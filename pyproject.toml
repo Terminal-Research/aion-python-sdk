@@ -1,0 +1,42 @@
+[tool.poetry]
+name = "aion-agent-api"
+version = "0.1.0"
+description = "LangGraph server for deploying agent workflows"
+authors = ["Terminal Research Team <support@terminal.exchange>"]
+readme = "README.md"
+packages = [{include = "aion", from = "src"}]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+langgraph = "^0.3.18"
+langgraph-api = "^0.0.32"
+openai = "^1.12.0"
+pydantic = "^2.6.0"
+python-dotenv = "^1.0.0"
+pyyaml = "^6.0.1"
+langchain-core = "^0.3.47"
+langchain-openai = "^0.3.9"
+click = "^8.1.8"
+uvicorn = "^0.34.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0.0"
+black = "^24.1.0"
+isort = "^5.13.0"
+mypy = "^1.8.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 88
+target-version = ['py38']
+include = '\.pyi?$'
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+
+[tool.poetry.scripts]
+aion-agent-api = "aion.agent.api.cli.commands:cli"

@@ -1,0 +1,12 @@
+{
+    "host": "127.0.0.1",
+    "port": 8000,
+    "reload": false,
+    "open_browser": true,
+    "debug_port": null,
+    "wait_for_client": false,
+    "graphs": {
+        "example_graph": "./src/path/to/your/module.py:graph_variable"
+    },
+    "env": "./.env"
+}
