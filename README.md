@@ -114,9 +114,3 @@ run_server(host="0.0.0.0", port=8000, reload=True)
 ## Dependencies
 
 - Python 3.11+
-- LangGraph API
-- LangGraph
-- Click (CLI framework)
-- Uvicorn (ASGI server)
-- Pydantic
-- Python-dotenv
