@@ -5,7 +5,12 @@
 # 1. Building the aion-agent-api package
 # 2. Uninstalling it from agent-workflow
 # 3. Reinstalling it in agent-workflow
-# 4. Running "poetry run aion serve"
+# 4. Running "poetry run aion serve" with optional debugging
+#
+# Usage:
+#   ./scripts/test_run.sh                   # Regular run without debugging
+#   ./scripts/test_run.sh --debug           # Run with debugger enabled and waiting
+#   ./scripts/test_run.sh --debug-port 9999 # Specify a custom debug port
 
 set -e  # Exit on any error
 
@@ -47,9 +52,55 @@ echo -e "${BLUE}Installing new aion-agent-api package...${NC}"
 poetry add "$AION_DIR/dist/aion_agent_api-${VERSION}-py3-none-any.whl"
 echo -e "${GREEN}Installation completed successfully.${NC}"
 
+# Process command line arguments to handle debugging options
+DEBUG_ENABLED=true
+DEBUG_PORT=5678
+DEBUG_WAIT=false
+EXTRA_ARGS=""
+
+# Parse the command line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --debug)
+            DEBUG_ENABLED=true
+            DEBUG_WAIT=true
+            shift
+            ;;
+        --debug-port)
+            DEBUG_PORT="$2"
+            shift 2
+            ;;
+        --wait-for-client)
+            DEBUG_WAIT=true
+            shift
+            ;;
+        *) # Unknown option
+            EXTRA_ARGS="$EXTRA_ARGS $1"
+            shift
+            ;;
+    esac
+done
+
+# Build the server command
+SERVE_CMD="poetry run aion serve"
+
+# Add debug options if enabled
+if [ "$DEBUG_ENABLED" = true ]; then
+    echo -e "${BLUE}🐛 Debugging enabled on port $DEBUG_PORT${NC}"
+    SERVE_CMD="$SERVE_CMD --debug-port $DEBUG_PORT"
+    
+    if [ "$DEBUG_WAIT" = true ]; then
+        echo -e "${BLUE}⏳ Server will wait for debugger to attach${NC}"
+        SERVE_CMD="$SERVE_CMD --wait-for-client"
+    fi
+fi
+
+# Add any extra arguments
+SERVE_CMD="$SERVE_CMD $EXTRA_ARGS"
+
 # Run the server
-echo -e "${BLUE}Running 'aion serve'...${NC}"
-poetry run aion serve
+echo -e "${BLUE}Running: $SERVE_CMD${NC}"
+eval $SERVE_CMD
 
 # Script will exit here if `aion serve` is stopped with Ctrl+C
 echo -e "${GREEN}Test run completed.${NC}"
