@@ -1,32 +1,23 @@
 """
-LangGraph API Server for AION Agent API
+LangGraph API Server Runner for AION Agent API
 
-This module provides a generic LangGraph API server implementation that can be used
-to deploy any LangGraph-based agent. Other agent projects can import this module
-and use it to expose their agents via an API.
+This module provides utilities for configuring and launching the LangGraph API server.
+It handles environment setup, debugging configuration, and server execution.
 """
 
 import os
-import logging
 import json
+import logging
 import pathlib
 import threading
 import time
-import urllib.error
-import urllib.request
 import webbrowser
 from contextlib import contextmanager
-from typing import Dict, List, Any, Optional, Callable, Mapping, Sequence, Union
+from typing import Dict, Any, Optional, Mapping, Sequence, Union
 
-from dotenv import load_dotenv
-from fastapi import FastAPI
-from langgraph.api import RunRequest, runtime_server_app
-from langgraph_api.agent import agent_api_router
-from langgraph.graph import StateGraph
-from pydantic import BaseModel
 import uvicorn
 
-from aion.agent.api.server.config import ServerConfig
+from aion.api.agent.server.config import ServerConfig
 
 # Configure logging
 logging.basicConfig(
@@ -34,19 +25,6 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
-
-# Load environment variables
-load_dotenv()
-
-# Create FastAPI app
-app = FastAPI(
-    title="AION Agent API",
-    description="LangGraph Server for deploying agent workflows",
-    version="0.1.0",
-)
-
-# Add the LangGraph API routes
-app.include_router(agent_api_router, prefix="/api")
 
 
 @contextmanager
@@ -75,37 +53,66 @@ def patch_environment(**kwargs):
                 del os.environ[key]
 
 
-def register_graph(
-    graph: Any,
-    graph_id: str,
-    display_name: str,
-    description: str,
-) -> None:
+
+def _load_env_vars(env: Union[str, pathlib.Path, Mapping, None]) -> Dict[str, str]:
     """
-    Register a LangGraph with the API server.
+    Load environment variables from various sources.
+    
+    This function handles loading environment variables from:
+    1. A specified .env file path
+    2. A mapping of environment variables
+    3. The .env file in the current directory
+    4. The .env.template file in the package directory
     
     Args:
-        graph: The compiled LangGraph to register
-        graph_id: Unique identifier for the graph
-        display_name: Human-readable name for the graph
-        description: Description of what the graph does
+        env: Source of environment variables, which can be:
+            - A string or Path pointing to a .env file
+            - A mapping of environment variable key-value pairs
+            - None to check for .env files in standard locations
+    
+    Returns:
+        Dictionary of environment variables
     """
-    runtime_server_app.register_graph(
-        graph, 
-        graph_id,
-        display_name=display_name,
-        description=description,
-    )
-    logger.info(f"Registered graph '{display_name}' with ID: {graph_id}")
+    env_vars = env if isinstance(env, Mapping) else None
+    
+    if isinstance(env, (str, pathlib.Path)):
+        try:
+            from dotenv import load_dotenv
+            
+            load_dotenv(dotenv_path=env)
+            env_vars = dict(os.environ)
+            logger.debug(f"Loaded environment variables from {env}")
+        except ImportError:
+            logger.warning(
+                "python-dotenv is not installed. Environment variables will not be loaded from file."
+            )
+    else:
+        # If no specific .env file was provided, try to load from .env or .env.template
+        try:
+            from dotenv import load_dotenv
+            
+            # First try .env in current directory
+            if os.path.exists(".env"):
+                load_dotenv()
+                env_vars = dict(os.environ)
+                logger.debug("Loaded environment variables from .env in current directory")
+            # Then try the template file in the package directory
+            elif os.path.exists(os.path.join(os.path.dirname(__file__), "../../../../.env.template")):
+                template_path = os.path.join(os.path.dirname(__file__), "../../../../.env.template")
+                load_dotenv(dotenv_path=template_path)
+                env_vars = dict(os.environ)
+                logger.debug(f"Loaded environment variables from template at {template_path}")
+        except ImportError:
+            logger.warning(
+                "python-dotenv is not installed. Environment variables will not be loaded from file."
+            )
+    
+    return env_vars or {}
 
-
-@app.get("/")
-async def root() -> Dict[str, str]:
-    """Root endpoint for the API server."""
+def _production_vars():
     return {
-        "message": "AION Agent API Server",
-        "status": "running",
-        "version": "0.1.0",
+        LANGGRAPH_AUTH_TYPE:"aion",
+        LANGGRAPH_AUTH:{"path":"aion.agent.server.AionAuthBackend", "openapi" : { }}, # see langgraph_api.openapi.LANGGRAPH_AUTH["openapi"] for expected properties 
     }
 
 
@@ -114,10 +121,14 @@ def run_server(
     port: int = 8000,
     reload: bool = False,
     graphs: Optional[Dict[str, Any]] = None,
+    n_jobs_per_worker: int | None = None,
     open_browser: bool = False,
     debug_port: Optional[int] = None,
     wait_for_client: bool = False,
     env: Optional[Union[str, pathlib.Path, Mapping[str, str]]] = None,
+    store: Optional[Dict[str, Any]] = None,
+    auth: Optional[Dict[str, Any]] = None,
+    http: Optional[Dict[str, Any]] = None,
     reload_includes: Optional[Sequence[str]] = None,
     reload_excludes: Optional[Sequence[str]] = None,
     **kwargs: Any,
@@ -130,6 +141,7 @@ def run_server(
         port: Port to listen on
         reload: Whether to enable auto-reload on code changes
         graphs: Dictionary mapping graph IDs to LangGraph instances
+        n_jobs_per_worker: Number of jobs per worker
         open_browser: Whether to open a browser window after the server starts
         debug_port: Port for the debugger to listen on
         wait_for_client: Whether to wait for a debugger client to connect
@@ -143,18 +155,7 @@ def run_server(
     start_time = time.time()
     
     # Handle environment variables
-    env_vars = env if isinstance(env, Mapping) else None
-    if isinstance(env, (str, pathlib.Path)):
-        try:
-            from dotenv import load_dotenv
-            
-            load_dotenv(dotenv_path=env)
-            env_vars = dict(os.environ)
-            logger.debug(f"Loaded environment variables from {env}")
-        except ImportError:
-            logger.warning(
-                "python-dotenv is not installed. Environment variables will not be loaded from file."
-            )
+    env_vars = _load_env_vars(env)
     
     # Set up debugging if requested
     if debug_port is not None:
@@ -173,18 +174,32 @@ def run_server(
     
     local_url = f"http://{host}:{port}"
     
-    # Register graphs if provided
+    # Graph registration is now handled by the LangGraph API
+    # via the langgraph.json configuration file
     if graphs:
-        for graph_id, graph in graphs.items():
-            register_graph(
-                graph=graph,
-                graph_id=graph_id,
-                display_name=graph_id.replace("_", " ").title(),
-                description=f"Agent graph: {graph_id}",
-            )
+        logger.warning(
+            "Direct graph registration is no longer supported. "
+            "Please define your graphs in langgraph.json instead."
+        )
     
     # Environment patch for configuration
-    with patch_environment(**(env_vars or {})):
+    with patch_environment(
+        MIGRATIONS_PATH="__inmem",
+        DATABASE_URI=":memory:",
+        REDIS_URI="fake",
+        N_JOBS_PER_WORKER=str(n_jobs_per_worker if n_jobs_per_worker else 1),
+        LANGGRAPH_STORE=json.dumps(store) if store else None,
+        LANGSERVE_GRAPHS=json.dumps(graphs) if graphs else None,
+        LANGSMITH_LANGGRAPH_API_VARIANT="local_dev", # they change this to "local" if LANGSMITH_API_KEY
+        # LANGSMITH_LANGGRAPH_API_VARIANT="self_hosted", 
+        LANGGRAPH_AUTH=json.dumps(auth) if auth else None, 
+        LANGGRAPH_HTTP=json.dumps(http) if http else None,
+        # See https://developer.chrome.com/blog/private-network-access-update-2024-03
+        ALLOW_PRIVATE_NETWORK="true",
+        # Include dev or prod-specific variables
+        **(_production_vars if False else {}), # @todo
+        **(env_vars or {}),
+    ):
         # Function to open browser after server starts
         def _open_browser():
             thread_logger = logging.getLogger("browser_opener")
@@ -195,6 +210,10 @@ def run_server(
             
             while True:
                 try:
+                    # Simple check to see if server is up
+                    import urllib.request
+                    import urllib.error
+                    
                     with urllib.request.urlopen(f"{local_url}/") as response:
                         if response.status == 200:
                             thread_logger.info(f"Server started in {time.time() - start_time:.2f}s")
@@ -237,7 +256,7 @@ This server provides endpoints for LangGraph agents.
         
         # Run the server
         uvicorn.run(
-            "aion.agent.api.server.app:app",
+            "aion.api.agent.server.server:app",  # Updated import path to point to server.py
             host=host,
             port=port,
             reload=reload,
@@ -249,14 +268,14 @@ This server provides endpoints for LangGraph agents.
                 "incremental": False,
                 "disable_existing_loggers": False,
                 "formatters": {
-                    "default": {
-                        "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+                    "simple": {
+                        "class": "langgraph_api.logging.Formatter",
                     }
                 },
                 "handlers": {
                     "console": {
                         "class": "logging.StreamHandler",
-                        "formatter": "default",
+                        "formatter": "simple",
                         "stream": "ext://sys.stdout",
                     }
                 },

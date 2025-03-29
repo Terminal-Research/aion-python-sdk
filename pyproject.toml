@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "aion-agent-api"
-version = "0.1.0"
+version = "0.1.3"
 description = "LangGraph server for deploying agent workflows"
 authors = ["Terminal Research Team <support@terminal.exchange>"]
 readme = "README.md"
@@ -18,6 +18,7 @@ langchain-core = "^0.3.47"
 langchain-openai = "^0.3.9"
 click = "^8.1.8"
 uvicorn = "^0.34.0"
+fastapi = "^0.115.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"
@@ -39,4 +40,4 @@ profile = "black"
 multi_line_output = 3
 
 [tool.poetry.scripts]
-aion-agent-api = "aion.agent.api.cli.commands:cli"
+aion = "aion.api.agent.cli.commands:cli"

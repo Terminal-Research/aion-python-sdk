@@ -55,55 +55,12 @@ def validate_config_file(config_path: pathlib.Path) -> Dict[str, Any]:
     # Return the validated configuration
     return config
 
-
-def load_graphs_from_config(config: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Load LangGraph instances from the configuration.
-    
-    Args:
-        config: The configuration dictionary
-        
-    Returns:
-        Dictionary mapping graph IDs to LangGraph instances
-    """
-    graphs = {}
-    
-    if "graphs" not in config:
-        return graphs
-    
-    for graph_id, graph_path in config["graphs"].items():
-        try:
-            # Handle either a string path or a direct object
-            if isinstance(graph_path, str):
-                module_path, variable_name = graph_path.split(":")
-                
-                # Convert relative path to absolute and handle dot notation
-                if module_path.startswith("./"):
-                    module_path = module_path[2:]
-                module_path = module_path.replace("/", ".")
-                if module_path.endswith(".py"):
-                    module_path = module_path[:-3]
-                
-                # Import the module and get the graph
-                import importlib
-                module = importlib.import_module(module_path)
-                graph = getattr(module, variable_name)
-                
-                graphs[graph_id] = graph
-                logger.info(f"Loaded graph '{graph_id}' from {graph_path}")
-            else:
-                # Assume it's a direct graph instance
-                graphs[graph_id] = graph_path
-                logger.info(f"Using provided graph instance for '{graph_id}'")
-        except Exception as e:
-            logger.warning(f"Failed to load graph '{graph_id}' from {graph_path}: {e}")
-    
-    return graphs
-
-
 def load_env_from_config(config: Dict[str, Any]) -> Optional[Union[str, Dict[str, str]]]:
     """
     Load environment variables from the configuration.
+    
+    This function first looks for a template .env file to use as a base,
+    then overrides values from the configuration file.
     
     Args:
         config: The configuration dictionary
@@ -111,7 +68,34 @@ def load_env_from_config(config: Dict[str, Any]) -> Optional[Union[str, Dict[str
     Returns:
         Environment variables or path to .env file
     """
-    if "env" not in config:
-        return None
+    # Start with default environment variables
+    env_vars = {}
     
-    return config["env"]
+    # First try to load the .env.template file as a base configuration
+    template_path = pathlib.Path(__file__).parent.parent.parent.parent.parent / ".env.template"
+    if template_path.exists():
+        try:
+            # Parse the .env.template file
+            with open(template_path, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        key, value = line.split("=", 1)
+                        env_vars[key] = value
+                        
+            logger.debug(f"Loaded base environment from {template_path}")
+        except Exception as e:
+            logger.warning(f"Failed to load template environment: {e}")
+    
+    # Then override with configuration from langgraph.json
+    if "env" in config:
+        if isinstance(config["env"], str):
+            # If env is a string, it's a path to an env file
+            # @todo DJ if this is a path to a file, we should update the env variables with its contents
+            return config["env"]
+        elif isinstance(config["env"], dict):
+            # If env is a dict, merge it with our base environment
+            env_vars.update(config["env"])
+    
+    # Return the merged environment variables
+    return env_vars if env_vars else None

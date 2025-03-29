@@ -4,20 +4,21 @@ Command-line interface commands for AION Agent API.
 This module implements the CLI commands for managing the AION Agent API server.
 """
 
+
+
 import logging
+import os
 import pathlib
 import sys
-from typing import Any, Dict, Optional
+from typing import Optional
 
 import click
 
-from aion.agent.api.cli.config import (
+from aion.api.agent.cli.config import (
     validate_config_file,
-    load_graphs_from_config,
     load_env_from_config,
 )
-from aion.agent.api.server import run_server
-from aion.agent.api.server.config import get_config
+from aion.api.agent.server import run_server
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -75,6 +76,12 @@ def cli():
     default=None,
     help="Wait for a debugger client to connect before starting the server. Overrides config file.",
 )
+@click.option(
+    "--n-jobs-per-worker",
+    type=int,
+    default=None,
+    help="Number of jobs to run per worker for graph execution. Overrides config file.",
+)
 def serve(
     config: pathlib.Path,
     host: Optional[str],
@@ -84,6 +91,7 @@ def serve(
     open_browser: Optional[bool],
     debug_port: Optional[int],
     wait_for_client: Optional[bool],
+    n_jobs_per_worker: Optional[int],
 ):
     """
     Launch the AION Agent API server.
@@ -126,36 +134,39 @@ def serve(
     # Load environment from either command-line or config
     server_env = env_file if env_file else load_env_from_config(config_dict)
     
-    # Load graphs from config
-    graphs = load_graphs_from_config(config_dict)
+    cwd = os.getcwd()
+    sys.path.append(cwd)
+    dependencies = config_dict.get("dependencies", [])
+    for dep in dependencies:
+        dep_path = pathlib.Path(cwd) / dep
+        if dep_path.is_dir() and dep_path.exists():
+            logger.info(f"Adding dependency to sys.path: {dep_path}")
+            sys.path.append(str(dep_path))
     
-    # Run the server with the consolidated settings
+    # Note about graph configuration
+    if "graphs" in config_dict:
+        logger.info(
+            "Graph configuration detected in config file. "
+            "The LangGraph API will load graphs directly from the configuration."
+        )
+    
     run_server(
         host=server_host,
         port=server_port,
         reload=server_reload,
-        graphs=graphs,
-        env=server_env,
+        graphs=config_dict.get("graphs", {}),
         open_browser=server_open_browser,
         debug_port=server_debug_port,
         wait_for_client=server_wait_for_client,
+        env=server_env,
+        store=config_dict.get("store"),
+        auth=config_dict.get("auth"),
+        http=config_dict.get("http"),
+        n_jobs_per_worker=n_jobs_per_worker,
     )
 
 
-@cli.command(help="📖 Show help information about the AION Agent API")
-def info():
-    """
-    Display information about the AION Agent API server.
-    
-    Shows the current configuration settings and available commands.
-    """
-    config = get_config()
-    
-    click.echo("\nAION Agent API Configuration:")
-    click.echo(f"  Host: {config.host}")
-    click.echo(f"  Port: {config.port}")
-    click.echo(f"  Debug Mode: {'Enabled' if config.debug else 'Disabled'}")
-    click.echo("\nFor more information, run 'aion-agent-api serve --help'")
+# Info command removed to avoid premature imports
 
 
 if __name__ == "__main__":

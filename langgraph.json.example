@@ -1,12 +1,76 @@
 {
-    "host": "127.0.0.1",
-    "port": 8000,
-    "reload": false,
-    "open_browser": true,
-    "debug_port": null,
-    "wait_for_client": false,
+    // Server configuration options
+    "host": "127.0.0.1",          // Hostname to bind the server to
+    "port": 8000,                // Port to bind the server to
+    "reload": false,             // Enable automatic reloading on code changes
+    "open_browser": true,        // Automatically open browser when server starts
+    "debug_port": null,          // Port for debug server (optional)
+    "wait_for_client": false,    // Wait for client connection before starting
+
+    // Required. Dependencies for LangGraph Cloud API server
+    // Can be: ".", a path to a package, or a package name
+    "dependencies": [
+        ".",                     // Local Python packages
+        "./local_package"        // Path to a package with pyproject.toml, setup.py or requirements.txt
+    ],
+
+    // Required. Map of graph IDs to paths where compiled graphs or graph-creating functions are defined
+    // Examples:
+    // - "./your_package/your_file.py:variable" where variable is a CompiledStateGraph instance
+    // - "./your_package/your_file.py:make_graph" where make_graph is a function that creates a StateGraph
     "graphs": {
         "example_graph": "./src/path/to/your/module.py:graph_variable"
     },
-    "env": "./.env"
+
+    // Auth configuration (added in v0.0.11)
+    // Path to your authentication handler
+    // Example: "./your_package/auth.py:auth" where auth is an instance of langgraph_sdk.Auth
+    "auth": "./src/path/to/your/auth.py:auth",
+
+    // Path to .env file or a mapping of environment variables
+    "env": "./.env",
+    // Alternative env configuration as a map
+    // "env": {
+    //     "DATABASE_URI": "sqlite:///langgraph.db",
+    //     "DEBUG": "1"
+    // },
+
+    // Configuration for adding semantic search to the BaseStore
+    "store": {
+        "index": {
+            "embed": "openai:text-embedding-3-small", // Embedding provider or path to custom embedding function
+            "dims": 1536,                          // Dimension size of the embedding model
+            "fields": ["$"]                       // Optional list of fields to index
+        }
+    },
+
+    // Python version (3.11 or 3.12, defaults to 3.11)
+    "python_version": "3.11",
+
+    // Specify node_version: 20 to use LangGraph.js
+    "node_version": "20",
+
+    // Path to pip config file
+    "pip_config_file": "./pip.conf",
+
+    // Array of additional lines to add to Dockerfile
+    "dockerfile_lines": [
+        "RUN apt-get update && apt-get install -y curl",
+        "RUN pip install --no-cache-dir langchain-community"
+    ],
+
+    // HTTP server configuration
+    "http": {
+        "app": "./src/agent/webapp.py:app",      // Path to custom Starlette/FastAPI app (see https://langchain-ai.github.io/langgraph/how-tos/http/custom_routes/)
+        "disable_assistants": false,             // Disable /assistants routes
+        "disable_threads": false,                // Disable /threads routes
+        "disable_runs": false,                   // Disable /runs routes
+        "disable_store": false,                  // Disable /store routes
+        "disable_meta": false,                   // Disable /ok, /info, /metrics, and /docs routes
+        "cors": {                               // CORS configuration
+            "allow_origins": ["*"],              // List of allowed origins
+            "allow_methods": ["*"],              // List of allowed HTTP methods
+            "allow_headers": ["*"]               // List of allowed HTTP headers
+        }
+    }
 }

@@ -30,6 +30,47 @@ poetry run aion-agent-api serve
 
 # View CLI help
 poetry run aion-agent-api --help
+```
+
+### Configuration
+
+The server can be configured using environment variables or a `.env` file. A template file `.env.template` is provided with default values.
+
+```bash
+# Create your own .env file
+cp .env.template .env
+
+# Edit with your configuration
+vim .env
+```
+
+#### Essential Configuration
+
+The following environment variables are required:
+
+| Variable | Description | Default |
+|----------|-------------|--------|
+| DATABASE_URI | Database connection URI | sqlite:///langgraph.db |
+| HOST | Host address to bind to | 127.0.0.1 |
+| PORT | Port to listen on | 8000 |
+
+#### LangGraph Configuration 
+
+The server uses a `langgraph.json` file to configure graphs and other settings. This follows the standard LangGraph API configuration format:
+
+```json
+{
+  "host": "127.0.0.1",
+  "port": 8000,
+  "reload": true,
+  "env": {
+    "DATABASE_URI": "sqlite:///langgraph.db"
+  },
+  "graphs": {
+    "my_graph": "./path/to/module.py:graph_variable"
+  }
+}
+```
 poetry run aion-agent-api serve --help
 
 # Start with specific host and port
@@ -55,7 +96,7 @@ See `langgraph.json.example` for a template of the configuration file format.
 You can also use the AION Agent API programmatically from your own agent projects:
 
 ```python
-from aion.agent.api.server import register_graph, run_server
+from aion.api.agent.server import register_graph, run_server
 from your_agent_module import your_graph
 
 # Register your LangGraph agent
