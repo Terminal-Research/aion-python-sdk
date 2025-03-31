@@ -76,15 +76,6 @@ async def astream_state(
     on_checkpoint: Callable[[CheckpointPayload], None] = lambda _: None,
     on_task_result: Callable[[TaskResultPayload], None] = lambda _: None,
 ) -> AnyStream:
-    # Add a debugger breakpoint here when debugpy is available
-    try:
-        import debugpy
-        if debugpy.is_client_connected():
-            logger.info("Debugger is connected, breaking at astream_state")
-            debugpy.breakpoint()
-    except (ImportError, AttributeError):
-        pass
-        
     logger.info("Logging loop x121")
     """Stream messages from the runnable."""
     run_id = str(run["run_id"])
@@ -215,14 +206,6 @@ async def astream_state(
             while True:
                 event = await wait_if_not_done(anext(stream, sentinel), done)
                 logger.info("logger x125event %s", event)
-                # Add another breakpoint for event inspection
-                try:
-                    import debugpy
-                    if debugpy.is_client_connected():
-                        logger.info("Debugger is connected, breaking at event processing")
-                        debugpy.breakpoint()
-                except (ImportError, AttributeError):
-                    pass
                     
                 if event is sentinel:
                     break

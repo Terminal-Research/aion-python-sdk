@@ -8,7 +8,7 @@ packages = [{include = "aion", from = "src"}]
 
 [tool.poetry.dependencies]
 python = "^3.11"
-langgraph = "^0.3.18"
+langgraph = "^0.3.21"
 langgraph-api = "^0.0.32"
 openai = "^1.12.0"
 pydantic = "^2.6.0"
