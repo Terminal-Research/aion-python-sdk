@@ -11,6 +11,8 @@ import sys
 from typing import Optional, Callable, Sequence
 
 import click
+import click.exceptions
+from click import secho
 
 from aion.api.agent.cli.exec import Runner, subp_exec
 from aion.api.agent.cli.progress import Progress
@@ -235,9 +237,6 @@ def _build(
     passthrough: Sequence[str] = (),
 ):
     
-    if config_json.get("node_version"):
-        raise NotImplementedError("Node.js is not supported")
-    
     # TODO: we need a base image. For now, we only support python
     base_image = base_image or "langchain/langgraph-api" 
 
@@ -323,6 +322,105 @@ def build(
             runner, set, config, config_json, base_image, pull, tag, docker_build_args
         )
 
+
+@OPT_CONFIG
+@click.argument("save_path", type=click.Path(resolve_path=True))
+@cli.command(
+    help="🐳 Generate a Dockerfile for the Aion Agent API server, with Docker Compose options."
+)
+@click.option(
+    # Add a flag for adding a docker-compose.yml file as part of the output
+    "--add-docker-compose",
+    help=(
+        "Add additional files for running the LangGraph API server with "
+        "docker-compose. These files include a docker-compose.yml, .env file, "
+        "and a .dockerignore file."
+    ),
+    is_flag=True,
+)
+def dockerfile(save_path: str, config: pathlib.Path, add_docker_compose: bool) -> None:
+    save_path = pathlib.Path(save_path).absolute()
+    secho(f"🔍 Validating configuration at path: {config}", fg="yellow")
+    config_json = cfg.validate_config_file(config)
+    secho("✅ Configuration validated!", fg="green")
+
+    secho(f"📝 Generating Dockerfile at {save_path}", fg="yellow")
+    dockerfile, additional_contexts = cfg.config_to_docker(
+        config,
+        config_json,
+        "langchain/langgraph-api",
+    )
+    with open(str(save_path), "w", encoding="utf-8") as f:
+        f.write(dockerfile)
+    secho("✅ Created: Dockerfile", fg="green")
+
+    if additional_contexts:
+        additional_contexts_str = ",".join(
+            f"{k}={v}" for k, v in additional_contexts.items()
+        )
+        secho(
+            f"""📝 Run docker build with these additional build contexts `--build-context {additional_contexts_str}`""",
+            fg="yellow",
+        )
+
+    if add_docker_compose:
+        # Add docker compose and related files
+        # Add .dockerignore file in the same directory as the Dockerfile
+        with open(str(save_path.parent / ".dockerignore"), "w", encoding="utf-8") as f:
+            f.write(_get_docker_ignore_content())
+        secho("✅ Created: .dockerignore", fg="green")
+
+        # Generate a docker-compose.yml file
+        path = str(save_path.parent / "docker-compose.yml")
+        with open(path, "w", encoding="utf-8") as f:
+            with Runner() as runner:
+                capabilities = langgraph_cli.docker.check_capabilities(runner)
+
+            compose_dict = langgraph_cli.docker.compose_as_dict(
+                capabilities,
+                port=8123,
+            )
+            # Add .env file to the docker-compose.yml for the langgraph-api service
+            compose_dict["services"]["langgraph-api"]["env_file"] = [".env"]
+            # Add the Dockerfile to the build context
+            compose_dict["services"]["langgraph-api"]["build"] = {
+                "context": ".",
+                "dockerfile": save_path.name,
+            }
+            f.write(langgraph_cli.docker.dict_to_yaml(compose_dict))
+            secho("✅ Created: docker-compose.yml", fg="green")
+
+        # Check if the .env file exists in the same directory as the Dockerfile
+        if not (save_path.parent / ".env").exists():
+            # Also add an empty .env file
+            with open(str(save_path.parent / ".env"), "w", encoding="utf-8") as f:
+                f.writelines(
+                    [
+                        "# Uncomment the following line to add your LangSmith API key",
+                        "\n",
+                        "# LANGSMITH_API_KEY=your-api-key",
+                        "\n",
+                        "# Or if you have a LangGraph Cloud license key, "
+                        "then uncomment the following line: ",
+                        "\n",
+                        "# LANGGRAPH_CLOUD_LICENSE_KEY=your-license-key",
+                        "\n",
+                        "# Add any other environment variables go below...",
+                    ]
+                )
+
+            secho("✅ Created: .env", fg="green")
+        else:
+            # Do nothing since the .env file already exists. Not a great
+            # idea to overwrite in case the user has added custom env vars set
+            # in the .env file already.
+            secho("➖ Skipped: .env. It already exists!", fg="yellow")
+
+    secho(
+        f"🎉 Files generated successfully at path {save_path.parent}!",
+        fg="cyan",
+        bold=True,
+    )
 
 if __name__ == "__main__":
     cli()

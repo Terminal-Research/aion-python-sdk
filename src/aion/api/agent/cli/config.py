@@ -395,6 +395,9 @@ def validate_config(config: Config) -> Config:
         "http": config.get("http"),
         "ui": config.get("ui"),
     }
+    
+    if config.get("node_version"):
+        raise NotImplementedError("Node.js is not supported")
 
     if config.get("python_version"):
         pyversion = config["python_version"]
