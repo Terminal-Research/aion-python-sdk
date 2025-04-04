@@ -26,10 +26,13 @@ AION Agent API provides a command-line interface for launching the server:
 
 ```bash
 # Using the CLI
-poetry run aion-agent-api serve
+poetry run aion serve
+
+# Build the Docker image
+poetry run aion build -t my-image
 
 # View CLI help
-poetry run aion-agent-api --help
+poetry run aion --help
 ```
 
 ### Configuration
@@ -71,13 +74,13 @@ The server uses a `langgraph.json` file to configure graphs and other settings. 
   }
 }
 ```
-poetry run aion-agent-api serve --help
+poetry run aion serve --help
 
 # Start with specific host and port
-poetry run aion-agent-api serve --host 0.0.0.0 --port 9000
+poetry run aion serve --host 0.0.0.0 --port 9000
 
 # Enable hot reloading for development
-poetry run aion-agent-api serve --reload
+poetry run aion serve --reload
 ```
 
 ### Configuration File
@@ -86,30 +89,10 @@ You can use a JSON configuration file to specify server settings and register gr
 
 ```bash
 # Use a specific configuration file
-poetry run aion-agent-api serve -c my_config.json
+poetry run aion serve -c my_config.json
 ```
 
 See `langgraph.json.example` for a template of the configuration file format.
-
-### Programmatic Usage
-
-You can also use the AION Agent API programmatically from your own agent projects:
-
-```python
-from aion.api.agent.server import register_graph, run_server
-from your_agent_module import your_graph
-
-# Register your LangGraph agent
-register_graph(
-    graph=your_graph,
-    graph_id="my_agent",
-    display_name="My Agent",
-    description="My awesome LangGraph agent"
-)
-
-# Run the server
-run_server(host="0.0.0.0", port=8000, reload=True)
-```
 
 ## Dependencies
 

@@ -36,6 +36,7 @@ async def disabled_metadata_loop() -> None:
 metadata.metadata_loop = disabled_metadata_loop
 
 # =================================================
+# This is a temporary patch to diagnose a streaming bug in langgraph_api
 
 # Import the original function directly
 from langgraph_api.stream import astream_state as original_astream_state
@@ -193,19 +194,24 @@ async def astream_state(
                 elif "events" in stream_mode:
                     yield "events", event
     else:
-        logger.info("Logging loop x125")
+        logger.info("graph.stream_channels_asis = %s", graph.stream_channels_asis)
+        logger.info("output_keys = %s", ["messages"])
         async with (
             stack,
             aclosing(
                 graph.astream(
-                    input, config, stream_mode=list(stream_modes_set), **kwargs
+                    input, 
+                    config, 
+                    stream_mode=list(stream_modes_set), 
+                    output_keys=["messages"],
+                    **kwargs
                 )
             ) as stream,
         ):
             sentinel = object()
             while True:
                 event = await wait_if_not_done(anext(stream, sentinel), done)
-                logger.info("logger x125event %s", event)
+                # logger.info("logger x125event %s", event)
                     
                 if event is sentinel:
                     break
