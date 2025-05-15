@@ -77,7 +77,6 @@ async def astream_state(
     on_checkpoint: Callable[[CheckpointPayload], None] = lambda _: None,
     on_task_result: Callable[[TaskResultPayload], None] = lambda _: None,
 ) -> AnyStream:
-    logger.info("Logging loop x121")
     """Stream messages from the runnable."""
     run_id = str(run["run_id"])
     await stack.enter_async_context(conn.pipeline())
@@ -142,7 +141,6 @@ async def astream_state(
             sentinel = object()
             while True:
                 event = await wait_if_not_done(anext(stream, sentinel), done)
-                logger.info("Logging loop x123")
                 if event is sentinel:
                     break
                 if event.get("tags") and "langsmith:hidden" in event["tags"]:
@@ -194,8 +192,6 @@ async def astream_state(
                 elif "events" in stream_mode:
                     yield "events", event
     else:
-        logger.info("graph.stream_channels_asis = %s", graph.stream_channels_asis)
-        logger.info("output_keys = %s", ["messages"])
         async with (
             stack,
             aclosing(
@@ -211,7 +207,6 @@ async def astream_state(
             sentinel = object()
             while True:
                 event = await wait_if_not_done(anext(stream, sentinel), done)
-                # logger.info("logger x125event %s", event)
                     
                 if event is sentinel:
                     break
