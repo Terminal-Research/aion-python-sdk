@@ -8,7 +8,7 @@ packages = [{include = "aion_agent_api", from = "src"}]
 
 [tool.poetry.dependencies]
 python = "^3.11"
-a2a-sdk = {path = "../_a2a-python", develop = true}
+a2a-sdk = "^0.2.5"
 uvicorn = "^0.23.0"
 starlette = "^0.32.0"
 
