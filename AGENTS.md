@@ -13,7 +13,7 @@ This repository is a monorepo containing multiple projects located primarily und
 - **_a2a-template-langgraph** – example implementation of an A2A protocol serving a LangGraph agent.
 - **_agent-workflow** – example implementation of a langgraph project using langgraph_api as a server
  - **aion-agent-api** – implementation of an A2A server wrapping a LangGraph project. Provides a structlog-based ``logging`` module for CLI tools.
-- **aion-agent-cli** – command line interface for the Aion Python SDK.
+ - **aion-agent-cli** – command line interface for the Aion Python SDK exposing the `aion` entry point.
 
 ## Additional guidelines
 
