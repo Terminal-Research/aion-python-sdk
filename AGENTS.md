@@ -10,11 +10,12 @@ This repository is a monorepo containing multiple projects located primarily und
 - **_langgraph_api** – internal version of the LangGraph API server exposing HTTP routes, middleware, and async workers.
 - **_langgraph_cli** – internal CLI utilities for building Docker images and launching the LangGraph API server.
 - **_langgraph_storage** – in-memory storage backend and queue implementation for local LangGraph operations.
-- **_a2a-template-langgraph** – placeholder for agent-to-agent templates; contains no implementation.
-- **_agent-workflow** – placeholder package reserved for workflow examples.
+- **_a2a-template-langgraph** – example implementation of an A2A protocol serving a LangGraph agent.
+- **_agent-workflow** – example implementation of a langgraph project using langgraph_api as a server
 
 ## Additional guidelines
 
 1. Libraries in packages whose names start with an underscore are provided only for context and are **not** intended to be distributed.
 2. Always use idiomatic Python and best practices.
 3. Document all code with Python docstrings, especially at the class and method level.
+4. Create thourough unit tests for all code using pytest.
