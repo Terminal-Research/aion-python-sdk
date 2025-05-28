@@ -97,8 +97,8 @@ def _load_env_vars(env: Union[str, pathlib.Path, Mapping, None]) -> Dict[str, st
                 env_vars = dict(os.environ)
                 logger.debug("Loaded environment variables from .env in current directory")
             # Then try the template file in the package directory
-            elif os.path.exists(os.path.join(os.path.dirname(__file__), "../../../../.env.template")):
-                template_path = os.path.join(os.path.dirname(__file__), "../../../../.env.template")
+            elif os.path.exists(os.path.join(os.path.dirname(__file__), "../../../../../.env.template")):
+                template_path = os.path.join(os.path.dirname(__file__), "../../../../../.env.template")
                 load_dotenv(dotenv_path=template_path)
                 env_vars = dict(os.environ)
                 logger.debug(f"Loaded environment variables from template at {template_path}")
