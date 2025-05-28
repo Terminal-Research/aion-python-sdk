@@ -492,7 +492,8 @@ def load_env_from_config(
 
     # First try to load the .env.template file as a base configuration
     template_path = (
-        pathlib.Path(__file__).parent.parent.parent.parent.parent / ".env.template"
+        pathlib.Path(__file__).parent.parent.parent.parent.parent.parent
+        / ".env.template"
     )
     if template_path.exists():
         try:
