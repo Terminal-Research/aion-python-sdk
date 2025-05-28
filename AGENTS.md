@@ -12,6 +12,7 @@ This repository is a monorepo containing multiple projects located primarily und
 - **_langgraph_storage** – in-memory storage backend and queue implementation for local LangGraph operations.
 - **_a2a-template-langgraph** – example implementation of an A2A protocol serving a LangGraph agent.
 - **_agent-workflow** – example implementation of a langgraph project using langgraph_api as a server
+- **aion-agent-api** – implementation of an A2A server wrapping a LangGraph project.
 
 ## Additional guidelines
 

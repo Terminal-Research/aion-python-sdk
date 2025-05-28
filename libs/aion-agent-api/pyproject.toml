@@ -1,0 +1,20 @@
+[tool.poetry]
+name = "aion-agent-api"
+version = "0.1.0"
+description = "A2A server wrapper for LangGraph projects"
+authors = ["Terminal Research Team <support@terminal.exchange>"]
+readme = "README.md"
+packages = [{include = "aion_agent_api", from = "src"}]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+a2a-sdk = {path = "../_a2a-python", develop = true}
+uvicorn = "^0.23.0"
+starlette = "^0.32.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
