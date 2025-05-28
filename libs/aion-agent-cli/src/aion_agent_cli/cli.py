@@ -8,11 +8,6 @@ import click
 
 __version__ = "0.1.0"
 
-# Attempt to match the logging style used by ``_langgraph_cli`` which relies on
-# the configuration from ``aion_agent_api.logging``.  That configuration uses
-# ``structlog`` with a console renderer for colorful output.  If the dependency
-# is unavailable, fall back to the standard library logger so the CLI still
-# works in minimal environments.
 try:  # pragma: no cover - optional dependency may not be installed
     import structlog
 
