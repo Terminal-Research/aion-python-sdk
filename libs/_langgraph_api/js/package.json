@@ -1,0 +1,43 @@
+{
+  "name": "@langchain/langgraph-api",
+  "private": true,
+  "version": "0.0.0",
+  "main": "index.js",
+  "scripts": {
+    "format": "prettier --write ."
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.12.0",
+    "@hono/zod-validator": "^0.2.2",
+    "@langchain/core": "^0.3.40",
+    "@langchain/langgraph": "^0.2.49",
+    "@langchain/langgraph-checkpoint": "^0.0.15",
+    "@types/json-schema": "^7.0.15",
+    "@typescript/vfs": "^1.6.0",
+    "dedent": "^1.5.3",
+    "exit-hook": "^4.0.0",
+    "hono": "^4.5.4",
+    "p-queue": "^8.0.1",
+    "p-retry": "^6.2.0",
+    "tsx": "^4.19.3",
+    "typescript": "^5.5.4",
+    "undici": "^6.21.1",
+    "uuid": "^10.0.0",
+    "winston": "^3.17.0",
+    "@langchain/langgraph-api": "~0.0.14",
+    "zod": "^3.23.8"
+  },
+  "resolutions": {
+    "esbuild": "^0.25.0"
+  },
+  "devDependencies": {
+    "@langchain/langgraph-sdk": "^0.0.31",
+    "@types/react": "^19.0.8",
+    "@types/react-dom": "^19.0.3",
+    "@types/node": "^22.2.0",
+    "postgres": "^3.4.4",
+    "prettier": "^3.3.3",
+    "vitest": "^3.0.4"
+  },
+  "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"
+}
