@@ -6,7 +6,7 @@ This repository is a monorepo containing multiple projects located primarily und
 
 ## Projects
 
-- **cli** – an Aion adaptation of `langgraph-cli` for running a LangGraph production server.
+- **_cli** – an Aion adaptation of `langgraph-cli` for running a LangGraph production server. Out-of-date, was based on langgraph_cli and langgraph_api. We are now using our own servers.
 - **_langgraph_api** – internal version of the LangGraph API server exposing HTTP routes, middleware, and async workers.
 - **_langgraph_cli** – internal CLI utilities for building Docker images and launching the LangGraph API server.
 - **_langgraph_storage** – in-memory storage backend and queue implementation for local LangGraph operations.
