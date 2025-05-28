@@ -8,12 +8,23 @@ import click
 
 __version__ = "0.1.0"
 
-# Configure logging similar to other projects
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
-logger = logging.getLogger(__name__)
+# Attempt to match the logging style used by ``_langgraph_cli`` which relies on
+# the configuration from ``aion_agent_api.logging``.  That configuration uses
+# ``structlog`` with a console renderer for colorful output.  If the dependency
+# is unavailable, fall back to the standard library logger so the CLI still
+# works in minimal environments.
+try:  # pragma: no cover - optional dependency may not be installed
+    import structlog
+
+    import aion_agent_api.logging  # noqa: F401 - triggers global configuration
+
+    logger = structlog.stdlib.get_logger(__name__)
+except Exception:  # pragma: no cover - structlog is optional for tests
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
+    logger = logging.getLogger(__name__)
 
 
 @click.group()
