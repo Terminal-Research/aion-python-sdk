@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import uvicorn
 from a2a.server.apps import A2AStarletteApplication
 from a2a.server.request_handlers.request_handler import RequestHandler
 from a2a.types import AgentCard
@@ -33,5 +32,9 @@ class A2AServer:
 
     def run(self, host: str = "127.0.0.1", port: int = 8000) -> None:
         """Run the server using ``uvicorn``."""
+        # Import uvicorn lazily so this module does not require the dependency
+        # unless the server is actually started.
+        import uvicorn  # type: ignore
+
         app = self._app or self.build_app()
         uvicorn.run(app, host=host, port=port)
