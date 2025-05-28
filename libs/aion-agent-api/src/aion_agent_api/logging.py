@@ -13,7 +13,8 @@ LOG_JSON = log_env("LOG_JSON", cast=bool, default=False)
 LOG_COLOR = log_env("LOG_COLOR", cast=bool, default=True)
 LOG_LEVEL = log_env("LOG_LEVEL", cast=str, default="INFO")
 
-logging.getLogger().setLevel(LOG_LEVEL.upper())
+root_logger = logging.getLogger()
+root_logger.setLevel(LOG_LEVEL.upper())
 logging.getLogger("psycopg").setLevel(logging.WARNING)
 
 
@@ -100,3 +101,8 @@ structlog.configure(
     wrapper_class=structlog.stdlib.BoundLogger,
     cache_logger_on_first_use=True,
 )
+
+if not root_logger.handlers:
+    handler = logging.StreamHandler()
+    handler.setFormatter(Formatter("%(message)s", None, "%"))
+    root_logger.addHandler(handler)
