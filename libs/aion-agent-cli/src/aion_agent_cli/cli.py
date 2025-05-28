@@ -22,7 +22,7 @@ def cli() -> None:
     """Command line interface for the Aion Python SDK."""
 
 
-@cli.command(help="Run the AION Agent API server")
+@cli.command(help="🚀 Run the AION Agent API server")
 def serve() -> None:
     """Stub for running the AION Agent API server."""
     welcome = """
