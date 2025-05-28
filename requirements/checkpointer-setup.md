@@ -4,7 +4,7 @@ This document explains how `langgraph_api` configures checkpointing for each gra
 
 ## Default Checkpointer
 
-The in-memory implementation resides in [`libs/_langgraph_storage/checkpoint.py`](../libs/_langgraph_storage/checkpoint.py). A global `InMemorySaver` is created and exposed via the `Checkpointer()` function:
+The in-memory implementation resides in the [langgraph-storage](https://github.com/langchain-ai/langgraph-storage) project, which this repository includes under `libs/_langgraph_storage` for convenience. A global `InMemorySaver` is created and exposed via the `Checkpointer()` function:
 
 ```python
 MEMORY = InMemorySaver()
@@ -46,3 +46,39 @@ The graph therefore receives a ready-to-use checkpointer without any user config
 ## JS Graphs
 
 When JavaScript graphs are loaded via `collect_graphs_from_env`, the server spawns a background task that runs `run_remote_checkpointer`. This task exposes HTTP endpoints that proxy to the same Python `Checkpointer` so that JS graphs can checkpoint remotely.
+
+## PostgreSQL Checkpointer
+
+LangGraph can persist checkpoints in a Postgres database using the `langgraph-checkpoint-postgres` package. To set it up:
+
+1. Install the dependencies:
+
+   ```bash
+   pip install langgraph-checkpoint-postgres psycopg[binary]
+   ```
+
+2. Initialize a `PostgresSaver` and create the tables:
+
+   ```python
+   from langgraph.checkpoint.postgres import PostgresSaver
+
+   DB_URI = "postgresql://user:password@localhost:5432/dbname"
+   checkpointer = PostgresSaver.from_conn_string(DB_URI)
+   checkpointer.setup()  # Creates necessary tables
+   ```
+
+3. Compile your graph with this checkpointer:
+
+   ```python
+   graph = builder.compile(checkpointer=checkpointer)
+   ```
+
+4. Invoke the graph with a thread ID:
+
+   ```python
+   config = {"configurable": {"thread_id": "1"}}
+   graph.invoke(input_data, config)
+   ```
+
+Using PostgreSQL lets your LangGraph application persist checkpoints across sessions, enabling durable memory and features like semantic search when `pgvector` is installed.
+
