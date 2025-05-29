@@ -6,7 +6,7 @@ import pytest
 
 import logging
 
-from aion_agent_api.graph import GRAPHS, initialize_graphs
+from aion.server.langgraph.graph import GRAPHS, initialize_graphs
 
 
 def test_initialize_graphs(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:

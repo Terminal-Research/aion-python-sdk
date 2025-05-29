@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Command line interface for the Aion Python SDK"
 authors = ["Terminal Research Team <support@terminal.exchange>"]
 readme = "README.md"
-packages = [{include = "aion_agent_cli", from = "src"}]
+packages = [{include = "aion", from = "src"}]
 
 [tool.poetry.dependencies]
 python = "^3.11"
@@ -19,4 +19,4 @@ requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
-aion = "aion_agent_cli.cli:cli"
+aion = "aion.cli.cli:cli"

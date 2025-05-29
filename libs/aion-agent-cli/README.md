@@ -5,7 +5,7 @@ Command-line interface for the Aion Python SDK.
 This project provides a minimal CLI for running the Aion Agent API server.
 
 When ``structlog`` is available the CLI uses the same colorful logging style as
-``_langgraph_cli`` via ``aion_agent_api.logging``. In more minimal
+``_langgraph_cli`` via ``aion.server.langgraph.logging``. In more minimal
 environments it falls back to the standard library's basic configuration.
 
 ## Usage
@@ -18,5 +18,5 @@ installed you can run:
 poetry run aion serve
 ```
 
-This will invoke ``aion_agent_cli.cli`` which in turn starts the local Agent
+This will invoke ``aion.cli.cli`` which in turn starts the local Agent
 API server.
