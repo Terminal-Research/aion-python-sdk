@@ -37,6 +37,7 @@ def serve(host: str, port: int) -> None:
         "Starting AION Agent API server",
         extra={"host": host, "port": port},
     )
+    logger.info(welcome_message(host, port))
     try:
         from aion.server.langgraph.__main__ import main as server_main
     except Exception as exc:  # pragma: no cover - optional dependency may fail
@@ -46,6 +47,23 @@ def serve(host: str, port: int) -> None:
         ) from exc
 
     server_main.callback(host=host, port=port)
+    
+def welcome_message(host: str, port: int):
+    return """
+
+        Welcome to
+
+╔═╗╦╔═╗╔╗╔  ╔═╗╔═╗╔═╗╔╗╔╔╦╗  ╔═╗╔═╗╦
+╠═╣║║ ║║║║  ╠═╣║ ╦║╣ ║║║ ║   ╠═╣╠═╝║
+╩ ╩╩╚═╝╝╚╝  ╩ ╩╚═╝╚═╝╝╚╝ ╩   ╩ ╩╩  ╩
+
+- 🚀 API: http://{host}:{port}
+- 📚 API Docs: http://{host}:{port}/docs
+- 🖥️ Agent Card: http://{host}:{port}/.well-known/agent.json
+
+This server provides endpoints for LangGraph agents.
+
+"""
 
 
 if __name__ == "__main__":
