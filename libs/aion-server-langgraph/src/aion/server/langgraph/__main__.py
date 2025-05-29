@@ -13,9 +13,8 @@ from a2a.types import (
     AgentCard,
     AgentSkill,
 )
-from agent import CurrencyAgent
-from agent_executor import CurrencyAgentExecutor
-from agents.langgraph.agent import CurrencyAgent
+from .a2a.agent import CurrencyAgent
+from .a2a.agent_executor import CurrencyAgentExecutor
 from dotenv import load_dotenv
 
 
