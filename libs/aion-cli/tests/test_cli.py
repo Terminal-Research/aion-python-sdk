@@ -1,8 +1,17 @@
-from click.testing import CliRunner
-from aion.cli.cli import cli, __version__
+"""Tests for the Aion CLI package."""
+
+from __future__ import annotations
+
 import logging
-import types
+import os
 import sys
+import types
+
+from click.testing import CliRunner
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
+
+from aion.cli.cli import cli, __version__
 
 
 def test_version() -> None:
