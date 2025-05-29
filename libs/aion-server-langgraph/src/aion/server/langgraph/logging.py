@@ -99,7 +99,7 @@ structlog.configure(
     ],
     logger_factory=structlog.stdlib.LoggerFactory(),
     wrapper_class=structlog.stdlib.BoundLogger,
-    cache_logger_on_first_use=False,
+    cache_logger_on_first_use=True,
 )
 
 if not root_logger.handlers:
