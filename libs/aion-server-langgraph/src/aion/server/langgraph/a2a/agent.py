@@ -13,6 +13,7 @@ from langgraph.graph import StateGraph
 
 from ..graph import GRAPHS, get_graph, initialize_graphs
 
+logger = logging.getLogger(__name__)
 
 @tool
 def get_exchange_rate(
