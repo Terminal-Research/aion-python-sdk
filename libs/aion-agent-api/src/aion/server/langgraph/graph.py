@@ -109,7 +109,7 @@ def _load_graph(import_str: str, base_dir: Path) -> Any:
         logger.debug("Calling factory '%s' for graph", var_part or module_part)
         obj = obj()
 
-    if isinstance(obj, Graph) and hasattr(obj, "compile"):
+    if hasattr(obj, "compile") and callable(getattr(obj, "compile")):
         logger.debug("Compiling Graph instance from module '%s'", module_part)
         obj = obj.compile()
 
