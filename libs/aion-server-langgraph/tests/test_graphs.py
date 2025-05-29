@@ -4,6 +4,9 @@ from pathlib import Path
 
 import pytest
 
+pytest.importorskip("pydantic")
+pytest.importorskip("a2a")
+
 import logging
 
 from aion.server.langgraph.graph import GRAPHS, initialize_graphs

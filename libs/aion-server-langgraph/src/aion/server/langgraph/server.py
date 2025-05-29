@@ -37,3 +37,4 @@ class A2AServer:
 
         app = self._app or self.build_app()
         uvicorn.run(app, host=host, port=port)
+

@@ -139,3 +139,4 @@ def initialize_graphs(config_path: str | Path = "langgraph.json") -> None:
         graph_obj = _load_graph(import_str, base_dir)
         register_graph(graph_id, graph_obj)
     logger.info("Initialized %d graphs", len(graphs_cfg))
+

@@ -1,4 +1,7 @@
 import logging
+import pytest
+
+pytest.importorskip("structlog")
 import structlog
 import aion.server.langgraph.logging as logconf
 

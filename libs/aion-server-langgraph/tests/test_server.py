@@ -1,8 +1,13 @@
+import pytest
+
+pytest.importorskip("a2a")
+pytest.importorskip("starlette")
+pytest.importorskip("pydantic")
+
 from aion.server.langgraph.server import A2AServer
 from a2a.types import AgentCard, AgentCapabilities
 from a2a.server.request_handlers.request_handler import RequestHandler
 from starlette.applications import Starlette
-import pytest
 
 
 class DummyHandler(RequestHandler):
