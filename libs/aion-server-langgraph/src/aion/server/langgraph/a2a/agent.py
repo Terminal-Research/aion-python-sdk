@@ -58,25 +58,29 @@ class LanggraphAgent:
         config = {"configurable": {"thread_id": sessionId}}
 
         logger.debug("Beginning Langgraph Stream: %s", inputs)
-        for item in self.graph.stream(inputs, config, stream_mode='values messages-tuple custom'):
-            logger.debug("Langgraph Stream Chunk Received: %s", item)
-            message = item['messages'][-1]
-            if (
-                isinstance(message, AIMessage)
-                and message.tool_calls
-                and len(message.tool_calls) > 0
-            ):
-                yield {
-                    'is_task_complete': False,
-                    'require_user_input': False,
-                    'content': 'Looking up the exchange rates...',
-                }
-            elif isinstance(message, ToolMessage):
-                yield {
-                    'is_task_complete': False,
-                    'require_user_input': False,
-                    'content': 'Processing the exchange rates..',
-                }
+        async for item in self.graph.astream(inputs, config, stream_mode='values messages-tuple custom'):
+            try:
+                logger.debug("Langgraph Stream Chunk Received: %s", item)
+                message = item['messages'][-1]
+                if (
+                    isinstance(message, AIMessage)
+                    and message.tool_calls
+                    and len(message.tool_calls) > 0
+                ):
+                    yield {
+                        'is_task_complete': False,
+                        'require_user_input': False,
+                        'content': 'Looking up the exchange rates...',
+                    }
+                elif isinstance(message, ToolMessage):
+                    yield {
+                        'is_task_complete': False,
+                        'require_user_input': False,
+                        'content': 'Processing the exchange rates..',
+                    }
+            except Exception as e:
+                logger.error(f'An error occurred while processing Langgraph Stream Chunk: {e}')
+                raise ServerError(error=InternalError()) from e
 
         logger.debug("Final Langgraph Stream Chunk Received")
         yield self.get_agent_response(config)
