@@ -9,6 +9,7 @@ import httpx
 from langchain_core.messages import AIMessage, ToolMessage
 from langchain_core.tools import tool
 from pydantic import BaseModel
+from langgraph.graph import StateGraph
 
 from ..graph import GRAPHS, get_graph, initialize_graphs
 
@@ -56,7 +57,7 @@ class ResponseFormat(BaseModel):
 class LanggraphAgent:
     """Simple agent that delegates execution to a configured LangGraph."""
 
-    def __init__(self, graph: Any) -> None:
+    def __init__(self, graph: StateGraph) -> None:
         """Initialize the agent using the first registered LangGraph."""
         self.graph = graph
         
@@ -89,6 +90,7 @@ class LanggraphAgent:
 
         async for item in self.graph.astream(inputs, config, stream_mode='values'):
             message = item['messages'][-1]
+            logger.debug("Langgraph Stream Chunk Received: %s", message.content)
             if (
                 isinstance(message, AIMessage)
                 and message.tool_calls
