@@ -1,0 +1,9 @@
+{
+    // Required. Map of graph IDs to paths where compiled graphs or graph-creating functions are defined
+    // Examples:
+    // - "./your_package/your_file.py:variable" where variable is a CompiledStateGraph instance
+    // - "./your_package/your_file.py:make_graph", where make_graph is a function that takes a config dictionary (langchain_core.runnables.RunnableConfig) and returns an instance of langgraph.graph.state.StateGraph or langgraph.graph.state.CompiledStateGraph
+    "graphs": {
+        "example_graph": "./src/path/to/your/module.py:graph_variable"
+    }
+}

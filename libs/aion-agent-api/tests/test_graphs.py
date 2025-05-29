@@ -10,8 +10,9 @@ from aion_agent_api.graph import GRAPHS, initialize_graphs
 
 
 def test_initialize_graphs(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-    graph_file = tmp_path / "my_graph.py"
-    graph_file.write_text(
+    module_path = tmp_path / "src" / "path" / "to" / "your" / "module.py"
+    module_path.parent.mkdir(parents=True)
+    module_path.write_text(
         """
 class DummyGraph:
     def compile(self):
@@ -21,7 +22,12 @@ def create_graph():
     return DummyGraph()
 """
     )
-    config = {"graphs": {"dummy": f"{graph_file}:create_graph"}}
+
+    config = {
+        "graphs": {
+            "example_graph": "./src/path/to/your/module.py:create_graph"
+        }
+    }
     (tmp_path / "langgraph.json").write_text(json.dumps(config))
 
     cwd = os.getcwd()
@@ -32,6 +38,6 @@ def create_graph():
     finally:
         os.chdir(cwd)
 
-    assert GRAPHS["dummy"] == "compiled"
+    assert GRAPHS["example_graph"] == "compiled"
     messages = [r.getMessage() for r in caplog.records]
-    assert any("Importing graph 'dummy'" in msg for msg in messages)
+    assert any("Importing graph 'example_graph'" in msg for msg in messages)
