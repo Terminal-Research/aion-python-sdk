@@ -9,7 +9,7 @@ packages = [{include = "aion", from = "src"}]
 [tool.poetry.dependencies]
 python = "^3.11"
 click = "^8.1.8"
-aion-agent-api = {path = "../aion-agent-api", develop = true }
+aion-server-langgraph = {path = "../aion-server-langgraph", develop = true }
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"
