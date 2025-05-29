@@ -18,10 +18,21 @@ from .a2a.agent_executor import CurrencyAgentExecutor
 from dotenv import load_dotenv
 
 
-load_dotenv()
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Log the current working directory
+cwd = os.getcwd()
+logger.info(f"Current working directory: {cwd}")
+
+# Load environment variables with verbose output
+dotenv_path = load_dotenv(verbose=True)
+
+# Log result of load_dotenv
+if dotenv_path:
+    logger.info(f"Loaded .env file from: {dotenv_path}")
+else:
+    logger.warning("No .env file was found or loaded")
 
 
 class MissingAPIKeyError(Exception):
