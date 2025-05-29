@@ -58,7 +58,7 @@ class LanggraphAgent:
         config = {"configurable": {"thread_id": sessionId}}
 
         logger.debug("Beginning Langgraph Stream: %s", inputs)
-        async for item in self.graph.astream(inputs, config, stream_mode='values messages-tuple custom'):
+        for item in self.graph.stream(inputs, config, stream_mode='values messages-tuple custom'):
             logger.debug("Langgraph Stream Chunk Received: %s", item)
             message = item['messages'][-1]
             if (
