@@ -56,8 +56,14 @@ class ResponseFormat(BaseModel):
 class LanggraphAgent:
     """Simple agent that delegates execution to a configured LangGraph."""
 
-    def __init__(self, graph: Any) -> None:
+    def __init__(self, graph: Any | None) -> None:
         """Initialize the agent using the first registered LangGraph."""
+        if graph is None:
+            if not GRAPHS:
+                initialize_graphs()
+            if not GRAPHS:
+                raise SystemExit(1)
+            graph = next(iter(GRAPHS.values()))
         self.graph = graph
         
     def invoke(self, query: str, sessionId: str) -> str:
