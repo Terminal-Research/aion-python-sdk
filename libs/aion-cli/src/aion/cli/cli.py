@@ -58,7 +58,7 @@ def welcome_message(host: str, port: int) -> str:
     Returns:
         A formatted multi-line string containing usage information.
     """
-    return """
+    return f"""
 
         Welcome to
 
