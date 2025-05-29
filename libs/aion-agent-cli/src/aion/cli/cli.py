@@ -29,27 +29,23 @@ def cli() -> None:
 
 
 @cli.command(help="🚀 Run the AION Agent API server")
-def serve() -> None:
-    """Stub for running the AION Agent API server."""
-    welcome = """
-
-        Welcome to
-
-╔═╗╦╔═╗╔╗╔  ╔═╗╔═╗╔═╗╔╗╔╔╦╗  ╔═╗╔═╗╦
-╠═╣║║ ║║║║  ╠═╣║ ╦║╣ ║║║ ║   ╠═╣╠═╝║
-╩ ╩╩╚═╝╝╚╝  ╩ ╩╚═╝╚═╝╝╚╝ ╩   ╩ ╩╩  ╩
-
-- 🚀 API: http://127.0.0.1:8000
-- 📚 API Docs: http://127.0.0.1:8000/docs
-- 🖥️ Admin Interface: http://127.0.0.1:8000/api/admin
-
-This server provides endpoints for LangGraph agents.
-
-"""
-    logger.info(welcome)
+@click.option("--host", default="localhost", show_default=True, help="Server host")
+@click.option("--port", default=10000, show_default=True, help="Server port")
+def serve(host: str, port: int) -> None:
+    """Run the example AION Agent API server."""
     logger.info(
-        "Patching langgraph_api", extra={"api_variant": "local_dev", "thread_name": "MainThread"}
+        "Starting AION Agent API server",
+        extra={"host": host, "port": port},
     )
+    try:
+        from aion.server.langgraph.__main__ import main as server_main
+    except Exception as exc:  # pragma: no cover - optional dependency may fail
+        logger.error("Failed to import server", exc_info=exc)
+        raise click.ClickException(
+            "Unable to start server. Is aion-server-langgraph installed?"
+        ) from exc
+
+    server_main.callback(host=host, port=port)
 
 
 if __name__ == "__main__":
