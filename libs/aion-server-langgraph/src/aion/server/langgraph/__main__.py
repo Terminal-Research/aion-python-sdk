@@ -79,7 +79,7 @@ for dirname in _walk_to_root(path):
         break
 
 # Load environment variables with verbose output
-dotenv_path = load_dotenv(verbose=True)
+dotenv_path = load_dotenv(dotenv_path=os.path.join(os.getcwd(), '.env'), verbose=True)
 
 # Log result of load_dotenv
 if dotenv_path:
