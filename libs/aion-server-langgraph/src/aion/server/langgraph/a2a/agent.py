@@ -87,7 +87,7 @@ class LanggraphAgent:
         inputs = {"messages": [("user", query)]}
         config = {"configurable": {"thread_id": sessionId}}
 
-        for item in self.graph.stream(inputs, config, stream_mode='values'):
+        async for item in self.graph.astream(inputs, config, stream_mode='values'):
             message = item['messages'][-1]
             if (
                 isinstance(message, AIMessage)
