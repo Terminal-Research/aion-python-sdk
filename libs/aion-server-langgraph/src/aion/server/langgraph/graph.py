@@ -9,10 +9,48 @@ import json
 import os
 from pathlib import Path
 from types import ModuleType
-from typing import Any, Dict
+from typing import Any, Dict, Iterator, Iterable
 import logging
 
 logger = logging.getLogger(__name__)
+
+# Lazy registry that loads graphs on first access
+class GraphRegistry(dict[str, Any]):
+    """Dictionary-like registry that loads graphs when accessed."""
+
+    _initialized = False
+
+    def _ensure_loaded(self) -> None:
+        if not self._initialized:
+            try:
+                initialize_graphs()
+            except FileNotFoundError:  # pragma: no cover - no config present
+                pass
+            self._initialized = True
+
+    def __getitem__(self, key: str) -> Any:  # type: ignore[override]
+        self._ensure_loaded()
+        return super().__getitem__(key)
+
+    def __iter__(self) -> Iterator[str]:
+        self._ensure_loaded()
+        return super().__iter__()
+
+    def items(self) -> Iterable[tuple[str, Any]]:  # type: ignore[override]
+        self._ensure_loaded()
+        return super().items()
+
+    def __contains__(self, key: object) -> bool:  # type: ignore[override]
+        self._ensure_loaded()
+        return super().__contains__(key)
+
+    def values(self) -> Iterable[Any]:  # type: ignore[override]
+        self._ensure_loaded()
+        return super().values()
+
+    def __len__(self) -> int:  # type: ignore[override]
+        self._ensure_loaded()
+        return super().__len__()
 
 # LangGraph is optional in this environment. Define minimal stubs if the package
 # is not installed so type checks and isinstance comparisons do not fail at
@@ -34,7 +72,7 @@ except Exception:  # pragma: no cover - local testing without dependency
 
 
 # Registry of loaded graphs keyed by their ID
-GRAPHS: Dict[str, Any] = {}
+GRAPHS: GraphRegistry = GraphRegistry()
 
 
 def register_graph(graph_id: str, graph: Any) -> None:
