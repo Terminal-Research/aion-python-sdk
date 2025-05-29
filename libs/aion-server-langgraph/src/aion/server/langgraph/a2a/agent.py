@@ -53,34 +53,12 @@ class ResponseFormat(BaseModel):
     message: str
 
 
-class CurrencyAgent:
+class LanggraphAgent:
     """Simple agent that delegates execution to a configured LangGraph."""
 
-    SYSTEM_INSTRUCTION = (
-        "You are a specialized assistant for currency conversions. "
-        "Your sole purpose is to use the 'get_exchange_rate' tool to answer questions about currency exchange rates. "
-        "If the user asks about anything other than currency conversion or exchange rates, "
-        "politely state that you cannot help with that topic and can only assist with currency-related queries. "
-        "Do not attempt to answer unrelated questions or use tools for other purposes."
-        "Set response status to input_required if the user needs to provide more information."
-        "Set response status to error if there is an error while processing the request."
-        "Set response status to completed if the request is complete."
-    )
-
-    def __init__(self, config_path: str | None = None) -> None:
+    def __init__(self, graph: Any) -> None:
         """Initialize the agent using the first registered LangGraph."""
-
-        if config_path is not None:
-            initialize_graphs(config_path or "langgraph.json")
-        if not GRAPHS:
-            logging.getLogger(__name__).error(
-                "No graphs found in configuration; terminating server"
-            )
-            raise SystemExit(1)
-
-        graph_id = next(iter(GRAPHS))
-        self.graph = get_graph(graph_id)
-        logging.getLogger(__name__).info("Using graph '%s'", graph_id)
+        self.graph = graph
         
     def invoke(self, query: str, sessionId: str) -> str:
         """Invoke the agent synchronously.

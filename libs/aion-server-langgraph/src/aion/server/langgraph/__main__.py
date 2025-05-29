@@ -13,8 +13,8 @@ from a2a.types import (
     AgentCard,
     AgentSkill,
 )
-from .a2a.agent import CurrencyAgent
-from .a2a.agent_executor import CurrencyAgentExecutor
+from .a2a.agent import LanggraphAgent
+from .a2a.agent_executor import LanggraphAgentExecutor
 from .graph import GRAPHS, get_graph, initialize_graphs
 from dotenv import load_dotenv
 
@@ -58,8 +58,8 @@ def main(host, port):
             description='Helps with exchange rates for currencies',
             url=f'http://{host}:{port}/',
             version='1.0.0',
-            defaultInputModes=CurrencyAgent.SUPPORTED_CONTENT_TYPES,
-            defaultOutputModes=CurrencyAgent.SUPPORTED_CONTENT_TYPES,
+            defaultInputModes=LanggraphAgent.SUPPORTED_CONTENT_TYPES,
+            defaultOutputModes=LanggraphAgent.SUPPORTED_CONTENT_TYPES,
             capabilities=capabilities,
             skills=[skill],
         )
@@ -67,7 +67,7 @@ def main(host, port):
         # --8<-- [start:DefaultRequestHandler]
         httpx_client = httpx.AsyncClient()
         request_handler = DefaultRequestHandler(
-            agent_executor=CurrencyAgentExecutor(graph_obj),
+            agent_executor=LanggraphAgentExecutor(graph_obj),
             task_store=InMemoryTaskStore(),
             push_notifier=InMemoryPushNotifier(httpx_client),
         )

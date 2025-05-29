@@ -18,21 +18,17 @@ from a2a.utils import (
     new_task,
 )
 from a2a.utils.errors import ServerError
-from .agent import CurrencyAgent
-
+from .agent import LanggraphAgent
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-
-class CurrencyAgentExecutor(AgentExecutor):
+class LanggraphAgentExecutor(AgentExecutor):
     """Currency Conversion ``AgentExecutor`` example."""
 
     def __init__(self, graph: Any) -> None:
         """Create the executor with the given graph."""
-
-        self.agent = CurrencyAgent(config_path=None)
-        self.agent.graph = graph
+        self.agent = LanggraphAgent(graph)
 
     async def execute(
         self,

@@ -1,6 +1,6 @@
 """LangGraph A2A example agent modules."""
 
-__all__ = ["CurrencyAgent", "CurrencyAgentExecutor"]
+__all__ = ["LanggraphAgent", "LanggraphAgentExecutor"]
 
-from .agent import CurrencyAgent
-from .agent_executor import CurrencyAgentExecutor
+from .agent import LanggraphAgent
+from .agent_executor import LanggraphAgentExecutor
