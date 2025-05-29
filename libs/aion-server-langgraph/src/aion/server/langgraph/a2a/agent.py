@@ -88,6 +88,7 @@ class LanggraphAgent:
     def get_agent_response(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Return the final structured response from the agent."""
         current_state = self.graph.get_state(config)
+        logger.debug("Final Langgraph State: %s", current_state)
         structured_response = current_state.values.get('structured_response')
         if structured_response and isinstance(
             structured_response, ResponseFormat
