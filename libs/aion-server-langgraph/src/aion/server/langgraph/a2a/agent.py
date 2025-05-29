@@ -1,19 +1,16 @@
 from collections.abc import AsyncIterable
+"""Currency conversion example agent built on top of LangGraph."""
+
 from typing import Any, Dict, Literal
 
+import logging
 import httpx
-import os
 
 from langchain_core.messages import AIMessage, ToolMessage
 from langchain_core.tools import tool
-from langchain_openai import ChatOpenAI
 from pydantic import BaseModel
 
-from langgraph.checkpoint.memory import MemorySaver
-from langgraph.prebuilt import create_react_agent
-
-
-memory = MemorySaver()
+from ..graph import GRAPHS, get_graph, initialize_graphs
 
 
 @tool
@@ -57,37 +54,33 @@ class ResponseFormat(BaseModel):
 
 
 class CurrencyAgent:
-    """Simple agent for answering currency conversion queries."""
+    """Simple agent that delegates execution to a configured LangGraph."""
 
     SYSTEM_INSTRUCTION = (
-        'You are a specialized assistant for currency conversions. '
+        "You are a specialized assistant for currency conversions. "
         "Your sole purpose is to use the 'get_exchange_rate' tool to answer questions about currency exchange rates. "
-        'If the user asks about anything other than currency conversion or exchange rates, '
-        'politely state that you cannot help with that topic and can only assist with currency-related queries. '
-        'Do not attempt to answer unrelated questions or use tools for other purposes.'
-        'Set response status to input_required if the user needs to provide more information.'
-        'Set response status to error if there is an error while processing the request.'
-        'Set response status to completed if the request is complete.'
+        "If the user asks about anything other than currency conversion or exchange rates, "
+        "politely state that you cannot help with that topic and can only assist with currency-related queries. "
+        "Do not attempt to answer unrelated questions or use tools for other purposes."
+        "Set response status to input_required if the user needs to provide more information."
+        "Set response status to error if there is an error while processing the request."
+        "Set response status to completed if the request is complete."
     )
 
-    def __init__(self) -> None:
-        """Initialize the agent and underlying LangGraph workflow."""
-        # self.model = ChatGoogleGenerativeAI(model='gemini-2.0-flash')
-        self.model = ChatOpenAI(
-            openai_api_key=os.getenv("OPENROUTER_API_KEY"),
-            openai_api_base="https://openrouter.ai/api/v1",
-            model_name="openai/gpt-4o-2024-11-20",
-            streaming=True,
-        )
-        self.tools = [get_exchange_rate]
+    def __init__(self, config_path: str | None = None) -> None:
+        """Initialize the agent using the first registered LangGraph."""
 
-        self.graph = create_react_agent(
-            self.model,
-            tools=self.tools,
-            checkpointer=memory,
-            prompt=self.SYSTEM_INSTRUCTION,
-            response_format=ResponseFormat,
-        )
+        if config_path is not None:
+            initialize_graphs(config_path or "langgraph.json")
+        if not GRAPHS:
+            logging.getLogger(__name__).error(
+                "No graphs found in configuration; terminating server"
+            )
+            raise SystemExit(1)
+
+        graph_id = next(iter(GRAPHS))
+        self.graph = get_graph(graph_id)
+        logging.getLogger(__name__).info("Using graph '%s'", graph_id)
         
     def invoke(self, query: str, sessionId: str) -> str:
         """Invoke the agent synchronously.
