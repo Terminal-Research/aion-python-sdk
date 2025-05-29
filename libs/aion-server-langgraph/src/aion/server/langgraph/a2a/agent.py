@@ -90,8 +90,8 @@ class LanggraphAgent:
         config = {"configurable": {"thread_id": sessionId}}
 
         async for item in self.graph.astream(inputs, config, stream_mode='values'):
+            logger.debug("Langgraph Stream Chunk Received: %s", item)
             message = item['messages'][-1]
-            logger.debug("Langgraph Stream Chunk Received: %s", message.content)
             if (
                 isinstance(message, AIMessage)
                 and message.tool_calls
