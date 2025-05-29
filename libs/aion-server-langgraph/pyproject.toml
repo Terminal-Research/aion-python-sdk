@@ -7,7 +7,7 @@ readme = "README.md"
 packages = [{include = "aion", from = "src"}]
 
 [tool.poetry.dependencies]
-python = "^3.13"
+python = "^3.12"
 a2a-sdk = "^0.2.5"
 uvicorn = "^0.23.0"
 starlette = "^0.46.2"
