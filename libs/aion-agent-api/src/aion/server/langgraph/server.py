@@ -7,7 +7,6 @@ from a2a.server.request_handlers.request_handler import RequestHandler
 from a2a.types import AgentCard
 from starlette.applications import Starlette
 
-
 class A2AServer:
     """Simple wrapper exposing a LangGraph project via the A2A protocol."""
 
