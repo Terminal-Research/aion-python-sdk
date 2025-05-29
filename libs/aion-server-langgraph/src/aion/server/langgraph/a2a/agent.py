@@ -57,6 +57,7 @@ class LanggraphAgent:
         inputs = {"messages": [("user", query)]}
         config = {"configurable": {"thread_id": sessionId}}
 
+        logger.debug("Beginning Langgraph Stream: %s", inputs)
         async for item in self.graph.astream(inputs, config, stream_mode='values messages-tuple custom'):
             logger.debug("Langgraph Stream Chunk Received: %s", item)
             message = item['messages'][-1]
@@ -77,6 +78,7 @@ class LanggraphAgent:
                     'content': 'Processing the exchange rates..',
                 }
 
+        logger.debug("Final Langgraph Stream Chunk Received")
         yield self.get_agent_response(config)
 
     def get_agent_response(self, config: Dict[str, Any]) -> Dict[str, Any]:
