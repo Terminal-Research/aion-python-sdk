@@ -1,6 +1,6 @@
 import logging
 import structlog
-import aion_agent_api.logging as logconf
+import aion.server.langgraph.logging as logconf
 
 
 def test_configures_structlog() -> None:

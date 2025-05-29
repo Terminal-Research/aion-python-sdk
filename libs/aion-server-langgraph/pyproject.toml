@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "A2A server wrapper for LangGraph projects"
 authors = ["Terminal Research Team <support@terminal.exchange>"]
 readme = "README.md"
-packages = [{include = "aion_agent_api", from = "src"}]
+packages = [{include = "aion", from = "src"}]
 
 [tool.poetry.dependencies]
 python = "^3.11"
