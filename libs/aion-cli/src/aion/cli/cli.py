@@ -48,7 +48,16 @@ def serve(host: str, port: int) -> None:
 
     server_main.callback(host=host, port=port)
     
-def welcome_message(host: str, port: int):
+def welcome_message(host: str, port: int) -> str:
+    """Return an ASCII welcome banner for the API server.
+
+    Args:
+        host: Hostname where the server is running.
+        port: Port number where the server is running.
+
+    Returns:
+        A formatted multi-line string containing usage information.
+    """
     return """
 
         Welcome to
