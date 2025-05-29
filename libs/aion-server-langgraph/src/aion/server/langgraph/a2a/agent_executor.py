@@ -1,4 +1,5 @@
 import logging
+from typing import Any
 
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import Event, EventQueue
@@ -25,10 +26,13 @@ logger = logging.getLogger(__name__)
 
 
 class CurrencyAgentExecutor(AgentExecutor):
-    """Currency Conversion AgentExecutor Example."""
+    """Currency Conversion ``AgentExecutor`` example."""
 
-    def __init__(self):
-        self.agent = CurrencyAgent()
+    def __init__(self, graph: Any) -> None:
+        """Create the executor with the given graph."""
+
+        self.agent = CurrencyAgent(config_path=None)
+        self.agent.graph = graph
 
     async def execute(
         self,

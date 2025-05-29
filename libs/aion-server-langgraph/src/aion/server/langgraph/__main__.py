@@ -15,6 +15,7 @@ from a2a.types import (
 )
 from .a2a.agent import CurrencyAgent
 from .a2a.agent_executor import CurrencyAgentExecutor
+from .graph import GRAPHS, get_graph, initialize_graphs
 from dotenv import load_dotenv
 
 
@@ -33,6 +34,12 @@ class MissingAPIKeyError(Exception):
 def main(host, port):
     """Starts the Currency Agent server."""
     try:
+        initialize_graphs()
+        if not GRAPHS:
+            logger.error("No graphs found in configuration; shutting down")
+            raise SystemExit(1)
+        graph_id, graph_obj = next(iter(GRAPHS.items()))
+        logger.info("Using graph '%s'", graph_id)
         if not os.getenv('OPENROUTER_API_KEY'):
             raise MissingAPIKeyError(
                 'OPENROUTER_API_KEY environment variable not set.'
@@ -60,7 +67,7 @@ def main(host, port):
         # --8<-- [start:DefaultRequestHandler]
         httpx_client = httpx.AsyncClient()
         request_handler = DefaultRequestHandler(
-            agent_executor=CurrencyAgentExecutor(),
+            agent_executor=CurrencyAgentExecutor(graph_obj),
             task_store=InMemoryTaskStore(),
             push_notifier=InMemoryPushNotifier(httpx_client),
         )
