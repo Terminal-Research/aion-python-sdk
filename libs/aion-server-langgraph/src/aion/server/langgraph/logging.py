@@ -7,9 +7,9 @@ import structlog
 from starlette.config import Config
 from structlog.typing import EventDict
 
-log_env = Config()
+log_env = Config(dotenv_path=os.path.join(os.getcwd(), '.env'))
 
-LOG_JSON = log_env("LOG_JSON", cast=bool, default=False)
+LOG_JSON = log_env("LOG_JSON", cast=bool, default=True)
 LOG_COLOR = log_env("LOG_COLOR", cast=bool, default=True)
 LOG_LEVEL = log_env("LOG_LEVEL", cast=str, default="INFO")
 
