@@ -1,5 +1,5 @@
 from click.testing import CliRunner
-from aion_agent_cli.cli import cli, __version__
+from aion.cli.cli import cli, __version__
 import logging
 
 

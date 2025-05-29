@@ -1,4 +1,4 @@
-from aion_agent_api.server import A2AServer
+from aion.server.langgraph.server import A2AServer
 from a2a.types import AgentCard, AgentCapabilities
 from a2a.server.request_handlers.request_handler import RequestHandler
 from starlette.applications import Starlette

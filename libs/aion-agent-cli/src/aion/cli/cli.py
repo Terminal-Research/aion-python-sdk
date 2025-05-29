@@ -11,7 +11,7 @@ __version__ = "0.1.0"
 try:  # pragma: no cover - optional dependency may not be installed
     import structlog
 
-    import aion_agent_api.logging  # noqa: F401 - triggers global configuration
+    import aion.server.langgraph.logging  # noqa: F401 - triggers global configuration
 
     logger = structlog.stdlib.get_logger(__name__)
 except Exception:  # pragma: no cover - structlog is optional for tests
