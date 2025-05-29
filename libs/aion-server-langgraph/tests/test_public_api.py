@@ -1,4 +1,8 @@
 import importlib
+import pytest
+
+pytest.importorskip("a2a")
+pytest.importorskip("pydantic")
 
 
 def test_public_api_exposes_all() -> None:

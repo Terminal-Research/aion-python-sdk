@@ -1,7 +1,8 @@
 from collections.abc import AsyncIterable
-from typing import Any, Literal, Dict
+from typing import Any, Dict, Literal
 
 import httpx
+import os
 
 from langchain_core.messages import AIMessage, ToolMessage
 from langchain_core.tools import tool
@@ -56,6 +57,8 @@ class ResponseFormat(BaseModel):
 
 
 class CurrencyAgent:
+    """Simple agent for answering currency conversion queries."""
+
     SYSTEM_INSTRUCTION = (
         'You are a specialized assistant for currency conversions. '
         "Your sole purpose is to use the 'get_exchange_rate' tool to answer questions about currency exchange rates. "
@@ -67,13 +70,14 @@ class CurrencyAgent:
         'Set response status to completed if the request is complete.'
     )
 
-    def __init__(self):
+    def __init__(self) -> None:
+        """Initialize the agent and underlying LangGraph workflow."""
         # self.model = ChatGoogleGenerativeAI(model='gemini-2.0-flash')
         self.model = ChatOpenAI(
             openai_api_key=os.getenv("OPENROUTER_API_KEY"),
             openai_api_base="https://openrouter.ai/api/v1",
             model_name="openai/gpt-4o-2024-11-20",
-            streaming=True
+            streaming=True,
         )
         self.tools = [get_exchange_rate]
 
@@ -85,14 +89,32 @@ class CurrencyAgent:
             response_format=ResponseFormat,
         )
         
-    def invoke(self, query, sessionId) -> str:
-        config = {'configurable': {'thread_id': sessionId}}
-        self.graph.invoke({'messages': [('user', query)]}, config)
+    def invoke(self, query: str, sessionId: str) -> str:
+        """Invoke the agent synchronously.
+
+        Args:
+            query: The user query to process.
+            sessionId: Unique identifier for the conversation thread.
+
+        Returns:
+            The agent's final response as a string.
+        """
+        config = {"configurable": {"thread_id": sessionId}}
+        self.graph.invoke({"messages": [("user", query)]}, config)
         return self.get_agent_response(config)
 
-    async def stream(self, query, sessionId) -> AsyncIterable[Dict[str, Any]]:
-        inputs = {'messages': [('user', query)]}
-        config = {'configurable': {'thread_id': sessionId}}
+    async def stream(self, query: str, sessionId: str) -> AsyncIterable[Dict[str, Any]]:
+        """Stream intermediate responses from the agent.
+
+        Args:
+            query: The user query to process.
+            sessionId: Unique identifier for the conversation thread.
+
+        Yields:
+            Partial response dictionaries describing progress.
+        """
+        inputs = {"messages": [("user", query)]}
+        config = {"configurable": {"thread_id": sessionId}}
 
         for item in self.graph.stream(inputs, config, stream_mode='values'):
             message = item['messages'][-1]
@@ -115,7 +137,8 @@ class CurrencyAgent:
 
         yield self.get_agent_response(config)
 
-    def get_agent_response(self, config):
+    def get_agent_response(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Return the final structured response from the agent."""
         current_state = self.graph.get_state(config)
         structured_response = current_state.values.get('structured_response')
         if structured_response and isinstance(

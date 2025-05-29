@@ -106,3 +106,4 @@ if not root_logger.handlers:
     handler = logging.StreamHandler()
     handler.setFormatter(Formatter("%(message)s", None, "%"))
     root_logger.addHandler(handler)
+
