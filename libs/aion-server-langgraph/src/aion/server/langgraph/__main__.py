@@ -21,72 +21,7 @@ from dotenv import load_dotenv
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Log the current working directory
-cwd = os.getcwd()
-logger.info(f"Current working directory: {cwd}")
-
-import io
-import logging
-import os
-import pathlib
-import shutil
-import sys
-import tempfile
-# Recreate logic from dotenv.find_dotenv to log the search process
-frame = sys._getframe()
-current_file = __file__
-logger.info(f"Starting frame search from: {current_file}")
-
-# Find the frame that's not from this file
-while frame.f_code.co_filename == current_file or not os.path.exists(frame.f_code.co_filename):
-    logger.info(f"Skipping frame: {frame.f_code.co_filename}")
-    assert frame.f_back is not None
-    frame = frame.f_back
-
-# Get the directory of the calling file
-frame_filename = frame.f_code.co_filename
-logger.info(f"Found calling frame: {frame_filename}")
-path = os.path.dirname(os.path.abspath(frame_filename))
-logger.info(f"Starting directory search from: {path}")
-
-# Simulate walking to root and checking each directory
-def _walk_to_root(start_path):
-    """Yield directories starting from the given directory up to the root"""
-    if not os.path.exists(start_path):
-        logger.warning(f"Start path does not exist: {start_path}")
-        return
-    
-    if os.path.isfile(start_path):
-        start_path = os.path.dirname(start_path)
-        
-    current_dir = os.path.abspath(start_path)
-    logger.info(f"Walking directory tree from: {current_dir}")
-    
-    while True:
-        yield current_dir
-        parent_dir = os.path.dirname(current_dir)
-        if parent_dir == current_dir:
-            break
-        current_dir = parent_dir
-
-# Log each directory that would be checked
-env_file = '.env'
-for dirname in _walk_to_root(path):
-    check_path = os.path.join(dirname, env_file)
-    logger.info(f"Checking for .env file at: {check_path}")
-    if os.path.isfile(check_path):
-        logger.info(f"Found .env file at: {check_path}")
-        break
-
-# Load environment variables with verbose output
 dotenv_path = load_dotenv(dotenv_path=os.path.join(os.getcwd(), '.env'), verbose=True)
-
-# Log result of load_dotenv
-if dotenv_path:
-    logger.info(f"Loaded .env file from: {dotenv_path}")
-else:
-    logger.warning("No .env file was found or loaded")
-
 
 class MissingAPIKeyError(Exception):
     """Exception for missing API key."""
