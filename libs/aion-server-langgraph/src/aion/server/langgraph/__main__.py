@@ -18,8 +18,6 @@ from .a2a.agent_executor import LanggraphAgentExecutor
 from .graph import GRAPHS, get_graph, initialize_graphs
 from dotenv import load_dotenv
 
-
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 dotenv_path = load_dotenv(dotenv_path=os.path.join(os.getcwd(), '.env'), verbose=True)
