@@ -25,7 +25,13 @@ logger = logging.getLogger(__name__)
 cwd = os.getcwd()
 logger.info(f"Current working directory: {cwd}")
 
-
+import io
+import logging
+import os
+import pathlib
+import shutil
+import sys
+import tempfile
 # Recreate logic from dotenv.find_dotenv to log the search process
 frame = sys._getframe()
 current_file = __file__
