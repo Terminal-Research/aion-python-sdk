@@ -19,6 +19,7 @@ from a2a.utils import (
 from a2a.utils.errors import ServerError
 from .tasks import AionTaskUpdater
 from .agent import LanggraphAgent
+from .event_producer import LanggraphA2AEventProducer
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -44,21 +45,20 @@ class LanggraphAgentExecutor(AgentExecutor):
         if not task:
             task = new_task(context.message)
             event_queue.enqueue_event(task)
-        updater = AionTaskUpdater(event_queue, task.id, task.contextId)
+        updater = AionTaskUpdater(event_queue, task.id, task.contextId) 
+        event_producer = LanggraphA2AEventProducer(event_queue, task)
+        firstLoop = True
         try:
             async for item in self.agent.stream(query, task.contextId):
                 is_task_complete = item['is_task_complete']
                 require_user_input = item['require_user_input']
 
                 if not is_task_complete and not require_user_input:
-                    updater.update_status(
-                        TaskState.working,
-                        new_agent_text_message(
-                            item['content'],
-                            task.contextId,
-                            task.id,
-                        ),
-                    )
+                    if firstLoop:
+                        event_producer.update_status_working()
+                        firstLoop = False
+                    if item['event_type'] == 'messages':
+                        event_producer.handle_message(item['message'])
                 elif require_user_input:
                     updater.update_status(
                         TaskState.input_required,

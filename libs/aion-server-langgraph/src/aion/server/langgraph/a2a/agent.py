@@ -60,7 +60,6 @@ class LanggraphAgent:
         logger.debug("Beginning Langgraph Stream: %s", inputs)
         for eventType, item in self.graph.stream(inputs, config, stream_mode=['values', 'messages', 'custom']):
             try:
-                logger.debug("Langgraph Stream Chunk Received [%s]: %s", eventType, item)
                 if eventType == 'values':
                     logger.debug(
                         "Langgraph Stream Chunk [Values]: (%s) %s", 
@@ -95,7 +94,7 @@ class LanggraphAgent:
                     logger.debug(
                         "Langgraph Stream Chunk [Custom Event]: (%s) %s", 
                         type(item).__name__, 
-                        item['custom_event']
+                        item
                     )
                     yield {
                         'event_type': eventType,
