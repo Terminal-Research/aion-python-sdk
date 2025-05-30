@@ -3,7 +3,6 @@ from typing import Any
 
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import Event, EventQueue
-from a2a.server.tasks import TaskUpdater
 from a2a.types import (
     InternalError,
     InvalidParamsError,
@@ -18,6 +17,7 @@ from a2a.utils import (
     new_task,
 )
 from a2a.utils.errors import ServerError
+from .tasks import AionTaskUpdater
 from .agent import LanggraphAgent
 
 logging.basicConfig(level=logging.INFO)
@@ -44,7 +44,7 @@ class LanggraphAgentExecutor(AgentExecutor):
         if not task:
             task = new_task(context.message)
             event_queue.enqueue_event(task)
-        updater = TaskUpdater(event_queue, task.id, task.contextId)
+        updater = AionTaskUpdater(event_queue, task.id, task.contextId)
         try:
             async for item in self.agent.stream(query, task.contextId):
                 is_task_complete = item['is_task_complete']
