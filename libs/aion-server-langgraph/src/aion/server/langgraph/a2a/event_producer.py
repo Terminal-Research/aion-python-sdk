@@ -7,66 +7,67 @@ from langchain_core.messages import BaseMessage, AIMessageChunk
 import uuid
 from typing import Any
 
+
 class LanggraphA2AEventProducer:
-  
-    ARTIFACT_NAME_MESSAGE_STREAMING = 'message_streaming'
-    ARTIFACT_NAME_MESSAGE_RESULT = 'message_result'
-  
+
+    ARTIFACT_NAME_MESSAGE_STREAMING = "message_streaming"
+    ARTIFACT_NAME_MESSAGE_RESULT = "message_result"
+
     def __init__(self, event_queue: EventQueue, task: Task):
         self.task = task
         self.event_queue = event_queue
         self.updater = AionTaskUpdater(event_queue, task.id, task.contextId)
+        self._streaming_result_artifact_id = None
 
     def handle_event(
-      self, 
-      event_type: str,
-      event: Any,
-      is_task_complete: bool,
-      require_user_input: bool,
+        self,
+        event_type: str,
+        event: Any,
+        is_task_complete: bool,
+        require_user_input: bool,
     ):
-      if event_type == 'messages':
-        self.stream_message(event)
-      elif event_type == 'values':
-        pass
-      elif event_type == 'custom':
-        self.emit_langgraph_event(event)
-      else:
-        raise ValueError(f"Unhandled event. Event Type: {event_type}, Event: {event}")
+        if event_type == "messages":
+            self.stream_message(event)
+        elif event_type == "values":
+            pass
+        elif event_type == "custom":
+            self.emit_langgraph_event(event)
+        else:
+            raise ValueError(
+                f"Unhandled event. Event Type: {event_type}, Event: {event}"
+            )
 
     def update_status_working(self):
-      self.updater.update_status(
-          state=TaskState.working,
-      )
+        self.updater.update_status(
+            state=TaskState.working,
+        )
 
     def stream_message(self, langgraph_message: BaseMessage):
-      if isinstance(langgraph_message, AIMessageChunk):
-        append = self._streaming_result_artifact_id != None
-        if not append:
-          self._streaming_result_artifact_id = str(uuid.uuid4())
-        
-        self.updater.add_artifact(
-          parts=[Part(root=TextPart(text=langgraph_message.content))],
-          artifact_id=self._streaming_result_artifact_id,
-          name=self.ARTIFACT_NAME_MESSAGE_STREAMING,
-          append=append,
-          last_chunk=False
-        )
-        
+        if isinstance(langgraph_message, AIMessageChunk):
+            append = self._streaming_result_artifact_id != None
+            if not append:
+                self._streaming_result_artifact_id = str(uuid.uuid4())
+
+            self.updater.add_artifact(
+                parts=[Part(root=TextPart(text=langgraph_message.content))],
+                artifact_id=self._streaming_result_artifact_id,
+                name=self.ARTIFACT_NAME_MESSAGE_STREAMING,
+                append=append,
+                last_chunk=False,
+            )
+
     def emit_langgraph_event(self, event: dict):
-      emit_event = {k: v for k, v in event.items() if k != "custom_event"}
-      if "custom_event" in event:
-          emit_event["event"] = event["custom_event"]
-      
-      self.updater.update_status(
-        state=TaskState.working,
-        message=Message(
-          contextId=self.task.contextId,
-          messageId=str(uuid.uuid4()),
-          role=Role.agent,
-          parts=[Part(root=DataPart(data=emit_event))],
-          metadata={
-            "aion:message_type": "event"
-          }
+        emit_event = {k: v for k, v in event.items() if k != "custom_event"}
+        if "custom_event" in event:
+            emit_event["event"] = event["custom_event"]
+
+        self.updater.update_status(
+            state=TaskState.working,
+            message=Message(
+                contextId=self.task.contextId,
+                messageId=str(uuid.uuid4()),
+                role=Role.agent,
+                parts=[Part(root=DataPart(data=emit_event))],
+                metadata={"aion:message_type": "event"},
+            ),
         )
-      )
-      
