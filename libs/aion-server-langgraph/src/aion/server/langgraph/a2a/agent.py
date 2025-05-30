@@ -58,33 +58,47 @@ class LanggraphAgent:
         config = {"configurable": {"thread_id": sessionId}}
 
         logger.debug("Beginning Langgraph Stream: %s", inputs)
-        for type, item in self.graph.stream(inputs, config, stream_mode=['values', 'messages', 'custom']):
+        for eventType, item in self.graph.stream(inputs, config, stream_mode=['values', 'messages', 'custom']):
             try:
-                logger.debug("Langgraph Stream Chunk Received: %s", item)
-                if type == 'values':
-                    logger.debug("Langgraph Stream Chunk [Values]: (%s) %s", type(item), item)
+                logger.debug("Langgraph Stream Chunk Received [%s]: %s", eventType, item)
+                if eventType == 'values':
+                    logger.debug(
+                        "Langgraph Stream Chunk [Values]: (%s) %s", 
+                        type(item).__name__, 
+                        item
+                    )
                     yield {
-                        'type': type,
+                        'event_type': eventType,
                         'graph_state': item,
                         'is_task_complete': False,
                         'require_user_input': False,
                         'content': 'processing...',
                     }
-                elif type == 'messages':
+                elif eventType == 'messages':
                     token, metadata = item
-                    logger.debug("Langgraph Stream Chunk [Message]:\n Token(%s): %s\n Metadata(%s): %s", type(token), token, type(metadata), metadata)
+                    logger.debug(
+                        "Langgraph Stream Chunk [Message]:\n Token(%s): %s\n Metadata(%s): %s", 
+                        type(token).__name__, 
+                        token, 
+                        type(metadata).__name__, 
+                        metadata
+                    )
                     yield {
-                        'type': type,
+                        'event_type': eventType,
                         'message': token,
                         'metadata': metadata,
                         'is_task_complete': False,
                         'require_user_input': False,
                         'content': 'processing...',
                     }
-                elif type == 'custom':
-                    logger.debug("Langgraph Stream Chunk [Custom Event]: (%s) %s", type(item), item['custom_event'])
+                elif eventType == 'custom':
+                    logger.debug(
+                        "Langgraph Stream Chunk [Custom Event]: (%s) %s", 
+                        type(item).__name__, 
+                        item['custom_event']
+                    )
                     yield {
-                        'type': type,
+                        'event_type': eventType,
                         'event': item,
                         'is_task_complete': False,
                         'require_user_input': False,
