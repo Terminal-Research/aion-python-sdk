@@ -16,7 +16,6 @@ class LanggraphA2AEventProducer:
         self.task = task
         self.event_queue = event_queue
         self.updater = AionTaskUpdater(event_queue, task.id, task.contextId)
-        self._streaming_result_artifact_id = str(uuid.uuid4())
 
     def handle_event(
       self, 
@@ -41,11 +40,15 @@ class LanggraphA2AEventProducer:
 
     def stream_message(self, langgraph_message: BaseMessage):
       if isinstance(langgraph_message, AIMessageChunk):
+        append = self._streaming_result_artifact_id != None
+        if not append:
+          self._streaming_result_artifact_id = str(uuid.uuid4())
+        
         self.updater.add_artifact(
           parts=[Part(root=TextPart(text=langgraph_message.content))],
           artifact_id=self._streaming_result_artifact_id,
           name=self.ARTIFACT_NAME_MESSAGE_STREAMING,
-          append=True,
+          append=append,
           last_chunk=False
         )
         
