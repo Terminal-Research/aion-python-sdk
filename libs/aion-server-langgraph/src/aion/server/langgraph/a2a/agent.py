@@ -61,23 +61,47 @@ class LanggraphAgent:
         for type, item in self.graph.stream(inputs, config, stream_mode=['values', 'messages-tuple', 'custom']):
             try:
                 logger.debug("Langgraph Stream Chunk Received: %s", item)
-                message = item['messages'][-1]
-                if (
-                    isinstance(message, AIMessage)
-                    and message.tool_calls
-                    and len(message.tool_calls) > 0
-                ):
+                if type == 'values':
+                    logger.debug("Langgraph Stream Chunk [Values]: %s", item)
                     yield {
                         'is_task_complete': False,
                         'require_user_input': False,
-                        'content': 'Looking up the exchange rates...',
+                        'content': 'processing...',
                     }
-                elif isinstance(message, ToolMessage):
+                elif type == 'messages':
+                    logger.debug("Langgraph Stream Chunk [Message]: %s", item)
                     yield {
                         'is_task_complete': False,
                         'require_user_input': False,
-                        'content': 'Processing the exchange rates..',
+                        'content': 'processing...',
                     }
+                elif type == 'custom':
+                    logger.debug("Langgraph Stream Chunk [Custom Event]: %s", item['custom_event'])
+                    yield {
+                        'is_task_complete': False,
+                        'require_user_input': False,
+                        'content': 'processing...',
+                    }
+                else:
+                    raise ValueError(f"Unknown stream type: {type}")
+                    
+                # message = item['messages'][-1]
+                # if (
+                #     isinstance(message, AIMessage)
+                #     and message.tool_calls
+                #     and len(message.tool_calls) > 0
+                # ):
+                #     yield {
+                #         'is_task_complete': False,
+                #         'require_user_input': False,
+                #         'content': 'Looking up the exchange rates...',
+                #     }
+                # elif isinstance(message, ToolMessage):
+                #     yield {
+                #         'is_task_complete': False,
+                #         'require_user_input': False,
+                #         'content': 'Processing the exchange rates..',
+                    # }
             except Exception as e:
                 logger.error(f'An error occurred while processing Langgraph Stream Chunk: {e}')
                 raise ServerError(error=InternalError()) from e
