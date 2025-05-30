@@ -69,7 +69,8 @@ class LanggraphAgent:
                         'content': 'processing...',
                     }
                 elif type == 'messages':
-                    logger.debug("Langgraph Stream Chunk [Message]: %s", item)
+                    token, metadata = item
+                    logger.debug("Langgraph Stream Chunk [Message]:\n Token: %s\n Metadata: %s", token, metadata)
                     yield {
                         'is_task_complete': False,
                         'require_user_input': False,
