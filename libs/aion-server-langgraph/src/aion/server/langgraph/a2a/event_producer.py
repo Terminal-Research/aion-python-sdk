@@ -2,7 +2,7 @@
 
 from a2a.server.events import EventQueue
 from aion.server.langgraph.a2a.tasks import AionTaskUpdater
-from a2a.types import TaskState, Message, Part, Role, TextPart
+from a2a.types import TaskState, Message, Part, Role, TextPart, Task
 from langchain_core.messages import BaseMessage, AIMessageChunk
 
 class LanggraphA2AEventProducer:
@@ -11,10 +11,12 @@ class LanggraphA2AEventProducer:
         self.event_queue = event_queue
         self.updater = AionTaskUpdater(event_queue, task.id, task.contextId)
 
-    def handle_message(self, langgraph_message: BaseMessage):
+    def update_status_working(self):
       self.updater.update_status(
           state=TaskState.working,
       )
+
+    def handle_message(self, langgraph_message: BaseMessage):
       if isinstance(langgraph_message, AIMessageChunk):
         message = Message(
             role=Role.agent,
