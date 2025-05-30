@@ -57,8 +57,13 @@ class LanggraphAgentExecutor(AgentExecutor):
                     if firstLoop:
                         event_producer.update_status_working()
                         firstLoop = False
-                    if item['event_type'] == 'messages':
-                        event_producer.handle_message(item['message'])
+                    
+                    event_producer.handle_event(
+                        item['event_type'],
+                        item['event'],
+                        item['is_task_complete'],
+                        item['require_user_input'],
+                    )
                 elif require_user_input:
                     updater.update_status(
                         TaskState.input_required,
