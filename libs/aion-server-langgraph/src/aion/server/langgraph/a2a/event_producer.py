@@ -2,9 +2,10 @@
 
 from a2a.server.events import EventQueue
 from aion.server.langgraph.a2a.tasks import AionTaskUpdater
-from a2a.types import TaskState, Message, Part, Role, TextPart, Task
+from a2a.types import TaskState, Message, Part, Role, TextPart, DataPart, Task
 from langchain_core.messages import BaseMessage, AIMessageChunk
 import uuid
+from typing import Any
 
 class LanggraphA2AEventProducer:
   
@@ -19,17 +20,17 @@ class LanggraphA2AEventProducer:
 
     def handle_event(
       self, 
-      event_type: String,
+      event_type: str,
       event: Any,
-      is_task_complete: bool, 
-      require_user_input: bool, 
+      is_task_complete: bool,
+      require_user_input: bool,
     ):
       if event_type == 'messages':
         self.stream_message(event)
       elif event_type == 'values':
         pass
       elif event_type == 'custom':
-        pass
+        self.emit_langgraph_event(event)
       else:
         raise ValueError(f"Unhandled event. Event Type: {event_type}, Event: {event}")
 
@@ -47,4 +48,22 @@ class LanggraphA2AEventProducer:
           append=True,
           last_chunk=False
         )
+        
+    def emit_langgraph_event(self, event: dict):
+      emit_event = {k: v for k, v in event.items() if k != "custom_event"}
+      if "custom_event" in event:
+          emit_event["event"] = event["custom_event"]
+      
+      self.updater.update_status(
+        state=TaskState.working,
+        message=Message(
+          contextId=self.task.contextId,
+          messageId=str(uuid.uuid4()),
+          role=Role.agent,
+          parts=[Part(root=DataPart(data=emit_event))],
+          metadata={
+            "aion:message_type": "event"
+          }
+        )
+      )
       

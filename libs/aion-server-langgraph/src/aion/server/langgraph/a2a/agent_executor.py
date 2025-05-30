@@ -52,12 +52,12 @@ class LanggraphAgentExecutor(AgentExecutor):
             async for item in self.agent.stream(query, task.contextId):
                 is_task_complete = item['is_task_complete']
                 require_user_input = item['require_user_input']
+                
+                if firstLoop:
+                    event_producer.update_status_working()
+                    firstLoop = False
 
                 if not is_task_complete and not require_user_input:
-                    if firstLoop:
-                        event_producer.update_status_working()
-                        firstLoop = False
-                    
                     event_producer.handle_event(
                         item['event_type'],
                         item['event'],
