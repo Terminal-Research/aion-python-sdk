@@ -43,7 +43,7 @@ class LanggraphA2AEventProducer:
       if isinstance(langgraph_message, AIMessageChunk):
         self.updater.add_artifact(
           parts=[Part(root=TextPart(text=langgraph_message.content))],
-          artifactId=self._streaming_result_artifact_id,
+          artifact_id=self._streaming_result_artifact_id,
           name=self.ARTIFACT_NAME_MESSAGE_STREAMING,
           append=True,
           last_chunk=False
