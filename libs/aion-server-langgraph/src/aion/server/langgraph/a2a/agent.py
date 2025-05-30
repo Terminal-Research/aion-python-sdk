@@ -58,7 +58,7 @@ class LanggraphAgent:
         config = {"configurable": {"thread_id": sessionId}}
 
         logger.debug("Beginning Langgraph Stream: %s", inputs)
-        for type, item in self.graph.stream(inputs, config, stream_mode=['values', 'messages-tuple', 'custom']):
+        for type, item in self.graph.stream(inputs, config, stream_mode=['values', 'messages', 'custom']):
             try:
                 logger.debug("Langgraph Stream Chunk Received: %s", item)
                 if type == 'values':
