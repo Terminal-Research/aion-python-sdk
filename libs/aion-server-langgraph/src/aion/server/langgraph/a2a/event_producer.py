@@ -4,6 +4,7 @@ from a2a.server.events import EventQueue
 from aion.server.langgraph.a2a.tasks import AionTaskUpdater
 from a2a.types import TaskState, Message, Part, Role, TextPart, Task
 from langchain_core.messages import BaseMessage, AIMessageChunk
+import uuid
 
 class LanggraphA2AEventProducer:
     def __init__(self, event_queue: EventQueue, task: Task):
