@@ -47,14 +47,14 @@ class LanggraphA2AEventProducer:
     def _handle_complete(self, event: StateSnapshot):
         if hasattr(event.values, "messages") and len(event.values.messages):
             last_message = event.values.messages[-1]
-        if last_message and isinstance(last_message, AIMessage):
-            self.updater.add_artifact(
-                parts=[Part(root=TextPart(text=last_message.content))],
-                artifact_id=str(uuid.uuid4()),
-                name=self.ARTIFACT_NAME_MESSAGE_RESULT,
-                append=False,
-                last_chunk=True,
-            )
+            if last_message and isinstance(last_message, AIMessage):
+                self.updater.add_artifact(
+                    parts=[Part(root=TextPart(text=last_message.content))],
+                    artifact_id=str(uuid.uuid4()),
+                    name=self.ARTIFACT_NAME_MESSAGE_RESULT,
+                    append=False,
+                    last_chunk=True,
+                )
         self.updater.complete()
 
     def _handle_interrupt(self, interrupts: Sequence[Interrupt]):
