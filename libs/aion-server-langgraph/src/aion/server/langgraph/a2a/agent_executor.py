@@ -62,7 +62,6 @@ class LanggraphAgentExecutor(AgentExecutor):
                 event_producer.handle_event(
                     item['event_type'],
                     item['event'],
-                    item['is_task_complete'],
                 )
         except Exception as e:
             logger.error(f'An error occurred while streaming the response: {e}')

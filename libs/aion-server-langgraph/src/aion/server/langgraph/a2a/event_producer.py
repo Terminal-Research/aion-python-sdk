@@ -23,7 +23,6 @@ class LanggraphA2AEventProducer:
         self,
         event_type: str,
         event: Any,
-        is_task_complete: bool,
     ):
         if event_type == "messages":
             self._stream_message(event)
