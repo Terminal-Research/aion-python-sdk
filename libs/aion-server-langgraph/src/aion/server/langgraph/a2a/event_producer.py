@@ -48,10 +48,12 @@ class LanggraphA2AEventProducer:
         if len(interrupts):
           self.updater.update_status(
               TaskState.input_required,
-              new_agent_text_message(
-                  interrupts[0].value,
-                  self.task.contextId,
-                  self.task.id,
+              message=Message(
+                  contextId=self.task.contextId,
+                  taskId=self.task.id,
+                  messageId=str(uuid.uuid4()),
+                  role=Role.agent,
+                  parts=[Part(root=TextPart(text=interrupts[0].value))],
               ),
               final=True,
           )
@@ -79,6 +81,7 @@ class LanggraphA2AEventProducer:
             state=TaskState.working,
             message=Message(
                 contextId=self.task.contextId,
+                taskId=self.task.id,
                 messageId=str(uuid.uuid4()),
                 role=Role.agent,
                 parts=[Part(root=DataPart(data=emit_event))],
@@ -91,6 +94,7 @@ class LanggraphA2AEventProducer:
             state=TaskState.working,
             message=Message(
                 contextId=self.task.contextId,
+                taskId=self.task.id,
                 messageId=str(uuid.uuid4()),
                 role=Role.agent,
                 parts=[Part(root=DataPart(data=event))],
