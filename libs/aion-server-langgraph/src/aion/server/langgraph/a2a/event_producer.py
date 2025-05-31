@@ -41,10 +41,6 @@ class LanggraphA2AEventProducer:
             )
 
     def update_status_working(self):
-        self.updater.add_artifact(
-            [Part(root=TextPart(text=item['content']))],
-            name='conversion_result',
-        )
         self.updater.update_status(
             state=TaskState.working,
         )
