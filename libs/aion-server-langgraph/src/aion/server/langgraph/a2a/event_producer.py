@@ -93,7 +93,7 @@ class LanggraphA2AEventProducer:
                 contextId=self.task.contextId,
                 messageId=str(uuid.uuid4()),
                 role=Role.agent,
-                parts=[Part(root=DataPart(data=emit_event))],
+                parts=[Part(root=DataPart(data=event))],
                 metadata={"aion:message_type": "langgraph_values"},
             ),
         )
