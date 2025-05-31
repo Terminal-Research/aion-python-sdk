@@ -20,6 +20,8 @@ from a2a.utils.errors import ServerError
 from .tasks import AionTaskUpdater
 from .agent import LanggraphAgent
 from .event_producer import LanggraphA2AEventProducer
+from langgraph.types import Command
+from langgraph.errors import GraphInterrupt
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -42,12 +44,16 @@ class LanggraphAgentExecutor(AgentExecutor):
 
         query = context.get_user_input()
         task = context.current_task
-        if not task:
+        if task and task.state == TaskState.input_required:
+            query = Command(resume=query)
+        elif not task:
             task = new_task(context.message)
             event_queue.enqueue_event(task)
+            
         updater = AionTaskUpdater(event_queue, task.id, task.contextId) 
         event_producer = LanggraphA2AEventProducer(event_queue, task)
         firstLoop = True
+                
         try:
             async for item in self.agent.stream(query, task.contextId):
                 is_task_complete = item['is_task_complete']
@@ -82,7 +88,9 @@ class LanggraphAgentExecutor(AgentExecutor):
                     )
                     updater.complete()
                     break
-
+        except GraphInterrupt as e:
+            logger.debug(f'GraphInterrupt occurred while streaming the response: {e}')
+            event_producer.handle_interrupt(e.args[0])
         except Exception as e:
             logger.error(f'An error occurred while streaming the response: {e}')
             raise ServerError(error=InternalError()) from e

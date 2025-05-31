@@ -10,6 +10,7 @@ from langchain_core.messages import AIMessage, ToolMessage
 from langchain_core.tools import tool
 from pydantic import BaseModel
 from langgraph.graph import StateGraph
+from langgraph.types import Command
 
 from ..graph import GRAPHS, get_graph, initialize_graphs
 
@@ -30,51 +31,59 @@ class LanggraphAgent:
         """Initialize the agent using the first registered LangGraph."""
         self.graph = graph
         
-    def invoke(self, query: str, sessionId: str) -> str:
+    def invoke(self, query: Union[str, Command], sessionId: str) -> str:
         """Invoke the agent synchronously.
 
         Args:
-            query: The user query to process.
+            query: The user message or a LangGraph Command
             sessionId: Unique identifier for the conversation thread.
 
         Returns:
             The agent's final response as a string.
         """
+        if isinstance(query, Command):
+            inputs = query
+        else:
+            inputs = {"messages": [("user", query)]}
+        
         config = {"configurable": {"thread_id": sessionId}}
-        self.graph.invoke({"messages": [("user", query)]}, config)
+        self.graph.invoke(inputs, config)
         return self.get_agent_response(config)
 
-    async def stream(self, query: str, sessionId: str) -> AsyncIterable[Dict[str, Any]]:
+    async def stream(self, query: Union[str, Command], sessionId: str) -> AsyncIterable[Dict[str, Any]]:
         """Stream intermediate responses from the agent.
 
         Args:
-            query: The user query to process.
+            query: The user message or a LangGraph Command
             sessionId: Unique identifier for the conversation thread.
 
         Yields:
             Partial response dictionaries describing progress.
         """
-        inputs = {"messages": [("user", query)]}
+        if isinstance(query, Command):
+            inputs = query
+        else:
+            inputs = {"messages": [("user", query)]}
         config = {"configurable": {"thread_id": sessionId}}
 
         logger.debug("Beginning Langgraph Stream: %s", inputs)
         for eventType, event in self.graph.stream(inputs, config, stream_mode=['values', 'messages', 'custom']):
             try:
-                if eventType == 'values' or eventType == 'messages' or eventType == 'custom':
-                    if eventType == 'messages':
-                        event, metadata = event
-                    else:
-                        metadata = None
-                        
-                    logger.debug(
-                        "Langgraph Stream Chunk [%s]:\n Event[%s]: %s\n Metadata[%s]: %s", 
-                        eventType,
-                        type(event).__name__, 
-                        event, 
-                        type(metadata).__name__ if metadata is not None else "", 
-                        metadata if metadata is not None else ""
-                    )
+                if eventType == 'messages':
+                    event, metadata = event
+                else:
+                    metadata = None
                     
+                logger.debug(
+                    "Langgraph Stream Chunk [%s]:\n Event[%s]: %s\n Metadata[%s]: %s", 
+                    eventType,
+                    type(event).__name__, 
+                    event, 
+                    type(metadata).__name__ if metadata is not None else "", 
+                    metadata if metadata is not None else ""
+                )
+                
+                if eventType == 'values' or eventType == 'messages' or eventType == 'custom':
                     yield {
                         'event_type': eventType,
                         'event': event,

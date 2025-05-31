@@ -5,7 +5,9 @@ from aion.server.langgraph.a2a.tasks import AionTaskUpdater
 from a2a.types import TaskState, Message, Part, Role, TextPart, DataPart, Task
 from langchain_core.messages import BaseMessage, AIMessageChunk
 import uuid
-from typing import Any
+from typing import Any, Sequence
+
+from langgraph.types import Interrupt
 
 
 class LanggraphA2AEventProducer:
@@ -27,11 +29,11 @@ class LanggraphA2AEventProducer:
         require_user_input: bool,
     ):
         if event_type == "messages":
-            self.stream_message(event)
+            self._stream_message(event)
         elif event_type == "values":
-            pass
+            self._emit_langgraph_values(event)
         elif event_type == "custom":
-            self.emit_langgraph_event(event)
+            self._emit_langgraph_event(event)
         else:
             raise ValueError(
                 f"Unhandled event. Event Type: {event_type}, Event: {event}"
@@ -42,7 +44,19 @@ class LanggraphA2AEventProducer:
             state=TaskState.working,
         )
 
-    def stream_message(self, langgraph_message: BaseMessage):
+    def handle_interrupt(self, interrupts: Sequence[Interrupt]):
+        if len(interrupts):
+          self.updater.update_status(
+              TaskState.input_required,
+              new_agent_text_message(
+                  interrupts[0].value,
+                  self.task.contextId,
+                  self.task.id,
+              ),
+              final=True,
+          )
+
+    def _stream_message(self, langgraph_message: BaseMessage):
         if isinstance(langgraph_message, AIMessageChunk):
             append = self._streaming_result_artifact_id != None
             if not append:
@@ -56,7 +70,7 @@ class LanggraphA2AEventProducer:
                 last_chunk=False,
             )
 
-    def emit_langgraph_event(self, event: dict):
+    def _emit_langgraph_event(self, event: dict):
         emit_event = {k: v for k, v in event.items() if k != "custom_event"}
         if "custom_event" in event:
             emit_event["event"] = event["custom_event"]
@@ -69,5 +83,17 @@ class LanggraphA2AEventProducer:
                 role=Role.agent,
                 parts=[Part(root=DataPart(data=emit_event))],
                 metadata={"aion:message_type": "event"},
+            ),
+        )
+
+    def _emit_langgraph_values(self, event: dict):
+        self.updater.update_status(
+            state=TaskState.working,
+            message=Message(
+                contextId=self.task.contextId,
+                messageId=str(uuid.uuid4()),
+                role=Role.agent,
+                parts=[Part(root=DataPart(data=emit_event))],
+                metadata={"aion:message_type": "langgraph_values"},
             ),
         )
