@@ -3,12 +3,12 @@ from collections.abc import AsyncIterable
 """Currency conversion example agent built on top of LangGraph."""
 
 from typing import Any, Dict, Literal, Union
-
+from pprint import pformat
 import logging
 
 from pydantic import BaseModel
 from langgraph.graph import StateGraph
-from langgraph.types import Command
+from langgraph.types import Command, StateSnapshot
 from langgraph.errors import GraphInterrupt
 
 logger = logging.getLogger(__name__)
@@ -129,8 +129,8 @@ class LanggraphAgent:
 
     def get_agent_response(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Return the final structured response from the agent."""
-        current_state = self.graph.get_state(config)
-        logger.debug("Final Langgraph State: %s", current_state)
+        current_state: StateSnapshot = self.graph.get_state(config)
+        logger.debug("Final Langgraph State: %s", pformat(current_state))
 
         if len(current_state.interrupts):
             return {
