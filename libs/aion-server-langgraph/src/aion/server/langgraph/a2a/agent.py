@@ -13,13 +13,6 @@ from langgraph.errors import GraphInterrupt
 logger = logging.getLogger(__name__)
 
 
-class ResponseFormat(BaseModel):
-    """Respond to the user in this format."""
-
-    status: Literal["input_required", "completed", "error"] = "input_required"
-    message: str
-
-
 class LanggraphAgent:
     """Simple agent that delegates execution to a configured LangGraph."""
 
@@ -92,34 +85,12 @@ class LanggraphAgent:
                         "event_type": eventType,
                         "event": event,
                         "metadata": metadata,
-                        "is_task_complete": False,
                     }
                 else:
                     raise ValueError(f"Unknown stream type: {eventType}")
-
-                # message = item['messages'][-1]
-                # if (
-                #     isinstance(message, AIMessage)
-                #     and message.tool_calls
-                #     and len(message.tool_calls) > 0
-                # ):
-                #     yield {
-                #         'is_task_complete': False,
-                #         'require_user_input': False,
-                #         'content': 'Looking up the exchange rates...',
-                #     }
-                # elif isinstance(message, ToolMessage):
-                #     yield {
-                #         'is_task_complete': False,
-                #         'require_user_input': False,
-                #         'content': 'Processing the exchange rates..',
-                # }
             logger.debug("Final Langgraph Stream Chunk Received")
             yield self.get_agent_response(config)
 
-        # except GraphInterrupt as e:
-        #     logger.debug(f"GraphInterrupt occurred while streaming the response: {e}")
-        #     yield {"event_type": "interrupt", "event": e, "is_task_complete": False}
         except Exception as e:
             logger.error(
                 f"An error occurred while processing Langgraph Stream Chunk: {e}"
@@ -131,6 +102,7 @@ class LanggraphAgent:
         current_state: StateSnapshot = self.graph.get_state(config)
         logger.debug("Final Langgraph State: %s", current_state)
 
+        # TODO: handle if an error is thrown in the graph
         if len(current_state.tasks):
             for task in current_state.tasks:
                 if hasattr(task, "interrupts") and len(task.interrupts):
@@ -138,34 +110,11 @@ class LanggraphAgent:
                     return {
                         "event_type": "interrupt",
                         "event": task.interrupts,
-                        "is_task_complete": False,
                     }
 
-        structured_response = current_state.values.get("structured_response")
-        if structured_response and isinstance(structured_response, ResponseFormat):
-            if structured_response.status == "input_required":
-                return {
-                    "is_task_complete": False,
-                    "require_user_input": True,
-                    "content": structured_response.message,
-                }
-            elif structured_response.status == "error":
-                return {
-                    "is_task_complete": False,
-                    "require_user_input": True,
-                    "content": structured_response.message,
-                }
-            elif structured_response.status == "completed":
-                return {
-                    "is_task_complete": True,
-                    "require_user_input": False,
-                    "content": structured_response.message,
-                }
-
         return {
-            "is_task_complete": False,
-            "require_user_input": True,
-            "content": "We are unable to process your request at the moment. Please try again.",
+            "event_type": "complete",
+            "event": current_state,
         }
 
     SUPPORTED_CONTENT_TYPES = ["text", "text/plain"]

@@ -55,27 +55,15 @@ class LanggraphAgentExecutor(AgentExecutor):
                 
         try:
             async for item in self.agent.stream(query, task.contextId):
-                is_task_complete = item['is_task_complete']
-                
                 if firstLoop:
                     event_producer.update_status_working()
                     firstLoop = False
 
-                if not is_task_complete:
-                    event_producer.handle_event(
-                        item['event_type'],
-                        item['event'],
-                        item['is_task_complete'],
-                    )
-                    # if item['event_type'] == 'interrupt':
-                    #     break
-                else:
-                    updater.add_artifact(
-                        [Part(root=TextPart(text=item['content']))],
-                        name='conversion_result',
-                    )
-                    updater.complete()
-                    break
+                event_producer.handle_event(
+                    item['event_type'],
+                    item['event'],
+                    item['is_task_complete'],
+                )
         except Exception as e:
             logger.error(f'An error occurred while streaming the response: {e}')
             raise ServerError(error=InternalError()) from e

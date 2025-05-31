@@ -3,10 +3,10 @@
 from a2a.server.events import EventQueue
 from aion.server.langgraph.a2a.tasks import AionTaskUpdater
 from a2a.types import TaskState, Message, Part, Role, TextPart, DataPart, Task
-from langchain_core.messages import BaseMessage, AIMessageChunk
+from langchain_core.messages import BaseMessage, AIMessageChunk, AIMessage
 import uuid
 from typing import Any, Sequence
-from langgraph.types import Interrupt
+from langgraph.types import Interrupt, StateSnapshot
 
 class LanggraphA2AEventProducer:
 
@@ -33,15 +33,34 @@ class LanggraphA2AEventProducer:
             self._emit_langgraph_event(event)
         elif event_type == "interrupt":
             self._handle_interrupt(event)
+        elif event_type == "complete":
+            self._handle_complete(event)
         else:
             raise ValueError(
                 f"Unhandled event. Event Type: {event_type}, Event: {event}"
             )
 
     def update_status_working(self):
+        self.updater.add_artifact(
+            [Part(root=TextPart(text=item['content']))],
+            name='conversion_result',
+        )
         self.updater.update_status(
             state=TaskState.working,
         )
+        
+    def _handle_complete(self, event: StateSnapshot):
+        if hasattr(event.values, "messages") and len(event.values.messages):
+            last_message = event.values.messages[-1]
+        if last_message and isinstance(last_message, AIMessage):
+            self.updater.add_artifact(
+                parts=[Part(root=TextPart(text=last_message.content))],
+                artifact_id=str(uuid.uuid4()),
+                name=self.ARTIFACT_NAME_MESSAGE_RESULT,
+                append=False,
+                last_chunk=True,
+            )
+        self.updater.complete()
 
     def _handle_interrupt(self, interrupts: Sequence[Interrupt]):
         if len(interrupts):
