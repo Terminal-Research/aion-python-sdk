@@ -1,12 +1,16 @@
 """Utility functions for creating and handling A2A messages."""
 
+import logging
+import uuid
+
+from typing import Any, Sequence
+from a2a.types import TaskState, Message, Part, Role, TextPart, DataPart, Task
 from a2a.server.events import EventQueue
 from aion.server.langgraph.a2a.tasks import AionTaskUpdater
-from a2a.types import TaskState, Message, Part, Role, TextPart, DataPart, Task
 from langchain_core.messages import BaseMessage, AIMessageChunk, AIMessage
-import uuid
-from typing import Any, Sequence
 from langgraph.types import Interrupt, StateSnapshot
+
+logger = logging.getLogger(__name__)
 
 class LanggraphA2AEventProducer:
 
@@ -45,8 +49,8 @@ class LanggraphA2AEventProducer:
         )
         
     def _handle_complete(self, event: StateSnapshot):
-        if hasattr(event.values, "messages") and len(event.values.messages):
-            last_message = event.values.messages[-1]
+        if hasattr(event.values, "messages") and len(event.values["messages"]):
+            last_message = event.values["messages"][-1]
             if last_message and isinstance(last_message, AIMessage):
                 self.updater.add_artifact(
                     parts=[Part(root=TextPart(text=last_message.content))],
