@@ -67,6 +67,8 @@ class LanggraphAgentExecutor(AgentExecutor):
                         item['event'],
                         item['is_task_complete'],
                     )
+                    # if item['event_type'] == 'interrupt':
+                    #     break
                 else:
                     updater.add_artifact(
                         [Part(root=TextPart(text=item['content']))],

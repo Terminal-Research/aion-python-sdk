@@ -5,9 +5,8 @@ from aion.server.langgraph.a2a.tasks import AionTaskUpdater
 from a2a.types import TaskState, Message, Part, Role, TextPart, DataPart, Task
 from langchain_core.messages import BaseMessage, AIMessageChunk
 import uuid
-from typing import Any
-from langgraph.errors import GraphInterrupt
-
+from typing import Any, Sequence
+from langgraph.types import Interrupt
 
 class LanggraphA2AEventProducer:
 
@@ -44,8 +43,7 @@ class LanggraphA2AEventProducer:
             state=TaskState.working,
         )
 
-    def _handle_interrupt(self, interrupt: GraphInterrupt):
-        interrupts = interrupt.args[0] # Sequence[Interrupt]
+    def _handle_interrupt(self, interrupts: Sequence[Interrupt]):
         if len(interrupts):
           self.updater.update_status(
               TaskState.input_required,

@@ -117,10 +117,10 @@ class LanggraphAgent:
                 # }
             logger.debug("Final Langgraph Stream Chunk Received")
             yield self.get_agent_response(config)
-            
-        except GraphInterrupt as e:
-            logger.debug(f"GraphInterrupt occurred while streaming the response: {e}")
-            yield {"event_type": "interrupt", "event": e, "is_task_complete": False}
+
+        # except GraphInterrupt as e:
+        #     logger.debug(f"GraphInterrupt occurred while streaming the response: {e}")
+        #     yield {"event_type": "interrupt", "event": e, "is_task_complete": False}
         except Exception as e:
             logger.error(
                 f"An error occurred while processing Langgraph Stream Chunk: {e}"
@@ -131,6 +131,14 @@ class LanggraphAgent:
         """Return the final structured response from the agent."""
         current_state = self.graph.get_state(config)
         logger.debug("Final Langgraph State: %s", current_state)
+
+        if len(current_state.interrupts):
+            return {
+                "event_type": "interrupt",
+                "event": current_state.interrupts,
+                "is_task_complete": False,
+            }
+
         structured_response = current_state.values.get("structured_response")
         if structured_response and isinstance(structured_response, ResponseFormat):
             if structured_response.status == "input_required":
