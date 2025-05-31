@@ -43,7 +43,7 @@ class LanggraphAgentExecutor(AgentExecutor):
 
         query = context.get_user_input()
         task = context.current_task
-        if task and task.state == TaskState.input_required:
+        if task and task.status.state == TaskState.input_required:
             query = Command(resume=query)
         elif not task:
             task = new_task(context.message)
