@@ -21,7 +21,6 @@ from .tasks import AionTaskUpdater
 from .agent import LanggraphAgent
 from .event_producer import LanggraphA2AEventProducer
 from langgraph.types import Command
-from langgraph.errors import GraphInterrupt
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -57,30 +56,17 @@ class LanggraphAgentExecutor(AgentExecutor):
         try:
             async for item in self.agent.stream(query, task.contextId):
                 is_task_complete = item['is_task_complete']
-                require_user_input = item['require_user_input']
                 
                 if firstLoop:
                     event_producer.update_status_working()
                     firstLoop = False
 
-                if not is_task_complete and not require_user_input:
+                if not is_task_complete:
                     event_producer.handle_event(
                         item['event_type'],
                         item['event'],
                         item['is_task_complete'],
-                        item['require_user_input'],
                     )
-                elif require_user_input:
-                    updater.update_status(
-                        TaskState.input_required,
-                        new_agent_text_message(
-                            item['content'],
-                            task.contextId,
-                            task.id,
-                        ),
-                        final=True,
-                    )
-                    break
                 else:
                     updater.add_artifact(
                         [Part(root=TextPart(text=item['content']))],
@@ -88,9 +74,6 @@ class LanggraphAgentExecutor(AgentExecutor):
                     )
                     updater.complete()
                     break
-        except GraphInterrupt as e:
-            logger.debug(f'GraphInterrupt occurred while streaming the response: {e}')
-            event_producer.handle_interrupt(e.args[0])
         except Exception as e:
             logger.error(f'An error occurred while streaming the response: {e}')
             raise ServerError(error=InternalError()) from e

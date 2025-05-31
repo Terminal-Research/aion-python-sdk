@@ -8,6 +8,7 @@ import logging
 from pydantic import BaseModel
 from langgraph.graph import StateGraph
 from langgraph.types import Command
+from langgraph.errors import GraphInterrupt
 
 logger = logging.getLogger(__name__)
 
@@ -84,8 +85,6 @@ class LanggraphAgent:
                         'event': event,
                         'metadata': metadata,
                         'is_task_complete': False,
-                        'require_user_input': False,
-                        'content': 'processing...',
                     }
                 else:
                     raise ValueError(f"Unknown stream type: {eventType}")
@@ -107,6 +106,13 @@ class LanggraphAgent:
                 #         'require_user_input': False,
                 #         'content': 'Processing the exchange rates..',
                     # }
+            except GraphInterrupt as e:
+                logger.debug(f'GraphInterrupt occurred while streaming the response: {e}')
+                yield {
+                    'event_type': 'interrupt',
+                    'event': e,
+                    'is_task_complete': False
+                }
             except Exception as e:
                 logger.error(f'An error occurred while processing Langgraph Stream Chunk: {e}')
                 raise ServerError(error=InternalError()) from e

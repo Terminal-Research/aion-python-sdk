@@ -5,9 +5,8 @@ from aion.server.langgraph.a2a.tasks import AionTaskUpdater
 from a2a.types import TaskState, Message, Part, Role, TextPart, DataPart, Task
 from langchain_core.messages import BaseMessage, AIMessageChunk
 import uuid
-from typing import Any, Sequence
-
-from langgraph.types import Interrupt
+from typing import Any
+from langgraph.errors import GraphInterrupt
 
 
 class LanggraphA2AEventProducer:
@@ -26,7 +25,6 @@ class LanggraphA2AEventProducer:
         event_type: str,
         event: Any,
         is_task_complete: bool,
-        require_user_input: bool,
     ):
         if event_type == "messages":
             self._stream_message(event)
@@ -34,6 +32,8 @@ class LanggraphA2AEventProducer:
             self._emit_langgraph_values(event)
         elif event_type == "custom":
             self._emit_langgraph_event(event)
+        elif event_type == "interrupt":
+            self._handle_interrupt(event)
         else:
             raise ValueError(
                 f"Unhandled event. Event Type: {event_type}, Event: {event}"
@@ -44,7 +44,8 @@ class LanggraphA2AEventProducer:
             state=TaskState.working,
         )
 
-    def handle_interrupt(self, interrupts: Sequence[Interrupt]):
+    def _handle_interrupt(self, interrupt: GraphInterrupt):
+        interrupts = interrupt.args[0] # Sequence[Interrupt]
         if len(interrupts):
           self.updater.update_status(
               TaskState.input_required,
