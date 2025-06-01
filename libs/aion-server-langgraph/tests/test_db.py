@@ -1,14 +1,12 @@
-import builtins
-from unittest import mock
-
 import asyncio
 from unittest import mock
+import logging
 
 import pytest
 
 pytest.importorskip("pydantic")
 
-from aion.server.langgraph.__main__ import check_postgres_connection
+from aion.server.db import test_connection
 from aion.server.langgraph.a2a.tasks import PostgresTaskStore
 
 
@@ -34,7 +32,7 @@ class DummyConnection:
         self.closed = True
 
 
-def test_check_postgres_connection_success(monkeypatch, caplog):
+def test_test_connection_success(monkeypatch, caplog):
     conn = DummyConnection()
 
     def fake_connect(url):
@@ -43,8 +41,22 @@ def test_check_postgres_connection_success(monkeypatch, caplog):
     monkeypatch.setenv("POSTGRES_URL", "postgresql://example")
     monkeypatch.setattr("psycopg.connect", fake_connect)
 
-    check_postgres_connection()
+    with caplog.at_level(logging.INFO):
+        assert test_connection("postgresql://example")
     assert conn.closed
+    assert "Successfully connected to Postgres" in caplog.text
+
+
+def test_test_connection_failure(monkeypatch, caplog):
+    def fake_connect(url):
+        raise RuntimeError("could not connect")
+
+    monkeypatch.setenv("POSTGRES_URL", "postgresql://example")
+    monkeypatch.setattr("psycopg.connect", fake_connect)
+
+    with caplog.at_level(logging.ERROR):
+        assert not test_connection("postgresql://example")
+    assert "Could not connect to Postgres" in caplog.text
 
 
 def test_postgres_task_store_saves(monkeypatch):

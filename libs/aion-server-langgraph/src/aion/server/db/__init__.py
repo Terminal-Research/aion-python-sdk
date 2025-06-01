@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
+import logging
 import psycopg
 
 # Default namespace for database objects
@@ -36,6 +37,9 @@ __all__ = [
     "test_connection",
 ]
 
+# Module logger
+logger = logging.getLogger(__name__)
+
 
 def test_connection(url: str) -> bool:
     """Attempt to connect to Postgres using ``psycopg``.
@@ -49,6 +53,8 @@ def test_connection(url: str) -> bool:
     try:
         conn = psycopg.connect(url)
         conn.close()
+        logger.info("Successfully connected to Postgres")
         return True
-    except Exception:
+    except Exception as exc:  # pragma: no cover - connection failures
+        logger.error("Could not connect to Postgres: %s", exc)
         return False
