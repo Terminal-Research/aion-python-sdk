@@ -7,6 +7,8 @@ from pathlib import Path
 from alembic import context
 from alembic.config import Config
 from sqlalchemy import create_engine
+from alembic.runtime.migration import MigrationContext
+import logging
 
 from aion.server.db import get_config, sqlalchemy_url
 
@@ -27,6 +29,9 @@ cfg = get_config()
 DATABASE_URL = cfg.url if cfg else ""
 config.set_main_option("sqlalchemy.url", sqlalchemy_url(DATABASE_URL))
 
+# Module logger
+logger = logging.getLogger(__name__)
+
 
 def _get_engine() -> "Engine":
     """Return a SQLAlchemy engine for the configured database."""
@@ -39,12 +44,32 @@ def _get_engine() -> "Engine":
     return create_engine(url)
 
 
+def _log_revision_start(
+    context: "MigrationContext", revision: object, directives: list
+) -> None:
+    """Log which migration is about to run."""
+    path = getattr(revision, "path", str(revision))
+    logger.debug("Running migration %s", path)
+
+
+def _log_revision_end(
+    context: "MigrationContext", revision: object, directives: list
+) -> None:
+    """Log that a migration finished successfully."""
+    path = getattr(revision, "path", str(revision))
+    logger.debug("Completed migration %s", path)
+
+
 def run_migrations() -> None:
     """Run Alembic migrations."""
     engine = _get_engine()
 
     with engine.connect() as connection:
-        context.configure(connection=connection)
+        context.configure(
+            connection=connection,
+            process_revision_directives=_log_revision_start,
+            on_version_apply=_log_revision_end,
+        )
         with context.begin_transaction():
             context.run_migrations()
 
@@ -54,7 +79,11 @@ def run_offline_migrations() -> None:
 
     cfg = get_config()
     url = sqlalchemy_url(cfg.url) if cfg else ""
-    context.configure(url=url)
+    context.configure(
+        url=url,
+        process_revision_directives=_log_revision_start,
+        on_version_apply=_log_revision_end,
+    )
     with context.begin_transaction():
         context.run_migrations()
 
