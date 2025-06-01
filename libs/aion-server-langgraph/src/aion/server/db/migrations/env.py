@@ -27,13 +27,20 @@ cfg = get_config()
 DATABASE_URL = cfg.url if cfg else ""
 config.set_main_option("sqlalchemy.url", DATABASE_URL)
 
-engine = create_engine(DATABASE_URL) if DATABASE_URL else None
+
+def _get_engine() -> "Engine":
+    """Return a SQLAlchemy engine for the configured database."""
+    cfg = get_config()
+    if not cfg:
+        raise RuntimeError("No database configured")
+
+    config.set_main_option("sqlalchemy.url", cfg.url)
+    return create_engine(cfg.url)
 
 
 def run_migrations() -> None:
     """Run Alembic migrations."""
-    if engine is None:
-        raise RuntimeError("No database configured")
+    engine = _get_engine()
 
     with engine.connect() as connection:
         context.configure(connection=connection)
@@ -44,7 +51,9 @@ def run_migrations() -> None:
 def run_offline_migrations() -> None:
     """Run migrations in offline mode."""
 
-    context.configure(url=DATABASE_URL)
+    cfg = get_config()
+    url = cfg.url if cfg else ""
+    context.configure(url=url)
     with context.begin_transaction():
         context.run_migrations()
 
