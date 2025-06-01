@@ -41,9 +41,16 @@ def run_migrations() -> None:
             context.run_migrations()
 
 
-if context.is_offline_mode():  # pragma: no cover - offline migrations
+def run_offline_migrations() -> None:
+    """Run migrations in offline mode."""
+
     context.configure(url=DATABASE_URL)
     with context.begin_transaction():
         context.run_migrations()
-else:
-    run_migrations()
+
+
+if __name__ == "__main__":  # pragma: no cover - CLI invocation
+    if context.is_offline_mode():
+        run_offline_migrations()
+    else:
+        run_migrations()
