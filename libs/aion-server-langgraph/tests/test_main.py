@@ -13,7 +13,7 @@ def test_main_runs_migrations(monkeypatch):
 
     monkeypatch.setattr(module, "test_connection", lambda url: True)
     called = {}
-    monkeypatch.setattr(module, "run_migrations", lambda: called.setdefault("ran", True))
+    monkeypatch.setattr(module, "upgrade_to_head", lambda: called.setdefault("ran", True))
     monkeypatch.setattr(module, "initialize_graphs", lambda: module.GRAPHS.setdefault("g", object()))
     monkeypatch.setattr(module, "PostgresTaskStore", lambda: object())
     monkeypatch.setattr(module, "LanggraphAgentExecutor", lambda g: object())
