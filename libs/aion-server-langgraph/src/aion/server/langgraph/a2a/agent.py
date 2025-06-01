@@ -102,7 +102,6 @@ class LanggraphAgent:
         current_state: StateSnapshot = self.graph.get_state(config)
         logger.debug("Final Langgraph State: %s", current_state)
 
-        # TODO: handle if an error is thrown in the graph
         if len(current_state.tasks):
             for task in current_state.tasks:
                 if hasattr(task, "interrupts") and len(task.interrupts):
