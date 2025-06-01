@@ -10,21 +10,10 @@ from pydantic import BaseModel
 
 try:  # pragma: no cover - optional dependency
     from a2a.types import Artifact, Task
-except Exception:  # pragma: no cover - test environment without dependency
-    class Artifact(BaseModel):
-        """Fallback Artifact model."""
-
-        artifactId: str
-        name: str | None = None
-        parts: list
-        metadata: dict | None = None
-
-    class Task(BaseModel):
-        """Fallback Task model."""
-
-        id: str
-        contextId: str
-        status: str | None = None
+except Exception as exc:  # pragma: no cover - explicit failure if missing
+    raise ImportError(
+        "The 'a2a-sdk' package is required to use these models"
+    ) from exc
 
 
 class ThreadRecord(BaseModel):
