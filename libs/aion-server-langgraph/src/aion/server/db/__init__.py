@@ -34,6 +34,7 @@ __all__ = [
     "AION_DB_NAMESPACE",
     "DatabaseConfig",
     "get_config",
+    "sqlalchemy_url",
     "test_connection",
 ]
 
@@ -58,3 +59,27 @@ def test_connection(url: str) -> bool:
     except Exception as exc:  # pragma: no cover - connection failures
         logger.error("Could not connect to Postgres: %s", exc)
         return False
+
+
+def sqlalchemy_url(url: str) -> str:
+    """Return a SQLAlchemy connection URL using the ``psycopg`` driver.
+
+    SQLAlchemy requires the ``postgresql+psycopg://`` protocol when using
+    ``psycopg`` version 3. This helper ensures the correct prefix is used
+    without forcing callers to specify it in their environment variable.
+
+    Args:
+        url: The configured connection URL.
+
+    Returns:
+        The URL formatted for SQLAlchemy.
+    """
+
+    prefix = "postgresql+psycopg://"
+    if url.startswith(prefix) or not url:
+        return url
+    if url.startswith("postgresql://"):
+        return prefix + url[len("postgresql://") :]
+    if url.startswith("postgres://"):
+        return prefix + url[len("postgres://") :]
+    return url
