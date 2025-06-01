@@ -24,7 +24,7 @@ from .a2a.agent import LanggraphAgent
 from .a2a.agent_executor import LanggraphAgentExecutor
 from .graph import GRAPHS, get_graph, initialize_graphs
 from aion.server.db import get_config, test_connection
-from aion.server.db.migrations.env import run_migrations
+from aion.server.db.migrations import upgrade_to_head
 from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
@@ -46,7 +46,7 @@ def main(host, port):
             has_db = test_connection(cfg.url)
             if has_db:
                 try:
-                    run_migrations()
+                    upgrade_to_head()
                 except Exception as exc:  # pragma: no cover - migration failure
                     logger.error("Failed to run migrations: %s", exc)
         else:
