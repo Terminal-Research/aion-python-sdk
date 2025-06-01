@@ -9,6 +9,12 @@ import uvicorn
 from a2a.server.apps import A2AStarletteApplication
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.tasks import InMemoryPushNotifier, InMemoryTaskStore
+from .a2a.tasks import PostgresTaskStore
+
+try:  # pragma: no cover - optional dependency
+    from langgraph.checkpoint.postgres import PostgresCheckpoint
+except Exception:  # pragma: no cover - missing dependency
+    PostgresCheckpoint = None  # type: ignore
 from a2a.types import (
     AgentCapabilities,
     AgentCard,
@@ -36,9 +42,12 @@ def main(host, port):
     try:
         cfg = get_config()
         if cfg:
-            test_connection(cfg.url)
+            has_db = test_connection(cfg.url)
         else:
-            logger.info("POSTGRES_URL environment variable not set, using in-memory data store")
+            has_db = False
+            logger.info(
+                "POSTGRES_URL environment variable not set, using in-memory data store"
+            )
         initialize_graphs()
         if not GRAPHS:
             logger.error("No graphs found in configuration; shutting down")
@@ -69,11 +78,25 @@ def main(host, port):
             skills=[skill],
         )
 
+        if has_db:
+            task_store = PostgresTaskStore()
+            if PostgresCheckpoint:
+                try:
+                    checkpoint = PostgresCheckpoint(
+                        conninfo=os.getenv("POSTGRES_URL"),
+                        namespace="langgraph",
+                    )
+                    graph_obj = graph_obj.with_checkpoint(checkpoint)
+                except Exception as exc:  # pragma: no cover - checkpoint failure
+                    logger.error("Failed to configure PostgresCheckpoint: %s", exc)
+        else:
+            task_store = InMemoryTaskStore()
+
         # --8<-- [start:DefaultRequestHandler]
         httpx_client = httpx.AsyncClient()
         request_handler = DefaultRequestHandler(
             agent_executor=LanggraphAgentExecutor(graph_obj),
-            task_store=InMemoryTaskStore(),
+            task_store=task_store,
             push_notifier=InMemoryPushNotifier(httpx_client),
         )
         server = A2AStarletteApplication(
