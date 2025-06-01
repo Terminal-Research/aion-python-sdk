@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 from alembic import context
+from alembic.config import Config
 from sqlalchemy import create_engine
 
 from aion.server.db import get_config
+
+# ``alembic.context`` exposes ``config`` only when executed via Alembic's
+# command line utilities. When this module is imported directly (e.g. during
+# server startup), the attribute is missing. Create a basic ``Config`` object in
+# that case so that configuration options can still be set.
+if not hasattr(context, "config"):
+    context.config = Config()  # type: ignore[attr-defined]
 
 config = context.config
 
