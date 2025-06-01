@@ -1,5 +1,6 @@
 import logging
 import os
+from typing import Optional
 
 import click
 import httpx
@@ -8,6 +9,7 @@ import uvicorn
 from a2a.server.apps import A2AStarletteApplication
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.tasks import InMemoryPushNotifier, InMemoryTaskStore
+import psycopg
 from a2a.types import (
     AgentCapabilities,
     AgentCard,
@@ -22,6 +24,21 @@ logger = logging.getLogger(__name__)
 
 dotenv_path = load_dotenv(dotenv_path=os.path.join(os.getcwd(), '.env'), verbose=True)
 
+
+def check_postgres_connection() -> None:
+    """Verify that ``POSTGRES_URL`` is configured and reachable."""
+
+    url = os.getenv("POSTGRES_URL")
+    if not url:
+        logger.info("POSTGRES_URL environment variable not set")
+        return
+    try:
+        conn = psycopg.connect(url)
+        conn.close()
+        logger.info("Successfully connected to Postgres")
+    except Exception as exc:  # pragma: no cover - connection failures
+        logger.error("Could not connect to Postgres: %s", exc)
+
 class MissingAPIKeyError(Exception):
     """Exception for missing API key."""
 
@@ -32,6 +49,7 @@ class MissingAPIKeyError(Exception):
 def main(host, port):
     """Starts the Currency Agent server."""
     try:
+        check_postgres_connection()
         initialize_graphs()
         if not GRAPHS:
             logger.error("No graphs found in configuration; shutting down")
