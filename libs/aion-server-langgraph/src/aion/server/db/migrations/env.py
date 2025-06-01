@@ -8,7 +8,7 @@ from alembic import context
 from alembic.config import Config
 from sqlalchemy import create_engine
 
-from aion.server.db import get_config
+from aion.server.db import get_config, sqlalchemy_url
 
 # ``alembic.context`` exposes ``config`` only when executed via Alembic's
 # command line utilities. When this module is imported directly (e.g. during
@@ -25,7 +25,7 @@ config.set_main_option("script_location", str(script_location))
 
 cfg = get_config()
 DATABASE_URL = cfg.url if cfg else ""
-config.set_main_option("sqlalchemy.url", DATABASE_URL)
+config.set_main_option("sqlalchemy.url", sqlalchemy_url(DATABASE_URL))
 
 
 def _get_engine() -> "Engine":
@@ -34,8 +34,9 @@ def _get_engine() -> "Engine":
     if not cfg:
         raise RuntimeError("No database configured")
 
-    config.set_main_option("sqlalchemy.url", cfg.url)
-    return create_engine(cfg.url)
+    url = sqlalchemy_url(cfg.url)
+    config.set_main_option("sqlalchemy.url", url)
+    return create_engine(url)
 
 
 def run_migrations() -> None:
@@ -52,7 +53,7 @@ def run_offline_migrations() -> None:
     """Run migrations in offline mode."""
 
     cfg = get_config()
-    url = cfg.url if cfg else ""
+    url = sqlalchemy_url(cfg.url) if cfg else ""
     context.configure(url=url)
     with context.begin_transaction():
         context.run_migrations()

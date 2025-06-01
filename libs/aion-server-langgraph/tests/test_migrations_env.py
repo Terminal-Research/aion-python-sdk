@@ -43,5 +43,5 @@ def test_run_migrations_uses_runtime_env(monkeypatch):
 
     module.run_migrations()
 
-    assert created.get("url") == "postgresql://example"
+    assert created.get("url") == "postgresql+psycopg://example"
     assert created.get("ran")
