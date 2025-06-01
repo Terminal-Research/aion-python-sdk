@@ -11,19 +11,31 @@ from aion.server.langgraph.a2a.tasks import PostgresTaskStore
 
 
 class DummyCursor:
-    def execute(self, *args, **kwargs):
-        pass
+    def __init__(self, row=None, recorder=None):
+        self.row = row
+        self.recorder = recorder if recorder is not None else {}
+
+    def execute(self, sql, params):
+        if isinstance(self.recorder, list):
+            self.recorder.append(sql)
+        else:
+            self.recorder["sql"] = sql
+            self.recorder["params"] = params
+
+    def fetchone(self):
+        return (self.row,) if self.row is not None else None
 
     def close(self):
         pass
 
 
 class DummyConnection:
-    def __init__(self):
+    def __init__(self, cursor=None):
         self.closed = False
+        self._cursor = cursor or DummyCursor()
 
     def cursor(self):
-        return DummyCursor()
+        return self._cursor
 
     def commit(self):
         pass
@@ -59,36 +71,36 @@ def test_test_connection_failure(monkeypatch, caplog):
     assert "Could not connect to Postgres" in caplog.text
 
 
-def test_postgres_task_store_saves(monkeypatch):
+def test_postgres_task_store_methods(monkeypatch):
     task = mock.Mock()
+    task.id = "00000000-0000-0000-0000-000000000000"
     task.contextId = "ctx"
     task.model_dump_json.return_value = "{}"
 
-    recorded = {}
+    sql_log: list[str] = []
+    cursors = [
+        DummyCursor(recorder=sql_log),
+        DummyCursor(row="{}", recorder=sql_log),
+        DummyCursor(recorder=sql_log),
+    ]
 
-    class Cursor:
-        def execute(self, sql, params):
-            recorded["sql"] = sql
-            recorded["params"] = params
-
-        def close(self):
-            pass
-
-    class Conn(DummyConnection):
-        def cursor(self):
-            return Cursor()
+    conns = [DummyConnection(c) for c in cursors]
 
     def fake_connect(url):
-        recorded["dsn"] = url
-        return Conn()
+        assert url == "postgresql://example"
+        return conns.pop(0)
 
     monkeypatch.setenv("POSTGRES_URL", "postgresql://example")
     monkeypatch.setattr("psycopg.connect", fake_connect)
 
     store = PostgresTaskStore()
-    asyncio.run(store.save_task(task))
+    asyncio.run(store.save(task))
+    result = asyncio.run(store.get(task.id))
+    asyncio.run(store.delete(task.id))
 
-    assert recorded["dsn"] == "postgresql://example"
-    assert "INSERT INTO tasks" in recorded["sql"]
+    assert any("INSERT INTO tasks" in s for s in sql_log)
+    assert any("SELECT task FROM tasks" in s for s in sql_log)
+    assert any("DELETE FROM tasks" in s for s in sql_log)
+    assert result is not None
 
 

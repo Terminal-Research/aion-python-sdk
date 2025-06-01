@@ -23,7 +23,13 @@ except Exception:  # pragma: no cover - tests without a2a
     class TaskStore:  # type: ignore
         """Fallback ``TaskStore`` protocol."""
 
-        async def save_task(self, task: Task) -> None:  # pragma: no cover
+        async def save(self, task: Task) -> None:  # pragma: no cover
+            raise NotImplementedError
+
+        async def get(self, task_id: str) -> Task | None:  # pragma: no cover
+            raise NotImplementedError
+
+        async def delete(self, task_id: str) -> None:  # pragma: no cover
             raise NotImplementedError
 
 
@@ -39,10 +45,14 @@ class PostgresTaskStore(TaskStore):
             raise RuntimeError("Postgres DSN is not configured")
         return psycopg.connect(self._dsn)
 
-    async def save_task(self, task: Task) -> None:
+    async def save(self, task: Task) -> None:
         """Persist a ``Task`` to the database."""
+        try:
+            task_id = str(uuid.UUID(task.id))
+        except Exception:
+            task_id = str(uuid.uuid4())
         record = TaskRecord(
-            id=uuid.uuid4(),
+            id=uuid.UUID(task_id),
             context_id=task.contextId,
             task=task,
             created_at=_dt.datetime.utcnow(),
@@ -54,6 +64,10 @@ class PostgresTaskStore(TaskStore):
                     """
                     INSERT INTO tasks (id, context_id, task, created_at, updated_at)
                     VALUES (%s, %s, %s::jsonb, %s, %s)
+                    ON CONFLICT (id) DO UPDATE
+                    SET task = EXCLUDED.task,
+                        context_id = EXCLUDED.context_id,
+                        updated_at = EXCLUDED.updated_at
                     """,
                     (
                         str(record.id),
@@ -64,3 +78,35 @@ class PostgresTaskStore(TaskStore):
                     ),
                 )
                 conn.commit()
+
+    async def get(self, task_id: str) -> Task | None:
+        """Retrieve a task by ID."""
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT task FROM tasks WHERE id = %s",
+                    (str(task_id),),
+                )
+                row = cur.fetchone()
+        if not row:
+            return None
+        data: Any = row[0]
+        if isinstance(data, str):
+            import json
+
+            data = json.loads(data)
+        return Task.model_validate(data)
+
+    async def delete(self, task_id: str) -> None:
+        """Delete a task by ID."""
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM tasks WHERE id = %s",
+                    (str(task_id),),
+                )
+                conn.commit()
+
+    # Backwards compatibility
+    async def save_task(self, task: Task) -> None:  # pragma: no cover - legacy
+        await self.save(task)
