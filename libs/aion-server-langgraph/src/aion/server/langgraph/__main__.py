@@ -38,7 +38,7 @@ def main(host, port):
         if cfg:
             test_connection(cfg.url)
         else:
-            logger.info("POSTGRES_URL environment variable not set")
+            logger.info("POSTGRES_URL environment variable not set, using in-memory data store")
         initialize_graphs()
         if not GRAPHS:
             logger.error("No graphs found in configuration; shutting down")
