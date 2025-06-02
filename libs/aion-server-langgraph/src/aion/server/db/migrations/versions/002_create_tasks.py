@@ -8,9 +8,11 @@ down_revision = "001"
 branch_labels = None
 depends_on = None
 
+logger = logging.getLogger(__name__)
 
 def upgrade() -> None:
     """Create tasks table."""
+    logger.debug("Creating tasks table")
     op.create_table(
         "tasks",
         sa.Column("id", sa.Uuid(), primary_key=True),

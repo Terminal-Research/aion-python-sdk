@@ -8,9 +8,12 @@ down_revision = None
 branch_labels = None
 depends_on = None
 
+logger = logging.getLogger(__name__)
+
 
 def upgrade() -> None:
     """Create threads table."""
+    logger.debug("Creating threads table")
     op.create_table(
         "threads",
         sa.Column("id", sa.Uuid(), primary_key=True),
