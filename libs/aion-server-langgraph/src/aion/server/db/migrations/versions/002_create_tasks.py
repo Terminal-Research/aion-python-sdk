@@ -8,6 +8,7 @@ down_revision = "001"
 branch_labels = None
 depends_on = None
 
+import logging
 logger = logging.getLogger(__name__)
 
 def upgrade() -> None:

@@ -8,6 +8,7 @@ down_revision = None
 branch_labels = None
 depends_on = None
 
+import logging
 logger = logging.getLogger(__name__)
 
 
