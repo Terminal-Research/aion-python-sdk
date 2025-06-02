@@ -53,7 +53,7 @@ def _log_revision_start(
 
 
 def _log_revision_end(
-    ctx: "MigrationContext", step: "MigrationInfo", heads: list
+    ctx: "MigrationContext", step: "MigrationInfo", heads: list, run_args: dict
 ) -> None:
     """Log that a migration finished successfully."""
     logger.debug("Completed migration %s", step.up_revision_id)
