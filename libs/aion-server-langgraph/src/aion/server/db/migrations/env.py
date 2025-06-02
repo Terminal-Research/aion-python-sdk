@@ -88,7 +88,11 @@ def run_offline_migrations() -> None:
         context.run_migrations()
 
 
-if __name__ == "__main__":  # pragma: no cover - CLI invocation
+# When executed via Alembic's command helpers, ``context.config`` will include
+# ``cmd_opts``. Only in that case should this module trigger migrations
+# automatically. Importing this module (e.g. during application startup) should
+# not run migrations on import.
+if getattr(config, "cmd_opts", None):  # pragma: no cover - CLI invocation
     if context.is_offline_mode():
         run_offline_migrations()
     else:
