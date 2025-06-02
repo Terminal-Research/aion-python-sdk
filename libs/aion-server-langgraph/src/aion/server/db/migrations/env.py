@@ -7,7 +7,7 @@ from pathlib import Path
 from alembic import context
 from alembic.config import Config
 from sqlalchemy import create_engine
-from alembic.runtime.migration import MigrationContext
+from alembic.runtime.migration import MigrationContext, MigrationInfo
 import logging
 
 logger = logging.getLogger(__name__)
@@ -53,11 +53,10 @@ def _log_revision_start(
 
 
 def _log_revision_end(
-    context: "MigrationContext", revision: object, directives: list
+    ctx: "MigrationContext", step: "MigrationInfo", heads: list
 ) -> None:
     """Log that a migration finished successfully."""
-    path = getattr(revision, "path", str(revision))
-    logger.debug("Completed migration %s", path)
+    logger.debug("Completed migration %s", step.up_revision_id)
 
 
 def run_migrations() -> None:

@@ -30,7 +30,7 @@ def get_config() -> DatabaseConfig | None:
     return DatabaseConfig(url=url)
 
 # Import utility functions from utils module
-from .utils import test_connection, sqlalchemy_url, test_permissions, create_tables
+from .utils import test_connection, sqlalchemy_url, test_permissions
 
 __all__ = [
     "AION_DB_NAMESPACE",
@@ -39,7 +39,6 @@ __all__ = [
     "sqlalchemy_url",
     "test_connection",
     "test_permissions",
-    "create_tables",
 ]
 
 # Module logger
