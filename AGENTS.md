@@ -13,7 +13,7 @@ This repository is a monorepo containing multiple projects located primarily und
 - **_a2a-template-langgraph** – example implementation of an A2A protocol serving a LangGraph agent.
 - **_agent-workflow** – example implementation of a langgraph project using langgraph_api as a server
 - **aion-agent-cli** – command line interface for the Aion Python SDK exposing the `aion` entry point.
-- **aion-server-langgraph** – example Google A2A server running a LangGraph agent. Includes a Postgres database interface, task store, and Alembic migration helpers.
+- **aion-server-langgraph** – example Google A2A server running a LangGraph agent. Includes a Postgres database interface, task store, and Alembic migration helpers. Graphs are configured via `aion.yaml`.
 
 ## Additional guidelines
 

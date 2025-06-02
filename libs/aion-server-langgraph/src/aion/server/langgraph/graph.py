@@ -5,7 +5,7 @@ from __future__ import annotations
 import importlib
 import importlib.util
 import inspect
-import json
+from typing import Tuple
 import os
 from pathlib import Path
 from types import ModuleType
@@ -116,21 +116,65 @@ def _load_graph(import_str: str, base_dir: Path) -> Any:
     return obj
 
 
-def initialize_graphs(config_path: str | Path = "langgraph.json") -> None:
-    """Load and register graphs declared in ``langgraph.json``.
+def _load_simple_yaml(path: Path) -> Dict[str, Any]:
+    """Load a minimal YAML file.
+
+    The parser only understands indentation based mappings with string values,
+    which is sufficient for the ``aion.yaml`` configuration file.
 
     Args:
-        config_path: Path to the configuration file. Defaults to ``langgraph.json``
+        path: Location of the YAML file.
+
+    Returns:
+        Parsed mapping.
+    """
+
+    with path.open("r", encoding="utf-8") as fh:
+        lines = fh.readlines()
+
+    root: Dict[str, Any] = {}
+    stack: list[Tuple[int, Dict[str, Any]]] = [(0, root)]
+
+    for line in lines:
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+
+        indent = len(line) - len(line.lstrip())
+        key, _, value = line.lstrip().partition(":")
+        key = key.strip()
+        value = value.strip()
+
+        while stack and indent < stack[-1][0]:
+            stack.pop()
+
+        parent = stack[-1][1]
+
+        if value == "":
+            new_dict: Dict[str, Any] = {}
+            parent[key] = new_dict
+            stack.append((indent + 2, new_dict))
+        else:
+            if value.startswith("\"") and value.endswith("\""):
+                value = value[1:-1]
+            parent[key] = value
+
+    return root
+
+
+def initialize_graphs(config_path: str | Path = "aion.yaml") -> None:
+    """Load and register graphs declared in ``aion.yaml``.
+
+    Args:
+        config_path: Path to the configuration file. Defaults to ``aion.yaml``
             in the current working directory.
     """
     path = Path(config_path)
     if not path.is_absolute():
         path = Path(os.getcwd()) / path
     logger.info("Loading graphs from %s", path)
-    with path.open("r", encoding="utf-8") as f:
-        config = json.load(f)
+    config = _load_simple_yaml(path)
 
-    graphs_cfg = config.get("graphs", {})
+    graphs_cfg = config.get("aion", {}).get("graph", {})
     if not graphs_cfg:
         logger.warning("No graphs configured in %s", path)
     base_dir = path.parent
