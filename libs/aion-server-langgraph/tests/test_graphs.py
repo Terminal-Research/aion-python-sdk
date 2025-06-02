@@ -1,4 +1,3 @@
-import json
 import os
 from pathlib import Path
 
@@ -26,12 +25,12 @@ def create_graph():
 """
     )
 
-    config = {
-        "graphs": {
-            "example_graph": "./src/path/to/your/module.py:create_graph"
-        }
-    }
-    (tmp_path / "langgraph.json").write_text(json.dumps(config))
+    config = (
+        "aion:\n"
+        "  graph:\n"
+        "    example_graph: \"./src/path/to/your/module.py:create_graph\"\n"
+    )
+    (tmp_path / "aion.yaml").write_text(config)
 
     cwd = os.getcwd()
     os.chdir(tmp_path)

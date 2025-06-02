@@ -1,4 +1,3 @@
-import json
 import os
 from pathlib import Path
 
@@ -8,7 +7,7 @@ pytest.importorskip("pydantic")
 pytest.importorskip("a2a")
 
 from aion.server.langgraph.a2a.agent import LanggraphAgent
-from aion.server.langgraph.graph import GRAPHS
+from aion.server.langgraph.graph import GRAPHS, initialize_graphs
 
 
 def test_langgraph_agent_uses_first_registered_graph(tmp_path: Path) -> None:
@@ -22,12 +21,17 @@ def create() -> DummyGraph:
     return DummyGraph()
 """
     )
-    config = {"graphs": {"g1": "./mod.py:create"}}
-    cfg_path = tmp_path / "langgraph.json"
-    cfg_path.write_text(json.dumps(config))
+    config = (
+        "aion:\n"
+        "  graph:\n"
+        "    g1: \"./mod.py:create\"\n"
+    )
+    cfg_path = tmp_path / "aion.yaml"
+    cfg_path.write_text(config)
     cwd = os.getcwd()
     os.chdir(tmp_path)
     try:
+        initialize_graphs()
         agent = LanggraphAgent(graph=GRAPHS["g1"])
         assert agent.graph is GRAPHS["g1"]
     finally:
@@ -35,11 +39,12 @@ def create() -> DummyGraph:
 
 
 def test_langgraph_agent_no_graphs(tmp_path: Path) -> None:
-    cfg_path = tmp_path / "langgraph.json"
-    cfg_path.write_text(json.dumps({"graphs": {}}))
+    cfg_path = tmp_path / "aion.yaml"
+    cfg_path.write_text("aion:\n  graph: {}\n")
     cwd = os.getcwd()
     os.chdir(tmp_path)
     try:
+        initialize_graphs()
         with pytest.raises(SystemExit):
             LanggraphAgent(graph=None)
     finally:

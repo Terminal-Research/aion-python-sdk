@@ -10,5 +10,5 @@ It also provides a ``logging`` module mirroring the colorful output used by
 configures the root logger with a console handler so CLI tools immediately
 produce log output.
 
-Graphs are registered based on a ``langgraph.json`` file located in your project
-root. See ``langgraph.json.example`` for the expected format.
+Graphs are registered based on an ``aion.yaml`` file located in your project
+root. See ``aion.yaml.example`` for the expected format.
