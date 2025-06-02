@@ -54,7 +54,22 @@ def test_connection(url: str) -> bool:
     try:
         conn = psycopg.connect(url)
         conn.close()
-        logger.info("Successfully connected to Postgres")
+        # Parse connection info for more helpful logging
+        try:
+            from urllib.parse import urlparse
+
+            parsed = urlparse(url)
+            host = parsed.hostname or ""
+            port = f":{parsed.port}" if parsed.port else ""
+            dbname = parsed.path.lstrip("/") if parsed.path else ""
+            dbpart = f"/{dbname}" if dbname else ""
+            details = f"{host}{port}{dbpart}" if (host or dbpart) else ""
+        except Exception:
+            details = ""
+        if details:
+            logger.info("Successfully connected to Postgres at %s", details)
+        else:
+            logger.info("Successfully connected to Postgres")
         return True
     except Exception as exc:  # pragma: no cover - connection failures
         logger.error("Could not connect to Postgres: %s", exc)
