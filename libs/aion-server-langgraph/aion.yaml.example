@@ -1,0 +1,28 @@
+aion:
+  # Required. Array of dependencies for LangGraph Platform API server. 
+  # Dependencies can be one of the following:
+  #
+  # - A single period ("."), which will look for local Python packages.
+  # - The directory path where pyproject.toml is located. For example, 
+  #   if pyproject.toml is located in the root of the project directory, 
+  #   specify "./". If it's located in a subdirectory called local_package, 
+  #   specify "./local_package". Do not specify the string "pyproject.toml" itself.
+  # - A Python package name.
+  dependencies:
+    src: "./src"
+  # Required. Mapping from graph ID to path where the compiled graph or a
+  # function that makes a graph is defined. Example:
+  #
+  # - ./your_package/your_file.py:variable, where variable is an instance
+  #   of langgraph.graph.state.CompiledStateGraph
+  # - ./your_package/your_file.py:make_graph, where make_graph is a function
+  #   that takes a config dictionary (langchain_core.runnables.RunnableConfig)
+  #   and returns an instance of langgraph.graph.state.StateGraph or
+  #   langgraph.graph.state.CompiledStateGraph. See how to rebuild a graph at
+  #       runtime for more details.
+  graph:
+    workflow_builder: "./src/aion/agent/workflow/graphs/graph.py:app"
+  # Optional. Path to .env file or a mapping from environment variable to its value.
+  # Values in this file will override values provided by Deployment Environment
+  # variables provided by Aion Cloud.
+  env: "./.env"
