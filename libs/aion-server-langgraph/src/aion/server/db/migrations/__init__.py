@@ -10,9 +10,21 @@ __all__ = ["upgrade_to_head"]
 
 
 def upgrade_to_head() -> None:
-    """Upgrade the database schema to the latest revision.
-
-    This function delegates to :func:`alembic.command.upgrade` using the
-    configuration defined in :mod:`aion.server.db.migrations.env`.
-    """
-    command.upgrade(config, "head")
+    """Upgrade the database schema to the latest revision."""
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    try:
+        logger.info("Starting database migrations to head")
+        # See what versions Alembic thinks are available
+        from alembic import script
+        script_directory = script.ScriptDirectory.from_config(config)
+        revisions = list(script_directory.walk_revisions())
+        logger.info(f"Available revisions: {[rev.revision for rev in revisions]}")
+        
+        # Try to run the migrations
+        command.upgrade(config, "head")
+        logger.info("Database migrations completed successfully")
+    except Exception as e:
+        logger.error(f"Database migration failed: {e}", exc_info=True)
+        raise
