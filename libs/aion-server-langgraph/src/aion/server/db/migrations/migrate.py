@@ -70,12 +70,6 @@ def _fail_if_no_permissions():
         logger.error(f"Current database: {permissions['current_database']}")
         sys.exit(1)
         
-    # Log permission status
-    logger.info(f"Database user: {permissions['user_info']['current_user'] if permissions['user_info'] else 'Unknown'}")
-    logger.info(f"Database: {permissions['current_database']}")
-    logger.info(f"Can create tables: {permissions['can_create_table']}")
-    logger.info(f"Can create schema: {permissions['can_create_schema']}")
-    
     # Schema permissions are not critical, just log a warning
     if not permissions['can_create_schema']:
         logger.warning("User cannot create schemas - this may limit some migration capabilities")
