@@ -65,7 +65,7 @@ def main(host, port):
                 'OPENROUTER_API_KEY environment variable not set.'
             )
 
-        capabilities = AgentCapabilities(streaming=True, pushNotifications=True)
+        capabilities = AgentCapabilities(streaming=True, pushNotifications=False)
         skill = AgentSkill(
             id='convert_currency',
             name='Currency Exchange Rates Tool',
@@ -86,6 +86,7 @@ def main(host, port):
 
         if has_db:
             task_store = PostgresTaskStore()
+            logger.debug("Using PostgresTaskStore")
             if PostgresCheckpoint:
                 try:
                     checkpoint = PostgresCheckpoint(
@@ -97,6 +98,7 @@ def main(host, port):
                     logger.error("Failed to configure PostgresCheckpoint: %s", exc)
         else:
             task_store = InMemoryTaskStore()
+            logger.debug("Using InMemoryTaskStore")
 
         # --8<-- [start:DefaultRequestHandler]
         httpx_client = httpx.AsyncClient()
