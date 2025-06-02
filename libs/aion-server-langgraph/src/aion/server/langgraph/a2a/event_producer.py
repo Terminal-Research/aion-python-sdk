@@ -49,17 +49,31 @@ class LanggraphA2AEventProducer:
         )
         
     def _handle_complete(self, event: StateSnapshot):
+        last_message_parts = None
         if event.values and len(event.values["messages"]):
             last_message = event.values["messages"][-1]
             if last_message and isinstance(last_message, AIMessage):
+                last_message_parts = [Part(root=TextPart(text=last_message.content))]
                 self.updater.add_artifact(
-                    parts=[Part(root=TextPart(text=last_message.content))],
+                    parts=last_message_parts,
                     artifact_id=str(uuid.uuid4()),
                     name=self.ARTIFACT_NAME_MESSAGE_RESULT,
                     append=False,
                     last_chunk=True,
                 )
-        self.updater.complete()
+                
+        if last_message_parts:
+            self.updater.complete(
+                message=Message(
+                    contextId=self.task.contextId,
+                    taskId=self.task.id,
+                    messageId=str(uuid.uuid4()),
+                    role=Role.agent,
+                    parts=last_message_parts
+                ),
+            )
+        else:
+            self.updater.complete()
 
     def _handle_interrupt(self, interrupts: Sequence[Interrupt]):
         if len(interrupts):
