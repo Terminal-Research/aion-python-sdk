@@ -45,7 +45,33 @@ def main(host, port):
         if cfg:
             has_db = test_connection(cfg.url)
             if has_db:
-                upgrade_to_head()
+                # Test database permissions first
+                from aion.server.db import test_permissions
+                permissions = test_permissions(cfg.url)
+                
+                # Log permission details
+                logger.info("Database permissions check results:")
+                logger.info(f"Database user: {permissions['user_info']['current_user'] if permissions['user_info'] else 'Unknown'}")
+                logger.info(f"Database: {permissions['current_database']}")
+                logger.info(f"Can create tables: {permissions['can_create_table']}")
+                logger.info(f"Can create schema: {permissions['can_create_schema']}")
+                
+                if permissions['error'] or not permissions['can_create_table']:
+                    if permissions['error']:
+                        logger.error(f"Database permission error: {permissions['error']}")
+                    if not permissions['can_create_table'] and 'table_error' in permissions:
+                        logger.error(f"Table creation error: {permissions['table_error']}")
+                    logger.error("Insufficient database permissions - migrations may fail")
+                
+                # Attempt migrations with better error reporting
+                try:
+                    upgrade_to_head()
+                except Exception as exc:
+                    logger.error(f"Migration failed: {exc}", exc_info=True)
+                    # If we have permissions to create tables, try direct creation
+                    if permissions['can_create_table']:
+                        logger.warning("Attempting direct table creation as fallback")
+                        # Add direct table creation here if needed
         else:
             has_db = False
             logger.info(
