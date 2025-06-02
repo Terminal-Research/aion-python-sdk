@@ -37,6 +37,7 @@ __all__ = [
     "sqlalchemy_url",
     "test_connection",
     "test_permissions",
+    "create_tables",
 ]
 
 # Module logger
