@@ -44,15 +44,24 @@ def _log_migrations():
     logger.debug(f"Available revisions: {[rev.revision for rev in revisions]}")
         
 def _fail_if_no_permissions():
-    # Test database permissions
-    from sqlalchemy import create_engine, URL
-    from sqlalchemy.engine.url import make_url
+    """Test database permissions and fail if insufficient for migrations.
+    
+    This function checks if the current database user has permissions to create tables.
+    If not, it logs an error and exits the process.
+    """
+    # Get connection URL from Alembic config
     conn_url = str(config.get_main_option("sqlalchemy.url"))
     
-    # Check permissions before attempting migrations
-    logger.debug(f"Testing database permissions before migrations")
+    # Check permissions
+    logger.debug("Testing database permissions before migrations")
     permissions = test_permissions(conn_url)
     
+    if not permissions['can_connect']:
+        logger.error("Cannot connect to database")
+        if permissions['error']:
+            logger.error(f"Connection error: {permissions['error']}")
+        sys.exit(1)
+        
     if not permissions['can_create_table']:
         error_msg = "Insufficient database permissions to create tables"
         if 'table_error' in permissions:
@@ -62,4 +71,14 @@ def _fail_if_no_permissions():
         logger.error(f"Current user: {permissions['user_info']['current_user'] if permissions['user_info'] else 'Unknown'}")
         logger.error(f"Current database: {permissions['current_database']}")
         sys.exit(1)
+        
+    # Log permission status
+    logger.info(f"Database user: {permissions['user_info']['current_user'] if permissions['user_info'] else 'Unknown'}")
+    logger.info(f"Database: {permissions['current_database']}")
+    logger.info(f"Can create tables: {permissions['can_create_table']}")
+    logger.info(f"Can create schema: {permissions['can_create_schema']}")
+    
+    # Schema permissions are not critical, just log a warning
+    if not permissions['can_create_schema']:
+        logger.warning("User cannot create schemas - this may limit some migration capabilities")
 

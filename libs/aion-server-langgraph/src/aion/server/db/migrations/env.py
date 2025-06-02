@@ -27,6 +27,7 @@ config.set_main_option("script_location", str(script_location))
 
 cfg = get_config()
 DATABASE_URL = cfg.url if cfg else ""
+logger.debug("Using SQLAlchemy database URL: %s", DATABASE_URL)
 config.set_main_option("sqlalchemy.url", sqlalchemy_url(DATABASE_URL))
 
 # Module logger
