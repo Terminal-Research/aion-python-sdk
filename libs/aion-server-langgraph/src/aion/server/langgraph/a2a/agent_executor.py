@@ -49,7 +49,6 @@ class LanggraphAgentExecutor(AgentExecutor):
             task = new_task(context.message)
             event_queue.enqueue_event(task)
             
-        updater = AionTaskUpdater(event_queue, task.id, task.contextId) 
         event_producer = LanggraphA2AEventProducer(event_queue, task)
         firstLoop = True
                 
