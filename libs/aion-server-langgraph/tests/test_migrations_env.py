@@ -90,3 +90,24 @@ def test_run_migrations_logs_steps(monkeypatch, caplog):
 
     assert "Running migration foo.py" in caplog.text
     assert "Completed migration foo.py" in caplog.text
+
+
+def test_upgrade_to_head_sets_cmd_opts(monkeypatch):
+    """Ensure ``upgrade_to_head`` populates ``config.cmd_opts``."""
+
+    module = importlib.import_module("aion.server.db.migrations")
+    importlib.reload(module)
+
+    monkeypatch.setenv("POSTGRES_URL", "postgresql://example")
+    monkeypatch.setattr(module, "test_permissions", lambda url: {"can_create_table": True})
+
+    recorded = {}
+
+    def fake_upgrade(cfg, revision):
+        recorded["cmd_opts"] = getattr(cfg, "cmd_opts", None)
+
+    monkeypatch.setattr(module.command, "upgrade", fake_upgrade)
+
+    module.upgrade_to_head()
+
+    assert recorded.get("cmd_opts") is not None
