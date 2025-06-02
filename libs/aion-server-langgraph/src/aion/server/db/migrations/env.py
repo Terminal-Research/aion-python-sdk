@@ -10,6 +10,8 @@ from sqlalchemy import create_engine
 from alembic.runtime.migration import MigrationContext
 import logging
 
+logger = logging.getLogger(__name__)
+
 from aion.server.db import get_config, sqlalchemy_url
 
 # ``alembic.context`` exposes ``config`` only when executed via Alembic's
@@ -29,9 +31,6 @@ cfg = get_config()
 DATABASE_URL = cfg.url if cfg else ""
 logger.debug("Using SQLAlchemy database URL: %s", DATABASE_URL)
 config.set_main_option("sqlalchemy.url", sqlalchemy_url(DATABASE_URL))
-
-# Module logger
-logger = logging.getLogger(__name__)
 
 
 def _get_engine() -> "Engine":
