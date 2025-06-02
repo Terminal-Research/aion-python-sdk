@@ -21,6 +21,14 @@ def upgrade_to_head() -> None:
     
     try:
         logger.debug("Starting database migrations to head")
+        # ``alembic.command`` only runs migrations when ``config.cmd_opts`` is
+        # present. When invoked programmatically this attribute is missing, so
+        # ensure it exists before calling ``upgrade``.
+        if not getattr(config, "cmd_opts", None):
+            from types import SimpleNamespace
+
+            config.cmd_opts = SimpleNamespace()
+
         # Try to run the migrations
         command.upgrade(config, "head")
         logger.debug("Database migrations completed successfully")
