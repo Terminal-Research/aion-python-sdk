@@ -1,4 +1,5 @@
 import importlib
+import logging
 from unittest import mock
 import pytest
 
@@ -6,7 +7,7 @@ pytest.importorskip("pydantic")
 pytest.importorskip("a2a")
 
 
-def test_main_runs_migrations(monkeypatch):
+def test_main_runs_migrations(monkeypatch, caplog):
     monkeypatch.setenv("POSTGRES_URL", "postgresql://example")
     monkeypatch.setenv("OPENROUTER_API_KEY", "key")
     module = importlib.import_module("aion.server.langgraph.__main__")
@@ -22,5 +23,8 @@ def test_main_runs_migrations(monkeypatch):
     monkeypatch.setattr(module, "httpx", mock.Mock(AsyncClient=lambda: mock.Mock()))
     monkeypatch.setattr(module, "uvicorn", mock.Mock(run=lambda app, host, port: None))
 
-    module.main.callback(host="localhost", port=10000)
+    with caplog.at_level(logging.DEBUG):
+        module.main.callback(host="localhost", port=10000)
     assert called.get("ran")
+    assert "Running database migrations" in caplog.text
+    assert "Database migrations completed" in caplog.text

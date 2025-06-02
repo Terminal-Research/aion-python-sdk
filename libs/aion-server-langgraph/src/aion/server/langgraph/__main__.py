@@ -45,8 +45,10 @@ def main(host, port):
         if cfg:
             has_db = test_connection(cfg.url)
             if has_db:
+                logger.debug("Running database migrations")
                 try:
                     upgrade_to_head()
+                    logger.debug("Database migrations completed")
                 except Exception as exc:  # pragma: no cover - migration failure
                     logger.error("Failed to run migrations: %s", exc)
         else:

@@ -56,7 +56,7 @@ def test_test_connection_success(monkeypatch, caplog):
     with caplog.at_level(logging.INFO):
         assert test_connection("postgresql://example")
     assert conn.closed
-    assert "Successfully connected to Postgres" in caplog.text
+    assert "Successfully connected to Postgres at example" in caplog.text
 
 
 def test_test_connection_failure(monkeypatch, caplog):
