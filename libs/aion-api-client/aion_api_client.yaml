@@ -1,0 +1,19 @@
+default:
+  debug: true
+  aion_api:
+    host: api.aion.to
+    port: 80
+    keepalive: 60
+  logging:
+    level: INFO
+    file: aion-api-client.log
+
+production:
+  debug: false
+  aion_api:
+    host: api.aion.to
+    port: 80
+    keepalive: 60
+  logging:
+    level: WARNING
+    file: /var/log/aion/aion-api-client.log
