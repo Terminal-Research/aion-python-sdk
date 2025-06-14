@@ -1,0 +1,23 @@
+[tool.poetry]
+name = "aion-api-client"
+version = "0.1.0"
+description = "Websocket GraphQL client for the Aion API"
+authors = ["Terminal Research Team <support@terminal.exchange>"]
+homepage = "https://github.com/Terminal-Research/aion-python-sdk"
+readme = "README.md"
+packages = [{ include = "aion", from = "src" }]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+dynaconf = "^3.2.5"
+gql = "^3.5.0"
+ariadne-codegen = "^0.7.0"
+PyJWT = "^2.8.0"
+httpx = "^0.28.1"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
