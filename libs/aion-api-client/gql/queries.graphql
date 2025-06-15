@@ -1,5 +1,6 @@
-subscription ChatCompletions($request: ChatCompletionRequest!) {
-  chatCompletionStream(request: $request) {
+subscription ChatCompletionStream($model: String!, $messages: [MessageInput!]!, $stream: Boolean!) {
+  chatCompletionStream(model: $model, messages: $messages, stream: $stream) {
+    __typename
     ... on ChatCompletionStreamResponseChunk {
       response {
         id
@@ -11,15 +12,15 @@ subscription ChatCompletions($request: ChatCompletionRequest!) {
             role
             content
           }
-          finishReason
+          finish_reason
         }
       }
     }
+    ... on ChatCompletionStreamComplete {
+      __typename
+    }
     ... on ChatCompletionStreamError {
       message
-    }
-    ... on ChatCompletionStreamComplete {
-      done
     }
   }
 }
