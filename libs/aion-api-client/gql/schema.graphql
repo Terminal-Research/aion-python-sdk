@@ -8,8 +8,14 @@ directive @defer(if: Boolean, label: String) on FRAGMENT_SPREAD | INLINE_FRAGMEN
 schema {
   query: Queries
   mutation: Mutations
+  subscription: Subscriptions
 }
 scalar Json
+scalar Long
+
+union ChatCompletionStreamChunk = ChatCompletionStreamComplete | ChatCompletionStreamError | ChatCompletionStreamResponseChunk
+
+union JSONRPCResponse = JSONRPCErrorResponse | JSONRPCSuccessResponse
 
 enum AgentBehaviorDeploymentType {
   Aion
@@ -51,6 +57,18 @@ enum VersionStatus {
   Queued
 }
 
+input JSONRPCRequestInput {
+  jsonrpc: String!
+  method: String!
+  params: Json
+  id: Json
+}
+
+input MessageInput {
+  role: String!
+  content: String!
+}
+
 type AgentBehavior {
   id: ID!
   userId: ID!
@@ -80,6 +98,32 @@ type AgentIdentity {
   backgroundImageUrl: String
 }
 
+type ChatCompletionStreamChoice {
+  index: Int!
+  delta: Delta!
+  finish_reason: String
+}
+
+type ChatCompletionStreamComplete {
+  "Fake field because GraphQL does not support empty objects. Do not query, use __typename instead."
+  _: Boolean
+}
+
+type ChatCompletionStreamError {
+  message: String!
+}
+
+type ChatCompletionStreamResponse {
+  id: String!
+  created: Long!
+  model: String!
+  choices: [ChatCompletionStreamChoice!]!
+}
+
+type ChatCompletionStreamResponseChunk {
+  response: ChatCompletionStreamResponse!
+}
+
 type ClientSecret {
   clientId: String!
   secret: String!
@@ -101,6 +145,11 @@ type CreateLocalDeploymentResponse {
   clientSecret: ClientSecret!
 }
 
+type Delta {
+  role: String
+  content: String
+}
+
 type Deployment {
   id: ID!
   organizationId: ID
@@ -118,6 +167,22 @@ type DeploymentEnvironment {
   name: String!
   branch: String
   environmentVariables: [KVStringString!]!
+}
+
+type JSONRPCError {
+  code: Int!
+  message: String!
+  data: Json
+}
+
+type JSONRPCErrorResponse {
+  id: Json
+  error: JSONRPCError!
+}
+
+type JSONRPCSuccessResponse {
+  id: Json!
+  result: Json!
 }
 
 "A key-value pair of String and String"
@@ -142,7 +207,7 @@ type Mutations {
   updateAgentIdentity(agentIdentityId: ID!, atName: String, biography: String, avatarImageUrl: String, backgroundImageUrl: String): AgentIdentity @auth(subjectType: "User")
   updateAgentEnvironment(agentEnvironmentId: ID!, name: String, configurationVariables: Json, useLongTermMemory: Boolean, systemPrompt: String): AgentEnvironment @auth(subjectType: "User")
   createLocalDeployment(name: String!, serverUrl: String!): CreateLocalDeploymentResponse
-  a2aSend(request: Json!, distributionId: ID!): A2AGQLResponse @auth(subjectType: "User")
+  a2aSend(request: JSONRPCRequestInput!, distributionId: ID!): JSONRPCResponse @auth(subjectType: "User")
 }
 
 type Queries {
@@ -166,8 +231,8 @@ type Queries {
 }
 
 type Subscriptions {
-  a2aStream(request: Json!, distributionId: ID!): Json @auth(subjectType: "User")
-  chatCompletionStream(request: ChatCompletionRequest!): ChatCompletionStreamChunk @auth(subjectType: "User")
+  a2aStream(request: JSONRPCRequestInput!, distributionId: ID!): JSONRPCResponse @auth(subjectType: "User")
+  chatCompletionStream(model: String!, messages: [MessageInput!]!, stream: Boolean!): ChatCompletionStreamChunk @auth(subjectType: "Version")
 }
 
 type User {
@@ -193,48 +258,3 @@ type Version {
   status: VersionStatus!
   serverUrl: String
 }
-
-"Role/content message used in chat completion requests."
-input MessageInput {
-  role: String!
-  content: String!
-}
-
-"Request payload for chat completion."
-input ChatCompletionRequest {
-  model: String!
-  messages: [MessageInput!]!
-  stream: Boolean
-}
-
-type Delta {
-  role: String
-  content: String
-}
-
-type ChatCompletionStreamChoice {
-  index: Int!
-  delta: Delta!
-  finishReason: String
-}
-
-type ChatCompletionStreamResponse {
-  id: String!
-  created: Float!
-  model: String!
-  choices: [ChatCompletionStreamChoice!]!
-}
-
-type ChatCompletionStreamResponseChunk {
-  response: ChatCompletionStreamResponse!
-}
-
-type ChatCompletionStreamError {
-  message: String!
-}
-
-type ChatCompletionStreamComplete {
-  done: Boolean!
-}
-
-union ChatCompletionStreamChunk = ChatCompletionStreamResponseChunk | ChatCompletionStreamError | ChatCompletionStreamComplete

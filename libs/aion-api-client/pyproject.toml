@@ -11,11 +11,11 @@ packages = [{ include = "aion", from = "src" }]
 python = "^3.11"
 dynaconf = "^3.2.5"
 gql = "^3.5.0"
-ariadne-codegen = {version = "^0.7.0", extras = ["subscriptions"]}
+ariadne-codegen = {version = "^0.14.0", extras = ["subscriptions"]}
 PyJWT = "^2.8.0"
 httpx = "^0.28.1"
 pydantic = "^2.10.6"
-websockets = "^12.0"
+websockets = "^11.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"
