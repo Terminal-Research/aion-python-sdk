@@ -13,7 +13,7 @@ schema {
 scalar Json
 scalar Long
 
-union ChatCompletionStreamChunk = ChatCompletionStreamComplete | ChatCompletionStreamError | ChatCompletionStreamResponseChunk
+union ChatCompletionStreamChunk = ChatCompletionStreamError | ChatCompletionStreamResponseChunk
 
 union JSONRPCResponse = JSONRPCErrorResponse | JSONRPCSuccessResponse
 
@@ -102,11 +102,6 @@ type ChatCompletionStreamChoice {
   index: Int!
   delta: Delta!
   finish_reason: String
-}
-
-type ChatCompletionStreamComplete {
-  "Fake field because GraphQL does not support empty objects. Do not query, use __typename instead."
-  _: Boolean
 }
 
 type ChatCompletionStreamError {
