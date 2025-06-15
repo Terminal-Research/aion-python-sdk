@@ -1,5 +1,0 @@
-# Example GraphQL schema used for ariadne-codegen
-
-type Query {
-  _empty: String
-}
