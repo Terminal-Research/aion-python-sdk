@@ -1,0 +1,240 @@
+"Describes API authentication requirements."
+directive @auth("which authenticated subjects have access"
+subjectType: String, "which roles have access"
+roles: [String]) on QUERY | MUTATION
+"Marks a fragment as being optionally deferrable. Allowing the backend to split the query and return non-deferred parts first. This implicitly uses a streaming transport protocol which requires client support."
+directive @defer(if: Boolean, label: String) on FRAGMENT_SPREAD | INLINE_FRAGMENT
+
+schema {
+  query: Queries
+  mutation: Mutations
+}
+scalar Json
+
+enum AgentBehaviorDeploymentType {
+  Aion
+  LangGraph
+}
+
+enum AgentIdentityType {
+  Deployed
+  Personal
+}
+
+enum DeploymentType {
+  GitHub
+  Local
+}
+
+enum Privacy {
+  Private
+  Public
+}
+
+enum SubjectType {
+  User
+  Version
+}
+
+enum UserNetworkType {
+  Aion
+  Telegram
+}
+
+enum VersionStatus {
+  Building
+  Cancelled
+  Error
+  Offline
+  Online
+  Provisioning
+  Queued
+}
+
+type AgentBehavior {
+  id: ID!
+  userId: ID!
+  deploymentType: AgentBehaviorDeploymentType!
+  deploymentId: ID
+  versionId: ID
+  langgraphAssistantId: String
+}
+
+type AgentEnvironment {
+  id: ID!
+  userId: ID!
+  name: String!
+  configurationVariables: [KVStringString!]!
+  useLongTermMemory: Boolean!
+  systemPrompt: String!
+}
+
+type AgentIdentity {
+  id: ID!
+  agentType: AgentIdentityType!
+  userId: ID
+  organizationId: ID
+  atName: String
+  biography: String
+  avatarImageUrl: String
+  backgroundImageUrl: String
+}
+
+type ClientSecret {
+  clientId: String!
+  secret: String!
+}
+
+type ClientSecretHash {
+  id: ID!
+  clientId: ID!
+  secretHash: String!
+  subjectType: SubjectType!
+  subjectId: ID!
+}
+
+type CreateLocalDeploymentResponse {
+  deployment: Deployment!
+  environment: DeploymentEnvironment!
+  version: Version!
+  clientSecretHash: ClientSecretHash!
+  clientSecret: ClientSecret!
+}
+
+type Deployment {
+  id: ID!
+  organizationId: ID
+  userId: ID
+  repositoryId: ID
+  name: String!
+  deploymentType: DeploymentType!
+  sourceRoot: String
+  hasAutoVersionEnabled: Boolean!
+}
+
+type DeploymentEnvironment {
+  id: ID!
+  deploymentId: ID!
+  name: String!
+  branch: String
+  environmentVariables: [KVStringString!]!
+}
+
+"A key-value pair of String and String"
+type KVStringString {
+  "Key"
+  key: String!
+  "Value"
+  value: String!
+}
+
+type MemorySpace {
+  id: ID!
+  name: String!
+  description: String
+  instructions: String
+  owner: AgentIdentity!
+  privacy: Privacy!
+  sharedWith: [AgentIdentity!]!
+}
+
+type Mutations {
+  updateAgentIdentity(agentIdentityId: ID!, atName: String, biography: String, avatarImageUrl: String, backgroundImageUrl: String): AgentIdentity @auth(subjectType: "User")
+  updateAgentEnvironment(agentEnvironmentId: ID!, name: String, configurationVariables: Json, useLongTermMemory: Boolean, systemPrompt: String): AgentEnvironment @auth(subjectType: "User")
+  createLocalDeployment(name: String!, serverUrl: String!): CreateLocalDeploymentResponse
+  a2aSend(request: Json!, distributionId: ID!): A2AGQLResponse @auth(subjectType: "User")
+}
+
+type Queries {
+  user(userId: ID!): User
+  memorySpaces: [MemorySpace!]
+  "Retrieves a list of all agent identities available to the authenticated user."
+  agentIdentities: [AgentIdentity!]
+  agentIdentity(agentIdentityId: ID!): AgentIdentity @auth(subjectType: "User")
+  "Retrieves a list of agent behaviors for a specific user."
+  agentBehaviors: [AgentBehavior!] @auth(subjectType: "User")
+  "Retrieves a specific agent behavior by its ID for the authenticated user."
+  agentBehavior(agentBehaviorId: ID!): AgentBehavior @auth(subjectType: "User")
+  "Retrieves a list of agent environments for a specific user."
+  agentEnvironments: [AgentEnvironment!] @auth(subjectType: "User")
+  "Retrieves a specific agent environment by its ID for the authenticated user."
+  agentEnvironment(agentEnvironmentId: ID!): AgentEnvironment @auth(subjectType: "User")
+  "Retrieves a list of deployments for a specific user."
+  deployments: [Deployment!] @auth(subjectType: "User")
+  "Retrieves a specific deployment by its ID for the authenticated user."
+  deployment(deploymentId: ID!): Deployment @auth(subjectType: "User")
+}
+
+type Subscriptions {
+  a2aStream(request: Json!, distributionId: ID!): Json @auth(subjectType: "User")
+  chatCompletionStream(request: ChatCompletionRequest!): ChatCompletionStreamChunk @auth(subjectType: "User")
+}
+
+type User {
+  id: ID!
+  authId: String!
+  atName: String
+  name: String
+  avatarUrl: String
+  networks: [UserNetwork!]
+}
+
+type UserNetwork {
+  network: UserNetworkType!
+}
+
+type Version {
+  id: ID!
+  deploymentId: ID!
+  environmentId: ID
+  commitHash: String
+  commitMessage: String
+  isManual: Boolean!
+  status: VersionStatus!
+  serverUrl: String
+}
+
+"Role/content message used in chat completion requests."
+input MessageInput {
+  role: String!
+  content: String!
+}
+
+"Request payload for chat completion."
+input ChatCompletionRequest {
+  model: String!
+  messages: [MessageInput!]!
+  stream: Boolean
+}
+
+type Delta {
+  role: String
+  content: String
+}
+
+type ChatCompletionStreamChoice {
+  index: Int!
+  delta: Delta!
+  finishReason: String
+}
+
+type ChatCompletionStreamResponse {
+  id: String!
+  created: Float!
+  model: String!
+  choices: [ChatCompletionStreamChoice!]!
+}
+
+type ChatCompletionStreamResponseChunk {
+  response: ChatCompletionStreamResponse!
+}
+
+type ChatCompletionStreamError {
+  message: String!
+}
+
+type ChatCompletionStreamComplete {
+  done: Boolean!
+}
+
+union ChatCompletionStreamChunk = ChatCompletionStreamResponseChunk | ChatCompletionStreamError | ChatCompletionStreamComplete
