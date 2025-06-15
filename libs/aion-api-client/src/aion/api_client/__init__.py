@@ -1,6 +1,6 @@
-"""Websocket GraphQL client for the Aion API."""
+"""High level API client for the Aion API."""
 
-from .client import AionApiClient
+from .client import ApiClient
 from .settings import settings
 
-__all__ = ["AionApiClient", "settings"]
+__all__ = ["ApiClient", "settings"]
