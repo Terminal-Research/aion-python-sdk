@@ -21,3 +21,9 @@ cd libs/aion-api-client
 poetry install
 poetry run pytest
 ```
+
+To regenerate the Python classes for the GraphQL API run:
+
+```bash
+poetry run ariadne-codegen gql/schema.graphql --output src/aion/gql/generated
+```
