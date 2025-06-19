@@ -21,6 +21,7 @@ SQLAlchemy = "^2.0"
 
 langgraph = "^0.3.9"
 langchain-openai = "^0.3.9"
+PyYAML = "^6.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"
