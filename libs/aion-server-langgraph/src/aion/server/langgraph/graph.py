@@ -12,6 +12,8 @@ from types import ModuleType
 from typing import Any, Dict
 import logging
 
+import yaml
+
 logger = logging.getLogger(__name__)
 
 # LangGraph is optional in this environment. Define minimal stubs if the package
@@ -117,10 +119,7 @@ def _load_graph(import_str: str, base_dir: Path) -> Any:
 
 
 def _load_simple_yaml(path: Path) -> Dict[str, Any]:
-    """Load a minimal YAML file.
-
-    The parser only understands indentation based mappings with string values,
-    which is sufficient for the ``aion.yaml`` configuration file.
+    """Load a YAML file using PyYAML.
 
     Args:
         path: Location of the YAML file.
@@ -130,35 +129,12 @@ def _load_simple_yaml(path: Path) -> Dict[str, Any]:
     """
 
     with path.open("r", encoding="utf-8") as fh:
-        lines = fh.readlines()
+        data = yaml.safe_load(fh)
 
-    root: Dict[str, Any] = {}
-    stack: list[Tuple[int, Dict[str, Any]]] = [(0, root)]
+    if not isinstance(data, dict):
+        raise ValueError("Configuration file must contain a mapping at the root")
 
-    for line in lines:
-        if not line.strip() or line.lstrip().startswith("#"):
-            continue
-
-        indent = len(line) - len(line.lstrip())
-        key, _, value = line.lstrip().partition(":")
-        key = key.strip()
-        value = value.strip()
-
-        while stack and indent < stack[-1][0]:
-            stack.pop()
-
-        parent = stack[-1][1]
-
-        if value == "":
-            new_dict: Dict[str, Any] = {}
-            parent[key] = new_dict
-            stack.append((indent + 2, new_dict))
-        else:
-            if value.startswith("\"") and value.endswith("\""):
-                value = value[1:-1]
-            parent[key] = value
-
-    return root
+    return data
 
 
 def initialize_graphs(config_path: str | Path = "aion.yaml") -> None:
