@@ -26,3 +26,7 @@ aion:
   # Values in this file will override values provided by Deployment Environment
   # variables provided by Aion Cloud.
   env: "./.env"
+  # Optional. Mount an MCP proxy at `/mcp` if this port is set.
+  # The server proxies requests to a locally running MCP instance.
+  mcp:
+    port: 9000
