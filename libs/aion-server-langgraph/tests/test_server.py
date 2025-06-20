@@ -8,6 +8,8 @@ from aion.server.langgraph.server import A2AServer
 from a2a.types import AgentCard, AgentCapabilities
 from a2a.server.request_handlers.request_handler import RequestHandler
 from starlette.applications import Starlette
+import sys
+import types
 
 
 class DummyHandler(RequestHandler):
@@ -51,3 +53,34 @@ def test_build_app() -> None:
     server = A2AServer(card, handler)
     app = server.build_app()
     assert isinstance(app, Starlette)
+
+
+def test_build_app_mounts_mcp_proxy(monkeypatch) -> None:
+    card = AgentCard(
+        name="ProxyAgent",
+        description="desc",
+        version="0.1",
+        url="http://localhost",
+        skills=[],
+        capabilities=AgentCapabilities(),
+        authentication={"schemes": []},
+        defaultInputModes=["text/plain"],
+        defaultOutputModes=["application/json"],
+    )
+
+    handler = DummyHandler()
+    server = A2AServer(card, handler)
+
+    class DummyApp(Starlette):
+        pass
+
+    dummy_proxy = DummyApp()
+    monkeypatch.setitem(
+        sys.modules,
+        "aion.mcp",
+        types.SimpleNamespace(load_proxy=lambda: dummy_proxy),
+    )
+
+    app = server.build_app()
+    assert app.routes[-1].path == "/mcp"
+
