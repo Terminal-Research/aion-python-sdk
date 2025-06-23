@@ -7,3 +7,6 @@ Google `a2a-sdk` and Starlette.
 
 Graphs are registered based on an ``aion.yaml`` file located in your project
 root. See ``aion.yaml.example`` for the expected format.
+
+HTTP applications can also be mounted dynamically by listing them under the
+``http`` section in ``aion.yaml``.
