@@ -17,7 +17,7 @@ from a2a.utils import (
     new_task,
 )
 from a2a.utils.errors import ServerError
-from .tasks import AionTaskUpdater
+from aion.server.tasks import AionTaskUpdater
 from .agent import LanggraphAgent
 from .event_producer import LanggraphA2AEventProducer
 from langgraph.types import Command

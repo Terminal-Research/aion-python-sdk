@@ -9,7 +9,7 @@ import uvicorn
 from a2a.server.apps import A2AStarletteApplication
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.tasks import InMemoryPushNotifier, InMemoryTaskStore
-from .a2a.tasks import PostgresTaskStore
+from aion.server.tasks import PostgresTaskStore
 
 try:  # pragma: no cover - optional dependency
     from langgraph.checkpoint.postgres import PostgresCheckpoint
