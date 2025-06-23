@@ -6,6 +6,7 @@ from a2a.server.apps import A2AStarletteApplication
 from a2a.server.request_handlers.request_handler import RequestHandler
 from a2a.types import AgentCard
 from starlette.applications import Starlette
+import logging
 
 class A2AServer:
     """Simple wrapper exposing a LangGraph project via the A2A protocol."""
@@ -26,7 +27,22 @@ class A2AServer:
         application = A2AStarletteApplication(
             agent_card=self._agent_card, http_handler=self._handler
         )
-        self._app = application.build()
+        app = application.build()
+
+        proxy = None
+        try:  # pragma: no cover - optional dependency
+            from aion.mcp import load_proxy
+
+            proxy = load_proxy()
+        except Exception as exc:  # pragma: no cover - optional dependency
+            logging.getLogger(__name__).warning(
+                "Failed to load MCP proxy: %s", exc
+            )
+
+        if proxy is not None:
+            app.mount("/mcp", proxy)
+
+        self._app = app
         return self._app
 
     def run(self, host: str = "127.0.0.1", port: int = 8000) -> None:

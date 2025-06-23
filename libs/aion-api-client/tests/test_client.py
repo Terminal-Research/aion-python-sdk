@@ -10,6 +10,10 @@ import logging
 
 import pytest
 
+pytest.importorskip("httpx")
+pytest.importorskip("jwt")
+pytest.importorskip("gql")
+
 from aion.api_client import ApiClient, settings
 from aion.gql import GqlClient
 

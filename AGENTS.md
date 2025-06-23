@@ -16,6 +16,7 @@ This repository is a monorepo containing multiple projects located primarily und
 - **aion-server-langgraph** – example Google A2A server running a LangGraph agent. Includes a Postgres database interface, task store, and Alembic migration helpers. Graphs are configured via `aion.yaml`.
 - **aion-api-client** – provides a low level GraphQL client and a high level
   `ApiClient` interface for the Aion API.
+- **aion-mcp** – creates an ASGI proxy for an MCP server defined in `aion.yaml`.
 
 ## Additional guidelines
 
