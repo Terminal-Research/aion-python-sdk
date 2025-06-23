@@ -22,7 +22,12 @@ aion:
   #       runtime for more details.
   graph:
     workflow_builder: "./src/aion/agent/workflow/graphs/graph.py:app"
+  # Optional. Mapping of mount path to Starlette/FastAPI apps which will be
+  # dynamically loaded and mounted.
+  http:
+    /api: "./src/agent/webapp.py:app"
   # Optional. Path to .env file or a mapping from environment variable to its value.
   # Values in this file will override values provided by Deployment Environment
   # variables provided by Aion Cloud.
   env: "./.env"
+
