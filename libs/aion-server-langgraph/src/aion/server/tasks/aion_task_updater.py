@@ -19,7 +19,6 @@ class AionTaskUpdater(TaskUpdater):
 
         Args:
             parts: A list of `Part` objects forming the chunk message.
-            name: Optional name for the artifact.
             metadata: Optional metadata for the artifact.
             append: Optional boolean indicating if this chunk appends to a previous one.
             last_chunk: Optional boolean indicating if this is the last chunk.
