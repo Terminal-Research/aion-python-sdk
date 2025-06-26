@@ -1,7 +1,7 @@
 import uuid
 from typing import Any
 from a2a.server.tasks.task_updater import TaskUpdater
-from a2a.types import Artifact, TaskArtifactUpdateEvent, Part
+from a2a.types import Part, TaskStatusUpdateEvent, TaskStatus, Message
 
 
 class AionTaskUpdater(TaskUpdater):
@@ -11,8 +11,6 @@ class AionTaskUpdater(TaskUpdater):
     def add_artifact(
         self,
         parts: list[Part],
-        artifact_id: str = str(uuid.uuid4()),
-        name: str | None = None,
         metadata: dict[str, Any] | None = None,
         append: bool = False,
         last_chunk: bool = False,
@@ -20,24 +18,20 @@ class AionTaskUpdater(TaskUpdater):
         """Adds an artifact chunk to the task and publishes a `TaskArtifactUpdateEvent`.
 
         Args:
-            parts: A list of `Part` objects forming the artifact chunk.
-            artifact_id: The ID of the artifact. A new UUID is generated if not provided.
+            parts: A list of `Part` objects forming the chunk message.
             name: Optional name for the artifact.
             metadata: Optional metadata for the artifact.
             append: Optional boolean indicating if this chunk appends to a previous one.
             last_chunk: Optional boolean indicating if this is the last chunk.
         """
         self.event_queue.enqueue_event(
-            TaskArtifactUpdateEvent(
+            TaskStatusUpdateEvent(
                 taskId=self.task_id,
                 contextId=self.context_id,
-                artifact=Artifact(
-                    artifactId=artifact_id,
-                    name=name,
-                    parts=parts,
-                    metadata=metadata,
-                ),
+                status=TaskStatus(message=Message(parts=parts,
+                                                  metadata=metadata)),
                 append=append,
                 last_chunk=last_chunk,
             )
         )
+
