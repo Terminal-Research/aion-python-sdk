@@ -7,7 +7,7 @@ import pytest
 pytest.importorskip("pydantic")
 
 from aion.server.db import test_connection
-from aion.server.langgraph.a2a.tasks import PostgresTaskStore
+from aion.server.tasks import PostgresTaskStore
 
 
 class DummyCursor:

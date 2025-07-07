@@ -6,7 +6,7 @@ import uuid
 from typing import Any, Sequence
 from a2a.types import TaskState, Message, Part, Role, TextPart, DataPart, Task
 from a2a.server.events import EventQueue
-from aion.server.langgraph.a2a.tasks import AionTaskUpdater
+from aion.server.tasks import AionTaskUpdater
 from langchain_core.messages import BaseMessage, AIMessageChunk, AIMessage
 from langgraph.types import Interrupt, StateSnapshot
 
