@@ -3,7 +3,7 @@ import pytest
 
 pytest.importorskip("structlog")
 import structlog
-import aion.server.langgraph.logging as logconf
+import aion.server.logging as logconf
 
 
 def test_configures_structlog() -> None:

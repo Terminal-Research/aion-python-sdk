@@ -6,7 +6,7 @@ import pytest
 
 pytest.importorskip("pydantic")
 
-from aion.server.db import test_connection
+from aion.server.db import verify_connection
 from aion.server.tasks import PostgresTaskStore
 
 
@@ -54,7 +54,7 @@ def test_test_connection_success(monkeypatch, caplog):
     monkeypatch.setattr("psycopg.connect", fake_connect)
 
     with caplog.at_level(logging.INFO):
-        assert test_connection("postgresql://example")
+        assert verify_connection("postgresql://example")
     assert conn.closed
     assert "Successfully connected to Postgres at example" in caplog.text
 
@@ -67,7 +67,7 @@ def test_test_connection_failure(monkeypatch, caplog):
     monkeypatch.setattr("psycopg.connect", fake_connect)
 
     with caplog.at_level(logging.ERROR):
-        assert not test_connection("postgresql://example")
+        assert not verify_connection("postgresql://example")
     assert "Could not connect to Postgres" in caplog.text
 
 

@@ -2,13 +2,13 @@ from collections.abc import AsyncIterable
 
 """Currency conversion example agent built on top of LangGraph."""
 
-from typing import Any, Dict, Literal, Union
+from typing import Any, Dict, Union
 import logging
 
-from pydantic import BaseModel
 from langgraph.graph import StateGraph
 from langgraph.types import Command, StateSnapshot
-from langgraph.errors import GraphInterrupt
+
+from a2a.utils.errors import ServerError, InternalError
 
 logger = logging.getLogger(__name__)
 

@@ -27,7 +27,7 @@ def get_config() -> DatabaseConfig | None:
         return None
     return DatabaseConfig(url=url)
 
-def test_connection(url: str) -> bool:
+def verify_connection(url: str) -> bool:
     """Attempt to connect to Postgres using ``psycopg``.
 
     Args:
@@ -83,6 +83,24 @@ def sqlalchemy_url(url: str) -> str:
     if url.startswith("postgres://"):
         return prefix + url[len("postgres://") :]
     return url
+
+def psycopg_url(url: str) -> str:
+    """Return a psycopg connection URL by removing SQLAlchemy-specific prefixes.
+
+    psycopg expects standard PostgreSQL URLs without the '+psycopg' driver specification.
+    This helper converts SQLAlchemy URLs back to standard PostgreSQL format.
+
+    Args:
+        url: The SQLAlchemy connection URL.
+
+    Returns:
+        The URL formatted for psycopg.
+    """
+    if not url or "://" not in url:
+        return url
+
+    _, rest = url.split("://", 1)
+    return f"postgresql://{rest}"
 
 
 def test_permissions(url: str) -> dict:

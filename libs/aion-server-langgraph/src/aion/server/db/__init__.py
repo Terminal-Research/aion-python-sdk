@@ -8,8 +8,9 @@ AION_DB_NAMESPACE = "aion"
 
 # Import utility functions from utils module
 from .utils import (
-    test_connection,
+    verify_connection,
     sqlalchemy_url,
+    psycopg_url,
     test_permissions,
     get_config,
     DatabaseConfig,
@@ -20,6 +21,7 @@ __all__ = [
     "DatabaseConfig",
     "get_config",
     "sqlalchemy_url",
-    "test_connection",
+    "psycopg_url",
+    "verify_connection",
     "test_permissions",
 ]

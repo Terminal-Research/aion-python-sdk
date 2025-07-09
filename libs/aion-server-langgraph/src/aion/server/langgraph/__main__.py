@@ -1,6 +1,5 @@
 import logging
 import os
-from typing import Optional
 
 import click
 import httpx
@@ -22,8 +21,8 @@ from a2a.types import (
 )
 from .a2a.agent import LanggraphAgent
 from .a2a.agent_executor import LanggraphAgentExecutor
-from .graph import GRAPHS, get_graph, initialize_graphs
-from aion.server.db import get_config, test_connection
+from .graph import graph_manager
+from aion.server.db import get_config, verify_connection
 from aion.server.db.migrations import upgrade_to_head
 from dotenv import load_dotenv
 
@@ -43,7 +42,7 @@ def main(host, port):
     try:
         cfg = get_config()
         if cfg:
-            has_db = test_connection(cfg.url)
+            has_db = verify_connection(cfg.url)
             if has_db:
                 # Attempt migrations with better error reporting
                 try:
@@ -59,11 +58,13 @@ def main(host, port):
             logger.info(
                 "POSTGRES_URL environment variable not set, using in-memory data store"
             )
-        initialize_graphs()
-        if not GRAPHS:
+
+        graph_manager.initialize_graphs()
+        if not graph_manager.has_active_graph():
             logger.error("No graphs found in configuration; shutting down")
             raise SystemExit(1)
-        graph_id, graph_obj = next(iter(GRAPHS.items()))
+
+        graph_id, graph_obj = next(iter(graph_manager.graphs.items()))
         logger.info("Using graph '%s'", graph_id)
         if not os.getenv('OPENROUTER_API_KEY'):
             raise MissingAPIKeyError(
@@ -91,16 +92,17 @@ def main(host, port):
 
         if has_db:
             task_store = PostgresTaskStore()
-            logger.debug("Using PostgresTaskStore")
-            if PostgresCheckpoint:
-                try:
-                    checkpoint = PostgresCheckpoint(
-                        conninfo=os.getenv("POSTGRES_URL"),
-                        namespace="langgraph",
-                    )
-                    graph_obj = graph_obj.with_checkpoint(checkpoint)
-                except Exception as exc:  # pragma: no cover - checkpoint failure
-                    logger.error("Failed to configure PostgresCheckpoint: %s", exc)
+            # todo replace with PostgresSaver
+            # logger.debug("Using PostgresTaskStore")
+            # if PostgresCheckpoint:
+            #     try:
+            #         checkpoint = PostgresCheckpoint(
+            #             conninfo=os.getenv("POSTGRES_URL"),
+            #             namespace="langgraph",
+            #         )
+            #         graph_obj = graph_obj.with_checkpoint(checkpoint)
+            #     except Exception as exc:  # pragma: no cover - checkpoint failure
+            #         logger.error("Failed to configure PostgresCheckpoint: %s", exc)
         else:
             task_store = InMemoryTaskStore()
             logger.debug("Using InMemoryTaskStore")

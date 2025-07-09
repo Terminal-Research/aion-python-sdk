@@ -6,7 +6,7 @@ pytest.importorskip("pydantic")
 pytest.importorskip("starlette")
 from starlette.applications import Starlette
 
-from aion.server.langgraph.webapp import DynamicMounter
+from aion.server.webapp import DynamicMounter
 
 
 def test_dynamic_mounter(tmp_path: Path) -> None:

@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import os
 import sys
 from alembic import command
 
 from .env import config
-from aion.server.db import test_permissions
+from aion.server.db import test_permissions, psycopg_url
 
 import logging
 logger = logging.getLogger(__name__)
@@ -48,8 +47,8 @@ def _fail_if_no_permissions():
     If not, it logs an error and exits the process.
     """
     # Get connection URL from Alembic config
-    conn_url = str(config.get_main_option("sqlalchemy.url"))
-    
+    conn_url = psycopg_url(config.get_main_option("sqlalchemy.url"))
+
     # Check permissions
     logger.debug("Testing database permissions before migrations")
     permissions = test_permissions(conn_url)
