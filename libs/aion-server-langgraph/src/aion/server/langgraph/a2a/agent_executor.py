@@ -2,28 +2,26 @@ import logging
 from typing import Any
 
 from a2a.server.agent_execution import AgentExecutor, RequestContext
-from a2a.server.events import Event, EventQueue
+from a2a.server.events import EventQueue
 from a2a.types import (
     InternalError,
     InvalidParamsError,
-    Part,
     Task,
     TaskState,
-    TextPart,
     UnsupportedOperationError,
 )
 from a2a.utils import (
-    new_agent_text_message,
     new_task,
 )
 from a2a.utils.errors import ServerError
-from aion.server.tasks import AionTaskUpdater
+from langgraph.types import Command
+
 from .agent import LanggraphAgent
 from .event_producer import LanggraphA2AEventProducer
-from langgraph.types import Command
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
 
 class LanggraphAgentExecutor(AgentExecutor):
     """Currency Conversion ``AgentExecutor`` example."""
@@ -33,9 +31,9 @@ class LanggraphAgentExecutor(AgentExecutor):
         self.agent = LanggraphAgent(graph)
 
     async def execute(
-        self,
-        context: RequestContext,
-        event_queue: EventQueue,
+            self,
+            context: RequestContext,
+            event_queue: EventQueue,
     ) -> None:
         error = self._validate_request(context)
         if error:
@@ -48,10 +46,10 @@ class LanggraphAgentExecutor(AgentExecutor):
         elif not task:
             task = new_task(context.message)
             event_queue.enqueue_event(task)
-            
+
         event_producer = LanggraphA2AEventProducer(event_queue, task)
         firstLoop = True
-                
+
         try:
             async for item in self.agent.stream(query, task.contextId):
                 if firstLoop:
@@ -70,6 +68,6 @@ class LanggraphAgentExecutor(AgentExecutor):
         return False
 
     async def cancel(
-        self, request: RequestContext, event_queue: EventQueue
+            self, request: RequestContext, event_queue: EventQueue
     ) -> Task | None:
         raise ServerError(error=UnsupportedOperationError())

@@ -7,7 +7,7 @@ pytest.importorskip("pydantic")
 pytest.importorskip("a2a")
 
 from aion.server.langgraph.a2a.agent import LanggraphAgent
-from aion.server.langgraph.graph import graph_manager
+from aion.server.langgraph.agent import agent_manager
 
 
 def test_langgraph_agent_uses_first_registered_graph(tmp_path: Path) -> None:
@@ -31,8 +31,9 @@ def create() -> DummyGraph:
     cwd = os.getcwd()
     os.chdir(tmp_path)
     try:
-        graph_manager.initialize_graphs()
-        test_graph = graph_manager.get_graph("g1")
+        agent_manager.initialize_graphs()
+        test_agent = agent_manager.get_agent("g1")
+        test_graph = test_agent.get_compiled_graph()
         agent = LanggraphAgent(graph=test_graph)
         assert agent.graph is test_graph
     finally:
@@ -45,7 +46,7 @@ def test_langgraph_agent_no_graphs(tmp_path: Path) -> None:
     cwd = os.getcwd()
     os.chdir(tmp_path)
     try:
-        graph_manager.initialize_graphs()
+        agent_manager.initialize_graphs()
         with pytest.raises(SystemExit):
             LanggraphAgent(graph=None)
     finally:

@@ -16,6 +16,8 @@ from .utils import (
     DatabaseConfig,
 )
 
+from .manager import db_manager
+
 __all__ = [
     "AION_DB_NAMESPACE",
     "DatabaseConfig",
@@ -24,4 +26,5 @@ __all__ = [
     "psycopg_url",
     "verify_connection",
     "test_permissions",
+    "db_manager",
 ]

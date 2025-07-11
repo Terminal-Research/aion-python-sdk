@@ -8,7 +8,7 @@ pytest.importorskip("a2a")
 
 import logging
 
-from aion.server.langgraph.graph import graph_manager
+from aion.server.langgraph.agent import agent_manager
 
 
 def test_initialize_graphs(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
@@ -36,10 +36,10 @@ def create_graph():
     os.chdir(tmp_path)
     try:
         caplog.set_level(logging.INFO)
-        graph_manager.initialize_graphs()
+        agent_manager.initialize_graphs()
     finally:
         os.chdir(cwd)
 
-    assert graph_manager.get_graph("example_graph") == "compiled"
+    assert agent_manager.get_agent("example_graph").get_compiled_graph() == "compiled"
     messages = [r.getMessage() for r in caplog.records]
     assert any("Importing graph 'example_graph'" in msg for msg in messages)
