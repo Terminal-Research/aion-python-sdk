@@ -20,8 +20,8 @@ aion:
   #   and returns an instance of langgraph.graph.state.StateGraph or
   #   langgraph.graph.state.CompiledStateGraph. See how to rebuild a graph at
   #       runtime for more details.
-  graph:
-    workflow_builder: "./src/aion/agent/workflow/graphs/graph.py:app"
+  agent:
+    workflow_builder: "./src/aion/agent/workflow/graphs/graph.py:ChildBaseAgent"
   # Optional. Mapping of mount path to Starlette/FastAPI apps which will be
   # dynamically loaded and mounted.
   http:
