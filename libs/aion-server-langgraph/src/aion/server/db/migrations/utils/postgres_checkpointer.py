@@ -1,12 +1,12 @@
 import logging
 
 from aion.server.db import psycopg_url
-from ..env import config
+from aion.server.db.migrations.env import config
 
 logger = logging.getLogger(__name__)
 
 
-def setup_checkpointer_tables() -> None:
+async def setup_checkpointer_tables() -> None:
     """Setup LangGraph checkpointer tables in the database.
 
     This function creates the necessary tables for PostgresSaver checkpointer
@@ -19,11 +19,11 @@ def setup_checkpointer_tables() -> None:
         conn_url = psycopg_url(config.get_main_option("sqlalchemy.url"))
 
         # Import here to avoid issues if langgraph-checkpoint-postgres is not available
-        from langgraph.checkpoint.postgres import PostgresSaver
+        from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
         # Create checkpointer and setup tables
-        with PostgresSaver.from_conn_string(psycopg_url(conn_url)) as checkpointer:
-            checkpointer.setup()
+        async with AsyncPostgresSaver.from_conn_string(psycopg_url(conn_url)) as checkpointer:
+            await checkpointer.setup()
 
     except ImportError:
         logger.warning("langgraph-checkpoint-postgres not available, skipping checkpointer setup")

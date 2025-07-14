@@ -145,7 +145,7 @@ class AppFactory:
             logger.warning("POSTGRES_URL environment variable is empty")
             return
 
-        is_connection_verified = verify_connection(cfg.url)
+        is_connection_verified = await verify_connection(cfg.url)
         if not is_connection_verified:
             logger.warning("Can't verify postgres connection")
             return
@@ -158,7 +158,7 @@ class AppFactory:
             return
 
         try:
-            upgrade_to_head()
+            await upgrade_to_head()
         except Exception as exc:
             logger.error(f"Migration failed: {exc}", exc_info=True)
             await self._cleanup_db()

@@ -1,8 +1,7 @@
 import logging
 from typing import Optional
 
-# from psycopg_pool import AsyncConnectionPool
-from psycopg_pool import ConnectionPool
+from psycopg_pool import AsyncConnectionPool
 
 from aion.server.utils import Singleton
 
@@ -14,7 +13,7 @@ class DbManager(metaclass=Singleton):
 
     def __init__(self):
         """Initialize the database manager with no active pool."""
-        self._pool: Optional[ConnectionPool] = None
+        self._pool: Optional[AsyncConnectionPool] = None
 
     @property
     def is_initialized(self) -> bool:
@@ -31,7 +30,7 @@ class DbManager(metaclass=Singleton):
             logger.warning("Database already initialized")
             return
 
-        self._pool = ConnectionPool(
+        self._pool = AsyncConnectionPool(
             dsn,
             min_size=2,
             max_size=10,
@@ -41,11 +40,11 @@ class DbManager(metaclass=Singleton):
             max_waiting=20,
             open=False)
 
-        self._pool.open()
-        self._pool.wait()
+        await self._pool.open()
+        await self._pool.wait()
         logger.info(f"Pool created with {self._pool.get_stats()}")
 
-    def get_pool(self) -> ConnectionPool:
+    def get_pool(self) -> AsyncConnectionPool:
         """Get the active connection pool.
 
         Returns:
@@ -65,7 +64,7 @@ class DbManager(metaclass=Singleton):
             return
 
         logger.info('Closing database connection pool')
-        self._pool.close()
+        await self._pool.close()
         self._pool = None
         logger.info('Database connection pool closed')
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from alembic import command
@@ -16,9 +17,10 @@ from .utils import (
 logger = logging.getLogger(__name__)
 
 
-def upgrade_to_head() -> None:
+async def upgrade_to_head() -> None:
     """Upgrade the database schema to the latest revision."""
-    fail_if_no_permissions()
+
+    await fail_if_no_permissions()
     log_migrations()
 
     try:
@@ -32,11 +34,12 @@ def upgrade_to_head() -> None:
             config.cmd_opts = SimpleNamespace()
 
         # Try to run the migrations
-        command.upgrade(config, "head")
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, command.upgrade, config, "head")
         logger.debug("Database migrations completed successfully")
 
         # Setup checkpointer tables after main migrations
-        setup_checkpointer_tables()
+        await setup_checkpointer_tables()
     except Exception as e:
         logger.error(f"Database migration failed: {e}", exc_info=True)
         raise

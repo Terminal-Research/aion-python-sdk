@@ -44,7 +44,7 @@ class DummyConnection:
         self.closed = True
 
 
-def test_test_connection_success(monkeypatch, caplog):
+async def test_test_connection_success(monkeypatch, caplog):
     conn = DummyConnection()
 
     def fake_connect(url):
@@ -54,12 +54,12 @@ def test_test_connection_success(monkeypatch, caplog):
     monkeypatch.setattr("psycopg.connect", fake_connect)
 
     with caplog.at_level(logging.INFO):
-        assert verify_connection("postgresql://example")
+        assert await verify_connection("postgresql://example")
     assert conn.closed
     assert "Successfully connected to Postgres at example" in caplog.text
 
 
-def test_test_connection_failure(monkeypatch, caplog):
+async def test_test_connection_failure(monkeypatch, caplog):
     def fake_connect(url):
         raise RuntimeError("could not connect")
 
@@ -67,7 +67,7 @@ def test_test_connection_failure(monkeypatch, caplog):
     monkeypatch.setattr("psycopg.connect", fake_connect)
 
     with caplog.at_level(logging.ERROR):
-        assert not verify_connection("postgresql://example")
+        assert not await verify_connection("postgresql://example")
     assert "Could not connect to Postgres" in caplog.text
 
 

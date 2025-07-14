@@ -9,7 +9,7 @@ from aion.server.db import test_permissions, psycopg_url
 logger = logging.getLogger(__name__)
 
 
-def fail_if_no_permissions():
+async def fail_if_no_permissions():
     """Test database permissions and fail if insufficient for migrations.
 
     This function checks if the current database user has permissions to create tables.
@@ -20,7 +20,7 @@ def fail_if_no_permissions():
 
     # Check permissions
     logger.debug("Testing database permissions before migrations")
-    permissions = test_permissions(conn_url)
+    permissions = await test_permissions(conn_url)
 
     if not permissions['can_connect']:
         logger.error("Cannot connect to database")

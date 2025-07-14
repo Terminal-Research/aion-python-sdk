@@ -6,7 +6,7 @@ import datetime as _dt
 import uuid
 from typing import Any
 
-from psycopg_pool import ConnectionPool
+from psycopg_pool import AsyncConnectionPool
 from pydantic import BaseModel
 
 from aion.server.db.models import TaskRecord
@@ -34,9 +34,9 @@ except Exception:  # pragma: no cover - tests without a2a
 
 
 class PostgresTaskStore(TaskStore):
-    """Store tasks in a Postgres database using connection pool."""
+    """Store tasks in a Postgres database using async connection pool."""
 
-    def __init__(self, pool: ConnectionPool) -> None:
+    def __init__(self, pool: AsyncConnectionPool) -> None:
         if pool is None:
             raise ValueError("Connection pool is required")
         self._pool = pool
@@ -56,9 +56,9 @@ class PostgresTaskStore(TaskStore):
             updated_at=_dt.datetime.utcnow(),
         )
 
-        with self._pool.connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
+        async with self._pool.connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
                     """
                     INSERT INTO tasks (id, context_id, task, created_at, updated_at)
                     VALUES (%s, %s, %s::jsonb, %s, %s) ON CONFLICT (id) DO
@@ -78,13 +78,13 @@ class PostgresTaskStore(TaskStore):
 
     async def get(self, task_id: str) -> Task | None:
         """Retrieve a task by ID."""
-        with self._pool.connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
+        async with self._pool.connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
                     "SELECT task FROM tasks WHERE id = %s",
                     (str(task_id),),
                 )
-                row = cur.fetchone()
+                row = await cur.fetchone()
 
         if not row:
             return None
@@ -98,9 +98,9 @@ class PostgresTaskStore(TaskStore):
 
     async def delete(self, task_id: str) -> None:
         """Delete a task by ID."""
-        with self._pool.connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
+        async with self._pool.connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
                     "DELETE FROM tasks WHERE id = %s",
                     (str(task_id),),
                 )

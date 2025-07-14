@@ -2,8 +2,7 @@ import logging
 from typing import Literal
 
 from langgraph.checkpoint.memory import InMemorySaver
-# from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from langgraph.checkpoint.postgres import PostgresSaver
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 from aion.server.db import db_manager
 
@@ -85,7 +84,7 @@ class GraphCheckpointerManager:
         to ensure the application continues to function.
         """
         try:
-            checkpointer = PostgresSaver(conn=db_manager.get_pool())
+            checkpointer = AsyncPostgresSaver(conn=db_manager.get_pool())
             logger.info(f"Created PostgresSaver checkpointer")
             return checkpointer
 

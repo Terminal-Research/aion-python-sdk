@@ -20,8 +20,8 @@ class LanggraphAgent:
         """Initialize the agent using the first registered LangGraph."""
         self.graph = graph
 
-    def invoke(self, query: Union[str, Command], sessionId: str) -> str:
-        """Invoke the agent synchronously.
+    async def invoke(self, query: Union[str, Command], sessionId: str) -> dict[str, Any]:
+        """Invoke the agent asynchronously.
 
         Args:
             query: The user message or a LangGraph Command
@@ -36,11 +36,11 @@ class LanggraphAgent:
             inputs = {"messages": [("user", query)]}
 
         config = {"configurable": {"thread_id": sessionId}}
-        self.graph.invoke(inputs, config)
-        return self.get_agent_response(config)
+        await self.graph.ainvoke(inputs, config)
+        return await self.get_agent_response(config)
 
     async def stream(
-        self, query: Union[str, Command], sessionId: str
+            self, query: Union[str, Command], sessionId: str
     ) -> AsyncIterable[Dict[str, Any]]:
         """Stream intermediate responses from the agent.
 
@@ -59,8 +59,8 @@ class LanggraphAgent:
 
         logger.debug("Beginning Langgraph Stream: %s", inputs)
         try:
-            for eventType, event in self.graph.stream(
-                inputs, config, stream_mode=["values", "messages", "custom"]
+            async for eventType, event in self.graph.astream(
+                    inputs, config, stream_mode=["values", "messages", "custom"]
             ):
                 if eventType == "messages":
                     event, metadata = event
@@ -77,9 +77,9 @@ class LanggraphAgent:
                 )
 
                 if (
-                    eventType == "values"
-                    or eventType == "messages"
-                    or eventType == "custom"
+                        eventType == "values"
+                        or eventType == "messages"
+                        or eventType == "custom"
                 ):
                     yield {
                         "event_type": eventType,
@@ -88,8 +88,9 @@ class LanggraphAgent:
                     }
                 else:
                     raise ValueError(f"Unknown stream type: {eventType}")
+
             logger.debug("Final Langgraph Stream Chunk Received")
-            yield self.get_agent_response(config)
+            yield await self.get_agent_response(config)
 
         except Exception as e:
             logger.error(
@@ -97,9 +98,9 @@ class LanggraphAgent:
             )
             raise ServerError(error=InternalError()) from e
 
-    def get_agent_response(self, config: Dict[str, Any]) -> Dict[str, Any]:
+    async def get_agent_response(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Return the final structured response from the agent."""
-        current_state: StateSnapshot = self.graph.get_state(config)
+        current_state: StateSnapshot = await self.graph.aget_state(config)
         logger.debug("Final Langgraph State: %s", current_state)
 
         if len(current_state.tasks):

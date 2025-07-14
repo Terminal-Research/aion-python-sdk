@@ -45,7 +45,7 @@ class LanggraphAgentExecutor(AgentExecutor):
             query = Command(resume=query)
         elif not task:
             task = new_task(context.message)
-            event_queue.enqueue_event(task)
+            await event_queue.enqueue_event(task)
 
         event_producer = LanggraphA2AEventProducer(event_queue, task)
         firstLoop = True
@@ -53,10 +53,10 @@ class LanggraphAgentExecutor(AgentExecutor):
         try:
             async for item in self.agent.stream(query, task.contextId):
                 if firstLoop:
-                    event_producer.update_status_working()
+                    await event_producer.update_status_working()
                     firstLoop = False
 
-                event_producer.handle_event(
+                await event_producer.handle_event(
                     item['event_type'],
                     item['event'],
                 )
