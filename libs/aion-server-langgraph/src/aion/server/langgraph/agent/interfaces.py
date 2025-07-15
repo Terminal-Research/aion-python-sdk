@@ -1,9 +1,10 @@
 from abc import ABC, abstractmethod
-from typing import Union
+from typing import Union, Optional, Callable
 
 from a2a.types import AgentCard
 from langgraph.graph import Graph
 from langgraph.pregel import Pregel
+from .models import AgentConfig
 
 
 class AgentInterface(ABC):
@@ -28,7 +29,34 @@ class AgentInterface(ABC):
         pass
 
     @abstractmethod
-    def get_agent_card(self, base_url: str) -> AgentCard:
+    def create_graph(self) -> Union[Graph, Pregel]:
+        """Create and return the agent's graph.
+
+        Returns:
+            Newly created graph object.
+        """
+        pass
+
+    @abstractmethod
+    def create_compiled_graph(self) -> Union[Graph, Pregel]:
+        """Create and return a compiled graph for the agent.
+
+        Returns:
+            Newly compiled graph object.
+        """
+        pass
+
+    @abstractmethod
+    def recompile(self) -> Union[Graph, Pregel]:
+        """Force recompilation of the agent's graph.
+
+        Returns:
+            Newly compiled graph object.
+        """
+        pass
+
+    @abstractmethod
+    def get_agent_card(self, base_url: str) -> Optional[AgentCard]:
         """Return the agent's card with capabilities description.
 
         Args:
@@ -40,19 +68,41 @@ class AgentInterface(ABC):
         pass
 
     @abstractmethod
-    def create_graph(self) -> Union[Graph, Pregel]:
-        """Create and return the agent's graph.
+    def generate_agent_card(self, base_url: str) -> Optional[AgentCard]:
+        """Generate the agent's capability card.
+
+        Creates an AgentCard that describes this agent's capabilities,
+        including its skills, supported input/output modes, and metadata.
+        May be replaced with user's custom card.
+
+        Args:
+            base_url: Base URL where this agent is hosted, used to construct
+                     the agent's endpoint URL.
 
         Returns:
-            Newly created graph object.
+            Agent card or None if not implemented.
         """
         pass
 
+    @property
     @abstractmethod
-    def recompile(self) -> Union[Graph, Pregel]:
-        """Force recompilation of the agent's graph.
+    def config(self) -> Optional[AgentConfig]:
+        """Get the agent's configuration.
 
         Returns:
-            Newly compiled graph object.
+            Agent configuration or None if not set.
+        """
+        pass
+
+    @config.setter
+    @abstractmethod
+    def config(self, value: AgentConfig) -> None:
+        """Set the agent's configuration.
+
+        Args:
+            value: Agent configuration to set.
+
+        Raises:
+            TypeError: If value is not an AgentConfig instance.
         """
         pass
