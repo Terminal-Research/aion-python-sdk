@@ -4,13 +4,13 @@ import pytest
 
 pytest.importorskip("yaml")
 
-GRAPH_PATH = Path(__file__).resolve().parents[1] / "src" / "aion" / "server" / "langgraph" / "graph.py"
+GRAPH_PATH = Path(__file__).resolve().parents[1] / "src" / "aion" / "server" / "langgraph" / "graph" / "manager.py"
 
-spec = importlib.util.spec_from_file_location("graph", GRAPH_PATH)
+spec = importlib.util.spec_from_file_location("manager", GRAPH_PATH)
 graph = importlib.util.module_from_spec(spec)
 assert spec.loader is not None
 spec.loader.exec_module(graph)
-_load_simple_yaml = graph._load_simple_yaml
+_load_simple_yaml = graph.graph_manager._load_simple_yaml
 
 
 def test_load_simple_yaml(tmp_path: Path) -> None:

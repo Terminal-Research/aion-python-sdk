@@ -6,10 +6,9 @@ import datetime as _dt
 import uuid
 from typing import Any
 
-import psycopg
+from psycopg_pool import AsyncConnectionPool
 from pydantic import BaseModel
 
-from aion.server.db import get_config
 from aion.server.db.models import TaskRecord
 
 try:  # pragma: no cover - optional dependency
@@ -19,6 +18,7 @@ except Exception:  # pragma: no cover - tests without a2a
     class Task(BaseModel):
         id: str
         contextId: str
+
 
     class TaskStore:  # type: ignore
         """Fallback ``TaskStore`` protocol."""
@@ -34,16 +34,12 @@ except Exception:  # pragma: no cover - tests without a2a
 
 
 class PostgresTaskStore(TaskStore):
-    """Store tasks in a Postgres database."""
+    """Store tasks in a Postgres database using async connection pool."""
 
-    def __init__(self, dsn: str | None = None) -> None:
-        cfg = get_config()
-        self._dsn = dsn or (cfg.url if cfg else None)
-
-    def _connect(self) -> psycopg.Connection:
-        if not self._dsn:
-            raise RuntimeError("Postgres DSN is not configured")
-        return psycopg.connect(self._dsn)
+    def __init__(self, pool: AsyncConnectionPool) -> None:
+        if pool is None:
+            raise ValueError("Connection pool is required")
+        self._pool = pool
 
     async def save(self, task: Task) -> None:
         """Persist a ``Task`` to the database."""
@@ -51,6 +47,7 @@ class PostgresTaskStore(TaskStore):
             task_id = str(uuid.UUID(task.id))
         except Exception:
             task_id = str(uuid.uuid4())
+
         record = TaskRecord(
             id=uuid.UUID(task_id),
             context_id=task.contextId,
@@ -58,14 +55,15 @@ class PostgresTaskStore(TaskStore):
             created_at=_dt.datetime.utcnow(),
             updated_at=_dt.datetime.utcnow(),
         )
-        with self._connect() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
+
+        async with self._pool.connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
                     """
                     INSERT INTO tasks (id, context_id, task, created_at, updated_at)
-                    VALUES (%s, %s, %s::jsonb, %s, %s)
-                    ON CONFLICT (id) DO UPDATE
-                    SET task = EXCLUDED.task,
+                    VALUES (%s, %s, %s::jsonb, %s, %s) ON CONFLICT (id) DO
+                    UPDATE
+                        SET task = EXCLUDED.task,
                         context_id = EXCLUDED.context_id,
                         updated_at = EXCLUDED.updated_at
                     """,
@@ -77,35 +75,35 @@ class PostgresTaskStore(TaskStore):
                         record.updated_at,
                     ),
                 )
-                conn.commit()
 
     async def get(self, task_id: str) -> Task | None:
         """Retrieve a task by ID."""
-        with self._connect() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
+        async with self._pool.connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
                     "SELECT task FROM tasks WHERE id = %s",
                     (str(task_id),),
                 )
-                row = cur.fetchone()
+                row = await cur.fetchone()
+
         if not row:
             return None
+
         data: Any = row[0]
         if isinstance(data, str):
             import json
-
             data = json.loads(data)
+
         return Task.model_validate(data)
 
     async def delete(self, task_id: str) -> None:
         """Delete a task by ID."""
-        with self._connect() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
+        async with self._pool.connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
                     "DELETE FROM tasks WHERE id = %s",
                     (str(task_id),),
                 )
-                conn.commit()
 
     # Backwards compatibility
     async def save_task(self, task: Task) -> None:  # pragma: no cover - legacy
