@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import sys
 
 import click
 import uvicorn
@@ -27,10 +28,13 @@ async def async_serve(host, port):
         if not app_factory:
             return
 
-        uvicorn.run(
+        uconfig = uvicorn.Config(
             app=app_factory.starlette_app,
             host=app_factory.config.host,
             port=app_factory.config.port)
+        server = uvicorn.Server(config=uconfig)
+
+        await server.serve()
 
     except MissingAPIKeyError as e:
         logger.error(f'Error: {e}')
@@ -46,7 +50,14 @@ async def async_serve(host, port):
 @click.option('--port', 'port', default=10000)
 def main(host, port):
     """Starts the Currency Agent server."""
-    asyncio.run(async_serve(host, port))
+    try:
+        asyncio.run(async_serve(host, port))
+    except KeyboardInterrupt:
+        logger.info("Interrupted by user")
+        sys.exit(0)
+    except Exception as e:
+        logger.error(f"Fatal error: {e}")
+        sys.exit(1)
 
 
 if __name__ == '__main__':
