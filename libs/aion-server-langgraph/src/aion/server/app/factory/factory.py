@@ -1,10 +1,11 @@
 import logging
 from typing import Optional
 
-import httpx
 from a2a.server.apps import A2AStarletteApplication
 from a2a.server.request_handlers import DefaultRequestHandler
-from a2a.server.tasks import InMemoryPushNotifier, InMemoryTaskStore
+from a2a.server.tasks import (
+    InMemoryTaskStore,
+    InMemoryPushNotificationConfigStore)
 from a2a.types import AgentCard
 from starlette.applications import Starlette
 
@@ -103,20 +104,15 @@ class AppFactory:
         Returns:
             Configured DefaultRequestHandler instance.
         """
-        httpx_client = httpx.AsyncClient()
-
         if db_manager.is_initialized:
             task_store = PostgresTaskStore(pool=db_manager.get_pool())
         else:
             task_store = InMemoryTaskStore()
 
-        self._httpx_client = httpx_client
-        self._task_store = task_store
-
         return DefaultRequestHandler(
             agent_executor=LanggraphAgentExecutor(self.agent.get_compiled_graph()),
             task_store=task_store,
-            push_notifier=InMemoryPushNotifier(httpx_client))
+            push_config_store=InMemoryPushNotificationConfigStore())
 
     async def _init_agents(self):
         """Initialize agents from configuration."""
