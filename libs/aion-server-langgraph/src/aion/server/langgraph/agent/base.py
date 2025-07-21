@@ -1,6 +1,5 @@
 import logging
-from abc import abstractmethod
-from typing import Union, TypedDict, Dict, Any, Optional, Callable
+from typing import Union, Optional, Callable
 
 from a2a.types import AgentCard
 from langgraph.graph import Graph
@@ -115,8 +114,8 @@ class BaseAgent(AgentInterface):
         from a2a.types import AgentCard, AgentCapabilities, AgentSkill
 
         capabilities = AgentCapabilities(
-            streaming=self.config.capabilities.streaming or True,
-            pushNotifications=self.config.capabilities.pushNotifications or False)
+            streaming=self.config.capabilities.streaming,
+            pushNotifications=self.config.capabilities.pushNotifications)
 
         skills = []
         for skill_config in self.config.skills:
