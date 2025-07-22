@@ -288,16 +288,6 @@ class AgentConfigProcessor:
             ValueError: If configuration is invalid.
         """
         try:
-            # Convert nested dictionaries to Pydantic models
-            if 'capabilities' in config_data:
-                config_data['capabilities'] = AgentCapabilities(**config_data['capabilities'])
-
-            if 'skills' in config_data:
-                skills = []
-                for skill_data in config_data['skills']:
-                    skills.append(AgentSkill(**skill_data))
-                config_data['skills'] = skills
-
             return AgentConfig(**config_data)
         except ValidationError as e:
             raise ValueError(f"Invalid agent configuration: {e}") from e

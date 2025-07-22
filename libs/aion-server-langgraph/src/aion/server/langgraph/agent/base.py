@@ -1,6 +1,5 @@
 import logging
-from abc import abstractmethod
-from typing import Union, TypedDict, Dict, Any, Optional, Callable
+from typing import Union, Optional, Callable
 
 from a2a.types import AgentCard
 from langgraph.graph import Graph
@@ -9,6 +8,8 @@ from langgraph.pregel import Pregel
 from .checkpointer import GraphCheckpointerManager
 from .interfaces import AgentInterface
 from .models import AgentConfig
+
+from .card import AionAgentCard
 
 logger = logging.getLogger(__name__)
 
@@ -128,7 +129,7 @@ class BaseAgent(AgentInterface):
                 examples=skill_config.examples)
             skills.append(skill)
 
-        return AgentCard(
+        return AionAgentCard(
             name=self.config.name or "Graph Agent",
             description=self.config.description or "Agent based on external graph",
             url=base_url,
@@ -136,5 +137,6 @@ class BaseAgent(AgentInterface):
             defaultInputModes=self.config.input_modes,
             defaultOutputModes=self.config.output_modes,
             capabilities=capabilities,
-            skills=skills
+            skills=skills,
+            configuration=self.config.configuration
         )
