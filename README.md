@@ -8,6 +8,12 @@ This repository contains multiple projects.
 
 Each project manages its own dependencies and configuration.
 
+## Configuration
+
+The server components use an `aion.yaml` file located in your project root to configure LangGraph workflows and HTTP 
+applications. For detailed configuration options and examples,
+see the [Aion YAML Configuration Guide](docs/aion-yaml-config.md).
+
 ## Running the CLI
 
 Install ``aion-agent-cli`` as a dependency (for example with ``pip install -e
