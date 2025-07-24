@@ -9,11 +9,12 @@ from a2a.server.tasks import (
 from a2a.types import AgentCard
 from starlette.applications import Starlette
 
-from aion.server.db import db_manager, get_config, verify_connection
+from aion.server.db import db_manager, verify_connection
 from aion.server.db.migrations import upgrade_to_head
 from aion.server.langgraph.a2a import LanggraphAgentExecutor
 from aion.server.langgraph.agent import BaseAgent, agent_manager
 from aion.server.tasks import PostgresTaskStore
+from aion.server.configs import db_settings
 from .configs import AppConfig
 from .lifespan import AppLifespan
 
@@ -132,22 +133,18 @@ class AppFactory:
 
     async def _init_db(self):
         """Initialize database connection and run migrations."""
-        cfg = get_config()
-        if not cfg:
+        pg_url = db_settings.pg_url
+        if not pg_url:
             logger.info("POSTGRES_URL environment variable not set, using in-memory data store")
             return
 
-        if not cfg.url:
-            logger.warning("POSTGRES_URL environment variable is empty")
-            return
-
-        is_connection_verified = await verify_connection(cfg.url)
+        is_connection_verified = await verify_connection(pg_url)
         if not is_connection_verified:
             logger.warning("Can't verify postgres connection")
             return
 
         try:
-            await db_manager.initialize(cfg.url)
+            await db_manager.initialize(pg_url)
         except Exception as exc:
             logger.error("Failed to initialize database", exc_info=exc)
             await self._cleanup_db()

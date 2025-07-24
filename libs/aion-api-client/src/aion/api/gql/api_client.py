@@ -4,38 +4,11 @@ from __future__ import annotations
 
 from typing import Any, AsyncGenerator, Iterable, Optional
 
-from ..gql.client import GqlClient
-
-CHAT_COMPLETIONS_SUBSCRIPTION = """
-subscription ChatCompletions($request: ChatCompletionRequest!) {
-  chatCompletionStream(request: $request) {
-    ... on ChatCompletionStreamResponseChunk {
-      response {
-        id
-        created
-        model
-        choices {
-          index
-          delta {
-            role
-            content
-          }
-          finishReason
-        }
-      }
-    }
-    ... on ChatCompletionStreamError {
-      message
-    }
-    ... on ChatCompletionStreamComplete {
-      done
-    }
-  }
-}
-"""
+from aion.api.gql import GqlClient
+from .queries import CHAT_COMPLETIONS_SUBSCRIPTION
 
 
-class ApiClient:
+class AionGqlApiClient:
     """Programmatic interface exposing Aion API functionality."""
 
     def __init__(self, gql_client: Optional[GqlClient] = None) -> None:
