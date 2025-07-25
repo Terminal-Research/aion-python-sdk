@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from typing import Any, Optional
 
 from gql import Client, gql
@@ -24,9 +23,13 @@ class GqlClient:
     and connection lifecycle.
     """
 
-    def __init__(self) -> None:
-        self.client_id = os.getenv("AION_CLIENT_ID")
-        self.secret = os.getenv("AION_SECRET")
+    def __init__(
+            self,
+            client_id: Optional[str] = None,
+            client_secret: Optional[str] = None
+    ) -> None:
+        self.client_id = client_id or aion_api_settings.client_id
+        self.secret = client_secret or aion_api_settings.client_secret
         self._validate_configuration()
         self._client: Optional[Client] = None
 
@@ -46,11 +49,17 @@ class GqlClient:
         and appropriate connection settings from the API configuration.
         """
         aion_token = await aion_jwt_manager.get_token()
+        if not aion_token:
+            raise ValueError("No token received from authentication")
+
         url = (
             f"{aion_api_settings.ws_gql_url}"
             f"?token={aion_token}"
         )
-        return WebsocketsTransport(url=url, ping_interval=aion_api_settings.keepalive)
+        return WebsocketsTransport(
+            url=url,
+            ping_interval=aion_api_settings.keepalive,
+            subprotocols=["graphql-transport-ws"])
 
     async def execute(self, query: str, variables: Optional[dict[str, Any]] = None) -> Any:
         """

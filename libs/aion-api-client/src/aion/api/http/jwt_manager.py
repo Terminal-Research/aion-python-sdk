@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -92,8 +93,9 @@ class AionJWTManager:
         """
         async with self._lock:
             if self._should_refresh_token():
-                await self._refresh_token()
-            return self._token.value
+                with suppress(Exception):
+                    await self._refresh_token()
+            return None if not self._token else self._token.value
 
     def _should_refresh_token(self) -> bool:
         """
@@ -120,20 +122,25 @@ class AionJWTManager:
         3. Creating a new Token object from the JWT
         4. Updating the cached token
         """
+        first_token = True
         try:
             data = await self._client.authenticate()
 
-            token_value = data.get("access_token")
+            token_value = data.get("accessToken")
             if not token_value:
-                raise ValueError("No token received from authentication")
+                raise ValueError("Access Token is missing in response.")
 
             # Create Token object from JWT
             self._token = Token.from_jwt(token_value)
 
-            logger.info(f"Token refreshed successfully, expires at: {self._token.expires_at}")
+            if first_token:
+                processed_action = "fetched"
+            else:
+                processed_action = "refreshed"
+            logger.info(f"Token {processed_action} successfully, expires at: {self._token.expires_at}")
 
-        except Exception as e:
-            logger.error(f"Token refresh failed: {e}")
+        except Exception as ex:
+            logger.error(f"Token refresh failed: {ex}")
             raise
 
     def clear_token(self) -> None:
