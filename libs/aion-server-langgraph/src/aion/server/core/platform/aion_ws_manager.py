@@ -2,7 +2,9 @@ import asyncio
 import logging
 from typing import Optional
 
-from aion.api import AionGqlApiClient
+from aion.api.config import aion_api_settings
+from aion.api.http import aion_jwt_manager
+from gql.transport.websockets import WebsocketsTransport
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +28,6 @@ class AionWebSocketManager:
         self.ping_interval = ping_interval
         self.reconnect_delay = reconnect_delay
 
-        self._aion_client: Optional[AionGqlApiClient] = None
         self._websocket_task: Optional[asyncio.Task] = None
         self._shutdown_event = asyncio.Event()
         self._connection_ready = asyncio.Event()
@@ -34,7 +35,6 @@ class AionWebSocketManager:
     async def start(self) -> None:
         """Start WebSocket connection with the platform."""
         try:
-            self._aion_client = AionGqlApiClient()
             logger.info("Initializing connection to Aion platform...")
 
             self._websocket_task = asyncio.create_task(self._connection_loop())
@@ -109,9 +109,29 @@ class AionWebSocketManager:
                         continue
                     break
 
+    async def _build_transport(self) -> WebsocketsTransport:
+        """
+        Build a WebSocket transport with JWT authentication.
+
+        Creates a new WebSocket transport configured with the current JWT token
+        and appropriate connection settings from the API configuration.
+        """
+        aion_token = await aion_jwt_manager.get_token()
+        if not aion_token:
+            raise ValueError("No token received from authentication")
+
+        url = (
+            f"{aion_api_settings.ws_gql_url}"
+            f"?token={aion_token}"
+        )
+        return WebsocketsTransport(
+            url=url,
+            ping_interval=aion_api_settings.keepalive,
+            subprotocols=["graphql-transport-ws"])
+
     async def _establish_connection(self) -> None:
         """Establish connection without blocking on pings."""
-        transport = await self._aion_client._gql._build_transport()
+        transport = await self._build_transport()
         await transport.connect()
         logger.info("WebSocket connection established")
 

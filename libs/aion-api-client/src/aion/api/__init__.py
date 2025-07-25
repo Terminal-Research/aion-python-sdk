@@ -1,8 +1,8 @@
-from .gql import AionGqlApiClient, generated
-from .http import AionHttpApiClient
+from .gql import AionGqlClient, generated
+from .http import AionHttpClient
 
 __all__ = [
-    "AionGqlApiClient",
-    "AionHttpApiClient",
+    "AionGqlClient",
+    "AionHttpClient",
     "generated",
 ]

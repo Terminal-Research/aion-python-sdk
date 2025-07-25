@@ -7,7 +7,7 @@ from typing import Optional
 
 import jwt
 
-from .client import AionHttpApiClient
+from .client import AionHttpClient
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +73,7 @@ class AionJWTManager:
     - Automatic token refresh when expired or expiring soon
     - Thread-safe access using asyncio locks
     - Caching of valid tokens to minimize API calls
-    - Integration with AionHttpApiClient for authentication
+    - Integration with AionHttpClient for authentication
 
     The manager ensures that only one token refresh operation occurs at a time
     and provides both token strings and Token objects to consumers.
@@ -81,7 +81,7 @@ class AionJWTManager:
     def __init__(self):
         self._token: Optional[Token] = None
         self._lock = asyncio.Lock()
-        self._client = AionHttpApiClient()
+        self._client = AionHttpClient()
 
     async def get_token(self) -> str:
         """

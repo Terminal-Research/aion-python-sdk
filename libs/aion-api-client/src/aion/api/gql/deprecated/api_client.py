@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, AsyncGenerator, Iterable, Optional
 
-from aion.api.gql import GqlClient
+from .client import GqlClient
 from .queries import CHAT_COMPLETIONS_SUBSCRIPTION
 
 

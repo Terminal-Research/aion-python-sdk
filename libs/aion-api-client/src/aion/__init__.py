@@ -9,8 +9,8 @@ from pkgutil import extend_path
 __path__ = extend_path(__path__, __name__)
 
 from .api import (
-    AionGqlApiClient,
-    AionHttpApiClient,
+    AionGqlClient,
+    AionHttpClient,
     generated
 )  # noqa: E402
 
@@ -20,8 +20,8 @@ from aion.api.exceptions import (
 )  # noqa: E402
 
 __all__ = [
-    "AionGqlApiClient",
-    "AionHttpApiClient",
+    "AionGqlClient",
+    "AionHttpClient",
     "generated",
 
     # exceptions

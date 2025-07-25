@@ -24,6 +24,7 @@ pytest = "8.4.1"
 schema_path = "gql/schema.graphql"
 queries_path = "gql/queries.graphql"
 target_package_path = "src/aion/api/gql/generated"
+client_name="GqlClient"
 async_client = true
 enable_custom_operations = true
 opentelemetry_client = true

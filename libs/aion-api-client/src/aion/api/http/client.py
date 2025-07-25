@@ -9,7 +9,7 @@ from aion.api.config import aion_api_settings
 logger = logging.getLogger(__name__)
 
 
-class AionHttpApiClient:
+class AionHttpClient:
     """
     Simple HTTP client for Aion API without built-in token management.
 

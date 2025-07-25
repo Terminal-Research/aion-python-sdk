@@ -1,7 +1,5 @@
-from .client import GqlClient
-from .api_client import AionGqlApiClient
+from .client import AionGqlClient
 
 __all__ = [
-    "GqlClient",
-    "AionGqlApiClient",
+    "AionGqlClient",
 ]

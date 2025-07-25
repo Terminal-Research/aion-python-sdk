@@ -16,10 +16,6 @@ class AionApiSettings:
         port (int): Connection port number
         keepalive (int): WebSocket keepalive interval in seconds
     """
-
-    _http_url: str
-    _ws_url: str
-
     def __init__(self):
         """
         Initialize AionApiSettings with values from environment settings.
@@ -35,7 +31,7 @@ class AionApiSettings:
         self.keepalive = settings.aion_api.get("keepalive", 60)
 
     @property
-    def http_url(self):
+    def http_url(self) -> str:
         """
         Get the complete HTTP URL for API requests.
 
@@ -58,7 +54,24 @@ class AionApiSettings:
         return self._http_url
 
     @property
-    def ws_gql_url(self):
+    def gql_url(self) -> str:
+        """
+        Get the complete HTTP URL for GraphQL endpoint.
+
+        Constructs and caches the GraphQL HTTP URL by appending the GraphQL
+        WebSocket path to the base HTTP URL.
+
+        Returns:
+            str: Complete HTTP URL for GraphQL endpoint (/ws/graphql)
+        """
+        if hasattr(self, "_gql_url"):
+            return self._gql_url
+
+        self._gql_url = f"{self.http_url}/ws/graphql"
+        return self._gql_url
+
+    @property
+    def ws_gql_url(self) -> str:
         """
         Get the complete WebSocket URL for GraphQL subscriptions.
 
@@ -68,12 +81,12 @@ class AionApiSettings:
         Returns:
             str: Complete WebSocket URL for GraphQL subscriptions
         """
-        if hasattr(self, "_ws_url"):
-            return self._ws_url
+        if hasattr(self, "_ws_gql_url"):
+            return self._ws_gql_url
 
         prefix = "wss" if self.protocol == "https" else "ws"
-        self._ws_url = f"{prefix}://{self.host}/ws/graphql"
-        return self._ws_url
+        self._ws_gql_url = f"{prefix}://{self.host}/ws/graphql"
+        return self._ws_gql_url
 
 
 aion_api_settings = AionApiSettings()

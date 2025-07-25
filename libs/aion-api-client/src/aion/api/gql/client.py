@@ -1,88 +1,122 @@
-"""Low level GraphQL client for communicating with the Aion API."""
-
-from __future__ import annotations
-
 import logging
-from typing import Any, Optional
-
-from gql import Client, gql
-from gql.transport.websockets import WebsocketsTransport
+from typing import Optional, List, Any, AsyncIterator
 
 from aion.api.config import aion_api_settings
 from aion.api.http import aion_jwt_manager
+from .generated.graphql_client import MessageInput, ChatCompletionStream
+from .generated.graphql_client.client import GqlClient
 
 logger = logging.getLogger(__name__)
 
 
-class GqlClient:
+class AionGqlClient:
     """
-    Client for the Aion GraphQL API using WebSocket connections.
+    Lightweight wrapper over ariadne-codegen generated GraphQL client with automatic authentication.
 
-    This client provides asynchronous GraphQL query execution and subscription
-    handling over WebSocket connections. It automatically manages JWT authentication
-    and connection lifecycle.
+    This wrapper provides seamless integration with the Aion GraphQL API by handling
+    JWT token authentication automatically. It wraps the generated GqlClient from
+    ariadne-codegen and manages the authentication flow transparently.
+
+    Attributes:
+        client_id (str): Client identifier for authentication
+        secret (str): Client secret for authentication
+        client (Optional[GqlClient]): The underlying ariadne-codegen generated GraphQL client
     """
 
-    def __init__(
-            self,
-            client_id: Optional[str] = None,
-            client_secret: Optional[str] = None
-    ) -> None:
+    def __init__(self, client_id: Optional[str] = None, client_secret: Optional[str] = None):
+        """
+        Initialize the Aion GraphQL client.
+
+        Args:
+            client_id (Optional[str]): Client ID for authentication.
+                If not provided, uses value from aion_api_settings.
+            client_secret (Optional[str]): Client secret for authentication.
+                If not provided, uses value from aion_api_settings.
+        """
         self.client_id = client_id or aion_api_settings.client_id
         self.secret = client_secret or aion_api_settings.client_secret
-        self._validate_configuration()
-        self._client: Optional[Client] = None
+        self.client: Optional[GqlClient] = None
+        self._is_initialized = False
 
-    def _validate_configuration(self):
-        """Validate that all required environment variables are set"""
-        if not self.client_id or not self.secret:
-            logger.error(
-                "AION_CLIENT_ID and AION_SECRET environment variables must be set"
-            )
-            raise ValueError("AION_CLIENT_ID, AION_SECRET environment variables must be set")
-
-    async def _build_transport(self) -> WebsocketsTransport:
+    async def initialize(self):
         """
-        Build a WebSocket transport with JWT authentication.
+        Initialize the GraphQL client with authentication.
 
-        Creates a new WebSocket transport configured with the current JWT token
-        and appropriate connection settings from the API configuration.
+        This method sets up the client with proper JWT authentication
+        and establishes connections for both HTTP and WebSocket endpoints.
         """
+        if self._is_initialized:
+            logger.warning("AionGqlClient is already initialized")
+            return
+
+        logger.info(f"Initializing AionGqlClient...")
+        await self._build_client()
+        self._is_initialized = True
+
+    def _validate_client_before_execute(self):
+        """
+        Validate that the client is properly initialized before executing operations.
+
+        Raises:
+            RuntimeError: If the client has not been initialized via initialize() method.
+        """
+        if not self._is_initialized:
+            error_msg = "AionGqlClient is not initialized before executing operations."
+            logger.error(error_msg)
+            raise RuntimeError(error_msg)
+
+    async def _build_client(self):
+        """
+        Build and configure the underlying GraphQL client.
+
+        Creates a new GqlClient instance with authenticated URLs for both
+        HTTP and WebSocket connections. Handles JWT token retrieval and
+        URL construction with proper authentication parameters.
+        """
+        if isinstance(self.client, GqlClient):
+            logger.warning("Client already initialized")
+            return
+
         aion_token = await aion_jwt_manager.get_token()
         if not aion_token:
             raise ValueError("No token received from authentication")
 
-        url = (
+        http_url = (
+            f"{aion_api_settings.gql_url}"
+            f"?token={aion_token}"
+        )
+        ws_url = (
             f"{aion_api_settings.ws_gql_url}"
             f"?token={aion_token}"
         )
-        return WebsocketsTransport(
-            url=url,
-            ping_interval=aion_api_settings.keepalive,
-            subprotocols=["graphql-transport-ws"])
 
-    async def execute(self, query: str, variables: Optional[dict[str, Any]] = None) -> Any:
-        """
-        Execute a GraphQL query using a WebSocket connection.
+        self.client = GqlClient(
+            url=http_url,
+            ws_url=ws_url)
 
-        Establishes a fresh WebSocket connection, executes the provided GraphQL
-        query with optional variables, and returns the result.
+    async def chat_completion_stream(
+            self,
+            model: str,
+            messages: List[MessageInput],
+            stream: bool,
+            **kwargs: Any
+    ) -> AsyncIterator[ChatCompletionStream]:
         """
-        transport = await self._build_transport()
-        async with Client(transport=transport, fetch_schema_from_transport=False) as session:
-            return await session.execute(gql(query), variable_values=variables)
+        Stream chat completion responses from the Aion API.
 
-    async def subscribe(
-            self, query: str, variables: Optional[dict[str, Any]] = None
-    ) -> Any:
-        """
-        Subscribe to a GraphQL subscription and yield results.
+        Provides a streaming interface for chat completions, allowing real-time
+        processing of AI responses.
 
-        Establishes a persistent WebSocket connection and yields results from
-        a GraphQL subscription as they arrive. The connection remains open
-        until the async generator is closed.
+        Args:
+            model (str): The AI model to use for completion
+            messages (List[MessageInput]): List of input messages for the conversation
+            stream (bool): Whether to enable streaming mode
+            **kwargs (Any): Additional parameters to pass to the completion request
         """
-        transport = await self._build_transport()
-        async with Client(transport=transport, fetch_schema_from_transport=False) as session:
-            async for result in session.subscribe(gql(query), variable_values=variables):
-                yield result
+        self._validate_client_before_execute()
+
+        return self.client.chat_completion_stream(
+            model=model,
+            messages=messages,
+            stream=stream,
+            **kwargs)
