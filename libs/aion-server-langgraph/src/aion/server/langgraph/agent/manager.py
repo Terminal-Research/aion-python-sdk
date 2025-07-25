@@ -5,7 +5,7 @@ import logging
 from pathlib import Path
 from typing import Dict, Optional, Union
 
-from aion.server.utils.metaclasses import Singleton
+from aion.server.core.metaclasses import Singleton
 from .base import BaseAgent
 from .config_processor import AgentConfigProcessor
 

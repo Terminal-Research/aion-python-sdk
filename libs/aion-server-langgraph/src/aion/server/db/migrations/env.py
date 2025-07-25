@@ -12,7 +12,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-from aion.server.db import get_config, sqlalchemy_url
+from aion.server.configs import db_settings
 
 # ``alembic.context`` exposes ``config`` only when executed via Alembic's
 # command line utilities. When this module is imported directly (e.g. during
@@ -27,18 +27,15 @@ config = context.config
 script_location = Path(__file__).parent
 config.set_main_option("script_location", str(script_location))
 
-cfg = get_config()
-DATABASE_URL = cfg.url if cfg else ""
-config.set_main_option("sqlalchemy.url", sqlalchemy_url(DATABASE_URL))
+config.set_main_option("sqlalchemy.url", db_settings.pg_sqlalchemy_url or "")
 
 
 def _get_engine() -> "Engine":
     """Return a SQLAlchemy engine for the configured database."""
-    cfg = get_config()
-    if not cfg:
+    url = db_settings.pg_sqlalchemy_url or ""
+    if not url:
         raise RuntimeError("No database configured")
 
-    url = sqlalchemy_url(cfg.url)
     config.set_main_option("sqlalchemy.url", url)
     return create_engine(url)
 
@@ -75,10 +72,8 @@ def run_migrations() -> None:
 def run_offline_migrations() -> None:
     """Run migrations in offline mode."""
 
-    cfg = get_config()
-    url = sqlalchemy_url(cfg.url) if cfg else ""
     context.configure(
-        url=url,
+        url=db_settings.pg_sqlalchemy_url or "",
         process_revision_directives=_log_revision_start,
         on_version_apply=_log_revision_end,
     )

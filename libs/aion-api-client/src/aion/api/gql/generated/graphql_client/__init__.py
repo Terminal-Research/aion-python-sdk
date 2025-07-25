@@ -10,7 +10,7 @@ from .chat_completion_stream import (
     ChatCompletionStreamChatCompletionStreamChatCompletionStreamResponseChunkResponseChoices,
     ChatCompletionStreamChatCompletionStreamChatCompletionStreamResponseChunkResponseChoicesDelta,
 )
-from .client import Client
+from .client import GqlClient
 from .enums import (
     AgentBehaviorDeploymentType,
     AgentIdentityType,
@@ -42,8 +42,8 @@ __all__ = [
     "ChatCompletionStreamChatCompletionStreamChatCompletionStreamResponseChunkResponse",
     "ChatCompletionStreamChatCompletionStreamChatCompletionStreamResponseChunkResponseChoices",
     "ChatCompletionStreamChatCompletionStreamChatCompletionStreamResponseChunkResponseChoicesDelta",
-    "Client",
     "DeploymentType",
+    "GqlClient",
     "GraphQLClientError",
     "GraphQLClientGraphQLError",
     "GraphQLClientGraphQLMultiError",

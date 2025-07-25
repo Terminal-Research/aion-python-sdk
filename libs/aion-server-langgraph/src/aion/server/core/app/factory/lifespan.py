@@ -1,7 +1,10 @@
-from contextlib import asynccontextmanager
+import asyncio
+from contextlib import asynccontextmanager, suppress
 from typing import TYPE_CHECKING, AsyncGenerator
 
 from starlette.applications import Starlette
+
+from aion.server.core.platform import aion_websocket_manager
 
 if TYPE_CHECKING:
     from .factory import AppFactory
@@ -25,9 +28,13 @@ class AppLifespan:
 
     async def startup(self):
         """Handle application startup events."""
-        pass
+        # start websocket connection with aion api
+        asyncio.create_task(aion_websocket_manager.start())
 
     async def shutdown(self):
         """Handle application shutdown events."""
-        # Delegate shutdown logic to app factory
+        # stop websocket connection with aion api
+        with suppress(Exception):
+            await aion_websocket_manager.stop()
+        # Delegate other shutdown logic to app factory
         await self.app_factory.shutdown()

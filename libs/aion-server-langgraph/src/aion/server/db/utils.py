@@ -3,29 +3,11 @@
 from __future__ import annotations
 
 import logging
+
 import psycopg
-import os
-from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
-
-@dataclass
-class DatabaseConfig:
-    """Configuration for connecting to Postgres."""
-
-    url: str
-
-
-def get_config() -> DatabaseConfig | None:
-    """Return database configuration from the ``POSTGRES_URL`` environment.
-
-    Returns ``None`` if the variable is not set.
-    """
-    url = os.getenv("POSTGRES_URL")
-    if not url:
-        return None
-    return DatabaseConfig(url=url)
 
 async def verify_connection(url: str) -> bool:
     """Attempt to connect to Postgres using ``psycopg`` async.
@@ -78,10 +60,11 @@ def sqlalchemy_url(url: str) -> str:
     if url.startswith(prefix) or not url:
         return url
     if url.startswith("postgresql://"):
-        return prefix + url[len("postgresql://") :]
+        return prefix + url[len("postgresql://"):]
     if url.startswith("postgres://"):
-        return prefix + url[len("postgres://") :]
+        return prefix + url[len("postgres://"):]
     return url
+
 
 def psycopg_url(url: str) -> str:
     """Return a psycopg connection URL by removing SQLAlchemy-specific prefixes.

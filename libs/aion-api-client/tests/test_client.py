@@ -14,13 +14,13 @@ pytest.importorskip("httpx")
 pytest.importorskip("jwt")
 pytest.importorskip("gql")
 
-from aion.api_client import ApiClient, settings
-from aion.gql import GqlClient
+from aion.api.config import settings, aion_api_settings
+from aion.api.gql import GqlClient, AionGqlApiClient
 
 
 def test_settings_loaded() -> None:
     assert settings.debug is True
-    assert settings.aion_api.keepalive == 60
+    assert aion_api_settings.keepalive == 60
 
 
 def test_missing_env_logs_error(monkeypatch, caplog) -> None:
@@ -42,7 +42,7 @@ async def test_chat_completions_calls_gql(monkeypatch) -> None:
         }
         yield {"chatCompletionStream": {"done": True}}
 
-    client = ApiClient(gql_client=GqlClient())
+    client = AionGqlApiClient(gql_client=GqlClient())
     monkeypatch.setattr(client._gql, "subscribe", mock_subscribe)
 
     results = []

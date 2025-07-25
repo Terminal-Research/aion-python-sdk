@@ -27,7 +27,7 @@ def gql(q: str) -> str:
     return q
 
 
-class Client(AsyncBaseClientOpenTelemetry):
+class GqlClient(AsyncBaseClientOpenTelemetry):
     async def chat_completion_stream(
         self, model: str, messages: List[MessageInput], stream: bool, **kwargs: Any
     ) -> AsyncIterator[ChatCompletionStream]:

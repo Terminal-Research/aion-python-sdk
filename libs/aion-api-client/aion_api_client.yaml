@@ -1,19 +1,20 @@
+# DEFAULT SETTINGS
 default:
-  debug: true
   aion_api:
+    protocol: https
     host: api.aion.to
-    port: 80
+    port: 443
     keepalive: 60
+
+# ENVIRONMENT SPECIFIC
+development:
+  debug: true
   logging:
     level: INFO
     file: aion-api-client.log
 
 production:
   debug: false
-  aion_api:
-    host: api.aion.to
-    port: 80
-    keepalive: 60
   logging:
     level: WARNING
     file: /var/log/aion/aion-api-client.log

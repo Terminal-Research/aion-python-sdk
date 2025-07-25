@@ -8,22 +8,23 @@ readme = "README.md"
 packages = [{ include = "aion", from = "src" }]
 
 [tool.poetry.dependencies]
-python = "^3.11"
-dynaconf = "^3.2.5"
-gql = "^3.5.0"
+python = "3.13.5"
+dynaconf = "3.2.11"
+gql = "3.5.3"
 ariadne-codegen = {version = "^0.14.0", extras = ["subscriptions"]}
-PyJWT = "^2.8.0"
-httpx = "^0.28.1"
-pydantic = "^2.10.6"
-websockets = "^11.0"
+PyJWT = "2.10.1"
+httpx = "0.28.1"
+pydantic = "2.11.3"
+websockets = "11.0.3"
 
 [tool.poetry.group.dev.dependencies]
-pytest = "^8.0.0"
+pytest = "8.4.1"
 
 [tool.ariadne-codegen]
 schema_path = "gql/schema.graphql"
 queries_path = "gql/queries.graphql"
-target_package_path = "src/aion/gql/generated"
+target_package_path = "src/aion/api/gql/generated"
+client_name="GqlClient"
 async_client = true
 enable_custom_operations = true
 opentelemetry_client = true
