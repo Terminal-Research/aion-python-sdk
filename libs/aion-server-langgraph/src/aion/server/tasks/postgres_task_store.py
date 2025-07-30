@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-import datetime as _dt
 import uuid
-from typing import Any
+import datetime as _dt
 
-from psycopg_pool import AsyncConnectionPool
 from pydantic import BaseModel
 
-from aion.server.db.models import TaskRecord
+from aion.server.db.manager import db_manager
+from aion.server.db.repositories import TasksRepository
+from aion.server.types.entities import TaskRecord
 
 try:  # pragma: no cover - optional dependency
     from a2a.server.tasks import TaskStore
@@ -18,7 +18,6 @@ except Exception:  # pragma: no cover - tests without a2a
     class Task(BaseModel):
         id: str
         contextId: str
-
 
     class TaskStore:  # type: ignore
         """Fallback ``TaskStore`` protocol."""
@@ -34,77 +33,87 @@ except Exception:  # pragma: no cover - tests without a2a
 
 
 class PostgresTaskStore(TaskStore):
-    """Store tasks in a Postgres database using async connection pool."""
+    """Store tasks in a Postgres database using repository pattern."""
 
-    def __init__(self, pool: AsyncConnectionPool) -> None:
-        if pool is None:
-            raise ValueError("Connection pool is required")
-        self._pool = pool
+    def _task_to_entity(self, task: Task, task_id: uuid.UUID = None) -> TaskRecord:
+        """Convert Task to TaskRecord entity."""
+        if task_id is None:
+            try:
+                task_id = uuid.UUID(task.id)
+            except (ValueError, AttributeError):
+                task_id = uuid.uuid4()
 
-    async def save(self, task: Task) -> None:
-        """Persist a ``Task`` to the database."""
-        try:
-            task_id = str(uuid.UUID(task.id))
-        except Exception:
-            task_id = str(uuid.uuid4())
+        now = _dt.datetime.utcnow()
 
-        record = TaskRecord(
-            id=uuid.UUID(task_id),
+        return TaskRecord(
+            id=task_id,
             context_id=task.contextId,
             task=task,
-            created_at=_dt.datetime.utcnow(),
-            updated_at=_dt.datetime.utcnow(),
+            created_at=now,
+            updated_at=now
         )
 
-        async with self._pool.connection() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    """
-                    INSERT INTO tasks (id, context_id, task, created_at, updated_at)
-                    VALUES (%s, %s, %s::jsonb, %s, %s) ON CONFLICT (id) DO
-                    UPDATE
-                        SET task = EXCLUDED.task,
-                        context_id = EXCLUDED.context_id,
-                        updated_at = EXCLUDED.updated_at
-                    """,
-                    (
-                        str(record.id),
-                        record.context_id,
-                        record.task.model_dump_json(),
-                        record.created_at,
-                        record.updated_at,
-                    ),
-                )
+    def _entity_to_task(self, entity: TaskRecord) -> Task:
+        """Convert TaskRecord entity to Task."""
+        task_data = entity.task
+
+        if isinstance(task_data, dict):
+            return Task.model_validate(task_data)
+        elif hasattr(task_data, 'model_validate'):
+            return task_data
+        else:
+            return Task.model_validate(task_data)
+
+    async def save(self, task: Task) -> None:
+        """Save a task."""
+        try:
+            task_id = uuid.UUID(task.id)
+        except (ValueError, AttributeError):
+            task_id = uuid.uuid4()
+
+        entity = self._task_to_entity(task, task_id)
+
+        async with db_manager.get_session() as session:
+            repository = TasksRepository(session)
+            await repository.save(entity)
+            await session.commit()
 
     async def get(self, task_id: str) -> Task | None:
-        """Retrieve a task by ID."""
-        async with self._pool.connection() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    "SELECT task FROM tasks WHERE id = %s",
-                    (str(task_id),),
-                )
-                row = await cur.fetchone()
-
-        if not row:
+        """Get a task by ID."""
+        try:
+            task_uuid = uuid.UUID(task_id)
+        except ValueError:
             return None
 
-        data: Any = row[0]
-        if isinstance(data, str):
-            import json
-            data = json.loads(data)
+        async with db_manager.get_session() as session:
+            repository = TasksRepository(session)
+            entity = await repository.find_by_id(task_uuid)
 
-        return Task.model_validate(data)
+            if not entity:
+                return None
+
+            return self._entity_to_task(entity)
 
     async def delete(self, task_id: str) -> None:
         """Delete a task by ID."""
-        async with self._pool.connection() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    "DELETE FROM tasks WHERE id = %s",
-                    (str(task_id),),
-                )
+        try:
+            task_uuid = uuid.UUID(task_id)
+        except ValueError:
+            return
 
-    # Backwards compatibility
-    async def save_task(self, task: Task) -> None:  # pragma: no cover - legacy
+        async with db_manager.get_session() as session:
+            repository = TasksRepository(session)
+            await repository.delete_by_id(task_uuid)
+            await session.commit()
+
+    async def get_by_context(self, context_id: str) -> list[Task]:
+        """Get all tasks for a given context."""
+        async with db_manager.get_session() as session:
+            repository = TasksRepository(session)
+            entities = await repository.find_by_context(context_id)
+
+            return [self._entity_to_task(entity) for entity in entities]
+
+    async def save_task(self, task: Task) -> None:
+        """Backwards compatibility method."""
         await self.save(task)
