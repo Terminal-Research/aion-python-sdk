@@ -16,11 +16,8 @@ from .models import AgentConfig, AgentCapabilities, AgentSkill
 logger = logging.getLogger(__name__)
 
 # LangGraph imports with fallback
-try:
-    from langgraph.graph import Graph
-    from langgraph.pregel import Pregel
-except Exception:
-    from aion.server.langgraph.graph.langgraph_interfaces import Graph, Pregel
+from langgraph.graph import Graph
+from langgraph.pregel import Pregel
 
 
 class AgentConfigProcessor:

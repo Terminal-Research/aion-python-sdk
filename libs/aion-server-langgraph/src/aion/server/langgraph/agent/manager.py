@@ -5,20 +5,14 @@ import logging
 from pathlib import Path
 from typing import Dict, Optional, Union
 
+from langgraph.graph import Graph
+from langgraph.pregel import Pregel
+
 from aion.server.core.metaclasses import Singleton
 from .base import BaseAgent
 from .config_processor import AgentConfigProcessor
 
 logger = logging.getLogger(__name__)
-
-# LangGraph is optional in this environment. Define minimal stubs if the package
-# is not installed so type checks and isinstance comparisons do not fail at
-# runtime when LangGraph is available.
-try:  # pragma: no cover - optional dependency
-    from langgraph.graph import Graph
-    from langgraph.pregel import Pregel
-except Exception:  # pragma: no cover - local testing without dependency
-    from aion.server.langgraph.graph.langgraph_interfaces import Graph, Pregel
 
 
 class AgentManager(metaclass=Singleton):

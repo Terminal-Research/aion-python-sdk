@@ -6,10 +6,7 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 from aion.server.db import db_manager
 
-try:
-    from langgraph.graph import Graph
-except Exception:
-    from aion.server.langgraph.graph.langgraph_interfaces import Graph
+from langgraph.graph import Graph
 
 logger = logging.getLogger(__name__)
 

@@ -8,7 +8,7 @@ packages = [{include = "aion", from = "src"}]
 
 [tool.poetry.dependencies]
 python = "3.13.5"
-a2a-sdk = "0.2.12"
+a2a-sdk = "0.2.16"
 uvicorn = "0.23.2"
 starlette = "0.46.2"
 structlog = "24.4.0"
@@ -16,8 +16,11 @@ httpx = "0.28.1"
 pydantic = "2.11.3"
 pydantic-settings = "2.10.1"
 python-dotenv = "1.1.1"
+# PostgreSQL
 psycopg = { version = "3.2.9", extras = ["binary"] }
-alembic = "1.16.2"
+asyncpg = "0.30.0" # native psql protocol (faster then psycopg)
+greenlet = "3.2.3" # supports async pg operations
+alembic = "1.16.2" # migrations
 SQLAlchemy = "2.0.41"
 
 langgraph = "0.3.9"

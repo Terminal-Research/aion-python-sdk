@@ -16,6 +16,8 @@ from .utils import (
 
 from .manager import db_manager
 
+from .models import TaskRecordModel
+
 __all__ = [
     "AION_DB_NAMESPACE",
     "sqlalchemy_url",
@@ -23,4 +25,7 @@ __all__ = [
     "verify_connection",
     "test_permissions",
     "db_manager",
+
+    # db models
+    "TaskRecordModel",
 ]

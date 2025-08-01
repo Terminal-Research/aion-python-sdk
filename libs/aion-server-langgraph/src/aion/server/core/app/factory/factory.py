@@ -1,11 +1,7 @@
 import logging
 from typing import Optional
 
-from a2a.server.apps import A2AStarletteApplication
-from a2a.server.request_handlers import DefaultRequestHandler
-from a2a.server.tasks import (
-    InMemoryTaskStore,
-    InMemoryPushNotificationConfigStore)
+from a2a.server.tasks import InMemoryPushNotificationConfigStore
 from a2a.types import AgentCard
 from starlette.applications import Starlette
 
@@ -13,10 +9,12 @@ from aion.server.db import db_manager, verify_connection
 from aion.server.db.migrations import upgrade_to_head
 from aion.server.langgraph.a2a import LanggraphAgentExecutor
 from aion.server.langgraph.agent import BaseAgent, agent_manager
-from aion.server.tasks import PostgresTaskStore
+from aion.server.tasks import store_manager
 from aion.server.configs import db_settings
 from .configs import AppConfig
 from .lifespan import AppLifespan
+from .a2a_starlette_application import AionA2AStarletteApplication
+from aion.server.core.request_handlers import AionRequestHandler
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +23,7 @@ class AppFactory:
     """Factory for creating and configuring the application."""
 
     config: AppConfig
-    a2a_app: Optional[A2AStarletteApplication]
+    a2a_app: Optional[AionA2AStarletteApplication]
     starlette_app: Optional[Starlette]
     agent: Optional[BaseAgent]
 
@@ -59,7 +57,7 @@ class AppFactory:
 
         return instance
 
-    async def create_a2a_app(self) -> "A2AStarletteApplication":
+    async def create_a2a_app(self) -> "AionA2AStarletteApplication":
         """Create and configure the A2A application.
 
         Returns:
@@ -77,7 +75,7 @@ class AppFactory:
         agent_card = self._create_agent_card()
         request_handler = await self._create_request_handler()
 
-        self.a2a_app = A2AStarletteApplication(
+        self.a2a_app = AionA2AStarletteApplication(
             agent_card=agent_card,
             http_handler=request_handler)
         return self.a2a_app
@@ -99,20 +97,17 @@ class AppFactory:
 
         raise RuntimeError("No agent available to create agent card")
 
-    async def _create_request_handler(self) -> DefaultRequestHandler:
+    async def _create_request_handler(self) -> "AionRequestHandler":
         """Create and configure the request handler.
 
         Returns:
             Configured DefaultRequestHandler instance.
         """
-        if db_manager.is_initialized:
-            task_store = PostgresTaskStore(pool=db_manager.get_pool())
-        else:
-            task_store = InMemoryTaskStore()
+        store_manager.initialize()
 
-        return DefaultRequestHandler(
+        return AionRequestHandler(
             agent_executor=LanggraphAgentExecutor(self.agent.get_compiled_graph()),
-            task_store=task_store,
+            task_store=store_manager.get_store(),
             push_config_store=InMemoryPushNotificationConfigStore())
 
     async def _init_agents(self):
