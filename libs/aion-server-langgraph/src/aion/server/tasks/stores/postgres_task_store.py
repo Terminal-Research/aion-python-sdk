@@ -3,36 +3,18 @@
 from __future__ import annotations
 
 import uuid
-import datetime as _dt
-
-from pydantic import BaseModel
+from datetime import datetime, timezone
+from typing import Optional, List
 
 from aion.server.db.manager import db_manager
 from aion.server.db.repositories import TasksRepository
 from aion.server.types.entities import TaskRecord
 
-try:  # pragma: no cover - optional dependency
-    from a2a.server.tasks import TaskStore
-    from a2a.types import Task
-except Exception:  # pragma: no cover - tests without a2a
-    class Task(BaseModel):
-        id: str
-        contextId: str
-
-    class TaskStore:  # type: ignore
-        """Fallback ``TaskStore`` protocol."""
-
-        async def save(self, task: Task) -> None:  # pragma: no cover
-            raise NotImplementedError
-
-        async def get(self, task_id: str) -> Task | None:  # pragma: no cover
-            raise NotImplementedError
-
-        async def delete(self, task_id: str) -> None:  # pragma: no cover
-            raise NotImplementedError
+from a2a.types import Task
+from .base_task_store import BaseTaskStore
 
 
-class PostgresTaskStore(TaskStore):
+class PostgresTaskStore(BaseTaskStore):
     """Store tasks in a Postgres database using repository pattern."""
 
     def _task_to_entity(self, task: Task, task_id: uuid.UUID = None) -> TaskRecord:
@@ -43,7 +25,7 @@ class PostgresTaskStore(TaskStore):
             except (ValueError, AttributeError):
                 task_id = uuid.uuid4()
 
-        now = _dt.datetime.utcnow()
+        now = datetime.now(tz=timezone.utc)
 
         return TaskRecord(
             id=task_id,
@@ -106,14 +88,49 @@ class PostgresTaskStore(TaskStore):
             await repository.delete_by_id(task_uuid)
             await session.commit()
 
-    async def get_by_context(self, context_id: str) -> list[Task]:
+    async def get_by_context(
+            self,
+            context_id: str,
+            limit: Optional[int] = None,
+            offset: Optional[int] = None
+    ) -> list[Task]:
         """Get all tasks for a given context."""
         async with db_manager.get_session() as session:
             repository = TasksRepository(session)
-            entities = await repository.find_by_context(context_id)
-
+            entities = await repository.find_by_context(
+                context_id=context_id,
+                limit=limit,
+                offset=offset
+            )
             return [self._entity_to_task(entity) for entity in entities]
 
     async def save_task(self, task: Task) -> None:
         """Backwards compatibility method."""
         await self.save(task)
+
+    async def get_context_ids(
+            self,
+            offset: Optional[int] = None,
+            limit: Optional[int] = None
+    ) -> List[str]:
+        context_ids = []
+        async with db_manager.get_session() as session:
+            repository = TasksRepository(session)
+            context_ids = await repository.find_unique_context_ids(offset=offset, limit=limit)
+        return context_ids
+
+    async def get_context_tasks(
+            self,
+            context_id: str,
+            offset: Optional[int] = None,
+            limit: Optional[int] = None
+    ) -> List[Task]:
+        task_records = []
+        async with db_manager.get_session() as session:
+            repository = TasksRepository(session)
+            task_records = await repository.find_by_context(
+                context_id=context_id,
+                offset=offset,
+                limit=limit)
+        tasks = [record.task for record in task_records]
+        return tasks

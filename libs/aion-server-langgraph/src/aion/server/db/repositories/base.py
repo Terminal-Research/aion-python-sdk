@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 from typing import Type, TypeVar, Generic, Optional, List
 import uuid
 
+from sqlalchemy import Select, select, delete, exists
 from sqlalchemy.ext.asyncio import AsyncSession
 
 ModelT = TypeVar('ModelT')
@@ -28,17 +29,36 @@ class BaseRepository(ABC, Generic[ModelT, EntityT]):
         """Domain entity class."""
         raise NotImplementedError
 
-    @abstractmethod
-    async def save(self, entity: EntityT) -> EntityT:
-        """Save or update an entity."""
-        raise NotImplementedError
-
-    @abstractmethod
     async def find_by_id(self, id: uuid.UUID) -> Optional[EntityT]:
-        """Find entity by ID."""
-        raise NotImplementedError
+        """Find row by ID."""
+        stmt = select(self.model_class).where(self.model_class.id == id)
+        return await self._execute_and_convert_single(stmt)
 
-    @abstractmethod
+
     async def delete_by_id(self, id: uuid.UUID) -> bool:
-        """Delete entity by ID."""
-        raise NotImplementedError
+        """Delete row by ID."""
+        stmt = delete(self.model_class).where(self.model_class.id == id)
+        result = await self._session.execute(stmt)
+        return result.rowcount > 0
+
+    async def exists_by_id(self, id: uuid.UUID) -> bool:
+        """Check if task exists."""
+        stmt = select(exists().where(self.model_class.id == id))
+        result = await self._session.execute(stmt)
+        return result.scalar()
+
+    async def _execute_and_convert_multiple(self, stmt: Select) -> List[EntityT]:
+        """Execute query and return list of entities."""
+        result = await self._session.execute(stmt)
+        models = result.scalars().all()
+        return [self.entity_class.model_validate(model, from_attributes=True) for model in models]
+
+    async def _execute_and_convert_single(self, stmt: Select) -> Optional[EntityT]:
+        """Execute query and return single entity or None."""
+        result = await self._session.execute(stmt)
+        model = result.scalar_one_or_none()
+
+        if not model:
+            return None
+
+        return self.entity_class.model_validate(model, from_attributes=True)

@@ -9,6 +9,8 @@ from aion.server.types import (
     Conversation,
     ContextsList
 )
+from aion.server.tasks import store_manager
+from aion.server.utils import ConversationBuilder
 
 
 @trace_class(kind=SpanKind.SERVER)
@@ -29,11 +31,13 @@ class AionRequestHandler(DefaultRequestHandler, IRequestHandler):
         Returns:
             Conversation object with context data
         """
-        # todo complete
-        return Conversation.model_validate({
-            "context_id": params.context_id,
-            "status": "unknown"
-        })
+        task_store = store_manager.get_store()
+        tasks = await task_store.get_context_tasks(
+            context_id=params.context_id,
+            limit=params.history_length,
+            offset=params.history_offset)
+
+        return ConversationBuilder.build_from_tasks(context_id=params.context_id, tasks=tasks)
 
     async def on_get_contexts_list(
             self,
@@ -49,5 +53,8 @@ class AionRequestHandler(DefaultRequestHandler, IRequestHandler):
         Returns:
             List of available context IDs
         """
-        # todo complete
-        return ContextsList.model_validate([])
+        task_store = store_manager.get_store()
+        context_ids = await task_store.get_context_ids(
+            limit=params.history_length,
+            offset=params.history_offset)
+        return ContextsList.model_validate(context_ids)

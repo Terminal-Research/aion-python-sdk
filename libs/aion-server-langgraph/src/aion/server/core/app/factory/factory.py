@@ -1,9 +1,7 @@
 import logging
 from typing import Optional
 
-from a2a.server.tasks import (
-    InMemoryTaskStore,
-    InMemoryPushNotificationConfigStore)
+from a2a.server.tasks import InMemoryPushNotificationConfigStore
 from a2a.types import AgentCard
 from starlette.applications import Starlette
 
@@ -11,7 +9,7 @@ from aion.server.db import db_manager, verify_connection
 from aion.server.db.migrations import upgrade_to_head
 from aion.server.langgraph.a2a import LanggraphAgentExecutor
 from aion.server.langgraph.agent import BaseAgent, agent_manager
-from aion.server.tasks import PostgresTaskStore
+from aion.server.tasks import store_manager
 from aion.server.configs import db_settings
 from .configs import AppConfig
 from .lifespan import AppLifespan
@@ -105,14 +103,11 @@ class AppFactory:
         Returns:
             Configured DefaultRequestHandler instance.
         """
-        if db_manager.is_initialized:
-            task_store = PostgresTaskStore()
-        else:
-            task_store = InMemoryTaskStore()
+        store_manager.initialize()
 
         return AionRequestHandler(
             agent_executor=LanggraphAgentExecutor(self.agent.get_compiled_graph()),
-            task_store=task_store,
+            task_store=store_manager.get_store(),
             push_config_store=InMemoryPushNotificationConfigStore())
 
     async def _init_agents(self):

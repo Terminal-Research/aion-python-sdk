@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-import uuid
-from typing import List, Optional, Type
+from typing import List, Type, Optional
 
-from sqlalchemy import select, delete
+from sqlalchemy import select, func, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from aion.server.types import TaskRecord
 from .base import BaseRepository
 from ..models import TaskRecordModel
-from aion.server.types import TaskRecord
 
 
 class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
@@ -51,33 +50,58 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
 
         await self._session.flush()
 
-    async def find_by_id(self, task_id: uuid.UUID) -> Optional[TaskRecord]:
-        """Find task by ID."""
-        stmt = select(self.model_class).where(self.model_class.id == task_id)
-        result = await self._session.execute(stmt)
-        model = result.scalar_one_or_none()
-
-        if not model:
-            return None
-
-        return self.entity_class.model_validate(model, from_attributes=True)
-
-    async def find_by_context(self, context_id: str) -> List[TaskRecord]:
+    async def find_by_context(
+            self,
+            context_id: str,
+            limit: Optional[int] = None,
+            offset: Optional[int] = None
+    ) -> List[TaskRecord]:
         """Find all tasks by context ID."""
-        stmt = select(self.model_class).where(self.model_class.context_id == context_id)
-        result = await self._session.execute(stmt)
-        models = result.scalars().all()
+        stmt = (select(self.model_class)
+                .where(self.model_class.context_id == context_id)
+                .order_by(desc(self.model_class.created_at)))
 
-        return [self.entity_class.model_validate(model, from_attributes=True) for model in models]
+        if offset:
+            stmt = stmt.offset(offset)
+        if limit:
+            stmt = stmt.limit(limit)
 
-    async def delete_by_id(self, task_id: uuid.UUID) -> bool:
-        """Delete task by ID."""
-        stmt = delete(self.model_class).where(self.model_class.id == task_id)
-        result = await self._session.execute(stmt)
-        return result.rowcount > 0
+        return await self._execute_and_convert_multiple(stmt)
 
-    async def exists(self, task_id: uuid.UUID) -> bool:
-        """Check if task exists."""
-        stmt = select(self.model_class.id).where(self.model_class.id == task_id)
+    async def find_unique_context_ids(
+            self,
+            limit: Optional[int] = None,
+            offset: Optional[int] = None
+    ) -> List[str]:
+        """
+        Find all unique context_id values ordered by latest task creation.
+
+        Args:
+            limit: Maximum number of context_ids to return
+            offset: Number of context_ids to skip
+
+        Returns:
+            List of unique context_id strings ordered by latest created_at DESC
+        """
+        subquery = (
+            select(
+                self.model_class.context_id,
+                func.max(self.model_class.created_at).label('latest_created_at')
+            )
+            .where(self.model_class.context_id.is_not(None))
+            .group_by(self.model_class.context_id)
+            .subquery()
+        )
+
+        stmt = (
+            select(subquery.c.context_id)
+            .order_by(desc(subquery.c.latest_created_at))
+        )
+
+        if offset:
+            stmt = stmt.offset(offset)
+        if limit:
+            stmt = stmt.limit(limit)
+
         result = await self._session.execute(stmt)
-        return result.scalar_one_or_none() is not None
+        return [row[0] for row in result.fetchall()]

@@ -6,9 +6,17 @@ from a2a.types import Message, Artifact, TaskState
 __all__ = [
     "Conversation",
     "ContextsList",
+    "ConversationTaskStatus",
 ]
 
-from pydantic import RootModel, Field
+from pydantic import RootModel, Field, ConfigDict
+
+
+class ConversationTaskStatus(A2ABaseModel):
+    state: TaskState
+    """
+    The current state of the task's lifecycle.
+    """
 
 
 class Conversation(A2ABaseModel):
@@ -25,7 +33,7 @@ class Conversation(A2ABaseModel):
     """
     List of artifacts associated with the conversation.
     """
-    status: TaskState
+    status: ConversationTaskStatus
     """
     Current status of the conversation.
     """
