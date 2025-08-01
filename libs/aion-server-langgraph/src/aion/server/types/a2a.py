@@ -4,7 +4,7 @@ __all__ = [
     "MessageType",
     "ArtifactName",
     "A2AEventType",
-    "A2AMetaKey",
+    "A2AMetadataKey",
 ]
 
 class MessageType(str, Enum):
@@ -27,6 +27,8 @@ class A2AEventType(str, Enum):
     COMPLETE = "complete"
 
 
-class A2AMetaKey(str, Enum):
+class A2AMetadataKey(str, Enum):
     """Metadata keys used in A2A message headers (metadata)."""
     MESSAGE_TYPE = "aion:message_type"
+    SENDER_ID = "aion:sender_id"
+    SIGNATURE = "aion:signature"

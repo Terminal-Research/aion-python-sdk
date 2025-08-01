@@ -11,7 +11,7 @@ from a2a.server.events import EventQueue
 from langchain_core.messages import BaseMessage, AIMessageChunk, AIMessage
 from langgraph.types import Interrupt, StateSnapshot
 
-from aion.server.types import ArtifactName, MessageType, A2AEventType, A2AMetaKey
+from aion.server.types import ArtifactName, MessageType, A2AEventType, A2AMetadataKey
 
 logger = logging.getLogger(__name__)
 
@@ -151,7 +151,7 @@ class LanggraphA2AEventProducer:
                     role=Role.agent,
                     parts=[Part(root=TextPart(text=langgraph_message.content))],
                     metadata={
-                        A2AMetaKey.MESSAGE_TYPE.value: MessageType.STREAM_DELTA.value
+                        A2AMetadataKey.MESSAGE_TYPE.value: MessageType.STREAM_DELTA.value
                     },
                 ),
             )
@@ -179,7 +179,7 @@ class LanggraphA2AEventProducer:
                 role=Role.agent,
                 parts=[Part(root=DataPart(data=emit_event))],
                 metadata={
-                    A2AMetaKey.MESSAGE_TYPE.value: MessageType.EVENT.value
+                    A2AMetadataKey.MESSAGE_TYPE.value: MessageType.EVENT.value
                 },
             ),
         )
@@ -203,7 +203,7 @@ class LanggraphA2AEventProducer:
                 role=Role.agent,
                 parts=[Part(root=DataPart(data=event))],
                 metadata={
-                    A2AMetaKey.MESSAGE_TYPE.value: MessageType.LANGRAPH_VALUES.value
+                    A2AMetadataKey.MESSAGE_TYPE.value: MessageType.LANGRAPH_VALUES.value
                 },
             ),
         )

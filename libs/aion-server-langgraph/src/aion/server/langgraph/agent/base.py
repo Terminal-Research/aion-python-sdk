@@ -1,7 +1,7 @@
 import logging
 from typing import Union, Optional, Callable
 
-from a2a.types import AgentCard
+from a2a.types import AgentCard, AgentExtension
 from langgraph.graph import Graph
 from langgraph.pregel import Pregel
 
@@ -10,6 +10,9 @@ from .interfaces import AgentInterface
 from .models import AgentConfig
 
 from .card import AionAgentCard
+
+from aion.server.types import GetContextParams, GetContextsListParams
+from aion.server.configs import aion_platform_settings
 
 logger = logging.getLogger(__name__)
 
@@ -113,11 +116,25 @@ class BaseAgent(AgentInterface):
 
     def _generate_agent_card_from_config(self, base_url: str) -> AgentCard:
         """Generate agent card from config."""
-        from a2a.types import AgentCard, AgentCapabilities, AgentSkill
+        from a2a.types import AgentCapabilities, AgentSkill
 
         capabilities = AgentCapabilities(
             streaming=self.config.capabilities.streaming,
-            pushNotifications=self.config.capabilities.pushNotifications)
+            push_notifications=self.config.capabilities.pushNotifications,
+            extensions=[
+                AgentExtension(
+                    description="Get Conversation info based on context",
+                    params=GetContextParams.model_json_schema(),
+                    required=False,
+                    uri=f"{aion_platform_settings.docs_url}/a2a/extensions/get-context"
+                ),
+                AgentExtension(
+                    description="Get list of available contexts",
+                    params=GetContextsListParams.model_json_schema(),
+                    required=False,
+                    uri=f"{aion_platform_settings.docs_url}/a2a/extensions/get-contexts"
+                )
+            ])
 
         skills = []
         for skill_config in self.config.skills:
