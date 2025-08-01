@@ -3,7 +3,7 @@ from typing import Optional
 
 from psycopg_pool import AsyncConnectionPool
 
-from aion.server.utils import Singleton
+from aion.server.core.metaclasses import Singleton
 
 logger = logging.getLogger(__name__)
 

@@ -5,7 +5,7 @@ import sys
 
 import click
 import uvicorn
-from aion.server.app import AppFactory, AppConfig
+from aion.server.core.app import AppFactory, AppConfig
 from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)

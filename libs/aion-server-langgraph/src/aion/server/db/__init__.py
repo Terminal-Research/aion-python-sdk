@@ -12,16 +12,12 @@ from .utils import (
     sqlalchemy_url,
     psycopg_url,
     test_permissions,
-    get_config,
-    DatabaseConfig,
 )
 
 from .manager import db_manager
 
 __all__ = [
     "AION_DB_NAMESPACE",
-    "DatabaseConfig",
-    "get_config",
     "sqlalchemy_url",
     "psycopg_url",
     "verify_connection",
