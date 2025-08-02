@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-import datetime as _dt
 import uuid
-from typing import List
+from sqlalchemy import Column, DateTime, String, func
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.ext.declarative import declarative_base
 
-from pydantic import BaseModel
+from .fields import JSONType
+
 
 try:  # pragma: no cover - optional dependency
     from a2a.types import Artifact, Task
@@ -16,21 +18,39 @@ except Exception as exc:  # pragma: no cover - explicit failure if missing
     ) from exc
 
 
-class ThreadRecord(BaseModel):
-    """Representation of a row in the ``threads`` table."""
+__all__ = [
+    "BaseModel",
+    "TaskRecordModel",
+]
 
-    id: uuid.UUID
-    context_id: str
-    artifacts: List[Artifact]
-    created_at: _dt.datetime
-    updated_at: _dt.datetime
+BaseModel = declarative_base()
 
-
-class TaskRecord(BaseModel):
+class TaskRecordModel(BaseModel):
     """Representation of a row in the ``tasks`` table."""
 
-    id: uuid.UUID
-    context_id: str
-    task: Task
-    created_at: _dt.datetime
-    updated_at: _dt.datetime
+    __tablename__ = 'tasks'
+
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4)
+
+    context_id = Column(
+        String,
+        nullable=False,
+        index=True)
+
+    task = Column(
+        JSONType,
+        nullable=False)
+
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now())
+
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now())

@@ -11,6 +11,8 @@ from a2a.server.events import EventQueue
 from langchain_core.messages import BaseMessage, AIMessageChunk, AIMessage
 from langgraph.types import Interrupt, StateSnapshot
 
+from aion.server.types import ArtifactName, MessageType, A2AEventType, A2AMetadataKey
+
 logger = logging.getLogger(__name__)
 
 class LanggraphA2AEventProducer:
@@ -21,9 +23,6 @@ class LanggraphA2AEventProducer:
     It converts LangGraph events into appropriate A2A TaskStatusUpdateEvent
     and TaskArtifactUpdateEvent objects.
     """
-
-    # Artifact name for final message result
-    ARTIFACT_NAME_MESSAGE_RESULT = "message_result"
 
     def __init__(self, event_queue: EventQueue, task: Task):
         """Initialize the LangGraph A2A Event Producer.
@@ -53,15 +52,15 @@ class LanggraphA2AEventProducer:
         Raises:
             ValueError: If an unhandled event type is encountered
         """
-        if event_type == "messages":
+        if event_type == A2AEventType.MESSAGES.value:
             await self._stream_message(event)
-        elif event_type == "values":
+        elif event_type == A2AEventType.VALUES.value:
             await self._emit_langgraph_values(event)
-        elif event_type == "custom":
+        elif event_type == A2AEventType.CUSTOM.value:
             await self._emit_langgraph_event(event)
-        elif event_type == "interrupt":
+        elif event_type == A2AEventType.INTERRUPT.value:
             await self._handle_interrupt(event)
-        elif event_type == "complete":
+        elif event_type == A2AEventType.COMPLETE.value:
             await self._handle_complete(event)
         else:
             raise ValueError(
@@ -91,7 +90,7 @@ class LanggraphA2AEventProducer:
                 await self.updater.add_artifact(
                     parts=last_message_parts,
                     artifact_id=str(uuid.uuid4()),
-                    name=self.ARTIFACT_NAME_MESSAGE_RESULT,
+                    name=ArtifactName.MESSAGE_RESULT.value,
                     append=False,
                     last_chunk=True,
                 )
@@ -151,7 +150,9 @@ class LanggraphA2AEventProducer:
                     messageId=str(uuid.uuid4()),
                     role=Role.agent,
                     parts=[Part(root=TextPart(text=langgraph_message.content))],
-                    metadata={"aion:message_type": "stream_delta"},
+                    metadata={
+                        A2AMetadataKey.MESSAGE_TYPE.value: MessageType.STREAM_DELTA.value
+                    },
                 ),
             )
 
@@ -177,7 +178,9 @@ class LanggraphA2AEventProducer:
                 messageId=str(uuid.uuid4()),
                 role=Role.agent,
                 parts=[Part(root=DataPart(data=emit_event))],
-                metadata={"aion:message_type": "event"},
+                metadata={
+                    A2AMetadataKey.MESSAGE_TYPE.value: MessageType.EVENT.value
+                },
             ),
         )
 
@@ -199,6 +202,8 @@ class LanggraphA2AEventProducer:
                 messageId=str(uuid.uuid4()),
                 role=Role.agent,
                 parts=[Part(root=DataPart(data=event))],
-                metadata={"aion:message_type": "langgraph_values"},
+                metadata={
+                    A2AMetadataKey.MESSAGE_TYPE.value: MessageType.LANGRAPH_VALUES.value
+                },
             ),
         )
