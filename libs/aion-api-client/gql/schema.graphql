@@ -17,23 +17,54 @@ union ChatCompletionStreamChunk = ChatCompletionStreamError | ChatCompletionStre
 
 union JSONRPCResponse = JSONRPCErrorResponse | JSONRPCSuccessResponse
 
+"Item emitted by walletUpdates. The first event is the wallet state."
+union WalletStreamEvent = BalanceChange | PriceChange | TransactionEvent | WalletStateEvent
+
+"Deployment backends available for agent behaviors"
 enum AgentBehaviorDeploymentType {
   Aion
   LangGraph
 }
 
+"Indicates whether the identity is personal or deployed"
 enum AgentIdentityType {
   Deployed
   Personal
 }
 
+"Distinguishes native coins from tokens"
+enum AssetKind {
+  Native
+  Token
+}
+
+"Where the deployment source is hosted"
 enum DeploymentType {
   GitHub
   Local
 }
 
+enum GitHubAccountType {
+  Organization
+  User
+}
+
+"Supported networks"
+enum Network {
+  ARBITRUM
+  BASE
+  BNB_CHAIN
+  ETHEREUM
+  OPTIMISM
+  OTHER
+  POLYGON
+}
+
+"Access level for a memory space"
 enum Privacy {
+  "Only the owner can access the memory space"
   Private
+  "Memory space can be shared publicly"
   Public
 }
 
@@ -42,11 +73,27 @@ enum SubjectType {
   Version
 }
 
+"Direction relative to wallet owner"
+enum TransactionDirection {
+  RECEIVED
+  SENT
+}
+
+"Transaction status"
+enum TransactionStatus {
+  CONFIRMED
+  PENDING
+}
+
+"Enumeration of supported user network types"
 enum UserNetworkType {
+  "Aion network account"
   Aion
+  "Telegram network account"
   Telegram
 }
 
+"Lifecycle status of a deployment version"
 enum VersionStatus {
   Building
   Cancelled
@@ -69,33 +116,94 @@ input MessageInput {
   content: String!
 }
 
+"Configuration describing how an agent is deployed"
 type AgentBehavior {
+  "Unique identifier for the behavior"
   id: ID!
+  "Identifier of the user that owns this behavior"
   userId: ID!
+  "Deployment backend used by the behavior"
   deploymentType: AgentBehaviorDeploymentType!
+  "Associated deployment if the behavior is backed by one"
   deploymentId: ID
+  "Version of the deployment used by the behavior"
   versionId: ID
-  langgraphAssistantId: String
+  "Assistant ID when running on LangGraph"
+  assistantId: String
 }
 
+"Runtime configuration and variables for an agent"
 type AgentEnvironment {
+  "Unique environment identifier"
   id: ID!
+  "Owner of the environment"
   userId: ID!
+  "Friendly name for the environment"
   name: String!
+  "Key/value configuration variables available to the agent"
   configurationVariables: [KVStringString!]!
+  "Whether long term memory should be enabled"
   useLongTermMemory: Boolean!
+  "System prompt injected into the agent"
   systemPrompt: String!
 }
 
+"Public profile information for an agent"
 type AgentIdentity {
+  "Unique identifier for the identity"
   id: ID!
+  "Type of identity"
   agentType: AgentIdentityType!
+  "Owning user when type is personal"
   userId: ID
+  "Owning organisation when type is deployed"
   organizationId: ID
+  "Agent handle prefixed with '@'"
   atName: String
+  "Biography or description of the agent"
   biography: String
+  "URL to the avatar image"
   avatarImageUrl: String
+  "URL to the profile background image"
   backgroundImageUrl: String
+}
+
+"Blockchain asset, either native coin or token"
+type Asset {
+  id: ID!
+  symbol: String!
+  name: String
+  iconUrls: TokenIconUrls
+  address: String
+  network: Network!
+  decimals: Int!
+  kind: AssetKind!
+}
+
+"Balance and price information for an asset"
+type AssetBalance {
+  "Asset metadata"
+  asset: Asset!
+  "Normalized balance already adjusted by asset.decimals"
+  balance: Float!
+}
+
+"Current price information for an asset"
+type AssetPrice {
+  asset: Asset!
+  value: Float!
+  currency: String!
+}
+
+"Balance change update"
+type BalanceChange {
+  assetBalance: AssetBalance!
+}
+
+"Git branch available in a repository"
+type BranchOption {
+  "Branch name"
+  name: String!
 }
 
 type ChatCompletionStreamChoice {
@@ -120,7 +228,7 @@ type ChatCompletionStreamResponseChunk {
 }
 
 type ClientSecret {
-  clientId: String!
+  clientId: ID!
   secret: String!
 }
 
@@ -132,11 +240,17 @@ type ClientSecretHash {
   subjectId: ID!
 }
 
+"Details returned after provisioning a new local deployment"
 type CreateLocalDeploymentResponse {
+  "Deployment that was created"
   deployment: Deployment!
+  "Default environment associated with the deployment"
   environment: DeploymentEnvironment!
+  "Initial version of the deployment"
   version: Version!
+  "Hash of the generated client secret"
   clientSecretHash: ClientSecretHash!
+  "Plain-text client secret for the user"
   clientSecret: ClientSecret!
 }
 
@@ -145,23 +259,72 @@ type Delta {
   content: String
 }
 
+"Basic information about a deployment"
 type Deployment {
+  "Unique identifier of the deployment"
   id: ID!
+  "Owning organisation if applicable"
   organizationId: ID
+  "User that created the deployment"
   userId: ID
+  "Repository backing the deployment"
   repositoryId: ID
+  "Human friendly name"
   name: String!
+  "Type of deployment"
   deploymentType: DeploymentType!
+  "Path within the repository containing source code"
   sourceRoot: String
+  "Whether auto versioning is enabled"
   hasAutoVersionEnabled: Boolean!
 }
 
-type DeploymentEnvironment {
+"Detailed information about a deployment."
+type DeploymentDetail {
+  "Unique identifier for the deployment"
   id: ID!
+  "Deployment configuration"
+  deployment: Deployment!
+  "Environments associated with the deployment"
+  environments: [DeploymentEnvironment!]!
+  "Versions that belong to this deployment"
+  versions: [Version!]!
+  "GitHub repository linked to this deployment, if any"
+  repository: Repository
+}
+
+"Specific environment configuration for a deployment"
+type DeploymentEnvironment {
+  "Unique identifier of the environment"
+  id: ID!
+  "Deployment this environment belongs to"
   deploymentId: ID!
+  "Environment name"
   name: String!
+  "Git branch associated with the environment"
   branch: String
+  "Environment variables applied to builds"
   environmentVariables: [KVStringString!]!
+}
+
+"Represents the state of GitHub repository selection."
+type GitHubInstallationOptions {
+  "True if the user has authorized via GitHub OAuth"
+  hasGitHubOAuth: Boolean!
+  "URL that the client can use to start GitHub OAuth authorization"
+  gitHubOAuthUrl: String!
+  "URL that the client can use to install the GitHub App"
+  gitHubInstallationUrl: String!
+  "Available GitHub App installations the user can choose from"
+  installationOptions: [InstallationOption!]!
+}
+
+"Selectable GitHub App installation"
+type InstallationOption {
+  "Unique identifier of the installation option"
+  gitHubInstallationId: Long!
+  "Human readable name for the installation"
+  name: String!
 }
 
 type JSONRPCError {
@@ -188,21 +351,38 @@ type KVStringString {
   value: String!
 }
 
+"Structured memory store that agents can read and write"
 type MemorySpace {
+  "Unique identifier of the memory space"
   id: ID!
+  "Display name for the space"
   name: String!
+  "Optional description of the space's contents"
   description: String
+  "Instructions that guide how the space should be used"
   instructions: String
+  "Agent that owns the memory space"
   owner: AgentIdentity!
+  "Privacy setting for the space"
   privacy: Privacy!
+  "Agents that the space is shared with"
   sharedWith: [AgentIdentity!]!
 }
 
 type Mutations {
   updateAgentIdentity(agentIdentityId: ID!, atName: String, biography: String, avatarImageUrl: String, backgroundImageUrl: String): AgentIdentity @auth(subjectType: "User")
   updateAgentEnvironment(agentEnvironmentId: ID!, name: String, configurationVariables: Json, useLongTermMemory: Boolean, systemPrompt: String): AgentEnvironment @auth(subjectType: "User")
-  createLocalDeployment(name: String!, serverUrl: String!): CreateLocalDeploymentResponse
-  a2aSend(request: JSONRPCRequestInput!, distributionId: ID!): JSONRPCResponse @auth(subjectType: "User")
+  createLocalDeployment(name: String!, serverUrl: String!): CreateLocalDeploymentResponse @auth(subjectType: "User")
+  createGitHubDeployment(name: String!, sourceRoot: String, hasAutoVersionEnabled: Boolean!, gitHubInstallationId: Long!, githubRepoId: Long!): DeploymentDetail @auth(subjectType: "User")
+  updateGitHubDeployment(deploymentId: ID!, name: String!, sourceRoot: String, hasAutoVersionEnabled: Boolean!, gitHubInstallationId: Long!, githubRepoId: Long!): DeploymentDetail @auth(subjectType: "User")
+  deleteDeployment(deploymentId: ID!): Boolean @auth(subjectType: "User")
+  createOrUpdateDeploymentEnvironment(deploymentId: ID!, deploymentEnvironmentId: ID, branch: String, environmentalVariables: Json): DeploymentEnvironment @auth(subjectType: "User")
+  a2aSend("JSON-RPC request body" request: JSONRPCRequestInput!, "Distribution that should handle the request" distributionId: ID!): JSONRPCResponse @auth(subjectType: "User")
+}
+
+"Price change update"
+type PriceChange {
+  assetPrice: AssetPrice!
 }
 
 type Queries {
@@ -219,37 +399,143 @@ type Queries {
   agentEnvironments: [AgentEnvironment!] @auth(subjectType: "User")
   "Retrieves a specific agent environment by its ID for the authenticated user."
   agentEnvironment(agentEnvironmentId: ID!): AgentEnvironment @auth(subjectType: "User")
+  "Retrieves repositories available for import for the specified owner."
+  gitHubRepositoryOptions(gitHubInstallationId: Long!): [RepositoryOption!] @auth(subjectType: "User")
+  "Retrieves branches available for a repository."
+  gitHubBranchOptions(gitHubInstallationId: Long!, gitHubRepoId: Long!): [BranchOption!] @auth(subjectType: "User")
   "Retrieves a list of deployments for a specific user."
   deployments: [Deployment!] @auth(subjectType: "User")
   "Retrieves a specific deployment by its ID for the authenticated user."
-  deployment(deploymentId: ID!): Deployment @auth(subjectType: "User")
+  deployment(deploymentId: ID!): DeploymentDetail @auth(subjectType: "User")
+  "Entry point to get the wallet state"
+  walletState(address: String!): WalletStateWithPrices
+}
+
+"GitHub repository managed by the platform"
+type Repository {
+  "Internal repository identifier"
+  id: ID!
+  "GitHub App installation that owns the repository"
+  gitHubInstallationId: Long!
+  "GitHub repository ID"
+  githubRepoId: Long!
+  "Owner ID on GitHub"
+  gitHubOwnerId: Long!
+  "Type of owner account"
+  gitHubOwnerType: GitHubAccountType!
+  "Repository name"
+  name: String!
+  "HTTPS clone URL"
+  url: String!
+}
+
+"Repository available for import"
+type RepositoryOption {
+  "GitHub repository ID"
+  githubRepoId: Long!
+  "Repository name"
+  name: String!
+  "Repository description if available"
+  description: String
+  "If repository is private"
+  isPrivate: Boolean!
 }
 
 type Subscriptions {
-  a2aStream(request: JSONRPCRequestInput!, distributionId: ID!): JSONRPCResponse @auth(subjectType: "User")
+  "Opens a live stream of JSON-RPC responses produced by the agent-to-agent (A2A) pipeline. Each element in the stream corresponds to a single JSON-RPC response generated while executing the requested agent workflow, allowing clients to render incremental updates in real-time."
+  a2aStream("JSON-RPC request body" request: JSONRPCRequestInput!, "Distribution that should handle the request" distributionId: ID!): JSONRPCResponse @auth(subjectType: "User")
+  "Streams delta chunks for an LLM chat-completion request. When `stream=true` is set, the underlying model returns partial responses; this subscription forwards those chunks to the client as they become available, enabling token-level streaming UIs."
   chatCompletionStream(model: String!, messages: [MessageInput!]!, stream: Boolean!): ChatCompletionStreamChunk @auth(subjectType: "Version")
+  "Emits updates to GitHub installation options for the authenticated user. Useful for dashboards that must stay synchronized with the user's current GitHub access rights."
+  gitHubInstallationOptions: GitHubInstallationOptions @auth(subjectType: "User")
+  "Streams wallet state then incremental updates"
+  walletUpdates(address: String!): WalletStreamEvent
 }
 
-type User {
+"Token icon URLs in multiple sizes"
+type TokenIconUrls {
+  thumbnail: String
+  small: String
+  large: String
+}
+
+"A transaction event involving a blockchain asset"
+type Transaction {
   id: ID!
+  timestamp: String!
+  from: String!
+  to: String!
+  asset: Asset!
+  value: Float!
+  direction: TransactionDirection!
+  status: TransactionStatus!
+  blockExplorerUrl: String!
+}
+
+"Transaction update event"
+type TransactionEvent {
+  transaction: Transaction!
+}
+
+"Represents a user account"
+type User {
+  "Unique identifier of the user"
+  id: ID!
+  "Identifier from the authentication provider"
   authId: String!
+  "User's @ handle"
   atName: String
+  "Display name"
   name: String
+  "URL of the user's avatar image"
   avatarUrl: String
+  "Networks linked to this user"
   networks: [UserNetwork!]
 }
 
+"Association between a user and an external network"
 type UserNetwork {
+  "Type of network linked to the user"
   network: UserNetworkType!
 }
 
+"A single build or release of a deployment"
 type Version {
+  "Unique identifier of the version"
   id: ID!
+  "Deployment this version belongs to"
   deploymentId: ID!
+  "Environment the version was built for"
   environmentId: ID
+  "Git commit hash used for the build"
   commitHash: String
+  "Commit message associated with the build"
   commitMessage: String
+  "True if the version was manually triggered"
   isManual: Boolean!
+  "Current status of the version"
   status: VersionStatus!
+  "URL of the running server, if applicable"
   serverUrl: String
+  "Client identifier that initiated the build"
+  client_id: ID
+}
+
+"Full wallet state response"
+type WalletState {
+  address: String!
+  assets: [AssetBalance!]!
+  recentTransactions: [Transaction!]!
+}
+
+"Initial wallet state snapshot"
+type WalletStateEvent {
+  walletStateWithPrices: WalletStateWithPrices!
+}
+
+"Wallet state enriched with price information"
+type WalletStateWithPrices {
+  walletState: WalletState!
+  totalUsdValue: Float!
+  assetPrices: [AssetPrice!]!
 }
