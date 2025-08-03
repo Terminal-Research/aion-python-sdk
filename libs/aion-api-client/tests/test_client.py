@@ -23,7 +23,9 @@ def test_settings_loaded() -> None:
     assert aion_api_settings.keepalive == 60
 
 
-@pytest.mark.asyncio
+# Use ``anyio``'s pytest plugin to execute async tests using the ``asyncio`` backend
+# only. This avoids unnecessary parametrization for other event loops.
+@pytest.mark.anyio("asyncio")
 async def test_chat_completion_stream_calls_gql(monkeypatch) -> None:
     async def mock_chat_completion_stream(*, model: str, messages: list, stream: bool):
         assert model == "test-model"
@@ -46,7 +48,7 @@ async def test_chat_completion_stream_calls_gql(monkeypatch) -> None:
     assert results == [{"done": True}]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio("asyncio")
 async def test_a2a_stream_calls_gql(monkeypatch) -> None:
     request = JSONRPCRequestInput(jsonrpc="2.0", method="testMethod", params=None, id=None)
 

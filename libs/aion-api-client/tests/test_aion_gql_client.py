@@ -20,15 +20,21 @@ os.environ.setdefault("AION_CLIENT_SECRET", "test-secret")
 from aion.api.gql.client import AionGqlClient
 
 
-@pytest.mark.asyncio
+# Using the ``anyio`` pytest plugin ensures our async tests run without requiring
+# the separate ``pytest-asyncio`` dependency.  Limit the backend to ``asyncio``
+# to avoid unnecessary trio parametrization.
+@pytest.mark.anyio("asyncio")
 async def test_chat_completion_stream_requires_initialize() -> None:
     """Calling chat_completion_stream before initialize should raise RuntimeError."""
     client = AionGqlClient()
+    stream = client.chat_completion_stream(
+        model="test-model", messages=[], stream=True
+    )
     with pytest.raises(RuntimeError):
-        await client.chat_completion_stream(model="test-model", messages=[], stream=True)
+        await anext(stream)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio("asyncio")
 async def test_initialize_twice_logs_warning(monkeypatch, caplog) -> None:
     """Repeated initialize calls log a warning and do not rebuild the client."""
     client = AionGqlClient()
