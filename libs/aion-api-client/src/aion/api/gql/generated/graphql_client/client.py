@@ -16,11 +16,12 @@ from graphql import (
     print_ast,
 )
 
+from .a2a_stream import A2AStream
 from .async_base_client_open_telemetry import AsyncBaseClientOpenTelemetry
 from .base_operation import GraphQLField
 from .chat_completion_stream import ChatCompletionStream
-from .input_types import MessageInput
-from .operations import CHAT_COMPLETION_STREAM_GQL
+from .input_types import JSONRPCRequestInput, MessageInput
+from .operations import A_2_A_STREAM_GQL, CHAT_COMPLETION_STREAM_GQL
 
 
 def gql(q: str) -> str:
@@ -43,6 +44,21 @@ class GqlClient(AsyncBaseClientOpenTelemetry):
             **kwargs
         ):
             yield ChatCompletionStream.model_validate(data)
+
+    async def a_2_a_stream(
+        self, request: JSONRPCRequestInput, distribution_id: str, **kwargs: Any
+    ) -> AsyncIterator[A2AStream]:
+        variables: Dict[str, object] = {
+            "request": request,
+            "distributionId": distribution_id,
+        }
+        async for data in self.execute_ws(
+            query=A_2_A_STREAM_GQL,
+            operation_name="A2AStream",
+            variables=variables,
+            **kwargs
+        ):
+            yield A2AStream.model_validate(data)
 
     async def execute_custom_operation(
         self, *fields: GraphQLField, operation_type: OperationType, operation_name: str

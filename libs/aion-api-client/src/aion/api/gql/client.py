@@ -3,7 +3,12 @@ from typing import Optional, List, Any, AsyncIterator
 
 from aion.api.config import aion_api_settings
 from aion.api.http import aion_jwt_manager
-from .generated.graphql_client import MessageInput, ChatCompletionStream
+from .generated.graphql_client import (
+    MessageInput,
+    ChatCompletionStream,
+    JSONRPCRequestInput,
+    A2AStream,
+)
 from .generated.graphql_client.client import GqlClient
 
 logger = logging.getLogger(__name__)
@@ -101,8 +106,7 @@ class AionGqlClient:
             stream: bool,
             **kwargs: Any
     ) -> AsyncIterator[ChatCompletionStream]:
-        """
-        Stream chat completion responses from the Aion API.
+        """Stream chat completion responses from the Aion API.
 
         Provides a streaming interface for chat completions, allowing real-time
         processing of AI responses.
@@ -115,8 +119,34 @@ class AionGqlClient:
         """
         self._validate_client_before_execute()
 
-        return self.client.chat_completion_stream(
+        async for chunk in self.client.chat_completion_stream(
             model=model,
             messages=messages,
             stream=stream,
-            **kwargs)
+            **kwargs):
+            yield chunk
+
+    async def a2a_stream(
+            self,
+            request: JSONRPCRequestInput,
+            distribution_id: str,
+            **kwargs: Any
+    ) -> AsyncIterator[A2AStream]:
+        """Stream agent-to-agent JSON-RPC responses.
+
+        Opens a websocket subscription to the A2A pipeline, yielding
+        incremental JSON-RPC responses produced during agent workflow
+        execution.
+
+        Args:
+            request (JSONRPCRequestInput): JSON-RPC request payload.
+            distribution_id (str): Identifier of the distribution to handle the request.
+            **kwargs (Any): Additional parameters forwarded to the underlying client.
+        """
+        self._validate_client_before_execute()
+
+        async for chunk in self.client.a_2_a_stream(
+            request=request,
+            distribution_id=distribution_id,
+            **kwargs):
+            yield chunk

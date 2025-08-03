@@ -21,3 +21,21 @@ subscription ChatCompletionStream($model: String!, $messages: [MessageInput!]!, 
     }
   }
 }
+
+subscription A2AStream($request: JSONRPCRequestInput!, $distributionId: ID!) {
+  a2aStream(request: $request, distributionId: $distributionId) {
+    __typename
+    ... on JSONRPCSuccessResponse {
+      id
+      result
+    }
+    ... on JSONRPCErrorResponse {
+      errorId: id
+      error {
+        code
+        message
+        data
+      }
+    }
+  }
+}
