@@ -30,6 +30,9 @@ enable_custom_operations = true
 opentelemetry_client = true
 plugins = ["ariadne_codegen.contrib.extract_operations.ExtractOperationsPlugin"]
 
+[tool.pytest.ini_options]
+filterwarnings = ["ignore::DeprecationWarning"]
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
