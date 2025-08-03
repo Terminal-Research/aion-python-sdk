@@ -22,5 +22,5 @@ This repository is a monorepo containing multiple projects located primarily und
 
 1. Libraries in packages whose names start with an underscore are provided only for context and are **not** intended to be distributed.
 2. Always use idiomatic Python and best practices.
-3. Document all code with Python docstrings in Google's style, especially at the class and method level.
+3. Document all code with detailed Python docstrings in Google's style, especially at the class and method level; avoid overly terse summaries.
 4. Create thourough unit tests for all code using pytest.

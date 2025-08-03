@@ -17,7 +17,12 @@ pytest.importorskip("gql")
 os.environ.setdefault("AION_CLIENT_ID", "test-id")
 os.environ.setdefault("AION_CLIENT_SECRET", "test-secret")
 
+import jwt
+from datetime import datetime, timedelta, timezone
+
 from aion.api.gql.client import AionGqlClient
+from aion.api.http.jwt_manager import AionJWTManager, Token
+from aion.api.http import aion_jwt_manager
 
 
 # Using the ``anyio`` pytest plugin ensures our async tests run without requiring
@@ -53,3 +58,31 @@ async def test_initialize_twice_logs_warning(monkeypatch, caplog) -> None:
 
     assert mock_build_client.calls == 1
     assert any("already initialized" in message for message in caplog.messages)
+
+
+@pytest.mark.anyio("asyncio")
+async def test_custom_jwt_manager_overrides_global(monkeypatch) -> None:
+    """Providing a custom JWT manager should bypass the global instance."""
+
+    exp = datetime.now(tz=timezone.utc) + timedelta(minutes=5)
+    token_value = jwt.encode({"exp": int(exp.timestamp())}, "secret", algorithm="HS256")
+
+    class DummyManager(AionJWTManager):
+        def __init__(self, token: str) -> None:
+            super().__init__()
+            self._token = Token.from_jwt(token)
+
+        async def _refresh_token(self) -> None:  # pragma: no cover - not used
+            return None
+
+    dummy = DummyManager(token_value)
+
+    async def fail() -> None:
+        raise AssertionError("global manager should not be used")
+
+    monkeypatch.setattr(aion_jwt_manager, "get_token", fail)
+
+    client = AionGqlClient(jwt_manager=dummy)
+    await client.initialize()
+
+    assert token_value in client.client.url
