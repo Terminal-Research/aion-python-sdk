@@ -14,9 +14,29 @@ class AgentIdentityType(str, Enum):
     Personal = "Personal"
 
 
+class AssetKind(str, Enum):
+    Native = "Native"
+    Token = "Token"
+
+
 class DeploymentType(str, Enum):
     GitHub = "GitHub"
     Local = "Local"
+
+
+class GitHubAccountType(str, Enum):
+    Organization = "Organization"
+    User = "User"
+
+
+class Network(str, Enum):
+    ARBITRUM = "ARBITRUM"
+    BASE = "BASE"
+    BNB_CHAIN = "BNB_CHAIN"
+    ETHEREUM = "ETHEREUM"
+    OPTIMISM = "OPTIMISM"
+    OTHER = "OTHER"
+    POLYGON = "POLYGON"
 
 
 class Privacy(str, Enum):
@@ -27,6 +47,16 @@ class Privacy(str, Enum):
 class SubjectType(str, Enum):
     User = "User"
     Version = "Version"
+
+
+class TransactionDirection(str, Enum):
+    RECEIVED = "RECEIVED"
+    SENT = "SENT"
+
+
+class TransactionStatus(str, Enum):
+    CONFIRMED = "CONFIRMED"
+    PENDING = "PENDING"
 
 
 class UserNetworkType(str, Enum):

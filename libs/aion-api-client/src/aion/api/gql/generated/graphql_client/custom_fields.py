@@ -7,9 +7,14 @@ from .custom_typing_fields import (
     AgentBehaviorGraphQLField,
     AgentEnvironmentGraphQLField,
     AgentIdentityGraphQLField,
+    AssetBalanceGraphQLField,
+    AssetGraphQLField,
+    AssetPriceGraphQLField,
+    BranchOptionGraphQLField,
     ClientSecretGraphQLField,
     ClientSecretHashGraphQLField,
     CreateLocalDeploymentResponseGraphQLField,
+    DeploymentDetailGraphQLField,
     DeploymentEnvironmentGraphQLField,
     DeploymentGraphQLField,
     JSONRPCErrorGraphQLField,
@@ -17,9 +22,15 @@ from .custom_typing_fields import (
     JSONRPCSuccessResponseGraphQLField,
     KVStringStringGraphQLField,
     MemorySpaceGraphQLField,
+    RepositoryGraphQLField,
+    RepositoryOptionGraphQLField,
+    TokenIconUrlsGraphQLField,
+    TransactionGraphQLField,
     UserGraphQLField,
     UserNetworkGraphQLField,
     VersionGraphQLField,
+    WalletStateGraphQLField,
+    WalletStateWithPricesGraphQLField,
 )
 
 
@@ -33,9 +44,7 @@ class AgentBehaviorFields(GraphQLField):
         "deploymentId"
     )
     version_id: "AgentBehaviorGraphQLField" = AgentBehaviorGraphQLField("versionId")
-    langgraph_assistant_id: "AgentBehaviorGraphQLField" = AgentBehaviorGraphQLField(
-        "langgraphAssistantId"
-    )
+    assistant_id: "AgentBehaviorGraphQLField" = AgentBehaviorGraphQLField("assistantId")
 
     def fields(self, *subfields: AgentBehaviorGraphQLField) -> "AgentBehaviorFields":
         """Subfields should come from the AgentBehaviorFields class"""
@@ -97,6 +106,84 @@ class AgentIdentityFields(GraphQLField):
         return self
 
     def alias(self, alias: str) -> "AgentIdentityFields":
+        self._alias = alias
+        return self
+
+
+class AssetFields(GraphQLField):
+    id: "AssetGraphQLField" = AssetGraphQLField("id")
+    symbol: "AssetGraphQLField" = AssetGraphQLField("symbol")
+    name: "AssetGraphQLField" = AssetGraphQLField("name")
+
+    @classmethod
+    def icon_urls(cls) -> "TokenIconUrlsFields":
+        return TokenIconUrlsFields("icon_urls")
+
+    address: "AssetGraphQLField" = AssetGraphQLField("address")
+    network: "AssetGraphQLField" = AssetGraphQLField("network")
+    decimals: "AssetGraphQLField" = AssetGraphQLField("decimals")
+    kind: "AssetGraphQLField" = AssetGraphQLField("kind")
+
+    def fields(
+        self, *subfields: Union[AssetGraphQLField, "TokenIconUrlsFields"]
+    ) -> "AssetFields":
+        """Subfields should come from the AssetFields class"""
+        self._subfields.extend(subfields)
+        return self
+
+    def alias(self, alias: str) -> "AssetFields":
+        self._alias = alias
+        return self
+
+
+class AssetBalanceFields(GraphQLField):
+    @classmethod
+    def asset(cls) -> "AssetFields":
+        return AssetFields("asset")
+
+    balance: "AssetBalanceGraphQLField" = AssetBalanceGraphQLField("balance")
+
+    def fields(
+        self, *subfields: Union[AssetBalanceGraphQLField, "AssetFields"]
+    ) -> "AssetBalanceFields":
+        """Subfields should come from the AssetBalanceFields class"""
+        self._subfields.extend(subfields)
+        return self
+
+    def alias(self, alias: str) -> "AssetBalanceFields":
+        self._alias = alias
+        return self
+
+
+class AssetPriceFields(GraphQLField):
+    @classmethod
+    def asset(cls) -> "AssetFields":
+        return AssetFields("asset")
+
+    value: "AssetPriceGraphQLField" = AssetPriceGraphQLField("value")
+    currency: "AssetPriceGraphQLField" = AssetPriceGraphQLField("currency")
+
+    def fields(
+        self, *subfields: Union[AssetPriceGraphQLField, "AssetFields"]
+    ) -> "AssetPriceFields":
+        """Subfields should come from the AssetPriceFields class"""
+        self._subfields.extend(subfields)
+        return self
+
+    def alias(self, alias: str) -> "AssetPriceFields":
+        self._alias = alias
+        return self
+
+
+class BranchOptionFields(GraphQLField):
+    name: "BranchOptionGraphQLField" = BranchOptionGraphQLField("name")
+
+    def fields(self, *subfields: BranchOptionGraphQLField) -> "BranchOptionFields":
+        """Subfields should come from the BranchOptionFields class"""
+        self._subfields.extend(subfields)
+        return self
+
+    def alias(self, alias: str) -> "BranchOptionFields":
         self._alias = alias
         return self
 
@@ -199,6 +286,44 @@ class DeploymentFields(GraphQLField):
         return self
 
     def alias(self, alias: str) -> "DeploymentFields":
+        self._alias = alias
+        return self
+
+
+class DeploymentDetailFields(GraphQLField):
+    id: "DeploymentDetailGraphQLField" = DeploymentDetailGraphQLField("id")
+
+    @classmethod
+    def deployment(cls) -> "DeploymentFields":
+        return DeploymentFields("deployment")
+
+    @classmethod
+    def environments(cls) -> "DeploymentEnvironmentFields":
+        return DeploymentEnvironmentFields("environments")
+
+    @classmethod
+    def versions(cls) -> "VersionFields":
+        return VersionFields("versions")
+
+    @classmethod
+    def repository(cls) -> "RepositoryFields":
+        return RepositoryFields("repository")
+
+    def fields(
+        self,
+        *subfields: Union[
+            DeploymentDetailGraphQLField,
+            "DeploymentEnvironmentFields",
+            "DeploymentFields",
+            "RepositoryFields",
+            "VersionFields",
+        ]
+    ) -> "DeploymentDetailFields":
+        """Subfields should come from the DeploymentDetailFields class"""
+        self._subfields.extend(subfields)
+        return self
+
+    def alias(self, alias: str) -> "DeploymentDetailFields":
         self._alias = alias
         return self
 
@@ -326,6 +451,97 @@ class MemorySpaceFields(GraphQLField):
         return self
 
 
+class RepositoryFields(GraphQLField):
+    id: "RepositoryGraphQLField" = RepositoryGraphQLField("id")
+    git_hub_installation_id: "RepositoryGraphQLField" = RepositoryGraphQLField(
+        "gitHubInstallationId"
+    )
+    github_repo_id: "RepositoryGraphQLField" = RepositoryGraphQLField("githubRepoId")
+    git_hub_owner_id: "RepositoryGraphQLField" = RepositoryGraphQLField("gitHubOwnerId")
+    git_hub_owner_type: "RepositoryGraphQLField" = RepositoryGraphQLField(
+        "gitHubOwnerType"
+    )
+    name: "RepositoryGraphQLField" = RepositoryGraphQLField("name")
+    url: "RepositoryGraphQLField" = RepositoryGraphQLField("url")
+
+    def fields(self, *subfields: RepositoryGraphQLField) -> "RepositoryFields":
+        """Subfields should come from the RepositoryFields class"""
+        self._subfields.extend(subfields)
+        return self
+
+    def alias(self, alias: str) -> "RepositoryFields":
+        self._alias = alias
+        return self
+
+
+class RepositoryOptionFields(GraphQLField):
+    github_repo_id: "RepositoryOptionGraphQLField" = RepositoryOptionGraphQLField(
+        "githubRepoId"
+    )
+    name: "RepositoryOptionGraphQLField" = RepositoryOptionGraphQLField("name")
+    description: "RepositoryOptionGraphQLField" = RepositoryOptionGraphQLField(
+        "description"
+    )
+    is_private: "RepositoryOptionGraphQLField" = RepositoryOptionGraphQLField(
+        "isPrivate"
+    )
+
+    def fields(
+        self, *subfields: RepositoryOptionGraphQLField
+    ) -> "RepositoryOptionFields":
+        """Subfields should come from the RepositoryOptionFields class"""
+        self._subfields.extend(subfields)
+        return self
+
+    def alias(self, alias: str) -> "RepositoryOptionFields":
+        self._alias = alias
+        return self
+
+
+class TokenIconUrlsFields(GraphQLField):
+    thumbnail: "TokenIconUrlsGraphQLField" = TokenIconUrlsGraphQLField("thumbnail")
+    small: "TokenIconUrlsGraphQLField" = TokenIconUrlsGraphQLField("small")
+    large: "TokenIconUrlsGraphQLField" = TokenIconUrlsGraphQLField("large")
+
+    def fields(self, *subfields: TokenIconUrlsGraphQLField) -> "TokenIconUrlsFields":
+        """Subfields should come from the TokenIconUrlsFields class"""
+        self._subfields.extend(subfields)
+        return self
+
+    def alias(self, alias: str) -> "TokenIconUrlsFields":
+        self._alias = alias
+        return self
+
+
+class TransactionFields(GraphQLField):
+    id: "TransactionGraphQLField" = TransactionGraphQLField("id")
+    timestamp: "TransactionGraphQLField" = TransactionGraphQLField("timestamp")
+    from_: "TransactionGraphQLField" = TransactionGraphQLField("from")
+    to: "TransactionGraphQLField" = TransactionGraphQLField("to")
+
+    @classmethod
+    def asset(cls) -> "AssetFields":
+        return AssetFields("asset")
+
+    value: "TransactionGraphQLField" = TransactionGraphQLField("value")
+    direction: "TransactionGraphQLField" = TransactionGraphQLField("direction")
+    status: "TransactionGraphQLField" = TransactionGraphQLField("status")
+    block_explorer_url: "TransactionGraphQLField" = TransactionGraphQLField(
+        "blockExplorerUrl"
+    )
+
+    def fields(
+        self, *subfields: Union[TransactionGraphQLField, "AssetFields"]
+    ) -> "TransactionFields":
+        """Subfields should come from the TransactionFields class"""
+        self._subfields.extend(subfields)
+        return self
+
+    def alias(self, alias: str) -> "TransactionFields":
+        self._alias = alias
+        return self
+
+
 class UserFields(GraphQLField):
     id: "UserGraphQLField" = UserGraphQLField("id")
     auth_id: "UserGraphQLField" = UserGraphQLField("authId")
@@ -371,6 +587,7 @@ class VersionFields(GraphQLField):
     is_manual: "VersionGraphQLField" = VersionGraphQLField("isManual")
     status: "VersionGraphQLField" = VersionGraphQLField("status")
     server_url: "VersionGraphQLField" = VersionGraphQLField("serverUrl")
+    client_id: "VersionGraphQLField" = VersionGraphQLField("client_id")
 
     def fields(self, *subfields: VersionGraphQLField) -> "VersionFields":
         """Subfields should come from the VersionFields class"""
@@ -378,5 +595,59 @@ class VersionFields(GraphQLField):
         return self
 
     def alias(self, alias: str) -> "VersionFields":
+        self._alias = alias
+        return self
+
+
+class WalletStateFields(GraphQLField):
+    address: "WalletStateGraphQLField" = WalletStateGraphQLField("address")
+
+    @classmethod
+    def assets(cls) -> "AssetBalanceFields":
+        return AssetBalanceFields("assets")
+
+    @classmethod
+    def recent_transactions(cls) -> "TransactionFields":
+        return TransactionFields("recent_transactions")
+
+    def fields(
+        self,
+        *subfields: Union[
+            WalletStateGraphQLField, "AssetBalanceFields", "TransactionFields"
+        ]
+    ) -> "WalletStateFields":
+        """Subfields should come from the WalletStateFields class"""
+        self._subfields.extend(subfields)
+        return self
+
+    def alias(self, alias: str) -> "WalletStateFields":
+        self._alias = alias
+        return self
+
+
+class WalletStateWithPricesFields(GraphQLField):
+    @classmethod
+    def wallet_state(cls) -> "WalletStateFields":
+        return WalletStateFields("wallet_state")
+
+    total_usd_value: "WalletStateWithPricesGraphQLField" = (
+        WalletStateWithPricesGraphQLField("totalUsdValue")
+    )
+
+    @classmethod
+    def asset_prices(cls) -> "AssetPriceFields":
+        return AssetPriceFields("asset_prices")
+
+    def fields(
+        self,
+        *subfields: Union[
+            WalletStateWithPricesGraphQLField, "AssetPriceFields", "WalletStateFields"
+        ]
+    ) -> "WalletStateWithPricesFields":
+        """Subfields should come from the WalletStateWithPricesFields class"""
+        self._subfields.extend(subfields)
+        return self
+
+    def alias(self, alias: str) -> "WalletStateWithPricesFields":
         self._alias = alias
         return self

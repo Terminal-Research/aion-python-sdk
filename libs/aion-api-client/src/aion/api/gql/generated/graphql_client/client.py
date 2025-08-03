@@ -16,7 +16,7 @@ from graphql import (
     print_ast,
 )
 
-from .a2a_stream import A2AStream
+from .a_2_a_stream import A2AStream
 from .async_base_client_open_telemetry import AsyncBaseClientOpenTelemetry
 from .base_operation import GraphQLField
 from .chat_completion_stream import ChatCompletionStream

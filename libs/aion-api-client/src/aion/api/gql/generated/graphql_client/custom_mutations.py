@@ -6,8 +6,10 @@ from .custom_fields import (
     AgentEnvironmentFields,
     AgentIdentityFields,
     CreateLocalDeploymentResponseFields,
+    DeploymentDetailFields,
+    DeploymentEnvironmentFields,
 )
-from .custom_typing_fields import JSONRPCResponseUnion
+from .custom_typing_fields import GraphQLField, JSONRPCResponseUnion
 from .input_types import JSONRPCRequestInput
 
 
@@ -76,6 +78,101 @@ class Mutation:
         }
         return CreateLocalDeploymentResponseFields(
             field_name="createLocalDeployment", arguments=cleared_arguments
+        )
+
+    @classmethod
+    def create_git_hub_deployment(
+        cls,
+        name: str,
+        has_auto_version_enabled: bool,
+        git_hub_installation_id: Any,
+        github_repo_id: Any,
+        *,
+        source_root: Optional[str] = None
+    ) -> DeploymentDetailFields:
+        arguments: Dict[str, Dict[str, Any]] = {
+            "name": {"type": "String!", "value": name},
+            "sourceRoot": {"type": "String", "value": source_root},
+            "hasAutoVersionEnabled": {
+                "type": "Boolean!",
+                "value": has_auto_version_enabled,
+            },
+            "gitHubInstallationId": {"type": "Long!", "value": git_hub_installation_id},
+            "githubRepoId": {"type": "Long!", "value": github_repo_id},
+        }
+        cleared_arguments = {
+            key: value for key, value in arguments.items() if value["value"] is not None
+        }
+        return DeploymentDetailFields(
+            field_name="createGitHubDeployment", arguments=cleared_arguments
+        )
+
+    @classmethod
+    def update_git_hub_deployment(
+        cls,
+        deployment_id: str,
+        name: str,
+        has_auto_version_enabled: bool,
+        git_hub_installation_id: Any,
+        github_repo_id: Any,
+        *,
+        source_root: Optional[str] = None
+    ) -> DeploymentDetailFields:
+        arguments: Dict[str, Dict[str, Any]] = {
+            "deploymentId": {"type": "ID!", "value": deployment_id},
+            "name": {"type": "String!", "value": name},
+            "sourceRoot": {"type": "String", "value": source_root},
+            "hasAutoVersionEnabled": {
+                "type": "Boolean!",
+                "value": has_auto_version_enabled,
+            },
+            "gitHubInstallationId": {"type": "Long!", "value": git_hub_installation_id},
+            "githubRepoId": {"type": "Long!", "value": github_repo_id},
+        }
+        cleared_arguments = {
+            key: value for key, value in arguments.items() if value["value"] is not None
+        }
+        return DeploymentDetailFields(
+            field_name="updateGitHubDeployment", arguments=cleared_arguments
+        )
+
+    @classmethod
+    def delete_deployment(cls, deployment_id: str) -> GraphQLField:
+        arguments: Dict[str, Dict[str, Any]] = {
+            "deploymentId": {"type": "ID!", "value": deployment_id}
+        }
+        cleared_arguments = {
+            key: value for key, value in arguments.items() if value["value"] is not None
+        }
+        return GraphQLField(field_name="deleteDeployment", arguments=cleared_arguments)
+
+    @classmethod
+    def create_or_update_deployment_environment(
+        cls,
+        deployment_id: str,
+        *,
+        deployment_environment_id: Optional[str] = None,
+        branch: Optional[str] = None,
+        environmental_variables: Optional[Any] = None
+    ) -> DeploymentEnvironmentFields:
+        arguments: Dict[str, Dict[str, Any]] = {
+            "deploymentId": {"type": "ID!", "value": deployment_id},
+            "deploymentEnvironmentId": {
+                "type": "ID",
+                "value": deployment_environment_id,
+            },
+            "branch": {"type": "String", "value": branch},
+            "environmentalVariables": {
+                "type": "Json",
+                "value": environmental_variables,
+            },
+        }
+        cleared_arguments = {
+            key: value for key, value in arguments.items() if value["value"] is not None
+        }
+        return DeploymentEnvironmentFields(
+            field_name="createOrUpdateDeploymentEnvironment",
+            arguments=cleared_arguments,
         )
 
     @classmethod

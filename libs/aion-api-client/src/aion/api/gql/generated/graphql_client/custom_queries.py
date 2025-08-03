@@ -6,9 +6,13 @@ from .custom_fields import (
     AgentBehaviorFields,
     AgentEnvironmentFields,
     AgentIdentityFields,
+    BranchOptionFields,
+    DeploymentDetailFields,
     DeploymentFields,
     MemorySpaceFields,
+    RepositoryOptionFields,
     UserFields,
+    WalletStateWithPricesFields,
 )
 
 
@@ -76,15 +80,58 @@ class Query:
         )
 
     @classmethod
+    def git_hub_repository_options(
+        cls, git_hub_installation_id: Any
+    ) -> RepositoryOptionFields:
+        arguments: Dict[str, Dict[str, Any]] = {
+            "gitHubInstallationId": {"type": "Long!", "value": git_hub_installation_id}
+        }
+        cleared_arguments = {
+            key: value for key, value in arguments.items() if value["value"] is not None
+        }
+        return RepositoryOptionFields(
+            field_name="gitHubRepositoryOptions", arguments=cleared_arguments
+        )
+
+    @classmethod
+    def git_hub_branch_options(
+        cls, git_hub_installation_id: Any, git_hub_repo_id: Any
+    ) -> BranchOptionFields:
+        arguments: Dict[str, Dict[str, Any]] = {
+            "gitHubInstallationId": {"type": "Long!", "value": git_hub_installation_id},
+            "gitHubRepoId": {"type": "Long!", "value": git_hub_repo_id},
+        }
+        cleared_arguments = {
+            key: value for key, value in arguments.items() if value["value"] is not None
+        }
+        return BranchOptionFields(
+            field_name="gitHubBranchOptions", arguments=cleared_arguments
+        )
+
+    @classmethod
     def deployments(cls) -> DeploymentFields:
         return DeploymentFields(field_name="deployments")
 
     @classmethod
-    def deployment(cls, deployment_id: str) -> DeploymentFields:
+    def deployment(cls, deployment_id: str) -> DeploymentDetailFields:
         arguments: Dict[str, Dict[str, Any]] = {
             "deploymentId": {"type": "ID!", "value": deployment_id}
         }
         cleared_arguments = {
             key: value for key, value in arguments.items() if value["value"] is not None
         }
-        return DeploymentFields(field_name="deployment", arguments=cleared_arguments)
+        return DeploymentDetailFields(
+            field_name="deployment", arguments=cleared_arguments
+        )
+
+    @classmethod
+    def wallet_state(cls, address: str) -> WalletStateWithPricesFields:
+        arguments: Dict[str, Dict[str, Any]] = {
+            "address": {"type": "String!", "value": address}
+        }
+        cleared_arguments = {
+            key: value for key, value in arguments.items() if value["value"] is not None
+        }
+        return WalletStateWithPricesFields(
+            field_name="walletState", arguments=cleared_arguments
+        )
