@@ -2,7 +2,7 @@ import logging
 from typing import Optional, List, Any, AsyncIterator
 
 from aion.api.config import aion_api_settings
-from aion.api.http import aion_jwt_manager
+from aion.api.http import aion_jwt_manager, AionJWTManager
 from .generated.graphql_client import (
     MessageInput,
     ChatCompletionStream,
@@ -16,19 +16,27 @@ logger = logging.getLogger(__name__)
 
 class AionGqlClient:
     """
-    Lightweight wrapper over ariadne-codegen generated GraphQL client with automatic authentication.
+    Lightweight wrapper over ariadne-codegen generated GraphQL client with authentication.
 
     This wrapper provides seamless integration with the Aion GraphQL API by handling
     JWT token authentication automatically. It wraps the generated GqlClient from
-    ariadne-codegen and manages the authentication flow transparently.
+    ariadne-codegen and manages the authentication flow transparently. A custom
+    :class:`AionJWTManager` may be supplied for scenarios where token refresh is
+    handled externally.
 
     Attributes:
         client_id (str): Client identifier for authentication
         secret (str): Client secret for authentication
+        jwt_manager (AionJWTManager): Manager used to retrieve JWT tokens
         client (Optional[GqlClient]): The underlying ariadne-codegen generated GraphQL client
     """
 
-    def __init__(self, client_id: Optional[str] = None, client_secret: Optional[str] = None):
+    def __init__(
+        self,
+        client_id: Optional[str] = None,
+        client_secret: Optional[str] = None,
+        jwt_manager: Optional[AionJWTManager] = None,
+    ):
         """
         Initialize the Aion GraphQL client.
 
@@ -37,11 +45,14 @@ class AionGqlClient:
                 If not provided, uses value from aion_api_settings.
             client_secret (Optional[str]): Client secret for authentication.
                 If not provided, uses value from aion_api_settings.
+            jwt_manager (Optional[AionJWTManager]): Custom JWT manager. When
+                ``None``, the global :data:`aion_jwt_manager` is used.
         """
         self.client_id = client_id or aion_api_settings.client_id
         self.secret = client_secret or aion_api_settings.client_secret
         self.client: Optional[GqlClient] = None
         self._is_initialized = False
+        self.jwt_manager: AionJWTManager = jwt_manager or aion_jwt_manager
 
     async def initialize(self):
         """
@@ -82,7 +93,7 @@ class AionGqlClient:
             logger.warning("Client already initialized")
             return
 
-        aion_token = await aion_jwt_manager.get_token()
+        aion_token = await self.jwt_manager.get_token()
         if not aion_token:
             raise ValueError("No token received from authentication")
 
