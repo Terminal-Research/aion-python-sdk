@@ -33,7 +33,7 @@ class LanggraphA2AEventProducer:
         """
         self.task = task
         self.event_queue = event_queue
-        self.updater = TaskUpdater(event_queue, task.id, task.contextId)
+        self.updater = TaskUpdater(event_queue, task.id, task.context_id)
 
     async def handle_event(
         self,
@@ -98,7 +98,7 @@ class LanggraphA2AEventProducer:
         if last_message_parts:
             await self.updater.complete(
                 message=Message(
-                    contextId=self.task.contextId,
+                    contextId=self.task.context_id,
                     taskId=self.task.id,
                     messageId=str(uuid.uuid4()),
                     role=Role.agent,
@@ -121,7 +121,7 @@ class LanggraphA2AEventProducer:
           await self.updater.update_status(
               TaskState.input_required,
               message=Message(
-                  contextId=self.task.contextId,
+                  contextId=self.task.context_id,
                   taskId=self.task.id,
                   messageId=str(uuid.uuid4()),
                   role=Role.agent,
@@ -145,7 +145,7 @@ class LanggraphA2AEventProducer:
             await self.updater.update_status(
                 state=TaskState.working,
                 message=Message(
-                    contextId=self.task.contextId,
+                    contextId=self.task.context_id,
                     taskId=self.task.id,
                     messageId=str(uuid.uuid4()),
                     role=Role.agent,
@@ -173,7 +173,7 @@ class LanggraphA2AEventProducer:
         await self.updater.update_status(
             state=TaskState.working,
             message=Message(
-                contextId=self.task.contextId,
+                contextId=self.task.context_id,
                 taskId=self.task.id,
                 messageId=str(uuid.uuid4()),
                 role=Role.agent,
@@ -197,7 +197,7 @@ class LanggraphA2AEventProducer:
         await self.updater.update_status(
             state=TaskState.working,
             message=Message(
-                contextId=self.task.contextId,
+                contextId=self.task.context_id,
                 taskId=self.task.id,
                 messageId=str(uuid.uuid4()),
                 role=Role.agent,

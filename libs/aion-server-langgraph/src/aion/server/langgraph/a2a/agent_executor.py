@@ -1,5 +1,5 @@
 import logging
-from typing import Any
+from typing import Any, Tuple
 
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
@@ -7,7 +7,6 @@ from a2a.types import (
     InternalError,
     InvalidParamsError,
     Task,
-    TaskState,
     UnsupportedOperationError,
 )
 from a2a.utils import (
@@ -15,6 +14,9 @@ from a2a.utils import (
 )
 from a2a.utils.errors import ServerError
 from langgraph.types import Command
+
+from aion.server.utils import check_if_task_is_resumable
+from aion.server.tasks import store_manager
 
 from .agent import LanggraphAgent
 from .event_producer import LanggraphA2AEventProducer
@@ -24,7 +26,14 @@ logger = logging.getLogger(__name__)
 
 
 class LanggraphAgentExecutor(AgentExecutor):
-    """Currency Conversion ``AgentExecutor`` example."""
+    """
+    LangGraph-based agent executor implementation.
+
+    This executor manages the execution of LangGraph agents, handling task creation,
+    resumption, and event streaming. It integrates with the A2A (Agent-to-Agent)
+    framework to provide agent execution capabilities with proper error handling
+    and event management.
+    """
 
     def __init__(self, graph: Any) -> None:
         """Create the executor with the given graph."""
@@ -35,23 +44,31 @@ class LanggraphAgentExecutor(AgentExecutor):
             context: RequestContext,
             event_queue: EventQueue,
     ) -> None:
+        """
+        Execute the agent with the given context and event queue.
+
+        This method handles the main execution flow including:
+        - Request validation
+        - Task creation or resumption
+        - Event streaming and status updates
+        - Error handling and propagation
+        """
         error = self._validate_request(context)
         if error:
             raise ServerError(error=InvalidParamsError())
 
         query = context.get_user_input()
-        task = context.current_task
-        if task and task.status.state == TaskState.input_required:
-            query = Command(resume=query)
-        elif not task:
-            task = new_task(context.message)
+        task, is_new_task = await self._get_task_for_execution(context)
+        if is_new_task:
             await event_queue.enqueue_event(task)
+        else:
+            query = Command(resume=query)
 
         event_producer = LanggraphA2AEventProducer(event_queue, task)
         firstLoop = True
 
         try:
-            async for item in self.agent.stream(query, task.contextId):
+            async for item in self.agent.stream(query, task.context_id):
                 if firstLoop:
                     await event_producer.update_status_working()
                     firstLoop = False
@@ -63,6 +80,39 @@ class LanggraphAgentExecutor(AgentExecutor):
         except Exception as e:
             logger.error(f'An error occurred while streaming the response: {e}')
             raise ServerError(error=InternalError()) from e
+
+    async def _get_task_for_execution(self, context: RequestContext) -> Tuple[Task, bool]:
+        """
+        Retrieve or create a task for execution.
+
+        This method implements the following logic:
+        1. If current_task exists and is resumable, return it
+        2. If current_task exists but is not resumable, raise an error
+        3. Try to get the last task from context and check if resumable
+        4. If no resumable task found, create a new task
+
+        Returns:
+            Tuple[Task, bool]: A tuple containing the task to execute and a boolean
+                             indicating whether it's a new task (True) or existing (False).
+        """
+        current_task = context.current_task
+        if current_task is not None:
+            if check_if_task_is_resumable(current_task):
+                return current_task, False
+            else:
+                raise ServerError(error=InvalidParamsError(
+                    message=f'Task {current_task.id} is in terminal state: {current_task.status.state}'
+                ))
+
+        # try to get last task and check if it is resumable
+        last_task = await store_manager.get_store().get_context_last_task(context_id=context.context_id)
+        if last_task is not None:
+            if check_if_task_is_resumable(last_task):
+                return last_task, False
+
+        # just create a new task
+        task = new_task(context.message)
+        return task, True
 
     def _validate_request(self, context: RequestContext) -> bool:
         return False

@@ -54,13 +54,16 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
             self,
             context_id: str,
             limit: Optional[int] = None,
-            offset: Optional[int] = None
+            offset: Optional[int] = None,
+            descending_order: bool = True
     ) -> List[TaskRecord]:
         """Find all tasks by context ID."""
-        stmt = (select(self.model_class)
-                .where(self.model_class.context_id == context_id)
-                .order_by(desc(self.model_class.created_at)))
+        stmt = (
+            select(self.model_class)
+            .where(self.model_class.context_id == context_id))
 
+        if descending_order:
+            stmt = stmt.order_by(desc(self.model_class.created_at))
         if offset:
             stmt = stmt.offset(offset)
         if limit:
