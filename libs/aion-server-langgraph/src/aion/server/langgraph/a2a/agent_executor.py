@@ -15,8 +15,7 @@ from a2a.utils import (
 from a2a.utils.errors import ServerError
 from langgraph.types import Command
 
-from aion.server.utils import check_if_task_is_resumable
-from aion.server.tasks import store_manager
+from aion.server.utils import check_if_task_is_interrupted
 
 from .agent import LanggraphAgent
 from .event_producer import LanggraphA2AEventProducer
@@ -88,8 +87,7 @@ class LanggraphAgentExecutor(AgentExecutor):
         This method implements the following logic:
         1. If current_task exists and is resumable, return it
         2. If current_task exists but is not resumable, raise an error
-        3. Try to get the last task from context and check if resumable
-        4. If no resumable task found, create a new task
+        3. If no resumable task found, create a new task
 
         Returns:
             Tuple[Task, bool]: A tuple containing the task to execute and a boolean
@@ -97,18 +95,12 @@ class LanggraphAgentExecutor(AgentExecutor):
         """
         current_task = context.current_task
         if current_task is not None:
-            if check_if_task_is_resumable(current_task):
+            if check_if_task_is_interrupted(current_task):
                 return current_task, False
             else:
                 raise ServerError(error=InvalidParamsError(
                     message=f'Task {current_task.id} is in terminal state: {current_task.status.state}'
                 ))
-
-        # try to get last task and check if it is resumable
-        last_task = await store_manager.get_store().get_context_last_task(context_id=context.context_id)
-        if last_task is not None:
-            if check_if_task_is_resumable(last_task):
-                return last_task, False
 
         # just create a new task
         task = new_task(context.message)

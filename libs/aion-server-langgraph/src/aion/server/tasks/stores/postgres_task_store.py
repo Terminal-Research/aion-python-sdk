@@ -139,10 +139,8 @@ class PostgresTaskStore(BaseTaskStore):
 
     async def get_context_last_task(self, context_id: str) -> Optional[Task]:
         """Retrieve the most recent task for a specific context."""
-        result = None
-        async with db_manager.get_session() as session:
-            repository = TasksRepository(session)
-            task_records = await repository.find_by_context(context_id=context_id, limit=1)
-            if task_records:
-                result = task_records[0].task
-        return result
+        try:
+            tasks = await self.get_context_tasks(context_id=context_id, limit=1)
+            return tasks[0]
+        except:
+            return None

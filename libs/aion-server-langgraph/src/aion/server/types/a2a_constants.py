@@ -1,7 +1,10 @@
+from a2a.server.request_handlers.default_request_handler import TERMINAL_TASK_STATES as A2A_TERMINAL_TASK_STATES
 from a2a.types import TaskState
 
 __all__ = [
-    "RESUMABLE_TASK_STATUSES",
+    "INTERRUPT_TASK_STATES",
+    "TERMINAL_TASK_STATES",
 ]
 
-RESUMABLE_TASK_STATUSES = (TaskState.input_required, TaskState.auth_required)
+INTERRUPT_TASK_STATES = (TaskState.input_required, TaskState.auth_required)
+TERMINAL_TASK_STATES = A2A_TERMINAL_TASK_STATES
