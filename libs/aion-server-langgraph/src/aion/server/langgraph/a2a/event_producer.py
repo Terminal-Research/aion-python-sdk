@@ -117,18 +117,37 @@ class LanggraphA2AEventProducer:
         Args:
             interrupts: Sequence of interrupt objects from LangGraph
         """
-        if len(interrupts):
-          await self.updater.update_status(
-              TaskState.input_required,
-              message=Message(
-                  contextId=self.task.context_id,
-                  taskId=self.task.id,
-                  messageId=str(uuid.uuid4()),
-                  role=Role.agent,
-                  parts=[Part(root=TextPart(text=interrupts[0].value))],
-              ),
-              final=True,
-          )
+        interrupt = interrupts[0] if interrupts else None
+        if not interrupt:
+            return
+
+        # todo add more complex processing of interruption type
+        if isinstance(interrupt.value, dict):
+            interruption_type_value = interrupt.value.get("type", None)
+            if interruption_type_value:
+                try:
+                    task_state = TaskState(interruption_type_value)
+                except:
+                    task_state = TaskState.input_required
+            else:
+                task_state = TaskState.input_required
+
+            interrupt_message = interrupt.value.get("message", None) or str(interrupt.value)
+        else:
+            task_state = TaskState.input_required
+            interrupt_message = str(interrupt.value)
+
+        await self.updater.update_status(
+            task_state,
+            message=Message(
+                contextId=self.task.context_id,
+                taskId=self.task.id,
+                messageId=str(uuid.uuid4()),
+                role=Role.agent,
+                parts=[Part(root=TextPart(text=interrupt_message))],
+            ),
+            final=True,
+        )
 
     async def _stream_message(self, langgraph_message: BaseMessage):
         """Stream message chunks from LangGraph as A2A status updates.
