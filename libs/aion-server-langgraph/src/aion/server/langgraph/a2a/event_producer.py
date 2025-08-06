@@ -11,7 +11,7 @@ from a2a.server.events import EventQueue
 from langchain_core.messages import BaseMessage, AIMessageChunk, AIMessage
 from langgraph.types import Interrupt, StateSnapshot
 
-from aion.server.types import ArtifactName, MessageType, A2AEventType, A2AMetadataKey
+from aion.server.types import MessageType, A2AEventType, A2AMetadataKey
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +33,7 @@ class LanggraphA2AEventProducer:
         """
         self.task = task
         self.event_queue = event_queue
-        self.updater = TaskUpdater(event_queue, task.id, task.contextId)
+        self.updater = TaskUpdater(event_queue, task.id, task.context_id)
 
     async def handle_event(
         self,
@@ -72,41 +72,8 @@ class LanggraphA2AEventProducer:
         await self.updater.update_status(state=TaskState.working)
 
     async def _handle_complete(self, event: StateSnapshot):
-        """Handle task completion event from LangGraph.
-
-        Processes the completion state snapshot, extracts the final message,
-        creates an artifact for the result, and completes the task with
-        the final message or without a message if none is available.
-
-        Args:
-            event (StateSnapshot): The completion state snapshot from LangGraph
-                containing the final state values and messages
-        """
-        last_message_parts = None
-        if event.values and len(event.values["messages"]):
-            last_message = event.values["messages"][-1]
-            if last_message and isinstance(last_message, AIMessage):
-                last_message_parts = [Part(root=TextPart(text=last_message.content))]
-                await self.updater.add_artifact(
-                    parts=last_message_parts,
-                    artifact_id=str(uuid.uuid4()),
-                    name=ArtifactName.MESSAGE_RESULT.value,
-                    append=False,
-                    last_chunk=True,
-                )
-
-        if last_message_parts:
-            await self.updater.complete(
-                message=Message(
-                    contextId=self.task.contextId,
-                    taskId=self.task.id,
-                    messageId=str(uuid.uuid4()),
-                    role=Role.agent,
-                    parts=last_message_parts
-                ),
-            )
-        else:
-            await self.updater.complete()
+        """Handle task completion event from LangGraph."""
+        await self.updater.complete()
 
     async def _handle_interrupt(self, interrupts: Sequence[Interrupt]):
         """Handle LangGraph interrupt events.
@@ -117,18 +84,21 @@ class LanggraphA2AEventProducer:
         Args:
             interrupts: Sequence of interrupt objects from LangGraph
         """
-        if len(interrupts):
-          await self.updater.update_status(
-              TaskState.input_required,
-              message=Message(
-                  contextId=self.task.contextId,
-                  taskId=self.task.id,
-                  messageId=str(uuid.uuid4()),
-                  role=Role.agent,
-                  parts=[Part(root=TextPart(text=interrupts[0].value))],
-              ),
-              final=True,
-          )
+        interruption = interrupts[0] if len(interrupts) else None
+        if not interruption:
+            return
+
+        await self.updater.update_status(
+            TaskState.input_required,
+            message=Message(
+                context_id=self.task.context_id,
+                task_id=self.task.id,
+                message_id=str(uuid.uuid4()),
+                role=Role.agent,
+                parts=[Part(root=TextPart(text=interruption.value))],
+            ),
+            final=True,
+        )
 
     async def _stream_message(self, langgraph_message: BaseMessage):
         """Stream message chunks from LangGraph as A2A status updates.
@@ -141,18 +111,22 @@ class LanggraphA2AEventProducer:
                 expected to be an AIMessageChunk for streaming content
         """
         if isinstance(langgraph_message, AIMessageChunk):
+            if self.task.status.state == TaskState.working:
+                return
+
             # Stream the delta via status update with message
+            await self.updater.update_status(state=TaskState.working)
+            return
+
+        if isinstance(langgraph_message, AIMessage):
             await self.updater.update_status(
                 state=TaskState.working,
                 message=Message(
-                    contextId=self.task.contextId,
-                    taskId=self.task.id,
-                    messageId=str(uuid.uuid4()),
+                    context_id=self.task.context_id,
+                    task_id=self.task.id,
+                    message_id=str(uuid.uuid4()),
                     role=Role.agent,
-                    parts=[Part(root=TextPart(text=langgraph_message.content))],
-                    metadata={
-                        A2AMetadataKey.MESSAGE_TYPE.value: MessageType.STREAM_DELTA.value
-                    },
+                    parts=[Part(root=TextPart(text=langgraph_message.content))]
                 ),
             )
 
@@ -173,9 +147,9 @@ class LanggraphA2AEventProducer:
         await self.updater.update_status(
             state=TaskState.working,
             message=Message(
-                contextId=self.task.contextId,
-                taskId=self.task.id,
-                messageId=str(uuid.uuid4()),
+                context_id=self.task.context_id,
+                task_id=self.task.id,
+                message_id=str(uuid.uuid4()),
                 role=Role.agent,
                 parts=[Part(root=DataPart(data=emit_event))],
                 metadata={
@@ -194,16 +168,7 @@ class LanggraphA2AEventProducer:
         Args:
             event: Dictionary containing state values from LangGraph
         """
-        await self.updater.update_status(
-            state=TaskState.working,
-            message=Message(
-                contextId=self.task.contextId,
-                taskId=self.task.id,
-                messageId=str(uuid.uuid4()),
-                role=Role.agent,
-                parts=[Part(root=DataPart(data=event))],
-                metadata={
-                    A2AMetadataKey.MESSAGE_TYPE.value: MessageType.LANGRAPH_VALUES.value
-                },
-            ),
-        )
+        if self.task.status.state == TaskState.working:
+            return
+
+        await self.updater.update_status(state=TaskState.working)
