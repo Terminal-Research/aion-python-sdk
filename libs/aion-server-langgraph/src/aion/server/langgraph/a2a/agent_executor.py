@@ -51,7 +51,7 @@ class LanggraphAgentExecutor(AgentExecutor):
         firstLoop = True
 
         try:
-            async for item in self.agent.stream(query, task.contextId):
+            async for item in self.agent.stream(query, task.context_id):
                 if firstLoop:
                     await event_producer.update_status_working()
                     firstLoop = False

@@ -29,7 +29,7 @@ class PostgresTaskStore(BaseTaskStore):
 
         return TaskRecord(
             id=task_id,
-            context_id=task.contextId,
+            context_id=task.context_id,
             task=task,
             created_at=now,
             updated_at=now
