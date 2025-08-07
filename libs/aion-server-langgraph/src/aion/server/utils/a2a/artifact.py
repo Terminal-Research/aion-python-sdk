@@ -26,7 +26,7 @@ class StreamingArtifactBuilder:
     def __init__(
             self,
             task: Task,
-            part_mode: StreamingArtifactBuilderPartMode = StreamingArtifactBuilderPartMode.CONCATENATED
+            part_mode: StreamingArtifactBuilderPartMode = StreamingArtifactBuilderPartMode.SEPARATED
     ):
         """Initialize the builder with a Task object and part handling mode.
 
