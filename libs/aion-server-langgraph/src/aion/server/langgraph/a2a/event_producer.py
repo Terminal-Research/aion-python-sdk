@@ -12,6 +12,7 @@ from langchain_core.messages import BaseMessage, AIMessageChunk, AIMessage
 from langgraph.types import Interrupt, StateSnapshot
 
 from aion.server.types import MessageType, A2AEventType, A2AMetadataKey
+from aion.server.utils import StreamingArtifactBuilder
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,14 @@ class LanggraphA2AEventProducer:
         self.task = task
         self.event_queue = event_queue
         self.updater = TaskUpdater(event_queue, task.id, task.context_id)
+
+    @property
+    def streaming_artifact_builder(self):
+        if hasattr(self, '_streaming_artifact_builder'):
+            return self._streaming_artifact_builder
+
+        self._streaming_artifact_builder = StreamingArtifactBuilder(task=self.task)
+        return self._streaming_artifact_builder
 
     async def handle_event(
         self,
@@ -67,8 +76,11 @@ class LanggraphA2AEventProducer:
                 f"Unhandled event. Event Type: {event_type}, Event: {event}"
             )
 
-    async def update_status_working(self):
+    async def update_status_working(self, force: bool = False):
         """Update task status to working state."""
+        if self.task.status.state == TaskState.working and not force:
+            return
+
         await self.updater.update_status(state=TaskState.working)
 
     async def _handle_complete(self, event: StateSnapshot):
@@ -111,11 +123,14 @@ class LanggraphA2AEventProducer:
                 expected to be an AIMessageChunk for streaming content
         """
         if isinstance(langgraph_message, AIMessageChunk):
-            if self.task.status.state == TaskState.working:
-                return
+            artifact_event = self.streaming_artifact_builder.build_from_langgraph_message(
+                langgraph_message=langgraph_message,
+                skip_final_if_no_chunk=True)
 
-            # Stream the delta via status update with message
-            await self.updater.update_status(state=TaskState.working)
+            if artifact_event:
+                await self.event_queue.enqueue_event(artifact_event)
+
+            await self.update_status_working()
             return
 
         if isinstance(langgraph_message, AIMessage):
@@ -129,6 +144,7 @@ class LanggraphA2AEventProducer:
                     parts=[Part(root=TextPart(text=langgraph_message.content))]
                 ),
             )
+            return
 
     async def _emit_langgraph_event(self, event: dict):
         """Emit custom LangGraph events as A2A status updates.
@@ -168,7 +184,4 @@ class LanggraphA2AEventProducer:
         Args:
             event: Dictionary containing state values from LangGraph
         """
-        if self.task.status.state == TaskState.working:
-            return
-
-        await self.updater.update_status(state=TaskState.working)
+        return await self.update_status_working()
