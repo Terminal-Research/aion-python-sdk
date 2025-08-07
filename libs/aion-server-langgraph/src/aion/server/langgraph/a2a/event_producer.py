@@ -3,15 +3,15 @@
 import logging
 import uuid
 
-from typing import Any, Sequence
+from typing import Any, Sequence, Optional
 
 from a2a.server.tasks import TaskUpdater
-from a2a.types import TaskState, Message, Part, Role, TextPart, DataPart, Task
+from a2a.types import TaskState, Message, Part, Role, TextPart, DataPart, Task, TaskArtifactUpdateEvent
 from a2a.server.events import EventQueue
 from langchain_core.messages import BaseMessage, AIMessageChunk, AIMessage
 from langgraph.types import Interrupt, StateSnapshot
 
-from aion.server.types import MessageType, A2AEventType, A2AMetadataKey
+from aion.server.types import MessageType, A2AEventType, A2AMetadataKey, ArtifactStreamingStatusReason
 from aion.server.utils import StreamingArtifactBuilder
 
 logger = logging.getLogger(__name__)
@@ -100,6 +100,12 @@ class LanggraphA2AEventProducer:
         if not interruption:
             return
 
+        await self.add_stream_artefact(
+            self.streaming_artifact_builder.build_meta_complete_event(
+                status_reason=ArtifactStreamingStatusReason.INTERRUPTED
+            )
+        )
+
         await self.updater.update_status(
             TaskState.input_required,
             message=Message(
@@ -122,14 +128,11 @@ class LanggraphA2AEventProducer:
             langgraph_message (BaseMessage): The message object from LangGraph,
                 expected to be an AIMessageChunk for streaming content
         """
+        await self.add_stream_artefact(
+            self.streaming_artifact_builder.build_from_langgraph_message(langgraph_message=langgraph_message)
+        )
+
         if isinstance(langgraph_message, AIMessageChunk):
-            artifact_event = self.streaming_artifact_builder.build_from_langgraph_message(
-                langgraph_message=langgraph_message,
-                skip_final_if_no_chunk=True)
-
-            if artifact_event:
-                await self.event_queue.enqueue_event(artifact_event)
-
             await self.update_status_working()
             return
 
@@ -185,3 +188,16 @@ class LanggraphA2AEventProducer:
             event: Dictionary containing state values from LangGraph
         """
         return await self.update_status_working()
+
+    async def add_stream_artefact(self, event: Optional[TaskArtifactUpdateEvent] = None):
+        """
+        Add a task artifact update event to the streaming queue.
+
+        Args:
+            event: Optional task artifact update event to be queued for processing.
+                   If None, the method returns without performing any action.
+        """
+        if not event:
+            return
+
+        await self.event_queue.enqueue_event(event)

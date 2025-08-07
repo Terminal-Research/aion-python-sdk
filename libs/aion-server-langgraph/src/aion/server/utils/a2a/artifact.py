@@ -1,10 +1,8 @@
-"""Builder class for creating streaming artifacts in A2A tasks."""
-
-from typing import Any
+from typing import Any, Optional, Literal
 from enum import Enum
 
 from a2a.types import TaskArtifactUpdateEvent, Artifact, Part, TextPart, Task
-from aion.server.types import ArtifactName
+from aion.server.types import ArtifactName, ArtifactStreamingStatus, ArtifactStreamingStatusReason
 from langchain_core.messages import BaseMessage, AIMessageChunk, AIMessage
 
 
@@ -43,42 +41,60 @@ class StreamingArtifactBuilder:
         self.artifact_name = ArtifactName.STREAM_DELTA.value
         self.part_mode = part_mode
 
-    def has_existing_streaming_artifact(self) -> bool:
-        """Check if a streaming artifact already exists in the task."""
-        if not self.task.artifacts:
-            return False
+    def get_existing_streaming_artifact(self, active_only: bool = True) -> Optional[Artifact]:
+        """Get existing streaming artifact if it exists in the task.
 
-        return any(
-            artifact.artifact_id == self.artifact_id
-            for artifact in self.task.artifacts
-        )
+        Args:
+            active_only: If True, returns only artifacts with ACTIVE status.
+                        If False, returns any artifact regardless of status.
 
-    def get_existing_streaming_content(self) -> str:
-        """Get the current content of the streaming artifact if it exists."""
+        Returns:
+            Artifact if found (and active if active_only=True), None otherwise.
+            When active_only=True and non-active artifact exists, returns None
+            to indicate a new artifact should be created.
+        """
         if not self.task.artifacts:
-            return ""
+            return None
 
         for artifact in self.task.artifacts:
-            if artifact.artifact_id == self.artifact_id and artifact.parts:
-                if self.part_mode == StreamingArtifactBuilderPartMode.CONCATENATED:
-                    first_part = artifact.parts[0]
-                    if hasattr(first_part.root, 'text'):
-                        return first_part.root.text
-                else:
-                    content_parts = []
-                    for part in artifact.parts:
-                        if hasattr(part.root, 'text'):
-                            content_parts.append(part.root.text)
-                    return ''.join(content_parts)
-                return ""
+            if artifact.artifact_id == self.artifact_id:
+                if not active_only:
+                    return artifact
 
+                # Check if artifact has active status
+                if (artifact.metadata and
+                        artifact.metadata.get("status") == ArtifactStreamingStatus.ACTIVE.value):
+                    return artifact
+                # If artifact exists but is not active, we should replace it
+                # by returning None to trigger new artifact creation
+                elif artifact.metadata and "status" in artifact.metadata:
+                    return None
+                # If no status metadata exists, consider it active for backward compatibility
+                else:
+                    return artifact
+        return None
+
+    def _extract_content_from_artifact(self, artifact: Optional[Artifact] = None) -> str:
+        """Get the current content of the streaming artifact if it exists."""
+        if not artifact:
+            return ""
+
+        if self.part_mode == StreamingArtifactBuilderPartMode.CONCATENATED:
+            first_part = artifact.parts[0]
+            if hasattr(first_part.root, 'text'):
+                return first_part.root.text
+        else:
+            content_parts = []
+            for part in artifact.parts:
+                if hasattr(part.root, 'text'):
+                    content_parts.append(part.root.text)
+            return ''.join(content_parts)
         return ""
 
     def build_from_langgraph_message(
             self,
             langgraph_message: BaseMessage,
-            metadata: dict[str, Any] | None = None,
-            skip_final_if_no_chunk: bool = True
+            metadata: dict[str, Any] | None = None
     ) -> TaskArtifactUpdateEvent | None:
         """Build streaming artifact event from LangGraph message with automatic type detection.
 
@@ -89,34 +105,58 @@ class StreamingArtifactBuilder:
         Args:
             langgraph_message: LangGraph message object
             metadata: Optional metadata for the artifact
-            skip_final_if_no_chunk: Skip final event if no streaming artifact exists
 
         Returns:
             TaskArtifactUpdateEvent or None if message type is not supported
         """
+        if not isinstance(metadata, dict):
+            metadata = {}
+
         if isinstance(langgraph_message, AIMessageChunk):
             return self.build_streaming_chunk_event(
                 content=langgraph_message.content,
-                is_final=False,
-                metadata=metadata
+                metadata=metadata | {
+                    "status": ArtifactStreamingStatus.ACTIVE,
+                    "status_reason": ArtifactStreamingStatusReason.CHUNK_STREAMING,
+                }
             )
 
         elif isinstance(langgraph_message, AIMessage):
-            if skip_final_if_no_chunk and not self.has_existing_streaming_artifact():
+            if not self.get_existing_streaming_artifact():
                 return None
 
-            return self.build_streaming_chunk_event(
-                content=langgraph_message.content,
-                is_final=True,
-                metadata=metadata
+            return self.build_finalized_event(
+                metadata=metadata | {
+                    "status": ArtifactStreamingStatus.FINALIZED,
+                    "status_reason": ArtifactStreamingStatusReason.COMPLETE_MESSAGE
+                }
             )
 
         return None
 
+    def build_meta_complete_event(
+            self,
+            status_reason: ArtifactStreamingStatusReason = ArtifactStreamingStatusReason.COMPLETE_MESSAGE
+    ) -> TaskArtifactUpdateEvent | None:
+        """Build a meta completion event that finalizes existing artifact without changing content."""
+        streaming_artifact = self.get_existing_streaming_artifact()
+        if not streaming_artifact:
+            return None
+
+        return self._build_chunk_event(
+            parts=streaming_artifact.parts,
+            append=False,
+            last_chunk=False,
+            metadata={
+                "status": ArtifactStreamingStatus.FINALIZED.value,
+                "status_reason": status_reason.value,
+            }
+        )
+
     def build_streaming_chunk_event(
             self,
             content: str,
-            is_final: bool = False,
+            append: Optional[bool] = None,
             metadata: dict[str, Any] | None = None
     ) -> TaskArtifactUpdateEvent:
         """Build a streaming chunk event with content handling based on part_mode.
@@ -127,37 +167,60 @@ class StreamingArtifactBuilder:
 
         Args:
             content: The text content for this chunk
-            is_final: Whether this is the final chunk of the stream
+            append: Optional override for append behavior
             metadata: Optional metadata for the artifact
 
         Returns:
             Configured TaskArtifactUpdateEvent with proper content handling
         """
-        has_existing = self.has_existing_streaming_artifact()
+        streaming_artifact = self.get_existing_streaming_artifact()
         is_concatenated = self.part_mode == StreamingArtifactBuilderPartMode.CONCATENATED
 
         # Determine append flag
-        append = not is_concatenated and has_existing
+        if append is None:
+            append = not is_concatenated and streaming_artifact is not None
 
-        # Determine content
-        if is_concatenated and has_existing and not is_final:
-            # Accumulate content for concatenated mode on intermediate chunks
-            existing_content = self.get_existing_streaming_content()
+        # Determine content - accumulate for concatenated mode
+        if is_concatenated and streaming_artifact:
+            existing_content = self._extract_content_from_artifact(streaming_artifact)
             final_content = existing_content + content
         else:
-            # Use content as-is for all other cases
             final_content = content
 
         return self._build_chunk_event(
             content=final_content,
             append=append,
-            last_chunk=is_final,
+            last_chunk=False,
+            metadata=metadata
+        )
+
+    def build_finalized_event(
+            self,
+            metadata: dict[str, Any] | None = None
+    ) -> TaskArtifactUpdateEvent | None:
+        """Build a finalization event that keeps existing content as-is.
+
+        Args:
+            metadata: Optional metadata for the artifact
+
+        Returns:
+            TaskArtifactUpdateEvent or None if no existing artifact found
+        """
+        streaming_artifact = self.get_existing_streaming_artifact()
+        if not streaming_artifact:
+            return None
+
+        return self._build_chunk_event(
+            parts=streaming_artifact.parts,
+            append=False,
+            last_chunk=False,
             metadata=metadata
         )
 
     def _build_chunk_event(
             self,
-            content: str,
+            content: Optional[str] = None,
+            parts: Optional[list[Part]] = None,
             append: bool = False,
             last_chunk: bool = False,
             metadata: dict[str, Any] | None = None
@@ -165,7 +228,8 @@ class StreamingArtifactBuilder:
         """Build a TaskArtifactUpdateEvent with the specified parameters.
 
         Args:
-            content: Text content for the event
+            content: Text content for the event (mutually exclusive with parts)
+            parts: List of parts for the event (mutually exclusive with content)
             append: Whether to append to existing parts or replace them
             last_chunk: Whether this is the final chunk
             metadata: Optional metadata for the artifact
@@ -173,7 +237,11 @@ class StreamingArtifactBuilder:
         Returns:
             Configured TaskArtifactUpdateEvent
         """
-        parts = [Part(root=TextPart(text=content))]
+        if content is not None:
+            parts = [Part(root=TextPart(text=content))]
+        elif parts is None:
+            parts = []
+
         return TaskArtifactUpdateEvent(
             task_id=self.task_id,
             context_id=self.context_id,
