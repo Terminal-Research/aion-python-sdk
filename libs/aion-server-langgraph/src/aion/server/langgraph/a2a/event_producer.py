@@ -125,9 +125,9 @@ class LanggraphA2AEventProducer:
         await self.updater.update_status(
             task_state,
             message=Message(
-                contextId=self.task.context_id,
-                taskId=self.task.id,
-                messageId=str(uuid.uuid4()),
+                context_id=self.task.context_id,
+                task_id=self.task.id,
+                message_id=str(uuid.uuid4()),
                 role=Role.agent,
                 parts=[Part(root=TextPart(text=interrupt_message))],
             ),

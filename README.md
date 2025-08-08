@@ -10,9 +10,15 @@ Each project manages its own dependencies and configuration.
 
 ## Configuration
 
-The server components use an `aion.yaml` file located in your project root to configure LangGraph workflows and HTTP 
+The server components use an `aion.yaml` file located in your project root to configure LangGraph workflows and HTTP
 applications. For detailed configuration options and examples,
 see the [Aion YAML Configuration Guide](docs/aion-yaml-config.md).
+
+## Extensions
+
+The A2A (Agent-to-Agent) communication system supports various protocol extensions and customizations. For detailed
+documentation on extensions, streaming, and protocol features, see
+the [A2A Extensions Documentation](docs/a2a_extensions/main.md).
 
 ## Running the CLI
 
