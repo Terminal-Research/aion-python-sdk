@@ -113,6 +113,7 @@ class PostgresTaskStore(BaseTaskStore):
             offset: Optional[int] = None,
             limit: Optional[int] = None
     ) -> List[str]:
+        """Retrieve unique context IDs with pagination support."""
         context_ids = []
         async with db_manager.get_session() as session:
             repository = TasksRepository(session)
@@ -125,6 +126,7 @@ class PostgresTaskStore(BaseTaskStore):
             offset: Optional[int] = None,
             limit: Optional[int] = None
     ) -> List[Task]:
+        """Retrieve tasks for a specific context with pagination support."""
         task_records = []
         async with db_manager.get_session() as session:
             repository = TasksRepository(session)
@@ -134,3 +136,11 @@ class PostgresTaskStore(BaseTaskStore):
                 limit=limit)
         tasks = [record.task for record in task_records]
         return tasks
+
+    async def get_context_last_task(self, context_id: str) -> Optional[Task]:
+        """Retrieve the most recent task for a specific context."""
+        try:
+            tasks = await self.get_context_tasks(context_id=context_id, limit=1)
+            return tasks[0]
+        except:
+            return None

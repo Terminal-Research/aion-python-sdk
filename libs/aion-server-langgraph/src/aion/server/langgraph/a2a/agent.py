@@ -20,12 +20,19 @@ class LanggraphAgent:
         """Initialize the agent using the first registered LangGraph."""
         self.graph = graph
 
-    async def invoke(self, query: Union[str, Command], sessionId: str) -> dict[str, Any]:
+    @staticmethod
+    def _get_action_config(session_id: str):
+        """Get config for agent invoke/stream action"""
+        return {"configurable": {
+            "thread_id": session_id
+        }}
+
+    async def invoke(self, query: Union[str, Command], session_id: str) -> dict[str, Any]:
         """Invoke the agent asynchronously.
 
         Args:
             query: The user message or a LangGraph Command
-            sessionId: Unique identifier for the conversation thread.
+            session_id: Unique identifier for the conversation thread.
 
         Returns:
             The agent's final response as a string.
@@ -35,18 +42,18 @@ class LanggraphAgent:
         else:
             inputs = {"messages": [("user", query)]}
 
-        config = {"configurable": {"thread_id": sessionId}}
+        config = self._get_action_config(session_id)
         await self.graph.ainvoke(inputs, config)
         return await self.get_agent_response(config)
 
     async def stream(
-            self, query: Union[str, Command], sessionId: str
+            self, query: Union[str, Command], session_id: str
     ) -> AsyncIterable[Dict[str, Any]]:
         """Stream intermediate responses from the agent.
 
         Args:
             query: The user message or a LangGraph Command
-            sessionId: Unique identifier for the conversation thread.
+            session_id: Unique identifier for the conversation thread.
 
         Yields:
             Partial response dictionaries describing progress.
@@ -55,8 +62,8 @@ class LanggraphAgent:
             inputs = query
         else:
             inputs = {"messages": [("user", query)]}
-        config = {"configurable": {"thread_id": sessionId}}
 
+        config = self._get_action_config(session_id)
         logger.debug("Beginning Langgraph Stream: %s", inputs)
         try:
             async for eventType, event in self.graph.astream(

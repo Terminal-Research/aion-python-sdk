@@ -96,8 +96,8 @@ class LanggraphA2AEventProducer:
         Args:
             interrupts: Sequence of interrupt objects from LangGraph
         """
-        interruption = interrupts[0] if len(interrupts) else None
-        if not interruption:
+        interrupt = interrupts[0] if interrupts else None
+        if not interrupt:
             return
 
         await self.add_stream_artefact(
@@ -106,14 +106,30 @@ class LanggraphA2AEventProducer:
             )
         )
 
+        # todo add more complex processing of interruption type
+        if isinstance(interrupt.value, dict):
+            interruption_type_value = interrupt.value.get("type", None)
+            if interruption_type_value:
+                try:
+                    task_state = TaskState(interruption_type_value)
+                except:
+                    task_state = TaskState.input_required
+            else:
+                task_state = TaskState.input_required
+
+            interrupt_message = interrupt.value.get("message", None) or str(interrupt.value)
+        else:
+            task_state = TaskState.input_required
+            interrupt_message = str(interrupt.value)
+
         await self.updater.update_status(
-            TaskState.input_required,
+            task_state,
             message=Message(
-                context_id=self.task.context_id,
-                task_id=self.task.id,
-                message_id=str(uuid.uuid4()),
+                contextId=self.task.context_id,
+                taskId=self.task.id,
+                messageId=str(uuid.uuid4()),
                 role=Role.agent,
-                parts=[Part(root=TextPart(text=interruption.value))],
+                parts=[Part(root=TextPart(text=interrupt_message))],
             ),
             final=True,
         )
