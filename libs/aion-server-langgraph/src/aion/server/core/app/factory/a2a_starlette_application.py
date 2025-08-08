@@ -10,7 +10,7 @@ from a2a.server.apps.jsonrpc.jsonrpc_app import (
 from a2a.types import (
     A2AError, JSONParseError, InternalError, TaskResubscriptionRequest,
     SendStreamingMessageRequest, InvalidRequestError,
-    UnsupportedOperationError, JSONRPCErrorResponse
+    UnsupportedOperationError, JSONRPCErrorResponse, JSONRPCRequest
 )
 from a2a.types import AgentCard
 from a2a.utils.errors import MethodNotImplementedError
@@ -69,6 +69,14 @@ class AionA2AStarletteApplication(A2AStarletteApplication):
 
         try:
             body = await request.json()
+            if isinstance(body, dict):
+                request_id = body.get('id')
+
+            # First, validate the basic JSON-RPC structure. This is crucial
+            # because the A2ARequest model is a discriminated union where some
+            # request types have default values for the 'method' field
+            JSONRPCRequest.model_validate(body)
+
             a2a_request = ExtendedA2ARequest.model_validate(body)
             call_context = self._context_builder.build(request)
 
@@ -164,7 +172,7 @@ class AionA2AStarletteApplication(A2AStarletteApplication):
                     id=request_id, error=error
                 )
 
-        return self._create_response(handler_result)
+        return self._create_response(context=context, handler_result=handler_result)
 
     def _check_if_request_is_custom_method(self, request_obj):
         """Check if the request is a custom method type.

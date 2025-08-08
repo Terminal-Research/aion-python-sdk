@@ -5,6 +5,8 @@ __all__ = [
     "ArtifactName",
     "A2AEventType",
     "A2AMetadataKey",
+    "ArtifactStreamingStatus",
+    "ArtifactStreamingStatusReason",
 ]
 
 class MessageType(str, Enum):
@@ -17,6 +19,7 @@ class MessageType(str, Enum):
 class ArtifactName(str, Enum):
     """Named artifacts that can be created and referenced."""
     MESSAGE_RESULT = "message_result"
+    STREAM_DELTA = "stream_delta"
 
 class A2AEventType(str, Enum):
     """Event types for Agent-to-Agent (A2A) communication."""
@@ -32,3 +35,26 @@ class A2AMetadataKey(str, Enum):
     MESSAGE_TYPE = "aion:message_type"
     SENDER_ID = "aion:sender_id"
     SIGNATURE = "aion:signature"
+
+
+class ArtifactStreamingStatus(str, Enum):
+    """Enumeration representing the current status of artifact streaming."""
+
+    FINALIZED = "finalized"
+    """Artifact streaming has been completed and finalized."""
+
+    ACTIVE = "active"
+    """Artifact streaming is currently in progress."""
+
+
+class ArtifactStreamingStatusReason(str, Enum):
+    """Enumeration representing the reason for the current artifact streaming status."""
+
+    INTERRUPTED = "interrupted"
+    """Streaming was interrupted before completion."""
+
+    COMPLETE_MESSAGE = "complete_message"
+    """Streaming completed with a AIMessage."""
+
+    CHUNK_STREAMING = "chunk_streaming"
+    """Currently streaming data in chunks."""
