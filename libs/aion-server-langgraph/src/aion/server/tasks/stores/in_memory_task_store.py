@@ -56,6 +56,7 @@ class InMemoryTaskStore(BaseTaskStore):
             offset: Optional[int] = None,
             limit: Optional[int] = None
     ) -> List[str]:
+        """Retrieve unique context IDs with pagination support."""
         offset = offset or 0
         if offset >= len(self.tasks):
             return []
@@ -90,6 +91,7 @@ class InMemoryTaskStore(BaseTaskStore):
             offset: Optional[int] = None,
             limit: Optional[int] = None
     ) -> List[Task]:
+        """Retrieve tasks for a specific context with pagination support."""
         offset = offset or 0
 
         matching_tasks = []
@@ -109,3 +111,15 @@ class InMemoryTaskStore(BaseTaskStore):
                 break
 
         return matching_tasks
+
+    async def get_context_last_task(self, context_id: str) -> Optional[Task]:
+        """Retrieve the most recent task for a specific context."""
+        result = None
+        for task in reversed(list(self.tasks.values())):
+            if task.context_id != context_id:
+                continue
+
+            result = task
+            break
+
+        return result

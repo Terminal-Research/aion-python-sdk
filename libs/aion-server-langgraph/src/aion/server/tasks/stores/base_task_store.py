@@ -51,3 +51,16 @@ class BaseTaskStore(TaskStore):
             List of Task objects belonging to the specified context
         """
         pass
+
+    @abstractmethod
+    async def get_context_last_task(self, context_id: str) -> Optional[Task]:
+        """
+        Retrieve the most recent task for a specific context.
+
+        Args:
+            context_id: The context identifier to get the last task for
+
+        Returns:
+            The most recent Task object for the context, or None if no tasks exist
+        """
+        pass
