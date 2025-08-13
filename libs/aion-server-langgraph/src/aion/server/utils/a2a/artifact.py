@@ -62,8 +62,10 @@ class StreamingArtifactBuilder:
                     return artifact
 
                 # Check if artifact has active status
-                if (artifact.metadata and
-                        artifact.metadata.get("status") == ArtifactStreamingStatus.ACTIVE.value):
+                if (
+                        artifact.metadata and
+                        artifact.metadata.get("status") == ArtifactStreamingStatus.ACTIVE.value
+                ):
                     return artifact
                 # If artifact exists but is not active, we should replace it
                 # by returning None to trigger new artifact creation

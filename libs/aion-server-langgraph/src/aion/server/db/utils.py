@@ -85,7 +85,7 @@ def psycopg_url(url: str) -> str:
     return f"postgresql://{rest}"
 
 
-async def test_permissions(url: str) -> dict:
+async def validate_permissions(url: str) -> dict:
     """Test database permissions for the current user.
 
     This function attempts various database operations to determine
