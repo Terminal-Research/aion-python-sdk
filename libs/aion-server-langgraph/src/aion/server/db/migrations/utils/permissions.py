@@ -4,7 +4,7 @@ import logging
 import sys
 
 from ..env import config
-from aion.server.db import test_permissions, psycopg_url
+from aion.server.db import validate_permissions, psycopg_url
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ async def fail_if_no_permissions():
 
     # Check permissions
     logger.debug("Testing database permissions before migrations")
-    permissions = await test_permissions(conn_url)
+    permissions = await validate_permissions(conn_url)
 
     if not permissions['can_connect']:
         logger.error("Cannot connect to database")

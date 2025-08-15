@@ -11,7 +11,7 @@ from .utils import (
     verify_connection,
     sqlalchemy_url,
     psycopg_url,
-    test_permissions,
+    validate_permissions,
 )
 
 from .manager import db_manager
@@ -23,7 +23,7 @@ __all__ = [
     "sqlalchemy_url",
     "psycopg_url",
     "verify_connection",
-    "test_permissions",
+    "validate_permissions",
     "db_manager",
 
     # db models

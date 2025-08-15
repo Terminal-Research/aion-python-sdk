@@ -56,5 +56,8 @@ class ArtifactStreamingStatusReason(str, Enum):
     COMPLETE_MESSAGE = "complete_message"
     """Streaming completed with a AIMessage."""
 
+    COMPLETE_TASK = "complete_task"
+    """Streaming completed with a Task status update."""
+
     CHUNK_STREAMING = "chunk_streaming"
     """Currently streaming data in chunks."""

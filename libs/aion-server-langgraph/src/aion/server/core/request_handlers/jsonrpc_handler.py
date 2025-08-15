@@ -1,4 +1,4 @@
-from typing import List
+from typing import TYPE_CHECKING
 
 from a2a.server.context import ServerCallContext
 from a2a.server.request_handlers import JSONRPCHandler, prepare_response_object
@@ -16,9 +16,13 @@ from aion.server.types import (
     Conversation
 )
 
+if TYPE_CHECKING:
+    from aion.server.core.request_handlers import AionRequestHandler
+
 
 class AionJSONRPCHandler(JSONRPCHandler):
     """Extended JSON-RPC handler with custom methods for Aion context management."""
+    request_handler: "AionRequestHandler"
 
     async def on_get_context(
             self,
