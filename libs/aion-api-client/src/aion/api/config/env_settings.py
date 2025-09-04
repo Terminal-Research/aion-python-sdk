@@ -13,6 +13,7 @@ settings = Dynaconf(
     ],
     environments=True,
     env="production",
+    load_dotenv=True,
     ENV_SWITCHER_FOR_DYNACONF="AION_API_CLIENT_ENV",
     validators = [
         # settings from .env
