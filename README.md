@@ -17,14 +17,14 @@ Create a `.env` file in your project root with the following configuration:
 ```bash
 # Database Configuration
 # If not set, memory storage will be used (created automatically with agent startup)
-POSTGRES_URL=postgresql://david_terminal_user:david_terminal_user_password@localhost:5432/david_terminal_agent_db
+POSTGRES_URL=postgresql://your_username:your_password@localhost:5432/your_database_name
 
 # Logging
 LOG_LEVEL=DEBUG
 
 # AION API Client
-AION_CLIENT_ID=28afd668-68ec-46-837d926fb670
-AION_CLIENT_SECRET=C6ZIEV4lmjYtbh+iIrCstyxoheMzyc=
+AION_CLIENT_ID=your_client_id_here
+AION_CLIENT_SECRET=your_client_secret_here
 AION_API_CLIENT_ENV=development  # or 'production'
 
 # CLI Authentication (optional)
