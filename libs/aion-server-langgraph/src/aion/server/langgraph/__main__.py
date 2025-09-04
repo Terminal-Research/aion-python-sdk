@@ -1,12 +1,11 @@
-import asyncio
 import logging
 import os
 import sys
 
-import click
 import uvicorn
-from aion.server.core.app import AppFactory, AppConfig
 from dotenv import load_dotenv
+
+from aion.server.core.app import AppFactory, AppConfig
 
 logger = logging.getLogger(__name__)
 
@@ -45,13 +44,10 @@ async def async_serve(host, port):
         exit(1)
 
 
-@click.command()
-@click.option('--host', 'host', default='localhost')
-@click.option('--port', 'port', default=10000)
-def main(host, port):
+async def main(host: str = "localhost", port: int = 10000):
     """Starts the Currency Agent server."""
     try:
-        asyncio.run(async_serve(host, port))
+        await async_serve(host, port)
     except KeyboardInterrupt:
         logger.info("Interrupted by user")
         sys.exit(0)
