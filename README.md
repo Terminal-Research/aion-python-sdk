@@ -1,40 +1,102 @@
-# Aion Monorepo
+# Aion Agent SDK
 
-This repository contains multiple projects.
+A Python SDK for integrating LangGraph agents with the Agent-to-Agent (A2A) protocol.
 
-- **cli** – the original AION Agent API project providing a CLI for deploying LangGraph workflows.
-- **aion-agent-cli** – command line interface for the Aion Python SDK.
-- **aion-agent-api** – A2A server wrapper for LangGraph projects.
+## Installation
 
-Each project manages its own dependencies and configuration.
+Install the SDK as a package:
 
-## Configuration
+```bash
+pip install aion-agent-sdk
+```
 
-The server components use an `aion.yaml` file located in your project root to configure LangGraph workflows and HTTP
-applications. For detailed configuration options and examples,
-see the [Aion YAML Configuration Guide](docs/aion-yaml-config.md).
+## Environment Configuration
 
-## Extensions
+Create a `.env` file in your project root with the following configuration:
 
-The A2A (Agent-to-Agent) communication system supports various protocol extensions and customizations. For detailed
-documentation on extensions, streaming, and protocol features, see
-the [A2A Extensions Documentation](docs/a2a_extensions/main.md).
+```bash
+# Database Configuration
+# If not set, memory storage will be used (created automatically with agent startup)
+POSTGRES_URL=postgresql://david_terminal_user:david_terminal_user_password@localhost:5432/david_terminal_agent_db
 
-## Running the CLI
+# Logging
+LOG_LEVEL=DEBUG
 
-Install ``aion-agent-cli`` as a dependency (for example with ``pip install -e
-libs/aion-agent-cli``). The package provides the ``aion`` command so you can
-launch the development server with:
+# AION API Client
+AION_CLIENT_ID=28afd668-68ec-46-837d926fb670
+AION_CLIENT_SECRET=C6ZIEV4lmjYtbh+iIrCstyxoheMzyc=
+AION_API_CLIENT_ENV=development  # or 'production'
+
+# CLI Authentication (optional)
+AION_CLI_BEARER_TOKEN=your_bearer_token_here
+```
+
+### Environment Variables Explained
+
+- **`POSTGRES_URL`** - PostgreSQL connection string. If not provided, the system automatically creates and uses in-memory storage when the agent starts
+- **`LOG_LEVEL`** - Controls logging verbosity (DEBUG, INFO, WARNING, ERROR) - *currently not used*
+- **`AION_CLIENT_ID`** & **`AION_CLIENT_SECRET`** - Authentication credentials for AION API
+- **`AION_API_CLIENT_ENV`** - Environment setting (`development` or `production`)
+- **`AION_CLI_BEARER_TOKEN`** - Bearer token for authentication (chat command) - *optional*
+
+## Basic Configuration
+
+Create a minimal `aion.yaml` configuration file:
+
+```yaml
+aion:
+  agent:
+    my_bot: "./agent.py:chat_agent"
+```
+
+For extended configuration options including skills and capabilities, see the **[Complete Configuration Guide](docs/aion-yaml-config.md)**.
+
+## Running the Agent
+
+Start the A2A server (runs on http://localhost:10000):
 
 ```bash
 poetry run aion serve
 ```
 
-When working directly in this repository you can also run the CLI from the
-subproject for local development:
+The server will automatically:
+- Load your `aion.yaml` configuration
+- Load environment variables from `.env` file
+- Make your agents available via the A2A protocol
+
+## Testing
+
+Test your agents with interactive chat in a separate terminal:
 
 ```bash
-cd libs/aion-agent-cli
-poetry install
-poetry run aion serve
+poetry run aion chat
 ```
+
+This provides a convenient way to test your agents locally before deployment.
+
+For all available CLI commands and options, see the **[CLI Reference](libs/aion-cli/README.md)**.
+
+## Integration
+
+The SDK provides seamless integration of your LangGraph agents through:
+
+- **Automatic Configuration Loading** - `aion serve` reads your `aion.yaml` setup
+- **Environment Management** - Automatic `.env` file loading
+- **Protocol Wrapping** - A2A protocol server wrapping your agents
+- **Storage Flexibility** - Automatic fallback to memory storage when database not configured
+
+## Documentation
+
+- **[Complete Configuration Guide](docs/aion-yaml-config.md)** - Full YAML options, skills, capabilities
+- **[A2A Protocol Extensions](docs/a2a_extensions/main.md)** - Streaming, context management, JSON-RPC methods  
+- **[API Client](libs/aion-api-client/README.md)** - GraphQL client for integration
+- **[CLI Reference](libs/aion-cli/README.md)** - Command-line interface and all available commands
+
+## Quick Start Summary
+
+1. **Install**: `pip install aion-agent-sdk`
+2. **Configure**: Create `.env` and `aion.yaml` files
+3. **Run**: `poetry run aion serve`
+4. **Test**: `poetry run aion chat` (in another terminal)
+
+Your agents are now running and accessible via the A2A protocol at `http://localhost:10000`.

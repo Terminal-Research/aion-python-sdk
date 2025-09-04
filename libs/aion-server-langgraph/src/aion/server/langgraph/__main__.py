@@ -18,11 +18,6 @@ class MissingAPIKeyError(Exception):
 
 async def async_serve(host, port):
     try:
-        if not os.getenv('OPENROUTER_API_KEY'):
-            raise MissingAPIKeyError(
-                'OPENROUTER_API_KEY environment variable not set.'
-            )
-
         app_factory = await AppFactory.initialize(config=AppConfig(host=host, port=port))
         if not app_factory:
             return

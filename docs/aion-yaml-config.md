@@ -475,7 +475,6 @@ Path to `.env` file containing environment variables:
 
 ```bash
 # .env file example
-OPENROUTER_API_KEY=key # optional
 POSTGRES_URL=postgresql://localhost:5432/aion # optional
 ```
 

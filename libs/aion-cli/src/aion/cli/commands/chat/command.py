@@ -9,7 +9,7 @@ import asyncclick as click
 @click.option(
     '--bearer-token',
     help='Bearer token for authentication',
-    envvar='A2A_CLI_BEARER_TOKEN',
+    envvar='AION_CLI_BEARER_TOKEN',
 )
 @click.option('--session', default=0, help='Session ID (0 for random)')
 @click.option('--history/--no-history', default=False, help='Show task history')
