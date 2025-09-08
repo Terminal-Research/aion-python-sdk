@@ -13,7 +13,7 @@ from aion.server.tasks import store_manager
 from aion.server.configs import db_settings
 from .configs import AppConfig
 from .lifespan import AppLifespan
-from .a2a_starlette_application import AionA2AStarletteApplication
+from ..a2a_starlette import AionA2AStarletteApplication
 from aion.server.core.request_handlers import AionRequestHandler
 
 logger = logging.getLogger(__name__)
@@ -106,7 +106,7 @@ class AppFactory:
         store_manager.initialize()
 
         return AionRequestHandler(
-            agent_executor=LanggraphAgentExecutor(self.agent.get_compiled_graph()),
+            agent_executor=LanggraphAgentExecutor(),
             task_store=store_manager.get_store(),
             push_config_store=InMemoryPushNotificationConfigStore())
 

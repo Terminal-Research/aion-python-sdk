@@ -17,11 +17,14 @@ from a2a.utils.errors import MethodNotImplementedError
 from pydantic import ValidationError
 from starlette.exceptions import HTTPException
 from starlette.requests import Request
-from starlette.responses import Response
+from starlette.responses import Response, JSONResponse
+from starlette.routing import Route
 from starlette.status import HTTP_413_REQUEST_ENTITY_TOO_LARGE
 
+from aion.server.core.app.routes import WellKnownSpecificAgentCardEndpoint
 from aion.server.core.request_handlers import AionJSONRPCHandler, IRequestHandler
 from aion.server.types import ExtendedA2ARequest, CustomA2ARequest, GetContextRequest, GetContextsListRequest
+from aion.server.utils.constants import SPECIFIC_AGENT_CARD_WELL_KNOWN_PATH
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +57,40 @@ class AionA2AStarletteApplication(A2AStarletteApplication):
         self.handler = AionJSONRPCHandler(
             agent_card=agent_card,
             request_handler=http_handler)
+
+    def routes(self, *args, **kwargs):
+        """
+        Get all application routes including custom routes.
+
+        This method extends the parent class routes by adding custom routes
+        to the standard route collection.
+
+        Returns:
+            list[Route]: Combined list of standard routes and custom routes.
+        """
+        routes = super().routes(*args, **kwargs)
+        return [*routes, *self.custom_routes()]
+
+    @staticmethod
+    def custom_routes() -> list[Route]:
+        """
+        Define custom application routes.
+
+        This method creates and returns a list of custom routes that are not
+        part of the standard application routing. These routes are automatically
+        added to the main route collection.
+
+        Returns:
+            list[Route]: List of custom Route objects for the application.
+        """
+        custom_routes = [
+            Route(
+                SPECIFIC_AGENT_CARD_WELL_KNOWN_PATH,
+                WellKnownSpecificAgentCardEndpoint,
+                name="specific_agent_card",
+            )
+        ]
+        return custom_routes
 
     async def _handle_requests(self, request: Request) -> Response:
         """Handle incoming HTTP requests with comprehensive error handling.

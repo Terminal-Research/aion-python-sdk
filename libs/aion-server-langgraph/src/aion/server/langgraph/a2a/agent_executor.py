@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Tuple
+from typing import Tuple
 
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
@@ -15,8 +15,9 @@ from a2a.utils import (
 from a2a.utils.errors import ServerError
 from langgraph.types import Command
 
+from aion.server.langgraph import agent_manager
+from aion.server.types import A2AMetadataKey
 from aion.server.utils import check_if_task_is_interrupted
-
 from .agent import LanggraphAgent
 from .event_producer import LanggraphA2AEventProducer
 
@@ -34,9 +35,18 @@ class LanggraphAgentExecutor(AgentExecutor):
     and event management.
     """
 
-    def __init__(self, graph: Any) -> None:
-        """Create the executor with the given graph."""
-        self.agent = LanggraphAgent(graph)
+    @staticmethod
+    def _get_agent_for_execution(context: RequestContext):
+        agent_id = context.metadata.get(A2AMetadataKey.GRAPH_ID.value)
+        if not agent_id:
+            agent = agent_manager.get_first_agent()
+        else:
+            agent = agent_manager.get_agent(agent_id)
+
+        if not agent:
+            raise ServerError(error=InvalidParamsError(message="No agent found"))
+
+        return LanggraphAgent(agent.get_compiled_graph())
 
     async def execute(
             self,
@@ -56,6 +66,7 @@ class LanggraphAgentExecutor(AgentExecutor):
         if error:
             raise ServerError(error=InvalidParamsError())
 
+        agent = self._get_agent_for_execution(context)
         query = context.get_user_input()
         task, is_new_task = await self._get_task_for_execution(context)
         if is_new_task:
@@ -67,7 +78,7 @@ class LanggraphAgentExecutor(AgentExecutor):
         firstLoop = True
 
         try:
-            async for item in self.agent.stream(query, task.context_id):
+            async for item in agent.stream(query, task.context_id):
                 if firstLoop:
                     await event_producer.update_status_working()
                     firstLoop = False

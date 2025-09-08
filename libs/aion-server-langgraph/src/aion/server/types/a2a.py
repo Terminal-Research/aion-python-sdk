@@ -35,6 +35,7 @@ class A2AMetadataKey(str, Enum):
     MESSAGE_TYPE = "aion:message_type"
     SENDER_ID = "aion:sender_id"
     SIGNATURE = "aion:signature"
+    GRAPH_ID = "aion:graph_id"
 
 
 class ArtifactStreamingStatus(str, Enum):

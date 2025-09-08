@@ -28,7 +28,6 @@ class BaseAgent(AgentInterface):
         """Initialize BaseAgent.
 
         Args:
-            agent_id:
             graph_source: Optional graph instance or function that returns a graph
             config: Optional configuration for the agent
         """
