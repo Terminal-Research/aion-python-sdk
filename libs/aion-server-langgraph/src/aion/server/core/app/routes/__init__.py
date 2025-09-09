@@ -1,1 +1,1 @@
-from .agent_card import WellKnownSpecificAgentCardEndpoint
+from .well_known_agent import WellKnownSpecificAgentCardEndpoint, WellKnownAgentsListEndpoint

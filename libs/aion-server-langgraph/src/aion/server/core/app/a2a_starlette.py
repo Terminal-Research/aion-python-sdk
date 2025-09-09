@@ -17,14 +17,14 @@ from a2a.utils.errors import MethodNotImplementedError
 from pydantic import ValidationError
 from starlette.exceptions import HTTPException
 from starlette.requests import Request
-from starlette.responses import Response, JSONResponse
+from starlette.responses import Response
 from starlette.routing import Route
 from starlette.status import HTTP_413_REQUEST_ENTITY_TOO_LARGE
 
-from aion.server.core.app.routes import WellKnownSpecificAgentCardEndpoint
+from aion.server.core.app.routes import WellKnownSpecificAgentCardEndpoint, WellKnownAgentsListEndpoint
 from aion.server.core.request_handlers import AionJSONRPCHandler, IRequestHandler
 from aion.server.types import ExtendedA2ARequest, CustomA2ARequest, GetContextRequest, GetContextsListRequest
-from aion.server.utils.constants import SPECIFIC_AGENT_CARD_WELL_KNOWN_PATH
+from aion.server.utils.constants import SPECIFIC_AGENT_CARD_WELL_KNOWN_PATH, AVAILABLE_GRAPHS_WELL_KNOWN_PATH
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +88,11 @@ class AionA2AStarletteApplication(A2AStarletteApplication):
                 SPECIFIC_AGENT_CARD_WELL_KNOWN_PATH,
                 WellKnownSpecificAgentCardEndpoint,
                 name="specific_agent_card",
+            ),
+            Route(
+                AVAILABLE_GRAPHS_WELL_KNOWN_PATH,
+                WellKnownAgentsListEndpoint,
+                name="available_graphs",
             )
         ]
         return custom_routes

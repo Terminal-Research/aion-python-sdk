@@ -6,7 +6,7 @@ from typing import Optional
 from uuid import uuid4
 
 import httpx
-from a2a.client import A2ACardResolver, A2AClient
+from a2a.client import A2AClient
 from a2a.types import (
     FilePart,
     FileWithBytes,
@@ -26,6 +26,8 @@ from a2a.types import (
     TextPart,
 )
 
+from aion.cli.commands.chat.card_resolver import AionA2ACardResolver
+
 
 class ChatSession:
     """Handles A2A chat session logic"""
@@ -38,6 +40,7 @@ class ChatSession:
             custom_headers: Optional[dict] = None,
             use_push_notifications: bool = False,
             push_notification_receiver: str = 'http://localhost:5000',
+            graph_id: Optional[str] = None,
     ):
         self.agent_url = agent_url
         self.bearer_token = bearer_token
@@ -45,6 +48,7 @@ class ChatSession:
         self.custom_headers = custom_headers or {}
         self.use_push_notifications = use_push_notifications
         self.push_notification_receiver = push_notification_receiver
+        self.graph_id = graph_id
 
         # Setup headers
         self.headers = {}
@@ -68,7 +72,10 @@ class ChatSession:
 
         async with httpx.AsyncClient(timeout=30, headers=self.headers) as httpx_client:
             # Get agent card
-            card_resolver = A2ACardResolver(httpx_client, self.agent_url)
+            card_resolver = AionA2ACardResolver(
+                httpx_client=httpx_client,
+                base_url=self.agent_url,
+                graph_id=self.graph_id)
             card = await card_resolver.get_agent_card()
 
             print('======= Agent Card ========')
@@ -350,6 +357,7 @@ async def start_chat(
         push_notification_receiver: str = 'http://localhost:5000',
         enabled_extensions: Optional[str] = None,
         custom_headers: Optional[dict] = None,
+        graph_id: Optional[str] = None,
 ):
     """Start a chat session with the A2A agent"""
     chat_session = ChatSession(
@@ -359,6 +367,7 @@ async def start_chat(
         custom_headers=custom_headers,
         use_push_notifications=use_push_notifications,
         push_notification_receiver=push_notification_receiver,
+        graph_id=graph_id
     )
 
     await chat_session.start(session_id=session_id, show_history=show_history)

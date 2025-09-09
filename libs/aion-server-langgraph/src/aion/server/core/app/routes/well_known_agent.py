@@ -13,9 +13,9 @@ class WellKnownSpecificAgentCardEndpoint(HTTPEndpoint):
     _agent: Optional[BaseAgent]
 
     @property
-    def agent_id(self) -> str:
+    def graph_id(self) -> str:
         """Extract agent ID from URL path parameters."""
-        return self.scope["path_params"].get("agent_id")
+        return self.scope["path_params"].get("graph_id")
 
     @property
     def agent(self):
@@ -23,7 +23,7 @@ class WellKnownSpecificAgentCardEndpoint(HTTPEndpoint):
         if hasattr(self, "_agent"):
             return self._agent
 
-        self._agent = agent_manager.get_agent(agent_id=self.agent_id)
+        self._agent = agent_manager.get_agent(agent_id=self.graph_id)
         return self._agent
 
     async def get(self, request: Request) -> JSONResponse:
@@ -34,10 +34,11 @@ class WellKnownSpecificAgentCardEndpoint(HTTPEndpoint):
         """
         if not self.agent:
             return JSONResponse(
-                {"error": f"No agent found by passed id \"{self.agent_id}\""},
+                {"error": f"No agent found by passed id \"{self.graph_id}\""},
                 status_code=404
             )
 
+        # todo replace hardcode with dynamic data
         card_to_serve = self.agent.get_agent_card("http://localhost:10000")
         return JSONResponse(
             card_to_serve.model_dump(
@@ -45,3 +46,16 @@ class WellKnownSpecificAgentCardEndpoint(HTTPEndpoint):
                 by_alias=True,
             )
         )
+
+
+class WellKnownAgentsListEndpoint(HTTPEndpoint):
+    """HTTP endpoint for serving list of available agents via well-known URI."""
+
+    async def get(self, request: Request) -> JSONResponse:
+        """
+        Retrieve list of all registered agents.
+
+        Returns array of agent IDs.
+        """
+        agents = agent_manager.agents.keys()
+        return JSONResponse({"graphs_ids": list(agents)})
