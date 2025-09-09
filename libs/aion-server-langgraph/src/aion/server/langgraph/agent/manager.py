@@ -11,6 +11,7 @@ from langgraph.pregel import Pregel
 from aion.server.core.metaclasses import Singleton
 from .base import BaseAgent
 from .config_processor import AgentConfigProcessor
+from aion.server.utils import get_config_path
 
 logger = logging.getLogger(__name__)
 
@@ -118,20 +119,17 @@ class AgentManager(metaclass=Singleton):
             config_path: Path to the configuration file. Defaults to aion.yaml
                 in the current working directory.
         """
-        path = Path(config_path)
-        if not path.is_absolute():
-            path = Path(os.getcwd()) / path
-
-        logger.info("Loading agents from %s", path)
+        config_path = get_config_path(config_path)
+        logger.info("Loading agents from %s", config_path)
 
         # load and process agents
-        processor = AgentConfigProcessor(base_dir=path.parent, logger=logger)
+        processor = AgentConfigProcessor(config_path=config_path, logger_=logger)
 
         try:
-            agents = processor.load_and_process_config(path)
+            agents = processor.load_and_process_config()
 
             if not agents:
-                logger.warning("No agents configured in %s", path)
+                logger.warning("No agents configured in %s", config_path)
                 return
 
             # Register all loaded agents

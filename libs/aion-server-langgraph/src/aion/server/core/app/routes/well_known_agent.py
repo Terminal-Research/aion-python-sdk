@@ -4,6 +4,7 @@ from starlette.endpoints import HTTPEndpoint
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
+from aion.server.configs import app_settings
 from aion.server.langgraph.agent import agent_manager, BaseAgent
 
 
@@ -38,8 +39,7 @@ class WellKnownSpecificAgentCardEndpoint(HTTPEndpoint):
                 status_code=404
             )
 
-        # todo replace hardcode with dynamic data
-        card_to_serve = self.agent.get_agent_card("http://localhost:10000")
+        card_to_serve = self.agent.get_agent_card(app_settings.url)
         return JSONResponse(
             card_to_serve.model_dump(
                 exclude_none=True,

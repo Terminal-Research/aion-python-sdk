@@ -2,6 +2,10 @@
 
 import logging
 import asyncclick as click
+from aion.server.configs import app_settings
+from aion.server.langgraph.agent import AionConfigReader
+from aion.server.utils import substitute_vars
+from aion.server.utils.constants import SPECIFIC_AGENT_CARD_WELL_KNOWN_PATH
 
 try:
     import structlog
@@ -24,7 +28,9 @@ async def serve(host: str, port: int) -> None:
         "Starting AION Agent API server",
         extra={"host": host, "port": port},
     )
-    logger.info(welcome_message(host, port))
+    app_settings.update_serve_settings(host=host, port=port)
+
+    logger.info(welcome_message())
 
     try:
         from aion.server.langgraph.__main__ import main as server_main
@@ -38,27 +44,43 @@ async def serve(host: str, port: int) -> None:
     await server_main(host=host, port=port)
 
 
-def welcome_message(host: str, port: int) -> str:
+def welcome_message() -> str:
     """Return an ASCII welcome banner for the API server.
-
-    Args:
-        host: Hostname where the server is running.
-        port: Port number where the server is running.
 
     Returns:
         A formatted multi-line string containing usage information.
     """
+    try:
+        graph_ids = list(AionConfigReader().load_and_validate_config().keys())
+    except Exception:
+        graph_ids = []
+
+    if not graph_ids:
+        agent_card_info = f"- 🖥️ Agent Card: ---"
+    else:
+        agent_card_info = "- 🖥️ Agent Cards:\n" + "\n".join(
+            "  • {graph_id}: {url}".format(
+                graph_id=graph_id,
+                url=app_settings.url
+                    + substitute_vars(
+                    template=SPECIFIC_AGENT_CARD_WELL_KNOWN_PATH,
+                    values={"graph_id": graph_id},
+                ),
+            )
+            for graph_id in graph_ids
+        )
+
     return f"""
 
-        Welcome to
+    Welcome to
 
 ╔═╗╦╔═╗╔╗╔  ╔═╗╔═╗╔═╗╔╗╔╔╦╗  ╔═╗╔═╗╦
 ╠═╣║║ ║║║║  ╠═╣║ ╦║╣ ║║║ ║   ╠═╣╠═╝║
 ╩ ╩╩╚═╝╝╚╝  ╩ ╩╚═╝╚═╝╝╚╝ ╩   ╩ ╩╩  ╩
 
-- 🚀 API: http://{host}:{port}
-- 📚 API Docs: http://{host}:{port}/docs
-- 🖥️ Agent Card: http://{host}:{port}/.well-known/agent-card.json
+- 🚀 API: {app_settings.url}
+- 📚 API Docs: {app_settings.url}/docs
+{agent_card_info}
 
 This server provides endpoints for LangGraph agents.
 
