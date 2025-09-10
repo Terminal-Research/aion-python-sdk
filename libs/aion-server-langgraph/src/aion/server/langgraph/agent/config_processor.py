@@ -13,7 +13,7 @@ from pydantic import ValidationError
 
 from .base import BaseAgent
 from .models import AgentConfig, AgentCapabilities
-from ...utils import get_config_path
+from aion.server.utils import get_config_path
 
 logger = logging.getLogger(__name__)
 

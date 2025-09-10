@@ -41,8 +41,9 @@ poetry run aion serve --host 0.0.0.0 --port 8080
 **Server Endpoints:**
 
 * API Base: `http://{host}:{port}`
-* API Documentation: `http://{host}:{port}/docs`
-* Agent Card: `http://{host}:{port}/.well-known/agent-card.json`
+* Agent RPC: `http://{host}:{port}/{graph_id}/rpc`
+* Agent Card: 
+  *  {graph_id}: `http://{host}:{port}/.well-known/{graph_id}/agent-card.json`
 
 ---
 

@@ -32,10 +32,11 @@ class A2AEventType(str, Enum):
 
 class A2AMetadataKey(str, Enum):
     """Metadata keys used in A2A message headers (metadata)."""
-    MESSAGE_TYPE = "aion:message_type"
-    SENDER_ID = "aion:sender_id"
+    MESSAGE_TYPE = "aion:messageType"
+    SENDER_ID = "aion:senderId"
     SIGNATURE = "aion:signature"
-    GRAPH_ID = "aion:graph_id"
+    NETWORK = "aion:network"
+    DISTRIBUTION = "aion:distribution"
 
 
 class ArtifactStreamingStatus(str, Enum):

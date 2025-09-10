@@ -39,7 +39,7 @@ class WellKnownSpecificAgentCardEndpoint(HTTPEndpoint):
                 status_code=404
             )
 
-        card_to_serve = self.agent.get_agent_card(app_settings.url)
+        card_to_serve = self.agent.generate_agent_card(app_settings.url)
         return JSONResponse(
             card_to_serve.model_dump(
                 exclude_none=True,

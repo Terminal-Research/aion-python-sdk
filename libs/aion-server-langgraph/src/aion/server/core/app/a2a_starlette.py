@@ -22,9 +22,13 @@ from starlette.routing import Route
 from starlette.status import HTTP_413_REQUEST_ENTITY_TOO_LARGE
 
 from aion.server.core.app.routes import WellKnownSpecificAgentCardEndpoint, WellKnownAgentsListEndpoint
-from aion.server.core.request_handlers import AionJSONRPCHandler, IRequestHandler
+from aion.server.core.request_handlers import AionJSONRPCHandler, IRequestHandler, AionCallContextBuilder
 from aion.server.types import ExtendedA2ARequest, CustomA2ARequest, GetContextRequest, GetContextsListRequest
-from aion.server.utils.constants import SPECIFIC_AGENT_CARD_WELL_KNOWN_PATH, AVAILABLE_GRAPHS_WELL_KNOWN_PATH
+from aion.server.utils.constants import (
+    SPECIFIC_AGENT_CARD_WELL_KNOWN_PATH,
+    AVAILABLE_GRAPHS_WELL_KNOWN_PATH,
+    SPECIFIC_AGENT_RPC_PATH
+)
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +55,7 @@ class AionA2AStarletteApplication(A2AStarletteApplication):
             agent_card=agent_card,
             http_handler=http_handler,
             extended_agent_card=extended_agent_card,
-            context_builder=context_builder)
+            context_builder=context_builder or AionCallContextBuilder())
 
         # replace handler with our custom handler with additional methods
         self.handler = AionJSONRPCHandler(
@@ -71,8 +75,7 @@ class AionA2AStarletteApplication(A2AStarletteApplication):
         routes = super().routes(*args, **kwargs)
         return [*routes, *self.custom_routes()]
 
-    @staticmethod
-    def custom_routes() -> list[Route]:
+    def custom_routes(self) -> list[Route]:
         """
         Define custom application routes.
 
@@ -93,6 +96,12 @@ class AionA2AStarletteApplication(A2AStarletteApplication):
                 AVAILABLE_GRAPHS_WELL_KNOWN_PATH,
                 WellKnownAgentsListEndpoint,
                 name="available_graphs",
+            ),
+            Route(
+                SPECIFIC_AGENT_RPC_PATH,
+                self._handle_requests,
+                methods=['POST'],
+                name='a2a_agent_specific_handler',
             )
         ]
         return custom_routes

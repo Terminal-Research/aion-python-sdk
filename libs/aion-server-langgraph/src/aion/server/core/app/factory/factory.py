@@ -5,16 +5,16 @@ from a2a.server.tasks import InMemoryPushNotificationConfigStore
 from a2a.types import AgentCard
 from starlette.applications import Starlette
 
+from aion.server.configs import db_settings
+from aion.server.core.request_handlers import AionRequestHandler
 from aion.server.db import db_manager, verify_connection
 from aion.server.db.migrations import upgrade_to_head
 from aion.server.langgraph.a2a import LanggraphAgentExecutor
 from aion.server.langgraph.agent import BaseAgent, agent_manager
 from aion.server.tasks import store_manager
-from aion.server.configs import db_settings
 from .configs import AppConfig
 from .lifespan import AppLifespan
 from ..a2a_starlette import AionA2AStarletteApplication
-from aion.server.core.request_handlers import AionRequestHandler
 
 logger = logging.getLogger(__name__)
 
@@ -89,11 +89,11 @@ class AppFactory:
         Raises:
             RuntimeError: If no agent is available.
         """
-        base_url = f'http://{self.config.host}:{self.config.port}/'
+        base_url = f'http://{self.config.host}:{self.config.port}'
 
         if self.agent:
             logger.info("Getting agent card from agent instance")
-            return self.agent.get_agent_card(base_url)
+            return self.agent.generate_agent_card(base_url)
 
         raise RuntimeError("No agent available to create agent card")
 
@@ -104,10 +104,11 @@ class AppFactory:
             Configured DefaultRequestHandler instance.
         """
         store_manager.initialize()
+        task_store = store_manager.get_store()
 
         return AionRequestHandler(
             agent_executor=LanggraphAgentExecutor(),
-            task_store=store_manager.get_store(),
+            task_store=task_store,
             push_config_store=InMemoryPushNotificationConfigStore())
 
     async def _init_agents(self):

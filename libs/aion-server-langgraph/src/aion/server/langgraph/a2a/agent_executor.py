@@ -16,8 +16,7 @@ from a2a.utils.errors import ServerError
 from langgraph.types import Command
 
 from aion.server.langgraph import agent_manager
-from aion.server.types import A2AMetadataKey
-from aion.server.utils import check_if_task_is_interrupted
+from aion.server.utils import check_if_task_is_interrupted, A2AMetadataCollector
 from .agent import LanggraphAgent
 from .event_producer import LanggraphA2AEventProducer
 
@@ -37,7 +36,7 @@ class LanggraphAgentExecutor(AgentExecutor):
 
     @staticmethod
     def _get_agent_for_execution(context: RequestContext):
-        agent_id = context.metadata.get(A2AMetadataKey.GRAPH_ID.value)
+        agent_id = getattr(context.call_context, "agent_id", None)
         if not agent_id:
             agent = agent_manager.get_first_agent()
         else:

@@ -110,7 +110,7 @@ class ConfigurationField(BaseModel):
 
 class AgentCapabilities(BaseModel):
     """Agent capabilities configuration."""
-    streaming: bool = Field(default=True, description="Whether agent supports streaming responses")
+    streaming: bool = Field(default=False, description="Whether agent supports streaming responses")
     pushNotifications: bool = Field(default=False, description="Whether agent supports push notifications")
 
 

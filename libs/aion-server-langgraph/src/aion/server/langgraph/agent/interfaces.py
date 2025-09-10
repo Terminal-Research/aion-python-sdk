@@ -56,7 +56,7 @@ class AgentInterface(ABC):
         pass
 
     @abstractmethod
-    def get_agent_card(self, base_url: str) -> Optional[AgentCard]:
+    def generate_agent_card(self, base_url: str) -> Optional[AgentCard]:
         """Return the agent's card with capabilities description.
 
         Args:
@@ -64,23 +64,6 @@ class AgentInterface(ABC):
 
         Returns:
             Agent card containing metadata and capabilities.
-        """
-        pass
-
-    @abstractmethod
-    def generate_agent_card(self, base_url: str) -> Optional[AgentCard]:
-        """Generate the agent's capability card.
-
-        Creates an AgentCard that describes this agent's capabilities,
-        including its skills, supported input/output modes, and metadata.
-        May be replaced with user's custom card.
-
-        Args:
-            base_url: Base URL where this agent is hosted, used to construct
-                     the agent's endpoint URL.
-
-        Returns:
-            Agent card or None if not implemented.
         """
         pass
 

@@ -13,6 +13,8 @@ from .card import AionAgentCard
 
 from aion.server.types import GetContextParams, GetContextsListParams
 from aion.server.configs import aion_platform_settings
+from aion.server.utils import substitute_vars
+from aion.server.utils.constants import SPECIFIC_AGENT_RPC_PATH
 
 logger = logging.getLogger(__name__)
 
@@ -93,27 +95,6 @@ class BaseAgent(AgentInterface):
             raise NotImplementedError("Subclasses must implement create_graph or provide graph_source")
 
     def generate_agent_card(self, base_url: str) -> Optional[AgentCard]:
-        """Generate the agent's capability card.
-
-        Creates an AgentCard that describes this agent's capabilities,
-        including its skills, supported input/output modes, and metadata.
-        May be replaced with user's custom card.
-
-        Args:
-            base_url: Base URL where this agent is hosted, used to construct
-                     the agent's endpoint URL.
-        """
-        return None
-
-    def get_agent_card(self, base_url: str) -> Optional[AgentCard]:
-        """Return the agent's card with capabilities description."""
-        agent_card = self.generate_agent_card(base_url)
-        if agent_card and isinstance(agent_card, AgentCard):
-            return agent_card
-
-        return self._generate_agent_card_from_config(base_url)
-
-    def _generate_agent_card_from_config(self, base_url: str) -> AgentCard:
         """Generate agent card from config."""
         from a2a.types import AgentCapabilities, AgentSkill
 
@@ -145,10 +126,18 @@ class BaseAgent(AgentInterface):
                 examples=skill_config.examples)
             skills.append(skill)
 
+        agent_url = "{base_url}/{rpc_path}".format(
+            base_url=base_url,
+            rpc_path=substitute_vars(
+                template=SPECIFIC_AGENT_RPC_PATH,
+                values={"graph_id": self.agent_id},
+            ).lstrip("/")
+        )
+
         return AionAgentCard(
             name=self.config.name or "Graph Agent",
             description=self.config.description or "Agent based on external graph",
-            url=base_url,
+            url=agent_url,
             version=self.config.version or "1.0.0",
             defaultInputModes=self.config.input_modes,
             defaultOutputModes=self.config.output_modes,
