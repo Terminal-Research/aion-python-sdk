@@ -93,7 +93,7 @@ class AppFactory:
 
         if self.agent:
             logger.info("Getting agent card from agent instance")
-            return self.agent.generate_agent_card(base_url)
+            return self.agent.card
 
         raise RuntimeError("No agent available to create agent card")
 

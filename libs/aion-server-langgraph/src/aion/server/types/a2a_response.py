@@ -1,6 +1,6 @@
 from typing import Literal
 
-from a2a._base import A2ABaseModel
+from aion.server.core.base import A2ABaseModel
 from a2a.types import JSONRPCErrorResponse
 from pydantic import RootModel
 

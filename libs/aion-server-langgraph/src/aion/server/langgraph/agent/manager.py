@@ -53,6 +53,11 @@ class AgentManager(metaclass=Singleton):
         """
         return self.agents.get(agent_id)
 
+    def get_agent_card(self, agent_id: str):
+        agent = self.get_agent(agent_id)
+        if not agent:
+            return
+
     def get_compiled_graph(self, agent_id: str) -> Optional[Union[Graph, Pregel]]:
         """Return a compiled graph for the agent.
 

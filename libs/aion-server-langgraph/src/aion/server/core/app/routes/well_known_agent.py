@@ -4,8 +4,8 @@ from starlette.endpoints import HTTPEndpoint
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from aion.server.configs import app_settings
 from aion.server.langgraph.agent import agent_manager, BaseAgent
+from aion.server.utils import validate_agent_id
 
 
 class WellKnownSpecificAgentCardEndpoint(HTTPEndpoint):
@@ -24,7 +24,7 @@ class WellKnownSpecificAgentCardEndpoint(HTTPEndpoint):
         if hasattr(self, "_agent"):
             return self._agent
 
-        self._agent = agent_manager.get_agent(agent_id=self.graph_id)
+        self._agent = validate_agent_id(self.graph_id)
         return self._agent
 
     async def get(self, request: Request) -> JSONResponse:
@@ -39,9 +39,8 @@ class WellKnownSpecificAgentCardEndpoint(HTTPEndpoint):
                 status_code=404
             )
 
-        card_to_serve = self.agent.generate_agent_card(app_settings.url)
         return JSONResponse(
-            card_to_serve.model_dump(
+            self.agent.card.model_dump(
                 exclude_none=True,
                 by_alias=True,
             )
