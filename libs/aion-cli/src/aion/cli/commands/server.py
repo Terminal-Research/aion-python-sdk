@@ -4,7 +4,7 @@ import logging
 import asyncclick as click
 from aion.server.configs import app_settings
 from aion.server.langgraph.agent import AionConfigReader
-from aion.server.utils import substitute_vars
+from aion.shared.utils import substitute_vars
 from aion.server.utils.constants import SPECIFIC_AGENT_CARD_WELL_KNOWN_PATH
 
 try:
@@ -33,7 +33,7 @@ async def serve(host: str, port: int) -> None:
     logger.info(welcome_message())
 
     try:
-        from aion.server.langgraph.__main__ import main as server_main
+        from aion.server import run_server
     except Exception as exc:
         logger.error("Failed to import server", exc_info=exc)
         raise click.ClickException(
@@ -41,7 +41,7 @@ async def serve(host: str, port: int) -> None:
         ) from exc
 
     # Note: If server_main.callback is not async, you might need to wrap it
-    await server_main(host=host, port=port)
+    await run_server(host=host, port=port)
 
 
 def welcome_message() -> str:

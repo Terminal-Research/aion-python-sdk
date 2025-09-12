@@ -11,7 +11,7 @@ from langgraph.pregel import Pregel
 from aion.server.core.metaclasses import Singleton
 from .base import BaseAgent
 from .config_processor import AgentConfigProcessor
-from aion.server.utils import get_config_path
+from aion.shared.utils import get_config_path
 
 logger = logging.getLogger(__name__)
 

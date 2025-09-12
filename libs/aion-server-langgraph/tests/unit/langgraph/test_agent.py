@@ -6,7 +6,7 @@ from unittest.mock import Mock, patch
 from pydantic import ValidationError
 
 from aion.server.langgraph.agent.base import BaseAgent
-from aion.server.langgraph.agent.models import AgentConfig, ConfigurationField, ConfigurationType, AgentSkill
+from aion.shared.aion_config import AgentConfig, ConfigurationField, ConfigurationType, AgentSkill
 from aion.server.langgraph.agent.config_processor import AgentConfigProcessor
 from aion.server.langgraph.agent.manager import AgentManager
 

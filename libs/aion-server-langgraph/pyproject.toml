@@ -22,7 +22,6 @@ greenlet = "3.2.3" # supports async pg operations
 alembic = "1.16.2" # migrations
 SQLAlchemy = "2.0.41"
 
-langgraph = "0.3.9"
 langgraph-checkpoint-postgres = "2.0.21"
 langchain-openai = "0.3.27"
 PyYAML = "6.0.2"

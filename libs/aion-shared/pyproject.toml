@@ -10,6 +10,7 @@ packages = [{include = "aion", from = "src"}]
 python = "3.13.5"
 pydantic = "2.11.3"
 a2a-sdk = "0.3.0"
+langgraph = "0.3.9"
 
 [build-system]
 requires = ["poetry-core"]

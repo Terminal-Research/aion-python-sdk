@@ -2,6 +2,10 @@
 
 import asyncclick as click
 
+from .commands.server import serve
+from .commands.chat import chat
+
+
 __version__ = "0.1.0"
 
 
@@ -11,9 +15,6 @@ def cli() -> None:
     """Command line interface for the Aion Python SDK."""
     pass
 
-
-from .commands.server import serve
-from .commands.chat import chat
 
 cli.add_command(serve)
 cli.add_command(chat)

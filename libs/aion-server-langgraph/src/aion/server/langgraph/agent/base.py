@@ -1,26 +1,21 @@
 import logging
 from typing import Union, Optional, Callable
 
-from a2a.types import AgentCard, AgentExtension, AgentCapabilities, AgentSkill
+from .card import AionAgentCard
+from aion.shared.aion_config import AgentConfig
 from langgraph.graph import Graph
 from langgraph.pregel import Pregel
 
+from aion.server.configs import app_settings
 from .checkpointer import GraphCheckpointerManager
 from .interfaces import AgentInterface
-from .models import AgentConfig
-
-from .card import AionAgentCard
-
-from aion.server.types import GetContextParams, GetContextsListParams
-from aion.server.configs import aion_platform_settings, app_settings
-from aion.server.utils import substitute_vars
-from aion.server.utils.constants import SPECIFIC_AGENT_RPC_PATH
 
 logger = logging.getLogger(__name__)
 
 
 class BaseAgent(AgentInterface):
     """Base class for all agents."""
+    _card: AionAgentCard
 
     def __init__(
             self,
@@ -41,7 +36,6 @@ class BaseAgent(AgentInterface):
         self._config = config
         self.base_url = base_url or app_settings.url
 
-
     @property
     def config(self) -> Optional[AgentConfig]:
         """Get the agent's configuration."""
@@ -57,54 +51,11 @@ class BaseAgent(AgentInterface):
     @property
     def card(self) -> AionAgentCard:
         """Generate agent card from config."""
+        if hasattr(self, "_card"):
+            return self._card
 
-        capabilities = AgentCapabilities(
-            streaming=self.config.capabilities.streaming,
-            push_notifications=self.config.capabilities.pushNotifications,
-            extensions=[
-                AgentExtension(
-                    description="Get Conversation info based on context",
-                    params=GetContextParams.model_json_schema(),
-                    required=False,
-                    uri=f"{aion_platform_settings.docs_url}/a2a/extensions/get-context"
-                ),
-                AgentExtension(
-                    description="Get list of available contexts",
-                    params=GetContextsListParams.model_json_schema(),
-                    required=False,
-                    uri=f"{aion_platform_settings.docs_url}/a2a/extensions/get-contexts"
-                )
-            ])
-
-        skills = []
-        for skill_config in self.config.skills:
-            skill = AgentSkill(
-                id=skill_config.id,
-                name=skill_config.name,
-                description=skill_config.description,
-                tags=skill_config.tags,
-                examples=skill_config.examples)
-            skills.append(skill)
-
-        agent_url = "{base_url}/{rpc_path}".format(
-            base_url=self.base_url,
-            rpc_path=substitute_vars(
-                template=SPECIFIC_AGENT_RPC_PATH,
-                values={"graph_id": self.agent_id},
-            ).lstrip("/")
-        )
-
-        return AionAgentCard(
-            name=self.config.name or "Graph Agent",
-            description=self.config.description or "Agent based on external graph",
-            url=agent_url,
-            version=self.config.version or "1.0.0",
-            defaultInputModes=self.config.input_modes,
-            defaultOutputModes=self.config.output_modes,
-            capabilities=capabilities,
-            skills=skills,
-            configuration=self.config.configuration
-        )
+        self._card = AionAgentCard.from_config(config=self.config, base_url=self.base_url)
+        return self._card
 
     def get_graph(self) -> Union[Graph, Pregel]:
         """Return the agent's graph with caching."""

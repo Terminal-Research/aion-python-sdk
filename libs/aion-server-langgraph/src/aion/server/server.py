@@ -39,7 +39,7 @@ async def async_serve(host, port):
         exit(1)
 
 
-async def main(host: str = "localhost", port: int = 10000):
+async def run_server(host: str = "localhost", port: int = 10000):
     """Starts the Currency Agent server."""
     try:
         await async_serve(host, port)
@@ -52,4 +52,4 @@ async def main(host: str = "localhost", port: int = 10000):
 
 
 if __name__ == '__main__':
-    main()
+    run_server()

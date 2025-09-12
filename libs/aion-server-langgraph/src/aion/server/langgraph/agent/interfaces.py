@@ -1,12 +1,12 @@
 from abc import ABC, abstractmethod
 from typing import Union, Optional, Callable
 
-from a2a.types import AgentCard
 from langgraph.graph import Graph
 from langgraph.pregel import Pregel
 
 from .card import AionAgentCard
-from .models import AgentConfig
+
+from aion.shared.aion_config import AgentConfig
 
 
 class AgentInterface(ABC):
