@@ -8,7 +8,6 @@ packages = [{include = "aion", from = "src"}]
 
 [tool.poetry.dependencies]
 python = "3.13.5"
-a2a-sdk = "0.3.0"
 uvicorn = "0.23.2"
 starlette = "0.46.2"
 structlog = "24.4.0"
@@ -27,6 +26,8 @@ langgraph = "0.3.9"
 langgraph-checkpoint-postgres = "2.0.21"
 langchain-openai = "0.3.27"
 PyYAML = "6.0.2"
+
+aion-shared = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "features/multi_agent", subdirectory = "libs/aion-shared" }
 
 [tool.poetry.group.dev.dependencies]
 pytest = "8.4.1"
