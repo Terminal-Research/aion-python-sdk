@@ -137,13 +137,19 @@ def get_dependencies(pyproject_data: Dict) -> Dict[str, str]:
     """Extract dependencies from pyproject.toml data."""
     dependencies = {}
 
+    # Main dependencies
     deps = pyproject_data.get('tool', {}).get('poetry', {}).get('dependencies', {})
     dependencies.update(deps)
 
+    # Group dependencies (modern Poetry)
     dev_groups = pyproject_data.get('tool', {}).get('poetry', {}).get('group', {})
     for group_name, group_data in dev_groups.items():
         if 'dependencies' in group_data:
             dependencies.update(group_data['dependencies'])
+
+    # Legacy dev-dependencies (old Poetry)
+    legacy_dev = pyproject_data.get('tool', {}).get('poetry', {}).get('dev-dependencies', {})
+    dependencies.update(legacy_dev)
 
     return dependencies
 
@@ -180,15 +186,58 @@ def get_package_path(package_name: str, libs_dir: Path) -> Path:
     raise FileNotFoundError(f"Package {package_name} not found in libs/")
 
 
+def ensure_poetry_environment(package_dir: Path) -> bool:
+    """Ensure Poetry environment is initialized for the package."""
+    try:
+        # Check if virtual environment exists
+        result = subprocess.run(
+            ['poetry', 'env', 'info', '--path'],
+            cwd=package_dir,
+            capture_output=True,
+            text=True
+        )
+
+        if result.returncode == 0 and result.stdout.strip():
+            # Environment exists, check if it's properly set up
+            test_result = subprocess.run(
+                ['poetry', 'run', 'python', '--version'],
+                cwd=package_dir,
+                capture_output=True,
+                text=True
+            )
+
+            if test_result.returncode == 0:
+                return True
+
+        # Environment doesn't exist or is broken, create it
+        print(f"  [SETUP] Initializing Poetry environment for {package_dir.name}")
+        init_result = subprocess.run(
+            ['poetry', 'install'],
+            cwd=package_dir,
+            capture_output=True,
+            text=True
+        )
+        return init_result.returncode == 0
+
+    except Exception as e:
+        print(f"  [ERROR] Failed to initialize Poetry environment: {e}")
+        return False
+
+
 def check_poetry_available(current_dir: Path) -> bool:
-    """Check if Poetry is available and current directory has pyproject.toml."""
+    """Check if Poetry is available and environment is ready."""
     try:
         result = subprocess.run(['poetry', '--version'], capture_output=True, text=True)
         if result.returncode != 0:
             return False
 
         pyproject_path = current_dir / 'pyproject.toml'
-        return pyproject_path.exists()
+        if not pyproject_path.exists():
+            return False
+
+        # Ensure the environment is initialized
+        return ensure_poetry_environment(current_dir)
+
     except FileNotFoundError:
         return False
 
@@ -202,14 +251,14 @@ def install_package_editable(package_path: Path, current_dir: Path) -> bool:
         result = subprocess.run(cmd, cwd=current_dir, capture_output=True, text=True)
 
         if result.returncode == 0:
-            print(f"✅ Installed {package_path.name}")
+            print(f"[SUCCESS] Installed {package_path.name}")
             return True
         else:
-            print(f"❌ Failed to install {package_path.name}: {result.stderr}")
+            print(f"[ERROR] Failed to install {package_path.name}: {result.stderr}")
             return False
 
     except Exception as e:
-        print(f"❌ Error installing {package_path.name}: {e}")
+        print(f"[ERROR] Error installing {package_path.name}: {e}")
         return False
 
 
@@ -228,10 +277,10 @@ def process_package(package_dir: Path, libs_packages: Set[str], libs_dir: Path) 
         return 0
 
     if not check_poetry_available(package_dir):
-        print(f"❌ Poetry not available for {package_dir.name}")
+        print(f"[ERROR] Poetry not available or failed to initialize for {package_dir.name}")
         return 0
 
-    print(f"\n📦 {package_dir.name}: installing {', '.join(local_deps)}")
+    print(f"\n[PACKAGE] {package_dir.name}: installing {', '.join(local_deps)}")
 
     installed_count = 0
     for dep_name in local_deps:
@@ -240,9 +289,9 @@ def process_package(package_dir: Path, libs_packages: Set[str], libs_dir: Path) 
             if install_package_editable(dep_path, package_dir):
                 installed_count += 1
         except FileNotFoundError:
-            print(f"❌ {dep_name} not found")
+            print(f"[ERROR] {dep_name} not found")
         except Exception as e:
-            print(f"❌ Error with {dep_name}: {e}")
+            print(f"[ERROR] Error with {dep_name}: {e}")
 
     return installed_count
 
@@ -251,35 +300,35 @@ def main():
     """Main function to process all packages in libs/ directory."""
     current_dir = Path.cwd()
     libs_dir = current_dir / 'libs'
-    print("libs_dir", libs_dir)
 
     if not libs_dir.exists():
-        print("❌ libs/ directory not found")
+        print("[ERROR] libs/ directory not found")
         return 1
 
     try:
         result = subprocess.run(['poetry', '--version'], capture_output=True, text=True)
         if result.returncode != 0:
-            print("❌ Poetry is not available")
+            print("[ERROR] Poetry is not available")
             return 1
+        print(f"[INFO] Using {result.stdout.strip()}")
     except FileNotFoundError:
-        print("❌ Poetry is not available")
+        print("[ERROR] Poetry is not available")
         return 1
 
     libs_packages = find_libs_packages(libs_dir)
 
     if not libs_packages:
-        print("❌ No packages found in libs/")
+        print("[ERROR] No packages found in libs/")
         return 1
 
-    print(f"Found {len(libs_packages)} packages: {', '.join(sorted(libs_packages))}")
+    print(f"[INFO] Found {len(libs_packages)} packages: {', '.join(sorted(libs_packages))}")
 
     total_installed = 0
     for package_dir in sorted(libs_dir.iterdir()):
         if package_dir.is_dir():
             total_installed += process_package(package_dir, libs_packages, libs_dir)
 
-    print(f"\n🎉 Installed {total_installed} local dependencies")
+    print(f"\n[COMPLETE] Installed {total_installed} local dependencies")
     return 0
 
 
@@ -287,8 +336,8 @@ if __name__ == '__main__':
     try:
         sys.exit(main())
     except KeyboardInterrupt:
-        print("\n⚠️ Interrupted by user")
+        print("\n[WARNING] Interrupted by user")
         sys.exit(1)
     except Exception as e:
-        print(f"\n❌ Error: {e}")
+        print(f"\n[ERROR] Error: {e}")
         sys.exit(1)

@@ -186,10 +186,10 @@ def restore_original_dependencies(package_dir: Path) -> bool:
         if result.returncode == 0:
             return True
         else:
-            print(f"❌ Failed to restore dependencies: {result.stderr}")
+            print(f"[ERROR] Failed to restore dependencies: {result.stderr}")
             return False
     except Exception as e:
-        print(f"❌ Error running poetry install: {e}")
+        print(f"[ERROR] Error running poetry install: {e}")
         return False
 
 
@@ -214,14 +214,14 @@ def process_package(package_dir: Path, libs_packages: Set[str]) -> int:
         return 0
 
     if not check_poetry_available(package_dir):
-        print(f"❌ Poetry not available for {package_dir.name}")
+        print(f"[ERROR] Poetry not available for {package_dir.name}")
         return 0
 
-    print(f"\n📦 {package_dir.name}: syncing environment with pyproject.toml")
+    print(f"\n[PACKAGE] {package_dir.name}: syncing environment with pyproject.toml")
 
     # Restore original dependencies with poetry install --sync
     if restore_original_dependencies(package_dir):
-        print(f"✅ Environment synced (restored {len(local_deps)} dependencies)")
+        print(f"[SUCCESS] Environment synced (restored {len(local_deps)} dependencies)")
         return len(local_deps)
     else:
         return 0
@@ -233,32 +233,32 @@ def main():
     libs_dir = current_dir / 'libs'
 
     if not libs_dir.exists():
-        print("❌ libs/ directory not found")
+        print("[ERROR] libs/ directory not found")
         return 1
 
     try:
         result = subprocess.run(['poetry', '--version'], capture_output=True, text=True)
         if result.returncode != 0:
-            print("❌ Poetry is not available")
+            print("[ERROR] Poetry is not available")
             return 1
     except FileNotFoundError:
-        print("❌ Poetry is not available")
+        print("[ERROR] Poetry is not available")
         return 1
 
     libs_packages = find_libs_packages(libs_dir)
 
     if not libs_packages:
-        print("❌ No packages found in libs/")
+        print("[ERROR] No packages found in libs/")
         return 1
 
-    print(f"Found {len(libs_packages)} packages: {', '.join(sorted(libs_packages))}")
+    print(f"[INFO] Found {len(libs_packages)} packages: {', '.join(sorted(libs_packages))}")
 
     total_restored = 0
     for package_dir in sorted(libs_dir.iterdir()):
         if package_dir.is_dir():
             total_restored += process_package(package_dir, libs_packages)
 
-    print(f"\n🎉 Restored {total_restored} local dependencies to original versions")
+    print(f"\n[COMPLETE] Restored {total_restored} local dependencies to original versions")
     return 0
 
 
@@ -266,8 +266,8 @@ if __name__ == '__main__':
     try:
         sys.exit(main())
     except KeyboardInterrupt:
-        print("\n⚠️ Interrupted by user")
+        print("\n[WARNING] Interrupted by user")
         sys.exit(1)
     except Exception as e:
-        print(f"\n❌ Error: {e}")
+        print(f"\n[ERROR] Error: {e}")
         sys.exit(1)
