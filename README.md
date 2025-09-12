@@ -132,3 +132,9 @@ The SDK provides seamless integration of your LangGraph agents through:
 4. **Test**: `poetry run aion chat` (in another terminal, optionally with `--graph-id`)
 
 Your agents are now running and accessible via the A2A protocol at `http://localhost:10000`.
+
+---
+
+## Contributing
+
+For development setup and working with local dependencies, see **[Local Development Setup](docs/local-setup.md)**.

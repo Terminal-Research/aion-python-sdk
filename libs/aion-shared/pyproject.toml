@@ -1,0 +1,15 @@
+[tool.poetry]
+name = "aion-shared"
+version = "0.1.0"
+description = ""
+authors = ["Terminal Research Team <support@terminal.exchange>"]
+readme = "README.md"
+packages = [{include = "aion", from = "src"}]
+
+[tool.poetry.dependencies]
+python = "3.13.5"
+pydantic = "2.11.3"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
