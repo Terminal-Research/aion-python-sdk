@@ -83,12 +83,7 @@ For all available CLI commands and options, see the **[CLI Reference](libs/aion-
 
 ### Direct Agent Access
 
-If your server hosts multiple LangGraph agents (graphs) at the same time, you can explicitly select which one to interact with using the `--graph-id` option:
-
-```bash
-# Start chat with default graph (first one in aion.yaml)
-poetry run aion chat
-```
+If your server hosts multiple LangGraph agents (graphs) at the same time, you can explicitly select which one to interact with using the `--graph-id` option.
 
 Example `aion.yaml` with multiple agents running on different ports:
 
@@ -98,6 +93,7 @@ aion:
     support: 
       path: "./support.py:support_agent"
       port: 10001
+      
     sales_graph:
       path: "./support.py:sales_agent"
       port: 10002
@@ -119,10 +115,12 @@ For more complex deployments with multiple agents, you can use a proxy server to
 aion:
   proxy:
     port: 10000
+    
   agents:
     support: 
       path: "./support.py:support_agent"
       port: 10001
+      
     sales_graph:
       path: "./support.py:sales_agent"
       port: 10002
