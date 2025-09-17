@@ -6,11 +6,12 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional, List
 
+from a2a.server.context import ServerCallContext
+from a2a.types import Task
+
 from aion.server.db.manager import db_manager
 from aion.server.db.repositories import TasksRepository
 from aion.server.types.entities import TaskRecord
-
-from a2a.types import Task
 from .base_task_store import BaseTaskStore
 
 
@@ -46,7 +47,9 @@ class PostgresTaskStore(BaseTaskStore):
         else:
             return Task.model_validate(task_data)
 
-    async def save(self, task: Task) -> None:
+    async def save(
+            self, task: Task, context: ServerCallContext | None = None
+    ) -> None:
         """Save a task."""
         try:
             task_id = uuid.UUID(task.id)
@@ -60,7 +63,9 @@ class PostgresTaskStore(BaseTaskStore):
             await repository.save(entity)
             await session.commit()
 
-    async def get(self, task_id: str) -> Task | None:
+    async def get(
+            self, task_id: str, context: ServerCallContext | None = None
+    ) -> Task | None:
         """Get a task by ID."""
         try:
             task_uuid = uuid.UUID(task_id)
@@ -76,7 +81,9 @@ class PostgresTaskStore(BaseTaskStore):
 
             return self._entity_to_task(entity)
 
-    async def delete(self, task_id: str) -> None:
+    async def delete(
+            self, task_id: str, context: ServerCallContext | None = None
+    ) -> None:
         """Delete a task by ID."""
         try:
             task_uuid = uuid.UUID(task_id)
