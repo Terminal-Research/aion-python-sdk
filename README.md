@@ -45,8 +45,10 @@ Create a minimal `aion.yaml` configuration file:
 
 ```yaml
 aion:
-  agent:
-    my_bot: "./agent.py:chat_agent"
+  agents:
+    your_agent_id: 
+      path: "./agent.py:chat_agent"
+      port: 10000
 ```
 
 For extended configuration options including skills and capabilities, see the **[Complete Configuration Guide](docs/aion-yaml-config.md)**.
@@ -77,34 +79,89 @@ This provides a convenient way to test your agents locally before deployment.
 
 For all available CLI commands and options, see the **[CLI Reference](libs/aion-cli/README.md)**.
 
-## Using `graph_id`
+## Multiple Agents Configuration
+
+### Direct Agent Access
 
 If your server hosts multiple LangGraph agents (graphs) at the same time, you can explicitly select which one to interact with using the `--graph-id` option:
 
 ```bash
 # Start chat with default graph (first one in aion.yaml)
 poetry run aion chat
-
-# Start chat with specific graph ID
-poetry run aion chat --graph-id my_bot
 ```
 
-Example `aion.yaml` with multiple agents:
+Example `aion.yaml` with multiple agents running on different ports:
 
 ```yaml
 aion:
-  agent:
-    support_bot: "./support.py:support_agent"
-    sales_bot: "./sales.py:sales_agent"
+  agents:
+    support: 
+      path: "./support.py:support_agent"
+      port: 10001
+    sales_graph:
+      path: "./support.py:sales_agent"
+      port: 10002
 ```
 
 Then you can run:
 
 ```bash
-poetry run aion chat --graph-id support_bot
+poetry run aion chat --graph-id sales_graph
 ```
 
-to connect specifically to the **support\_bot** agent.
+to connect specifically to the **sales_graph** agent.
+
+### Proxy Configuration
+
+For more complex deployments with multiple agents, you can use a proxy server to route requests to different agents. This allows all agents to be accessible through a single entry point:
+
+```yaml
+aion:
+  proxy:
+    port: 10000
+  agents:
+    support: 
+      path: "./support.py:support_agent"
+      port: 10001
+    sales_graph:
+      path: "./support.py:sales_agent"
+      port: 10002
+```
+
+With proxy configuration:
+- The proxy server runs on port `10000` and acts as a single entry point
+- Each agent runs on its individual port (`10001`, `10002`, etc.)
+- Agents are accessible via URL path routing: `http://localhost:10000/{agent-id}/path`
+- The proxy automatically routes requests to the appropriate agent based on the URL path
+
+#### URL Routing
+
+Each agent can be accessed through the proxy using path-based routing:
+
+- **Support agent**: `http://localhost:10000/support/...`
+- **Sales agent**: `http://localhost:10000/sales_graph/...`
+
+For example:
+- `http://localhost:10000/support/.well-known/agent-card.json` - Routes to the Support Agent's Card
+- `http://localhost:10000/sales_graph/` - Routes to the sales_graph agent (for rpc requests)
+
+To start the proxy server with multiple agents:
+
+```bash
+poetry run aion serve
+```
+
+This will start both the proxy server on port `10000` and all configured agents on their respective ports.
+
+To chat with agents through the proxy:
+
+```bash
+# Connect to proxy and use default agent
+poetry run aion chat
+
+# Connect to proxy and specify agent
+poetry run aion chat --graph-id support
+```
 
 ---
 
@@ -116,6 +173,7 @@ The SDK provides seamless integration of your LangGraph agents through:
 * **Environment Management** - Automatic `.env` file loading
 * **Protocol Wrapping** - A2A protocol server wrapping your agents
 * **Storage Flexibility** - Automatic fallback to memory storage when database not configured
+* **Proxy Support** - Single entry point for multiple agents with automatic routing
 
 ## Documentation
 
@@ -130,8 +188,6 @@ The SDK provides seamless integration of your LangGraph agents through:
 2. **Configure**: Create `.env` and `aion.yaml` files
 3. **Run**: `poetry run aion serve`
 4. **Test**: `poetry run aion chat` (in another terminal, optionally with `--graph-id`)
-
-Your agents are now running and accessible via the A2A protocol at `http://localhost:10000`.
 
 ---
 
