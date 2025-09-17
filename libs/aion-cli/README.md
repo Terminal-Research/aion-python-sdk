@@ -6,7 +6,7 @@ This project provides a minimal CLI for running the Aion Agent API server and in
 
 ## Installation
 
-Include `aion-agent-cli` as a dependency in your Poetry project.
+Include `aion-cli` as a dependency in your Poetry project.
 
 ## Commands
 
