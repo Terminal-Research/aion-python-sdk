@@ -18,17 +18,10 @@ from pydantic import ValidationError
 from starlette.exceptions import HTTPException
 from starlette.requests import Request
 from starlette.responses import Response
-from starlette.routing import Route
 from starlette.status import HTTP_413_REQUEST_ENTITY_TOO_LARGE
 
-from aion.server.core.app.routes import WellKnownSpecificAgentCardEndpoint, WellKnownAgentsListEndpoint
-from aion.server.core.request_handlers import AionJSONRPCHandler, IRequestHandler, AionCallContextBuilder
+from aion.server.core.request_handlers import AionJSONRPCHandler, IRequestHandler
 from aion.server.types import ExtendedA2ARequest, CustomA2ARequest, GetContextRequest, GetContextsListRequest
-from aion.server.utils.constants import (
-    SPECIFIC_AGENT_CARD_WELL_KNOWN_PATH,
-    AVAILABLE_GRAPHS_WELL_KNOWN_PATH,
-    SPECIFIC_AGENT_RPC_PATH
-)
 
 logger = logging.getLogger(__name__)
 
@@ -55,56 +48,12 @@ class AionA2AStarletteApplication(A2AStarletteApplication):
             agent_card=agent_card,
             http_handler=http_handler,
             extended_agent_card=extended_agent_card,
-            context_builder=context_builder or AionCallContextBuilder())
+            context_builder=context_builder)
 
         # replace handler with our custom handler with additional methods
         self.handler = AionJSONRPCHandler(
             agent_card=agent_card,
             request_handler=http_handler)
-
-    def routes(self, *args, **kwargs):
-        """
-        Get all application routes including custom routes.
-
-        This method extends the parent class routes by adding custom routes
-        to the standard route collection.
-
-        Returns:
-            list[Route]: Combined list of standard routes and custom routes.
-        """
-        routes = super().routes(*args, **kwargs)
-        return [*routes, *self.custom_routes()]
-
-    def custom_routes(self) -> list[Route]:
-        """
-        Define custom application routes.
-
-        This method creates and returns a list of custom routes that are not
-        part of the standard application routing. These routes are automatically
-        added to the main route collection.
-
-        Returns:
-            list[Route]: List of custom Route objects for the application.
-        """
-        custom_routes = [
-            Route(
-                SPECIFIC_AGENT_CARD_WELL_KNOWN_PATH,
-                WellKnownSpecificAgentCardEndpoint,
-                name="specific_agent_card",
-            ),
-            Route(
-                AVAILABLE_GRAPHS_WELL_KNOWN_PATH,
-                WellKnownAgentsListEndpoint,
-                name="available_graphs",
-            ),
-            Route(
-                SPECIFIC_AGENT_RPC_PATH,
-                self._handle_requests,
-                methods=['POST'],
-                name='a2a_agent_specific_handler',
-            )
-        ]
-        return custom_routes
 
     async def _handle_requests(self, request: Request) -> Response:
         """Handle incoming HTTP requests with comprehensive error handling.

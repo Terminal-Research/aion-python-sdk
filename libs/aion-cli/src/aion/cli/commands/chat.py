@@ -2,9 +2,11 @@
 from typing import Optional
 import asyncclick as click
 
+from aion.cli.handlers import start_chat
+
 
 @click.command(name="chat")
-@click.option('--agent', default='http://localhost:10000', help='Agent URL')
+@click.option('--host', default='http://localhost:10000', help='Host URL')
 @click.option(
     '--bearer-token',
     help='Bearer token for authentication',
@@ -30,10 +32,10 @@ import asyncclick as click
 @click.option(
     '--graph_id',
     default=None,
-    help='Graph ID to use',
+    help='Graph ID to use via proxy server',
 )
 async def chat(
-        agent: str,
+        host: str,
         bearer_token: Optional[str],
         session: int,
         history: bool,
@@ -44,13 +46,11 @@ async def chat(
         graph_id: Optional[str],
 ):
     """Start an interactive chat session with A2A agent"""
-    from .session import start_chat
-
     custom_headers = _parse_headers(header)
 
     try:
         await start_chat(
-            agent_url=agent,
+            host=host,
             bearer_token=bearer_token,
             session_id=session,
             show_history=history,

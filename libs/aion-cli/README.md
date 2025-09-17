@@ -62,7 +62,7 @@ Connects to a running A2A server and provides an interactive command-line chat i
 
 **Options:**
 
-* `--agent TEXT` - Agent URL to connect to (default: `http://localhost:10000`)
+* `--host TEXT` - Agent URL to connect to (default: `http://localhost:10000`)
 * `--bearer-token TEXT` - Bearer token for authentication (can also be set via `AION_CLI_BEARER_TOKEN` environment variable)
 * `--session INTEGER` - Session ID to use; `0` creates a random session (default: `0`)
 * `--history / --no-history` - Show task history in the chat interface (default: `--no-history`)
@@ -79,7 +79,7 @@ Connects to a running A2A server and provides an interactive command-line chat i
 poetry run aion chat
 
 # Chat with custom agent URL
-poetry run aion chat --agent http://localhost:8080
+poetry run aion chat --host http://localhost:8080
 
 # Chat with authentication
 poetry run aion chat --bearer-token your-token-here
@@ -101,7 +101,7 @@ poetry run aion chat --graph-id my-agent-graph
 
 # Complex example with multiple options
 poetry run aion chat \
-  --agent http://prod-agent.example.com \
+  --host http://prod-agent.example.com \
   --bearer-token $TOKEN \
   --session 999 \
   --history \

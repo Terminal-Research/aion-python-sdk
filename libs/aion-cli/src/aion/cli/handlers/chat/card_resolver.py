@@ -5,8 +5,7 @@ from typing import Optional, Any
 import httpx
 from a2a.client import A2ACardResolver, A2AClientHTTPError, A2AClientJSONError
 from a2a.types import AgentCard
-from aion.server.utils import substitute_vars
-from aion.server.utils.constants import SPECIFIC_AGENT_CARD_WELL_KNOWN_PATH
+from aion.shared.utils import substitute_vars
 from pydantic import ValidationError
 
 logger = logging.getLogger(__name__)
@@ -19,10 +18,7 @@ class AionA2ACardResolver(A2ACardResolver):
         self.graph_id = graph_id
 
         if self.graph_id:
-            self.agent_card_path = substitute_vars(
-                template=SPECIFIC_AGENT_CARD_WELL_KNOWN_PATH,
-                values={"graph_id": self.graph_id}
-            ).lstrip('/')
+            self.agent_card_path = f"{self.graph_id}/{self.agent_card_path}"
 
     async def get_agent_card(
             self,

@@ -3,9 +3,11 @@ import os
 import sys
 
 import uvicorn
+from aion.shared.aion_config import AgentConfig
 from dotenv import load_dotenv
 
-from aion.server.core.app import AppFactory, AppConfig
+from aion.server.configs import app_settings
+from aion.server.core.app import AppFactory
 
 logger = logging.getLogger(__name__)
 
@@ -16,16 +18,16 @@ class MissingAPIKeyError(Exception):
     """Exception for missing API key."""
 
 
-async def async_serve(host, port):
+async def async_serve(agent_id: str, agent_config: AgentConfig):
     try:
-        app_factory = await AppFactory.initialize(config=AppConfig(host=host, port=port))
+        app_factory = await AppFactory.create_and_initialize(agent_id, agent_config)
         if not app_factory:
             return
 
         uconfig = uvicorn.Config(
-            app=app_factory.starlette_app,
-            host=app_factory.config.host,
-            port=app_factory.config.port)
+            app=app_factory.get_starlette_app(),
+            host=app_factory.get_agent_host(),
+            port=app_factory.get_agent_config().port)
         server = uvicorn.Server(config=uconfig)
 
         await server.serve()
@@ -39,10 +41,10 @@ async def async_serve(host, port):
         exit(1)
 
 
-async def run_server(host: str = "localhost", port: int = 10000):
+async def run_server(agent_id: str, agent_config: AgentConfig):
     """Starts the Currency Agent server."""
     try:
-        await async_serve(host, port)
+        await async_serve(agent_id, agent_config)
     except KeyboardInterrupt:
         logger.info("Interrupted by user")
         sys.exit(0)

@@ -1,18 +1,19 @@
 import logging
 from typing import Optional
+from pathlib import Path
 
 from a2a.server.tasks import InMemoryPushNotificationConfigStore
 from a2a.types import AgentCard
+from aion.shared.aion_config import AgentConfig
 from starlette.applications import Starlette
 
-from aion.server.configs import db_settings
+from aion.server.configs import db_settings, app_settings
 from aion.server.core.request_handlers import AionRequestHandler
 from aion.server.db import db_manager, verify_connection
 from aion.server.db.migrations import upgrade_to_head
 from aion.server.langgraph.a2a import LanggraphAgentExecutor
-from aion.server.langgraph.agent import BaseAgent, agent_manager
+from aion.server.langgraph.agent import BaseAgent, AgentManager
 from aion.server.tasks import store_manager
-from .configs import AppConfig
 from .lifespan import AppLifespan
 from ..a2a_starlette import AionA2AStarletteApplication
 
@@ -20,125 +21,165 @@ logger = logging.getLogger(__name__)
 
 
 class AppFactory:
-    """Factory for creating and configuring the application."""
-
-    config: AppConfig
-    a2a_app: Optional[AionA2AStarletteApplication]
-    starlette_app: Optional[Starlette]
-    agent: Optional[BaseAgent]
-
-    def __init__(self, config: AppConfig):
-        if config and not isinstance(config, AppConfig):
-            raise TypeError("config must be an instance of AppConfig")
-
-        self.config = config if config else AppConfig()
-        self.a2a_app = None
-        self.starlette_app = None
-        self.agent = None
-
-    @classmethod
-    async def initialize(cls, config: AppConfig) -> Optional["AppFactory"]:
-        """Initialize and create an AppFactory instance.
+    def __init__(self, agent_id: str, agent_config: AgentConfig, base_path: Optional[Path] = None):
+        """Initialize factory with agent configuration.
 
         Args:
-            config: Application configuration.
+            agent_id: Unique identifier for the agent
+            agent_config: Complete agent configuration object
+            base_path: Base path for resolving module imports
+        """
+        self.agent_id = agent_id
+        self.agent_config = agent_config
+        self.base_path = base_path
+
+        # Application components
+        self.a2a_app: Optional[AionA2AStarletteApplication] = None
+        self.starlette_app: Optional[Starlette] = None
+        self.agent: Optional[BaseAgent] = None
+        self.agent_manager: Optional[DirectAgentManager] = None
+
+    @classmethod
+    async def create_and_initialize(
+            cls,
+            agent_id: str,
+            agent_config: AgentConfig,
+            base_path: Optional[Path] = None
+    ) -> Optional["AppFactory"]:
+        """Create and initialize a AppFactory instance.
+
+        Args:
+            agent_id: Unique identifier for the agent
+            agent_config: Complete agent configuration object
+            base_path: Base path for resolving module imports
 
         Returns:
-            Initialized AppFactory instance or None if initialization failed.
+            Initialized AppFactory instance or None if initialization failed
         """
-        instance = cls(config)
+        instance = cls(agent_id, agent_config, base_path)
+
         try:
-            await instance.create_a2a_app()
-            await instance.build_starlette_app()
+            app_settings.set_agent_config(agent_id, agent_config)
+
+            await instance._initialize()
         except Exception as exc:
-            logger.error("Failed to build server", exc_info=exc)
+            logger.error("Failed to initialize application factory", exc_info=exc)
             await instance.shutdown()
-            return
+            return None
 
         return instance
 
-    async def create_a2a_app(self) -> "AionA2AStarletteApplication":
-        """Create and configure the A2A application.
+    async def _initialize(self) -> None:
+        """Initialize all application components."""
+        logger.info("Initializing application for agent '%s'", self.agent_id)
 
-        Returns:
-            Configured A2AStarletteApplication instance.
-
-        Raises:
-            RuntimeError: If app is already created.
-        """
-        if self.a2a_app:
-            raise RuntimeError("This app is already created")
-
+        # Initialize database
         await self._init_db()
-        await self._init_agents()
 
+        # Create agent
+        await self._init_agent()
+
+        # Create A2A application
+        await self._create_a2a_app()
+
+        # Build Starlette application
+        await self._build_starlette_app()
+
+        logger.info("Application initialized successfully")
+
+    async def _init_agent(self) -> None:
+        """Initialize agent from the provided configuration."""
+        self.agent_manager = AgentManager(base_path=self.base_path)
+
+        # Create and register agent
+        self.agent = self.agent_manager.create_agent(self.agent_id, self.agent_config)
+
+        # Pre-compile the graph
+        if not self.agent_manager.precompile_agent():
+            raise RuntimeError(f"Failed to pre-compile agent '{self.agent_id}'")
+
+        logger.info("Agent '%s' (%s) initialized with compiled graph",
+                    self.agent_id, self.agent.__class__.__name__)
+
+    async def _create_a2a_app(self) -> None:
+        """Create and configure the A2A application."""
+        if self.a2a_app:
+            raise RuntimeError("A2A application is already created")
+
+        if not self.agent:
+            raise RuntimeError("Agent must be initialized before creating A2A app")
+
+        # Create agent card
         agent_card = self._create_agent_card()
+
+        # Create request handler
         request_handler = await self._create_request_handler()
 
         self.a2a_app = AionA2AStarletteApplication(
             agent_card=agent_card,
-            http_handler=request_handler)
-        return self.a2a_app
+            http_handler=request_handler
+        )
+
+        logger.info("A2A application created successfully")
 
     def _create_agent_card(self) -> AgentCard:
-        """Create agent card from the loaded agent.
+        """Create agent card from the agent configuration.
 
         Returns:
-            Agent card with capabilities description.
+            Agent card with capabilities description
 
         Raises:
-            RuntimeError: If no agent is available.
+            RuntimeError: If no agent is available
         """
-        base_url = f'http://{self.config.host}:{self.config.port}'
+        if not self.agent:
+            raise RuntimeError("No agent available to create agent card")
 
-        if self.agent:
-            logger.info("Getting agent card from agent instance")
-            return self.agent.card
+        # Create base URL from config
+        base_url = f'http://0.0.0.0:{self.agent_config.port}'
 
-        raise RuntimeError("No agent available to create agent card")
+        logger.info("Creating agent card from agent configuration")
+        return self.agent.card
 
-    async def _create_request_handler(self) -> "AionRequestHandler":
+    async def _create_request_handler(self) -> AionRequestHandler:
         """Create and configure the request handler.
 
         Returns:
-            Configured DefaultRequestHandler instance.
+            Configured AionRequestHandler instance
         """
+        # Initialize task store
         store_manager.initialize()
         task_store = store_manager.get_store()
 
         return AionRequestHandler(
-            agent_executor=LanggraphAgentExecutor(),
+            agent_executor=LanggraphAgentExecutor(self.agent.get_compiled_graph()),
             task_store=task_store,
-            push_config_store=InMemoryPushNotificationConfigStore())
+            push_config_store=InMemoryPushNotificationConfigStore()
+        )
 
-    async def _init_agents(self):
-        """Initialize agents from configuration."""
-        agent_manager.initialize_agents()
+    async def _build_starlette_app(self) -> None:
+        """Build the Starlette application."""
+        if not self.a2a_app:
+            raise RuntimeError("A2A application must be created before building Starlette app")
 
-        if not agent_manager.has_active_agents():
-            raise RuntimeError("Agent manager has no agents after initialization")
+        lifespan = AppLifespan(app_factory=self)
+        self.starlette_app = self.a2a_app.build(lifespan=lifespan.executor)
 
-        # Get the first available agent
-        self.agent = agent_manager.get_first_agent()
-        if not self.agent:
-            raise RuntimeError("No agent available after initialization")
+        logger.info("Starlette application built successfully")
 
-        agent_id = next(iter(agent_manager.agents.keys()))
-        logger.info("Using agent '%s' (%s) with compiled graph",
-                    agent_id, self.agent.__class__.__name__)
-
-    async def _init_db(self):
+    async def _init_db(self) -> None:
         """Initialize database connection and run migrations."""
         pg_url = db_settings.pg_url
         if not pg_url:
             logger.info("POSTGRES_URL environment variable not set, using in-memory data store")
             return
 
+        # Verify connection
         is_connection_verified = await verify_connection(pg_url)
         if not is_connection_verified:
-            logger.warning("Can't verify postgres connection")
+            logger.warning("Cannot verify postgres connection")
             return
 
+        # Initialize database manager
         try:
             await db_manager.initialize(pg_url)
         except Exception as exc:
@@ -146,33 +187,53 @@ class AppFactory:
             await self._cleanup_db()
             return
 
+        # Run migrations
         try:
             await upgrade_to_head()
+            logger.info("Database migrations completed successfully")
         except Exception as exc:
-            logger.error(f"Migration failed: {exc}", exc_info=True)
+            logger.error("Migration failed: %s", exc, exc_info=True)
             await self._cleanup_db()
             return
 
-    async def build_starlette_app(self) -> Starlette:
-        """Build the Starlette application.
-
-        Returns:
-            Configured Starlette application instance.
-        """
-        lifespan = AppLifespan(app_factory=self)
-        self.starlette_app = self.a2a_app.build(lifespan=lifespan.executor)
-        return self.starlette_app
-
-    async def shutdown(self):
+    async def shutdown(self) -> None:
         """Shutdown the application and cleanup resources."""
+        logger.info("Shutting down application factory")
         await self._cleanup_db()
 
-    async def _cleanup_db(self):
+    async def _cleanup_db(self) -> None:
         """Cleanup database connections."""
         if not db_manager.is_initialized:
             return
 
         try:
             await db_manager.close()
+            logger.info("Database connections closed")
         except Exception as exc:
             logger.error("Error closing database", exc_info=exc)
+
+    # Properties for accessing application components
+
+    @property
+    def is_initialized(self) -> bool:
+        """Check if the factory is fully initialized."""
+        return (
+                self.agent is not None and
+                self.a2a_app is not None and
+                self.starlette_app is not None
+        )
+
+    def get_agent(self) -> Optional[BaseAgent]:
+        """Get the initialized agent instance."""
+        return self.agent
+
+    def get_starlette_app(self) -> Optional[Starlette]:
+        """Get the Starlette application instance."""
+        return self.starlette_app
+
+    def get_agent_config(self) -> AgentConfig:
+        """Get the agent configuration."""
+        return self.agent_config
+
+    def get_agent_host(self) -> str:
+        return "0.0.0.0"

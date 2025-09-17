@@ -1,6 +1,7 @@
 import asyncio
 from typing import cast
 
+from a2a.server.context import ServerCallContext
 from a2a.server.events import EventQueue
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.request_handlers.default_request_handler import TERMINAL_TASK_STATES
@@ -18,7 +19,6 @@ from aion.server.types import (
 )
 from aion.server.tasks import store_manager, AionTaskManager
 from aion.server.utils import ConversationBuilder
-from .call_context import AionServerCallContext
 
 
 @trace_class(kind=SpanKind.SERVER)
@@ -28,7 +28,7 @@ class AionRequestHandler(DefaultRequestHandler, IRequestHandler):
     async def _setup_message_execution(
         self,
         params: MessageSendParams,
-        context: AionServerCallContext | None = None,
+        context: ServerCallContext | None = None,
     ) -> tuple[TaskManager, str, EventQueue, ResultAggregator, asyncio.Task]:
         """ !! Overrides default message execution setup. !!
 
@@ -100,7 +100,7 @@ class AionRequestHandler(DefaultRequestHandler, IRequestHandler):
     async def on_get_context(
             self,
             params: GetContextParams,
-            context: AionServerCallContext | None = None
+            context: ServerCallContext | None = None
     ) -> Conversation:
         """Get conversation context by ID.
 
@@ -122,7 +122,7 @@ class AionRequestHandler(DefaultRequestHandler, IRequestHandler):
     async def on_get_contexts_list(
             self,
             params: GetContextsListParams,
-            context: AionServerCallContext | None = None
+            context: ServerCallContext | None = None
     ) -> ContextsList:
         """Get list of available context IDs.
 
