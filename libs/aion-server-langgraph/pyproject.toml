@@ -12,9 +12,6 @@ uvicorn = "0.23.2"
 starlette = "0.46.2"
 structlog = "24.4.0"
 httpx = "0.28.1"
-pydantic = "2.11.3"
-pydantic-settings = "2.10.1"
-python-dotenv = "1.1.1"
 # PostgreSQL
 psycopg = { version = "3.2.9", extras = ["binary"] }
 asyncpg = "0.30.0" # native psql protocol (faster then psycopg)
@@ -26,7 +23,6 @@ langgraph-checkpoint-postgres = "2.0.21"
 langchain-openai = "0.3.27"
 PyYAML = "6.0.2"
 
-aion-shared = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-shared" }
 aion-api-client = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-api-client" }
 
 [tool.poetry.group.dev.dependencies]
