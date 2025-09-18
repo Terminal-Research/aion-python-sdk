@@ -25,7 +25,8 @@ LOG_LEVEL=DEBUG
 # AION API Client
 AION_CLIENT_ID=your_client_id_here
 AION_CLIENT_SECRET=your_client_secret_here
-AION_API_CLIENT_ENV=development  # or 'production'
+AION_API_HOST=https://api.aion.to
+AION_API_KEEP_ALIVE=60
 
 # CLI Authentication (optional)
 AION_CLI_BEARER_TOKEN=your_bearer_token_here
@@ -36,7 +37,8 @@ AION_CLI_BEARER_TOKEN=your_bearer_token_here
 * **`POSTGRES_URL`** - PostgreSQL connection string. If not provided, the system automatically creates and uses in-memory storage when the agent starts
 * **`LOG_LEVEL`** - Controls logging verbosity (DEBUG, INFO, WARNING, ERROR) - *currently not used*
 * **`AION_CLIENT_ID`** & **`AION_CLIENT_SECRET`** - Authentication credentials for AION API
-* **`AION_API_CLIENT_ENV`** - Environment setting (`development` or `production`)
+* **`AION_API_HOST`** - API host URL (default: `https://api.aion.to`)
+* **`AION_API_KEEP_ALIVE`** - Keep alive interval in seconds for API connections (default: 60)
 * **`AION_CLI_BEARER_TOKEN`** - Bearer token for authentication (chat command) - *optional*
 
 ## Basic Configuration

@@ -2,7 +2,7 @@ from typing import Literal, Optional
 
 from aion.shared.aion_config import AgentConfig
 from pydantic import Field
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class AppSettings(BaseSettings):
@@ -16,6 +16,13 @@ class AppSettings(BaseSettings):
 
     agent_id: Optional[str] = None
     agent_config: Optional[AgentConfig] = None
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore"
+    )
 
     @property
     def url(self) -> str:

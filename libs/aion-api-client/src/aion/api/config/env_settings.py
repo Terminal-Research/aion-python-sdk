@@ -1,28 +1,81 @@
 """Configuration for the Aion API client."""
 
-from pathlib import Path
-from dynaconf import Dynaconf, Validator
+from typing import Optional
+from urllib.parse import urlparse
 
-ROOT_DIR = Path(__file__).resolve().parent.parent.parent.parent.parent
-BASE_DIR = ROOT_DIR / "src" / "aion" / "api"
+from pydantic import Field, field_validator, computed_field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
-settings = Dynaconf(
-    envvar_prefix="AION",
-    settings_files=[
-        (ROOT_DIR / "aion_api_client.yaml"),
-    ],
-    environments=True,
-    env="production",
-    load_dotenv=True,
-    ENV_SWITCHER_FOR_DYNACONF="AION_API_CLIENT_ENV",
-    validators = [
-        # settings from .env
-        Validator("CLIENT_ID", must_exist=True, is_type_of=str),
-        Validator("CLIENT_SECRET", must_exist=True, is_type_of=str),
 
-        # settings from aion_api_client.yaml
-        Validator("aion_api.host", must_exist=True, is_type_of=str),
-        Validator("aion_api.port", must_exist=True, is_type_of=int, gte=1, lte=65535),
-        Validator("aion_api.keepalive", must_exist=True, is_type_of=int, gte=5),
-    ]
-)
+class ApiSettings(BaseSettings):
+    """Aion API client settings."""
+
+    client_id: Optional[str] = Field(
+        # ...,
+        default=None,
+        alias="AION_CLIENT_ID",
+        description="Client ID for API authentication"
+    )
+
+    client_secret: Optional[str] = Field(
+        # ...,
+        default=None,
+        alias="AION_CLIENT_SECRET",
+        description="Client secret for API authentication"
+    )
+
+    api_host: str = Field(
+        default="https://api.aion.to",
+        alias="AION_API_HOST",
+        description="API host URL"
+    )
+
+    api_keep_alive: int = Field(
+        default=60,
+        alias="AION_API_KEEP_ALIVE",
+        description="Keep alive interval in seconds"
+    )
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore"
+    )
+
+    @computed_field
+    @property
+    def scheme(self) -> str:
+        """Get the URL scheme (http/https)."""
+        return urlparse(self.api_host).scheme
+
+    @computed_field
+    @property
+    def hostname(self) -> str:
+        """Get the hostname from the API URL."""
+        return urlparse(self.api_host).hostname
+
+    @computed_field
+    @property
+    def port(self) -> int:
+        """Get the port number from the API URL."""
+        parsed = urlparse(self.api_host)
+        return parsed.port or (443 if parsed.scheme == "https" else 80)
+
+    @field_validator("api_host")
+    @classmethod
+    def validate_api_host(cls, v):
+        """Validate API host URL format."""
+        if not v.startswith(("http://", "https://")):
+            raise ValueError("API host must start with http:// or https://")
+        return v.rstrip("/")
+
+
+
+# Initialize settings
+try:
+    api_settings = ApiSettings()
+except Exception as e:
+    print(f"Error loading configuration: {e}")
+    print("Please check your .env file and ensure all required variables are set.")
+    raise
