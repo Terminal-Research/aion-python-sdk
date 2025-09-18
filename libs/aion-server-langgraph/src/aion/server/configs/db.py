@@ -3,7 +3,7 @@ from urllib.parse import urlparse
 import re
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from aion.server.db import sqlalchemy_url, psycopg_url
 
@@ -20,6 +20,13 @@ class DbSettings(BaseSettings):
         default=None,
         alias="POSTGRES_URL",
         description="Postgres connection URL")
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore"
+    )
 
     @field_validator('pg_url')
     @classmethod

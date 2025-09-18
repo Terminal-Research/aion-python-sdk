@@ -9,7 +9,6 @@ packages = [{ include = "aion", from = "src" }]
 
 [tool.poetry.dependencies]
 python = "3.13.5"
-dynaconf = "3.2.11"
 gql = "3.5.3"
 ariadne-codegen = {version = "^0.14.0", extras = ["subscriptions"]}
 PyJWT = "2.10.1"

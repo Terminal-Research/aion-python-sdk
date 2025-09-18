@@ -1,4 +1,4 @@
-from .env_settings import settings
+from .env_settings import api_settings
 
 
 class AionApiSettings:
@@ -11,11 +11,11 @@ class AionApiSettings:
     Attributes:
         client_id (str): Client identifier for API authentication
         client_secret (str): Client secret for API authentication
-        protocol (str): Connection protocol (http/https)
-        host (str): API host address
-        port (int): Connection port number
-        keepalive (int): WebSocket keepalive interval in seconds
     """
+    _gql_url: str
+    _ws_gql_url: str
+    _http_url: str
+
     def __init__(self):
         """
         Initialize AionApiSettings with values from environment settings.
@@ -23,12 +23,11 @@ class AionApiSettings:
         Loads configuration from the settings module, applying default values
         for missing parameters.
         """
-        self.client_id = settings.client_id
-        self.client_secret = settings.client_secret
-        self.protocol = settings.aion_api.get("protocol", "https")
-        self.host = settings.aion_api.get("host", "api.aion.to")
-        self.port = settings.aion_api.get("port", 443)
-        self.keepalive = settings.aion_api.get("keepalive", 60)
+        self.client_id = api_settings.client_id
+        self.client_secret = api_settings.client_secret
+        self.scheme = api_settings.scheme
+        self.hostname = api_settings.hostname
+        self.port = api_settings.port
 
     @property
     def http_url(self) -> str:
@@ -46,9 +45,9 @@ class AionApiSettings:
 
         default_ports = {"http": 80, "https": 443}
         if self.port in default_ports.values():
-            url = f"{self.protocol}://{self.host}"
+            url = f"{self.scheme}://{self.hostname}"
         else:
-            url = f"{self.protocol}://{self.host}:{self.port}"
+            url = f"{self.scheme}://{self.hostname}:{self.port}"
 
         self._http_url = url
         return self._http_url
@@ -84,8 +83,8 @@ class AionApiSettings:
         if hasattr(self, "_ws_gql_url"):
             return self._ws_gql_url
 
-        prefix = "wss" if self.protocol == "https" else "ws"
-        self._ws_gql_url = f"{prefix}://{self.host}/ws/graphql"
+        prefix = "wss" if self.scheme == "https" else "ws"
+        self._ws_gql_url = f"{prefix}://{self.hostname}/ws/graphql"
         return self._ws_gql_url
 
 
