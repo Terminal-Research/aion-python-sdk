@@ -1,37 +1,74 @@
 import logging
-from typing import Optional
 from pathlib import Path
+from typing import Optional
 
 from a2a.server.tasks import InMemoryPushNotificationConfigStore
 from a2a.types import AgentCard
 from aion.shared.aion_config import AgentConfig
 from starlette.applications import Starlette
 
-from aion.server.configs import db_settings, app_settings
+from aion.server.configs import db_settings, AppSettings
+from aion.server.core.app.a2a_starlette import AionA2AStarletteApplication
 from aion.server.core.request_handlers import AionRequestHandler
 from aion.server.db import db_manager, verify_connection
+from aion.server.db.manager import DbManager
 from aion.server.db.migrations import upgrade_to_head
 from aion.server.langgraph.a2a import LanggraphAgentExecutor
 from aion.server.langgraph.agent import BaseAgent, AgentManager
-from aion.server.tasks import store_manager
+from aion.server.tasks import store_manager, StoreManager
 from .lifespan import AppLifespan
-from ..a2a_starlette import AionA2AStarletteApplication
+
+
 
 logger = logging.getLogger(__name__)
 
 
-class AppFactory:
-    def __init__(self, agent_id: str, agent_config: AgentConfig, base_path: Optional[Path] = None):
-        """Initialize factory with agent configuration.
+class AppContext:
+    """Application context with settings and managers.
 
-        Args:
-            agent_id: Unique identifier for the agent
-            agent_config: Complete agent configuration object
-            base_path: Base path for resolving module imports
-        """
+    Attributes:
+        app_settings: Application configuration settings
+        db_manager: Database connection manager
+        store_manager: Task store manager for handling data storage
+    """
+
+    def __init__(
+            self,
+            app_settings: AppSettings,
+            db_manager: DbManager,
+            store_manager: StoreManager
+    ):
+        self.app_settings = app_settings
+        self.db_manager = db_manager
+        self.store_manager = store_manager
+
+
+class AppFactory:
+    """Factory for creating and initializing agent applications.
+
+    Attributes:
+        agent_id: Unique identifier for the agent
+        agent_config: Agent configuration with runtime settings
+        base_path: Base path for resolving module imports
+        context: Application context with shared resources
+        a2a_app: Agent-to-agent communication application
+        starlette_app: Main Starlette web application
+        agent: Initialized agent instance
+        agent_manager: Manager for agent lifecycle operations
+    """
+
+    def __init__(
+            self,
+            agent_id: str,
+            agent_config: AgentConfig,
+            context: AppContext,
+            base_path: Optional[Path] = None
+    ):
+        """Initialize factory with agent configuration."""
         self.agent_id = agent_id
         self.agent_config = agent_config
         self.base_path = base_path
+        self.context = context
 
         # Application components
         self.a2a_app: Optional[AionA2AStarletteApplication] = None
@@ -39,35 +76,17 @@ class AppFactory:
         self.agent: Optional[BaseAgent] = None
         self.agent_manager: Optional[DirectAgentManager] = None
 
-    @classmethod
-    async def create_and_initialize(
-            cls,
-            agent_id: str,
-            agent_config: AgentConfig,
-            base_path: Optional[Path] = None
-    ) -> Optional["AppFactory"]:
-        """Create and initialize a AppFactory instance.
-
-        Args:
-            agent_id: Unique identifier for the agent
-            agent_config: Complete agent configuration object
-            base_path: Base path for resolving module imports
-
-        Returns:
-            Initialized AppFactory instance or None if initialization failed
-        """
-        instance = cls(agent_id, agent_config, base_path)
-
+    async def initialize(self):
+        """Initialize the application factory."""
         try:
-            app_settings.set_agent_config(agent_id, agent_config)
+            self.context.app_settings.set_agent_config(self.agent_id, self.agent_config)
 
-            await instance._initialize()
+            await self._initialize()
+            return self
         except Exception as exc:
             logger.error("Failed to initialize application factory", exc_info=exc)
-            await instance.shutdown()
+            await self.shutdown()
             return None
-
-        return instance
 
     async def _initialize(self) -> None:
         """Initialize all application components."""
@@ -88,7 +107,7 @@ class AppFactory:
         logger.info("Application initialized successfully")
 
     async def _init_agent(self) -> None:
-        """Initialize agent from the provided configuration."""
+        """Initialize agent from configuration."""
         self.agent_manager = AgentManager(base_path=self.base_path)
 
         # Create and register agent
@@ -123,14 +142,7 @@ class AppFactory:
         logger.info("A2A application created successfully")
 
     def _create_agent_card(self) -> AgentCard:
-        """Create agent card from the agent configuration.
-
-        Returns:
-            Agent card with capabilities description
-
-        Raises:
-            RuntimeError: If no agent is available
-        """
+        """Create agent card from configuration."""
         if not self.agent:
             raise RuntimeError("No agent available to create agent card")
 
@@ -141,14 +153,10 @@ class AppFactory:
         return self.agent.card
 
     async def _create_request_handler(self) -> AionRequestHandler:
-        """Create and configure the request handler.
-
-        Returns:
-            Configured AionRequestHandler instance
-        """
+        """Create and configure the request handler."""
         # Initialize task store
-        store_manager.initialize()
-        task_store = store_manager.get_store()
+        self.context.store_manager.initialize()
+        task_store = self.context.store_manager.get_store()
 
         return AionRequestHandler(
             agent_executor=LanggraphAgentExecutor(self.agent.get_compiled_graph()),
@@ -181,7 +189,7 @@ class AppFactory:
 
         # Initialize database manager
         try:
-            await db_manager.initialize(pg_url)
+            await self.context.db_manager.initialize(pg_url)
         except Exception as exc:
             logger.error("Failed to initialize database", exc_info=exc)
             await self._cleanup_db()
@@ -203,11 +211,11 @@ class AppFactory:
 
     async def _cleanup_db(self) -> None:
         """Cleanup database connections."""
-        if not db_manager.is_initialized:
+        if not self.context.db_manager.is_initialized:
             return
 
         try:
-            await db_manager.close()
+            await self.context.db_manager.close()
             logger.info("Database connections closed")
         except Exception as exc:
             logger.error("Error closing database", exc_info=exc)
@@ -236,4 +244,5 @@ class AppFactory:
         return self.agent_config
 
     def get_agent_host(self) -> str:
+        """Get the agent host address."""
         return "0.0.0.0"

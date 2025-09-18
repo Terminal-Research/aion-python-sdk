@@ -20,6 +20,9 @@ class AppSettings(BaseSettings):
     @property
     def url(self) -> str:
         """Application URL."""
+        if not self.agent_config:
+            raise AttributeError("agent_config must be set for AppSettings")
+
         return f"http://0.0.0.0:{self.agent_config.port}"
 
     def set_agent_config(self, agent_id: str, agent_config: AgentConfig) -> None:
