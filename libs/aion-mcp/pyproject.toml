@@ -7,9 +7,10 @@ readme = "README.md"
 packages = [{include = "aion", from = "src"}]
 
 [tool.poetry.dependencies]
-python = "^3.11"
+python = "3.13.5"
 asgi-proxy-lib = "*"
 PyYAML = "*"
+aion-shared = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "features/multi_agent", subdirectory = "libs/aion-shared" }
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"

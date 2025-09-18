@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Tuple
+from typing import Tuple, Any
 
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
@@ -16,7 +16,6 @@ from a2a.utils.errors import ServerError
 from langgraph.types import Command
 
 from aion.server.utils import check_if_task_is_interrupted
-
 from .agent import LanggraphAgent
 from .event_producer import LanggraphA2AEventProducer
 
@@ -33,9 +32,7 @@ class LanggraphAgentExecutor(AgentExecutor):
     framework to provide agent execution capabilities with proper error handling
     and event management.
     """
-
-    def __init__(self, graph: Any) -> None:
-        """Create the executor with the given graph."""
+    def __init__(self, graph: Any):
         self.agent = LanggraphAgent(graph)
 
     async def execute(

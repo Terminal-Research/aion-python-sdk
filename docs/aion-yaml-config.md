@@ -6,7 +6,7 @@
 - [File Structure](#file-structure)
 - [Agent Configuration](#agent-configuration)
   - [Basic Syntax](#basic-syntax)
-  - [Simple Agent Configuration](#simple-agent-configuration)
+  - [Required Parameters](#required-parameters)
   - [Path Format Options](#path-format-options)
   - [Complex Agent Configuration](#complex-agent-configuration)
   - [Configuration Properties](#configuration-properties)
@@ -17,70 +17,48 @@
   - [Array Fields](#array-fields)
   - [Object Fields](#object-fields)
   - [Common Properties](#common-properties)
-- [Dependencies Configuration](#dependencies-configuration)
-- [Environment Variables Configuration](#environment-variables-configuration)
-- [MCP Proxy Configuration](#mcp-proxy-configuration)
-- [HTTP Services Configuration](#http-services-configuration)
-
+- [Proxy Configuration](#proxy-configuration)
 ---
 
 ## Overview
 
-The `aion.yaml` file is the main configuration file for your Aion project. It defines agents, dependencies, services, and deployment settings.
+The `aion.yaml` file is the main configuration file for your Aion project. It defines agents, proxy settings, dependencies, services, and deployment settings.
 
 ## File Structure
 
 ```yaml
 aion:
-  agent:
+  proxy:
+    # Proxy server settings (see "Proxy Configuration" section below)
+  agents:
     # Agent configurations (see "Agent Configuration" section below)
-  dependencies:
-    # Package dependencies (see "Dependencies Configuration" section below)
-  env:
-    # Environment variables (see "Environment Variables Configuration" section below)
-  mcp:
-    # MCP proxy settings (see "MCP Proxy Configuration" section below)
-  http:
-    # Web services (see "HTTP Services Configuration" section below)
 ```
 
 ---
 
 ## Agent Configuration
 
-The `agent` section defines AI agents in your Aion project. Each agent can be configured with a simple string path or a detailed configuration object.
+The `agents` section defines AI agents in your Aion project. Each agent **must** be configured with both a `path` and `port` parameter.
 
 ### Basic Syntax
 
 ```yaml
 aion:
-  agent:
-    agent_id: "path/to/agent.py"
-    # OR
+  agents:
     agent_id:
       path: "path/to/agent.py"
+      port: 8001
       # additional configuration...
 ```
 
-### Simple Agent Configuration
+### Required Parameters
 
-For basic agents, you can use just a string path:
+**Every agent must specify both:**
 
-```yaml
-aion:
-  agent:
-    # Graph instance variable (StateGraph)
-    chat_bot: "./src/agents/chat.py:chat_graph"
-    
-    # Function that creates and returns a graph
-    analyzer: "./src/agents/analysis.py:create_analyzer"
-    
-    # BaseAgent child class
-    assistant: "./src/agents/assistant.py:AssistantAgent"
-    
-    # File with auto-discovery
-    support: "./src/agents/support.py"
-```
+| Parameter | Type | Description | Validation |
+|-----------|------|-------------|------------|
+| `path` | string | Path to agent implementation | Required |
+| `port` | integer | Port number for the agent | Required, 1-65535, must be unique |
 
 ### Path Format Options
 
@@ -91,16 +69,43 @@ aion:
 | **BaseAgent class** | Points to `BaseAgent` subclass | `"./path/to/file.py:ClassName"` |
 | **Auto-discovery** | Automatically finds graph/agent in file | `"./path/to/file.py"` |
 
+### Basic Agent Configuration
+
+```yaml
+aion:
+  agents:
+    # Graph instance variable (StateGraph)
+    chat_bot:
+      path: "./src/agents/chat.py:chat_graph"
+      port: 8001
+    
+    # Function that creates and returns a graph
+    analyzer:
+      path: "./src/agents/analysis.py:create_analyzer" 
+      port: 8002
+    
+    # BaseAgent child class
+    assistant:
+      path: "./src/agents/assistant.py:AssistantAgent"
+      port: 8003
+    
+    # File with auto-discovery
+    support:
+      path: "./src/agents/support.py"
+      port: 8004
+```
+
 ### Complex Agent Configuration
 
 For advanced agents with specific capabilities and settings:
 
 ```yaml
 aion:
-  agent:
+  agents:
     advanced_assistant:
-      # Required: Path to agent implementation
+      # Required: Path and port
       path: "./src/agents/advanced.py:advanced_graph"
+      port: 8001
       
       # Basic Information
       name: "Advanced AI Assistant"
@@ -206,15 +211,27 @@ aion:
               type: "boolean"
               description: "Enable model response caching"
               default: true
+
+    # Additional agents with different ports
+    data_processor:
+      path: "./src/agents/processor.py"
+      port: 8002
+      name: "Data Processor"
+      
+    web_crawler:
+      path: "./src/agents/crawler.py:WebCrawlerAgent"
+      port: 8003
+      name: "Web Crawler"
 ```
 
 ### Configuration Properties
 
 #### Required Fields
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `path` | string | Path to agent implementation |
+| Field | Type | Description | Validation |
+|-------|------|-------------|-------------|
+| `path` | string | Path to agent implementation | Required |
+| `port` | integer | Port number for the agent | Required, 1-65535, unique across all agents and proxy |
 
 #### Optional Metadata
 
@@ -438,101 +455,125 @@ All field types support these properties:
 
 ---
 
-## Dependencies Configuration
+## Proxy Configuration
 
-The `dependencies` section defines Python packages and local modules required for your Aion project.
-
-### Syntax
-
-```yaml
-aion:
-  dependencies:
-    src: "./src"
-```
-
-### Rules
-
-- Point to directory containing `pyproject.toml`, not the file itself
-- Use relative paths starting with `"./"`
-- Use `"."` for current directory packages
-
----
-
-## Environment Variables Configuration
-
-The `env` section specifies environment variables for your agents and services. This section is optional.
+The `proxy` section configures a proxy server that can route requests to different agents. This section is optional.
 
 ### Syntax
 
 ```yaml
 aion:
-  env: "./.env"
+  proxy:
+    port: 10000
 ```
 
 ### Configuration
 
-Path to `.env` file containing environment variables:
+| Field | Type | Required | Description | Validation |
+|-------|------|----------|-------------|------------|
+| `port` | integer | ✓ | Port number for the proxy server | 1-65535, must be unique |
 
-```bash
-# .env file example
-POSTGRES_URL=postgresql://localhost:5432/aion # optional
+### How Proxy Works
+
+The proxy server routes requests to agents based on URL patterns:
+
+#### Direct Agent Access
+```
+# Agent Card
+http://localhost:8001/.well-known/agent-card.json
+
+# Agent RPC  
+http://localhost:8001/
 ```
 
-### Priority
+#### Proxy Agent Access
+```
+# Agent Card (via Proxy)
+http://localhost:10000/agent-id/.well-known/agent-card.json
 
-Values in `aion.yaml` override Aion Cloud deployment environment variables.
+# Agent RPC (via Proxy)
+http://localhost:10000/agent-id/
+```
 
----
-
-## MCP Proxy Configuration
-
-The `mcp` section configures Model Context Protocol proxy for external service integration. This section is optional.
-
-### Syntax
+### Example Configuration
 
 ```yaml
 aion:
-  mcp:
-    port: 9000
+  proxy:
+    port: 10000
+    
+  agents:
+    chat_bot:
+      path: "./src/agents/chat.py"
+      port: 8001
+      
+    analyzer:
+      path: "./src/agents/analyzer.py"  
+      port: 8002
 ```
 
-### Configuration
+**Access patterns:**
+- Direct: `http://localhost:8001/` → `chat_bot`
+- Proxy: `http://localhost:10000/chat_bot/` → `chat_bot`
+- Direct: `http://localhost:8002/` → `analyzer`
+- Proxy: `http://localhost:10000/analyzer/` → `analyzer`
 
-**Port**: Port number where local MCP instance is running
+### Port Validation
 
+The system validates that all ports are unique across:
+- All agent ports
+- Proxy port (if configured)
+
+**Example of port conflict error:**
 ```yaml
-mcp:
-  port: 9000
+aion:
+  proxy:
+    port: 8001  # ❌ Conflict with chat_bot
+    
+  agents:
+    chat_bot:
+      path: "./src/agents/chat.py"
+      port: 8001  # ❌ Conflict with proxy
 ```
-
-### How It Works
-
-- Mounts MCP proxy at `/mcp` endpoint
-- Forwards requests to `localhost:{port}`
-- Allows agents to communicate with MCP services through the proxy
-
-### Requirements
-
-- Local MCP service must be running on specified port
-- Port must be available and not used by other services
 
 ---
 
-## HTTP Services Configuration
-
-The `http` section mounts Starlette/FastAPI applications that will be dynamically loaded and served. This section is optional.
-
-### Syntax
+## Complete Configuration Example
 
 ```yaml
 aion:
-  http:
-    api: "./src/agent/webapp.py:app"
+  # Proxy server (optional)
+  proxy:
+    port: 10000
+  
+  # Agent configurations (required path and port for each)
+  agents:
+    chat_assistant:
+      path: "./src/agents/chat.py:ChatAgent"
+      port: 8001
+      name: "Chat Assistant"
+      description: "General purpose chat agent"
+      version: "1.2.0"
+      input_modes: ["text", "audio"]
+      output_modes: ["text", "audio"]
+      capabilities:
+        streaming: true
+        pushNotifications: false
+      configuration:
+        max_history:
+          type: "integer"
+          description: "Maximum chat history length"
+          default: 100
+          min: 10
+          max: 1000
+    
+    data_analyst:
+      path: "./src/agents/analyzer.py"
+      port: 8002
+      name: "Data Analyst"
+      skills:
+        - id: "csv_analysis"
+          name: "CSV Analysis"
+          description: "Analyze CSV files and generate insights"
+          tags: ["data", "csv", "analysis"]
 ```
-
-### Path Format
-
-`"./path/to/file.py:app_variable"`
-
-- **File path**: Relative path to Python file
-- **App variable**: Name of FastAPI/Starlette application after `:`

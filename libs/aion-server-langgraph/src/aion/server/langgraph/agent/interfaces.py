@@ -1,10 +1,12 @@
 from abc import ABC, abstractmethod
 from typing import Union, Optional, Callable
 
-from a2a.types import AgentCard
 from langgraph.graph import Graph
 from langgraph.pregel import Pregel
-from .models import AgentConfig
+
+from .card import AionAgentCard
+
+from aion.shared.aion_config import AgentConfig
 
 
 class AgentInterface(ABC):
@@ -55,35 +57,6 @@ class AgentInterface(ABC):
         """
         pass
 
-    @abstractmethod
-    def get_agent_card(self, base_url: str) -> Optional[AgentCard]:
-        """Return the agent's card with capabilities description.
-
-        Args:
-            base_url: Base URL for the agent service.
-
-        Returns:
-            Agent card containing metadata and capabilities.
-        """
-        pass
-
-    @abstractmethod
-    def generate_agent_card(self, base_url: str) -> Optional[AgentCard]:
-        """Generate the agent's capability card.
-
-        Creates an AgentCard that describes this agent's capabilities,
-        including its skills, supported input/output modes, and metadata.
-        May be replaced with user's custom card.
-
-        Args:
-            base_url: Base URL where this agent is hosted, used to construct
-                     the agent's endpoint URL.
-
-        Returns:
-            Agent card or None if not implemented.
-        """
-        pass
-
     @property
     @abstractmethod
     def config(self) -> Optional[AgentConfig]:
@@ -105,4 +78,10 @@ class AgentInterface(ABC):
         Raises:
             TypeError: If value is not an AgentConfig instance.
         """
+        pass
+
+    @property
+    @abstractmethod
+    def card(self) -> AionAgentCard:
+        """Get the agent's card."""
         pass

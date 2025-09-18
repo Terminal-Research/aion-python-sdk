@@ -6,7 +6,7 @@ from typing import Optional
 from uuid import uuid4
 
 import httpx
-from a2a.client import A2ACardResolver, A2AClient
+from a2a.client import A2AClient
 from a2a.types import (
     FilePart,
     FileWithBytes,
@@ -26,25 +26,29 @@ from a2a.types import (
     TextPart,
 )
 
+from .card_resolver import AionA2ACardResolver
+
 
 class ChatSession:
     """Handles A2A chat session logic"""
 
     def __init__(
             self,
-            agent_url: str,
+            host: str,
             bearer_token: Optional[str] = None,
             enabled_extensions: Optional[str] = None,
             custom_headers: Optional[dict] = None,
             use_push_notifications: bool = False,
             push_notification_receiver: str = 'http://localhost:5000',
+            graph_id: Optional[str] = None,
     ):
-        self.agent_url = agent_url
+        self.host = host
         self.bearer_token = bearer_token
         self.enabled_extensions = enabled_extensions
         self.custom_headers = custom_headers or {}
         self.use_push_notifications = use_push_notifications
         self.push_notification_receiver = push_notification_receiver
+        self.graph_id = graph_id
 
         # Setup headers
         self.headers = {}
@@ -68,7 +72,10 @@ class ChatSession:
 
         async with httpx.AsyncClient(timeout=30, headers=self.headers) as httpx_client:
             # Get agent card
-            card_resolver = A2ACardResolver(httpx_client, self.agent_url)
+            card_resolver = AionA2ACardResolver(
+                httpx_client=httpx_client,
+                base_url=self.host,
+                graph_id=self.graph_id)
             card = await card_resolver.get_agent_card()
 
             print('======= Agent Card ========')
@@ -191,37 +198,53 @@ class ChatSession:
             context_id: str,
             task_id: Optional[str]
     ):
-        """Handle streaming response"""
-        response_stream = client.send_message_streaming(
-            SendStreamingMessageRequest(
-                id=str(uuid4()),
-                params=payload,
+        """Handle streaming response with auto-continue after errors"""
+        try:
+            response_stream = client.send_message_streaming(
+                SendStreamingMessageRequest(
+                    id=str(uuid4()),
+                    params=payload,
+                )
             )
-        )
 
-        task_result = None
-        message = None
-        task_completed = False
+            task_result = None
+            message = None
+            task_completed = False
 
-        async for result in response_stream:
-            if isinstance(result.root, JSONRPCErrorResponse):
-                print(f'Error: {result.root.error}, context_id: {context_id}, task_id: {task_id}')
-                return False, context_id, task_id
+            async for result in response_stream:
+                if isinstance(result.root, JSONRPCErrorResponse):
+                    error_info = result.root.error
+                    print(f'JSON-RPC error in streaming response: {error_info}')
+                    # Auto-continue to next task
+                    return True, context_id, task_id
 
-            event = result.root.result
-            context_id = event.context_id
+                event = result.root.result
+                context_id = event.context_id
 
-            if isinstance(event, Task):
-                task_id = event.id
-            elif isinstance(event, (TaskStatusUpdateEvent, TaskArtifactUpdateEvent)):
-                task_id = event.task_id
-                if (isinstance(event, TaskStatusUpdateEvent) and
-                        event.status.state == 'completed'):
-                    task_completed = True
-            elif isinstance(event, Message):
-                message = event
+                if isinstance(event, Task):
+                    task_id = event.id
+                elif isinstance(event, (TaskStatusUpdateEvent, TaskArtifactUpdateEvent)):
+                    task_id = event.task_id
+                    if (isinstance(event, TaskStatusUpdateEvent) and
+                            event.status.state == 'completed'):
+                        task_completed = True
+                elif isinstance(event, Message):
+                    message = event
 
-            print(f'stream event => {event.model_dump_json(exclude_none=True)}')
+                print(f'stream event => {event.model_dump_json(exclude_none=True)}')
+
+        except httpx.TimeoutException as e:
+            print(f'Request timed out: {str(e)}. Continuing to next input.')
+            # Auto-continue to next task
+            return True, context_id, task_id
+
+        except httpx.ConnectError as e:
+            print(f'Connection failed: {str(e)}. Please check if the server is running.')
+            return False, context_id, task_id
+
+        except Exception as e:
+            print(f'Unexpected error during streaming: {e}')
+            return False, context_id, task_id
 
         # Get full task if needed
         if task_id and not task_completed:
@@ -240,17 +263,35 @@ class ChatSession:
             context_id: str,
             task_id: Optional[str]
     ):
-        """Handle non-streaming response"""
+        """Handle non-streaming response with auto-continue after errors"""
         try:
-            event = await client.send_message(
+            response = await client.send_message(
                 SendMessageRequest(
                     id=str(uuid4()),
                     params=payload,
                 )
             )
-            event = event.root.result
+
+            # Check for JSON-RPC error response
+            if isinstance(response.root, JSONRPCErrorResponse):
+                error_info = response.root.error
+                print(f'JSON-RPC error in non-streaming response: {error_info}')
+                # Auto-continue to next task
+                return True, context_id, task_id
+
+            event = response.root.result
+
+        except httpx.TimeoutException as e:
+            print(f'Request timed out: {str(e)}. Continuing to next input.')
+            # Auto-continue to next task
+            return True, context_id, task_id
+
+        except httpx.ConnectError as e:
+            print(f'Connection failed: {str(e)}. Please check if the server is running.')
+            return False, context_id, task_id
+
         except Exception as e:
-            print('Failed to complete the call', e)
+            print(f'Failed to complete the call: {e}')
             return False, context_id, task_id
 
         if not context_id:
@@ -315,34 +356,57 @@ class ChatSession:
         return True, context_id, task_id
 
     async def _get_task_result(self, client: A2AClient, task_id: str, context_id: str):
-        """Get task result by ID"""
-        task_result_response = await client.get_task(
-            GetTaskRequest(
-                id=str(uuid4()),
-                params=TaskQueryParams(id=task_id),
+        """Get task result by ID with improved error handling"""
+        try:
+            task_result_response = await client.get_task(
+                GetTaskRequest(
+                    id=str(uuid4()),
+                    params=TaskQueryParams(id=task_id),
+                )
             )
-        )
 
-        if isinstance(task_result_response.root, JSONRPCErrorResponse):
-            print(f'Error: {task_result_response.root.error}, context_id: {context_id}, task_id: {task_id}')
+            if isinstance(task_result_response.root, JSONRPCErrorResponse):
+                error_info = task_result_response.root.error
+                print(f'Error getting task result: {error_info}')
+                return None
+
+            return task_result_response.root.result
+
+        except httpx.TimeoutException as e:
+            print('Timeout while getting task result')
             return None
 
-        return task_result_response.root.result
+        except httpx.ConnectError as e:
+            print('Connection failed while getting task result')
+            return None
+
+        except Exception as e:
+            print(f'Unexpected error getting task result: {e}')
+            return None
 
     async def _show_task_history(self, client: A2AClient, task_id: str):
-        """Show task history"""
-        print('========= history ======== ')
-        task_response = await client.get_task(
-            {'id': task_id, 'historyLength': 10}
-        )
-        print(
-            task_response.model_dump_json(
-                include={'result': {'history': True}}
+        """Show task history with error handling"""
+        try:
+            print('========= history ======== ')
+            task_response = await client.get_task(
+                {'id': task_id, 'historyLength': 10}
             )
-        )
+
+            if isinstance(task_response.root, JSONRPCErrorResponse):
+                error_info = task_response.root.error
+                print(f'Error getting task history: {error_info}')
+                return
+
+            print(
+                task_response.model_dump_json(
+                    include={'result': {'history': True}}
+                )
+            )
+        except Exception as e:
+            print(f'Failed to get task history: {e}')
 
 async def start_chat(
-        agent_url: str = 'http://localhost:8083',
+        host: str = 'http://localhost:8083',
         bearer_token: Optional[str] = None,
         session_id: int = 0,
         show_history: bool = False,
@@ -350,15 +414,17 @@ async def start_chat(
         push_notification_receiver: str = 'http://localhost:5000',
         enabled_extensions: Optional[str] = None,
         custom_headers: Optional[dict] = None,
+        graph_id: Optional[str] = None,
 ):
     """Start a chat session with the A2A agent"""
     chat_session = ChatSession(
-        agent_url=agent_url,
+        host=host,
         bearer_token=bearer_token,
         enabled_extensions=enabled_extensions,
         custom_headers=custom_headers,
         use_push_notifications=use_push_notifications,
         push_notification_receiver=push_notification_receiver,
+        graph_id=graph_id
     )
 
     await chat_session.start(session_id=session_id, show_history=show_history)

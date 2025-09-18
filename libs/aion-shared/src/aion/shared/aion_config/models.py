@@ -1,6 +1,6 @@
 from enum import Enum
 from typing import List, Dict, Any, Optional, Union
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class ConfigurationType(str, Enum):
@@ -110,7 +110,7 @@ class ConfigurationField(BaseModel):
 
 class AgentCapabilities(BaseModel):
     """Agent capabilities configuration."""
-    streaming: bool = Field(default=True, description="Whether agent supports streaming responses")
+    streaming: bool = Field(default=False, description="Whether agent supports streaming responses")
     pushNotifications: bool = Field(default=False, description="Whether agent supports push notifications")
 
 
@@ -128,6 +128,7 @@ class AgentConfig(BaseModel):
 
     # Required fields
     path: str = Field(..., description="Path to agent class, function, or graph instance")
+    port: int = Field(..., description="Port number for the agent", ge=1, le=65535)
 
     # Optional metadata with defaults
     name: str = Field(
@@ -164,6 +165,14 @@ class AgentConfig(BaseModel):
     configuration: Dict[str, ConfigurationField] = Field(
         default_factory=dict,
         description="Additional configuration parameters")
+
+    @field_validator('port')
+    @classmethod
+    def validate_port(cls, value):
+        """Validate port number is within valid range."""
+        if not (1 <= value <= 65535):
+            raise ValueError("Port must be between 1 and 65535")
+        return value
 
     @field_validator('configuration', mode='before')
     @classmethod
@@ -226,23 +235,132 @@ class AgentConfig(BaseModel):
                 raise ValueError("Skill IDs must be unique")
         return value
 
+    class Config:
+        """Pydantic configuration."""
+        extra = "ignore"
+        use_enum_values = True
+        validate_assignment = True
+
+
+class ProxyConfig(BaseModel):
+    """Configuration for the proxy server."""
+    port: int = Field(
+        ...,
+        description="Port number for the proxy server",
+        ge=1,
+        le=65535
+    )
+
+
+class AionConfig(BaseModel):
+    """Main configuration for Aion system."""
+
+    agents: Dict[str, AgentConfig] = Field(
+        default_factory=dict,
+        description="Dictionary of agent configurations mapped by agent ID"
+    )
+
+    proxy: Optional[ProxyConfig] = Field(
+        default=None,
+        description="Proxy server configuration"
+    )
+
+    @field_validator('agents', mode='before')
     @classmethod
-    def create_minimal_config(cls, agent_id: str, item_type: str = "graph") -> "AgentConfig":
-        """Create a minimal configuration for an agent."""
-        return cls(
-            path="",  # Will be set by caller
-            name=f'{agent_id.replace("-", " ").title()} Agent',
-            description=f'Agent created from {item_type}',
-            version='1.0.0',
-            capabilities=AgentCapabilities(),
-            skills=[],
-            input_modes=['text'],
-            output_modes=['text'],
-            configuration={}
-        )
+    def validate_agents(cls, value):
+        """Validate agents dictionary and convert from various input formats."""
+        if value is None:
+            return {}
+
+        if isinstance(value, dict):
+            # If already a dict, validate each agent config
+            result = {}
+            for agent_id, agent_config in value.items():
+                if isinstance(agent_config, AgentConfig):
+                    result[agent_id] = agent_config
+                elif isinstance(agent_config, dict):
+                    try:
+                        result[agent_id] = AgentConfig(**agent_config)
+                    except Exception as e:
+                        raise ValueError(f"Invalid agent config for '{agent_id}': {e}")
+                else:
+                    raise ValueError(f"Agent config for '{agent_id}' must be an AgentConfig instance or dict")
+            return result
+
+        elif isinstance(value, list):
+            # Convert from list format (backward compatibility)
+            result = {}
+            for i, agent_config in enumerate(value):
+                if isinstance(agent_config, AgentConfig):
+                    # Use agent name or path as key, fallback to index
+                    agent_id = agent_config.name if agent_config.name != "Agent" else f"agent_{i}"
+                    result[agent_id] = agent_config
+                elif isinstance(agent_config, dict):
+                    try:
+                        config = AgentConfig(**agent_config)
+                        agent_id = config.name if config.name != "Agent" else f"agent_{i}"
+                        result[agent_id] = config
+                    except Exception as e:
+                        raise ValueError(f"Invalid agent config at index {i}: {e}")
+                else:
+                    raise ValueError(f"Agent config at index {i} must be an AgentConfig instance or dict")
+            return result
+
+        else:
+            raise ValueError("Agents must be a dictionary or list")
+
+    @model_validator(mode='after')
+    def validate_unique_ports(self):
+        """Validate that all ports (agents and proxy) are unique."""
+        used_ports = []
+
+        # Collect proxy port
+        if self.proxy:
+            used_ports.append(self.proxy.port)
+
+        # Collect agent ports
+        for agent_id, agent in self.agents.items():
+            used_ports.append(agent.port)
+
+        # Check for duplicates
+        if len(used_ports) != len(set(used_ports)):
+            # Find duplicate ports for better error message
+            port_counts = {}
+            for port in used_ports:
+                port_counts[port] = port_counts.get(port, 0) + 1
+
+            duplicates = [port for port, count in port_counts.items() if count > 1]
+            raise ValueError(f"Port conflicts detected. The following ports are used multiple times: {duplicates}")
+
+        return self
+
+    @model_validator(mode='after')
+    def validate_unique_paths(self):
+        """Validate that all agent paths are unique."""
+        if self.agents:
+            agent_paths = [agent.path for agent in self.agents.values()]
+            if len(agent_paths) != len(set(agent_paths)):
+                # Find duplicate paths for better error message
+                path_counts = {}
+                for path in agent_paths:
+                    path_counts[path] = path_counts.get(path, 0) + 1
+
+                duplicates = [path for path, count in path_counts.items() if count > 1]
+                raise ValueError(
+                    f"Agent path conflicts detected. The following paths are used multiple times: {duplicates}")
+
+        return self
+
+    def get_agent(self, agent_id: str) -> Optional[AgentConfig]:
+        """Get an agent configuration by ID."""
+        return self.agents.get(agent_id)
+
+    def list_agents(self) -> List[str]:
+        """Get a list of all agent IDs."""
+        return list(self.agents.keys())
 
     class Config:
         """Pydantic configuration."""
-        extra = "forbid"  # Don't allow extra fields in agent config root level
+        extra = "ignore"
         use_enum_values = True
         validate_assignment = True

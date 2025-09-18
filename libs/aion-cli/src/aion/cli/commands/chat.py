@@ -1,11 +1,12 @@
 """Chat session command"""
-
 from typing import Optional
 import asyncclick as click
 
+from aion.cli.handlers import start_chat
+
 
 @click.command(name="chat")
-@click.option('--agent', default='http://localhost:10000', help='Agent URL')
+@click.option('--host', default='http://localhost:10000', help='Host URL')
 @click.option(
     '--bearer-token',
     help='Bearer token for authentication',
@@ -28,8 +29,13 @@ import asyncclick as click
     '--extensions',
     help='Comma-separated list of extension URIs to enable',
 )
+@click.option(
+    '--graph_id',
+    default=None,
+    help='Graph ID to use via proxy server',
+)
 async def chat(
-        agent: str,
+        host: str,
         bearer_token: Optional[str],
         session: int,
         history: bool,
@@ -37,15 +43,14 @@ async def chat(
         push_receiver: str,
         header: tuple,
         extensions: Optional[str],
+        graph_id: Optional[str],
 ):
     """Start an interactive chat session with A2A agent"""
-    from .session import start_chat
-
     custom_headers = _parse_headers(header)
 
     try:
         await start_chat(
-            agent_url=agent,
+            host=host,
             bearer_token=bearer_token,
             session_id=session,
             show_history=history,
@@ -53,6 +58,7 @@ async def chat(
             push_notification_receiver=push_receiver,
             enabled_extensions=extensions,
             custom_headers=custom_headers,
+            graph_id=graph_id,
         )
     except KeyboardInterrupt:
         click.echo("\nChat session interrupted by user")

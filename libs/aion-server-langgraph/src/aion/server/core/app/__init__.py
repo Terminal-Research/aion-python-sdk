@@ -1,6 +1,6 @@
-from .factory import AppFactory, AppConfig
+from .factory import AppFactory, AppContext
 
 __all__ = [
     "AppFactory",
-    "AppConfig",
+    "AppContext",
 ]

@@ -2,6 +2,9 @@
 
 import asyncclick as click
 
+from . import commands
+
+
 __version__ = "0.1.0"
 
 
@@ -12,11 +15,8 @@ def cli() -> None:
     pass
 
 
-from .commands.server import serve
-from .commands.chat import chat
-
-cli.add_command(serve)
-cli.add_command(chat)
+cli.add_command(commands.serve)
+cli.add_command(commands.chat)
 
 if __name__ == "__main__":
     cli()
