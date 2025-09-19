@@ -53,10 +53,11 @@ class AionGqlClient:
         self.client_id = client_id
         self.secret = client_secret
         self.client: Optional[GqlClient] = None
-        self._is_initialized = False
         self.jwt_manager: AionJWTManager = jwt_manager
         self.gql_url = gql_url
         self.ws_url = ws_url
+
+        self._is_initialized = False
 
     async def initialize(self) -> "AionGqlClient":
         """
