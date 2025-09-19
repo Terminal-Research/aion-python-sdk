@@ -3,6 +3,7 @@
 from typing import Any, Dict, Optional
 
 from .custom_fields import (
+    AgentBehaviorFields,
     AgentEnvironmentFields,
     AgentIdentityFields,
     CreateLocalDeploymentResponseFields,
@@ -187,3 +188,15 @@ class Mutation:
             key: value for key, value in arguments.items() if value["value"] is not None
         }
         return JSONRPCResponseUnion(field_name="a2aSend", arguments=cleared_arguments)
+
+    @classmethod
+    def register_version(cls, configuration: str) -> AgentBehaviorFields:
+        arguments: Dict[str, Dict[str, Any]] = {
+            "configuration": {"type": "String!", "value": configuration}
+        }
+        cleared_arguments = {
+            key: value for key, value in arguments.items() if value["value"] is not None
+        }
+        return AgentBehaviorFields(
+            field_name="registerVersion", arguments=cleared_arguments
+        )

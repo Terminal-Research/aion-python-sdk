@@ -1,8 +1,9 @@
 import logging
 from typing import Optional, List, Any, AsyncIterator
 
-from aion.api.config import aion_api_settings
-from aion.api.http import aion_jwt_manager, AionJWTManager
+from aion.shared.aion_config import AgentConfig
+
+from aion.api.http import AionJWTManager
 from .generated.graphql_client import (
     MessageInput,
     ChatCompletionStream,
@@ -10,6 +11,7 @@ from .generated.graphql_client import (
     A2AStream,
 )
 from .generated.graphql_client.client import GqlClient
+from .generated.graphql_client.custom_mutations import Mutation
 
 logger = logging.getLogger(__name__)
 
@@ -19,10 +21,9 @@ class AionGqlClient:
     Lightweight wrapper over ariadne-codegen generated GraphQL client with authentication.
 
     This wrapper provides seamless integration with the Aion GraphQL API by handling
-    JWT token authentication automatically. It wraps the generated GqlClient from
-    ariadne-codegen and manages the authentication flow transparently. A custom
-    :class:`AionJWTManager` may be supplied for scenarios where token refresh is
-    handled externally.
+    JWT token authentication. It wraps the generated GqlClient from ariadne-codegen
+    and manages the authentication flow. All authentication parameters (client_id,
+    client_secret, and jwt_manager) must be explicitly provided during initialization.
 
     Attributes:
         client_id (str): Client identifier for authentication
@@ -32,42 +33,61 @@ class AionGqlClient:
     """
 
     def __init__(
-        self,
-        client_id: Optional[str] = None,
-        client_secret: Optional[str] = None,
-        jwt_manager: Optional[AionJWTManager] = None,
+            self,
+            client_id: Optional[str] = None,
+            client_secret: Optional[str] = None,
+            jwt_manager: Optional[AionJWTManager] = None,
+            gql_url: Optional[str] = None,
+            ws_url: Optional[str] = None
     ):
         """
         Initialize the Aion GraphQL client.
 
         Args:
             client_id (Optional[str]): Client ID for authentication.
-                If not provided, uses value from aion_api_settings.
             client_secret (Optional[str]): Client secret for authentication.
-                If not provided, uses value from aion_api_settings.
-            jwt_manager (Optional[AionJWTManager]): Custom JWT manager. When
-                ``None``, the global :data:`aion_jwt_manager` is used.
+            jwt_manager (Optional[AionJWTManager]): JWT manager for token handling.
+            gql_url (Optional[str]): HTTP URL for requests.
+            ws_url (Optional[str]): WS URL for requests.
         """
-        self.client_id = client_id or aion_api_settings.client_id
-        self.secret = client_secret or aion_api_settings.client_secret
+        self.client_id = client_id
+        self.secret = client_secret
         self.client: Optional[GqlClient] = None
         self._is_initialized = False
-        self.jwt_manager: AionJWTManager = jwt_manager or aion_jwt_manager
+        self.jwt_manager: AionJWTManager = jwt_manager
+        self.gql_url = gql_url
+        self.ws_url = ws_url
 
-    async def initialize(self):
+    async def initialize(self) -> "AionGqlClient":
         """
         Initialize the GraphQL client with authentication.
 
         This method sets up the client with proper JWT authentication
         and establishes connections for both HTTP and WebSocket endpoints.
+
+        Raises:
+            ValueError: If any required authentication parameter is not provided.
         """
         if self._is_initialized:
             logger.warning("AionGqlClient is already initialized")
-            return
+            return self
+
+        # Validate required parameters
+        if not self.client_id:
+            raise ValueError("client_id is required and cannot be None or empty")
+        if not self.secret:
+            raise ValueError("client_secret is required and cannot be None or empty")
+        if self.jwt_manager is None:
+            raise ValueError("jwt_manager is required and cannot be None")
+        if not self.gql_url:
+            raise ValueError("gql_url is required and cannot be None or empty")
+        if not self.ws_url:
+            raise ValueError("ws_url is required and cannot be None or empty")
 
         logger.info(f"Initializing AionGqlClient...")
         await self._build_client()
         self._is_initialized = True
+        return self
 
     def _validate_client_before_execute(self):
         """
@@ -97,18 +117,9 @@ class AionGqlClient:
         if not aion_token:
             raise ValueError("No token received from authentication")
 
-        http_url = (
-            f"{aion_api_settings.gql_url}"
-            f"?token={aion_token}"
-        )
-        ws_url = (
-            f"{aion_api_settings.ws_gql_url}"
-            f"?token={aion_token}"
-        )
-
         self.client = GqlClient(
-            url=http_url,
-            ws_url=ws_url)
+            url="{gql_url}?token={token}".format(gql_url=self.gql_url, token=aion_token),
+            ws_url="{ws_url}?token={token}".format(ws_url=self.ws_url, token=aion_token))
 
     async def chat_completion_stream(
             self,
@@ -131,10 +142,10 @@ class AionGqlClient:
         self._validate_client_before_execute()
 
         async for chunk in self.client.chat_completion_stream(
-            model=model,
-            messages=messages,
-            stream=stream,
-            **kwargs):
+                model=model,
+                messages=messages,
+                stream=stream,
+                **kwargs):
             yield chunk
 
     async def a2a_stream(
@@ -157,7 +168,23 @@ class AionGqlClient:
         self._validate_client_before_execute()
 
         async for chunk in self.client.a_2_a_stream(
-            request=request,
-            distribution_id=distribution_id,
-            **kwargs):
+                request=request,
+                distribution_id=distribution_id,
+                **kwargs):
             yield chunk
+
+    async def register_version(self, agent_config: AgentConfig):
+        """Register a new agent version with the provided configuration.
+
+        Args:
+            agent_config (AgentConfig): The agent configuration object containing
+                agent type, version, capabilities, and behavioral settings.
+        """
+        self._validate_client_before_execute()
+
+        configuration = agent_config.model_dump_json()
+        register_field = Mutation.register_version(configuration)
+        return await self.client.mutation(
+            register_field,
+            operation_name="RegisterVersion"
+        )

@@ -11,14 +11,12 @@ class ApiSettings(BaseSettings):
     """Aion API client settings."""
 
     client_id: Optional[str] = Field(
-        # ...,
         default=None,
         alias="AION_CLIENT_ID",
         description="Client ID for API authentication"
     )
 
     client_secret: Optional[str] = Field(
-        # ...,
         default=None,
         alias="AION_CLIENT_SECRET",
         description="Client secret for API authentication"
@@ -69,7 +67,6 @@ class ApiSettings(BaseSettings):
         if not v.startswith(("http://", "https://")):
             raise ValueError("API host must start with http:// or https://")
         return v.rstrip("/")
-
 
 
 # Initialize settings

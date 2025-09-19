@@ -1,4 +1,4 @@
-from .env_settings import api_settings
+from .env_settings import api_settings, ApiSettings
 
 
 class AionApiSettings:
@@ -16,18 +16,19 @@ class AionApiSettings:
     _ws_gql_url: str
     _http_url: str
 
-    def __init__(self):
+    def __init__(self, settings: ApiSettings):
         """
         Initialize AionApiSettings with values from environment settings.
 
         Loads configuration from the settings module, applying default values
         for missing parameters.
         """
-        self.client_id = api_settings.client_id
-        self.client_secret = api_settings.client_secret
-        self.scheme = api_settings.scheme
-        self.hostname = api_settings.hostname
-        self.port = api_settings.port
+        self.client_id = settings.client_id
+        self.client_secret = settings.client_secret
+        self.scheme = settings.scheme
+        self.hostname = settings.hostname
+        self.port = settings.port
+        self.keepalive = settings.api_keep_alive
 
     @property
     def http_url(self) -> str:
@@ -88,4 +89,4 @@ class AionApiSettings:
         return self._ws_gql_url
 
 
-aion_api_settings = AionApiSettings()
+aion_api_settings = AionApiSettings(api_settings)
