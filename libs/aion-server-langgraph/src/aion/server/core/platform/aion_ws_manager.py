@@ -6,10 +6,12 @@ from aion.api.config import aion_api_settings
 from aion.api.http import aion_jwt_manager
 from gql.transport.websockets import WebsocketsTransport
 
+from aion.server.core.base import WebSocketManagerProto
+
 logger = logging.getLogger(__name__)
 
 
-class AionWebSocketManager:
+class AionWebSocketManager(WebSocketManagerProto):
     """
     WebSocket connection manager for Aion platform.
 
@@ -34,9 +36,10 @@ class AionWebSocketManager:
 
     async def start(self) -> None:
         """Start WebSocket connection with the platform."""
-        try:
-            logger.info("Initializing connection to Aion platform...")
+        if not await aion_jwt_manager.get_token():
+            raise RuntimeError("No auth token")
 
+        try:
             self._websocket_task = asyncio.create_task(self._connection_loop())
 
             await asyncio.wait_for(self._connection_ready.wait(), timeout=30.0)
@@ -76,8 +79,6 @@ class AionWebSocketManager:
 
         while not self._shutdown_event.is_set():
             try:
-                logger.info("Establishing WebSocket connection to Aion...")
-
                 await self._establish_connection()
 
                 if first_connection:
@@ -90,11 +91,9 @@ class AionWebSocketManager:
             except KeyboardInterrupt:
                 logger.info("Connection stopped by user request")
                 break
-            except Exception as e:
-                logger.error(f"WebSocket connection error: {e}")
-
+            except Exception as ex:
                 if first_connection:
-                    logger.error("Failed to establish initial connection")
+                    logger.error(f"Websocket connection startup failed: {ex}")
                     break
 
                 if not self._shutdown_event.is_set():
@@ -108,8 +107,11 @@ class AionWebSocketManager:
                         self._connection_ready.clear()
                         continue
                     break
+                else:
+                    logger.error(f"WebSocket connection error: {ex}")
 
-    async def _build_transport(self) -> WebsocketsTransport:
+    @staticmethod
+    async def _build_transport() -> WebsocketsTransport:
         """
         Build a WebSocket transport with JWT authentication.
 

@@ -1,11 +1,11 @@
 from typing import Optional
 
-from aion import AionGqlClient
+from aion.api.gql import AionGqlClient
 from aion.api.config import aion_api_settings
 from aion.api.http import AionJWTManager, aion_jwt_manager
 
 
-class AionGqlClientManager:
+class AionGqlContextClient:
     """
     A manager class for handling AionGqlClient instances with context management capabilities.
     """
@@ -19,7 +19,7 @@ class AionGqlClientManager:
             ws_url: Optional[str] = None
     ):
         """
-        Initialize the AionGqlClientManager.
+        Initialize the AionGqlContextClient.
 
         Args:
             client_id: Client ID for authentication
@@ -71,6 +71,6 @@ class AionGqlClientManager:
             exc_tb: Exception traceback
         """
         if self._client:
-            # Add cleanup logic here if needed in future
+            # Add cleanup logic here if needed
             # await self._client.close()
             self._client = None

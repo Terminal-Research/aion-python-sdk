@@ -59,6 +59,10 @@ class AionGqlClient:
 
         self._is_initialized = False
 
+    @property
+    def is_initialized(self) -> bool:
+        return self._is_initialized
+
     async def initialize(self) -> "AionGqlClient":
         """
         Initialize the GraphQL client with authentication.
@@ -69,7 +73,7 @@ class AionGqlClient:
         Raises:
             ValueError: If any required authentication parameter is not provided.
         """
-        if self._is_initialized:
+        if self.is_initialized:
             logger.warning("AionGqlClient is already initialized")
             return self
 
@@ -85,7 +89,6 @@ class AionGqlClient:
         if not self.ws_url:
             raise ValueError("ws_url is required and cannot be None or empty")
 
-        logger.info(f"Initializing AionGqlClient...")
         await self._build_client()
         self._is_initialized = True
         return self
