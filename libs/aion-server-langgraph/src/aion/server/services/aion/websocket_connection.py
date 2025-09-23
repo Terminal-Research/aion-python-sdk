@@ -1,10 +1,11 @@
-from aion.server.core.base import BaseService, WebSocketManagerProto
+from aion.server.core.base import BaseService
+from aion.server.interfaces import IWebSocketManager
 
 
 class AionWebSocketService(BaseService):
     """Service wrapper for managing WebSocket connections with dependency injection."""
 
-    def __init__(self, websocket_manager: WebSocketManagerProto, **kwargs) -> None:
+    def __init__(self, websocket_manager: IWebSocketManager, **kwargs) -> None:
         """
         Initialize the WebSocket service.
 

@@ -1,9 +1,17 @@
-from typing import Protocol
+from abc import ABC, abstractmethod
+
+from gql.transport.websockets import WebsocketsTransport
+
+__all__ = [
+    "IWebSocketManager",
+    "IWebsocketTransportFactory",
+]
 
 
-class WebSocketManagerProto(Protocol):
+class IWebSocketManager(ABC):
     """Protocol for WebSocket manager implementations."""
 
+    @abstractmethod
     async def start(self) -> None:
         """
         Start WebSocket connection with the platform.
@@ -14,6 +22,7 @@ class WebSocketManagerProto(Protocol):
         """
         ...
 
+    @abstractmethod
     async def stop(self) -> None:
         """
         Stop WebSocket connection.
@@ -23,6 +32,7 @@ class WebSocketManagerProto(Protocol):
         ...
 
     @property
+    @abstractmethod
     def is_connected(self) -> bool:
         """
         Check if connection to the platform is active.
@@ -30,4 +40,12 @@ class WebSocketManagerProto(Protocol):
         Returns:
             True if connection is active, False otherwise.
         """
+        ...
+
+
+class IWebsocketTransportFactory(ABC):
+    """Protocol for WebSocket manager implementations."""
+
+    @abstractmethod
+    async def create_transport(self) -> WebsocketsTransport:
         ...

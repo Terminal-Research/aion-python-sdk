@@ -1,3 +1,3 @@
 from .agent_startup_broadcast import AionAgentStartupBroadcastService
 from .websocket_connection import AionWebSocketService
-from .get_auth_token import AionGetAuthTokenService
+from .auth_manager import AionAuthManagerService

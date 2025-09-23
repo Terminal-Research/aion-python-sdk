@@ -20,8 +20,9 @@ from starlette.requests import Request
 from starlette.responses import Response
 from starlette.status import HTTP_413_REQUEST_ENTITY_TOO_LARGE
 
-from aion.server.core.request_handlers import AionJSONRPCHandler, IRequestHandler
+from aion.server.core.request_handlers import AionJSONRPCHandler
 from aion.server.types import ExtendedA2ARequest, CustomA2ARequest, GetContextRequest, GetContextsListRequest
+from aion.server.interfaces import IRequestHandler
 
 logger = logging.getLogger(__name__)
 
