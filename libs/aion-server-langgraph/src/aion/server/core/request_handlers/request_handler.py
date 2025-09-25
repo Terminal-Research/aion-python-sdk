@@ -9,6 +9,7 @@ from a2a.server.tasks import TaskManager, ResultAggregator
 from a2a.types import MessageSendParams, Task, InvalidParamsError, TaskNotFoundError
 from a2a.utils.errors import ServerError
 from a2a.utils.telemetry import trace_class, SpanKind
+from aion.shared.context import set_context_from_a2a_request
 
 from aion.server.interfaces import IRequestHandler
 from aion.server.tasks import store_manager, AionTaskManager
@@ -43,9 +44,12 @@ class AionRequestHandler(DefaultRequestHandler, IRequestHandler):
             context_id=params.message.context_id,
             task_store=self.task_store,
             initial_message=params.message,
+            context=context,
         )
+        # ======= CUSTOM: AUTO-DEFINING NECESSARY TASK =======
         if not task_manager.task_id:
             await task_manager.auto_discover_and_assign_task(interrupted=True)
+        # ======= END =======
 
         task: Task | None = await task_manager.get_task()
         if task:
@@ -73,6 +77,10 @@ class AionRequestHandler(DefaultRequestHandler, IRequestHandler):
             context=context,
         )
 
+        # ======= CUSTOM: SET AION REQUEST CONTEXT =======
+        set_context_from_a2a_request(request_context)
+        # ======= END =======
+
         task_id = cast('str', request_context.task_id)
         # Always assign a task ID. We may not actually upgrade to a task, but
         # dictating the task ID at this layer is useful for tracking running
@@ -97,8 +105,8 @@ class AionRequestHandler(DefaultRequestHandler, IRequestHandler):
 
         return task_manager, task_id, queue, result_aggregator, producer_task
 
+    @staticmethod
     async def on_get_context(
-            self,
             params: GetContextParams,
             context: ServerCallContext | None = None
     ) -> Conversation:
@@ -119,8 +127,8 @@ class AionRequestHandler(DefaultRequestHandler, IRequestHandler):
 
         return ConversationBuilder.build_from_tasks(context_id=params.context_id, tasks=tasks)
 
+    @staticmethod
     async def on_get_contexts_list(
-            self,
             params: GetContextsListParams,
             context: ServerCallContext | None = None
     ) -> ContextsList:

@@ -2,7 +2,7 @@ from a2a.types import AgentCard
 from a2a.types import AgentExtension, AgentCapabilities, AgentSkill
 from aion.shared.aion_config import AgentConfig
 
-from aion.server.configs import aion_platform_settings
+from aion.shared.configs import aion_platform_settings
 from aion.server.types import GetContextParams, GetContextsListParams
 from .collectors import AgentCardConfigurationCollector
 

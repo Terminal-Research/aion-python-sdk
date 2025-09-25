@@ -1,12 +1,12 @@
-import logging
 from typing import Optional
 
+from aion.shared.logging import get_logger
 from psycopg_pool import AsyncConnectionPool
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 
 from aion.server.core.metaclasses import Singleton
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class DbManager(metaclass=Singleton):

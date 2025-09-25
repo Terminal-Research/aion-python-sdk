@@ -1,16 +1,17 @@
 from collections.abc import AsyncIterable
 
+from aion.shared.logging import get_logger
+
 """Currency conversion example agent built on top of LangGraph."""
 
 from typing import Any, Dict, Union
-import logging
 
 from langgraph.graph import StateGraph
 from langgraph.types import Command, StateSnapshot
 
 from a2a.utils.errors import ServerError, InternalError
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class LanggraphAgent:

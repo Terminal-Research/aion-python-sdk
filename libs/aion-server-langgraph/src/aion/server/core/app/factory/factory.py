@@ -5,9 +5,10 @@ from typing import Optional
 from a2a.server.tasks import InMemoryPushNotificationConfigStore
 from a2a.types import AgentCard
 from aion.shared.aion_config import AgentConfig
+from aion.shared.logging import get_logger
 from starlette.applications import Starlette
 
-from aion.server.configs import db_settings, AppSettings
+from aion.shared.configs import db_settings, AppSettings
 from aion.server.core.app.a2a_starlette import AionA2AStarletteApplication
 from aion.server.core.request_handlers import AionRequestHandler
 from aion.server.db import db_manager, verify_connection
@@ -20,7 +21,7 @@ from .lifespan import AppLifespan
 
 
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class AppContext:

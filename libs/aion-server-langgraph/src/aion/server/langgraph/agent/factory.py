@@ -9,10 +9,11 @@ from types import ModuleType
 from typing import Optional, Union, Callable, Any
 
 from aion.shared.aion_config import AgentConfig
+from aion.shared.logging import get_logger
 
 from .base import BaseAgent
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # LangGraph imports with fallback
 from langgraph.graph import Graph
@@ -30,7 +31,7 @@ class AgentFactory:
             logger_: Logger instance to use
         """
         self.base_path = base_path or Path.cwd()
-        self.logger = logger_ or logging.getLogger(__name__)
+        self.logger = logger_ or get_logger(__name__)
 
     def create_agent_from_config(self, agent_id: str, agent_config: AgentConfig) -> BaseAgent:
         """Create a BaseAgent instance directly from an AgentConfig object.

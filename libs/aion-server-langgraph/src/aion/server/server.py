@@ -1,17 +1,17 @@
-import logging
 import os
 import sys
 
 import uvicorn
-from dotenv import load_dotenv
 from aion.shared.aion_config import AgentConfig
+from aion.shared.logging import get_logger
+from dotenv import load_dotenv
 
-from aion.server.configs import app_settings
+from aion.shared.configs import app_settings
 from aion.server.core.app import AppFactory, AppContext
 from aion.server.db import db_manager
 from aion.server.tasks import store_manager
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 dotenv_path = load_dotenv(dotenv_path=os.path.join(os.getcwd(), '.env'), verbose=True)
 

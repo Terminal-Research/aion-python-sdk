@@ -1,8 +1,8 @@
-import logging
+from aion.shared.logging import get_logger
 
 from ..env import config
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def log_migrations():

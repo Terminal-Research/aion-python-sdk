@@ -1,14 +1,13 @@
 import json
-import logging
 from typing import Optional, Any
 
 import httpx
 from a2a.client import A2ACardResolver, A2AClientHTTPError, A2AClientJSONError
 from a2a.types import AgentCard
-from aion.shared.utils import substitute_vars
+from aion.shared.logging import get_logger
 from pydantic import ValidationError
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class AionA2ACardResolver(A2ACardResolver):

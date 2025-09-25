@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 from abc import ABC, abstractmethod
 from contextlib import suppress
 from dataclasses import dataclass
@@ -11,12 +10,12 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import jwt
+from aion.shared.logging import get_logger
 
 from aion.api.exceptions import AionAuthenticationError
-
 from .client import AionHttpClient
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 @dataclass

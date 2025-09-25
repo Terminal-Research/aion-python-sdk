@@ -1,10 +1,11 @@
 import asyncio
-import logging
 from typing import Optional
+
+from aion.shared.logging import get_logger
 
 from aion.server.interfaces import IWebsocketTransportFactory, IWebSocketManager
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 __all__ = [
     "AionWebSocketManager",

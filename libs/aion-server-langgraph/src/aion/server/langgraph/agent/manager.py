@@ -5,11 +5,12 @@ from pathlib import Path
 from typing import Optional
 
 from aion.shared.aion_config import AgentConfig
+from aion.shared.logging import get_logger
 
 from .base import BaseAgent
 from .factory import AgentFactory
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class AgentManager:
@@ -25,7 +26,7 @@ class AgentManager:
         self.factory = AgentFactory(base_path=base_path, logger_=logger_)
         self.agent: Optional[BaseAgent] = None
         self.agent_id: Optional[str] = None
-        self.logger = logger_ or logging.getLogger(__name__)
+        self.logger = logger_ or get_logger(__name__)
 
     def create_agent(self, agent_id: str, agent_config: AgentConfig) -> BaseAgent:
         """Create and store an agent from configuration.

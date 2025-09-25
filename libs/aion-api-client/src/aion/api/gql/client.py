@@ -1,7 +1,7 @@
-import logging
 from typing import Optional, List, Any, AsyncIterator
 
 from aion.shared.aion_config import AgentConfig
+from aion.shared.logging import get_logger
 
 from aion.api.http import AionJWTManager
 from .generated.graphql_client import (
@@ -13,7 +13,7 @@ from .generated.graphql_client import (
 from .generated.graphql_client.client import GqlClient
 from .generated.graphql_client.custom_mutations import Mutation
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class AionGqlClient:

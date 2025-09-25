@@ -4,15 +4,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from aion.shared.logging import get_logger
 from alembic import context
 from alembic.config import Config
 from sqlalchemy import create_engine
-from alembic.runtime.migration import MigrationContext, MigrationInfo
-import logging
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
-from aion.server.configs import db_settings
+from aion.shared.configs import db_settings
 
 # ``alembic.context`` exposes ``config`` only when executed via Alembic's
 # command line utilities. When this module is imported directly (e.g. during
@@ -41,7 +40,7 @@ def _get_engine() -> "Engine":
 
 
 def _log_revision_start(
-    context: "MigrationContext", revision: object, directives: list
+        context: "MigrationContext", revision: object, directives: list
 ) -> None:
     """Log which migration is about to run."""
     path = getattr(revision, "path", str(revision))
@@ -49,7 +48,7 @@ def _log_revision_start(
 
 
 def _log_revision_end(
-    ctx: "MigrationContext", step: "MigrationInfo", heads: list, run_args: dict
+        ctx: "MigrationContext", step: "MigrationInfo", heads: list, run_args: dict
 ) -> None:
     """Log that a migration finished successfully."""
     logger.debug("Completed migration %s", step.up_revision_id)

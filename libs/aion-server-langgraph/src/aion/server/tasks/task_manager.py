@@ -1,12 +1,11 @@
-import logging
-
 from a2a.server.tasks import TaskManager
 from a2a.types import Task
+from aion.shared.logging import get_logger
 
 from aion.server.tasks import store_manager
 from aion.server.utils import check_if_task_is_interrupted
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class AionTaskManager(TaskManager):

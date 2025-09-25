@@ -5,7 +5,7 @@ import re
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from aion.server.db import sqlalchemy_url, psycopg_url
+from aion.shared.utils import sqlalchemy_url, psycopg_url
 
 
 class DbSettings(BaseSettings):

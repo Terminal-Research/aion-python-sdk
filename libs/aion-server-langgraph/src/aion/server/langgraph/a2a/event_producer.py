@@ -1,20 +1,20 @@
 """Utility functions for creating and handling A2A messages."""
 
-import logging
 import uuid
-
 from typing import Any, Sequence, Optional
 
+from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
 from a2a.types import TaskState, Message, Part, Role, TextPart, DataPart, Task, TaskArtifactUpdateEvent
-from a2a.server.events import EventQueue
+from aion.shared.logging import get_logger
 from langchain_core.messages import BaseMessage, AIMessageChunk, AIMessage
 from langgraph.types import Interrupt, StateSnapshot
 
 from aion.server.types import MessageType, A2AEventType, A2AMetadataKey, ArtifactStreamingStatusReason
 from aion.server.utils import StreamingArtifactBuilder
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
+
 
 class LanggraphA2AEventProducer:
     """Event producer for converting LangGraph events to A2A task events.
@@ -45,9 +45,9 @@ class LanggraphA2AEventProducer:
         return self._streaming_artifact_builder
 
     async def handle_event(
-        self,
-        event_type: str,
-        event: Any,
+            self,
+            event_type: str,
+            event: Any,
     ):
         """Handle incoming LangGraph events and convert them to A2A events.
 

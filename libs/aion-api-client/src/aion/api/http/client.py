@@ -1,12 +1,12 @@
-import logging
 from typing import Optional, Dict, Any
 
 import httpx
+from aion.shared.logging import get_logger
 
+from aion.shared.configs import aion_api_settings
 from aion.api.exceptions import AionAuthenticationError
-from aion.api.config import aion_api_settings
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class AionHttpClient:

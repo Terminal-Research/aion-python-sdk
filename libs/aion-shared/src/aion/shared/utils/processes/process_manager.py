@@ -1,11 +1,12 @@
-import logging
 import multiprocessing
 import time
 from dataclasses import dataclass
 from enum import Enum
 from typing import Dict, Callable, Any, Optional, Tuple
 
-logger = logging.getLogger("ProcessManager")
+from aion.shared.logging import get_logger
+
+logger = get_logger("ProcessManager")
 
 
 class ProcessStatus(Enum):

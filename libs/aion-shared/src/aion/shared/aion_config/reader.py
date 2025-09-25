@@ -10,8 +10,9 @@ from pydantic import ValidationError
 from aion.shared.utils import get_config_path
 from .exceptions import ConfigurationError
 from .models import AionConfig, AgentConfig, ProxyConfig
+from aion.shared.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class AionConfigReader:
@@ -25,7 +26,7 @@ class AionConfigReader:
             logger_: Logger instance. If None, creates a new one.
         """
         self.config_path = config_path or get_config_path()
-        self.logger = logger_ or logging.getLogger(__name__)
+        self.logger = logger_ or get_logger(__name__)
 
     def load_config_file(self) -> Dict[str, Any]:
         """Load and parse the YAML configuration file.

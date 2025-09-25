@@ -4,7 +4,7 @@ import asyncio
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, AsyncGenerator, Optional
 
-from aion.api.config import aion_api_settings
+from aion.shared.configs import aion_api_settings
 from aion.api.http import aion_jwt_manager
 from starlette.applications import Starlette
 

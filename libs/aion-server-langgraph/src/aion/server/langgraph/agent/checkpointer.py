@@ -1,14 +1,13 @@
-import logging
 from typing import Literal
 
+from aion.shared.logging import get_logger
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from langgraph.graph import Graph
 
 from aion.server.db import db_manager
 
-from langgraph.graph import Graph
-
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 CHECKPOINTER_TYPE = Literal["memory", "postgres"]
 

@@ -1,4 +1,3 @@
-import logging
 from contextlib import asynccontextmanager
 from typing import Dict, Optional
 from urllib.parse import urljoin
@@ -6,9 +5,10 @@ from urllib.parse import urljoin
 import httpx
 import uvicorn
 from aion.shared.aion_config import AionConfig
+from aion.shared.logging import get_logger
 from fastapi import FastAPI, Request, HTTPException, Response
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class AionAgentProxyServer:

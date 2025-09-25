@@ -2,6 +2,8 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Optional, Any
 
+from aion.shared.logging import get_logger
+
 
 class BaseService(ABC):
     """
@@ -28,7 +30,7 @@ class BaseService(ABC):
             logger: Optional logger instance. If None, creates a logger
                    using the module name.
         """
-        self.logger = logger or logging.getLogger(self.__class__.__module__)
+        self.logger = logger or get_logger(self.__class__.__module__)
 
 
 class BaseExecuteService(BaseService):

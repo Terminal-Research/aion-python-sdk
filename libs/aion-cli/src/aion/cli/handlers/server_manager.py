@@ -1,16 +1,16 @@
 """Server management handler for AION agents and proxy"""
 import asyncio
-import logging
 import os
 import signal
 import sys
 from typing import Dict, Optional
 
-from aion.shared.aion_config import AgentConfig
-from aion.shared.utils.processes import ProcessManager
 from aion.proxy import AionAgentProxyServer
+from aion.shared.aion_config import AgentConfig
+from aion.shared.logging import get_logger
+from aion.shared.utils.processes import ProcessManager
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class ServerManager:

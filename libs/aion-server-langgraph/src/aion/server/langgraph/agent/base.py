@@ -1,16 +1,16 @@
-import logging
 from typing import Union, Optional, Callable
 
-from .card import AionAgentCard
 from aion.shared.aion_config import AgentConfig
+from aion.shared.logging import get_logger
 from langgraph.graph import Graph
 from langgraph.pregel import Pregel
 
-from aion.server.configs import app_settings
+from aion.shared.configs import app_settings
+from .card import AionAgentCard
 from .checkpointer import GraphCheckpointerManager
 from .interfaces import AgentInterface
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class BaseAgent(AgentInterface):

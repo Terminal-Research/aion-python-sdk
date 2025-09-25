@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 
+from aion.shared.logging import get_logger
 from alembic import command
 
 from .env import config
@@ -14,7 +14,7 @@ from .utils import (
     setup_checkpointer_tables,
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 async def upgrade_to_head() -> None:
