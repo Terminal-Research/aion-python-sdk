@@ -4,16 +4,12 @@ import asyncio
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, AsyncGenerator, Optional
 
-from aion.shared.configs import aion_api_settings
 from aion.api.http import aion_jwt_manager
+from aion.shared.settings import api_settings
 from starlette.applications import Starlette
 
+from aion.server import services as aion_services
 from aion.server.core.platform import AionWebSocketManager, WebsocketTransportFactory
-from aion.server.services import (
-    AionAgentStartupBroadcastService,
-    AionWebSocketService,
-    AionAuthManagerService
-)
 
 if TYPE_CHECKING:
     from aion.server.core.app import AppFactory
@@ -32,8 +28,8 @@ class AppLifespan:
         if not self._websocket_manager and create:
             self._websocket_manager = AionWebSocketManager(
                 ws_transport_factory=WebsocketTransportFactory(
-                    ws_url=aion_api_settings.ws_gql_url,
-                    auth_manager=AionAuthManagerService(jwt_manager=aion_jwt_manager)
+                    ws_url=api_settings.ws_gql_url,
+                    auth_manager=aion_services.AionAuthManagerService(jwt_manager=aion_jwt_manager)
                 )
             )
         return self._websocket_manager
@@ -49,25 +45,34 @@ class AppLifespan:
 
     async def startup(self):
         """Handle application startup events."""
+        # START AION LOGGING WORKER
+        asyncio.create_task(aion_services.LoggingStartAionWorkerService().execute())
+
         # fetch token before services execution to reduce number of requests to aion api
-        auth_token = await AionAuthManagerService(jwt_manager=aion_jwt_manager).get_token()
-        if not auth_token:
-            return
+        auth_token = await aion_services.AionAuthManagerService(jwt_manager=aion_jwt_manager).get_token()
 
-        asyncio.create_task(
-            AionAgentStartupBroadcastService()
-            .execute(self.app_factory.agent_config))
+        # SEND INFO TO AION ABOUT AGENT
+        if auth_token:
+            asyncio.create_task(
+                aion_services.AionAgentStartupBroadcastService()
+                .execute(self.app_factory.agent_config))
 
-        ws_manager = await self.get_websocket_manager(create=True)
-        asyncio.create_task(
-            AionWebSocketService(websocket_manager=ws_manager)
-            .start_connection())
+        if auth_token:
+            # START WEBSOCKET CONNECTION WITH AION
+            ws_manager = await self.get_websocket_manager(create=True)
+            asyncio.create_task(
+                aion_services.AionWebSocketService(websocket_manager=ws_manager)
+                .start_connection())
 
     async def shutdown(self):
         """Handle application shutdown events."""
         # stop websocket connection with aion api
         ws_manager = await self.get_websocket_manager(create=False)
         if ws_manager:
-            await AionWebSocketService(websocket_manager=ws_manager).stop_connection()
+            await aion_services.AionWebSocketService(websocket_manager=ws_manager).stop_connection()
+
         # Delegate other shutdown logic to app factory
         await self.app_factory.shutdown()
+
+        # STOP AION LOGGING WORKER
+        asyncio.create_task(aion_services.LoggingStopAionWorkerService().execute())

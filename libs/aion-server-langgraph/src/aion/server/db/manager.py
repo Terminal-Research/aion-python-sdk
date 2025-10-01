@@ -4,7 +4,7 @@ from aion.shared.logging import get_logger
 from psycopg_pool import AsyncConnectionPool
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 
-from aion.server.core.metaclasses import Singleton
+from aion.shared.metaclasses import Singleton
 
 logger = get_logger(__name__)
 

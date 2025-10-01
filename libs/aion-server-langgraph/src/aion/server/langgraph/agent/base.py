@@ -5,7 +5,7 @@ from aion.shared.logging import get_logger
 from langgraph.graph import Graph
 from langgraph.pregel import Pregel
 
-from aion.shared.configs import app_settings
+from aion.shared.settings import app_settings
 from .card import AionAgentCard
 from .checkpointer import GraphCheckpointerManager
 from .interfaces import AgentInterface

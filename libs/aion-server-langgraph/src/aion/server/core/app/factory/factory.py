@@ -8,7 +8,7 @@ from aion.shared.aion_config import AgentConfig
 from aion.shared.logging import get_logger
 from starlette.applications import Starlette
 
-from aion.shared.configs import db_settings, AppSettings
+from aion.shared.settings import db_settings, AppSettings
 from aion.server.core.app.a2a_starlette import AionA2AStarletteApplication
 from aion.server.core.request_handlers import AionRequestHandler
 from aion.server.db import db_manager, verify_connection

@@ -2,7 +2,7 @@ from a2a.types import AgentCard
 from a2a.types import AgentExtension, AgentCapabilities, AgentSkill
 from aion.shared.aion_config import AgentConfig
 
-from aion.shared.configs import aion_platform_settings
+from aion.shared.settings import platform_settings
 from aion.server.types import GetContextParams, GetContextsListParams
 from .collectors import AgentCardConfigurationCollector
 
@@ -37,13 +37,13 @@ class AionAgentCard(AgentCard):
                     description="Get Conversation info based on context",
                     params=GetContextParams.model_json_schema(),
                     required=False,
-                    uri=f"{aion_platform_settings.docs_url}/a2a/extensions/get-context"
+                    uri=f"{platform_settings.docs_url}/a2a/extensions/get-context"
                 ),
                 AgentExtension(
                     description="Get list of available contexts",
                     params=GetContextsListParams.model_json_schema(),
                     required=False,
-                    uri=f"{aion_platform_settings.docs_url}/a2a/extensions/get-contexts"
+                    uri=f"{platform_settings.docs_url}/a2a/extensions/get-contexts"
                 )
             ])
 

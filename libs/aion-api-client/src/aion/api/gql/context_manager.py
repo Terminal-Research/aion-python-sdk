@@ -1,7 +1,7 @@
 from typing import Optional
 
 from aion.api.gql import AionGqlClient
-from aion.shared.configs import aion_api_settings
+from aion.shared.settings import api_settings
 from aion.api.http import AionJWTManager, aion_jwt_manager
 
 
@@ -43,11 +43,11 @@ class AionGqlContextClient:
             Configured AionGqlClient instance
         """
         return AionGqlClient(
-            client_id=self.client_id or aion_api_settings.client_id,
-            client_secret=self.client_secret or aion_api_settings.client_secret,
+            client_id=self.client_id or api_settings.client_id,
+            client_secret=self.client_secret or api_settings.client_secret,
             jwt_manager=self.jwt_manager or aion_jwt_manager,
-            gql_url=self.gql_url or aion_api_settings.gql_url,
-            ws_url=self.ws_url or aion_api_settings.ws_gql_url
+            gql_url=self.gql_url or api_settings.gql_url,
+            ws_url=self.ws_url or api_settings.ws_gql_url
         )
 
     async def __aenter__(self) -> AionGqlClient:

@@ -149,16 +149,6 @@ class ServerManager:
                     proxy_info = self.process_manager.get_process_info("proxy")
                     proxy_alive = proxy_info and proxy_info.process.is_alive()
 
-                # Log status periodically
-                status_parts = []
-                if alive_count > 0:
-                    status_parts.append(f"{alive_count} agents")
-                if proxy_alive:
-                    status_parts.append("proxy")
-
-                if status_parts:
-                    logger.debug(f"Running: {', '.join(status_parts)}")
-
                 # Exit if all agents have stopped
                 if alive_count == 0:
                     logger.error("All agents have stopped, exiting...")

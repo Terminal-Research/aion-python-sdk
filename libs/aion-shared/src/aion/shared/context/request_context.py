@@ -1,4 +1,3 @@
-import os
 import uuid
 from contextvars import ContextVar
 from dataclasses import dataclass, asdict, field
@@ -18,7 +17,8 @@ class RequestContext:
     """
     # Transaction-level identifiers
     transaction_id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    transaction_name: Optional[str] = None
+    request_method: str = field(default="POST")
+    request_path: str = field(default="/")
 
     # Trace context (from A2A metadata)
     trace_id: Optional[str] = None  # from aion:traceId
@@ -33,9 +33,11 @@ class RequestContext:
     aion_distribution_id: Optional[str] = None  # from aion:distribution.id
     aion_version_id: Optional[str] = None  # from aion:distribution.behavior.versionId
     aion_agent_environment_id: Optional[str] = None  # from aion:distribution.environment.id
+    langgraph_current_node: Optional[str] = None
 
-    # Additional context for logging
-    tags: Dict[str, Any] = field(default_factory=dict)
+    @property
+    def transaction_name(self) -> str:
+        return f"{self.request_method} {self.request_path}"
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary"""
@@ -44,10 +46,6 @@ class RequestContext:
     def update(self, **kwargs) -> 'RequestContext':
         """Create new instance with updated fields"""
         current_data = self.to_dict()
-        # Handle tags separately to merge them properly
-        if 'tags' in kwargs and self.tags:
-            merged_tags = {**self.tags, **kwargs['tags']}
-            kwargs['tags'] = merged_tags
         current_data.update(kwargs)
         return RequestContext(**current_data)
 
@@ -72,6 +70,28 @@ class RequestContext:
             span_name=span_name,
             parent_span_id=self.span_id  # Current span becomes parent
         )
+
+    def get_aion_log_context(self):
+        return {
+            "trace.id": self.trace_id,
+            "transaction.id": self.transaction_id,
+            "transaction.name": self.transaction_name,
+            "span.id": self.span_id,
+            "span.name": self.span_name,
+            "parent.span.id": self.parent_span_id,
+            "tags": {
+                "aion.distribution.id": self.aion_distribution_id,
+                "aion.version.id": self.aion_version_id,
+                "aion.agentEnvironment.id": self.aion_agent_environment_id,
+                "http.method": "POST",
+                "http.target": "/",
+                "langgraph.node": self.langgraph_current_node
+            }
+        }
+
+    def set_langgraph_current_node(self, langgraph_current_node: str) -> None:
+        self.langgraph_current_node = langgraph_current_node
+
 
 # Single context variable to hold the entire context
 request_context_var: ContextVar[Optional[RequestContext]] = ContextVar('request_context', default=None)

@@ -27,6 +27,7 @@ from a2a.types import (
 )
 
 from .card_resolver import AionA2ACardResolver
+from .utils import A2ARequestHelper
 
 
 class ChatSession:
@@ -41,6 +42,7 @@ class ChatSession:
             use_push_notifications: bool = False,
             push_notification_receiver: str = 'http://localhost:5000',
             graph_id: Optional[str] = None,
+            request_helper: Optional[A2ARequestHelper] = None,
     ):
         self.host = host
         self.bearer_token = bearer_token
@@ -49,6 +51,7 @@ class ChatSession:
         self.use_push_notifications = use_push_notifications
         self.push_notification_receiver = push_notification_receiver
         self.graph_id = graph_id
+        self.request_helper = request_helper or A2ARequestHelper()
 
         # Setup headers
         self.headers = {}
@@ -171,6 +174,7 @@ class ChatSession:
             configuration=MessageSendConfiguration(
                 accepted_output_modes=['text'],
             ),
+            metadata=self.request_helper.generate_task_metadata()
         )
 
         # Add push notification config if enabled
@@ -404,6 +408,7 @@ class ChatSession:
             )
         except Exception as e:
             print(f'Failed to get task history: {e}')
+
 
 async def start_chat(
         host: str = 'http://localhost:8083',

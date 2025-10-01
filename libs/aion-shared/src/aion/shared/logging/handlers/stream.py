@@ -1,6 +1,6 @@
 import logging
 
-from aion.shared.logging.filter import ContextFilter
+from aion.shared.logging.base import AionLogRecord
 from aion.shared.utils.text import colorize_text
 
 
@@ -19,16 +19,14 @@ class LogStreamFormatter(logging.Formatter):
     def __init__(self):
         super().__init__('%(asctime)s - %(levelname)s - %(name)s -  %(message)s')
 
-    def format(self, record):
-        # Get color for this level
-        levelname = record.levelname
-        color_alias = self.COLOR_ALIASES.get(levelname, self.COLOR_ALIASES["INFO"])
-
-        # Format with original formatter
+    def format(self, record: AionLogRecord):
         formatted_message = super().format(record)
 
-        # Return colored version
-        return colorize_text(text=formatted_message, color=color_alias)
+        try:
+            color_alias = self.COLOR_ALIASES.get(record.levelname, self.COLOR_ALIASES["INFO"])
+            return colorize_text(text=formatted_message, color=color_alias)
+        except Exception:
+            return formatted_message
 
 
 class LogStreamHandler(logging.StreamHandler):
@@ -38,5 +36,4 @@ class LogStreamHandler(logging.StreamHandler):
 
     def __init__(self, stream=None):
         super().__init__(stream)
-        self.addFilter(ContextFilter())
         self.setFormatter(LogStreamFormatter())

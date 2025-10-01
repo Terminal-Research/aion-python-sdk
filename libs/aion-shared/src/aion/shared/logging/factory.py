@@ -1,13 +1,18 @@
 import logging
 from typing import Optional
 
-from .handlers import LogStreamHandler, LogHttpHandler
+from aion.shared.settings import app_settings
+from .base import AionLogger
+from .handlers import LogStreamHandler, LogAionApiHandler
+
+logging.setLoggerClass(AionLogger)
 
 
 def get_logger(
         name: Optional[str] = None,
         use_stream: bool = True,
-        use_http: bool = True
+        use_aion_api: bool = True,
+        level: Optional[int | str] = None
 ) -> logging.Logger:
     """
     Get a logger with automatic context injection and custom handlers
@@ -15,7 +20,8 @@ def get_logger(
     Args:
         name: Logger name. If None, uses calling module's __name__
         use_stream: Whether to add console output handler
-        use_http: Whether to add http handler
+        use_aion_api: Whether to add aion api handler
+        level: Logging level
 
     Returns:
         Configured logger with context support and custom handlers
@@ -29,7 +35,11 @@ def get_logger(
 
     # Configure only if not already configured
     if not _is_logger_configured(logger):
-        _configure_logger(logger, use_stream, use_http)
+        _configure_logger(
+            logger=logger,
+            use_stream=use_stream,
+            use_aion_api=use_aion_api,
+            level=level)
 
     return logger
 
@@ -38,7 +48,7 @@ def _is_logger_configured(logger: logging.Logger) -> bool:
     """
     Check if logger already has our custom handlers configured
     """
-    custom_handler_types = (LogHttpHandler, LogStreamHandler)
+    custom_handler_types = (LogAionApiHandler, LogStreamHandler)
 
     for handler in logger.handlers:
         if isinstance(handler, custom_handler_types):
@@ -49,12 +59,14 @@ def _is_logger_configured(logger: logging.Logger) -> bool:
 def _configure_logger(
         logger: logging.Logger,
         use_stream: bool,
-        use_http: bool
+        use_aion_api: bool,
+        level: Optional[int | str] = None
 ) -> None:
     """
     Configure logger with custom context-aware handlers
     """
-    logger.setLevel(logging.INFO)
+    log_level = level or app_settings.log_level
+    logger.setLevel(log_level)
     logger.propagate = False
 
     # Add stream handler if requested
@@ -62,8 +74,5 @@ def _configure_logger(
         logger.addHandler(LogStreamHandler())
 
     # Add HTTP handler if requested
-    if use_http:
-        http_handler = LogHttpHandler()
-        # Set higher level for HTTP to avoid spam
-        http_handler.setLevel(logging.INFO)
-        logger.addHandler(http_handler)
+    if use_aion_api:
+        logger.addHandler(LogAionApiHandler())

@@ -6,7 +6,7 @@ from aion.shared.aion_config import AgentConfig
 from aion.shared.logging import get_logger
 from dotenv import load_dotenv
 
-from aion.shared.configs import app_settings
+from aion.shared.settings import app_settings
 from aion.server.core.app import AppFactory, AppContext
 from aion.server.db import db_manager
 from aion.server.tasks import store_manager

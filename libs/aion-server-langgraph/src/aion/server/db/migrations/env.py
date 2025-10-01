@@ -11,7 +11,7 @@ from sqlalchemy import create_engine
 
 logger = get_logger(__name__)
 
-from aion.shared.configs import db_settings
+from aion.shared.settings import db_settings
 
 # ``alembic.context`` exposes ``config`` only when executed via Alembic's
 # command line utilities. When this module is imported directly (e.g. during
