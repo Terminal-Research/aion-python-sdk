@@ -1,6 +1,8 @@
 import logging
+from datetime import datetime
 
 from aion.shared.logging.base import AionLogRecord
+from aion.shared.settings import app_settings
 from aion.shared.utils.text import colorize_text
 
 
@@ -16,17 +18,24 @@ class LogStreamFormatter(logging.Formatter):
         "CRITICAL": "bright_red",
     }
 
-    def __init__(self):
-        super().__init__('%(asctime)s - %(levelname)s - %(name)s -  %(message)s')
-
     def format(self, record: AionLogRecord):
-        formatted_message = super().format(record)
+        # Format timestamp
+        timestamp = datetime.fromtimestamp(record.created).strftime('%Y-%m-%d %H:%M:%S,%f')[:-3]
 
+        # Build the formatted message manually
+        if app_settings.agent_id:
+            formatted_message = f"{timestamp} - {record.levelname} - {record.name} - Agent [{app_settings.agent_id}] - {record.getMessage()}"
+        else:
+            formatted_message = f"{timestamp} - {record.levelname} - {record.name} - {record.getMessage()}"
+
+        return self._colorize(record.levelname, formatted_message)
+
+    def _colorize(self, level: str, message: str):
         try:
-            color_alias = self.COLOR_ALIASES.get(record.levelname, self.COLOR_ALIASES["INFO"])
-            return colorize_text(text=formatted_message, color=color_alias)
+            color_alias = self.COLOR_ALIASES.get(level, self.COLOR_ALIASES["INFO"])
+            return colorize_text(text=message, color=color_alias)
         except Exception:
-            return formatted_message
+            return message
 
 
 class LogStreamHandler(logging.StreamHandler):

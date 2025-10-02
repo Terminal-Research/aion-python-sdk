@@ -9,7 +9,7 @@ from .stores import (
     PostgresTaskStore
 )
 
-logger = get_logger(__name__)
+logger = get_logger("StoreManager")
 
 
 class StoreManager:

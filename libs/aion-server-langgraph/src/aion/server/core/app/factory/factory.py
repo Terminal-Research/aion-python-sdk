@@ -21,25 +21,22 @@ from .lifespan import AppLifespan
 
 
 
-logger = get_logger(__name__)
+logger = get_logger("AppFactory")
 
 
 class AppContext:
     """Application context with settings and managers.
 
     Attributes:
-        app_settings: Application configuration settings
         db_manager: Database connection manager
         store_manager: Task store manager for handling data storage
     """
 
     def __init__(
             self,
-            app_settings: AppSettings,
             db_manager: DbManager,
             store_manager: StoreManager
     ):
-        self.app_settings = app_settings
         self.db_manager = db_manager
         self.store_manager = store_manager
 
@@ -80,8 +77,6 @@ class AppFactory:
     async def initialize(self):
         """Initialize the application factory."""
         try:
-            self.context.app_settings.set_agent_config(self.agent_id, self.agent_config)
-
             await self._initialize()
             return self
         except Exception as exc:
@@ -104,8 +99,6 @@ class AppFactory:
 
         # Build Starlette application
         await self._build_starlette_app()
-
-        logger.info("Application initialized successfully")
 
     async def _init_agent(self) -> None:
         """Initialize agent from configuration."""

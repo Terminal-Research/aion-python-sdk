@@ -10,7 +10,7 @@ from .card import AionAgentCard
 from .checkpointer import GraphCheckpointerManager
 from .interfaces import AgentInterface
 
-logger = get_logger(__name__)
+logger = get_logger("BaseAgent")
 
 
 class BaseAgent(AgentInterface):

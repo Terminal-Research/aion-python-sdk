@@ -11,7 +11,7 @@ from langgraph.types import Command, StateSnapshot
 
 from a2a.utils.errors import ServerError, InternalError
 
-logger = get_logger(__name__)
+logger = get_logger("LanggraphAgent")
 
 
 class LanggraphAgent:

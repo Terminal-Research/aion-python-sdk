@@ -10,7 +10,7 @@ from aion.shared.aion_config import AgentConfig
 from aion.shared.logging import get_logger
 from aion.shared.utils.processes import ProcessManager
 
-logger = get_logger(__name__)
+logger = get_logger("ServerManager")
 
 
 class ServerManager:
@@ -255,8 +255,6 @@ class ServerManager:
             config: AionConfig instance
         """
         try:
-            logger.info(f"Starting proxy server in process {os.getpid()}")
-
             # Create new event loop for this process
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)

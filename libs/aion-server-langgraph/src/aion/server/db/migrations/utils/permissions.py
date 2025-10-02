@@ -8,7 +8,7 @@ from aion.server.db import validate_permissions
 from aion.shared.utils import psycopg_url
 from ..env import config
 
-logger = get_logger(__name__)
+logger = get_logger("Migrations [utils.permissions]")
 
 
 async def fail_if_no_permissions():

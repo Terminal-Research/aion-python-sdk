@@ -7,7 +7,7 @@ from aion.shared.logging import get_logger
 
 from .base_task_store import BaseTaskStore
 
-logger = get_logger(__name__)
+logger = get_logger("InMemoryTaskStore")
 
 
 class InMemoryTaskStore(BaseTaskStore):
@@ -19,7 +19,7 @@ class InMemoryTaskStore(BaseTaskStore):
 
     def __init__(self) -> None:
         """Initializes the InMemoryTaskStore."""
-        logger.debug('Initializing InMemoryTaskStore')
+        logger.info('Initializing InMemoryTaskStore')
         self.tasks: dict[str, Task] = {}
         self.lock = asyncio.Lock()
 

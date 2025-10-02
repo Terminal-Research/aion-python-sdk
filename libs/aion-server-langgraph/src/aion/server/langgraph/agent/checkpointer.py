@@ -7,7 +7,7 @@ from langgraph.graph import Graph
 
 from aion.server.db import db_manager
 
-logger = get_logger(__name__)
+logger = get_logger("GraphCheckpointerManager")
 
 CHECKPOINTER_TYPE = Literal["memory", "postgres"]
 

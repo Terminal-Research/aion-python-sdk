@@ -4,14 +4,14 @@ import sys
 import uvicorn
 from aion.shared.aion_config import AgentConfig
 from aion.shared.logging import get_logger
+from aion.shared.settings import app_settings
 from dotenv import load_dotenv
 
-from aion.shared.settings import app_settings
 from aion.server.core.app import AppFactory, AppContext
 from aion.server.db import db_manager
 from aion.server.tasks import store_manager
 
-logger = get_logger(__name__)
+logger = get_logger("Agent:server")
 
 dotenv_path = load_dotenv(dotenv_path=os.path.join(os.getcwd(), '.env'), verbose=True)
 
@@ -22,15 +22,15 @@ class MissingAPIKeyError(Exception):
 
 async def async_serve(agent_id: str, agent_config: AgentConfig):
     try:
-        app_context = AppContext(
-            app_settings=app_settings,
-            db_manager=db_manager,
-            store_manager=store_manager)
+        app_settings.set_agent_config(agent_id=agent_id, agent_config=agent_config)
 
         app_factory = await AppFactory(
             agent_id=agent_id,
             agent_config=agent_config,
-            context=app_context
+            context=AppContext(
+                db_manager=db_manager,
+                store_manager=store_manager
+            )
         ).initialize()
 
         if not app_factory:

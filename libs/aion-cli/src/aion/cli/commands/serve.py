@@ -7,7 +7,7 @@ from aion.shared.logging import get_logger
 from aion.cli.handlers import ServerManager
 from aion.cli.utils.cli_messages import welcome_message
 
-logger = get_logger(__name__)
+logger = get_logger("Command [serve]")
 
 
 @click.command(name="serve")

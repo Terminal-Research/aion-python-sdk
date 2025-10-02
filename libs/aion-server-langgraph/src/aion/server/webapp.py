@@ -11,7 +11,7 @@ from aion.shared.logging import get_logger
 from pydantic import BaseModel
 from starlette.applications import Starlette
 
-logger = get_logger(__name__)
+logger = get_logger("WebApp")
 
 
 class HttpConfig(BaseModel):

@@ -13,8 +13,6 @@ from aion.shared.logging import get_logger
 
 from .base import BaseAgent
 
-logger = get_logger(__name__)
-
 # LangGraph imports with fallback
 from langgraph.graph import Graph
 from langgraph.pregel import Pregel
@@ -31,7 +29,7 @@ class AgentFactory:
             logger_: Logger instance to use
         """
         self.base_path = base_path or Path.cwd()
-        self.logger = logger_ or get_logger(__name__)
+        self.logger = logger_ or get_logger("AgentFactory")
 
     def create_agent_from_config(self, agent_id: str, agent_config: AgentConfig) -> BaseAgent:
         """Create a BaseAgent instance directly from an AgentConfig object.
@@ -91,12 +89,12 @@ class AgentFactory:
             if spec is None or spec.loader is None:
                 raise ValueError(f"Could not load module from path: {path}")
 
-            self.logger.debug("Importing module from %s", path)
+            self.logger.info("Importing module from %s", path)
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
         else:
             # Dotted path import
-            self.logger.debug("Importing module '%s'", module_str)
+            self.logger.info("Importing module '%s'", module_str)
             module = importlib.import_module(module_str)
 
         return module
@@ -182,15 +180,15 @@ class AgentFactory:
                     member is not BaseAgent and
                     member.__module__ == module.__name__
             ):
-                self.logger.debug("Found BaseAgent subclass '%s' in module '%s'",
-                                  member.__name__, module.__name__)
+                self.logger.info("Found BaseAgent subclass '%s' in module '%s'",
+                                 member.__name__, module.__name__)
                 return member
 
         # Then, look for graph instances
         for name, member in inspect.getmembers(module):
             if self._is_graph_instance(member):
-                self.logger.debug("Found graph instance '%s' of type '%s' in module '%s'",
-                                  name, type(member).__name__, module.__name__)
+                self.logger.info("Found graph instance '%s' of type '%s' in module '%s'",
+                                 name, type(member).__name__, module.__name__)
                 return member
 
         raise ValueError(f"No BaseAgent subclass or graph instance found in module '{module.__name__}'")

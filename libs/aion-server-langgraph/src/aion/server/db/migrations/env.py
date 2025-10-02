@@ -9,7 +9,7 @@ from alembic import context
 from alembic.config import Config
 from sqlalchemy import create_engine
 
-logger = get_logger(__name__)
+logger = get_logger("Migrations [env]")
 
 from aion.shared.settings import db_settings
 

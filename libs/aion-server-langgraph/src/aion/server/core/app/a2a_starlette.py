@@ -24,7 +24,7 @@ from aion.server.core.request_handlers import AionJSONRPCHandler
 from aion.server.interfaces import IRequestHandler
 from aion.server.types import ExtendedA2ARequest, CustomA2ARequest, GetContextRequest, GetContextsListRequest
 
-logger = get_logger(__name__)
+logger = get_logger("AionA2AStarletteApplication")
 
 
 class AionA2AStarletteApplication(A2AStarletteApplication):

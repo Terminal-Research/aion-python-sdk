@@ -12,8 +12,6 @@ from .exceptions import ConfigurationError
 from .models import AionConfig, AgentConfig, ProxyConfig
 from aion.shared.logging import get_logger
 
-logger = get_logger(__name__)
-
 
 class AionConfigReader:
     """Handles loading, parsing, and validation of Aion configuration files."""
@@ -26,7 +24,7 @@ class AionConfigReader:
             logger_: Logger instance. If None, creates a new one.
         """
         self.config_path = config_path or get_config_path()
-        self.logger = logger_ or get_logger(__name__)
+        self.logger = logger_ or get_logger("AionConfigReader")
 
     def load_config_file(self) -> Dict[str, Any]:
         """Load and parse the YAML configuration file.

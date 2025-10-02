@@ -6,7 +6,7 @@ from aion.shared.settings import api_settings
 
 from aion.api.exceptions import AionAuthenticationError
 
-logger = get_logger(__name__)
+logger = get_logger("AionHttpClient")
 
 
 class AionHttpClient:

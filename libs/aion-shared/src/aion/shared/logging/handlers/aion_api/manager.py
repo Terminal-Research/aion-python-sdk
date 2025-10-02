@@ -1,14 +1,8 @@
 import asyncio
-import sys
 from typing import Optional, List
 
 from aion.shared.logging.base import AionLogRecord
 from aion.shared.metaclasses import Singleton
-
-
-def _print_debug(message: str):
-    """Simple debug output without using logging system"""
-    print(f"[AionApiLogManager] {message}", file=sys.stderr)
 
 
 class AionApiLogManager(metaclass=Singleton):
@@ -18,6 +12,7 @@ class AionApiLogManager(metaclass=Singleton):
 
         self._disabled = False
         self._started = False
+        self._shutdown_event = asyncio.Event()
 
         # Config
         self.url = None
@@ -29,6 +24,15 @@ class AionApiLogManager(metaclass=Singleton):
         self.sent_count = 0
         self.dropped_count = 0
         self.buffered_before_start = 0
+        self.__logger = None
+
+    @property
+    def _logger(self):
+        """Lazy logger initialization to avoid circular imports"""
+        if self.__logger is None:
+            from aion.shared.logging.factory import get_logger
+            self.__logger = get_logger("AionApiLogManager", use_aion_api=False)
+        return self.__logger
 
     @property
     def is_disabled(self) -> bool:
@@ -43,7 +47,7 @@ class AionApiLogManager(metaclass=Singleton):
     @property
     def can_accept_logs(self) -> bool:
         """Check if we should accept new logs"""
-        return not self._disabled and self.queue is not None
+        return not self._disabled and not self._shutdown_event.is_set() and self.queue is not None
 
     def add_log(self, record: AionLogRecord) -> bool:
         """
@@ -64,9 +68,10 @@ class AionApiLogManager(metaclass=Singleton):
 
         except asyncio.QueueFull:
             self.dropped_count += 1
+            self._logger.warning(f"Queue full, log dropped (total dropped: {self.dropped_count})")
             return False
-        except Exception as e:
-            _print_debug(f"Error adding log: {e}")
+        except Exception as ex:
+            self._logger.exception(f"Error adding log: {ex}")
             return False
 
     async def start(
@@ -81,21 +86,21 @@ class AionApiLogManager(metaclass=Singleton):
         On failure, disables the manager and clears queue.
         """
         if self._started:
-            _print_debug("Worker already started")
+            self._logger.warning("Worker already started")
             return True
 
         if self._disabled:
-            _print_debug("Manager is disabled, cannot start")
+            self._logger.warning("Manager is disabled, cannot start")
             return False
 
         # Validate configuration
         if not url:
-            _print_debug("No URL provided, disabling log manager")
+            self._logger.warning("No URL provided, disabling log manager")
             self.disable()
             return False
 
         if not client_id:
-            _print_debug("No client_id provided, disabling log manager")
+            self._logger.warning("No client_id provided, disabling log manager")
             self.disable()
             return False
 
@@ -106,13 +111,16 @@ class AionApiLogManager(metaclass=Singleton):
             self.flush_interval = flush_interval
             self.client_id = client_id
 
+            # Reset shutdown flag in case of restart
+            self._shutdown_event.clear()
+
             # Start worker
             self.worker_task = asyncio.create_task(self._worker())
             self._started = True
             return True
 
-        except Exception as e:
-            _print_debug(f"Failed to start worker: {e}")
+        except Exception as ex:
+            self._logger.exception(f"Failed to start worker: {ex}")
             self.disable()
             return False
 
@@ -136,23 +144,29 @@ class AionApiLogManager(metaclass=Singleton):
                         break
 
                 if self.buffered_before_start:
-                    _print_debug(f"Queue cleared, dropped {self.buffered_before_start} buffered logs")
+                    self._logger.warning(f"Queue cleared, dropped {self.buffered_before_start} buffered logs")
 
             except Exception as ex:
-                _print_debug(f"Error clearing queue: {ex}")
+                self._logger.exception(f"Error clearing queue: {ex}")
 
         self.buffered_before_start = 0
 
     async def _worker(self):
-        """Background worker"""
+        """Background worker that periodically checks shutdown event"""
         batch = []
+        check_interval = min(self.flush_interval, 1.0)  # Check shutdown at least every second
 
         try:
             while True:
+                # Check if shutdown requested
+                if self._shutdown_event.is_set():
+                    self._logger.info("Shutdown event detected, draining remaining logs")
+                    break
+
                 try:
                     entry = await asyncio.wait_for(
                         self.queue.get(),
-                        timeout=self.flush_interval
+                        timeout=check_interval
                     )
                     batch.append(entry)
                     self.queue.task_done()
@@ -162,20 +176,64 @@ class AionApiLogManager(metaclass=Singleton):
                         batch.clear()
 
                 except asyncio.TimeoutError:
+                    # Timeout reached - check if we have batch to send
                     if batch:
                         await self._send_batch(batch)
                         batch.clear()
 
+                    # Continue loop to check shutdown event
+
                 except asyncio.CancelledError:
-                    # Graceful shutdown
+                    # Graceful shutdown via task cancellation
+                    self._logger.info("Worker task cancelled, sending remaining batch")
                     if batch:
                         await self._send_batch(batch)
                     raise
 
+            # Shutdown requested - drain queue and process all remaining items
+            self._logger.info(
+                f"Draining queue (current batch: {len(batch)}, queue size: {self.queue.qsize()})")
+
+            # First, send current batch if exists
+            if batch:
+                await self._send_batch(batch)
+                batch.clear()
+
+            # Then process all remaining items in queue
+            while not self.queue.empty():
+                try:
+                    entry = self.queue.get_nowait()
+                    batch.append(entry)
+                    self.queue.task_done()
+
+                    # Send in batches to avoid memory issues
+                    if len(batch) >= self.batch_size:
+                        await self._send_batch(batch)
+                        batch.clear()
+
+                except asyncio.QueueEmpty:
+                    break
+                except Exception as ex:
+                    self._logger.exception(f"Error draining queue: {ex}")
+                    break
+
+            # Send final batch
+            if batch:
+                await self._send_batch(batch)
+                batch.clear()
+
+            self._logger.info("Queue drained successfully")
+
         except asyncio.CancelledError:
-            pass
+            self._logger.info("Worker task cancelled")
+            # Even on cancellation, try to send what we have
+            if batch:
+                try:
+                    await self._send_batch(batch)
+                except Exception:
+                    pass
         except Exception as ex:
-            _print_debug(f"Worker crashed: {ex}")
+            self._logger.exception(f"Worker crashed: {ex}")
             self.disable()
 
     async def _send_batch(self, batch: List[AionLogRecord]):
@@ -187,29 +245,62 @@ class AionApiLogManager(metaclass=Singleton):
             #         json=batch,
             #         timeout=aiohttp.ClientTimeout(total=30)
             #     )
-            _print_debug(f"Aion: Sending {len(batch)} log entries")
+            self._logger.info(f"Aion: Sending {len(batch)} log entries")
             self.sent_count += len(batch)
 
         except Exception as ex:
-            _print_debug(f"Failed to send batch: {ex}")
+            self._logger.exception(f"Failed to send batch: {ex}")
 
     async def shutdown(self, timeout: float = 5.0):
-        """Graceful shutdown"""
+        """
+        Graceful shutdown with proper task cleanup.
+
+        Args:
+            timeout: Maximum time to wait for queue processing
+        """
         if not self.is_started:
+            self._logger.info("Manager not started, nothing to shutdown")
             return
 
+        self._logger.info(f"Starting shutdown (queue size: {self.queue.qsize()})")
+
+        # Set shutdown event - worker will check it
+        self._shutdown_event.set()
+
         try:
-            # Wait for queue
-            await asyncio.wait_for(self.queue.join(), timeout=timeout)
-        except asyncio.TimeoutError:
-            _print_debug(f"Timeout waiting for queue, {self.queue.qsize()} logs will be lost")
-
-        # Cancel worker
-        if self.worker_task:
-            self.worker_task.cancel()
+            # Try to process remaining items in queue
             try:
-                await self.worker_task
-            except asyncio.CancelledError:
-                pass
+                await asyncio.wait_for(self.queue.join(), timeout=timeout)
+                self._logger.info("All queued logs processed")
+            except asyncio.TimeoutError:
+                remaining = self.queue.qsize()
+                self._logger.warning(f"Shutdown timeout, {remaining} logs will be lost")
 
-        self._started = False
+            # Wait for worker to finish naturally (it checks shutdown flag)
+            if self.worker_task and not self.worker_task.done():
+                self._logger.info("Waiting for worker task to complete")
+                try:
+                    # Give worker a bit more time to finish cleanly
+                    await asyncio.wait_for(self.worker_task, timeout=2.0)
+                    self._logger.info("Worker task completed naturally")
+                except asyncio.TimeoutError:
+                    # If still running, cancel it
+                    self._logger.warning("Worker task timeout, cancelling")
+                    self.worker_task.cancel()
+                    try:
+                        await self.worker_task
+                    except asyncio.CancelledError:
+                        self._logger.info("Worker task cancelled")
+                except asyncio.CancelledError:
+                    self._logger.info("Worker task cancelled")
+                except Exception as ex:
+                    self._logger.exception(f"Error during worker completion: {ex}")
+
+        except Exception as ex:
+            self._logger.exception(f"Error during shutdown: {ex}")
+
+        finally:
+            # Always cleanup state
+            self.worker_task = None
+            self._started = False
+            self._logger.info(f"Shutdown complete (sent: {self.sent_count}, dropped: {self.dropped_count})")
