@@ -28,6 +28,21 @@ class LogStreamFormatter(logging.Formatter):
         else:
             formatted_message = f"{timestamp} - {record.levelname} - {record.name} - {record.getMessage()}"
 
+        # Add exception info if present
+        if record.exc_info:
+            if not record.exc_text:
+                record.exc_text = self.formatException(record.exc_info)
+
+            if record.exc_text:
+                if formatted_message[-1:] != "\n":
+                    formatted_message = formatted_message + "\n"
+                formatted_message = formatted_message + record.exc_text
+
+        if hasattr(record, 'stack_info') and record.stack_info:
+            if formatted_message[-1:] != "\n":
+                formatted_message = formatted_message + "\n"
+            formatted_message = formatted_message + self.formatStack(record.stack_info)
+
         return self._colorize(record.levelname, formatted_message)
 
     def _colorize(self, level: str, message: str):

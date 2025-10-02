@@ -3,12 +3,16 @@ from typing import Optional, List
 
 from aion.shared.logging.base import AionLogRecord
 from aion.shared.metaclasses import Singleton
+from aion.shared.settings import platform_settings
+from aion.shared.utils import create_logstash_log_entry
+from .client import AionLogstashClient
 
 
 class AionApiLogManager(metaclass=Singleton):
     def __init__(self, queue_size: int = 1000):
         self.queue = asyncio.Queue(maxsize=queue_size)
         self.worker_task = None
+        self.client: Optional[AionLogstashClient] = None
 
         self._disabled = False
         self._started = False
@@ -19,6 +23,7 @@ class AionApiLogManager(metaclass=Singleton):
         self.batch_size = 100
         self.flush_interval = 10
         self.client_id = None
+        self.client_timeout = 5
 
         # Metrics
         self.sent_count = 0
@@ -79,7 +84,8 @@ class AionApiLogManager(metaclass=Singleton):
             url: str,
             batch_size: int = 100,
             flush_interval: float = 10,
-            client_id: Optional[str] = None
+            client_id: Optional[str] = None,
+            client_timeout: int = 5
     ) -> bool:
         """
         Start the worker. Returns True on success, False on failure.
@@ -110,6 +116,10 @@ class AionApiLogManager(metaclass=Singleton):
             self.batch_size = batch_size
             self.flush_interval = flush_interval
             self.client_id = client_id
+            self.client_timeout = client_timeout
+
+            # Initialize client
+            self.client = AionLogstashClient(url=url, timeout=client_timeout)
 
             # Reset shutdown flag in case of restart
             self._shutdown_event.clear()
@@ -121,6 +131,7 @@ class AionApiLogManager(metaclass=Singleton):
 
         except Exception as ex:
             self._logger.exception(f"Failed to start worker: {ex}")
+            await self._cleanup_client()
             self.disable()
             return False
 
@@ -237,19 +248,40 @@ class AionApiLogManager(metaclass=Singleton):
             self.disable()
 
     async def _send_batch(self, batch: List[AionLogRecord]):
-        """Send batch via HTTP"""
+        """Send batch via HTTP using AionLogstashClient"""
+        if not self.client:
+            self._logger.error("Client not initialized")
+            return
+
         try:
-            # async with aiohttp.ClientSession() as session:
-            #     await session.post(
-            #         self.url,
-            #         json=batch,
-            #         timeout=aiohttp.ClientTimeout(total=30)
-            #     )
-            self._logger.info(f"Aion: Sending {len(batch)} log entries")
-            self.sent_count += len(batch)
+            # Convert AionLogRecord objects to dicts
+            log_dicts = [self._prepare_record(record) for record in batch]
+
+            # Send via client
+            success = await self.client.send(log_dicts)
+            if success:
+                self.sent_count += len(batch)
 
         except Exception as ex:
             self._logger.exception(f"Failed to send batch: {ex}")
+
+    def _prepare_record(self, record: AionLogRecord) -> dict:
+        """Convert AionLogRecord to dict for sending"""
+        return create_logstash_log_entry(
+            record=record,
+            client_id=self.client_id,
+            node_name=platform_settings.node_name)
+
+    async def _cleanup_client(self):
+        """Close client session"""
+        if self.client:
+            try:
+                await self.client.close_session()
+                self._logger.debug("Client session closed")
+            except Exception as ex:
+                self._logger.exception(f"Error closing client session: {ex}")
+            finally:
+                self.client = None
 
     async def shutdown(self, timeout: float = 5.0):
         """
@@ -300,6 +332,9 @@ class AionApiLogManager(metaclass=Singleton):
             self._logger.exception(f"Error during shutdown: {ex}")
 
         finally:
+            # Close client session
+            await self._cleanup_client()
+
             # Always cleanup state
             self.worker_task = None
             self._started = False

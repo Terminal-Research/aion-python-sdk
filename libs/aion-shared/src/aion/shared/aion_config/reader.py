@@ -7,7 +7,7 @@ from typing import Dict, Any, Optional
 import yaml
 from pydantic import ValidationError
 
-from aion.shared.utils import get_config_path
+from aion.shared.utils.path import get_config_path
 from .exceptions import ConfigurationError
 from .models import AionConfig, AgentConfig, ProxyConfig
 from aion.shared.logging import get_logger

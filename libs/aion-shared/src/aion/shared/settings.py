@@ -81,7 +81,7 @@ class DatabaseSettings(BaseEnvSettings):
     @property
     def pg_sqlalchemy_url(self):
         """Convert PostgreSQL URL to SQLAlchemy-compatible format"""
-        from aion.shared.utils import sqlalchemy_url
+        from aion.shared.utils.db import sqlalchemy_url
         if not self.is_valid_pg_url():
             return None
         return sqlalchemy_url(self.pg_url)
@@ -89,7 +89,7 @@ class DatabaseSettings(BaseEnvSettings):
     @property
     def pg_psycopg_url(self):
         """Convert PostgreSQL URL to psycopg-compatible format"""
-        from aion.shared.utils import psycopg_url
+        from aion.shared.utils.db import psycopg_url
         if not self.is_valid_pg_url():
             return None
         return psycopg_url(self.pg_url)

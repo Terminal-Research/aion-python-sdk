@@ -29,15 +29,13 @@ def replace_uvicorn_loggers():
         This should be called during application initialization before
         uvicorn starts processing requests.
     """
-    from .factory import get_logger
-
+    from aion.shared.logging.factory import get_logger
     for logger_name in ("uvicorn.access", "uvicorn", "starlette", "fastapi"):
         get_logger(logger_name, use_stream=True, use_aion_api=False)
 
 
 def create_logstash_log_entry(
         record: AionLogRecord,
-        request_context: RequestContext,
         client_id: str,
         node_name: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -50,7 +48,6 @@ def create_logstash_log_entry(
 
     Args:
         record: AionLogRecord instance containing the log information
-        request_context: Current request context with additional metadata
         client_id: Unique identifier for the client making the request
         node_name: Optional name of the node/host where the log originated.
                   If None, host.name field will be set to None.
@@ -70,6 +67,8 @@ def create_logstash_log_entry(
             - error.stack_trace: Full stack trace (only if exception present)
             - Additional fields from request_context.get_aion_log_context()
     """
+    request_context = getattr(record, "request_context", None)
+
     log_entry = {
         '@timestamp': datetime.datetime.now(tz=datetime.timezone.utc).isoformat(),
         'clientId': client_id,
@@ -92,8 +91,9 @@ def create_logstash_log_entry(
         log_entry['logger'] = record.name
 
     # Add context information
-    logstash_context = request_context.get_aion_log_context()
-    log_entry.update(logstash_context)
+    logstash_context = request_context.get_aion_log_context() if request_context else None
+    if logstash_context:
+        log_entry.update(logstash_context)
 
     # Add exception information if present
     if record.exc_info:
