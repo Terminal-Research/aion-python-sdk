@@ -8,6 +8,8 @@ __all__ = [
     "request_context_var",
 ]
 
+from aion.shared.opentelemetry import SpanInfo
+
 
 @dataclass
 class RequestContext:
@@ -22,9 +24,6 @@ class RequestContext:
 
     # Trace context (from A2A metadata)
     trace_id: Optional[str] = None  # from aion:traceId
-    span_id: Optional[str] = None
-    span_name: Optional[str] = None
-    parent_span_id: Optional[str] = None
 
     # User context
     user_id: Optional[str] = None  # from aion:senderId
@@ -57,28 +56,10 @@ class RequestContext:
         filtered_data = {k: v for k, v in data.items() if k in valid_fields}
         return cls(**filtered_data)
 
-    def create_span_context(self, span_name: str, span_id: str = None) -> 'RequestContext':
-        """
-        Create a new context for a span operation.
-
-        Args:
-            span_name: Human-readable span name (e.g., "langgraph.execute")
-            span_id: Optional span ID, generates UUID if not provided
-        """
-        return self.update(
-            span_id=span_id or str(uuid.uuid4()),
-            span_name=span_name,
-            parent_span_id=self.span_id  # Current span becomes parent
-        )
-
     def get_aion_log_context(self):
         return {
-            "trace.id": self.trace_id,
             "transaction.id": self.transaction_id,
             "transaction.name": self.transaction_name,
-            "span.id": self.span_id,
-            "span.name": self.span_name,
-            "parent.span.id": self.parent_span_id,
             "tags": {
                 "aion.distribution.id": self.aion_distribution_id,
                 "aion.version.id": self.aion_version_id,

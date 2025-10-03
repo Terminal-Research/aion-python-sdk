@@ -6,7 +6,11 @@ import traceback
 from typing import Dict, Any, Optional
 from typing import TYPE_CHECKING
 
+from opentelemetry import trace
+from opentelemetry.sdk.trace import ReadableSpan
+
 from aion.shared.context import RequestContext
+from aion.shared.opentelemetry import get_span_info
 
 if TYPE_CHECKING:
     from aion.shared.logging.base import AionLogRecord
@@ -68,6 +72,7 @@ def create_logstash_log_entry(
             - Additional fields from request_context.get_aion_log_context()
     """
     request_context = getattr(record, "request_context", None)
+    span_info = getattr(record, "trace_span_info", None)
 
     log_entry = {
         '@timestamp': datetime.datetime.now(tz=datetime.timezone.utc).isoformat(),
@@ -78,6 +83,11 @@ def create_logstash_log_entry(
         # Host & Process metadata
         'host.name': node_name,
         'process.pid': os.getpid(),
+
+        "trace.id": span_info.trace_id if span_info else None,
+        "span.id": span_info.span_id if span_info else None,
+        "span.name": span_info.span_name if span_info else None,
+        "parent.span.id": span_info.parent_span_id if span_info else None,
 
         # Application context
         'service.name': "aion-langgraph-server",

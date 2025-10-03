@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, AsyncGenerator, Optional
 
 from aion.api.http import aion_jwt_manager
+from aion.shared.opentelemetry import init_tracing
 from aion.shared.settings import api_settings
 from starlette.applications import Starlette
 
@@ -45,6 +46,9 @@ class AppLifespan:
 
     async def startup(self):
         """Handle application startup events."""
+        # SETUP OPEN-TELEMETRY
+        init_tracing()
+
         # START AION LOGGING WORKER
         asyncio.create_task(aion_services.LoggingStartAionWorkerService().execute())
 

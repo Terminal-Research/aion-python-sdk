@@ -92,18 +92,16 @@ def clear_context():
     request_context_var.set(None)
 
 
-def set_context_from_a2a_request(context: A2ARequestContext) -> RequestContext:
+def set_context_from_a2a_request(metadata: Dict[str, Any]) -> RequestContext:
     """
     Set the request context from A2A request data.
 
     Args:
-        context: A2A request context containing message, configuration, and metadata
+        metadata: A2A request metadata
 
     Returns:
         RequestContext: The created and set request context
     """
-    metadata = context.metadata
-
     # Extract distribution information
     distribution = metadata.get("aion:distribution", {})
     behavior = metadata.get("aion:behavior", {})
@@ -121,4 +119,3 @@ def set_context_from_a2a_request(context: A2ARequestContext) -> RequestContext:
     # Set the context in the context variable
     set_context(request_context)
     return request_context
-

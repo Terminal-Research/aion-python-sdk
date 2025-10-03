@@ -9,7 +9,6 @@ from a2a.server.tasks import TaskManager, ResultAggregator
 from a2a.types import MessageSendParams, Task, InvalidParamsError, TaskNotFoundError
 from a2a.utils.errors import ServerError
 from a2a.utils.telemetry import trace_class, SpanKind
-from aion.shared.context import set_context_from_a2a_request
 
 from aion.server.interfaces import IRequestHandler
 from aion.server.tasks import store_manager, AionTaskManager
@@ -76,10 +75,6 @@ class AionRequestHandler(DefaultRequestHandler, IRequestHandler):
             task=task,
             context=context,
         )
-
-        # ======= CUSTOM: SET AION REQUEST CONTEXT =======
-        set_context_from_a2a_request(request_context)
-        # ======= END =======
 
         task_id = cast('str', request_context.task_id)
         # Always assign a task ID. We may not actually upgrade to a task, but

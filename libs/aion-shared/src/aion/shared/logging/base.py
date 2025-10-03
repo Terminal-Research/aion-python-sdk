@@ -2,6 +2,7 @@ import logging
 from typing import Optional
 
 from ..context import RequestContext, get_context
+from ..opentelemetry import get_span_info, SpanInfo
 
 
 class AionLogRecord(logging.LogRecord):
@@ -17,6 +18,7 @@ class AionLogRecord(logging.LogRecord):
                         cannot be retrieved.
     """
     request_context: Optional[RequestContext]
+    trace_span_info: Optional[SpanInfo]
 
     def __init__(self, *args, **kwargs):
         """
@@ -31,6 +33,11 @@ class AionLogRecord(logging.LogRecord):
             self.request_context = get_context()
         except Exception:
             self.request_context = None
+
+        try:
+            self.trace_span_info = get_span_info()
+        except Exception:
+            self.span_info = None
 
 
 class AionLogger(logging.Logger):
