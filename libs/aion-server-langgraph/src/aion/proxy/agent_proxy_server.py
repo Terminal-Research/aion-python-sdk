@@ -1,12 +1,18 @@
 from contextlib import asynccontextmanager
 from typing import Dict, Optional
 from urllib.parse import urljoin
+import logging
 
 import httpx
 import uvicorn
 from aion.shared.aion_config import AionConfig
 from aion.shared.logging import get_logger
+from aion.shared.logging.base import AionLogger
 from fastapi import FastAPI, Request, HTTPException, Response
+from aion.shared.settings import app_settings
+
+# Set custom logger class globally for all loggers including uvicorn/fastapi
+logging.setLoggerClass(AionLogger)
 
 logger = get_logger()
 
@@ -39,7 +45,7 @@ class AionAgentProxyServer:
         """Build agent URL mappings from configuration"""
         for agent_id, agent_config in self.config.agents.items():
             # Build agent URL
-            host = "localhost"  # Default host
+            host = "0.0.0.0"  # Default host
             port = agent_config.port
             scheme = "http"  # Default scheme
 
@@ -179,9 +185,10 @@ class AionAgentProxyServer:
             app=self.app,
             host=host,
             port=port,
-            log_level="info"
+            log_level=app_settings.log_level.lower(),
+            log_config=None
         )
 
         server = uvicorn.Server(config)
-        logger.info(f"Starting AION Proxy Server on {host}:{port}")
+        logger.info(f"Starting AION Proxy Server on http://{host}:{port}")
         await server.serve()

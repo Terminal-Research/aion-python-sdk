@@ -68,8 +68,8 @@ class RequestContext:
                 "aion.distribution.id": self.aion_distribution_id,
                 "aion.version.id": self.aion_version_id,
                 "aion.agentEnvironment.id": self.aion_agent_environment_id,
-                "http.method": "POST",
-                "http.target": "/",
+                "http.method": self.request_method,
+                "http.target": self.request_path,
                 "langgraph.node": self.langgraph_current_node
             }
         }

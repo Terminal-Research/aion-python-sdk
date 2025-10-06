@@ -1,15 +1,21 @@
 import os
 import sys
+import logging
 
 import uvicorn
 from aion.shared.aion_config import AgentConfig
 from aion.shared.logging import get_logger
+from aion.shared.logging.base import AionLogger
 from aion.shared.settings import app_settings
+from aion.shared.utils import replace_uvicorn_loggers
 from dotenv import load_dotenv
 
 from aion.server.core.app import AppFactory, AppContext
 from aion.server.db import db_manager
 from aion.server.tasks import store_manager
+
+# Set custom logger class globally for all loggers including uvicorn
+logging.setLoggerClass(AionLogger)
 
 logger = get_logger()
 
@@ -39,7 +45,9 @@ async def async_serve(agent_id: str, agent_config: AgentConfig):
         uconfig = uvicorn.Config(
             app=app_factory.get_starlette_app(),
             host=app_factory.get_agent_host(),
-            port=app_factory.get_agent_config().port)
+            port=app_factory.get_agent_config().port,
+            log_config=None
+        )
         server = uvicorn.Server(config=uconfig)
 
         await server.serve()
@@ -56,6 +64,9 @@ async def async_serve(agent_id: str, agent_config: AgentConfig):
 async def run_server(agent_id: str, agent_config: AgentConfig):
     """Starts the Currency Agent server."""
     try:
+        # CONFIGURE UVICORN/STARLETTE LOGGERS FOR INCOMING REQUESTS
+        replace_uvicorn_loggers(suppress_startup_logs=True)
+        # RUN AGENT
         await async_serve(agent_id, agent_config)
     except KeyboardInterrupt:
         logger.info("Interrupted by user")
