@@ -5,7 +5,7 @@ from aion.shared.logging import get_logger
 
 from aion.server.interfaces import IWebsocketTransportFactory, IWebSocketManager
 
-logger = get_logger("AionWebSocketManager")
+logger = get_logger()
 
 __all__ = [
     "AionWebSocketManager",

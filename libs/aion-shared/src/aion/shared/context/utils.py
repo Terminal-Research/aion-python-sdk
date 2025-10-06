@@ -92,7 +92,12 @@ def clear_context():
     request_context_var.set(None)
 
 
-def set_context_from_a2a_request(metadata: Dict[str, Any]) -> RequestContext:
+def set_context_from_a2a_request(
+        metadata: Dict[str, Any],
+        request_method: Optional[str] = None,
+        request_path: Optional[str] = None,
+        jrpc_method: Optional[str] = None
+) -> RequestContext:
     """
     Set the request context from A2A request data.
 
@@ -115,6 +120,15 @@ def set_context_from_a2a_request(metadata: Dict[str, Any]) -> RequestContext:
         aion_version_id=behavior.get("versionId"),
         aion_agent_environment_id=environment.get("id")
     )
+
+    if request_method is not None:
+        request_context.request_method = request_method
+
+    if request_path is not None:
+        request_context.request_path = request_path
+
+    if jrpc_method is not None:
+        request_context.request_jrpc_method = jrpc_method
 
     # Set the context in the context variable
     set_context(request_context)

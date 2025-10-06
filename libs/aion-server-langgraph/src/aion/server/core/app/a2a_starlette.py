@@ -26,7 +26,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 from starlette.status import HTTP_413_REQUEST_ENTITY_TOO_LARGE
 
-logger = get_logger("AionA2AStarletteApplication")
+logger = get_logger()
 request_tracer = trace.get_tracer("langgraph.agent")
 
 
@@ -88,11 +88,16 @@ class AionA2AStarletteApplication(A2AStarletteApplication):
             request_obj = a2a_request.root
 
             # Set context environment
+            request_context = None
             if request_obj.params.metadata:
                 try:
-                    request_context = set_context_from_a2a_request(metadata=request_obj.params.metadata)
+                    request_context = set_context_from_a2a_request(
+                        metadata=request_obj.params.metadata,
+                        request_method=request.method,
+                        request_path=request.url.path,
+                        jrpc_method=request_obj.method
+                    )
                 except Exception as ex:
-                    request_context = None
                     logger.exception(f"Error while setting request context: {ex}")
 
             with request_tracer.start_as_current_span(

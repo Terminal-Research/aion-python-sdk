@@ -1,3 +1,4 @@
+import secrets
 import uuid
 from typing import Dict, Any, Optional
 
@@ -38,7 +39,7 @@ class A2ARequestHelper:
         return {
             "aion:senderId": self.sender_id,
             "aion:network": network,
-            "aion:traceId": str(uuid.uuid4()),
+            "aion:traceId": secrets.token_hex(16),
             "aion:distribution": {
                 "id": str(uuid.uuid4()),
                 "identity": {

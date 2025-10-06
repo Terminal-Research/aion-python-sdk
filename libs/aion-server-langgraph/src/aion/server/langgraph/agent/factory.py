@@ -29,7 +29,7 @@ class AgentFactory:
             logger_: Logger instance to use
         """
         self.base_path = base_path or Path.cwd()
-        self.logger = logger_ or get_logger("AgentFactory")
+        self.logger = logger_ or get_logger()
 
     def create_agent_from_config(self, agent_id: str, agent_config: AgentConfig) -> BaseAgent:
         """Create a BaseAgent instance directly from an AgentConfig object.

@@ -21,6 +21,7 @@ class RequestContext:
     transaction_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     request_method: str = field(default="POST")
     request_path: str = field(default="/")
+    request_jrpc_method: Optional[str] = field(default=None)
 
     # Trace context (from A2A metadata)
     trace_id: Optional[str] = None  # from aion:traceId
@@ -36,7 +37,10 @@ class RequestContext:
 
     @property
     def transaction_name(self) -> str:
-        return f"{self.request_method} {self.request_path}"
+        name = f"{self.request_method} {self.request_path}"
+        if self.request_jrpc_method:
+            name = name + f" [{self.request_jrpc_method}]"
+        return name
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary"""

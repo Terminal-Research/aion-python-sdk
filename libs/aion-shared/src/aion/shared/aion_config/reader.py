@@ -24,7 +24,7 @@ class AionConfigReader:
             logger_: Logger instance. If None, creates a new one.
         """
         self.config_path = config_path or get_config_path()
-        self.logger = logger_ or get_logger("AionConfigReader")
+        self.logger = logger_ or get_logger()
 
     def load_config_file(self) -> Dict[str, Any]:
         """Load and parse the YAML configuration file.

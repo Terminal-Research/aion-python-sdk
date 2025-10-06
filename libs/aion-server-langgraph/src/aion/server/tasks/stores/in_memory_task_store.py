@@ -7,7 +7,7 @@ from aion.shared.logging import get_logger
 
 from .base_task_store import BaseTaskStore
 
-logger = get_logger("InMemoryTaskStore")
+logger = get_logger()
 
 
 class InMemoryTaskStore(BaseTaskStore):

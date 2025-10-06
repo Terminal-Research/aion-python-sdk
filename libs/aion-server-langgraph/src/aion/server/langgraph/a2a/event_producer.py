@@ -13,7 +13,7 @@ from langgraph.types import Interrupt, StateSnapshot
 from aion.server.types import MessageType, A2AEventType, A2AMetadataKey, ArtifactStreamingStatusReason
 from aion.server.utils import StreamingArtifactBuilder
 
-logger = get_logger("LanggraphA2AEventProducer")
+logger = get_logger()
 
 
 class LanggraphA2AEventProducer:

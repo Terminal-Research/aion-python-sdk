@@ -19,7 +19,7 @@ from aion.server.utils import check_if_task_is_interrupted
 from .agent import LanggraphAgent
 from .event_producer import LanggraphA2AEventProducer
 
-logger = get_logger("LanggraphAgentExecutor")
+logger = get_logger()
 
 
 class LanggraphAgentExecutor(AgentExecutor):

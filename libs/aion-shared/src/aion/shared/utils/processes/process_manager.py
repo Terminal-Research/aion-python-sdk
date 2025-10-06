@@ -6,7 +6,7 @@ from typing import Dict, Callable, Any, Optional, Tuple
 
 from aion.shared.logging import get_logger
 
-logger = get_logger("ProcessManager")
+logger = get_logger()
 
 
 class ProcessStatus(Enum):

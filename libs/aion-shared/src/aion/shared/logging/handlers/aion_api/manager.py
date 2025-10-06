@@ -36,7 +36,7 @@ class AionApiLogManager(metaclass=Singleton):
         """Lazy logger initialization to avoid circular imports"""
         if self.__logger is None:
             from aion.shared.logging.factory import get_logger
-            self.__logger = get_logger("AionApiLogManager", use_aion_api=False)
+            self.__logger = get_logger(use_aion_api=False)
         return self.__logger
 
     @property

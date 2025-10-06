@@ -6,14 +6,10 @@ import traceback
 from typing import Dict, Any, Optional
 from typing import TYPE_CHECKING
 
-from opentelemetry import trace
-from opentelemetry.sdk.trace import ReadableSpan
-
-from aion.shared.context import RequestContext
-from aion.shared.opentelemetry import get_span_info
-
 if TYPE_CHECKING:
     from aion.shared.logging.base import AionLogRecord
+    from aion.shared.opentelemetry.tracing import SpanInfo
+    from aion.shared.context.request_context import RequestContext
 
 __all__ = [
     "replace_uvicorn_loggers",
@@ -48,10 +44,11 @@ def create_logstash_log_entry(
 
     Generates a dictionary containing all required and optional fields
     according to Logstash specification, including timestamp, log level,
-    message, host information, service metadata, and exception details.
+    message, host information, service metadata, tracing context, and exception details.
 
     Args:
-        record: AionLogRecord instance containing the log information
+        record: AionLogRecord instance containing the log information, including
+                optional trace_span_info and request_context attributes
         client_id: Unique identifier for the client making the request
         node_name: Optional name of the node/host where the log originated.
                   If None, host.name field will be set to None.
@@ -64,16 +61,19 @@ def create_logstash_log_entry(
             - message: Formatted log message
             - host.name: Node/host name
             - process.pid: Process ID
-            - service.name: Service identifier
+            - service.name: Service identifier (defaults to "aion-langgraph-server")
             - logger: Logger name (optional, only if present in record)
+            - trace.id: Trace ID in hex format (from SpanInfo if available)
+            - span.id: Span ID in hex format (from SpanInfo if available)
+            - span.name: Span name (from SpanInfo if available)
+            - parent.span.id: Parent span ID in hex format (from SpanInfo if available)
+            - transaction.id: Transaction identifier (from RequestContext if available)
+            - transaction.name: Transaction name (from RequestContext if available)
+            - tags: Additional tags dictionary (from RequestContext if available)
             - error.message: Error message (only if exception present)
             - error.type: Exception type name (only if exception present)
             - error.stack_trace: Full stack trace (only if exception present)
-            - Additional fields from request_context.get_aion_log_context()
     """
-    request_context = getattr(record, "request_context", None)
-    span_info = getattr(record, "trace_span_info", None)
-
     log_entry = {
         '@timestamp': datetime.datetime.now(tz=datetime.timezone.utc).isoformat(),
         'clientId': client_id,
@@ -84,10 +84,15 @@ def create_logstash_log_entry(
         'host.name': node_name,
         'process.pid': os.getpid(),
 
-        "trace.id": span_info.trace_id if span_info else None,
-        "span.id": span_info.span_id if span_info else None,
-        "span.name": span_info.span_name if span_info else None,
-        "parent.span.id": span_info.parent_span_id if span_info else None,
+        "trace.id": None,
+        "span.id": None,
+        "span.name": None,
+        "parent.span.id": None,
+
+        # Context information
+        "transaction.id": None,
+        "transaction.name": None,
+        "tags": {},
 
         # Application context
         'service.name': "aion-langgraph-server",
@@ -96,14 +101,23 @@ def create_logstash_log_entry(
         'error.stack_trace': None
     }
 
+    span_info: Optional[SpanInfo] = getattr(record, "trace_span_info", None)
+    if span_info:
+        log_entry.update({
+            "trace.id": span_info.trace_id_hex,
+            "span.id": span_info.span_id_hex,
+            "span.name": span_info.span_name,
+            "parent.span.id": span_info.parent_span_id_hex,
+        })
+
     # Optional logger name
     if record.name:
         log_entry['logger'] = record.name
 
     # Add context information
-    logstash_context = request_context.get_aion_log_context() if request_context else None
-    if logstash_context:
-        log_entry.update(logstash_context)
+    request_context: Optional[RequestContext] = getattr(record, "request_context", None)
+    if request_context:
+        log_entry.update(request_context.get_aion_log_context())
 
     # Add exception information if present
     if record.exc_info:

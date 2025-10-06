@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, Asyn
 
 from aion.shared.metaclasses import Singleton
 
-logger = get_logger("DbManager")
+logger = get_logger()
 
 
 class DbManager(metaclass=Singleton):

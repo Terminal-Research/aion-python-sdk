@@ -15,7 +15,7 @@ from aion.shared.logging import get_logger
 from aion.api.exceptions import AionAuthenticationError
 from .client import AionHttpClient
 
-logger = get_logger("AionJWTManager")
+logger = get_logger()
 
 
 @dataclass

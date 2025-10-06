@@ -10,7 +10,7 @@ from aion.shared.aion_config import AgentConfig
 from aion.shared.logging import get_logger
 from aion.shared.utils.processes import ProcessManager
 
-logger = get_logger("ServerManager")
+logger = get_logger()
 
 
 class ServerManager:

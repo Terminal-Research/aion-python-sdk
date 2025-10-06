@@ -3,7 +3,7 @@ from aion.shared.settings import api_settings, platform_settings
 
 from aion.server.core.base import BaseExecuteService
 
-logger = get_logger("LoggingStartAionWorkerService")
+logger = get_logger()
 
 
 # todo update to use DI pattern

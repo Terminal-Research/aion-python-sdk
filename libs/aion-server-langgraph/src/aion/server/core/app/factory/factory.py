@@ -21,7 +21,7 @@ from .lifespan import AppLifespan
 
 
 
-logger = get_logger("AppFactory")
+logger = get_logger()
 
 
 class AppContext:

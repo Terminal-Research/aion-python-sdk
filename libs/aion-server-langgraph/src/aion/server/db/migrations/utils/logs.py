@@ -2,7 +2,7 @@ from aion.shared.logging import get_logger
 
 from ..env import config
 
-logger = get_logger("Migrations [utils.logs]")
+logger = get_logger()
 
 
 def log_migrations():

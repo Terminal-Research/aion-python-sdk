@@ -24,7 +24,7 @@ class AgentManager:
         self.factory = AgentFactory(base_path=base_path, logger_=logger_)
         self.agent: Optional[BaseAgent] = None
         self.agent_id: Optional[str] = None
-        self.logger = logger_ or get_logger("AgentManager")
+        self.logger = logger_ or get_logger()
 
     def create_agent(self, agent_id: str, agent_config: AgentConfig) -> BaseAgent:
         """Create and store an agent from configuration.

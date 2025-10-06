@@ -5,7 +5,7 @@ from __future__ import annotations
 import psycopg
 from aion.shared.logging import get_logger
 
-logger = get_logger("DB [utils]")
+logger = get_logger()
 
 
 async def verify_connection(url: str) -> bool:

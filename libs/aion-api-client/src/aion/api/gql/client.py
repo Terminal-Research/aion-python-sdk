@@ -13,7 +13,7 @@ from .generated.graphql_client import (
 from .generated.graphql_client.client import GqlClient
 from .generated.graphql_client.custom_mutations import Mutation
 
-logger = get_logger("AionGqlClient")
+logger = get_logger()
 
 
 class AionGqlClient:

@@ -7,7 +7,7 @@ from a2a.types import AgentCard
 from aion.shared.logging import get_logger
 from pydantic import ValidationError
 
-logger = get_logger("AionA2ACardResolver")
+logger = get_logger()
 
 
 class AionA2ACardResolver(A2ACardResolver):

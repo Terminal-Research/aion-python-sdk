@@ -14,7 +14,7 @@ from .utils import (
     setup_checkpointer_tables,
 )
 
-logger = get_logger("Migrations [migrate]")
+logger = get_logger()
 
 
 async def upgrade_to_head() -> None:

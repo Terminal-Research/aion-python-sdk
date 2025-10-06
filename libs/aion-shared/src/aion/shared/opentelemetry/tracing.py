@@ -1,6 +1,5 @@
-import logging
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Union
 
 from opentelemetry import trace
 from opentelemetry.context import Context
@@ -20,16 +19,16 @@ def init_tracing():
 
 
 def generate_request_span_context(
-        trace_id: Optional[int] = None,
-        span_id: Optional[int] = None
+        trace_id: Optional[Union[int, str]] = None,
+        span_id: Optional[Union[int, str]] = None
 ) -> Optional[Context]:
     """
     Generate a remote span context for continuing an existing trace.
 
     Args:
-        trace_id: The trace ID (128-bit integer) to continue
-        span_id: Optional parent span ID (64-bit integer).
-                 If None, a random one will be generated.
+        trace_id: The trace ID as 128-bit (16 byte) integer or hex string to continue
+        span_id: Optional parent span ID as 64-bit (8 byte) integer or hex string.
+                 If None, INVALID_SPAN_ID will be used.
 
     Returns:
         Context object that can be passed to start_as_current_span
@@ -37,9 +36,34 @@ def generate_request_span_context(
     if trace_id is None:
         return None
 
+    from aion.shared.logging.factory import get_logger
+    logger = get_logger()
+
     try:
+        # Convert trace_id from hex string to int if needed
+        if isinstance(trace_id, str):
+            try:
+                trace_id = int(trace_id, 16)
+            except (ValueError, TypeError) as e:
+                logger.warning(
+                    f"Failed to convert trace_id '{trace_id}' from hex to int: {e}. "
+                    f"Tracing will not be linked to parent trace."
+                )
+                return None
+
+        # Convert span_id from hex string to int if needed
         if span_id is None:
             span_id = INVALID_SPAN_ID
+
+        elif isinstance(span_id, str):
+            try:
+                span_id = int(span_id, 8)
+            except (ValueError, TypeError) as e:
+                logger.warning(
+                    f"Failed to convert span_id '{span_id}' from hex to int: {e}. "
+                    f"Using INVALID_SPAN_ID instead."
+                )
+                span_id = INVALID_SPAN_ID
 
         span_context = SpanContext(
             trace_id=trace_id,
@@ -51,16 +75,42 @@ def generate_request_span_context(
         parent = NonRecordingSpan(span_context)
         return trace.set_span_in_context(parent)
     except Exception as ex:
-        logging.exception(f"Failed to generate span context: {ex}")
+        logger.exception(f"Failed to generate span context: {ex}")
         return None
 
 
 @dataclass
 class SpanInfo:
+    """Container for OpenTelemetry span information with lazy hex conversion.
+
+    Stores trace and span IDs in both integer and hexadecimal formats,
+    converting to hex representation only when needed.
+    """
     trace_id: Optional[int] = None
     span_id: Optional[int] = None
     span_name: Optional[str] = None
     parent_span_id: Optional[int] = None
+    _trace_id_hex: Optional[bytes] = None
+    _span_id_hex: Optional[bytes] = None
+    _parent_span_id_hex: Optional[bytes] = None
+
+    @property
+    def trace_id_hex(self) -> bytes:
+        if self._trace_id_hex is None and self.trace_id is not None:
+            self._trace_id_hex = self.trace_id.to_bytes(16, "big").hex()
+        return self._trace_id_hex
+
+    @property
+    def span_id_hex(self) -> bytes:
+        if self._span_id_hex is None and self.span_id is not None:
+            self._span_id_hex = self.span_id.to_bytes(8, "big").hex()
+        return self._span_id_hex
+
+    @property
+    def parent_span_id_hex(self) -> bytes:
+        if self._parent_span_id_hex is None and self.parent_span_id is not None:
+            self._parent_span_id_hex = self.parent_span_id.to_bytes(8, "big").hex()
+        return self._parent_span_id_hex
 
 
 def get_span_info(span=None) -> SpanInfo:
