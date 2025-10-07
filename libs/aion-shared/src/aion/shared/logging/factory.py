@@ -75,14 +75,19 @@ def _configure_logger(
 
     # Add HTTP handler if requested
     if use_logstash:
+        try:
+            logstash_host, logstash_port = platform_settings.get_logstash_host_port()
+        except:
+            logstash_host, logstash_port = None, None
+
         logger.addHandler(AionLogstashHandler(
-            host="localhost",
-            port="8081",
-            database_path=None,
+            host=logstash_host,
+            port=logstash_port,
+            database_path=None, # disable db as a queue. Use inmemory queue
             transport="logstash_async.transport.HttpTransport",
             ssl_enable=False,
             ssl_verify=False,
-            enable=bool(platform_settings.logstash_endpoint),
+            enable=bool(logstash_host and logstash_port),
             client_id=api_settings.client_id,
             node_name=platform_settings.node_name
         ))

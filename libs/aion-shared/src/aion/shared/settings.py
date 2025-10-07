@@ -303,6 +303,17 @@ class PlatformSettings(BaseEnvSettings):
         alias="LOGSTASH_ENDPOINT"
     )
 
+    def get_logstash_host_port(self) -> Optional[tuple[str, int]]:
+        """Extract host and port from logstash endpoint as tuple."""
+        if not self.logstash_endpoint:
+            return None
+
+        from aion.shared.utils.url import parse_host_port
+        try:
+            return parse_host_port(self.logstash_endpoint)
+        except Exception:
+            return None
+
 
 class AppSettings(BaseEnvSettings):
     """Application configuration settings."""
