@@ -13,18 +13,17 @@ from a2a.types import (
 )
 from a2a.types import AgentCard
 from a2a.utils.errors import MethodNotImplementedError
-from aion.server.core.request_handlers import AionJSONRPCHandler
-from aion.server.interfaces import IRequestHandler
-from aion.server.types import ExtendedA2ARequest, CustomA2ARequest, GetContextRequest, GetContextsListRequest
-from aion.shared.context import set_context_from_a2a_request
 from aion.shared.logging import get_logger
-from aion.shared.opentelemetry import generate_request_span_context
 from opentelemetry import trace
 from pydantic import ValidationError
 from starlette.exceptions import HTTPException
 from starlette.requests import Request
 from starlette.responses import Response
 from starlette.status import HTTP_413_REQUEST_ENTITY_TOO_LARGE
+
+from aion.server.core.request_handlers import AionJSONRPCHandler
+from aion.server.interfaces import IRequestHandler
+from aion.server.types import ExtendedA2ARequest, CustomA2ARequest, GetContextRequest, GetContextsListRequest
 
 logger = get_logger()
 request_tracer = trace.get_tracer("langgraph.agent")
@@ -87,40 +86,23 @@ class AionA2AStarletteApplication(A2AStarletteApplication):
             request_id = a2a_request.root.id
             request_obj = a2a_request.root
 
-            # Set context environment
-            request_context = None
-            if request_obj.params.metadata:
-                try:
-                    request_context = set_context_from_a2a_request(
-                        metadata=request_obj.params.metadata,
-                        request_method=request.method,
-                        request_path=request.url.path,
-                        jrpc_method=request_obj.method
-                    )
-                except Exception as ex:
-                    logger.exception(f"Error while setting request context: {ex}")
+            if self._check_if_request_is_custom_method(request_obj):
+                return await self._handle_custom_requests(
+                    request, a2a_request, call_context
+                )
 
-            with request_tracer.start_as_current_span(
-                    name="a2a.process_request",
-                    context=generate_request_span_context(trace_id=getattr(request_context, "trace_id", None))
+            # default a2a-sdk processing
+            if isinstance(
+                    request_obj,
+                    TaskResubscriptionRequest | SendStreamingMessageRequest,
             ):
-                if self._check_if_request_is_custom_method(request_obj):
-                    return await self._handle_custom_requests(
-                        request, a2a_request, call_context
-                    )
-
-                # default a2a-sdk processing
-                if isinstance(
-                        request_obj,
-                        TaskResubscriptionRequest | SendStreamingMessageRequest,
-                ):
-                    return await self._process_streaming_request(
-                        request_id, a2a_request, call_context
-                    )
-
-                return await self._process_non_streaming_request(
+                return await self._process_streaming_request(
                     request_id, a2a_request, call_context
                 )
+
+            return await self._process_non_streaming_request(
+                request_id, a2a_request, call_context
+            )
         except MethodNotImplementedError:
             traceback.print_exc()
             return self._generate_error_response(

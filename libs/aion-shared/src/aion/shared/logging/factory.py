@@ -1,9 +1,9 @@
 import logging
 from typing import Optional
 
-from aion.shared.settings import app_settings
+from aion.shared.settings import app_settings, platform_settings, api_settings
 from .base import AionLogger
-from .handlers import LogStreamHandler, LogAionApiHandler
+from .handlers import LogStreamHandler, AionLogstashHandler
 
 logging.setLoggerClass(AionLogger)
 
@@ -11,7 +11,7 @@ logging.setLoggerClass(AionLogger)
 def get_logger(
         name: Optional[str] = None,
         use_stream: bool = True,
-        use_aion_api: bool = True,
+        use_logstash: bool = True,
         level: Optional[int | str] = None
 ) -> logging.Logger:
     """
@@ -20,7 +20,7 @@ def get_logger(
     Args:
         name: Logger name. If None, uses calling module's __name__
         use_stream: Whether to add console output handler
-        use_aion_api: Whether to add aion api handler
+        use_logstash: Whether to add aion api handler
         level: Logging level
 
     Returns:
@@ -38,7 +38,7 @@ def get_logger(
         _configure_logger(
             logger=logger,
             use_stream=use_stream,
-            use_aion_api=use_aion_api,
+            use_logstash=use_logstash,
             level=level)
 
     return logger
@@ -48,7 +48,7 @@ def _is_logger_configured(logger: logging.Logger) -> bool:
     """
     Check if logger already has our custom handlers configured
     """
-    custom_handler_types = (LogAionApiHandler, LogStreamHandler)
+    custom_handler_types = (AionLogstashHandler, LogStreamHandler)
 
     for handler in logger.handlers:
         if isinstance(handler, custom_handler_types):
@@ -59,7 +59,7 @@ def _is_logger_configured(logger: logging.Logger) -> bool:
 def _configure_logger(
         logger: logging.Logger,
         use_stream: bool,
-        use_aion_api: bool,
+        use_logstash: bool,
         level: Optional[int | str] = None
 ) -> None:
     """
@@ -74,5 +74,15 @@ def _configure_logger(
         logger.addHandler(LogStreamHandler())
 
     # Add HTTP handler if requested
-    if use_aion_api:
-        logger.addHandler(LogAionApiHandler())
+    if use_logstash:
+        logger.addHandler(AionLogstashHandler(
+            host="localhost",
+            port="8081",
+            database_path=None,
+            transport="logstash_async.transport.HttpTransport",
+            ssl_enable=False,
+            ssl_verify=False,
+            enable=bool(platform_settings.logstash_endpoint),
+            client_id=api_settings.client_id,
+            node_name=platform_settings.node_name
+        ))

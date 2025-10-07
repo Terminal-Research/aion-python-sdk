@@ -1,4 +1,4 @@
-import logging
+from pathlib import Path
 from pathlib import Path
 from typing import Optional
 
@@ -6,20 +6,19 @@ from a2a.server.tasks import InMemoryPushNotificationConfigStore
 from a2a.types import AgentCard
 from aion.shared.aion_config import AgentConfig
 from aion.shared.logging import get_logger
+from aion.shared.settings import db_settings
 from starlette.applications import Starlette
 
-from aion.shared.settings import db_settings, AppSettings
 from aion.server.core.app.a2a_starlette import AionA2AStarletteApplication
+from aion.server.core.middlewares import TracingMiddleware, AionContextMiddleware
 from aion.server.core.request_handlers import AionRequestHandler
-from aion.server.db import db_manager, verify_connection
+from aion.server.db import verify_connection
 from aion.server.db.manager import DbManager
 from aion.server.db.migrations import upgrade_to_head
 from aion.server.langgraph.a2a import LanggraphAgentExecutor
 from aion.server.langgraph.agent import BaseAgent, AgentManager
-from aion.server.tasks import store_manager, StoreManager
+from aion.server.tasks import StoreManager
 from .lifespan import AppLifespan
-
-
 
 logger = get_logger()
 
@@ -165,6 +164,8 @@ class AppFactory:
 
         lifespan = AppLifespan(app_factory=self)
         self.starlette_app = self.a2a_app.build(lifespan=lifespan.executor)
+        self.starlette_app.add_middleware(TracingMiddleware)
+        self.starlette_app.add_middleware(AionContextMiddleware)
 
         logger.info("Starlette application built successfully")
 

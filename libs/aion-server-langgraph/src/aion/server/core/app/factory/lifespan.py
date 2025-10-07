@@ -49,9 +49,6 @@ class AppLifespan:
         # SETUP OPEN-TELEMETRY
         init_tracing()
 
-        # START AION LOGGING WORKER
-        asyncio.create_task(aion_services.LoggingStartAionWorkerService().execute())
-
         # fetch token before services execution to reduce number of requests to aion api
         auth_token = await aion_services.AionAuthManagerService(jwt_manager=aion_jwt_manager).get_token()
 
@@ -77,6 +74,3 @@ class AppLifespan:
 
         # Delegate other shutdown logic to app factory
         await self.app_factory.shutdown()
-
-        # STOP AION LOGGING WORKER
-        asyncio.create_task(aion_services.LoggingStopAionWorkerService().execute())

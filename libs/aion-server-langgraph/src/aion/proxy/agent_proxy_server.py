@@ -186,7 +186,8 @@ class AionAgentProxyServer:
             host=host,
             port=port,
             log_level=app_settings.log_level.lower(),
-            log_config=None
+            log_config=None,
+            access_log=False
         )
 
         server = uvicorn.Server(config)

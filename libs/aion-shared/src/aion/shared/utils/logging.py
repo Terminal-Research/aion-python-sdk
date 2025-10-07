@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "replace_uvicorn_loggers",
-    "configure_http_client_loggers",
+    "replace_logstash_loggers",
     "create_logstash_log_entry"
 ]
 
@@ -38,13 +38,13 @@ def replace_uvicorn_loggers(suppress_startup_logs: bool = False):
     from aion.shared.logging.factory import get_logger
 
     # uvicorn.access logs incoming HTTP requests (e.g., "GET / HTTP/1.1" 200 OK)
-    get_logger("uvicorn.access", use_stream=True, use_aion_api=True)
+    get_logger("uvicorn.access", use_stream=True, use_logstash=True)
 
     # uvicorn logs server events (startup, shutdown, etc.)
-    uvicorn_logger = get_logger("uvicorn", use_stream=True, use_aion_api=False)
+    uvicorn_logger = get_logger("uvicorn", use_stream=True, use_logstash=False)
 
     # uvicorn.error - handles startup/shutdown messages
-    uvicorn_error_logger = get_logger("uvicorn.error", use_stream=True, use_aion_api=False)
+    uvicorn_error_logger = get_logger("uvicorn.error", use_stream=True, use_logstash=False)
 
     # Optional: reduce verbosity of infrastructure logs
     if suppress_startup_logs:
@@ -52,26 +52,16 @@ def replace_uvicorn_loggers(suppress_startup_logs: bool = False):
         uvicorn_error_logger.setLevel(logging.WARNING)
 
     # starlette and fastapi logs (less verbose, mainly for errors)
-    get_logger("starlette", use_stream=True, use_aion_api=False)
-    get_logger("fastapi", use_stream=True, use_aion_api=False)
+    get_logger("starlette", use_stream=True, use_logstash=False)
+    get_logger("fastapi", use_stream=True, use_logstash=False)
 
 
-def configure_http_client_loggers():
-    """
-    Configure loggers for HTTP clients (httpx, aiohttp).
-
-    This function enables logging for HTTP client libraries to track
-    outgoing requests and responses. Useful for debugging API calls.
-
-    Note:
-        Call this during application initialization if you want to
-        track HTTP client activity.
-    """
+def replace_logstash_loggers():
+    """Configure logstash-related loggers to use stream output only, preventing circular logging."""
     from aion.shared.logging.factory import get_logger
-    # Enable httpx logging (used by some clients)
-    get_logger("httpx", use_stream=True, use_aion_api=True)
-    # Enable aiohttp logging (used by AionLogstashClient)
-    get_logger("aiohttp.client", use_stream=True, use_aion_api=True)
+    get_logger("LogProcessingWorker", use_stream=True, use_logstash=False)
+    get_logger("logstash_async.transport", use_stream=True, use_logstash=False)
+    get_logger("logstash_async.memory_cache", use_stream=True, use_logstash=False)
 
 
 def create_logstash_log_entry(
