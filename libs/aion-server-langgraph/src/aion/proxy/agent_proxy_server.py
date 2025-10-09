@@ -51,7 +51,7 @@ class AionAgentProxyServer:
 
             agent_url = f"{scheme}://{host}:{port}"
             self.agent_urls[agent_id] = agent_url
-            logger.info(f"Mapped agent '{agent_id}' to {agent_url}")
+            logger.debug(f"Mapped agent '{agent_id}' to {agent_url}")
 
     @asynccontextmanager
     async def _lifespan(self, app: FastAPI):
@@ -63,14 +63,14 @@ class AionAgentProxyServer:
             timeout=httpx.Timeout(30.0),
             follow_redirects=True
         )
-        logger.info("HTTP client initialized")
+        logger.debug("HTTP client initialized")
 
         yield
 
         # Shutdown
         if self.http_client:
             await self.http_client.aclose()
-            logger.info("HTTP client closed")
+            logger.debug("HTTP client closed")
 
     def _setup_routes(self):
         @self.app.api_route(

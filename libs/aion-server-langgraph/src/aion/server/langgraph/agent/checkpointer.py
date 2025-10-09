@@ -68,7 +68,7 @@ class GraphCheckpointerManager:
         in RAM. This checkpointer is ephemeral and will lose state when the
         application restarts, but requires no external dependencies.
         """
-        logger.info(f"Created InMemorySaver checkpointer")
+        logger.debug(f"Created InMemorySaver checkpointer")
         return InMemorySaver()
 
     def _get_postgres_checkpointer(self):

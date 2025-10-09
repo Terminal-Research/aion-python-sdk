@@ -59,7 +59,7 @@ class AionA2ACardResolver(A2ACardResolver):
             )
             response.raise_for_status()
             agent_card_data = response.json()
-            logger.info(
+            logger.debug(
                 'Successfully fetched agent card data from %s',
                 target_url,
             )

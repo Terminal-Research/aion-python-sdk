@@ -19,7 +19,7 @@ class InMemoryTaskStore(BaseTaskStore):
 
     def __init__(self) -> None:
         """Initializes the InMemoryTaskStore."""
-        logger.info('Initializing InMemoryTaskStore')
+        logger.debug('Initializing InMemoryTaskStore')
         self.tasks: dict[str, Task] = {}
         self.lock = asyncio.Lock()
 

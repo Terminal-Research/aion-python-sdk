@@ -45,7 +45,7 @@ class AgentFactory:
             ValueError: If the agent cannot be created from the configuration
             TypeError: If the loaded item is not a valid agent type
         """
-        self.logger.info("Creating agent '%s' from config", agent_id)
+        self.logger.debug("Creating agent '%s' from config", agent_id)
 
         try:
             # Load the agent item from the configured path
@@ -58,7 +58,7 @@ class AgentFactory:
             agent.agent_id = agent_id
             agent.config = agent_config
 
-            self.logger.info("Successfully created agent '%s'", agent_id)
+            self.logger.debug("Successfully created agent '%s'", agent_id)
             return agent
 
         except Exception as e:
@@ -89,12 +89,11 @@ class AgentFactory:
             if spec is None or spec.loader is None:
                 raise ValueError(f"Could not load module from path: {path}")
 
-            self.logger.info("Importing module from %s", path)
+            self.logger.debug("Importing module from %s", path)
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
         else:
-            # Dotted path import
-            self.logger.info("Importing module '%s'", module_str)
+            self.logger.debug("Importing module '%s'", module_str)
             module = importlib.import_module(module_str)
 
         return module
@@ -180,15 +179,15 @@ class AgentFactory:
                     member is not BaseAgent and
                     member.__module__ == module.__name__
             ):
-                self.logger.info("Found BaseAgent subclass '%s' in module '%s'",
-                                 member.__name__, module.__name__)
+                self.logger.debug("Found BaseAgent subclass '%s' in module '%s'",
+                                  member.__name__, module.__name__)
                 return member
 
         # Then, look for graph instances
         for name, member in inspect.getmembers(module):
             if self._is_graph_instance(member):
-                self.logger.info("Found graph instance '%s' of type '%s' in module '%s'",
-                                 name, type(member).__name__, module.__name__)
+                self.logger.debug("Found graph instance '%s' of type '%s' in module '%s'",
+                                  name, type(member).__name__, module.__name__)
                 return member
 
         raise ValueError(f"No BaseAgent subclass or graph instance found in module '{module.__name__}'")

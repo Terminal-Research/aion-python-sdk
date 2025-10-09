@@ -48,10 +48,8 @@ async def serve() -> None:
         # Start proxy server if not disabled
         proxy_started = False
         if use_proxy:
-            logger.info("Starting proxy server...")
             if server_manager.start_proxy(config):
                 proxy_started = True
-                logger.info("Proxy server started successfully")
             else:
                 logger.error("Failed to start proxy server")
 

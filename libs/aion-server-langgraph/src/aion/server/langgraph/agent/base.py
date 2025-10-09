@@ -73,13 +73,13 @@ class BaseAgent(AgentInterface):
         """Create and return a compiled graph for the agent."""
         graph = self.get_graph()
         if hasattr(graph, "compile") and callable(getattr(graph, "compile")):
-            logger.info(f"Compiling graph for agent \"{self.__class__.__name__}\"")
+            logger.debug(f"Compiling graph for agent \"{self.__class__.__name__}\"")
             checkpointer = GraphCheckpointerManager(graph).get_checkpointer()
             compiled_graph = graph.compile(checkpointer=checkpointer)
             return compiled_graph
         else:
             # If graph doesn't require compilation, return it as is
-            logger.info(f"Graph for agent \"{self.__class__.__name__}\" doesn't require compilation")
+            logger.debug(f"Graph for agent \"{self.__class__.__name__}\" doesn't require compilation")
             return graph
 
     def recompile(self) -> Union[Graph, Pregel]:

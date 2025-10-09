@@ -87,7 +87,7 @@ class ProcessManager:
             )
 
             self.processes[key] = process_info
-            logger.info(f"Process '{key}' created with PID {process.pid}")
+            logger.debug(f"Process '{key}' created with PID {process.pid}")
 
             return True
 

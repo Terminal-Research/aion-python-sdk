@@ -85,7 +85,7 @@ class AppFactory:
 
     async def _initialize(self) -> None:
         """Initialize all application components."""
-        logger.info("Initializing application for agent '%s'", self.agent_id)
+        logger.debug("Initializing application for agent '%s'", self.agent_id)
 
         # Initialize database
         await self._init_db()
@@ -99,6 +99,9 @@ class AppFactory:
         # Build Starlette application
         await self._build_starlette_app()
 
+        logger.info("Agent '%s' initialized successfully at http://%s:%s",
+                    self.agent_id, self.get_agent_host(), self.agent_config.port)
+
     async def _init_agent(self) -> None:
         """Initialize agent from configuration."""
         self.agent_manager = AgentManager(base_path=self.base_path)
@@ -110,8 +113,8 @@ class AppFactory:
         if not self.agent_manager.precompile_agent():
             raise RuntimeError(f"Failed to pre-compile agent '{self.agent_id}'")
 
-        logger.info("Agent '%s' (%s) initialized with compiled graph",
-                    self.agent_id, self.agent.__class__.__name__)
+        logger.debug("Agent '%s' (%s) initialized with compiled graph",
+                     self.agent_id, self.agent.__class__.__name__)
 
     async def _create_a2a_app(self) -> None:
         """Create and configure the A2A application."""
@@ -132,8 +135,6 @@ class AppFactory:
             http_handler=request_handler
         )
 
-        logger.info("A2A application created successfully")
-
     def _create_agent_card(self) -> AgentCard:
         """Create agent card from configuration."""
         if not self.agent:
@@ -142,7 +143,6 @@ class AppFactory:
         # Create base URL from config
         base_url = f'http://0.0.0.0:{self.agent_config.port}'
 
-        logger.info("Creating agent card from agent configuration")
         return self.agent.card
 
     async def _create_request_handler(self) -> AionRequestHandler:
@@ -167,13 +167,11 @@ class AppFactory:
         self.starlette_app.add_middleware(TracingMiddleware)
         self.starlette_app.add_middleware(AionContextMiddleware)
 
-        logger.info("Starlette application built successfully")
-
     async def _init_db(self) -> None:
         """Initialize database connection and run migrations."""
         pg_url = db_settings.pg_url
         if not pg_url:
-            logger.info("POSTGRES_URL environment variable not set, using in-memory data store")
+            logger.debug("POSTGRES_URL environment variable not set, using in-memory data store")
             return
 
         # Verify connection
