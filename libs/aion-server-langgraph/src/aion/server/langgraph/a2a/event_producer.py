@@ -85,6 +85,7 @@ class LanggraphA2AEventProducer:
 
     async def _handle_complete(self, event: StateSnapshot):
         """Handle task completion event from LangGraph."""
+        logger.info(f"Completing task: task_id={self.task.id}, context_id={self.task.context_id}")
         await self.updater.complete()
 
     async def _handle_interrupt(self, interrupts: Sequence[Interrupt]):
@@ -99,6 +100,10 @@ class LanggraphA2AEventProducer:
         interrupt = interrupts[0] if interrupts else None
         if not interrupt:
             return
+
+        logger.info(
+            "Handling interrupt: task_id=%s, context_id=%s, interrupt_type=%s",
+            self.task.id, self.task.context_id, type(interrupt.value).__name__)
 
         await self.add_stream_artefact(
             self.streaming_artifact_builder.build_meta_complete_event(
@@ -144,6 +149,11 @@ class LanggraphA2AEventProducer:
             langgraph_message (BaseMessage): The message object from LangGraph,
                 expected to be an AIMessageChunk for streaming content
         """
+        logger.debug(
+            "Streaming message: task_id=%s, context_id=%s, message_type=%s",
+            self.task.id, self.task.context_id, type(langgraph_message).__name__
+        )
+
         await self.add_stream_artefact(
             self.streaming_artifact_builder.build_from_langgraph_message(langgraph_message=langgraph_message)
         )

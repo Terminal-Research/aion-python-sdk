@@ -48,12 +48,14 @@ class LanggraphAgent:
         return await self.get_agent_response(config)
 
     async def stream(
-            self, query: Union[str, Command], session_id: str
+            self, query: Union[str, Command],
+            task_id: str, session_id: str
     ) -> AsyncIterable[Dict[str, Any]]:
         """Stream intermediate responses from the agent.
 
         Args:
             query: The user message or a LangGraph Command
+            task_id: Identifier of the task.
             session_id: Unique identifier for the conversation thread.
 
         Yields:
@@ -65,7 +67,7 @@ class LanggraphAgent:
             inputs = {"messages": [("user", query)]}
 
         config = self._get_action_config(session_id)
-        logger.debug("Beginning Langgraph Stream: %s", inputs)
+        logger.info(f"Starting LangGraph stream: task_id={task_id}, context_id={session_id}")
         try:
             async for eventType, event in self.graph.astream(
                     inputs, config, stream_mode=["values", "messages", "custom"]
@@ -97,12 +99,12 @@ class LanggraphAgent:
                 else:
                     raise ValueError(f"Unknown stream type: {eventType}")
 
-            logger.debug("Final Langgraph Stream Chunk Received")
+            logger.info(f"LangGraph stream finished successfully: task_id={task_id}, context_id={session_id}")
             yield await self.get_agent_response(config)
 
         except Exception as e:
             logger.error(
-                f"An error occurred while processing Langgraph Stream Chunk: {e}"
+                f"An error occurred while processing Langgraph Stream Chunk: task_id={task_id}, context_id={session_id}, error={e}"
             )
             raise ServerError(error=InternalError()) from e
 

@@ -12,6 +12,7 @@ from a2a.utils import (
     new_task,
 )
 from a2a.utils.errors import ServerError
+from a2a.utils.telemetry import trace_function
 from aion.shared.logging.factory import get_logger
 from langgraph.types import Command
 
@@ -35,6 +36,7 @@ class LanggraphAgentExecutor(AgentExecutor):
     def __init__(self, graph: Any):
         self.agent = LanggraphAgent(graph)
 
+    @trace_function
     async def execute(
             self,
             context: RequestContext,
@@ -56,15 +58,17 @@ class LanggraphAgentExecutor(AgentExecutor):
         query = context.get_user_input()
         task, is_new_task = await self._get_task_for_execution(context)
         if is_new_task:
+            logger.info(f"Created new task: task_id={task.id}, context_id={task.context_id}")
             await event_queue.enqueue_event(task)
         else:
+            logger.info(f"Resuming existing task: task_id={task.id}, context_id={task.context_id}")
             query = Command(resume=query)
 
         event_producer = LanggraphA2AEventProducer(event_queue, task)
         firstLoop = True
 
         try:
-            async for item in self.agent.stream(query, task.context_id):
+            async for item in self.agent.stream(query, task.id, task.context_id):
                 if firstLoop:
                     await event_producer.update_status_working()
                     firstLoop = False
@@ -74,7 +78,7 @@ class LanggraphAgentExecutor(AgentExecutor):
                     item['event'],
                 )
         except Exception as e:
-            logger.error(f'An error occurred while streaming the response: {e}')
+            logger.error(f'An error occurred while streaming the response: task_id={task.id}, context_id={task.context_id}, error={e}')
             raise ServerError(error=InternalError()) from e
 
     async def _get_task_for_execution(self, context: RequestContext) -> Tuple[Task, bool]:

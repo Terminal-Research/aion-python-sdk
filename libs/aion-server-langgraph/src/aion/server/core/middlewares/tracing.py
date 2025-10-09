@@ -2,10 +2,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from a2a.utils import DEFAULT_RPC_URL
+from a2a.utils.telemetry import trace_function
 from aion.shared.context import get_context
 from aion.shared.logging import get_logger
 from aion.shared.opentelemetry import generate_request_span_context
-from opentelemetry import trace
+from opentelemetry import context
+from opentelemetry.trace import SpanKind
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
@@ -25,13 +28,10 @@ class TracingMiddleware(BaseHTTPMiddleware):
 
     Args:
         app: The ASGI application
-        tracer_name: Name of the OpenTelemetry tracer to use.
-                     Defaults to "LanggraphAgentRequest"
     """
 
-    def __init__(self, app, tracer_name: str = "LanggraphAgentRequest"):
+    def __init__(self, app):
         super().__init__(app)
-        self.tracer = trace.get_tracer(tracer_name)
         self.logger = get_logger()
 
     async def dispatch(self, request: Request, call_next) -> Response:
@@ -49,15 +49,43 @@ class TracingMiddleware(BaseHTTPMiddleware):
             HTTP response from the application
         """
         request_context: RequestContext = get_context()
-        with self.tracer.start_as_current_span(
-                name="a2a.process_request",
-                context=generate_request_span_context(trace_id=getattr(request_context, "trace_id", None))
-        ):
-            response = await call_next(request)
-            self._log_request(request, response, request_context)
-            return response
 
-    def _log_request(self, request: Request, response: Response, request_context):
+        # Generate trace context and attach it globally
+        trace_context = generate_request_span_context(trace_id=getattr(request_context, "trace_id", None))
+        if trace_context:
+            token = context.attach(trace_context)
+        else:
+            token = None
+
+        try:
+            return await self.dispatch_request(request, request_context, call_next)
+        finally:
+            if token is not None:
+                context.detach(token)
+
+    @trace_function(kind=SpanKind.SERVER)
+    async def dispatch_request(self, request, request_context, call_next):
+        self._log_request_received(request, request_context)
+        response = await call_next(request)
+        self._log_request_response(request, response, request_context)
+        return response
+
+    def _log_request_received(self, request: Request, request_context):
+        """Log incoming request.
+
+        Args:
+            request: The HTTP request object
+            request_context: Request context containing transaction metadata
+        """
+        if request.url.path == DEFAULT_RPC_URL and request.method == "POST":
+            if request_context:
+                text = f"Received RPC request: {request_context.transaction_name}"
+            else:
+                text = f"Received RPC request: {request.method} {request.url.path}"
+
+            self.logger.info(text)
+
+    def _log_request_response(self, request: Request, response: Response, request_context):
         """Log request completion with transaction name and status code.
 
         Uses transaction name from request context if available,

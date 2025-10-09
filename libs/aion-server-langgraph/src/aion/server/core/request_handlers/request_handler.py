@@ -8,7 +8,6 @@ from a2a.server.request_handlers.default_request_handler import TERMINAL_TASK_ST
 from a2a.server.tasks import TaskManager, ResultAggregator
 from a2a.types import MessageSendParams, Task, InvalidParamsError, TaskNotFoundError
 from a2a.utils.errors import ServerError
-from a2a.utils.telemetry import trace_class, SpanKind
 
 from aion.server.interfaces import IRequestHandler
 from aion.server.tasks import store_manager, AionTaskManager
@@ -21,7 +20,6 @@ from aion.server.types import (
 from aion.server.utils import ConversationBuilder
 
 
-@trace_class(kind=SpanKind.SERVER)
 class AionRequestHandler(DefaultRequestHandler, IRequestHandler):
     """Request handler implementation for Aion management operations."""
 
