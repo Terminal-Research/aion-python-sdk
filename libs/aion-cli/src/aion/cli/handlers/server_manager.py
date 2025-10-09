@@ -28,7 +28,7 @@ class ServerManager:
 
     def _signal_handler(self, signum, frame):
         """Handle shutdown signals gracefully"""
-        logger.info(f"Received signal {signum}, shutting down all agents and proxy...")
+        logger.debug(f"Received signal {signum}, shutting down all agents and proxy...")
         if self.process_manager:
             self.process_manager.shutdown_all(timeout=30)
         sys.exit(0)
