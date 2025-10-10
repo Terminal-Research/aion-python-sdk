@@ -13,8 +13,6 @@ __all__ = [
     "db_settings",
     "AppSettings",
     "app_settings",
-    "PlatformSettings",
-    "platform_settings",
     "ApiSettings",
     "api_settings",
 ]
@@ -278,13 +276,15 @@ class ApiSettings(BaseEnvSettings):
         return self._ws_gql_url
 
 
-class PlatformSettings(BaseEnvSettings):
-    """
-    Configuration settings for Aion platform integration.
+class AppSettings(BaseEnvSettings):
+    """Application configuration settings."""
 
-    Settings can be overridden using environment variables with the
-    corresponding alias names (e.g., AION_DOCS_URL).
-    """
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = Field(
+        description="Logging level to use.",
+        alias="LOG_LEVEL",
+        default="INFO"
+    )
+
     docs_url: str = Field(
         default="https://docs.aion.to/",
         description="Url to the documentation of Aion API.",
@@ -297,31 +297,22 @@ class PlatformSettings(BaseEnvSettings):
         alias="NODE_NAME"
     )
 
+    distribution_id: Optional[str] = Field(
+        default=None,
+        description="Distribution ID used to identify deployment in Aion platform",
+        alias="DISTRIBUTION_ID"
+    )
+
+    version_id: Optional[str] = Field(
+        default=None,
+        description="Version ID used to identify deployment in Aion platform",
+        alias="VERSION_ID"
+    )
+
     logstash_endpoint: Optional[str] = Field(
         default=None,
         description="Logstash endpoint to use.",
         alias="LOGSTASH_ENDPOINT"
-    )
-
-    def get_logstash_host_port(self) -> Optional[tuple[str, int]]:
-        """Extract host and port from logstash endpoint as tuple."""
-        if not self.logstash_endpoint:
-            return None
-
-        from aion.shared.utils.url import parse_host_port
-        try:
-            return parse_host_port(self.logstash_endpoint)
-        except Exception:
-            return None
-
-
-class AppSettings(BaseEnvSettings):
-    """Application configuration settings."""
-
-    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = Field(
-        description="Logging level to use.",
-        alias="LOG_LEVEL",
-        default="INFO"
     )
 
     agent_id: Optional[str] = None
@@ -336,7 +327,12 @@ class AppSettings(BaseEnvSettings):
         return f"http://0.0.0.0:{self.agent_config.port}"
 
     def set_agent_config(self, agent_id: str, agent_config: AgentConfig) -> None:
-        """Update agent configuration."""
+        """
+        Update agent configuration.
+
+        Note: This method must be called before application startup to ensure
+        the application knows which agent it should work with.
+        """
         self.agent_id = agent_id
         self.agent_config = agent_config
 
@@ -345,7 +341,6 @@ class AppSettings(BaseEnvSettings):
 try:
     db_settings = DatabaseSettings()
     api_settings = ApiSettings()
-    platform_settings = PlatformSettings()
     app_settings = AppSettings()
 except Exception as ex:
     print(f"Error loading configuration: {ex}")

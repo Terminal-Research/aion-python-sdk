@@ -1,8 +1,11 @@
-import logging
-from typing import Optional
+from __future__ import annotations
 
-from ..context import RequestContext, get_context
-from ..opentelemetry import get_span_info, SpanInfo
+import logging
+from typing import Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from aion.shared.context import RequestContext
+    from aion.shared.opentelemetry.tracing import SpanInfo
 
 
 class AionLogRecord(logging.LogRecord):
@@ -19,6 +22,8 @@ class AionLogRecord(logging.LogRecord):
     """
     request_context: Optional[RequestContext]
     trace_span_info: Optional[SpanInfo]
+    distribution_id: Optional[str]
+    version_id: Optional[str]
 
     def __init__(self, *args, **kwargs):
         """
@@ -28,17 +33,38 @@ class AionLogRecord(logging.LogRecord):
             *args: Positional arguments passed to logging.LogRecord
             **kwargs: Keyword arguments passed to logging.LogRecord
         """
+        from aion.shared.context import get_context
+        from aion.shared.opentelemetry.tracing import get_span_info
+        from aion.shared.settings import app_settings
+
         super().__init__(*args, **kwargs)
-        try:
-            self.request_context = get_context()
-        except Exception:
-            self.request_context = None
 
         try:
-            self.trace_span_info = get_span_info()
+            request_context = get_context()
         except Exception:
-            self.span_info = None
+            request_context = None
 
+        try:
+            trace_span_info = get_span_info()
+        except Exception:
+            trace_span_info = None
+
+        # Opentelemetry tracing
+        self.trace_id = getattr(trace_span_info, "trace_id_hex", None)
+        self.trace_span_id = getattr(trace_span_info, "span_id_hex", None)
+        self.trace_span_name = getattr(trace_span_info, "span_name", None)
+        self.trace_patent_span_id = getattr(trace_span_info, "parent_span_id_hex", None)
+
+        # request context / deployment info
+        self.transaction_id = getattr(request_context, "transaction_id", None)
+        self.transaction_name = getattr(request_context, "transaction_name", None)
+
+        self.aion_distribution_id = getattr(request_context, "aion_distribution_id", app_settings.distribution_id)
+        self.aion_version_id = getattr(request_context, "aion_version_id", app_settings.version_id)
+        self.aion_agent_environment_id = getattr(request_context, "aion_agent_environment_id", None)
+        self.http_request_method = getattr(request_context, "request_method", None)
+        self.http_request_target = getattr(request_context, "request_path", None)
+        self.langgraph_node = getattr(request_context, "langgraph_current_node", None)
 
 class AionLogger(logging.Logger):
     """

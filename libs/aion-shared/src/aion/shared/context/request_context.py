@@ -60,20 +60,6 @@ class RequestContext:
         filtered_data = {k: v for k, v in data.items() if k in valid_fields}
         return cls(**filtered_data)
 
-    def get_aion_log_context(self):
-        return {
-            "transaction.id": self.transaction_id,
-            "transaction.name": self.transaction_name,
-            "tags": {
-                "aion.distribution.id": self.aion_distribution_id,
-                "aion.version.id": self.aion_version_id,
-                "aion.agentEnvironment.id": self.aion_agent_environment_id,
-                "http.method": self.request_method,
-                "http.target": self.request_path,
-                "langgraph.node": self.langgraph_current_node
-            }
-        }
-
     def set_langgraph_current_node(self, langgraph_current_node: str) -> None:
         self.langgraph_current_node = langgraph_current_node
 
