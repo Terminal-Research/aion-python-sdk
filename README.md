@@ -19,8 +19,13 @@ Create a `.env` file in your project root with the following configuration:
 # If not set, memory storage will be used (created automatically with agent startup)
 POSTGRES_URL=postgresql://your_username:your_password@localhost:5432/your_database_name
 
-# Logging
-LOG_LEVEL=DEBUG
+# Application Settings
+LOG_LEVEL=INFO
+AION_DOCS_URL=https://docs.aion.to/
+NODE_NAME=your_node_name
+DISTRIBUTION_ID=your_distribution_id
+VERSION_ID=your_version_id
+LOGSTASH_ENDPOINT=logstash-host:port
 
 # AION API Client
 AION_CLIENT_ID=your_client_id_here
@@ -34,11 +39,23 @@ AION_CLI_BEARER_TOKEN=your_bearer_token_here
 
 ### Environment Variables Explained
 
+#### Database Configuration
 * **`POSTGRES_URL`** - PostgreSQL connection string. If not provided, the system automatically creates and uses in-memory storage when the agent starts
-* **`LOG_LEVEL`** - Controls logging verbosity (DEBUG, INFO, WARNING, ERROR) - *currently not used*
+
+#### Application Settings
+* **`LOG_LEVEL`** - Controls logging verbosity: DEBUG, INFO, WARNING, ERROR (default: INFO)
+* **`AION_DOCS_URL`** - URL to the Aion API documentation (default: `https://docs.aion.to/`)
+* **`NODE_NAME`** - Node name used to identify deployment in Aion platform (optional)
+* **`DISTRIBUTION_ID`** - Distribution ID used to identify deployment in Aion platform (optional)
+* **`VERSION_ID`** - Version ID used to identify deployment in Aion platform (optional)
+* **`LOGSTASH_ENDPOINT`** - Logstash endpoint for logging (optional)
+
+#### AION API Client
 * **`AION_CLIENT_ID`** & **`AION_CLIENT_SECRET`** - Authentication credentials for AION API
 * **`AION_API_HOST`** - API host URL (default: `https://api.aion.to`)
 * **`AION_API_KEEP_ALIVE`** - Keep alive interval in seconds for API connections (default: 60)
+
+#### CLI Authentication
 * **`AION_CLI_BEARER_TOKEN`** - Bearer token for authentication (chat command) - *optional*
 
 ## Basic Configuration
