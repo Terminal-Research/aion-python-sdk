@@ -275,33 +275,3 @@ class AionConfigReader:
                 "Proxy configuration validation failed",
                 details=formatted_error
             ) from e
-
-    def get_config_summary(self, config: AionConfig) -> str:
-        """Generate a human-readable summary of the loaded configuration.
-
-        Args:
-            config: Validated AionConfig instance.
-
-        Returns:
-            Formatted string with configuration summary.
-        """
-        summary_lines = [
-            "=== Aion Configuration Summary ===",
-            f"Proxy server: port {config.proxy.port}",
-            f"Total agents: {len(config.agents)}"
-        ]
-
-        if config.agents:
-            summary_lines.append("\nAgents:")
-            for agent_id, agent in config.agents.items():
-                summary_lines.append(
-                    f"  - {agent_id}: {agent.name} (port {agent.port}) -> {agent.path}"
-                )
-
-                if agent.skills:
-                    summary_lines.append(f"    Skills: {', '.join([skill.name for skill in agent.skills])}")
-
-                if agent.configuration:
-                    summary_lines.append(f"    Custom config fields: {len(agent.configuration)}")
-
-        return "\n".join(summary_lines)

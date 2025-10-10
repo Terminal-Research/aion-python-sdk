@@ -1,4 +1,4 @@
-from aion.server.core.base import A2ABaseModel
+from aion.shared.base import A2ABaseModel
 
 
 from pydantic import Field

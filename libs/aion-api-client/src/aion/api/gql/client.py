@@ -1,7 +1,7 @@
 import logging
 from typing import Optional, List, Any, AsyncIterator
 
-from aion.shared.aion_config import AgentConfig
+from aion.shared.aion_config import AionConfig
 
 from aion.api.http import AionJWTManager
 from .generated.graphql_client import (
@@ -177,12 +177,11 @@ class AionGqlClient:
                 **kwargs):
             yield chunk
 
-    async def register_version(self, agent_config: AgentConfig):
+    async def register_version(self, config: AionConfig):
         """Register a new agent version with the provided configuration.
 
         Args:
-            agent_config (AgentConfig): The agent configuration object containing
-                agent type, version, capabilities, and behavioral settings.
+            config (AionConfig): The aion configuration object containing
         """
         self._validate_client_before_execute()
 

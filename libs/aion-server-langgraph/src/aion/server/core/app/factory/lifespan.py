@@ -10,7 +10,6 @@ from starlette.applications import Starlette
 
 from aion.server.core.platform import AionWebSocketManager, WebsocketTransportFactory
 from aion.server.services import (
-    AionAgentStartupBroadcastService,
     AionWebSocketService,
     AionAuthManagerService
 )
@@ -53,10 +52,6 @@ class AppLifespan:
         auth_token = await AionAuthManagerService(jwt_manager=aion_jwt_manager).get_token()
         if not auth_token:
             return
-
-        asyncio.create_task(
-            AionAgentStartupBroadcastService()
-            .execute(self.app_factory.agent_config))
 
         ws_manager = await self.get_websocket_manager(create=True)
         asyncio.create_task(
