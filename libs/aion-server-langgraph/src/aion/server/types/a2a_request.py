@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal, Union
 
-from aion.server.core.base import A2ABaseModel
+from aion.shared.base import A2ABaseModel
 from a2a.types import A2ARequest
 from pydantic import RootModel
 

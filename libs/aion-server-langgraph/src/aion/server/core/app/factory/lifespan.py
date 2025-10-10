@@ -52,12 +52,6 @@ class AppLifespan:
         # fetch token before services execution to reduce number of requests to aion api
         auth_token = await aion_services.AionAuthManagerService(jwt_manager=aion_jwt_manager).get_token()
 
-        # SEND INFO TO AION ABOUT AGENT
-        if auth_token:
-            asyncio.create_task(
-                aion_services.AionAgentStartupBroadcastService()
-                .execute(self.app_factory.agent_config))
-
         if auth_token:
             # START WEBSOCKET CONNECTION WITH AION
             ws_manager = await self.get_websocket_manager(create=True)
