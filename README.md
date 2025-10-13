@@ -195,6 +195,7 @@ The SDK provides seamless integration of your LangGraph agents through:
 ## Documentation
 
 * **[Complete Configuration Guide](docs/aion-yaml-config.md)** - Full YAML options, skills, capabilities
+* **[HTTP Endpoints](docs/http_endpoints.md)** - Agent and Proxy Server HTTP endpoints reference
 * **[A2A Protocol Extensions](docs/a2a_extensions/main.md)** - Streaming, context management, JSON-RPC methods
 * **[API Client](libs/aion-api-client/README.md)** - GraphQL client for integration
 * **[CLI Reference](libs/aion-cli/README.md)** - Command-line interface and all available commands
