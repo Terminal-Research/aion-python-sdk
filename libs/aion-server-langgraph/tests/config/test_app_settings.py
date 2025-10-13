@@ -57,13 +57,24 @@ class TestAppSettings:
         settings = AppSettings()
         assert settings.node_name == "test-node-123"
 
-    def test_default_logstash_endpoint(self):
-        """Test that logstash_endpoint defaults to None."""
+    def test_default_logstash_host(self):
+        """Test that logstash_host defaults to None."""
         settings = AppSettings()
-        assert settings.logstash_endpoint is None
+        assert settings.logstash_host is None
 
-    @patch.dict(os.environ, {"LOGSTASH_ENDPOINT": "localhost:5000"})
-    def test_logstash_endpoint_from_environment(self):
-        """Test that logstash_endpoint can be set via environment variable."""
+    @patch.dict(os.environ, {"LOGSTASH_HOST": "localhost"})
+    def test_logstash_host_from_environment(self):
+        """Test that logstash_host can be set via environment variable."""
         settings = AppSettings()
-        assert settings.logstash_endpoint == "localhost:5000"
+        assert settings.logstash_host == "localhost"
+
+    def test_default_logstash_port(self):
+        """Test that logstash_port defaults to None."""
+        settings = AppSettings()
+        assert settings.logstash_port is None
+
+    @patch.dict(os.environ, {"LOGSTASH_PORT": "5000"})
+    def test_logstash_port_from_environment(self):
+        """Test that logstash_port can be set via environment variable."""
+        settings = AppSettings()
+        assert settings.logstash_port == 5000
