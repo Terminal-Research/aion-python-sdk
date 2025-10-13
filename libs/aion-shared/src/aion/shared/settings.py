@@ -309,10 +309,16 @@ class AppSettings(BaseEnvSettings):
         alias="VERSION_ID"
     )
 
-    logstash_endpoint: Optional[str] = Field(
+    logstash_host: Optional[str] = Field(
         default=None,
-        description="Logstash endpoint to use.",
-        alias="LOGSTASH_ENDPOINT"
+        description="Logstash host to use.",
+        alias="LOGSTASH_HOST"
+    )
+
+    logstash_port: Optional[int] = Field(
+        default=None,
+        description="Logstash port to use.",
+        alias="LOGSTASH_PORT"
     )
 
     agent_id: Optional[str] = None
@@ -325,6 +331,11 @@ class AppSettings(BaseEnvSettings):
             raise AttributeError("agent_config must be set for AppSettings")
 
         return f"http://0.0.0.0:{self.agent_config.port}"
+
+    @property
+    def is_logstash_configured(self) -> bool:
+        """Check if logstash is configured with both host and port."""
+        return bool(self.logstash_host and self.logstash_port)
 
     def set_agent_config(self, agent_id: str, agent_config: AgentConfig) -> None:
         """

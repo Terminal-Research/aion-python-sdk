@@ -25,7 +25,8 @@ AION_DOCS_URL=https://docs.aion.to/
 NODE_NAME=your_node_name
 DISTRIBUTION_ID=your_distribution_id
 VERSION_ID=your_version_id
-LOGSTASH_ENDPOINT=logstash-host:port
+LOGSTASH_HOST=0.0.0.0
+LOGSTASH_PORT=5000
 
 # AION API Client
 AION_CLIENT_ID=your_client_id_here
@@ -48,7 +49,8 @@ AION_CLI_BEARER_TOKEN=your_bearer_token_here
 * **`NODE_NAME`** - Node name used to identify deployment in Aion platform (optional)
 * **`DISTRIBUTION_ID`** - Distribution ID used to identify deployment in Aion platform (optional)
 * **`VERSION_ID`** - Version ID used to identify deployment in Aion platform (optional)
-* **`LOGSTASH_ENDPOINT`** - Logstash endpoint for logging (optional)
+* **`LOGSTASH_HOST`** - Logstash server host for centralized logging (optional)
+* **`LOGSTASH_PORT`** - Logstash server port for centralized logging (optional)
 
 #### AION API Client
 * **`AION_CLIENT_ID`** & **`AION_CLIENT_SECRET`** - Authentication credentials for AION API
