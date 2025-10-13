@@ -2,6 +2,11 @@ from typing import Optional, List, Union
 
 from pydantic import BaseModel, Field
 
+__all__ = [
+    "ErrorDetail",
+    "ErrorResponse",
+]
+
 
 class ErrorDetail(BaseModel):
     """Error detail information"""

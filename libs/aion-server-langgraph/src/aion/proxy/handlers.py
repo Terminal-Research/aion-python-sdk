@@ -6,7 +6,6 @@ from urllib.parse import urljoin
 
 import httpx
 from aion.shared.logging import get_logger
-from aion.shared.types import AgentHealthStatus
 from fastapi import Request, Response
 
 from .exceptions import (
@@ -15,6 +14,7 @@ from .exceptions import (
     AgentTimeoutException,
     AgentProxyException
 )
+from .types import AgentHealthInfo
 
 logger = get_logger()
 
@@ -38,7 +38,7 @@ class RequestHandler:
         Check health status of all configured agents
 
         Returns:
-            Dictionary with status of each agent compatible with AgentsHealthResponse
+            Dictionary with status of each agent compatible with SystemHealthResponse
         """
         results = {}
 
@@ -46,28 +46,28 @@ class RequestHandler:
             try:
                 # Try to connect to agent's health endpoint or root
                 response = await self.http_client.get(
-                    f"{agent_url}/health",
+                    f"{agent_url}/health/",
                     timeout=5.0
                 )
-                results[agent_id] = AgentHealthStatus(
+                results[agent_id] = AgentHealthInfo(
                     status="healthy" if response.status_code == 200 else "unhealthy",
                     url=agent_url,
                     status_code=response.status_code
                 )
             except httpx.ConnectError:
-                results[agent_id] = AgentHealthStatus(
+                results[agent_id] = AgentHealthInfo(
                     status="unavailable",
                     url=agent_url,
                     error="connection_refused"
                 )
             except httpx.TimeoutException:
-                results[agent_id] = AgentHealthStatus(
+                results[agent_id] = AgentHealthInfo(
                     status="timeout",
                     url=agent_url,
                     error="timeout"
                 )
             except Exception as e:
-                results[agent_id] = AgentHealthStatus(
+                results[agent_id] = AgentHealthInfo(
                     status="error",
                     url=agent_url,
                     error=str(e)
@@ -77,7 +77,7 @@ class RequestHandler:
         all_healthy = all(agent.status == "healthy" for agent in results.values())
 
         return {
-            "proxy_status": "ok",
+            "proxy_status": "healthy",
             "overall_agents_status": "healthy" if all_healthy else "degraded",
             "agents": results
         }

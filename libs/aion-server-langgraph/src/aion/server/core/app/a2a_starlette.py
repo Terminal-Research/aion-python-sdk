@@ -14,16 +14,24 @@ from a2a.types import (
 from a2a.types import AgentCard
 from a2a.utils.errors import MethodNotImplementedError
 from aion.shared.logging import get_logger
+from aion.shared.types import (
+    ExtendedA2ARequest,
+    CustomA2ARequest,
+    GetContextRequest,
+    GetContextsListRequest,
+    HealthResponse,
+)
 from opentelemetry import trace
 from pydantic import ValidationError
 from starlette.exceptions import HTTPException
 from starlette.requests import Request
-from starlette.responses import Response
+from starlette.responses import Response, JSONResponse
+from starlette.routing import Route
 from starlette.status import HTTP_413_REQUEST_ENTITY_TOO_LARGE
 
 from aion.server.core.request_handlers import AionJSONRPCHandler
 from aion.server.interfaces import IRequestHandler
-from aion.shared.types import ExtendedA2ARequest, CustomA2ARequest, GetContextRequest, GetContextsListRequest
+from aion.server.utils.constants import HEALTH_CHECK_URL
 
 logger = get_logger()
 request_tracer = trace.get_tracer("langgraph.agent")
@@ -57,6 +65,20 @@ class AionA2AStarletteApplication(A2AStarletteApplication):
         self.handler = AionJSONRPCHandler(
             agent_card=agent_card,
             request_handler=http_handler)
+
+    def routes(self, *args, **kwargs) -> list[Route]:
+        default_routes = super().routes(*args, **kwargs)
+
+        app_routes = [
+            *default_routes,
+            Route(
+                HEALTH_CHECK_URL,
+                self._handle_health_check,
+                methods=['GET'],
+                name="app_health",
+            )
+        ]
+        return app_routes
 
     async def _handle_requests(self, request: Request) -> Response:
         """Handle incoming HTTP requests with comprehensive error handling.
@@ -177,7 +199,8 @@ class AionA2AStarletteApplication(A2AStarletteApplication):
 
         return self._create_response(context=context, handler_result=handler_result)
 
-    def _check_if_request_is_custom_method(self, request_obj):
+    @staticmethod
+    def _check_if_request_is_custom_method(request_obj):
         """Check if the request is a custom method type.
 
         Args:
@@ -188,6 +211,16 @@ class AionA2AStarletteApplication(A2AStarletteApplication):
         """
         custom_types = get_args(CustomA2ARequest.model_fields['root'].annotation)
         return type(request_obj) in custom_types
+
+    @staticmethod
+    async def _handle_health_check(request) -> JSONResponse:
+        """
+        Health check endpoint
+
+        Returns:
+            Simple status response with 200 status code
+        """
+        return JSONResponse(HealthResponse().model_dump())
 
 
 __all__ = ["AionA2AStarletteApplication"]

@@ -10,6 +10,7 @@ from .exceptions import (
     AgentTimeoutException,
     AgentProxyException
 )
+from .types import AgentHealthInfo, SystemHealthResponse
 
 __all__ = [
     "AionAgentProxyServer",
@@ -19,4 +20,6 @@ __all__ = [
     "AgentUnavailableException",
     "AgentTimeoutException",
     "AgentProxyException",
+    "AgentHealthInfo",
+    "SystemHealthResponse",
 ]

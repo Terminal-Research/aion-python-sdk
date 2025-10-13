@@ -1,10 +1,12 @@
 """
 Route definitions for AION Agent Proxy Server
 """
-from aion.shared.types import HealthResponse, AgentsHealthResponse
+from aion.shared.types import HealthResponse
 from fastapi import FastAPI, Request, Response
 
 from .handlers import RequestHandler
+from .types import SystemHealthResponse
+from .constants import HEALTH_CHECK_URL, SYSTEM_HEALTH_CHECK_URL
 
 
 def setup_routes(app: FastAPI, request_handler: RequestHandler):
@@ -17,7 +19,7 @@ def setup_routes(app: FastAPI, request_handler: RequestHandler):
     """
 
     @app.get(
-        "/health",
+        HEALTH_CHECK_URL,
         response_model=HealthResponse,
         summary="Health check",
         description="Check if the proxy server is running"
@@ -27,17 +29,17 @@ def setup_routes(app: FastAPI, request_handler: RequestHandler):
         Health check endpoint
 
         Returns:
-            Simple OK response with 200 status code
+            Simple status response with 200 status code
         """
         return HealthResponse()
 
     @app.get(
-        "/health/agents",
-        response_model=AgentsHealthResponse,
+        SYSTEM_HEALTH_CHECK_URL,
+        response_model=SystemHealthResponse,
         summary="Agents health check",
         description="Check health status of all configured agents"
     )
-    async def agents_health_check() -> AgentsHealthResponse:
+    async def agents_health_check() -> SystemHealthResponse:
         """
         Check health status of all configured agents
 
@@ -45,7 +47,7 @@ def setup_routes(app: FastAPI, request_handler: RequestHandler):
             Dictionary with status of proxy and all agents
         """
         result = await request_handler.check_agents_health()
-        return AgentsHealthResponse(**result)
+        return SystemHealthResponse(**result)
 
     @app.api_route(
         "/{agent_id}/{path:path}",
