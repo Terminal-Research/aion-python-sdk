@@ -48,16 +48,7 @@ class AppLifespan:
         """Handle application startup events."""
         # SETUP OPEN-TELEMETRY
         init_tracing()
-
-        # fetch token before services execution to reduce number of requests to aion api
-        auth_token = await aion_services.AionAuthManagerService(jwt_manager=aion_jwt_manager).get_token()
-
-        if auth_token:
-            # START WEBSOCKET CONNECTION WITH AION
-            ws_manager = await self.get_websocket_manager(create=True)
-            asyncio.create_task(
-                aion_services.AionWebSocketService(websocket_manager=ws_manager)
-                .start_connection())
+        asyncio.create_task(self._start_ws_connection())
 
     async def shutdown(self):
         """Handle application shutdown events."""
@@ -68,3 +59,14 @@ class AppLifespan:
 
         # Delegate other shutdown logic to app factory
         await self.app_factory.shutdown()
+
+    async def _start_ws_connection(self):
+        # fetch token before services execution to reduce number of requests to aion api
+        auth_token = await aion_services.AionAuthManagerService(jwt_manager=aion_jwt_manager).get_token()
+
+        if auth_token:
+            # START WEBSOCKET CONNECTION WITH AION
+            ws_manager = await self.get_websocket_manager(create=True)
+            asyncio.create_task(
+                aion_services.AionWebSocketService(websocket_manager=ws_manager)
+                .start_connection())
