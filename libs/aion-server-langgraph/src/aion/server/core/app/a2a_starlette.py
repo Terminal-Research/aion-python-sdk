@@ -23,7 +23,7 @@ from starlette.status import HTTP_413_REQUEST_ENTITY_TOO_LARGE
 
 from aion.server.core.request_handlers import AionJSONRPCHandler
 from aion.server.interfaces import IRequestHandler
-from aion.server.types import ExtendedA2ARequest, CustomA2ARequest, GetContextRequest, GetContextsListRequest
+from aion.shared.types import ExtendedA2ARequest, CustomA2ARequest, GetContextRequest, GetContextsListRequest
 
 logger = get_logger()
 request_tracer = trace.get_tracer("langgraph.agent")

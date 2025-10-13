@@ -7,7 +7,7 @@ from a2a.server.request_handlers import JSONRPCHandler, prepare_response_object
 from a2a.types import JSONRPCErrorResponse, InternalError
 from a2a.utils.errors import ServerError
 
-from aion.server.types import (
+from aion.shared.types import (
     GetContextRequest,
     GetContextsListRequest,
     GetContextResponse,

@@ -11,7 +11,7 @@ from a2a.utils.errors import ServerError
 
 from aion.server.interfaces import IRequestHandler
 from aion.server.tasks import store_manager, AionTaskManager
-from aion.server.types import (
+from aion.shared.types import (
     GetContextParams,
     GetContextsListParams,
     Conversation,

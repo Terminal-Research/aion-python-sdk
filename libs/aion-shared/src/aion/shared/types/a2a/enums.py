@@ -9,6 +9,7 @@ __all__ = [
     "ArtifactStreamingStatusReason",
 ]
 
+
 class MessageType(str, Enum):
     """Types of messages that can be processed in the system."""
     STREAM_DELTA = "stream_delta"
@@ -16,10 +17,12 @@ class MessageType(str, Enum):
     EVENT = "event"
     LANGRAPH_VALUES = "langraph_values"
 
+
 class ArtifactName(str, Enum):
     """Named artifacts that can be created and referenced."""
     MESSAGE_RESULT = "message_result"
     STREAM_DELTA = "stream_delta"
+
 
 class A2AEventType(str, Enum):
     """Event types for Agent-to-Agent (A2A) communication."""

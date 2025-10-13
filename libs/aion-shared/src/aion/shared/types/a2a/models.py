@@ -1,15 +1,15 @@
 from typing import List
 
-from aion.shared.base import A2ABaseModel
 from a2a.types import Message, Artifact, TaskState
+from pydantic import RootModel, Field
+
+from aion.shared.base import A2ABaseModel
 
 __all__ = [
     "Conversation",
     "ContextsList",
     "ConversationTaskStatus",
 ]
-
-from pydantic import RootModel, Field, ConfigDict
 
 
 class ConversationTaskStatus(A2ABaseModel):

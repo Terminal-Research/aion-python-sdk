@@ -10,7 +10,7 @@ __all__ = [
     "AionContextMiddleware",
 ]
 
-from aion.server.types import ExtendedA2ARequest
+from aion.shared.types import ExtendedA2ARequest
 
 logger = get_logger(use_logstash=False)
 

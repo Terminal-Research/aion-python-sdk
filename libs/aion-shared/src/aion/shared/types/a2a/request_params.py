@@ -1,9 +1,8 @@
-from aion.shared.base import A2ABaseModel
-
-
-from pydantic import Field
 from typing import Optional, Dict, Any
 
+from pydantic import Field
+
+from aion.shared.base import A2ABaseModel
 
 __all__ = [
     "GetContextParams",
@@ -19,6 +18,9 @@ class GetContextParams(A2ABaseModel):
 
 
 class GetContextsListParams(A2ABaseModel):
-   history_length: Optional[int] = Field(default=None, description="Number of recent contexts to be retrieved")
-   history_offset: Optional[int] = Field(default=None, description="The offset starting with the most recent context from which the server should start returning history")
-   metadata: Optional[Dict[str, Any]] = Field(default=None, description="Additional metadata")
+    history_length: Optional[int] = Field(default=None, description="Number of recent contexts to be retrieved")
+    history_offset: Optional[int] = Field(
+        default=None,
+        description="The offset starting with the most recent context from which the server should start returning history"
+    )
+    metadata: Optional[Dict[str, Any]] = Field(default=None, description="Additional metadata")

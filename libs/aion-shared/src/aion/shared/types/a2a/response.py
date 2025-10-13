@@ -1,10 +1,10 @@
 from typing import Literal
 
-from aion.shared.base import A2ABaseModel
 from a2a.types import JSONRPCErrorResponse
 from pydantic import RootModel
 
-from .a2a_models import Conversation, ContextsList
+from aion.shared.base import A2ABaseModel
+from .models import Conversation, ContextsList
 
 __all__ = [
     "GetContextSuccessResponse",
@@ -26,6 +26,7 @@ class GetContextSuccessResponse(A2ABaseModel):
     """
     result: Conversation
 
+
 class GetContextResponse(
     RootModel[JSONRPCErrorResponse | GetContextSuccessResponse]
 ):
@@ -46,6 +47,7 @@ class GetContextsListSuccessResponse(A2ABaseModel):
     """
     List of context ids
     """
+
 
 class GetContextsListResponse(
     RootModel[JSONRPCErrorResponse | GetContextsListSuccessResponse]

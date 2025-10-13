@@ -10,7 +10,7 @@ from aion.shared.logging import get_logger
 from langchain_core.messages import BaseMessage, AIMessageChunk, AIMessage
 from langgraph.types import Interrupt, StateSnapshot
 
-from aion.server.types import MessageType, A2AEventType, A2AMetadataKey, ArtifactStreamingStatusReason
+from aion.shared.types import MessageType, A2AEventType, A2AMetadataKey, ArtifactStreamingStatusReason
 from aion.server.utils import StreamingArtifactBuilder
 
 logger = get_logger()

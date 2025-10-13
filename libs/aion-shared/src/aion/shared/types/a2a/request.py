@@ -6,7 +6,7 @@ from aion.shared.base import A2ABaseModel
 from a2a.types import A2ARequest
 from pydantic import RootModel
 
-from .a2a_request_params import GetContextParams, GetContextsListParams
+from .request_params import GetContextParams, GetContextsListParams
 
 __all__ = [
     "GetContextRequest",
