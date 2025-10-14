@@ -10,6 +10,7 @@ __all__ = [
     "get_context",
     "clear_context",
     "set_context_from_a2a_request",
+    "set_langgraph_node",
 ]
 
 
@@ -78,18 +79,37 @@ def update_context(**kwargs) -> RequestContext:
     Raises:
         RuntimeError: If no context is currently set
     """
-    current = request_context_var.get()
+    current = get_context()
     if current is None:
         raise RuntimeError("No context is currently set. Use set_context() first.")
 
-    updated = current.update(**kwargs)
-    request_context_var.set(updated)
-    return updated
+    return set_context(current, **kwargs)
 
 
 def clear_context():
     """Clear current context (useful for testing)"""
     request_context_var.set(None)
+
+
+def set_langgraph_node(node_name: str) -> RequestContext:
+    """
+    Set the current LangGraph node name in the context.
+
+    Args:
+        node_name: Name of the current LangGraph node
+
+    Returns:
+        Updated RequestContext instance
+
+    Raises:
+        RuntimeError: If no context is currently set
+    """
+    current = get_context()
+    if current is None:
+        raise RuntimeError("No context is currently set. Use set_context() first.")
+
+    current.set_langgraph_current_node(node_name)
+    return current
 
 
 def set_context_from_a2a_request(
@@ -101,35 +121,33 @@ def set_context_from_a2a_request(
     """
     Set the request context from A2A request data.
 
+    Extracts relevant information from A2A request metadata including distribution,
+    behavior, and environment details, and creates a RequestContext object. The context
+    is then set in the context variable and returned.
+
     Args:
-        metadata: A2A request metadata
+        metadata: A2A request metadata containing trace ID, sender ID, distribution,
+                  behavior, and environment information
+        request_method: Optional HTTP request method (e.g., 'GET', 'POST')
+        request_path: Optional request path/endpoint
+        jrpc_method: Optional JSON-RPC method name
 
     Returns:
-        RequestContext: The created and set request context
+        RequestContext: The created and set request context with all extracted
+                       and provided information
     """
-    # Extract distribution information
     distribution = metadata.get("aion:distribution", {})
     behavior = metadata.get("aion:behavior", {})
     environment = metadata.get("aion:environment", {})
 
-    # Create the request context directly
-    request_context = RequestContext(
+    return set_context(
         trace_id=metadata.get("aion:traceId"),
         user_id=metadata.get("aion:senderId"),
         aion_distribution_id=distribution.get("id"),
         aion_version_id=behavior.get("versionId"),
-        aion_agent_environment_id=environment.get("id")
+        aion_agent_environment_id=environment.get("id"),
+        request_method=request_method,
+        request_path=request_path,
+        request_jrpc_method=jrpc_method
     )
 
-    if request_method is not None:
-        request_context.request_method = request_method
-
-    if request_path is not None:
-        request_context.request_path = request_path
-
-    if jrpc_method is not None:
-        request_context.request_jrpc_method = jrpc_method
-
-    # Set the context in the context variable
-    set_context(request_context)
-    return request_context

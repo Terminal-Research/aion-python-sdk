@@ -1,11 +1,13 @@
 """Utility functions for creating and handling A2A messages."""
 
+import os
 import uuid
 from typing import Any, Sequence, Optional
 
 from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
 from a2a.types import TaskState, Message, Part, Role, TextPart, DataPart, Task, TaskArtifactUpdateEvent
+from aion.shared.context import set_langgraph_node
 from aion.shared.logging import get_logger
 from langchain_core.messages import BaseMessage, AIMessageChunk, AIMessage
 from langgraph.types import Interrupt, StateSnapshot
@@ -55,7 +57,7 @@ class LanggraphA2AEventProducer:
         that convert them into A2A TaskStatusUpdateEvent or TaskArtifactUpdateEvent.
 
         Args:
-            event_type: Type of LangGraph event (messages, values, custom, interrupt, complete)
+            event_type: Type of LangGraph event (messages, values, custom, updates, interrupt, complete)
             event: The event data payload
 
         Raises:
@@ -67,6 +69,8 @@ class LanggraphA2AEventProducer:
             await self._emit_langgraph_values(event)
         elif event_type == A2AEventType.CUSTOM.value:
             await self._emit_langgraph_event(event)
+        elif event_type == A2AEventType.UPDATES.value:
+            await self._handle_node_update(event)
         elif event_type == A2AEventType.INTERRUPT.value:
             await self._handle_interrupt(event)
         elif event_type == A2AEventType.COMPLETE.value:
@@ -214,6 +218,32 @@ class LanggraphA2AEventProducer:
             event: Dictionary containing state values from LangGraph
         """
         return await self.update_status_working()
+
+    async def _handle_node_update(self, event: dict):
+        """Handle LangGraph node update events.
+
+        Processes node updates from LangGraph execution and stores the active node
+        information in environment variables. The event is a dictionary where keys are node
+        names and values are the node outputs.
+
+        Args:
+            event: Dictionary containing node updates from LangGraph in the format
+                   {node_name: node_output}
+        """
+        # Extract node names from the updates event
+        # event format: {node_name: node_output}
+        node_names = list(event.keys())
+
+        if not node_names:
+            logger.debug(
+                "Empty node update received: task_id=%s, context_id=%s",
+                self.task.id, self.task.context_id
+            )
+            return
+
+        active_node = node_names[0]
+        set_langgraph_node(active_node)
+
 
     async def add_stream_artefact(self, event: Optional[TaskArtifactUpdateEvent] = None):
         """
