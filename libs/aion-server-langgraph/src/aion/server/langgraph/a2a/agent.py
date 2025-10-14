@@ -70,7 +70,7 @@ class LanggraphAgent:
         logger.info(f"Starting LangGraph stream: task_id={task_id}, context_id={session_id}")
         try:
             async for eventType, event in self.graph.astream(
-                    inputs, config, stream_mode=["values", "messages", "custom"]
+                    inputs, config, stream_mode=["values", "messages", "custom", "updates"]
             ):
                 if eventType == "messages":
                     event, metadata = event
@@ -86,11 +86,7 @@ class LanggraphAgent:
                     metadata if metadata is not None else "",
                 )
 
-                if (
-                        eventType == "values"
-                        or eventType == "messages"
-                        or eventType == "custom"
-                ):
+                if eventType in ("values", "messages", "custom", "updates"):
                     yield {
                         "event_type": eventType,
                         "event": event,
