@@ -26,7 +26,7 @@ class MissingAPIKeyError(Exception):
     """Exception for missing API key."""
 
 
-async def async_serve(agent_id: str, agent_config: AgentConfig):
+async def async_serve(agent_id: str, agent_config: AgentConfig, startup_callback=None):
     try:
         app_settings.set_agent_config(agent_id=agent_id, agent_config=agent_config)
 
@@ -36,7 +36,8 @@ async def async_serve(agent_id: str, agent_config: AgentConfig):
             context=AppContext(
                 db_manager=db_manager,
                 store_manager=store_manager
-            )
+            ),
+            startup_callback=startup_callback
         ).initialize()
 
         if not app_factory:
@@ -62,14 +63,14 @@ async def async_serve(agent_id: str, agent_config: AgentConfig):
         exit(1)
 
 
-async def run_server(agent_id: str, agent_config: AgentConfig):
+async def run_server(agent_id: str, agent_config: AgentConfig, startup_callback=None):
     """Starts the Currency Agent server."""
     try:
         # CONFIGURE CUSTOM LOGGERS FOR UVICORN / LOGSTASH
         replace_uvicorn_loggers(suppress_startup_logs=True)
         replace_logstash_loggers()
         # RUN AGENT
-        await async_serve(agent_id, agent_config)
+        await async_serve(agent_id, agent_config, startup_callback)
     except KeyboardInterrupt:
         logger.info("Interrupted by user")
         sys.exit(0)

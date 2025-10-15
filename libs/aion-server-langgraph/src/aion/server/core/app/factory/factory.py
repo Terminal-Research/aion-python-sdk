@@ -48,6 +48,7 @@ class AppFactory:
         agent_config: Agent configuration with runtime settings
         base_path: Base path for resolving module imports
         context: Application context with shared resources
+        startup_callback: Optional callback to call after initialization
         a2a_app: Agent-to-agent communication application
         starlette_app: Main Starlette web application
         agent: Initialized agent instance
@@ -59,9 +60,18 @@ class AppFactory:
             agent_id: str,
             agent_config: AgentConfig,
             context: AppContext,
-            base_path: Optional[Path] = None
+            base_path: Optional[Path] = None,
+            startup_callback=None
     ):
-        """Initialize factory with agent configuration."""
+        """Initialize factory with agent configuration and context.
+
+        Args:
+            agent_id: Unique identifier for the agent
+            agent_config: Agent configuration with runtime settings
+            context: Application context with shared resources
+            base_path: Optional base path for resolving module imports
+            startup_callback: Optional callback to call after initialization
+        """
         self.agent_id = agent_id
         self.agent_config = agent_config
         self.base_path = base_path
@@ -71,10 +81,15 @@ class AppFactory:
         self.a2a_app: Optional[AionA2AStarletteApplication] = None
         self.starlette_app: Optional[Starlette] = None
         self.agent: Optional[BaseAgent] = None
-        self.agent_manager: Optional[DirectAgentManager] = None
+        self.agent_manager: Optional[AgentManager] = None
+        self.startup_callback = startup_callback
 
     async def initialize(self):
-        """Initialize the application factory."""
+        """Initialize the application factory.
+
+        Returns:
+            Self if initialization successful, None if initialization failed
+        """
         try:
             await self._initialize()
             return self
@@ -84,7 +99,9 @@ class AppFactory:
             return None
 
     async def _initialize(self) -> None:
-        """Initialize all application components."""
+        """Initialize all application components in sequence:
+        database, agent, A2A app, and Starlette app.
+        """
         logger.debug("Initializing application for agent '%s'", self.agent_id)
 
         # Initialize database
@@ -103,7 +120,7 @@ class AppFactory:
                     self.agent_id, self.get_agent_host(), self.agent_config.port)
 
     async def _init_agent(self) -> None:
-        """Initialize agent from configuration."""
+        """Initialize agent from configuration and pre-compile its graph."""
         self.agent_manager = AgentManager(base_path=self.base_path)
 
         # Create and register agent
@@ -117,7 +134,7 @@ class AppFactory:
                      self.agent_id, self.agent.__class__.__name__)
 
     async def _create_a2a_app(self) -> None:
-        """Create and configure the A2A application."""
+        """Create and configure the A2A application with agent card and request handler."""
         if self.a2a_app:
             raise RuntimeError("A2A application is already created")
 
@@ -136,7 +153,11 @@ class AppFactory:
         )
 
     def _create_agent_card(self) -> AgentCard:
-        """Create agent card from configuration."""
+        """Get agent card from the initialized agent.
+
+        Returns:
+            AgentCard from the agent instance
+        """
         if not self.agent:
             raise RuntimeError("No agent available to create agent card")
 
@@ -146,7 +167,7 @@ class AppFactory:
         return self.agent.card
 
     async def _create_request_handler(self) -> AionRequestHandler:
-        """Create and configure the request handler."""
+        """Create and configure the request handler with task store and agent executor."""
         # Initialize task store
         self.context.store_manager.initialize()
         task_store = self.context.store_manager.get_store()
@@ -158,7 +179,7 @@ class AppFactory:
         )
 
     async def _build_starlette_app(self) -> None:
-        """Build the Starlette application."""
+        """Build the Starlette application from A2A app and add middlewares."""
         if not self.a2a_app:
             raise RuntimeError("A2A application must be created before building Starlette app")
 
@@ -168,7 +189,7 @@ class AppFactory:
         self.starlette_app.add_middleware(AionContextMiddleware)
 
     async def _init_db(self) -> None:
-        """Initialize database connection and run migrations."""
+        """Initialize database connection, run migrations, or skip if POSTGRES_URL not set."""
         pg_url = db_settings.pg_url
         if not pg_url:
             logger.debug("POSTGRES_URL environment variable not set, using in-memory data store")
@@ -198,12 +219,12 @@ class AppFactory:
             return
 
     async def shutdown(self) -> None:
-        """Shutdown the application and cleanup resources."""
+        """Shutdown the application and cleanup database resources."""
         logger.info("Shutting down application factory")
         await self._cleanup_db()
 
     async def _cleanup_db(self) -> None:
-        """Cleanup database connections."""
+        """Close database connections if initialized."""
         if not self.context.db_manager.is_initialized:
             return
 
@@ -217,7 +238,7 @@ class AppFactory:
 
     @property
     def is_initialized(self) -> bool:
-        """Check if the factory is fully initialized."""
+        """Check if the factory is fully initialized (agent, A2A app, and Starlette app exist)."""
         return (
                 self.agent is not None and
                 self.a2a_app is not None and
@@ -237,5 +258,5 @@ class AppFactory:
         return self.agent_config
 
     def get_agent_host(self) -> str:
-        """Get the agent host address."""
+        """Get the agent host address (always returns '0.0.0.0')."""
         return "0.0.0.0"

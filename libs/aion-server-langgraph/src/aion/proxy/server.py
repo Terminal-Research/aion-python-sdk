@@ -29,17 +29,19 @@ class AionAgentProxyServer:
     based on agent_id in the URL path
     """
 
-    def __init__(self, config: AionConfig):
+    def __init__(self, config: AionConfig, startup_callback=None):
         """
         Initialize proxy server with AION configuration
 
         Args:
             config: AionConfig instance containing agent configurations
+            startup_callback: Optional callback to call after server lifespan startup completes
         """
         self.config = config
         self.agent_urls: Dict[str, str] = {}
         self.http_client_manager = ProxyHttpClient()
         self.request_handler: Optional[RequestHandler] = None
+        self.startup_callback = startup_callback
 
         self._build_agent_urls()
 
@@ -50,12 +52,12 @@ class AionAgentProxyServer:
         )
 
     def _build_agent_urls(self):
-        """Build agent URL mappings from configuration"""
+        """Build agent URL mappings from configuration using hardcoded host 0.0.0.0 and http scheme"""
         for agent_id, agent_config in self.config.agents.items():
             # Build agent URL
-            host = "0.0.0.0"  # Default host
+            host = "0.0.0.0"
             port = agent_config.port
-            scheme = "http"  # Default scheme
+            scheme = "http"
 
             agent_url = f"{scheme}://{host}:{port}"
             self.agent_urls[agent_id] = agent_url
@@ -64,7 +66,8 @@ class AionAgentProxyServer:
     @asynccontextmanager
     async def _lifespan(self, app: FastAPI):
         """
-        Lifespan event handler for startup and shutdown
+        Lifespan event handler for startup and shutdown.
+        Initializes HTTP client, request handler, routes, and calls startup callback.
         """
         # Startup
         async with self.http_client_manager.lifespan() as http_client:
@@ -73,6 +76,10 @@ class AionAgentProxyServer:
 
             # Setup routes
             setup_routes(self.app, self.request_handler)
+
+            # Call startup callback if provided - server is now ready
+            if self.startup_callback is not None:
+                self.startup_callback()
 
             yield
 
@@ -83,8 +90,8 @@ class AionAgentProxyServer:
         Start the proxy server
 
         Args:
-            host: Host to bind the server to
-            port: Port to bind the server to (defaults to config.proxy.port)
+            host: Host to bind the server to (default: "0.0.0.0")
+            port: Port to bind the server to (default: config.proxy.port)
         """
         if port is None:
             port = self.config.proxy.port

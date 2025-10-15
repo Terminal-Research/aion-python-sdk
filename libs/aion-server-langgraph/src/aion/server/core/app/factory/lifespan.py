@@ -40,6 +40,11 @@ class AppLifespan:
         """Async context manager for application lifespan management."""
         try:
             await self.startup()
+
+            # call startup callback if presented
+            if self.app_factory.startup_callback is not None:
+                self.app_factory.startup_callback()
+
             yield
         finally:
             await self.shutdown()

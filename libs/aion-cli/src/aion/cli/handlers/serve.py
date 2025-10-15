@@ -75,11 +75,6 @@ class ServeHandler:
         )
 
         # Report agent startup results
-        if self.successful_agents:
-            logger.info(
-                f"Successfully started agents: {', '.join(self.successful_agents)}"
-            )
-
         if self.failed_agents:
             logger.error(f"Failed to start agents: {', '.join(self.failed_agents)}")
 

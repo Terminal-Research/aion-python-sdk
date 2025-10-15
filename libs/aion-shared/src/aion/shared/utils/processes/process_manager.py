@@ -45,20 +45,20 @@ class ProcessManager:
     def create_process(
             self,
             key: str,
-            target_function: Callable,
-            *args,
-            use_pipe: bool = False,
-            **kwargs
+            func: Callable,
+            func_args: Optional[Tuple] = None,
+            func_kwargs: Optional[Dict[str, Any]] = None,
+            use_pipe: bool = False
     ) -> bool:
         """
         Create and start a new process with custom key
 
         Args:
             key: Custom key to identify the process
-            target_function: Function to run in separate process
-            *args: Positional arguments for target function
+            func: Function to run in separate process
+            func_args: Positional arguments for target function
+            func_kwargs: Keyword arguments for target function
             use_pipe: If True, creates a bidirectional pipe for parent-child communication
-            **kwargs: Keyword arguments for target function
 
         Returns:
             bool: True if process created successfully, False otherwise
@@ -66,6 +66,12 @@ class ProcessManager:
         if key in self.processes:
             logger.warning(f"Process with key '{key}' already exists")
             return False
+
+        # Initialize args and kwargs if not provided
+        if func_args is None:
+            func_args = ()
+        if func_kwargs is None:
+            func_kwargs = {}
 
         try:
             parent_conn = None
@@ -75,13 +81,13 @@ class ProcessManager:
             if use_pipe:
                 parent_conn, child_conn = multiprocessing.Pipe()
                 # Add child_conn to kwargs if target function expects it
-                kwargs['conn'] = child_conn
+                func_kwargs['conn'] = child_conn
 
             # Create new process
             process = multiprocessing.Process(
-                target=target_function,
-                args=args,
-                kwargs=kwargs,
+                target=func,
+                args=func_args,
+                kwargs=func_kwargs,
                 name=f"{key}"
             )
 
@@ -92,9 +98,9 @@ class ProcessManager:
             process_info = ProcessInfo(
                 key=key,
                 process=process,
-                target_function=target_function,
-                args=args,
-                kwargs=kwargs,
+                target_function=func,
+                args=func_args,
+                kwargs=func_kwargs,
                 created_at=time.time(),
                 status=ProcessStatus.RUNNING,
                 pid=process.pid,
@@ -108,7 +114,7 @@ class ProcessManager:
             return True
 
         except Exception as e:
-            logger.error(f"Failed to create process '{key}': {str(e)}")
+            logger.exception(f"Failed to create process '{key}': {str(e)}")
             return False
 
     def terminate_process(self, key: str, timeout: float = 5.0) -> bool:
@@ -400,7 +406,12 @@ class ProcessManager:
         del self.processes[key]
 
         # Create new process with same parameters
-        return self.create_process(key, target_function, *args, **kwargs)
+        return self.create_process(
+            key=key,
+            func=target_function,
+            func_args=args,
+            func_kwargs=kwargs
+        )
 
     def __enter__(self):
         """Context manager entry"""

@@ -207,9 +207,8 @@ class AionConfigReader:
             # Handle case when proxy might be None
             if aion_config.proxy is not None:
                 self.logger.info(
-                    "Successfully loaded configuration with %d agents and proxy on port %d",
-                    len(aion_config.agents),
-                    aion_config.proxy.port
+                    "Successfully loaded configuration with %d agents and proxy",
+                    len(aion_config.agents)
                 )
             else:
                 self.logger.info(
