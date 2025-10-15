@@ -2,12 +2,11 @@
 import asyncio
 
 import asyncclick as click
-from aion.shared.aion_config.reader import ConfigurationError, AionConfigReader
-from aion.shared.logging import get_logger
-
-from aion.cli.handlers import ServerManager
+from aion.cli.handlers import ServeHandler
 from aion.cli.services import AionConfigBroadcastService
 from aion.cli.utils.cli_messages import welcome_message
+from aion.shared.aion_config.reader import ConfigurationError, AionConfigReader
+from aion.shared.logging import get_logger
 
 logger = get_logger()
 
@@ -16,7 +15,7 @@ logger = get_logger()
 async def serve() -> None:
     """Run all configured AION agents and proxy server in separate processes"""
 
-    server_manager = ServerManager()
+    handler = ServeHandler()
 
     try:
         # Load configuration
@@ -28,41 +27,21 @@ async def serve() -> None:
                 message="No agents configured, please add agents to your AION configuration"
             )
 
-        use_proxy = bool(config.proxy)
+        # Start servers
+        successful_agents, failed_agents, proxy_started = await handler.startup(config)
 
-        # Initialize server manager
-        server_manager.initialize()
-
-        # Start all configured agents
-        successful_agents, failed_agents = server_manager.start_all_agents(config)
-
-        # Report agent startup results
-        if successful_agents:
-            logger.info(f"Successfully started agents: {', '.join(successful_agents)}")
-
-        if failed_agents:
-            logger.error(f"Failed to start agents: {', '.join(failed_agents)}")
-
+        # Exit if no agents started successfully
         if not successful_agents:
-            logger.error("No agents started successfully, exiting...")
             return
-
-        # Start proxy server if not disabled
-        proxy_started = False
-        if use_proxy:
-            if server_manager.start_proxy(config):
-                proxy_started = True
-            else:
-                logger.error("Failed to start proxy server")
 
         # Broadcast config to aion api
         asyncio.create_task(AionConfigBroadcastService().execute(config))
 
-        # print welcome message
+        # Print welcome message after successful startup
         print(welcome_message(aion_config=config, proxy_enabled=proxy_started))
 
-        # Monitor processes and keep main process running
-        await server_manager.monitor_processes(successful_agents, proxy_started, config)
+        # Monitor processes (blocking call until shutdown)
+        await handler.monitor()
 
     except Exception as e:
         logger.error(f"Failed to start server: {str(e)}")
@@ -70,4 +49,4 @@ async def serve() -> None:
 
     finally:
         # Ensure graceful shutdown
-        server_manager.shutdown()
+        await handler.shutdown()
