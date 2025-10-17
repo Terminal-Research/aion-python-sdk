@@ -12,26 +12,21 @@ def welcome_message(aion_config: AionConfig, proxy_enabled: bool = True) -> str:
     Returns:
         A formatted multi-line string containing usage information.
     """
-    try:
-        config = aion_config or AionConfigReader().load_and_validate_config()
-    except Exception:
-        config = None
-
     # Build proxy URL
-    if proxy_enabled and config and config.proxy:
-        proxy_url = f"http://localhost:{config.proxy.port}"
+    if proxy_enabled and aion_config and aion_config.proxy:
+        proxy_url = f"http://localhost:{aion_config.proxy.port}"
         proxy_info = f"- Proxy API: {proxy_url}"
     else:
         proxy_url = None
         proxy_info = "- Proxy: Disabled"
 
     # Build agents information
-    if not config or not config.agents:
+    if not aion_config or not aion_config.agents:
         agents_info = "- Agents: No agents configured"
     else:
         agents_info = "- Agents:"
 
-        for agent_id, agent_config in config.agents.items():
+        for agent_id, agent_config in aion_config.agents.items():
             agent_url = f"http://localhost:{agent_config.port}"
             agents_info += f"\n  * {agent_id}:"
 

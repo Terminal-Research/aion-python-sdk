@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import List, Dict, Any, Optional, Union
+from typing import List, Dict, Any, Optional, Union, Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
@@ -142,6 +142,11 @@ class AgentConfig(BaseModel):
     version: str = Field(
         default="1.0.0",
         description="Agent version")
+
+    framework: Literal["langgraph"] = Field(
+        default="langgraph",
+        description="Agent framework"
+    )
 
     # Capabilities and features
     capabilities: AgentCapabilities = Field(
