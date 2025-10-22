@@ -8,7 +8,7 @@ packages = [{include = "aion", from = "src"}]
 
 [tool.poetry.dependencies]
 aion-server-langgraph = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-server-langgraph" }
-python = "3.13.5"
+python = "^3.12.0"
 click = "8.2.1"
 asyncclick = "8.2.2.2"
 
