@@ -1,44 +1,41 @@
-import logging
+from pathlib import Path
 from pathlib import Path
 from typing import Optional
 
 from a2a.server.tasks import InMemoryPushNotificationConfigStore
 from a2a.types import AgentCard
 from aion.shared.aion_config import AgentConfig
+from aion.shared.logging import get_logger
+from aion.shared.settings import db_settings
 from starlette.applications import Starlette
 
-from aion.server.configs import db_settings, AppSettings
 from aion.server.core.app.a2a_starlette import AionA2AStarletteApplication
+from aion.server.core.middlewares import TracingMiddleware, AionContextMiddleware
 from aion.server.core.request_handlers import AionRequestHandler
-from aion.server.db import db_manager, verify_connection
+from aion.server.db import verify_connection
 from aion.server.db.manager import DbManager
 from aion.server.db.migrations import upgrade_to_head
 from aion.server.langgraph.a2a import LanggraphAgentExecutor
 from aion.server.langgraph.agent import BaseAgent, AgentManager
-from aion.server.tasks import store_manager, StoreManager
+from aion.server.tasks import StoreManager
 from .lifespan import AppLifespan
 
-
-
-logger = logging.getLogger(__name__)
+logger = get_logger()
 
 
 class AppContext:
     """Application context with settings and managers.
 
     Attributes:
-        app_settings: Application configuration settings
         db_manager: Database connection manager
         store_manager: Task store manager for handling data storage
     """
 
     def __init__(
             self,
-            app_settings: AppSettings,
             db_manager: DbManager,
             store_manager: StoreManager
     ):
-        self.app_settings = app_settings
         self.db_manager = db_manager
         self.store_manager = store_manager
 
@@ -79,8 +76,6 @@ class AppFactory:
     async def initialize(self):
         """Initialize the application factory."""
         try:
-            self.context.app_settings.set_agent_config(self.agent_id, self.agent_config)
-
             await self._initialize()
             return self
         except Exception as exc:
@@ -90,7 +85,7 @@ class AppFactory:
 
     async def _initialize(self) -> None:
         """Initialize all application components."""
-        logger.info("Initializing application for agent '%s'", self.agent_id)
+        logger.debug("Initializing application for agent '%s'", self.agent_id)
 
         # Initialize database
         await self._init_db()
@@ -104,7 +99,8 @@ class AppFactory:
         # Build Starlette application
         await self._build_starlette_app()
 
-        logger.info("Application initialized successfully")
+        logger.info("Agent '%s' initialized successfully at http://%s:%s",
+                    self.agent_id, self.get_agent_host(), self.agent_config.port)
 
     async def _init_agent(self) -> None:
         """Initialize agent from configuration."""
@@ -117,8 +113,8 @@ class AppFactory:
         if not self.agent_manager.precompile_agent():
             raise RuntimeError(f"Failed to pre-compile agent '{self.agent_id}'")
 
-        logger.info("Agent '%s' (%s) initialized with compiled graph",
-                    self.agent_id, self.agent.__class__.__name__)
+        logger.debug("Agent '%s' (%s) initialized with compiled graph",
+                     self.agent_id, self.agent.__class__.__name__)
 
     async def _create_a2a_app(self) -> None:
         """Create and configure the A2A application."""
@@ -139,8 +135,6 @@ class AppFactory:
             http_handler=request_handler
         )
 
-        logger.info("A2A application created successfully")
-
     def _create_agent_card(self) -> AgentCard:
         """Create agent card from configuration."""
         if not self.agent:
@@ -149,7 +143,6 @@ class AppFactory:
         # Create base URL from config
         base_url = f'http://0.0.0.0:{self.agent_config.port}'
 
-        logger.info("Creating agent card from agent configuration")
         return self.agent.card
 
     async def _create_request_handler(self) -> AionRequestHandler:
@@ -171,14 +164,14 @@ class AppFactory:
 
         lifespan = AppLifespan(app_factory=self)
         self.starlette_app = self.a2a_app.build(lifespan=lifespan.executor)
-
-        logger.info("Starlette application built successfully")
+        self.starlette_app.add_middleware(TracingMiddleware)
+        self.starlette_app.add_middleware(AionContextMiddleware)
 
     async def _init_db(self) -> None:
         """Initialize database connection and run migrations."""
         pg_url = db_settings.pg_url
         if not pg_url:
-            logger.info("POSTGRES_URL environment variable not set, using in-memory data store")
+            logger.debug("POSTGRES_URL environment variable not set, using in-memory data store")
             return
 
         # Verify connection

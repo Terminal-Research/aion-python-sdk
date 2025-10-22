@@ -7,11 +7,10 @@ from typing import Dict, Any, Optional
 import yaml
 from pydantic import ValidationError
 
-from aion.shared.utils import get_config_path
+from aion.shared.utils.path import get_config_path
 from .exceptions import ConfigurationError
 from .models import AionConfig, AgentConfig, ProxyConfig
-
-logger = logging.getLogger(__name__)
+from aion.shared.logging import get_logger
 
 
 class AionConfigReader:
@@ -25,7 +24,7 @@ class AionConfigReader:
             logger_: Logger instance. If None, creates a new one.
         """
         self.config_path = config_path or get_config_path()
-        self.logger = logger_ or logging.getLogger(__name__)
+        self.logger = logger_ or get_logger()
 
     def load_config_file(self) -> Dict[str, Any]:
         """Load and parse the YAML configuration file.
@@ -275,33 +274,3 @@ class AionConfigReader:
                 "Proxy configuration validation failed",
                 details=formatted_error
             ) from e
-
-    def get_config_summary(self, config: AionConfig) -> str:
-        """Generate a human-readable summary of the loaded configuration.
-
-        Args:
-            config: Validated AionConfig instance.
-
-        Returns:
-            Formatted string with configuration summary.
-        """
-        summary_lines = [
-            "=== Aion Configuration Summary ===",
-            f"Proxy server: port {config.proxy.port}",
-            f"Total agents: {len(config.agents)}"
-        ]
-
-        if config.agents:
-            summary_lines.append("\nAgents:")
-            for agent_id, agent in config.agents.items():
-                summary_lines.append(
-                    f"  - {agent_id}: {agent.name} (port {agent.port}) -> {agent.path}"
-                )
-
-                if agent.skills:
-                    summary_lines.append(f"    Skills: {', '.join([skill.name for skill in agent.skills])}")
-
-                if agent.configuration:
-                    summary_lines.append(f"    Custom config fields: {len(agent.configuration)}")
-
-        return "\n".join(summary_lines)

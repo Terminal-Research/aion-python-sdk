@@ -26,6 +26,7 @@ class A2AEventType(str, Enum):
     MESSAGES = "messages"
     VALUES = "values"
     CUSTOM = "custom"
+    UPDATES = "updates"
     INTERRUPT = "interrupt"
     COMPLETE = "complete"
 

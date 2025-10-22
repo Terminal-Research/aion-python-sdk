@@ -1,12 +1,12 @@
-import logging
 from typing import Optional, Dict, Any
 
 import httpx
+from aion.shared.logging import get_logger
+from aion.shared.settings import api_settings
 
 from aion.api.exceptions import AionAuthenticationError
-from aion.api.config import aion_api_settings
 
-logger = logging.getLogger(__name__)
+logger = get_logger()
 
 
 class AionHttpClient:
@@ -25,15 +25,15 @@ class AionHttpClient:
         Authenticate with the Aion API and return token data.
 
         Performs client credentials authentication using the configured client ID
-        and secret from aion_api_settings. Returns the full authentication response
+        and secret from api_settings. Returns the full authentication response
         which typically contains the access token and other metadata.
         """
-        if not aion_api_settings.client_id or not aion_api_settings.client_secret:
+        if not api_settings.client_id or not api_settings.client_secret:
             raise ValueError("AION_CLIENT_ID and AION_CLIENT_SECRET must be set")
 
         payload = {
-            "clientId": aion_api_settings.client_id,
-            "secret": aion_api_settings.client_secret
+            "clientId": api_settings.client_id,
+            "secret": api_settings.client_secret
         }
 
         response = await self.request(
@@ -79,7 +79,7 @@ class AionHttpClient:
             httpx.RequestError: If the request fails due to network issues
             httpx.HTTPStatusError: If the server returns an HTTP error status
         """
-        url = f"{aion_api_settings.http_url}{endpoint}"
+        url = f"{api_settings.http_url}{endpoint}"
         request_headers = {}
 
         if token:

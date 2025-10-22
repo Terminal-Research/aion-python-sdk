@@ -1,14 +1,20 @@
-import logging
 from contextlib import asynccontextmanager
 from typing import Dict, Optional
 from urllib.parse import urljoin
+import logging
 
 import httpx
 import uvicorn
 from aion.shared.aion_config import AionConfig
+from aion.shared.logging import get_logger
+from aion.shared.logging.base import AionLogger
 from fastapi import FastAPI, Request, HTTPException, Response
+from aion.shared.settings import app_settings
 
-logger = logging.getLogger(__name__)
+# Set custom logger class globally for all loggers including uvicorn/fastapi
+logging.setLoggerClass(AionLogger)
+
+logger = get_logger()
 
 
 class AionAgentProxyServer:
@@ -39,13 +45,13 @@ class AionAgentProxyServer:
         """Build agent URL mappings from configuration"""
         for agent_id, agent_config in self.config.agents.items():
             # Build agent URL
-            host = "localhost"  # Default host
+            host = "0.0.0.0"  # Default host
             port = agent_config.port
             scheme = "http"  # Default scheme
 
             agent_url = f"{scheme}://{host}:{port}"
             self.agent_urls[agent_id] = agent_url
-            logger.info(f"Mapped agent '{agent_id}' to {agent_url}")
+            logger.debug(f"Mapped agent '{agent_id}' to {agent_url}")
 
     @asynccontextmanager
     async def _lifespan(self, app: FastAPI):
@@ -57,14 +63,14 @@ class AionAgentProxyServer:
             timeout=httpx.Timeout(30.0),
             follow_redirects=True
         )
-        logger.info("HTTP client initialized")
+        logger.debug("HTTP client initialized")
 
         yield
 
         # Shutdown
         if self.http_client:
             await self.http_client.aclose()
-            logger.info("HTTP client closed")
+            logger.debug("HTTP client closed")
 
     def _setup_routes(self):
         @self.app.api_route(
@@ -179,9 +185,11 @@ class AionAgentProxyServer:
             app=self.app,
             host=host,
             port=port,
-            log_level="info"
+            log_level=app_settings.log_level.lower(),
+            log_config=None,
+            access_log=False
         )
 
         server = uvicorn.Server(config)
-        logger.info(f"Starting AION Proxy Server on {host}:{port}")
+        logger.info(f"Starting AION Proxy Server on http://{host}:{port}")
         await server.serve()

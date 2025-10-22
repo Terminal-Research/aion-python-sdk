@@ -1,14 +1,13 @@
-import logging
 from typing import Literal
 
+from aion.shared.logging import get_logger
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from langgraph.graph import Graph
 
 from aion.server.db import db_manager
 
-from langgraph.graph import Graph
-
-logger = logging.getLogger(__name__)
+logger = get_logger()
 
 CHECKPOINTER_TYPE = Literal["memory", "postgres"]
 
@@ -69,7 +68,7 @@ class GraphCheckpointerManager:
         in RAM. This checkpointer is ephemeral and will lose state when the
         application restarts, but requires no external dependencies.
         """
-        logger.info(f"Created InMemorySaver checkpointer")
+        logger.debug(f"Created InMemorySaver checkpointer")
         return InMemorySaver()
 
     def _get_postgres_checkpointer(self):

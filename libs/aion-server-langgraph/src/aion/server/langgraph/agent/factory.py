@@ -9,10 +9,9 @@ from types import ModuleType
 from typing import Optional, Union, Callable, Any
 
 from aion.shared.aion_config import AgentConfig
+from aion.shared.logging import get_logger
 
 from .base import BaseAgent
-
-logger = logging.getLogger(__name__)
 
 # LangGraph imports with fallback
 from langgraph.graph import Graph
@@ -30,7 +29,7 @@ class AgentFactory:
             logger_: Logger instance to use
         """
         self.base_path = base_path or Path.cwd()
-        self.logger = logger_ or logging.getLogger(__name__)
+        self.logger = logger_ or get_logger()
 
     def create_agent_from_config(self, agent_id: str, agent_config: AgentConfig) -> BaseAgent:
         """Create a BaseAgent instance directly from an AgentConfig object.
@@ -46,7 +45,7 @@ class AgentFactory:
             ValueError: If the agent cannot be created from the configuration
             TypeError: If the loaded item is not a valid agent type
         """
-        self.logger.info("Creating agent '%s' from config", agent_id)
+        self.logger.debug("Creating agent '%s' from config", agent_id)
 
         try:
             # Load the agent item from the configured path
@@ -59,7 +58,7 @@ class AgentFactory:
             agent.agent_id = agent_id
             agent.config = agent_config
 
-            self.logger.info("Successfully created agent '%s'", agent_id)
+            self.logger.debug("Successfully created agent '%s'", agent_id)
             return agent
 
         except Exception as e:
@@ -94,7 +93,6 @@ class AgentFactory:
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
         else:
-            # Dotted path import
             self.logger.debug("Importing module '%s'", module_str)
             module = importlib.import_module(module_str)
 

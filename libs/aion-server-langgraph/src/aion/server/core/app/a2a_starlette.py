@@ -1,5 +1,4 @@
 import json
-import logging
 import traceback
 from typing import get_args
 
@@ -14,16 +13,20 @@ from a2a.types import (
 )
 from a2a.types import AgentCard
 from a2a.utils.errors import MethodNotImplementedError
+from aion.shared.logging import get_logger
+from opentelemetry import trace
 from pydantic import ValidationError
 from starlette.exceptions import HTTPException
 from starlette.requests import Request
 from starlette.responses import Response
 from starlette.status import HTTP_413_REQUEST_ENTITY_TOO_LARGE
 
-from aion.server.core.request_handlers import AionJSONRPCHandler, IRequestHandler
+from aion.server.core.request_handlers import AionJSONRPCHandler
+from aion.server.interfaces import IRequestHandler
 from aion.server.types import ExtendedA2ARequest, CustomA2ARequest, GetContextRequest, GetContextsListRequest
 
-logger = logging.getLogger(__name__)
+logger = get_logger()
+request_tracer = trace.get_tracer("langgraph.agent")
 
 
 class AionA2AStarletteApplication(A2AStarletteApplication):

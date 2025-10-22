@@ -1,11 +1,12 @@
-import logging
 import multiprocessing
 import time
 from dataclasses import dataclass
 from enum import Enum
 from typing import Dict, Callable, Any, Optional, Tuple
 
-logger = logging.getLogger("ProcessManager")
+from aion.shared.logging import get_logger
+
+logger = get_logger()
 
 
 class ProcessStatus(Enum):
@@ -86,7 +87,7 @@ class ProcessManager:
             )
 
             self.processes[key] = process_info
-            logger.info(f"Process '{key}' created with PID {process.pid}")
+            logger.debug(f"Process '{key}' created with PID {process.pid}")
 
             return True
 
@@ -113,7 +114,7 @@ class ProcessManager:
         process = process_info.process
 
         if not process.is_alive():
-            logger.info(f"Process '{key}' is already terminated")
+            logger.debug(f"Process '{key}' is already terminated")
             process_info.status = ProcessStatus.STOPPED
             return True
 
@@ -129,7 +130,7 @@ class ProcessManager:
                 process.join()
 
             process_info.status = ProcessStatus.TERMINATED
-            logger.info(f"Process '{key}' terminated successfully")
+            logger.debug(f"Process '{key}' terminated successfully")
 
             return True
 
@@ -220,7 +221,7 @@ class ProcessManager:
 
         cleaned_up_count = len(dead_keys)
         if cleaned_up_count:
-            logger.info(f"Cleaned up {cleaned_up_count} dead processes")
+            logger.debug(f"Cleaned up {cleaned_up_count} dead processes")
         return len(dead_keys)
 
     def shutdown_all(self, timeout: float = 5.0) -> bool:
@@ -242,7 +243,7 @@ class ProcessManager:
 
         # Clear all processes
         self.processes.clear()
-        logger.info("All processes shut down")
+        logger.debug("All processes shut down")
 
         return success
 

@@ -1,5 +1,5 @@
 """Create tasks table."""
-
+from aion.shared.logging import get_logger
 from alembic import op
 import sqlalchemy as sa
 
@@ -8,8 +8,8 @@ down_revision = "001"
 branch_labels = None
 depends_on = None
 
-import logging
-logger = logging.getLogger(__name__)
+from aion.shared.logging import get_logger
+logger = get_logger(__name__)
 
 def upgrade() -> None:
     """Create tasks table."""

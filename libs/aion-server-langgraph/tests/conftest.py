@@ -1,3 +1,4 @@
+import asyncio
 import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
@@ -32,3 +33,11 @@ def mock_ws_transport():
     transport.websocket = MagicMock()
     transport.websocket.ping = AsyncMock()
     return transport
+
+
+@pytest.fixture
+def event_loop():
+    """Create event loop for async tests."""
+    loop = asyncio.new_event_loop()
+    yield loop
+    loop.close()
