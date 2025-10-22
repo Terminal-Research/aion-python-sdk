@@ -1,9 +1,6 @@
-import importlib
-import importlib.util
 import inspect
 from pathlib import Path
-from types import ModuleType
-from typing import Any, Callable, Optional, Union
+from typing import Any, Optional
 
 from aion.shared.aion_config.models import AgentConfig
 from aion.shared.logging import get_logger
@@ -18,22 +15,34 @@ from aion.server.langgraph.agent.base import BaseAgent
 
 logger = get_logger()
 
+
 class LangGraphAdapter(AgentAdapter):
 
     def __init__(self, base_path: Optional[Path] = None):
         self.base_path = base_path or Path.cwd()
 
-    @property
-    def framework_name(self) -> str:
+    @staticmethod
+    def framework_name() -> str:
         return "langgraph"
 
+    def get_supported_types(self) -> list[type]:
+        """Return list of types this adapter can handle."""
+        return [Graph, Pregel]
+
+    def get_supported_type_names(self) -> set[str]:
+        """Return set of class names this adapter can handle."""
+        return {
+            "StateGraph",
+            "CompiledStateGraph",
+            "CompiledGraph",
+            "MessageGraph",
+            "CompiledMessageGraph"
+        }
+
     def can_handle(self, agent_obj: Any) -> bool:
-        if isinstance(agent_obj, BaseAgent):
-            return True
-        if inspect.isclass(agent_obj) and issubclass(agent_obj, BaseAgent):
-            return True
         if isinstance(agent_obj, (Graph, Pregel)):
             return True
+
         class_name = agent_obj.__class__.__name__
         graph_class_names = {
             "StateGraph",
@@ -45,6 +54,7 @@ class LangGraphAdapter(AgentAdapter):
 
         if class_name in graph_class_names:
             return True
+
         if callable(agent_obj) and not inspect.isclass(agent_obj):
             return True
 
@@ -109,45 +119,6 @@ class LangGraphAdapter(AgentAdapter):
         if not config.path:
             raise ConfigurationError("Agent path is required for LangGraph adapter")
         logger.debug(f"Configuration validated for agent '{config.id}'")
-
-    def get_metadata(self, agent: Any) -> dict[str, Any]:
-        metadata = {
-            "framework": self.framework_name,
-        }
-
-        if isinstance(agent, BaseAgent):
-            metadata["agent_class"] = agent.__class__.__name__
-            if hasattr(agent, "card"):
-                metadata["card"] = {
-                    "name": agent.card.name,
-                    "description": agent.card.description,
-                }
-
-        return metadata
-
-    def _import_module(self, module_str: str) -> ModuleType:
-        if (
-            module_str.endswith(".py")
-            or "/" in module_str
-            or module_str.startswith(".")
-        ):
-            path = (self.base_path / module_str).resolve()
-            if not path.exists():
-                raise FileNotFoundError(f"Module not found: {path}")
-
-            mod_name = path.stem + "_module"
-            spec = importlib.util.spec_from_file_location(mod_name, path)
-            if spec is None or spec.loader is None:
-                raise ValueError(f"Could not load module from path: {path}")
-
-            logger.debug(f"Importing module from {path}")
-            module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
-        else:
-            logger.debug(f"Importing module '{module_str}'")
-            module = importlib.import_module(module_str)
-
-        return module
 
     @staticmethod
     def _is_graph_instance(obj: Any) -> bool:

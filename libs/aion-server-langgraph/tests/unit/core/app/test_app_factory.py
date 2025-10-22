@@ -41,7 +41,6 @@ class TestAppFactory:
             result = await factory.initialize()
 
             assert result == factory
-            mock_app_context.app_settings.set_agent_config.assert_called_once_with("test_agent", mock_agent_config)
             mock_initialize.assert_called_once()
 
     @pytest.mark.asyncio

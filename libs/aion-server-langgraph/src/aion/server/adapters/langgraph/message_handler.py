@@ -21,6 +21,7 @@ from aion.server.adapters.base.message_adapter import (
 
 logger = get_logger()
 
+
 class LangGraphMessageAdapter(MessageAdapter):
 
     def to_unified(self, framework_message: BaseMessage) -> UnifiedMessage:
@@ -85,8 +86,8 @@ class LangGraphMessageAdapter(MessageAdapter):
         return isinstance(framework_message, AIMessageChunk)
 
     def build_artifact(
-        self,
-        messages: list[Any],
+            self,
+            messages: list[Any],
     ) -> Optional[StreamingArtifact]:
         if not messages:
             return None
@@ -140,34 +141,6 @@ class LangGraphMessageAdapter(MessageAdapter):
 
         return result
 
-    def extract_tool_results(self, framework_message: Any) -> list[dict[str, Any]]:
-        if isinstance(framework_message, ToolMessage):
-            return [
-                {
-                    "tool_call_id": framework_message.tool_call_id
-                    if hasattr(framework_message, "tool_call_id")
-                    else None,
-                    "content": framework_message.content,
-                }
-            ]
-
-        return []
-
-    def get_message_metadata(self, framework_message: Any) -> dict[str, Any]:
-        metadata = {
-            "type": framework_message.__class__.__name__,
-        }
-        if hasattr(framework_message, "id"):
-            metadata["id"] = framework_message.id
-        if hasattr(framework_message, "additional_kwargs"):
-            metadata["additional_kwargs"] = framework_message.additional_kwargs
-        if hasattr(framework_message, "response_metadata"):
-            metadata["response_metadata"] = framework_message.response_metadata
-        if hasattr(framework_message, "usage_metadata"):
-            metadata["usage_metadata"] = framework_message.usage_metadata
-
-        return metadata
-
     def _get_message_role(self, message: BaseMessage) -> MessageRole:
         if isinstance(message, HumanMessage):
             return MessageRole.USER
@@ -189,5 +162,3 @@ class LangGraphMessageAdapter(MessageAdapter):
             return MessageType.TOOL_CALL
         else:
             return MessageType.TEXT
-
-

@@ -5,8 +5,6 @@ from urllib.parse import urlparse
 from pydantic import Field, field_validator, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from aion.shared.aion_config import AgentConfig
-
 __all__ = [
     "BaseEnvSettings",
     "DatabaseSettings",
@@ -321,31 +319,10 @@ class AppSettings(BaseEnvSettings):
         alias="LOGSTASH_PORT"
     )
 
-    agent_id: Optional[str] = None
-    agent_config: Optional[AgentConfig] = None
-
-    @property
-    def url(self) -> str:
-        """Application URL."""
-        if not self.agent_config:
-            raise AttributeError("agent_config must be set for AppSettings")
-
-        return f"http://0.0.0.0:{self.agent_config.port}"
-
     @property
     def is_logstash_configured(self) -> bool:
         """Check if logstash is configured with both host and port."""
         return bool(self.logstash_host and self.logstash_port)
-
-    def set_agent_config(self, agent_id: str, agent_config: AgentConfig) -> None:
-        """
-        Update agent configuration.
-
-        Note: This method must be called before application startup to ensure
-        the application knows which agent it should work with.
-        """
-        self.agent_id = agent_id
-        self.agent_config = agent_config
 
 
 # Initialize settings instances

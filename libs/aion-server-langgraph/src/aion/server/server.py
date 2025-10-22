@@ -1,15 +1,16 @@
+import logging
 import os
 import sys
-import logging
 
 import uvicorn
 from aion.shared.aion_config import AgentConfig
 from aion.shared.logging import get_logger
 from aion.shared.logging.base import AionLogger
-from aion.shared.settings import app_settings
 from aion.shared.utils import replace_uvicorn_loggers, replace_logstash_loggers
 from dotenv import load_dotenv
 
+from aion.server.adapters import register_available_adapters
+from aion.server.core.agent import agent_manager
 from aion.server.core.app import AppFactory, AppContext
 from aion.server.db import db_manager
 from aion.server.tasks import store_manager
@@ -28,7 +29,9 @@ class MissingAPIKeyError(Exception):
 
 async def async_serve(agent_id: str, agent_config: AgentConfig, startup_callback=None):
     try:
-        app_settings.set_agent_config(agent_id=agent_id, agent_config=agent_config)
+        agent_manager.set_agent_config(agent_id, agent_config)
+        aion_agent = await agent_manager.create_agent()
+        d1=1
 
         app_factory = await AppFactory(
             agent_id=agent_id,
@@ -66,18 +69,20 @@ async def async_serve(agent_id: str, agent_config: AgentConfig, startup_callback
 async def run_server(agent_id: str, agent_config: AgentConfig, startup_callback=None):
     """Starts the Currency Agent server."""
     try:
-        # CONFIGURE CUSTOM LOGGERS FOR UVICORN / LOGSTASH
+        # Configure custom loggers from uvicorn / logstash
         replace_uvicorn_loggers(suppress_startup_logs=True)
         replace_logstash_loggers()
-        # RUN AGENT
+
+        # Register agent adapters to handle a specific agent framework
+        register_available_adapters()
+
+        # Run agent server
         await async_serve(agent_id, agent_config, startup_callback)
+
     except KeyboardInterrupt:
         logger.info("Interrupted by user")
         sys.exit(0)
+
     except Exception as e:
         logger.error(f"Fatal error: {e}")
         sys.exit(1)
-
-
-if __name__ == '__main__':
-    run_server()

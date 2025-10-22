@@ -5,7 +5,6 @@ from aion.shared.logging import get_logger
 from langgraph.graph import Graph
 from langgraph.pregel import Pregel
 
-from aion.shared.settings import app_settings
 from .card import AionAgentCard
 from .checkpointer import GraphCheckpointerManager
 from .interfaces import AgentInterface
@@ -28,13 +27,14 @@ class BaseAgent(AgentInterface):
         Args:
             graph_source: Optional graph instance or function that returns a graph
             config: Optional configuration for the agent
+            base_url: Optional base URL for the agent (computed from config if not provided)
         """
         self.agent_id = None
         self._graph = None
         self._compiled_graph = None
         self._graph_source = graph_source
         self._config = config
-        self.base_url = base_url or app_settings.url
+        self._base_url = base_url
 
     @property
     def config(self) -> Optional[AgentConfig]:
@@ -47,6 +47,19 @@ class BaseAgent(AgentInterface):
         if value is not None and not isinstance(value, AgentConfig):
             raise TypeError(f"Config must be an AgentConfig instance, got {type(value)}")
         self._config = value
+
+    @property
+    def base_url(self) -> str:
+        """Get the base URL for the agent."""
+        if self._base_url:
+            return self._base_url
+
+        # Compute from config if available
+        if self._config and hasattr(self._config, 'port'):
+            return f"http://0.0.0.0:{self._config.port}"
+
+        # Default fallback
+        return "http://0.0.0.0:8000"
 
     @property
     def card(self) -> AionAgentCard:

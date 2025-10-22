@@ -1,15 +1,18 @@
 from typing import Any, Optional
 
-from aion.server.adapters.base.agent_adapter import AgentAdapter
 from aion.shared.metaclasses import Singleton
 
+from .base.agent_adapter import AgentAdapter
+
+
 class AdapterRegistry(metaclass=Singleton):
-    _instance: Optional["AdapterRegistry"] = None
+    """Singleton registry for managing framework adapters."""
+
     _adapters: dict[str, AgentAdapter] = {}
 
     def register(self, adapter: AgentAdapter) -> None:
-
-        framework_name = adapter.framework_name
+        """Register a new framework adapter."""
+        framework_name = adapter.framework_name()
         if framework_name in self._adapters:
             raise ValueError(
                 f"Adapter for framework '{framework_name}' is already registered"
@@ -17,47 +20,35 @@ class AdapterRegistry(metaclass=Singleton):
         self._adapters[framework_name] = adapter
 
     def unregister(self, framework_name: str) -> None:
-
+        """Unregister an adapter by framework name."""
         self._adapters.pop(framework_name, None)
 
     def get_adapter(self, framework_name: str) -> Optional[AgentAdapter]:
-
+        """Get an adapter by framework name."""
         return self._adapters.get(framework_name)
 
     def get_adapter_for_agent(self, agent_obj: Any) -> Optional[AgentAdapter]:
-
+        """Find and return the appropriate adapter for a given agent object."""
         for adapter in self._adapters.values():
             if adapter.can_handle(agent_obj):
                 return adapter
         return None
 
-    def list_adapters(self) -> list[str]:
+    def list_adapters(self) -> list[AgentAdapter]:
+        """Return a list of all registered adapter instances."""
+        return list(self._adapters.values())
+
+    def list_registered_frameworks(self) -> list[str]:
+        """Return a list of all registered framework names."""
         return list(self._adapters.keys())
 
     def clear(self) -> None:
+        """Clear all registered adapters."""
         self._adapters.clear()
 
     def is_registered(self, framework_name: str) -> bool:
-
+        """Check if an adapter is registered for the given framework name."""
         return framework_name in self._adapters
-_global_registry = AdapterRegistry()
-
-def register_adapter(adapter: AgentAdapter) -> None:
-
-    _global_registry.register(adapter)
-
-def get_adapter(framework_name: str) -> Optional[AgentAdapter]:
-
-    return _global_registry.get_adapter(framework_name)
-
-def get_adapter_for_agent(agent_obj: Any) -> Optional[AgentAdapter]:
-
-    return _global_registry.get_adapter_for_agent(agent_obj)
-
-def list_registered_frameworks() -> list[str]:
-    return _global_registry.list_adapters()
-
-def clear_registry() -> None:
-    _global_registry.clear()
 
 
+adapter_registry = AdapterRegistry()

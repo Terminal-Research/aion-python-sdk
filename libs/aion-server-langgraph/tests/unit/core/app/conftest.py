@@ -8,7 +8,6 @@ from aion.server.core.app import AppFactory
 from aion.server.core.app.factory import AppContext
 from aion.server.langgraph.agent import BaseAgent
 from aion.shared.aion_config import AgentConfig
-from aion.server.configs import AppSettings
 from aion.server.db.manager import DbManager
 from aion.server.tasks import StoreManager
 
@@ -35,14 +34,6 @@ def mock_agent():
 
 
 @pytest.fixture
-def mock_app_settings():
-    """Mock AppSettings for testing."""
-    app_settings = MagicMock(spec=AppSettings)
-    app_settings.set_agent_config.return_value = None
-    return app_settings
-
-
-@pytest.fixture
 def mock_db_manager():
     """Mock DbManager for testing."""
     with patch("aion.server.db.manager.db_manager") as db_manager:
@@ -63,10 +54,9 @@ def mock_store_manager():
 
 
 @pytest.fixture
-def mock_app_context(mock_app_settings, mock_db_manager, mock_store_manager):
+def mock_app_context(mock_db_manager, mock_store_manager):
     """Mock AppContext for testing."""
     return AppContext(
-        app_settings=mock_app_settings,
         db_manager=mock_db_manager,
         store_manager=mock_store_manager
     )

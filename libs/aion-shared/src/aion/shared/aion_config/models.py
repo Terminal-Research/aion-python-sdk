@@ -171,6 +171,11 @@ class AgentConfig(BaseModel):
         default_factory=dict,
         description="Additional configuration parameters")
 
+    @property
+    def base_url(self) -> str:
+        """Returns the base URL of the agent."""
+        return f'http://0.0.0.0:{self.port}'
+
     @field_validator('port')
     @classmethod
     def validate_port(cls, value):

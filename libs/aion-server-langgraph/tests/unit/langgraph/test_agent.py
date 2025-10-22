@@ -113,12 +113,8 @@ class NotAnAgent:
 class TestBaseAgentCriticalPaths:
     """Test BaseAgent's most important functionality."""
 
-    @patch('aion.server.langgraph.agent.base.app_settings')
-    def test_config_setter_type_validation(self, mock_app_settings):
+    def test_config_setter_type_validation(self):
         """Config type validation prevents runtime errors."""
-        # Mock app_settings to have a valid URL
-        mock_app_settings.url = "http://localhost:8000"
-
         agent = BaseAgent()
 
         # Valid config
@@ -130,22 +126,15 @@ class TestBaseAgentCriticalPaths:
         with pytest.raises(TypeError, match="Config must be an AgentConfig instance"):
             agent.config = "invalid_config"
 
-    @patch('aion.server.langgraph.agent.base.app_settings')
-    def test_create_graph_not_implemented_error(self, mock_app_settings):
+    def test_create_graph_not_implemented_error(self):
         """Ensure proper error when subclass doesn't implement create_graph."""
-        # Mock app_settings to have a valid URL
-        mock_app_settings.url = "http://localhost:8000"
-
         agent = BaseAgent()  # No graph_source provided
 
         with pytest.raises(NotImplementedError, match="Subclasses must implement create_graph"):
             agent.create_graph()
 
-    @patch('aion.server.langgraph.agent.base.app_settings')
-    def test_graph_compilation_failure_handling(self, mock_app_settings):
+    def test_graph_compilation_failure_handling(self):
         """Test handling when graph compilation fails."""
-        # Mock app_settings to have a valid URL
-        mock_app_settings.url = "http://localhost:8000"
 
         # Patch the GraphCheckpointerManager where it's imported in base.py
         with patch('aion.server.langgraph.agent.base.GraphCheckpointerManager') as mock_checkpointer:
@@ -192,11 +181,8 @@ class NotAnAgent:
         with pytest.raises(TypeError, match="Class 'NotAnAgent' must be a subclass of BaseAgent"):
             manager.create_agent("test", invalid_config)
 
-    @patch('aion.server.langgraph.agent.base.app_settings')
-    def test_get_compiled_graph_error_propagation(self, mock_app_settings, manager, temp_dir):
+    def test_get_compiled_graph_error_propagation(self, manager, temp_dir):
         """Ensure compilation errors are properly propagated."""
-        # Mock app_settings to have a valid URL
-        mock_app_settings.url = "http://localhost:8000"
 
         # Create agent file that will fail compilation
         agent_file = temp_dir / "failing_agent.py"
@@ -250,11 +236,8 @@ class TestIntegrationScenarios:
         with tempfile.TemporaryDirectory() as tmpdir:
             yield Path(tmpdir)
 
-    @patch('aion.server.langgraph.agent.base.app_settings')
-    def test_full_agent_loading_workflow(self, mock_app_settings, temp_dir):
+    def test_full_agent_loading_workflow(self, temp_dir):
         """Test complete workflow from config file to working agent."""
-        # Mock app_settings to have a valid URL
-        mock_app_settings.url = "http://localhost:8000"
 
         # Create a valid agent module
         agent_file = temp_dir / "test_agent.py"
@@ -290,11 +273,8 @@ class TestAgent(BaseAgent):
         graph = agent.get_graph()
         assert graph is not None
 
-    @patch('aion.server.langgraph.agent.base.app_settings')
-    def test_agent_manager_integration(self, mock_app_settings, temp_dir):
+    def test_agent_manager_integration(self, temp_dir):
         """Test AgentManager with real agent loading."""
-        # Mock app_settings to have a valid URL
-        mock_app_settings.url = "http://localhost:8000"
 
         manager = AgentManager(base_path=temp_dir)
 

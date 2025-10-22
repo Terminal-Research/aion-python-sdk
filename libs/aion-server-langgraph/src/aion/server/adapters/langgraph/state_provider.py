@@ -76,17 +76,6 @@ class LangGraphStateAdapter(StateAdapter):
         logger.debug(f"Creating resume input with user_input: {user_input}")
         return Command(resume=user_input)
 
-    def extract_messages(self, state: AgentState) -> list[Any]:
-        return state.messages
-
-    def extract_metadata(self, state: AgentState) -> dict[str, Any]:
-        metadata = state.metadata.copy()
-        metadata["is_complete"] = state.is_complete()
-        metadata["requires_input"] = state.requires_input()
-        metadata["next_steps_count"] = len(state.next_steps)
-
-        return metadata
-
     def _has_interrupt(self, snapshot: StateSnapshot) -> bool:
         if not hasattr(snapshot, "tasks"):
             return False
