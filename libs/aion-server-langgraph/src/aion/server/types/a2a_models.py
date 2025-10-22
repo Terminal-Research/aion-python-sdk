@@ -1,6 +1,6 @@
 from typing import List
 
-from aion.server.core.base import A2ABaseModel
+from aion.shared.base import A2ABaseModel
 from a2a.types import Message, Artifact, TaskState
 
 __all__ = [

@@ -10,14 +10,14 @@ from a2a.types import MessageSendParams, Task, InvalidParamsError, TaskNotFoundE
 from a2a.utils.errors import ServerError
 from a2a.utils.telemetry import trace_class, SpanKind
 
-from .interfaces import IRequestHandler
+from aion.server.interfaces import IRequestHandler
+from aion.server.tasks import store_manager, AionTaskManager
 from aion.server.types import (
     GetContextParams,
     GetContextsListParams,
     Conversation,
     ContextsList
 )
-from aion.server.tasks import store_manager, AionTaskManager
 from aion.server.utils import ConversationBuilder
 
 
@@ -26,9 +26,9 @@ class AionRequestHandler(DefaultRequestHandler, IRequestHandler):
     """Request handler implementation for Aion management operations."""
 
     async def _setup_message_execution(
-        self,
-        params: MessageSendParams,
-        context: ServerCallContext | None = None,
+            self,
+            params: MessageSendParams,
+            context: ServerCallContext | None = None,
     ) -> tuple[TaskManager, str, EventQueue, ResultAggregator, asyncio.Task]:
         """ !! Overrides default message execution setup. !!
 
@@ -79,9 +79,9 @@ class AionRequestHandler(DefaultRequestHandler, IRequestHandler):
         # agents.
 
         if (
-            self._push_config_store
-            and params.configuration
-            and params.configuration.push_notification_config
+                self._push_config_store
+                and params.configuration
+                and params.configuration.push_notification_config
         ):
             await self._push_config_store.set_info(
                 task_id, params.configuration.push_notification_config

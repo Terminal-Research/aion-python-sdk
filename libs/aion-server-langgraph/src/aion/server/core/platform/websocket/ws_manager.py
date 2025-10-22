@@ -2,41 +2,49 @@ import asyncio
 import logging
 from typing import Optional
 
-from aion.api.config import aion_api_settings
-from aion.api.http import aion_jwt_manager
-from gql.transport.websockets import WebsocketsTransport
+from aion.server.interfaces import IWebsocketTransportFactory, IWebSocketManager
 
 logger = logging.getLogger(__name__)
 
+__all__ = [
+    "AionWebSocketManager",
+]
 
-class AionWebSocketManager:
+
+class AionWebSocketManager(IWebSocketManager):
     """
-    WebSocket connection manager for Aion platform.
+    WebSocket connection manager for Aion platform with dependency injection.
 
     Provides basic agent communication with the Aion ecosystem through
     persistent WebSocket connection with automatic reconnection.
     """
 
-    def __init__(self, ping_interval: float = 30.0, reconnect_delay: float = 10.0):
+    def __init__(
+            self,
+            ws_transport_factory: IWebsocketTransportFactory,
+            ping_interval: float = 30.0,
+            reconnect_delay: float = 10.0,
+    ):
         """
-        Initialize WebSocket manager.
+        Initialize WebSocket manager with injected dependencies.
 
         Args:
+            ws_transport_factory: Factory for creating WebSocket transports
             ping_interval: Interval between ping messages (seconds)
             reconnect_delay: Delay before reconnection attempt (seconds)
         """
+        self._ws_transport_factory = ws_transport_factory
         self.ping_interval = ping_interval
         self.reconnect_delay = reconnect_delay
 
         self._websocket_task: Optional[asyncio.Task] = None
         self._shutdown_event = asyncio.Event()
         self._connection_ready = asyncio.Event()
+        self._transport: Optional = None
 
     async def start(self) -> None:
         """Start WebSocket connection with the platform."""
         try:
-            logger.info("Initializing connection to Aion platform...")
-
             self._websocket_task = asyncio.create_task(self._connection_loop())
 
             await asyncio.wait_for(self._connection_ready.wait(), timeout=30.0)
@@ -76,8 +84,6 @@ class AionWebSocketManager:
 
         while not self._shutdown_event.is_set():
             try:
-                logger.info("Establishing WebSocket connection to Aion...")
-
                 await self._establish_connection()
 
                 if first_connection:
@@ -90,11 +96,9 @@ class AionWebSocketManager:
             except KeyboardInterrupt:
                 logger.info("Connection stopped by user request")
                 break
-            except Exception as e:
-                logger.error(f"WebSocket connection error: {e}")
-
+            except Exception as ex:
                 if first_connection:
-                    logger.error("Failed to establish initial connection")
+                    logger.error(f"Websocket connection startup failed: {ex}")
                     break
 
                 if not self._shutdown_event.is_set():
@@ -108,34 +112,14 @@ class AionWebSocketManager:
                         self._connection_ready.clear()
                         continue
                     break
-
-    async def _build_transport(self) -> WebsocketsTransport:
-        """
-        Build a WebSocket transport with JWT authentication.
-
-        Creates a new WebSocket transport configured with the current JWT token
-        and appropriate connection settings from the API configuration.
-        """
-        aion_token = await aion_jwt_manager.get_token()
-        if not aion_token:
-            raise ValueError("No token received from authentication")
-
-        url = (
-            f"{aion_api_settings.ws_gql_url}"
-            f"?token={aion_token}"
-        )
-        return WebsocketsTransport(
-            url=url,
-            ping_interval=aion_api_settings.keepalive,
-            subprotocols=["graphql-transport-ws"])
+                else:
+                    logger.error(f"WebSocket connection error: {ex}")
 
     async def _establish_connection(self) -> None:
         """Establish connection without blocking on pings."""
-        transport = await self._build_transport()
-        await transport.connect()
+        self._transport = await self._ws_transport_factory.create_transport()
+        await self._transport.connect()
         logger.info("WebSocket connection established")
-
-        self._transport = transport
 
     async def _run_ping_loop(self) -> None:
         """Run the ping loop to keep connection alive."""
@@ -157,7 +141,7 @@ class AionWebSocketManager:
                     break
 
         finally:
-            if hasattr(self, '_transport'):
+            if self._transport:
                 await self._transport.close()
                 logger.info("WebSocket connection closed")
 
@@ -175,6 +159,3 @@ class AionWebSocketManager:
                 not self._shutdown_event.is_set() and
                 self._connection_ready.is_set()
         )
-
-
-aion_websocket_manager = AionWebSocketManager()
