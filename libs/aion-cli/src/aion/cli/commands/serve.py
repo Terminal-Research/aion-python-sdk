@@ -1,13 +1,15 @@
 """CLI command for serving AION agents and proxy"""
-import logging
+import asyncio
 
 import asyncclick as click
 from aion.shared.aion_config.reader import ConfigurationError, AionConfigReader
+from aion.shared.logging import get_logger
 
 from aion.cli.handlers import ServerManager
+from aion.cli.services import AionConfigBroadcastService
 from aion.cli.utils.cli_messages import welcome_message
 
-logger = logging.getLogger(__name__)
+logger = get_logger()
 
 
 @click.command(name="serve")
@@ -48,13 +50,15 @@ async def serve() -> None:
         # Start proxy server if not disabled
         proxy_started = False
         if use_proxy:
-            logger.info("Starting proxy server...")
             if server_manager.start_proxy(config):
                 proxy_started = True
-                logger.info("Proxy server started successfully")
             else:
                 logger.error("Failed to start proxy server")
 
+        # Broadcast config to aion api
+        asyncio.create_task(AionConfigBroadcastService().execute(config))
+
+        # print welcome message
         print(welcome_message(aion_config=config, proxy_enabled=proxy_started))
 
         # Monitor processes and keep main process running

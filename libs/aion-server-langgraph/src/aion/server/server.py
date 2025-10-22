@@ -1,17 +1,23 @@
-import logging
 import os
 import sys
+import logging
 
 import uvicorn
-from dotenv import load_dotenv
 from aion.shared.aion_config import AgentConfig
+from aion.shared.logging import get_logger
+from aion.shared.logging.base import AionLogger
+from aion.shared.settings import app_settings
+from aion.shared.utils import replace_uvicorn_loggers, replace_logstash_loggers
+from dotenv import load_dotenv
 
-from aion.server.configs import app_settings
 from aion.server.core.app import AppFactory, AppContext
 from aion.server.db import db_manager
 from aion.server.tasks import store_manager
 
-logger = logging.getLogger(__name__)
+# Set custom logger class globally for all loggers including uvicorn
+logging.setLoggerClass(AionLogger)
+
+logger = get_logger()
 
 dotenv_path = load_dotenv(dotenv_path=os.path.join(os.getcwd(), '.env'), verbose=True)
 
@@ -22,15 +28,15 @@ class MissingAPIKeyError(Exception):
 
 async def async_serve(agent_id: str, agent_config: AgentConfig):
     try:
-        app_context = AppContext(
-            app_settings=app_settings,
-            db_manager=db_manager,
-            store_manager=store_manager)
+        app_settings.set_agent_config(agent_id=agent_id, agent_config=agent_config)
 
         app_factory = await AppFactory(
             agent_id=agent_id,
             agent_config=agent_config,
-            context=app_context
+            context=AppContext(
+                db_manager=db_manager,
+                store_manager=store_manager
+            )
         ).initialize()
 
         if not app_factory:
@@ -39,7 +45,10 @@ async def async_serve(agent_id: str, agent_config: AgentConfig):
         uconfig = uvicorn.Config(
             app=app_factory.get_starlette_app(),
             host=app_factory.get_agent_host(),
-            port=app_factory.get_agent_config().port)
+            port=app_factory.get_agent_config().port,
+            log_config=None,
+            access_log=False
+        )
         server = uvicorn.Server(config=uconfig)
 
         await server.serve()
@@ -56,6 +65,10 @@ async def async_serve(agent_id: str, agent_config: AgentConfig):
 async def run_server(agent_id: str, agent_config: AgentConfig):
     """Starts the Currency Agent server."""
     try:
+        # CONFIGURE CUSTOM LOGGERS FOR UVICORN / LOGSTASH
+        replace_uvicorn_loggers(suppress_startup_logs=True)
+        replace_logstash_loggers()
+        # RUN AGENT
         await async_serve(agent_id, agent_config)
     except KeyboardInterrupt:
         logger.info("Interrupted by user")

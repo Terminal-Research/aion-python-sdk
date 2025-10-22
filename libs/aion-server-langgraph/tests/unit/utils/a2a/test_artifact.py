@@ -4,7 +4,7 @@ import pytest
 from a2a.types import Artifact, Task, Part, TextPart
 from langchain_core.messages import AIMessageChunk, AIMessage
 
-from aion.server.types import ArtifactName, ArtifactStreamingStatus, ArtifactStreamingStatusReason
+from aion.shared.types import ArtifactName, ArtifactStreamingStatus, ArtifactStreamingStatusReason
 from aion.server.utils import StreamingArtifactBuilder, StreamingArtifactBuilderPartMode
 
 

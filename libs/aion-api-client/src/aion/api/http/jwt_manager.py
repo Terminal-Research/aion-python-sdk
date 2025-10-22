@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 from abc import ABC, abstractmethod
 from contextlib import suppress
 from dataclasses import dataclass
@@ -11,10 +10,12 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import jwt
+from aion.shared.logging import get_logger
 
+from aion.api.exceptions import AionAuthenticationError
 from .client import AionHttpClient
 
-logger = logging.getLogger(__name__)
+logger = get_logger()
 
 
 @dataclass
@@ -135,10 +136,23 @@ class AionRefreshingJWTManager(AionJWTManager):
     def __init__(self) -> None:
         super().__init__()
         self._client = AionHttpClient()
+        self._auth_failed = False
 
     async def get_token(self) -> Optional[str]:
-        """Return a valid token, refreshing it if necessary."""
+        """
+        Get a valid token string, refreshing if necessary.
+
+        Returns the cached JWT token string, automatically calling
+        :meth:`_refresh_token` when the current token is missing, expired,
+        or expiring soon. If a previous 401 error occurred, returns None
+        without attempting refresh. This method is thread-safe and ensures
+        only one refresh operation occurs at a time.
+        """
         async with self._lock:
+            # If authentication failed previously, don't attempt refresh
+            if self._auth_failed:
+                return None
+
             if self.should_refresh_token():
                 with suppress(Exception):
                     await self._refresh_token()
@@ -153,7 +167,14 @@ class AionRefreshingJWTManager(AionJWTManager):
         2. Extracting the access token from the response
         3. Creating a new :class:`Token` object from the JWT
         4. Updating the cached token
+
+        If a 401 error occurs, sets the auth_failed flag to prevent
+        further refresh attempts.
         """
+        # If authentication failed previously, don't attempt refresh
+        if self._auth_failed:
+            return
+
         first_token = self._token is None
         try:
             data = await self._client.authenticate()
@@ -162,6 +183,8 @@ class AionRefreshingJWTManager(AionJWTManager):
                 raise ValueError("Access Token is missing in response.")
 
             self._token = Token.from_jwt(token_value)
+            # Reset auth failed flag on successful authentication
+            self._auth_failed = False
 
             if first_token:
                 processed_action = "fetched"
@@ -172,11 +195,41 @@ class AionRefreshingJWTManager(AionJWTManager):
                 processed_action,
                 self._token.expires_at,
             )
-        except Exception as ex:  # pragma: no cover - pass through to caller
+
+        except AionAuthenticationError:
+            self._auth_failed = True
+            self._token = None
+            logger.warning(
+                "Aion authentication failed with 401 error. "
+                "Further refresh attempts will be skipped until reset.")
+
+        except Exception as ex:
             logger.error("Token refresh failed: %s", ex)
             raise
+
+    def reset_auth_state(self) -> None:
+        """
+        Reset the authentication failure state.
+
+        Clears the auth_failed flag and cached token, allowing fresh
+        authentication attempts. Use this when credentials have been
+        updated or when you want to retry authentication after a 401 error.
+        """
+        self._auth_failed = False
+        self._token = None
+        logger.info("Authentication state reset. Fresh authentication will be attempted.")
+
+    @property
+    def is_auth_failed(self) -> bool:
+        """
+        Check if authentication has failed due to 401 error.
+
+        Returns:
+            bool: True if a 401 error occurred and no further refresh
+                  attempts will be made, False otherwise.
+        """
+        return self._auth_failed
 
 
 # Global instance used by the API client
 aion_jwt_manager = AionRefreshingJWTManager()
-

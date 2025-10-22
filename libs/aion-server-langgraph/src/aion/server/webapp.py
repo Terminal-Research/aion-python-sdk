@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
-import logging
 from pathlib import Path
 from typing import Any, Dict
 
+from aion.shared.logging import get_logger
 from pydantic import BaseModel
 from starlette.applications import Starlette
 
-logger = logging.getLogger(__name__)
+logger = get_logger()
 
 
 class HttpConfig(BaseModel):
@@ -100,4 +100,3 @@ class DynamicMounter:
         http_data = raw.get("aion", {}).get("http", {}) if isinstance(raw, dict) else {}
         http_cfg = HttpConfig(apps=http_data)
         self.mount_manager.mount_apps(http_cfg.apps)
-

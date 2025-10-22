@@ -1,16 +1,16 @@
 """Server management handler for AION agents and proxy"""
 import asyncio
-import logging
 import os
 import signal
 import sys
 from typing import Dict, Optional
 
-from aion.shared.aion_config import AgentConfig
-from aion.shared.utils.processes import ProcessManager
 from aion.proxy import AionAgentProxyServer
+from aion.shared.aion_config import AgentConfig
+from aion.shared.logging import get_logger
+from aion.shared.utils.processes import ProcessManager
 
-logger = logging.getLogger(__name__)
+logger = get_logger()
 
 
 class ServerManager:
@@ -28,7 +28,7 @@ class ServerManager:
 
     def _signal_handler(self, signum, frame):
         """Handle shutdown signals gracefully"""
-        logger.info(f"Received signal {signum}, shutting down all agents and proxy...")
+        logger.debug(f"Received signal {signum}, shutting down all agents and proxy...")
         if self.process_manager:
             self.process_manager.shutdown_all(timeout=30)
         sys.exit(0)
@@ -62,9 +62,7 @@ class ServerManager:
             agent_config=agent_config
         )
 
-        if success:
-            logger.info(f"Agent '{agent_id}' started successfully")
-        else:
+        if not success:
             logger.error(f"Failed to start agent '{agent_id}'")
             self.agent_configs.pop(agent_id, None)
 
@@ -90,9 +88,7 @@ class ServerManager:
             config=config
         )
 
-        if success:
-            logger.info(f"Proxy server started successfully on port {config.proxy.port}")
-        else:
+        if not success:
             logger.error("Failed to start proxy server")
 
         return success
@@ -110,7 +106,7 @@ class ServerManager:
         successful_agents = []
         failed_agents = []
 
-        logger.info(f"Starting {len(config.agents)} AION agents...")
+        logger.debug(f"Starting {len(config.agents)} AION agents...")
 
         for agent_id, agent_config in config.agents.items():
             if self.start_agent(agent_id, agent_config):
@@ -149,16 +145,6 @@ class ServerManager:
                     proxy_info = self.process_manager.get_process_info("proxy")
                     proxy_alive = proxy_info and proxy_info.process.is_alive()
 
-                # Log status periodically
-                status_parts = []
-                if alive_count > 0:
-                    status_parts.append(f"{alive_count} agents")
-                if proxy_alive:
-                    status_parts.append("proxy")
-
-                if status_parts:
-                    logger.debug(f"Running: {', '.join(status_parts)}")
-
                 # Exit if all agents have stopped
                 if alive_count == 0:
                     logger.error("All agents have stopped, exiting...")
@@ -168,14 +154,14 @@ class ServerManager:
                 if proxy_started and not proxy_alive and alive_count > 0:
                     logger.warning("Proxy server died, attempting to restart...")
                     if self.start_proxy(config):
-                        logger.info("Proxy server restarted successfully")
+                        logger.debug("Proxy server restarted successfully")
                         proxy_alive = True
                     else:
                         logger.error("Failed to restart proxy server")
                         proxy_alive = False
 
         except KeyboardInterrupt:
-            logger.info("Received shutdown signal...")
+            logger.debug("Received shutdown signal...")
 
     def shutdown(self) -> bool:
         """
@@ -184,11 +170,11 @@ class ServerManager:
         Returns:
             bool: True if all processes shut down successfully
         """
-        logger.info("Shutting down all agents and proxy...")
+        logger.debug("Shutting down all agents and proxy...")
         if self.process_manager:
             success = self.process_manager.shutdown_all(timeout=30)
             if success:
-                logger.info("All processes shut down successfully")
+                logger.debug("All processes shut down successfully")
             else:
                 logger.warning("Some processes may not have shut down cleanly")
             return success
@@ -240,7 +226,6 @@ class ServerManager:
         """
         try:
             from aion.server import run_server
-            logger.info(f"Starting agent '{agent_id}' in process {os.getpid()}")
 
             # Create new event loop for this process
             loop = asyncio.new_event_loop()
@@ -265,8 +250,6 @@ class ServerManager:
             config: AionConfig instance
         """
         try:
-            logger.info(f"Starting proxy server in process {os.getpid()}")
-
             # Create new event loop for this process
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)

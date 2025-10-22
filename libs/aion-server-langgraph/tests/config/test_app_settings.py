@@ -2,11 +2,17 @@ import pytest
 from unittest.mock import patch
 import os
 
-from aion.server.configs import AppSettings
+from aion.shared.settings import AppSettings, app_settings
 
 
 class TestAppSettings:
     """Test suite for AppSettings class"""
+
+    def test_global_app_settings_instance(self):
+        """Test that global app_settings instance exists"""
+        assert app_settings is not None
+        assert isinstance(app_settings, AppSettings)
+        assert app_settings.log_level in ["DEBUG", "INFO", "WARNING", "ERROR"]
 
     def test_default_log_level(self):
         """Test that default log level is INFO when environment variable is not set"""
@@ -28,3 +34,47 @@ class TestAppSettings:
         with patch.dict(os.environ, {'LOG_LEVEL': 'INVALID'}):
             with pytest.raises(ValueError):
                 AppSettings()
+
+    def test_default_docs_url(self):
+        """Test that default docs URL is set correctly."""
+        settings = AppSettings()
+        assert settings.docs_url == "https://docs.aion.to/"
+
+    @patch.dict(os.environ, {"AION_DOCS_URL": "https://custom.aion.docs/"})
+    def test_docs_url_from_environment(self):
+        """Test that docs URL can be overridden via environment variable."""
+        settings = AppSettings()
+        assert settings.docs_url == "https://custom.aion.docs/"
+
+    def test_default_node_name(self):
+        """Test that node_name defaults to None."""
+        settings = AppSettings()
+        assert settings.node_name is None
+
+    @patch.dict(os.environ, {"NODE_NAME": "test-node-123"})
+    def test_node_name_from_environment(self):
+        """Test that node_name can be set via environment variable."""
+        settings = AppSettings()
+        assert settings.node_name == "test-node-123"
+
+    def test_default_logstash_host(self):
+        """Test that logstash_host defaults to None."""
+        settings = AppSettings()
+        assert settings.logstash_host is None
+
+    @patch.dict(os.environ, {"LOGSTASH_HOST": "localhost"})
+    def test_logstash_host_from_environment(self):
+        """Test that logstash_host can be set via environment variable."""
+        settings = AppSettings()
+        assert settings.logstash_host == "localhost"
+
+    def test_default_logstash_port(self):
+        """Test that logstash_port defaults to None."""
+        settings = AppSettings()
+        assert settings.logstash_port is None
+
+    @patch.dict(os.environ, {"LOGSTASH_PORT": "5000"})
+    def test_logstash_port_from_environment(self):
+        """Test that logstash_port can be set via environment variable."""
+        settings = AppSettings()
+        assert settings.logstash_port == 5000

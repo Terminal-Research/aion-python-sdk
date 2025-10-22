@@ -1,13 +1,13 @@
 import asyncio
-import logging
 from typing import Optional, List
 
 from a2a.server.context import ServerCallContext
 from a2a.types import Task
+from aion.shared.logging import get_logger
 
 from .base_task_store import BaseTaskStore
 
-logger = logging.getLogger(__name__)
+logger = get_logger()
 
 
 class InMemoryTaskStore(BaseTaskStore):
