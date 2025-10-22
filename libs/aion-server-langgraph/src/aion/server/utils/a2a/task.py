@@ -1,5 +1,5 @@
 from a2a.types import Task
-from aion.server.types import INTERRUPT_TASK_STATES
+from aion.shared.types import INTERRUPT_TASK_STATES
 
 __all__ = [
     "check_if_task_is_interrupted",

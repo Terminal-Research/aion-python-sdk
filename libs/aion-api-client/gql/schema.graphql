@@ -378,6 +378,7 @@ type Mutations {
   deleteDeployment(deploymentId: ID!): Boolean @auth(subjectType: "User")
   createOrUpdateDeploymentEnvironment(deploymentId: ID!, deploymentEnvironmentId: ID, branch: String, environmentalVariables: Json): DeploymentEnvironment @auth(subjectType: "User")
   a2aSend("JSON-RPC request body" request: JSONRPCRequestInput!, "Distribution that should handle the request" distributionId: ID!): JSONRPCResponse @auth(subjectType: "User")
+  registerVersion("Contents of the server's aion.yaml file. From this, the control plane will register the behavior's graph id and configuration variable metadata." configuration: String!): AgentBehavior @auth(subjectType: "Version")
 }
 
 "Price change update"

@@ -1,7 +1,7 @@
 from unittest.mock import Mock
 import pytest
 from a2a.types import Task, TaskState, Artifact, Message, TaskStatus
-from aion.server.types import ArtifactName, ConversationTaskStatus
+from aion.shared.types import ArtifactName, ConversationTaskStatus
 from aion.server.utils import ConversationBuilder
 
 

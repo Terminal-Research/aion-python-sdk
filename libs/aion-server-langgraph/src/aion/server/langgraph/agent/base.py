@@ -1,16 +1,16 @@
-import logging
 from typing import Union, Optional, Callable
 
-from .card import AionAgentCard
 from aion.shared.aion_config import AgentConfig
+from aion.shared.logging import get_logger
 from langgraph.graph import Graph
 from langgraph.pregel import Pregel
 
-from aion.server.configs import app_settings
+from aion.shared.settings import app_settings
+from .card import AionAgentCard
 from .checkpointer import GraphCheckpointerManager
 from .interfaces import AgentInterface
 
-logger = logging.getLogger(__name__)
+logger = get_logger()
 
 
 class BaseAgent(AgentInterface):
@@ -73,13 +73,13 @@ class BaseAgent(AgentInterface):
         """Create and return a compiled graph for the agent."""
         graph = self.get_graph()
         if hasattr(graph, "compile") and callable(getattr(graph, "compile")):
-            logger.info(f"Compiling graph for agent \"{self.__class__.__name__}\"")
+            logger.debug(f"Compiling graph for agent \"{self.__class__.__name__}\"")
             checkpointer = GraphCheckpointerManager(graph).get_checkpointer()
             compiled_graph = graph.compile(checkpointer=checkpointer)
             return compiled_graph
         else:
             # If graph doesn't require compilation, return it as is
-            logger.info(f"Graph for agent \"{self.__class__.__name__}\" doesn't require compilation")
+            logger.debug(f"Graph for agent \"{self.__class__.__name__}\" doesn't require compilation")
             return graph
 
     def recompile(self) -> Union[Graph, Pregel]:

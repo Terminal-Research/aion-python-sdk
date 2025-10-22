@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Dict, Any, Optional
 
-from aion.server.types import A2AMetadataKey
+from aion.shared.types import A2AMetadataKey
 
 
 @dataclass

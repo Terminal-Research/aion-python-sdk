@@ -1,5 +1,6 @@
-import logging
 from typing import Optional
+
+from aion.shared.logging import get_logger
 
 from aion.server.db import db_manager
 from .stores import (
@@ -8,7 +9,7 @@ from .stores import (
     PostgresTaskStore
 )
 
-logger = logging.Logger(__name__)
+logger = get_logger()
 
 
 class StoreManager:

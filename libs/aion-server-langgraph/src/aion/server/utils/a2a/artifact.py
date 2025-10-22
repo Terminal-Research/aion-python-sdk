@@ -2,7 +2,7 @@ from typing import Any, Optional, Literal
 from enum import Enum
 
 from a2a.types import TaskArtifactUpdateEvent, Artifact, Part, TextPart, Task
-from aion.server.types import ArtifactName, ArtifactStreamingStatus, ArtifactStreamingStatusReason
+from aion.shared.types import ArtifactName, ArtifactStreamingStatus, ArtifactStreamingStatusReason
 from langchain_core.messages import BaseMessage, AIMessageChunk, AIMessage
 
 
