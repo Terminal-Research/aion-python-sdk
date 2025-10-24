@@ -1,8 +1,8 @@
 """Service for monitoring and restarting AION processes"""
 import asyncio
 
-from aion.shared.aion_config import AionConfig
-from aion.shared.base import BaseExecuteService
+from aion.shared.config import AionConfig
+from aion.shared.services import BaseExecuteService
 from aion.shared.utils.processes import ProcessManager
 
 

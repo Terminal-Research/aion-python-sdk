@@ -2,16 +2,17 @@ import inspect
 from pathlib import Path
 from typing import Any, Optional
 
-from aion.shared.aion_config.models import AgentConfig
+from aion.shared.agent import AgentAdapter, ExecutorAdapter, ConfigurationError
+from aion.shared.agent.adapters.checkpointer_adapter import CheckpointerConfig, CheckpointerType
+from aion.shared.config.models import AgentConfig
 from aion.shared.logging import get_logger
+from aion.shared.settings import db_settings
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import Graph
 from langgraph.pregel import Pregel
 
-from aion.server.adapters.base.agent_adapter import AgentAdapter
-from aion.server.adapters.base.executor_adapter import ExecutorAdapter
-from aion.server.adapters.exceptions import ConfigurationError
-from aion.server.adapters.langgraph.executor import LangGraphExecutor
-from aion.server.langgraph.agent.base import BaseAgent
+from .checkpointer_factory import LangGraphCheckpointerAdapter
+from .executor import LangGraphExecutor
 
 logger = get_logger()
 
@@ -20,6 +21,7 @@ class LangGraphAdapter(AgentAdapter):
 
     def __init__(self, base_path: Optional[Path] = None):
         self.base_path = base_path or Path.cwd()
+        self.checkpointer_adapter = LangGraphCheckpointerAdapter()
 
     @staticmethod
     def framework_name() -> str:
@@ -40,19 +42,7 @@ class LangGraphAdapter(AgentAdapter):
         }
 
     def can_handle(self, agent_obj: Any) -> bool:
-        if isinstance(agent_obj, (Graph, Pregel)):
-            return True
-
-        class_name = agent_obj.__class__.__name__
-        graph_class_names = {
-            "StateGraph",
-            "CompiledStateGraph",
-            "CompiledGraph",
-            "MessageGraph",
-            "CompiledMessageGraph",
-        }
-
-        if class_name in graph_class_names:
+        if self._is_graph_instance(agent_obj):
             return True
 
         if callable(agent_obj) and not inspect.isclass(agent_obj):
@@ -60,81 +50,129 @@ class LangGraphAdapter(AgentAdapter):
 
         return False
 
-    def discover_agent(self, module: Any, config: AgentConfig) -> Any:
-        logger.debug(f"Discovering agent in module '{module.__name__}'")
-        for name, member in inspect.getmembers(module, inspect.isclass):
-            if (
-                issubclass(member, BaseAgent)
-                and member is not BaseAgent
-                and member.__module__ == module.__name__
-            ):
-                logger.debug(
-                    f"Found BaseAgent subclass '{member.__name__}' in module '{module.__name__}'"
-                )
-                return member
-        for name, member in inspect.getmembers(module):
-            if self._is_graph_instance(member):
-                logger.debug(
-                    f"Found graph instance '{name}' of type '{type(member).__name__}' in module '{module.__name__}'"
-                )
-                return member
-        for name, member in inspect.getmembers(module, inspect.isfunction):
-            if not name.startswith("_"):
-                logger.debug(f"Found potential graph function '{name}'")
-                return member
+    async def initialize_agent(self, agent_obj: Any, config: AgentConfig) -> Any:
+        """Initialize agent from discovered object.
 
-        raise ValueError(
-            f"No BaseAgent subclass, graph instance, or graph function found in module '{module.__name__}'"
-        )
+        Args:
+            agent_obj: Graph instance or callable that returns a graph
+            config: Agent configuration
 
-    def initialize_agent(self, agent_obj: Any, config: AgentConfig) -> Any:
+        Returns:
+            Compiled graph ready for execution
+        """
         logger.debug(f"Initializing agent of type '{type(agent_obj).__name__}'")
-        if inspect.isclass(agent_obj) and issubclass(agent_obj, BaseAgent):
-            agent_instance = agent_obj()
-            agent_instance.config = config
-            return agent_instance
-        if isinstance(agent_obj, BaseAgent):
-            agent_obj.config = config
-            return agent_obj
-        if self._is_graph_instance(agent_obj) or callable(agent_obj):
-            agent_instance = BaseAgent(graph_source=agent_obj, config=config)
-            return agent_instance
+
+        # If it's a graph instance, compile it
+        if self._is_graph_instance(agent_obj):
+            return await self._compile_graph(agent_obj, config)
+
+        # If it's a callable (function), call it to get the graph
+        if callable(agent_obj) and not inspect.isclass(agent_obj):
+            logger.debug(f"Calling function to get graph")
+            graph = agent_obj()
+            if not self._is_graph_instance(graph):
+                raise TypeError(
+                    f"Function returned {type(graph).__name__}, expected a LangGraph graph"
+                )
+            return await self._compile_graph(graph, config)
 
         raise TypeError(
-            f"Cannot initialize agent from object of type '{type(agent_obj).__name__}'"
+            f"Cannot initialize agent from object of type '{type(agent_obj).__name__}'. "
+            f"Expected a LangGraph graph instance or a function that returns a graph."
         )
 
-    def create_executor(self, agent: Any, config: AgentConfig) -> ExecutorAdapter:
-        if not isinstance(agent, BaseAgent):
+    async def create_executor(self, agent: Any, config: AgentConfig) -> ExecutorAdapter:
+        """Create executor for the agent.
+
+        Args:
+            agent: Compiled graph from initialize_agent
+            config: Agent configuration
+
+        Returns:
+            Executor adapter for running the agent
+        """
+        logger.debug(f"Creating executor for agent")
+
+        # Agent should already be a compiled graph from initialize_agent
+        if not self._is_graph_instance(agent):
             raise TypeError(
-                f"Agent must be a BaseAgent instance, got {type(agent).__name__}"
+                f"Agent must be a compiled LangGraph graph, got {type(agent).__name__}"
             )
 
-        logger.debug(f"Creating executor for agent '{config.id}'")
-        compiled_graph = agent.get_compiled_graph()
-
-        return LangGraphExecutor(compiled_graph, config)
+        return LangGraphExecutor(agent, config)
 
     def validate_config(self, config: AgentConfig) -> None:
         if not config.path:
             raise ConfigurationError("Agent path is required for LangGraph adapter")
-        logger.debug(f"Configuration validated for agent '{config.id}'")
+        logger.debug(f"Configuration validated for agent by LangGraph adapter")
 
-    @staticmethod
-    def _is_graph_instance(obj: Any) -> bool:
-        if obj is None:
-            return False
-        if isinstance(obj, (Graph, Pregel)):
-            return True
-        class_name = obj.__class__.__name__
-        graph_class_names = {
-            "StateGraph",
+    async def _compile_graph(
+            self,
+            graph: Any,
+            config: AgentConfig
+    ) -> Any:
+        """Compile a LangGraph graph with checkpointer.
+
+        Args:
+            graph: LangGraph graph instance
+            config: Agent configuration
+
+        Returns:
+            Compiled graph
+        """
+        # Check if graph is already compiled
+        if isinstance(graph, Pregel) or graph.__class__.__name__ in {
             "CompiledStateGraph",
             "CompiledGraph",
-            "MessageGraph",
-            "CompiledMessageGraph",
-        }
+            "CompiledMessageGraph"
+        }:
+            logger.debug(f"Graph is already compiled")
+            return graph
 
+        # Compile the graph with checkpointer
+        if hasattr(graph, "compile") and callable(getattr(graph, "compile")):
+            logger.debug(f"Compiling graph")
+            checkpointer = await self._get_checkpointer()
+            compiled_graph = graph.compile(checkpointer=checkpointer)
+            return compiled_graph
+        else:
+            # If graph doesn't require compilation, return it as is
+            logger.debug(f"Graph doesn't require compilation")
+            return graph
+
+    async def _get_checkpointer(self) -> Optional[BaseCheckpointSaver]:
+        """Get checkpointer based on configuration.
+
+        Returns:
+            Checkpointer instance (InMemorySaver or AsyncPostgresSaver)
+        """
+        try:
+            # Determine checkpointer type based on database settings
+            # If POSTGRES_URL is set and database is available, use PostgreSQL
+            checkpointer_type = CheckpointerType.MEMORY
+
+            if db_settings.pg_url:
+                logger.debug("PostgreSQL URL found, will use PostgreSQL checkpointer")
+                checkpointer_type = CheckpointerType.POSTGRES
+
+            # Create checkpointer config
+            checkpointer_config = CheckpointerConfig(type=checkpointer_type)
+
+            # Create checkpointer using the adapter
+            checkpointer = await self.checkpointer_adapter.create_checkpointer(checkpointer_config)
+            logger.debug(f"Created {checkpointer_type} checkpointer")
+            return checkpointer
+
+        except Exception as ex:
+            logger.warning(f"Failed to create checkpointer: {ex}")
+
+    def _is_graph_instance(self, obj: Any) -> bool:
+        if obj is None:
+            return False
+
+        if isinstance(obj, (Graph, Pregel)):
+            return True
+
+        class_name = obj.__class__.__name__
+        graph_class_names = self.get_supported_type_names()
         return class_name in graph_class_names
-
-

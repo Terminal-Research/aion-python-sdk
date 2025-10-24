@@ -3,7 +3,7 @@ from typing import List
 from a2a.types import Message, Artifact, TaskState
 from pydantic import RootModel, Field
 
-from aion.shared.base import A2ABaseModel
+from aion.shared.a2a import A2ABaseModel
 
 __all__ = [
     "Conversation",

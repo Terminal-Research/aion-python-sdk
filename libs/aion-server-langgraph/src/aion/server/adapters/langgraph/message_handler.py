@@ -1,5 +1,12 @@
 from typing import Any, Optional
 
+from aion.shared.agent.adapters.message_adapter import (
+    MessageAdapter,
+    MessageRole,
+    MessageType,
+    StreamingArtifact,
+    UnifiedMessage,
+)
 from aion.shared.logging import get_logger
 from langchain_core.messages import (
     AIMessage,
@@ -9,14 +16,6 @@ from langchain_core.messages import (
     SystemMessage,
     ToolMessage,
     FunctionMessage,
-)
-
-from aion.server.adapters.base.message_adapter import (
-    MessageAdapter,
-    MessageRole,
-    MessageType,
-    StreamingArtifact,
-    UnifiedMessage,
 )
 
 logger = get_logger()

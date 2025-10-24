@@ -1,10 +1,10 @@
 from a2a.types import AgentCard
 from a2a.types import AgentExtension, AgentCapabilities, AgentSkill
-from aion.shared.aion_config import AgentConfig
+from aion.shared.config import AgentConfig
 
 from aion.shared.settings import app_settings
 from aion.shared.types import GetContextParams, GetContextsListParams
-from .collectors import AgentCardConfigurationCollector
+from . import collectors
 
 
 class AionAgentCard(AgentCard):
@@ -27,7 +27,6 @@ class AionAgentCard(AgentCard):
     def from_config(
             cls,
             config: AgentConfig,
-            base_url: str,
     ) -> "AionAgentCard":
         capabilities = AgentCapabilities(
             streaming=config.capabilities.streaming,
@@ -60,13 +59,13 @@ class AionAgentCard(AgentCard):
         return cls(
             name=config.name or "Graph Agent",
             description=config.description or "Agent based on external graph",
-            url=base_url,
+            url=config.base_url,
             version=config.version or "1.0.0",
             default_input_modes=config.input_modes,
             default_output_modes=config.output_modes,
             capabilities=capabilities,
             skills=skills,
-            configuration=AgentCardConfigurationCollector(config.configuration).collect()
+            configuration=collectors.AgentCardConfigurationCollector(config.configuration).collect()
         )
 
 

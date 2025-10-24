@@ -1,5 +1,5 @@
-from aion.shared.aion_config.models import AionConfig, AgentConfig
-from aion.shared.aion_config.reader import AionConfigReader
+from aion.shared.config.models import AionConfig, AgentConfig
+from aion.shared.config.reader import AionConfigReader
 
 
 def welcome_message(aion_config: AionConfig, proxy_enabled: bool = True) -> str:

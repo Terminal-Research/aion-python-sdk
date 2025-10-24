@@ -1,10 +1,10 @@
 """Bootstrap module to register all available adapters."""
+from aion.shared.agent import adapter_registry
 
 
 def register_available_adapters():
     """Register all available framework adapters."""
-    from aion.server.adapters.registry import adapter_registry
-    from aion.server.adapters.langgraph import LangGraphAdapter
+    from .langgraph import LangGraphAdapter
 
     supported_framework_adapters = (
         LangGraphAdapter,

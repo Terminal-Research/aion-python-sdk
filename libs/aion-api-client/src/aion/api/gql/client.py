@@ -1,6 +1,6 @@
 from typing import Optional, List, Any, AsyncIterator
 
-from aion.shared.aion_config import AionConfig
+from aion.shared.config import AionConfig
 from aion.shared.logging import get_logger
 
 from aion.api.http import AionJWTManager

@@ -1,7 +1,7 @@
 from aion.api.gql import AionGqlContextClient
-from aion.shared.aion_config import AionConfig
+from aion.shared.config import AionConfig
 
-from aion.shared.base import BaseExecuteService
+from aion.shared.services import BaseExecuteService
 
 
 class AionConfigBroadcastService(BaseExecuteService):

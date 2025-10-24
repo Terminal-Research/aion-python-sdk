@@ -16,12 +16,8 @@ from typing import Any, Optional
 
 class CheckpointerType(str, Enum):
     """Enumeration of supported checkpoint storage types."""
-
     MEMORY = "memory"
     POSTGRES = "postgres"
-    REDIS = "redis"
-    SQLITE = "sqlite"
-    FILE = "file"
 
 
 @dataclass
@@ -40,6 +36,7 @@ class CheckpointerConfig:
     namespace: Optional[str] = None
     ttl: Optional[int] = None
     metadata: dict[str, Any] = field(default_factory=dict)
+
 
 @dataclass
 class Checkpoint:

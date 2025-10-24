@@ -12,7 +12,7 @@ from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from typing import Any, Optional, Set
 
-from aion.server.adapters.base.state_adapter import AgentState
+from .state_adapter import AgentState
 
 
 class ExecutionConfig:

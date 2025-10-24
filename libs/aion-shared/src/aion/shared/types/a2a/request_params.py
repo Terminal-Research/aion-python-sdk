@@ -2,7 +2,7 @@ from typing import Optional, Dict, Any
 
 from pydantic import Field
 
-from aion.shared.base import A2ABaseModel
+from aion.shared.a2a import A2ABaseModel
 
 __all__ = [
     "GetContextParams",

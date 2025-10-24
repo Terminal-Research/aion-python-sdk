@@ -1,6 +1,6 @@
 from aion.api.http import AionJWTManager
 
-from aion.shared.base import BaseService
+from aion.shared.services import BaseService
 from aion.server.interfaces import IAuthManager
 
 

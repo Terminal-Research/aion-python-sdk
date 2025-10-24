@@ -7,7 +7,7 @@ from typing import Dict, Optional
 import logging
 
 import uvicorn
-from aion.shared.aion_config import AionConfig
+from aion.shared.config import AionConfig
 from aion.shared.logging import get_logger
 from aion.shared.logging.base import AionLogger
 from fastapi import FastAPI

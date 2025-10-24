@@ -9,7 +9,7 @@ from aion.cli.services import (
     ServeProxyStartupService,
     ServeShutdownService,
 )
-from aion.shared.aion_config import AionConfig
+from aion.shared.config import AionConfig
 from aion.shared.logging import get_logger
 from aion.shared.utils.processes import ProcessManager
 

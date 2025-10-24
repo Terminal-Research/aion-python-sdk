@@ -12,7 +12,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any, Optional
 
-from aion.shared.logging import get_logger
+from aion.shared.logging.factory import get_logger
 
 logger = get_logger()
 
@@ -122,10 +122,10 @@ class ModuleLoader:
                 f"Failed to execute module from {module_path}: {e}"
             ) from e
 
-        logger.debug(f"Successfully loaded module '{mod_name}' from {module_path}")
         return module
 
-    def _load_from_dotted_path(self, dotted_path: str) -> ModuleType:
+    @staticmethod
+    def _load_from_dotted_path(dotted_path: str) -> ModuleType:
         """Load module from a dotted Python path.
 
         Args:
@@ -247,18 +247,12 @@ class ModuleLoader:
             # Check by instance type
             for supported_type in supported_types:
                 if isinstance(member, supported_type):
-                    logger.debug(
-                        f"Found instance '{name}' of type '{type(member).__name__}'"
-                    )
                     found_objects.append(("instance", member, name))
                     break
 
             # Check by class name (for types we can't import)
             class_name = type(member).__name__
             if class_name in supported_type_names:
-                logger.debug(
-                    f"Found object '{name}' with matching class name '{class_name}'"
-                )
                 found_objects.append(("named_type", member, name))
 
         # 3. Search for callables (functions that might return supported types)
@@ -269,7 +263,6 @@ class ModuleLoader:
 
             # Only add if we haven't found anything better
             if not found_objects:
-                logger.debug(f"Found callable '{name}'")
                 found_objects.append(("callable", member, name))
 
         # Return the first found object (priority: class > instance > callable)

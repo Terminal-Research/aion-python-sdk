@@ -18,9 +18,9 @@ not by the adapter.
 from abc import ABC, abstractmethod
 from typing import Any
 
-from aion.shared.aion_config.models import AgentConfig
+from aion.shared.config.models import AgentConfig
 
-from aion.server.adapters.base.executor_adapter import ExecutorAdapter
+from .executor_adapter import ExecutorAdapter
 
 
 class AgentAdapter(ABC):
@@ -78,23 +78,7 @@ class AgentAdapter(ABC):
         pass
 
     @abstractmethod
-    def discover_agent(self, module: Any, config: AgentConfig) -> Any:
-        """Discover and return an agent from a module based on configuration.
-
-        Args:
-            module: The module to search for agents
-            config: Agent configuration specifying which agent to discover
-
-        Returns:
-            Any: The discovered agent object
-
-        Raises:
-            ValueError: If agent cannot be found or discovered
-        """
-        pass
-
-    @abstractmethod
-    def initialize_agent(self, agent_obj: Any, config: AgentConfig) -> Any:
+    async def initialize_agent(self, agent_obj: Any, config: AgentConfig) -> Any:
         """Initialize an agent with the given configuration.
 
         Args:
@@ -110,7 +94,7 @@ class AgentAdapter(ABC):
         pass
 
     @abstractmethod
-    def create_executor(self, agent: Any, config: AgentConfig) -> ExecutorAdapter:
+    async def create_executor(self, agent: Any, config: AgentConfig) -> ExecutorAdapter:
         """Create an executor for the given agent.
 
         Args:

@@ -5,23 +5,18 @@ representation of an agent in the AION system. It encapsulates agent identity,
 configuration, and execution capabilities while delegating framework-specific
 operations to adapters.
 """
-
 import time
+import traceback
 from collections.abc import AsyncIterator
 from typing import Any, Optional
 
-from aion.shared.aion_config.models import AgentConfig
-from aion.shared.logging import get_logger
-
-from aion.server.adapters.base.agent_adapter import AgentAdapter
-from aion.server.adapters.base.executor_adapter import (
-    ExecutionConfig,
-    ExecutionEvent,
-    ExecutorAdapter,
-)
-from aion.server.adapters.base.state_adapter import AgentState
-from .card import AionAgentCard
+from aion.shared.config.models import AgentConfig
+from aion.shared.logging.factory import get_logger
 from .models import AgentMetadata
+from ..adapters import AgentAdapter
+from ..adapters.executor_adapter import ExecutionConfig, ExecutionEvent, ExecutorAdapter
+from ..adapters.state_adapter import AgentState
+from ..card import AionAgentCard
 
 logger = get_logger()
 
@@ -45,7 +40,6 @@ class AionAgent:
         This class is designed for single-agent deployment. For multi-agent
         scenarios, deploy multiple servers behind a proxy.
     """
-
     def __init__(
             self,
             agent_id: str,
@@ -82,7 +76,11 @@ class AionAgent:
         self._metadata = metadata
         self._card: Optional[Any] = None
 
-    # ===== Properties (read-only) =====
+    @property
+    def logger(self):
+        if not hasattr(self, "_logger"):
+            self._logger = get_logger()
+        return self._logger
 
     @property
     def id(self) -> str:
@@ -122,7 +120,13 @@ class AionAgent:
         """Agent runtime metadata."""
         return self._metadata
 
-    # ===== Unified Execution API =====
+    @property
+    def host(self):
+        return "0.0.0.0"
+
+    @property
+    def port(self) -> int:
+        return self.config.port
 
     async def execute(
             self,
@@ -321,10 +325,10 @@ class AionAgent:
         adapter.validate_config(config)
 
         # Initialize agent (may wrap or transform native_agent)
-        initialized_agent = adapter.initialize_agent(native_agent, config)
+        initialized_agent = await adapter.initialize_agent(native_agent, config)
 
         # Create executor
-        executor = adapter.create_executor(initialized_agent, config)
+        executor = await adapter.create_executor(initialized_agent, config)
 
         # Create metadata with runtime capabilities
         metadata = AgentMetadata(created_at=time.time())
@@ -340,7 +344,7 @@ class AionAgent:
 
         logger.info(
             f"AionAgent '{agent_id}' created successfully "
-            f"(framework={adapter.framework_name()}"
+            f"(framework={adapter.framework_name()})"
         )
 
         return agent
@@ -369,8 +373,8 @@ class AionAgent:
             ValueError: If no adapter can handle the agent or path is missing
             FileNotFoundError: If agent module not found
         """
-        from aion.server.adapters.registry import adapter_registry
-        from aion.server.core.agent.module_loader import ModuleLoader
+        from ..adapters.registry import adapter_registry
+        from .module_loader import ModuleLoader
 
         if not config.path:
             raise ValueError(f"Agent path is required in configuration for agent '{agent_id}'")
@@ -385,7 +389,7 @@ class AionAgent:
         except Exception as ex:
             raise FileNotFoundError(
                 f"Failed to load module for agent '{agent_id}' from path '{config.path}': {ex}"
-            ) from e
+            ) from ex
 
         # Try each registered adapter to discover the agent
         errors = []

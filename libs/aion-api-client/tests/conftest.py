@@ -3,7 +3,7 @@ import datetime
 
 import jwt
 import pytest
-from aion.shared.aion_config import AgentConfig
+from aion.shared.config import AgentConfig
 
 from aion.api.http import AionJWTManager
 from aion.api.http.jwt_manager import Token

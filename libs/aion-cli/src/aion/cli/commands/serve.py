@@ -5,7 +5,7 @@ import asyncclick as click
 from aion.cli.handlers import ServeHandler
 from aion.cli.services import AionConfigBroadcastService
 from aion.cli.utils.cli_messages import welcome_message
-from aion.shared.aion_config.reader import ConfigurationError, AionConfigReader
+from aion.shared.config.reader import ConfigurationError, AionConfigReader
 from aion.shared.logging import get_logger
 
 logger = get_logger()

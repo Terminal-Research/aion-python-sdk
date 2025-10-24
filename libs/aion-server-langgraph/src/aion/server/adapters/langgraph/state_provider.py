@@ -1,15 +1,15 @@
 from typing import Any, Optional
 
-from aion.shared.logging import get_logger
-from langgraph.types import Command, Interrupt, StateSnapshot
-
-from aion.server.adapters.base.state_adapter import (
+from aion.shared.agent.adapters.state_adapter import (
     AgentState,
     InterruptInfo,
     StateAdapter,
 )
+from aion.shared.logging import get_logger
+from langgraph.types import Command, Interrupt, StateSnapshot
 
 logger = get_logger()
+
 
 class LangGraphStateAdapter(StateAdapter):
 
@@ -69,9 +69,9 @@ class LangGraphStateAdapter(StateAdapter):
         )
 
     def create_resume_input(
-        self,
-        user_input: Any,
-        state: AgentState,
+            self,
+            user_input: Any,
+            state: AgentState,
     ) -> dict[str, Any]:
         logger.debug(f"Creating resume input with user_input: {user_input}")
         return Command(resume=user_input)
@@ -111,5 +111,3 @@ class LangGraphStateAdapter(StateAdapter):
                         all_interrupts.append(interrupt)
 
         return all_interrupts if all_interrupts else None
-
-

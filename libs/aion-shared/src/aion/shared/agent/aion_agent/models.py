@@ -1,7 +1,3 @@
-"""Data models for agent representation.
-
-This module contains Pydantic models used by the agent system.
-"""
 from dataclasses import dataclass
 
 from pydantic import Field

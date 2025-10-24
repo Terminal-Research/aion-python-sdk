@@ -1,6 +1,6 @@
 from typing import Dict, Any, Union
 
-from aion.shared.aion_config import ConfigurationField, ConfigurationType
+from aion.shared.config import ConfigurationField, ConfigurationType
 
 
 class AgentCardConfigurationCollector:

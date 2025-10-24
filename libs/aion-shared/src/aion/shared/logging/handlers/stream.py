@@ -2,7 +2,6 @@ import logging
 from datetime import datetime
 
 from aion.shared.logging.base import AionLogRecord
-from aion.shared.settings import app_settings
 from aion.shared.utils.text import colorize_text
 
 
@@ -19,12 +18,14 @@ class LogStreamFormatter(logging.Formatter):
     }
 
     def format(self, record: AionLogRecord):
+        from aion.shared.agent.aion_agent import agent_manager
+
         # Format timestamp
         timestamp = datetime.fromtimestamp(record.created).strftime('%Y-%m-%d %H:%M:%S,%f')[:-3]
 
         # Build the formatted message manually
-        if app_settings.agent_id:
-            formatted_message = f"{timestamp} - {record.levelname} - {record.name} - Agent [{app_settings.agent_id}] - {record.getMessage()}"
+        if agent_manager.agent_id:
+            formatted_message = f"{timestamp} - {record.levelname} - {record.name} - Agent [{agent_manager.agent_id}] - {record.getMessage()}"
         else:
             formatted_message = f"{timestamp} - {record.levelname} - {record.name} - {record.getMessage()}"
 

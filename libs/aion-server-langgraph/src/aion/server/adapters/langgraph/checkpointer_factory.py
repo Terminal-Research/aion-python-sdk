@@ -1,15 +1,14 @@
 from typing import Any, Optional
 
-from aion.shared.logging import get_logger
-from langgraph.checkpoint.memory import InMemorySaver
-from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-
-from aion.server.adapters.base.checkpointer_adapter import (
-    Checkpoint,
+from aion.shared.agent.adapters.checkpointer_adapter import (
     CheckpointerAdapter,
     CheckpointerConfig,
     CheckpointerType,
 )
+from aion.shared.logging import get_logger
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+
 from aion.server.db import db_manager
 
 logger = get_logger()
@@ -26,7 +25,13 @@ class LangGraphCheckpointerAdapter(CheckpointerAdapter):
             return self._create_memory_checkpointer()
 
         elif config.type == CheckpointerType.POSTGRES:
-            return await self._create_postgres_checkpointer(config)
+            postgres_checkpointer = await self._create_postgres_checkpointer()
+            if postgres_checkpointer is None:
+                logger.warning(
+                    "PostgreSQL checkpointer creation failed, falling back to InMemorySaver"
+                )
+                return self._create_memory_checkpointer()
+            return postgres_checkpointer
 
         else:
             raise ValueError(
@@ -47,33 +52,26 @@ class LangGraphCheckpointerAdapter(CheckpointerAdapter):
 
         return True
 
-    def _create_memory_checkpointer(self) -> InMemorySaver:
-        logger.debug("Creating InMemorySaver checkpointer")
+    @staticmethod
+    def _create_memory_checkpointer() -> InMemorySaver:
         return InMemorySaver()
 
-    async def _create_postgres_checkpointer(
-            self,
-            config: CheckpointerConfig,
-    ) -> AsyncPostgresSaver:
+    @staticmethod
+    async def _create_postgres_checkpointer() -> Optional[AsyncPostgresSaver]:
         try:
             if not db_manager.is_initialized:
-                logger.warning(
-                    "Database manager not initialized, falling back to InMemorySaver"
-                )
-                return self._create_memory_checkpointer()
+                logger.warning("Database manager not initialized")
+                return None
+
             pool = db_manager.get_pool()
             if not pool:
-                logger.warning(
-                    "Database pool not available, falling back to InMemorySaver"
-                )
-                return self._create_memory_checkpointer()
+                logger.warning("Database pool not available")
+                return None
+
             checkpointer = AsyncPostgresSaver(conn=pool)
             logger.info("Created AsyncPostgresSaver checkpointer")
-
             return checkpointer
 
-        except Exception as e:
-            logger.error(f"Failed to create PostgreSQL checkpointer: {e}")
-            logger.warning("Falling back to InMemorySaver")
-            return self._create_memory_checkpointer()
-
+        except Exception as ex:
+            logger.error(f"Failed to create PostgreSQL checkpointer: {ex}")
+            return None

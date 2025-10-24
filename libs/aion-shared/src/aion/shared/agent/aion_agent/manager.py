@@ -7,8 +7,8 @@ a proxy instead.
 
 from typing import Optional
 
-from aion.shared.aion_config.models import AgentConfig
-from aion.shared.logging import get_logger
+from aion.shared.config.models import AgentConfig
+from aion.shared.logging.factory import get_logger
 from aion.shared.metaclasses import Singleton
 
 from .agent import AionAgent
@@ -121,6 +121,10 @@ class AgentManager(metaclass=Singleton):
                 "or via set_agent_config() before calling create_agent()"
             )
 
+        # set global info about agent
+        if agent_id or config:
+            self.set_agent_config(final_agent_id, final_config)
+
         logger.info(f"Creating agent '{final_agent_id}'...")
 
         # Create agent using auto-detection
@@ -128,16 +132,6 @@ class AgentManager(metaclass=Singleton):
 
         # Store agent
         self._agent = agent
-        self._agent_id = final_agent_id
-        self._agent_config = final_config
-
-        logger.info(
-            f"Agent '{final_agent_id}' created and loaded "
-            f"(framework={agent.framework}, "
-            f"streaming={agent.supports_streaming()}, "
-            f"resume={agent.supports_resume()})"
-        )
-
         return agent
 
     def get_agent(self) -> Optional[AionAgent]:

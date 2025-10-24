@@ -3,7 +3,7 @@ from typing import Literal
 from a2a.types import JSONRPCErrorResponse
 from pydantic import RootModel
 
-from aion.shared.base import A2ABaseModel
+from aion.shared.a2a import A2ABaseModel
 from .models import Conversation, ContextsList
 
 __all__ = [

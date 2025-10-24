@@ -1,5 +1,5 @@
 """Service for graceful shutdown of AION serve processes"""
-from aion.shared.base import BaseExecuteService
+from aion.shared.services import BaseExecuteService
 from aion.shared.utils.processes import ProcessManager
 
 

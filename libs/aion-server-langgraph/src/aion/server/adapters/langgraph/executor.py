@@ -1,20 +1,21 @@
 from collections.abc import AsyncIterator
 from typing import Any, Optional
 
-from aion.shared.aion_config.models import AgentConfig
-from aion.shared.logging import get_logger
-
-from aion.server.adapters.base.executor_adapter import (
+from aion.shared.agent import ExecutionError, StateRetrievalError
+from aion.shared.agent.adapters.executor_adapter import (
     ExecutionConfig,
     ExecutionEvent,
     ExecutorAdapter,
 )
-from aion.server.adapters.base.state_adapter import AgentState
-from aion.server.adapters.exceptions import ExecutionError, StateRetrievalError
-from aion.server.adapters.langgraph.message_handler import LangGraphMessageAdapter
-from aion.server.adapters.langgraph.state_provider import LangGraphStateAdapter
+from aion.shared.agent.adapters.state_adapter import AgentState
+from aion.shared.config.models import AgentConfig
+from aion.shared.logging import get_logger
+
+from .message_handler import LangGraphMessageAdapter
+from .state_provider import LangGraphStateAdapter
 
 logger = get_logger()
+
 
 class LangGraphExecutor(ExecutorAdapter):
     def __init__(self, compiled_graph: Any, config: AgentConfig):
@@ -153,9 +154,8 @@ class LangGraphExecutor(ExecutorAdapter):
     def supports_state_retrieval(self) -> bool:
         return True
 
-    def _to_langgraph_config(
-            self, config: Optional[ExecutionConfig]
-    ) -> dict[str, Any]:
+    @staticmethod
+    def _to_langgraph_config(config: Optional[ExecutionConfig]) -> dict[str, Any]:
         if not config:
             return {}
 
@@ -165,12 +165,8 @@ class LangGraphExecutor(ExecutorAdapter):
 
         return {"configurable": {"thread_id": thread_id}}
 
-    def _convert_event(
-            self,
-            event_type: str,
-            event_data: Any,
-            metadata: Optional[Any] = None,
-    ) -> Optional[ExecutionEvent]:
+    @staticmethod
+    def _convert_event(event_type: str, event_data: Any, metadata: Optional[Any] = None) -> Optional[ExecutionEvent]:
         if event_type == "messages":
             return ExecutionEvent(
                 event_type="message",
@@ -202,4 +198,3 @@ class LangGraphExecutor(ExecutorAdapter):
         else:
             logger.warning(f"Unknown LangGraph event type: {event_type}")
             return None
-

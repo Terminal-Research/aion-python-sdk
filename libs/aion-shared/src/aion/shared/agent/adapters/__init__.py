@@ -14,13 +14,20 @@ Classes:
     StateAdapter: Agent state extraction and management
     MessageAdapter: Message format translation and normalization
     CheckpointerAdapter: Agent state checkpoint and recovery
+
+Registry:
+    AdapterRegistry: Singleton registry for managing framework adapters
+
+Singletons:
+    adapter_registry: Global adapter registry instance
 """
 
-from aion.server.adapters.base.agent_adapter import AgentAdapter
-from aion.server.adapters.base.checkpointer_adapter import CheckpointerAdapter
-from aion.server.adapters.base.executor_adapter import ExecutorAdapter
-from aion.server.adapters.base.message_adapter import MessageAdapter
-from aion.server.adapters.base.state_adapter import StateAdapter
+from .agent_adapter import AgentAdapter
+from .checkpointer_adapter import CheckpointerAdapter
+from .executor_adapter import ExecutorAdapter
+from .message_adapter import MessageAdapter
+from .registry import AdapterRegistry, adapter_registry
+from .state_adapter import StateAdapter
 
 __all__ = [
     "AgentAdapter",
@@ -28,5 +35,6 @@ __all__ = [
     "StateAdapter",
     "MessageAdapter",
     "CheckpointerAdapter",
+    "AdapterRegistry",
+    "adapter_registry",
 ]
-
