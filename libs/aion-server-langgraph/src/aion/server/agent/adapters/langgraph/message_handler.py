@@ -1,6 +1,6 @@
 from typing import Any, Optional
 
-from aion.shared.agent.adapters.message_adapter import (
+from aion.shared.agent.adapters import (
     MessageAdapter,
     MessageRole,
     MessageType,

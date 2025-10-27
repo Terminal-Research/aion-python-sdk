@@ -9,7 +9,7 @@ from aion.shared.logging.base import AionLogger
 from aion.shared.utils import replace_uvicorn_loggers, replace_logstash_loggers
 from dotenv import load_dotenv
 
-from aion.server.adapters import register_available_adapters
+from aion.server.agent import register_available_adapters
 from aion.shared.agent import agent_manager
 from aion.server.core.app import AppFactory, AppContext
 from aion.server.db import db_manager

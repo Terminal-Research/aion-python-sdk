@@ -2,12 +2,12 @@ from collections.abc import AsyncIterator
 from typing import Any, Optional
 
 from aion.shared.agent import ExecutionError, StateRetrievalError
-from aion.shared.agent.adapters.executor_adapter import (
+from aion.shared.agent.adapters import (
     ExecutionConfig,
     ExecutionEvent,
     ExecutorAdapter,
 )
-from aion.shared.agent.adapters.state_adapter import AgentState
+from aion.shared.agent.adapters import AgentState
 from aion.shared.config.models import AgentConfig
 from aion.shared.logging import get_logger
 
@@ -78,13 +78,28 @@ class LangGraphExecutor(ExecutorAdapter):
                     yield unified_event
             logger.info(f"LangGraph stream completed: session_id={session_id}")
             final_state = await self.get_state(config)
+
+            # Build completion metadata
+            completion_metadata = {
+                "is_interrupted": final_state.is_interrupted,
+                "next_steps": final_state.next_steps,
+            }
+
+            # Extract interrupt information if present
+            if final_state.is_interrupted:
+                interrupt_info = self.state_adapter.extract_interrupt_info(final_state)
+                if interrupt_info:
+                    completion_metadata["interrupt"] = {
+                        "reason": interrupt_info.reason,
+                        "prompt": interrupt_info.prompt,
+                        "options": interrupt_info.options,
+                        "metadata": interrupt_info.metadata,
+                    }
+
             yield ExecutionEvent(
                 event_type="complete",
                 data=final_state.values,
-                metadata={
-                    "is_interrupted": final_state.is_interrupted,
-                    "next_steps": final_state.next_steps,
-                },
+                metadata=completion_metadata,
             )
 
         except Exception as e:
@@ -167,28 +182,93 @@ class LangGraphExecutor(ExecutorAdapter):
 
     @staticmethod
     def _convert_event(event_type: str, event_data: Any, metadata: Optional[Any] = None) -> Optional[ExecutionEvent]:
+        """Convert LangGraph event to framework-agnostic ExecutionEvent.
+
+        This method normalizes LangGraph-specific types (BaseMessage, etc.)
+        into simple types (str, dict, list) before creating ExecutionEvent.
+
+        Special handling for streaming:
+        - AIMessageChunk → message with is_streaming=True (for streaming artifacts)
+        - AIMessage → message with is_final=True (finalizes streaming)
+
+        Args:
+            event_type: LangGraph event type
+            event_data: LangGraph event data (may contain framework-specific types)
+            metadata: Optional LangGraph metadata
+
+        Returns:
+            ExecutionEvent with normalized data, or None if event should be skipped
+        """
         if event_type == "messages":
+            # Normalize LangGraph message to simple format
+            langgraph_message = event_data
+
+            # Extract content from BaseMessage
+            if hasattr(langgraph_message, "content"):
+                content = str(langgraph_message.content)
+            else:
+                content = str(langgraph_message)
+
+            # Determine role from message type
+            role = "agent"
+            message_class_name = ""
+            if hasattr(langgraph_message, "__class__"):
+                message_class_name = langgraph_message.__class__.__name__
+                if "AI" in message_class_name or "Assistant" in message_class_name:
+                    role = "assistant"
+                elif "Human" in message_class_name or "User" in message_class_name:
+                    role = "user"
+                elif "System" in message_class_name:
+                    role = "system"
+
+            # Detect streaming vs final message
+            is_streaming_chunk = "Chunk" in message_class_name
+            is_final_message = message_class_name == "AIMessage"
+
             return ExecutionEvent(
                 event_type="message",
-                data=event_data,
-                metadata={"langgraph_metadata": metadata} if metadata else {},
+                data=content,  # ← Normalized to string!
+                metadata={
+                    "role": role,
+                    "langgraph_type": message_class_name,
+                    "langgraph_metadata": metadata,
+                    "is_streaming": is_streaming_chunk,  # ← For streaming artifacts
+                    "is_final": is_final_message,         # ← To finalize streaming
+                },
             )
 
         elif event_type == "values":
+            # State values - already dict format, but ensure serializable
             return ExecutionEvent(
                 event_type="state_update",
-                data=event_data,
+                data=event_data if isinstance(event_data, dict) else {"value": event_data},
                 metadata={"source": "langgraph_values"},
             )
 
         elif event_type == "updates":
+            # Node updates - dict of node outputs
             return ExecutionEvent(
                 event_type="node_update",
-                data=event_data,
+                data=event_data if isinstance(event_data, dict) else {"update": event_data},
                 metadata={"source": "langgraph_updates"},
             )
 
         elif event_type == "custom":
+            # Custom events - transform for A2A compatibility
+            # LangGraph custom events have "custom_event" field
+            if isinstance(event_data, dict):
+                # Transform custom_event field to event field for A2A
+                emit_event = {k: v for k, v in event_data.items() if k != "custom_event"}
+                if "custom_event" in event_data:
+                    emit_event["event"] = event_data["custom_event"]
+
+                return ExecutionEvent(
+                    event_type="custom",
+                    data=emit_event,
+                    metadata={"source": "langgraph_custom"},
+                )
+
+            # Pass through non-dict custom events
             return ExecutionEvent(
                 event_type="custom",
                 data=event_data,

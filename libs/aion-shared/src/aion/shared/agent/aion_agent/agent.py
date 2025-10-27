@@ -6,17 +6,20 @@ configuration, and execution capabilities while delegating framework-specific
 operations to adapters.
 """
 import time
-import traceback
 from collections.abc import AsyncIterator
 from typing import Any, Optional
 
+from aion.shared.agent.adapters import (
+    ExecutionConfig,
+    AgentAdapter,
+    AgentState,
+    ExecutionEvent,
+    ExecutorAdapter,
+)
+from aion.shared.agent.card import AionAgentCard
 from aion.shared.config.models import AgentConfig
 from aion.shared.logging.factory import get_logger
 from .models import AgentMetadata
-from ..adapters import AgentAdapter
-from ..adapters.executor_adapter import ExecutionConfig, ExecutionEvent, ExecutorAdapter
-from ..adapters.state_adapter import AgentState
-from ..card import AionAgentCard
 
 logger = get_logger()
 
@@ -40,6 +43,7 @@ class AionAgent:
         This class is designed for single-agent deployment. For multi-agent
         scenarios, deploy multiple servers behind a proxy.
     """
+
     def __init__(
             self,
             agent_id: str,

@@ -10,6 +10,7 @@ from starlette.applications import Starlette
 from aion.server.core.app.a2a_starlette import AionA2AStarletteApplication
 from aion.server.core.middlewares import TracingMiddleware, AionContextMiddleware
 from aion.server.core.request_handlers import AionRequestHandler
+from aion.server.agent import AionAgentRequestExecutor
 from aion.server.db import verify_connection
 from aion.server.db.manager import DbManager
 from aion.server.db.migrations import upgrade_to_head
@@ -119,7 +120,7 @@ class AppFactory:
         task_store = self.context.store_manager.get_store()
 
         return AionRequestHandler(
-            agent_executor=self.aion_agent.get_executor(),
+            agent_executor=AionAgentRequestExecutor(self.aion_agent),
             task_store=task_store,
             push_config_store=InMemoryPushNotificationConfigStore()
         )

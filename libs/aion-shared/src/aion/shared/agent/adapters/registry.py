@@ -2,7 +2,7 @@ from typing import Any, Optional
 
 from aion.shared.metaclasses import Singleton
 
-from .agent_adapter import AgentAdapter
+from .interfaces import AgentAdapter
 
 
 class AdapterRegistry(metaclass=Singleton):

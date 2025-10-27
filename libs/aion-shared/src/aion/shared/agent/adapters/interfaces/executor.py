@@ -12,7 +12,7 @@ from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from typing import Any, Optional, Set
 
-from .state_adapter import AgentState
+from .state import AgentState
 
 
 class ExecutionConfig:

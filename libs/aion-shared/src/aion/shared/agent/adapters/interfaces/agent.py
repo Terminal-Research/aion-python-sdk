@@ -20,7 +20,7 @@ from typing import Any
 
 from aion.shared.config.models import AgentConfig
 
-from .executor_adapter import ExecutorAdapter
+from .executor import ExecutorAdapter
 
 
 class AgentAdapter(ABC):

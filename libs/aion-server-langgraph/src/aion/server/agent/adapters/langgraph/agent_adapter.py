@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from aion.shared.agent import AgentAdapter, ExecutorAdapter, ConfigurationError
-from aion.shared.agent.adapters.checkpointer_adapter import CheckpointerConfig, CheckpointerType
+from aion.shared.agent.adapters import CheckpointerConfig, CheckpointerType
 from aion.shared.config.models import AgentConfig
 from aion.shared.logging import get_logger
 from aion.shared.settings import db_settings
