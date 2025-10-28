@@ -31,11 +31,12 @@ class LangGraphExecutor(ExecutorAdapter):
     ) -> dict[str, Any]:
         try:
             langgraph_config = self._to_langgraph_config(config)
+            langgraph_inputs = self._transform_inputs(inputs)
             logger.debug(
-                f"Invoking LangGraph agent with inputs: {inputs}, config: {langgraph_config}"
+                f"Invoking LangGraph agent with inputs: {langgraph_inputs}, config: {langgraph_config}"
             )
 
-            result = await self.compiled_graph.ainvoke(inputs, langgraph_config)
+            result = await self.compiled_graph.ainvoke(langgraph_inputs, langgraph_config)
             logger.debug(f"LangGraph invoke completed: {result}")
 
             return result
@@ -51,14 +52,15 @@ class LangGraphExecutor(ExecutorAdapter):
     ) -> AsyncIterator[ExecutionEvent]:
         try:
             langgraph_config = self._to_langgraph_config(config)
+            langgraph_inputs = self._transform_inputs(inputs)
             session_id = config.session_id if config else "unknown"
 
             logger.info(f"Starting LangGraph stream: session_id={session_id}")
             logger.debug(
-                f"Stream inputs: {inputs}, config: {langgraph_config}"
+                f"Stream inputs: {langgraph_inputs}, config: {langgraph_config}"
             )
             async for event_type, event_data in self.compiled_graph.astream(
-                    inputs,
+                    langgraph_inputs,
                     langgraph_config,
                     stream_mode=["values", "messages", "custom", "updates"],
             ):
@@ -147,10 +149,15 @@ class LangGraphExecutor(ExecutorAdapter):
                 logger.warning(
                     f"Attempted to resume non-interrupted execution: {config.session_id}"
                 )
-                async for event in self.stream(inputs or {}, config):
+                # Transform inputs before streaming
+                transformed_inputs = self._transform_inputs(inputs) if inputs else {}
+                async for event in self.stream(transformed_inputs, config):
                     yield event
                 return
-            resume_input = self.state_adapter.create_resume_input(inputs, state)
+
+            # Transform inputs before creating resume input
+            transformed_inputs = self._transform_inputs(inputs) if inputs else None
+            resume_input = self.state_adapter.create_resume_input(transformed_inputs, state)
 
             logger.debug(f"Resume input: {resume_input}")
             async for event in self.stream(resume_input, config):
@@ -179,6 +186,32 @@ class LangGraphExecutor(ExecutorAdapter):
             return {}
 
         return {"configurable": {"thread_id": thread_id}}
+
+    @staticmethod
+    def _transform_inputs(inputs: dict[str, Any]) -> dict[str, Any]:
+        """Transform generic inputs to LangGraph format.
+
+        LangGraph expects inputs to match state channels (e.g., 'messages').
+        This method converts the generic {"input": "..."} format to LangGraph format.
+
+        Args:
+            inputs: Generic input dict, typically {"input": "user message"}
+
+        Returns:
+            LangGraph-compatible input dict with messages channel
+        """
+        # If inputs already have 'messages' key, assume it's already in LangGraph format
+        if "messages" in inputs:
+            return inputs
+
+        # If inputs have generic 'input' key, convert to messages format
+        if "input" in inputs:
+            user_message = inputs["input"]
+            return {"messages": [("user", user_message)]}
+
+        # For empty or other formats, try to pass through
+        # (may fail if graph requires specific channels)
+        return inputs
 
     @staticmethod
     def _convert_event(event_type: str, event_data: Any, metadata: Optional[Any] = None) -> Optional[ExecutionEvent]:

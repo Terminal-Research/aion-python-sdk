@@ -8,6 +8,7 @@ str, dict, list). Framework-specific normalization should happen in the
 ExecutorAdapter layer before creating ExecutionEvent.
 """
 
+import uuid
 from typing import Optional
 
 from a2a.types import (
@@ -85,10 +86,14 @@ class ExecutionEventTranslator:
         parts: list[TextPart] = [TextPart(text=message_content)]
 
         # Determine role (default to "agent")
+        # Map "assistant" to "agent" for A2A compatibility
         role = metadata.get("role", "agent")
+        if role == "assistant":
+            role = "agent"
 
         # Create A2A message
         message = Message(
+            message_id=str(uuid.uuid4()),
             task_id=task.id,
             context_id=task.context_id,
             role=role,
