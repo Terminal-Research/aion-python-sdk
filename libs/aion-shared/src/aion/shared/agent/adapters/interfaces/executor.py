@@ -10,8 +10,10 @@ in a framework-agnostic way. It provides abstractions for:
 
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
-from typing import Any, Optional, Set
+from typing import Any, Optional
 
+from aion.shared.agent.inputs import AgentInput
+from .events import ExecutionEvent
 from .state import AgentState
 
 
@@ -45,36 +47,6 @@ class ExecutionConfig:
         self.metadata = metadata or {}
 
 
-class ExecutionEvent:
-    """An event emitted during agent execution.
-
-    Attributes:
-        event_type: Type/category of the event
-        data: Event payload/data
-        metadata: Additional event metadata
-    """
-    def __init__(
-        self,
-        event_type: str,
-        data: Any,
-        metadata: Optional[dict[str, Any]] = None,
-    ):
-        """Initialize an execution event.
-
-        Args:
-            event_type: Type of event (e.g., "start", "stream", "end", "error")
-            data: Event payload/data
-            metadata: Additional event metadata
-        """
-        self.event_type = event_type
-        self.data = data
-        self.metadata = metadata or {}
-
-    def __repr__(self) -> str:
-        """Return string representation of the event."""
-        return f"ExecutionEvent(type={self.event_type}, data={self.data})"
-
-
 class ExecutorAdapter(ABC):
     """Abstract base for framework-specific agent execution.
 
@@ -90,13 +62,13 @@ class ExecutorAdapter(ABC):
     @abstractmethod
     async def invoke(
         self,
-        inputs: dict[str, Any],
+        inputs: AgentInput,
         config: Optional[ExecutionConfig] = None,
     ) -> dict[str, Any]:
         """Execute the agent with given inputs and return final output.
 
         Args:
-            inputs: Input parameters for the agent
+            inputs: Universal agent input (will be transformed to framework format)
             config: Execution configuration (session_id, thread_id, etc.)
 
         Returns:
@@ -111,13 +83,13 @@ class ExecutorAdapter(ABC):
     @abstractmethod
     async def stream(
         self,
-        inputs: dict[str, Any],
+        inputs: AgentInput,
         config: Optional[ExecutionConfig] = None,
     ) -> AsyncIterator[ExecutionEvent]:
         """Stream agent execution, yielding events in real-time.
 
         Args:
-            inputs: Input parameters for the agent
+            inputs: Universal agent input (will be transformed to framework format)
             config: Execution configuration (session_id, thread_id, etc.)
 
         Yields:
@@ -147,13 +119,13 @@ class ExecutorAdapter(ABC):
     @abstractmethod
     async def resume(
         self,
-        inputs: Optional[dict[str, Any]],
+        inputs: Optional[AgentInput],
         config: ExecutionConfig,
     ) -> AsyncIterator[ExecutionEvent]:
         """Resume a paused/interrupted agent execution.
 
         Args:
-            inputs: Input parameters to provide after interruption (optional)
+            inputs: Universal agent input to provide after interruption (optional)
             config: Execution configuration specifying which execution to resume
 
         Yields:
@@ -179,7 +151,7 @@ class ExecutorAdapter(ABC):
 
     def supports_multi_turn(self) -> bool:
         """Check if executor supports multi-turn conversations."""
-        return False  # Default
+        return False
 
     def supports_parallel_execution(self) -> bool:
         """Check if executor supports parallel execution."""

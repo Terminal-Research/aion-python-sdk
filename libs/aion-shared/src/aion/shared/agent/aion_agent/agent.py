@@ -9,6 +9,7 @@ import time
 from collections.abc import AsyncIterator
 from typing import Any, Optional
 
+from aion.shared.agent.inputs import AgentInput
 from aion.shared.agent.adapters import (
     ExecutionConfig,
     AgentAdapter,
@@ -134,7 +135,7 @@ class AionAgent:
 
     async def execute(
             self,
-            inputs: dict[str, Any],
+            inputs: AgentInput | dict[str, Any],
             session_id: Optional[str] = None,
             thread_id: Optional[str] = None,
             timeout: Optional[float] = None,
@@ -145,9 +146,9 @@ class AionAgent:
         This is a framework-agnostic method that works for all agents.
 
         Args:
-            inputs: Input data for the agent
+            inputs: Input data (AgentInput or dict for backward compatibility)
             session_id: Session identifier for this execution
-            thread_id: Thread identifier for multi-turn conversations
+            thread_id: Thread_identifier for multi-turn conversations
             timeout: Maximum execution time in seconds
             **metadata: Additional execution metadata
 
@@ -170,11 +171,15 @@ class AionAgent:
             f"session_id={session_id})"
         )
 
+        # Convert dict to AgentInput for backward compatibility
+        if isinstance(inputs, dict):
+            inputs = AgentInput.from_dict(inputs)
+
         return await self._executor.invoke(inputs, config)
 
     async def stream(
             self,
-            inputs: dict[str, Any],
+            inputs: AgentInput | dict[str, Any],
             session_id: Optional[str] = None,
             thread_id: Optional[str] = None,
             timeout: Optional[float] = None,
@@ -183,7 +188,7 @@ class AionAgent:
         """Execute agent with streaming output.
 
         Args:
-            inputs: Input data for the agent
+            inputs: Input data (AgentInput or dict for backward compatibility)
             session_id: Session identifier for this execution
             thread_id: Thread identifier for multi-turn conversations
             timeout: Maximum execution time in seconds
@@ -207,6 +212,10 @@ class AionAgent:
             f"Streaming agent '{self.id}' (framework={self.framework}, "
             f"session_id={session_id})"
         )
+
+        # Convert dict to AgentInput for backward compatibility
+        if isinstance(inputs, dict):
+            inputs = AgentInput.from_dict(inputs)
 
         async for event in self._executor.stream(inputs, config):
             yield event
@@ -237,7 +246,7 @@ class AionAgent:
     async def resume(
             self,
             session_id: str,
-            inputs: Optional[dict[str, Any]] = None,
+            inputs: Optional[AgentInput | dict[str, Any]] = None,
             thread_id: Optional[str] = None,
             **metadata,
     ) -> AsyncIterator[ExecutionEvent]:
@@ -245,7 +254,7 @@ class AionAgent:
 
         Args:
             session_id: Session identifier
-            inputs: Optional input data to provide after interruption
+            inputs: Optional input data (AgentInput or dict for backward compatibility)
             thread_id: Optional thread identifier
             **metadata: Additional execution metadata
 
@@ -263,6 +272,10 @@ class AionAgent:
         )
 
         logger.debug(f"Resuming agent '{self.id}', session={session_id}")
+
+        # Convert dict to AgentInput for backward compatibility
+        if inputs is not None and isinstance(inputs, dict):
+            inputs = AgentInput.from_dict(inputs)
 
         async for event in self._executor.resume(inputs, config):
             yield event

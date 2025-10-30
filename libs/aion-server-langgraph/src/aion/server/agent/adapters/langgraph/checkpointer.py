@@ -15,6 +15,7 @@ logger = get_logger()
 
 
 class LangGraphCheckpointerAdapter(CheckpointerAdapter):
+
     async def create_checkpointer(
             self,
             config: CheckpointerConfig,
@@ -54,10 +55,20 @@ class LangGraphCheckpointerAdapter(CheckpointerAdapter):
 
     @staticmethod
     def _create_memory_checkpointer() -> InMemorySaver:
+        """Create in-memory checkpointer.
+
+        Returns:
+            InMemorySaver instance
+        """
         return InMemorySaver()
 
     @staticmethod
     async def _create_postgres_checkpointer() -> Optional[AsyncPostgresSaver]:
+        """Create PostgreSQL checkpointer using database pool.
+
+        Returns:
+            AsyncPostgresSaver instance or None if creation fails
+        """
         try:
             if not db_manager.is_initialized:
                 logger.warning("Database manager not initialized")

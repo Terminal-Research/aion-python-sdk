@@ -15,7 +15,6 @@ Classes:
         AgentAdapter: Framework-specific agent lifecycle management
         ExecutorAdapter: Agent execution and streaming capabilities
         StateAdapter: Agent state extraction and management
-        MessageAdapter: Message format translation and normalization
         CheckpointerAdapter: Agent state checkpoint and recovery
 
     Registry:
@@ -43,11 +42,13 @@ from .adapters import (
     AgentAdapter,
     CheckpointerAdapter,
     ExecutorAdapter,
-    MessageAdapter,
     StateAdapter,
     AdapterRegistry,
     adapter_registry,
 )
+
+# Input models
+from .inputs import AgentInput
 
 # Exceptions
 from .exceptions import (
@@ -71,11 +72,12 @@ __all__ = [
     "agent_manager",
     # Agent card
     "AionAgentCard",
+    # Input models
+    "AgentInput",
     # Adapters
     "AgentAdapter",
     "ExecutorAdapter",
     "StateAdapter",
-    "MessageAdapter",
     "CheckpointerAdapter",
     "AdapterRegistry",
     "adapter_registry",

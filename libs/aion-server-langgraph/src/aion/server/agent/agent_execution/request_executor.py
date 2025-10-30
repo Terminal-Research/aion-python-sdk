@@ -20,7 +20,7 @@ from a2a.types import (
 from a2a.utils import new_task
 from a2a.utils.errors import ServerError
 from a2a.utils.telemetry import trace_function
-from aion.shared.agent import AionAgent
+from aion.shared.agent import AgentInput, AionAgent
 from aion.shared.logging import get_logger
 
 from aion.server.utils import check_if_task_is_interrupted, StreamingArtifactBuilder
@@ -81,13 +81,6 @@ class AionAgentRequestExecutor(AgentExecutor):
     ) -> None:
         """Execute the agent with the given context and event queue.
 
-        This method orchestrates the full execution flow:
-        1. Validate request
-        2. Create or resume task
-        3. Stream execution through AionAgent
-        4. Translate events to A2A format
-        5. Handle errors
-
         Args:
             context: A2A request context with message and task info
             event_queue: Queue for publishing A2A events
@@ -140,7 +133,7 @@ class AionAgentRequestExecutor(AgentExecutor):
                     f"input_length={len(user_input)}"
                 )
                 event_stream = self.agent.stream(
-                    inputs={"input": user_input},
+                    inputs=AgentInput.from_text(user_input),
                     session_id=session_id,
                     thread_id=thread_id,
                 )
@@ -152,7 +145,7 @@ class AionAgentRequestExecutor(AgentExecutor):
                 )
                 event_stream = self.agent.resume(
                     session_id=session_id,
-                    inputs={"input": user_input} if user_input else None,
+                    inputs=AgentInput.from_text(user_input) if user_input else None,
                     thread_id=thread_id,
                 )
 

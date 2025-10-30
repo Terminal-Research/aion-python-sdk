@@ -11,7 +11,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import Graph
 from langgraph.pregel import Pregel
 
-from .checkpointer_factory import LangGraphCheckpointerAdapter
+from .checkpointer import LangGraphCheckpointerAdapter
 from .executor import LangGraphExecutor
 
 logger = get_logger()
@@ -62,11 +62,9 @@ class LangGraphAdapter(AgentAdapter):
         """
         logger.debug(f"Initializing agent of type '{type(agent_obj).__name__}'")
 
-        # If it's a graph instance, compile it
         if self._is_graph_instance(agent_obj):
             return await self._compile_graph(agent_obj, config)
 
-        # If it's a callable (function), call it to get the graph
         if callable(agent_obj) and not inspect.isclass(agent_obj):
             logger.debug(f"Calling function to get graph")
             graph = agent_obj()
@@ -93,7 +91,6 @@ class LangGraphAdapter(AgentAdapter):
         """
         logger.debug(f"Creating executor for agent")
 
-        # Agent should already be a compiled graph from initialize_agent
         if not self._is_graph_instance(agent):
             raise TypeError(
                 f"Agent must be a compiled LangGraph graph, got {type(agent).__name__}"
@@ -120,7 +117,6 @@ class LangGraphAdapter(AgentAdapter):
         Returns:
             Compiled graph
         """
-        # Check if graph is already compiled
         if isinstance(graph, Pregel) or graph.__class__.__name__ in {
             "CompiledStateGraph",
             "CompiledGraph",
@@ -129,36 +125,31 @@ class LangGraphAdapter(AgentAdapter):
             logger.debug(f"Graph is already compiled")
             return graph
 
-        # Compile the graph with checkpointer
         if hasattr(graph, "compile") and callable(getattr(graph, "compile")):
             logger.debug(f"Compiling graph")
             checkpointer = await self._get_checkpointer()
             compiled_graph = graph.compile(checkpointer=checkpointer)
             return compiled_graph
         else:
-            # If graph doesn't require compilation, return it as is
             logger.debug(f"Graph doesn't require compilation")
             return graph
 
     async def _get_checkpointer(self) -> Optional[BaseCheckpointSaver]:
         """Get checkpointer based on configuration.
 
+        Uses PostgreSQL if available, otherwise falls back to in-memory.
+
         Returns:
-            Checkpointer instance (InMemorySaver or AsyncPostgresSaver)
+            Checkpointer instance or None if creation fails
         """
         try:
-            # Determine checkpointer type based on database settings
-            # If POSTGRES_URL is set and database is available, use PostgreSQL
             checkpointer_type = CheckpointerType.MEMORY
 
             if db_settings.pg_url:
                 logger.debug("PostgreSQL URL found, will use PostgreSQL checkpointer")
                 checkpointer_type = CheckpointerType.POSTGRES
 
-            # Create checkpointer config
             checkpointer_config = CheckpointerConfig(type=checkpointer_type)
-
-            # Create checkpointer using the adapter
             checkpointer = await self.checkpointer_adapter.create_checkpointer(checkpointer_config)
             logger.debug(f"Created {checkpointer_type} checkpointer")
             return checkpointer
@@ -167,6 +158,14 @@ class LangGraphAdapter(AgentAdapter):
             logger.warning(f"Failed to create checkpointer: {ex}")
 
     def _is_graph_instance(self, obj: Any) -> bool:
+        """Check if object is a LangGraph graph instance.
+
+        Args:
+            obj: Object to check
+
+        Returns:
+            True if object is a supported graph type
+        """
         if obj is None:
             return False
 

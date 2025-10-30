@@ -1,18 +1,20 @@
 from collections.abc import AsyncIterator
 from typing import Any, Optional
 
-from aion.shared.agent import ExecutionError, StateRetrievalError
+from aion.shared.agent import AgentInput, ExecutionError, StateRetrievalError
+from aion.shared.agent.adapters import AgentState
 from aion.shared.agent.adapters import (
+    CompleteEvent,
+    ErrorEvent,
     ExecutionConfig,
     ExecutionEvent,
     ExecutorAdapter,
 )
-from aion.shared.agent.adapters import AgentState
 from aion.shared.config.models import AgentConfig
 from aion.shared.logging import get_logger
 
-from .message_handler import LangGraphMessageAdapter
-from .state_provider import LangGraphStateAdapter
+from .event_converter import LangGraphEventConverter
+from .state import LangGraphStateAdapter
 
 logger = get_logger()
 
@@ -22,11 +24,11 @@ class LangGraphExecutor(ExecutorAdapter):
         self.compiled_graph = compiled_graph
         self.config = config
         self.state_adapter = LangGraphStateAdapter()
-        self.message_adapter = LangGraphMessageAdapter()
+        self.event_converter = LangGraphEventConverter()
 
     async def invoke(
             self,
-            inputs: dict[str, Any],
+            inputs: AgentInput,
             config: Optional[ExecutionConfig] = None,
     ) -> dict[str, Any]:
         try:
@@ -47,7 +49,7 @@ class LangGraphExecutor(ExecutorAdapter):
 
     async def stream(
             self,
-            inputs: dict[str, Any],
+            inputs: AgentInput,
             config: Optional[ExecutionConfig] = None,
     ) -> AsyncIterator[ExecutionEvent]:
         try:
@@ -72,43 +74,32 @@ class LangGraphExecutor(ExecutorAdapter):
                 logger.debug(
                     f"LangGraph stream event [{event_type}]: {type(event_data).__name__}"
                 )
-                unified_event = self._convert_event(
+                unified_event = self.event_converter.convert(
                     event_type, event_data, metadata
                 )
-
                 if unified_event:
                     yield unified_event
+
             logger.info(f"LangGraph stream completed: session_id={session_id}")
             final_state = await self.get_state(config)
 
-            # Build completion metadata
-            completion_metadata = {
-                "is_interrupted": final_state.is_interrupted,
-                "next_steps": final_state.next_steps,
-            }
-
-            # Extract interrupt information if present
+            # Extract interrupt info if execution was interrupted
+            interrupt_info = None
             if final_state.is_interrupted:
                 interrupt_info = self.state_adapter.extract_interrupt_info(final_state)
-                if interrupt_info:
-                    completion_metadata["interrupt"] = {
-                        "reason": interrupt_info.reason,
-                        "prompt": interrupt_info.prompt,
-                        "options": interrupt_info.options,
-                        "metadata": interrupt_info.metadata,
-                    }
 
-            yield ExecutionEvent(
-                event_type="complete",
+            yield CompleteEvent(
                 data=final_state.values,
-                metadata=completion_metadata,
+                is_interrupted=final_state.is_interrupted,
+                next_steps=final_state.next_steps,
+                interrupt=interrupt_info,  # Pass InterruptInfo object directly
             )
 
         except Exception as e:
             logger.error(f"LangGraph stream failed: {e}")
-            yield ExecutionEvent(
-                event_type="error",
-                data={"error": str(e), "type": type(e).__name__},
+            yield ErrorEvent(
+                error=str(e),
+                error_type=type(e).__name__,
             )
             raise ExecutionError(f"Failed to stream agent: {e}") from e
 
@@ -135,7 +126,7 @@ class LangGraphExecutor(ExecutorAdapter):
 
     async def resume(
             self,
-            inputs: Optional[dict[str, Any]],
+            inputs: Optional[AgentInput],
             config: ExecutionConfig,
     ) -> AsyncIterator[ExecutionEvent]:
         if not config or not config.session_id:
@@ -149,19 +140,57 @@ class LangGraphExecutor(ExecutorAdapter):
                 logger.warning(
                     f"Attempted to resume non-interrupted execution: {config.session_id}"
                 )
-                # Transform inputs before streaming
-                transformed_inputs = self._transform_inputs(inputs) if inputs else {}
-                async for event in self.stream(transformed_inputs, config):
+                # If not interrupted, continue with new inputs or raise error
+                if not inputs:
+                    raise ValueError(
+                        f"Execution {config.session_id} is not interrupted, "
+                        "but no new inputs provided"
+                    )
+                async for event in self.stream(inputs, config):
                     yield event
                 return
 
-            # Transform inputs before creating resume input
+            # Transform inputs to LangGraph format for resume
             transformed_inputs = self._transform_inputs(inputs) if inputs else None
-            resume_input = self.state_adapter.create_resume_input(transformed_inputs, state)
 
-            logger.debug(f"Resume input: {resume_input}")
-            async for event in self.stream(resume_input, config):
-                yield event
+            # Create Command object for resume (LangGraph-specific)
+            resume_command = self.state_adapter.create_resume_input(transformed_inputs, state)
+
+            logger.debug(f"Resuming with command: {resume_command}")
+
+            # Stream using the Command object directly
+            langgraph_config = self._to_langgraph_config(config)
+            session_id = config.session_id if config else "unknown"
+
+            async for event_type, event_data in self.compiled_graph.astream(
+                    resume_command,
+                    langgraph_config,
+                    stream_mode=["values", "messages", "custom", "updates"],
+            ):
+                if event_type == "messages":
+                    event_data, metadata = event_data
+                else:
+                    metadata = None
+
+                unified_event = self.event_converter.convert(
+                    event_type, event_data, metadata
+                )
+                if unified_event:
+                    yield unified_event
+
+            logger.info(f"Resume completed: session_id={session_id}")
+            final_state = await self.get_state(config)
+
+            interrupt_info = None
+            if final_state.is_interrupted:
+                interrupt_info = self.state_adapter.extract_interrupt_info(final_state)
+
+            yield CompleteEvent(
+                data=final_state.values,
+                is_interrupted=final_state.is_interrupted,
+                next_steps=final_state.next_steps,
+                interrupt=interrupt_info,
+            )
 
         except Exception as e:
             logger.error(f"Failed to resume execution: {e}")
@@ -178,6 +207,14 @@ class LangGraphExecutor(ExecutorAdapter):
 
     @staticmethod
     def _to_langgraph_config(config: Optional[ExecutionConfig]) -> dict[str, Any]:
+        """Convert ExecutionConfig to LangGraph configuration format.
+
+        Args:
+            config: Execution configuration with session/thread ID
+
+        Returns:
+            LangGraph config dict with thread_id
+        """
         if not config:
             return {}
 
@@ -188,126 +225,15 @@ class LangGraphExecutor(ExecutorAdapter):
         return {"configurable": {"thread_id": thread_id}}
 
     @staticmethod
-    def _transform_inputs(inputs: dict[str, Any]) -> dict[str, Any]:
-        """Transform generic inputs to LangGraph format.
+    def _transform_inputs(inputs: AgentInput) -> dict[str, Any]:
+        """Transform universal AgentInput to LangGraph format.
 
-        LangGraph expects inputs to match state channels (e.g., 'messages').
-        This method converts the generic {"input": "..."} format to LangGraph format.
-
-        Args:
-            inputs: Generic input dict, typically {"input": "user message"}
-
-        Returns:
-            LangGraph-compatible input dict with messages channel
-        """
-        # If inputs already have 'messages' key, assume it's already in LangGraph format
-        if "messages" in inputs:
-            return inputs
-
-        # If inputs have generic 'input' key, convert to messages format
-        if "input" in inputs:
-            user_message = inputs["input"]
-            return {"messages": [("user", user_message)]}
-
-        # For empty or other formats, try to pass through
-        # (may fail if graph requires specific channels)
-        return inputs
-
-    @staticmethod
-    def _convert_event(event_type: str, event_data: Any, metadata: Optional[Any] = None) -> Optional[ExecutionEvent]:
-        """Convert LangGraph event to framework-agnostic ExecutionEvent.
-
-        This method normalizes LangGraph-specific types (BaseMessage, etc.)
-        into simple types (str, dict, list) before creating ExecutionEvent.
-
-        Special handling for streaming:
-        - AIMessageChunk → message with is_streaming=True (for streaming artifacts)
-        - AIMessage → message with is_final=True (finalizes streaming)
+        Converts AgentInput.text to LangGraph's expected message format.
 
         Args:
-            event_type: LangGraph event type
-            event_data: LangGraph event data (may contain framework-specific types)
-            metadata: Optional LangGraph metadata
+            inputs: Universal agent input
 
         Returns:
-            ExecutionEvent with normalized data, or None if event should be skipped
+            LangGraph-compatible input dict: {"messages": [("user", text)]}
         """
-        if event_type == "messages":
-            # Normalize LangGraph message to simple format
-            langgraph_message = event_data
-
-            # Extract content from BaseMessage
-            if hasattr(langgraph_message, "content"):
-                content = str(langgraph_message.content)
-            else:
-                content = str(langgraph_message)
-
-            # Determine role from message type
-            role = "agent"
-            message_class_name = ""
-            if hasattr(langgraph_message, "__class__"):
-                message_class_name = langgraph_message.__class__.__name__
-                if "AI" in message_class_name or "Assistant" in message_class_name:
-                    role = "assistant"
-                elif "Human" in message_class_name or "User" in message_class_name:
-                    role = "user"
-                elif "System" in message_class_name:
-                    role = "system"
-
-            # Detect streaming vs final message
-            is_streaming_chunk = "Chunk" in message_class_name
-            is_final_message = message_class_name == "AIMessage"
-
-            return ExecutionEvent(
-                event_type="message",
-                data=content,  # ← Normalized to string!
-                metadata={
-                    "role": role,
-                    "langgraph_type": message_class_name,
-                    "langgraph_metadata": metadata,
-                    "is_streaming": is_streaming_chunk,  # ← For streaming artifacts
-                    "is_final": is_final_message,         # ← To finalize streaming
-                },
-            )
-
-        elif event_type == "values":
-            # State values - already dict format, but ensure serializable
-            return ExecutionEvent(
-                event_type="state_update",
-                data=event_data if isinstance(event_data, dict) else {"value": event_data},
-                metadata={"source": "langgraph_values"},
-            )
-
-        elif event_type == "updates":
-            # Node updates - dict of node outputs
-            return ExecutionEvent(
-                event_type="node_update",
-                data=event_data if isinstance(event_data, dict) else {"update": event_data},
-                metadata={"source": "langgraph_updates"},
-            )
-
-        elif event_type == "custom":
-            # Custom events - transform for A2A compatibility
-            # LangGraph custom events have "custom_event" field
-            if isinstance(event_data, dict):
-                # Transform custom_event field to event field for A2A
-                emit_event = {k: v for k, v in event_data.items() if k != "custom_event"}
-                if "custom_event" in event_data:
-                    emit_event["event"] = event_data["custom_event"]
-
-                return ExecutionEvent(
-                    event_type="custom",
-                    data=emit_event,
-                    metadata={"source": "langgraph_custom"},
-                )
-
-            # Pass through non-dict custom events
-            return ExecutionEvent(
-                event_type="custom",
-                data=event_data,
-                metadata={"source": "langgraph_custom"},
-            )
-
-        else:
-            logger.warning(f"Unknown LangGraph event type: {event_type}")
-            return None
+        return {"messages": [("user", inputs.text)]}

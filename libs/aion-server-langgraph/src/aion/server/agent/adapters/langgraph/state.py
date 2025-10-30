@@ -18,8 +18,10 @@ class LangGraphStateAdapter(StateAdapter):
         next_steps = list(snapshot.next) if snapshot.next else []
         is_interrupted = self._has_interrupt(snapshot)
         messages = []
+
         if hasattr(snapshot, "values") and isinstance(snapshot.values, dict):
             messages = snapshot.values.get("messages", [])
+
         metadata = {
             "langgraph_snapshot": True,
             "created_at": snapshot.created_at if hasattr(snapshot, "created_at") else None,
@@ -76,13 +78,23 @@ class LangGraphStateAdapter(StateAdapter):
         logger.debug(f"Creating resume input with user_input: {user_input}")
         return Command(resume=user_input)
 
-    def _has_interrupt(self, snapshot: StateSnapshot) -> bool:
+    @staticmethod
+    def _has_interrupt(snapshot: StateSnapshot) -> bool:
+        """Check if snapshot contains any interrupts.
+
+        Args:
+            snapshot: LangGraph state snapshot
+
+        Returns:
+            True if any task has interrupts
+        """
         if not hasattr(snapshot, "tasks"):
             return False
 
         tasks = snapshot.tasks
         if not tasks:
             return False
+
         for task in tasks:
             if hasattr(task, "interrupts"):
                 interrupts = task.interrupts
@@ -91,7 +103,16 @@ class LangGraphStateAdapter(StateAdapter):
 
         return False
 
-    def _extract_interrupt_data(self, snapshot: StateSnapshot) -> Optional[list]:
+    @staticmethod
+    def _extract_interrupt_data(snapshot: StateSnapshot) -> Optional[list]:
+        """Extract interrupt data from all tasks in snapshot.
+
+        Args:
+            snapshot: LangGraph state snapshot
+
+        Returns:
+            List of interrupt data or None
+        """
         if not hasattr(snapshot, "tasks"):
             return None
 

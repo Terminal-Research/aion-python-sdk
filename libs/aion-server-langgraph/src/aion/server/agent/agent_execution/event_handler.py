@@ -17,7 +17,15 @@ from a2a.types import (
     TaskState,
     TextPart,
 )
-from aion.shared.agent.adapters import ExecutionEvent
+from aion.shared.agent.adapters import (
+    CompleteEvent,
+    CustomEvent,
+    ErrorEvent,
+    ExecutionEvent,
+    MessageEvent,
+    NodeUpdateEvent,
+    StateUpdateEvent,
+)
 from aion.shared.context import set_langgraph_node
 from aion.shared.logging import get_logger
 from aion.shared.types import MessageType, A2AMetadataKey, ArtifactStreamingStatusReason
@@ -67,76 +75,69 @@ class ExecutionEventHandler:
     ) -> None:
         """Handle an ExecutionEvent and publish appropriate A2A events.
 
+        Uses type-safe isinstance checks for proper type narrowing.
+
         Args:
-            execution_event: Event from agent execution
+            execution_event: Event from agent execution (typed subclass)
             event_queue: Queue to publish A2A events
             task: Current task
         """
-        event_type = execution_event.event_type
-        event_data = execution_event.data
-        metadata = execution_event.metadata or {}
-
         logger.debug(
-            f"Processing execution event: type={event_type}, task_id={task.id}"
+            f"Processing execution event: type={execution_event.event_type}, task_id={task.id}"
         )
 
-        # Route to specific handler based on event type
-        if event_type == "message":
+        # Route to a specific handler using isinstance for type narrowing
+        if isinstance(execution_event, MessageEvent):
             await self._handle_message_event(execution_event, event_queue, task)
-        elif event_type == "node_update":
-            await self._handle_node_update_event(event_data, task)
-        elif event_type == "state_update":
-            await self._handle_state_update_event(event_data, task)
-        elif event_type == "custom":
-            await self._handle_custom_event(event_data, task)
-        elif event_type == "complete":
-            await self._handle_complete_event(metadata, event_queue, task)
-        elif event_type == "error":
-            await self._handle_error_event(event_data, task)
+        elif isinstance(execution_event, NodeUpdateEvent):
+            await self._handle_node_update_event(execution_event, task)
+        elif isinstance(execution_event, StateUpdateEvent):
+            await self._handle_state_update_event(execution_event.data, task)
+        elif isinstance(execution_event, CustomEvent):
+            await self._handle_custom_event(execution_event.data, task)
+        elif isinstance(execution_event, CompleteEvent):
+            await self._handle_complete_event(execution_event, event_queue, task)
+        elif isinstance(execution_event, ErrorEvent):
+            await self._handle_error_event(execution_event, task)
         else:
             logger.warning(
-                f"Unknown execution event type: {event_type}, task_id={task.id}"
+                f"Unknown execution event type: {execution_event.event_type}, task_id={task.id}"
             )
 
     async def _handle_message_event(
             self,
-            execution_event: ExecutionEvent,
+            message_event: MessageEvent,
             event_queue: EventQueue,
             task: Task,
     ) -> None:
         """Handle message events (streaming, final, regular).
 
         Args:
-            execution_event: Message event
+            message_event: Typed MessageEvent
             event_queue: Queue to publish events
             task: Current task
         """
-        metadata = execution_event.metadata or {}
-        event_data = execution_event.data
-        is_streaming = metadata.get("is_streaming", False)
-        is_final = metadata.get("is_final", False)
+        is_streaming = message_event.is_streaming
+        is_final = message_event.is_final
 
         if is_streaming:
-            await self._handle_streaming_chunk(event_data, task)
+            await self._handle_streaming_chunk(message_event.data, task)
         elif is_final:
-            await self._handle_final_message(execution_event, event_queue, task)
+            await self._handle_final_message(message_event, event_queue, task)
         else:
-            await self._handle_regular_message(execution_event, event_queue, task)
+            await self._handle_regular_message(message_event, event_queue, task)
 
     async def _handle_streaming_chunk(
             self,
             event_data: str,
             task: Task,
     ) -> None:
-        """Handle streaming message chunk (AIMessageChunk).
+        """Handle streaming message chunk.
 
         Args:
             event_data: Chunk content
             task: Current task
         """
-        # AIMessageChunk → streaming artifact
-        # Note: Don't send status update here - it's redundant during streaming.
-        # Status was already set to "working" on first event.
         if self.streaming_artifact_builder:
             artifact_event = self.streaming_artifact_builder.build_streaming_chunk_event(
                 content=event_data,
@@ -150,18 +151,17 @@ class ExecutionEventHandler:
 
     async def _handle_final_message(
             self,
-            execution_event: ExecutionEvent,
+            message_event: MessageEvent,
             event_queue: EventQueue,
             task: Task,
     ) -> None:
-        """Handle final message after streaming (AIMessage).
+        """Handle the final message after streaming.
 
         Args:
-            execution_event: Final message event
+            message_event: Typed MessageEvent (final)
             event_queue: Queue to publish events
             task: Current task
         """
-        # AIMessage → finalize streaming artifact
         if self.streaming_artifact_builder:
             finalize_event = self.streaming_artifact_builder.build_finalized_event(
                 metadata={
@@ -173,66 +173,58 @@ class ExecutionEventHandler:
                 await event_queue.enqueue_event(finalize_event)
                 logger.debug(f"Finalized streaming artifact: task_id={task.id}")
 
-        # Send full message
-        a2a_message = self.event_translator.translate_message_event(execution_event, task)
+        a2a_message = self.event_translator.translate_message_event(message_event, task)
         if a2a_message and self.task_updater:
-            await self.task_updater.update_status(state="working", message=a2a_message)
+            await self.task_updater.update_status(state=TaskState.working, message=a2a_message)
             logger.debug(f"Sent final message: task_id={task.id}")
 
     async def _handle_regular_message(
             self,
-            execution_event: ExecutionEvent,
+            message_event: MessageEvent,
             event_queue: EventQueue,
             task: Task,
     ) -> None:
         """Handle regular message (not streaming).
 
         Args:
-            execution_event: Message event
+            message_event: Typed MessageEvent (regular)
             event_queue: Queue to publish events
             task: Current task
         """
-        a2a_message = self.event_translator.translate_message_event(execution_event, task)
+        a2a_message = self.event_translator.translate_message_event(message_event, task)
         if a2a_message:
             await event_queue.enqueue_event(a2a_message)
         else:
             logger.warning(f"Failed to translate message event: task_id={task.id}")
 
+    @staticmethod
     async def _handle_node_update_event(
-            self,
-            event_data: dict,
+            node_event: NodeUpdateEvent,
             task: Task,
     ) -> None:
-        """Handle node update event (internal, not sent to client).
+        """Handle node update event (internal only, not sent to a client).
 
         Args:
-            event_data: Node update data
+            node_event: NodeUpdateEvent with node information
             task: Current task
         """
-        # Internal event: update active node in context (for LangGraph)
-        # Don't send to client - this is debugging/monitoring info
-        if isinstance(event_data, dict):
-            node_names = list(event_data.keys())
-            if node_names:
-                active_node = node_names[0]
-                set_langgraph_node(active_node)
-                logger.debug(
-                    f"Node update: active_node={active_node}, task_id={task.id}"
-                )
+        if node_event.node_name:
+            set_langgraph_node(node_event.node_name)
+            logger.debug(
+                f"Node update: active_node={node_event.node_name}, task_id={task.id}"
+            )
 
+    @staticmethod
     async def _handle_state_update_event(
-            self,
             event_data: dict,
             task: Task,
     ) -> None:
-        """Handle state update event (internal, not sent to client).
+        """Handle state update event (internal only, not sent to a client).
 
         Args:
             event_data: State update data
             task: Current task
         """
-        # Internal event: agent state changed
-        # Don't send to client - this is debugging/monitoring info
         logger.debug(
             f"State update: task_id={task.id}, "
             f"data_keys={list(event_data.keys()) if isinstance(event_data, dict) else 'N/A'}"
@@ -243,62 +235,60 @@ class ExecutionEventHandler:
             event_data: dict,
             task: Task,
     ) -> None:
-        """Handle custom event.
+        """Handle custom event by publishing as a DataPart message.
 
         Args:
-            event_data: Custom event data
+            event_data: Custom event data (may contain Pydantic models)
             task: Current task
         """
-        # Custom event → send as DataPart message
         if self.task_updater:
+            # Ensure data is serializable (convert Pydantic models if needed)
+            serializable_data = event_data
+
             custom_message = Message(
                 context_id=task.context_id,
                 task_id=task.id,
                 message_id=str(uuid.uuid4()),
                 role=Role.agent,
-                parts=[Part(root=DataPart(data=event_data))],
+                parts=[Part(root=DataPart(data=serializable_data))],
                 metadata={
                     A2AMetadataKey.MESSAGE_TYPE.value: MessageType.EVENT.value
                 },
             )
-            await self.task_updater.update_status(state="working", message=custom_message)
+            await self.task_updater.update_status(state=TaskState.working, message=custom_message)
             logger.debug(f"Sent custom event: task_id={task.id}")
 
     async def _handle_complete_event(
             self,
-            metadata: dict,
+            complete_event: CompleteEvent,
             event_queue: EventQueue,
             task: Task,
     ) -> None:
         """Handle completion event (interrupted or completed).
 
         Args:
-            metadata: Event metadata with completion info
+            complete_event: Typed CompleteEvent with completion info
             event_queue: Queue to publish events
             task: Current task
         """
-        is_interrupted = metadata.get("is_interrupted", False)
-
-        if is_interrupted:
-            await self._handle_interrupted_completion(metadata, event_queue, task)
+        if complete_event.is_interrupted:
+            await self._handle_interrupted_completion(complete_event, event_queue, task)
         else:
             await self._handle_successful_completion(task)
 
     async def _handle_interrupted_completion(
             self,
-            metadata: dict,
+            complete_event: CompleteEvent,
             event_queue: EventQueue,
             task: Task,
     ) -> None:
         """Handle interrupted completion (agent waiting for input).
 
         Args:
-            metadata: Event metadata with interrupt info
+            complete_event: Typed CompleteEvent with interrupt info
             event_queue: Queue to publish events
             task: Current task
         """
-        # Agent is waiting for input - handle interrupt
-        # First, finalize any streaming artifact
         if self.streaming_artifact_builder:
             finalize_event = self.streaming_artifact_builder.build_meta_complete_event(
                 status_reason=ArtifactStreamingStatusReason.INTERRUPTED
@@ -306,16 +296,13 @@ class ExecutionEventHandler:
             if finalize_event:
                 await event_queue.enqueue_event(finalize_event)
 
-        # Get interrupt information if available
-        interrupt_info = metadata.get("interrupt")
+        interrupt_info = complete_event.interrupt
         interrupt_message = None
 
         if interrupt_info:
-            # Extract interrupt details
-            reason = interrupt_info.get("reason", "Agent requires input")
-            prompt = interrupt_info.get("prompt")
-
-            # Create message with interrupt information
+            # Use InterruptInfo object attributes (not dict)
+            reason = interrupt_info.reason or "Agent requires input"
+            prompt = interrupt_info.prompt
             interrupt_text = prompt if prompt else reason
             interrupt_message = Message(
                 context_id=task.context_id,
@@ -325,18 +312,15 @@ class ExecutionEventHandler:
                 parts=[Part(root=TextPart(text=interrupt_text))],
             )
 
-        # Determine task state (support custom types from interrupt)
         task_state = "input_required"
-        if interrupt_info and "metadata" in interrupt_info:
-            custom_type = interrupt_info["metadata"].get("type")
+        if interrupt_info and interrupt_info.metadata:
+            custom_type = interrupt_info.metadata.get("type")
             if custom_type:
                 try:
-                    # Try to use custom state if valid
                     task_state = TaskState(custom_type)
-                except:
-                    pass  # Fall back to input_required
+                except ValueError:
+                    pass
 
-        # Update status with interrupt message
         if self.task_updater:
             await self.task_updater.update_status(
                 state=task_state,
@@ -346,8 +330,8 @@ class ExecutionEventHandler:
 
         logger.info(
             f"Task requires input: task_id={task.id}, "
-            f"next_steps={metadata.get('next_steps', [])}, "
-            f"interrupt={interrupt_info.get('reason') if interrupt_info else 'N/A'}"
+            f"next_steps={complete_event.next_steps}, "
+            f"interrupt={interrupt_info.reason if interrupt_info else 'N/A'}"
         )
 
     async def _handle_successful_completion(
@@ -359,24 +343,26 @@ class ExecutionEventHandler:
         Args:
             task: Current task
         """
-        # Agent completed successfully
         if self.task_updater:
             await self.task_updater.complete()
         logger.info(f"Task completed: task_id={task.id}")
 
     async def _handle_error_event(
             self,
-            event_data: dict,
+            error_event: ErrorEvent,
             task: Task,
     ) -> None:
         """Handle error event.
 
         Args:
-            event_data: Error data
+            error_event: Typed ErrorEvent with error info
             task: Current task
         """
-        error_info = event_data.get("error", "Unknown error")
-        logger.error(f"Execution error: task_id={task.id}, error={error_info}")
+        logger.error(
+            f"Execution error: task_id={task.id}, "
+            f"error={error_event.error}, "
+            f"type={error_event.error_type}"
+        )
 
         if self.task_updater:
             await self.task_updater.failed()

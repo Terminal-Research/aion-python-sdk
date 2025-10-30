@@ -11,28 +11,56 @@ The StateAdapter enables:
 """
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
 from typing import Any, Optional
 
+from pydantic import BaseModel, Field
 
-@dataclass
-class AgentState:
-    """Unified representation of agent execution state.
 
-    Attributes:
-        values: Dictionary of current state values
-        next_steps: List of upcoming steps/nodes in execution
-        is_interrupted: Whether execution is paused/interrupted
-        metadata: Additional state metadata
-        config: Execution configuration
-        messages: List of messages in conversation history
-    """
-    values: dict[str, Any] = field(default_factory=dict)
-    next_steps: list[str] = field(default_factory=list)
-    is_interrupted: bool = False
-    metadata: dict[str, Any] = field(default_factory=dict)
-    config: dict[str, Any] = field(default_factory=dict)
-    messages: list[Any] = field(default_factory=list)
+class InterruptInfo(BaseModel):
+    """Information about an agent execution interrupt/pause."""
+
+    reason: str = Field(description="Description of why execution was interrupted")
+    prompt: Optional[str] = Field(
+        default=None,
+        description="Prompt/question for the user"
+    )
+    options: Optional[list[str]] = Field(
+        default=None,
+        description="List of valid user responses"
+    )
+    metadata: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Additional interrupt metadata"
+    )
+
+
+class AgentState(BaseModel):
+    """Unified representation of agent execution state."""
+
+    values: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Dictionary of current state values"
+    )
+    next_steps: list[str] = Field(
+        default_factory=list,
+        description="List of upcoming steps/nodes in execution"
+    )
+    is_interrupted: bool = Field(
+        default=False,
+        description="Whether execution is paused/interrupted"
+    )
+    metadata: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Additional state metadata"
+    )
+    config: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Execution configuration"
+    )
+    messages: list[Any] = Field(
+        default_factory=list,
+        description="List of messages in conversation history"
+    )
 
     def is_complete(self) -> bool:
         """Check if agent execution is complete.
@@ -49,22 +77,6 @@ class AgentState:
             bool: True if execution is interrupted and waiting for input
         """
         return self.is_interrupted
-
-
-@dataclass
-class InterruptInfo:
-    """Information about an agent execution interrupt/pause.
-
-    Attributes:
-        reason: Description of why execution was interrupted
-        prompt: Optional prompt/question for the user
-        options: Optional list of valid user responses
-        metadata: Additional interrupt metadata
-    """
-    reason: str
-    prompt: Optional[str] = None
-    options: Optional[list[str]] = None
-    metadata: dict[str, Any] = field(default_factory=dict)
 
 class StateAdapter(ABC):
     """Abstract base for framework-specific agent state extraction.
