@@ -133,7 +133,7 @@ class AionAgentRequestExecutor(AgentExecutor):
                     f"input_length={len(user_input)}"
                 )
                 event_stream = self.agent.stream(
-                    inputs=AgentInput.from_text(user_input),
+                    inputs=AgentInput(text=user_input),
                     session_id=session_id,
                     thread_id=thread_id,
                 )
@@ -145,7 +145,7 @@ class AionAgentRequestExecutor(AgentExecutor):
                 )
                 event_stream = self.agent.resume(
                     session_id=session_id,
-                    inputs=AgentInput.from_text(user_input) if user_input else None,
+                    inputs=AgentInput(text=user_input) if user_input else None,
                     thread_id=thread_id,
                 )
 

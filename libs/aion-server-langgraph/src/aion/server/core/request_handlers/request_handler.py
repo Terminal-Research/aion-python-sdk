@@ -8,15 +8,15 @@ from a2a.server.request_handlers.default_request_handler import TERMINAL_TASK_ST
 from a2a.server.tasks import TaskManager, ResultAggregator
 from a2a.types import MessageSendParams, Task, InvalidParamsError, TaskNotFoundError
 from a2a.utils.errors import ServerError
-
-from aion.server.interfaces import IRequestHandler
-from aion.server.tasks import store_manager, AionTaskManager
 from aion.shared.types import (
     GetContextParams,
     GetContextsListParams,
     Conversation,
     ContextsList
 )
+
+from aion.server.interfaces import IRequestHandler
+from aion.server.tasks import store_manager, AionTaskManager
 from aion.server.utils import ConversationBuilder
 
 

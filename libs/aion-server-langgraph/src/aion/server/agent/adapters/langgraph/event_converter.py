@@ -86,9 +86,8 @@ class LangGraphEventConverter:
         elif isinstance(langgraph_message, SystemMessage):
             role = "system"
 
-        # Detect streaming vs final messages
+        # Detect streaming chunks
         is_streaming_chunk = isinstance(langgraph_message, AIMessageChunk)
-        is_final_message = isinstance(langgraph_message, AIMessage) and not is_streaming_chunk
 
         event_metadata = {
             "langgraph_type": type(langgraph_message).__name__,
@@ -100,7 +99,6 @@ class LangGraphEventConverter:
             data=content,
             role=role,
             is_streaming=is_streaming_chunk,
-            is_final=is_final_message,
             metadata=event_metadata,
         )
 

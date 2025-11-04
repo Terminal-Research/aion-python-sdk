@@ -6,6 +6,7 @@ from .events import (
     StateUpdateEvent,
     NodeUpdateEvent,
     CustomEvent,
+    InterruptEvent,
     CompleteEvent,
     ErrorEvent,
 )
@@ -27,6 +28,7 @@ __all__ = [
     "StateUpdateEvent",
     "NodeUpdateEvent",
     "CustomEvent",
+    "InterruptEvent",
     "CompleteEvent",
     "ErrorEvent",
     # Executor

@@ -43,6 +43,7 @@ class ChatSession:
             push_notification_receiver: str = 'http://localhost:5000',
             graph_id: Optional[str] = None,
             request_helper: Optional[A2ARequestHelper] = None,
+            session_id: int = 0,
     ):
         self.host = host
         self.bearer_token = bearer_token
@@ -52,6 +53,7 @@ class ChatSession:
         self.push_notification_receiver = push_notification_receiver
         self.graph_id = graph_id
         self.request_helper = request_helper or A2ARequestHelper()
+        self.context_id = session_id if session_id > 0 else 0
 
         # Setup headers
         self.headers = {}
@@ -69,9 +71,11 @@ class ChatSession:
         # Add custom headers
         self.headers.update(self.custom_headers)
 
-    async def start(self, session_id: int = 0, show_history: bool = False):
+    async def start(self, show_history: bool = False):
         """Start the chat session"""
         print(f'Will use headers: {self.headers}')
+        if not self.context_id:
+            self.context_id = uuid4().hex
 
         async with httpx.AsyncClient(timeout=30, headers=self.headers) as httpx_client:
             # Get agent card
@@ -90,17 +94,15 @@ class ChatSession:
 
             client = A2AClient(httpx_client, agent_card=card)
             streaming = card.capabilities.streaming
-            context_id = session_id if session_id > 0 else uuid4().hex
 
             # Main chat loop
             continue_loop = True
             while continue_loop:
                 print('=========  starting a new task ======== ')
-                continue_loop, _, task_id = await self._complete_task(
+                continue_loop, task_id = await self._complete_task(
                     client,
                     streaming,
                     None,
-                    context_id,
                 )
 
                 if show_history and continue_loop and task_id:
@@ -126,17 +128,16 @@ class ChatSession:
             client: A2AClient,
             streaming: bool,
             task_id: Optional[str],
-            context_id: str,
     ):
         """Complete a single chat task"""
         # Get user input
         try:
             prompt = input('\nWhat do you want to send to the agent? (:q or quit to exit): ')
         except (EOFError, KeyboardInterrupt):
-            return False, None, None
+            return False, None
 
         if prompt.lower() in [':q', 'quit']:
-            return False, None, None
+            return False, None
 
         # Create message
         message = Message(
@@ -144,7 +145,7 @@ class ChatSession:
             parts=[TextPart(text=prompt)],
             message_id=str(uuid4()),
             task_id=task_id,
-            context_id=context_id,
+            context_id=self.context_id,
         )
 
         # Handle file attachment
@@ -191,15 +192,14 @@ class ChatSession:
 
         # Send message and handle response
         if streaming:
-            return await self._handle_streaming_response(client, payload, context_id, task_id)
+            return await self._handle_streaming_response(client, payload, task_id)
         else:
-            return await self._handle_non_streaming_response(client, payload, context_id, task_id)
+            return await self._handle_non_streaming_response(client, payload, task_id)
 
     async def _handle_streaming_response(
             self,
             client: A2AClient,
             payload: MessageSendParams,
-            context_id: str,
             task_id: Optional[str]
     ):
         """Handle streaming response with auto-continue after errors"""
@@ -220,10 +220,10 @@ class ChatSession:
                     error_info = result.root.error
                     print(f'JSON-RPC error in streaming response: {error_info}')
                     # Auto-continue to next task
-                    return True, context_id, task_id
+                    return True, task_id
 
                 event = result.root.result
-                context_id = event.context_id
+                self.context_id = event.context_id
 
                 if isinstance(event, Task):
                     task_id = event.id
@@ -240,31 +240,30 @@ class ChatSession:
         except httpx.TimeoutException as e:
             print(f'Request timed out: {str(e)}. Continuing to next input.')
             # Auto-continue to next task
-            return True, context_id, task_id
+            return True, task_id
 
         except httpx.ConnectError as e:
             print(f'Connection failed: {str(e)}. Please check if the server is running.')
-            return False, context_id, task_id
+            return False, task_id
 
         except Exception as e:
             print(f'Unexpected error during streaming: {e}')
-            return False, context_id, task_id
+            return False, task_id
 
         # Get full task if needed
         if task_id and not task_completed:
-            task_result = await self._get_task_result(client, task_id, context_id)
+            task_result = await self._get_task_result(client, task_id)
             if task_result is None:
-                return False, context_id, task_id
+                return False, task_id
 
         return await self._process_task_result(
-            message, task_result, client, context_id, task_id
+            message, task_result, client, task_id, streaming=True
         )
 
     async def _handle_non_streaming_response(
             self,
             client: A2AClient,
             payload: MessageSendParams,
-            context_id: str,
             task_id: Optional[str]
     ):
         """Handle non-streaming response with auto-continue after errors"""
@@ -281,25 +280,25 @@ class ChatSession:
                 error_info = response.root.error
                 print(f'JSON-RPC error in non-streaming response: {error_info}')
                 # Auto-continue to next task
-                return True, context_id, task_id
+                return True, task_id
 
             event = response.root.result
 
         except httpx.TimeoutException as e:
             print(f'Request timed out: {str(e)}. Continuing to next input.')
             # Auto-continue to next task
-            return True, context_id, task_id
+            return True, task_id
 
         except httpx.ConnectError as e:
             print(f'Connection failed: {str(e)}. Please check if the server is running.')
-            return False, context_id, task_id
+            return False, task_id
 
         except Exception as e:
             print(f'Failed to complete the call: {e}')
-            return False, context_id, task_id
+            return False, task_id
 
-        if not context_id:
-            context_id = event.context_id
+        if not self.context_id:
+            self.context_id = event.context_id
 
         task_result = None
         message = None
@@ -312,7 +311,7 @@ class ChatSession:
             message = event
 
         return await self._process_task_result(
-            message, task_result, client, context_id, task_id
+            message, task_result, client, task_id, streaming=False
         )
 
     async def _process_task_result(
@@ -320,13 +319,13 @@ class ChatSession:
             message: Optional[Message],
             task_result: Optional[Task],
             client: A2AClient,
-            context_id: str,
-            task_id: Optional[str]
+            task_id: Optional[str],
+            streaming: bool = False
     ):
         """Process the final task result"""
         if message:
             print(f'\n{message.model_dump_json(exclude_none=True)}')
-            return True, context_id, task_id
+            return True, task_id
 
         if task_result:
             # Print task content (excluding file contents)
@@ -349,17 +348,16 @@ class ChatSession:
             if state.name == TaskState.input_required.name:
                 return await self._complete_task(
                     client,
-                    True,  # Assume streaming for recursive calls
+                    streaming,  # Use the same streaming mode as the parent call
                     task_id,
-                    context_id,
                 )
 
-            return True, context_id, task_id
+            return True, task_id
 
         # Fallback case
-        return True, context_id, task_id
+        return True, task_id
 
-    async def _get_task_result(self, client: A2AClient, task_id: str, context_id: str):
+    async def _get_task_result(self, client: A2AClient, task_id: str):
         """Get task result by ID with improved error handling"""
         try:
             task_result_response = await client.get_task(
@@ -429,7 +427,8 @@ async def start_chat(
         custom_headers=custom_headers,
         use_push_notifications=use_push_notifications,
         push_notification_receiver=push_notification_receiver,
-        graph_id=graph_id
+        graph_id=graph_id,
+        session_id=session_id
     )
 
-    await chat_session.start(session_id=session_id, show_history=show_history)
+    await chat_session.start(show_history=show_history)

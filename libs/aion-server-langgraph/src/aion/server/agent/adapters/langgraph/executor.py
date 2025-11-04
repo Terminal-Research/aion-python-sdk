@@ -9,6 +9,7 @@ from aion.shared.agent.adapters import (
     ExecutionConfig,
     ExecutionEvent,
     ExecutorAdapter,
+    InterruptEvent,
 )
 from aion.shared.config.models import AgentConfig
 from aion.shared.logging import get_logger
@@ -83,17 +84,19 @@ class LangGraphExecutor(ExecutorAdapter):
             logger.info(f"LangGraph stream completed: session_id={session_id}")
             final_state = await self.get_state(config)
 
-            # Extract interrupt info if execution was interrupted
-            interrupt_info = None
+            # Check if execution was interrupted
             if final_state.is_interrupted:
                 interrupt_info = self.state_adapter.extract_interrupt_info(final_state)
-
-            yield CompleteEvent(
-                data=final_state.values,
-                is_interrupted=final_state.is_interrupted,
-                next_steps=final_state.next_steps,
-                interrupt=interrupt_info,  # Pass InterruptInfo object directly
-            )
+                yield InterruptEvent(
+                    data=final_state.values,
+                    next_steps=final_state.next_steps,
+                    interrupt=interrupt_info,
+                )
+            else:
+                yield CompleteEvent(
+                    data=final_state.values,
+                    next_steps=final_state.next_steps,
+                )
 
         except Exception as e:
             logger.error(f"LangGraph stream failed: {e}")
@@ -181,16 +184,19 @@ class LangGraphExecutor(ExecutorAdapter):
             logger.info(f"Resume completed: session_id={session_id}")
             final_state = await self.get_state(config)
 
-            interrupt_info = None
+            # Check if execution was interrupted again
             if final_state.is_interrupted:
                 interrupt_info = self.state_adapter.extract_interrupt_info(final_state)
-
-            yield CompleteEvent(
-                data=final_state.values,
-                is_interrupted=final_state.is_interrupted,
-                next_steps=final_state.next_steps,
-                interrupt=interrupt_info,
-            )
+                yield InterruptEvent(
+                    data=final_state.values,
+                    next_steps=final_state.next_steps,
+                    interrupt=interrupt_info,
+                )
+            else:
+                yield CompleteEvent(
+                    data=final_state.values,
+                    next_steps=final_state.next_steps,
+                )
 
         except Exception as e:
             logger.error(f"Failed to resume execution: {e}")

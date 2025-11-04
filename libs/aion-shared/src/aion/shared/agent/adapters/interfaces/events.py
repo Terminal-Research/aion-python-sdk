@@ -47,10 +47,6 @@ class MessageEvent(ExecutionEvent):
         default=False,
         description="Whether this is a streaming chunk"
     )
-    is_final: bool = Field(
-        default=False,
-        description="Whether this finalizes a streaming message"
-    )
 
 
 class StateUpdateEvent(ExecutionEvent):
@@ -88,25 +84,32 @@ class CustomEvent(ExecutionEvent):
     data: Any = Field(description="Custom event data (any type)")
 
 
+class InterruptEvent(ExecutionEvent):
+    """Event signaling execution was interrupted (requires user input)."""
+
+    event_type: Literal["interrupt"] = Field(
+        default="interrupt",
+        description="Always 'interrupt'"
+    )
+    data: Any = Field(description="Current execution state/values")
+    next_steps: list[str] = Field(
+        default_factory=list,
+        description="Available next steps"
+    )
+    interrupt: InterruptInfo = Field(description="Interrupt details")
+
+
 class CompleteEvent(ExecutionEvent):
-    """Event signaling execution completion."""
+    """Event signaling execution completion (successfully finished)."""
 
     event_type: Literal["complete"] = Field(
         default="complete",
         description="Always 'complete'"
     )
     data: Any = Field(description="Final execution state/values")
-    is_interrupted: bool = Field(
-        default=False,
-        description="Whether execution was interrupted"
-    )
     next_steps: list[str] = Field(
         default_factory=list,
         description="Available next steps"
-    )
-    interrupt: Optional[InterruptInfo] = Field(
-        default=None,
-        description="Interrupt details if interrupted"
     )
 
 

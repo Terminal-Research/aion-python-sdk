@@ -56,11 +56,12 @@ class LangGraphStateAdapter(StateAdapter):
 
         if not interrupt_data:
             return InterruptInfo(reason="unknown_interrupt")
+
         if isinstance(interrupt_data, list) and len(interrupt_data) > 0:
             first_interrupt = interrupt_data[0]
             if isinstance(first_interrupt, dict):
                 return InterruptInfo(
-                    reason="human_input_required",
+                    reason="input-required",
                     prompt=first_interrupt.get("value", "Input required"),
                     metadata=first_interrupt,
                 )
@@ -98,7 +99,7 @@ class LangGraphStateAdapter(StateAdapter):
         for task in tasks:
             if hasattr(task, "interrupts"):
                 interrupts = task.interrupts
-                if isinstance(interrupts, list) and len(interrupts) > 0:
+                if isinstance(interrupts, (list, tuple)) and len(interrupts) > 0:
                     return True
 
         return False
