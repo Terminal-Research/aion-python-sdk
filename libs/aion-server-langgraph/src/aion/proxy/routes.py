@@ -2,7 +2,7 @@
 Route definitions for AION Agent Proxy Server
 """
 from a2a.utils import AGENT_CARD_WELL_KNOWN_PATH
-from aion.shared.types import HealthResponse, RootManifest
+from aion.shared.types import HealthResponse
 from aion.shared.utils.deployment import get_service_name, get_api_version
 from fastapi import Request, Response
 
@@ -13,7 +13,7 @@ from .constants import (
     AGENT_PROXY_URL,
 )
 from .handlers import RequestHandler
-from .types import SystemHealthResponse
+from .types import SystemHealthResponse, ProxyManifest
 
 
 class ProxyRouter:
@@ -84,11 +84,11 @@ class ProxyRouter:
 
         @self.app.get(
             MANIFEST_URL,
-            response_model=RootManifest,
+            response_model=ProxyManifest,
             summary="Manifest",
             description="Get a manifest from the deployment"
         )
-        async def get_manifest() -> RootManifest:
+        async def get_manifest() -> ProxyManifest:
             """
             Get deployment manifest with service information and agent endpoints
 
@@ -97,7 +97,7 @@ class ProxyRouter:
             """
             endpoint_template = AGENT_PROXY_URL.replace("{path:path}", "{path}")
 
-            return RootManifest(
+            return ProxyManifest(
                 api_version=get_api_version(),
                 name=get_service_name(),
                 endpoints={
