@@ -2,7 +2,6 @@ import logging
 from typing import Optional
 
 from aion.shared.settings import app_settings, api_settings
-from aion.shared.utils.url import parse_host_port
 from .base import AionLogger
 from .handlers import LogStreamHandler, AionLogstashHandler
 

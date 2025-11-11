@@ -4,23 +4,26 @@ from typing import Any, Dict, Optional
 
 from .custom_fields import (
     AgentBehaviorFields,
-    AgentEnvironmentFields,
     AgentIdentityFields,
     BranchOptionFields,
     DeploymentDetailFields,
     DeploymentFields,
+    LogEventFields,
     MemorySpaceFields,
+    ProjectMetadataFields,
     RepositoryOptionFields,
+    TraceFields,
     UserFields,
     WalletStateWithPricesFields,
 )
+from .input_types import LogFiltersInput
 
 
 class Query:
     @classmethod
-    def user(cls, user_id: str) -> UserFields:
+    def user(cls, *, user_id: Optional[str] = None) -> UserFields:
         arguments: Dict[str, Dict[str, Any]] = {
-            "userId": {"type": "ID!", "value": user_id}
+            "userId": {"type": "ID", "value": user_id}
         }
         cleared_arguments = {
             key: value for key, value in arguments.items() if value["value"] is not None
@@ -48,10 +51,6 @@ class Query:
         )
 
     @classmethod
-    def agent_behaviors(cls) -> AgentBehaviorFields:
-        return AgentBehaviorFields(field_name="agentBehaviors")
-
-    @classmethod
     def agent_behavior(cls, agent_behavior_id: str) -> AgentBehaviorFields:
         arguments: Dict[str, Dict[str, Any]] = {
             "agentBehaviorId": {"type": "ID!", "value": agent_behavior_id}
@@ -61,22 +60,6 @@ class Query:
         }
         return AgentBehaviorFields(
             field_name="agentBehavior", arguments=cleared_arguments
-        )
-
-    @classmethod
-    def agent_environments(cls) -> AgentEnvironmentFields:
-        return AgentEnvironmentFields(field_name="agentEnvironments")
-
-    @classmethod
-    def agent_environment(cls, agent_environment_id: str) -> AgentEnvironmentFields:
-        arguments: Dict[str, Dict[str, Any]] = {
-            "agentEnvironmentId": {"type": "ID!", "value": agent_environment_id}
-        }
-        cleared_arguments = {
-            key: value for key, value in arguments.items() if value["value"] is not None
-        }
-        return AgentEnvironmentFields(
-            field_name="agentEnvironment", arguments=cleared_arguments
         )
 
     @classmethod
@@ -135,3 +118,29 @@ class Query:
         return WalletStateWithPricesFields(
             field_name="walletState", arguments=cleared_arguments
         )
+
+    @classmethod
+    def projects(cls) -> ProjectMetadataFields:
+        return ProjectMetadataFields(field_name="projects")
+
+    @classmethod
+    def project_logs(cls, project_id: str, filters: LogFiltersInput) -> LogEventFields:
+        arguments: Dict[str, Dict[str, Any]] = {
+            "projectId": {"type": "ID!", "value": project_id},
+            "filters": {"type": "LogFiltersInput!", "value": filters},
+        }
+        cleared_arguments = {
+            key: value for key, value in arguments.items() if value["value"] is not None
+        }
+        return LogEventFields(field_name="projectLogs", arguments=cleared_arguments)
+
+    @classmethod
+    def log_traces(cls, project_id: str, filters: LogFiltersInput) -> TraceFields:
+        arguments: Dict[str, Dict[str, Any]] = {
+            "projectId": {"type": "ID!", "value": project_id},
+            "filters": {"type": "LogFiltersInput!", "value": filters},
+        }
+        cleared_arguments = {
+            key: value for key, value in arguments.items() if value["value"] is not None
+        }
+        return TraceFields(field_name="logTraces", arguments=cleared_arguments)

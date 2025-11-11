@@ -59,6 +59,7 @@ class AppFactory:
             self,
             agent_id: str,
             agent_config: AgentConfig,
+            port: int,
             context: AppContext,
             base_path: Optional[Path] = None,
             startup_callback=None
@@ -76,6 +77,7 @@ class AppFactory:
         self.agent_config = agent_config
         self.base_path = base_path
         self.context = context
+        self.port = port
 
         # Application components
         self.a2a_app: Optional[AionA2AStarletteApplication] = None
@@ -117,7 +119,7 @@ class AppFactory:
         await self._build_starlette_app()
 
         logger.info("Agent '%s' initialized successfully at http://%s:%s",
-                    self.agent_id, self.get_agent_host(), self.agent_config.port)
+                    self.agent_id, self.get_agent_host(), self.port)
 
     async def _init_agent(self) -> None:
         """Initialize agent from configuration and pre-compile its graph."""
@@ -162,7 +164,7 @@ class AppFactory:
             raise RuntimeError("No agent available to create agent card")
 
         # Create base URL from config
-        base_url = f'http://0.0.0.0:{self.agent_config.port}'
+        base_url = f'http://0.0.0.0:{self.port}'
 
         return self.agent.card
 

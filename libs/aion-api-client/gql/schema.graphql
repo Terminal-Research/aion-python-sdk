@@ -10,23 +10,47 @@ schema {
   mutation: Mutations
   subscription: Subscriptions
 }
+"Base64-encoded binary payload."
+scalar BytesBase64
 scalar Json
+"""
+
+An identifier established by the Client that MUST contain a String, Number,
+or NULL value if included. If it is not included it is assumed to be a
+notification. The value SHOULD NOT be NULL for requests expecting a response,
+and Numbers SHOULD NOT contain fractional parts. The Server MUST reply with
+the same value in the Response object if included. This member is used to
+correlate the context between the two objects. A2A methods typically expect a
+response or stream, so id will usually be present and non-null.
+        
+"""
+scalar JsonRpcId
 scalar Long
+"A date-time with an offset from UTC/Greenwich in the ISO-8601 calendar system using the format 1970-01-01T00:00:00Z"
+scalar OffsetDateTime
 
 union ChatCompletionStreamChunk = ChatCompletionStreamError | ChatCompletionStreamResponseChunk
 
+union JsonRpcResponseGQL = JsonRpcErrorResponseGQL | JsonRpcSuccessResponseGQL
+
+"Alias for backward compatibility"
 union JSONRPCResponse = JSONRPCErrorResponse | JSONRPCSuccessResponse
+
+"Stream of document updates for a project"
+union ReceiveEvent = ChangesAppliedEvent | NodeStatusUpdate | SnapshotEvent | StatusHistoryUpdate
 
 "Item emitted by walletUpdates. The first event is the wallet state."
 union WalletStreamEvent = BalanceChange | PriceChange | TransactionEvent | WalletStateEvent
 
-"Deployment backends available for agent behaviors"
-enum AgentBehaviorDeploymentType {
-  Aion
-  LangGraph
+"Indicates whether the behavior is managed within the platform or represents an external integration"
+enum AgentBehaviorKind {
+  A2ADeployment
+  AionDeployment
+  Distribution
+  System
 }
 
-"Indicates whether the identity is personal or deployed"
+"Indicates whether the identity is for a user's personal agent or a deployed agent"
 enum AgentIdentityType {
   Deployed
   Personal
@@ -40,13 +64,22 @@ enum AssetKind {
 
 "Where the deployment source is hosted"
 enum DeploymentType {
-  GitHub
-  Local
+  A2ARemote
+  AionRemote
+  GitHubAionHosted
 }
 
 enum GitHubAccountType {
   Organization
   User
+}
+
+enum LogLevel {
+  Debug
+  Error
+  Info
+  Trace
+  Warn
 }
 
 "Supported networks"
@@ -60,12 +93,40 @@ enum Network {
   POLYGON
 }
 
+"Enumeration of supported user network types"
+enum NetworkType {
+  "Aion Network"
+  Aion
+  "A2A API Network"
+  Api
+  "Telegram Network"
+  Telegram
+}
+
+"Severity level for a node status"
+enum NodeStatusType {
+  Error
+  Info
+  Success
+  Warning
+  Working
+}
+
 "Access level for a memory space"
 enum Privacy {
   "Only the owner can access the memory space"
   Private
   "Memory space can be shared publicly"
   Public
+}
+
+"Category of a status history entry"
+enum StatusHistoryType {
+  Committed
+  Error
+  Info
+  Success
+  Warning
 }
 
 enum SubjectType {
@@ -85,14 +146,6 @@ enum TransactionStatus {
   PENDING
 }
 
-"Enumeration of supported user network types"
-enum UserNetworkType {
-  "Aion network account"
-  Aion
-  "Telegram network account"
-  Telegram
-}
-
 "Lifecycle status of a deployment version"
 enum VersionStatus {
   Building
@@ -104,11 +157,39 @@ enum VersionStatus {
   Queued
 }
 
-input JSONRPCRequestInput {
+"JSON-RPC request envelope for agent-to-agent workflows"
+input JsonRpcRequestGQLInput {
+  "JSON-RPC protocol version, defaults to 2.0"
   jsonrpc: String!
+  "Method invoked on the destination agent"
   method: String!
+  "Parameters forwarded to the method call"
   params: Json
-  id: Json
+  "Identifier for correlating responses to the request"
+  id: JsonRpcId
+}
+
+"Alias for backward compatibility"
+input JSONRPCRequestInput {
+  "JSON-RPC protocol version, defaults to 2.0"
+  jsonrpc: String!
+  "Method invoked on the destination agent"
+  method: String!
+  "Parameters forwarded to the method call"
+  params: Json
+  "Identifier for correlating responses to the request"
+  id: JsonRpcId
+}
+
+input LogFiltersInput {
+  startTime: OffsetDateTime!
+  endTime: OffsetDateTime
+  logLevels: [LogLevel!]!
+  traceId: ID
+  distributionId: ID
+  versionId: ID
+  agentEnvironmentId: ID
+  messageSearch: String
 }
 
 input MessageInput {
@@ -122,50 +203,60 @@ type AgentBehavior {
   id: ID!
   "Identifier of the user that owns this behavior"
   userId: ID!
-  "Deployment backend used by the behavior"
-  deploymentType: AgentBehaviorDeploymentType!
-  "Associated deployment if the behavior is backed by one"
+  "Associated deployment for this behavior"
   deploymentId: ID
   "Version of the deployment used by the behavior"
   versionId: ID
-  "Assistant ID when running on LangGraph"
-  assistantId: String
-}
-
-"Runtime configuration and variables for an agent"
-type AgentEnvironment {
-  "Unique environment identifier"
-  id: ID!
-  "Owner of the environment"
-  userId: ID!
-  "Friendly name for the environment"
+  "Lifecycle state of this behavior"
+  kind: AgentBehaviorKind!
+  "the semantic version defined for the behavior by the developer in the Aion.yaml config."
+  logicalVersion: String!
+  "the developer-assigned name of the behavior from the Aion.yaml or AgentCard. Set to the graphId if not found."
   name: String!
-  "Key/value configuration variables available to the agent"
-  configurationVariables: [KVStringString!]!
-  "Whether long term memory should be enabled"
-  useLongTermMemory: Boolean!
-  "System prompt injected into the agent"
-  systemPrompt: String!
+  "Optional developer-assigned name of the behavior from the Aion.yaml or AgentCard."
+  description: String
+  "Schema describing the configuration variables"
+  configurationSchema: Json
+  "Optional AgentCard manifest describing this behavior"
+  agentCard: Json
+  "LangGraph graph identifier if applicable"
+  graphId: String
 }
 
-"Public profile information for an agent"
+"Public profile information for a user or agent"
 type AgentIdentity {
   "Unique identifier for the identity"
   id: ID!
-  "Type of identity"
+  "Type of the agent identity (personal or deployed)"
   agentType: AgentIdentityType!
-  "Owning user when type is personal"
+"""
+Reference to the owning user account. Personal identities always map to
+their user.
+"""
   userId: ID
-  "Owning organisation when type is deployed"
+  "Reference to the associated organization"
   organizationId: ID
-  "Agent handle prefixed with '@'"
+  "Identity name; personal identities should match the owning user's name"
+  name: String
+  "Agent-to-Agent protocol endpoint URL"
+  a2aUrl: String
+  "Website URL for human consumption"
+  website: String
+  "Primary contact email address"
+  email: String
+  "Addressable handle applicable inside the Aion network"
   atName: String
-  "Biography or description of the agent"
+"""
+Description of the identity's purpose; personal identities use the
+user's bio
+"""
   biography: String
-  "URL to the avatar image"
+  "URL to the identity's avatar image"
   avatarImageUrl: String
-  "URL to the profile background image"
+  "URL to the identity's profile background image"
   backgroundImageUrl: String
+  "Internal notes for administrators"
+  notes: String
 }
 
 "Blockchain asset, either native coin or token"
@@ -206,6 +297,22 @@ type BranchOption {
   name: String!
 }
 
+"Result of applying Automerge changes"
+type ChangesApplied {
+  "Project identifier"
+  projectId: ID!
+  "Concatenated set of raw Automerge changes which can be applied to an Automerge document via loadIncremental"
+  incrementalChanges: BytesBase64!
+  "New document heads after applying changes"
+  newHeads: Heads!
+}
+
+"Applied changes event"
+type ChangesAppliedEvent {
+  "Changes payload"
+  payload: ChangesApplied!
+}
+
 type ChatCompletionStreamChoice {
   index: Int!
   delta: Delta!
@@ -240,8 +347,8 @@ type ClientSecretHash {
   subjectId: ID!
 }
 
-"Details returned after provisioning a new local deployment"
-type CreateLocalDeploymentResponse {
+"Details returned after provisioning a new remote deployment"
+type CreateRemoteDeploymentResponse {
   "Deployment that was created"
   deployment: Deployment!
   "Default environment associated with the deployment"
@@ -267,6 +374,8 @@ type Deployment {
   organizationId: ID
   "User that created the deployment"
   userId: ID
+  "Project this deployment is associated with"
+  projectId: ID!
   "Repository backing the deployment"
   repositoryId: ID
   "Human friendly name"
@@ -299,6 +408,8 @@ type DeploymentEnvironment {
   id: ID!
   "Deployment this environment belongs to"
   deploymentId: ID!
+  "Project this environment is associated with"
+  projectId: ID!
   "Environment name"
   name: String!
   "Git branch associated with the environment"
@@ -319,6 +430,12 @@ type GitHubInstallationOptions {
   installationOptions: [InstallationOption!]!
 }
 
+"Automerge heads (commit IDs)"
+type Heads {
+  "Base64-encoded head commit identifiers"
+  values: [BytesBase64!]!
+}
+
 "Selectable GitHub App installation"
 type InstallationOption {
   "Unique identifier of the installation option"
@@ -327,20 +444,40 @@ type InstallationOption {
   name: String!
 }
 
-type JSONRPCError {
+type JsonRpcError {
   code: Int!
   message: String!
   data: Json
 }
 
-type JSONRPCErrorResponse {
-  id: Json
-  error: JSONRPCError!
+type JsonRpcErrorResponseGQL {
+  "Identifier correlating the response to its request"
+  id: JsonRpcId
+  error: JsonRpcError!
+  jsonrpc: String!
 }
 
-type JSONRPCSuccessResponse {
-  id: Json!
+type JsonRpcSuccessResponseGQL {
+  "Identifier correlating the response to its request"
+  id: JsonRpcId
   result: Json!
+  jsonrpc: String!
+}
+
+"Alias for backward compatibility"
+type JSONRPCSuccessResponse {
+  "Identifier correlating the response to its request"
+  id: JsonRpcId
+  result: Json!
+  jsonrpc: String!
+}
+
+"Alias for backward compatibility"
+type JSONRPCErrorResponse {
+  "Identifier correlating the response to its request"
+  id: JsonRpcId
+  error: JsonRpcError!
+  jsonrpc: String!
 }
 
 "A key-value pair of String and String"
@@ -349,6 +486,15 @@ type KVStringString {
   key: String!
   "Value"
   value: String!
+}
+
+"A log event"
+type LogEvent {
+  level: String!
+  level_value: Int!
+  message: String!
+  timestamp: OffsetDateTime!
+  properties: [KVStringString!]!
 }
 
 "Structured memory store that agents can read and write"
@@ -370,15 +516,62 @@ type MemorySpace {
 }
 
 type Mutations {
-  updateAgentIdentity(agentIdentityId: ID!, atName: String, biography: String, avatarImageUrl: String, backgroundImageUrl: String): AgentIdentity @auth(subjectType: "User")
-  updateAgentEnvironment(agentEnvironmentId: ID!, name: String, configurationVariables: Json, useLongTermMemory: Boolean, systemPrompt: String): AgentEnvironment @auth(subjectType: "User")
-  createLocalDeployment(name: String!, serverUrl: String!): CreateLocalDeploymentResponse @auth(subjectType: "User")
-  createGitHubDeployment(name: String!, sourceRoot: String, hasAutoVersionEnabled: Boolean!, gitHubInstallationId: Long!, githubRepoId: Long!): DeploymentDetail @auth(subjectType: "User")
-  updateGitHubDeployment(deploymentId: ID!, name: String!, sourceRoot: String, hasAutoVersionEnabled: Boolean!, gitHubInstallationId: Long!, githubRepoId: Long!): DeploymentDetail @auth(subjectType: "User")
-  deleteDeployment(deploymentId: ID!): Boolean @auth(subjectType: "User")
-  createOrUpdateDeploymentEnvironment(deploymentId: ID!, deploymentEnvironmentId: ID, branch: String, environmentalVariables: Json): DeploymentEnvironment @auth(subjectType: "User")
-  a2aSend("JSON-RPC request body" request: JSONRPCRequestInput!, "Distribution that should handle the request" distributionId: ID!): JSONRPCResponse @auth(subjectType: "User")
-  registerVersion("Contents of the server's aion.yaml file. From this, the control plane will register the behavior's graph id and configuration variable metadata." configuration: String!): AgentBehavior @auth(subjectType: "Version")
+  "Creates a new agent identity for the authenticated user."
+  createAgentIdentity(agentType: AgentIdentityType!, organizationId: ID, name: String, atName: String, biography: String, avatarImageUrl: String, backgroundImageUrl: String, a2aUrl: String, website: String, email: String, notes: String): AgentIdentity @auth(subjectType: "User")
+  "Updates an existing agent identity owned by the authenticated user."
+  updateAgentIdentity(agentIdentityId: ID!, name: String, atName: String, biography: String, avatarImageUrl: String, backgroundImageUrl: String, a2aUrl: String, website: String, email: String, notes: String): AgentIdentity @auth(subjectType: "User")
+  "Deletes an agent identity owned by the authenticated user."
+  deleteAgentIdentity(agentIdentityId: ID!): AgentIdentity @auth(subjectType: "User")
+  "Registers a new Aion A2A server with the control plane. This should be called when the server first starts up. Returns all behaviors found in the configuration."
+  registerVersion("Serialized agent manifest retrieved from the runtime. This payload is forwarded to populate agent behaviors and configuration metadata during registration." manifest: String!): [AgentBehavior!] @auth(subjectType: "Version")
+  createRemoteDeployment(name: String!, serverUrl: String!, projectId: ID!, isA2AIntegration: Boolean!): CreateRemoteDeploymentResponse @auth(subjectType: "User")
+  createGitHubDeployment(name: String!, sourceRoot: String, branchName: String, hasAutoVersionEnabled: Boolean!, gitHubInstallationId: Long!, githubRepoId: Long!, projectId: ID!): DeploymentDetail @auth(subjectType: "User")
+  createOrUpdateDeploymentEnvironment(deploymentId: ID!, projectId: ID!, deploymentEnvironmentId: ID, branch: String, environmentalVariables: Json): DeploymentEnvironment @auth(subjectType: "User")
+"""
+
+        Apply raw Automerge changes to a project's document. Server applies and returns 
+        committed heads and echoes changes. Validation and execution of side-effects are
+        handled asynchronously and will not be completed in this request.
+
+        If the server needs to modify the document in response to the changes, those updates
+        will be returned via the receiveProjectChanges subscription.
+      
+"""
+  applyProjectChanges("Identifier of the project being modified." projectId: ID!, "Base64-encoded Automerge change frames." changes: [BytesBase64!]!): ChangesApplied @auth(subjectType: "User")
+  "Create empty project"
+  createProject("Name of the project." projectName: String!, "Optional environment name for the project. Defaults to 'production'." environmentName: String): ProjectMetadata @auth(subjectType: "User")
+  "Rename or update project environment"
+  updateProjectMetadata("Identifier of the project to update." projectId: ID!, "New project name, if changing." projectName: String, "New environment name, if changing." environmentName: String): ProjectMetadata @auth(subjectType: "User")
+  "Remove project and its history"
+  deleteProject("Identifier of the project to remove." projectId: ID!): Boolean @auth(subjectType: "User")
+}
+
+"Status details for a node"
+type NodeStatus {
+  "Identifier of the node"
+  nodeId: String!
+  "Category of the status"
+  nodeStatusType: NodeStatusType!
+  "Human readable message"
+  message: String!
+  "Creation timestamp in milliseconds"
+  createdAt: Long!
+  "Last update timestamp in milliseconds"
+  updatedAt: Long!
+}
+
+"Event containing node status updates"
+type NodeStatusUpdate {
+  "Status update payload"
+  payload: NodeStatusUpdatePayload!
+}
+
+"Payload of node status updates"
+type NodeStatusUpdatePayload {
+  "Project identifier"
+  projectId: ID!
+  "Statuses for nodes"
+  statuses: [NodeStatus!]!
 }
 
 "Price change update"
@@ -386,20 +579,25 @@ type PriceChange {
   assetPrice: AssetPrice!
 }
 
+"Basic information about a project"
+type ProjectMetadata {
+  "Unique project identifier"
+  id: ID!
+  "Name of the project"
+  projectName: String!
+  "Optional environment name"
+  environmentName: String
+}
+
 type Queries {
-  user(userId: ID!): User
+  "Retrieves a user by ID. When no userId is supplied, returns the currently authenticated user."
+  user(userId: ID): User
   memorySpaces: [MemorySpace!]
   "Retrieves a list of all agent identities available to the authenticated user."
   agentIdentities: [AgentIdentity!]
   agentIdentity(agentIdentityId: ID!): AgentIdentity @auth(subjectType: "User")
-  "Retrieves a list of agent behaviors for a specific user."
-  agentBehaviors: [AgentBehavior!] @auth(subjectType: "User")
   "Retrieves a specific agent behavior by its ID for the authenticated user."
   agentBehavior(agentBehaviorId: ID!): AgentBehavior @auth(subjectType: "User")
-  "Retrieves a list of agent environments for a specific user."
-  agentEnvironments: [AgentEnvironment!] @auth(subjectType: "User")
-  "Retrieves a specific agent environment by its ID for the authenticated user."
-  agentEnvironment(agentEnvironmentId: ID!): AgentEnvironment @auth(subjectType: "User")
   "Retrieves repositories available for import for the specified owner."
   gitHubRepositoryOptions(gitHubInstallationId: Long!): [RepositoryOption!] @auth(subjectType: "User")
   "Retrieves branches available for a repository."
@@ -410,6 +608,12 @@ type Queries {
   deployment(deploymentId: ID!): DeploymentDetail @auth(subjectType: "User")
   "Entry point to get the wallet state"
   walletState(address: String!): WalletStateWithPrices
+  "List of projects (no doc bytes)"
+  projects: [ProjectMetadata!] @auth(subjectType: "User")
+  "Retrieves JSON logs for a specific project ID with optional filters."
+  projectLogs(projectId: ID!, filters: LogFiltersInput!): [LogEvent!] @auth(subjectType: "User")
+  "Retrieves log trace records for a specific project ID with optional filters."
+  logTraces(projectId: ID!, filters: LogFiltersInput!): [Trace!] @auth(subjectType: "User")
 }
 
 "GitHub repository managed by the platform"
@@ -442,8 +646,54 @@ type RepositoryOption {
   isPrivate: Boolean!
 }
 
+"Automerge snapshot for a project"
+type Snapshot {
+  "Project identifier"
+  projectId: ID!
+  "Automerge document bytes"
+  bytes: BytesBase64!
+  "Heads corresponding to bytes"
+  heads: Heads!
+}
+
+"Snapshot of project document"
+type SnapshotEvent {
+  "Snapshot payload"
+  payload: Snapshot!
+}
+
+"Historical status change"
+type StatusHistory {
+  "Identifier of the history entry"
+  id: ID!
+  "Type of status change"
+  statusHistoryType: StatusHistoryType!
+  "Human readable message"
+  message: String!
+  "Creation timestamp in milliseconds"
+  createdAt: Long!
+  "Last update timestamp in milliseconds"
+  updatedAt: Long!
+}
+
+"Event containing project status history"
+type StatusHistoryUpdate {
+  "Status history payload"
+  payload: StatusHistoryUpdatePayload!
+}
+
+"Payload of status history updates"
+type StatusHistoryUpdatePayload {
+  "Project identifier"
+  projectId: ID!
+  "Recent status history entries"
+  history: [StatusHistory!]!
+}
+
 type Subscriptions {
-  "Opens a live stream of JSON-RPC responses produced by the agent-to-agent (A2A) pipeline. Each element in the stream corresponds to a single JSON-RPC response generated while executing the requested agent workflow, allowing clients to render incremental updates in real-time."
+  "Executes an agent-to-agent JSON-RPC request and streams the responses."
+  a2aRpc("JSON-RPC request body" request: JsonRpcRequestGQLInput!, "Distribution that should handle the request" distributionId: ID!): JsonRpcResponseGQL @auth(subjectType: "User")
+  "Alias for backward compatibility - use a2aRpc instead"
   a2aStream("JSON-RPC request body" request: JSONRPCRequestInput!, "Distribution that should handle the request" distributionId: ID!): JSONRPCResponse @auth(subjectType: "User")
   "Streams delta chunks for an LLM chat-completion request. When `stream=true` is set, the underlying model returns partial responses; this subscription forwards those chunks to the client as they become available, enabling token-level streaming UIs."
   chatCompletionStream(model: String!, messages: [MessageInput!]!, stream: Boolean!): ChatCompletionStreamChunk @auth(subjectType: "Version")
@@ -451,6 +701,12 @@ type Subscriptions {
   gitHubInstallationOptions: GitHubInstallationOptions @auth(subjectType: "User")
   "Streams wallet state then incremental updates"
   walletUpdates(address: String!): WalletStreamEvent
+  "Stream of document updates for a project"
+  receiveProjectChanges("Identifier of the project to observe." projectId: ID!): ReceiveEvent @auth(subjectType: "User")
+  "Streams JSON logs for a specific version ID"
+  versionLogs(versionId: ID!, startTime: OffsetDateTime!): LogEvent @auth(subjectType: "User")
+  "Streams JSON logs for a specific trace ID with optional filters."
+  projectLogs(projectId: ID!, filters: LogFiltersInput!): LogEvent @auth(subjectType: "User")
 }
 
 "Token icon URLs in multiple sizes"
@@ -458,6 +714,19 @@ type TokenIconUrls {
   thumbnail: String
   small: String
   large: String
+}
+
+"A log trace record"
+type Trace {
+  traceId: ID!
+  projectId: ID!
+  distributionId: ID!
+  versionId: ID!
+  agentEnvironmentId: ID!
+  lastMessage: String!
+  lastTimestamp: OffsetDateTime!
+  method: String
+  taskStatus: String
 }
 
 "A transaction event involving a blockchain asset"
@@ -482,6 +751,8 @@ type TransactionEvent {
 type User {
   "Unique identifier of the user"
   id: ID!
+  "Identifier of the user's personal agent identity"
+  agentIdentityId: ID!
   "Identifier from the authentication provider"
   authId: String!
   "User's @ handle"
@@ -491,13 +762,13 @@ type User {
   "URL of the user's avatar image"
   avatarUrl: String
   "Networks linked to this user"
-  networks: [UserNetwork!]
+  networks: [UserConnection!]
 }
 
 "Association between a user and an external network"
-type UserNetwork {
+type UserConnection {
   "Type of network linked to the user"
-  network: UserNetworkType!
+  network: NetworkType!
 }
 
 "A single build or release of a deployment"

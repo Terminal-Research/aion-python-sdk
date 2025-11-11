@@ -9,7 +9,7 @@ from pydantic import ValidationError
 
 from aion.shared.utils.path import get_config_path
 from .exceptions import ConfigurationError
-from .models import AionConfig, AgentConfig, ProxyConfig
+from .models import AionConfig, AgentConfig
 from aion.shared.logging import get_logger
 
 
@@ -95,7 +95,7 @@ class AionConfigReader:
         if 'aion' not in config_data:
             raise ConfigurationError(
                 "Configuration file must contain an 'aion' section at the root level",
-                details="Expected structure: aion:\n  proxy:\n    ...\n  agents:\n    ...",
+                details="Expected structure: aion:\n  deployment:\n    ...\n  agents:\n    ...",
                 file_path=self.config_path
             )
 
@@ -203,19 +203,10 @@ class AionConfigReader:
 
             # Validate and parse into models
             aion_config = self.validate_and_parse_config(config_data)
-
-            # Handle case when proxy might be None
-            if aion_config.proxy is not None:
-                self.logger.info(
-                    "Successfully loaded configuration with %d agents and proxy",
-                    len(aion_config.agents)
-                )
-            else:
-                self.logger.info(
-                    "Successfully loaded configuration with %d agents (no proxy configured)",
-                    len(aion_config.agents)
-                )
-
+            self.logger.info(
+                "Successfully loaded configuration with %d agents",
+                len(aion_config.agents)
+            )
             return aion_config
 
         except ConfigurationError:
@@ -250,26 +241,5 @@ class AionConfigReader:
             formatted_error = self._format_pydantic_error(e)
             raise ConfigurationError(
                 "Agent configuration validation failed",
-                details=formatted_error
-            ) from e
-
-    def validate_proxy_config(self, proxy_data: Dict[str, Any]) -> ProxyConfig:
-        """Validate proxy configuration.
-
-        Args:
-            proxy_data: Raw proxy configuration dictionary.
-
-        Returns:
-            Validated ProxyConfig instance.
-
-        Raises:
-            ConfigurationError: If proxy validation fails.
-        """
-        try:
-            return ProxyConfig(**proxy_data)
-        except ValidationError as e:
-            formatted_error = self._format_pydantic_error(e)
-            raise ConfigurationError(
-                "Proxy configuration validation failed",
                 details=formatted_error
             ) from e

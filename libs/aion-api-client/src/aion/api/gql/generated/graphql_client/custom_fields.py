@@ -5,29 +5,30 @@ from typing import Any, Dict, Optional, Union
 from .base_operation import GraphQLField
 from .custom_typing_fields import (
     AgentBehaviorGraphQLField,
-    AgentEnvironmentGraphQLField,
     AgentIdentityGraphQLField,
     AssetBalanceGraphQLField,
     AssetGraphQLField,
     AssetPriceGraphQLField,
     BranchOptionGraphQLField,
+    ChangesAppliedGraphQLField,
     ClientSecretGraphQLField,
     ClientSecretHashGraphQLField,
-    CreateLocalDeploymentResponseGraphQLField,
+    CreateRemoteDeploymentResponseGraphQLField,
     DeploymentDetailGraphQLField,
     DeploymentEnvironmentGraphQLField,
     DeploymentGraphQLField,
-    JSONRPCErrorGraphQLField,
-    JSONRPCErrorResponseGraphQLField,
-    JSONRPCSuccessResponseGraphQLField,
+    HeadsGraphQLField,
     KVStringStringGraphQLField,
+    LogEventGraphQLField,
     MemorySpaceGraphQLField,
+    ProjectMetadataGraphQLField,
     RepositoryGraphQLField,
     RepositoryOptionGraphQLField,
     TokenIconUrlsGraphQLField,
+    TraceGraphQLField,
     TransactionGraphQLField,
+    UserConnectionGraphQLField,
     UserGraphQLField,
-    UserNetworkGraphQLField,
     VersionGraphQLField,
     WalletStateGraphQLField,
     WalletStateWithPricesGraphQLField,
@@ -37,14 +38,21 @@ from .custom_typing_fields import (
 class AgentBehaviorFields(GraphQLField):
     id: "AgentBehaviorGraphQLField" = AgentBehaviorGraphQLField("id")
     user_id: "AgentBehaviorGraphQLField" = AgentBehaviorGraphQLField("userId")
-    deployment_type: "AgentBehaviorGraphQLField" = AgentBehaviorGraphQLField(
-        "deploymentType"
-    )
     deployment_id: "AgentBehaviorGraphQLField" = AgentBehaviorGraphQLField(
         "deploymentId"
     )
     version_id: "AgentBehaviorGraphQLField" = AgentBehaviorGraphQLField("versionId")
-    assistant_id: "AgentBehaviorGraphQLField" = AgentBehaviorGraphQLField("assistantId")
+    kind: "AgentBehaviorGraphQLField" = AgentBehaviorGraphQLField("kind")
+    logical_version: "AgentBehaviorGraphQLField" = AgentBehaviorGraphQLField(
+        "logicalVersion"
+    )
+    name: "AgentBehaviorGraphQLField" = AgentBehaviorGraphQLField("name")
+    description: "AgentBehaviorGraphQLField" = AgentBehaviorGraphQLField("description")
+    configuration_schema: "AgentBehaviorGraphQLField" = AgentBehaviorGraphQLField(
+        "configurationSchema"
+    )
+    agent_card: "AgentBehaviorGraphQLField" = AgentBehaviorGraphQLField("agentCard")
+    graph_id: "AgentBehaviorGraphQLField" = AgentBehaviorGraphQLField("graphId")
 
     def fields(self, *subfields: AgentBehaviorGraphQLField) -> "AgentBehaviorFields":
         """Subfields should come from the AgentBehaviorFields class"""
@@ -56,34 +64,6 @@ class AgentBehaviorFields(GraphQLField):
         return self
 
 
-class AgentEnvironmentFields(GraphQLField):
-    id: "AgentEnvironmentGraphQLField" = AgentEnvironmentGraphQLField("id")
-    user_id: "AgentEnvironmentGraphQLField" = AgentEnvironmentGraphQLField("userId")
-    name: "AgentEnvironmentGraphQLField" = AgentEnvironmentGraphQLField("name")
-
-    @classmethod
-    def configuration_variables(cls) -> "KVStringStringFields":
-        return KVStringStringFields("configuration_variables")
-
-    use_long_term_memory: "AgentEnvironmentGraphQLField" = AgentEnvironmentGraphQLField(
-        "useLongTermMemory"
-    )
-    system_prompt: "AgentEnvironmentGraphQLField" = AgentEnvironmentGraphQLField(
-        "systemPrompt"
-    )
-
-    def fields(
-        self, *subfields: Union[AgentEnvironmentGraphQLField, "KVStringStringFields"]
-    ) -> "AgentEnvironmentFields":
-        """Subfields should come from the AgentEnvironmentFields class"""
-        self._subfields.extend(subfields)
-        return self
-
-    def alias(self, alias: str) -> "AgentEnvironmentFields":
-        self._alias = alias
-        return self
-
-
 class AgentIdentityFields(GraphQLField):
     id: "AgentIdentityGraphQLField" = AgentIdentityGraphQLField("id")
     agent_type: "AgentIdentityGraphQLField" = AgentIdentityGraphQLField("agentType")
@@ -91,6 +71,10 @@ class AgentIdentityFields(GraphQLField):
     organization_id: "AgentIdentityGraphQLField" = AgentIdentityGraphQLField(
         "organizationId"
     )
+    name: "AgentIdentityGraphQLField" = AgentIdentityGraphQLField("name")
+    a_2_a_url: "AgentIdentityGraphQLField" = AgentIdentityGraphQLField("a2aUrl")
+    website: "AgentIdentityGraphQLField" = AgentIdentityGraphQLField("website")
+    email: "AgentIdentityGraphQLField" = AgentIdentityGraphQLField("email")
     at_name: "AgentIdentityGraphQLField" = AgentIdentityGraphQLField("atName")
     biography: "AgentIdentityGraphQLField" = AgentIdentityGraphQLField("biography")
     avatar_image_url: "AgentIdentityGraphQLField" = AgentIdentityGraphQLField(
@@ -99,6 +83,7 @@ class AgentIdentityFields(GraphQLField):
     background_image_url: "AgentIdentityGraphQLField" = AgentIdentityGraphQLField(
         "backgroundImageUrl"
     )
+    notes: "AgentIdentityGraphQLField" = AgentIdentityGraphQLField("notes")
 
     def fields(self, *subfields: AgentIdentityGraphQLField) -> "AgentIdentityFields":
         """Subfields should come from the AgentIdentityFields class"""
@@ -188,6 +173,28 @@ class BranchOptionFields(GraphQLField):
         return self
 
 
+class ChangesAppliedFields(GraphQLField):
+    project_id: "ChangesAppliedGraphQLField" = ChangesAppliedGraphQLField("projectId")
+    incremental_changes: "ChangesAppliedGraphQLField" = ChangesAppliedGraphQLField(
+        "incrementalChanges"
+    )
+
+    @classmethod
+    def new_heads(cls) -> "HeadsFields":
+        return HeadsFields("new_heads")
+
+    def fields(
+        self, *subfields: Union[ChangesAppliedGraphQLField, "HeadsFields"]
+    ) -> "ChangesAppliedFields":
+        """Subfields should come from the ChangesAppliedFields class"""
+        self._subfields.extend(subfields)
+        return self
+
+    def alias(self, alias: str) -> "ChangesAppliedFields":
+        self._alias = alias
+        return self
+
+
 class ClientSecretFields(GraphQLField):
     client_id: "ClientSecretGraphQLField" = ClientSecretGraphQLField("clientId")
     secret: "ClientSecretGraphQLField" = ClientSecretGraphQLField("secret")
@@ -227,7 +234,7 @@ class ClientSecretHashFields(GraphQLField):
         return self
 
 
-class CreateLocalDeploymentResponseFields(GraphQLField):
+class CreateRemoteDeploymentResponseFields(GraphQLField):
     @classmethod
     def deployment(cls) -> "DeploymentFields":
         return DeploymentFields("deployment")
@@ -251,19 +258,19 @@ class CreateLocalDeploymentResponseFields(GraphQLField):
     def fields(
         self,
         *subfields: Union[
-            CreateLocalDeploymentResponseGraphQLField,
+            CreateRemoteDeploymentResponseGraphQLField,
             "ClientSecretFields",
             "ClientSecretHashFields",
             "DeploymentEnvironmentFields",
             "DeploymentFields",
             "VersionFields",
         ]
-    ) -> "CreateLocalDeploymentResponseFields":
-        """Subfields should come from the CreateLocalDeploymentResponseFields class"""
+    ) -> "CreateRemoteDeploymentResponseFields":
+        """Subfields should come from the CreateRemoteDeploymentResponseFields class"""
         self._subfields.extend(subfields)
         return self
 
-    def alias(self, alias: str) -> "CreateLocalDeploymentResponseFields":
+    def alias(self, alias: str) -> "CreateRemoteDeploymentResponseFields":
         self._alias = alias
         return self
 
@@ -272,6 +279,7 @@ class DeploymentFields(GraphQLField):
     id: "DeploymentGraphQLField" = DeploymentGraphQLField("id")
     organization_id: "DeploymentGraphQLField" = DeploymentGraphQLField("organizationId")
     user_id: "DeploymentGraphQLField" = DeploymentGraphQLField("userId")
+    project_id: "DeploymentGraphQLField" = DeploymentGraphQLField("projectId")
     repository_id: "DeploymentGraphQLField" = DeploymentGraphQLField("repositoryId")
     name: "DeploymentGraphQLField" = DeploymentGraphQLField("name")
     deployment_type: "DeploymentGraphQLField" = DeploymentGraphQLField("deploymentType")
@@ -333,6 +341,9 @@ class DeploymentEnvironmentFields(GraphQLField):
     deployment_id: "DeploymentEnvironmentGraphQLField" = (
         DeploymentEnvironmentGraphQLField("deploymentId")
     )
+    project_id: "DeploymentEnvironmentGraphQLField" = DeploymentEnvironmentGraphQLField(
+        "projectId"
+    )
     name: "DeploymentEnvironmentGraphQLField" = DeploymentEnvironmentGraphQLField(
         "name"
     )
@@ -357,54 +368,15 @@ class DeploymentEnvironmentFields(GraphQLField):
         return self
 
 
-class JSONRPCErrorFields(GraphQLField):
-    code: "JSONRPCErrorGraphQLField" = JSONRPCErrorGraphQLField("code")
-    message: "JSONRPCErrorGraphQLField" = JSONRPCErrorGraphQLField("message")
-    data: "JSONRPCErrorGraphQLField" = JSONRPCErrorGraphQLField("data")
+class HeadsFields(GraphQLField):
+    values: "HeadsGraphQLField" = HeadsGraphQLField("values")
 
-    def fields(self, *subfields: JSONRPCErrorGraphQLField) -> "JSONRPCErrorFields":
-        """Subfields should come from the JSONRPCErrorFields class"""
+    def fields(self, *subfields: HeadsGraphQLField) -> "HeadsFields":
+        """Subfields should come from the HeadsFields class"""
         self._subfields.extend(subfields)
         return self
 
-    def alias(self, alias: str) -> "JSONRPCErrorFields":
-        self._alias = alias
-        return self
-
-
-class JSONRPCErrorResponseFields(GraphQLField):
-    id: "JSONRPCErrorResponseGraphQLField" = JSONRPCErrorResponseGraphQLField("id")
-
-    @classmethod
-    def error(cls) -> "JSONRPCErrorFields":
-        return JSONRPCErrorFields("error")
-
-    def fields(
-        self, *subfields: Union[JSONRPCErrorResponseGraphQLField, "JSONRPCErrorFields"]
-    ) -> "JSONRPCErrorResponseFields":
-        """Subfields should come from the JSONRPCErrorResponseFields class"""
-        self._subfields.extend(subfields)
-        return self
-
-    def alias(self, alias: str) -> "JSONRPCErrorResponseFields":
-        self._alias = alias
-        return self
-
-
-class JSONRPCSuccessResponseFields(GraphQLField):
-    id: "JSONRPCSuccessResponseGraphQLField" = JSONRPCSuccessResponseGraphQLField("id")
-    result: "JSONRPCSuccessResponseGraphQLField" = JSONRPCSuccessResponseGraphQLField(
-        "result"
-    )
-
-    def fields(
-        self, *subfields: JSONRPCSuccessResponseGraphQLField
-    ) -> "JSONRPCSuccessResponseFields":
-        """Subfields should come from the JSONRPCSuccessResponseFields class"""
-        self._subfields.extend(subfields)
-        return self
-
-    def alias(self, alias: str) -> "JSONRPCSuccessResponseFields":
+    def alias(self, alias: str) -> "HeadsFields":
         self._alias = alias
         return self
 
@@ -419,6 +391,28 @@ class KVStringStringFields(GraphQLField):
         return self
 
     def alias(self, alias: str) -> "KVStringStringFields":
+        self._alias = alias
+        return self
+
+
+class LogEventFields(GraphQLField):
+    level: "LogEventGraphQLField" = LogEventGraphQLField("level")
+    level_value: "LogEventGraphQLField" = LogEventGraphQLField("level_value")
+    message: "LogEventGraphQLField" = LogEventGraphQLField("message")
+    timestamp: "LogEventGraphQLField" = LogEventGraphQLField("timestamp")
+
+    @classmethod
+    def properties(cls) -> "KVStringStringFields":
+        return KVStringStringFields("properties")
+
+    def fields(
+        self, *subfields: Union[LogEventGraphQLField, "KVStringStringFields"]
+    ) -> "LogEventFields":
+        """Subfields should come from the LogEventFields class"""
+        self._subfields.extend(subfields)
+        return self
+
+    def alias(self, alias: str) -> "LogEventFields":
         self._alias = alias
         return self
 
@@ -447,6 +441,27 @@ class MemorySpaceFields(GraphQLField):
         return self
 
     def alias(self, alias: str) -> "MemorySpaceFields":
+        self._alias = alias
+        return self
+
+
+class ProjectMetadataFields(GraphQLField):
+    id: "ProjectMetadataGraphQLField" = ProjectMetadataGraphQLField("id")
+    project_name: "ProjectMetadataGraphQLField" = ProjectMetadataGraphQLField(
+        "projectName"
+    )
+    environment_name: "ProjectMetadataGraphQLField" = ProjectMetadataGraphQLField(
+        "environmentName"
+    )
+
+    def fields(
+        self, *subfields: ProjectMetadataGraphQLField
+    ) -> "ProjectMetadataFields":
+        """Subfields should come from the ProjectMetadataFields class"""
+        self._subfields.extend(subfields)
+        return self
+
+    def alias(self, alias: str) -> "ProjectMetadataFields":
         self._alias = alias
         return self
 
@@ -513,6 +528,27 @@ class TokenIconUrlsFields(GraphQLField):
         return self
 
 
+class TraceFields(GraphQLField):
+    trace_id: "TraceGraphQLField" = TraceGraphQLField("traceId")
+    project_id: "TraceGraphQLField" = TraceGraphQLField("projectId")
+    distribution_id: "TraceGraphQLField" = TraceGraphQLField("distributionId")
+    version_id: "TraceGraphQLField" = TraceGraphQLField("versionId")
+    agent_environment_id: "TraceGraphQLField" = TraceGraphQLField("agentEnvironmentId")
+    last_message: "TraceGraphQLField" = TraceGraphQLField("lastMessage")
+    last_timestamp: "TraceGraphQLField" = TraceGraphQLField("lastTimestamp")
+    method: "TraceGraphQLField" = TraceGraphQLField("method")
+    task_status: "TraceGraphQLField" = TraceGraphQLField("taskStatus")
+
+    def fields(self, *subfields: TraceGraphQLField) -> "TraceFields":
+        """Subfields should come from the TraceFields class"""
+        self._subfields.extend(subfields)
+        return self
+
+    def alias(self, alias: str) -> "TraceFields":
+        self._alias = alias
+        return self
+
+
 class TransactionFields(GraphQLField):
     id: "TransactionGraphQLField" = TransactionGraphQLField("id")
     timestamp: "TransactionGraphQLField" = TransactionGraphQLField("timestamp")
@@ -544,17 +580,18 @@ class TransactionFields(GraphQLField):
 
 class UserFields(GraphQLField):
     id: "UserGraphQLField" = UserGraphQLField("id")
+    agent_identity_id: "UserGraphQLField" = UserGraphQLField("agentIdentityId")
     auth_id: "UserGraphQLField" = UserGraphQLField("authId")
     at_name: "UserGraphQLField" = UserGraphQLField("atName")
     name: "UserGraphQLField" = UserGraphQLField("name")
     avatar_url: "UserGraphQLField" = UserGraphQLField("avatarUrl")
 
     @classmethod
-    def networks(cls) -> "UserNetworkFields":
-        return UserNetworkFields("networks")
+    def networks(cls) -> "UserConnectionFields":
+        return UserConnectionFields("networks")
 
     def fields(
-        self, *subfields: Union[UserGraphQLField, "UserNetworkFields"]
+        self, *subfields: Union[UserGraphQLField, "UserConnectionFields"]
     ) -> "UserFields":
         """Subfields should come from the UserFields class"""
         self._subfields.extend(subfields)
@@ -565,15 +602,15 @@ class UserFields(GraphQLField):
         return self
 
 
-class UserNetworkFields(GraphQLField):
-    network: "UserNetworkGraphQLField" = UserNetworkGraphQLField("network")
+class UserConnectionFields(GraphQLField):
+    network: "UserConnectionGraphQLField" = UserConnectionGraphQLField("network")
 
-    def fields(self, *subfields: UserNetworkGraphQLField) -> "UserNetworkFields":
-        """Subfields should come from the UserNetworkFields class"""
+    def fields(self, *subfields: UserConnectionGraphQLField) -> "UserConnectionFields":
+        """Subfields should come from the UserConnectionFields class"""
         self._subfields.extend(subfields)
         return self
 
-    def alias(self, alias: str) -> "UserNetworkFields":
+    def alias(self, alias: str) -> "UserConnectionFields":
         self._alias = alias
         return self
 

@@ -128,7 +128,6 @@ class AgentConfig(BaseModel):
 
     # Required fields
     path: str = Field(..., description="Path to agent class, function, or graph instance")
-    port: int = Field(..., description="Port number for the agent", ge=1, le=65535)
 
     # Optional metadata with defaults
     name: str = Field(
@@ -165,14 +164,6 @@ class AgentConfig(BaseModel):
     configuration: Dict[str, ConfigurationField] = Field(
         default_factory=dict,
         description="Additional configuration parameters")
-
-    @field_validator('port')
-    @classmethod
-    def validate_port(cls, value):
-        """Validate port number is within valid range."""
-        if not (1 <= value <= 65535):
-            raise ValueError("Port must be between 1 and 65535")
-        return value
 
     @field_validator('configuration', mode='before')
     @classmethod
@@ -242,27 +233,12 @@ class AgentConfig(BaseModel):
         validate_assignment = True
 
 
-class ProxyConfig(BaseModel):
-    """Configuration for the proxy server."""
-    port: int = Field(
-        ...,
-        description="Port number for the proxy server",
-        ge=1,
-        le=65535
-    )
-
-
 class AionConfig(BaseModel):
     """Main configuration for Aion system."""
 
     agents: Dict[str, AgentConfig] = Field(
         default_factory=dict,
         description="Dictionary of agent configurations mapped by agent ID"
-    )
-
-    proxy: Optional[ProxyConfig] = Field(
-        default=None,
-        description="Proxy server configuration"
     )
 
     @field_validator('agents', mode='before')
@@ -308,31 +284,6 @@ class AionConfig(BaseModel):
 
         else:
             raise ValueError("Agents must be a dictionary or list")
-
-    @model_validator(mode='after')
-    def validate_unique_ports(self):
-        """Validate that all ports (agents and proxy) are unique."""
-        used_ports = []
-
-        # Collect proxy port
-        if self.proxy:
-            used_ports.append(self.proxy.port)
-
-        # Collect agent ports
-        for agent_id, agent in self.agents.items():
-            used_ports.append(agent.port)
-
-        # Check for duplicates
-        if len(used_ports) != len(set(used_ports)):
-            # Find duplicate ports for better error message
-            port_counts = {}
-            for port in used_ports:
-                port_counts[port] = port_counts.get(port, 0) + 1
-
-            duplicates = [port for port, count in port_counts.items() if count > 1]
-            raise ValueError(f"Port conflicts detected. The following ports are used multiple times: {duplicates}")
-
-        return self
 
     @model_validator(mode='after')
     def validate_unique_paths(self):

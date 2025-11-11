@@ -323,6 +323,7 @@ class AppSettings(BaseEnvSettings):
 
     agent_id: Optional[str] = None
     agent_config: Optional[AgentConfig] = None
+    port: Optional[int] = None
 
     @property
     def url(self) -> str:
@@ -330,12 +331,15 @@ class AppSettings(BaseEnvSettings):
         if not self.agent_config:
             raise AttributeError("agent_config must be set for AppSettings")
 
-        return f"http://0.0.0.0:{self.agent_config.port}"
+        return f"http://0.0.0.0:{self.port}"
 
     @property
     def is_logstash_configured(self) -> bool:
         """Check if logstash is configured with both host and port."""
         return bool(self.logstash_host and self.logstash_port)
+
+    def set_app_port(self, value: int) -> None:
+        self.port = value
 
     def set_agent_config(self, agent_id: str, agent_config: AgentConfig) -> None:
         """

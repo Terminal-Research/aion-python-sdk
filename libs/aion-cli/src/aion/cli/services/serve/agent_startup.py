@@ -22,7 +22,8 @@ class ServeAgentStartupService(BaseExecuteService):
     async def execute(
             self,
             config: AionConfig,
-            process_manager: ProcessManager
+            process_manager: ProcessManager,
+            port_manager
     ) -> tuple[list[str], list[str]]:
         """
         Start all configured agents in separate processes in parallel.
@@ -30,6 +31,7 @@ class ServeAgentStartupService(BaseExecuteService):
         Args:
             config: AION configuration containing agent definitions
             process_manager: ProcessManager instance to create agent processes
+            port_manager: AionPortManager instance with reserved ports
 
         Returns:
             tuple: (successful_agents, failed_agents) - lists of agent IDs
@@ -41,7 +43,7 @@ class ServeAgentStartupService(BaseExecuteService):
 
         # Create tasks for starting all agents in parallel
         tasks = [
-            self._start_agent(agent_id, agent_config, process_manager)
+            self._start_agent(agent_id, agent_config, process_manager, port_manager)
             for agent_id, agent_config in config.agents.items()
         ]
 
@@ -64,7 +66,8 @@ class ServeAgentStartupService(BaseExecuteService):
             self,
             agent_id: str,
             agent_config: AgentConfig,
-            process_manager: ProcessManager
+            process_manager: ProcessManager,
+            port_manager
     ) -> bool:
         """
         Start a single agent in a separate process and wait for startup confirmation.
@@ -73,17 +76,35 @@ class ServeAgentStartupService(BaseExecuteService):
             agent_id: Unique identifier for the agent
             agent_config: Agent configuration
             process_manager: ProcessManager instance
+            port_manager: AionPortManager instance
 
         Returns:
             bool: True if agent started successfully
         """
+        # Get reserved port for this agent
+        agent_port = port_manager.get_agent_port(agent_id)
+        if agent_port is None:
+            self.logger.error(f"No port reserved for agent '{agent_id}'")
+            return False
+
+        # Get serialized socket for passing to subprocess
+        serialized_socket = port_manager.get_agent_socket_serialized(agent_id)
+        if serialized_socket is None:
+            self.logger.error(f"Failed to get socket for agent '{agent_id}'")
+            return False
+
+        self.logger.debug(f"Passing socket for port {agent_port} to agent '{agent_id}'")
+
         # Create and start the process with pipe for communication
+        # Pass serialized socket to subprocess
         success = process_manager.create_process(
             key=agent_id,
             func=self._agent_wrapper,
             func_kwargs={
                 "agent_id": agent_id,
                 "agent_config": agent_config,
+                "port": agent_port,
+                "serialized_socket": serialized_socket,
             },
             use_pipe=True
         )
@@ -122,13 +143,15 @@ class ServeAgentStartupService(BaseExecuteService):
                 logger.warning(f"Failed to send startup confirmation for agent '{agent_id}': {str(ex)}")
 
     @staticmethod
-    def _agent_wrapper(agent_id: str, agent_config: AgentConfig, conn=None):
+    def _agent_wrapper(agent_id: str, agent_config: AgentConfig, port: int, serialized_socket: tuple, conn=None):
         """
         Wrapper function to run agent server in subprocess.
 
         Args:
             agent_id: Agent identifier
             agent_config: Agent configuration
+            port: Port number for this agent
+            serialized_socket: Serialized socket from parent process
             conn: Pipe connection to parent process (optional)
         """
         try:
@@ -137,11 +160,13 @@ class ServeAgentStartupService(BaseExecuteService):
             asyncio.set_event_loop(loop)
 
             try:
-                # Run the async server function with startup callback
+                # Run the async server function with startup callback, port, and socket
                 loop.run_until_complete(
                     run_server(
                         agent_id=agent_id,
                         agent_config=agent_config,
+                        port=port,
+                        serialized_socket=serialized_socket,
                         startup_callback=lambda: ServeAgentStartupService._send_startup_event(agent_id, conn)
                     )
                 )

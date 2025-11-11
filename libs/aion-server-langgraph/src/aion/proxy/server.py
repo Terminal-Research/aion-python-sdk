@@ -3,11 +3,10 @@ AION Agent Proxy Server
 Simple proxy server that routes requests to different AION agents based on agent_id
 """
 from contextlib import asynccontextmanager
-from typing import Dict, Optional
+from typing import Dict, Optional, Callable
 import logging
 
 import uvicorn
-from aion.shared.aion_config import AionConfig
 from aion.shared.logging import get_logger
 from aion.shared.logging.base import AionLogger
 from fastapi import FastAPI
@@ -29,39 +28,28 @@ class AionAgentProxyServer:
     based on agent_id in the URL path
     """
 
-    def __init__(self, config: AionConfig, startup_callback=None):
+    def __init__(self, agents: Dict[str, str], startup_callback: Optional[Callable] = None):
         """
-        Initialize proxy server with AION configuration
+        Initialize proxy server with agent mappings
 
         Args:
-            config: AionConfig instance containing agent configurations
+            agents: Dictionary mapping agent_id to agent_url (e.g., {"my-agent": "http://0.0.0.0:8001"})
             startup_callback: Optional callback to call after server lifespan startup completes
         """
-        self.config = config
-        self.agent_urls: Dict[str, str] = {}
+        self.agent_urls = agents
         self.http_client_manager = ProxyHttpClient()
         self.request_handler: Optional[RequestHandler] = None
         self.startup_callback = startup_callback
 
-        self._build_agent_urls()
+        # Log agent mappings
+        for agent_id, agent_url in self.agent_urls.items():
+            logger.debug(f"Mapped agent '{agent_id}' to {agent_url}")
 
         self.app = FastAPI(
             title="AION Agent Proxy Server",
             version="1.0.0",
             lifespan=self._lifespan
         )
-
-    def _build_agent_urls(self):
-        """Build agent URL mappings from configuration using hardcoded host 0.0.0.0 and http scheme"""
-        for agent_id, agent_config in self.config.agents.items():
-            # Build agent URL
-            host = "0.0.0.0"
-            port = agent_config.port
-            scheme = "http"
-
-            agent_url = f"{scheme}://{host}:{port}"
-            self.agent_urls[agent_id] = agent_url
-            logger.debug(f"Mapped agent '{agent_id}' to {agent_url}")
 
     @asynccontextmanager
     async def _lifespan(self, app: FastAPI):
@@ -85,26 +73,35 @@ class AionAgentProxyServer:
 
         # Shutdown handled by context manager
 
-    async def start(self, host: str = "0.0.0.0", port: Optional[int] = None):
+    async def start(self, port: int, host: str = "0.0.0.0", serialized_socket=None):
         """
         Start the proxy server
 
         Args:
+            port: Port to bind the server to
             host: Host to bind the server to (default: "0.0.0.0")
-            port: Port to bind the server to (default: config.proxy.port)
+            serialized_socket: Optional serialized socket from parent process
         """
-        if port is None:
-            port = self.config.proxy.port
+        # Deserialize socket if provided
+        sockets = None
+        if serialized_socket is not None:
+            from aion.shared.utils.ports.reservation import deserialize_socket
+            sock = deserialize_socket(serialized_socket)
+            sockets = [sock]
+            logger.debug(f"Using passed socket for proxy on port {port}")
 
         config = uvicorn.Config(
             app=self.app,
-            host=host,
-            port=port,
+            host=host if sockets is None else None,
+            port=port if sockets is None else None,
             log_level=app_settings.log_level.lower(),
             log_config=None,
             access_log=False
         )
 
         server = uvicorn.Server(config)
+        if sockets is not None:
+            server.servers = []  # Clear default servers
+
         logger.info(f"Starting AION Proxy Server on http://{host}:{port}")
-        await server.serve()
+        await server.serve(sockets=sockets)
