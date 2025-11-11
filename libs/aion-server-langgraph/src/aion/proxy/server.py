@@ -14,7 +14,7 @@ from aion.shared.settings import app_settings
 
 from .client import ProxyHttpClient
 from .handlers import RequestHandler
-from .routes import setup_routes
+from .routes import ProxyRouter
 
 # Set custom logger class globally for all loggers including uvicorn/fastapi
 logging.setLoggerClass(AionLogger)
@@ -63,7 +63,7 @@ class AionAgentProxyServer:
             self.request_handler = RequestHandler(self.agent_urls, http_client)
 
             # Setup routes
-            setup_routes(self.app, self.request_handler)
+            ProxyRouter(agent_proxy_server=self, request_handler=self.request_handler).register_routes()
 
             # Call startup callback if provided - server is now ready
             if self.startup_callback is not None:
