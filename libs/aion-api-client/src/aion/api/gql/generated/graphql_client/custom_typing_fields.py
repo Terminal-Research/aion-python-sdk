@@ -15,12 +15,32 @@ class ChatCompletionStreamChunkUnion(GraphQLField):
         return self
 
 
+class JsonRpcResponseGQLUnion(GraphQLField):
+    def on(self, type_name: str, *subfields: GraphQLField) -> "JsonRpcResponseGQLUnion":
+        self._inline_fragments[type_name] = subfields
+        return self
+
+    def alias(self, alias: str) -> "JsonRpcResponseGQLUnion":
+        self._alias = alias
+        return self
+
+
 class JSONRPCResponseUnion(GraphQLField):
     def on(self, type_name: str, *subfields: GraphQLField) -> "JSONRPCResponseUnion":
         self._inline_fragments[type_name] = subfields
         return self
 
     def alias(self, alias: str) -> "JSONRPCResponseUnion":
+        self._alias = alias
+        return self
+
+
+class ReceiveEventUnion(GraphQLField):
+    def on(self, type_name: str, *subfields: GraphQLField) -> "ReceiveEventUnion":
+        self._inline_fragments[type_name] = subfields
+        return self
+
+    def alias(self, alias: str) -> "ReceiveEventUnion":
         self._alias = alias
         return self
 
@@ -37,12 +57,6 @@ class WalletStreamEventUnion(GraphQLField):
 
 class AgentBehaviorGraphQLField(GraphQLField):
     def alias(self, alias: str) -> "AgentBehaviorGraphQLField":
-        self._alias = alias
-        return self
-
-
-class AgentEnvironmentGraphQLField(GraphQLField):
-    def alias(self, alias: str) -> "AgentEnvironmentGraphQLField":
         self._alias = alias
         return self
 
@@ -83,6 +97,18 @@ class BranchOptionGraphQLField(GraphQLField):
         return self
 
 
+class ChangesAppliedGraphQLField(GraphQLField):
+    def alias(self, alias: str) -> "ChangesAppliedGraphQLField":
+        self._alias = alias
+        return self
+
+
+class ChangesAppliedEventGraphQLField(GraphQLField):
+    def alias(self, alias: str) -> "ChangesAppliedEventGraphQLField":
+        self._alias = alias
+        return self
+
+
 class ChatCompletionStreamChoiceGraphQLField(GraphQLField):
     def alias(self, alias: str) -> "ChatCompletionStreamChoiceGraphQLField":
         self._alias = alias
@@ -119,8 +145,8 @@ class ClientSecretHashGraphQLField(GraphQLField):
         return self
 
 
-class CreateLocalDeploymentResponseGraphQLField(GraphQLField):
-    def alias(self, alias: str) -> "CreateLocalDeploymentResponseGraphQLField":
+class CreateRemoteDeploymentResponseGraphQLField(GraphQLField):
+    def alias(self, alias: str) -> "CreateRemoteDeploymentResponseGraphQLField":
         self._alias = alias
         return self
 
@@ -155,20 +181,32 @@ class GitHubInstallationOptionsGraphQLField(GraphQLField):
         return self
 
 
+class HeadsGraphQLField(GraphQLField):
+    def alias(self, alias: str) -> "HeadsGraphQLField":
+        self._alias = alias
+        return self
+
+
 class InstallationOptionGraphQLField(GraphQLField):
     def alias(self, alias: str) -> "InstallationOptionGraphQLField":
         self._alias = alias
         return self
 
 
-class JSONRPCErrorGraphQLField(GraphQLField):
-    def alias(self, alias: str) -> "JSONRPCErrorGraphQLField":
+class JsonRpcErrorGraphQLField(GraphQLField):
+    def alias(self, alias: str) -> "JsonRpcErrorGraphQLField":
         self._alias = alias
         return self
 
 
-class JSONRPCErrorResponseGraphQLField(GraphQLField):
-    def alias(self, alias: str) -> "JSONRPCErrorResponseGraphQLField":
+class JsonRpcErrorResponseGQLGraphQLField(GraphQLField):
+    def alias(self, alias: str) -> "JsonRpcErrorResponseGQLGraphQLField":
+        self._alias = alias
+        return self
+
+
+class JsonRpcSuccessResponseGQLGraphQLField(GraphQLField):
+    def alias(self, alias: str) -> "JsonRpcSuccessResponseGQLGraphQLField":
         self._alias = alias
         return self
 
@@ -179,8 +217,20 @@ class JSONRPCSuccessResponseGraphQLField(GraphQLField):
         return self
 
 
+class JSONRPCErrorResponseGraphQLField(GraphQLField):
+    def alias(self, alias: str) -> "JSONRPCErrorResponseGraphQLField":
+        self._alias = alias
+        return self
+
+
 class KVStringStringGraphQLField(GraphQLField):
     def alias(self, alias: str) -> "KVStringStringGraphQLField":
+        self._alias = alias
+        return self
+
+
+class LogEventGraphQLField(GraphQLField):
+    def alias(self, alias: str) -> "LogEventGraphQLField":
         self._alias = alias
         return self
 
@@ -197,8 +247,32 @@ class MutationsGraphQLField(GraphQLField):
         return self
 
 
+class NodeStatusGraphQLField(GraphQLField):
+    def alias(self, alias: str) -> "NodeStatusGraphQLField":
+        self._alias = alias
+        return self
+
+
+class NodeStatusUpdateGraphQLField(GraphQLField):
+    def alias(self, alias: str) -> "NodeStatusUpdateGraphQLField":
+        self._alias = alias
+        return self
+
+
+class NodeStatusUpdatePayloadGraphQLField(GraphQLField):
+    def alias(self, alias: str) -> "NodeStatusUpdatePayloadGraphQLField":
+        self._alias = alias
+        return self
+
+
 class PriceChangeGraphQLField(GraphQLField):
     def alias(self, alias: str) -> "PriceChangeGraphQLField":
+        self._alias = alias
+        return self
+
+
+class ProjectMetadataGraphQLField(GraphQLField):
+    def alias(self, alias: str) -> "ProjectMetadataGraphQLField":
         self._alias = alias
         return self
 
@@ -221,6 +295,36 @@ class RepositoryOptionGraphQLField(GraphQLField):
         return self
 
 
+class SnapshotGraphQLField(GraphQLField):
+    def alias(self, alias: str) -> "SnapshotGraphQLField":
+        self._alias = alias
+        return self
+
+
+class SnapshotEventGraphQLField(GraphQLField):
+    def alias(self, alias: str) -> "SnapshotEventGraphQLField":
+        self._alias = alias
+        return self
+
+
+class StatusHistoryGraphQLField(GraphQLField):
+    def alias(self, alias: str) -> "StatusHistoryGraphQLField":
+        self._alias = alias
+        return self
+
+
+class StatusHistoryUpdateGraphQLField(GraphQLField):
+    def alias(self, alias: str) -> "StatusHistoryUpdateGraphQLField":
+        self._alias = alias
+        return self
+
+
+class StatusHistoryUpdatePayloadGraphQLField(GraphQLField):
+    def alias(self, alias: str) -> "StatusHistoryUpdatePayloadGraphQLField":
+        self._alias = alias
+        return self
+
+
 class SubscriptionsGraphQLField(GraphQLField):
     def alias(self, alias: str) -> "SubscriptionsGraphQLField":
         self._alias = alias
@@ -229,6 +333,12 @@ class SubscriptionsGraphQLField(GraphQLField):
 
 class TokenIconUrlsGraphQLField(GraphQLField):
     def alias(self, alias: str) -> "TokenIconUrlsGraphQLField":
+        self._alias = alias
+        return self
+
+
+class TraceGraphQLField(GraphQLField):
+    def alias(self, alias: str) -> "TraceGraphQLField":
         self._alias = alias
         return self
 
@@ -251,8 +361,8 @@ class UserGraphQLField(GraphQLField):
         return self
 
 
-class UserNetworkGraphQLField(GraphQLField):
-    def alias(self, alias: str) -> "UserNetworkGraphQLField":
+class UserConnectionGraphQLField(GraphQLField):
+    def alias(self, alias: str) -> "UserConnectionGraphQLField":
         self._alias = alias
         return self
 

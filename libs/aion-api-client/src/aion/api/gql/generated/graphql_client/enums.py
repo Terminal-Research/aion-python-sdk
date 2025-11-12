@@ -4,9 +4,11 @@
 from enum import Enum
 
 
-class AgentBehaviorDeploymentType(str, Enum):
-    Aion = "Aion"
-    LangGraph = "LangGraph"
+class AgentBehaviorKind(str, Enum):
+    A2ADeployment = "A2ADeployment"
+    AionDeployment = "AionDeployment"
+    Distribution = "Distribution"
+    System = "System"
 
 
 class AgentIdentityType(str, Enum):
@@ -20,13 +22,22 @@ class AssetKind(str, Enum):
 
 
 class DeploymentType(str, Enum):
-    GitHub = "GitHub"
-    Local = "Local"
+    A2ARemote = "A2ARemote"
+    AionRemote = "AionRemote"
+    GitHubAionHosted = "GitHubAionHosted"
 
 
 class GitHubAccountType(str, Enum):
     Organization = "Organization"
     User = "User"
+
+
+class LogLevel(str, Enum):
+    Debug = "Debug"
+    Error = "Error"
+    Info = "Info"
+    Trace = "Trace"
+    Warn = "Warn"
 
 
 class Network(str, Enum):
@@ -39,9 +50,31 @@ class Network(str, Enum):
     POLYGON = "POLYGON"
 
 
+class NetworkType(str, Enum):
+    Aion = "Aion"
+    Api = "Api"
+    Telegram = "Telegram"
+
+
+class NodeStatusType(str, Enum):
+    Error = "Error"
+    Info = "Info"
+    Success = "Success"
+    Warning = "Warning"
+    Working = "Working"
+
+
 class Privacy(str, Enum):
     Private = "Private"
     Public = "Public"
+
+
+class StatusHistoryType(str, Enum):
+    Committed = "Committed"
+    Error = "Error"
+    Info = "Info"
+    Success = "Success"
+    Warning = "Warning"
 
 
 class SubjectType(str, Enum):
@@ -57,11 +90,6 @@ class TransactionDirection(str, Enum):
 class TransactionStatus(str, Enum):
     CONFIRMED = "CONFIRMED"
     PENDING = "PENDING"
-
-
-class UserNetworkType(str, Enum):
-    Aion = "Aion"
-    Telegram = "Telegram"
 
 
 class VersionStatus(str, Enum):

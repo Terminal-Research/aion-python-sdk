@@ -21,6 +21,7 @@ from aion.shared.types import (
     GetContextsListRequest,
     HealthResponse,
 )
+from aion.shared.utils.deployment import get_protocol_version
 from opentelemetry import trace
 from pydantic import ValidationError
 from starlette.exceptions import HTTPException
@@ -31,7 +32,8 @@ from starlette.status import HTTP_413_REQUEST_ENTITY_TOO_LARGE
 
 from aion.server.core.request_handlers import AionJSONRPCHandler
 from aion.server.interfaces import IRequestHandler
-from aion.server.utils.constants import HEALTH_CHECK_URL
+from aion.server.types import ConfigurationFileResponse
+from aion.server.utils.constants import HEALTH_CHECK_URL, CONFIGURATION_FILE_URL
 
 logger = get_logger()
 request_tracer = trace.get_tracer("langgraph.agent")
@@ -76,6 +78,12 @@ class AionA2AStarletteApplication(A2AStarletteApplication):
                 self._handle_health_check,
                 methods=['GET'],
                 name="app_health",
+            ),
+            Route(
+                CONFIGURATION_FILE_URL,
+                self._handle_get_configuration_file,
+                methods=['GET'],
+                name="agent_configuration",
             )
         ]
         return app_routes
@@ -221,6 +229,19 @@ class AionA2AStarletteApplication(A2AStarletteApplication):
             Simple status response with 200 status code
         """
         return JSONResponse(HealthResponse().model_dump())
+
+    async def _handle_get_configuration_file(self, request) -> JSONResponse:
+        """
+        Configuration file endpoint
+
+        Returns:
+            Configuration file response with protocol version and agent configuration
+        """
+        response = ConfigurationFileResponse(
+            protocolVersion=get_protocol_version(),
+            configuration=self.agent_card.configuration
+        )
+        return JSONResponse(response.model_dump())
 
 
 __all__ = ["AionA2AStarletteApplication"]

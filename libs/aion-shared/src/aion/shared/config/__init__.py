@@ -5,7 +5,6 @@ from .models import (
     AgentCapabilities,
     AgentSkill,
     AgentConfig,
-    ProxyConfig,
     AionConfig,
 )
 from .reader import AionConfigReader

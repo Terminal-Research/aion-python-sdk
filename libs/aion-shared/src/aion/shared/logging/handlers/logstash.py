@@ -21,6 +21,8 @@ from aion.shared.logging.base import AionLogRecord
 from logstash_async.formatter import LogstashFormatter
 from logstash_async.handler import AsynchronousLogstashHandler
 
+from aion.shared.utils.deployment import get_service_name
+
 
 class AionLogstashFilter(logging.Filter):
     """Filter log records for Logstash processing.
@@ -133,7 +135,7 @@ class AionLogstashFormatter(LogstashFormatter):
             },
 
             # Application context
-            'service.name': "aion-langgraph-server",
+            'service.name': get_service_name(),
             'error.message': None,
             'error.type': None,
             'error.stack_trace': None

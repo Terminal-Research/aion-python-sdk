@@ -33,3 +33,23 @@ class SystemHealthResponse(BaseModel):
     agents: Dict[str, AgentHealthInfo] = Field(
         description="Health status of each configured agent"
     )
+
+
+class ProxyManifest(BaseModel):
+    """Data model for root manifest representation.
+
+    Represents the root-level service manifest that defines the API version,
+    service name, and available agent endpoints for A2A communication.
+    """
+    api_version: str = Field(
+        ...,
+        description="Manifest API version."
+    )
+    name: str = Field(
+        ...,
+        description="Service name"
+    )
+    endpoints: Dict[str, str] = Field(
+        default_factory=dict,
+        description="A map of agent identifiers to relative paths"
+    )

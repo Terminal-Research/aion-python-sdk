@@ -2,35 +2,82 @@
 
 from typing import Any, Dict, Optional
 
+from . import AgentIdentityType
 from .custom_fields import (
     AgentBehaviorFields,
-    AgentEnvironmentFields,
     AgentIdentityFields,
-    CreateLocalDeploymentResponseFields,
+    ChangesAppliedFields,
+    CreateRemoteDeploymentResponseFields,
     DeploymentDetailFields,
     DeploymentEnvironmentFields,
+    ProjectMetadataFields,
 )
-from .custom_typing_fields import GraphQLField, JSONRPCResponseUnion
-from .input_types import JSONRPCRequestInput
+from .custom_typing_fields import GraphQLField
 
 
 class Mutation:
+    @classmethod
+    def create_agent_identity(
+        cls,
+        agent_type: AgentIdentityType,
+        *,
+        organization_id: Optional[str] = None,
+        name: Optional[str] = None,
+        at_name: Optional[str] = None,
+        biography: Optional[str] = None,
+        avatar_image_url: Optional[str] = None,
+        background_image_url: Optional[str] = None,
+        a_2_a_url: Optional[str] = None,
+        website: Optional[str] = None,
+        email: Optional[str] = None,
+        notes: Optional[str] = None
+    ) -> AgentIdentityFields:
+        arguments: Dict[str, Dict[str, Any]] = {
+            "agentType": {"type": "AgentIdentityType!", "value": agent_type},
+            "organizationId": {"type": "ID", "value": organization_id},
+            "name": {"type": "String", "value": name},
+            "atName": {"type": "String", "value": at_name},
+            "biography": {"type": "String", "value": biography},
+            "avatarImageUrl": {"type": "String", "value": avatar_image_url},
+            "backgroundImageUrl": {"type": "String", "value": background_image_url},
+            "a2aUrl": {"type": "String", "value": a_2_a_url},
+            "website": {"type": "String", "value": website},
+            "email": {"type": "String", "value": email},
+            "notes": {"type": "String", "value": notes},
+        }
+        cleared_arguments = {
+            key: value for key, value in arguments.items() if value["value"] is not None
+        }
+        return AgentIdentityFields(
+            field_name="createAgentIdentity", arguments=cleared_arguments
+        )
+
     @classmethod
     def update_agent_identity(
         cls,
         agent_identity_id: str,
         *,
+        name: Optional[str] = None,
         at_name: Optional[str] = None,
         biography: Optional[str] = None,
         avatar_image_url: Optional[str] = None,
-        background_image_url: Optional[str] = None
+        background_image_url: Optional[str] = None,
+        a_2_a_url: Optional[str] = None,
+        website: Optional[str] = None,
+        email: Optional[str] = None,
+        notes: Optional[str] = None
     ) -> AgentIdentityFields:
         arguments: Dict[str, Dict[str, Any]] = {
             "agentIdentityId": {"type": "ID!", "value": agent_identity_id},
+            "name": {"type": "String", "value": name},
             "atName": {"type": "String", "value": at_name},
             "biography": {"type": "String", "value": biography},
             "avatarImageUrl": {"type": "String", "value": avatar_image_url},
             "backgroundImageUrl": {"type": "String", "value": background_image_url},
+            "a2aUrl": {"type": "String", "value": a_2_a_url},
+            "website": {"type": "String", "value": website},
+            "email": {"type": "String", "value": email},
+            "notes": {"type": "String", "value": notes},
         }
         cleared_arguments = {
             key: value for key, value in arguments.items() if value["value"] is not None
@@ -40,45 +87,44 @@ class Mutation:
         )
 
     @classmethod
-    def update_agent_environment(
-        cls,
-        agent_environment_id: str,
-        *,
-        name: Optional[str] = None,
-        configuration_variables: Optional[Any] = None,
-        use_long_term_memory: Optional[bool] = None,
-        system_prompt: Optional[str] = None
-    ) -> AgentEnvironmentFields:
+    def delete_agent_identity(cls, agent_identity_id: str) -> AgentIdentityFields:
         arguments: Dict[str, Dict[str, Any]] = {
-            "agentEnvironmentId": {"type": "ID!", "value": agent_environment_id},
-            "name": {"type": "String", "value": name},
-            "configurationVariables": {
-                "type": "Json",
-                "value": configuration_variables,
-            },
-            "useLongTermMemory": {"type": "Boolean", "value": use_long_term_memory},
-            "systemPrompt": {"type": "String", "value": system_prompt},
+            "agentIdentityId": {"type": "ID!", "value": agent_identity_id}
         }
         cleared_arguments = {
             key: value for key, value in arguments.items() if value["value"] is not None
         }
-        return AgentEnvironmentFields(
-            field_name="updateAgentEnvironment", arguments=cleared_arguments
+        return AgentIdentityFields(
+            field_name="deleteAgentIdentity", arguments=cleared_arguments
         )
 
     @classmethod
-    def create_local_deployment(
-        cls, name: str, server_url: str
-    ) -> CreateLocalDeploymentResponseFields:
+    def register_version(cls, manifest: str) -> AgentBehaviorFields:
         arguments: Dict[str, Dict[str, Any]] = {
-            "name": {"type": "String!", "value": name},
-            "serverUrl": {"type": "String!", "value": server_url},
+            "manifest": {"type": "String!", "value": manifest}
         }
         cleared_arguments = {
             key: value for key, value in arguments.items() if value["value"] is not None
         }
-        return CreateLocalDeploymentResponseFields(
-            field_name="createLocalDeployment", arguments=cleared_arguments
+        return AgentBehaviorFields(
+            field_name="registerVersion", arguments=cleared_arguments
+        )
+
+    @classmethod
+    def create_remote_deployment(
+        cls, name: str, server_url: str, project_id: str, is_a_2_a_integration: bool
+    ) -> CreateRemoteDeploymentResponseFields:
+        arguments: Dict[str, Dict[str, Any]] = {
+            "name": {"type": "String!", "value": name},
+            "serverUrl": {"type": "String!", "value": server_url},
+            "projectId": {"type": "ID!", "value": project_id},
+            "isA2AIntegration": {"type": "Boolean!", "value": is_a_2_a_integration},
+        }
+        cleared_arguments = {
+            key: value for key, value in arguments.items() if value["value"] is not None
+        }
+        return CreateRemoteDeploymentResponseFields(
+            field_name="createRemoteDeployment", arguments=cleared_arguments
         )
 
     @classmethod
@@ -88,18 +134,22 @@ class Mutation:
         has_auto_version_enabled: bool,
         git_hub_installation_id: Any,
         github_repo_id: Any,
+        project_id: str,
         *,
-        source_root: Optional[str] = None
+        source_root: Optional[str] = None,
+        branch_name: Optional[str] = None
     ) -> DeploymentDetailFields:
         arguments: Dict[str, Dict[str, Any]] = {
             "name": {"type": "String!", "value": name},
             "sourceRoot": {"type": "String", "value": source_root},
+            "branchName": {"type": "String", "value": branch_name},
             "hasAutoVersionEnabled": {
                 "type": "Boolean!",
                 "value": has_auto_version_enabled,
             },
             "gitHubInstallationId": {"type": "Long!", "value": git_hub_installation_id},
             "githubRepoId": {"type": "Long!", "value": github_repo_id},
+            "projectId": {"type": "ID!", "value": project_id},
         }
         cleared_arguments = {
             key: value for key, value in arguments.items() if value["value"] is not None
@@ -109,48 +159,10 @@ class Mutation:
         )
 
     @classmethod
-    def update_git_hub_deployment(
-        cls,
-        deployment_id: str,
-        name: str,
-        has_auto_version_enabled: bool,
-        git_hub_installation_id: Any,
-        github_repo_id: Any,
-        *,
-        source_root: Optional[str] = None
-    ) -> DeploymentDetailFields:
-        arguments: Dict[str, Dict[str, Any]] = {
-            "deploymentId": {"type": "ID!", "value": deployment_id},
-            "name": {"type": "String!", "value": name},
-            "sourceRoot": {"type": "String", "value": source_root},
-            "hasAutoVersionEnabled": {
-                "type": "Boolean!",
-                "value": has_auto_version_enabled,
-            },
-            "gitHubInstallationId": {"type": "Long!", "value": git_hub_installation_id},
-            "githubRepoId": {"type": "Long!", "value": github_repo_id},
-        }
-        cleared_arguments = {
-            key: value for key, value in arguments.items() if value["value"] is not None
-        }
-        return DeploymentDetailFields(
-            field_name="updateGitHubDeployment", arguments=cleared_arguments
-        )
-
-    @classmethod
-    def delete_deployment(cls, deployment_id: str) -> GraphQLField:
-        arguments: Dict[str, Dict[str, Any]] = {
-            "deploymentId": {"type": "ID!", "value": deployment_id}
-        }
-        cleared_arguments = {
-            key: value for key, value in arguments.items() if value["value"] is not None
-        }
-        return GraphQLField(field_name="deleteDeployment", arguments=cleared_arguments)
-
-    @classmethod
     def create_or_update_deployment_environment(
         cls,
         deployment_id: str,
+        project_id: str,
         *,
         deployment_environment_id: Optional[str] = None,
         branch: Optional[str] = None,
@@ -158,6 +170,7 @@ class Mutation:
     ) -> DeploymentEnvironmentFields:
         arguments: Dict[str, Dict[str, Any]] = {
             "deploymentId": {"type": "ID!", "value": deployment_id},
+            "projectId": {"type": "ID!", "value": project_id},
             "deploymentEnvironmentId": {
                 "type": "ID",
                 "value": deployment_environment_id,
@@ -177,26 +190,61 @@ class Mutation:
         )
 
     @classmethod
-    def a_2_a_send(
-        cls, request: JSONRPCRequestInput, distribution_id: str
-    ) -> JSONRPCResponseUnion:
+    def apply_project_changes(
+        cls, project_id: str, changes: Any
+    ) -> ChangesAppliedFields:
         arguments: Dict[str, Dict[str, Any]] = {
-            "request": {"type": "JSONRPCRequestInput!", "value": request},
-            "distributionId": {"type": "ID!", "value": distribution_id},
+            "projectId": {"type": "ID!", "value": project_id},
+            "changes": {"type": "BytesBase64!", "value": changes},
         }
         cleared_arguments = {
             key: value for key, value in arguments.items() if value["value"] is not None
         }
-        return JSONRPCResponseUnion(field_name="a2aSend", arguments=cleared_arguments)
+        return ChangesAppliedFields(
+            field_name="applyProjectChanges", arguments=cleared_arguments
+        )
 
     @classmethod
-    def register_version(cls, configuration: str) -> AgentBehaviorFields:
+    def create_project(
+        cls, project_name: str, *, environment_name: Optional[str] = None
+    ) -> ProjectMetadataFields:
         arguments: Dict[str, Dict[str, Any]] = {
-            "configuration": {"type": "String!", "value": configuration}
+            "projectName": {"type": "String!", "value": project_name},
+            "environmentName": {"type": "String", "value": environment_name},
         }
         cleared_arguments = {
             key: value for key, value in arguments.items() if value["value"] is not None
         }
-        return AgentBehaviorFields(
-            field_name="registerVersion", arguments=cleared_arguments
+        return ProjectMetadataFields(
+            field_name="createProject", arguments=cleared_arguments
         )
+
+    @classmethod
+    def update_project_metadata(
+        cls,
+        project_id: str,
+        *,
+        project_name: Optional[str] = None,
+        environment_name: Optional[str] = None
+    ) -> ProjectMetadataFields:
+        arguments: Dict[str, Dict[str, Any]] = {
+            "projectId": {"type": "ID!", "value": project_id},
+            "projectName": {"type": "String", "value": project_name},
+            "environmentName": {"type": "String", "value": environment_name},
+        }
+        cleared_arguments = {
+            key: value for key, value in arguments.items() if value["value"] is not None
+        }
+        return ProjectMetadataFields(
+            field_name="updateProjectMetadata", arguments=cleared_arguments
+        )
+
+    @classmethod
+    def delete_project(cls, project_id: str) -> GraphQLField:
+        arguments: Dict[str, Dict[str, Any]] = {
+            "projectId": {"type": "ID!", "value": project_id}
+        }
+        cleared_arguments = {
+            key: value for key, value in arguments.items() if value["value"] is not None
+        }
+        return GraphQLField(field_name="deleteProject", arguments=cleared_arguments)

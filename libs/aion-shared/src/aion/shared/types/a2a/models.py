@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Dict
 
 from a2a.types import Message, Artifact, TaskState
 from pydantic import RootModel, Field

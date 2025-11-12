@@ -6,7 +6,8 @@ import uvicorn
 from aion.shared.config import AgentConfig
 from aion.shared.logging import get_logger
 from aion.shared.logging.base import AionLogger
-from aion.shared.utils import replace_uvicorn_loggers, replace_logstash_loggers
+from aion.shared.settings import app_settings
+from aion.shared.utils.logging import replace_uvicorn_loggers, replace_logstash_loggers
 from dotenv import load_dotenv
 
 from aion.server.agent import register_available_adapters
@@ -27,14 +28,16 @@ class MissingAPIKeyError(Exception):
     """Exception for missing API key."""
 
 
-async def async_serve(agent_id: str, agent_config: AgentConfig, startup_callback=None):
+async def async_serve(agent_id: str, agent_config: AgentConfig, port: int, startup_callback=None):
     try:
+        app_settings.set_app_port(port)
         aion_agent = await agent_manager.create_agent(
             agent_id=agent_id,
             config=agent_config)
 
         app_factory = await AppFactory(
             aion_agent=aion_agent,
+            port=port,
             context=AppContext(
                 db_manager=db_manager,
                 store_manager=store_manager
@@ -45,16 +48,29 @@ async def async_serve(agent_id: str, agent_config: AgentConfig, startup_callback
         if not app_factory:
             return
 
+        # Deserialize socket if provided
+        sockets = None
+        if serialized_socket is not None:
+            from aion.shared.utils.ports.reservation import deserialize_socket
+            sock = deserialize_socket(serialized_socket)
+            sockets = [sock]
+            logger.debug(f"Using passed socket for agent '{agent_id}' on port {port}")
+
         uconfig = uvicorn.Config(
             app=app_factory.get_starlette_app(),
-            host=aion_agent.host,
-            port=aion_agent.port,
+            host=aion_agent.host if sockets is None else None,
+            port=aion_agent.port if sockets is None else None,
             log_config=None,
             access_log=False
         )
         server = uvicorn.Server(config=uconfig)
 
-        await server.serve()
+        # If we have sockets, we need to manually set them on the server
+        server = uvicorn.Server(config=uconfig)
+        if sockets is not None:
+            server.servers = []  # Clear default servers
+
+        await server.serve(sockets=sockets)
 
     except MissingAPIKeyError as ex:
         logger.error(f'Error: {ex}')
@@ -65,7 +81,7 @@ async def async_serve(agent_id: str, agent_config: AgentConfig, startup_callback
         exit(1)
 
 
-async def run_server(agent_id: str, agent_config: AgentConfig, startup_callback=None):
+async def run_server(agent_id: str, agent_config: AgentConfig, port: int, startup_callback=None, serialized_socket=None):
     """Starts the Currency Agent server."""
     try:
         # Configure custom loggers from uvicorn / logstash
@@ -75,9 +91,8 @@ async def run_server(agent_id: str, agent_config: AgentConfig, startup_callback=
         # Register agent adapters to handle a specific agent framework
         register_available_adapters()
 
-        # Run agent server
-        await async_serve(agent_id, agent_config, startup_callback)
-
+        # RUN AGENT
+        await async_serve(agent_id, agent_config, port, startup_callback, serialized_socket)
     except KeyboardInterrupt:
         logger.info("Interrupted by user")
         sys.exit(0)

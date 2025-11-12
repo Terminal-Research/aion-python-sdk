@@ -5,7 +5,7 @@ import sys
 from aion.shared.logging import get_logger
 
 from aion.server.db import validate_permissions
-from aion.shared.utils import psycopg_url
+from aion.shared.utils.db import psycopg_url
 from ..env import config
 
 logger = get_logger()
