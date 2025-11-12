@@ -1,7 +1,7 @@
 """CLI-specific port manager with business logic for AION agents and proxy."""
 from typing import Optional, List
 
-from aion.shared.aion_config import AionConfig
+from aion.shared.config import AionConfig
 from aion.shared.logging import get_logger
 from aion.shared.utils.ports import PortReservationManager
 

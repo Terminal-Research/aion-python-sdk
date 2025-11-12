@@ -1,9 +1,7 @@
 """
 Route definitions for AION Agent Proxy Server
 """
-from a2a.utils import AGENT_CARD_WELL_KNOWN_PATH
-from aion.shared.types import HealthResponse
-from aion.shared.utils.deployment import get_service_name, get_api_version
+from aion.shared.types import HealthResponse, A2AManifest
 from fastapi import Request, Response
 
 from .constants import (
@@ -13,7 +11,8 @@ from .constants import (
     AGENT_PROXY_URL,
 )
 from .handlers import RequestHandler
-from .types import SystemHealthResponse, ProxyManifest
+from .types import SystemHealthResponse
+from .utils import generate_a2a_manifest
 
 
 class ProxyRouter:
@@ -84,30 +83,18 @@ class ProxyRouter:
 
         @self.app.get(
             MANIFEST_URL,
-            response_model=ProxyManifest,
+            response_model=A2AManifest,
             summary="Manifest",
             description="Get a manifest from the deployment"
         )
-        async def get_manifest() -> ProxyManifest:
+        async def get_manifest() -> A2AManifest:
             """
             Get deployment manifest with service information and agent endpoints
 
             Returns:
                 RootManifest containing API version, service name, and agent endpoints
             """
-            endpoint_template = AGENT_PROXY_URL.replace("{path:path}", "{path}")
-
-            return ProxyManifest(
-                api_version=get_api_version(),
-                name=get_service_name(),
-                endpoints={
-                    agent_id: endpoint_template.format(
-                        agent_id=agent_id,
-                        path=AGENT_CARD_WELL_KNOWN_PATH.lstrip('/')
-                    )
-                    for agent_id in self.ap_server.agent_urls.keys()
-                }
-            )
+            return generate_a2a_manifest(agent_ids=list(self.ap_server.agent_urls.keys()))
 
     def _register_proxy(self) -> None:
         """Register proxy endpoint for forwarding requests to agents"""

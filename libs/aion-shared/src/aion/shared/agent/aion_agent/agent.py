@@ -9,7 +9,6 @@ import time
 from collections.abc import AsyncIterator
 from typing import Any, Optional
 
-from aion.shared.agent.inputs import AgentInput
 from aion.shared.agent.adapters import (
     ExecutionConfig,
     AgentAdapter,
@@ -18,6 +17,7 @@ from aion.shared.agent.adapters import (
     ExecutorAdapter,
 )
 from aion.shared.agent.card import AionAgentCard
+from aion.shared.agent.inputs import AgentInput
 from aion.shared.config.models import AgentConfig
 from aion.shared.logging.factory import get_logger
 from .models import AgentMetadata
@@ -52,12 +52,14 @@ class AionAgent:
             adapter: AgentAdapter,
             executor: ExecutorAdapter,
             native_agent: Any,
+            port: Optional[int] = None,
             metadata: Optional[AgentMetadata] = None,
     ):
         """Initialize AionAgent.
 
         Args:
             agent_id: Unique agent identifier
+            port: Port number
             config: Agent configuration
             adapter: Framework-specific adapter
             executor: Framework-specific executor
@@ -69,6 +71,7 @@ class AionAgent:
             AionAgent.from_config() factory methods instead.
         """
         self._id = agent_id
+        self.port = port
         self._config = config
         self._adapter = adapter
         self._executor = executor
@@ -91,6 +94,25 @@ class AionAgent:
     def id(self) -> str:
         """Agent unique identifier."""
         return self._id
+
+    @property
+    def port(self):
+        """Port number where agent is running."""
+        return self._port
+
+    @port.setter
+    def port(self, port: Optional[int]) -> None:
+        """Set port number."""
+        if port is None:
+            self._port = None
+            return
+
+        if not isinstance(port, int):
+            raise TypeError("Port must be an integer")
+
+        if port <= 0 or port > 65535:
+            raise ValueError("Port number must be between 0 and 65535")
+        self._port = port
 
     @property
     def config(self) -> AgentConfig:
@@ -117,7 +139,9 @@ class AionAgent:
         Lazy-loaded on first access.
         """
         if self._card is None:
-            self._card = AionAgentCard.from_config(self._config)
+            self._card = AionAgentCard.from_config(
+                config=self._config,
+                base_url=f"http://{self.host}:{self.port}")
         return self._card
 
     @property
@@ -128,10 +152,6 @@ class AionAgent:
     @property
     def host(self):
         return "0.0.0.0"
-
-    @property
-    def port(self) -> int:
-        return self.config.port
 
     async def execute(
             self,

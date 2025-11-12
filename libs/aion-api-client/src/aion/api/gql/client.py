@@ -2,6 +2,7 @@ from typing import Optional, List, Any, AsyncIterator
 
 from aion.shared.config import AionConfig
 from aion.shared.logging import get_logger
+from aion.shared.types import A2AManifest
 
 from aion.api.http import AionJWTManager
 from .generated.graphql_client import (
@@ -177,16 +178,21 @@ class AionGqlClient:
                 **kwargs):
             yield chunk
 
-    async def register_version(self, config: AionConfig):
-        """Register a new agent version with the provided configuration.
+    async def register_version(self, manifest: A2AManifest):
+        """Register a new agent version with the provided A2A manifest.
+
+        Submits the service manifest to the Aion platform for version registration
+        and service discovery. The manifest contains API version, service name,
+        and agent endpoint mappings according to the aion.manifest/v1 specification.
 
         Args:
-            config (AionConfig): The aion configuration object containing
+            manifest (A2AManifest): The A2A manifest containing service configuration,
+                including api_version, name, and endpoints mapping.
         """
         self._validate_client_before_execute()
 
-        configuration = agent_config.model_dump_json()
-        register_field = Mutation.register_version(configuration)
+        manifest_val = manifest.model_dump_json()
+        register_field = Mutation.register_version(manifest_val)
         return await self.client.mutation(
             register_field,
             operation_name="RegisterVersion"

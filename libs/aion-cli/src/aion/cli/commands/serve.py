@@ -1,11 +1,8 @@
 """CLI command for serving AION agents and proxy"""
-import asyncio
 from dataclasses import dataclass
 
 import asyncclick as click
 from aion.cli.handlers import ServeHandler
-from aion.cli.services import AionConfigBroadcastService
-from aion.cli.utils.cli_messages import welcome_message
 from aion.shared.config.reader import ConfigurationError, AionConfigReader
 from aion.shared.logging import get_logger
 
@@ -97,8 +94,6 @@ async def serve(
 ) -> None:
     """Run all configured AION agents and proxy server in separate processes"""
 
-    handler = ServeHandler()
-
     try:
         # Load configuration
         reader = AionConfigReader()
@@ -116,8 +111,9 @@ async def serve(
             port_range_end=port_range_end
         )
 
-        # Start servers with calculated port allocation
-        successful_agents, failed_agents, proxy_started = await handler.startup(
+        # Run complete lifecycle through handler
+        handler = ServeHandler()
+        await handler.run(
             config=config,
             proxy_port=strategy.proxy_port,
             port_range_start=strategy.port_range_start,
@@ -126,20 +122,6 @@ async def serve(
             proxy_port_search_end=strategy.proxy_port_search_end
         )
 
-        # Exit if no agents started successfully
-        if not successful_agents:
-            return
-
-        # Broadcast config to aion api
-        asyncio.create_task(AionConfigBroadcastService().execute(config))
-
-        # Monitor processes (blocking call until shutdown)
-        await handler.monitor()
-
     except Exception as ex:
         logger.exception(f"Failed to start server: {str(ex)}")
         raise click.ClickException(f"Unable to start AION system: {str(ex)}")
-
-    finally:
-        # Ensure graceful shutdown
-        await handler.shutdown()

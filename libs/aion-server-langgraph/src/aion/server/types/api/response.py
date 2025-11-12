@@ -1,6 +1,6 @@
 from typing import Dict
 
-from aion.shared.aion_config.models import ConfigurationField
+from aion.shared.config.models import ConfigurationField
 from pydantic import BaseModel, Field
 
 

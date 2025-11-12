@@ -27,6 +27,7 @@ class AionAgentCard(AgentCard):
     def from_config(
             cls,
             config: AgentConfig,
+            base_url: str,
     ) -> "AionAgentCard":
         capabilities = AgentCapabilities(
             streaming=config.capabilities.streaming,
@@ -59,7 +60,7 @@ class AionAgentCard(AgentCard):
         return cls(
             name=config.name or "Graph Agent",
             description=config.description or "Agent based on external graph",
-            url=config.base_url,
+            url=base_url,
             version=config.version or "1.0.0",
             default_input_modes=config.input_modes,
             default_output_modes=config.output_modes,

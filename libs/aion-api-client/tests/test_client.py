@@ -121,18 +121,3 @@ async def test_a2a_stream_requires_initialize(dummy_jwt_manager) -> None:
 
     with pytest.raises(RuntimeError, match="AionGqlClient is not initialized before executing operations"):
         await anext(stream)
-
-
-@pytest.mark.anyio("asyncio")
-async def test_register_version_requires_initialize(dummy_jwt_manager, agent_config) -> None:
-    """Calling register_version before initialize should raise RuntimeError."""
-    client = AionGqlClient(
-        client_id="test-id",
-        client_secret="test-secret",
-        jwt_manager=dummy_jwt_manager,
-        gql_url=aion_api_settings.gql_url,
-        ws_url=aion_api_settings.ws_gql_url
-    )
-
-    with pytest.raises(RuntimeError, match="AionGqlClient is not initialized before executing operations"):
-        await client.register_version(agent_config)

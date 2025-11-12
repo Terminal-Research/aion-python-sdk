@@ -319,11 +319,6 @@ class AppSettings(BaseEnvSettings):
         alias="LOGSTASH_PORT"
     )
 
-    port: Optional[int] = None
-
-    def set_app_port(self, value: int) -> None:
-        self.port = value
-
     @property
     def is_logstash_configured(self) -> bool:
         """Check if logstash is configured with both host and port."""

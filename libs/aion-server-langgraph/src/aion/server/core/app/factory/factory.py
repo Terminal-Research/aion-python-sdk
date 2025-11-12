@@ -51,7 +51,6 @@ class AppFactory:
     def __init__(
             self,
             aion_agent: AionAgent,
-            port: int,
             context: AppContext,
             startup_callback=None
     ):
@@ -62,7 +61,6 @@ class AppFactory:
             startup_callback: Optional callback to call after initialization
         """
         self.aion_agent = aion_agent
-        self.port = port
         self.context = context
 
         # Application components

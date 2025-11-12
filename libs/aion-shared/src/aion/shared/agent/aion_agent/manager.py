@@ -86,6 +86,7 @@ class AgentManager(metaclass=Singleton):
     async def create_agent(
             self,
             agent_id: Optional[str] = None,
+            port: Optional[int] = None,
             config: Optional[AgentConfig] = None,
     ) -> AionAgent:
         """Create and register a new agent.
@@ -96,6 +97,7 @@ class AgentManager(metaclass=Singleton):
 
         Args:
             agent_id: Unique agent identifier (optional if set via set_agent_config)
+            port: Optional port number to bind to (optional)
             config: Agent configuration (optional if set via set_agent_config)
 
         Returns:
@@ -129,29 +131,22 @@ class AgentManager(metaclass=Singleton):
 
         # Create agent using auto-detection
         agent = await AionAgent.from_config(agent_id=final_agent_id, config=final_config)
+        agent.port = port
 
         # Store agent
         self._agent = agent
         return agent
 
-    def get_agent(self) -> Optional[AionAgent]:
+    def get_agent(self, raise_: bool = False) -> Optional[AionAgent]:
         """Get current agent instance.
 
         Returns:
             Optional[AionAgent]: Current agent or None if no agent is loaded
-        """
-        return self._agent
-
-    def get_agent_or_raise(self) -> AionAgent:
-        """Get current agent or raise if not loaded.
-
-        Returns:
-            AionAgent: Current agent instance
 
         Raises:
-            RuntimeError: If no agent is loaded
+            RuntimeError: If no agent is loaded (if raise_ is True)
         """
-        if self._agent is None:
+        if not self._agent and raise_:
             raise RuntimeError("No agent is currently loaded")
         return self._agent
 
@@ -172,32 +167,6 @@ class AgentManager(metaclass=Singleton):
             self._agent_config = None
         else:
             logger.debug("No agent to clear")
-
-    async def reload_agent(self, config: AgentConfig) -> AionAgent:
-        """Reload agent with new configuration.
-
-        This is a convenience method that clears the current agent and
-        creates a new one with the provided configuration.
-
-        Args:
-            config: New agent configuration
-
-        Returns:
-            AionAgent: Newly created agent instance
-
-        Raises:
-            ValueError: If configuration is invalid
-            FileNotFoundError: If agent module not found
-        """
-        agent_id = config.id
-
-        logger.info(f"Reloading agent '{agent_id}'...")
-
-        # Clear existing agent
-        self.clear()
-
-        # Create new agent
-        return await self.create_agent(agent_id, config)
 
     def __repr__(self) -> str:
         """Return string representation of the manager."""

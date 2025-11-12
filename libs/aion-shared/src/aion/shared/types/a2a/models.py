@@ -9,6 +9,7 @@ __all__ = [
     "Conversation",
     "ContextsList",
     "ConversationTaskStatus",
+    "A2AManifest",
 ]
 
 
@@ -42,3 +43,23 @@ class Conversation(A2ABaseModel):
 class ContextsList(RootModel[List[str]]):
     """A list of context strings for LangGraph agent communication."""
     root: List[str]
+
+
+class A2AManifest(A2ABaseModel):
+    """Data model for root manifest representation.
+
+    Represents the root-level service manifest that defines the API version,
+    service name, and available agent endpoints for A2A communication.
+    """
+    api_version: str = Field(
+        ...,
+        description="Manifest API version."
+    )
+    name: str = Field(
+        ...,
+        description="Service name"
+    )
+    endpoints: Dict[str, str] = Field(
+        default_factory=dict,
+        description="A map of agent identifiers to relative paths"
+    )

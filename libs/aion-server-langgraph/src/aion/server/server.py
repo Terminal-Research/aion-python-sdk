@@ -3,15 +3,14 @@ import os
 import sys
 
 import uvicorn
+from aion.shared.agent import agent_manager
 from aion.shared.config import AgentConfig
 from aion.shared.logging import get_logger
 from aion.shared.logging.base import AionLogger
-from aion.shared.settings import app_settings
 from aion.shared.utils.logging import replace_uvicorn_loggers, replace_logstash_loggers
 from dotenv import load_dotenv
 
 from aion.server.agent import register_available_adapters
-from aion.shared.agent import agent_manager
 from aion.server.core.app import AppFactory, AppContext
 from aion.server.db import db_manager
 from aion.server.tasks import store_manager
@@ -28,16 +27,21 @@ class MissingAPIKeyError(Exception):
     """Exception for missing API key."""
 
 
-async def async_serve(agent_id: str, agent_config: AgentConfig, port: int, startup_callback=None):
+async def async_serve(
+        agent_id: str,
+        agent_config: AgentConfig,
+        port: int,
+        startup_callback=None,
+        serialized_socket=None
+):
     try:
-        app_settings.set_app_port(port)
         aion_agent = await agent_manager.create_agent(
             agent_id=agent_id,
+            port=port,
             config=agent_config)
 
         app_factory = await AppFactory(
             aion_agent=aion_agent,
-            port=port,
             context=AppContext(
                 db_manager=db_manager,
                 store_manager=store_manager
@@ -63,8 +67,6 @@ async def async_serve(agent_id: str, agent_config: AgentConfig, port: int, start
             log_config=None,
             access_log=False
         )
-        server = uvicorn.Server(config=uconfig)
-
         # If we have sockets, we need to manually set them on the server
         server = uvicorn.Server(config=uconfig)
         if sockets is not None:
@@ -81,7 +83,13 @@ async def async_serve(agent_id: str, agent_config: AgentConfig, port: int, start
         exit(1)
 
 
-async def run_server(agent_id: str, agent_config: AgentConfig, port: int, startup_callback=None, serialized_socket=None):
+async def run_server(
+        agent_id: str,
+        agent_config: AgentConfig,
+        port: int,
+        startup_callback=None,
+        serialized_socket=None
+):
     """Starts the Currency Agent server."""
     try:
         # Configure custom loggers from uvicorn / logstash

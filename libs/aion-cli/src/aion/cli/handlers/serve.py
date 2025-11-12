@@ -1,19 +1,22 @@
 """Handler for orchestrating AION server startup and management"""
+import asyncio
 import signal
 import sys
 from typing import Optional
+
+from aion.shared.config import AionConfig
+from aion.shared.logging import get_logger
+from aion.shared.utils.processes import ProcessManager
 
 from aion.cli.services import (
     ServeAgentStartupService,
     ServeMonitoringService,
     ServeProxyStartupService,
     ServeShutdownService,
+    AionDeploymentRegisterVersionService,
 )
 from aion.cli.utils.cli_messages import welcome_message
 from aion.cli.utils.port_manager import AionPortManager
-from aion.shared.config import AionConfig
-from aion.shared.logging import get_logger
-from aion.shared.utils.processes import ProcessManager
 
 logger = get_logger()
 
@@ -22,15 +25,9 @@ class ServeHandler:
     """
     Handler for orchestrating AION agent and proxy server lifecycle.
 
-    This handler coordinates the startup, monitoring, and shutdown of all
-    AION agents and proxy server by delegating to specialized services.
-
-    Example:
-        handler = ServeHandler()
-        successful, failed, proxy_started = await handler.startup(config)
-        if successful:
-            await handler.monitor()
-            await handler.shutdown()
+    This handler coordinates the complete lifecycle: startup, config broadcast,
+    monitoring, and shutdown of all AION agents and proxy server by delegating
+    to specialized services.
     """
 
     def __init__(self):
@@ -58,14 +55,61 @@ class ServeHandler:
             self.port_manager.release_all()
         sys.exit(0)
 
-    async def startup(
-        self,
-        config: AionConfig,
-        proxy_port: int | None = None,
-        port_range_start: int = 8000,
-        port_range_end: int = 9000,
-        proxy_port_search_start: int = 8000,
-        proxy_port_search_end: int = 8100
+    async def run(
+            self,
+            config: AionConfig,
+            proxy_port: int | None = None,
+            port_range_start: int = 8000,
+            port_range_end: int = 9000,
+            proxy_port_search_start: int = 8000,
+            proxy_port_search_end: int = 8100
+    ) -> None:
+        """
+        Complete lifecycle: startup, broadcast config, monitor, and shutdown.
+
+        This is the main entry point that orchestrates the entire AION system lifecycle.
+
+        Args:
+            config: AION configuration instance
+            proxy_port: Optional port for proxy server (if None, will auto-find)
+            port_range_start: Starting port of the range for agents
+            port_range_end: Ending port of the range for agents
+            proxy_port_search_start: Starting port for proxy search if auto-finding
+            proxy_port_search_end: Ending port for proxy search if auto-finding
+        """
+        try:
+            # Startup phase
+            successful_agents, failed_agents, proxy_started = await self._startup(
+                config=config,
+                proxy_port=proxy_port,
+                port_range_start=port_range_start,
+                port_range_end=port_range_end,
+                proxy_port_search_start=proxy_port_search_start,
+                proxy_port_search_end=proxy_port_search_end
+            )
+
+            # Exit if no agents started successfully
+            if not successful_agents:
+                return
+
+            # Broadcast config to aion api
+            asyncio.create_task(AionDeploymentRegisterVersionService().execute(successful_agents))
+
+            # Monitor processes (blocking call until shutdown)
+            await self._monitor()
+
+        finally:
+            # Ensure graceful shutdown
+            await self.shutdown()
+
+    async def _startup(
+            self,
+            config: AionConfig,
+            proxy_port: int | None = None,
+            port_range_start: int = 8000,
+            port_range_end: int = 9000,
+            proxy_port_search_start: int = 8000,
+            proxy_port_search_end: int = 8100
     ) -> tuple[list[str], list[str], bool]:
         """
         Start all configured agents and proxy server with dynamic port allocation.
@@ -94,7 +138,8 @@ class ServeHandler:
                 proxy_port_search_end
             )
             if found_proxy_port is None:
-                logger.error(f"Failed to auto-find proxy port in range {proxy_port_search_start}-{proxy_port_search_end}")
+                logger.error(
+                    f"Failed to auto-find proxy port in range {proxy_port_search_start}-{proxy_port_search_end}")
                 self.port_manager.release_all()
                 return [], [], False
 
@@ -117,9 +162,9 @@ class ServeHandler:
             logger.info(f"Reserved proxy port {proxy_port}")
 
         if not self.port_manager.reserve_agent_ports(
-            agent_ids=list(config.agents.keys()),
-            port_range_start=port_range_start,
-            port_range_end=port_range_end
+                agent_ids=list(config.agents.keys()),
+                port_range_start=port_range_start,
+                port_range_end=port_range_end
         ):
             logger.error("Failed to reserve agent ports")
             self.port_manager.release_all()
@@ -171,7 +216,7 @@ class ServeHandler:
 
         return self.successful_agents, self.failed_agents, self.proxy_started
 
-    async def monitor(self) -> None:
+    async def _monitor(self) -> None:
         """
         Monitor running processes and handle restarts.
 
@@ -182,7 +227,7 @@ class ServeHandler:
             RuntimeError: If called before startup()
         """
         if not self.process_manager or not self.config:
-            raise RuntimeError("monitor() called before startup()")
+            raise RuntimeError("_monitor() called before _startup()")
 
         await ServeMonitoringService().execute(
             successful_agents=self.successful_agents,

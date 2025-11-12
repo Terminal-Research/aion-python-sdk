@@ -1,1 +1,1 @@
-from .config_broadcast import AionConfigBroadcastService
+from .deployment_register_version import AionDeploymentRegisterVersionService

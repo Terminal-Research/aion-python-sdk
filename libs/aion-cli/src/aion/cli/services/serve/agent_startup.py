@@ -8,6 +8,8 @@ from aion.shared.services import BaseExecuteService
 from aion.shared.logging import get_logger
 from aion.shared.utils.processes import ProcessManager
 
+from aion.cli.utils.port_manager import AionPortManager
+
 logger = get_logger()
 
 
@@ -23,7 +25,7 @@ class ServeAgentStartupService(BaseExecuteService):
             self,
             config: AionConfig,
             process_manager: ProcessManager,
-            port_manager
+            port_manager: AionPortManager
     ) -> tuple[list[str], list[str]]:
         """
         Start all configured agents in separate processes in parallel.
@@ -67,7 +69,7 @@ class ServeAgentStartupService(BaseExecuteService):
             agent_id: str,
             agent_config: AgentConfig,
             process_manager: ProcessManager,
-            port_manager
+            port_manager: AionPortManager
     ) -> bool:
         """
         Start a single agent in a separate process and wait for startup confirmation.

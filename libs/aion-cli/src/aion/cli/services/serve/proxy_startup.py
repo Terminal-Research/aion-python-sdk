@@ -5,7 +5,7 @@ from typing import Dict
 
 from aion.proxy import AionAgentProxyServer
 from aion.shared.config import AionConfig
-from aion.shared.base import BaseExecuteService
+from aion.shared.services import BaseExecuteService
 from aion.shared.logging import get_logger
 from aion.shared.utils.processes import ProcessManager
 
