@@ -12,26 +12,44 @@ Include `aion-cli` as a dependency in your Poetry project.
 
 ### `aion serve`
 
-Starts all configured AION agents and an optional proxy server that wraps your LangGraph agents with the A2A (Agent-to-Agent) protocol.
+Starts all configured AION agents and a proxy server that wraps your LangGraph agents with the A2A (Agent-to-Agent) protocol.
 
 **Usage:**
 
 ```bash
-poetry run aion serve
+poetry run aion serve [OPTIONS]
 ```
 
 **Description:**
-This command reads your `aion.yaml` configuration and launches all configured AION Agent API servers. The system can run multiple agents simultaneously and includes an optional proxy server for unified access. Each agent server provides HTTP endpoints for interacting with your configured LangGraph agents and includes automatic API documentation.
+This command reads your `aion.yaml` configuration and launches all configured AION Agent API servers. The system automatically runs multiple agents simultaneously and includes a proxy server for unified access. Ports are assigned automatically unless explicitly specified. Each agent server provides HTTP endpoints for interacting with your configured agents and includes automatic API documentation.
+
+**Options:**
+
+* `--port INTEGER` - Port for the proxy server (if not specified, will auto-find starting from 8000)
+* `--port-range-start INTEGER` - Starting port of the range for proxy and agents (default: proxy_port + 1 if proxy specified, else 8000)
+* `--port-range-end INTEGER` - Ending port of the range for proxy and agents (default: port_range_start + 1000)
 
 **Configuration Requirements:**
 - At least one agent must be configured in your `aion.yaml` file
-- Proxy server configuration is optional
+- Proxy server is started automatically
 
-**Example:**
+**Examples:**
 
 ```bash
-# Start all configured agents and proxy server
+# Start with automatic port assignment (default)
 poetry run aion serve
+
+# Start proxy on specific port, agents will use ports starting from 10001
+poetry run aion serve --port 10000
+
+# Start with custom port range for all services
+poetry run aion serve --port-range-start 8000 --port-range-end 9000
+
+# Start proxy on port 7000, agents starting from 7001
+poetry run aion serve --port 7000 --port-range-start 7001
+
+# Specify only the port range (proxy will auto-find within the range)
+poetry run aion serve --port-range-start 8000 --port-range-end 8100
 ```
 
 **Welcome Message:**
@@ -42,13 +60,13 @@ Welcome to
 ╔═╗╦╔═╗╔╗╔  ╔═╗╔═╗╔═╗╔╗╔╔╦╗  ╔═╗╔═╗╦
 ╠═╣║║ ║║║║  ╠═╣║ ╦║╣ ║║║ ║   ╠═╣╠═╝║
 ╩ ╩╩╚═╝╝╚╝  ╩ ╩╚═╝╚═╝╝╚╝ ╩   ╩ ╩╩  ╩
-- Proxy API: http://localhost:10000
+- Proxy API: http://localhost:{proxy_port}
 - Agents:
   * agent-id:
-    - Card: http://localhost:port/.well-known/agent-card.json
-    - Card (Proxy): http://localhost:10000/agent-id/.well-known/agent-card.json
-    - RPC: http://localhost:port
-    - RPC (Proxy): http://localhost:10000/agent-id/
+    - Card: http://localhost:{agent_port}/.well-known/agent-card.json
+    - Card (Proxy): http://localhost:{proxy_port}/agents/agent-id/.well-known/agent-card.json
+    - RPC: http://localhost:{agent_port}
+    - RPC (Proxy): http://localhost:{proxy_port}/agents/agent-id/
 ```
 
 
@@ -56,16 +74,19 @@ Welcome to
 **Server Endpoints:**
 The system provides multiple access methods for each agent:
 
-**Proxy Server Access (if configured):**
-* **Proxy API Base:** `http://localhost:10000` (or configured proxy port)
-* **Agent RPC (via Proxy):** `http://localhost:10000/{agent_id}/`
-* **Agent Card (via Proxy):** `http://localhost:10000/{agent_id}/.well-known/agent-card.json`
+**Proxy Server Access:**
+* **Proxy API Base:** `http://localhost:{proxy_port}` (automatically assigned or specified with `--port`)
+* **Proxy Manifest:** `http://localhost:{proxy_port}/.well-known/manifest.json`
+* **Agent RPC (via Proxy):** `http://localhost:{proxy_port}/agents/{agent_id}/`
+* **Agent Card (via Proxy):** `http://localhost:{proxy_port}/agents/{agent_id}/.well-known/agent-card.json`
+* **Agent Configuration (via Proxy):** `http://localhost:{proxy_port}/agents/{agent_id}/.well-known/configuration.json`
 
 **Direct Agent Access:**
 * **Agent RPC (Direct):** `http://{agent_host}:{agent_port}`
 * **Agent Card (Direct):** `http://{agent_host}:{agent_port}/.well-known/agent-card.json`
+* **Agent Configuration (Direct):** `http://{agent_host}:{agent_port}/.well-known/configuration.json`
 
-Each configured agent will display both direct and proxy endpoints (if proxy is enabled) in the welcome message upon startup.
+Each configured agent will display both direct and proxy endpoints in the welcome message upon startup.
 
 ---
 
@@ -168,10 +189,41 @@ Ensure your project is properly configured before running the server command.
 The AION CLI supports running multiple agents simultaneously:
 
 - Each agent runs in its own process
-- Agents can be configured with different ports, and settings
-- Optional proxy server provides unified access to all agents
+- Ports are assigned automatically or can be specified via CLI options
+- Proxy server provides unified access to all agents
 - Failed agents don't prevent other agents from starting
 - System monitors all processes and provides graceful shutdown
+
+## Port Assignment Strategy
+
+The system uses intelligent port assignment:
+
+**Default Behavior (no options specified):**
+- Proxy port: Auto-find starting from 8000
+- Agent ports: Auto-find starting from 8000, within range 8000-9000
+
+**With `--port` specified:**
+- Proxy port: Uses specified port
+- Agent ports: Auto-find starting from `proxy_port + 1`
+
+**With `--port-range-start` and `--port-range-end`:**
+- All ports (proxy and agents) are found within the specified range
+- Proxy searches first, then agents use remaining ports
+
+**Examples:**
+```bash
+# Default: proxy and agents start searching from 8000
+aion serve
+
+# Proxy on 10000, agents from 10001+
+aion serve --port 10000
+
+# All services between 7000-7100
+aion serve --port-range-start 7000 --port-range-end 7100
+
+# Proxy on 5000, agents between 8000-9000
+aion serve --port 5000 --port-range-start 8000 --port-range-end 9000
+```
 
 ## Troubleshooting
 
@@ -179,18 +231,20 @@ The AION CLI supports running multiple agents simultaneously:
 
 * Ensure `aion-server-langgraph` is installed
 * Check that your `aion.yaml` configuration is valid and contains at least one agent
-* Verify that configured ports are not already in use
+* Verify that ports in the specified range are available
+* Try specifying a different port range with `--port-range-start` and `--port-range-end`
 * Check logs for specific agent startup failures
 
 **Chat connection issues:**
 
-* Ensure the agent server (or proxy server) is running
-* Verify the agent URL is correct  
+* Ensure the proxy server is running
+* Verify the proxy URL is correct (check the welcome message for the actual port)
 * Check authentication token if required
-* If using `--graph-id`, ensure the agent ID exists
+* If using `--agent_id`, ensure the agent ID exists in your configuration
 
-**Multi-agent issues:**
+**Port conflicts:**
 
-* Check that each agent is configured with unique ports
-* Review startup logs to identify which agents failed to start
-* Use proxy server for simplified agent access
+* If default ports (8000-9000) are busy, specify a custom range
+* Use `--port` to set a specific proxy port
+* The system will automatically skip occupied ports within the range
+* Check system logs to see which ports were assigned

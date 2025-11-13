@@ -30,7 +30,19 @@ Returns agent card with:
 - Supported capabilities/methods
 - Additional metadata
 
-### 3. Health Check Endpoint
+### 3. Configuration Endpoint
+
+**Path:** `/.well-known/configuration.json`
+**Method:** `GET`
+**Purpose:** Agent configuration and protocol version information
+
+Returns agent configuration with:
+- Protocol version
+- Agent-specific configuration details
+
+See more: [configuration.json specification](https://www.notion.so/appmail/configuration-json-2a7c8d8a1c1a80368745ebaab40455fb)
+
+### 4. Health Check Endpoint
 
 **Path:** `/health/`
 **Method:** `GET`
@@ -65,9 +77,22 @@ Returns:
 
 Polls each agent's `/health/` endpoint with 5-second timeout.
 
-### 3. Agent Request Forwarding
+### 3. Proxy Manifest Endpoint
 
-**Path:** `/{agent_id}/{path}`
+**Path:** `/.well-known/manifest.json`
+**Method:** `GET`
+**Purpose:** Proxy server manifest with service information and agent endpoints
+
+Returns manifest with:
+- Service name and version
+- List of available agents and their endpoints
+- Protocol version information
+
+See more: [manifest.json specification](https://www.notion.so/appmail/manifest-json-2a7c8d8a1c1a8082b7a7dcf6b42eec93)
+
+### 4. Agent Request Forwarding
+
+**Path:** `/agents/{agent_id}/{path}`
 **Methods:** `GET`, `POST`, `PUT`, `DELETE`, `PATCH`, `OPTIONS`, `HEAD`
 **Purpose:** Forward requests to specific agents
 
@@ -76,9 +101,9 @@ Routes requests to agents based on `agent_id` in URL:
 - `{path}` - Path to forward to the agent
 
 Examples:
-- `/research-agent/` - Forward JSON-RPC request to research-agent
-- `/research-agent/.well-known/agent-card.json` - Get agent card
-- `/research-agent/health/` - Check agent health
+- `/agents/research-agent/` - Forward JSON-RPC request to research-agent
+- `/agents/research-agent/.well-known/agent-card.json` - Get agent card
+- `/agents/research-agent/health/` - Check agent health
 
 Error responses:
 - `404` - Agent not found
@@ -96,6 +121,7 @@ Error responses:
 |----------|--------|---------|
 | `/` | POST | JSON-RPC A2A communication |
 | `/.well-known/agent-card.json` | GET | Agent metadata and discovery |
+| `/.well-known/configuration.json` | GET | Agent configuration and protocol version |
 | `/health/` | GET | Agent health status |
 
 ### Proxy Server Endpoints
@@ -104,4 +130,5 @@ Error responses:
 |----------|--------|---------|
 | `/health/` | GET | Proxy health check |
 | `/health/system/` | GET | System-wide health (proxy + all agents) |
-| `/{agent_id}/{path}` | ANY | Forward request to agent |
+| `/.well-known/manifest.json` | GET | Proxy manifest with service info and agent endpoints |
+| `/agents/{agent_id}/{path}` | ANY | Forward request to agent |
