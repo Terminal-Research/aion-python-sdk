@@ -7,6 +7,7 @@ This document defines the common data structures used across A2A protocol extens
 - [Conversation](#conversation) - Complete conversation context with history and artifacts
 - [ContextsList](#contextslist) - List of available context identifiers
 - [ConversationTaskStatus](#conversationtaskstatus) - Task lifecycle status information
+- [A2AManifest](#a2amanifest) - Root-level service manifest with API version and agent endpoints
 
 ---
 
@@ -76,10 +77,32 @@ A list of context identifiers representing available conversations.
 
 Status information about the current state of a conversation task.
 
-- **`state`** - Current lifecycle state of the task (e.g., "pending", "running", "completed", "failed")
+- **`state`** - Current lifecycle state of the task (e.g., "pending", "running", "completed", "failed") - `TaskState`
 
 ```json
 {
   "state": "completed"
+}
+```
+
+---
+
+## A2AManifest
+
+Root-level service manifest that defines the API version, service name, and available agent endpoints for A2A communication.
+
+- **`api_version`** - Manifest API version - `str`
+- **`name`** - Service name - `str`
+- **`endpoints`** - A map of agent identifiers to their relative paths - `Dict[str, str]`
+
+```json
+{
+  "api_version": "1.0.0",
+  "name": "aion-service",
+  "endpoints": {
+    "chat_assistant": "/agents/chat_assistant",
+    "data_analyst": "/agents/data_analyst",
+    "web_crawler": "/agents/web_crawler"
+  }
 }
 ```

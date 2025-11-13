@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-import logging
 import sys
 
-from ..env import config
-from aion.server.db import validate_permissions, psycopg_url
+from aion.shared.logging import get_logger
 
-logger = logging.getLogger(__name__)
+from aion.server.db import validate_permissions
+from aion.shared.utils.db import psycopg_url
+from ..env import config
+
+logger = get_logger()
 
 
 async def fail_if_no_permissions():

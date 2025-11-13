@@ -1,20 +1,98 @@
 """CLI command for serving AION agents and proxy"""
-import logging
+from dataclasses import dataclass
 
 import asyncclick as click
-from aion.shared.aion_config.reader import ConfigurationError, AionConfigReader
+from aion.cli.handlers import ServeHandler
+from aion.shared.config.reader import ConfigurationError, AionConfigReader
+from aion.shared.logging import get_logger
 
-from aion.cli.handlers import ServerManager
-from aion.cli.utils.cli_messages import welcome_message
+logger = get_logger()
 
-logger = logging.getLogger(__name__)
+
+@dataclass
+class PortAllocationStrategy:
+    """Strategy for allocating ports to proxy and agents."""
+
+    proxy_port: int | None
+    port_range_start: int
+    port_range_end: int
+    proxy_port_search_start: int
+    proxy_port_search_end: int
+
+    @classmethod
+    def calculate(
+        cls,
+        proxy_port: int | None,
+        port_range_start: int | None,
+        port_range_end: int | None
+    ) -> "PortAllocationStrategy":
+        """
+        Calculate port allocation strategy based on CLI parameters.
+
+        Args:
+            proxy_port: Explicit proxy port (None = auto-find)
+            port_range_start: Starting port of range (None = auto-calculate)
+            port_range_end: Ending port of range (None = auto-calculate)
+
+        Returns:
+            PortAllocationStrategy with calculated values
+        """
+        # Auto-calculate port range start if not specified
+        if port_range_start is None:
+            # If proxy port explicitly specified, start range after it
+            # Otherwise use default 8000
+            port_range_start = (proxy_port + 1) if proxy_port is not None else 8000
+
+        # Auto-calculate port range end if not specified
+        if port_range_end is None:
+            # Default range: 1000 ports
+            port_range_end = port_range_start + 1000
+
+        # Determine proxy port search range
+        if proxy_port is None:
+            # Use port range for proxy search
+            proxy_port_search_start = port_range_start
+            proxy_port_search_end = port_range_end
+        else:
+            # Proxy port explicitly specified, no search needed
+            # These values won't be used, but set for consistency
+            proxy_port_search_start = 8000
+            proxy_port_search_end = 8100
+
+        return cls(
+            proxy_port=proxy_port,
+            port_range_start=port_range_start,
+            port_range_end=port_range_end,
+            proxy_port_search_start=proxy_port_search_start,
+            proxy_port_search_end=proxy_port_search_end
+        )
 
 
 @click.command(name="serve")
-async def serve() -> None:
+@click.option(
+    "--port",
+    type=int,
+    default=None,
+    help="Port for the proxy server (if not specified, will auto-find starting from 8000)"
+)
+@click.option(
+    "--port-range-start",
+    type=int,
+    default=None,
+    help="Starting port of the range for proxy and agents (default: proxy_port + 1 if proxy specified, else 8000)"
+)
+@click.option(
+    "--port-range-end",
+    type=int,
+    default=None,
+    help="Ending port of the range for proxy and agents (default: port_range_start + 1000)"
+)
+async def serve(
+    port: int | None,
+    port_range_start: int | None,
+    port_range_end: int | None
+) -> None:
     """Run all configured AION agents and proxy server in separate processes"""
-
-    server_manager = ServerManager()
 
     try:
         # Load configuration
@@ -26,44 +104,24 @@ async def serve() -> None:
                 message="No agents configured, please add agents to your AION configuration"
             )
 
-        use_proxy = bool(config.proxy)
+        # Calculate port allocation strategy
+        strategy = PortAllocationStrategy.calculate(
+            proxy_port=port,
+            port_range_start=port_range_start,
+            port_range_end=port_range_end
+        )
 
-        # Initialize server manager
-        server_manager.initialize()
+        # Run complete lifecycle through handler
+        handler = ServeHandler()
+        await handler.run(
+            config=config,
+            proxy_port=strategy.proxy_port,
+            port_range_start=strategy.port_range_start,
+            port_range_end=strategy.port_range_end,
+            proxy_port_search_start=strategy.proxy_port_search_start,
+            proxy_port_search_end=strategy.proxy_port_search_end
+        )
 
-        # Start all configured agents
-        successful_agents, failed_agents = server_manager.start_all_agents(config)
-
-        # Report agent startup results
-        if successful_agents:
-            logger.info(f"Successfully started agents: {', '.join(successful_agents)}")
-
-        if failed_agents:
-            logger.error(f"Failed to start agents: {', '.join(failed_agents)}")
-
-        if not successful_agents:
-            logger.error("No agents started successfully, exiting...")
-            return
-
-        # Start proxy server if not disabled
-        proxy_started = False
-        if use_proxy:
-            logger.info("Starting proxy server...")
-            if server_manager.start_proxy(config):
-                proxy_started = True
-                logger.info("Proxy server started successfully")
-            else:
-                logger.error("Failed to start proxy server")
-
-        print(welcome_message(aion_config=config, proxy_enabled=proxy_started))
-
-        # Monitor processes and keep main process running
-        await server_manager.monitor_processes(successful_agents, proxy_started, config)
-
-    except Exception as e:
-        logger.error(f"Failed to start server: {str(e)}")
-        raise click.ClickException(f"Unable to start AION system: {str(e)}")
-
-    finally:
-        # Ensure graceful shutdown
-        server_manager.shutdown()
+    except Exception as ex:
+        logger.exception(f"Failed to start server: {str(ex)}")
+        raise click.ClickException(f"Unable to start AION system: {str(ex)}")

@@ -11,7 +11,7 @@ from a2a.types import Task
 
 from aion.server.db.manager import db_manager
 from aion.server.db.repositories import TasksRepository
-from aion.server.types.entities import TaskRecord
+from aion.server.types import TaskRecord
 from .base_task_store import BaseTaskStore
 
 

@@ -1,16 +1,13 @@
 """Remove unique constraint from context_id in tasks table."""
-
 from alembic import op
-import sqlalchemy as sa
 
 revision = "003"
 down_revision = "002"
 branch_labels = None
 depends_on = None
 
-import logging
-
-logger = logging.getLogger(__name__)
+from aion.shared.logging import get_logger
+logger = get_logger(__name__)
 
 
 def upgrade() -> None:

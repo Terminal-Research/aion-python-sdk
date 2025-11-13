@@ -9,8 +9,6 @@ AION_DB_NAMESPACE = "aion"
 # Import utility functions from utils module
 from .utils import (
     verify_connection,
-    sqlalchemy_url,
-    psycopg_url,
     validate_permissions,
 )
 
@@ -20,8 +18,6 @@ from .models import TaskRecordModel
 
 __all__ = [
     "AION_DB_NAMESPACE",
-    "sqlalchemy_url",
-    "psycopg_url",
     "verify_connection",
     "validate_permissions",
     "db_manager",

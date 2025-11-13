@@ -47,5 +47,5 @@ poetry run pytest
 To regenerate the Python classes for the GraphQL API run:
 
 ```bash
-poetry run ariadne-codegen
+poetry run ariadne-codegen client
 ```

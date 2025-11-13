@@ -1,9 +1,9 @@
-import logging
+from aion.shared.logging import get_logger
+from aion.shared.utils.db import psycopg_url
 
-from aion.server.db import psycopg_url
 from aion.server.db.migrations.env import config
 
-logger = logging.getLogger(__name__)
+logger = get_logger()
 
 
 async def setup_checkpointer_tables() -> None:

@@ -18,17 +18,20 @@ from .chat_completion_stream import (
 )
 from .client import GqlClient
 from .enums import (
-    AgentBehaviorDeploymentType,
+    AgentBehaviorKind,
     AgentIdentityType,
     AssetKind,
     DeploymentType,
     GitHubAccountType,
+    LogLevel,
     Network,
+    NetworkType,
+    NodeStatusType,
     Privacy,
+    StatusHistoryType,
     SubjectType,
     TransactionDirection,
     TransactionStatus,
-    UserNetworkType,
     VersionStatus,
 )
 from .exceptions import (
@@ -38,7 +41,12 @@ from .exceptions import (
     GraphQLClientHttpError,
     GraphQLClientInvalidResponseError,
 )
-from .input_types import JSONRPCRequestInput, MessageInput
+from .input_types import (
+    JsonRpcRequestGQLInput,
+    JSONRPCRequestInput,
+    LogFiltersInput,
+    MessageInput,
+)
 from .operations import A_2_A_STREAM_GQL, CHAT_COMPLETION_STREAM_GQL
 
 __all__ = [
@@ -47,7 +55,7 @@ __all__ = [
     "A2AStreamA2AStreamJSONRPCErrorResponseError",
     "A2AStreamA2AStreamJSONRPCSuccessResponse",
     "A_2_A_STREAM_GQL",
-    "AgentBehaviorDeploymentType",
+    "AgentBehaviorKind",
     "AgentIdentityType",
     "AssetKind",
     "AsyncBaseClientOpenTelemetry",
@@ -68,13 +76,18 @@ __all__ = [
     "GraphQLClientHttpError",
     "GraphQLClientInvalidResponseError",
     "JSONRPCRequestInput",
+    "JsonRpcRequestGQLInput",
+    "LogFiltersInput",
+    "LogLevel",
     "MessageInput",
     "Network",
+    "NetworkType",
+    "NodeStatusType",
     "Privacy",
+    "StatusHistoryType",
     "SubjectType",
     "TransactionDirection",
     "TransactionStatus",
     "Upload",
-    "UserNetworkType",
     "VersionStatus",
 ]

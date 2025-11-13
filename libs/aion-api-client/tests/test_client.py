@@ -25,8 +25,11 @@ def test_settings_loaded() -> None:
 
 # Use ``anyio``'s pytest plugin to execute async tests using the ``asyncio`` backend
 # only. This avoids unnecessary parametrization for other event loops.
+
+
 @pytest.mark.anyio("asyncio")
 async def test_chat_completion_stream_calls_gql(monkeypatch) -> None:
+    """Test that chat_completion_stream properly calls the underlying GraphQL client."""
     async def mock_chat_completion_stream(*, model: str, messages: list, stream: bool):
         assert model == "test-model"
         assert messages == []
@@ -50,6 +53,7 @@ async def test_chat_completion_stream_calls_gql(monkeypatch) -> None:
 
 @pytest.mark.anyio("asyncio")
 async def test_a2a_stream_calls_gql(monkeypatch) -> None:
+    """Test that a2a_stream properly calls the underlying GraphQL client."""
     request = JSONRPCRequestInput(jsonrpc="2.0", method="testMethod", params=None, id=None)
 
     async def mock_a_2_a_stream(*, request: JSONRPCRequestInput, distribution_id: str):
@@ -71,3 +75,49 @@ async def test_a2a_stream_calls_gql(monkeypatch) -> None:
         chunks.append(chunk)
 
     assert chunks == [{"result": 1}]
+
+
+# INITIALIZATION REQUIREMENT TESTS
+
+
+@pytest.mark.anyio("asyncio")
+async def test_chat_completion_stream_requires_initialize(dummy_jwt_manager) -> None:
+    """Calling chat_completion_stream before initialize should raise RuntimeError."""
+    client = AionGqlClient(
+        client_id="test-id",
+        client_secret="test-secret",
+        jwt_manager=dummy_jwt_manager,
+        gql_url=aion_api_settings.gql_url,
+        ws_url=aion_api_settings.ws_gql_url
+    )
+    stream = client.chat_completion_stream(
+        model="test-model", messages=[], stream=True
+    )
+    with pytest.raises(RuntimeError, match="AionGqlClient is not initialized before executing operations"):
+        await anext(stream)
+
+
+@pytest.mark.anyio("asyncio")
+async def test_a2a_stream_requires_initialize(dummy_jwt_manager) -> None:
+    """Calling a2a_stream before initialize should raise RuntimeError."""
+    client = AionGqlClient(
+        client_id="test-id",
+        client_secret="test-secret",
+        jwt_manager=dummy_jwt_manager,
+        gql_url=aion_api_settings.gql_url,
+        ws_url=aion_api_settings.ws_gql_url
+    )
+
+    request = JSONRPCRequestInput(
+        jsonrpc="2.0",
+        method="test",
+        id="test-id"
+    )
+
+    stream = client.a2a_stream(
+        request=request,
+        distribution_id="test-distribution"
+    )
+
+    with pytest.raises(RuntimeError, match="AionGqlClient is not initialized before executing operations"):
+        await anext(stream)

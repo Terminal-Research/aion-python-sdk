@@ -1,5 +1,4 @@
 import json
-import logging
 import traceback
 from typing import get_args
 
@@ -14,16 +13,32 @@ from a2a.types import (
 )
 from a2a.types import AgentCard
 from a2a.utils.errors import MethodNotImplementedError
+from aion.shared.agent import AionAgent
+from aion.shared.logging import get_logger
+from aion.shared.types import (
+    ExtendedA2ARequest,
+    CustomA2ARequest,
+    GetContextRequest,
+    GetContextsListRequest,
+    HealthResponse,
+)
+from aion.shared.utils.deployment import get_protocol_version
+from opentelemetry import trace
 from pydantic import ValidationError
 from starlette.exceptions import HTTPException
 from starlette.requests import Request
-from starlette.responses import Response
+from starlette.responses import Response, JSONResponse
+from starlette.routing import Route
 from starlette.status import HTTP_413_REQUEST_ENTITY_TOO_LARGE
 
-from aion.server.core.request_handlers import AionJSONRPCHandler, IRequestHandler
-from aion.server.types import ExtendedA2ARequest, CustomA2ARequest, GetContextRequest, GetContextsListRequest
+from aion.server.core.request_handlers import AionJSONRPCHandler
+from aion.server.interfaces import IRequestHandler
+from aion.server.types import ConfigurationFileResponse
+from aion.server.utils.constants import HEALTH_CHECK_URL, CONFIGURATION_FILE_URL
+from aion.shared.config import AgentConfigurationCollector
 
-logger = logging.getLogger(__name__)
+logger = get_logger()
+request_tracer = trace.get_tracer("langgraph.agent")
 
 
 class AionA2AStarletteApplication(A2AStarletteApplication):
@@ -31,7 +46,7 @@ class AionA2AStarletteApplication(A2AStarletteApplication):
 
     def __init__(
             self,
-            agent_card: AgentCard,
+            aion_agent: AionAgent,
             http_handler: IRequestHandler,
             extended_agent_card: AgentCard | None = None,
             context_builder: CallContextBuilder | None = None
@@ -39,21 +54,42 @@ class AionA2AStarletteApplication(A2AStarletteApplication):
         """Initialize the Aion A2A application with custom handler.
 
         Args:
-            agent_card: Main agent configuration card
+            aion_agent: AionAgent instance.
             http_handler: Request handler implementation
             extended_agent_card: Optional extended agent configuration
             context_builder: Optional context builder for requests
         """
+        self.aion_agent = aion_agent
         super().__init__(
-            agent_card=agent_card,
+            agent_card=self.aion_agent.card,
             http_handler=http_handler,
             extended_agent_card=extended_agent_card,
             context_builder=context_builder)
 
         # replace handler with our custom handler with additional methods
         self.handler = AionJSONRPCHandler(
-            agent_card=agent_card,
+            agent_card=self.agent_card,
             request_handler=http_handler)
+
+    def routes(self, *args, **kwargs) -> list[Route]:
+        default_routes = super().routes(*args, **kwargs)
+
+        app_routes = [
+            *default_routes,
+            Route(
+                HEALTH_CHECK_URL,
+                self._handle_health_check,
+                methods=['GET'],
+                name="app_health",
+            ),
+            Route(
+                CONFIGURATION_FILE_URL,
+                self._handle_get_configuration_file,
+                methods=['GET'],
+                name="agent_configuration",
+            )
+        ]
+        return app_routes
 
     async def _handle_requests(self, request: Request) -> Response:
         """Handle incoming HTTP requests with comprehensive error handling.
@@ -174,7 +210,8 @@ class AionA2AStarletteApplication(A2AStarletteApplication):
 
         return self._create_response(context=context, handler_result=handler_result)
 
-    def _check_if_request_is_custom_method(self, request_obj):
+    @staticmethod
+    def _check_if_request_is_custom_method(request_obj):
         """Check if the request is a custom method type.
 
         Args:
@@ -185,6 +222,29 @@ class AionA2AStarletteApplication(A2AStarletteApplication):
         """
         custom_types = get_args(CustomA2ARequest.model_fields['root'].annotation)
         return type(request_obj) in custom_types
+
+    @staticmethod
+    async def _handle_health_check(request) -> JSONResponse:
+        """
+        Health check endpoint
+
+        Returns:
+            Simple status response with 200 status code
+        """
+        return JSONResponse(HealthResponse().model_dump())
+
+    async def _handle_get_configuration_file(self, request) -> JSONResponse:
+        """
+        Configuration file endpoint
+
+        Returns:
+            Configuration file response with protocol version and agent configuration
+        """
+        response = ConfigurationFileResponse(
+            protocolVersion=get_protocol_version(),
+            configuration=AgentConfigurationCollector(self.aion_agent.config.configuration).collect()
+        )
+        return JSONResponse(response.model_dump())
 
 
 __all__ = ["AionA2AStarletteApplication"]

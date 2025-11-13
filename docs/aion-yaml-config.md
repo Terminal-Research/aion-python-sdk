@@ -17,19 +17,16 @@
   - [Array Fields](#array-fields)
   - [Object Fields](#object-fields)
   - [Common Properties](#common-properties)
-- [Proxy Configuration](#proxy-configuration)
 ---
 
 ## Overview
 
-The `aion.yaml` file is the main configuration file for your Aion project. It defines agents, proxy settings, dependencies, services, and deployment settings.
+The `aion.yaml` file is the main configuration file for your Aion project. It defines agents, dependencies, services, and deployment settings. Ports are assigned automatically for all agents and the proxy server.
 
 ## File Structure
 
 ```yaml
 aion:
-  proxy:
-    # Proxy server settings (see "Proxy Configuration" section below)
   agents:
     # Agent configurations (see "Agent Configuration" section below)
 ```
@@ -38,7 +35,7 @@ aion:
 
 ## Agent Configuration
 
-The `agents` section defines AI agents in your Aion project. Each agent **must** be configured with both a `path` and `port` parameter.
+The `agents` section defines AI agents in your Aion project. Each agent **must** be configured with a `path` parameter. Ports are assigned automatically.
 
 ### Basic Syntax
 
@@ -47,18 +44,16 @@ aion:
   agents:
     agent_id:
       path: "path/to/agent.py"
-      port: 8001
       # additional configuration...
 ```
 
 ### Required Parameters
 
-**Every agent must specify both:**
+**Every agent must specify:**
 
 | Parameter | Type | Description | Validation |
 |-----------|------|-------------|------------|
 | `path` | string | Path to agent implementation | Required |
-| `port` | integer | Port number for the agent | Required, 1-65535, must be unique |
 
 ### Path Format Options
 
@@ -77,22 +72,18 @@ aion:
     # Graph instance variable (StateGraph)
     chat_bot:
       path: "./src/agents/chat.py:chat_graph"
-      port: 8001
-    
+
     # Function that creates and returns a graph
     analyzer:
-      path: "./src/agents/analysis.py:create_analyzer" 
-      port: 8002
-    
+      path: "./src/agents/analysis.py:create_analyzer"
+
     # BaseAgent child class
     assistant:
       path: "./src/agents/assistant.py:AssistantAgent"
-      port: 8003
-    
+
     # File with auto-discovery
     support:
       path: "./src/agents/support.py"
-      port: 8004
 ```
 
 ### Complex Agent Configuration
@@ -103,10 +94,9 @@ For advanced agents with specific capabilities and settings:
 aion:
   agents:
     advanced_assistant:
-      # Required: Path and port
+      # Required: Path (port is assigned automatically)
       path: "./src/agents/advanced.py:advanced_graph"
-      port: 8001
-      
+
       # Basic Information
       name: "Advanced AI Assistant"
       description: "A sophisticated AI agent with multiple capabilities including data analysis, web search, and document processing"
@@ -212,15 +202,13 @@ aion:
               description: "Enable model response caching"
               default: true
 
-    # Additional agents with different ports
+    # Additional agents
     data_processor:
       path: "./src/agents/processor.py"
-      port: 8002
       name: "Data Processor"
-      
+
     web_crawler:
       path: "./src/agents/crawler.py:WebCrawlerAgent"
-      port: 8003
       name: "Web Crawler"
 ```
 
@@ -231,7 +219,6 @@ aion:
 | Field | Type | Description | Validation |
 |-------|------|-------------|-------------|
 | `path` | string | Path to agent implementation | Required |
-| `port` | integer | Port number for the agent | Required, 1-65535, unique across all agents and proxy |
 
 #### Optional Metadata
 
@@ -455,102 +442,14 @@ All field types support these properties:
 
 ---
 
-## Proxy Configuration
-
-The `proxy` section configures a proxy server that can route requests to different agents. This section is optional.
-
-### Syntax
-
-```yaml
-aion:
-  proxy:
-    port: 10000
-```
-
-### Configuration
-
-| Field | Type | Required | Description | Validation |
-|-------|------|----------|-------------|------------|
-| `port` | integer | ✓ | Port number for the proxy server | 1-65535, must be unique |
-
-### How Proxy Works
-
-The proxy server routes requests to agents based on URL patterns:
-
-#### Direct Agent Access
-```
-# Agent Card
-http://localhost:8001/.well-known/agent-card.json
-
-# Agent RPC  
-http://localhost:8001/
-```
-
-#### Proxy Agent Access
-```
-# Agent Card (via Proxy)
-http://localhost:10000/agent-id/.well-known/agent-card.json
-
-# Agent RPC (via Proxy)
-http://localhost:10000/agent-id/
-```
-
-### Example Configuration
-
-```yaml
-aion:
-  proxy:
-    port: 10000
-    
-  agents:
-    chat_bot:
-      path: "./src/agents/chat.py"
-      port: 8001
-      
-    analyzer:
-      path: "./src/agents/analyzer.py"  
-      port: 8002
-```
-
-**Access patterns:**
-- Direct: `http://localhost:8001/` → `chat_bot`
-- Proxy: `http://localhost:10000/chat_bot/` → `chat_bot`
-- Direct: `http://localhost:8002/` → `analyzer`
-- Proxy: `http://localhost:10000/analyzer/` → `analyzer`
-
-### Port Validation
-
-The system validates that all ports are unique across:
-- All agent ports
-- Proxy port (if configured)
-
-**Example of port conflict error:**
-```yaml
-aion:
-  proxy:
-    port: 8001  # ❌ Conflict with chat_bot
-    
-  agents:
-    chat_bot:
-      path: "./src/agents/chat.py"
-      port: 8001  # ❌ Conflict with proxy
-```
-
----
-
 ## Complete Configuration Example
 
 ```yaml
 aion:
-  # Proxy server (optional)
-  proxy:
-    port: 10000
-  
-  # Agent configurations (required path and port for each)
+  # Agent configurations (required path for each, ports assigned automatically)
   agents:
     chat_assistant:
       path: "./src/agents/chat.py:ChatAgent"
-      port: 8001
       name: "Chat Assistant"
       description: "General purpose chat agent"
       version: "1.2.0"
@@ -566,10 +465,9 @@ aion:
           default: 100
           min: 10
           max: 1000
-    
+
     data_analyst:
       path: "./src/agents/analyzer.py"
-      port: 8002
       name: "Data Analyst"
       skills:
         - id: "csv_analysis"

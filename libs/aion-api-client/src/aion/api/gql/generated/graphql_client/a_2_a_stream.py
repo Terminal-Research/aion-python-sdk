@@ -34,7 +34,7 @@ class A2AStreamA2AStreamJSONRPCErrorResponseError(BaseModel):
 
 class A2AStreamA2AStreamJSONRPCSuccessResponse(BaseModel):
     typename__: Literal["JSONRPCSuccessResponse"] = Field(alias="__typename")
-    id: Any
+    id: Optional[Any]
     result: Any
 
 
