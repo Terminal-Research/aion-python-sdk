@@ -1,9 +1,10 @@
 from typing import Dict, Any, Union
 
 from aion.shared.config import ConfigurationField, ConfigurationType
+from .base import BaseCollector
 
 
-class AgentCardConfigurationCollector:
+class AgentConfigurationCollector(BaseCollector):
     """
     Collects and processes agent configuration data for AionAgentCard.
 

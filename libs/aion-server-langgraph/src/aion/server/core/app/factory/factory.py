@@ -109,7 +109,7 @@ class AppFactory:
         request_handler = await self._create_request_handler()
 
         self.a2a_app = AionA2AStarletteApplication(
-            agent_card=self.aion_agent.card,
+            aion_agent=self.aion_agent,
             http_handler=request_handler
         )
 

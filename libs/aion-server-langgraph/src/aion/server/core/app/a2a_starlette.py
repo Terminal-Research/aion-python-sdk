@@ -13,6 +13,7 @@ from a2a.types import (
 )
 from a2a.types import AgentCard
 from a2a.utils.errors import MethodNotImplementedError
+from aion.shared.agent import AionAgent
 from aion.shared.logging import get_logger
 from aion.shared.types import (
     ExtendedA2ARequest,
@@ -34,6 +35,7 @@ from aion.server.core.request_handlers import AionJSONRPCHandler
 from aion.server.interfaces import IRequestHandler
 from aion.server.types import ConfigurationFileResponse
 from aion.server.utils.constants import HEALTH_CHECK_URL, CONFIGURATION_FILE_URL
+from aion.shared.config import AgentConfigurationCollector
 
 logger = get_logger()
 request_tracer = trace.get_tracer("langgraph.agent")
@@ -44,7 +46,7 @@ class AionA2AStarletteApplication(A2AStarletteApplication):
 
     def __init__(
             self,
-            agent_card: AgentCard,
+            aion_agent: AionAgent,
             http_handler: IRequestHandler,
             extended_agent_card: AgentCard | None = None,
             context_builder: CallContextBuilder | None = None
@@ -52,20 +54,21 @@ class AionA2AStarletteApplication(A2AStarletteApplication):
         """Initialize the Aion A2A application with custom handler.
 
         Args:
-            agent_card: Main agent configuration card
+            aion_agent: AionAgent instance.
             http_handler: Request handler implementation
             extended_agent_card: Optional extended agent configuration
             context_builder: Optional context builder for requests
         """
+        self.aion_agent = aion_agent
         super().__init__(
-            agent_card=agent_card,
+            agent_card=self.aion_agent.card,
             http_handler=http_handler,
             extended_agent_card=extended_agent_card,
             context_builder=context_builder)
 
         # replace handler with our custom handler with additional methods
         self.handler = AionJSONRPCHandler(
-            agent_card=agent_card,
+            agent_card=self.agent_card,
             request_handler=http_handler)
 
     def routes(self, *args, **kwargs) -> list[Route]:
@@ -239,7 +242,7 @@ class AionA2AStarletteApplication(A2AStarletteApplication):
         """
         response = ConfigurationFileResponse(
             protocolVersion=get_protocol_version(),
-            configuration=self.agent_card.configuration
+            configuration=AgentConfigurationCollector(self.aion_agent.config.configuration).collect()
         )
         return JSONResponse(response.model_dump())
 

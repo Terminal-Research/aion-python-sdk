@@ -28,6 +28,7 @@ from a2a.types import (
 
 from .card_resolver import AionA2ACardResolver
 from .utils import A2ARequestHelper
+from ...utils.proxy_utils import format_agent_proxy_path
 
 
 class ChatSession:
@@ -41,7 +42,7 @@ class ChatSession:
             custom_headers: Optional[dict] = None,
             use_push_notifications: bool = False,
             push_notification_receiver: str = 'http://localhost:5000',
-            graph_id: Optional[str] = None,
+            agent_id: Optional[str] = None,
             request_helper: Optional[A2ARequestHelper] = None,
             session_id: int = 0,
     ):
@@ -51,7 +52,7 @@ class ChatSession:
         self.custom_headers = custom_headers or {}
         self.use_push_notifications = use_push_notifications
         self.push_notification_receiver = push_notification_receiver
-        self.graph_id = graph_id
+        self.agent_id = agent_id
         self.request_helper = request_helper or A2ARequestHelper()
         self.context_id = session_id if session_id > 0 else 0
 
@@ -82,7 +83,7 @@ class ChatSession:
             card_resolver = AionA2ACardResolver(
                 httpx_client=httpx_client,
                 base_url=self.host,
-                graph_id=self.graph_id)
+                agent_id=self.agent_id)
             card = await card_resolver.get_agent_card()
 
             print('======= Agent Card ========')
@@ -92,7 +93,15 @@ class ChatSession:
             if self.use_push_notifications:
                 await self._setup_push_notifications()
 
-            client = A2AClient(httpx_client, agent_card=card)
+            client_url = None
+            if self.agent_id:
+                client_url = "{host}{path}".format(host=self.host, path=format_agent_proxy_path(self.agent_id))
+
+            client = A2AClient(
+                httpx_client=httpx_client,
+                agent_card=card,
+                url=client_url,
+            )
             streaming = card.capabilities.streaming
 
             # Main chat loop
@@ -417,7 +426,7 @@ async def start_chat(
         push_notification_receiver: str = 'http://localhost:5000',
         enabled_extensions: Optional[str] = None,
         custom_headers: Optional[dict] = None,
-        graph_id: Optional[str] = None,
+        agent_id: Optional[str] = None,
 ):
     """Start a chat session with the A2A agent"""
     chat_session = ChatSession(
@@ -427,7 +436,7 @@ async def start_chat(
         custom_headers=custom_headers,
         use_push_notifications=use_push_notifications,
         push_notification_receiver=push_notification_receiver,
-        graph_id=graph_id,
+        agent_id=agent_id,
         session_id=session_id
     )
 

@@ -1,5 +1,3 @@
-from a2a.utils import AGENT_CARD_WELL_KNOWN_PATH
-
 from aion.shared.types import A2AManifest
 
 __all__ = [
@@ -26,8 +24,8 @@ def get_protocol_version() -> str:
 
 
 def generate_a2a_manifest(
-    agent_ids: list[str],
-    endpoint_template: str
+        agent_ids: list[str],
+        endpoint_template: str
 ) -> A2AManifest:
     """
     Generate an A2A manifest with endpoints for specified agents.
@@ -48,10 +46,7 @@ def generate_a2a_manifest(
         api_version=get_api_version(),
         name=get_service_name(),
         endpoints={
-            agent_id: endpoint_template.format(
-                agent_id=agent_id,
-                path=AGENT_CARD_WELL_KNOWN_PATH.lstrip('/')
-            )
+            agent_id: endpoint_template.format(agent_id=agent_id)
             for agent_id in agent_ids
         }
     )

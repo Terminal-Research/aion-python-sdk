@@ -7,17 +7,23 @@ from a2a.types import AgentCard
 from aion.shared.logging import get_logger
 from pydantic import ValidationError
 
+from aion.cli.utils.proxy_utils import format_agent_proxy_path
+
 logger = get_logger()
 
 
 class AionA2ACardResolver(A2ACardResolver):
 
-    def __init__(self, *args, graph_id: Optional[str] = None, **kwargs):
+    def __init__(self, *args, agent_id: Optional[str] = None, **kwargs):
         super().__init__(*args, **kwargs)
-        self.graph_id = graph_id
+        self.agent_id = agent_id
 
-        if self.graph_id:
-            self.agent_card_path = f"{self.graph_id}/{self.agent_card_path}"
+        if self.agent_id:
+            # Format the agent card path to include the agent ID prefix
+            self.agent_card_path = format_agent_proxy_path(
+                self.agent_id,
+                self.agent_card_path
+            ).lstrip("/")
 
     async def get_agent_card(
             self,

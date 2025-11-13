@@ -15,7 +15,7 @@ from aion.cli.services import (
     ServeShutdownService,
     AionDeploymentRegisterVersionService,
 )
-from aion.cli.utils.cli_messages import welcome_message
+from aion.cli.utils.cli_messages import generate_welcome_message
 from aion.cli.utils.port_manager import AionPortManager
 
 logger = get_logger()
@@ -210,7 +210,7 @@ class ServeHandler:
 
         # Print welcome message after successful startup
         try:
-            print(welcome_message(port_manager=self.port_manager))
+            print(generate_welcome_message(port_manager=self.port_manager))
         except:
             pass
 

@@ -1,27 +1,17 @@
 from a2a.types import AgentCard
 from a2a.types import AgentExtension, AgentCapabilities, AgentSkill
-from aion.shared.config import AgentConfig
 
+from aion.shared.config import AgentConfig
 from aion.shared.settings import app_settings
 from aion.shared.types import GetContextParams, GetContextsListParams
-from . import collectors
 
 
 class AionAgentCard(AgentCard):
     """
-    Extended AgentCard with configuration management capabilities.
+    Extended AgentCard.
 
-    This class extends the base AgentCard to include automatic configuration
-    processing through the AgentCardConfigurationCollector. It standardizes
-    configuration data into a consistent format suitable for agent management.
-
-    Attributes:
-        configuration (dict[str, dict]): Dictionary containing processed configuration
-                                       data where keys are field names and values are
-                                       configuration dictionaries with validation rules
-                                       and metadata.
+    This class extends the base AgentCard with custom extensions
     """
-    configuration: dict[str, dict] = {}
 
     @classmethod
     def from_config(
@@ -65,8 +55,7 @@ class AionAgentCard(AgentCard):
             default_input_modes=config.input_modes,
             default_output_modes=config.output_modes,
             capabilities=capabilities,
-            skills=skills,
-            configuration=collectors.AgentCardConfigurationCollector(config.configuration).collect()
+            skills=skills
         )
 
 

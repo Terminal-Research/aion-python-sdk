@@ -30,7 +30,7 @@ from aion.cli.handlers import start_chat
     help='Comma-separated list of extension URIs to enable',
 )
 @click.option(
-    '--graph_id',
+    '--agent_id',
     default=None,
     help='Graph ID to use via proxy server',
 )
@@ -43,7 +43,7 @@ async def chat(
         push_receiver: str,
         header: tuple,
         extensions: Optional[str],
-        graph_id: Optional[str],
+        agent_id: Optional[str],
 ):
     """Start an interactive chat session with A2A agent"""
     custom_headers = _parse_headers(header)
@@ -58,7 +58,7 @@ async def chat(
             push_notification_receiver=push_receiver,
             enabled_extensions=extensions,
             custom_headers=custom_headers,
-            graph_id=graph_id,
+            agent_id=agent_id,
         )
     except KeyboardInterrupt:
         click.echo("\nChat session interrupted by user")
