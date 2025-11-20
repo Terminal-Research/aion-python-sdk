@@ -191,8 +191,16 @@ class AionGqlClient:
         """
         self._validate_client_before_execute()
 
+        from .generated.graphql_client.custom_fields import AgentBehaviorFields
+
         manifest_val = manifest.model_dump_json()
-        register_field = Mutation.register_version(manifest_val)
+        register_field = Mutation.register_version(manifest_val).fields(
+            AgentBehaviorFields.id,
+            AgentBehaviorFields.name,
+            AgentBehaviorFields.logical_version,
+            AgentBehaviorFields.kind,
+            AgentBehaviorFields.graph_id
+        )
         return await self.client.mutation(
             register_field,
             operation_name="RegisterVersion"

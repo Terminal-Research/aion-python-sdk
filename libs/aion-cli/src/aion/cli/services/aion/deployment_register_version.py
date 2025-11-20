@@ -1,4 +1,8 @@
 from aion.api.gql import AionGqlContextClient
+from aion.api.gql.generated.graphql_client import (
+    GraphQLClientHttpError,
+    GraphQLClientGraphQLMultiError
+)
 from aion.proxy.utils import generate_a2a_manifest
 
 from aion.shared.services import BaseExecuteService
@@ -33,11 +37,22 @@ class AionDeploymentRegisterVersionService(BaseExecuteService):
         """
         try:
             manifest = generate_a2a_manifest(agent_ids)
-
             async with AionGqlContextClient() as client:
                 await client.register_version(manifest)
                 self.logger.info("Manifest registration completed successfully")
             return True
+        except GraphQLClientHttpError as ex:
+            self.logger.error(
+                "Manifest registration failed. Status code: %s. Error: \"%s\"",
+                ex.status_code,
+                ex.response.content.decode("utf-8"),)
+            return False
+        except GraphQLClientGraphQLMultiError as ex:
+            self.logger.error(
+                "Manifest registration failed with GraphQL errors. Errors: %s",
+                [{"message": e.message, "path": e.path, "extensions": e.extensions} for e in ex.errors]
+            )
+            return False
         except Exception as ex:
             self.logger.error("Manifest registration failed: %s", ex)
             return False

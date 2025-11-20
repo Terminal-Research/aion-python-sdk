@@ -244,15 +244,15 @@ class ApiSettings(BaseEnvSettings):
         Get the complete HTTP URL for GraphQL endpoint.
 
         Constructs and caches the GraphQL HTTP URL by appending the GraphQL
-        WebSocket path to the base HTTP URL.
+        API path to the base HTTP URL.
 
         Returns:
-            str: Complete HTTP URL for GraphQL endpoint (/ws/graphql)
+            str: Complete HTTP URL for GraphQL endpoint (/api/graphql)
         """
         if self._gql_url:
             return self._gql_url
 
-        self._gql_url = f"{self.http_url}/ws/graphql"
+        self._gql_url = f"{self.http_url}/api/graphql"
         return self._gql_url
 
     @property
