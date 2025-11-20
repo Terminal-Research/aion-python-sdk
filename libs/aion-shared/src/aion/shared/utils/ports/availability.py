@@ -1,6 +1,8 @@
 import socket
 from typing import Optional, Set, Callable, Tuple
 
+HOST = "0.0.0.0"
+
 
 def is_port_available(port: int) -> bool:
     """
@@ -15,7 +17,7 @@ def is_port_available(port: int) -> bool:
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            sock.bind(("127.0.0.1", port))
+            sock.bind((HOST, port))
             return True
     except (OSError, socket.error):
         return False
@@ -37,7 +39,7 @@ def reserve_port(port: int = 0) -> Tuple[int, socket.socket]:
     """
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    sock.bind(("127.0.0.1", port))
+    sock.bind((HOST, port))
     actual_port = sock.getsockname()[1]
     return actual_port, sock
 
@@ -176,7 +178,7 @@ def find_free_port_reserved(
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            sock.bind(("127.0.0.1", port_num))
+            sock.bind((HOST, port_num))
             return port_num, sock
         except (OSError, socket.error):
             # Port is not available, try next one
