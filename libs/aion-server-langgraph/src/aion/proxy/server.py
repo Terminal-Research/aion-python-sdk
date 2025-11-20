@@ -2,19 +2,19 @@
 AION Agent Proxy Server
 Simple proxy server that routes requests to different AION agents based on agent_id
 """
+import logging
 from contextlib import asynccontextmanager
 from typing import Dict, Optional, Callable
-import logging
 
 import uvicorn
-from aion.shared.config import AionConfig
 from aion.shared.logging import get_logger
 from aion.shared.logging.base import AionLogger
-from fastapi import FastAPI
 from aion.shared.settings import app_settings
+from fastapi import FastAPI
 
 from .client import ProxyHttpClient
 from .handlers import RequestHandler
+from .middleware import ProxyLoggingMiddleware
 from .routes import ProxyRouter
 
 # Set custom logger class globally for all loggers including uvicorn/fastapi
@@ -51,6 +51,11 @@ class AionAgentProxyServer:
             version="1.0.0",
             lifespan=self._lifespan
         )
+        self.add_middlewares()
+
+    def add_middlewares(self):
+        """Add middlewares to app"""
+        self.app.add_middleware(ProxyLoggingMiddleware)
 
     @asynccontextmanager
     async def _lifespan(self, app: FastAPI):
