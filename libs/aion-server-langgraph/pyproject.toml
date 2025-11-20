@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "aion-server-langgraph"
 version = "0.1.0"
-description = "A2A server wrapper for LangGraph projects"
+description = "A2A server wrapper for LangGraph and ADK projects"
 authors = ["Terminal Research Team <support@terminal.exchange>"]
 readme = "README.md"
 packages = [{include = "aion", from = "src"}]
