@@ -5,16 +5,22 @@ path formats (dotted paths, file paths, etc.) used in agent configurations.
 It also provides discovery functionality to find specific objects within modules.
 """
 
+from __future__ import annotations
+
 import importlib
 import importlib.util
 import inspect
 from pathlib import Path
 from types import ModuleType
-from typing import Any, Optional
+from typing import Any, Optional, TYPE_CHECKING
 
-from aion.shared.logging.factory import get_logger
+if TYPE_CHECKING:
+    from aion.shared.logging.base import AionLogger
 
-logger = get_logger()
+
+def _get_logger() -> AionLogger:
+    from aion.shared.logging.factory import get_logger
+    return get_logger()
 
 
 class ModuleLoader:
@@ -27,7 +33,7 @@ class ModuleLoader:
     - Paths starting with dot: "./relative/path.py"
     """
 
-    def __init__(self, base_path: Optional[Path] = None):
+    def __init__(self, base_path: Optional[Path] = None, logger: Optional[AionLogger] = None):
         """Initialize module loader.
 
         Args:
@@ -35,7 +41,14 @@ class ModuleLoader:
                       Defaults to current working directory.
         """
         self.base_path = base_path or Path.cwd()
+        self._logger: Optional[AionLogger] = logger
         logger.debug(f"ModuleLoader initialized with base_path={self.base_path}")
+
+    @property
+    def logger(self) -> AionLogger:
+        if not self._logger:
+            self._logger = _get_logger()
+        return self._logger
 
     def load(self, path: str) -> ModuleType:
         """Load a Python module from a path string.
@@ -112,7 +125,7 @@ class ModuleLoader:
                 f"File may not be a valid Python module."
             )
 
-        logger.debug(f"Loading module from file: {module_path}")
+        self.logger.debug(f"Loading module from file: {module_path}")
         module = importlib.util.module_from_spec(spec)
 
         try:
@@ -124,8 +137,7 @@ class ModuleLoader:
 
         return module
 
-    @staticmethod
-    def _load_from_dotted_path(dotted_path: str) -> ModuleType:
+    def _load_from_dotted_path(self, dotted_path: str) -> ModuleType:
         """Load module from a dotted Python path.
 
         Args:
@@ -137,7 +149,7 @@ class ModuleLoader:
         Raises:
             ImportError: If module cannot be imported
         """
-        logger.debug(f"Importing module from dotted path: {dotted_path}")
+        self.logger.debug(f"Importing module from dotted path: {dotted_path}")
 
         try:
             module = importlib.import_module(dotted_path)
@@ -147,7 +159,7 @@ class ModuleLoader:
                 f"Make sure the module is in PYTHONPATH or installed."
             ) from e
 
-        logger.debug(f"Successfully imported module: {dotted_path}")
+        self.logger.debug(f"Successfully imported module: {dotted_path}")
         return module
 
     def load_from_config_path(self, config_path: str) -> tuple[ModuleType, Optional[str]]:
@@ -175,8 +187,8 @@ class ModuleLoader:
 
         return module, item_name
 
-    @staticmethod
     def discover_object(
+            self,
             module: ModuleType,
             supported_types: list[type],
             supported_type_names: set[str],
@@ -211,7 +223,7 @@ class ModuleLoader:
                     f"Item '{item_name}' not found in module '{module.__name__}'"
                 )
             obj = getattr(module, item_name)
-            logger.debug(
+            self.logger.debug(
                 f"Found explicit item '{item_name}' of type '{type(obj).__name__}'"
             )
             return obj
@@ -229,7 +241,7 @@ class ModuleLoader:
             for supported_type in supported_types:
                 try:
                     if issubclass(member, supported_type) and member is not supported_type:
-                        logger.debug(
+                        self.logger.debug(
                             f"Found class '{name}' (subclass of {supported_type.__name__})"
                         )
                         found_objects.append(("class", member, name))
@@ -278,7 +290,5 @@ class ModuleLoader:
         found_objects.sort(key=lambda x: priority.get(x[0], 999))
 
         obj_type, obj, obj_name = found_objects[0]
-        logger.info(
-            f"Discovered {obj_type} '{obj_name}' in module '{module.__name__}'"
-        )
+        self.logger.info(f"Discovered {obj_type} '{obj_name}' in module '{module.__name__}'")
         return obj
