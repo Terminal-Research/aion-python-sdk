@@ -2,30 +2,55 @@
 
 Guide for working with local packages in the `libs/` directory.
 
+## Quick Reference
+
+To see all available commands:
+```bash
+make
+# or
+make help
+```
+
 ## Commands
 
-### Install all dependencies in libs directories
+### Install dependencies
 ```bash
-make install-deps
+make deps-install
 ```
-Installs all dependencies for packages in `libs/` directories.
+Installs dependencies from existing lock files for all packages (runs `poetry install --sync`).
+**Note:** This removes editable installations and syncs environment with lock files.
 
 ### Install local dependencies for development
 ```bash
-make install-local
+make deps-install-dev
 ```
 Installs packages from `libs/` in editable mode. Changes are immediately reflected.
 
-### Restore original dependencies  
+### Update lock files
 ```bash
-make restore-local
+make deps-lock
 ```
-Restores published versions from `pyproject.toml`.
+Updates `poetry.lock` files for all packages (runs `poetry lock`).
 
-## Workflow
+## Workflows
 
-1. **Install dependencies**: `make install-deps`
-2. **Start development**: `make install-local`
-3. **Edit files** in `libs/` directories  
-4. **Test changes** - they're live immediately
-5. **When done**: `make restore-local` (optional - to test with published versions)
+### Development with local packages
+1. **Start development**: `make deps-install-dev`
+2. **Edit files** in `libs/` directories
+3. **Test changes** - they're live immediately
+4. **When done**: `make deps-install` (to restore PyPI versions)
+
+### Update dependencies
+1. **Update lock files**: `make deps-lock`
+2. **Install updated dependencies**: `make deps-install`
+
+Or combine both:
+```bash
+make deps-lock && make deps-install
+```
+
+## Configuration
+
+To modify which packages are processed or change dependency mappings, edit `scripts/deps/config.py`.
+
+For more details, see `scripts/deps/README.md`.
