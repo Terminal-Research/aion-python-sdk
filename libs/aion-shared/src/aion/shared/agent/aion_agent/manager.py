@@ -4,16 +4,17 @@ This module provides the AgentManager class for managing a single agent instance
 in the AION server. For multi-agent scenarios, deploy multiple servers behind
 a proxy instead.
 """
+from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 from aion.shared.config.models import AgentConfig
-from aion.shared.logging.factory import get_logger
 from aion.shared.metaclasses import Singleton
 
 from .agent import AionAgent
 
-logger = get_logger()
+if TYPE_CHECKING:
+    from aion.shared.logging.base import AionLogger
 
 
 class AgentManager(metaclass=Singleton):
@@ -27,11 +28,19 @@ class AgentManager(metaclass=Singleton):
     ports and route requests through a proxy.
     """
 
-    def __init__(self):
+    def __init__(self, logger: Optional[AionLogger] = None):
         """Initialize agent manager."""
         self._agent: Optional[AionAgent] = None
         self._agent_id: Optional[str] = None
         self._agent_config: Optional[AgentConfig] = None
+        self._logger: Optional[AionLogger] = logger
+
+    @property
+    def logger(self) -> AionLogger:
+        if not self._logger:
+            from aion.shared.logging.factory import get_logger
+            self._logger = get_logger()
+        return self._logger
 
     @property
     def agent(self) -> Optional[AionAgent]:
@@ -81,7 +90,7 @@ class AgentManager(metaclass=Singleton):
         """
         self._agent_id = agent_id
         self._agent_config = config
-        logger.debug(f"Agent configuration set for '{agent_id}'")
+        self.logger.debug(f"Agent configuration set for '{agent_id}'")
 
     async def create_agent(
             self,
@@ -127,7 +136,7 @@ class AgentManager(metaclass=Singleton):
         if agent_id or config:
             self.set_agent_config(final_agent_id, final_config)
 
-        logger.info(f"Creating agent '{final_agent_id}'...")
+        self.logger.info(f"Creating agent '{final_agent_id}'...")
 
         # Create agent using auto-detection
         agent = await AionAgent.from_config(agent_id=final_agent_id, config=final_config)
@@ -161,12 +170,12 @@ class AgentManager(metaclass=Singleton):
             may continue running if there are active references to it.
         """
         if self._agent is not None:
-            logger.info(f"Clearing agent '{self._agent_id}'")
+            self.logger.info(f"Clearing agent '{self._agent_id}'")
             self._agent = None
             self._agent_id = None
             self._agent_config = None
         else:
-            logger.debug("No agent to clear")
+            self.logger.debug("No agent to clear")
 
     def __repr__(self) -> str:
         """Return string representation of the manager."""

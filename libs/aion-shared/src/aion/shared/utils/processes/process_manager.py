@@ -1,13 +1,14 @@
+from __future__ import annotations
+
 import multiprocessing
 import time
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, Callable, Any, Optional, Tuple
 from multiprocessing.connection import Connection
+from typing import Dict, Callable, Any, Optional, Tuple, TYPE_CHECKING
 
-from aion.shared.logging import get_logger
-
-logger = get_logger()
+if TYPE_CHECKING:
+    from aion.shared.logging.base import AionLogger
 
 
 class ProcessStatus(Enum):
@@ -39,8 +40,16 @@ class ProcessManager:
     Designed for serving A2A (Agent-to-Agent) LangGraph agents.
     """
 
-    def __init__(self):
+    def __init__(self, logger: Optional[AionLogger] = None):
         self.processes: Dict[str, ProcessInfo] = {}
+        self._logger: Optional[AionLogger] = logger
+
+    @property
+    def logger(self) -> AionLogger:
+        if not self._logger:
+            from aion.shared.logging.factory import get_logger
+            self._logger = get_logger()
+        return self._logger
 
     def create_process(
             self,
@@ -64,7 +73,7 @@ class ProcessManager:
             bool: True if process created successfully, False otherwise
         """
         if key in self.processes:
-            logger.warning(f"Process with key '{key}' already exists")
+            self.logger.warning(f"Process with key '{key}' already exists")
             return False
 
         # Initialize args and kwargs if not provided
@@ -109,12 +118,12 @@ class ProcessManager:
             )
 
             self.processes[key] = process_info
-            logger.debug(f"Process '{key}' created with PID {process.pid}{' (with pipe)' if use_pipe else ''}")
+            self.logger.debug(f"Process '{key}' created with PID {process.pid}{' (with pipe)' if use_pipe else ''}")
 
             return True
 
         except Exception as e:
-            logger.exception(f"Failed to create process '{key}': {str(e)}")
+            self.logger.exception(f"Failed to create process '{key}': {str(e)}")
             return False
 
     def terminate_process(self, key: str, timeout: float = 5.0) -> bool:
@@ -129,14 +138,14 @@ class ProcessManager:
             bool: True if process terminated successfully, False otherwise
         """
         if key not in self.processes:
-            logger.warning(f"Process with key '{key}' not found")
+            self.logger.warning(f"Process with key '{key}' not found")
             return False
 
         process_info = self.processes[key]
         process = process_info.process
 
         if not process.is_alive():
-            logger.debug(f"Process '{key}' is already terminated")
+            self.logger.debug(f"Process '{key}' is already terminated")
             process_info.status = ProcessStatus.STOPPED
             # Close pipe connections if they exist
             self._close_pipes(process_info)
@@ -149,12 +158,12 @@ class ProcessManager:
 
             # If still alive, force kill
             if process.is_alive():
-                logger.warning(f"Force killing process '{key}'")
+                self.logger.warning(f"Force killing process '{key}'")
                 process.kill()
                 process.join()
 
             process_info.status = ProcessStatus.TERMINATED
-            logger.debug(f"Process '{key}' terminated successfully")
+            self.logger.debug(f"Process '{key}' terminated successfully")
 
             # Close pipe connections if they exist
             self._close_pipes(process_info)
@@ -162,12 +171,11 @@ class ProcessManager:
             return True
 
         except Exception as e:
-            logger.error(f"Failed to terminate process '{key}': {str(e)}")
+            self.logger.error(f"Failed to terminate process '{key}': {str(e)}")
             process_info.status = ProcessStatus.ERROR
             return False
 
-    @staticmethod
-    def _close_pipes(process_info: ProcessInfo) -> None:
+    def _close_pipes(self, process_info: ProcessInfo) -> None:
         """
         Close pipe connections for a process
 
@@ -177,12 +185,12 @@ class ProcessManager:
         try:
             if process_info.parent_conn is not None:
                 process_info.parent_conn.close()
-                logger.debug(f"Closed parent connection for process '{process_info.key}'")
+                self.logger.debug(f"Closed parent connection for process '{process_info.key}'")
             if process_info.child_conn is not None:
                 process_info.child_conn.close()
-                logger.debug(f"Closed child connection for process '{process_info.key}'")
+                self.logger.debug(f"Closed child connection for process '{process_info.key}'")
         except Exception as e:
-            logger.warning(f"Error closing pipes for process '{process_info.key}': {str(e)}")
+            self.logger.warning(f"Error closing pipes for process '{process_info.key}': {str(e)}")
 
     def remove_process(self, key: str) -> bool:
         """
@@ -195,7 +203,7 @@ class ProcessManager:
             bool: True if process removed successfully, False otherwise
         """
         if key not in self.processes:
-            logger.warning(f"Process with key '{key}' not found")
+            self.logger.warning(f"Process with key '{key}' not found")
             return False
 
         # Terminate process if still running
@@ -204,7 +212,7 @@ class ProcessManager:
 
         # Remove from tracking
         del self.processes[key]
-        logger.info(f"Process '{key}' removed from manager")
+        self.logger.info(f"Process '{key}' removed from manager")
 
         return True
 
@@ -232,21 +240,21 @@ class ProcessManager:
             bool: True if message sent successfully, False otherwise
         """
         if key not in self.processes:
-            logger.warning(f"Process with key '{key}' not found")
+            self.logger.warning(f"Process with key '{key}' not found")
             return False
 
         process_info = self.processes[key]
 
         if process_info.parent_conn is None:
-            logger.error(f"Process '{key}' does not have a pipe connection")
+            self.logger.error(f"Process '{key}' does not have a pipe connection")
             return False
 
         try:
             process_info.parent_conn.send(message)
-            logger.debug(f"Message sent to process '{key}'")
+            self.logger.debug(f"Message sent to process '{key}'")
             return True
         except Exception as e:
-            logger.error(f"Failed to send message to process '{key}': {str(e)}")
+            self.logger.error(f"Failed to send message to process '{key}': {str(e)}")
             return False
 
     def receive_from_process(self, key: str, timeout: Optional[float] = None) -> Optional[Any]:
@@ -261,29 +269,29 @@ class ProcessManager:
             Message from child process or None if no message/error
         """
         if key not in self.processes:
-            logger.warning(f"Process with key '{key}' not found")
+            self.logger.warning(f"Process with key '{key}' not found")
             return None
 
         process_info = self.processes[key]
 
         if process_info.parent_conn is None:
-            logger.error(f"Process '{key}' does not have a pipe connection")
+            self.logger.error(f"Process '{key}' does not have a pipe connection")
             return None
 
         try:
             if timeout is not None:
                 if process_info.parent_conn.poll(timeout):
                     message = process_info.parent_conn.recv()
-                    logger.debug(f"Message received from process '{key}'")
+                    self.logger.debug(f"Message received from process '{key}'")
                     return message
                 else:
                     return None
             else:
                 message = process_info.parent_conn.recv()
-                logger.debug(f"Message received from process '{key}'")
+                self.logger.debug(f"Message received from process '{key}'")
                 return message
         except Exception as e:
-            logger.error(f"Failed to receive message from process '{key}': {str(e)}")
+            self.logger.error(f"Failed to receive message from process '{key}': {str(e)}")
             return None
 
     def get_connection(self, key: str) -> Optional[Connection]:
@@ -297,7 +305,7 @@ class ProcessManager:
             Connection: Parent connection or None if not found/not available
         """
         if key not in self.processes:
-            logger.warning(f"Process with key '{key}' not found")
+            self.logger.warning(f"Process with key '{key}' not found")
             return None
 
         process_info = self.processes[key]
@@ -349,7 +357,7 @@ class ProcessManager:
 
         cleaned_up_count = len(dead_keys)
         if cleaned_up_count:
-            logger.debug(f"Cleaned up {cleaned_up_count} dead processes")
+            self.logger.debug(f"Cleaned up {cleaned_up_count} dead processes")
         return len(dead_keys)
 
     def shutdown_all(self, timeout: float = 5.0) -> bool:
@@ -371,7 +379,7 @@ class ProcessManager:
 
         # Clear all processes
         self.processes.clear()
-        logger.debug("All processes shut down")
+        self.logger.debug("All processes shut down")
 
         return success
 
@@ -387,7 +395,7 @@ class ProcessManager:
             bool: True if process restarted successfully
         """
         if key not in self.processes:
-            logger.warning(f"Process with key '{key}' not found")
+            self.logger.warning(f"Process with key '{key}' not found")
             return False
 
         process_info = self.processes[key]
@@ -399,7 +407,7 @@ class ProcessManager:
 
         # Terminate current process
         if not self.terminate_process(key, timeout):
-            logger.error(f"Failed to terminate process '{key}' for restart")
+            self.logger.error(f"Failed to terminate process '{key}' for restart")
             return False
 
         # Remove old process

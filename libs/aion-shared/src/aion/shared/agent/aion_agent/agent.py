@@ -5,9 +5,11 @@ representation of an agent in the AION system. It encapsulates agent identity,
 configuration, and execution capabilities while delegating framework-specific
 operations to adapters.
 """
+from __future__ import annotations
+
 import time
 from collections.abc import AsyncIterator
-from typing import Any, Optional
+from typing import Any, Optional, TYPE_CHECKING
 
 from aion.shared.agent.adapters import (
     ExecutionConfig,
@@ -19,10 +21,17 @@ from aion.shared.agent.adapters import (
 from aion.shared.agent.card import AionAgentCard
 from aion.shared.agent.inputs import AgentInput
 from aion.shared.config.models import AgentConfig
-from aion.shared.logging.factory import get_logger
+from aion.shared.logging.base import AionLogger
+
 from .models import AgentMetadata
 
-logger = get_logger()
+if TYPE_CHECKING:
+    from aion.shared.logging.base import AionLogger
+
+
+def _get_logger() -> AionLogger:
+    from aion.shared.logging.factory import get_logger
+    return get_logger()
 
 
 class AionAgent:
@@ -54,6 +63,7 @@ class AionAgent:
             native_agent: Any,
             port: Optional[int] = None,
             metadata: Optional[AgentMetadata] = None,
+            logger: Optional[AionLogger] = None,
     ):
         """Initialize AionAgent.
 
@@ -65,6 +75,7 @@ class AionAgent:
             executor: Framework-specific executor
             native_agent: Native framework agent object
             metadata: Optional agent metadata
+            logger: Optional AionLogger instance
 
         Note:
             Don't call this directly. Use AionAgent.from_adapter() or
@@ -83,11 +94,12 @@ class AionAgent:
 
         self._metadata = metadata
         self._card: Optional[Any] = None
+        self._logger: Optional[AionLogger] = logger
 
     @property
-    def logger(self):
-        if not hasattr(self, "_logger"):
-            self._logger = get_logger()
+    def logger(self) -> AionLogger:
+        if not self._logger:
+            self._logger = _get_logger()
         return self._logger
 
     @property
@@ -186,7 +198,7 @@ class AionAgent:
             metadata=metadata,
         )
 
-        logger.debug(
+        self.logger.debug(
             f"Executing agent '{self.id}' (framework={self.framework}, "
             f"session_id={session_id})"
         )
@@ -228,7 +240,7 @@ class AionAgent:
             metadata=metadata,
         )
 
-        logger.debug(
+        self.logger.debug(
             f"Streaming agent '{self.id}' (framework={self.framework}, "
             f"session_id={session_id})"
         )
@@ -259,7 +271,7 @@ class AionAgent:
         """
         config = ExecutionConfig(session_id=session_id, thread_id=thread_id)
 
-        logger.debug(f"Getting state for agent '{self.id}', session={session_id}")
+        self.logger.debug(f"Getting state for agent '{self.id}', session={session_id}")
 
         return await self._executor.get_state(config)
 
@@ -291,7 +303,7 @@ class AionAgent:
             metadata=metadata,
         )
 
-        logger.debug(f"Resuming agent '{self.id}', session={session_id}")
+        self.logger.debug(f"Resuming agent '{self.id}', session={session_id}")
 
         # Convert dict to AgentInput for backward compatibility
         if inputs is not None and isinstance(inputs, dict):
@@ -353,6 +365,7 @@ class AionAgent:
             ValueError: If configuration is invalid
             TypeError: If native_agent cannot be initialized
         """
+        logger = _get_logger()
         logger.debug(
             f"Creating AionAgent '{agent_id}' from adapter "
             f"(framework={adapter.framework_name()})"
@@ -416,6 +429,7 @@ class AionAgent:
         if not config.path:
             raise ValueError(f"Agent path is required in configuration for agent '{agent_id}'")
 
+        logger = _get_logger()
         logger.debug(f"Creating AionAgent '{agent_id}' from config (path='{config.path}')")
 
         # Load the module using ModuleLoader
