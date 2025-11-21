@@ -10,11 +10,17 @@ import importlib.util
 import inspect
 from pathlib import Path
 from types import ModuleType
-from typing import Any, Optional
+from typing import Any, Optional, TYPE_CHECKING
 
-from aion.shared.logging.factory import get_logger
+from aion.shared.exceptions.agent import AgentAdapterNotFoundError
 
-logger = get_logger()
+if TYPE_CHECKING:
+    from aion.shared.logging.base import AionLogger
+
+
+def _get_logger() -> AionLogger:
+    from aion.shared.logging.factory import get_logger
+    return get_logger()
 
 
 class ModuleLoader:
@@ -35,7 +41,14 @@ class ModuleLoader:
                       Defaults to current working directory.
         """
         self.base_path = base_path or Path.cwd()
-        logger.debug(f"ModuleLoader initialized with base_path={self.base_path}")
+        self._logger: Optional[AionLogger] = None
+        self.logger.debug(f"ModuleLoader initialized with base_path={self.base_path}")
+
+    @property
+    def logger(self) -> AionLogger:
+        if not self._logger:
+            self._logger = _get_logger()
+        return self._logger
 
     def load(self, path: str) -> ModuleType:
         """Load a Python module from a path string.
@@ -112,7 +125,7 @@ class ModuleLoader:
                 f"File may not be a valid Python module."
             )
 
-        logger.debug(f"Loading module from file: {module_path}")
+        self.logger.debug(f"Loading module from file: {module_path}")
         module = importlib.util.module_from_spec(spec)
 
         try:
@@ -137,6 +150,7 @@ class ModuleLoader:
         Raises:
             ImportError: If module cannot be imported
         """
+        logger = _get_logger()
         logger.debug(f"Importing module from dotted path: {dotted_path}")
 
         try:
@@ -204,6 +218,8 @@ class ModuleLoader:
         2. Instances of supported_types
         3. Callables that might return supported types
         """
+        logger = _get_logger()
+
         if item_name:
             # Explicit item name provided - get it directly
             if not hasattr(module, item_name):
@@ -267,11 +283,7 @@ class ModuleLoader:
 
         # Return the first found object (priority: class > instance > callable)
         if not found_objects:
-            raise ValueError(
-                f"No supported object found in module '{module.__name__}'. "
-                f"Supported types: {[t.__name__ for t in supported_types]}, "
-                f"Supported type names: {supported_type_names}"
-            )
+            raise AgentAdapterNotFoundError()
 
         # Sort by priority: class first, then instance, then named_type, then callable
         priority = {"class": 0, "instance": 1, "named_type": 2, "callable": 3}

@@ -1,8 +1,11 @@
 """Generic port reservation manager without business logic."""
 import socket
-from typing import Dict, Optional, Set, Tuple
+from typing import Dict, Optional, Set, Tuple, TYPE_CHECKING
 
 from .availability import find_free_port_reserved, reserve_port
+
+if TYPE_CHECKING:
+    from aion.shared.logging.base import AionLogger
 
 
 def serialize_socket(sock: socket.socket) -> tuple:
@@ -54,10 +57,10 @@ class PortReservationManager:
         """Initialize port reservation manager for localhost."""
         self._reserved: Dict[str, Tuple[int, socket.socket]] = {}
         self._locked_ports: Set[int] = set()
-        self._logger = None
+        self._logger: Optional[AionLogger] = None
 
     @property
-    def logger(self):
+    def logger(self) -> AionLogger:
         if not self._logger:
             from aion.shared.logging.factory import get_logger
             self._logger = get_logger()

@@ -7,7 +7,7 @@ operations to adapters.
 """
 import time
 from collections.abc import AsyncIterator
-from typing import Any, Optional
+from typing import Any, Optional, TYPE_CHECKING
 
 from aion.shared.agent.adapters import (
     ExecutionConfig,
@@ -19,10 +19,17 @@ from aion.shared.agent.adapters import (
 from aion.shared.agent.card import AionAgentCard
 from aion.shared.agent.inputs import AgentInput
 from aion.shared.config.models import AgentConfig
-from aion.shared.logging.factory import get_logger
+from aion.shared.exceptions import AgentAdapterNotFoundError
+
 from .models import AgentMetadata
 
-logger = get_logger()
+if TYPE_CHECKING:
+    from aion.shared.logging.base import AionLogger
+
+
+def _get_logger():
+    from aion.shared.logging.factory import get_logger
+    return get_logger()
 
 
 class AionAgent:
@@ -83,11 +90,12 @@ class AionAgent:
 
         self._metadata = metadata
         self._card: Optional[Any] = None
+        self._logger: Optional[AionLogger] = None
 
     @property
-    def logger(self):
-        if not hasattr(self, "_logger"):
-            self._logger = get_logger()
+    def logger(self) -> AionLogger:
+        if not self._logger:
+            self._logger = _get_logger()
         return self._logger
 
     @property
@@ -186,7 +194,7 @@ class AionAgent:
             metadata=metadata,
         )
 
-        logger.debug(
+        self.logger.debug(
             f"Executing agent '{self.id}' (framework={self.framework}, "
             f"session_id={session_id})"
         )
@@ -228,7 +236,7 @@ class AionAgent:
             metadata=metadata,
         )
 
-        logger.debug(
+        self.logger.debug(
             f"Streaming agent '{self.id}' (framework={self.framework}, "
             f"session_id={session_id})"
         )
@@ -259,7 +267,7 @@ class AionAgent:
         """
         config = ExecutionConfig(session_id=session_id, thread_id=thread_id)
 
-        logger.debug(f"Getting state for agent '{self.id}', session={session_id}")
+        self.logger.debug(f"Getting state for agent '{self.id}', session={session_id}")
 
         return await self._executor.get_state(config)
 
@@ -291,7 +299,7 @@ class AionAgent:
             metadata=metadata,
         )
 
-        logger.debug(f"Resuming agent '{self.id}', session={session_id}")
+        self.logger.debug(f"Resuming agent '{self.id}', session={session_id}")
 
         # Convert dict to AgentInput for backward compatibility
         if inputs is not None and isinstance(inputs, dict):
@@ -353,6 +361,7 @@ class AionAgent:
             ValueError: If configuration is invalid
             TypeError: If native_agent cannot be initialized
         """
+        logger = _get_logger()
         logger.debug(
             f"Creating AionAgent '{agent_id}' from adapter "
             f"(framework={adapter.framework_name()})"
@@ -416,6 +425,7 @@ class AionAgent:
         if not config.path:
             raise ValueError(f"Agent path is required in configuration for agent '{agent_id}'")
 
+        logger = _get_logger()
         logger.debug(f"Creating AionAgent '{agent_id}' from config (path='{config.path}')")
 
         # Load the module using ModuleLoader
@@ -451,6 +461,9 @@ class AionAgent:
                     )
                     return await cls.from_adapter(agent_id, config, adapter, native_agent)
 
+            except AgentAdapterNotFoundError:
+                continue
+
             except Exception as ex:
                 # Store error and try next adapter
                 errors.append(f"{adapter.framework_name()}: {ex}")
@@ -460,7 +473,9 @@ class AionAgent:
         available_frameworks = [_adap.framework_name() for _adap in adapter_registry.list_adapters()]
         error_msg = f"No adapter found for agent '{agent_id}' in module '{config.path}'.\n"
         error_msg += f"Available frameworks: {available_frameworks}\n"
-        error_msg += f"Errors encountered:\n" + "\n".join(f"  - {err}" for err in errors)
+
+        if errors:
+            error_msg += f"Errors encountered:\n" + "\n".join(f"  - {err}" for err in errors)
         raise ValueError(error_msg)
 
     def get_native_agent(self) -> Any:

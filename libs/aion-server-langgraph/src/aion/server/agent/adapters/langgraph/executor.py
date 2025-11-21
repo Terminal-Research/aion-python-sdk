@@ -1,7 +1,8 @@
 from collections.abc import AsyncIterator
 from typing import Any, Optional
 
-from aion.shared.agent import AgentInput, ExecutionError, StateRetrievalError
+from aion.shared.agent import AgentInput
+from aion.shared.exceptions import AgentExecutionError, AgentStateRetrievalError
 from aion.shared.agent.adapters import AgentState
 from aion.shared.agent.adapters import (
     CompleteEvent,
@@ -46,7 +47,7 @@ class LangGraphExecutor(ExecutorAdapter):
 
         except Exception as e:
             logger.error(f"LangGraph invoke failed: {e}")
-            raise ExecutionError(f"Failed to invoke agent: {e}") from e
+            raise AgentExecutionError(f"Failed to invoke agent: {e}") from e
 
     async def stream(
             self,
@@ -104,7 +105,7 @@ class LangGraphExecutor(ExecutorAdapter):
                 error=str(e),
                 error_type=type(e).__name__,
             )
-            raise ExecutionError(f"Failed to stream agent: {e}") from e
+            raise AgentExecutionError(f"Failed to stream agent: {e}") from e
 
     async def get_state(self, config: ExecutionConfig) -> AgentState:
         if not config or not config.session_id:
@@ -125,7 +126,7 @@ class LangGraphExecutor(ExecutorAdapter):
 
         except Exception as e:
             logger.error(f"Failed to get state: {e}")
-            raise StateRetrievalError(f"Failed to retrieve state: {e}") from e
+            raise AgentStateRetrievalError(f"Failed to retrieve state: {e}") from e
 
     async def resume(
             self,
@@ -200,7 +201,7 @@ class LangGraphExecutor(ExecutorAdapter):
 
         except Exception as e:
             logger.error(f"Failed to resume execution: {e}")
-            raise ExecutionError(f"Failed to resume execution: {e}") from e
+            raise AgentExecutionError(f"Failed to resume execution: {e}") from e
 
     def supports_streaming(self) -> bool:
         return True

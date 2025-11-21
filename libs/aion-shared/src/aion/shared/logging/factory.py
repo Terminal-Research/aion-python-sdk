@@ -13,7 +13,7 @@ def get_logger(
         use_stream: bool = True,
         use_logstash: bool = True,
         level: Optional[int | str] = None
-) -> logging.Logger:
+) -> AionLogger:
     """
     Get a logger with automatic context injection and custom handlers
 

@@ -1,7 +1,7 @@
-class AdapterError(Exception):
+class AgentAdapterError(Exception):
     pass
 
-class AdapterNotFoundError(AdapterError):
+class AgentAdapterNotFoundError(AgentAdapterError):
     def __init__(self, framework_name: str | None = None, agent_type: str | None = None):
         if framework_name:
             message = f"No adapter registered for framework '{framework_name}'"
@@ -11,25 +11,25 @@ class AdapterNotFoundError(AdapterError):
             message = "No suitable adapter found"
         super().__init__(message)
 
-class AdapterRegistrationError(AdapterError):
+class AgentAdapterRegistrationError(AgentAdapterError):
     pass
 
-class ExecutionError(AdapterError):
+class AgentExecutionError(AgentAdapterError):
     pass
 
-class StateRetrievalError(AdapterError):
+class AgentStateRetrievalError(AgentAdapterError):
     pass
 
-class CheckpointError(AdapterError):
+class AgentCheckpointError(AgentAdapterError):
     pass
 
-class MessageConversionError(AdapterError):
+class AgentMessageConversionError(AgentAdapterError):
     pass
 
-class ConfigurationError(AdapterError):
+class AgentConfigurationError(AgentAdapterError):
     pass
 
-class UnsupportedOperationError(AdapterError):
+class AgentUnsupportedOperationError(AgentAdapterError):
     def __init__(self, operation: str, framework: str):
         message = f"Operation '{operation}' is not supported by '{framework}' adapter"
         super().__init__(message)

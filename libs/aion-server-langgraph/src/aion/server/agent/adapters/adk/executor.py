@@ -2,7 +2,8 @@
 from collections.abc import AsyncIterator
 from typing import Any, Optional
 
-from aion.shared.agent import AgentInput, ExecutionError, StateRetrievalError
+from aion.shared.agent import AgentInput
+from aion.shared.exceptions import AgentExecutionError, AgentStateRetrievalError
 from aion.shared.agent.adapters import AgentState
 from aion.shared.agent.adapters import (
     ErrorEvent,
@@ -48,7 +49,7 @@ class ADKExecutor(ExecutorAdapter):
 
         except Exception as e:
             logger.error(f"ADK invoke failed: {e}")
-            raise ExecutionError(f"Failed to invoke agent: {e}") from e
+            raise AgentExecutionError(f"Failed to invoke agent: {e}") from e
 
     async def stream(
         self,
@@ -80,7 +81,7 @@ class ADKExecutor(ExecutorAdapter):
 
         except Exception as e:
             logger.error(f"Failed to get ADK state: {e}")
-            raise StateRetrievalError(f"Failed to retrieve state: {e}") from e
+            raise AgentStateRetrievalError(f"Failed to retrieve state: {e}") from e
 
     async def resume(
         self,
@@ -101,7 +102,7 @@ class ADKExecutor(ExecutorAdapter):
 
         except Exception as e:
             logger.error(f"Failed to resume ADK execution: {e}")
-            raise ExecutionError(f"Failed to resume execution: {e}") from e
+            raise AgentExecutionError(f"Failed to resume execution: {e}") from e
 
     def supports_streaming(self) -> bool:
         return True

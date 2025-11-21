@@ -2,7 +2,8 @@ import inspect
 from pathlib import Path
 from typing import Any, Optional
 
-from aion.shared.agent import AgentAdapter, ExecutorAdapter, ConfigurationError
+from aion.shared.agent import AgentAdapter, ExecutorAdapter
+from aion.shared.exceptions import AgentConfigurationError
 from aion.shared.agent.adapters import CheckpointerConfig, CheckpointerType
 from aion.shared.config.models import AgentConfig
 from aion.shared.logging import get_logger
@@ -100,7 +101,7 @@ class LangGraphAdapter(AgentAdapter):
 
     def validate_config(self, config: AgentConfig) -> None:
         if not config.path:
-            raise ConfigurationError("Agent path is required for LangGraph adapter")
+            raise AgentConfigurationError("Agent path is required for LangGraph adapter")
         logger.debug(f"Configuration validated for agent by LangGraph adapter")
 
     async def _compile_graph(

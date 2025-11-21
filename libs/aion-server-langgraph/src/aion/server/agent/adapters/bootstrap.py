@@ -7,12 +7,12 @@ def register_available_adapters():
 
     This function registers both LangGraph and ADK adapters.
     """
-    from .adk import ADKAdapter
+    # from .adk import ADKAdapter
     from .langgraph import LangGraphAdapter
 
     supported_framework_adapters = (
         LangGraphAdapter,
-        ADKAdapter,
+        # ADKAdapter,
     )
 
     for adapter_class in supported_framework_adapters:

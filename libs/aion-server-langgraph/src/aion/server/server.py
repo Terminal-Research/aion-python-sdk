@@ -1,6 +1,5 @@
 import logging
 import os
-import sys
 
 import uvicorn
 from aion.shared.agent import agent_manager
@@ -74,13 +73,10 @@ async def async_serve(
 
         await server.serve(sockets=sockets)
 
-    except MissingAPIKeyError as ex:
-        logger.error(f'Error: {ex}')
-        exit(1)
-
-    except Exception as ex:
-        logger.error(f'An error occurred during server startup: {ex}')
-        exit(1)
+    except Exception:
+        # Let the exception propagate to the parent process handler
+        # which will log it with proper agent context
+        raise
 
 
 async def run_server(
@@ -101,10 +97,7 @@ async def run_server(
 
         # RUN AGENT
         await async_serve(agent_id, agent_config, port, startup_callback, serialized_socket)
-    except KeyboardInterrupt:
-        logger.info("Interrupted by user")
-        sys.exit(0)
-
-    except Exception as ex:
-        logger.error(f"Fatal error: {ex}")
-        sys.exit(1)
+    except (KeyboardInterrupt, Exception):
+        # Let the exception propagate to the parent process handler
+        # which will log it with proper agent context
+        raise

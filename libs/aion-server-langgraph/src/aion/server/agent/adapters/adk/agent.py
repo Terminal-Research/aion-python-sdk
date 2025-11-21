@@ -2,7 +2,8 @@ import inspect
 from pathlib import Path
 from typing import Any, Optional
 
-from aion.shared.agent import AgentAdapter, ExecutorAdapter, ConfigurationError
+from aion.shared.agent import AgentAdapter, ExecutorAdapter
+from aion.shared.exceptions import AgentConfigurationError
 from aion.shared.config.models import AgentConfig
 from aion.shared.logging import get_logger
 from google.adk.agents import Agent as BaseAgent
@@ -79,7 +80,7 @@ class ADKAdapter(AgentAdapter):
 
     def validate_config(self, config: AgentConfig) -> None:
         if not config.path:
-            raise ConfigurationError("Agent path is required for ADK adapter")
+            raise AgentConfigurationError("Agent path is required for ADK adapter")
 
         logger.debug("Configuration validated for ADK agent")
 
