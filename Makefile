@@ -1,10 +1,15 @@
-.PHONY: install-local restore-local
+.DEFAULT_GOAL := help
 
-install-deps: ## Install poetry dependencies in all libs in one command
-	python3 scripts/refresh_aion_deps.py
+.PHONY: help deps-install-dev deps-lock deps-install
 
-install-local: ## Install local aion dependencies in editable mode
-	python3 scripts/install_local_aion_deps.py
+help: ## Show available commands
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
-restore-local: ## Restore original aion dependencies from pyproject.toml
-	python3 scripts/restore_local_aion_deps.py
+deps-install-dev: ## Install local dependencies in editable mode for development
+	./scripts/deps/install-dev.py
+
+deps-install: ## Install dependencies from lock files for all packages
+	./scripts/deps/install.py
+
+deps-lock: ## Update lock files for all packages (poetry lock)
+	./scripts/deps/lock.py
