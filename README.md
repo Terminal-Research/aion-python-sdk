@@ -22,7 +22,6 @@ POSTGRES_URL=postgresql://your_username:your_password@localhost:5432/your_databa
 # Application Settings
 LOG_LEVEL=INFO
 AION_DOCS_URL=https://docs.aion.to/
-NODE_NAME=your_node_name
 DISTRIBUTION_ID=your_distribution_id
 VERSION_ID=your_version_id
 LOGSTASH_HOST=0.0.0.0
@@ -46,7 +45,6 @@ AION_CLI_BEARER_TOKEN=your_bearer_token_here
 #### Application Settings
 * **`LOG_LEVEL`** - Controls logging verbosity: DEBUG, INFO, WARNING, ERROR (default: INFO)
 * **`AION_DOCS_URL`** - URL to the Aion API documentation (default: `https://docs.aion.to/`)
-* **`NODE_NAME`** - Node name used to identify deployment in Aion platform (optional)
 * **`DISTRIBUTION_ID`** - Distribution ID used to identify deployment in Aion platform (optional)
 * **`VERSION_ID`** - Version ID used to identify deployment in Aion platform (optional)
 * **`LOGSTASH_HOST`** - Logstash server host for centralized logging (optional)

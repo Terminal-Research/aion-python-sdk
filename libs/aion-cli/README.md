@@ -229,7 +229,7 @@ aion serve --port 5000 --port-range-start 8000 --port-range-end 9000
 
 **Server won't start:**
 
-* Ensure `aion-server-langgraph` is installed
+* Ensure `aion-server` is installed
 * Check that your `aion.yaml` configuration is valid and contains at least one agent
 * Verify that ports in the specified range are available
 * Try specifying a different port range with `--port-range-start` and `--port-range-end`
