@@ -8,8 +8,8 @@ LIBS_DIR = ROOT_DIR / "libs"
 # Note: Only direct dependencies need to be specified. Transitive dependencies
 # are resolved automatically using resolve_dependencies() function.
 PACKAGES = {
-    "aion-cli": ["aion-server-langgraph"],
-    "aion-server-langgraph": ["aion-api-client", "aion-shared"],
+    "aion-cli": ["aion-server"],
+    "aion-server": ["aion-api-client", "aion-shared"],
     "aion-api-client": ["aion-shared"],
     "aion-mcp": ["aion-shared"],
     "aion-shared": [],
@@ -21,9 +21,9 @@ def resolve_dependencies(package_name: str, visited: set = None, resolved: List[
     Recursively resolve all transitive dependencies for a package in reverse topological order.
 
     This installs from higher-level to lower-level dependencies.
-    For example, if aion-cli depends on aion-server-langgraph, which depends on
+    For example, if aion-cli depends on aion-server, which depends on
     aion-api-client and aion-shared, the installation order will be:
-    1. aion-server-langgraph
+    1. aion-server
     2. aion-api-client
     3. aion-shared
 

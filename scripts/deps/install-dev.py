@@ -6,20 +6,20 @@ This script installs local package dependencies in editable mode using pip,
 allowing for live development across multiple packages in the monorepo.
 It automatically resolves transitive dependencies in the correct order.
 
-For example, if aion-cli depends on aion-server-langgraph, which depends on
+For example, if aion-cli depends on aion-server, which depends on
 aion-api-client and aion-shared, all dependencies will be installed in the
-order: aion-server-langgraph, aion-api-client, aion-shared.
+order: aion-server, aion-api-client, aion-shared.
 
 Usage:
     python install-dev.py
 
 Example:
     $ python scripts/deps/install-dev.py
-    [INFO] Available packages: aion-cli, aion-server-langgraph, ...
+    [INFO] Available packages: aion-cli, aion-server, ...
     [PACKAGE] aion-cli
-      Direct dependencies: aion-server-langgraph
-      Installing (with transitive): aion-server-langgraph, aion-api-client, aion-shared
-      [SUCCESS] Installed aion-server-langgraph < /path/to/libs/aion-server-langgraph
+      Direct dependencies: aion-server
+      Installing (with transitive): aion-server, aion-api-client, aion-shared
+      [SUCCESS] Installed aion-server < /path/to/libs/aion-server
       ...
 """
 

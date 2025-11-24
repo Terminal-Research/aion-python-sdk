@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "aion-server-langgraph"
+name = "aion-server"
 version = "0.1.0"
 description = "A2A server wrapper for LangGraph projects"
 authors = ["Terminal Research Team <support@terminal.exchange>"]
