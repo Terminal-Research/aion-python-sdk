@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 """
-Install production dependencies for all packages in the monorepo.
+Sync dependencies for all packages in the monorepo.
 
-This script runs `poetry install --sync` on all packages defined in config.PACKAGES
-to install dependencies from their poetry.lock files, removing any packages
+This script runs `poetry sync` on all packages defined in config.PACKAGES
+to synchronize their environments with poetry.lock files, removing any packages
 not specified in the lock file.
 
 Usage:
-    python install.py
+    python sync.py
 
 Example:
-    $ python scripts/deps/install.py
-    [INFO] Installing: aion-cli, aion-server, ...
-    [PACKAGE] aion-cli: installing dependencies
-      [SUCCESS] Dependencies installed (synced with lock file)
+    $ python scripts/deps/sync.py
+    [INFO] Syncing: aion-cli, aion-server, ...
+    [PACKAGE] aion-cli: syncing dependencies
+      [SUCCESS] Dependencies synced
     ...
 """
 
@@ -29,13 +29,13 @@ from package_ops import (
 
 def main():
     """
-    Main entry point for the install script.
+    Main entry point for the sync script.
 
-    Iterates through all packages and installs their production dependencies
-    from lock files using `poetry install --sync`.
+    Iterates through all packages and synchronizes their environments
+    with their lock files.
 
     Returns:
-        0 if all packages were installed successfully, 1 otherwise
+        0 if all packages were synced successfully, 1 otherwise
     """
     if not validate_libs_dir():
         print("[ERROR] libs/ directory not found")
@@ -46,7 +46,7 @@ def main():
         return 1
 
     packages = get_all_packages()
-    print(f"[INFO] Installing: {', '.join(packages)}")
+    print(f"[INFO] Syncing: {', '.join(packages)}")
 
     successful = 0
     failed = 0
@@ -55,9 +55,9 @@ def main():
         try:
             if execute_poetry_command(
                 package_name,
-                ['install'],
-                'installing dependencies',
-                'Dependencies installed (synced with lock file)'
+                ['sync'],
+                'syncing dependencies',
+                'Dependencies synced'
             ):
                 successful += 1
             else:
@@ -70,7 +70,7 @@ def main():
             failed += 1
 
     print(f"\n[COMPLETE] Summary:")
-    print(f"  - Successfully installed: {successful}")
+    print(f"  - Successfully synced: {successful}")
     print(f"  - Failed: {failed}")
 
     return 0 if failed == 0 else 1
