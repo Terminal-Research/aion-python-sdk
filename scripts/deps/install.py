@@ -13,7 +13,7 @@ Example:
     $ python scripts/deps/install.py
     [INFO] Installing: aion-cli, aion-server, ...
     [PACKAGE] aion-cli: installing dependencies
-      [SUCCESS] Dependencies installed (synced with lock file)
+      [SUCCESS] Dependencies installed
     ...
 """
 
@@ -32,7 +32,7 @@ def main():
     Main entry point for the install script.
 
     Iterates through all packages and installs their production dependencies
-    from lock files using `poetry install --sync`.
+    from lock files using `poetry install`.
 
     Returns:
         0 if all packages were installed successfully, 1 otherwise
@@ -57,7 +57,7 @@ def main():
                 package_name,
                 ['install'],
                 'installing dependencies',
-                'Dependencies installed (synced with lock file)'
+                'Dependencies installed'
             ):
                 successful += 1
             else:
