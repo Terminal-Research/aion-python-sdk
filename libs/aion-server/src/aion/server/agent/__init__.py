@@ -1,5 +1,5 @@
 from .agent_execution import AionAgentRequestExecutor
-from .adapters import register_available_adapters
+from .adapters_bootstrap import register_available_adapters
 
 __all__ = [
     "AionAgentRequestExecutor",
