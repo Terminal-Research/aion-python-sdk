@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "aion-adapter-langgraph"
+name = "aion-plugin-langgraph"
 version = "0.1.0"
 description = ""
 authors = ["Terminal Research Team <support@terminal.exchange>"]
