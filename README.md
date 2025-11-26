@@ -193,4 +193,6 @@ The SDK provides seamless integration of your LangGraph agents through:
 
 ## Contributing
 
-For development setup and working with local dependencies, see **[Local Development Setup](docs/local-setup.md)**.
+For development setup, working with local dependencies, and testing feature branches, see:
+- **[Local Development Setup](docs/local-setup.md)** - Full guide for working with monorepo dependencies
+- **[Dependency Management Scripts](scripts/deps/README.md)** - Detailed documentation for all dependency scripts

@@ -16,7 +16,7 @@ httpx = "0.28.1"
 pydantic = "2.11.3"
 websockets = "11.0.3"
 
-aion-shared = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-shared" }
+aion-shared = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "fixes/resolve_packages_installation", subdirectory = "libs/aion-shared" }
 
 [tool.poetry.group.dev.dependencies]
 pytest = "8.4.1"

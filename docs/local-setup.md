@@ -101,6 +101,40 @@ make deps-lock-regenerate  # Rebuild locks from scratch
 make deps-sync              # Clean install
 ```
 
+### Testing changes in feature branches
+
+When working on feature branches and need to test git installation before merging to main:
+
+**Problem**: Installing packages from a feature branch pulls transitive dependencies from `main` branch, preventing proper testing.
+
+**Solution**: Update all branch references to your feature branch:
+
+```bash
+# 1. Update branch references
+make deps-set-branch BRANCH=features/my-feature
+
+# 2. Commit and push changes
+git add libs/*/pyproject.toml
+git commit -m "chore: update branches for testing"
+git push
+
+# 3. Test installation in another project
+# 4. Test with optional dependencies (e.g., langgraph)
+```
+
+**Before merging to main**:
+```bash
+# Restore all branch references
+make deps-set-branch BRANCH=main
+git add libs/*/pyproject.toml
+git commit -m "chore: restore branches to main"
+```
+
+**How it works**:
+- The script updates all `branch = "main"` references in git dependencies to your feature branch
+- This ensures all internal dependencies resolve to the same branch when installed from git
+- Enables proper testing of changes across multiple packages before merging
+
 ## Configuration
 
 To modify which packages are processed or change dependency mappings, edit `scripts/deps/config.py`.

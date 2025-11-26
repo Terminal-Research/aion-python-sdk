@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help deps-install-dev deps-install deps-lock deps-lock-regenerate deps-sync
+.PHONY: help deps-install-dev deps-install deps-lock deps-lock-regenerate deps-sync deps-set-branch
 
 help: ## Show available commands
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -19,3 +19,11 @@ deps-lock-regenerate: ## Regenerate lock files from scratch (ignores existing lo
 
 deps-sync: ## Sync dependencies with lock files (removes unlocked packages)
 	./scripts/deps/sync.py
+
+deps-set-branch: ## Update git branch references (usage: make deps-set-branch BRANCH=features/my-branch)
+	@if [ -z "$(BRANCH)" ]; then \
+		echo "Error: BRANCH variable is required"; \
+		echo "Usage: make deps-set-branch BRANCH=features/my-branch"; \
+		exit 1; \
+	fi
+	./scripts/deps/set-branch.py $(BRANCH)
