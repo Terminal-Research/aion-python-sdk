@@ -15,6 +15,7 @@ from aion.server.db import verify_connection
 from aion.server.db.manager import DbManager
 from aion.server.db.migrations import upgrade_to_head
 from aion.server.tasks import StoreManager
+from aion.server.plugins.manager import PluginManager
 from .lifespan import AppLifespan
 
 logger = get_logger()
@@ -26,15 +27,18 @@ class AppContext:
     Attributes:
         db_manager: Database connection manager
         store_manager: Task store manager for handling data storage
+        plugin_manager: Plugin manager for handling plugin lifecycle
     """
 
     def __init__(
             self,
             db_manager: DbManager,
-            store_manager: StoreManager
+            store_manager: StoreManager,
+            plugin_manager: PluginManager
     ):
         self.db_manager = db_manager
         self.store_manager = store_manager
+        self.plugin_manager = plugin_manager
 
 
 class AppFactory:
@@ -84,12 +88,25 @@ class AppFactory:
 
     async def _initialize(self) -> None:
         """Initialize all application components in sequence:
-        database, agent, A2A app, and Starlette app.
+        database, plugins, agent building (framework discovery), A2A app, and Starlette app.
+
+        Order is critical:
+        1. Init DB - creates connection pool
+        2. Init plugins - registers adapters, setup with db_manager
+        3. Build agent - discovers framework from registered adapters
+        4. Create A2A app
+        5. Build Starlette app
         """
         logger.debug("Initializing application for agent '%s'", self.aion_agent.id)
 
         # Initialize database
         await self._init_db()
+
+        # Initialize plugins (registers framework adapters)
+        await self._init_plugins()
+
+        # Build agent (discovers framework and creates executor)
+        await self._build_agent()
 
         # Create A2A application
         await self._create_a2a_app()
@@ -165,9 +182,45 @@ class AppFactory:
             await self._cleanup_db()
             return
 
+    async def _init_plugins(self) -> None:
+        """Discover, register and setup all plugins.
+
+        This step registers framework adapters before agent building.
+        """
+        try:
+            # Discover and register plugins
+            await self.context.plugin_manager.discover_and_register()
+
+            # Setup plugins with dependencies
+            await self.context.plugin_manager.setup_all(
+                db_manager=self.context.db_manager
+            )
+        except Exception as exc:
+            logger.error("Failed to initialize plugins", exc_info=exc)
+            await self._cleanup_plugins()
+
+    async def _build_agent(self) -> None:
+        """Build the agent by discovering framework and creating executor.
+
+        This must be called after plugins are initialized so that framework
+        adapters are registered.
+        """
+        if self.aion_agent.is_built:
+            logger.debug(f"Agent '{self.aion_agent.id}' is already built, skipping")
+            return
+
+        try:
+            logger.debug(f"Building agent '{self.aion_agent.id}'...")
+            await self.aion_agent.build()
+            logger.info(f"Agent '{self.aion_agent.id}' built successfully (framework={self.aion_agent.framework})")
+        except Exception as exc:
+            logger.error(f"Failed to build agent '{self.aion_agent.id}'", exc_info=exc)
+            raise
+
     async def shutdown(self) -> None:
-        """Shutdown the application and cleanup database resources."""
+        """Shutdown the application and cleanup resources."""
         logger.info("Shutting down application factory")
+        await self._cleanup_plugins()
         await self._cleanup_db()
 
     async def _cleanup_db(self) -> None:
@@ -180,6 +233,17 @@ class AppFactory:
             logger.info("Database connections closed")
         except Exception as exc:
             logger.error("Error closing database", exc_info=exc)
+
+    async def _cleanup_plugins(self) -> None:
+        """Teardown all plugins if initialized."""
+        if not self.context.plugin_manager.is_initialized():
+            return
+
+        try:
+            await self.context.plugin_manager.teardown_all()
+            logger.info("Plugins cleaned up")
+        except Exception as exc:
+            logger.error("Error cleaning up plugins", exc_info=exc)
 
     # Properties for accessing application components
 

@@ -103,7 +103,7 @@ class PluginManager:
                 await plugin.setup(db_manager=db_manager, **extra_deps)
 
                 # Server-specific post-setup integration
-                await self._post_setup(plugin, db_manager)
+                await self._post_setup(plugin)
 
                 # Health check
                 if await plugin.health_check():
@@ -172,14 +172,12 @@ class PluginManager:
 
     async def _post_setup(
             self,
-            plugin: BasePluginProtocol,
-            db_manager: Optional[DbManagerProtocol]
+            plugin: BasePluginProtocol
     ) -> None:
         """Perform server-specific post-setup integration.
 
         Args:
             plugin: Plugin that was just setup
-            db_manager: Database manager instance
         """
         # If it's an agent plugin, register its adapter
         if isinstance(plugin, AgentPluginProtocol):
