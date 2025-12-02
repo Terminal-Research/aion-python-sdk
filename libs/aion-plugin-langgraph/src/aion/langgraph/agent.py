@@ -5,6 +5,7 @@ from typing import Any, Optional
 from aion.shared.agent import AgentAdapter, ExecutorAdapter, ConfigurationError
 from aion.shared.agent.adapters import CheckpointerConfig, CheckpointerType
 from aion.shared.config.models import AgentConfig
+from aion.shared.db import DbManagerProtocol
 from aion.shared.logging import get_logger
 from aion.shared.settings import db_settings
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -18,10 +19,27 @@ logger = get_logger()
 
 
 class LangGraphAdapter(AgentAdapter):
+    """LangGraph framework adapter with database dependency injection.
 
-    def __init__(self, base_path: Optional[Path] = None):
+    This adapter handles LangGraph graph instances and provides execution
+    capabilities. For PostgreSQL checkpointer support, a database manager
+    instance should be provided via dependency injection.
+    """
+
+    def __init__(
+        self,
+        base_path: Optional[Path] = None,
+        db_manager: Optional[DbManagerProtocol] = None
+    ):
+        """Initialize LangGraph adapter.
+
+        Args:
+            base_path: Base path for agent files (defaults to current directory)
+            db_manager: Database manager instance for PostgreSQL checkpointer support.
+                       If None, only memory checkpointers will be available.
+        """
         self.base_path = base_path or Path.cwd()
-        self.checkpointer_adapter = LangGraphCheckpointerAdapter()
+        self.checkpointer_adapter = LangGraphCheckpointerAdapter(db_manager=db_manager)
 
     @staticmethod
     def framework_name() -> str:

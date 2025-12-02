@@ -3,6 +3,7 @@ import os
 import sys
 
 import uvicorn
+from aion.server.plugins import plugin_manager
 from aion.shared.agent import agent_manager
 from aion.shared.config import AgentConfig
 from aion.shared.logging import get_logger
@@ -96,8 +97,9 @@ async def run_server(
         replace_uvicorn_loggers(suppress_startup_logs=True)
         replace_logstash_loggers()
 
-        # Register agent adapters to handle a specific agent framework
-        register_available_adapters()
+        # Register plugins
+        await plugin_manager.discover_and_register()
+        await plugin_manager.setup_all()
 
         # RUN AGENT
         await async_serve(agent_id, agent_config, port, startup_callback, serialized_socket)
