@@ -212,7 +212,6 @@ class AppFactory:
         try:
             await self.aion_agent.build()
         except Exception as exc:
-            logger.error(f"Failed to build agent '{self.aion_agent.id}'", exc_info=exc)
             raise
 
     async def shutdown(self) -> None:

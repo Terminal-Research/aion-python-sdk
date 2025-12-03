@@ -161,7 +161,7 @@ class PluginManager:
             plugin = LangGraphPlugin()
             plugins.append(plugin)
         except ImportError:
-            self.logger.debug("LangGraph plugin not available (aion-plugin-langgraph not installed)")
+            pass
         except Exception as e:
             self.logger.warning(f"Failed to load LangGraph plugin: {e}")
 
