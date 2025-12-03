@@ -90,7 +90,6 @@ class AgentManager(metaclass=Singleton):
         """
         self._agent_id = agent_id
         self._agent_config = config
-        self.logger.debug(f"Agent configuration set for '{agent_id}'")
 
     async def create_agent(
             self,
@@ -98,7 +97,10 @@ class AgentManager(metaclass=Singleton):
             port: Optional[int] = None,
             config: Optional[AgentConfig] = None,
     ) -> AionAgent:
-        """Create and register a new agent.
+        """Create and register a new agent (without building).
+
+        This creates an agent instance but does NOT discover the framework yet.
+        Call agent.build() after plugins are registered to complete initialization.
 
         Can be called in two ways:
         1. With parameters: create_agent(agent_id, config)
@@ -110,7 +112,7 @@ class AgentManager(metaclass=Singleton):
             config: Agent configuration (optional if set via set_agent_config)
 
         Returns:
-            AionAgent: Created agent instance
+            AionAgent: Created agent instance (not yet built)
 
         Raises:
             RuntimeError: If an agent is already loaded
@@ -136,10 +138,10 @@ class AgentManager(metaclass=Singleton):
         if agent_id or config:
             self.set_agent_config(final_agent_id, final_config)
 
-        self.logger.info(f"Creating agent '{final_agent_id}'...")
+        self.logger.info(f"Creating agent '{final_agent_id}' (framework discovery deferred)...")
 
-        # Create agent using auto-detection
-        agent = await AionAgent.from_config(agent_id=final_agent_id, config=final_config)
+        # Create agent WITHOUT framework discovery
+        agent = AionAgent(agent_id=final_agent_id, config=final_config)
         agent.port = port
 
         # Store agent

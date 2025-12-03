@@ -282,13 +282,11 @@ class ProcessManager:
             if timeout is not None:
                 if process_info.parent_conn.poll(timeout):
                     message = process_info.parent_conn.recv()
-                    self.logger.debug(f"Message received from process '{key}'")
                     return message
                 else:
                     return None
             else:
                 message = process_info.parent_conn.recv()
-                self.logger.debug(f"Message received from process '{key}'")
                 return message
         except Exception as e:
             self.logger.error(f"Failed to receive message from process '{key}': {str(e)}")

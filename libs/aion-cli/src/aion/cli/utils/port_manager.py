@@ -91,6 +91,7 @@ class AionPortManager:
             logger.info(f"Auto-reserved proxy port {found_port} from range {proxy_port_search_start}-{proxy_port_search_end}")
 
         # Reserve agent ports dynamically from range
+        reserved_ports = []
         for agent_id in config.agents.keys():
             port = self._port_manager.reserve_from_range(
                 key=agent_id,
@@ -101,9 +102,11 @@ class AionPortManager:
                 logger.error(f"Failed to reserve port for agent '{agent_id}' from range {agent_port_start}-{agent_port_end}")
                 self._port_manager.release_all()
                 return False
-            logger.debug(f"Reserved port {port} for agent '{agent_id}'")
+            reserved_ports.append(str(port))
 
-        logger.info(f"Successfully reserved {self._port_manager.count()} ports")
+        proxy_port = self.get_proxy_port()
+        all_ports = [str(proxy_port)] + reserved_ports if proxy_port else reserved_ports
+        logger.info(f"Successfully reserved ports: {', '.join(all_ports)}")
         return True
 
     def reserve_proxy_from_range(self, port_start: int, port_end: int) -> Optional[int]:
@@ -143,6 +146,7 @@ class AionPortManager:
         Returns:
             bool: True if all agent ports reserved successfully
         """
+        reserved_ports = []
         for agent_id in agent_ids:
             port = self._port_manager.reserve_from_range(
                 key=agent_id,
@@ -154,9 +158,9 @@ class AionPortManager:
                     f"Failed to reserve port for agent '{agent_id}' from range {port_range_start}-{port_range_end}"
                 )
                 return False
-            logger.debug(f"Reserved port {port} for agent '{agent_id}'")
+            reserved_ports.append(str(port))
 
-        logger.info(f"Successfully reserved {len(agent_ids)} agent ports")
+        logger.info(f"Reserved agent ports: {', '.join(reserved_ports)}")
         return True
 
     def reserve_agent_port(self, agent_id: str, port: int) -> bool:

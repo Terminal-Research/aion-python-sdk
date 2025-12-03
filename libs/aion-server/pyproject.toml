@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "A2A server wrapper for LangGraph projects"
 authors = ["Terminal Research Team <support@terminal.exchange>"]
 readme = "README.md"
-packages = [{include = "aion", from = "src"}]
+packages = [{ include = "aion", from = "src" }]
 
 [tool.poetry.dependencies]
 python = "^3.12.0"
@@ -13,14 +13,12 @@ fastapi = "0.119.1"
 structlog = "24.4.0"
 httpx = "0.28.1"
 # PostgreSQL
-psycopg = { version = "3.2.9", extras = ["binary"] }
+psycopg = { version = "^3.1", extras = ["binary", "pool"] }
 asyncpg = "0.30.0" # native psql protocol (faster then psycopg)
 greenlet = "3.2.3" # supports async pg operations
 alembic = "1.16.2" # migrations
 SQLAlchemy = "2.0.41"
 
-langgraph-checkpoint-postgres = "2.0.21"
-langchain-openai = "0.3.27"
 PyYAML = "6.0.2"
 
 aion-api-client = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-api-client" }

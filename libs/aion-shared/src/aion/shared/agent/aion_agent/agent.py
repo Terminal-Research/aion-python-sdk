@@ -58,9 +58,9 @@ class AionAgent:
             self,
             agent_id: str,
             config: AgentConfig,
-            adapter: AgentAdapter,
-            executor: ExecutorAdapter,
-            native_agent: Any,
+            adapter: Optional[AgentAdapter] = None,
+            executor: Optional[ExecutorAdapter] = None,
+            native_agent: Optional[Any] = None,
             port: Optional[int] = None,
             metadata: Optional[AgentMetadata] = None,
             logger: Optional[AionLogger] = None,
@@ -69,17 +69,18 @@ class AionAgent:
 
         Args:
             agent_id: Unique agent identifier
-            port: Port number
             config: Agent configuration
-            adapter: Framework-specific adapter
-            executor: Framework-specific executor
-            native_agent: Native framework agent object
+            adapter: Framework-specific adapter (optional, set during build)
+            executor: Framework-specific executor (optional, set during build)
+            native_agent: Native framework agent object (optional, set during build)
+            port: Port number
             metadata: Optional agent metadata
             logger: Optional AionLogger instance
 
         Note:
-            Don't call this directly. Use AionAgent.from_adapter() or
-            AionAgent.from_config() factory methods instead.
+            You can create an agent with just agent_id and config, then call build()
+            to complete initialization. Or use AionAgent.from_adapter() or
+            AionAgent.from_config() factory methods for one-step creation.
         """
         self._id = agent_id
         self.port = port
@@ -87,6 +88,7 @@ class AionAgent:
         self._adapter = adapter
         self._executor = executor
         self._native_agent = native_agent
+        self._is_built = False
 
         # Create default metadata if not provided
         if metadata is None:
@@ -132,12 +134,25 @@ class AionAgent:
         return self._config
 
     @property
+    def is_built(self) -> bool:
+        """Check if agent has been built (framework discovered and executor created).
+
+        Returns:
+            bool: True if agent is ready for execution, False otherwise
+        """
+        return self._is_built
+
+    @property
     def framework(self) -> str:
         """Framework name (e.g., 'langgraph', 'autogen').
 
         Returns framework from config if available, otherwise from adapter.
         """
-        return self._config.framework if hasattr(self._config, "framework") else self._adapter.framework_name()
+        if hasattr(self._config, "framework") and self._config.framework:
+            return self._config.framework
+        if self._adapter:
+            return self._adapter.framework_name()
+        return "unknown"
 
     @property
     def version(self) -> str:
@@ -188,9 +203,15 @@ class AionAgent:
             dict[str, Any]: Agent execution result
 
         Raises:
+            RuntimeError: If agent is not built yet
             ExecutionError: If execution fails
             TimeoutError: If execution exceeds timeout
         """
+        if not self._is_built:
+            raise RuntimeError(
+                f"Agent '{self._id}' is not built yet. Call build() before executing."
+            )
+
         config = ExecutionConfig(
             session_id=session_id,
             thread_id=thread_id,
@@ -230,9 +251,15 @@ class AionAgent:
             ExecutionEvent: Events emitted during execution
 
         Raises:
+            RuntimeError: If agent is not built yet
             ExecutionError: If execution fails
             TimeoutError: If execution exceeds timeout
         """
+        if not self._is_built:
+            raise RuntimeError(
+                f"Agent '{self._id}' is not built yet. Call build() before executing."
+            )
+
         config = ExecutionConfig(
             session_id=session_id,
             thread_id=thread_id,
@@ -267,8 +294,14 @@ class AionAgent:
             AgentState: Current agent state
 
         Raises:
+            RuntimeError: If agent is not built yet
             StateRetrievalError: If state cannot be retrieved
         """
+        if not self._is_built:
+            raise RuntimeError(
+                f"Agent '{self._id}' is not built yet. Call build() before accessing state."
+            )
+
         config = ExecutionConfig(session_id=session_id, thread_id=thread_id)
 
         self.logger.debug(f"Getting state for agent '{self.id}', session={session_id}")
@@ -294,9 +327,15 @@ class AionAgent:
             ExecutionEvent: Events emitted during resumed execution
 
         Raises:
+            RuntimeError: If agent is not built yet
             ExecutionError: If resume fails
             ValueError: If execution is not in resumable state
         """
+        if not self._is_built:
+            raise RuntimeError(
+                f"Agent '{self._id}' is not built yet. Call build() before resuming."
+            )
+
         config = ExecutionConfig(
             session_id=session_id,
             thread_id=thread_id,
@@ -399,47 +438,45 @@ class AionAgent:
 
         return agent
 
-    @classmethod
-    async def from_config(
-            cls,
-            agent_id: str,
-            config: AgentConfig,
-            base_path: Optional[Any] = None,
-    ) -> "AionAgent":
-        """Create AionAgent from config by auto-detecting framework.
+    async def build(self, base_path: Optional[Any] = None) -> "AionAgent":
+        """Build the agent by discovering framework and creating executor.
 
-        Uses ModuleLoader to load the module, then tries all registered adapters
-        to find one that can discover and handle the agent.
+        This method completes the agent initialization by:
+        1. Loading the agent module from config.path
+        2. Auto-detecting the framework using registered adapters
+        3. Creating the executor for agent execution
+
+        This allows plugins to be registered before the framework is discovered.
 
         Args:
-            agent_id: Unique agent identifier
-            config: Agent configuration with agent path
             base_path: Optional base path for resolving relative module paths
 
         Returns:
-            AionAgent: Unified agent instance
+            AionAgent: Self for method chaining
 
         Raises:
+            RuntimeError: If agent is already built
             ValueError: If no adapter can handle the agent or path is missing
             FileNotFoundError: If agent module not found
         """
+        if self._is_built:
+            raise RuntimeError(f"Agent '{self._id}' is already built")
+
         from ..adapters.registry import adapter_registry
         from .module_loader import ModuleLoader
 
-        if not config.path:
-            raise ValueError(f"Agent path is required in configuration for agent '{agent_id}'")
+        if not self._config.path:
+            raise ValueError(f"Agent path is required in configuration for agent '{self._id}'")
 
-        logger = _get_logger()
-        logger.debug(f"Creating AionAgent '{agent_id}' from config (path='{config.path}')")
+        self.logger.debug(f"Building AionAgent '{self._id}' from config (path='{self._config.path}')")
 
         # Load the module using ModuleLoader
         module_loader = ModuleLoader(base_path=base_path)
         try:
-            module, item_name = module_loader.load_from_config_path(config.path)
-            logger.debug(f"Successfully loaded module for agent '{agent_id}'")
+            module, item_name = module_loader.load_from_config_path(self._config.path)
         except Exception as ex:
             raise FileNotFoundError(
-                f"Failed to load module for agent '{agent_id}' from path '{config.path}': {ex}"
+                f"Failed to load module for agent '{self._id}' from path '{self._config.path}': {ex}"
             ) from ex
 
         # Try each registered adapter to discover the agent
@@ -460,10 +497,31 @@ class AionAgent:
 
                 # Check if adapter can handle the discovered agent
                 if adapter.can_handle(native_agent):
-                    logger.debug(
-                        f"Auto-detected framework '{adapter.framework_name()}' for agent '{agent_id}'"
+                    self.logger.debug(
+                        f"Auto-detected framework '{adapter.framework_name()}' for agent '{self._id}'"
                     )
-                    return await cls.from_adapter(agent_id, config, adapter, native_agent)
+
+                    # Validate config
+                    adapter.validate_config(self._config)
+
+                    # Initialize agent (may wrap or transform native_agent)
+                    initialized_agent = await adapter.initialize_agent(native_agent, self._config)
+
+                    # Create executor
+                    executor = await adapter.create_executor(initialized_agent, self._config)
+
+                    # Set the components
+                    self._adapter = adapter
+                    self._executor = executor
+                    self._native_agent = initialized_agent
+                    self._is_built = True
+
+                    self.logger.info(
+                        f"AionAgent '{self._id}' built successfully "
+                        f"(framework={adapter.framework_name()})"
+                    )
+
+                    return self
 
             except Exception as ex:
                 # Store error and try next adapter
@@ -472,7 +530,7 @@ class AionAgent:
 
         # No adapter could handle the agent
         available_frameworks = [_adap.framework_name() for _adap in adapter_registry.list_adapters()]
-        error_msg = f"No adapter found for agent '{agent_id}' in module '{config.path}'.\n"
+        error_msg = f"No adapter found for agent '{self._id}' in module '{self._config.path}'.\n"
         error_msg += f"Available frameworks: {available_frameworks}\n"
         error_msg += f"Errors encountered:\n" + "\n".join(f"  - {err}" for err in errors)
         raise ValueError(error_msg)

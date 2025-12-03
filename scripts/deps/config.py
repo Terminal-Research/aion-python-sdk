@@ -1,3 +1,4 @@
+from collections import deque
 from pathlib import Path
 from typing import List
 
@@ -9,61 +10,56 @@ LIBS_DIR = ROOT_DIR / "libs"
 # are resolved automatically using resolve_dependencies() function.
 PACKAGES = {
     "aion-cli": ["aion-server"],
-    "aion-server": ["aion-api-client", "aion-shared"],
+    "aion-server": ["aion-plugin-langgraph", "aion-api-client"],
+    "aion-plugin-langgraph": ["aion-shared"],
     "aion-api-client": ["aion-shared"],
     "aion-mcp": ["aion-shared"],
     "aion-shared": [],
 }
 
 
-def resolve_dependencies(package_name: str, visited: set = None, resolved: List[str] = None) -> List[str]:
+def resolve_dependencies(package_name: str) -> List[str]:
     """
-    Recursively resolve all transitive dependencies for a package in reverse topological order.
+    Resolve all transitive dependencies for a package using level-order traversal (BFS).
 
-    This installs from higher-level to lower-level dependencies.
-    For example, if aion-cli depends on aion-server, which depends on
-    aion-api-client and aion-shared, the installation order will be:
-    1. aion-server
-    2. aion-api-client
-    3. aion-shared
+    Dependencies are resolved level by level, ensuring higher-level packages
+    are installed before their dependencies.
 
     Args:
         package_name: The package to resolve dependencies for
-        visited: Set of packages currently being visited (for cycle detection)
-        resolved: List of resolved dependencies in order
 
     Returns:
-        List of all dependencies in installation order (high-level to low-level)
+        List of all packages in installation order (current package, then dependencies level by level)
 
     Raises:
         ValueError: If a circular dependency is detected
     """
-    if visited is None:
-        visited = set()
-    if resolved is None:
-        resolved = []
+    result = []
+    seen = set()
+    queue = deque([package_name])
+    in_progress = set()
 
-    if package_name in visited:
-        # Circular dependency detected
-        raise ValueError(f"Circular dependency detected: {package_name}")
+    while queue:
+        current = queue.popleft()
 
-    if package_name in resolved:
-        # Already resolved
-        return resolved
+        # Skip if already processed
+        if current in seen:
+            continue
 
-    visited.add(package_name)
+        # Check for circular dependency
+        if current in in_progress:
+            raise ValueError(f"Circular dependency detected: {current}")
 
-    # Get direct dependencies
-    direct_deps = PACKAGES.get(package_name, [])
+        in_progress.add(current)
+        seen.add(current)
+        result.append(current)
 
-    # Add this package first (before its dependencies for reverse order)
-    if package_name not in resolved:
-        resolved.append(package_name)
+        # Add direct dependencies to queue
+        direct_deps = PACKAGES.get(current, [])
+        for dep in direct_deps:
+            if dep not in seen:
+                queue.append(dep)
 
-    # Recursively resolve each dependency
-    for dep in direct_deps:
-        resolve_dependencies(dep, visited, resolved)
+        in_progress.remove(current)
 
-    visited.remove(package_name)
-
-    return resolved
+    return result

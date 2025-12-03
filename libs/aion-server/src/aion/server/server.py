@@ -10,10 +10,10 @@ from aion.shared.logging.base import AionLogger
 from aion.shared.utils.logging import replace_uvicorn_loggers, replace_logstash_loggers
 from dotenv import load_dotenv
 
-from aion.server.agent import register_available_adapters
 from aion.server.core.app import AppFactory, AppContext
 from aion.server.db import db_manager
 from aion.server.tasks import store_manager
+from aion.server.plugins import plugin_manager
 
 # Set custom logger class globally for all loggers including uvicorn
 logging.setLoggerClass(AionLogger)
@@ -44,7 +44,8 @@ async def async_serve(
             aion_agent=aion_agent,
             context=AppContext(
                 db_manager=db_manager,
-                store_manager=store_manager
+                store_manager=store_manager,
+                plugin_manager=plugin_manager
             ),
             startup_callback=startup_callback
         ).initialize()
@@ -95,9 +96,6 @@ async def run_server(
         # Configure custom loggers from uvicorn / logstash
         replace_uvicorn_loggers(suppress_startup_logs=True)
         replace_logstash_loggers()
-
-        # Register agent adapters to handle a specific agent framework
-        register_available_adapters()
 
         # RUN AGENT
         await async_serve(agent_id, agent_config, port, startup_callback, serialized_socket)

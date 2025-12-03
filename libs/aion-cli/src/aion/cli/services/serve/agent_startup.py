@@ -140,7 +140,6 @@ class ServeAgentStartupService(BaseExecuteService):
         if conn is not None:
             try:
                 conn.send({"status": "started", "pid": os.getpid(), "agent_id": agent_id})
-                logger.debug(f"Sent startup confirmation for agent '{agent_id}' to parent process")
             except Exception as ex:
                 logger.warning(f"Failed to send startup confirmation for agent '{agent_id}': {str(ex)}")
 

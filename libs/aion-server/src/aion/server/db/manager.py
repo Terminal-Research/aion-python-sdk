@@ -1,16 +1,19 @@
 from typing import Optional
 
+from aion.shared.db import DbManagerProtocol
 from aion.shared.logging import get_logger
+from aion.shared.logging.base import AionLogger
+from aion.shared.metaclasses import SingletonABCMeta
 from psycopg_pool import AsyncConnectionPool
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 
-from aion.shared.metaclasses import Singleton
 
-logger = get_logger()
+class DbManager(DbManagerProtocol, metaclass=SingletonABCMeta):
+    """PostgreSQL database manager implementation.
 
-
-class DbManager(metaclass=Singleton):
-    """Manages PostgreSQL connection pool and SQLAlchemy sessions."""
+    Implements DbManagerProtocol to provide database connectivity
+    using psycopg for connection pooling and SQLAlchemy for ORM operations.
+    """
 
     def __init__(self):
         """Initialize the database manager with no active pool."""
@@ -18,6 +21,13 @@ class DbManager(metaclass=Singleton):
         self._engine = None
         self._session_factory = None
         self._dsn: Optional[str] = None
+        self._logger: Optional[AionLogger] = None
+
+    @property
+    def logger(self) -> AionLogger:
+        if not self._logger:
+            self._logger = get_logger()
+        return self._logger
 
     @property
     def is_initialized(self) -> bool:
@@ -31,7 +41,7 @@ class DbManager(metaclass=Singleton):
             dsn: PostgreSQL connection string.
         """
         if self.is_initialized:
-            logger.warning("Database already initialized")
+            self.logger.warning("Database already initialized")
             return
 
         self._dsn = dsn
@@ -54,7 +64,7 @@ class DbManager(metaclass=Singleton):
         # Initialize SQLAlchemy engine and session factory
         self._setup_sqlalchemy()
 
-        logger.info(f"Pool created with {self._pool.get_stats()}")
+        self.logger.info(f"Pool created with {self._pool.get_stats()}")
 
     def _setup_sqlalchemy(self) -> None:
         """Setup SQLAlchemy engine and session factory."""
@@ -86,14 +96,14 @@ class DbManager(metaclass=Singleton):
             RuntimeError: If pool is not initialized.
         """
         if not self._pool:
-            logger.error("No database connection pool initialized.")
+            self.logger.error("No database connection pool initialized.")
             raise RuntimeError("Pool not initialized")
         return self._pool
 
     def get_session_factory(self):
         """Get SQLAlchemy session factory."""
         if not self._session_factory:
-            logger.error("SQLAlchemy session factory not initialized.")
+            self.logger.error("SQLAlchemy session factory not initialized.")
             raise RuntimeError("Session factory not initialized")
         return self._session_factory
 
@@ -110,10 +120,10 @@ class DbManager(metaclass=Singleton):
             self._session_factory = None
 
         if self._pool:
-            logger.info('Closing database connection pool')
+            self.logger.info('Closing database connection pool')
             await self._pool.close()
             self._pool = None
-            logger.info('Database connection pool closed')
+            self.logger.info('Database connection pool closed')
 
 
 db_manager = DbManager()
