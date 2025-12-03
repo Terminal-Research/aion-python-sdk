@@ -32,8 +32,7 @@ class LangGraphPlugin(AgentPluginProtocol):
     def name(self) -> str:
         return self.NAME
 
-    async def setup(self, **deps: Any) -> None:
-        db_manager = deps.get("db_manager")
+    async def setup(self, db_manager: DbManagerProtocol, **deps: Any) -> None:
         self._db_manager = db_manager
 
         if db_manager and db_manager.is_initialized:
@@ -41,7 +40,6 @@ class LangGraphPlugin(AgentPluginProtocol):
             await self._setup_checkpointer_tables(db_manager)
 
         self._adapter = LangGraphAdapter(db_manager=db_manager)
-        self.logger.debug(f"LangGraph adapter initialized")
 
     async def teardown(self) -> None:
         """Cleanup plugin resources.

@@ -54,19 +54,19 @@ class PluginManager:
         This method attempts to import and instantiate known plugins.
         Plugins that are not installed or fail to import are skipped gracefully.
         """
-        self.logger.info("Discovering available plugins...")
+        self.logger.debug("Discovering available plugins...")
 
         plugins = await self._discover_plugins()
 
         for plugin in plugins:
             try:
-                self.logger.info(f"Registering plugin: {plugin.name()}")
+                self.logger.debug(f"Registering plugin: {plugin.name()}")
                 self._registry.register(plugin)
             except Exception as e:
                 self.logger.error(f"Failed to register plugin {plugin.name()}: {e}", exc_info=True)
 
         self.logger.info(
-            f"Plugin discovery complete. Registered {len(plugins)} plugin(s): "
+            f"Registered {len(plugins)} plugin(s): "
             f"{', '.join(p.name() for p in plugins)}"
         )
 
@@ -92,13 +92,11 @@ class PluginManager:
             return
 
         plugins = self._registry.get_all()
-        self.logger.info(f"Setting up {len(plugins)} plugin(s)...")
+        self.logger.debug(f"Setting up {len(plugins)} plugin(s)...")
 
         setup_count = 0
         for plugin in plugins:
             try:
-                self.logger.debug(f"Setting up plugin: {plugin.name()}")
-
                 # Call plugin's setup with dependencies
                 await plugin.setup(db_manager=db_manager, **extra_deps)
 
@@ -107,7 +105,7 @@ class PluginManager:
 
                 # Health check
                 if await plugin.health_check():
-                    self.logger.info(f"Plugin '{plugin.name()}' setup complete and healthy")
+                    self.logger.debug(f"Plugin '{plugin.name()}' setup complete and healthy")
                     setup_count += 1
                 else:
                     self.logger.warning(f"Plugin '{plugin.name()}' setup complete but health check failed")
@@ -119,7 +117,7 @@ class PluginManager:
                 )
 
         self._initialized = True
-        self.logger.info(f"Plugin setup complete. {setup_count}/{len(plugins)} plugin(s) healthy")
+        self.logger.info(f"Initialized {setup_count}/{len(plugins)} plugin(s)")
 
     async def teardown_all(self) -> None:
         """Teardown all plugins in reverse order.
@@ -162,7 +160,6 @@ class PluginManager:
             from aion.langgraph import LangGraphPlugin
             plugin = LangGraphPlugin()
             plugins.append(plugin)
-            self.logger.debug(f"Discovered plugin: {plugin.name()}")
         except ImportError:
             self.logger.debug("LangGraph plugin not available (aion-plugin-langgraph not installed)")
         except Exception as e:

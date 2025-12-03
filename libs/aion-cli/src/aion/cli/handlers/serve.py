@@ -159,7 +159,6 @@ class ServeHandler:
                 logger.error(f"Failed to reserve proxy port {proxy_port}")
                 self.port_manager.release_all()
                 return [], [], False
-            logger.info(f"Reserved proxy port {proxy_port}")
 
         if not self.port_manager.reserve_agent_ports(
                 agent_ids=list(config.agents.keys()),

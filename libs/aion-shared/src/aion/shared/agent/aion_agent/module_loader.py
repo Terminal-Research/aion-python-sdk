@@ -42,7 +42,6 @@ class ModuleLoader:
         """
         self.base_path = base_path or Path.cwd()
         self._logger: Optional[AionLogger] = logger
-        self.logger.debug(f"ModuleLoader initialized with base_path={self.base_path}")
 
     @property
     def logger(self) -> AionLogger:

@@ -114,7 +114,7 @@ class AppFactory:
         # Build Starlette application
         await self._build_starlette_app()
 
-        logger.info("Agent '%s' initialized successfully at http://%s:%s",
+        logger.info("Agent '%s' initialized at http://%s:%s",
                     self.aion_agent.id, self.aion_agent.host, self.aion_agent.port)
 
     async def _create_a2a_app(self) -> None:
@@ -210,9 +210,7 @@ class AppFactory:
             return
 
         try:
-            logger.debug(f"Building agent '{self.aion_agent.id}'...")
             await self.aion_agent.build()
-            logger.info(f"Agent '{self.aion_agent.id}' built successfully (framework={self.aion_agent.framework})")
         except Exception as exc:
             logger.error(f"Failed to build agent '{self.aion_agent.id}'", exc_info=exc)
             raise

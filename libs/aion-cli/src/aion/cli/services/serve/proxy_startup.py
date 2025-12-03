@@ -88,7 +88,6 @@ class ServeProxyStartupService(BaseExecuteService):
         if conn is not None:
             try:
                 conn.send({"status": "started", "pid": os.getpid()})
-                logger.debug("Sent startup confirmation to parent process")
             except Exception as ex:
                 logger.warning(f"Failed to send startup confirmation: {str(ex)}")
 

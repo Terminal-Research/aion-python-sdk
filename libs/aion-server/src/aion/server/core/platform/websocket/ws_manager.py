@@ -90,7 +90,6 @@ class AionWebSocketManager(IWebSocketManager):
                 if first_connection:
                     self._connection_ready.set()
                     first_connection = False
-                    logger.info("First connection established, signaling ready")
 
                 await self._run_ping_loop()
 
@@ -120,7 +119,7 @@ class AionWebSocketManager(IWebSocketManager):
         """Establish connection without blocking on pings."""
         self._transport = await self._ws_transport_factory.create_transport()
         await self._transport.connect()
-        logger.info("WebSocket connection established")
+        logger.debug("WebSocket connection established")
 
     async def _run_ping_loop(self) -> None:
         """Run the ping loop to keep connection alive."""

@@ -474,7 +474,6 @@ class AionAgent:
         module_loader = ModuleLoader(base_path=base_path)
         try:
             module, item_name = module_loader.load_from_config_path(self._config.path)
-            self.logger.debug(f"Successfully loaded module for agent '{self._id}'")
         except Exception as ex:
             raise FileNotFoundError(
                 f"Failed to load module for agent '{self._id}' from path '{self._config.path}': {ex}"

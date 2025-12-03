@@ -90,7 +90,6 @@ class AgentManager(metaclass=Singleton):
         """
         self._agent_id = agent_id
         self._agent_config = config
-        self.logger.debug(f"Agent configuration set for '{agent_id}'")
 
     async def create_agent(
             self,

@@ -4,8 +4,13 @@ This module defines the foundational interface that all plugins must implement,
 providing a consistent contract for plugin lifecycle management across the system.
 """
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from aion.shared.db import DbManagerProtocol
 
 
 class BasePluginProtocol(ABC):
@@ -32,13 +37,14 @@ class BasePluginProtocol(ABC):
         pass
 
     @abstractmethod
-    async def setup(self, **deps: Any) -> None:
+    async def setup(self, db_manager: DbManagerProtocol, **deps: Any) -> None:
         """Initialize the plugin with required dependencies.
 
         Called once during application startup. Use this to store dependencies,
         run migrations, initialize components, and setup infrastructure.
 
         Args:
+            db_manager: Infrastructure database manager
             **deps: Plugin dependencies (db_manager, config, etc.)
 
         Raises:

@@ -169,7 +169,6 @@ class LangGraphAdapter(AgentAdapter):
 
             checkpointer_config = CheckpointerConfig(type=checkpointer_type)
             checkpointer = await self.checkpointer_adapter.create_checkpointer(checkpointer_config)
-            logger.debug(f"Created {checkpointer_type} checkpointer")
             return checkpointer
 
         except Exception as ex:
