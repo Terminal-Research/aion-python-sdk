@@ -13,7 +13,7 @@ PyYAML = "*"
 aion-shared = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-shared" }
 
 [tool.poetry.group.dev.dependencies]
-pytest = "^8.0.0"
+pytest = ">=8.0.0"
 
 [build-system]
 requires = ["poetry-core"]

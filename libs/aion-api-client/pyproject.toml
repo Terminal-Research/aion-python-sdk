@@ -9,23 +9,22 @@ packages = [{ include = "aion", from = "src" }]
 
 [tool.poetry.dependencies]
 python = "^3.12.0"
-gql = "3.5.3"
-ariadne-codegen = {version = "^0.14.0", extras = ["subscriptions"]}
-PyJWT = "2.10.1"
-httpx = "0.28.1"
-pydantic = "2.11.3"
-websockets = "11.0.3"
+gql = ">=3.4.1,<4.0.0"
+ariadne-codegen = { version = ">=0.14.0", extras = ["subscriptions"] }
+PyJWT = "^2.9.0"
+httpx = "^0.28.1"
+websockets = ">=11.0.3,<=15.0.1"
 
 aion-shared = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-shared" }
 
 [tool.poetry.group.dev.dependencies]
-pytest = "8.4.1"
+pytest = ">=8.0.0"
 
 [tool.ariadne-codegen]
 schema_path = "gql/schema.graphql"
 queries_path = "gql/queries.graphql"
 target_package_path = "src/aion/api/gql/generated"
-client_name="GqlClient"
+client_name = "GqlClient"
 async_client = true
 enable_custom_operations = true
 opentelemetry_client = true

@@ -8,23 +8,19 @@ packages = [{ include = "aion", from = "src" }]
 
 [tool.poetry.dependencies]
 python = "^3.12.0"
-uvicorn = "0.23.2"
-fastapi = "0.119.1"
-structlog = "24.4.0"
-httpx = "0.28.1"
+uvicorn = ">=0.23.2"
+fastapi = ">=0.115.2"
 # PostgreSQL
-psycopg = { version = "^3.1", extras = ["binary", "pool"] }
-asyncpg = "0.30.0" # native psql protocol (faster then psycopg)
-greenlet = "3.2.3" # supports async pg operations
-alembic = "1.16.2" # migrations
-SQLAlchemy = "2.0.41"
-
-PyYAML = "6.0.2"
+psycopg = { version = ">=3.1.12,<4.0.0", extras = ["binary", "pool"] }
+asyncpg = ">=0.29.0,<1.0.0"  # native psql protocol (faster than psycopg)
+greenlet = ">=3.0.3,<4.0.0"   # supports async pg operations
+alembic = ">=1.13.0,<2.0.0"   # migrations
+SQLAlchemy = ">=2.0.0,<2.1.0"
 
 aion-api-client = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-api-client" }
 
 [tool.poetry.group.dev.dependencies]
-pytest = "8.4.1"
+pytest = ">=8.0.0"
 
 [build-system]
 requires = ["poetry-core"]
