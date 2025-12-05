@@ -25,7 +25,8 @@ class ServeAgentStartupService(BaseExecuteService):
             self,
             config: AionConfig,
             process_manager: ProcessManager,
-            port_manager: AionPortManager
+            port_manager: AionPortManager,
+            startup_timeout: int = 30
     ) -> tuple[list[str], list[str]]:
         """
         Start all configured agents in separate processes in parallel.
@@ -34,6 +35,7 @@ class ServeAgentStartupService(BaseExecuteService):
             config: AION configuration containing agent definitions
             process_manager: ProcessManager instance to create agent processes
             port_manager: AionPortManager instance with reserved ports
+            startup_timeout: Timeout in seconds for startup confirmation (0 to skip)
 
         Returns:
             tuple: (successful_agents, failed_agents) - lists of agent IDs
@@ -45,7 +47,7 @@ class ServeAgentStartupService(BaseExecuteService):
 
         # Create tasks for starting all agents in parallel
         tasks = [
-            self._start_agent(agent_id, agent_config, process_manager, port_manager)
+            self._start_agent(agent_id, agent_config, process_manager, port_manager, startup_timeout)
             for agent_id, agent_config in config.agents.items()
         ]
 
@@ -69,7 +71,8 @@ class ServeAgentStartupService(BaseExecuteService):
             agent_id: str,
             agent_config: AgentConfig,
             process_manager: ProcessManager,
-            port_manager: AionPortManager
+            port_manager: AionPortManager,
+            startup_timeout: int = 30
     ) -> bool:
         """
         Start a single agent in a separate process and wait for startup confirmation.
@@ -79,6 +82,7 @@ class ServeAgentStartupService(BaseExecuteService):
             agent_config: Agent configuration
             process_manager: ProcessManager instance
             port_manager: AionPortManager instance
+            startup_timeout: Timeout in seconds for startup confirmation (0 to skip)
 
         Returns:
             bool: True if agent started successfully
@@ -115,10 +119,15 @@ class ServeAgentStartupService(BaseExecuteService):
             self.logger.error(f"Failed to start agent '{agent_id}'")
             return False
 
+        # Skip confirmation check if timeout is 0
+        if startup_timeout == 0:
+            self.logger.debug(f"Agent '{agent_id}' process started (startup confirmation skipped)")
+            return True
+
         # Wait for startup confirmation from agent server
-        self.logger.debug(f"Waiting for agent '{agent_id}' startup confirmation...")
+        self.logger.debug(f"Waiting for agent '{agent_id}' startup confirmation (timeout: {startup_timeout}s)...")
         startup_message = await asyncio.to_thread(
-            process_manager.receive_from_process, agent_id, 30.0  # 30 second timeout
+            process_manager.receive_from_process, agent_id, float(startup_timeout)
         )
 
         if startup_message and startup_message.get("status") == "started":

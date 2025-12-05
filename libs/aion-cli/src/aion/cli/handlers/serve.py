@@ -62,7 +62,8 @@ class ServeHandler:
             port_range_start: int = 8000,
             port_range_end: int = 9000,
             proxy_port_search_start: int = 8000,
-            proxy_port_search_end: int = 8100
+            proxy_port_search_end: int = 8100,
+            startup_timeout: int = 30
     ) -> None:
         """
         Complete lifecycle: startup, broadcast config, monitor, and shutdown.
@@ -76,6 +77,7 @@ class ServeHandler:
             port_range_end: Ending port of the range for agents
             proxy_port_search_start: Starting port for proxy search if auto-finding
             proxy_port_search_end: Ending port for proxy search if auto-finding
+            startup_timeout: Timeout in seconds for startup confirmation (0 to skip)
         """
         try:
             # Startup phase
@@ -85,7 +87,8 @@ class ServeHandler:
                 port_range_start=port_range_start,
                 port_range_end=port_range_end,
                 proxy_port_search_start=proxy_port_search_start,
-                proxy_port_search_end=proxy_port_search_end
+                proxy_port_search_end=proxy_port_search_end,
+                startup_timeout=startup_timeout
             )
 
             # Exit if no agents started successfully
@@ -109,7 +112,8 @@ class ServeHandler:
             port_range_start: int = 8000,
             port_range_end: int = 9000,
             proxy_port_search_start: int = 8000,
-            proxy_port_search_end: int = 8100
+            proxy_port_search_end: int = 8100,
+            startup_timeout: int = 30
     ) -> tuple[list[str], list[str], bool]:
         """
         Start all configured agents and proxy server with dynamic port allocation.
@@ -121,6 +125,7 @@ class ServeHandler:
             port_range_end: Ending port of the range for agents
             proxy_port_search_start: Starting port for proxy search if auto-finding
             proxy_port_search_end: Ending port for proxy search if auto-finding
+            startup_timeout: Timeout in seconds for startup confirmation (0 to skip)
 
         Returns:
             tuple: (successful_agents, failed_agents, proxy_started)
@@ -176,7 +181,8 @@ class ServeHandler:
         self.successful_agents, self.failed_agents = await ServeAgentStartupService().execute(
             config=config,
             process_manager=self.process_manager,
-            port_manager=self.port_manager
+            port_manager=self.port_manager,
+            startup_timeout=startup_timeout
         )
 
         # Report agent startup results
@@ -202,7 +208,8 @@ class ServeHandler:
                 port=proxy_port,
                 agents=agents,
                 process_manager=self.process_manager,
-                port_manager=self.port_manager
+                port_manager=self.port_manager,
+                startup_timeout=startup_timeout
             )
             if not self.proxy_started:
                 logger.error("Failed to start proxy server")

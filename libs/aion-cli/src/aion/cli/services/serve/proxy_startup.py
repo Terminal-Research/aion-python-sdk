@@ -25,7 +25,8 @@ class ServeProxyStartupService(BaseExecuteService):
         port: int,
         agents: Dict[str, str],
         process_manager: ProcessManager,
-        port_manager=None
+        port_manager=None,
+        startup_timeout: int = 30
     ) -> bool:
         """
         Start proxy server in a separate process and wait for startup confirmation.
@@ -35,6 +36,7 @@ class ServeProxyStartupService(BaseExecuteService):
             agents: Dictionary mapping agent_id to agent_url (e.g., {"my-agent": "http://0.0.0.0:8001"})
             process_manager: ProcessManager instance to create proxy process
             port_manager: Optional AionPortManager instance to release port reservation
+            startup_timeout: Timeout in seconds for startup confirmation (0 to skip)
 
         Returns:
             bool: True if proxy started successfully
@@ -64,10 +66,15 @@ class ServeProxyStartupService(BaseExecuteService):
             self.logger.error("Failed to start proxy server")
             return False
 
+        # Skip confirmation check if timeout is 0
+        if startup_timeout == 0:
+            self.logger.debug("Proxy server process started (startup confirmation skipped)")
+            return True
+
         # Wait for startup confirmation from proxy server
-        self.logger.debug("Waiting for proxy server startup confirmation...")
+        self.logger.debug(f"Waiting for proxy server startup confirmation (timeout: {startup_timeout}s)...")
         startup_message = await asyncio.to_thread(
-            process_manager.receive_from_process, "proxy", 30.0  # 30 second timeout
+            process_manager.receive_from_process, "proxy", float(startup_timeout)
         )
 
         if startup_message and startup_message.get("status") == "started":
