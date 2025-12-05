@@ -28,6 +28,7 @@ This command reads your `aion.yaml` configuration and launches all configured AI
 * `--port INTEGER` - Port for the proxy server (if not specified, will auto-find starting from 8000)
 * `--port-range-start INTEGER` - Starting port of the range for proxy and agents (default: proxy_port + 1 if proxy specified, else 8000)
 * `--port-range-end INTEGER` - Ending port of the range for proxy and agents (default: port_range_start + 1000)
+* `--startup-timeout INTEGER` - Timeout in seconds to wait for startup confirmation from agents and proxy (0 to skip, default: 30)
 
 **Configuration Requirements:**
 - At least one agent must be configured in your `aion.yaml` file
@@ -50,6 +51,12 @@ poetry run aion serve --port 7000 --port-range-start 7001
 
 # Specify only the port range (proxy will auto-find within the range)
 poetry run aion serve --port-range-start 8000 --port-range-end 8100
+
+# Skip startup confirmation check (faster startup, useful for development)
+poetry run aion serve --startup-timeout 0
+
+# Increase timeout for slow systems or large agents
+poetry run aion serve --startup-timeout 60
 ```
 
 **Welcome Message:**
@@ -234,6 +241,13 @@ aion serve --port 5000 --port-range-start 8000 --port-range-end 9000
 * Verify that ports in the specified range are available
 * Try specifying a different port range with `--port-range-start` and `--port-range-end`
 * Check logs for specific agent startup failures
+
+**Startup confirmation errors:**
+
+* If you see "failed to send startup confirmation" errors, try increasing the timeout: `--startup-timeout 60`
+* For slow systems or complex agents, use a higher timeout value
+* To skip the confirmation check entirely (faster but less reliable): `--startup-timeout 0`
+* Note: Skipping confirmation means the CLI won't verify that agents are actually ready to accept requests
 
 **Chat connection issues:**
 
