@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 import psycopg
 from aion.shared.logging import get_logger
 
@@ -81,30 +82,32 @@ async def validate_permissions(url: str) -> dict:
 
             # Test table creation
             try:
-                async with conn.cursor() as cur:
-                    # Create a test table
-                    await cur.execute("CREATE TABLE IF NOT EXISTS _test_permissions (id serial PRIMARY KEY)")
-                    await conn.commit()
-                    results["can_create_table"] = True
+                # Generate unique names to avoid conflicts with parallel executions
+                unique_id = uuid.uuid4().hex[:8]
+                test_table = f"_test_permissions_{unique_id}"
 
-                    # Clean up
-                    await cur.execute("DROP TABLE _test_permissions")
-                    await conn.commit()
+                async with conn.cursor() as cur:
+                    # Test table creation in a transaction that we'll rollback
+                    await cur.execute("BEGIN")
+                    await cur.execute(f"CREATE TABLE {test_table} (id serial PRIMARY KEY)")
+                    await cur.execute("ROLLBACK")
+                    results["can_create_table"] = True
             except Exception as table_exc:
                 results["can_create_table"] = False
                 results["table_error"] = str(table_exc)
 
             # Test schema creation
             try:
-                async with conn.cursor() as cur:
-                    # Create a test schema
-                    await cur.execute("CREATE SCHEMA IF NOT EXISTS _test_schema")
-                    await conn.commit()
-                    results["can_create_schema"] = True
+                # Generate unique name to avoid conflicts with parallel executions
+                unique_id = uuid.uuid4().hex[:8]
+                test_schema = f"_test_schema_{unique_id}"
 
-                    # Clean up
-                    await cur.execute("DROP SCHEMA _test_schema")
-                    await conn.commit()
+                async with conn.cursor() as cur:
+                    # Test schema creation in a transaction that we'll rollback
+                    await cur.execute("BEGIN")
+                    await cur.execute(f"CREATE SCHEMA {test_schema}")
+                    await cur.execute("ROLLBACK")
+                    results["can_create_schema"] = True
             except Exception as schema_exc:
                 results["can_create_schema"] = False
                 results["schema_error"] = str(schema_exc)

@@ -87,10 +87,17 @@ class PortAllocationStrategy:
     default=None,
     help="Ending port of the range for proxy and agents (default: port_range_start + 1000)"
 )
+@click.option(
+    "--startup-timeout",
+    type=int,
+    default=30,
+    help="Timeout in seconds to wait for startup confirmation from agents and proxy (0 to skip, default: 30)"
+)
 async def serve(
     port: int | None,
     port_range_start: int | None,
-    port_range_end: int | None
+    port_range_end: int | None,
+    startup_timeout: int
 ) -> None:
     """Run all configured AION agents and proxy server in separate processes"""
 
@@ -119,7 +126,8 @@ async def serve(
             port_range_start=strategy.port_range_start,
             port_range_end=strategy.port_range_end,
             proxy_port_search_start=strategy.proxy_port_search_start,
-            proxy_port_search_end=strategy.proxy_port_search_end
+            proxy_port_search_end=strategy.proxy_port_search_end,
+            startup_timeout=startup_timeout
         )
 
     except Exception as ex:

@@ -9,7 +9,7 @@ from aion.shared.db import DbManagerProtocol
 from aion.shared.logging import get_logger
 from aion.shared.settings import db_settings
 from langgraph.checkpoint.base import BaseCheckpointSaver
-from langgraph.graph import Graph
+from langgraph.graph import StateGraph
 from langgraph.pregel import Pregel
 
 from .checkpointer import LangGraphCheckpointerAdapter
@@ -47,7 +47,7 @@ class LangGraphAdapter(AgentAdapter):
 
     def get_supported_types(self) -> list[type]:
         """Return list of types this adapter can handle."""
-        return [Graph, Pregel]
+        return [StateGraph, Pregel]
 
     def get_supported_type_names(self) -> set[str]:
         """Return set of class names this adapter can handle."""
@@ -186,7 +186,7 @@ class LangGraphAdapter(AgentAdapter):
         if obj is None:
             return False
 
-        if isinstance(obj, (Graph, Pregel)):
+        if isinstance(obj, (StateGraph, Pregel)):
             return True
 
         class_name = obj.__class__.__name__

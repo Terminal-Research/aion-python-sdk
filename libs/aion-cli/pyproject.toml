@@ -10,15 +10,14 @@ packages = [{include = "aion", from = "src"}]
 python = "^3.12.0"
 aion-server = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-server" }
 aion-plugin-langgraph = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-plugin-langgraph", optional = true }
-click = "8.2.1"
-asyncclick = "8.2.2.2"
+asyncclick = "^8.0.1.2"
 
 [tool.poetry.extras]
 langgraph = ["aion-plugin-langgraph"]
 all = ["aion-plugin-langgraph"]
 
 [tool.poetry.group.dev.dependencies]
-pytest = "8.4.1"
+pytest = ">=8.0.0"
 
 [build-system]
 requires = ["poetry-core"]
