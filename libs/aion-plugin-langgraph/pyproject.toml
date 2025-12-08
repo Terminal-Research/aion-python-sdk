@@ -8,8 +8,7 @@ packages = [{ include = "aion", from = "src" }]
 
 [tool.poetry.dependencies]
 python = "^3.12.0"
-# todo update langgraph code to be able to work with recent packages
-langgraph = ">=0.3.1,<=0.4.10"
+langgraph = ">=0.3.1,<=1.0.4"
 langgraph-checkpoint-postgres = ">=2.0.0,<=3.0.1"
 aion-shared = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-shared" }
 
