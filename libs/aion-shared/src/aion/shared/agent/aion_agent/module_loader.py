@@ -190,18 +190,16 @@ class ModuleLoader:
             self,
             module: ModuleType,
             supported_types: list[type],
-            supported_type_names: set[str],
             item_name: Optional[str] = None,
     ) -> Any:
         """Discover an object in a module by type.
 
-        Searches for objects (classes, instances, callables) matching the
+        Searches for objects (classes, instances) matching the
         supported types. If item_name is provided, looks for that specific item.
 
         Args:
             module: Module to search in
             supported_types: List of types to match (using isinstance/issubclass)
-            supported_type_names: Set of class names to match by string
             item_name: Optional specific item name to look for
 
         Returns:
@@ -211,9 +209,10 @@ class ModuleLoader:
             ValueError: If no matching object found
 
         Priority order (when item_name is None):
-        1. Classes that are subclasses of supported_types
-        2. Instances of supported_types
-        3. Callables that might return supported types
+        1. Instances of supported_types (preserves user configuration)
+        2. Classes that are subclasses of supported_types
+
+        Note: Callables are only supported when explicitly specified via item_name
         """
         if item_name:
             # Explicit item name provided - get it directly
@@ -261,31 +260,15 @@ class ModuleLoader:
                     found_objects.append(("instance", member, name))
                     break
 
-            # Check by class name (for types we can't import)
-            class_name = type(member).__name__
-            if class_name in supported_type_names:
-                found_objects.append(("named_type", member, name))
-
-        # 3. Search for callables (functions that might return supported types)
-        for name, member in inspect.getmembers(module, inspect.isfunction):
-            # Skip private functions
-            if name.startswith("_"):
-                continue
-
-            # Only add if we haven't found anything better
-            if not found_objects:
-                found_objects.append(("callable", member, name))
-
-        # Return the first found object (priority: class > instance > callable)
+        # Return the first found object (priority: instance > class)
         if not found_objects:
             raise ValueError(
                 f"No supported object found in module '{module.__name__}'. "
-                f"Supported types: {[t.__name__ for t in supported_types]}, "
-                f"Supported type names: {supported_type_names}"
+                f"Supported types: {[t.__name__ for t in supported_types]}"
             )
 
-        # Sort by priority: class first, then instance, then named_type, then callable
-        priority = {"class": 0, "instance": 1, "named_type": 2, "callable": 3}
+        # Sort by priority: instance first (preserves user config), then class
+        priority = {"instance": 0, "class": 1}
         found_objects.sort(key=lambda x: priority.get(x[0], 999))
 
         obj_type, obj, obj_name = found_objects[0]

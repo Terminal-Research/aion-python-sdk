@@ -147,23 +147,54 @@ class PluginManager:
         self._initialized = False
         self.logger.info("Plugin teardown complete")
 
-    async def _discover_plugins(self) -> list[BasePluginProtocol]:
-        """Discover available plugins by attempting imports.
+    async def _try_load_plugin(
+            self,
+            module_name: str,
+            class_name: str,
+            display_name: str
+    ) -> Optional[BasePluginProtocol]:
+        """Try to load a single plugin by dynamic import.
+
+        Attempts to import and instantiate a plugin class from the specified module.
+        If the module is not installed (ImportError), returns None silently.
+        For other errors, logs a warning and returns None.
+
+        Args:
+            module_name: Full module path (e.g., "aion.langgraph")
+            class_name: Plugin class name to import (e.g., "LangGraphPlugin")
+            display_name: Human-readable name for logging (e.g., "LangGraph")
 
         Returns:
-            list[BasePluginProtocol]: List of discovered plugin instances
+            Optional[BasePluginProtocol]: Plugin instance if successful, None otherwise
         """
-        plugins = []
-
-        # Try to discover LangGraph plugin
         try:
-            from aion.langgraph import LangGraphPlugin
-            plugin = LangGraphPlugin()
-            plugins.append(plugin)
-        except ImportError:
-            pass
+            module = __import__(module_name, fromlist=[class_name])
+            plugin_class = getattr(module, class_name)
+            return plugin_class()
+
+        except ModuleNotFoundError:
+            return None
+
+        except ImportError as e:
+            self.logger.exception(f"Failed to import plugin '{module_name}': {e}")
+            return None
+
         except Exception as e:
-            self.logger.warning(f"Failed to load LangGraph plugin: {e}")
+            self.logger.warning(f"Failed to load {display_name} plugin: {e}")
+            return None
+
+    async def _discover_plugins(self) -> list[BasePluginProtocol]:
+        """Discover available plugins by attempting imports."""
+        plugin_configs = [
+            ("aion.langgraph", "LangGraphPlugin", "LangGraph"),
+            ("aion.adk", "ADKPlugin", "ADK"),
+        ]
+
+        plugins = []
+        for module_name, class_name, display_name in plugin_configs:
+            plugin = await self._try_load_plugin(module_name, class_name, display_name)
+            if plugin:
+                plugins.append(plugin)
 
         return plugins
 

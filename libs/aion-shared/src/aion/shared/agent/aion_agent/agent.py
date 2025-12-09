@@ -483,15 +483,10 @@ class AionAgent:
         errors = []
         for adapter in adapter_registry.list_adapters():
             try:
-                # Get supported types from adapter
-                supported_types = adapter.get_supported_types()
-                supported_type_names = adapter.get_supported_type_names()
-
                 # Try to discover object in module using adapter's supported types
                 native_agent = module_loader.discover_object(
                     module=module,
-                    supported_types=supported_types,
-                    supported_type_names=supported_type_names,
+                    supported_types=adapter.get_supported_types(),
                     item_name=item_name
                 )
 

@@ -66,18 +66,6 @@ class AgentAdapter(ABC):
         pass
 
     @abstractmethod
-    def get_supported_type_names(self) -> set[str]:
-        """Return set of class names this adapter can handle.
-
-        Some types cannot be imported directly (compiled graphs, etc.),
-        so we also check by class name.
-
-        Returns:
-            set[str]: Set of supported class names
-        """
-        pass
-
-    @abstractmethod
     async def initialize_agent(self, agent_obj: Any, config: AgentConfig) -> Any:
         """Initialize an agent with the given configuration.
 

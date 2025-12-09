@@ -1,15 +1,11 @@
 """LangGraph plugin for AION framework."""
 
-from typing import Any, Optional, TYPE_CHECKING
-
 from aion.shared.db import DbManagerProtocol
-from aion.shared.logging.base import AionLogger
+from aion.shared.logging import AionLogger, get_logger
 from aion.shared.plugins import AgentPluginProtocol
+from typing import Any, Optional
 
 from .agent import LangGraphAdapter
-
-if TYPE_CHECKING:
-    from aion.shared.logging.base import AionLogger
 
 
 class LangGraphPlugin(AgentPluginProtocol):
@@ -25,8 +21,7 @@ class LangGraphPlugin(AgentPluginProtocol):
     @property
     def logger(self) -> AionLogger:
         if not self._logger:
-            from aion.shared.logging import get_logger
-            self._logger = get_logger(__name__)
+            self._logger = get_logger()
         return self._logger
 
     def name(self) -> str:

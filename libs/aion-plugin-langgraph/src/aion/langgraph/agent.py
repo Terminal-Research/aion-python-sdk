@@ -49,16 +49,6 @@ class LangGraphAdapter(AgentAdapter):
         """Return list of types this adapter can handle."""
         return [StateGraph, Pregel]
 
-    def get_supported_type_names(self) -> set[str]:
-        """Return set of class names this adapter can handle."""
-        return {
-            "StateGraph",
-            "CompiledStateGraph",
-            "CompiledGraph",
-            "MessageGraph",
-            "CompiledMessageGraph"
-        }
-
     def can_handle(self, agent_obj: Any) -> bool:
         if self._is_graph_instance(agent_obj):
             return True
@@ -188,7 +178,4 @@ class LangGraphAdapter(AgentAdapter):
 
         if isinstance(obj, (StateGraph, Pregel)):
             return True
-
-        class_name = obj.__class__.__name__
-        graph_class_names = self.get_supported_type_names()
-        return class_name in graph_class_names
+        return False

@@ -3,7 +3,6 @@ from enum import Enum
 
 from a2a.types import TaskArtifactUpdateEvent, Artifact, Part, TextPart, Task
 from aion.shared.types import ArtifactName, ArtifactStreamingStatus, ArtifactStreamingStatusReason
-from langchain_core.messages import BaseMessage, AIMessageChunk, AIMessage
 
 
 class StreamingArtifactBuilderPartMode(Enum):
@@ -92,49 +91,6 @@ class StreamingArtifactBuilder:
                     content_parts.append(part.root.text)
             return ''.join(content_parts)
         return ""
-
-    def build_from_langgraph_message(
-            self,
-            langgraph_message: BaseMessage,
-            metadata: dict[str, Any] | None = None
-    ) -> TaskArtifactUpdateEvent | None:
-        """Build streaming artifact event from LangGraph message with automatic type detection.
-
-        This method automatically detects message type, determines if this is intermediate
-        or final chunk, handles state management based on part_mode, and accumulates
-        content according to the selected part mode.
-
-        Args:
-            langgraph_message: LangGraph message object
-            metadata: Optional metadata for the artifact
-
-        Returns:
-            TaskArtifactUpdateEvent or None if message type is not supported
-        """
-        if not isinstance(metadata, dict):
-            metadata = {}
-
-        if isinstance(langgraph_message, AIMessageChunk):
-            return self.build_streaming_chunk_event(
-                content=langgraph_message.content,
-                metadata=metadata | {
-                    "status": ArtifactStreamingStatus.ACTIVE,
-                    "status_reason": ArtifactStreamingStatusReason.CHUNK_STREAMING,
-                }
-            )
-
-        elif isinstance(langgraph_message, AIMessage):
-            if not self.get_existing_streaming_artifact():
-                return None
-
-            return self.build_finalized_event(
-                metadata=metadata | {
-                    "status": ArtifactStreamingStatus.FINALIZED,
-                    "status_reason": ArtifactStreamingStatusReason.COMPLETE_MESSAGE
-                }
-            )
-
-        return None
 
     def build_meta_complete_event(
             self,

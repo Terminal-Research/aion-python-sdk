@@ -74,27 +74,6 @@ class TestStreamingArtifactBuilder:
         result = builder_concatenated.get_existing_streaming_artifact(active_only=True)
         assert result is None
 
-    def test_message_type_handling(self, builder_concatenated):
-        """Proper handling of different message types."""
-        # AIMessageChunk creates streaming event
-        chunk = AIMessageChunk(content="test")
-        event = builder_concatenated.build_from_langgraph_message(chunk)
-        assert event.artifact.metadata["status"] == ArtifactStreamingStatus.ACTIVE.value
-
-        # AIMessage without existing artifact returns None
-        message = AIMessage(content="test")
-        event = builder_concatenated.build_from_langgraph_message(message)
-        assert event is None
-
-        # AIMessage with existing artifact finalizes it
-        builder_concatenated.task.artifacts.append(
-            Mock(artifact_id=ArtifactName.STREAM_DELTA.value,
-                 metadata={"status": ArtifactStreamingStatus.ACTIVE.value},
-                 parts=[])
-        )
-        event = builder_concatenated.build_from_langgraph_message(message)
-        assert event.artifact.metadata["status"] == ArtifactStreamingStatus.FINALIZED.value
-
     def test_content_extraction_edge_cases(self, builder_concatenated):
         """Handle edge cases in content extraction."""
         # None artifact
