@@ -180,56 +180,6 @@ class AionAgent:
     def host(self):
         return "0.0.0.0"
 
-    async def execute(
-            self,
-            inputs: AgentInput | dict[str, Any],
-            session_id: Optional[str] = None,
-            thread_id: Optional[str] = None,
-            timeout: Optional[float] = None,
-            **metadata,
-    ) -> dict[str, Any]:
-        """Execute agent with given inputs (non-streaming).
-
-        This is a framework-agnostic method that works for all agents.
-
-        Args:
-            inputs: Input data (AgentInput or dict for backward compatibility)
-            session_id: Session identifier for this execution
-            thread_id: Thread_identifier for multi-turn conversations
-            timeout: Maximum execution time in seconds
-            **metadata: Additional execution metadata
-
-        Returns:
-            dict[str, Any]: Agent execution result
-
-        Raises:
-            RuntimeError: If agent is not built yet
-            ExecutionError: If execution fails
-            TimeoutError: If execution exceeds timeout
-        """
-        if not self._is_built:
-            raise RuntimeError(
-                f"Agent '{self._id}' is not built yet. Call build() before executing."
-            )
-
-        config = ExecutionConfig(
-            session_id=session_id,
-            thread_id=thread_id,
-            timeout=timeout,
-            metadata=metadata,
-        )
-
-        self.logger.debug(
-            f"Executing agent '{self.id}' (framework={self.framework}, "
-            f"session_id={session_id})"
-        )
-
-        # Convert dict to AgentInput for backward compatibility
-        if isinstance(inputs, dict):
-            inputs = AgentInput.from_dict(inputs)
-
-        return await self._executor.invoke(inputs, config)
-
     async def stream(
             self,
             inputs: AgentInput | dict[str, Any],
@@ -350,32 +300,6 @@ class AionAgent:
 
         async for event in self._executor.resume(inputs, config):
             yield event
-
-    # ===== Capability Checks =====
-
-    def supports_streaming(self) -> bool:
-        """Check if agent supports streaming execution.
-
-        Returns:
-            bool: True if streaming is supported
-        """
-        return self._executor.supports_streaming()
-
-    def supports_resume(self) -> bool:
-        """Check if agent supports resuming from interrupts.
-
-        Returns:
-            bool: True if resume is supported
-        """
-        return self._executor.supports_resume()
-
-    def supports_state_retrieval(self) -> bool:
-        """Check if agent supports state retrieval.
-
-        Returns:
-            bool: True if state retrieval is supported
-        """
-        return self._executor.supports_state_retrieval()
 
     # ===== Factory Methods =====
 

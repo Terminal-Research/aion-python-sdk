@@ -26,30 +26,6 @@ class ADKExecutor(ExecutorAdapter):
         self._event_converter = None
         self._state_adapter = None
 
-    async def invoke(
-        self,
-        inputs: AgentInput,
-        config: Optional[ExecutionConfig] = None,
-    ) -> dict[str, Any]:
-        try:
-            logger.debug(f"Invoking ADK agent with inputs: {inputs.text}")
-
-            final_result = {"status": "completed"}
-
-            # Collect all events and extract final result
-            async for event in self.stream(inputs, config):
-                if event.event_type == "complete":
-                    if hasattr(event, "data"):
-                        final_result = event.data
-                    break
-
-            logger.debug(f"ADK invoke completed: {final_result}")
-            return final_result
-
-        except Exception as e:
-            logger.error(f"ADK invoke failed: {e}")
-            raise ExecutionError(f"Failed to invoke agent: {e}") from e
-
     async def stream(
         self,
         inputs: AgentInput,
@@ -102,21 +78,3 @@ class ADKExecutor(ExecutorAdapter):
         except Exception as e:
             logger.error(f"Failed to resume ADK execution: {e}")
             raise ExecutionError(f"Failed to resume execution: {e}") from e
-
-    def supports_streaming(self) -> bool:
-        return True
-
-    def supports_resume(self) -> bool:
-        return True
-
-    def supports_state_retrieval(self) -> bool:
-        return True
-
-    def supports_multi_turn(self) -> bool:
-        return True
-
-    def supports_tool_calling(self) -> bool:
-        return True
-
-    def supports_human_in_loop(self) -> bool:
-        return True

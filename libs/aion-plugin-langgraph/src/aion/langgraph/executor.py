@@ -27,27 +27,6 @@ class LangGraphExecutor(ExecutorAdapter):
         self.state_adapter = LangGraphStateAdapter()
         self.event_converter = LangGraphEventConverter()
 
-    async def invoke(
-            self,
-            inputs: AgentInput,
-            config: Optional[ExecutionConfig] = None,
-    ) -> dict[str, Any]:
-        try:
-            langgraph_config = self._to_langgraph_config(config)
-            langgraph_inputs = self._transform_inputs(inputs)
-            logger.debug(
-                f"Invoking LangGraph agent with inputs: {langgraph_inputs}, config: {langgraph_config}"
-            )
-
-            result = await self.compiled_graph.ainvoke(langgraph_inputs, langgraph_config)
-            logger.debug(f"LangGraph invoke completed: {result}")
-
-            return result
-
-        except Exception as e:
-            logger.error(f"LangGraph invoke failed: {e}")
-            raise ExecutionError(f"Failed to invoke agent: {e}") from e
-
     async def stream(
             self,
             inputs: AgentInput,
@@ -201,15 +180,6 @@ class LangGraphExecutor(ExecutorAdapter):
         except Exception as e:
             logger.error(f"Failed to resume execution: {e}")
             raise ExecutionError(f"Failed to resume execution: {e}") from e
-
-    def supports_streaming(self) -> bool:
-        return True
-
-    def supports_resume(self) -> bool:
-        return True
-
-    def supports_state_retrieval(self) -> bool:
-        return True
 
     @staticmethod
     def _to_langgraph_config(config: Optional[ExecutionConfig]) -> dict[str, Any]:

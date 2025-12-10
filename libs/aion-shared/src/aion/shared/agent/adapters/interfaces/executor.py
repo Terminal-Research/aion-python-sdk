@@ -54,32 +54,15 @@ class ExecutorAdapter(ABC):
     execution, streaming, and state management capabilities.
 
     The ExecutorAdapter handles:
-    - Synchronous and asynchronous agent invocation
     - Streaming execution with real-time events
     - State retrieval and management
     - Resume/recovery from interrupts
+
+    Note: This adapter is designed for A2A protocol which always uses streaming
+    execution. All execution flows use the stream() method to generate events
+    that are then either streamed to the client (message/stream) or aggregated
+    into a final Task object (message/send).
     """
-    @abstractmethod
-    async def invoke(
-        self,
-        inputs: AgentInput,
-        config: Optional[ExecutionConfig] = None,
-    ) -> dict[str, Any]:
-        """Execute the agent with given inputs and return final output.
-
-        Args:
-            inputs: Universal agent input (will be transformed to framework format)
-            config: Execution configuration (session_id, thread_id, etc.)
-
-        Returns:
-            dict[str, Any]: Final agent output
-
-        Raises:
-            TimeoutError: If execution exceeds configured timeout
-            Exception: Any framework-specific errors during execution
-        """
-        pass
-
     @abstractmethod
     async def stream(
         self,
@@ -136,31 +119,3 @@ class ExecutorAdapter(ABC):
             ValueError: If execution is not in a resumable state
         """
         pass
-
-    def supports_streaming(self) -> bool:
-        """Check if this executor supports streaming execution."""
-        return False
-
-    def supports_resume(self) -> bool:
-        """Check if this executor supports resuming interrupted executions."""
-        return False
-
-    def supports_state_retrieval(self) -> bool:
-        """Check if this executor supports state retrieval."""
-        return False
-
-    def supports_multi_turn(self) -> bool:
-        """Check if executor supports multi-turn conversations."""
-        return False
-
-    def supports_parallel_execution(self) -> bool:
-        """Check if executor supports parallel execution."""
-        return False
-
-    def supports_tool_calling(self) -> bool:
-        """Check if executor supports tool calling."""
-        return False
-
-    def supports_human_in_loop(self) -> bool:
-        """Check if executor supports human-in-the-loop."""
-        return False
