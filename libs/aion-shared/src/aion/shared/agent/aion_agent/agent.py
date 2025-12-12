@@ -183,8 +183,8 @@ class AionAgent:
     async def stream(
             self,
             inputs: AgentInput | dict[str, Any],
-            session_id: Optional[str] = None,
-            thread_id: Optional[str] = None,
+            context_id: Optional[str] = None,
+            task_id: Optional[str] = None,
             timeout: Optional[float] = None,
             **metadata,
     ) -> AsyncIterator[ExecutionEvent]:
@@ -192,8 +192,8 @@ class AionAgent:
 
         Args:
             inputs: Input data (AgentInput or dict for backward compatibility)
-            session_id: Session identifier for this execution
-            thread_id: Thread identifier for multi-turn conversations
+            context_id: Context identifier for multi-turn conversations (A2A context_id)
+            task_id: Optional task identifier for this specific execution (A2A task.id)
             timeout: Maximum execution time in seconds
             **metadata: Additional execution metadata
 
@@ -211,15 +211,15 @@ class AionAgent:
             )
 
         config = ExecutionConfig(
-            session_id=session_id,
-            thread_id=thread_id,
+            task_id=task_id,
+            context_id=context_id,
             timeout=timeout,
             metadata=metadata,
         )
 
         self.logger.debug(
             f"Streaming agent '{self.id}' (framework={self.framework}, "
-            f"session_id={session_id})"
+            f"task_id={task_id}, context_id={context_id})"
         )
 
         # Convert dict to AgentInput for backward compatibility
@@ -231,14 +231,14 @@ class AionAgent:
 
     async def get_state(
             self,
-            session_id: str,
-            thread_id: Optional[str] = None,
+            context_id: str,
+            task_id: Optional[str] = None,
     ) -> AgentState:
-        """Get current execution state for a session.
+        """Get current execution state for a context.
 
         Args:
-            session_id: Session identifier
-            thread_id: Optional thread identifier
+            context_id: Context identifier (A2A context_id)
+            task_id: Optional task identifier (A2A task.id)
 
         Returns:
             AgentState: Current agent state
@@ -252,25 +252,27 @@ class AionAgent:
                 f"Agent '{self._id}' is not built yet. Call build() before accessing state."
             )
 
-        config = ExecutionConfig(session_id=session_id, thread_id=thread_id)
+        config = ExecutionConfig(task_id=task_id, context_id=context_id)
 
-        self.logger.debug(f"Getting state for agent '{self.id}', session={session_id}")
+        self.logger.debug(
+            f"Getting state for agent '{self.id}', task_id={task_id}, context_id={context_id}"
+        )
 
         return await self._executor.get_state(config)
 
     async def resume(
             self,
-            session_id: str,
+            context_id: str,
             inputs: Optional[AgentInput | dict[str, Any]] = None,
-            thread_id: Optional[str] = None,
+            task_id: Optional[str] = None,
             **metadata,
     ) -> AsyncIterator[ExecutionEvent]:
         """Resume interrupted execution.
 
         Args:
-            session_id: Session identifier
+            context_id: Context identifier (A2A context_id)
             inputs: Optional input data (AgentInput or dict for backward compatibility)
-            thread_id: Optional thread identifier
+            task_id: Optional task identifier for this specific execution (A2A task.id)
             **metadata: Additional execution metadata
 
         Yields:
@@ -287,12 +289,14 @@ class AionAgent:
             )
 
         config = ExecutionConfig(
-            session_id=session_id,
-            thread_id=thread_id,
+            task_id=task_id,
+            context_id=context_id,
             metadata=metadata,
         )
 
-        self.logger.debug(f"Resuming agent '{self.id}', session={session_id}")
+        self.logger.debug(
+            f"Resuming agent '{self.id}', task_id={task_id}, context_id={context_id}"
+        )
 
         # Convert dict to AgentInput for backward compatibility
         if inputs is not None and isinstance(inputs, dict):

@@ -119,8 +119,8 @@ class AionAgentRequestExecutor(AgentExecutor):
 
         # Prepare execution
         user_input = context.get_user_input()
-        session_id = task.id
-        thread_id = task.context_id
+        task_id = task.id
+        context_id = task.context_id
 
         first_event = True
 
@@ -129,24 +129,24 @@ class AionAgentRequestExecutor(AgentExecutor):
             if is_new_task:
                 # New execution
                 logger.debug(
-                    f"Starting new execution: session_id={session_id}, "
+                    f"Starting new execution: task_id={task_id}, context_id={context_id}, "
                     f"input_length={len(user_input)}"
                 )
                 event_stream = self.agent.stream(
                     inputs=AgentInput(text=user_input),
-                    session_id=session_id,
-                    thread_id=thread_id,
+                    context_id=context_id,
+                    task_id=str(task_id),
                 )
             else:
                 # Resume interrupted execution
                 logger.debug(
-                    f"Resuming execution: session_id={session_id}, "
+                    f"Resuming execution: task_id={task_id}, context_id={context_id}, "
                     f"input_length={len(user_input)}"
                 )
                 event_stream = self.agent.resume(
-                    session_id=session_id,
+                    context_id=context_id,
                     inputs=AgentInput(text=user_input) if user_input else None,
-                    thread_id=thread_id,
+                    task_id=str(task_id),
                 )
 
             # Process events

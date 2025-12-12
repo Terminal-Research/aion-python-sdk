@@ -35,9 +35,9 @@ class LangGraphExecutor(ExecutorAdapter):
         try:
             langgraph_config = self._to_langgraph_config(config)
             langgraph_inputs = self._transform_inputs(inputs)
-            session_id = config.session_id if config else "unknown"
+            context_id = config.context_id if config else "unknown"
 
-            logger.info(f"Starting LangGraph stream: session_id={session_id}")
+            logger.info(f"Starting LangGraph stream: context_id={context_id}")
             logger.debug(
                 f"Stream inputs: {langgraph_inputs}, config: {langgraph_config}"
             )
@@ -60,7 +60,7 @@ class LangGraphExecutor(ExecutorAdapter):
                 if unified_event:
                     yield unified_event
 
-            logger.info(f"LangGraph stream completed: session_id={session_id}")
+            logger.info(f"LangGraph stream completed: context_id={context_id}")
             final_state = await self.get_state(config)
 
             # Check if execution was interrupted
@@ -86,12 +86,12 @@ class LangGraphExecutor(ExecutorAdapter):
             raise ExecutionError(f"Failed to stream agent: {e}") from e
 
     async def get_state(self, config: ExecutionConfig) -> AgentState:
-        if not config or not config.session_id:
-            raise ValueError("session_id is required to get state")
+        if not config or not config.context_id:
+            raise ValueError("context_id is required to get state")
 
         try:
             langgraph_config = self._to_langgraph_config(config)
-            logger.debug(f"Getting state for session: {config.session_id}")
+            logger.debug(f"Getting state for context: {config.context_id}")
             snapshot = await self.compiled_graph.aget_state(langgraph_config)
             agent_state = self.state_adapter.get_state_from_snapshot(snapshot)
 
@@ -111,21 +111,21 @@ class LangGraphExecutor(ExecutorAdapter):
             inputs: Optional[AgentInput],
             config: ExecutionConfig,
     ) -> AsyncIterator[ExecutionEvent]:
-        if not config or not config.session_id:
-            raise ValueError("session_id is required to resume execution")
+        if not config or not config.context_id:
+            raise ValueError("context_id is required to resume execution")
 
         try:
-            logger.info(f"Resuming execution for session: {config.session_id}")
+            logger.info(f"Resuming execution for context: {config.context_id}")
             state = await self.get_state(config)
 
             if not state.is_interrupted:
                 logger.warning(
-                    f"Attempted to resume non-interrupted execution: {config.session_id}"
+                    f"Attempted to resume non-interrupted execution: {config.context_id}"
                 )
                 # If not interrupted, continue with new inputs or raise error
                 if not inputs:
                     raise ValueError(
-                        f"Execution {config.session_id} is not interrupted, "
+                        f"Execution {config.context_id} is not interrupted, "
                         "but no new inputs provided"
                     )
                 async for event in self.stream(inputs, config):
@@ -142,7 +142,7 @@ class LangGraphExecutor(ExecutorAdapter):
 
             # Stream using the Command object directly
             langgraph_config = self._to_langgraph_config(config)
-            session_id = config.session_id if config else "unknown"
+            context_id = config.context_id if config else "unknown"
 
             async for event_type, event_data in self.compiled_graph.astream(
                     resume_command,
@@ -160,7 +160,7 @@ class LangGraphExecutor(ExecutorAdapter):
                 if unified_event:
                     yield unified_event
 
-            logger.info(f"Resume completed: session_id={session_id}")
+            logger.info(f"Resume completed: context_id={context_id}")
             final_state = await self.get_state(config)
 
             # Check if execution was interrupted again
@@ -186,19 +186,18 @@ class LangGraphExecutor(ExecutorAdapter):
         """Convert ExecutionConfig to LangGraph configuration format.
 
         Args:
-            config: Execution configuration with session/thread ID
+            config: Execution configuration with context_id
 
         Returns:
-            LangGraph config dict with thread_id
+            LangGraph config dict with thread_id (mapped from context_id)
         """
         if not config:
             return {}
 
-        thread_id = config.session_id or config.thread_id
-        if not thread_id:
+        if not config.context_id:
             return {}
 
-        return {"configurable": {"thread_id": thread_id}}
+        return {"configurable": {"thread_id": config.context_id}}
 
     @staticmethod
     def _transform_inputs(inputs: AgentInput) -> dict[str, Any]:

@@ -21,28 +21,28 @@ class ExecutionConfig:
     """Configuration for a single agent execution.
 
     Attributes:
-        session_id: Unique identifier for the execution session
-        thread_id: Thread identifier for multi-turn conversations
+        task_id: Unique identifier for the specific task/execution (A2A Task.id)
+        context_id: Context identifier for multi-turn conversations (A2A Task.context_id)
         timeout: Maximum execution time in seconds
         metadata: Additional execution metadata
     """
     def __init__(
         self,
-        session_id: Optional[str] = None,
-        thread_id: Optional[str] = None,
+        task_id: Optional[str] = None,
+        context_id: Optional[str] = None,
         timeout: Optional[float] = None,
         metadata: Optional[dict[str, Any]] = None,
     ):
         """Initialize execution configuration.
 
         Args:
-            session_id: Unique identifier for the execution session
-            thread_id: Thread identifier for multi-turn conversations
+            task_id: Unique identifier for the specific task/execution (A2A Task.id)
+            context_id: Context identifier for multi-turn conversations (A2A Task.context_id)
             timeout: Maximum execution time in seconds
             metadata: Additional execution metadata
         """
-        self.session_id = session_id
-        self.thread_id = thread_id
+        self.task_id = task_id
+        self.context_id = context_id
         self.timeout = timeout
         self.metadata = metadata or {}
 
@@ -73,7 +73,7 @@ class ExecutorAdapter(ABC):
 
         Args:
             inputs: Universal agent input (will be transformed to framework format)
-            config: Execution configuration (session_id, thread_id, etc.)
+            config: Execution configuration (task_id, context_id, timeout, etc.)
 
         Yields:
             ExecutionEvent: Events emitted during execution (e.g., tokens, tool calls)
