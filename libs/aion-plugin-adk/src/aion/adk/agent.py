@@ -19,12 +19,12 @@ class ADKAdapter(AgentAdapter):
             base_path: Optional[Path] = None,
             db_manager: Optional[DbManagerProtocol] = None
     ):
-        """Initialize LangGraph adapter.
+        """Initialize ADK adapter.
 
         Args:
             base_path: Base path for agent files (defaults to current directory)
-            db_manager: Database manager instance for PostgreSQL checkpointer support.
-                       If None, only memory checkpointers will be available.
+            db_manager: Database manager instance for DatabaseSessionService support.
+                       If None, InMemorySessionService will be used.
         """
         self.base_path = base_path or Path.cwd()
         self.db_manager = db_manager
@@ -79,7 +79,7 @@ class ADKAdapter(AgentAdapter):
                 f"Agent must be an ADK agent instance, got {type(agent).__name__}"
             )
 
-        return ADKExecutor(agent, config)
+        return ADKExecutor(agent, config, db_manager=self.db_manager)
 
     def validate_config(self, config: AgentConfig) -> None:
         if not config.path:

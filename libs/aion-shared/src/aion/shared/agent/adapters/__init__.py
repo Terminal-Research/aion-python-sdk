@@ -12,10 +12,6 @@ The adapter architecture allows for flexible framework support by:
 from .interfaces import (
     AgentAdapter,
     AgentState,
-    Checkpoint,
-    CheckpointerAdapter,
-    CheckpointerConfig,
-    CheckpointerType,
     CompleteEvent,
     CustomEvent,
     ErrorEvent,
@@ -35,10 +31,6 @@ __all__ = [
     # Interfaces
     "AgentAdapter",
     "AgentState",
-    "Checkpoint",
-    "CheckpointerAdapter",
-    "CheckpointerConfig",
-    "CheckpointerType",
     "CompleteEvent",
     "CustomEvent",
     "ErrorEvent",

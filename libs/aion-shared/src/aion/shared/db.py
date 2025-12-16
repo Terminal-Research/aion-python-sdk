@@ -60,3 +60,8 @@ class DbManagerProtocol(ABC):
         proper cleanup of database connections.
         """
         pass
+
+    @abstractmethod
+    def get_dsn(self) -> str:
+        """Get the database connection string (DSN)."""
+        pass

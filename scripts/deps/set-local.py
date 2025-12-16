@@ -104,7 +104,7 @@ def build_local_dependency_line(
     indent: int
 ) -> str:
     """Build a local dependency line with proper formatting."""
-    parts = [f'{dep_info.name} = {{ path = "{relative_path}"']
+    parts = [f'{dep_info.name} = {{ path = "{relative_path}"', 'develop = true']
 
     if dep_info.extras:
         parts.append(f'extras = {format_extras(dep_info.extras)}')

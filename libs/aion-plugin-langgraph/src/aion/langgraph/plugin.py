@@ -1,9 +1,10 @@
 """LangGraph plugin for AION framework."""
 
+from typing import Any, Optional, override
+
 from aion.shared.db import DbManagerProtocol
 from aion.shared.logging import AionLogger, get_logger
 from aion.shared.plugins import AgentPluginProtocol
-from typing import Any, Optional
 
 from .agent import LangGraphAdapter
 
@@ -24,10 +25,12 @@ class LangGraphPlugin(AgentPluginProtocol):
             self._logger = get_logger()
         return self._logger
 
+    @override
     def name(self) -> str:
         return self.NAME
 
-    async def setup(self, db_manager: DbManagerProtocol, **deps: Any) -> None:
+    @override
+    async def initialize(self, db_manager: DbManagerProtocol, **deps: Any) -> None:
         self._db_manager = db_manager
 
         if db_manager and db_manager.is_initialized:
@@ -36,6 +39,7 @@ class LangGraphPlugin(AgentPluginProtocol):
 
         self._adapter = LangGraphAdapter(db_manager=db_manager)
 
+    @override
     async def teardown(self) -> None:
         """Cleanup plugin resources.
 
@@ -45,13 +49,15 @@ class LangGraphPlugin(AgentPluginProtocol):
         self._adapter = None
         self._db_manager = None
 
+    @override
     def get_adapter(self) -> LangGraphAdapter:
         if not self._adapter:
             raise RuntimeError(
-                f"{self.name()} plugin not initialized. Call setup() first."
+                f"{self.name()} plugin not initialized. Call initialize() first."
             )
         return self._adapter
 
+    @override
     async def health_check(self) -> bool:
         return self._adapter is not None
 

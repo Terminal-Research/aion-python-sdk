@@ -78,7 +78,7 @@ class PluginManager:
         """Setup all registered plugins with dependencies.
 
         This method:
-        1. Calls setup() on each plugin with injected dependencies
+        1. Calls initialize() on each plugin with injected dependencies
         2. Performs plugin-specific post-setup (e.g., registering adapters)
         3. Runs health checks
         4. Handles errors gracefully
@@ -97,8 +97,8 @@ class PluginManager:
         setup_count = 0
         for plugin in plugins:
             try:
-                # Call plugin's setup with dependencies
-                await plugin.setup(db_manager=db_manager, **extra_deps)
+                # Call plugin's initialize with dependencies
+                await plugin.initialize(db_manager=db_manager, **extra_deps)
 
                 # Server-specific post-setup integration
                 await self._post_setup(plugin)

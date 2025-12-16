@@ -3,7 +3,6 @@ from pathlib import Path
 from typing import Any, Optional
 
 from aion.shared.agent import AgentAdapter, ExecutorAdapter, ConfigurationError
-from aion.shared.agent.adapters import CheckpointerConfig, CheckpointerType
 from aion.shared.config.models import AgentConfig
 from aion.shared.db import DbManagerProtocol
 from aion.shared.logging import get_logger
@@ -12,7 +11,11 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import StateGraph
 from langgraph.pregel import Pregel
 
-from .checkpointer import LangGraphCheckpointerAdapter
+from .checkpointer import (
+    CheckpointerConfig,
+    CheckpointerType,
+    LangGraphCheckpointerAdapter,
+)
 from .executor import LangGraphExecutor
 
 logger = get_logger()

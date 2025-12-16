@@ -75,22 +75,6 @@ class DatabaseSettings(BaseEnvSettings):
             return False
 
     @property
-    def pg_sqlalchemy_url(self):
-        """Convert PostgreSQL URL to SQLAlchemy-compatible format"""
-        from aion.shared.utils.db import sqlalchemy_url
-        if not self.is_valid_pg_url():
-            return None
-        return sqlalchemy_url(self.pg_url)
-
-    @property
-    def pg_psycopg_url(self):
-        """Convert PostgreSQL URL to psycopg-compatible format"""
-        from aion.shared.utils.db import psycopg_url
-        if not self.is_valid_pg_url():
-            return None
-        return psycopg_url(self.pg_url)
-
-    @property
     def pg_db_name(self) -> Optional[str]:
         """Extract database name from PostgreSQL URL"""
         if not self.is_valid_pg_url():

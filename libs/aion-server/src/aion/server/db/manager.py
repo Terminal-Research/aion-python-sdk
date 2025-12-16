@@ -1,11 +1,10 @@
-from typing import Optional
-
 from aion.shared.db import DbManagerProtocol
 from aion.shared.logging import get_logger
 from aion.shared.logging.base import AionLogger
 from aion.shared.metaclasses import SingletonABCMeta
 from psycopg_pool import AsyncConnectionPool
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from typing import Optional, override
 
 
 class DbManager(DbManagerProtocol, metaclass=SingletonABCMeta):
@@ -30,10 +29,12 @@ class DbManager(DbManagerProtocol, metaclass=SingletonABCMeta):
         return self._logger
 
     @property
+    @override
     def is_initialized(self) -> bool:
         """Check if the database pool is initialized and open."""
         return self._pool is not None and not self._pool.closed
 
+    @override
     async def initialize(self, dsn: str) -> None:
         """Initialize the database connection pool.
 
@@ -86,6 +87,7 @@ class DbManager(DbManagerProtocol, metaclass=SingletonABCMeta):
             expire_on_commit=False
         )
 
+    @override
     def get_pool(self) -> AsyncConnectionPool:
         """Get the active connection pool.
 
@@ -99,6 +101,21 @@ class DbManager(DbManagerProtocol, metaclass=SingletonABCMeta):
             self.logger.error("No database connection pool initialized.")
             raise RuntimeError("Pool not initialized")
         return self._pool
+
+    @override
+    def get_dsn(self) -> str:
+        """Get the database connection string (DSN).
+
+        Returns:
+            Database connection string used during initialization.
+
+        Raises:
+            RuntimeError: If manager is not initialized.
+        """
+        if not self._dsn:
+            self.logger.error("Database DSN not available.")
+            raise RuntimeError("DSN not initialized")
+        return self._dsn
 
     def get_session_factory(self):
         """Get SQLAlchemy session factory."""

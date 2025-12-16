@@ -6,7 +6,7 @@ import uuid
 from google.genai import types
 from google.adk.agents import InvocationContext
 from google.adk.agents.run_config import RunConfig
-from google.adk.sessions import InMemorySessionService, Session
+from google.adk.sessions import Session
 from google.adk.events import Event
 
 from aion.shared.agent import AgentInput, ExecutionError, StateRetrievalError
@@ -20,9 +20,11 @@ from aion.shared.agent.adapters import (
     InterruptEvent,
 )
 from aion.shared.config.models import AgentConfig
+from aion.shared.db import DbManagerProtocol
 from aion.shared.logging import get_logger
 
 from .event_converter import ADKEventConverter
+from .session_service import ADKSessionServiceAdapter
 from .state import ADKStateAdapter
 
 logger = get_logger()
@@ -30,12 +32,18 @@ logger = get_logger()
 
 class ADKExecutor(ExecutorAdapter):
 
-    def __init__(self, agent: Any, config: AgentConfig):
+    def __init__(
+        self,
+        agent: Any,
+        config: AgentConfig,
+        db_manager: Optional[DbManagerProtocol] = None,
+    ):
         self.agent = agent
         self.config = config
 
-        # Initialize session service for managing conversations
-        self._session_service = InMemorySessionService()
+        # Initialize session service adapter with optional database manager
+        session_adapter = ADKSessionServiceAdapter(db_manager=db_manager)
+        self._session_service = session_adapter.create_session_service()
 
         # Initialize adapters
         self._event_converter = ADKEventConverter()

@@ -21,7 +21,7 @@ class BasePluginProtocol(ABC):
     storage, etc.).
 
     The plugin architecture separates concerns:
-    - Plugin: Manages infrastructure (setup, teardown, migrations)
+    - Plugin: Manages infrastructure (initialize, teardown, migrations)
     - Adapter: Handles runtime behavior (execution, state management)
     """
 
@@ -37,7 +37,7 @@ class BasePluginProtocol(ABC):
         pass
 
     @abstractmethod
-    async def setup(self, db_manager: DbManagerProtocol, **deps: Any) -> None:
+    async def initialize(self, db_manager: DbManagerProtocol, **deps: Any) -> None:
         """Initialize the plugin with required dependencies.
 
         Called once during application startup. Use this to store dependencies,
@@ -48,7 +48,7 @@ class BasePluginProtocol(ABC):
             **deps: Plugin dependencies (db_manager, config, etc.)
 
         Raises:
-            Exception: If setup fails critically
+            Exception: If initialization fails critically
         """
         pass
 
