@@ -8,7 +8,7 @@ from aion.shared.db import DbManagerProtocol
 from aion.shared.logging import get_logger
 from google.adk.agents import BaseAgent
 
-from .executor import ADKExecutor
+from .execution import ADKExecutor
 
 logger = get_logger()
 

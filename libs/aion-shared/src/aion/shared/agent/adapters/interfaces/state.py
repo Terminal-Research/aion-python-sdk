@@ -3,11 +3,11 @@
 This module provides classes and interfaces for extracting, managing, and
 manipulating agent state across different frameworks.
 
-The StateAdapter enables:
-- State snapshot conversion to unified format
-- Interrupt/pause detection and handling
-- Resume input generation from user feedback
-- Message and metadata extraction
+Key classes:
+- AgentState: Unified representation of agent execution state
+- InterruptInfo: Information about execution interrupts/pauses
+- StateExtractor: Base class for extracting data from framework-specific objects
+- StateAdapter: (deprecated) Will be removed in favor of plugin-specific implementations
 """
 
 from abc import ABC, abstractmethod
@@ -78,7 +78,52 @@ class AgentState(BaseModel):
         """
         return self.is_interrupted
 
+
+class StateExtractor(ABC):
+    """Abstract base for extracting specific data from framework-specific objects.
+
+    StateExtractor provides a composable pattern for extracting different pieces
+    of information from framework-specific state/session/snapshot objects.
+
+    Plugins can create multiple specialized extractors (e.g., ValuesExtractor,
+    MessagesExtractor, MetadataExtractor) to build up an AgentState object.
+
+    Example:
+        class ValuesExtractor(StateExtractor):
+            def extract(self, session):
+                return session.state
+
+            def can_extract(self, session):
+                return hasattr(session, 'state')
+    """
+
+    @abstractmethod
+    def extract(self, source: Any) -> Any:
+        """Extract information from a framework-specific object.
+
+        Args:
+            source: Framework-specific object (e.g., Session, StateSnapshot)
+
+        Returns:
+            Any: Extracted information (type depends on extractor implementation)
+        """
+        pass
+
+    @abstractmethod
+    def can_extract(self, source: Any) -> bool:
+        """Check if this extractor can extract from the given source.
+
+        Args:
+            source: Framework-specific object to check
+
+        Returns:
+            bool: True if extraction is possible, False otherwise
+        """
+        pass
+
+
 class StateAdapter(ABC):
+    # todo remove state adapter (current implementation looks like it was developed for langgraph and not suitable for adk etc)
     """Abstract base for framework-specific agent state extraction.
 
     Subclasses must implement methods to convert framework-specific state

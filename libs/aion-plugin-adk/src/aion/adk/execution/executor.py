@@ -1,13 +1,6 @@
-
+import uuid
 from collections.abc import AsyncIterator
 from typing import Any, Optional
-import uuid
-
-from google.genai import types
-from google.adk.agents import InvocationContext
-from google.adk.agents.run_config import RunConfig
-from google.adk.sessions import Session
-from google.adk.events import Event
 
 from aion.shared.agent import AgentInput, ExecutionError, StateRetrievalError
 from aion.shared.agent.adapters import AgentState
@@ -17,15 +10,20 @@ from aion.shared.agent.adapters import (
     ExecutionConfig,
     ExecutionEvent,
     ExecutorAdapter,
-    InterruptEvent,
 )
 from aion.shared.config.models import AgentConfig
 from aion.shared.db import DbManagerProtocol
 from aion.shared.logging import get_logger
+from google.adk.agents import InvocationContext
+from google.adk.agents.run_config import RunConfig
+from google.adk.events import Event
+from google.adk.sessions import Session
+from google.genai import types
 
-from .event_converter import ADKEventConverter
-from .session_service import ADKSessionServiceAdapter
-from .state import ADKStateAdapter
+from ..constants import DEFAULT_USER_ID
+from ..events import ADKEventConverter
+from ..session import SessionServiceManager
+from ..state import StateConverter
 
 logger = get_logger()
 
@@ -33,26 +31,24 @@ logger = get_logger()
 class ADKExecutor(ExecutorAdapter):
 
     def __init__(
-        self,
-        agent: Any,
-        config: AgentConfig,
-        db_manager: Optional[DbManagerProtocol] = None,
+            self,
+            agent: Any,
+            config: AgentConfig,
+            db_manager: Optional[DbManagerProtocol] = None,
     ):
         self.agent = agent
         self.config = config
 
-        # Initialize session service adapter with optional database manager
-        session_adapter = ADKSessionServiceAdapter(db_manager=db_manager)
-        self._session_service = session_adapter.create_session_service()
+        session_manager = SessionServiceManager(db_manager=db_manager)
+        self._session_service = session_manager.create_session_service()
 
-        # Initialize adapters
         self._event_converter = ADKEventConverter()
-        self._state_adapter = ADKStateAdapter()
+        self._state_converter = StateConverter()
 
     async def stream(
-        self,
-        inputs: AgentInput,
-        config: Optional[ExecutionConfig] = None,
+            self,
+            inputs: AgentInput,
+            config: Optional[ExecutionConfig] = None,
     ) -> AsyncIterator[ExecutionEvent]:
         """Stream agent execution using ADK's run_async method.
 
@@ -67,10 +63,7 @@ class ADKExecutor(ExecutorAdapter):
             context_id = config.context_id if config else str(uuid.uuid4())
             logger.info(f"Starting ADK stream: context_id={context_id}")
 
-            # Get or create session
             session = await self._get_or_create_session(context_id)
-
-            # Create user content from inputs
             user_content = self._transform_inputs(inputs)
 
             # IMPORTANT: Add user message to session BEFORE creating invocation context
@@ -83,7 +76,6 @@ class ADKExecutor(ExecutorAdapter):
             await self._session_service.append_event(session, user_event)
             logger.debug(f"Added user message to session: {user_content}")
 
-            # Create invocation context
             invocation_context = await self._create_invocation_context(
                 session=session,
                 user_content=user_content,
@@ -91,40 +83,25 @@ class ADKExecutor(ExecutorAdapter):
 
             logger.debug(f"Stream inputs: {user_content}, context_id: {context_id}")
 
-            # Stream events from ADK agent
             async for adk_event in self.agent.run_async(invocation_context):
                 logger.debug(
                     f"ADK stream event: {type(adk_event).__name__}, "
                     f"author={adk_event.author}, partial={adk_event.partial}"
                 )
 
-                # Convert ADK event to unified ExecutionEvent
                 unified_event = self._event_converter.convert(adk_event)
                 if unified_event:
                     yield unified_event
 
-                # Append non-partial events to session
                 if not adk_event.partial:
                     await self._session_service.append_event(session, adk_event)
 
             logger.info(f"ADK stream completed: context_id={context_id}")
 
-            # Get final state to check for interrupts
             final_state = await self.get_state(config)
 
-            # Yield appropriate completion event
-            if final_state.is_interrupted:
-                interrupt_info = self._state_adapter.extract_interrupt_info(final_state)
-                yield InterruptEvent(
-                    data=final_state.values,
-                    next_steps=final_state.next_steps,
-                    interrupt=interrupt_info,
-                )
-            else:
-                yield CompleteEvent(
-                    data=final_state.values,
-                    next_steps=final_state.next_steps,
-                )
+            # ADK doesn't support interrupts, always yield CompleteEvent
+            yield CompleteEvent(data=final_state.values)
 
         except Exception as e:
             logger.error(f"ADK stream failed: {e}", exc_info=True)
@@ -141,7 +118,8 @@ class ADKExecutor(ExecutorAdapter):
             config: Execution configuration with context_id
 
         Returns:
-            AgentState: Unified agent state with values, next_steps, and interrupt info
+            AgentState: Unified agent state with values
+                       (next_steps is always empty, is_interrupted is always False)
 
         Raises:
             ValueError: If context_id is not provided
@@ -153,7 +131,6 @@ class ADKExecutor(ExecutorAdapter):
         try:
             logger.debug(f"Getting ADK state for context: {config.context_id}")
 
-            # Get session from session service
             session = await self._session_service.get_session(
                 app_name=self._get_app_name(),
                 user_id=self._get_user_id(),
@@ -165,14 +142,8 @@ class ADKExecutor(ExecutorAdapter):
                     f"Session not found: {config.context_id}"
                 )
 
-            # Convert ADK session to unified AgentState
-            agent_state = self._state_adapter.from_adk_session(session)
-
-            logger.debug(
-                f"State retrieved: interrupted={agent_state.is_interrupted}, "
-                f"next_steps={agent_state.next_steps}"
-            )
-
+            agent_state = self._state_converter.from_adk_session(session)
+            logger.debug(f"State retrieved: interrupted={agent_state.is_interrupted}")
             return agent_state
 
         except Exception as e:
@@ -180,49 +151,39 @@ class ADKExecutor(ExecutorAdapter):
             raise StateRetrievalError(f"Failed to retrieve state: {e}") from e
 
     async def resume(
-        self,
-        inputs: Optional[AgentInput],
-        config: ExecutionConfig,
+            self,
+            inputs: Optional[AgentInput],
+            config: ExecutionConfig,
     ) -> AsyncIterator[ExecutionEvent]:
-        """Resume an interrupted ADK agent execution.
+        """Resume ADK agent execution with new user input.
+
+        For ADK, resuming means continuing the conversation with the same session.
+        The session already contains the conversation history, and we simply
+        stream with new user inputs.
+
+        NOTE: ADK doesn't have explicit interrupt/pause states. Resume is just
+        continuing the conversation.
 
         Args:
-            inputs: Optional user input to provide when resuming
+            inputs: User input to continue the conversation
             config: Execution configuration with context_id
 
         Yields:
             ExecutionEvent: Events from resumed execution
 
         Raises:
-            ValueError: If context_id is not provided
+            ValueError: If context_id or inputs are not provided
             ExecutionError: If resume fails
         """
         if not config or not config.context_id:
             raise ValueError("context_id is required to resume execution")
 
+        if not inputs:
+            raise ValueError("inputs are required to resume ADK execution")
+
         try:
             logger.info(f"Resuming ADK execution for context: {config.context_id}")
 
-            # Check current state
-            state = await self.get_state(config)
-
-            if not state.is_interrupted:
-                logger.warning(
-                    f"Attempted to resume non-interrupted execution: {config.context_id}"
-                )
-                # If not interrupted, stream with new inputs if provided
-                if not inputs:
-                    raise ValueError(
-                        f"Execution {config.context_id} is not interrupted, "
-                        "but no new inputs provided"
-                    )
-                async for event in self.stream(inputs, config):
-                    yield event
-                return
-
-            # For ADK, resuming means continuing with the same session
-            # The session already contains the conversation history
-            # We just need to continue streaming with new inputs
             async for event in self.stream(inputs, config):
                 yield event
 
@@ -242,14 +203,12 @@ class ADKExecutor(ExecutorAdapter):
         app_name = self._get_app_name()
         user_id = self._get_user_id()
 
-        # Try to get existing session
         session = await self._session_service.get_session(
             app_name=app_name,
             user_id=user_id,
             session_id=session_id,
         )
 
-        # Create new session if it doesn't exist
         if not session:
             logger.debug(f"Creating new session: {session_id}")
             session = await self._session_service.create_session(
@@ -261,9 +220,9 @@ class ADKExecutor(ExecutorAdapter):
         return session
 
     async def _create_invocation_context(
-        self,
-        session: Session,
-        user_content: types.Content,
+            self,
+            session: Session,
+            user_content: types.Content,
     ) -> InvocationContext:
         """Create an InvocationContext for ADK agent execution.
 
@@ -311,15 +270,13 @@ class ADKExecutor(ExecutorAdapter):
         Returns:
             str: Application name
         """
-        # Use agent name from config or default
         return self.config.name or "aion-adk-agent"
 
-    def _get_user_id(self) -> str:
+    @staticmethod
+    def _get_user_id() -> str:
         """Get user ID from config or use default.
 
         Returns:
             str: User identifier
         """
-        # Use a default user ID for now
-        # In production, this should come from authentication context
-        return "default-user"
+        return DEFAULT_USER_ID

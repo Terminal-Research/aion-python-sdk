@@ -10,7 +10,7 @@ from .events import (
     ErrorEvent,
 )
 from .executor import ExecutorAdapter, ExecutionConfig
-from .state import StateAdapter, InterruptInfo, AgentState
+from .state import StateAdapter, StateExtractor, InterruptInfo, AgentState
 
 
 __all__ = [
@@ -30,6 +30,7 @@ __all__ = [
     "ExecutionConfig",
     # State
     "StateAdapter",
+    "StateExtractor",
     "InterruptInfo",
     "AgentState",
 ]

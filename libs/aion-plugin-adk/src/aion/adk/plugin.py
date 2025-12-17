@@ -4,7 +4,7 @@ from aion.shared.db import DbManagerProtocol
 from aion.shared.logging import AionLogger, get_logger
 from aion.shared.plugins import AgentPluginProtocol
 
-from .agent import ADKAdapter
+from .adapter import ADKAdapter
 
 
 class ADKPlugin(AgentPluginProtocol):

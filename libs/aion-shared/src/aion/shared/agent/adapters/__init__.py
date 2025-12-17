@@ -24,6 +24,7 @@ from .interfaces import (
     NodeUpdateEvent,
     StateAdapter,
     StateUpdateEvent,
+    StateExtractor,
 )
 from .registry import AdapterRegistry, adapter_registry
 
@@ -43,6 +44,7 @@ __all__ = [
     "NodeUpdateEvent",
     "StateAdapter",
     "StateUpdateEvent",
+    "StateExtractor",
     # Registry
     "AdapterRegistry",
     "adapter_registry",
