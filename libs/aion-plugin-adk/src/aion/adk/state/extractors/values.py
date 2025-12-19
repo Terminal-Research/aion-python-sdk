@@ -30,13 +30,11 @@ class StateValuesExtractor(StateExtractor):
         Returns:
             Dict containing the state values from session.state
         """
-        # Extract state values from session.state field
-        if hasattr(session, "state") and session.state:
-            state_values = session.state
-            logger.debug(f"Extracted state values: {len(state_values)} keys")
-            return state_values
+        if not self.can_extract(session):
+            return {}
 
-        return {}
+        state_values = session.state
+        return state_values
 
     @override
     def can_extract(self, session: Any) -> bool:
@@ -48,7 +46,7 @@ class StateValuesExtractor(StateExtractor):
         Returns:
             bool: Always True as any session can have state (even if empty)
         """
-        return session is not None
+        return bool(hasattr(session, "state") and session.state)
 
 
 __all__ = ["StateValuesExtractor"]

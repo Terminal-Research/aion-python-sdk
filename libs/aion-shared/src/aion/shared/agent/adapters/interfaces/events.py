@@ -13,6 +13,7 @@ from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from .messages import MessagePart
 from .state import InterruptInfo
 
 
@@ -32,13 +33,19 @@ class ExecutionEvent(BaseModel):
 
 
 class MessageEvent(ExecutionEvent):
-    """Event for agent messages (streaming or final)."""
+    """Event for agent messages (streaming or final).
+
+    Messages are composed of one or more parts (text, thoughts, etc.).
+    For streaming, typically contains a single text part per chunk.
+    """
 
     event_type: Literal["message"] = Field(
         default="message",
         description="Always 'message'"
     )
-    data: str = Field(description="Message content")
+    content: list[MessagePart] = Field(
+        description="Message content as list of parts (text, thought, etc.)"
+    )
     role: Optional[str] = Field(
         default=None,
         description="Message role (user, assistant, system, etc.)"

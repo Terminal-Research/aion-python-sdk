@@ -1,7 +1,7 @@
 """Events module for ADK plugin.
 
-This module handles conversion of ADK events to unified ExecutionEvent format
-using specialized handlers for different event types.
+This module handles conversion of ADK events to unified ExecutionEvent format.
+Extracts message content (text, thoughts) and tool calls/responses.
 """
 
 from .converter import ADKEventConverter

@@ -14,7 +14,7 @@ from typing import Any, Optional, TYPE_CHECKING
 from aion.shared.agent.adapters import (
     ExecutionConfig,
     AgentAdapter,
-    AgentState,
+    ExecutionSnapshot,
     ExecutionEvent,
     ExecutorAdapter,
 )
@@ -233,15 +233,15 @@ class AionAgent:
             self,
             context_id: str,
             task_id: Optional[str] = None,
-    ) -> AgentState:
-        """Get current execution state for a context.
+    ) -> ExecutionSnapshot:
+        """Get current execution state snapshot for a context.
 
         Args:
             context_id: Context identifier (A2A context_id)
             task_id: Optional task identifier (A2A task.id)
 
         Returns:
-            AgentState: Current agent state
+            ExecutionSnapshot: Current execution snapshot including state, messages, status, and metadata
 
         Raises:
             RuntimeError: If agent is not built yet

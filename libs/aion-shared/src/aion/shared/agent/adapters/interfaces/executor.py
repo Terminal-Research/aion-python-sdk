@@ -14,7 +14,7 @@ from typing import Any, Optional
 
 from aion.shared.agent.inputs import AgentInput
 from .events import ExecutionEvent
-from .state import AgentState
+from .state import ExecutionSnapshot
 
 
 class ExecutionConfig:
@@ -85,14 +85,14 @@ class ExecutorAdapter(ABC):
         pass
 
     @abstractmethod
-    async def get_state(self, config: ExecutionConfig) -> AgentState:
-        """Retrieve the current state of the agent execution.
+    async def get_state(self, config: ExecutionConfig) -> ExecutionSnapshot:
+        """Retrieve the current execution state snapshot.
 
         Args:
             config: Execution configuration specifying which execution to retrieve
 
         Returns:
-            AgentState: Current agent state including values, next steps, and interrupts
+            ExecutionSnapshot: Current execution snapshot including state, messages, status, and metadata
 
         Raises:
             KeyError: If execution not found

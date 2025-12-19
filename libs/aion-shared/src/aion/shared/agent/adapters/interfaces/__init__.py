@@ -10,7 +10,19 @@ from .events import (
     ErrorEvent,
 )
 from .executor import ExecutorAdapter, ExecutionConfig
-from .state import StateAdapter, StateExtractor, InterruptInfo, AgentState
+from .messages import (
+    Message,
+    MessageRole,
+    MessagePart,
+    MessagePartType,
+)
+from .state import (
+    StateAdapter,
+    StateExtractor,
+    InterruptInfo,
+    ExecutionSnapshot,
+    ExecutionStatus,
+)
 
 
 __all__ = [
@@ -32,5 +44,10 @@ __all__ = [
     "StateAdapter",
     "StateExtractor",
     "InterruptInfo",
-    "AgentState",
+    "ExecutionSnapshot",
+    "ExecutionStatus",
+    "Message",
+    "MessageRole",
+    "MessagePart",
+    "MessagePartType",
 ]

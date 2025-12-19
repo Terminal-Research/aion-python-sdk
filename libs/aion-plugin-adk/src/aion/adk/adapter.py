@@ -17,7 +17,7 @@ class ADKAdapter(AgentAdapter):
     def __init__(
             self,
             base_path: Optional[Path] = None,
-            db_manager: Optional[DbManagerProtocol] = None
+            db_manager: Optional[DbManagerProtocol] = None,
     ):
         """Initialize ADK adapter.
 

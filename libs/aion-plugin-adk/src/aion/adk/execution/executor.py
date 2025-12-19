@@ -3,12 +3,12 @@ from collections.abc import AsyncIterator
 from typing import Any, Optional
 
 from aion.shared.agent import AgentInput, ExecutionError, StateRetrievalError
-from aion.shared.agent.adapters import AgentState
 from aion.shared.agent.adapters import (
     CompleteEvent,
     ErrorEvent,
     ExecutionConfig,
     ExecutionEvent,
+    ExecutionSnapshot,
     ExecutorAdapter,
 )
 from aion.shared.config.models import AgentConfig
@@ -101,7 +101,7 @@ class ADKExecutor(ExecutorAdapter):
             final_state = await self.get_state(config)
 
             # ADK doesn't support interrupts, always yield CompleteEvent
-            yield CompleteEvent(data=final_state.values)
+            yield CompleteEvent(data=final_state.state or {"foo": "bar"})
 
         except Exception as e:
             logger.error(f"ADK stream failed: {e}", exc_info=True)
@@ -111,15 +111,14 @@ class ADKExecutor(ExecutorAdapter):
             )
             raise ExecutionError(f"Failed to stream agent: {e}") from e
 
-    async def get_state(self, config: ExecutionConfig) -> AgentState:
-        """Retrieve the current state from ADK session.
+    async def get_state(self, config: ExecutionConfig) -> ExecutionSnapshot:
+        """Retrieve the current execution state snapshot from ADK session.
 
         Args:
             config: Execution configuration with context_id
 
         Returns:
-            AgentState: Unified agent state with values
-                       (next_steps is always empty, is_interrupted is always False)
+            ExecutionSnapshot: Unified execution snapshot with state and messages
 
         Raises:
             ValueError: If context_id is not provided
@@ -142,9 +141,12 @@ class ADKExecutor(ExecutorAdapter):
                     f"Session not found: {config.context_id}"
                 )
 
-            agent_state = self._state_converter.from_adk_session(session)
-            logger.debug(f"State retrieved: interrupted={agent_state.is_interrupted}")
-            return agent_state
+            execution_state = self._state_converter.from_adk_session(session)
+            logger.debug(
+                f"State retrieved: {len(execution_state.messages)} messages, "
+                f"{len(execution_state.state)} state keys"
+            )
+            return execution_state
 
         except Exception as e:
             logger.error(f"Failed to get ADK state: {e}")

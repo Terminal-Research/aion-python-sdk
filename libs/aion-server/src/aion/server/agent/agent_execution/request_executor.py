@@ -21,6 +21,7 @@ from a2a.utils import new_task
 from a2a.utils.errors import ServerError
 from a2a.utils.telemetry import trace_function
 from aion.shared.agent import AgentInput, AionAgent
+from aion.shared.agent.adapters import ExecutionEvent
 from aion.shared.logging import get_logger
 
 from aion.server.utils import check_if_task_is_interrupted, StreamingArtifactBuilder
@@ -244,7 +245,7 @@ class AionAgentRequestExecutor(AgentExecutor):
 
     async def _handle_execution_event(
             self,
-            execution_event,
+            execution_event: ExecutionEvent,
             event_queue: EventQueue,
             task: Task,
     ) -> None:
