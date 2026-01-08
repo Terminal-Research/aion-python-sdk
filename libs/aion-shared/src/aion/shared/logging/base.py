@@ -64,7 +64,8 @@ class AionLogRecord(logging.LogRecord):
         self.aion_agent_environment_id = getattr(request_context, "aion_agent_environment_id", None)
         self.http_request_method = getattr(request_context, "request_method", None)
         self.http_request_target = getattr(request_context, "request_path", None)
-        self.langgraph_node = getattr(request_context, "langgraph_current_node", None)
+        self.langgraph_node = getattr(request_context, "langgraph_current_node", None) # todo make it framework-agnostic
+        self.task_id = getattr(request_context, "task_id", None)
 
 class AionLogger(logging.Logger):
     """

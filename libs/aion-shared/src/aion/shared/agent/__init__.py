@@ -14,7 +14,6 @@ Classes:
     Adapters:
         AgentAdapter: Framework-specific agent lifecycle management
         ExecutorAdapter: Agent execution and streaming capabilities
-        StateAdapter: Agent state extraction and management
 
     Registry:
         AdapterRegistry: Singleton registry for managing framework adapters
@@ -40,7 +39,6 @@ from .card import AionAgentCard
 from .adapters import (
     AgentAdapter,
     ExecutorAdapter,
-    StateAdapter,
     AdapterRegistry,
     adapter_registry,
 )
@@ -74,7 +72,6 @@ __all__ = [
     # Adapters
     "AgentAdapter",
     "ExecutorAdapter",
-    "StateAdapter",
     "AdapterRegistry",
     "adapter_registry",
     # Exceptions

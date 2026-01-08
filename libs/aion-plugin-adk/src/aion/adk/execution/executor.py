@@ -98,10 +98,8 @@ class ADKExecutor(ExecutorAdapter):
 
             logger.info(f"ADK stream completed: context_id={context_id}")
 
-            final_state = await self.get_state(config)
-
             # ADK doesn't support interrupts, always yield CompleteEvent
-            yield CompleteEvent(data=final_state.state or {"foo": "bar"})
+            yield CompleteEvent()
 
         except Exception as e:
             logger.error(f"ADK stream failed: {e}", exc_info=True)

@@ -23,9 +23,18 @@ class LogStreamFormatter(logging.Formatter):
         # Format timestamp
         timestamp = datetime.fromtimestamp(record.created).strftime('%Y-%m-%d %H:%M:%S,%f')[:-3]
 
-        # Build the formatted message manually
+        # Build context prefixes
+        context_parts = []
         if agent_manager.agent_id:
-            formatted_message = f"{timestamp} - {record.levelname} - {record.name} - Agent [{agent_manager.agent_id}] - {record.getMessage()}"
+            context_parts.append(f"Agent [{agent_manager.agent_id}]")
+
+        if hasattr(record, 'task_id') and record.task_id:
+            context_parts.append(f"Task [{record.task_id}]")
+
+        # Build the formatted message manually
+        context_str = " - ".join(context_parts)
+        if context_str:
+            formatted_message = f"{timestamp} - {record.levelname} - {record.name} - {context_str} - {record.getMessage()}"
         else:
             formatted_message = f"{timestamp} - {record.levelname} - {record.name} - {record.getMessage()}"
 

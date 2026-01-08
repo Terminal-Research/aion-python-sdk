@@ -27,7 +27,6 @@ from .interfaces import (
     MessagePartType,
     MessageRole,
     NodeUpdateEvent,
-    StateAdapter,
     StateUpdateEvent,
     StateExtractor,
 )
@@ -52,7 +51,6 @@ __all__ = [
     "MessagePartType",
     "MessageRole",
     "NodeUpdateEvent",
-    "StateAdapter",
     "StateUpdateEvent",
     "StateExtractor",
     # Registry

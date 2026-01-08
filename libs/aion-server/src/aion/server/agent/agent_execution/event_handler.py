@@ -83,10 +83,6 @@ class ExecutionEventHandler:
             event_queue: Queue to publish A2A events
             task: Current task
         """
-        logger.debug(
-            f"Processing execution event: type={execution_event.event_type}, task_id={task.id}"
-        )
-
         # Route to a specific handler using isinstance for type narrowing
         if isinstance(execution_event, MessageEvent):
             await self._handle_message_event(execution_event, event_queue, task)
@@ -103,9 +99,7 @@ class ExecutionEventHandler:
         elif isinstance(execution_event, ErrorEvent):
             await self._handle_error_event(execution_event, task)
         else:
-            logger.warning(
-                f"Unknown execution event type: {execution_event.event_type}, task_id={task.id}"
-            )
+            logger.warning(f"Unknown execution event type: {execution_event.event_type}")
 
     async def _handle_message_event(
             self,
@@ -121,31 +115,38 @@ class ExecutionEventHandler:
             task: Current task
         """
         if message_event.is_streaming:
-            await self._handle_streaming_chunk(message_event.data, task)
+            await self._handle_streaming_chunk(message_event, task)
         else:
             await self._handle_regular_message(message_event, event_queue, task)
 
     async def _handle_streaming_chunk(
             self,
-            event_data: str,
+            message_event: MessageEvent,
             task: Task,
     ) -> None:
         """Handle streaming message chunk.
 
         Args:
-            event_data: Chunk content
+            message_event: Streaming message event
             task: Current task
         """
+        chunk_text = message_event.get_text_content()
+        # skip if no text content
+        if not chunk_text:
+            logger.debug("Event: message - streaming chunk (empty, skipped)")
+            return
+
+        logger.debug("Event: message - streaming chunk")
+
         if self.streaming_artifact_builder:
             artifact_event = self.streaming_artifact_builder.build_streaming_chunk_event(
-                content=event_data,
+                content=chunk_text,
                 metadata={
                     "status": "active",
                     "status_reason": ArtifactStreamingStatusReason.CHUNK_STREAMING.value,
                 }
             )
             await self.task_updater.event_queue.enqueue_event(artifact_event)
-            logger.debug(f"Sent streaming artifact: task_id={task.id}")
 
     async def _handle_regular_message(
             self,
@@ -163,15 +164,16 @@ class ExecutionEventHandler:
             event_queue: Queue to publish events
             task: Current task
         """
+        logger.debug(f"Event: message - full message (role={message_event.role})")
+
         a2a_message = self.event_translator.translate_message_event(message_event, task)
         if a2a_message:
             await self.task_updater.update_status(
                 state=TaskState.working,
                 message=a2a_message
             )
-            logger.debug(f"Sent message via TaskStatusUpdateEvent: task_id={task.id}")
         else:
-            logger.warning(f"Failed to translate message event: task_id={task.id}")
+            logger.warning("Failed to translate message event")
 
     @staticmethod
     async def _handle_node_update_event(
@@ -186,9 +188,7 @@ class ExecutionEventHandler:
         """
         if node_event.node_name:
             set_langgraph_node(node_event.node_name)
-            logger.debug(
-                f"Node update: active_node={node_event.node_name}, task_id={task.id}"
-            )
+            logger.debug(f"Node: {node_event.node_name}")
 
     @staticmethod
     async def _handle_state_update_event(
@@ -201,10 +201,7 @@ class ExecutionEventHandler:
             event_data: State update data
             task: Current task
         """
-        logger.debug(
-            f"State update: task_id={task.id}, "
-            f"data_keys={list(event_data.keys()) if isinstance(event_data, dict) else 'N/A'}"
-        )
+        # State updates are internal events that don't require logging
 
     async def _handle_custom_event(
             self,
@@ -217,6 +214,8 @@ class ExecutionEventHandler:
             event_data: Custom event data (may contain Pydantic models)
             task: Current task
         """
+        logger.debug("Event: custom")
+
         if self.task_updater:
             # Ensure data is serializable (convert Pydantic models if needed)
             serializable_data = event_data
@@ -232,7 +231,6 @@ class ExecutionEventHandler:
                 },
             )
             await self.task_updater.update_status(state=TaskState.working, message=custom_message)
-            logger.debug(f"Sent custom event: task_id={task.id}")
 
     async def _handle_interrupt_event(
             self,
@@ -242,8 +240,11 @@ class ExecutionEventHandler:
     ) -> None:
         """Handle interrupt event (agent waiting for input).
 
+        Supports multiple simultaneous interrupts (LangGraph 0.6.0+).
+        Takes first interrupt to create user-facing message.
+
         Args:
-            interrupt_event: Typed InterruptEvent with interrupt info
+            interrupt_event: Typed InterruptEvent with list of interrupts
             event_queue: Queue to publish events
             task: Current task
         """
@@ -254,20 +255,24 @@ class ExecutionEventHandler:
             if finalize_event:
                 await event_queue.enqueue_event(finalize_event)
 
-        interrupt_info = interrupt_event.interrupt
+        # Take first interrupt for user-facing message
         interrupt_message = None
+        interrupt_id = None
 
-        if interrupt_info:
-            # Use InterruptInfo object attributes (not dict)
-            reason = interrupt_info.reason or "Agent requires input"
-            prompt = interrupt_info.prompt
-            interrupt_text = prompt if prompt else reason
+        if interrupt_event.interrupts:
+            interrupt_info = interrupt_event.interrupts[0]
+            interrupt_id = interrupt_info.id
+            interrupt_text = interrupt_info.get_prompt_text()
+
             interrupt_message = Message(
                 context_id=task.context_id,
                 task_id=task.id,
                 message_id=str(uuid.uuid4()),
                 role=Role.agent,
                 parts=[Part(root=TextPart(text=interrupt_text))],
+                metadata={
+                    "interruptId": interrupt_id
+                }
             )
 
         task_state = TaskState.input_required
@@ -281,9 +286,9 @@ class ExecutionEventHandler:
             )
 
         logger.info(
-            f"Task interrupted (requires input): task_id={task.id}, "
-            f"next_steps={interrupt_event.next_steps}, "
-            f"interrupt={interrupt_info.reason if interrupt_info else 'N/A'}"
+            f"Interrupted (requires input), "
+            f"interrupts_count={len(interrupt_event.interrupts)}, "
+            f"interrupt_id={interrupt_id or 'N/A'}"
         )
 
     async def _handle_complete_event(
@@ -306,11 +311,10 @@ class ExecutionEventHandler:
             )
             if finalize_event:
                 await event_queue.enqueue_event(finalize_event)
-                logger.debug(f"Finalized streaming artifact on completion: task_id={task.id}")
 
         if self.task_updater:
             await self.task_updater.complete()
-        logger.info(f"Task completed successfully: task_id={task.id}")
+        logger.info("Task completed successfully")
 
     async def _handle_error_event(
             self,
@@ -324,8 +328,7 @@ class ExecutionEventHandler:
             task: Current task
         """
         logger.error(
-            f"Execution error: task_id={task.id}, "
-            f"error={error_event.error}, "
+            f"Execution error: {error_event.error}, "
             f"type={error_event.error_type}"
         )
 

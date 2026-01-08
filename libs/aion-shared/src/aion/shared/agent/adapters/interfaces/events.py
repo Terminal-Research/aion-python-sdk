@@ -55,6 +55,16 @@ class MessageEvent(ExecutionEvent):
         description="Whether this is a streaming chunk"
     )
 
+    def get_text_content(self) -> str:
+        """Extract and concatenate all text content from message parts.
+
+        Returns:
+            Combined text content from all parts, or empty string if no content.
+        """
+        if not self.content:
+            return ""
+        return "".join(part.content for part in self.content if part.content)
+
 
 class StateUpdateEvent(ExecutionEvent):
     """Event for agent state updates."""
@@ -98,12 +108,11 @@ class InterruptEvent(ExecutionEvent):
         default="interrupt",
         description="Always 'interrupt'"
     )
-    data: Any = Field(description="Current execution state/values")
-    next_steps: list[str] = Field(
-        default_factory=list,
-        description="Available next steps"
+    interrupts: list[InterruptInfo] = Field(
+        description="List of interrupts that occurred. "
+                    "Most frameworks will have 1 interrupt, but some (like LangGraph) "
+                    "can have multiple simultaneous interrupts."
     )
-    interrupt: InterruptInfo = Field(description="Interrupt details")
 
 
 class CompleteEvent(ExecutionEvent):
@@ -112,11 +121,6 @@ class CompleteEvent(ExecutionEvent):
     event_type: Literal["complete"] = Field(
         default="complete",
         description="Always 'complete'"
-    )
-    data: Any = Field(description="Final execution state/values")
-    next_steps: list[str] = Field(
-        default_factory=list,
-        description="Available next steps"
     )
 
 

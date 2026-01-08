@@ -17,7 +17,6 @@ from .messages import (
     MessagePartType,
 )
 from .state import (
-    StateAdapter,
     StateExtractor,
     InterruptInfo,
     ExecutionSnapshot,
@@ -41,7 +40,6 @@ __all__ = [
     "ExecutorAdapter",
     "ExecutionConfig",
     # State
-    "StateAdapter",
     "StateExtractor",
     "InterruptInfo",
     "ExecutionSnapshot",

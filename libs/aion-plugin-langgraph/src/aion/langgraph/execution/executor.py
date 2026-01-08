@@ -2,20 +2,20 @@ from collections.abc import AsyncIterator
 from typing import Any, Optional
 
 from aion.shared.agent import AgentInput, ExecutionError, StateRetrievalError
-from aion.shared.agent.adapters import AgentState
 from aion.shared.agent.adapters import (
     CompleteEvent,
     ErrorEvent,
     ExecutionConfig,
     ExecutionEvent,
+    ExecutionSnapshot,
     ExecutorAdapter,
     InterruptEvent,
 )
 from aion.shared.config.models import AgentConfig
 from aion.shared.logging import get_logger
 
-from .event_converter import LangGraphEventConverter
-from .state import LangGraphStateAdapter
+from ..events import LangGraphEventConverter
+from ..state import LangGraphStateAdapter
 
 logger = get_logger()
 
@@ -27,6 +27,69 @@ class LangGraphExecutor(ExecutorAdapter):
         self.state_adapter = LangGraphStateAdapter()
         self.event_converter = LangGraphEventConverter()
 
+    async def _execute_and_convert_stream(
+            self,
+            inputs: Any,
+            config: dict[str, Any],
+            stream_mode: list[str]
+    ) -> AsyncIterator[ExecutionEvent]:
+        """
+        Executes the LangGraph stream and converts internal events to unified ExecutionEvents.
+
+        Args:
+            inputs: The data to pass to astream (could be state updates or a Command object).
+            config: LangGraph-specific configuration (thread_id, etc.).
+            stream_mode: List of LangGraph streaming modes to subscribe to.
+
+        Yields:
+            Converted unified ExecutionEvent objects.
+        """
+        async for event_type, event_data in self.compiled_graph.astream(
+                inputs,
+                config,
+                stream_mode=stream_mode,
+        ):
+            # LangGraph returns a tuple (message, metadata) specifically for the "messages" stream mode
+            if event_type == "messages":
+                event_data, metadata = event_data
+            else:
+                metadata = None
+
+            # Transform the vendor-specific event into our system's unified event format
+            unified_event = self.event_converter.convert(
+                event_type, event_data, metadata
+            )
+
+            if unified_event:
+                yield unified_event
+
+    async def _handle_final_state(self, final_state: ExecutionSnapshot) -> AsyncIterator[ExecutionEvent]:
+        """
+        Analyzes the final state of the graph to determine if it finished
+        normally or was interrupted for user input.
+
+        Args:
+            final_state: The snapshot of the graph state after execution.
+
+        Yields:
+            Either an InterruptEvent or a CompleteEvent.
+        """
+        # Check if the graph is paused at a breakpoint or waiting for input
+        if final_state.requires_input():
+            # Extract all interrupts (LangGraph 0.6.0+ supports multiple)
+            all_interrupts = self.state_adapter.extract_all_interrupts(final_state)
+
+            logger.debug(
+                f"Execution interrupted: awaiting user input "
+                f"({len(all_interrupts)} interrupt(s))"
+            )
+
+            yield InterruptEvent(
+                interrupts=all_interrupts,
+            )
+        else:
+            yield CompleteEvent()
+
     async def stream(
             self,
             inputs: AgentInput,
@@ -35,47 +98,17 @@ class LangGraphExecutor(ExecutorAdapter):
         try:
             langgraph_config = self._to_langgraph_config(config)
             langgraph_inputs = self._transform_inputs(inputs)
-            context_id = config.context_id if config else "unknown"
 
-            logger.info(f"Starting LangGraph stream: context_id={context_id}")
-            logger.debug(
-                f"Stream inputs: {langgraph_inputs}, config: {langgraph_config}"
-            )
-            async for event_type, event_data in self.compiled_graph.astream(
+            async for event in self._execute_and_convert_stream(
                     langgraph_inputs,
                     langgraph_config,
-                    stream_mode=["values", "messages", "custom", "updates"],
+                    stream_mode=["values", "messages", "custom", "updates"]
             ):
-                if event_type == "messages":
-                    event_data, metadata = event_data
-                else:
-                    metadata = None
+                yield event
 
-                logger.debug(
-                    f"LangGraph stream event [{event_type}]: {type(event_data).__name__}"
-                )
-                unified_event = self.event_converter.convert(
-                    event_type, event_data, metadata
-                )
-                if unified_event:
-                    yield unified_event
-
-            logger.info(f"LangGraph stream completed: context_id={context_id}")
             final_state = await self.get_state(config)
-
-            # Check if execution was interrupted
-            if final_state.is_interrupted:
-                interrupt_info = self.state_adapter.extract_interrupt_info(final_state)
-                yield InterruptEvent(
-                    data=final_state.values,
-                    next_steps=final_state.next_steps,
-                    interrupt=interrupt_info,
-                )
-            else:
-                yield CompleteEvent(
-                    data=final_state.values,
-                    next_steps=final_state.next_steps,
-                )
+            async for final_event in self._handle_final_state(final_state):
+                yield final_event
 
         except Exception as e:
             logger.error(f"LangGraph stream failed: {e}")
@@ -84,27 +117,6 @@ class LangGraphExecutor(ExecutorAdapter):
                 error_type=type(e).__name__,
             )
             raise ExecutionError(f"Failed to stream agent: {e}") from e
-
-    async def get_state(self, config: ExecutionConfig) -> AgentState:
-        if not config or not config.context_id:
-            raise ValueError("context_id is required to get state")
-
-        try:
-            langgraph_config = self._to_langgraph_config(config)
-            logger.debug(f"Getting state for context: {config.context_id}")
-            snapshot = await self.compiled_graph.aget_state(langgraph_config)
-            agent_state = self.state_adapter.get_state_from_snapshot(snapshot)
-
-            logger.debug(
-                f"State retrieved: interrupted={agent_state.is_interrupted}, "
-                f"next_steps={agent_state.next_steps}"
-            )
-
-            return agent_state
-
-        except Exception as e:
-            logger.error(f"Failed to get state: {e}")
-            raise StateRetrievalError(f"Failed to retrieve state: {e}") from e
 
     async def resume(
             self,
@@ -118,7 +130,7 @@ class LangGraphExecutor(ExecutorAdapter):
             logger.info(f"Resuming execution for context: {config.context_id}")
             state = await self.get_state(config)
 
-            if not state.is_interrupted:
+            if not state.requires_input():
                 logger.warning(
                     f"Attempted to resume non-interrupted execution: {config.context_id}"
                 )
@@ -142,44 +154,35 @@ class LangGraphExecutor(ExecutorAdapter):
 
             # Stream using the Command object directly
             langgraph_config = self._to_langgraph_config(config)
-            context_id = config.context_id if config else "unknown"
 
-            async for event_type, event_data in self.compiled_graph.astream(
+            async for event in self._execute_and_convert_stream(
                     resume_command,
                     langgraph_config,
-                    stream_mode=["values", "messages", "custom", "updates"],
+                    stream_mode=["values", "messages", "custom", "updates"]
             ):
-                if event_type == "messages":
-                    event_data, metadata = event_data
-                else:
-                    metadata = None
+                yield event
 
-                unified_event = self.event_converter.convert(
-                    event_type, event_data, metadata
-                )
-                if unified_event:
-                    yield unified_event
-
-            logger.info(f"Resume completed: context_id={context_id}")
             final_state = await self.get_state(config)
-
-            # Check if execution was interrupted again
-            if final_state.is_interrupted:
-                interrupt_info = self.state_adapter.extract_interrupt_info(final_state)
-                yield InterruptEvent(
-                    data=final_state.values,
-                    next_steps=final_state.next_steps,
-                    interrupt=interrupt_info,
-                )
-            else:
-                yield CompleteEvent(
-                    data=final_state.values,
-                    next_steps=final_state.next_steps,
-                )
+            async for final_event in self._handle_final_state(final_state):
+                yield final_event
 
         except Exception as e:
             logger.error(f"Failed to resume execution: {e}")
             raise ExecutionError(f"Failed to resume execution: {e}") from e
+
+    async def get_state(self, config: ExecutionConfig) -> ExecutionSnapshot:
+        if not config or not config.context_id:
+            raise ValueError("context_id is required to get state")
+
+        try:
+            langgraph_config = self._to_langgraph_config(config)
+            snapshot = await self.compiled_graph.aget_state(langgraph_config)
+            execution_snapshot = self.state_adapter.get_state_from_snapshot(snapshot)
+            return execution_snapshot
+
+        except Exception as e:
+            logger.error(f"Failed to get state: {e}")
+            raise StateRetrievalError(f"Failed to retrieve state: {e}") from e
 
     @staticmethod
     def _to_langgraph_config(config: Optional[ExecutionConfig]) -> dict[str, Any]:

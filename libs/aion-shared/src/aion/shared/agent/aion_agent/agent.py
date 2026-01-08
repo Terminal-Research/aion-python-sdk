@@ -217,11 +217,6 @@ class AionAgent:
             metadata=metadata,
         )
 
-        self.logger.debug(
-            f"Streaming agent '{self.id}' (framework={self.framework}, "
-            f"task_id={task_id}, context_id={context_id})"
-        )
-
         # Convert dict to AgentInput for backward compatibility
         if isinstance(inputs, dict):
             inputs = AgentInput.from_dict(inputs)

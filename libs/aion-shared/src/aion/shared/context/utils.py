@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 from typing import Optional, Dict, Any, Union
 
 from a2a.server.agent_execution import RequestContext as A2ARequestContext
@@ -11,6 +12,8 @@ __all__ = [
     "clear_context",
     "set_context_from_a2a_request",
     "set_langgraph_node",
+    "set_working_task",
+    "task_context",
 ]
 
 
@@ -104,12 +107,23 @@ def set_langgraph_node(node_name: str) -> RequestContext:
     Raises:
         RuntimeError: If no context is currently set
     """
-    current = get_context()
-    if current is None:
-        raise RuntimeError("No context is currently set. Use set_context() first.")
+    return update_context(langgraph_current_node=node_name)
 
-    current.set_langgraph_current_node(node_name)
-    return current
+
+def set_working_task(task_id: Optional[str] = None) -> RequestContext:
+    """
+    Set the current working task ID in the context.
+
+    Args:
+        task_id: ID of the current task (None to clear)
+
+    Returns:
+        Updated RequestContext instance
+
+    Raises:
+        RuntimeError: If no context is currently set
+    """
+    return update_context(task_id=task_id)
 
 
 def set_context_from_a2a_request(
@@ -151,3 +165,37 @@ def set_context_from_a2a_request(
         request_jrpc_method=jrpc_method
     )
 
+
+@contextmanager
+def task_context(task_id: str):
+    """
+    Context manager for setting task_id in the request context.
+
+    Automatically sets task_id when entering the context and ensures
+    proper cleanup on exit. This is useful for managing task scope
+    in execution flows.
+
+    Args:
+        task_id: ID of the task to set in context
+
+    Yields:
+        Updated RequestContext with task_id set
+
+    Raises:
+        RuntimeError: If no context is currently set
+    """
+    current = get_context()
+    if current is None:
+        raise RuntimeError("No context is currently set. Use set_context() first.")
+
+    # Save previous task_id
+    previous_task_id = current.task_id
+
+    # Set new task_id
+    updated_context = update_context(task_id=task_id)
+
+    try:
+        yield updated_context
+    finally:
+        # Restore previous task_id
+        update_context(task_id=previous_task_id)

@@ -11,12 +11,12 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import StateGraph
 from langgraph.pregel import Pregel
 
-from .checkpointer import (
+from .state import (
     CheckpointerConfig,
     CheckpointerType,
     LangGraphCheckpointerAdapter,
 )
-from .executor import LangGraphExecutor
+from .execution import LangGraphExecutor
 
 logger = get_logger()
 
@@ -167,7 +167,8 @@ class LangGraphAdapter(AgentAdapter):
         except Exception as ex:
             logger.warning(f"Failed to create checkpointer: {ex}")
 
-    def _is_graph_instance(self, obj: Any) -> bool:
+    @staticmethod
+    def _is_graph_instance(obj: Any) -> bool:
         """Check if object is a LangGraph graph instance.
 
         Args:

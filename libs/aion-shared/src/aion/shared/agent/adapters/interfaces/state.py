@@ -1,14 +1,14 @@
-"""Abstract base class for agent execution state extraction and management.
+"""Unified interfaces for agent execution state management.
 
-This module provides classes and interfaces for extracting, managing, and
-manipulating agent execution state snapshots across different frameworks.
+This module provides classes and interfaces for representing and managing
+agent execution state in a framework-agnostic way.
 
 Key classes:
 - ExecutionSnapshot: Unified snapshot of agent execution state at a point in time
 - ExecutionStatus: Status of agent execution (running, interrupted, complete, error)
 - InterruptInfo: Information about execution interrupts/pauses
 - StateExtractor: Base class for extracting data from framework-specific objects
-- StateAdapter: (deprecated) Will be removed in favor of plugin-specific implementations
+
 """
 
 from abc import ABC, abstractmethod
@@ -30,21 +30,62 @@ class ExecutionStatus(str, Enum):
 
 
 class InterruptInfo(BaseModel):
-    """Information about an agent execution interrupt/pause."""
+    """Information about an agent execution interrupt/pause.
 
-    reason: str = Field(description="Description of why execution was interrupted")
+    Universal interrupt structure supporting multiple AI frameworks:
+    - Core fields (id, value): Align with LangGraph 0.6.0+
+    - Optional fields (prompt, options): Convenience for structured frameworks
+      like AutoGen, CrewAI, Semantic Kernel
+
+    Framework adapters decide whether to populate optional convenience fields.
+    UI layers should check optional fields first, then fall back to parsing 'value'.
+    """
+
+    id: Optional[str] = Field(
+        default=None,
+        description="Unique interrupt identifier. Used to resume execution. "
+                    "LangGraph: from Interrupt.id. AutoGen/CrewAI: generated or task_id."
+    )
+    value: Any = Field(
+        description="Interrupt data/payload. Can be string, dict, or any structure. "
+                    "LangGraph: from Interrupt.value. AutoGen: full message object. "
+                    "Framework adapters may extract structured data into optional fields."
+    )
     prompt: Optional[str] = Field(
         default=None,
-        description="Prompt/question for the user"
+        description="User-facing prompt/question (optional convenience field). "
+                    "Extracted from 'value' by framework adapter if available. "
+                    "Useful for frameworks that provide explicit prompts (AutoGen, CrewAI, SK)."
     )
     options: Optional[list[str]] = Field(
         default=None,
-        description="List of valid user responses"
+        description="Available response options (optional convenience field). "
+                    "Extracted from 'value' by framework adapter if available. "
+                    "Useful for frameworks that provide explicit choices (AutoGen, SK)."
     )
     metadata: dict[str, Any] = Field(
         default_factory=dict,
-        description="Additional interrupt metadata"
+        description="Additional framework-specific interrupt metadata "
+                    "(sender, context, timestamp, etc.)"
     )
+
+    def get_prompt_text(self) -> str:
+        """Extract user-facing prompt text from this interrupt.
+
+        Priority:
+        1. prompt field (if set by framework adapter)
+        2. value field (if it's a string)
+        3. Fallback message with interrupt id
+
+        Returns:
+            str: User-facing prompt text
+        """
+        if self.prompt:
+            return self.prompt
+        elif isinstance(self.value, str):
+            return self.value
+        else:
+            return f"Agent requires input"
 
 
 class ExecutionSnapshot(BaseModel):
@@ -132,63 +173,3 @@ class StateExtractor(ABC):
             bool: True if extraction is possible, False otherwise
         """
         pass
-
-
-class StateAdapter(ABC):
-    # todo remove state adapter (current implementation looks like it was developed for langgraph and not suitable for adk etc)
-    """Abstract base for framework-specific agent execution state extraction.
-
-    Subclasses must implement methods to convert framework-specific state
-    representations to the unified ExecutionSnapshot format.
-
-    The StateAdapter is responsible for:
-    - Converting framework state snapshots to unified format
-    - Extracting interrupt/pause information
-    - Generating resume inputs from user feedback
-    - Extracting messages and metadata from state
-    """
-
-    @abstractmethod
-    def get_state_from_snapshot(self, snapshot: Any) -> ExecutionSnapshot:
-        """Extract unified execution snapshot from a framework-specific state snapshot.
-
-        Args:
-            snapshot: A framework-specific state snapshot
-
-        Returns:
-            ExecutionSnapshot: The execution state in unified format
-
-        Raises:
-            ValueError: If snapshot cannot be converted
-        """
-        pass
-
-    @abstractmethod
-    def extract_interrupt_info(self, state: ExecutionSnapshot) -> Optional[InterruptInfo]:
-        """Extract interrupt information from execution snapshot.
-
-        Args:
-            state: The execution snapshot to examine
-
-        Returns:
-            Optional[InterruptInfo]: Interrupt information if execution is interrupted,
-                                    None otherwise
-        """
-        pass
-
-    @abstractmethod
-    def create_resume_input(self, user_input: Any, state: ExecutionSnapshot) -> dict[str, Any]:
-        """Create framework-specific resume input from user feedback.
-
-        Args:
-            user_input: User's response/feedback after interruption
-            state: The current execution snapshot
-
-        Returns:
-            dict[str, Any]: Resume input formatted for the framework
-
-        Raises:
-            ValueError: If resume input cannot be created
-        """
-        pass
-

@@ -102,8 +102,4 @@ class ExecutionEventTranslator:
             parts=a2a_parts,
         )
 
-        logger.debug(
-            f"Translated message event to A2A Message: "
-            f"task_id={task.id}, role={role}, parts_count={len(a2a_parts)}"
-        )
         return message
