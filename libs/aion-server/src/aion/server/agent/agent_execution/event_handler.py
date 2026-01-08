@@ -133,7 +133,6 @@ class ExecutionEventHandler:
         chunk_text = message_event.get_text_content()
         # skip if no text content
         if not chunk_text:
-            logger.debug("Event: message - streaming chunk (empty, skipped)")
             return
 
         logger.debug("Event: message - streaming chunk")
@@ -165,6 +164,14 @@ class ExecutionEventHandler:
             task: Current task
         """
         logger.debug(f"Event: message - full message (role={message_event.role})")
+
+        # Finalize streaming artifact before sending the final message
+        if self.streaming_artifact_builder:
+            finalize_event = self.streaming_artifact_builder.build_meta_complete_event(
+                status_reason=ArtifactStreamingStatusReason.COMPLETE_MESSAGE
+            )
+            if finalize_event:
+                await event_queue.enqueue_event(finalize_event)
 
         a2a_message = self.event_translator.translate_message_event(message_event, task)
         if a2a_message:
@@ -304,14 +311,6 @@ class ExecutionEventHandler:
             event_queue: Queue to publish events
             task: Current task
         """
-        # Finalize streaming artifact if active
-        if self.streaming_artifact_builder:
-            finalize_event = self.streaming_artifact_builder.build_meta_complete_event(
-                status_reason=ArtifactStreamingStatusReason.COMPLETE_MESSAGE
-            )
-            if finalize_event:
-                await event_queue.enqueue_event(finalize_event)
-
         if self.task_updater:
             await self.task_updater.complete()
         logger.info("Task completed successfully")

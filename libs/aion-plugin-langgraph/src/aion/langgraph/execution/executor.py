@@ -78,15 +78,7 @@ class LangGraphExecutor(ExecutorAdapter):
         if final_state.requires_input():
             # Extract all interrupts (LangGraph 0.6.0+ supports multiple)
             all_interrupts = self.state_adapter.extract_all_interrupts(final_state)
-
-            logger.debug(
-                f"Execution interrupted: awaiting user input "
-                f"({len(all_interrupts)} interrupt(s))"
-            )
-
-            yield InterruptEvent(
-                interrupts=all_interrupts,
-            )
+            yield InterruptEvent(interrupts=all_interrupts)
         else:
             yield CompleteEvent()
 

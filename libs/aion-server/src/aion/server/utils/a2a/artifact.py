@@ -1,5 +1,5 @@
-from typing import Any, Optional, Literal
 from enum import Enum
+from typing import Any, Optional
 
 from a2a.types import TaskArtifactUpdateEvent, Artifact, Part, TextPart, Task
 from aion.shared.types import ArtifactName, ArtifactStreamingStatus, ArtifactStreamingStatusReason
@@ -94,21 +94,37 @@ class StreamingArtifactBuilder:
 
     def build_meta_complete_event(
             self,
-            status_reason: ArtifactStreamingStatusReason = ArtifactStreamingStatusReason.COMPLETE_MESSAGE
+            status_reason: ArtifactStreamingStatusReason = ArtifactStreamingStatusReason.COMPLETE_MESSAGE,
+            metadata: dict[str, Any] | None = None
     ) -> TaskArtifactUpdateEvent | None:
-        """Build a meta completion event that finalizes existing artifact without changing content."""
+        """Build a meta completion event that finalizes existing artifact without changing content.
+
+        Args:
+            status_reason: The reason for completion (default: COMPLETE_MESSAGE)
+            metadata: Optional additional metadata to merge with event metadata
+
+        Returns:
+            TaskArtifactUpdateEvent or None if no existing artifact found
+        """
         streaming_artifact = self.get_existing_streaming_artifact()
         if not streaming_artifact:
             return None
 
+        # Build base metadata with status information
+        event_metadata = {
+            "status": ArtifactStreamingStatus.FINALIZED.value,
+            "status_reason": status_reason.value,
+        }
+
+        # Merge extra metadata if provided
+        if metadata:
+            event_metadata.update(metadata)
+
         return self._build_chunk_event(
             parts=streaming_artifact.parts,
             append=False,
-            last_chunk=False,
-            metadata={
-                "status": ArtifactStreamingStatus.FINALIZED.value,
-                "status_reason": status_reason.value,
-            }
+            last_chunk=True,  # This is the final chunk of the artifact
+            metadata=event_metadata
         )
 
     def build_streaming_chunk_event(
@@ -148,29 +164,6 @@ class StreamingArtifactBuilder:
         return self._build_chunk_event(
             content=final_content,
             append=append,
-            last_chunk=False,
-            metadata=metadata
-        )
-
-    def build_finalized_event(
-            self,
-            metadata: dict[str, Any] | None = None
-    ) -> TaskArtifactUpdateEvent | None:
-        """Build a finalization event that keeps existing content as-is.
-
-        Args:
-            metadata: Optional metadata for the artifact
-
-        Returns:
-            TaskArtifactUpdateEvent or None if no existing artifact found
-        """
-        streaming_artifact = self.get_existing_streaming_artifact()
-        if not streaming_artifact:
-            return None
-
-        return self._build_chunk_event(
-            parts=streaming_artifact.parts,
-            append=False,
             last_chunk=False,
             metadata=metadata
         )
