@@ -10,8 +10,7 @@ from alembic import command
 from .env import config
 from .utils import (
     fail_if_no_permissions,
-    log_migrations,
-    setup_checkpointer_tables,
+    log_migrations
 )
 
 logger = get_logger()
@@ -37,9 +36,6 @@ async def upgrade_to_head() -> None:
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, command.upgrade, config, "head")
         logger.debug("Database migrations completed successfully")
-
-        # Setup checkpointer tables after main migrations
-        await setup_checkpointer_tables()
     except Exception as e:
         logger.error(f"Database migration failed: {e}", exc_info=True)
         raise

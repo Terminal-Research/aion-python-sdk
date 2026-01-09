@@ -14,35 +14,35 @@ from typing import Any, Optional
 
 from aion.shared.agent.inputs import AgentInput
 from .events import ExecutionEvent
-from .state import AgentState
+from .state import ExecutionSnapshot
 
 
 class ExecutionConfig:
     """Configuration for a single agent execution.
 
     Attributes:
-        session_id: Unique identifier for the execution session
-        thread_id: Thread identifier for multi-turn conversations
+        task_id: Unique identifier for the specific task/execution (A2A Task.id)
+        context_id: Context identifier for multi-turn conversations (A2A Task.context_id)
         timeout: Maximum execution time in seconds
         metadata: Additional execution metadata
     """
     def __init__(
         self,
-        session_id: Optional[str] = None,
-        thread_id: Optional[str] = None,
+        task_id: Optional[str] = None,
+        context_id: Optional[str] = None,
         timeout: Optional[float] = None,
         metadata: Optional[dict[str, Any]] = None,
     ):
         """Initialize execution configuration.
 
         Args:
-            session_id: Unique identifier for the execution session
-            thread_id: Thread identifier for multi-turn conversations
+            task_id: Unique identifier for the specific task/execution (A2A Task.id)
+            context_id: Context identifier for multi-turn conversations (A2A Task.context_id)
             timeout: Maximum execution time in seconds
             metadata: Additional execution metadata
         """
-        self.session_id = session_id
-        self.thread_id = thread_id
+        self.task_id = task_id
+        self.context_id = context_id
         self.timeout = timeout
         self.metadata = metadata or {}
 
@@ -54,32 +54,15 @@ class ExecutorAdapter(ABC):
     execution, streaming, and state management capabilities.
 
     The ExecutorAdapter handles:
-    - Synchronous and asynchronous agent invocation
     - Streaming execution with real-time events
     - State retrieval and management
     - Resume/recovery from interrupts
+
+    Note: This adapter is designed for A2A protocol which always uses streaming
+    execution. All execution flows use the stream() method to generate events
+    that are then either streamed to the client (message/stream) or aggregated
+    into a final Task object (message/send).
     """
-    @abstractmethod
-    async def invoke(
-        self,
-        inputs: AgentInput,
-        config: Optional[ExecutionConfig] = None,
-    ) -> dict[str, Any]:
-        """Execute the agent with given inputs and return final output.
-
-        Args:
-            inputs: Universal agent input (will be transformed to framework format)
-            config: Execution configuration (session_id, thread_id, etc.)
-
-        Returns:
-            dict[str, Any]: Final agent output
-
-        Raises:
-            TimeoutError: If execution exceeds configured timeout
-            Exception: Any framework-specific errors during execution
-        """
-        pass
-
     @abstractmethod
     async def stream(
         self,
@@ -90,7 +73,7 @@ class ExecutorAdapter(ABC):
 
         Args:
             inputs: Universal agent input (will be transformed to framework format)
-            config: Execution configuration (session_id, thread_id, etc.)
+            config: Execution configuration (task_id, context_id, timeout, etc.)
 
         Yields:
             ExecutionEvent: Events emitted during execution (e.g., tokens, tool calls)
@@ -102,14 +85,14 @@ class ExecutorAdapter(ABC):
         pass
 
     @abstractmethod
-    async def get_state(self, config: ExecutionConfig) -> AgentState:
-        """Retrieve the current state of the agent execution.
+    async def get_state(self, config: ExecutionConfig) -> ExecutionSnapshot:
+        """Retrieve the current execution state snapshot.
 
         Args:
             config: Execution configuration specifying which execution to retrieve
 
         Returns:
-            AgentState: Current agent state including values, next steps, and interrupts
+            ExecutionSnapshot: Current execution snapshot including state, messages, status, and metadata
 
         Raises:
             KeyError: If execution not found
@@ -136,31 +119,3 @@ class ExecutorAdapter(ABC):
             ValueError: If execution is not in a resumable state
         """
         pass
-
-    def supports_streaming(self) -> bool:
-        """Check if this executor supports streaming execution."""
-        return False
-
-    def supports_resume(self) -> bool:
-        """Check if this executor supports resuming interrupted executions."""
-        return False
-
-    def supports_state_retrieval(self) -> bool:
-        """Check if this executor supports state retrieval."""
-        return False
-
-    def supports_multi_turn(self) -> bool:
-        """Check if executor supports multi-turn conversations."""
-        return False
-
-    def supports_parallel_execution(self) -> bool:
-        """Check if executor supports parallel execution."""
-        return False
-
-    def supports_tool_calling(self) -> bool:
-        """Check if executor supports tool calling."""
-        return False
-
-    def supports_human_in_loop(self) -> bool:
-        """Check if executor supports human-in-the-loop."""
-        return False

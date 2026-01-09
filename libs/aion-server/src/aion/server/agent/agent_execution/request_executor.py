@@ -21,6 +21,8 @@ from a2a.utils import new_task
 from a2a.utils.errors import ServerError
 from a2a.utils.telemetry import trace_function
 from aion.shared.agent import AgentInput, AionAgent
+from aion.shared.agent.adapters import ExecutionEvent
+from aion.shared.context import task_context
 from aion.shared.logging import get_logger
 
 from aion.server.utils import check_if_task_is_interrupted, StreamingArtifactBuilder
@@ -96,75 +98,60 @@ class AionAgentRequestExecutor(AgentExecutor):
         # Get or create task
         task, is_new_task = await self._get_task_for_execution(context)
 
-        # Create task updater, streaming artifact builder, and event handler
-        self.task_updater = TaskUpdater(event_queue, task.id, task.context_id)
-        self.streaming_artifact_builder = StreamingArtifactBuilder(task)
-        self.event_handler = ExecutionEventHandler(
-            task_updater=self.task_updater,
-            streaming_artifact_builder=self.streaming_artifact_builder,
-            event_translator=self.event_translator,
-        )
-
-        if is_new_task:
-            logger.info(
-                f"Created new task: task_id={task.id}, context_id={task.context_id}, "
-                f"agent_id={self.agent.id}, framework={self.agent.framework}"
-            )
-            await event_queue.enqueue_event(task)
-        else:
-            logger.info(
-                f"Resuming existing task: task_id={task.id}, context_id={task.context_id}, "
-                f"agent_id={self.agent.id}, framework={self.agent.framework}"
+        # Set task_id in context for automatic logging throughout execution
+        with task_context(str(task.id)):
+            # Create task updater, streaming artifact builder, and event handler
+            self.task_updater = TaskUpdater(event_queue, task.id, task.context_id)
+            self.streaming_artifact_builder = StreamingArtifactBuilder(task)
+            self.event_handler = ExecutionEventHandler(
+                task_updater=self.task_updater,
+                streaming_artifact_builder=self.streaming_artifact_builder,
+                event_translator=self.event_translator,
             )
 
-        # Prepare execution
-        user_input = context.get_user_input()
-        session_id = task.id
-        thread_id = task.context_id
-
-        first_event = True
-
-        try:
-            # Execute agent (stream or resume)
             if is_new_task:
-                # New execution
-                logger.debug(
-                    f"Starting new execution: session_id={session_id}, "
-                    f"input_length={len(user_input)}"
-                )
-                event_stream = self.agent.stream(
-                    inputs=AgentInput(text=user_input),
-                    session_id=session_id,
-                    thread_id=thread_id,
-                )
+                logger.info("Created task")
+                await event_queue.enqueue_event(task)
             else:
-                # Resume interrupted execution
-                logger.debug(
-                    f"Resuming execution: session_id={session_id}, "
-                    f"input_length={len(user_input)}"
-                )
-                event_stream = self.agent.resume(
-                    session_id=session_id,
-                    inputs=AgentInput(text=user_input) if user_input else None,
-                    thread_id=thread_id,
-                )
+                logger.info("Resuming task")
 
-            # Process events
-            async for execution_event in event_stream:
-                # Update task status to working on first event
-                if first_event:
-                    await self._update_task_status_working(event_queue, task)
-                    first_event = False
+            # Prepare execution
+            user_input = context.get_user_input()
+            task_id = task.id
+            context_id = task.context_id
 
-                # Translate and publish event
-                await self._handle_execution_event(execution_event, event_queue, task)
+            try:
+                first_event = True
 
-        except Exception as ex:
-            logger.exception(
-                f"Execution failed: task_id={task.id}, context_id={task.context_id}, "
-                f"agent_id={self.agent.id}, error={ex}"
-            )
-            raise ServerError(error=InternalError()) from ex
+                # Execute agent (stream or resume)
+                if is_new_task:
+                    # New execution
+                    event_stream = self.agent.stream(
+                        inputs=AgentInput(text=user_input),
+                        context_id=context_id,
+                        task_id=str(task_id),
+                    )
+                else:
+                    # Resume interrupted execution
+                    event_stream = self.agent.resume(
+                        context_id=context_id,
+                        inputs=AgentInput(text=user_input) if user_input else None,
+                        task_id=str(task_id),
+                    )
+
+                # Process events
+                async for execution_event in event_stream:
+                    # Update task status to working on first event
+                    if first_event:
+                        await self._update_task_status_working(event_queue, task)
+                        first_event = False
+
+                    # Translate and publish event
+                    await self._handle_execution_event(execution_event, event_queue, task)
+
+            except Exception as ex:
+                logger.exception("Execution failed")
+                raise ServerError(error=InternalError()) from ex
 
     async def cancel(
             self, context: RequestContext, event_queue: EventQueue
@@ -240,11 +227,10 @@ class AionAgentRequestExecutor(AgentExecutor):
         """
         if self.task_updater:
             await self.task_updater.start_work()
-            logger.debug(f"Task status updated to WORKING: task_id={task.id}")
 
     async def _handle_execution_event(
             self,
-            execution_event,
+            execution_event: ExecutionEvent,
             event_queue: EventQueue,
             task: Task,
     ) -> None:

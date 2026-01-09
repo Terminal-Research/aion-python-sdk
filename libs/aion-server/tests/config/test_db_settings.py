@@ -20,8 +20,6 @@ class TestDbSettings:
             assert settings.pg_user_password is None
             assert settings.pg_host is None
             assert settings.pg_port is None
-            assert settings.pg_sqlalchemy_url is None
-            assert settings.pg_psycopg_url is None
 
     def test_environment_variable_loading(self):
         """Test that POSTGRES_URL environment variable is loaded correctly"""
@@ -45,9 +43,6 @@ class TestDbSettings:
             assert settings.pg_host == "localhost"
             assert settings.pg_port == 5432
             assert settings.is_valid_pg_url() is True
-            # Test URL conversion properties work with valid URL
-            assert settings.pg_sqlalchemy_url is not None
-            assert settings.pg_psycopg_url is not None
 
     def test_minimal_valid_postgres_url(self):
         """Test parsing of minimal valid PostgreSQL URL"""

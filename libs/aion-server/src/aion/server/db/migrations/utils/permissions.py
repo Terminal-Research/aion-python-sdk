@@ -5,7 +5,7 @@ import sys
 from aion.shared.logging import get_logger
 
 from aion.server.db import validate_permissions
-from aion.shared.utils.db import psycopg_url
+from aion.shared.utils.db import convert_pg_url
 from ..env import config
 
 logger = get_logger()
@@ -17,8 +17,8 @@ async def fail_if_no_permissions():
     This function checks if the current database user has permissions to create tables.
     If not, it logs an error and exits the process.
     """
-    # Get connection URL from Alembic config
-    conn_url = psycopg_url(config.get_main_option("sqlalchemy.url"))
+    # Get connection URL from Alembic config (convert from SQLAlchemy format to standard)
+    conn_url = convert_pg_url(config.get_main_option("sqlalchemy.url"), driver=None)
 
     # Check permissions
     logger.debug("Testing database permissions before migrations")

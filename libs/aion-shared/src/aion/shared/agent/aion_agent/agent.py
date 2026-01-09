@@ -14,7 +14,7 @@ from typing import Any, Optional, TYPE_CHECKING
 from aion.shared.agent.adapters import (
     ExecutionConfig,
     AgentAdapter,
-    AgentState,
+    ExecutionSnapshot,
     ExecutionEvent,
     ExecutorAdapter,
 )
@@ -180,61 +180,11 @@ class AionAgent:
     def host(self):
         return "0.0.0.0"
 
-    async def execute(
-            self,
-            inputs: AgentInput | dict[str, Any],
-            session_id: Optional[str] = None,
-            thread_id: Optional[str] = None,
-            timeout: Optional[float] = None,
-            **metadata,
-    ) -> dict[str, Any]:
-        """Execute agent with given inputs (non-streaming).
-
-        This is a framework-agnostic method that works for all agents.
-
-        Args:
-            inputs: Input data (AgentInput or dict for backward compatibility)
-            session_id: Session identifier for this execution
-            thread_id: Thread_identifier for multi-turn conversations
-            timeout: Maximum execution time in seconds
-            **metadata: Additional execution metadata
-
-        Returns:
-            dict[str, Any]: Agent execution result
-
-        Raises:
-            RuntimeError: If agent is not built yet
-            ExecutionError: If execution fails
-            TimeoutError: If execution exceeds timeout
-        """
-        if not self._is_built:
-            raise RuntimeError(
-                f"Agent '{self._id}' is not built yet. Call build() before executing."
-            )
-
-        config = ExecutionConfig(
-            session_id=session_id,
-            thread_id=thread_id,
-            timeout=timeout,
-            metadata=metadata,
-        )
-
-        self.logger.debug(
-            f"Executing agent '{self.id}' (framework={self.framework}, "
-            f"session_id={session_id})"
-        )
-
-        # Convert dict to AgentInput for backward compatibility
-        if isinstance(inputs, dict):
-            inputs = AgentInput.from_dict(inputs)
-
-        return await self._executor.invoke(inputs, config)
-
     async def stream(
             self,
             inputs: AgentInput | dict[str, Any],
-            session_id: Optional[str] = None,
-            thread_id: Optional[str] = None,
+            context_id: Optional[str] = None,
+            task_id: Optional[str] = None,
             timeout: Optional[float] = None,
             **metadata,
     ) -> AsyncIterator[ExecutionEvent]:
@@ -242,8 +192,8 @@ class AionAgent:
 
         Args:
             inputs: Input data (AgentInput or dict for backward compatibility)
-            session_id: Session identifier for this execution
-            thread_id: Thread identifier for multi-turn conversations
+            context_id: Context identifier for multi-turn conversations (A2A context_id)
+            task_id: Optional task identifier for this specific execution (A2A task.id)
             timeout: Maximum execution time in seconds
             **metadata: Additional execution metadata
 
@@ -261,15 +211,10 @@ class AionAgent:
             )
 
         config = ExecutionConfig(
-            session_id=session_id,
-            thread_id=thread_id,
+            task_id=task_id,
+            context_id=context_id,
             timeout=timeout,
             metadata=metadata,
-        )
-
-        self.logger.debug(
-            f"Streaming agent '{self.id}' (framework={self.framework}, "
-            f"session_id={session_id})"
         )
 
         # Convert dict to AgentInput for backward compatibility
@@ -281,17 +226,17 @@ class AionAgent:
 
     async def get_state(
             self,
-            session_id: str,
-            thread_id: Optional[str] = None,
-    ) -> AgentState:
-        """Get current execution state for a session.
+            context_id: str,
+            task_id: Optional[str] = None,
+    ) -> ExecutionSnapshot:
+        """Get current execution state snapshot for a context.
 
         Args:
-            session_id: Session identifier
-            thread_id: Optional thread identifier
+            context_id: Context identifier (A2A context_id)
+            task_id: Optional task identifier (A2A task.id)
 
         Returns:
-            AgentState: Current agent state
+            ExecutionSnapshot: Current execution snapshot including state, messages, status, and metadata
 
         Raises:
             RuntimeError: If agent is not built yet
@@ -302,25 +247,27 @@ class AionAgent:
                 f"Agent '{self._id}' is not built yet. Call build() before accessing state."
             )
 
-        config = ExecutionConfig(session_id=session_id, thread_id=thread_id)
+        config = ExecutionConfig(task_id=task_id, context_id=context_id)
 
-        self.logger.debug(f"Getting state for agent '{self.id}', session={session_id}")
+        self.logger.debug(
+            f"Getting state for agent '{self.id}', task_id={task_id}, context_id={context_id}"
+        )
 
         return await self._executor.get_state(config)
 
     async def resume(
             self,
-            session_id: str,
+            context_id: str,
             inputs: Optional[AgentInput | dict[str, Any]] = None,
-            thread_id: Optional[str] = None,
+            task_id: Optional[str] = None,
             **metadata,
     ) -> AsyncIterator[ExecutionEvent]:
         """Resume interrupted execution.
 
         Args:
-            session_id: Session identifier
+            context_id: Context identifier (A2A context_id)
             inputs: Optional input data (AgentInput or dict for backward compatibility)
-            thread_id: Optional thread identifier
+            task_id: Optional task identifier for this specific execution (A2A task.id)
             **metadata: Additional execution metadata
 
         Yields:
@@ -337,12 +284,14 @@ class AionAgent:
             )
 
         config = ExecutionConfig(
-            session_id=session_id,
-            thread_id=thread_id,
+            task_id=task_id,
+            context_id=context_id,
             metadata=metadata,
         )
 
-        self.logger.debug(f"Resuming agent '{self.id}', session={session_id}")
+        self.logger.debug(
+            f"Resuming agent '{self.id}', task_id={task_id}, context_id={context_id}"
+        )
 
         # Convert dict to AgentInput for backward compatibility
         if inputs is not None and isinstance(inputs, dict):
@@ -350,32 +299,6 @@ class AionAgent:
 
         async for event in self._executor.resume(inputs, config):
             yield event
-
-    # ===== Capability Checks =====
-
-    def supports_streaming(self) -> bool:
-        """Check if agent supports streaming execution.
-
-        Returns:
-            bool: True if streaming is supported
-        """
-        return self._executor.supports_streaming()
-
-    def supports_resume(self) -> bool:
-        """Check if agent supports resuming from interrupts.
-
-        Returns:
-            bool: True if resume is supported
-        """
-        return self._executor.supports_resume()
-
-    def supports_state_retrieval(self) -> bool:
-        """Check if agent supports state retrieval.
-
-        Returns:
-            bool: True if state retrieval is supported
-        """
-        return self._executor.supports_state_retrieval()
 
     # ===== Factory Methods =====
 
@@ -483,15 +406,10 @@ class AionAgent:
         errors = []
         for adapter in adapter_registry.list_adapters():
             try:
-                # Get supported types from adapter
-                supported_types = adapter.get_supported_types()
-                supported_type_names = adapter.get_supported_type_names()
-
                 # Try to discover object in module using adapter's supported types
                 native_agent = module_loader.discover_object(
                     module=module,
-                    supported_types=supported_types,
-                    supported_type_names=supported_type_names,
+                    supported_types=adapter.get_supported_types(),
                     item_name=item_name
                 )
 

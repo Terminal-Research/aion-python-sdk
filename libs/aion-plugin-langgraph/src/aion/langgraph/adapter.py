@@ -3,7 +3,6 @@ from pathlib import Path
 from typing import Any, Optional
 
 from aion.shared.agent import AgentAdapter, ExecutorAdapter, ConfigurationError
-from aion.shared.agent.adapters import CheckpointerConfig, CheckpointerType
 from aion.shared.config.models import AgentConfig
 from aion.shared.db import DbManagerProtocol
 from aion.shared.logging import get_logger
@@ -12,8 +11,12 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import StateGraph
 from langgraph.pregel import Pregel
 
-from .checkpointer import LangGraphCheckpointerAdapter
-from .executor import LangGraphExecutor
+from .state import (
+    CheckpointerConfig,
+    CheckpointerType,
+    LangGraphCheckpointerAdapter,
+)
+from .execution import LangGraphExecutor
 
 logger = get_logger()
 
@@ -48,16 +51,6 @@ class LangGraphAdapter(AgentAdapter):
     def get_supported_types(self) -> list[type]:
         """Return list of types this adapter can handle."""
         return [StateGraph, Pregel]
-
-    def get_supported_type_names(self) -> set[str]:
-        """Return set of class names this adapter can handle."""
-        return {
-            "StateGraph",
-            "CompiledStateGraph",
-            "CompiledGraph",
-            "MessageGraph",
-            "CompiledMessageGraph"
-        }
 
     def can_handle(self, agent_obj: Any) -> bool:
         if self._is_graph_instance(agent_obj):
@@ -174,7 +167,8 @@ class LangGraphAdapter(AgentAdapter):
         except Exception as ex:
             logger.warning(f"Failed to create checkpointer: {ex}")
 
-    def _is_graph_instance(self, obj: Any) -> bool:
+    @staticmethod
+    def _is_graph_instance(obj: Any) -> bool:
         """Check if object is a LangGraph graph instance.
 
         Args:
@@ -188,7 +182,4 @@ class LangGraphAdapter(AgentAdapter):
 
         if isinstance(obj, (StateGraph, Pregel)):
             return True
-
-        class_name = obj.__class__.__name__
-        graph_class_names = self.get_supported_type_names()
-        return class_name in graph_class_names
+        return False

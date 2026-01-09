@@ -20,9 +20,6 @@ class ExecutionError(AdapterError):
 class StateRetrievalError(AdapterError):
     pass
 
-class CheckpointError(AdapterError):
-    pass
-
 class MessageConversionError(AdapterError):
     pass
 

@@ -59,10 +59,19 @@ aion:
 
 | Format | Description | Example |
 |--------|-------------|---------|
-| **Graph instance** | Points to a `StateGraph` variable | `"./path/to/file.py:variable_name"` |
+| **Graph instance** | Points to a `StateGraph` variable or agent instance | `"./path/to/file.py:variable_name"` |
 | **Graph factory function** | Points to function returning a graph | `"./path/to/file.py:function_name"` |
 | **BaseAgent class** | Points to `BaseAgent` subclass | `"./path/to/file.py:ClassName"` |
-| **Auto-discovery** | Automatically finds graph/agent in file | `"./path/to/file.py"` |
+| **Auto-discovery** | Automatically finds graph/agent in file (see priority below) | `"./path/to/file.py"` |
+
+#### Auto-discovery Priority
+
+When using auto-discovery (path without `:item_name`), the system searches for agents in this priority order:
+
+1. **Agent instances** (e.g., `agent = MyAgent(...)`) - Preserves user's custom configuration
+2. **Agent classes** (e.g., `class MyAgent(BaseAgent)`) - Will be instantiated by the adapter
+
+**Note:** To use factory functions (callables) with auto-discovery, you must explicitly specify the function name: `"./path/to/file.py:create_agent"`
 
 ### Basic Agent Configuration
 
@@ -77,13 +86,31 @@ aion:
     analyzer:
       path: "./src/agents/analysis.py:create_analyzer"
 
-    # BaseAgent child class
+    # BaseAgent child class (explicit)
     assistant:
       path: "./src/agents/assistant.py:AssistantAgent"
 
-    # File with auto-discovery
+    # Agent instance with custom configuration (explicit)
+    custom_agent:
+      path: "./src/agents/custom.py:my_agent"
+
+    # File with auto-discovery (will prefer instance over class)
     support:
       path: "./src/agents/support.py"
+```
+
+**Auto-discovery example (`support.py`):**
+```python
+from google.adk.agents import BaseAgent
+
+class SupportAgent(BaseAgent):
+    pass
+
+# This instance will be auto-discovered first (priority over class)
+agent = SupportAgent(
+    custom_param="value",
+    special_feature=True
+)
 ```
 
 ### Complex Agent Configuration

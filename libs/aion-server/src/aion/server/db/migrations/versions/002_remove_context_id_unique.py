@@ -1,8 +1,8 @@
 """Remove unique constraint from context_id in tasks table."""
 from alembic import op
 
-revision = "003"
-down_revision = "002"
+revision = "002"
+down_revision = "001"
 branch_labels = None
 depends_on = None
 

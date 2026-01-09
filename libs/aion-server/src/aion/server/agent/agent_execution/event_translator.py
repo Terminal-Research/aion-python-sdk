@@ -16,7 +16,7 @@ from a2a.types import (
     Task,
     TextPart,
 )
-from aion.shared.agent.adapters import ExecutionEvent
+from aion.shared.agent.adapters import ExecutionEvent, MessageEvent, MessagePartType
 from aion.shared.logging import get_logger
 
 logger = get_logger()
@@ -45,50 +45,52 @@ class ExecutionEventTranslator:
         """Translate a 'message' ExecutionEvent to A2A Message.
 
         Args:
-            execution_event: Event with type 'message' and normalized data
+            execution_event: Event with type 'message' and MessagePart content
             task: Current task context
 
         Returns:
             A2A Message or None if translation not possible
         """
-        event_data = execution_event.data
-        metadata = execution_event.metadata or {}
-
-        # Extract message content (data should already be normalized)
-        if isinstance(event_data, str):
-            message_content = event_data
-
-        elif isinstance(event_data, dict):
-            # Support dict format with 'content' or 'text' keys
-            message_content = event_data.get("content") or event_data.get("text")
-            if not message_content:
-                logger.warning(
-                    f"Dict event_data missing 'content' or 'text': {event_data}"
-                )
-                return None
-        else:
-            # Fallback: try to convert to string
-            logger.warning(
-                f"Unexpected event_data type {type(event_data).__name__}, "
-                f"attempting string conversion"
+        # Validate that this is a MessageEvent with content field
+        if not isinstance(execution_event, MessageEvent):
+            logger.error(
+                f"Expected MessageEvent, got {type(execution_event).__name__}"
             )
-            try:
-                message_content = str(event_data)
-            except Exception as e:
-                logger.error(f"Failed to convert event_data to string: {e}")
-                return None
-
-        if not message_content:
-            logger.warning("Empty message content")
             return None
 
-        # Create message parts
-        parts: list[TextPart] = [TextPart(text=message_content)]
+        # Extract MessagePart content
+        content_parts = execution_event.content
 
-        # Determine role (default to "agent")
-        # Map "assistant" to "agent" for A2A compatibility
-        role = metadata.get("role", "agent")
-        if role == "assistant":
+        if not content_parts:
+            logger.warning("Empty message content parts")
+            return None
+
+        # Convert MessageParts to A2A TextParts
+        a2a_parts: list[TextPart] = []
+        for part in content_parts:
+            if part.type in (MessagePartType.TEXT, MessagePartType.THOUGHT):
+                a2a_parts.append(TextPart(
+                    text=part.content,
+                    metadata=part.metadata or None
+                ))
+
+        if not a2a_parts:
+            logger.debug(
+                f"No text or thought parts found in message content "
+                f"(content_parts={len(content_parts)})"
+            )
+            return None
+
+        # Determine role from MessageEvent.role field
+        # Normalize to A2A roles: 'agent' or 'user'
+        role = execution_event.role or "agent"
+        if role in ("assistant", "system"):
+            role = "agent"
+        elif role == "user":
+            role = "user"
+        else:
+            # Any other role (e.g., agent names like 'clarification_handler') → 'agent'
+            logger.debug(f"Normalizing non-standard role '{role}' to 'agent'")
             role = "agent"
 
         # Create A2A message
@@ -97,11 +99,7 @@ class ExecutionEventTranslator:
             task_id=task.id,
             context_id=task.context_id,
             role=role,
-            parts=parts,
+            parts=a2a_parts,
         )
 
-        logger.debug(
-            f"Translated message event to A2A Message: "
-            f"task_id={task.id}, role={role}, content_length={len(message_content)}"
-        )
         return message

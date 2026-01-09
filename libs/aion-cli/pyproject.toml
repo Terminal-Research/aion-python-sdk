@@ -4,17 +4,22 @@ version = "0.1.0"
 description = "Command line interface for the Aion Python SDK"
 authors = ["Terminal Research Team <support@terminal.exchange>"]
 readme = "README.md"
-packages = [{include = "aion", from = "src"}]
+packages = [{ include = "aion", from = "src" }]
 
 [tool.poetry.dependencies]
 python = "^3.12.0"
 aion-server = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-server" }
 aion-plugin-langgraph = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-plugin-langgraph", optional = true }
+aion-plugin-adk = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-plugin-adk", optional = true }
 asyncclick = "^8.0.1.2"
 
 [tool.poetry.extras]
 langgraph = ["aion-plugin-langgraph"]
-all = ["aion-plugin-langgraph"]
+adk = ["aion-plugin-adk"]
+all = [
+    "aion-plugin-langgraph",
+    "aion-plugin-adk"
+]
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=8.0.0"

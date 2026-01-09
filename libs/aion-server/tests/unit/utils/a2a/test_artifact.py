@@ -74,27 +74,6 @@ class TestStreamingArtifactBuilder:
         result = builder_concatenated.get_existing_streaming_artifact(active_only=True)
         assert result is None
 
-    def test_message_type_handling(self, builder_concatenated):
-        """Proper handling of different message types."""
-        # AIMessageChunk creates streaming event
-        chunk = AIMessageChunk(content="test")
-        event = builder_concatenated.build_from_langgraph_message(chunk)
-        assert event.artifact.metadata["status"] == ArtifactStreamingStatus.ACTIVE.value
-
-        # AIMessage without existing artifact returns None
-        message = AIMessage(content="test")
-        event = builder_concatenated.build_from_langgraph_message(message)
-        assert event is None
-
-        # AIMessage with existing artifact finalizes it
-        builder_concatenated.task.artifacts.append(
-            Mock(artifact_id=ArtifactName.STREAM_DELTA.value,
-                 metadata={"status": ArtifactStreamingStatus.ACTIVE.value},
-                 parts=[])
-        )
-        event = builder_concatenated.build_from_langgraph_message(message)
-        assert event.artifact.metadata["status"] == ArtifactStreamingStatus.FINALIZED.value
-
     def test_content_extraction_edge_cases(self, builder_concatenated):
         """Handle edge cases in content extraction."""
         # None artifact
@@ -107,22 +86,26 @@ class TestStreamingArtifactBuilder:
         assert builder_concatenated._extract_content_from_artifact(artifact) == ""
 
     def test_finalized_event_handling(self, builder_concatenated):
-        """Test finalization of existing artifacts."""
+        """Test finalization of existing artifacts with extra metadata."""
         # No existing artifact - should return None
-        result = builder_concatenated.build_finalized_event()
+        result = builder_concatenated.build_meta_complete_event()
         assert result is None
 
-        # With existing artifact - should finalize it
+        # With existing artifact - should finalize it with extra metadata
         existing_artifact = Mock(spec=Artifact)
         existing_artifact.artifact_id = ArtifactName.STREAM_DELTA.value
         existing_artifact.metadata = {"status": ArtifactStreamingStatus.ACTIVE.value}
         existing_artifact.parts = [Part(root=TextPart(text="test content"))]
         builder_concatenated.task.artifacts = [existing_artifact]
 
-        result = builder_concatenated.build_finalized_event({"final": "true"})
+        result = builder_concatenated.build_meta_complete_event(extra_metadata={"final": "true"})
         assert result is not None
+        # Check that both standard and extra metadata are present
+        assert result.artifact.metadata["status"] == ArtifactStreamingStatus.FINALIZED.value
+        assert result.artifact.metadata["status_reason"] == ArtifactStreamingStatusReason.COMPLETE_MESSAGE.value
         assert result.artifact.metadata["final"] == "true"
         assert result.append is False
+        assert result.last_chunk is True
 
     def test_meta_complete_event(self, builder_concatenated):
         """Test meta completion events."""

@@ -11,7 +11,7 @@ __all__ = [
 from aion.shared.opentelemetry import SpanInfo
 
 
-@dataclass
+@dataclass(frozen=True)
 class RequestContext:
     """
     Represents the context of a request with all relevant tracking information
@@ -33,6 +33,9 @@ class RequestContext:
     aion_distribution_id: Optional[str] = None  # from aion:distribution.id
     aion_version_id: Optional[str] = None  # from aion:distribution.behavior.versionId
     aion_agent_environment_id: Optional[str] = None  # from aion:distribution.environment.id
+
+    # Execution context
+    task_id: Optional[str] = None
     langgraph_current_node: Optional[str] = None
 
     @property
@@ -59,9 +62,6 @@ class RequestContext:
         valid_fields = {f.name for f in cls.__dataclass_fields__.values()}
         filtered_data = {k: v for k, v in data.items() if k in valid_fields}
         return cls(**filtered_data)
-
-    def set_langgraph_current_node(self, langgraph_current_node: str) -> None:
-        self.langgraph_current_node = langgraph_current_node
 
 
 # Single context variable to hold the entire context

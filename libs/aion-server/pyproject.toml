@@ -15,7 +15,7 @@ psycopg = { version = ">=3.1.12,<4.0.0", extras = ["binary", "pool"] }
 asyncpg = ">=0.29.0,<1.0.0"  # native psql protocol (faster than psycopg)
 greenlet = ">=3.0.3,<4.0.0"   # supports async pg operations
 alembic = ">=1.13.0,<2.0.0"   # migrations
-SQLAlchemy = ">=2.0.0,<2.1.0"
+SQLAlchemy = "^2.0.0"
 
 aion-api-client = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-api-client" }
 

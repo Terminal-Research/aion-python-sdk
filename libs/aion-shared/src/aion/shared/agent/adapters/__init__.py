@@ -11,11 +11,8 @@ The adapter architecture allows for flexible framework support by:
 
 from .interfaces import (
     AgentAdapter,
-    AgentState,
-    Checkpoint,
-    CheckpointerAdapter,
-    CheckpointerConfig,
-    CheckpointerType,
+    ExecutionSnapshot,
+    ExecutionStatus,
     CompleteEvent,
     CustomEvent,
     ErrorEvent,
@@ -24,21 +21,22 @@ from .interfaces import (
     ExecutorAdapter,
     InterruptEvent,
     InterruptInfo,
+    Message,
     MessageEvent,
+    MessagePart,
+    MessagePartType,
+    MessageRole,
     NodeUpdateEvent,
-    StateAdapter,
     StateUpdateEvent,
+    StateExtractor,
 )
 from .registry import AdapterRegistry, adapter_registry
 
 __all__ = [
     # Interfaces
     "AgentAdapter",
-    "AgentState",
-    "Checkpoint",
-    "CheckpointerAdapter",
-    "CheckpointerConfig",
-    "CheckpointerType",
+    "ExecutionSnapshot",
+    "ExecutionStatus",
     "CompleteEvent",
     "CustomEvent",
     "ErrorEvent",
@@ -47,10 +45,14 @@ __all__ = [
     "ExecutorAdapter",
     "InterruptEvent",
     "InterruptInfo",
+    "Message",
     "MessageEvent",
+    "MessagePart",
+    "MessagePartType",
+    "MessageRole",
     "NodeUpdateEvent",
-    "StateAdapter",
     "StateUpdateEvent",
+    "StateExtractor",
     # Registry
     "AdapterRegistry",
     "adapter_registry",

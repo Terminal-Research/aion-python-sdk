@@ -1,0 +1,16 @@
+[tool.poetry]
+name = "aion-plugin-adk"
+version = "0.1.0"
+description = ""
+authors = ["Terminal Research Team <support@terminal.exchange>"]
+readme = "README.md"
+packages = [{ include = "aion", from = "src" }]
+
+[tool.poetry.dependencies]
+python = "^3.12.0"
+aion-shared = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-shared" }
+google-adk = "^1.20.0" # todo check if google-adk lower versions are supported after plugin implementation
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

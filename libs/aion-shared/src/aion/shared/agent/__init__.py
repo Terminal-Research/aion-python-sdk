@@ -14,8 +14,6 @@ Classes:
     Adapters:
         AgentAdapter: Framework-specific agent lifecycle management
         ExecutorAdapter: Agent execution and streaming capabilities
-        StateAdapter: Agent state extraction and management
-        CheckpointerAdapter: Agent state checkpoint and recovery
 
     Registry:
         AdapterRegistry: Singleton registry for managing framework adapters
@@ -40,9 +38,7 @@ from .card import AionAgentCard
 # Adapters
 from .adapters import (
     AgentAdapter,
-    CheckpointerAdapter,
     ExecutorAdapter,
-    StateAdapter,
     AdapterRegistry,
     adapter_registry,
 )
@@ -55,7 +51,6 @@ from .exceptions import (
     AdapterError,
     AdapterNotFoundError,
     AdapterRegistrationError,
-    CheckpointError,
     ConfigurationError,
     ExecutionError,
     MessageConversionError,
@@ -77,8 +72,6 @@ __all__ = [
     # Adapters
     "AgentAdapter",
     "ExecutorAdapter",
-    "StateAdapter",
-    "CheckpointerAdapter",
     "AdapterRegistry",
     "adapter_registry",
     # Exceptions
@@ -87,7 +80,6 @@ __all__ = [
     "AdapterRegistrationError",
     "ExecutionError",
     "StateRetrievalError",
-    "CheckpointError",
     "MessageConversionError",
     "ConfigurationError",
     "UnsupportedOperationError",

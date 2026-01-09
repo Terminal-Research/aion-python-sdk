@@ -142,7 +142,7 @@ class AgentConfig(BaseModel):
         default="1.0.0",
         description="Agent version")
 
-    framework: Literal["langgraph"] = Field(
+    framework: Literal["langgraph", "adk"] = Field(
         default="langgraph",
         description="Agent framework"
     )
