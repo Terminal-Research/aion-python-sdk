@@ -1,7 +1,7 @@
 from collections.abc import AsyncIterator
-from typing import Any, Optional
+from typing import Any, Optional, TYPE_CHECKING
 
-from aion.shared.agent import AgentInput, ExecutionError, StateRetrievalError
+from aion.shared.agent.exceptions import ExecutionError, StateRetrievalError
 from aion.shared.agent.adapters import (
     CompleteEvent,
     ErrorEvent,
@@ -16,6 +16,9 @@ from aion.shared.logging import get_logger
 
 from ..events import LangGraphEventConverter
 from ..state import LangGraphStateAdapter
+
+if TYPE_CHECKING:
+    from a2a.server.agent_execution import RequestContext
 
 logger = get_logger()
 
@@ -84,12 +87,12 @@ class LangGraphExecutor(ExecutorAdapter):
 
     async def stream(
             self,
-            inputs: AgentInput,
+            context: "RequestContext",
             config: Optional[ExecutionConfig] = None,
     ) -> AsyncIterator[ExecutionEvent]:
         try:
             langgraph_config = self._to_langgraph_config(config)
-            langgraph_inputs = self._transform_inputs(inputs)
+            langgraph_inputs = self._transform_context(context)
 
             async for event in self._execute_and_convert_stream(
                     langgraph_inputs,
@@ -112,7 +115,7 @@ class LangGraphExecutor(ExecutorAdapter):
 
     async def resume(
             self,
-            inputs: Optional[AgentInput],
+            context: "RequestContext",
             config: ExecutionConfig,
     ) -> AsyncIterator[ExecutionEvent]:
         if not config or not config.context_id:
@@ -127,17 +130,18 @@ class LangGraphExecutor(ExecutorAdapter):
                     f"Attempted to resume non-interrupted execution: {config.context_id}"
                 )
                 # If not interrupted, continue with new inputs or raise error
-                if not inputs:
+                user_input = context.get_user_input()
+                if not user_input:
                     raise ValueError(
                         f"Execution {config.context_id} is not interrupted, "
                         "but no new inputs provided"
                     )
-                async for event in self.stream(inputs, config):
+                async for event in self.stream(context, config):
                     yield event
                 return
 
-            # Transform inputs to LangGraph format for resume
-            transformed_inputs = self._transform_inputs(inputs) if inputs else None
+            # Transform context to LangGraph format for resume
+            transformed_inputs = self._transform_context(context)
 
             # Create Command object for resume (LangGraph-specific)
             resume_command = self.state_adapter.create_resume_input(transformed_inputs, state)
@@ -195,15 +199,16 @@ class LangGraphExecutor(ExecutorAdapter):
         return {"configurable": {"thread_id": config.context_id}}
 
     @staticmethod
-    def _transform_inputs(inputs: AgentInput) -> dict[str, Any]:
-        """Transform universal AgentInput to LangGraph format.
+    def _transform_context(context: "RequestContext") -> dict[str, Any]:
+        """Transform A2A RequestContext to LangGraph format.
 
-        Converts AgentInput.text to LangGraph's expected message format.
+        Converts RequestContext to LangGraph's expected message format.
 
         Args:
-            inputs: Universal agent input
+            context: A2A request context
 
         Returns:
             LangGraph-compatible input dict: {"messages": [("user", text)]}
         """
-        return {"messages": [("user", inputs.text)]}
+        user_input = context.get_user_input()
+        return {"messages": [("user", user_input)]}

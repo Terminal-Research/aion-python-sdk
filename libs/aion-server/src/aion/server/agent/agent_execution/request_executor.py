@@ -20,9 +20,9 @@ from a2a.types import (
 from a2a.utils import new_task
 from a2a.utils.errors import ServerError
 from a2a.utils.telemetry import trace_function
-from aion.shared.agent import AgentInput, AionAgent
+from aion.shared.agent import AionAgent
 from aion.shared.agent.adapters import ExecutionEvent
-from aion.shared.context import task_context
+from aion.shared.agent.execution import task_context
 from aion.shared.logging import get_logger
 
 from aion.server.utils import check_if_task_is_interrupted, StreamingArtifactBuilder
@@ -115,29 +115,16 @@ class AionAgentRequestExecutor(AgentExecutor):
             else:
                 logger.info("Resuming task")
 
-            # Prepare execution
-            user_input = context.get_user_input()
-            task_id = task.id
-            context_id = task.context_id
-
             try:
                 first_event = True
 
                 # Execute agent (stream or resume)
                 if is_new_task:
                     # New execution
-                    event_stream = self.agent.stream(
-                        inputs=AgentInput(text=user_input),
-                        context_id=context_id,
-                        task_id=str(task_id),
-                    )
+                    event_stream = self.agent.stream(context=context)
                 else:
                     # Resume interrupted execution
-                    event_stream = self.agent.resume(
-                        context_id=context_id,
-                        inputs=AgentInput(text=user_input) if user_input else None,
-                        task_id=str(task_id),
-                    )
+                    event_stream = self.agent.resume(context=context)
 
                 # Process events
                 async for execution_event in event_stream:

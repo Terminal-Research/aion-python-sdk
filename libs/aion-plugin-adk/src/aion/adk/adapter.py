@@ -2,7 +2,8 @@ import inspect
 from pathlib import Path
 from typing import Any, Optional
 
-from aion.shared.agent import AgentAdapter, ExecutorAdapter, ConfigurationError
+from aion.shared.agent.adapters import AgentAdapter, ExecutorAdapter
+from aion.shared.agent.exceptions import ConfigurationError
 from aion.shared.config.models import AgentConfig
 from aion.shared.db import DbManagerProtocol
 from aion.shared.logging import get_logger

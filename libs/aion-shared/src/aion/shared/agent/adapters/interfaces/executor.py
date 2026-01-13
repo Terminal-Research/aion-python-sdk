@@ -10,11 +10,13 @@ in a framework-agnostic way. It provides abstractions for:
 
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
-from typing import Any, Optional
+from typing import Any, Optional, TYPE_CHECKING
 
-from aion.shared.agent.inputs import AgentInput
 from .events import ExecutionEvent
 from .state import ExecutionSnapshot
+
+if TYPE_CHECKING:
+    from a2a.server.agent_execution import RequestContext
 
 
 class ExecutionConfig:
@@ -66,13 +68,13 @@ class ExecutorAdapter(ABC):
     @abstractmethod
     async def stream(
         self,
-        inputs: AgentInput,
+        context: "RequestContext",
         config: Optional[ExecutionConfig] = None,
     ) -> AsyncIterator[ExecutionEvent]:
         """Stream agent execution, yielding events in real-time.
 
         Args:
-            inputs: Universal agent input (will be transformed to framework format)
+            context: A2A request context with message, metadata, and task information
             config: Execution configuration (task_id, context_id, timeout, etc.)
 
         Yields:
@@ -102,13 +104,13 @@ class ExecutorAdapter(ABC):
     @abstractmethod
     async def resume(
         self,
-        inputs: Optional[AgentInput],
+        context: "RequestContext",
         config: ExecutionConfig,
     ) -> AsyncIterator[ExecutionEvent]:
         """Resume a paused/interrupted agent execution.
 
         Args:
-            inputs: Universal agent input to provide after interruption (optional)
+            context: A2A request context with message, metadata, and task information
             config: Execution configuration specifying which execution to resume
 
         Yields:

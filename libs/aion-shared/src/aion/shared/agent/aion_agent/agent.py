@@ -19,7 +19,6 @@ from aion.shared.agent.adapters import (
     ExecutorAdapter,
 )
 from aion.shared.agent.card import AionAgentCard
-from aion.shared.agent.inputs import AgentInput
 from aion.shared.config.models import AgentConfig
 from aion.shared.logging.base import AionLogger
 
@@ -27,6 +26,7 @@ from .models import AgentMetadata
 
 if TYPE_CHECKING:
     from aion.shared.logging.base import AionLogger
+    from a2a.server.agent_execution import RequestContext
 
 
 def _get_logger() -> AionLogger:
@@ -182,18 +182,14 @@ class AionAgent:
 
     async def stream(
             self,
-            inputs: AgentInput | dict[str, Any],
-            context_id: Optional[str] = None,
-            task_id: Optional[str] = None,
+            context: "RequestContext",
             timeout: Optional[float] = None,
             **metadata,
     ) -> AsyncIterator[ExecutionEvent]:
         """Execute agent with streaming output.
 
         Args:
-            inputs: Input data (AgentInput or dict for backward compatibility)
-            context_id: Context identifier for multi-turn conversations (A2A context_id)
-            task_id: Optional task identifier for this specific execution (A2A task.id)
+            context: A2A request context with message, metadata, and task information
             timeout: Maximum execution time in seconds
             **metadata: Additional execution metadata
 
@@ -211,17 +207,13 @@ class AionAgent:
             )
 
         config = ExecutionConfig(
-            task_id=task_id,
-            context_id=context_id,
+            task_id=context.task_id,
+            context_id=context.context_id,
             timeout=timeout,
             metadata=metadata,
         )
 
-        # Convert dict to AgentInput for backward compatibility
-        if isinstance(inputs, dict):
-            inputs = AgentInput.from_dict(inputs)
-
-        async for event in self._executor.stream(inputs, config):
+        async for event in self._executor.stream(context, config):
             yield event
 
     async def get_state(
@@ -257,17 +249,13 @@ class AionAgent:
 
     async def resume(
             self,
-            context_id: str,
-            inputs: Optional[AgentInput | dict[str, Any]] = None,
-            task_id: Optional[str] = None,
+            context: "RequestContext",
             **metadata,
     ) -> AsyncIterator[ExecutionEvent]:
         """Resume interrupted execution.
 
         Args:
-            context_id: Context identifier (A2A context_id)
-            inputs: Optional input data (AgentInput or dict for backward compatibility)
-            task_id: Optional task identifier for this specific execution (A2A task.id)
+            context: A2A request context with message, metadata, and task information
             **metadata: Additional execution metadata
 
         Yields:
@@ -284,20 +272,16 @@ class AionAgent:
             )
 
         config = ExecutionConfig(
-            task_id=task_id,
-            context_id=context_id,
+            task_id=context.task_id,
+            context_id=context.context_id,
             metadata=metadata,
         )
 
         self.logger.debug(
-            f"Resuming agent '{self.id}', task_id={task_id}, context_id={context_id}"
+            f"Resuming agent '{self.id}', task_id={context.task_id}, context_id={context.context_id}"
         )
 
-        # Convert dict to AgentInput for backward compatibility
-        if inputs is not None and isinstance(inputs, dict):
-            inputs = AgentInput.from_dict(inputs)
-
-        async for event in self._executor.resume(inputs, config):
+        async for event in self._executor.resume(context, config):
             yield event
 
     # ===== Factory Methods =====

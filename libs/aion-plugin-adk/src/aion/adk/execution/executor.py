@@ -1,8 +1,8 @@
 import uuid
 from collections.abc import AsyncIterator
-from typing import Any, Optional
+from typing import Any, Optional, TYPE_CHECKING
 
-from aion.shared.agent import AgentInput, ExecutionError, StateRetrievalError
+from aion.shared.agent.exceptions import ExecutionError, StateRetrievalError
 from aion.shared.agent.adapters import (
     CompleteEvent,
     ErrorEvent,
@@ -24,6 +24,9 @@ from ..constants import DEFAULT_USER_ID
 from ..events import ADKEventConverter
 from ..session import SessionServiceManager
 from ..state import StateConverter
+
+if TYPE_CHECKING:
+    from a2a.server.agent_execution import RequestContext
 
 logger = get_logger()
 
@@ -47,13 +50,13 @@ class ADKExecutor(ExecutorAdapter):
 
     async def stream(
             self,
-            inputs: AgentInput,
+            context: "RequestContext",
             config: Optional[ExecutionConfig] = None,
     ) -> AsyncIterator[ExecutionEvent]:
         """Stream agent execution using ADK's run_async method.
 
         Args:
-            inputs: Universal agent input containing the user message
+            context: A2A request context with message, metadata, and task information
             config: Execution configuration with context_id
 
         Yields:
@@ -64,7 +67,7 @@ class ADKExecutor(ExecutorAdapter):
             logger.info(f"Starting ADK stream: context_id={context_id}")
 
             session = await self._get_or_create_session(context_id)
-            user_content = self._transform_inputs(inputs)
+            user_content = self._transform_context(context)
 
             # IMPORTANT: Add user message to session BEFORE creating invocation context
             # ADK expects user messages to be in session.events, not just in user_content
@@ -152,7 +155,7 @@ class ADKExecutor(ExecutorAdapter):
 
     async def resume(
             self,
-            inputs: Optional[AgentInput],
+            context: "RequestContext",
             config: ExecutionConfig,
     ) -> AsyncIterator[ExecutionEvent]:
         """Resume ADK agent execution with new user input.
@@ -165,26 +168,23 @@ class ADKExecutor(ExecutorAdapter):
         continuing the conversation.
 
         Args:
-            inputs: User input to continue the conversation
+            context: A2A request context with message, metadata, and task information
             config: Execution configuration with context_id
 
         Yields:
             ExecutionEvent: Events from resumed execution
 
         Raises:
-            ValueError: If context_id or inputs are not provided
+            ValueError: If context_id is not provided
             ExecutionError: If resume fails
         """
         if not config or not config.context_id:
             raise ValueError("context_id is required to resume execution")
 
-        if not inputs:
-            raise ValueError("inputs are required to resume ADK execution")
-
         try:
             logger.info(f"Resuming ADK execution for context: {config.context_id}")
 
-            async for event in self.stream(inputs, config):
+            async for event in self.stream(context, config):
                 yield event
 
         except Exception as e:
@@ -250,18 +250,19 @@ class ADKExecutor(ExecutorAdapter):
             run_config=run_config,
         )
 
-    def _transform_inputs(self, inputs: AgentInput) -> types.Content:
-        """Transform universal AgentInput to ADK Content format.
+    def _transform_context(self, context: "RequestContext") -> types.Content:
+        """Transform A2A RequestContext to ADK Content format.
 
         Args:
-            inputs: Universal agent input
+            context: A2A request context
 
         Returns:
             types.Content: ADK Content object with user message
         """
+        user_input = context.get_user_input()
         return types.Content(
             role="user",
-            parts=[types.Part(text=inputs.text)],
+            parts=[types.Part(text=user_input)],
         )
 
     def _get_app_name(self) -> str:

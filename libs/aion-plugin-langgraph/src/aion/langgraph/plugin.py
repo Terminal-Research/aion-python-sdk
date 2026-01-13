@@ -67,6 +67,14 @@ class LangGraphPlugin(AgentPluginProtocol):
         Creates the necessary tables for PostgreSQL checkpointer if they
         don't already exist. Uses LangGraph's built-in setup mechanism.
 
+        This method is idempotent - it can be safely called multiple times.
+        LangGraph's setup() uses a migration system that will apply only
+        new migrations, allowing for future schema updates.
+
+        When multiple agents start simultaneously, they may race to create
+        the same database objects. UniqueViolation errors are expected and
+        ignored in this scenario.
+
         Args:
             db_manager: Database manager instance
 
@@ -77,12 +85,24 @@ class LangGraphPlugin(AgentPluginProtocol):
             self.logger.debug("Attempting to setup LangGraph checkpointer tables")
 
             from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+            import psycopg.errors
 
             pool = db_manager.get_pool()
-            checkpointer = AsyncPostgresSaver(conn=pool)
-            await checkpointer.setup()
 
-            self.logger.info("LangGraph checkpointer tables created successfully")
+            # Use autocommit mode for CREATE INDEX CONCURRENTLY
+            async with pool.connection() as conn:
+                await conn.set_autocommit(True)
+                checkpointer = AsyncPostgresSaver(conn=conn)
+
+                try:
+                    await checkpointer.setup()
+                    self.logger.info("LangGraph checkpointer tables setup completed")
+                except psycopg.errors.UniqueViolation as e:
+                    # This can happen when multiple agents start simultaneously and race
+                    # to create the same database objects (tables, types, indexes, etc.).
+                    # This is expected and safe to ignore - it just means another agent
+                    # created the object first.
+                    self.logger.debug(f"Database objects already exist (parallel setup): {e}")
 
         except ImportError:
             self.logger.warning(
