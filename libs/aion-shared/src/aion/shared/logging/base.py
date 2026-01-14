@@ -4,7 +4,7 @@ import logging
 from typing import Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from aion.shared.context import RequestContext
+    from aion.shared.agent.execution import ExecutionContext
     from aion.shared.opentelemetry.tracing import SpanInfo
 
 
@@ -16,11 +16,11 @@ class AionLogRecord(logging.LogRecord):
     capture and store the current request context when a log record is created.
 
     Attributes:
-        request_context: Optional RequestContext object containing information
+        request_context: Optional ExecutionContext object containing information
                         about the current request. Will be None if context
                         cannot be retrieved.
     """
-    request_context: Optional[RequestContext]
+    request_context: Optional[ExecutionContext]
     trace_span_info: Optional[SpanInfo]
     distribution_id: Optional[str]
     version_id: Optional[str]
@@ -33,7 +33,7 @@ class AionLogRecord(logging.LogRecord):
             *args: Positional arguments passed to logging.LogRecord
             **kwargs: Keyword arguments passed to logging.LogRecord
         """
-        from aion.shared.context import get_context
+        from aion.shared.agent.execution import get_context
         from aion.shared.opentelemetry.tracing import get_span_info
         from aion.shared.settings import app_settings
 

@@ -27,7 +27,7 @@ from aion.shared.agent.adapters import (
     NodeUpdateEvent,
     StateUpdateEvent,
 )
-from aion.shared.context import set_langgraph_node
+from aion.shared.agent.execution import set_langgraph_node
 from aion.shared.logging import get_logger
 from aion.shared.types import MessageType, A2AMetadataKey, ArtifactStreamingStatusReason
 

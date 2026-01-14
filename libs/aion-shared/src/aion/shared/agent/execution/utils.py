@@ -1,9 +1,7 @@
 from contextlib import contextmanager
 from typing import Optional, Dict, Any, Union
 
-from a2a.server.agent_execution import RequestContext as A2ARequestContext
-
-from .request_context import RequestContext, request_context_var
+from .context import ExecutionContext, request_context_var
 
 __all__ = [
     "set_context",
@@ -19,39 +17,39 @@ __all__ = [
 
 # Public API functions
 def set_context(
-        context: Optional[Union[RequestContext, Dict[str, Any]]] = None,
+        context: Optional[Union[ExecutionContext, Dict[str, Any]]] = None,
         **kwargs
-) -> RequestContext:
+) -> ExecutionContext:
     """
-    Set request context from RequestContext object, dict, or individual parameters.
+    Set execution context from ExecutionContext object, dict, or individual parameters.
 
     Args:
-        context: RequestContext object or dictionary with context data
+        context: ExecutionContext object or dictionary with context data
         **kwargs: Individual context parameters (override context if provided)
 
     Returns:
-        The set RequestContext instance
+        The set ExecutionContext instance
     """
     # Start with empty context data
     context_data = {}
 
     # Add data from context parameter
     if context is not None:
-        if isinstance(context, RequestContext):
+        if isinstance(context, ExecutionContext):
             context_data.update(context.to_dict())
         elif isinstance(context, dict):
             context_data.update(context)
         else:
-            raise TypeError("context must be RequestContext instance or dict")
+            raise TypeError("context must be ExecutionContext instance or dict")
 
     # Override with kwargs (kwargs have higher priority)
     context_data.update({k: v for k, v in kwargs.items() if v is not None})
 
-    # Create RequestContext instance
+    # Create ExecutionContext instance
     if context_data:
-        new_context = RequestContext.from_dict(context_data)
+        new_context = ExecutionContext.from_dict(context_data)
     else:
-        new_context = RequestContext()  # Will generate default request_id
+        new_context = ExecutionContext()  # Will generate default transaction_id
 
     # Set in context variable
     request_context_var.set(new_context)
@@ -59,17 +57,17 @@ def set_context(
     return new_context
 
 
-def get_context() -> Optional[RequestContext]:
+def get_context() -> Optional[ExecutionContext]:
     """
-    Get current request context.
+    Get current execution context.
 
     Returns:
-        Current RequestContext or None if not set
+        Current ExecutionContext or None if not set
     """
     return request_context_var.get()
 
 
-def update_context(**kwargs) -> RequestContext:
+def update_context(**kwargs) -> ExecutionContext:
     """
     Update current context with new values.
 
@@ -77,7 +75,7 @@ def update_context(**kwargs) -> RequestContext:
         **kwargs: Context parameters to update
 
     Returns:
-        Updated RequestContext instance
+        Updated ExecutionContext instance
 
     Raises:
         RuntimeError: If no context is currently set
@@ -94,7 +92,7 @@ def clear_context():
     request_context_var.set(None)
 
 
-def set_langgraph_node(node_name: str) -> RequestContext:
+def set_langgraph_node(node_name: str) -> ExecutionContext:
     """
     Set the current LangGraph node name in the context.
 
@@ -102,7 +100,7 @@ def set_langgraph_node(node_name: str) -> RequestContext:
         node_name: Name of the current LangGraph node
 
     Returns:
-        Updated RequestContext instance
+        Updated ExecutionContext instance
 
     Raises:
         RuntimeError: If no context is currently set
@@ -110,7 +108,7 @@ def set_langgraph_node(node_name: str) -> RequestContext:
     return update_context(langgraph_current_node=node_name)
 
 
-def set_working_task(task_id: Optional[str] = None) -> RequestContext:
+def set_working_task(task_id: Optional[str] = None) -> ExecutionContext:
     """
     Set the current working task ID in the context.
 
@@ -118,7 +116,7 @@ def set_working_task(task_id: Optional[str] = None) -> RequestContext:
         task_id: ID of the current task (None to clear)
 
     Returns:
-        Updated RequestContext instance
+        Updated ExecutionContext instance
 
     Raises:
         RuntimeError: If no context is currently set
@@ -131,12 +129,12 @@ def set_context_from_a2a_request(
         request_method: Optional[str] = None,
         request_path: Optional[str] = None,
         jrpc_method: Optional[str] = None
-) -> RequestContext:
+) -> ExecutionContext:
     """
-    Set the request context from A2A request data.
+    Set the execution context from A2A request data.
 
     Extracts relevant information from A2A request metadata including distribution,
-    behavior, and environment details, and creates a RequestContext object. The context
+    behavior, and environment details, and creates an ExecutionContext object. The context
     is then set in the context variable and returned.
 
     Args:
@@ -147,8 +145,8 @@ def set_context_from_a2a_request(
         jrpc_method: Optional JSON-RPC method name
 
     Returns:
-        RequestContext: The created and set request context with all extracted
-                       and provided information
+        ExecutionContext: The created and set execution context with all extracted
+                         and provided information
     """
     distribution = metadata.get("aion:distribution", {})
     behavior = metadata.get("aion:behavior", {})
@@ -179,7 +177,7 @@ def task_context(task_id: str):
         task_id: ID of the task to set in context
 
     Yields:
-        Updated RequestContext with task_id set
+        Updated ExecutionContext with task_id set
 
     Raises:
         RuntimeError: If no context is currently set

@@ -4,7 +4,7 @@ from dataclasses import dataclass, asdict, field
 from typing import Optional, Dict, Any
 
 __all__ = [
-    "RequestContext",
+    "ExecutionContext",
     "request_context_var",
 ]
 
@@ -12,7 +12,7 @@ from aion.shared.opentelemetry import SpanInfo
 
 
 @dataclass(frozen=True)
-class RequestContext:
+class ExecutionContext:
     """
     Represents the context of a request with all relevant tracking information
     for Logstash logging and distributed tracing.
@@ -49,15 +49,15 @@ class RequestContext:
         """Convert to dictionary"""
         return asdict(self)
 
-    def update(self, **kwargs) -> 'RequestContext':
+    def update(self, **kwargs) -> 'ExecutionContext':
         """Create new instance with updated fields"""
         current_data = self.to_dict()
         current_data.update(kwargs)
-        return RequestContext(**current_data)
+        return ExecutionContext(**current_data)
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'RequestContext':
-        """Create RequestContext from dictionary"""
+    def from_dict(cls, data: Dict[str, Any]) -> 'ExecutionContext':
+        """Create ExecutionContext from dictionary"""
         # Filter only known fields to avoid TypeError
         valid_fields = {f.name for f in cls.__dataclass_fields__.values()}
         filtered_data = {k: v for k, v in data.items() if k in valid_fields}
@@ -65,4 +65,4 @@ class RequestContext:
 
 
 # Single context variable to hold the entire context
-request_context_var: ContextVar[Optional[RequestContext]] = ContextVar('request_context', default=None)
+request_context_var: ContextVar[Optional[ExecutionContext]] = ContextVar('request_context', default=None)

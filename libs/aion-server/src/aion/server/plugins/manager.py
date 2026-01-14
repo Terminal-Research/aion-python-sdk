@@ -7,7 +7,7 @@ server's systems.
 
 from typing import Optional
 
-from aion.shared.agent import adapter_registry
+from aion.shared.agent.adapters import adapter_registry
 from aion.shared.db import DbManagerProtocol
 from aion.shared.logging import get_logger, AionLogger
 from aion.shared.plugins import (
