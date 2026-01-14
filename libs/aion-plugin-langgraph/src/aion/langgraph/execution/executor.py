@@ -1,3 +1,5 @@
+import json
+import mimetypes
 from collections.abc import AsyncIterator
 from typing import Any, Optional, TYPE_CHECKING
 
@@ -13,6 +15,13 @@ from aion.shared.agent.adapters import (
 )
 from aion.shared.config.models import AgentConfig
 from aion.shared.logging import get_logger
+from langchain_core.messages import HumanMessage
+from langchain_core.messages.content import (
+    create_text_block,
+    create_file_block,
+    TextContentBlock,
+    FileContentBlock,
+)
 
 from ..events import LangGraphEventConverter
 from ..state import LangGraphStateAdapter
@@ -181,6 +190,36 @@ class LangGraphExecutor(ExecutorAdapter):
             raise StateRetrievalError(f"Failed to retrieve state: {e}") from e
 
     @staticmethod
+    def _detect_mime_type(file_info: Any) -> str:
+        """Detect MIME type from file_info object.
+
+        Tries to determine MIME type in the following order:
+        1. Use explicit mime_type attribute if present
+        2. Guess from filename extension if name attribute is present
+        3. Fall back to application/octet-stream
+
+        Args:
+            file_info: File information object (FileWithBytes or FileWithUri)
+
+        Returns:
+            MIME type string
+        """
+        # First try to use explicit mime_type if present and not None
+        mime_type = getattr(file_info, 'mime_type', None)
+        if mime_type:
+            return mime_type
+
+        # Try to guess from filename
+        filename = getattr(file_info, 'name', None)
+        if filename:
+            guessed_type, _ = mimetypes.guess_type(filename)
+            if guessed_type:
+                return guessed_type
+
+        # Default fallback
+        return 'application/octet-stream'
+
+    @staticmethod
     def _to_langgraph_config(config: Optional[ExecutionConfig]) -> dict[str, Any]:
         """Convert ExecutionConfig to LangGraph configuration format.
 
@@ -202,13 +241,62 @@ class LangGraphExecutor(ExecutorAdapter):
     def _transform_context(context: "RequestContext") -> dict[str, Any]:
         """Transform A2A RequestContext to LangGraph format.
 
-        Converts RequestContext to LangGraph's expected message format.
+        Converts RequestContext to LangGraph's expected message format,
+        including text content and file attachments using LangChain message types.
 
         Args:
             context: A2A request context
 
         Returns:
-            LangGraph-compatible input dict: {"messages": [("user", text)]}
+            LangGraph-compatible input dict with HumanMessage including text and files
         """
-        user_input = context.get_user_input()
-        return {"messages": [("user", user_input)]}
+        if not context.message:
+            return {"messages": []}
+
+        # Build content blocks for LangChain HumanMessage
+        content_blocks: list[TextContentBlock | FileContentBlock] = []
+
+        for part in context.message.parts:
+            part_obj = part.root
+
+            # Handle text parts
+            if part_obj.kind == 'text':
+                content_blocks.append(create_text_block(text=part_obj.text))
+
+            # Handle file parts
+            elif part_obj.kind == 'file':
+                file_info = part_obj.file
+                # Detect MIME type from file_info (checks mime_type, name, or defaults)
+                mime_type = LangGraphExecutor._detect_mime_type(file_info)
+
+                # Handle base64-encoded bytes
+                if hasattr(file_info, 'bytes'):
+                    file_base64 = file_info.bytes
+                    content_blocks.append(
+                        create_file_block(
+                            base64=file_base64,
+                            mime_type=mime_type,
+                        )
+                    )
+
+                # Handle URI-based files
+                elif hasattr(file_info, 'uri'):
+                    content_blocks.append(
+                        create_file_block(
+                            url=file_info.uri,
+                            mime_type=mime_type,
+                        )
+                    )
+
+            # Handle data parts - convert to text
+            elif part_obj.kind == 'data':
+                data_text = json.dumps(part_obj.data, indent=2)
+                content_blocks.append(create_text_block(text=data_text))
+
+        # If no content was extracted, return empty messages
+        if not content_blocks:
+            return {"messages": []}
+
+        # Create HumanMessage with content blocks (LangChain standard)
+        human_message = HumanMessage(content=content_blocks)
+        return {"messages": [human_message]}
