@@ -1,20 +1,20 @@
-"""Utilities for creating MessageParts from ADK Content.
+"""Utilities for creating a2a Parts from ADK Content.
 
-This module provides functions for extracting and creating MessagePart objects
+This module provides functions for extracting and creating a2a Part objects
 from ADK Content structures. Used by both event handlers and state extractors
-to convert ADK-specific content into unified MessagePart format.
+to convert ADK-specific content into unified a2a Part format.
 """
 
 from typing import Any, List
 
-from aion.shared.agent.adapters import MessagePart, MessagePartType
+from a2a.types import Part, TextPart
 from aion.shared.logging import get_logger
 
 logger = get_logger()
 
 
-def extract_message_parts(content: Any) -> List[MessagePart]:
-    """Extract MessageParts from ADK Content object.
+def extract_message_parts(content: Any) -> List[Part]:
+    """Extract a2a Parts from ADK Content object.
 
     ADK Content has a 'parts' field containing a list of Part objects.
     Each Part can have: text, thought, function_call, function_response, etc.
@@ -26,17 +26,14 @@ def extract_message_parts(content: Any) -> List[MessagePart]:
         content: ADK Content object (types.Content) or string
 
     Returns:
-        List of MessagePart objects (only TEXT and THOUGHT types)
+        List of a2a Part objects (TextPart with optional thought metadata)
     """
     parts = []
 
     # If content is a string, return single text part
     if isinstance(content, str):
         if content:  # Only add non-empty content
-            parts.append(MessagePart(
-                type=MessagePartType.TEXT,
-                content=content,
-            ))
+            parts.append(Part(root=TextPart(text=content)))
         return parts
 
     # Try to extract parts from Content object
@@ -44,10 +41,7 @@ def extract_message_parts(content: Any) -> List[MessagePart]:
         # Fallback to string conversion
         content_str = str(content) if content else ""
         if content_str:
-            parts.append(MessagePart(
-                type=MessagePartType.TEXT,
-                content=content_str,
-            ))
+            parts.append(Part(root=TextPart(text=content_str)))
         return parts
 
     try:
@@ -62,31 +56,25 @@ def extract_message_parts(content: Any) -> List[MessagePart]:
 
             # Extract text part (check if it's a thought or regular text)
             elif hasattr(part, "text") and part.text:
-                metadata = {}
-
                 # Check if this is a thought (internal reasoning)
                 is_thought = hasattr(part, "thought") and part.thought
-                if is_thought:
-                    part_type = MessagePartType.THOUGHT
-                    metadata["thought"] = True
-                else:
-                    part_type = MessagePartType.TEXT
 
-                parts.append(MessagePart(
-                    type=part_type,
-                    content=part.text,
-                    metadata=metadata,
-                ))
+                if is_thought:
+                    # Create TextPart with thought=True metadata
+                    parts.append(Part(root=TextPart(
+                        text=part.text,
+                        metadata={"thought": True}
+                    )))
+                else:
+                    # Create regular TextPart
+                    parts.append(Part(root=TextPart(text=part.text)))
 
     except Exception as e:
         logger.warning(f"Failed to extract content parts: {e}")
         # Fallback to string conversion
         content_str = str(content)
         if content_str:
-            parts.append(MessagePart(
-                type=MessagePartType.TEXT,
-                content=content_str,
-            ))
+            parts.append(Part(root=TextPart(text=content_str)))
 
     return parts
 

@@ -1,7 +1,7 @@
 """Messages extractor for ADK sessions.
 
 This module extracts conversation messages from ADK Session.events field
-and converts them to unified Message/MessagePart format.
+and converts them to unified Message format with a2a Part objects.
 """
 
 from typing import Any, List, override
@@ -21,7 +21,7 @@ logger = get_logger()
 class MessagesExtractor(StateExtractor):
     """Extractor for conversation messages from ADK Session.events field.
 
-    Converts ADK events to unified Message format with MessagePart components.
+    Converts ADK events to unified Message format with a2a Part objects.
     Extracts only text and thought content from events, filtering out tool calls
     and tool responses.
 

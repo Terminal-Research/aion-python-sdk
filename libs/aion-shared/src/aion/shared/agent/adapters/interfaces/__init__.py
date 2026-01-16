@@ -13,8 +13,6 @@ from .executor import ExecutorAdapter, ExecutionConfig
 from .messages import (
     Message,
     MessageRole,
-    MessagePart,
-    MessagePartType,
 )
 from .state import (
     StateExtractor,
@@ -46,6 +44,4 @@ __all__ = [
     "ExecutionStatus",
     "Message",
     "MessageRole",
-    "MessagePart",
-    "MessagePartType",
 ]

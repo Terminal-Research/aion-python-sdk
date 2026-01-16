@@ -11,9 +11,9 @@ Events provide real-time feedback about execution progress, including:
 
 from typing import Any, Literal, Optional
 
+from a2a.types import Part, TextPart, FilePart
 from pydantic import BaseModel, ConfigDict, Field
 
-from .messages import MessagePart
 from .state import InterruptInfo
 
 
@@ -35,16 +35,16 @@ class ExecutionEvent(BaseModel):
 class MessageEvent(ExecutionEvent):
     """Event for agent messages (streaming or final).
 
-    Messages are composed of one or more parts (text, thoughts, etc.).
-    For streaming, typically contains a single text part per chunk.
+    Messages are composed of one or more a2a Part objects (TextPart, FilePart, DataPart).
+    For streaming, typically contains a single TextPart per chunk.
     """
 
     event_type: Literal["message"] = Field(
         default="message",
         description="Always 'message'"
     )
-    content: list[MessagePart] = Field(
-        description="Message content as list of parts (text, thought, etc.)"
+    content: list[Part] = Field(
+        description="Message content as list of a2a Part objects (TextPart, FilePart, DataPart)"
     )
     role: Optional[str] = Field(
         default=None,
@@ -56,14 +56,18 @@ class MessageEvent(ExecutionEvent):
     )
 
     def get_text_content(self) -> str:
-        """Extract and concatenate all text content from message parts.
+        """Extract and concatenate all text content from TextPart objects.
 
         Returns:
-            Combined text content from all parts, or empty string if no content.
+            Combined text content from all TextPart objects, or empty string if no content.
         """
         if not self.content:
             return ""
-        return "".join(part.content for part in self.content if part.content)
+        texts = []
+        for part in self.content:
+            if isinstance(part.root, TextPart):
+                texts.append(part.root.text)
+        return "".join(texts)
 
 
 class StateUpdateEvent(ExecutionEvent):

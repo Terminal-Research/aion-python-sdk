@@ -17,7 +17,7 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
-from .messages import Message, MessagePart, MessagePartType, MessageRole
+from .messages import Message, MessageRole
 
 
 class ExecutionStatus(str, Enum):

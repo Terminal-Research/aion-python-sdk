@@ -22,6 +22,7 @@ class ArtifactName(str, Enum):
     """Named artifacts that can be created and referenced."""
     MESSAGE_RESULT = "message_result"
     STREAM_DELTA = "stream_delta"
+    OUTPUT_FILE = "output_file"
 
 
 class A2AEventType(str, Enum):

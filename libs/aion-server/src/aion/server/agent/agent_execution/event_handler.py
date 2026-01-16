@@ -9,11 +9,14 @@ import uuid
 from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
 from a2a.types import (
+    Artifact,
     DataPart,
+    FilePart,
     Message,
     Part,
     Role,
     Task,
+    TaskArtifactUpdateEvent,
     TaskState,
     TextPart,
 )
@@ -29,7 +32,12 @@ from aion.shared.agent.adapters import (
 )
 from aion.shared.agent.execution import set_langgraph_node
 from aion.shared.logging import get_logger
-from aion.shared.types import MessageType, A2AMetadataKey, ArtifactStreamingStatusReason
+from aion.shared.types import (
+    A2AMetadataKey,
+    ArtifactName,
+    ArtifactStreamingStatusReason,
+    MessageType,
+)
 
 from aion.server.utils import StreamingArtifactBuilder
 from .event_translator import ExecutionEventTranslator
@@ -173,6 +181,9 @@ class ExecutionEventHandler:
             if finalize_event:
                 await event_queue.enqueue_event(finalize_event)
 
+        # Extract and send file artifacts before sending the final message
+        await self._build_and_send_file_artifacts(message_event, event_queue, task)
+
         a2a_message = self.event_translator.translate_message_event(message_event, task)
         if a2a_message:
             await self.task_updater.update_status(
@@ -314,6 +325,67 @@ class ExecutionEventHandler:
         if self.task_updater:
             await self.task_updater.complete()
         logger.info("Task completed successfully")
+
+    async def _build_and_send_file_artifacts(
+            self,
+            message_event: MessageEvent,
+            event_queue: EventQueue,
+            task: Task,
+    ) -> None:
+        """Extract FilePart objects from MessageEvent and send them as artifacts.
+
+        Args:
+            message_event: MessageEvent containing a2a Part objects
+            event_queue: Queue to publish artifact events
+            task: Current task
+        """
+        # Extract FilePart objects (already a2a types!)
+        file_parts = [
+            part for part in message_event.content
+            if isinstance(part.root, FilePart)
+        ]
+
+        if not file_parts:
+            return
+
+        logger.debug(f"Found {len(file_parts)} file(s) in message, creating artifacts")
+
+        # Create artifact for each file
+        for idx, part in enumerate(file_parts):
+            # Extract file name from FilePart metadata or file.name
+            file_name = None
+            if part.root.metadata:
+                file_name = part.root.metadata.get("name")
+            if not file_name and hasattr(part.root.file, "name"):
+                file_name = part.root.file.name
+            if not file_name:
+                file_name = f"file_{idx}"
+
+            artifact_id = f"{ArtifactName.OUTPUT_FILE.value}_{file_name}"
+
+            # Create artifact (part is already a2a Part!)
+            artifact = Artifact(
+                artifact_id=artifact_id,
+                name=ArtifactName.OUTPUT_FILE.value,
+                parts=[part],  # Already a2a Part!
+                metadata={
+                    "file_name": file_name,
+                    "file_index": idx,
+                }
+            )
+
+            # Create artifact update event
+            artifact_event = TaskArtifactUpdateEvent(
+                task_id=task.id,
+                context_id=task.context_id,
+                artifact=artifact,
+                append=False,
+                last_chunk=True,
+            )
+
+            # Send artifact event
+            await event_queue.enqueue_event(artifact_event)
+            logger.debug(f"Sent file artifact: {file_name}")
 
     async def _handle_error_event(
             self,
