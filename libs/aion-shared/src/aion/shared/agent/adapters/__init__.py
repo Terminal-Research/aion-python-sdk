@@ -21,12 +21,12 @@ from .interfaces import (
     ExecutorAdapter,
     InterruptEvent,
     InterruptInfo,
-    Message,
     MessageEvent,
-    MessageRole,
     NodeUpdateEvent,
     StateUpdateEvent,
     StateExtractor,
+    normalize_role_to_a2a,
+    create_message_from_parts,
 )
 from .registry import AdapterRegistry, adapter_registry
 
@@ -43,12 +43,12 @@ __all__ = [
     "ExecutorAdapter",
     "InterruptEvent",
     "InterruptInfo",
-    "Message",
     "MessageEvent",
-    "MessageRole",
     "NodeUpdateEvent",
     "StateUpdateEvent",
     "StateExtractor",
+    "normalize_role_to_a2a",
+    "create_message_from_parts",
     # Registry
     "AdapterRegistry",
     "adapter_registry",

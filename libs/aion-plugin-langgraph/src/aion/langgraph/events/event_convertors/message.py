@@ -1,4 +1,6 @@
+import mimetypes
 from typing import Any, Optional
+from uuid import uuid4
 
 from a2a.types import Part, TextPart, FilePart, FileWithBytes, FileWithUri
 from aion.shared.agent.adapters import MessageEvent
@@ -62,7 +64,7 @@ class MessageEventConverter:
             return MessageEventConverter._text_part(part.get("text", ""))
 
         if part_type == "file":
-            return MessageEventConverter._file_part(part.get("file", {}))
+            return MessageEventConverter._file_part(part)
 
         logger.warning(f"Unknown content part type: {part_type}")
         return MessageEventConverter._text_part(str(part))
@@ -79,31 +81,22 @@ class MessageEventConverter:
         Supports both base64 data and URI-based files.
         """
         mime_type = file_info.get("mime_type", "application/octet-stream")
-        name = file_info.get("name", "unnamed_file")
-        uri = file_info.get("uri")
+        url = file_info.get("url")
 
-        if uri:
+        if url:
             # URI-based file
             file_data = FileWithUri(
-                uri=uri,
-                mime_type=mime_type,
-                name=name
+                uri=url,
+                mime_type=mime_type
             )
         else:
             # Base64-encoded file
             file_data = FileWithBytes(
-                bytes=file_info.get("data", ""),
-                mime_type=mime_type,
-                name=name
+                bytes=file_info.get("base64", ""),
+                mime_type=mime_type
             )
 
-        return Part(root=FilePart(
-            file=file_data,
-            metadata={
-                "mime_type": mime_type,
-                "name": name,
-            }
-        ))
+        return Part(root=FilePart(file=file_data))
 
     @staticmethod
     def _detect_role(message: Any) -> str:

@@ -15,9 +15,8 @@ from abc import ABC, abstractmethod
 from enum import Enum
 from typing import Any, Optional
 
+from a2a.types import Message
 from pydantic import BaseModel, Field
-
-from .messages import Message, MessageRole
 
 
 class ExecutionStatus(str, Enum):

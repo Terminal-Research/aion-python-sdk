@@ -11,8 +11,8 @@ from .events import (
 )
 from .executor import ExecutorAdapter, ExecutionConfig
 from .messages import (
-    Message,
-    MessageRole,
+    normalize_role_to_a2a,
+    create_message_from_parts,
 )
 from .state import (
     StateExtractor,
@@ -42,6 +42,7 @@ __all__ = [
     "InterruptInfo",
     "ExecutionSnapshot",
     "ExecutionStatus",
-    "Message",
-    "MessageRole",
+    # Message helpers
+    "normalize_role_to_a2a",
+    "create_message_from_parts",
 ]

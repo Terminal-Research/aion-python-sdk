@@ -6,7 +6,8 @@ and converts them to unified Message format (if needed in the future).
 
 from typing import Any, List, override
 
-from aion.shared.agent.adapters import StateExtractor, Message
+from a2a.types import Message
+from aion.shared.agent.adapters import StateExtractor
 from aion.shared.logging import get_logger
 from langgraph.types import StateSnapshot
 

@@ -353,15 +353,7 @@ class ExecutionEventHandler:
         # Create artifact for each file
         for idx, part in enumerate(file_parts):
             # Extract file name from FilePart metadata or file.name
-            file_name = None
-            if part.root.metadata:
-                file_name = part.root.metadata.get("name")
-            if not file_name and hasattr(part.root.file, "name"):
-                file_name = part.root.file.name
-            if not file_name:
-                file_name = f"file_{idx}"
-
-            artifact_id = f"{ArtifactName.OUTPUT_FILE.value}_{file_name}"
+            artifact_id = str(uuid.uuid4())
 
             # Create artifact (part is already a2a Part!)
             artifact = Artifact(
@@ -369,7 +361,6 @@ class ExecutionEventHandler:
                 name=ArtifactName.OUTPUT_FILE.value,
                 parts=[part],  # Already a2a Part!
                 metadata={
-                    "file_name": file_name,
                     "file_index": idx,
                 }
             )
@@ -385,7 +376,7 @@ class ExecutionEventHandler:
 
             # Send artifact event
             await event_queue.enqueue_event(artifact_event)
-            logger.debug(f"Sent file artifact: {file_name}")
+            logger.debug(f"Sent file artifact: {artifact_id}")
 
     async def _handle_error_event(
             self,
