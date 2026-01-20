@@ -7,11 +7,10 @@ from a2a.utils.telemetry import trace_function
 from aion.shared.agent.execution import get_context
 from aion.shared.logging import get_logger
 from aion.shared.opentelemetry import generate_request_span_context
+from fastapi import Request, Response
 from opentelemetry import context
 from opentelemetry.trace import SpanKind
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
-from starlette.responses import Response
 
 if TYPE_CHECKING:
     from aion.shared.agent.execution import ExecutionContext

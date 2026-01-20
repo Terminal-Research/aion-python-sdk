@@ -2,9 +2,8 @@ from a2a.types import JSONRPCRequest
 from a2a.utils import DEFAULT_RPC_URL
 from aion.shared.agent.execution import set_context_from_a2a_request
 from aion.shared.logging import get_logger
+from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
-from starlette.responses import Response
 
 __all__ = [
     "AionContextMiddleware",

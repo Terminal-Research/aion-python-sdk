@@ -1,9 +1,7 @@
 import asyncio
 import threading
 
-from starlette.applications import Starlette
-from starlette.requests import Request
-from starlette.responses import Response
+from fastapi import FastAPI, Request, Query, Response
 
 
 class PushNotificationListener:
@@ -36,12 +34,20 @@ class PushNotificationListener:
     async def start_server(self):
         import uvicorn
 
-        self.app = Starlette()
-        self.app.add_route(
-            '/notify', self.handle_notification, methods=['POST']
+        self.app = FastAPI()
+
+        # Register routes
+        self.app.add_api_route(
+            '/notify',
+            self.handle_validation_check,
+            methods=['GET'],
+            response_class=Response
         )
-        self.app.add_route(
-            '/notify', self.handle_validation_check, methods=['GET']
+        self.app.add_api_route(
+            '/notify',
+            self.handle_notification,
+            methods=['POST'],
+            response_class=Response
         )
 
         config = uvicorn.Config(
@@ -50,8 +56,18 @@ class PushNotificationListener:
         self.server = uvicorn.Server(config)
         await self.server.serve()
 
-    async def handle_validation_check(self, request: Request):
-        validation_token = request.query_params.get('validationToken')
+    async def handle_validation_check(
+        self,
+        validation_token: str = Query(None, alias="validationToken")
+    ) -> Response:
+        """Handle Teams channel validation.
+
+        Args:
+            validation_token: Validation token from Teams (received as validationToken in query params)
+
+        Returns:
+            Response with validation token or 400 error
+        """
         print(
             f'\npush notification verification received => \n{validation_token}\n'
         )
@@ -61,8 +77,15 @@ class PushNotificationListener:
 
         return Response(content=validation_token, status_code=200)
 
-    async def handle_notification(self, request: Request):
-        data = await request.json()
+    async def handle_notification(self, request: Request) -> Response:
+        """Handle push notifications.
 
+        Args:
+            request: HTTP request with notification data
+
+        Returns:
+            Response with 200 status
+        """
+        data = await request.json()
         print(f'\npush notification received => \n{data}\n')
         return Response(status_code=200)

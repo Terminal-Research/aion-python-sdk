@@ -62,7 +62,7 @@ async def async_serve(
             logger.debug(f"Using passed socket for agent '{agent_id}' on port {port}")
 
         uconfig = uvicorn.Config(
-            app=app_factory.get_starlette_app(),
+            app=app_factory.get_fastapi_app(),
             host=aion_agent.host if sockets is None else None,
             port=aion_agent.port if sockets is None else None,
             log_config=None,

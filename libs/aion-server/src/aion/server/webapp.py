@@ -1,4 +1,4 @@
-"""Dynamic Starlette application mounting utilities."""
+"""Dynamic FastAPI application mounting utilities."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ from pathlib import Path
 from typing import Any, Dict
 
 from aion.shared.logging import get_logger
+from fastapi import FastAPI
 from pydantic import BaseModel
-from starlette.applications import Starlette
 
 logger = get_logger()
 
@@ -59,9 +59,9 @@ class DynamicAppLoader:
 
 
 class MountManager:
-    """Manage mounting of applications onto a main ``Starlette`` app."""
+    """Manage mounting of applications onto a main ``FastAPI`` app."""
 
-    def __init__(self, main_app: Starlette, loader: DynamicAppLoader | None = None) -> None:
+    def __init__(self, main_app: FastAPI, loader: DynamicAppLoader | None = None) -> None:
         self.main_app = main_app
         self.loader = loader or DynamicAppLoader()
         self.mounted: Dict[str, Any] = {}
@@ -82,7 +82,7 @@ class MountManager:
 class DynamicMounter:
     """Orchestrate loading of configuration and mounting apps."""
 
-    def __init__(self, main_app: Starlette, config_path: str | Path = "aion.yaml") -> None:
+    def __init__(self, main_app: FastAPI, config_path: str | Path = "aion.yaml") -> None:
         self.main_app = main_app
         self.config_path = Path(config_path)
         self.mount_manager = MountManager(main_app)

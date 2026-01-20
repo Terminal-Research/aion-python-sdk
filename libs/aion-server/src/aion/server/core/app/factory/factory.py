@@ -5,9 +5,9 @@ from a2a.server.tasks import InMemoryPushNotificationConfigStore
 from aion.shared.agent import AionAgent
 from aion.shared.logging import get_logger
 from aion.shared.settings import db_settings
-from starlette.applications import Starlette
+from fastapi import FastAPI
 
-from aion.server.core.app.a2a_starlette import AionA2AStarletteApplication
+from aion.server.core.app.a2a_fastapi import AionA2AFastAPIApplication
 from aion.server.core.middlewares import TracingMiddleware, AionContextMiddleware
 from aion.server.core.request_handlers import AionRequestHandler
 from aion.server.agent import AionAgentRequestExecutor
@@ -49,7 +49,7 @@ class AppFactory:
         context: Application context with shared resources
         startup_callback: Optional callback to call after initialization
         a2a_app: Agent-to-agent communication application
-        starlette_app: Main Starlette web application
+        fastapi_app: Main FastAPI web application
     """
 
     def __init__(
@@ -68,8 +68,8 @@ class AppFactory:
         self.context = context
 
         # Application components
-        self.a2a_app: Optional[AionA2AStarletteApplication] = None
-        self.starlette_app: Optional[Starlette] = None
+        self.a2a_app: Optional[AionA2AFastAPIApplication] = None
+        self.fastapi_app: Optional[FastAPI] = None
         self.startup_callback = startup_callback
 
     async def initialize(self):
@@ -88,14 +88,14 @@ class AppFactory:
 
     async def _initialize(self) -> None:
         """Initialize all application components in sequence:
-        database, plugins, agent building (framework discovery), A2A app, and Starlette app.
+        database, plugins, agent building (framework discovery), A2A app, and FastAPI app.
 
         Order is critical:
         1. Init DB - creates connection pool
         2. Init plugins - registers adapters, setup with db_manager
         3. Build agent - discovers framework from registered adapters
         4. Create A2A app
-        5. Build Starlette app
+        5. Build FastAPI app
         """
         logger.debug("Initializing application for agent '%s'", self.aion_agent.id)
 
@@ -111,8 +111,8 @@ class AppFactory:
         # Create A2A application
         await self._create_a2a_app()
 
-        # Build Starlette application
-        await self._build_starlette_app()
+        # Build FastAPI application
+        await self._build_fastapi_app()
 
         logger.info("Agent '%s' initialized at http://%s:%s",
                     self.aion_agent.id, self.aion_agent.host, self.aion_agent.port)
@@ -125,7 +125,7 @@ class AppFactory:
         # Create request handler
         request_handler = await self._create_request_handler()
 
-        self.a2a_app = AionA2AStarletteApplication(
+        self.a2a_app = AionA2AFastAPIApplication(
             aion_agent=self.aion_agent,
             http_handler=request_handler
         )
@@ -142,15 +142,15 @@ class AppFactory:
             push_config_store=InMemoryPushNotificationConfigStore()
         )
 
-    async def _build_starlette_app(self) -> None:
-        """Build the Starlette application from A2A app and add middlewares."""
+    async def _build_fastapi_app(self) -> None:
+        """Build the FastAPI application from A2A app and add middlewares."""
         if not self.a2a_app:
-            raise RuntimeError("A2A application must be created before building Starlette app")
+            raise RuntimeError("A2A application must be created before building FastAPI app")
 
         lifespan = AppLifespan(app_factory=self)
-        self.starlette_app = self.a2a_app.build(lifespan=lifespan.executor)
-        self.starlette_app.add_middleware(TracingMiddleware)
-        self.starlette_app.add_middleware(AionContextMiddleware)
+        self.fastapi_app = self.a2a_app.build(lifespan=lifespan.executor)
+        self.fastapi_app.add_middleware(TracingMiddleware)
+        self.fastapi_app.add_middleware(AionContextMiddleware)
 
     async def _init_db(self) -> None:
         """Initialize database connection, run migrations, or skip if POSTGRES_URL not set."""
@@ -246,12 +246,12 @@ class AppFactory:
 
     @property
     def is_initialized(self) -> bool:
-        """Check if the factory is fully initialized (agent, A2A app, and Starlette app exist)."""
+        """Check if the factory is fully initialized (agent, A2A app, and FastAPI app exist)."""
         return (
                 self.a2a_app is not None and
-                self.starlette_app is not None
+                self.fastapi_app is not None
         )
 
-    def get_starlette_app(self) -> Optional[Starlette]:
-        """Get the Starlette application instance."""
-        return self.starlette_app
+    def get_fastapi_app(self) -> Optional[FastAPI]:
+        """Get the FastAPI application instance."""
+        return self.fastapi_app

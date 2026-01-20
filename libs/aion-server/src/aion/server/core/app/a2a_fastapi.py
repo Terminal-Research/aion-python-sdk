@@ -2,7 +2,7 @@ import json
 import traceback
 from typing import get_args
 
-from a2a.server.apps import A2AStarletteApplication
+from a2a.server.apps import A2AFastAPIApplication
 from a2a.server.apps.jsonrpc.jsonrpc_app import (
     CallContextBuilder,
 )
@@ -20,29 +20,23 @@ from aion.shared.types import (
     CustomA2ARequest,
     GetContextRequest,
     GetContextsListRequest,
-    HealthResponse,
 )
-from aion.shared.utils.deployment import get_protocol_version
+from fastapi import FastAPI, Request, Response
+from fastapi.exceptions import HTTPException
 from opentelemetry import trace
 from pydantic import ValidationError
-from starlette.exceptions import HTTPException
-from starlette.requests import Request
-from starlette.responses import Response, JSONResponse
-from starlette.routing import Route
 from starlette.status import HTTP_413_REQUEST_ENTITY_TOO_LARGE
 
 from aion.server.core.request_handlers import AionJSONRPCHandler
 from aion.server.interfaces import IRequestHandler
-from aion.server.types import ConfigurationFileResponse
-from aion.server.utils.constants import HEALTH_CHECK_URL, CONFIGURATION_FILE_URL
-from aion.shared.config import AgentConfigurationCollector
+from .api import AionExtraHTTPRoutes
 
 logger = get_logger()
 request_tracer = trace.get_tracer("langgraph.agent")
 
 
-class AionA2AStarletteApplication(A2AStarletteApplication):
-    """Extended A2A Starlette application with custom request handling capabilities."""
+class AionA2AFastAPIApplication(A2AFastAPIApplication):
+    """Extended A2A FastAPI application with custom request handling capabilities."""
 
     def __init__(
             self,
@@ -71,25 +65,34 @@ class AionA2AStarletteApplication(A2AStarletteApplication):
             agent_card=self.agent_card,
             request_handler=http_handler)
 
-    def routes(self, *args, **kwargs) -> list[Route]:
-        default_routes = super().routes(*args, **kwargs)
+    def add_routes_to_app(
+            self,
+            app: FastAPI,
+            agent_card_url: str = '/.well-known/agent-card.json',
+            rpc_url: str = '/',
+            extended_agent_card_url: str = '/agent/authenticatedExtendedCard'
+    ) -> None:
+        """Add custom routes to the FastAPI application.
 
-        app_routes = [
-            *default_routes,
-            Route(
-                HEALTH_CHECK_URL,
-                self._handle_health_check,
-                methods=['GET'],
-                name="app_health",
-            ),
-            Route(
-                CONFIGURATION_FILE_URL,
-                self._handle_get_configuration_file,
-                methods=['GET'],
-                name="agent_configuration",
-            )
-        ]
-        return app_routes
+        Args:
+            app: FastAPI application instance to add routes to
+            agent_card_url: URL path for the agent card endpoint
+            rpc_url: URL path for the JSON-RPC endpoint
+            extended_agent_card_url: URL path for the extended agent card endpoint
+        """
+        # Add the parent routes
+        super().add_routes_to_app(app, agent_card_url, rpc_url, extended_agent_card_url)
+        # Add aion extra routes
+        AionExtraHTTPRoutes(self.aion_agent).register(app)
+        from langserve import add_routes
+        add_routes(
+            app,
+            self.aion_agent.get_native_agent(),
+            path="/langserve",
+        )
+
+        # d1 = self.aion_agent.get_native_agent()
+        # d2=2
 
     async def _handle_requests(self, request: Request) -> Response:
         """Handle incoming HTTP requests with comprehensive error handling.
@@ -223,28 +226,5 @@ class AionA2AStarletteApplication(A2AStarletteApplication):
         custom_types = get_args(CustomA2ARequest.model_fields['root'].annotation)
         return type(request_obj) in custom_types
 
-    @staticmethod
-    async def _handle_health_check(request) -> JSONResponse:
-        """
-        Health check endpoint
 
-        Returns:
-            Simple status response with 200 status code
-        """
-        return JSONResponse(HealthResponse().model_dump())
-
-    async def _handle_get_configuration_file(self, request) -> JSONResponse:
-        """
-        Configuration file endpoint
-
-        Returns:
-            Configuration file response with protocol version and agent configuration
-        """
-        response = ConfigurationFileResponse(
-            protocolVersion=get_protocol_version(),
-            configuration=AgentConfigurationCollector(self.aion_agent.config.configuration).collect()
-        )
-        return JSONResponse(response.model_dump())
-
-
-__all__ = ["AionA2AStarletteApplication"]
+__all__ = ["AionA2AFastAPIApplication"]

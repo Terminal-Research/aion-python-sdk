@@ -10,6 +10,7 @@ packages = [{ include = "aion", from = "src" }]
 python = "^3.12.0"
 langgraph = ">=0.6.0,<=1.0.5"
 langgraph-checkpoint-postgres = ">=2.0.0,<=3.0.2"
+langserve = { version = "^0.3.3", extras = ["server"] }
 aion-shared = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-shared" }
 
 [build-system]
