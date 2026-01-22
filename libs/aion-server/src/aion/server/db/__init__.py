@@ -16,11 +16,14 @@ from .manager import db_manager
 
 from .models import TaskRecordModel
 
+from .factory import DbFactory
+
 __all__ = [
     "AION_DB_NAMESPACE",
     "verify_connection",
     "validate_permissions",
     "db_manager",
+    "DbFactory",
 
     # db models
     "TaskRecordModel",

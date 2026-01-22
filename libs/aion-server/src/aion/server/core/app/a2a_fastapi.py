@@ -84,15 +84,6 @@ class AionA2AFastAPIApplication(A2AFastAPIApplication):
         super().add_routes_to_app(app, agent_card_url, rpc_url, extended_agent_card_url)
         # Add aion extra routes
         AionExtraHTTPRoutes(self.aion_agent).register(app)
-        from langserve import add_routes
-        add_routes(
-            app,
-            self.aion_agent.get_native_agent(),
-            path="/langserve",
-        )
-
-        # d1 = self.aion_agent.get_native_agent()
-        # d2=2
 
     async def _handle_requests(self, request: Request) -> Response:
         """Handle incoming HTTP requests with comprehensive error handling.

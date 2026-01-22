@@ -24,7 +24,7 @@ class AppLifespan:
         self.app_factory: AppFactory = app_factory
         self._websocket_manager: Optional[AionWebSocketManager] = None
 
-    async def get_websocket_manager(self, create: bool = True) -> AionWebSocketManager:
+    async def _get_websocket_manager(self, create: bool = True) -> AionWebSocketManager:
         """Return the AionWebSocketManager instance."""
         if not self._websocket_manager and create:
             self._websocket_manager = AionWebSocketManager(
@@ -58,7 +58,7 @@ class AppLifespan:
     async def shutdown(self):
         """Handle application shutdown events."""
         # stop websocket connection with aion api
-        ws_manager = await self.get_websocket_manager(create=False)
+        ws_manager = await self._get_websocket_manager(create=False)
         if ws_manager:
             await aion_services.AionWebSocketService(websocket_manager=ws_manager).stop_connection()
 
@@ -71,7 +71,7 @@ class AppLifespan:
 
         if auth_token:
             # START WEBSOCKET CONNECTION WITH AION
-            ws_manager = await self.get_websocket_manager(create=True)
+            ws_manager = await self._get_websocket_manager(create=True)
             asyncio.create_task(
                 aion_services.AionWebSocketService(websocket_manager=ws_manager)
                 .start_connection())

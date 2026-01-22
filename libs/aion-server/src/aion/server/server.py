@@ -10,10 +10,11 @@ from aion.shared.logging.base import AionLogger
 from aion.shared.utils.logging import replace_uvicorn_loggers, replace_logstash_loggers
 from dotenv import load_dotenv
 
-from aion.server.core.app import AppFactory, AppContext
-from aion.server.db import db_manager
+from aion.server.agent import AgentFactory
+from aion.server.core.app import AppFactory
+from aion.server.db import DbFactory, db_manager
+from aion.server.plugins import PluginFactory
 from aion.server.tasks import store_manager
-from aion.server.plugins import plugin_manager
 
 # Set custom logger class globally for all loggers including uvicorn
 logging.setLoggerClass(AionLogger)
@@ -40,13 +41,18 @@ async def async_serve(
             port=port,
             config=agent_config)
 
+        # Create factories via dependency injection
+        db_factory = DbFactory(db_manager=db_manager)
+        agent_factory = AgentFactory(aion_agent=aion_agent)
+        plugin_factory = PluginFactory(db_manager=db_manager)
+
+        # Create and initialize AppFactory with all dependencies
         app_factory = await AppFactory(
             aion_agent=aion_agent,
-            context=AppContext(
-                db_manager=db_manager,
-                store_manager=store_manager,
-                plugin_manager=plugin_manager
-            ),
+            db_factory=db_factory,
+            agent_factory=agent_factory,
+            plugin_factory=plugin_factory,
+            store_manager=store_manager,
             startup_callback=startup_callback
         ).initialize()
 
