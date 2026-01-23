@@ -1,7 +1,7 @@
 from aion.shared.types import A2AManifest
 from aion.shared.utils.deployment import generate_a2a_manifest as generate_a2a_manifest_util
 
-from .constants import AGENT_PROXY_URL
+from .constants import AGENT_PROXY_PREFIX
 
 __all__ = [
     "generate_a2a_manifest",
@@ -21,8 +21,7 @@ def generate_a2a_manifest(agent_ids: list[str]) -> A2AManifest:
     Returns:
         A2AManifest: Configured manifest with endpoints for all provided agents.
     """
-    endpoint_template = AGENT_PROXY_URL.rsplit('/', 1)[0]
     return generate_a2a_manifest_util(
         agent_ids=agent_ids,
-        endpoint_template=endpoint_template
+        endpoint_template=AGENT_PROXY_PREFIX
     )

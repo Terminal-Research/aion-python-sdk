@@ -1,15 +1,15 @@
 """Messages extractor for ADK sessions.
 
 This module extracts conversation messages from ADK Session.events field
-and converts them to unified Message/MessagePart format.
+and converts them to unified Message format with a2a Part objects.
 """
 
 from typing import Any, List, override
 
+from a2a.types import Message
 from aion.shared.agent.adapters import (
     StateExtractor,
-    Message,
-    MessageRole,
+    create_message_from_parts,
 )
 from aion.shared.logging import get_logger
 
@@ -21,7 +21,7 @@ logger = get_logger()
 class MessagesExtractor(StateExtractor):
     """Extractor for conversation messages from ADK Session.events field.
 
-    Converts ADK events to unified Message format with MessagePart components.
+    Converts ADK events to unified Message format with a2a Part objects.
     Extracts only text and thought content from events, filtering out tool calls
     and tool responses.
 
@@ -107,16 +107,15 @@ class MessagesExtractor(StateExtractor):
         return hasattr(adk_event, "content") and adk_event.content is not None
 
     def _handle_message(self, adk_event: Any) -> List[Message]:
-        """Convert a regular message event to unified Message format.
+        """Convert a regular message event to a2a Message format.
 
         Args:
             adk_event: ADK message event
 
         Returns:
-            List containing a single Message object
+            List containing a single a2a.Message object
         """
         author = getattr(adk_event, "author", "assistant")
-        role = self._map_role(author)
 
         # Extract text from ADK event content using shared utility
         message_parts = extract_message_parts(adk_event.content)
@@ -125,32 +124,14 @@ class MessagesExtractor(StateExtractor):
             logger.debug(f"No parts extracted from content, skipping message")
             return []
 
-        # Create the message
-        message = Message(
-            role=role,
-            content=message_parts,
+        # Create a2a message
+        message = create_message_from_parts(
+            parts=message_parts,
+            role=author,  # Helper will normalize to a2a.Role
             metadata=self._extract_event_metadata(adk_event),
         )
 
         return [message]
-
-    def _map_role(self, author: str) -> MessageRole:
-        """Map ADK author to unified MessageRole.
-
-        Args:
-            author: ADK event author (e.g., "user", "assistant", "system")
-
-        Returns:
-            Unified MessageRole
-        """
-        author_lower = str(author).lower()
-        if author_lower == "user":
-            return MessageRole.USER
-        elif author_lower == "system":
-            return MessageRole.SYSTEM
-        else:
-            # Default to assistant for any other author
-            return MessageRole.ASSISTANT
 
     def _extract_event_metadata(self, adk_event: Any) -> dict[str, Any]:
         """Extract metadata from ADK event.

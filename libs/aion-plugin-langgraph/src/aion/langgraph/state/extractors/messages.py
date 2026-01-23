@@ -6,7 +6,8 @@ and converts them to unified Message format (if needed in the future).
 
 from typing import Any, List, override
 
-from aion.shared.agent.adapters import StateExtractor, Message
+from a2a.types import Message
+from aion.shared.agent.adapters import StateExtractor
 from aion.shared.logging import get_logger
 from langgraph.types import StateSnapshot
 
@@ -18,7 +19,7 @@ class MessagesExtractor(StateExtractor):
 
     Extracts messages from snapshot.values['messages'] field.
     Currently returns raw LangGraph messages; can be extended to convert
-    to unified Message format with MessagePart components.
+    to unified Message format with a2a Part objects.
 
     NOTE: LangGraph typically stores messages in snapshot.values['messages']
     as a list of LangChain message objects (HumanMessage, AIMessage, etc.).
@@ -68,7 +69,7 @@ class MessagesExtractor(StateExtractor):
 
         TODO: Implement conversion from LangChain message types
         (HumanMessage, AIMessage, SystemMessage) to unified Message
-        with MessagePart components.
+        with a2a Part objects.
 
         Args:
             langgraph_message: LangGraph/LangChain message object

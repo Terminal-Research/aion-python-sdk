@@ -14,7 +14,7 @@ from fastapi import FastAPI
 
 from .client import ProxyHttpClient
 from .handlers import RequestHandler
-from .middleware import ProxyLoggingMiddleware
+from .middlewares import ProxySwaggerUIFixMiddleware, ProxyLoggingMiddleware
 from .routes import ProxyRouter
 
 # Set custom logger class globally for all loggers including uvicorn/fastapi
@@ -55,6 +55,7 @@ class AionAgentProxyServer:
 
     def add_middlewares(self):
         """Add middlewares to app"""
+        self.app.add_middleware(ProxySwaggerUIFixMiddleware)
         self.app.add_middleware(ProxyLoggingMiddleware)
 
     @asynccontextmanager

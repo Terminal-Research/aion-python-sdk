@@ -1,7 +1,6 @@
 from aion.shared.logging import get_logger
+from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
-from starlette.responses import Response
 
 __all__ = ["ProxyLoggingMiddleware"]
 

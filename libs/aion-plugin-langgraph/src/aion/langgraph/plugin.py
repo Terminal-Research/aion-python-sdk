@@ -2,9 +2,11 @@
 
 from typing import Any, Optional, override
 
+from aion.shared.agent import AionAgent
 from aion.shared.db import DbManagerProtocol
 from aion.shared.logging import AionLogger, get_logger
 from aion.shared.plugins import AgentPluginProtocol
+from fastapi import FastAPI
 
 from .adapter import LangGraphAdapter
 
@@ -38,6 +40,24 @@ class LangGraphPlugin(AgentPluginProtocol):
             await self._setup_checkpointer_tables(db_manager)
 
         self._adapter = LangGraphAdapter(db_manager=db_manager)
+
+    @override
+    async def configure_app(self, app: FastAPI, agent: AionAgent) -> None:
+        """Adds LangServe HTTP routes to a FastAPI app for the specified agent.
+
+        This method integrates the given `agent` into the FastAPI application by
+        registering LangServe routes under `/http`. It only configures the app if
+        the agent's framework matches this class's framework name.
+        """
+        if agent.framework != self.name():
+            return
+
+        from langserve import add_routes
+        add_routes(
+            app,
+            agent.get_native_agent(),
+            path="/http",
+        )
 
     @override
     async def teardown(self) -> None:

@@ -165,6 +165,13 @@ class ServeAgentStartupService(BaseExecuteService):
             conn: Pipe connection to parent process (optional)
         """
         try:
+            # Reset signal handlers to default in child process
+            # This prevents inherited signal handlers from parent process from running
+            # which would cause issues with process management (AssertionError in is_alive)
+            import signal
+            signal.signal(signal.SIGINT, signal.SIG_DFL)
+            signal.signal(signal.SIGTERM, signal.SIG_DFL)
+
             # Create new event loop for this process
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
