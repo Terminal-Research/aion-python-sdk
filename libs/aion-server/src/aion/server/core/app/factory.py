@@ -19,6 +19,7 @@ from aion.server.db import DbFactory
 from aion.server.plugins import PluginFactory
 from aion.server.tasks import StoreManager
 from .lifespan import AppLifespan
+from .registry import app_registry
 
 logger = get_logger()
 
@@ -96,6 +97,9 @@ class AppFactory:
 
         # 5. Configure app - Phase 2: integrate plugins with built app and agent
         await self.plugin_factory.configure_app(self.fastapi_app, self.aion_agent)
+
+        # 6. Apply custom app extensions from AppRegistry
+        app_registry.apply_to_app(self.fastapi_app)
 
         logger.info("Agent '%s' initialized at http://%s:%s",
                     self.aion_agent.id, self.aion_agent.host, self.aion_agent.port)
