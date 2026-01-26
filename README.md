@@ -77,11 +77,16 @@ For all available CLI commands and options, see the **[CLI Reference](libs/aion-
 
 For running multiple agents with a proxy server, see the **[Multiple Agents Guide](docs/multiple-agents.md)**.
 
+## Agent Customization
+
+The AION SDK supports custom agent extensions like adding custom API routes. For complete details, see the **[AppRegistry Guide](docs/app-registry.md)**.
+
 ## Documentation
 
 * **[Environment Variables Guide](docs/environment-variables.md)** - All configuration variables
 * **[Complete Configuration Guide](docs/aion-yaml-config.md)** - Full YAML options, skills, capabilities
 * **[Multiple Agents Guide](docs/multiple-agents.md)** - Running multiple agents with proxy
+* **[AppRegistry Guide](docs/app-registry.md)** - Custom router registration and agent customization
 * **[HTTP Endpoints](docs/http_endpoints.md)** - Agent and Proxy Server HTTP endpoints reference
 * **[A2A Protocol Extensions](docs/a2a_extensions/main.md)** - Streaming, context management, JSON-RPC methods
 * **[API Client](libs/aion-api-client/README.md)** - GraphQL client for integration
