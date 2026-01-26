@@ -37,7 +37,6 @@ class ChatSession:
     def __init__(
             self,
             host: str,
-            bearer_token: Optional[str] = None,
             enabled_extensions: Optional[str] = None,
             custom_headers: Optional[dict] = None,
             use_push_notifications: bool = False,
@@ -47,7 +46,6 @@ class ChatSession:
             session_id: int = 0,
     ):
         self.host = host
-        self.bearer_token = bearer_token
         self.enabled_extensions = enabled_extensions
         self.custom_headers = custom_headers or {}
         self.use_push_notifications = use_push_notifications
@@ -58,8 +56,6 @@ class ChatSession:
 
         # Setup headers
         self.headers = {}
-        if bearer_token:
-            self.headers['Authorization'] = f'Bearer {bearer_token}'
 
         # Add extension headers if provided
         if enabled_extensions:
@@ -419,7 +415,6 @@ class ChatSession:
 
 async def start_chat(
         host: str = 'http://localhost:8083',
-        bearer_token: Optional[str] = None,
         session_id: int = 0,
         show_history: bool = False,
         use_push_notifications: bool = False,
@@ -431,7 +426,6 @@ async def start_chat(
     """Start a chat session with the A2A agent"""
     chat_session = ChatSession(
         host=host,
-        bearer_token=bearer_token,
         enabled_extensions=enabled_extensions,
         custom_headers=custom_headers,
         use_push_notifications=use_push_notifications,

@@ -59,7 +59,7 @@ class AionLogRecord(logging.LogRecord):
         self.transaction_id = getattr(request_context, "transaction_id", None)
         self.transaction_name = getattr(request_context, "transaction_name", None)
 
-        self.aion_distribution_id = getattr(request_context, "aion_distribution_id", app_settings.distribution_id)
+        self.aion_distribution_id = getattr(request_context, "aion_distribution_id", None)
         self.aion_version_id = getattr(request_context, "aion_version_id", app_settings.version_id)
         self.aion_agent_environment_id = getattr(request_context, "aion_agent_environment_id", None)
         self.http_request_method = getattr(request_context, "request_method", None)

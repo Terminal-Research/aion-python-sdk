@@ -113,14 +113,13 @@ Connects to a running A2A server and provides an interactive command-line chat i
 **Options:**
 
 * `--host TEXT` - Agent URL to connect to (default: `http://localhost:10000`)
-* `--bearer-token TEXT` - Bearer token for authentication (can also be set via `AION_CLI_BEARER_TOKEN` environment variable)
 * `--session INTEGER` - Session ID to use; `0` creates a random session (default: `0`)
 * `--history / --no-history` - Show task history in the chat interface (default: `--no-history`)
 * `--push-notifications / --no-push-notifications` - Enable push notifications (default: `--no-push-notifications`)
 * `--push-receiver TEXT` - Push notification receiver URL (default: `http://localhost:5000`)
 * `--header TEXT` - Custom HTTP headers in format `key=value` (can be used multiple times)
 * `--extensions TEXT` - Comma-separated list of extension URIs to enable
-* `--graph-id TEXT` - Agent ID to use in proxy (e.g., `hello-world`, `hello-world-chunked`). Be sure, that you passed proxy host in `--host`
+* `--agent-id TEXT` - Agent ID to use in proxy (e.g., `hello-world`, `hello-world-chunked`). Be sure, that you passed proxy host in `--host`
 
 **Examples:**
 
@@ -130,9 +129,6 @@ poetry run aion chat
 
 # Chat with custom agent URL
 poetry run aion chat --host http://localhost:8080
-
-# Chat with authentication
-poetry run aion chat --bearer-token your-token-here
 
 # Chat with specific session ID and history
 poetry run aion chat --session 12345 --history
@@ -147,7 +143,7 @@ poetry run aion chat --header "X-Custom-Header=value" --header "Authorization=Be
 poetry run aion chat --extensions "ext1.example.com,ext2.example.com"
 
 # Chat with explicit agent ID (when using proxy)
-poetry run aion chat --graph-id hello-world
+poetry run aion chat --agent-id hello-world
 
 # Connect to specific agent server directly
 poetry run aion chat --host http://localhost:10001
@@ -155,17 +151,12 @@ poetry run aion chat --host http://localhost:10001
 # Complex example with multiple options
 poetry run aion chat \
   --host http://localhost:10000 \
-  --bearer-token $TOKEN \
   --session 999 \
   --history \
   --push-notifications \
   --header "X-Client=aion-cli" \
-  --graph-id hello-world-chunked
+  --agent-id hello-world-chunked
 ```
-
-**Environment Variables:**
-
-* `AION_CLI_BEARER_TOKEN` - Default bearer token for authentication
 
 **Session Management:**
 

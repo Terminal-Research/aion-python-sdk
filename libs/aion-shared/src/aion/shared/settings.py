@@ -279,12 +279,6 @@ class AppSettings(BaseEnvSettings):
         alias="NODE_NAME"
     )
 
-    distribution_id: Optional[str] = Field(
-        default=None,
-        description="Distribution ID used to identify deployment in Aion platform",
-        alias="DISTRIBUTION_ID"
-    )
-
     version_id: Optional[str] = Field(
         default=None,
         description="Version ID used to identify deployment in Aion platform",

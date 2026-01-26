@@ -3,43 +3,74 @@
 This documentation provides a comprehensive reference for customizations and protocol extensions used in the
 Agent-to-Agent (A2A) communication system.
 
-## Organization
+## Quick Navigation
 
-The documentation is organized into the following sections:
+- **[JSON-RPC Methods](#json-rpc-extensions)** - Context retrieval and conversation management
+- **[Data Models](#models)** - Protocol data structures and schemas
+- **[Streaming](#streaming)** - Real-time response delivery patterns
 
-___
+---
 
-### Extensions
+## JSON-RPC Extensions
 
-Formal protocol extensions that extend the base A2A communication capabilities. Each extension is documented with its
-specific implementation details, message formats, and usage patterns.
+Formal protocol extensions that extend the base A2A communication capabilities with standard JSON-RPC 2.0 methods.
 
-#### JSON-RPC Extensions
+### Context Extension
 
-- **[Context Extension](./json_rpc/context.md)** - Methods for retrieving conversation contexts and context lists (
-  `context/get`, `contexts/get`)
+**[Full Documentation](./json_rpc/context.md)**
 
-___
+Methods for retrieving conversation contexts and managing context lists:
 
-### [Models](./models.md)
+- **`context/get`** - Retrieve a specific conversation context with message history
+  - Parameters: `context_id`, `history_length`, `history_offset`
+  - Returns: [Conversation](#conversation-model) object with full context and message history
 
-Data structure definitions and schemas used throughout the A2A communication protocol. These models define the format
-and structure of messages, responses, and other data objects protocol-level data types.
+- **`contexts/get`** - Retrieve a list of available contexts
+  - Returns: [ContextsList](#contextslist-model) with all accessible context identifiers
 
-___
+---
 
-### Other
+## Models
 
-Lower-level protocol features and implementation details that don't map directly to formal extensions but are essential
-for understanding the complete A2A communication system.
+**[Full Documentation](./models.md)**
 
-#### Streaming
+Data structure definitions and schemas used throughout the A2A protocol extensions:
 
-- **[Stream Delta Handling](./other/stream-delta-handling.md)** - Documentation for real-time response streaming through
-  `TaskArtifactUpdateEvent` objects, including incremental content delivery, artifact reconstruction, and streaming
-  lifecycle management.
+### Conversation Model
+Complete conversation context including message history, artifacts, and task status.
 
-___
+**Fields:**
+- `context_id` - Unique conversation identifier
+- `history` - Sequential messages (user/agent exchanges)
+- `artifacts` - Generated content (code, documents, files)
+- `status` - Current task state
+
+### ContextsList Model
+List of available context identifiers for discovery and enumeration.
+
+### ConversationTaskStatus Model
+Task lifecycle status information for conversation tracking.
+
+### A2AManifest Model
+Root-level service manifest with API version and agent endpoint information.
+
+---
+
+## Streaming
+
+Lower-level protocol features for real-time communication:
+
+### Stream Delta Handling
+
+**[Full Documentation](./other/stream-delta-handling.md)**
+
+Real-time response streaming through `TaskArtifactUpdateEvent` objects:
+
+- Incremental content delivery for large responses
+- Artifact reconstruction and streaming lifecycle management
+- Efficient bandwidth usage for real-time agent responses
+
+---
 
 ## Purpose
 
