@@ -7,11 +7,6 @@ from aion.cli.handlers import start_chat
 
 @click.command(name="chat")
 @click.option('--host', default='http://localhost:10000', help='Host URL')
-@click.option(
-    '--bearer-token',
-    help='Bearer token for authentication',
-    envvar='AION_CLI_BEARER_TOKEN',
-)
 @click.option('--session', default=0, help='Session ID (0 for random)')
 @click.option('--history/--no-history', default=False, help='Show task history')
 @click.option(
@@ -36,7 +31,6 @@ from aion.cli.handlers import start_chat
 )
 async def chat(
         host: str,
-        bearer_token: Optional[str],
         session: int,
         history: bool,
         push_notifications: bool,
@@ -51,7 +45,6 @@ async def chat(
     try:
         await start_chat(
             host=host,
-            bearer_token=bearer_token,
             session_id=session,
             show_history=history,
             use_push_notifications=push_notifications,
