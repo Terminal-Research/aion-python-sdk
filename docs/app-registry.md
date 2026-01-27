@@ -19,7 +19,7 @@ aion:
 
 ```python
 from fastapi import APIRouter
-from aion.server.core.app.registry import app_registry
+from aion.server import app_registry
 
 # Register custom routes in your agent module
 custom_router = APIRouter(prefix="/api/custom")
