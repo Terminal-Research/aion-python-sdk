@@ -205,3 +205,33 @@ class AionGqlClient:
             register_field,
             operation_name="RegisterVersion"
         )
+
+    async def get_current_deployment_version(self) -> Optional[str]:
+        """
+        Fetch the current deployment version ID from control plane.
+
+        Returns:
+            Optional[str]: VERSION_ID if found, None otherwise
+
+        Note:
+            Currently returns mock data (None). Real GraphQL query will be implemented
+            when backend adds the corresponding endpoint.
+
+            Expected query structure:
+            ```graphql
+            query GetDeploymentVersion($clientId: String!) {
+              deployment(clientId: $clientId) {
+                versionId
+              }
+            }
+            ```
+
+            For now, returns None to simulate "not available from control plane"
+        """
+        # TODO: Implement real GraphQL query when backend is ready
+        # self._validate_client_before_execute()
+        # result = await self.client.query(...)
+        # return result.deployment.version_id
+
+        logger.debug("get_current_deployment_version: returning None (mock implementation)")
+        return None
