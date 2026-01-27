@@ -1,15 +1,16 @@
 """Handler for orchestrating AION server startup and management"""
 import asyncio
 import signal
-import sys
 from typing import Optional
 
+import sys
 from aion.shared.config import AionConfig
 from aion.shared.logging import get_logger
 from aion.shared.utils.processes import ProcessManager
 
 from aion.cli.services import (
     ServeAgentStartupService,
+    ServeEnvironmentPreparerService,
     ServeMonitoringService,
     ServeProxyStartupService,
     ServeShutdownService,
@@ -132,6 +133,10 @@ class ServeHandler:
         """
         # Store config for later use
         self.config = config
+
+        # Prepare environment BEFORE starting agents
+        env_context = await ServeEnvironmentPreparerService().execute()
+        logger.info(f"Environment prepared. VERSION_ID: {env_context.version_id}")
 
         # Initialize port reservation manager
         self.port_manager = AionPortManager()
