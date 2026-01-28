@@ -33,9 +33,6 @@ union ChatCompletionStreamChunk = ChatCompletionStreamError | ChatCompletionStre
 
 union JsonRpcResponseGQL = JsonRpcErrorResponseGQL | JsonRpcSuccessResponseGQL
 
-"Alias for backward compatibility"
-union JSONRPCResponse = JSONRPCErrorResponse | JSONRPCSuccessResponse
-
 "Stream of document updates for a project"
 union ReceiveEvent = ChangesAppliedEvent | NodeStatusUpdate | SnapshotEvent | StatusHistoryUpdate
 
@@ -62,16 +59,61 @@ enum AssetKind {
   Token
 }
 
+"Automatic version promotion policy"
+enum AutoVersioningPolicy {
+  None
+  PromoteToBeta
+  PromoteToStable
+}
+
+enum CatalogEntryKind {
+  Tier
+  TopUp
+  Trial
+}
+
+enum CatalogKind {
+  Tier
+  TopUp
+}
+
 "Where the deployment source is hosted"
 enum DeploymentType {
   A2ARemote
   AionRemote
   GitHubAionHosted
+  System
+}
+
+enum FeatureFlag {
+  GitHubDeploymentEnabled
+  ModelsServiceEnabled
+  RemoteDeploymentEnabled
+  XDirectMessageDistributionEnabled
+  XPublicDistributionEnabled
+}
+
+enum FeatureLimit {
+  MaxDistributions
+  MaxMembers
+  MaxProjects
 }
 
 enum GitHubAccountType {
   Organization
   User
+}
+
+"Category of validation issue for a graph path"
+enum GraphIssueKind {
+  DistributionSequenceInvalid
+  SequencePathInvalid
+}
+
+"Severity of a graph validation issue"
+enum GraphIssueSeverity {
+  Error
+  Warning
 }
 
 enum LogLevel {
@@ -80,6 +122,17 @@ enum LogLevel {
   Info
   Trace
   Warn
+}
+
+enum MembershipRoleGQL {
+  "Administrative access without billing privileges"
+  Admin
+  "Ability to build and deploy resources"
+  Developer
+  "Full administrative access including billing controls"
+  Owner
+  "Read-only access to organization resources"
+  Viewer
 }
 
 "Supported networks"
@@ -93,14 +146,14 @@ enum Network {
   POLYGON
 }
 
-"Enumeration of supported user network types"
-enum NetworkType {
-  "Aion Network"
+"Enumeration of supported network types."
+enum NetworkTypeGQL {
+  A2A
   Aion
-  "A2A API Network"
-  Api
-  "Telegram Network"
+  GitHub
+  Playground
   Telegram
+  Twitter
 }
 
 "Severity level for a node status"
@@ -112,12 +165,27 @@ enum NodeStatusType {
   Working
 }
 
+enum OrganizationTypeGQL {
+  "Administrative organization reserved for Aion system operations"
+  Admin
+  "Personal organization created for an individual user"
+  Personal
+  "Shared organization with multiple members"
+  Team
+}
+
 "Access level for a memory space"
 enum Privacy {
   "Only the owner can access the memory space"
   Private
   "Memory space can be shared publicly"
   Public
+}
+
+"Release channel used for runtime selection"
+enum ReleaseChannel {
+  Beta
+  Stable
 }
 
 "Category of a status history entry"
@@ -134,6 +202,27 @@ enum SubjectType {
   Version
 }
 
+enum SubscriptionStatusGQL {
+  "Subscription is active"
+  Active
+  "Subscription has been canceled"
+  Canceled
+  "Subscription setup is incomplete"
+  Incomplete
+  "Subscription payment is past due"
+  PastDue
+  "Subscription is in trial"
+  Trial
+}
+
+"Lifecycle status for a top-up"
+enum TopUpStatusGQL {
+  Cancelled
+  Confirmed
+  Failed
+  Pending
+}
+
 "Direction relative to wallet owner"
 enum TransactionDirection {
   RECEIVED
@@ -144,6 +233,13 @@ enum TransactionDirection {
 enum TransactionStatus {
   CONFIRMED
   PENDING
+}
+
+"Promotion actions supported for deployment versions"
+enum VersionPromotionAction {
+  DemoteBeta
+  PromoteBeta
+  PromoteStable
 }
 
 "Lifecycle status of a deployment version"
@@ -159,18 +255,6 @@ enum VersionStatus {
 
 "JSON-RPC request envelope for agent-to-agent workflows"
 input JsonRpcRequestGQLInput {
-  "JSON-RPC protocol version, defaults to 2.0"
-  jsonrpc: String!
-  "Method invoked on the destination agent"
-  method: String!
-  "Parameters forwarded to the method call"
-  params: Json
-  "Identifier for correlating responses to the request"
-  id: JsonRpcId
-}
-
-"Alias for backward compatibility"
-input JSONRPCRequestInput {
   "JSON-RPC protocol version, defaults to 2.0"
   jsonrpc: String!
   "Method invoked on the destination agent"
@@ -197,21 +281,39 @@ input MessageInput {
   content: String!
 }
 
+"Ordered sequence path submitted for validation. The first step is the distribution (ingress) and the last step is the terminal behavior."
+input SequencePathInput {
+  "Synthetic identifier used to correlate validation results, typically the distribution node id."
+  sequenceId: String!
+  "Ordered sequence steps from distribution to terminal behavior."
+  steps: [SequenceStepInput!]!
+}
+
+"Single step in a sequence path submitted for validation. A sequence represents the ordered path a request takes from a distribution (ingress) through downstream behaviors to the terminal behavior."
+input SequenceStepInput {
+  "Identifier of the graph node represented by this step."
+  nodeId: String!
+  "AgentBehavior payload used for validation. The validator inspects extension requirements and fulfillment on each step."
+  agentBehavior: Json
+  "Edge identifier connecting from the previous node. Required for all steps after the first."
+  incomingEdgeId: String
+}
+
 "Configuration describing how an agent is deployed"
 type AgentBehavior {
   "Unique identifier for the behavior"
   id: ID!
-  "Identifier of the user that owns this behavior"
-  userId: ID!
+  "Organization that owns this behavior"
+  organizationId: ID!
   "Associated deployment for this behavior"
-  deploymentId: ID
+  deploymentId: ID!
   "Version of the deployment used by the behavior"
-  versionId: ID
+  versionId: ID!
   "Lifecycle state of this behavior"
   kind: AgentBehaviorKind!
   "the semantic version defined for the behavior by the developer in the Aion.yaml config."
   logicalVersion: String!
-  "the developer-assigned name of the behavior from the Aion.yaml or AgentCard. Set to the graphId if not found."
+  "the developer-assigned name of the behavior from the Aion.yaml or AgentCard. Set to the behaviorKey if not found."
   name: String!
   "Optional developer-assigned name of the behavior from the Aion.yaml or AgentCard."
   description: String
@@ -219,8 +321,8 @@ type AgentBehavior {
   configurationSchema: Json
   "Optional AgentCard manifest describing this behavior"
   agentCard: Json
-  "LangGraph graph identifier if applicable"
-  graphId: String
+  "Stable identifier for the behavior across versions"
+  behaviorKey: String!
 }
 
 "Public profile information for a user or agent"
@@ -235,7 +337,7 @@ their user.
 """
   userId: ID
   "Reference to the associated organization"
-  organizationId: ID
+  organizationId: ID!
   "Identity name; personal identities should match the owning user's name"
   name: String
   "Agent-to-Agent protocol endpoint URL"
@@ -297,6 +399,20 @@ type BranchOption {
   name: String!
 }
 
+type CatalogEntryGQL {
+  id: CatalogIdGQL!
+  displayName: String!
+  creditsGranted: Long!
+  priceCents: Long!
+  features: [KVFeatureLimitLong!]
+  limits: [KVFeatureFlagBoolean!]
+}
+
+type CatalogIdGQL {
+  kind: CatalogEntryKind!
+  key: String!
+}
+
 "Result of applying Automerge changes"
 type ChangesApplied {
   "Project identifier"
@@ -347,18 +463,50 @@ type ClientSecretHash {
   subjectId: ID!
 }
 
-"Details returned after provisioning a new remote deployment"
+"Details returned after provisioning a remote deployment or version"
 type CreateRemoteDeploymentResponse {
-  "Deployment that was created"
+  "Deployment associated with the response"
   deployment: Deployment!
-  "Default environment associated with the deployment"
-  environment: DeploymentEnvironment!
-  "Initial version of the deployment"
+  "Version created for the deployment"
   version: Version!
   "Hash of the generated client secret"
   clientSecretHash: ClientSecretHash!
   "Plain-text client secret for the user"
   clientSecret: ClientSecret!
+}
+
+"One-time crypto top-up initiated by a user"
+type CryptoTopUp {
+  "Unique identifier for the top-up"
+  id: ID!
+  "Organization that initiated the top-up"
+  organizationId: ID!
+  "User that initiated the top-up"
+  userId: ID!
+  "Coinbase Commerce charge identifier"
+  chargeId: String!
+  "Lifecycle status for the top-up"
+  status: TopUpStatusGQL!
+  "Credits requested by the top-up"
+  requestedCredits: Long!
+  "Requested amount in smallest currency units"
+  requestedAmount: Long!
+  "ISO currency code for the top-up"
+  requestedCurrency: String!
+  "Confirmation timestamp, if confirmed"
+  confirmedAt: OffsetDateTime
+  "Ledger entry recorded for the top-up, if applied"
+  ledgerEntryId: ID
+}
+
+"Coinbase-hosted checkout session for a crypto top-up"
+type CryptoTopUpSessionGQL {
+  "Top-up identifier used for status queries"
+  id: ID!
+  "Coinbase Commerce charge identifier"
+  chargeId: String!
+  "Hosted checkout URL"
+  hostedUrl: String!
 }
 
 type Delta {
@@ -370,12 +518,10 @@ type Delta {
 type Deployment {
   "Unique identifier of the deployment"
   id: ID!
-  "Owning organisation if applicable"
-  organizationId: ID
-  "User that created the deployment"
-  userId: ID
+  "Owning organisation"
+  organizationId: ID!
   "Project this deployment is associated with"
-  projectId: ID!
+  projectId: ID
   "Repository backing the deployment"
   repositoryId: ID
   "Human friendly name"
@@ -384,8 +530,8 @@ type Deployment {
   deploymentType: DeploymentType!
   "Path within the repository containing source code"
   sourceRoot: String
-  "Whether auto versioning is enabled"
-  hasAutoVersionEnabled: Boolean!
+  "Policy for automatic version promotion"
+  autoVersioningPolicy: AutoVersioningPolicy!
 }
 
 "Detailed information about a deployment."
@@ -420,14 +566,52 @@ type DeploymentEnvironment {
 
 "Represents the state of GitHub repository selection."
 type GitHubInstallationOptions {
-  "True if the user has authorized via GitHub OAuth"
+  "True if the organization has authorized via GitHub OAuth"
   hasGitHubOAuth: Boolean!
-  "URL that the client can use to start GitHub OAuth authorization"
+  "URL that the client can use to start GitHub OAuth authorization for the organization"
   gitHubOAuthUrl: String!
-  "URL that the client can use to install the GitHub App"
+  "URL that the client can use to install the GitHub App for the organization"
   gitHubInstallationUrl: String!
-  "Available GitHub App installations the user can choose from"
+  "Available GitHub App installations the organization can choose from"
   installationOptions: [InstallationOption!]!
+}
+
+"Validation issue tied to a specific edge"
+type GraphEdgeIssue {
+  "Identifier of the edge to annotate"
+  edgeId: String!
+  "Issue message for the edge"
+  message: String!
+}
+
+"Validation issue describing an invalid graph path"
+type GraphIssue {
+  "Unique identifier for the issue"
+  id: ID!
+  "Category of issue"
+  kind: GraphIssueKind!
+  "Severity of the issue"
+  severity: GraphIssueSeverity!
+  "Summary describing the issue"
+  message: String!
+  "Last update timestamp in milliseconds"
+  updatedAt: Long!
+  "Node identifiers comprising the affected path"
+  nodeIds: [String!]!
+  "Edge identifiers comprising the affected path"
+  edgeIds: [String!]!
+  "Optional node-level annotations"
+  nodeIssues: [GraphNodeIssue!]
+  "Optional edge-level annotations"
+  edgeIssues: [GraphEdgeIssue!]
+}
+
+"Validation issue tied to a specific node"
+type GraphNodeIssue {
+  "Identifier of the node to annotate"
+  nodeId: String!
+  "Issue message for the node"
+  message: String!
 }
 
 "Automerge heads (commit IDs)"
@@ -464,20 +648,20 @@ type JsonRpcSuccessResponseGQL {
   jsonrpc: String!
 }
 
-"Alias for backward compatibility"
-type JSONRPCSuccessResponse {
-  "Identifier correlating the response to its request"
-  id: JsonRpcId
-  result: Json!
-  jsonrpc: String!
+"A key-value pair of FeatureFlag and Boolean"
+type KVFeatureFlagBoolean {
+  "Key"
+  key: FeatureFlag!
+  "Value"
+  value: Boolean!
 }
 
-"Alias for backward compatibility"
-type JSONRPCErrorResponse {
-  "Identifier correlating the response to its request"
-  id: JsonRpcId
-  error: JsonRpcError!
-  jsonrpc: String!
+"A key-value pair of FeatureLimit and Long"
+type KVFeatureLimitLong {
+  "Key"
+  key: FeatureLimit!
+  "Value"
+  value: Long!
 }
 
 "A key-value pair of String and String"
@@ -495,6 +679,16 @@ type LogEvent {
   message: String!
   timestamp: OffsetDateTime!
   properties: [KVStringString!]!
+}
+
+"Links a user to an organization with an assigned role"
+type Membership {
+  "Unique identifier for the membership"
+  id: ID!
+  "Organization associated with the membership"
+  organization: Organization!
+  "Role granted to the member"
+  role: MembershipRoleGQL!
 }
 
 "Structured memory store that agents can read and write"
@@ -523,27 +717,43 @@ type Mutations {
   "Deletes an agent identity owned by the authenticated user."
   deleteAgentIdentity(agentIdentityId: ID!): AgentIdentity @auth(subjectType: "User")
   "Registers a new Aion A2A server with the control plane. This should be called when the server first starts up. Returns all behaviors found in the configuration."
-  registerVersion("Serialized agent manifest retrieved from the runtime. This payload is forwarded to populate agent behaviors and configuration metadata during registration." manifest: String!): [AgentBehavior!] @auth(subjectType: "Version")
-  createRemoteDeployment(name: String!, serverUrl: String!, projectId: ID!, isA2AIntegration: Boolean!): CreateRemoteDeploymentResponse @auth(subjectType: "User")
-  createGitHubDeployment(name: String!, sourceRoot: String, branchName: String, hasAutoVersionEnabled: Boolean!, gitHubInstallationId: Long!, githubRepoId: Long!, projectId: ID!): DeploymentDetail @auth(subjectType: "User")
-  createOrUpdateDeploymentEnvironment(deploymentId: ID!, projectId: ID!, deploymentEnvironmentId: ID, branch: String, environmentalVariables: Json): DeploymentEnvironment @auth(subjectType: "User")
+  registerVersion("Serialized agent manifest retrieved from the runtime. This payload is forwarded to populate agent behaviors and configuration metadata during registration." manifest: String!, "Identifier of the version being registered. This is required when authenticating as a User. When authenticating as a Version, this query will only return the Version connected to your credentials." versionId: ID): [AgentBehavior!]
+  createRemoteDeployment(name: String!, serverUrl: String!, projectId: ID!, organizationId: ID!, isA2AIntegration: Boolean!): CreateRemoteDeploymentResponse @auth(subjectType: "User")
+  "Creates a new version for an existing remote deployment."
+  createRemoteVersion("Identifier of the remote deployment that will own the new version" deploymentId: ID!, "Base URL of the remote server to associate with the version" serverUrl: String!): CreateRemoteDeploymentResponse @auth(subjectType: "User")
+  createGitHubDeployment("Human friendly deployment name." name: String!, "Optional path to the source root directory." sourceRoot: String, "Default branch to associate with the deployment." branchName: String, "Policy for automatic version promotion." autoVersioningPolicy: AutoVersioningPolicy, "GitHub installation identifier associated with the repository." gitHubInstallationId: Long!, "GitHub repository identifier." githubRepoId: Long!, "Identifier of the project associated with this deployment." projectId: ID!, "Identifier of the organization that will own the deployment." organizationId: ID!): DeploymentDetail @auth(subjectType: "User")
+  updateDeploymentEnvironment(organizationId: ID!, deploymentId: ID!, projectId: ID!, deploymentEnvironmentId: ID!, branch: String, environmentalVariables: Json): DeploymentEnvironment @auth(subjectType: "User")
+  "Deletes a deployment owned by the authenticated user."
+  deleteDeployment("Identifier of the deployment to remove." deploymentId: ID!): Boolean @auth(subjectType: "User")
+  "Promote a version to stable, beta, or remove beta."
+  promoteVersion("Identifier of the version to promote." versionId: ID!, "Promotion action to apply to the version." action: VersionPromotionAction!): Version @auth(subjectType: "User")
 """
 
-        Apply raw Automerge changes to a project's document. Server applies and returns 
-        committed heads and echoes changes. Validation and execution of side-effects are
-        handled asynchronously and will not be completed in this request.
+      Apply raw Automerge changes to a project's document. Server applies and returns 
+      committed heads and echoes changes. Validation and execution of side-effects are
+      handled asynchronously and will not be completed in this request.
 
-        If the server needs to modify the document in response to the changes, those updates
-        will be returned via the receiveProjectChanges subscription.
-      
+      If the server needs to modify the document in response to the changes, those updates
+      will be returned via the receiveProjectChanges subscription.
+    
 """
   applyProjectChanges("Identifier of the project being modified." projectId: ID!, "Base64-encoded Automerge change frames." changes: [BytesBase64!]!): ChangesApplied @auth(subjectType: "User")
   "Create empty project"
-  createProject("Name of the project." projectName: String!, "Optional environment name for the project. Defaults to 'production'." environmentName: String): ProjectMetadata @auth(subjectType: "User")
+  createProject("Organization that will own the project." organizationId: ID!, "Name of the project." projectName: String!, "Optional environment name for the project. Defaults to 'production'." environmentName: String): ProjectMetadata @auth(subjectType: "User")
   "Rename or update project environment"
   updateProjectMetadata("Identifier of the project to update." projectId: ID!, "New project name, if changing." projectName: String, "New environment name, if changing." environmentName: String): ProjectMetadata @auth(subjectType: "User")
   "Remove project and its history"
   deleteProject("Identifier of the project to remove." projectId: ID!): Boolean @auth(subjectType: "User")
+  "Lists available billing catalog entries (trial, subscriptions, and top-ups)."
+  catalogEntries: [CatalogEntryGQL!] @auth(subjectType: "User")
+  "Creates a Stripe Checkout session for purchasing a subscription tier or top-up pack."
+  createBillingCheckoutSession(organizationId: ID!, catalogKind: CatalogKind!, catalogKey: String!, successUrl: String, cancelUrl: String): StripeSessionGQL @auth(subjectType: "User")
+  "Creates a Stripe Billing Portal session for managing an organization's subscription."
+  createBillingPortalSession(organizationId: ID!, returnUrl: String): StripeSessionGQL @auth(subjectType: "User")
+  "Creates a Coinbase Commerce checkout session for a crypto top-up."
+  createCryptoTopUpSession("Organization that will own the top-up" organizationId: ID!, "Top-up catalog identifier" topUpId: String!, "Return URL after successful checkout" successUrl: String!, "Return URL after cancellation or expiry" cancelUrl: String!): CryptoTopUpSessionGQL @auth(subjectType: "User")
+  "Refreshes a crypto top-up status using Coinbase."
+  refreshCryptoTopUp("Crypto top-up identifier" id: ID!): CryptoTopUp @auth(subjectType: "User")
 }
 
 "Status details for a node"
@@ -574,6 +784,20 @@ type NodeStatusUpdatePayload {
   statuses: [NodeStatus!]!
 }
 
+"Represents a tenant workspace within Aion"
+type Organization {
+  "Unique identifier of the organization"
+  id: ID!
+  "Display name of the organization"
+  name: String!
+  "Classification describing the organization type"
+  organizationType: OrganizationTypeGQL!
+  "Stripe customer identifier associated with the organization"
+  stripeCustomerId: String
+  "Active subscriptions for the organization, if any"
+  subscriptions: [Subscription!]!
+}
+
 "Price change update"
 type PriceChange {
   assetPrice: AssetPrice!
@@ -583,6 +807,8 @@ type PriceChange {
 type ProjectMetadata {
   "Unique project identifier"
   id: ID!
+  "Owning organization"
+  organizationId: ID!
   "Name of the project"
   projectName: String!
   "Optional environment name"
@@ -591,10 +817,14 @@ type ProjectMetadata {
 
 type Queries {
   "Retrieves a user by ID. When no userId is supplied, returns the currently authenticated user."
-  user(userId: ID): User
-  memorySpaces: [MemorySpace!]
+  user(userId: ID): User @auth(subjectType: "User")
+  "Resolves a version identifier for the supplied client id."
+  versionIdByClientId(clientId: ID!): ID
+  memorySpaces: [MemorySpace!] @auth(subjectType: "User")
   "Retrieves a list of all agent identities available to the authenticated user."
-  agentIdentities: [AgentIdentity!]
+  agentIdentities(organizationId: ID!): [AgentIdentity!] @auth(subjectType: "User")
+  "Retrieves a list of agent behaviors for the specified project."
+  agentBehaviors(organizationId: ID!, projectId: ID!): [AgentBehavior!] @auth(subjectType: "User")
   agentIdentity(agentIdentityId: ID!): AgentIdentity @auth(subjectType: "User")
   "Retrieves a specific agent behavior by its ID for the authenticated user."
   agentBehavior(agentBehaviorId: ID!): AgentBehavior @auth(subjectType: "User")
@@ -603,17 +833,25 @@ type Queries {
   "Retrieves branches available for a repository."
   gitHubBranchOptions(gitHubInstallationId: Long!, gitHubRepoId: Long!): [BranchOption!] @auth(subjectType: "User")
   "Retrieves a list of deployments for a specific user."
-  deployments: [Deployment!] @auth(subjectType: "User")
+  deployments(organizationId: ID!): [Deployment!] @auth(subjectType: "User")
   "Retrieves a specific deployment by its ID for the authenticated user."
   deployment(deploymentId: ID!): DeploymentDetail @auth(subjectType: "User")
   "Entry point to get the wallet state"
-  walletState(address: String!): WalletStateWithPrices
+  walletState(address: String!): WalletStateWithPrices @auth(subjectType: "User")
   "List of projects (no doc bytes)"
-  projects: [ProjectMetadata!] @auth(subjectType: "User")
+  projects(organizationId: ID!): [ProjectMetadata!] @auth(subjectType: "User")
+  "Creates a default distribution node template for the supplied network type."
+  projectCreateDistributionTemplate(projectId: ID!, id: String, positionX: Int, positionY: Int, networkType: NetworkTypeGQL!): Json @auth(subjectType: "User")
+  "Validates project sequences before changes are committed."
+  validateProjectSequences("Identifier of the project being validated." projectId: ID!, "Sequence paths to validate, each representing a path from a distribution to a terminal behavior." sequences: [SequencePathInput!]!): [SequenceValidationResult!] @auth(subjectType: "User")
   "Retrieves JSON logs for a specific project ID with optional filters."
   projectLogs(projectId: ID!, filters: LogFiltersInput!): [LogEvent!] @auth(subjectType: "User")
   "Retrieves log trace records for a specific project ID with optional filters."
   logTraces(projectId: ID!, filters: LogFiltersInput!): [Trace!] @auth(subjectType: "User")
+  "Retrieves a crypto top-up by identifier."
+  cryptoTopUp("Crypto top-up identifier" id: ID!): CryptoTopUp @auth(subjectType: "User")
+  "Retrieves a Stripe top-up by identifier."
+  stripeTopUp("Stripe top-up identifier" id: ID!): StripeTopUp @auth(subjectType: "User")
 }
 
 "GitHub repository managed by the platform"
@@ -644,6 +882,16 @@ type RepositoryOption {
   description: String
   "If repository is private"
   isPrivate: Boolean!
+}
+
+"Validation outcome for a sequence path"
+type SequenceValidationResult {
+  "Sequence identifier supplied by the caller"
+  sequenceId: String!
+  "True when the sequence is valid"
+  isValid: Boolean!
+  "Validation issues for the sequence"
+  issues: [GraphIssue!]!
 }
 
 "Automerge snapshot for a project"
@@ -690,17 +938,69 @@ type StatusHistoryUpdatePayload {
   history: [StatusHistory!]!
 }
 
+"Stripe session details required to redirect a user into checkout."
+type StripeSessionGQL {
+  "Stripe session id"
+  id: String!
+  "Redirect URL provided by Stripe"
+  url: String!
+  "Top-up identifier when the session is for a Stripe top-up"
+  topUpId: ID
+}
+
+"One-time Stripe top-up initiated by a user"
+type StripeTopUp {
+  "Unique identifier for the top-up"
+  id: ID!
+  "Organization that initiated the top-up"
+  organizationId: ID!
+  "User that initiated the top-up"
+  userId: ID!
+  "Stripe Checkout session identifier"
+  sessionId: String!
+  "Stripe PaymentIntent identifier, if available"
+  paymentIntentId: String
+  "Lifecycle status for the top-up"
+  status: TopUpStatusGQL!
+  "Credits requested by the top-up"
+  requestedCredits: Long!
+  "Requested amount in smallest currency units"
+  requestedAmount: Long!
+  "ISO currency code for the top-up"
+  requestedCurrency: String!
+  "Confirmation timestamp, if confirmed"
+  confirmedAt: OffsetDateTime
+  "Ledger entry recorded for the top-up, if applied"
+  ledgerEntryId: ID
+}
+
+"Billing subscription backing an organization"
+type Subscription {
+  "Unique identifier for the subscription"
+  id: ID!
+  "Stripe subscription identifier associated with the organization"
+  stripeSubscriptionId: String!
+  "Subscription tier granting entitlements"
+  tierId: String!
+  "Lifecycle state of the subscription"
+  status: SubscriptionStatusGQL!
+  "Inclusive timestamp for the active billing period"
+  currentPeriodStart: OffsetDateTime!
+  "Exclusive timestamp for the active billing period"
+  currentPeriodEnd: OffsetDateTime!
+  "Scheduled cancellation time, if applicable"
+  cancelAt: OffsetDateTime
+}
+
 type Subscriptions {
   "Executes an agent-to-agent JSON-RPC request and streams the responses."
   a2aRpc("JSON-RPC request body" request: JsonRpcRequestGQLInput!, "Distribution that should handle the request" distributionId: ID!): JsonRpcResponseGQL @auth(subjectType: "User")
-  "Alias for backward compatibility - use a2aRpc instead"
-  a2aStream("JSON-RPC request body" request: JSONRPCRequestInput!, "Distribution that should handle the request" distributionId: ID!): JSONRPCResponse @auth(subjectType: "User")
   "Streams delta chunks for an LLM chat-completion request. When `stream=true` is set, the underlying model returns partial responses; this subscription forwards those chunks to the client as they become available, enabling token-level streaming UIs."
   chatCompletionStream(model: String!, messages: [MessageInput!]!, stream: Boolean!): ChatCompletionStreamChunk @auth(subjectType: "Version")
-  "Emits updates to GitHub installation options for the authenticated user. Useful for dashboards that must stay synchronized with the user's current GitHub access rights."
-  gitHubInstallationOptions: GitHubInstallationOptions @auth(subjectType: "User")
+  "Emits updates to GitHub installation options for the authenticated user."
+  gitHubInstallationOptions(organizationId: ID!): GitHubInstallationOptions @auth(subjectType: "User")
   "Streams wallet state then incremental updates"
-  walletUpdates(address: String!): WalletStreamEvent
+  walletUpdates(address: String!): WalletStreamEvent @auth(subjectType: "User")
   "Stream of document updates for a project"
   receiveProjectChanges("Identifier of the project to observe." projectId: ID!): ReceiveEvent @auth(subjectType: "User")
   "Streams JSON logs for a specific version ID"
@@ -763,12 +1063,16 @@ type User {
   avatarUrl: String
   "Networks linked to this user"
   networks: [UserConnection!]
+  "Personal organization associated with the user"
+  homeOrganization: Organization
+  "Organizations the user is a member of"
+  memberships: [Membership!]
 }
 
 "Association between a user and an external network"
 type UserConnection {
   "Type of network linked to the user"
-  network: NetworkType!
+  network: NetworkTypeGQL!
 }
 
 "A single build or release of a deployment"
@@ -783,14 +1087,18 @@ type Version {
   commitHash: String
   "Commit message associated with the build"
   commitMessage: String
-  "True if the version was manually triggered"
-  isManual: Boolean!
   "Current status of the version"
   status: VersionStatus!
+  "Timestamp when the version was created"
+  createdAt: OffsetDateTime!
+  "Release channel used for runtime selection"
+  releaseChannel: ReleaseChannel
+  "Timestamp when agent registration completed"
+  registeredAt: OffsetDateTime
   "URL of the running server, if applicable"
   serverUrl: String
   "Client identifier that initiated the build"
-  client_id: ID
+  clientId: ID
 }
 
 "Full wallet state response"
