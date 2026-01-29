@@ -8,7 +8,7 @@ from aion.api.http import AionJWTManager
 from .generated.graphql_client import (
     MessageInput,
     ChatCompletionStream,
-    JSONRPCRequestInput,
+    JsonRpcRequestGQLInput,
     A2AStream,
 )
 from .generated.graphql_client.client import GqlClient
@@ -106,6 +106,40 @@ class AionGqlClient:
             logger.error(error_msg)
             raise RuntimeError(error_msg)
 
+    async def _execute_query(self, field: Any, operation_name: str) -> dict[str, Any]:
+        """
+        Execute a GraphQL query with automatic validation.
+
+        Args:
+            field: GraphQL field to query
+            operation_name (str): Name of the operation for logging/debugging
+
+        Returns:
+            dict[str, Any]: Query result
+
+        Raises:
+            RuntimeError: If the client is not initialized
+        """
+        self._validate_client_before_execute()
+        return await self.client.query(field, operation_name=operation_name)
+
+    async def _execute_mutation(self, field: Any, operation_name: str) -> dict[str, Any]:
+        """
+        Execute a GraphQL mutation with automatic validation.
+
+        Args:
+            field: GraphQL field to mutate
+            operation_name (str): Name of the operation for logging/debugging
+
+        Returns:
+            dict[str, Any]: Mutation result
+
+        Raises:
+            RuntimeError: If the client is not initialized
+        """
+        self._validate_client_before_execute()
+        return await self.client.mutation(field, operation_name=operation_name)
+
     async def _build_client(self):
         """
         Build and configure the underlying GraphQL client.
@@ -155,7 +189,7 @@ class AionGqlClient:
 
     async def a2a_stream(
             self,
-            request: JSONRPCRequestInput,
+            request: JsonRpcRequestGQLInput,
             distribution_id: str,
             **kwargs: Any
     ) -> AsyncIterator[A2AStream]:
@@ -166,7 +200,7 @@ class AionGqlClient:
         execution.
 
         Args:
-            request (JSONRPCRequestInput): JSON-RPC request payload.
+            request (JsonRpcRequestGQLInput): JSON-RPC request payload.
             distribution_id (str): Identifier of the distribution to handle the request.
             **kwargs (Any): Additional parameters forwarded to the underlying client.
         """
@@ -178,7 +212,7 @@ class AionGqlClient:
                 **kwargs):
             yield chunk
 
-    async def register_version(self, manifest: A2AManifest):
+    async def register_version(self, manifest: A2AManifest, version_id: Optional[str] = None):
         """Register a new agent version with the provided A2A manifest.
 
         Submits the service manifest to the Aion platform for version registration
@@ -188,20 +222,24 @@ class AionGqlClient:
         Args:
             manifest (A2AManifest): The A2A manifest containing service configuration,
                 including api_version, name, and endpoints mapping.
+            version_id (str): Version ID of the deployment version to register.
         """
-        self._validate_client_before_execute()
-
         from .generated.graphql_client.custom_fields import AgentBehaviorFields
 
         manifest_val = manifest.model_dump_json()
-        register_field = Mutation.register_version(manifest_val).fields(
-            AgentBehaviorFields.id,
-            AgentBehaviorFields.name,
-            AgentBehaviorFields.logical_version,
-            AgentBehaviorFields.kind,
-            AgentBehaviorFields.graph_id
+        register_field = (
+            Mutation
+            .register_version(
+                manifest=manifest_val,
+                version_id=version_id
+            ).fields(
+                AgentBehaviorFields.id,
+                AgentBehaviorFields.name,
+                AgentBehaviorFields.logical_version,
+                AgentBehaviorFields.kind
+            )
         )
-        return await self.client.mutation(
+        return await self._execute_mutation(
             register_field,
             operation_name="RegisterVersion"
         )
@@ -212,26 +250,12 @@ class AionGqlClient:
 
         Returns:
             Optional[str]: VERSION_ID if found, None otherwise
-
-        Note:
-            Currently returns mock data (None). Real GraphQL query will be implemented
-            when backend adds the corresponding endpoint.
-
-            Expected query structure:
-            ```graphql
-            query GetDeploymentVersion($clientId: String!) {
-              deployment(clientId: $clientId) {
-                versionId
-              }
-            }
-            ```
-
-            For now, returns None to simulate "not available from control plane"
         """
-        # TODO: Implement real GraphQL query when backend is ready
-        # self._validate_client_before_execute()
-        # result = await self.client.query(...)
-        # return result.deployment.version_id
+        from .generated.graphql_client.custom_queries import Query
 
-        logger.debug("get_current_deployment_version: returning None (mock implementation)")
-        return None
+        version_id_field = Query.version_id_by_client_id(self.client_id)
+        result = await self._execute_query(
+            version_id_field,
+            operation_name="GetVersionIdByClientId"
+        )
+        return result.get("versionIdByClientId")

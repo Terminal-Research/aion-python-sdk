@@ -35,14 +35,12 @@ class ServeEnvironmentPreparerService(BaseExecuteService):
 
     async def _fetch_version_from_control_plane(self) -> Optional[str]:
         """Fetch VERSION_ID from control plane via GraphQL."""
-        # TODO: replace with an implementation using the Aion GraphQL client. Currently returns mock data.
-        return "6b2a5b4e-d0f5-48d3-a913-f8b77f4"
-        # try:
-        #     async with AionGqlContextClient() as client:
-        #         return await client.get_current_deployment_version()
-        # except Exception as ex:
-        #     self.logger.warning(f"Failed to fetch VERSION_ID from control plane: {ex}")
-        #     return None
+        try:
+            async with AionGqlContextClient() as client:
+                return await client.get_current_deployment_version()
+        except Exception as ex:
+            self.logger.warning(f"Failed to fetch VERSION_ID from control plane: {ex}")
+            return None
 
     @staticmethod
     def _cache_version_id(version_id: str) -> None:
