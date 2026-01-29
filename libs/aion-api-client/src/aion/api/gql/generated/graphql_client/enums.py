@@ -21,15 +21,57 @@ class AssetKind(str, Enum):
     Token = "Token"
 
 
+class AutoVersioningPolicy(str, Enum):
+    None_ = "None"
+    PromoteToBeta = "PromoteToBeta"
+    PromoteToStable = "PromoteToStable"
+
+
+class CatalogEntryKind(str, Enum):
+    Tier = "Tier"
+    TopUp = "TopUp"
+    Trial = "Trial"
+
+
+class CatalogKind(str, Enum):
+    Tier = "Tier"
+    TopUp = "TopUp"
+
+
 class DeploymentType(str, Enum):
     A2ARemote = "A2ARemote"
     AionRemote = "AionRemote"
     GitHubAionHosted = "GitHubAionHosted"
+    System = "System"
+
+
+class FeatureFlag(str, Enum):
+    GitHubDeploymentEnabled = "GitHubDeploymentEnabled"
+    ModelsServiceEnabled = "ModelsServiceEnabled"
+    RemoteDeploymentEnabled = "RemoteDeploymentEnabled"
+    XDirectMessageDistributionEnabled = "XDirectMessageDistributionEnabled"
+    XPublicDistributionEnabled = "XPublicDistributionEnabled"
+
+
+class FeatureLimit(str, Enum):
+    MaxDistributions = "MaxDistributions"
+    MaxMembers = "MaxMembers"
+    MaxProjects = "MaxProjects"
 
 
 class GitHubAccountType(str, Enum):
     Organization = "Organization"
     User = "User"
+
+
+class GraphIssueKind(str, Enum):
+    DistributionSequenceInvalid = "DistributionSequenceInvalid"
+    SequencePathInvalid = "SequencePathInvalid"
+
+
+class GraphIssueSeverity(str, Enum):
+    Error = "Error"
+    Warning = "Warning"
 
 
 class LogLevel(str, Enum):
@@ -38,6 +80,13 @@ class LogLevel(str, Enum):
     Info = "Info"
     Trace = "Trace"
     Warn = "Warn"
+
+
+class MembershipRoleGQL(str, Enum):
+    Admin = "Admin"
+    Developer = "Developer"
+    Owner = "Owner"
+    Viewer = "Viewer"
 
 
 class Network(str, Enum):
@@ -50,10 +99,13 @@ class Network(str, Enum):
     POLYGON = "POLYGON"
 
 
-class NetworkType(str, Enum):
+class NetworkTypeGQL(str, Enum):
+    A2A = "A2A"
     Aion = "Aion"
-    Api = "Api"
+    GitHub = "GitHub"
+    Playground = "Playground"
     Telegram = "Telegram"
+    Twitter = "Twitter"
 
 
 class NodeStatusType(str, Enum):
@@ -64,9 +116,20 @@ class NodeStatusType(str, Enum):
     Working = "Working"
 
 
+class OrganizationTypeGQL(str, Enum):
+    Admin = "Admin"
+    Personal = "Personal"
+    Team = "Team"
+
+
 class Privacy(str, Enum):
     Private = "Private"
     Public = "Public"
+
+
+class ReleaseChannel(str, Enum):
+    Beta = "Beta"
+    Stable = "Stable"
 
 
 class StatusHistoryType(str, Enum):
@@ -82,6 +145,21 @@ class SubjectType(str, Enum):
     Version = "Version"
 
 
+class SubscriptionStatusGQL(str, Enum):
+    Active = "Active"
+    Canceled = "Canceled"
+    Incomplete = "Incomplete"
+    PastDue = "PastDue"
+    Trial = "Trial"
+
+
+class TopUpStatusGQL(str, Enum):
+    Cancelled = "Cancelled"
+    Confirmed = "Confirmed"
+    Failed = "Failed"
+    Pending = "Pending"
+
+
 class TransactionDirection(str, Enum):
     RECEIVED = "RECEIVED"
     SENT = "SENT"
@@ -90,6 +168,12 @@ class TransactionDirection(str, Enum):
 class TransactionStatus(str, Enum):
     CONFIRMED = "CONFIRMED"
     PENDING = "PENDING"
+
+
+class VersionPromotionAction(str, Enum):
+    DemoteBeta = "DemoteBeta"
+    PromoteBeta = "PromoteBeta"
+    PromoteStable = "PromoteStable"
 
 
 class VersionStatus(str, Enum):
