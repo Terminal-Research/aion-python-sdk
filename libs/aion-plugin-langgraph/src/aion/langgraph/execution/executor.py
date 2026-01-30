@@ -1,5 +1,3 @@
-import json
-import mimetypes
 from collections.abc import AsyncIterator
 from typing import Any, Optional, TYPE_CHECKING
 
@@ -15,16 +13,11 @@ from aion.shared.agent.adapters import (
 )
 from aion.shared.config.models import AgentConfig
 from aion.shared.logging import get_logger
-from langchain_core.messages import HumanMessage
-from langchain_core.messages.content import (
-    create_text_block,
-    create_file_block,
-    TextContentBlock,
-    FileContentBlock,
-)
 
 from ..events import LangGraphEventConverter
 from ..state import LangGraphStateAdapter
+from .transformers import LangGraphTransformer
+from .helpers import StateHelper
 
 if TYPE_CHECKING:
     from a2a.server.agent_execution import RequestContext
@@ -94,25 +87,49 @@ class LangGraphExecutor(ExecutorAdapter):
         else:
             yield CompleteEvent()
 
+    async def _execute_stream_with_final_event(
+            self,
+            inputs: Any,
+            langgraph_config: dict[str, Any],
+            config: Optional[ExecutionConfig],
+    ) -> AsyncIterator[ExecutionEvent]:
+        """
+        Executes LangGraph stream and handles final state.
+
+        Args:
+            inputs: Input data for the graph
+            langgraph_config: LangGraph configuration
+            config: Execution configuration for state retrieval
+
+        Yields:
+            Execution events including final state event
+        """
+        async for event in self._execute_and_convert_stream(
+                inputs,
+                langgraph_config,
+                stream_mode=["values", "messages", "custom", "updates"]
+        ):
+            yield event
+
+        final_state = await self.get_state(config)
+        async for final_event in self._handle_final_state(final_state):
+            yield final_event
+
     async def stream(
             self,
             context: "RequestContext",
             config: Optional[ExecutionConfig] = None,
     ) -> AsyncIterator[ExecutionEvent]:
         try:
-            langgraph_config = self._to_langgraph_config(config)
-            langgraph_inputs = self._transform_context(context)
+            langgraph_config = LangGraphTransformer.to_config(config)
+            langgraph_inputs = self._prepare_inputs(context)
 
-            async for event in self._execute_and_convert_stream(
+            async for event in self._execute_stream_with_final_event(
                     langgraph_inputs,
                     langgraph_config,
-                    stream_mode=["values", "messages", "custom", "updates"]
+                    config,
             ):
                 yield event
-
-            final_state = await self.get_state(config)
-            async for final_event in self._handle_final_state(final_state):
-                yield final_event
 
         except Exception as e:
             logger.error(f"LangGraph stream failed: {e}")
@@ -150,7 +167,7 @@ class LangGraphExecutor(ExecutorAdapter):
                 return
 
             # Transform context to LangGraph format for resume
-            transformed_inputs = self._transform_context(context)
+            transformed_inputs = self._prepare_inputs(context)
 
             # Create Command object for resume (LangGraph-specific)
             resume_command = self.state_adapter.create_resume_input(transformed_inputs, state)
@@ -158,18 +175,14 @@ class LangGraphExecutor(ExecutorAdapter):
             logger.debug(f"Resuming with command: {resume_command}")
 
             # Stream using the Command object directly
-            langgraph_config = self._to_langgraph_config(config)
+            langgraph_config = LangGraphTransformer.to_config(config)
 
-            async for event in self._execute_and_convert_stream(
+            async for event in self._execute_stream_with_final_event(
                     resume_command,
                     langgraph_config,
-                    stream_mode=["values", "messages", "custom", "updates"]
+                    config,
             ):
                 yield event
-
-            final_state = await self.get_state(config)
-            async for final_event in self._handle_final_state(final_state):
-                yield final_event
 
         except Exception as e:
             logger.error(f"Failed to resume execution: {e}")
@@ -180,7 +193,7 @@ class LangGraphExecutor(ExecutorAdapter):
             raise ValueError("context_id is required to get state")
 
         try:
-            langgraph_config = self._to_langgraph_config(config)
+            langgraph_config = LangGraphTransformer.to_config(config)
             snapshot = await self.compiled_graph.aget_state(langgraph_config)
             execution_snapshot = self.state_adapter.get_state_from_snapshot(snapshot)
             return execution_snapshot
@@ -189,114 +202,21 @@ class LangGraphExecutor(ExecutorAdapter):
             logger.error(f"Failed to get state: {e}")
             raise StateRetrievalError(f"Failed to retrieve state: {e}") from e
 
-    @staticmethod
-    def _detect_mime_type(file_info: Any) -> str:
-        """Detect MIME type from file_info object.
+    def _prepare_inputs(self, context: "RequestContext") -> dict[str, Any]:
+        """Prepare LangGraph inputs from A2A RequestContext.
 
-        Tries to determine MIME type in the following order:
-        1. Use explicit mime_type attribute if present
-        2. Guess from filename extension if name attribute is present
-        3. Fall back to application/octet-stream
-
-        Args:
-            file_info: File information object (FileWithBytes or FileWithUri)
-
-        Returns:
-            MIME type string
-        """
-        # First try to use explicit mime_type if present and not None
-        mime_type = getattr(file_info, 'mime_type', None)
-        if mime_type:
-            return mime_type
-
-        # Try to guess from filename
-        filename = getattr(file_info, 'name', None)
-        if filename:
-            guessed_type, _ = mimetypes.guess_type(filename)
-            if guessed_type:
-                return guessed_type
-
-        # Default fallback
-        return 'application/octet-stream'
-
-    @staticmethod
-    def _to_langgraph_config(config: Optional[ExecutionConfig]) -> dict[str, Any]:
-        """Convert ExecutionConfig to LangGraph configuration format.
-
-        Args:
-            config: Execution configuration with context_id
-
-        Returns:
-            LangGraph config dict with thread_id (mapped from context_id)
-        """
-        if not config:
-            return {}
-
-        if not config.context_id:
-            return {}
-
-        return {"configurable": {"thread_id": config.context_id}}
-
-    @staticmethod
-    def _transform_context(context: "RequestContext") -> dict[str, Any]:
-        """Transform A2A RequestContext to LangGraph format.
-
-        Converts RequestContext to LangGraph's expected message format,
-        including text content and file attachments using LangChain message types.
+        Converts RequestContext to LangGraph's expected input format:
+        1. Converts message parts to HumanMessage (if state has 'messages' property)
+        2. Stores raw A2A envelope in a2a_inbox (if state has 'a2a_inbox' property)
 
         Args:
             context: A2A request context
 
         Returns:
-            LangGraph-compatible input dict with HumanMessage including text and files
+            LangGraph-compatible input dict
         """
-        if not context.message:
-            return {"messages": []}
-
-        # Build content blocks for LangChain HumanMessage
-        content_blocks: list[TextContentBlock | FileContentBlock] = []
-
-        for part in context.message.parts:
-            part_obj = part.root
-
-            # Handle text parts
-            if part_obj.kind == 'text':
-                content_blocks.append(create_text_block(text=part_obj.text))
-
-            # Handle file parts
-            elif part_obj.kind == 'file':
-                file_info = part_obj.file
-                # Detect MIME type from file_info (checks mime_type, name, or defaults)
-                mime_type = LangGraphExecutor._detect_mime_type(file_info)
-
-                # Handle base64-encoded bytes
-                if hasattr(file_info, 'bytes'):
-                    file_base64 = file_info.bytes
-                    content_blocks.append(
-                        create_file_block(
-                            base64=file_base64,
-                            mime_type=mime_type,
-                        )
-                    )
-
-                # Handle URI-based files
-                elif hasattr(file_info, 'uri'):
-                    content_blocks.append(
-                        create_file_block(
-                            url=file_info.uri,
-                            mime_type=mime_type,
-                        )
-                    )
-
-            # Handle data parts - convert to text
-            elif part_obj.kind == 'data':
-                data_text = json.dumps(part_obj.data, indent=2)
-                content_blocks.append(create_text_block(text=data_text))
-
-        # If no content was extracted, return empty messages
-        if not content_blocks:
-            return {"messages": []}
-
-        # Create HumanMessage with content blocks (LangChain standard)
-        human_message = HumanMessage(content=content_blocks)
-        return {"messages": [human_message]}
+        return LangGraphTransformer.to_inputs(
+            context,
+            include_messages=StateHelper.has_property(self.compiled_graph, "messages"),
+            include_a2a_inbox=StateHelper.has_property(self.compiled_graph, "a2a_inbox"),
+        )

@@ -179,6 +179,7 @@ class AionAgentRequestExecutor(AgentExecutor):
 
         if current_task is not None:
             if check_if_task_is_interrupted(current_task):
+                context.current_task = current_task
                 return current_task, False
             else:
                 raise ServerError(
@@ -190,6 +191,7 @@ class AionAgentRequestExecutor(AgentExecutor):
 
         # Create new task
         task = new_task(context.message)
+        context.current_task = task
         return task, True
 
     @staticmethod
