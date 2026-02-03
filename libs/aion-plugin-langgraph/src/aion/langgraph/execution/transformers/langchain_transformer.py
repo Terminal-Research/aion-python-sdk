@@ -20,6 +20,8 @@ class LangChainTransformer:
     ) -> list[TextContentBlock | FileContentBlock]:
         """Build content blocks from A2A Message parts.
 
+        Consecutive TextParts are concatenated into a single TextContentBlock.
+
         Args:
             message: A2A Message object
 
@@ -27,40 +29,55 @@ class LangChainTransformer:
             List of LangChain content blocks (text and file)
         """
         content_blocks: list[TextContentBlock | FileContentBlock] = []
+        accumulated_text: list[str] = []
+
+        def flush_text():
+            """Flush accumulated text parts into a single content block."""
+            nonlocal accumulated_text
+            if accumulated_text:
+                content_blocks.append(create_text_block(text="".join(accumulated_text)))
+                accumulated_text = []
 
         for part in message.parts:
             part_obj = part.root
 
-            # Handle text parts
+            # Handle text parts - accumulate them
             if part_obj.kind == 'text':
-                content_blocks.append(create_text_block(text=part_obj.text))
+                accumulated_text.append(part_obj.text)
 
-            # Handle file parts
-            elif part_obj.kind == 'file':
-                file_info = part_obj.file
-                mime_type = LangChainTransformer.detect_mime_type(file_info)
+            # Handle non-text parts - flush accumulated text first
+            else:
+                flush_text()
 
-                # Handle base64-encoded bytes
-                if hasattr(file_info, 'bytes'):
-                    content_blocks.append(
-                        create_file_block(
-                            base64=file_info.bytes,
-                            mime_type=mime_type,
+                # Handle file parts
+                if part_obj.kind == 'file':
+                    file_info = part_obj.file
+                    mime_type = LangChainTransformer.detect_mime_type(file_info)
+
+                    # Handle base64-encoded bytes
+                    if hasattr(file_info, 'bytes'):
+                        content_blocks.append(
+                            create_file_block(
+                                base64=file_info.bytes,
+                                mime_type=mime_type,
+                            )
                         )
-                    )
-                # Handle URI-based files
-                elif hasattr(file_info, 'uri'):
-                    content_blocks.append(
-                        create_file_block(
-                            url=file_info.uri,
-                            mime_type=mime_type,
+                    # Handle URI-based files
+                    elif hasattr(file_info, 'uri'):
+                        content_blocks.append(
+                            create_file_block(
+                                url=file_info.uri,
+                                mime_type=mime_type,
+                            )
                         )
-                    )
 
-            # Handle data parts - convert to text
-            elif part_obj.kind == 'data':
-                data_text = json.dumps(part_obj.data, indent=2)
-                content_blocks.append(create_text_block(text=data_text))
+                # Handle data parts - convert to text
+                elif part_obj.kind == 'data':
+                    data_text = json.dumps(part_obj.data, indent=2)
+                    content_blocks.append(create_text_block(text=data_text))
+
+        # Flush any remaining accumulated text
+        flush_text()
 
         return content_blocks
 
