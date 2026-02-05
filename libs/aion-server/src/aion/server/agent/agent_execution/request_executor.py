@@ -191,6 +191,7 @@ class AionAgentRequestExecutor(AgentExecutor):
 
         # Create new task
         task = new_task(context.message)
+        task.metadata = context.metadata or None
         context.current_task = task
         return task, True
 

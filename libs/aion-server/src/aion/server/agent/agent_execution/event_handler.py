@@ -21,6 +21,7 @@ from a2a.types import (
     TextPart,
 )
 from aion.shared.agent.adapters import (
+    ArtifactEvent,
     CompleteEvent,
     CustomEvent,
     ErrorEvent,
@@ -100,6 +101,8 @@ class ExecutionEventHandler:
             await self._handle_state_update_event(execution_event.data, task)
         elif isinstance(execution_event, CustomEvent):
             await self._handle_custom_event(execution_event.data, task)
+        elif isinstance(execution_event, ArtifactEvent):
+            await self._handle_artifact_event(execution_event, event_queue, task)
         elif isinstance(execution_event, InterruptEvent):
             await self._handle_interrupt_event(execution_event, event_queue, task)
         elif isinstance(execution_event, CompleteEvent):
@@ -208,18 +211,26 @@ class ExecutionEventHandler:
             set_langgraph_node(node_event.node_name)
             logger.debug(f"Node: {node_event.node_name}")
 
-    @staticmethod
     async def _handle_state_update_event(
+            self,
             event_data: dict,
             task: Task,
     ) -> None:
         """Handle state update event (internal only, not sent to a client).
 
+        Persists task metadata delta when ``task_metadata`` key is present —
+        emitted by ExecutionResultHandler when an outbox Task carries metadata.
+
         Args:
             event_data: State update data
             task: Current task
         """
-        # State updates are internal events that don't require logging
+        task_metadata = event_data.get("task_metadata")
+        if task_metadata and self.task_updater:
+            await self.task_updater.update_status(
+                state=TaskState.working,
+                metadata=task_metadata,
+            )
 
     async def _handle_custom_event(
             self,
@@ -249,6 +260,24 @@ class ExecutionEventHandler:
                 },
             )
             await self.task_updater.update_status(state=TaskState.working, message=custom_message)
+
+    async def _handle_artifact_event(
+            self,
+            artifact_event: ArtifactEvent,
+            event_queue: EventQueue,
+            task: Task,
+    ) -> None:
+        """Handle artifact event by publishing TaskArtifactUpdateEvent for each artifact."""
+        for artifact in artifact_event.artifacts:
+            event = TaskArtifactUpdateEvent(
+                task_id=task.id,
+                context_id=task.context_id,
+                artifact=artifact,
+                append=False,
+                last_chunk=True,
+            )
+            await event_queue.enqueue_event(event)
+            logger.debug(f"Sent artifact: {artifact.artifact_id}")
 
     async def _handle_interrupt_event(
             self,

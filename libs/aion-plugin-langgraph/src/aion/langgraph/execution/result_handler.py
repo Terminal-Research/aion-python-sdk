@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, TYPE_CHECKING
 
 from a2a.types import Message, Part, Role, Task, TextPart
-from aion.shared.agent.adapters import MessageEvent
+from aion.shared.agent.adapters import ArtifactEvent, MessageEvent, StateUpdateEvent
 
 from .stream_executor import StreamResult
 
@@ -124,31 +124,47 @@ class ExecutionResultHandler:
             - metadata — shallow merge; current task's keys take precedence
               (protects server-controlled keys such as aion:network).
 
-        Emits a MessageEvent if patch.history contains at least one agent message
-        (last one is used). Otherwise returns empty list.
+        Emits a MessageEvent for every message in patch.history (order preserved)
+        and an ArtifactEvent if patch carries artifacts.
         """
         task = context.current_task
         if task is None:
             return []
 
+        # Enforce server-owned fields on patch messages before merging
+        patched_history = [
+            msg.model_copy(update={
+                "task_id": context.task_id,
+                "context_id": context.context_id,
+            })
+            for msg in (patch.history or [])
+        ]
+
         merged = task.model_copy(update={
-            "history": list(task.history or []) + list(patch.history or []),
+            "history": list(task.history or []) + patched_history,
             "artifacts": list(task.artifacts or []) + list(patch.artifacts or []),
             "metadata": {**(patch.metadata or {}), **(task.metadata or {})},
         })
         context.current_task = merged
 
-        # Emit last agent message from patch history, if any
-        agent_messages = [msg for msg in (patch.history or []) if msg.role == Role.agent]
-        if agent_messages:
-            last = agent_messages[-1]
-            return [MessageEvent(
-                content=last.parts,
-                role=last.role.value,
-                is_streaming=False,
-            )]
+        events: list[ExecutionEvent] = []
 
-        return []
+        # Emit metadata delta first — before messages — so task_updater
+        # persists it without clearing the current status message.
+        if patch.metadata:
+            events.append(StateUpdateEvent(data={"task_metadata": patch.metadata}))
+
+        for msg in patched_history:
+            events.append(MessageEvent(
+                content=msg.parts,
+                role=msg.role.value,
+                is_streaming=False,
+            ))
+
+        if patch.artifacts:
+            events.append(ArtifactEvent(artifacts=patch.artifacts))
+
+        return events
 
     @staticmethod
     def _parse_message(outbox: Any) -> Message | None:

@@ -11,7 +11,7 @@ Events provide real-time feedback about execution progress, including:
 
 from typing import Any, Literal, Optional
 
-from a2a.types import Part, TextPart, FilePart
+from a2a.types import Artifact, Part, TextPart
 from pydantic import BaseModel, ConfigDict, Field
 
 from .state import InterruptInfo
@@ -103,6 +103,16 @@ class CustomEvent(ExecutionEvent):
         default="custom",
         description="Always 'custom'")
     data: Any = Field(description="Custom event data (any type)")
+
+
+class ArtifactEvent(ExecutionEvent):
+    """Event for task artifact updates from outbox."""
+
+    event_type: Literal["artifact"] = Field(
+        default="artifact",
+        description="Always 'artifact'"
+    )
+    artifacts: list[Artifact] = Field(description="Artifacts to attach to the task")
 
 
 class InterruptEvent(ExecutionEvent):
