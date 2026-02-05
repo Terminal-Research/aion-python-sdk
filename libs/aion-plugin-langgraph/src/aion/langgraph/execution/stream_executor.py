@@ -1,0 +1,94 @@
+"""Per-call stream executor for LangGraph astream."""
+
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
+from typing import Any
+
+from aion.shared.agent.adapters import ExecutionEvent, MessageEvent
+from aion.shared.logging import get_logger
+
+from ..events import LangGraphEventConverter
+
+logger = get_logger()
+
+STREAM_MODES = ["values", "messages", "custom", "updates"]
+
+
+@dataclass(frozen=True)
+class StreamResult:
+    """Accumulated state after one stream cycle.
+
+    accumulated_text — concatenated text extracted from streaming message chunks.
+        Non-empty only when the graph streamed AIMessageChunks but did not
+        emit a final complete message.
+    has_final_message — True if at least one complete (non-streaming) MessageEvent
+        was yielded during the cycle. When True, ResponseAssembler skips fallback.
+    """
+
+    accumulated_text: str
+    has_final_message: bool
+
+
+class StreamExecutor:
+    """Executes one astream cycle against a compiled LangGraph graph.
+
+    Lifecycle: instantiate > iterate `execute()` > read `result`.
+    Created fresh per stream/resume call. Does not know about response
+    assembly or state persistence.
+    """
+
+    def __init__(self, compiled_graph: Any, event_converter: LangGraphEventConverter):
+        self._graph = compiled_graph
+        self._converter = event_converter
+        self._accumulated_text: str = ""
+        self._has_final_message: bool = False
+
+    @property
+    def result(self) -> StreamResult:
+        """Accumulated state. Valid after `execute()` iteration is complete."""
+        return StreamResult(
+            accumulated_text=self._accumulated_text,
+            has_final_message=self._has_final_message,
+        )
+
+    async def execute(
+        self,
+        inputs: Any,
+        config: dict[str, Any],
+    ) -> AsyncIterator[ExecutionEvent]:
+        """Run astream and yield converted ExecutionEvents.
+
+        Tracks streaming text and final-message presence as events pass through.
+        None results from the converter (skipped event types) are dropped.
+
+        Args:
+            inputs: astream input — state dict or Command object (for resume).
+            config: LangGraph config dict (thread_id, etc.).
+
+        Yields:
+            Converted ExecutionEvent objects.
+        """
+        async for event_type, event_data in self._graph.astream(
+            inputs, config, stream_mode=STREAM_MODES
+        ):
+            if event_type == "messages":
+                event_data, metadata = event_data
+            else:
+                metadata = None
+
+            event = self._converter.convert(event_type, event_data, metadata)
+            if event is None:
+                continue
+
+            self._track(event)
+            yield event
+
+    def _track(self, event: ExecutionEvent) -> None:
+        """Update internal state based on the outgoing event."""
+        if not isinstance(event, MessageEvent):
+            return
+
+        if event.is_streaming:
+            self._accumulated_text += event.get_text_content()
+        else:
+            self._has_final_message = True

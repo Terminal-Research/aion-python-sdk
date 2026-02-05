@@ -1,7 +1,8 @@
+"""LangGraph executor — orchestrates stream, state retrieval, and result handling."""
+
 from collections.abc import AsyncIterator
 from typing import Any, Optional, TYPE_CHECKING
 
-from aion.shared.agent.exceptions import ExecutionError, StateRetrievalError
 from aion.shared.agent.adapters import (
     CompleteEvent,
     ErrorEvent,
@@ -11,13 +12,15 @@ from aion.shared.agent.adapters import (
     ExecutorAdapter,
     InterruptEvent,
 )
+from aion.shared.agent.exceptions import ExecutionError, StateRetrievalError
 from aion.shared.config.models import AgentConfig
 from aion.shared.logging import get_logger
 
 from ..events import LangGraphEventConverter
 from ..state import LangGraphStateAdapter
-from .transformers import LangGraphTransformer
-from .helpers import StateHelper
+from .result_handler import ExecutionResultHandler
+from .stream_executor import StreamExecutor, StreamResult
+from .transformer import LangGraphTransformer
 
 if TYPE_CHECKING:
     from a2a.server.agent_execution import RequestContext
@@ -26,109 +29,34 @@ logger = get_logger()
 
 
 class LangGraphExecutor(ExecutorAdapter):
-    def __init__(self, compiled_graph: Any, config: AgentConfig):
+    """Orchestrator for LangGraph agent execution."""
+
+    def __init__(
+        self,
+        compiled_graph: Any,
+        config: AgentConfig,
+        result_handler: Optional[ExecutionResultHandler] = None,
+    ):
         self.compiled_graph = compiled_graph
         self.config = config
-        self.state_adapter = LangGraphStateAdapter()
-        self.event_converter = LangGraphEventConverter()
-
-    async def _execute_and_convert_stream(
-            self,
-            inputs: Any,
-            config: dict[str, Any],
-            stream_mode: list[str]
-    ) -> AsyncIterator[ExecutionEvent]:
-        """
-        Executes the LangGraph stream and converts internal events to unified ExecutionEvents.
-
-        Args:
-            inputs: The data to pass to astream (could be state updates or a Command object).
-            config: LangGraph-specific configuration (thread_id, etc.).
-            stream_mode: List of LangGraph streaming modes to subscribe to.
-
-        Yields:
-            Converted unified ExecutionEvent objects.
-        """
-        async for event_type, event_data in self.compiled_graph.astream(
-                inputs,
-                config,
-                stream_mode=stream_mode,
-        ):
-            # LangGraph returns a tuple (message, metadata) specifically for the "messages" stream mode
-            if event_type == "messages":
-                event_data, metadata = event_data
-            else:
-                metadata = None
-
-            # Transform the vendor-specific event into our system's unified event format
-            unified_event = self.event_converter.convert(
-                event_type, event_data, metadata
-            )
-
-            if unified_event:
-                yield unified_event
-
-    async def _handle_final_state(self, final_state: ExecutionSnapshot) -> AsyncIterator[ExecutionEvent]:
-        """
-        Analyzes the final state of the graph to determine if it finished
-        normally or was interrupted for user input.
-
-        Args:
-            final_state: The snapshot of the graph state after execution.
-
-        Yields:
-            Either an InterruptEvent or a CompleteEvent.
-        """
-        # Check if the graph is paused at a breakpoint or waiting for input
-        if final_state.requires_input():
-            # Extract all interrupts (LangGraph 0.6.0+ supports multiple)
-            all_interrupts = self.state_adapter.extract_all_interrupts(final_state)
-            yield InterruptEvent(interrupts=all_interrupts)
-        else:
-            yield CompleteEvent()
-
-    async def _execute_stream_with_final_event(
-            self,
-            inputs: Any,
-            langgraph_config: dict[str, Any],
-            config: Optional[ExecutionConfig],
-    ) -> AsyncIterator[ExecutionEvent]:
-        """
-        Executes LangGraph stream and handles final state.
-
-        Args:
-            inputs: Input data for the graph
-            langgraph_config: LangGraph configuration
-            config: Execution configuration for state retrieval
-
-        Yields:
-            Execution events including final state event
-        """
-        async for event in self._execute_and_convert_stream(
-                inputs,
-                langgraph_config,
-                stream_mode=["values", "messages", "custom", "updates"]
-        ):
-            yield event
-
-        final_state = await self.get_state(config)
-        async for final_event in self._handle_final_state(final_state):
-            yield final_event
+        self._state_adapter = LangGraphStateAdapter()
+        self._event_converter = LangGraphEventConverter()
+        self._result_handler = result_handler or ExecutionResultHandler()
 
     async def stream(
-            self,
-            context: "RequestContext",
-            config: Optional[ExecutionConfig] = None,
+        self,
+        context: "RequestContext",
+        config: Optional[ExecutionConfig] = None,
     ) -> AsyncIterator[ExecutionEvent]:
         try:
-            langgraph_config = LangGraphTransformer.to_config(config)
-            langgraph_inputs = self._prepare_inputs(context)
+            lg_inputs = LangGraphTransformer.transform_context(context)
+            lg_config = LangGraphTransformer.to_langgraph_config(config)
 
-            async for event in self._execute_stream_with_final_event(
-                    langgraph_inputs,
-                    langgraph_config,
-                    config,
-            ):
+            stream_exec = StreamExecutor(self.compiled_graph, self._event_converter)
+            async for event in stream_exec.execute(lg_inputs, lg_config):
+                yield event
+
+            async for event in self._finalize(stream_exec.result, config, context):
                 yield event
 
         except Exception as e:
@@ -140,9 +68,9 @@ class LangGraphExecutor(ExecutorAdapter):
             raise ExecutionError(f"Failed to stream agent: {e}") from e
 
     async def resume(
-            self,
-            context: "RequestContext",
-            config: ExecutionConfig,
+        self,
+        context: "RequestContext",
+        config: ExecutionConfig,
     ) -> AsyncIterator[ExecutionEvent]:
         if not config or not config.context_id:
             raise ValueError("context_id is required to resume execution")
@@ -155,7 +83,6 @@ class LangGraphExecutor(ExecutorAdapter):
                 logger.warning(
                     f"Attempted to resume non-interrupted execution: {config.context_id}"
                 )
-                # If not interrupted, continue with new inputs or raise error
                 user_input = context.get_user_input()
                 if not user_input:
                     raise ValueError(
@@ -166,22 +93,17 @@ class LangGraphExecutor(ExecutorAdapter):
                     yield event
                 return
 
-            # Transform context to LangGraph format for resume
-            transformed_inputs = self._prepare_inputs(context)
-
-            # Create Command object for resume (LangGraph-specific)
-            resume_command = self.state_adapter.create_resume_input(transformed_inputs, state)
+            lg_inputs = LangGraphTransformer.transform_context(context)
+            resume_command = self._state_adapter.create_resume_input(lg_inputs, state)
+            lg_config = LangGraphTransformer.to_langgraph_config(config)
 
             logger.debug(f"Resuming with command: {resume_command}")
 
-            # Stream using the Command object directly
-            langgraph_config = LangGraphTransformer.to_config(config)
+            stream_exec = StreamExecutor(self.compiled_graph, self._event_converter)
+            async for event in stream_exec.execute(resume_command, lg_config):
+                yield event
 
-            async for event in self._execute_stream_with_final_event(
-                    resume_command,
-                    langgraph_config,
-                    config,
-            ):
+            async for event in self._finalize(stream_exec.result, config, context):
                 yield event
 
         except Exception as e:
@@ -193,30 +115,29 @@ class LangGraphExecutor(ExecutorAdapter):
             raise ValueError("context_id is required to get state")
 
         try:
-            langgraph_config = LangGraphTransformer.to_config(config)
-            snapshot = await self.compiled_graph.aget_state(langgraph_config)
-            execution_snapshot = self.state_adapter.get_state_from_snapshot(snapshot)
-            return execution_snapshot
+            lg_config = LangGraphTransformer.to_langgraph_config(config)
+            snapshot = await self.compiled_graph.aget_state(lg_config)
+            return self._state_adapter.get_state_from_snapshot(snapshot)
 
         except Exception as e:
             logger.error(f"Failed to get state: {e}")
             raise StateRetrievalError(f"Failed to retrieve state: {e}") from e
 
-    def _prepare_inputs(self, context: "RequestContext") -> dict[str, Any]:
-        """Prepare LangGraph inputs from A2A RequestContext.
+    async def _finalize(
+        self,
+        stream_result: StreamResult,
+        config: Optional[ExecutionConfig],
+        context: "RequestContext",
+    ) -> AsyncIterator[ExecutionEvent]:
+        """Retrieve state, handle result, emit Complete/Interrupt."""
+        snapshot = await self.get_state(config)
 
-        Converts RequestContext to LangGraph's expected input format:
-        1. Converts message parts to HumanMessage (if state has 'messages' property)
-        2. Stores raw A2A envelope in a2a_inbox (if state has 'a2a_inbox' property)
+        for event in self._result_handler.handle(stream_result, snapshot, context):
+            yield event
 
-        Args:
-            context: A2A request context
-
-        Returns:
-            LangGraph-compatible input dict
-        """
-        return LangGraphTransformer.to_inputs(
-            context,
-            include_messages=StateHelper.has_property(self.compiled_graph, "messages"),
-            include_a2a_inbox=StateHelper.has_property(self.compiled_graph, "a2a_inbox"),
-        )
+        if snapshot.requires_input():
+            yield InterruptEvent(
+                interrupts=self._state_adapter.extract_all_interrupts(snapshot)
+            )
+        else:
+            yield CompleteEvent()

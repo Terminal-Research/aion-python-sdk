@@ -1,6 +1,6 @@
 from .adapter import LangGraphAdapter
 from .events import LangGraphEventConverter
-from .execution import LangGraphExecutor
+from .execution import LangGraphExecutor, ExecutionResultHandler, StreamResult
 from .plugin import LangGraphPlugin
 from .state import (
     Checkpoint,
@@ -22,4 +22,6 @@ __all__ = [
     "LangGraphExecutor",
     "LangGraphPlugin",
     "LangGraphStateAdapter",
+    "ExecutionResultHandler",
+    "StreamResult",
 ]
