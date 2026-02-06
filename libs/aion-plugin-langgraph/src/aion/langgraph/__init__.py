@@ -10,6 +10,7 @@ from .state import (
     LangGraphCheckpointerAdapter,
     LangGraphStateAdapter,
 )
+from .stream import emit_file, emit_data, emit_message, emit_task_metadata
 
 __all__ = [
     "LangGraphAdapter",
@@ -24,4 +25,9 @@ __all__ = [
     "LangGraphStateAdapter",
     "ExecutionResultHandler",
     "StreamResult",
+    # Streaming helpers
+    "emit_file",
+    "emit_data",
+    "emit_message",
+    "emit_task_metadata",
 ]

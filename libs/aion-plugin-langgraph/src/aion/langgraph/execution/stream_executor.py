@@ -76,19 +76,19 @@ class StreamExecutor:
             else:
                 metadata = None
 
-            event = self._converter.convert(event_type, event_data, metadata)
-            if event is None:
+            aion_event = self._converter.convert(event_type, event_data, metadata)
+            if aion_event is None:
                 continue
 
-            self._track(event)
-            yield event
+            self._track(aion_event)
+            yield aion_event
 
-    def _track(self, event: ExecutionEvent) -> None:
+    def _track(self, aion_event: ExecutionEvent) -> None:
         """Update internal state based on the outgoing event."""
-        if not isinstance(event, MessageEvent):
+        if not isinstance(aion_event, MessageEvent):
             return
 
-        if event.is_streaming:
-            self._accumulated_text += event.get_text_content()
+        if aion_event.is_streaming:
+            self._accumulated_text += aion_event.get_text_content()
         else:
             self._has_final_message = True

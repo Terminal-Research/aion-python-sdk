@@ -143,7 +143,7 @@ class ExecutionResultHandler:
         merged = task.model_copy(update={
             "history": list(task.history or []) + patched_history,
             "artifacts": list(task.artifacts or []) + list(patch.artifacts or []),
-            "metadata": {**(patch.metadata or {}), **(task.metadata or {})},
+            "metadata": {**(task.metadata or {}), **(patch.metadata or {})},
         })
         context.current_task = merged
 
@@ -161,8 +161,13 @@ class ExecutionResultHandler:
                 is_streaming=False,
             ))
 
-        if patch.artifacts:
-            events.append(ArtifactEvent(artifacts=patch.artifacts))
+        # Emit one ArtifactEvent per artifact
+        for artifact in (patch.artifacts or []):
+            events.append(ArtifactEvent(
+                artifact=artifact,
+                append=False,
+                last_chunk=True,
+            ))
 
         return events
 

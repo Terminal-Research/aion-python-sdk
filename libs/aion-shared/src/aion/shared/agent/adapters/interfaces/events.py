@@ -5,7 +5,7 @@ Events provide real-time feedback about execution progress, including:
 - Messages (streaming or final)
 - State updates
 - Node/step updates
-- Custom framework-specific events
+- Artifacts
 - Completion and error events
 """
 
@@ -96,23 +96,26 @@ class NodeUpdateEvent(ExecutionEvent):
     )
 
 
-class CustomEvent(ExecutionEvent):
-    """Event for custom framework-specific events."""
-
-    event_type: Literal["custom"] = Field(
-        default="custom",
-        description="Always 'custom'")
-    data: Any = Field(description="Custom event data (any type)")
-
-
 class ArtifactEvent(ExecutionEvent):
-    """Event for task artifact updates from outbox."""
+    """Event for task artifact updates.
+
+    Supports streaming/chunking via append and last_chunk flags.
+    Each event contains a single artifact.
+    """
 
     event_type: Literal["artifact"] = Field(
         default="artifact",
         description="Always 'artifact'"
     )
-    artifacts: list[Artifact] = Field(description="Artifacts to attach to the task")
+    artifact: Artifact = Field(description="Artifact to attach to the task")
+    append: bool = Field(
+        default=False,
+        description="If true, append to previously sent artifact"
+    )
+    last_chunk: bool = Field(
+        default=True,
+        description="If true, this is the final chunk"
+    )
 
 
 class InterruptEvent(ExecutionEvent):

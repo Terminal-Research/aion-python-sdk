@@ -1,6 +1,6 @@
 """Execution module for LangGraph plugin."""
 
-from .executor import LangGraphExecutor
+from .langgraph_executor import LangGraphExecutor
 from .result_handler import ExecutionResultHandler
 from .stream_executor import StreamResult
 

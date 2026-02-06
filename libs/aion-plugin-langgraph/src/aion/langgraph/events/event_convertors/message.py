@@ -1,6 +1,4 @@
-import mimetypes
 from typing import Any, Optional
-from uuid import uuid4
 
 from a2a.types import Part, TextPart, FilePart, FileWithBytes, FileWithUri
 from aion.shared.agent.adapters import MessageEvent
@@ -117,10 +115,7 @@ class MessageEventConverter:
     @staticmethod
     def _build_metadata(message: Any, metadata: Optional[Any]) -> dict:
         """Build metadata dictionary for a message."""
-        result = {
-            "langgraph_type": type(message).__name__,
-        }
-
+        result = {}
         if metadata is not None:
             result["langgraph_metadata"] = metadata
 
