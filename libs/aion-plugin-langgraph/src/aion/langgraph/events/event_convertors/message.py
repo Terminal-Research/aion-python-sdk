@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Any, Optional, Tuple
 
 from a2a.types import Part, TextPart, FilePart, FileWithBytes, FileWithUri
 from aion.shared.agent.adapters import MessageEvent
@@ -25,10 +25,13 @@ class MessageEventConverter:
         Returns:
             MessageEvent Pydantic model with normalized content and metadata
         """
+        is_message_chunk, is_last_chunk = MessageEventConverter._detect_chunk_message(langgraph_message)
+
         return MessageEvent(
             content=MessageEventConverter._extract_content_parts(langgraph_message),
             role=MessageEventConverter._detect_role(langgraph_message),
-            is_streaming=MessageEventConverter._detect_streaming(langgraph_message),
+            is_chunk=is_message_chunk,
+            is_last_chunk=is_last_chunk,
             metadata=MessageEventConverter._build_metadata(langgraph_message, metadata),
         )
 
@@ -108,9 +111,21 @@ class MessageEventConverter:
         return "agent"
 
     @staticmethod
-    def _detect_streaming(message: Any) -> bool:
-        """Detect if a message is a streaming chunk."""
-        return isinstance(message, AIMessageChunk)
+    def _detect_chunk_message(message: Any) -> Tuple[bool, bool]:
+        """Detect if a message is a streaming chunk.
+
+        Returns:
+            Tuple of (is_chunk, is_last_chunk):
+                - is_chunk: True if message is AIMessageChunk
+                - is_last_chunk: True if chunk_position is 'last'
+        """
+        is_chunk = isinstance(message, AIMessageChunk)
+        is_last_chunk = False
+
+        if is_chunk and hasattr(message, "chunk_position"):
+            is_last_chunk = message.chunk_position == "last"
+
+        return is_chunk, is_last_chunk
 
     @staticmethod
     def _build_metadata(message: Any, metadata: Optional[Any]) -> dict:

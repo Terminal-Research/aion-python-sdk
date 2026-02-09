@@ -88,7 +88,7 @@ class StreamExecutor:
         if not isinstance(aion_event, MessageEvent):
             return
 
-        if aion_event.is_streaming:
+        if aion_event.is_chunk:
             self._accumulated_text += aion_event.get_text_content()
         else:
             self._has_final_message = True

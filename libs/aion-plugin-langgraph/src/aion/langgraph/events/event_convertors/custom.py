@@ -54,7 +54,7 @@ class CustomEventConverter:
         return ArtifactEvent(
             artifact=event.artifact,
             append=event.append,
-            last_chunk=event.last_chunk,
+            is_last_chunk=event.is_last_chunk,
         )
 
     @staticmethod

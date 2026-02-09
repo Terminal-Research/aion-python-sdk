@@ -8,7 +8,7 @@ The plugin provides helper functions to emit custom events during graph executio
 
 ### Available Functions
 
-#### `emit_file(writer, *, url=None, base64=None, mime_type, name=None, append=False, last_chunk=True)`
+#### `emit_file(writer, *, url=None, base64=None, mime_type, name=None, append=False, is_last_chunk=True)`
 
 Emit file artifacts during graph execution. Converts to a2a Artifact with FilePart.
 
@@ -19,14 +19,14 @@ Emit file artifacts during graph execution. Converts to a2a Artifact with FilePa
 - `mime_type`: MIME type (e.g., "application/pdf", "image/png")
 - `name`: Artifact name (defaults to "file")
 - `append`: Set to `True` to append to previously sent artifact (for streaming)
-- `last_chunk`: Set to `False` if more chunks are coming
+- `is_last_chunk`: Set to `False` if more chunks are coming
 
 **Use cases:**
 - Sending generated PDFs, images, or documents
 - Streaming large files in chunks
 - Referencing external file resources
 
-#### `emit_data(writer, data, name=None, append=False, last_chunk=True)`
+#### `emit_data(writer, data, name=None, append=False, is_last_chunk=True)`
 
 Emit structured data artifacts. Data must be JSON-serializable.
 
@@ -35,7 +35,7 @@ Emit structured data artifacts. Data must be JSON-serializable.
 - `data`: Dict or any JSON-serializable value
 - `name`: Artifact name (defaults to "data")
 - `append`: Set to `True` to append to previously sent artifact (for streaming)
-- `last_chunk`: Set to `False` if more chunks are coming
+- `is_last_chunk`: Set to `False` if more chunks are coming
 
 **Use cases:**
 - Sending analysis results, metrics, or structured outputs

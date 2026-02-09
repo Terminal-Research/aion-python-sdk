@@ -31,7 +31,7 @@ class ArtifactCustomEvent(AionCustomEvent):
 
     artifact: Artifact = Field(description="Artifact to emit")
     append: bool = Field(default=False, description="Append to previous artifact")
-    last_chunk: bool = Field(default=True, description="Final chunk indicator")
+    is_last_chunk: bool = Field(default=True, description="Final chunk indicator")
 
 
 class MessageCustomEvent(AionCustomEvent):

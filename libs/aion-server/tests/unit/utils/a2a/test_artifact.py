@@ -1,11 +1,11 @@
 from unittest.mock import Mock
 
 import pytest
-from a2a.types import Artifact, Task, Part, TextPart
-from langchain_core.messages import AIMessageChunk, AIMessage
+from a2a.types import Task, Part, TextPart
 
-from aion.shared.types import ArtifactName, ArtifactStreamingStatus, ArtifactStreamingStatusReason
-from aion.server.utils import StreamingArtifactBuilder, StreamingArtifactBuilderPartMode
+from aion.shared.agent.adapters import MessageEvent
+from aion.shared.types import ArtifactName
+from aion.server.utils import StreamingArtifactBuilder
 
 
 class TestStreamingArtifactBuilder:
@@ -20,109 +20,65 @@ class TestStreamingArtifactBuilder:
         return task
 
     @pytest.fixture
-    def builder_concatenated(self, mock_task):
-        return StreamingArtifactBuilder(
-            task=mock_task,
-            part_mode=StreamingArtifactBuilderPartMode.CONCATENATED
+    def builder(self, mock_task):
+        return StreamingArtifactBuilder(task=mock_task)
+
+    def _create_message_event(self, text: str, is_chunk: bool = True, is_last_chunk: bool = False) -> MessageEvent:
+        """Helper to create MessageEvent for testing."""
+        return MessageEvent(
+            content=[Part(root=TextPart(text=text))],
+            is_chunk=is_chunk,
+            is_last_chunk=is_last_chunk
         )
 
-    @pytest.fixture
-    def builder_separated(self, mock_task):
-        return StreamingArtifactBuilder(
-            task=mock_task,
-            part_mode=StreamingArtifactBuilderPartMode.SEPARATED
-        )
-
-    def test_concatenated_mode_accumulates_content(self, builder_concatenated):
-        """CONCATENATED mode should accumulate content in single part."""
-        # First chunk
-        event1 = builder_concatenated.build_streaming_chunk_event("Hello")
+    def test_first_chunk_does_not_append(self, builder):
+        """First chunk should not append since streaming hasn't started."""
+        msg1 = self._create_message_event("Hello")
+        event1 = builder.build_streaming_chunk_event(msg1)
+        assert event1.append is False
         assert event1.artifact.parts[0].root.text == "Hello"
 
-        # Simulate adding artifact to task
-        builder_concatenated.task.artifacts.append(event1.artifact)
-
-        # Second chunk - should accumulate content
-        event2 = builder_concatenated.build_streaming_chunk_event(" world")
-        assert event2.artifact.parts[0].root.text == "Hello world"
-        assert event2.append is False  # Replaces, doesn't append
-
-    def test_separated_mode_appends_parts(self, builder_separated):
-        """SEPARATED mode should append each chunk as separate part."""
+    def test_subsequent_chunks_append(self, builder):
+        """Subsequent chunks should append after streaming has started."""
         # First chunk
-        event1 = builder_separated.build_streaming_chunk_event("Hello")
+        msg1 = self._create_message_event("Hello")
+        event1 = builder.build_streaming_chunk_event(msg1)
         assert event1.append is False
 
-        # Simulate existing artifact with proper metadata
-        existing_artifact = Mock(spec=Artifact)
-        existing_artifact.artifact_id = ArtifactName.STREAM_DELTA.value
-        existing_artifact.metadata = {"status": ArtifactStreamingStatus.ACTIVE.value}
-        builder_separated.task.artifacts.append(existing_artifact)
-
         # Second chunk - should append
-        event2 = builder_separated.build_streaming_chunk_event(" world")
+        msg2 = self._create_message_event(" world")
+        event2 = builder.build_streaming_chunk_event(msg2)
         assert event2.append is True
+        assert event2.artifact.parts[0].root.text == " world"
 
-    def test_inactive_artifact_replacement(self, builder_concatenated):
-        """Inactive artifact should be replaced with new one."""
-        inactive_artifact = Mock(spec=Artifact)
-        inactive_artifact.artifact_id = ArtifactName.STREAM_DELTA.value
-        inactive_artifact.metadata = {"status": ArtifactStreamingStatus.FINALIZED.value}
-        builder_concatenated.task.artifacts = [inactive_artifact]
+    def test_streaming_state_persists(self, builder):
+        """Streaming state should persist across multiple chunks."""
+        # First chunk
+        msg1 = self._create_message_event("Hello")
+        event1 = builder.build_streaming_chunk_event(msg1)
+        assert event1.append is False
 
-        # Should return None, indicating new artifact creation
-        result = builder_concatenated.get_existing_streaming_artifact(active_only=True)
-        assert result is None
+        # All subsequent chunks should append
+        for i, text in enumerate([" world", "!", " How", " are", " you?"]):
+            msg = self._create_message_event(text)
+            event = builder.build_streaming_chunk_event(msg)
+            assert event.append is True, f"Chunk {i+1} should append"
 
-    def test_content_extraction_edge_cases(self, builder_concatenated):
-        """Handle edge cases in content extraction."""
-        # None artifact
-        assert builder_concatenated._extract_content_from_artifact(None) == ""
+    def test_last_chunk_flag_from_message_event(self, builder):
+        """Test that last_chunk flag is properly taken from MessageEvent."""
+        # Regular chunk (not last)
+        msg_chunk = self._create_message_event("Hello", is_chunk=True, is_last_chunk=False)
+        event_chunk = builder.build_streaming_chunk_event(msg_chunk)
+        assert event_chunk.last_chunk is False
 
-        # Part without text attribute - need to ensure hasattr returns False
-        part_without_text = Mock()
-        part_without_text.root = Mock(spec=[])  # Mock without 'text' attribute
-        artifact = Mock(parts=[part_without_text])
-        assert builder_concatenated._extract_content_from_artifact(artifact) == ""
+        # Last chunk
+        msg_last = self._create_message_event(" world", is_chunk=True, is_last_chunk=True)
+        event_last = builder.build_streaming_chunk_event(msg_last)
+        assert event_last.last_chunk is True
 
-    def test_finalized_event_handling(self, builder_concatenated):
-        """Test finalization of existing artifacts with extra metadata."""
-        # No existing artifact - should return None
-        result = builder_concatenated.build_meta_complete_event()
-        assert result is None
-
-        # With existing artifact - should finalize it with extra metadata
-        existing_artifact = Mock(spec=Artifact)
-        existing_artifact.artifact_id = ArtifactName.STREAM_DELTA.value
-        existing_artifact.metadata = {"status": ArtifactStreamingStatus.ACTIVE.value}
-        existing_artifact.parts = [Part(root=TextPart(text="test content"))]
-        builder_concatenated.task.artifacts = [existing_artifact]
-
-        result = builder_concatenated.build_meta_complete_event(extra_metadata={"final": "true"})
-        assert result is not None
-        # Check that both standard and extra metadata are present
-        assert result.artifact.metadata["status"] == ArtifactStreamingStatus.FINALIZED.value
-        assert result.artifact.metadata["status_reason"] == ArtifactStreamingStatusReason.COMPLETE_MESSAGE.value
-        assert result.artifact.metadata["final"] == "true"
-        assert result.append is False
-        assert result.last_chunk is True
-
-    def test_meta_complete_event(self, builder_concatenated):
-        """Test meta completion events."""
-        # No existing artifact - should return None
-        result = builder_concatenated.build_meta_complete_event()
-        assert result is None
-
-        # With existing artifact - should create completion event
-        existing_artifact = Mock(spec=Artifact)
-        existing_artifact.artifact_id = ArtifactName.STREAM_DELTA.value
-        existing_artifact.metadata = {"status": ArtifactStreamingStatus.ACTIVE.value}
-        existing_artifact.parts = [Part(root=TextPart(text="test content"))]
-        builder_concatenated.task.artifacts = [existing_artifact]
-
-        result = builder_concatenated.build_meta_complete_event(
-            ArtifactStreamingStatusReason.COMPLETE_TASK
-        )
-        assert result is not None
-        assert result.artifact.metadata["status"] == ArtifactStreamingStatus.FINALIZED.value
-        assert result.artifact.metadata["status_reason"] == ArtifactStreamingStatusReason.COMPLETE_TASK.value
+    def test_metadata_passed_through(self, builder):
+        """Test that metadata is properly passed through to the artifact."""
+        msg = self._create_message_event("Test")
+        metadata = {"status": "active", "test_key": "test_value"}
+        event = builder.build_streaming_chunk_event(msg, metadata=metadata)
+        assert event.artifact.metadata == metadata

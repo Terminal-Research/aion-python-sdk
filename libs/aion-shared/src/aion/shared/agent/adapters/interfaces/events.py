@@ -50,9 +50,13 @@ class MessageEvent(ExecutionEvent):
         default=None,
         description="Message role (user, assistant, system, etc.)"
     )
-    is_streaming: bool = Field(
+    is_chunk: bool = Field(
         default=False,
         description="Whether this is a streaming chunk"
+    )
+    is_last_chunk: bool = Field(
+        default=False,
+        description="Whether this is the last chunk in a streaming sequence"
     )
 
     def get_text_content(self) -> str:
@@ -99,7 +103,7 @@ class NodeUpdateEvent(ExecutionEvent):
 class ArtifactEvent(ExecutionEvent):
     """Event for task artifact updates.
 
-    Supports streaming/chunking via append and last_chunk flags.
+    Supports streaming/chunking via append and is_last_chunk flags.
     Each event contains a single artifact.
     """
 
@@ -112,7 +116,7 @@ class ArtifactEvent(ExecutionEvent):
         default=False,
         description="If true, append to previously sent artifact"
     )
-    last_chunk: bool = Field(
+    is_last_chunk: bool = Field(
         default=True,
         description="If true, this is the final chunk"
     )

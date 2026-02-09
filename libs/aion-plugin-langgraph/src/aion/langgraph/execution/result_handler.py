@@ -61,7 +61,8 @@ class ExecutionResultHandler:
                 MessageEvent(
                     content=[Part(root=TextPart(text=stream_result.accumulated_text))],
                     role="assistant",
-                    is_streaming=False,
+                    is_chunk=False,
+                    is_last_chunk=False,
                 )
             ]
 
@@ -108,7 +109,8 @@ class ExecutionResultHandler:
         return [MessageEvent(
             content=message.parts,
             role=message.role.value,
-            is_streaming=False,
+            is_chunk=False,
+            is_last_chunk=False,
         )]
 
     def _handle_outbox_task(
@@ -158,7 +160,8 @@ class ExecutionResultHandler:
             events.append(MessageEvent(
                 content=msg.parts,
                 role=msg.role.value,
-                is_streaming=False,
+                is_chunk=False,
+                is_last_chunk=False,
             ))
 
         # Emit one ArtifactEvent per artifact
@@ -166,7 +169,7 @@ class ExecutionResultHandler:
             events.append(ArtifactEvent(
                 artifact=artifact,
                 append=False,
-                last_chunk=True,
+                is_last_chunk=True,
             ))
 
         return events

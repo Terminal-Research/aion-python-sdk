@@ -10,7 +10,6 @@ from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
 from a2a.types import (
     Artifact,
-    DataPart,
     FilePart,
     Message,
     Part,
@@ -20,6 +19,7 @@ from a2a.types import (
     TaskState,
     TextPart,
 )
+from aion.server.utils import StreamingArtifactBuilder
 from aion.shared.agent.adapters import (
     ArtifactEvent,
     CompleteEvent,
@@ -33,13 +33,10 @@ from aion.shared.agent.adapters import (
 from aion.shared.agent.execution import set_langgraph_node
 from aion.shared.logging import get_logger
 from aion.shared.types import (
-    A2AMetadataKey,
     ArtifactName,
     ArtifactStreamingStatusReason,
-    MessageType,
 )
 
-from aion.server.utils import StreamingArtifactBuilder
 from .event_translator import ExecutionEventTranslator
 
 logger = get_logger()
@@ -122,7 +119,7 @@ class ExecutionEventHandler:
             event_queue: Queue to publish events
             task: Current task
         """
-        if message_event.is_streaming:
+        if message_event.is_chunk:
             await self._handle_streaming_chunk(message_event, task)
         else:
             await self._handle_regular_message(message_event, event_queue, task)
@@ -139,15 +136,15 @@ class ExecutionEventHandler:
             task: Current task
         """
         chunk_text = message_event.get_text_content()
-        # skip if no text content
-        if not chunk_text:
+        # skip if no text content and the chunk is not last
+        if not chunk_text and not message_event.is_last_chunk:
             return
 
         logger.debug("Event: message - streaming chunk")
 
         if self.streaming_artifact_builder:
             artifact_event = self.streaming_artifact_builder.build_streaming_chunk_event(
-                content=chunk_text,
+                message_event=message_event,
                 metadata={
                     "status": "active",
                     "status_reason": ArtifactStreamingStatusReason.CHUNK_STREAMING.value,
@@ -172,14 +169,6 @@ class ExecutionEventHandler:
             task: Current task
         """
         logger.debug(f"Event: message - full message (role={message_event.role})")
-
-        # Finalize streaming artifact before sending the final message
-        if self.streaming_artifact_builder:
-            finalize_event = self.streaming_artifact_builder.build_meta_complete_event(
-                status_reason=ArtifactStreamingStatusReason.COMPLETE_MESSAGE
-            )
-            if finalize_event:
-                await event_queue.enqueue_event(finalize_event)
 
         # Extract and send file artifacts before sending the final message
         await self._build_and_send_file_artifacts(message_event, event_queue, task)
@@ -250,7 +239,7 @@ class ExecutionEventHandler:
             context_id=task.context_id,
             artifact=artifact_event.artifact,
             append=artifact_event.append,
-            last_chunk=artifact_event.last_chunk,
+            last_chunk=artifact_event.is_last_chunk,
         )
         await event_queue.enqueue_event(event)
         logger.debug(f"Sent artifact: {artifact_event.artifact.artifact_id}")
@@ -271,13 +260,6 @@ class ExecutionEventHandler:
             event_queue: Queue to publish events
             task: Current task
         """
-        if self.streaming_artifact_builder:
-            finalize_event = self.streaming_artifact_builder.build_meta_complete_event(
-                status_reason=ArtifactStreamingStatusReason.INTERRUPTED
-            )
-            if finalize_event:
-                await event_queue.enqueue_event(finalize_event)
-
         # Take first interrupt for user-facing message
         interrupt_message = None
         interrupt_id = None

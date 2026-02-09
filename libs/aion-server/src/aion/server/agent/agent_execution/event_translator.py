@@ -76,7 +76,7 @@ class ExecutionEventTranslator:
 
         # Normalize role to A2A roles: 'agent' or 'user'
         role = execution_event.role or "agent"
-        if role in ("assistant", "system"):
+        if role in ("assistant", "system", "agent"):
             role = "agent"
         elif role == "user":
             role = "user"

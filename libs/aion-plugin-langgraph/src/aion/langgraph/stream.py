@@ -34,7 +34,7 @@ def emit_file(
     mime_type: str,
     name: str | None = None,
     append: bool = False,
-    last_chunk: bool = True,
+    is_last_chunk: bool = True,
 ) -> None:
     """Emit a file artifact during graph execution.
 
@@ -48,7 +48,7 @@ def emit_file(
         mime_type: MIME type of the file (e.g., "application/pdf", "image/png")
         name: Artifact name (defaults to "file")
         append: If True, append to previously sent artifact
-        last_chunk: If True, this is the final chunk
+        is_last_chunk: If True, this is the final chunk
 
     Raises:
         ValueError: If neither url nor base64 is provided, or if both are provided
@@ -79,7 +79,7 @@ def emit_file(
                     base64=chunk_base64,
                     mime_type="text/plain",
                     append=True,
-                    last_chunk=is_last
+                    is_last_chunk=is_last
                 )
 
             return state
@@ -107,7 +107,7 @@ def emit_file(
     event = ArtifactCustomEvent(
         artifact=artifact,
         append=append,
-        last_chunk=last_chunk,
+        is_last_chunk=is_last_chunk,
     )
     writer(event)
 
@@ -117,7 +117,7 @@ def emit_data(
     data: dict | Any,
     name: str | None = None,
     append: bool = False,
-    last_chunk: bool = True,
+    is_last_chunk: bool = True,
 ) -> None:
     """Emit a data artifact during graph execution.
 
@@ -128,7 +128,7 @@ def emit_data(
         data: Data to emit (dict or any JSON-serializable value)
         name: Artifact name (defaults to "data")
         append: If True, append to previously sent artifact
-        last_chunk: If True, this is the final chunk
+        is_last_chunk: If True, this is the final chunk
 
     Example:
         def my_node(state: dict, writer: StreamWriter):
@@ -147,7 +147,7 @@ def emit_data(
                     data_chunk,
                     name="streaming_data",
                     append=True,
-                    last_chunk=is_last
+                    is_last_chunk=is_last
                 )
 
             return state
@@ -163,7 +163,7 @@ def emit_data(
     event = ArtifactCustomEvent(
         artifact=artifact,
         append=append,
-        last_chunk=last_chunk,
+        is_last_chunk=is_last_chunk,
     )
     writer(event)
 
