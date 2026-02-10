@@ -2,6 +2,7 @@ from enum import Enum
 
 __all__ = [
     "MessageType",
+    "ArtifactId",
     "ArtifactName",
     "A2AEventType",
     "A2AMetadataKey",
@@ -18,11 +19,16 @@ class MessageType(str, Enum):
     LANGRAPH_VALUES = "langraph_values"
 
 
+class ArtifactId(str, Enum):
+    """Artifact IDs used in A2A message headers."""
+    STREAM_DELTA = "aion:streamDelta"
+
+
 class ArtifactName(str, Enum):
     """Named artifacts that can be created and referenced."""
-    MESSAGE_RESULT = "message_result"
-    STREAM_DELTA = "stream_delta"
-    OUTPUT_FILE = "output_file"
+    MESSAGE_RESULT = "Message Result"
+    STREAM_DELTA = "Stream Delta"
+    OUTPUT_FILE = "Output File"
 
 
 class A2AEventType(str, Enum):

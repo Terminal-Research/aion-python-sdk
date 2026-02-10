@@ -1,7 +1,7 @@
 from typing import Any, Optional, TYPE_CHECKING
 
 from a2a.types import TaskArtifactUpdateEvent, Artifact, Part, TextPart, Task
-from aion.shared.types import ArtifactName
+from aion.shared.types import ArtifactName, ArtifactId
 
 if TYPE_CHECKING:
     from aion.shared.agent.adapters import MessageEvent
@@ -24,7 +24,7 @@ class StreamingArtifactBuilder:
         self.task = task
         self.task_id = task.id
         self.context_id = task.context_id
-        self.artifact_id = ArtifactName.STREAM_DELTA.value
+        self.artifact_id = ArtifactId.STREAM_DELTA.value
         self.artifact_name = ArtifactName.STREAM_DELTA.value
         self._streaming_started = False
 
