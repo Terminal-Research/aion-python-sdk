@@ -60,7 +60,7 @@ class ExecutionResultHandler:
             return [
                 MessageEvent(
                     content=[Part(root=TextPart(text=stream_result.accumulated_text))],
-                    role="assistant",
+                    role="agent",
                     is_chunk=False,
                     is_last_chunk=False,
                 )

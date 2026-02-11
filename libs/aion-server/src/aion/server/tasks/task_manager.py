@@ -2,7 +2,7 @@ from a2a.server.events import Event
 from a2a.server.tasks import TaskManager
 from a2a.types import Task, TaskArtifactUpdateEvent
 from aion.shared.logging import get_logger
-from aion.shared.types import MessageType
+from aion.shared.types import ArtifactId
 
 from aion.server.tasks import store_manager
 from aion.server.utils import check_if_task_is_interrupted
@@ -49,7 +49,7 @@ class AionTaskManager(TaskManager):
             True if the event should be skipped, False otherwise.
         """
         if isinstance(event, TaskArtifactUpdateEvent):
-            if event.artifact.artifact_id == MessageType.STREAM_DELTA.value:
+            if event.artifact.artifact_id == ArtifactId.STREAM_DELTA.value:
                 return True
         return False
 

@@ -12,11 +12,14 @@ from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from typing import Any, Optional, TYPE_CHECKING
 
-from .events import ExecutionEvent
+from a2a.types import TaskArtifactUpdateEvent, TaskStatusUpdateEvent
+
 from .state import ExecutionSnapshot
 
 if TYPE_CHECKING:
     from a2a.server.agent_execution import RequestContext
+
+AgentEvent = TaskStatusUpdateEvent | TaskArtifactUpdateEvent
 
 
 class ExecutionConfig:
@@ -70,15 +73,15 @@ class ExecutorAdapter(ABC):
         self,
         context: "RequestContext",
         config: Optional[ExecutionConfig] = None,
-    ) -> AsyncIterator[ExecutionEvent]:
-        """Stream agent execution, yielding events in real-time.
+    ) -> AsyncIterator[AgentEvent]:
+        """Stream agent execution, yielding A2A events in real-time.
 
         Args:
             context: A2A request context with message, metadata, and task information
             config: Execution configuration (task_id, context_id, timeout, etc.)
 
         Yields:
-            ExecutionEvent: Events emitted during execution (e.g., tokens, tool calls)
+            AgentEvent: A2A events emitted during execution
 
         Raises:
             TimeoutError: If execution exceeds configured timeout
@@ -106,7 +109,7 @@ class ExecutorAdapter(ABC):
         self,
         context: "RequestContext",
         config: ExecutionConfig,
-    ) -> AsyncIterator[ExecutionEvent]:
+    ) -> AsyncIterator[AgentEvent]:
         """Resume a paused/interrupted agent execution.
 
         Args:
@@ -114,7 +117,7 @@ class ExecutorAdapter(ABC):
             config: Execution configuration specifying which execution to resume
 
         Yields:
-            ExecutionEvent: Events emitted during resumed execution
+            AgentEvent: A2A events emitted during resumed execution
 
         Raises:
             KeyError: If execution not found

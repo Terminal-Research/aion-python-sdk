@@ -3,14 +3,14 @@
 from collections.abc import AsyncIterator
 from typing import Any, Optional, TYPE_CHECKING
 
+from a2a.types import TaskArtifactUpdateEvent, TaskStatusUpdateEvent
 from aion.shared.agent.adapters import (
-    CompleteEvent,
     ErrorEvent,
     ExecutionConfig,
-    ExecutionEvent,
     ExecutionSnapshot,
     ExecutorAdapter,
     InterruptEvent,
+    CompleteEvent,
 )
 from aion.shared.agent.exceptions import ExecutionError, StateRetrievalError
 from aion.shared.config.models import AgentConfig
@@ -18,12 +18,15 @@ from aion.shared.logging import get_logger
 
 from ..events import LangGraphEventConverter
 from ..state import LangGraphStateAdapter
+from .a2a_converter import LangGraphA2AConverter
 from .result_handler import ExecutionResultHandler
 from .stream_executor import StreamExecutor, StreamResult
 from .transformer import LangGraphTransformer
 
 if TYPE_CHECKING:
     from a2a.server.agent_execution import RequestContext
+
+AgentEvent = TaskStatusUpdateEvent | TaskArtifactUpdateEvent
 
 logger = get_logger()
 
@@ -47,31 +50,34 @@ class LangGraphExecutor(ExecutorAdapter):
         self,
         context: "RequestContext",
         config: Optional[ExecutionConfig] = None,
-    ) -> AsyncIterator[ExecutionEvent]:
+    ) -> AsyncIterator[AgentEvent]:
+        converter = LangGraphA2AConverter(
+            task_id=context.task_id,
+            context_id=context.context_id,
+        )
         try:
             lg_inputs = LangGraphTransformer.transform_context(context)
             lg_config = LangGraphTransformer.to_langgraph_config(config)
 
             stream_exec = StreamExecutor(self.compiled_graph, self._event_converter)
-            async for event in stream_exec.execute(lg_inputs, lg_config):
-                yield event
+            async for execution_event in stream_exec.execute(lg_inputs, lg_config):
+                for a2a_event in converter.convert(execution_event):
+                    yield a2a_event
 
-            async for event in self._finalize(stream_exec.result, config, context):
-                yield event
+            async for a2a_event in self._finalize(stream_exec.result, config, context, converter):
+                yield a2a_event
 
         except Exception as e:
             logger.error(f"LangGraph stream failed: {e}")
-            yield ErrorEvent(
-                error=str(e),
-                error_type=type(e).__name__,
-            )
+            for a2a_event in converter.convert(ErrorEvent(error=str(e), error_type=type(e).__name__)):
+                yield a2a_event
             raise ExecutionError(f"Failed to stream agent: {e}") from e
 
     async def resume(
         self,
         context: "RequestContext",
         config: ExecutionConfig,
-    ) -> AsyncIterator[ExecutionEvent]:
+    ) -> AsyncIterator[AgentEvent]:
         if not config or not config.context_id:
             raise ValueError("context_id is required to resume execution")
 
@@ -89,10 +95,14 @@ class LangGraphExecutor(ExecutorAdapter):
                         f"Execution {config.context_id} is not interrupted, "
                         "but no new inputs provided"
                     )
-                async for event in self.stream(context, config):
-                    yield event
+                async for a2a_event in self.stream(context, config):
+                    yield a2a_event
                 return
 
+            converter = LangGraphA2AConverter(
+                task_id=context.task_id,
+                context_id=context.context_id,
+            )
             lg_inputs = LangGraphTransformer.transform_context(context)
             resume_command = self._state_adapter.create_resume_input(lg_inputs, state)
             lg_config = LangGraphTransformer.to_langgraph_config(config)
@@ -100,11 +110,12 @@ class LangGraphExecutor(ExecutorAdapter):
             logger.debug(f"Resuming with command: {resume_command}")
 
             stream_exec = StreamExecutor(self.compiled_graph, self._event_converter)
-            async for event in stream_exec.execute(resume_command, lg_config):
-                yield event
+            async for execution_event in stream_exec.execute(resume_command, lg_config):
+                for a2a_event in converter.convert(execution_event):
+                    yield a2a_event
 
-            async for event in self._finalize(stream_exec.result, config, context):
-                yield event
+            async for a2a_event in self._finalize(stream_exec.result, config, context, converter):
+                yield a2a_event
 
         except Exception as e:
             logger.error(f"Failed to resume execution: {e}")
@@ -128,16 +139,20 @@ class LangGraphExecutor(ExecutorAdapter):
         stream_result: StreamResult,
         config: Optional[ExecutionConfig],
         context: "RequestContext",
-    ) -> AsyncIterator[ExecutionEvent]:
+        converter: LangGraphA2AConverter,
+    ) -> AsyncIterator[AgentEvent]:
         """Retrieve state, handle result, emit Complete/Interrupt."""
         snapshot = await self.get_state(config)
 
-        for event in self._result_handler.handle(stream_result, snapshot, context):
-            yield event
+        for execution_event in self._result_handler.handle(stream_result, snapshot, context):
+            for a2a_event in converter.convert(execution_event):
+                yield a2a_event
 
         if snapshot.requires_input():
-            yield InterruptEvent(
+            for a2a_event in converter.convert(InterruptEvent(
                 interrupts=self._state_adapter.extract_all_interrupts(snapshot)
-            )
+            )):
+                yield a2a_event
         else:
-            yield CompleteEvent()
+            for a2a_event in converter.convert(CompleteEvent()):
+                yield a2a_event

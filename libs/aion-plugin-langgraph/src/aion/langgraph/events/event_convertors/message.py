@@ -103,7 +103,7 @@ class MessageEventConverter:
     def _detect_role(message: Any) -> str:
         """Detect the role of a message based on its type."""
         if isinstance(message, (AIMessage, AIMessageChunk)):
-            return "assistant"
+            return "agent"
         if isinstance(message, HumanMessage):
             return "user"
         if isinstance(message, SystemMessage):
