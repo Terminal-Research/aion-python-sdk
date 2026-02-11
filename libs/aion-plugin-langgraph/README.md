@@ -114,16 +114,16 @@ The Aion SDK provides helper functions (via LangGraph's `StreamWriter`) to emit 
 
 #### Available `custom` emit functions
 
-All functions are imported from `aion.langgraph.stream`:
+All functions are imported from `aion.langgraph`:
 
 ```python
 from langgraph.types import StreamWriter
-from aion.langgraph.stream import emit_file, emit_data, emit_message, emit_task_metadata
+from aion.langgraph import emit_file_artifact, emit_data_artifact, emit_message, emit_task_update
 ```
 
 ---
 
-##### `emit_file(writer, *, url=None, base64=None, mime_type, name=None, append=False, is_last_chunk=True)`
+##### `emit_file_artifact(writer, *, url=None, base64=None, mime_type, name=None, append=False, is_last_chunk=True)`
 
 Emits a file artifact. Converts to an A2A `Artifact` with `FilePart`.
 
@@ -141,7 +141,7 @@ Use cases: sending generated PDFs/images/documents, streaming large files in chu
 
 ---
 
-##### `emit_data(writer, data, name=None, append=False, is_last_chunk=True)`
+##### `emit_data_artifact(writer, data, name=None, append=False, is_last_chunk=True)`
 
 Emits a structured data artifact. `data` must be JSON-serializable.
 
@@ -157,31 +157,40 @@ Use cases: sending analysis results, metrics, structured outputs, JSON-formatted
 
 ---
 
-##### `emit_message(writer, message)`
+##### `emit_message(writer, message, ephemeral=False)`
 
-Emits a programmatic message during graph execution. Use for messages not returned in state.
+Emits a programmatic message during graph execution. Supports both full messages and streaming chunks.
 
 | Parameter | Description |
 |---|---|
 | `writer` | LangGraph `StreamWriter` from node signature |
 | `message` | LangChain `AIMessage` or `AIMessageChunk` |
+| `ephemeral` | If `True`, message is sent to the client but **not persisted** in task history (default: `False`) |
 
-> Only `AIMessage` is saved to conversation history. `AIMessageChunk` is used for streaming but not persisted.
+**`ephemeral=False` (default):**
+- `AIMessage` → `TaskStatusUpdateEvent(working, message=...)` — saved to conversation history.
+- `AIMessageChunk` → `TaskArtifactUpdateEvent(STREAM_DELTA)` — streamed to client, not persisted.
 
-Use cases: intermediate progress messages (`AIMessage`), streaming text chunks (`AIMessageChunk`), programmatic message generation.
+**`ephemeral=True`:**
+- `AIMessage` | `AIMessageChunk` → `TaskArtifactUpdateEvent(EPHEMERAL_MESSAGE)` — sent to client, filtered out by the task store (not persisted in task history). Does not affect streaming accumulation or final response fallback logic.
+
+Use cases: intermediate progress notifications, "thinking" indicators, transient status messages that should reach the client in real time but must not appear in task history.
 
 ---
 
-##### `emit_task_metadata(writer, metadata)`
+##### `emit_task_update(writer, message=None, metadata=None)`
 
-Updates task metadata during execution. Metadata is **merged** (not replaced) on the server side. Protected keys with `aion:` prefix are ignored and cannot be modified.
+Emits a combined task update — message and/or metadata — as a **single event**. Only accepts `AIMessage` (not chunks); for streaming use `emit_message()`.
 
 | Parameter | Description |
 |---|---|
 | `writer` | LangGraph `StreamWriter` from node signature |
-| `metadata` | Dictionary with metadata fields to update |
+| `message` | Full message to emit (`AIMessage` only) — optional |
+| `metadata` | Metadata dict to merge into the task — optional |
 
-Use cases: tracking execution progress, storing custom metrics or timestamps, adding execution context.
+At least one of `message` or `metadata` must be provided. Keys with the `aion:` prefix in metadata are ignored.
+
+Use cases: updating task progress with an accompanying message, attaching metadata to a completed step.
 
 ---
 
@@ -189,28 +198,35 @@ Use cases: tracking execution progress, storing custom metrics or timestamps, ad
 
 ```python
 from langgraph.types import StreamWriter
-from langchain_core.messages import AIMessage
-from aion.langgraph.stream import emit_file, emit_data, emit_message, emit_task_metadata
+from langchain_core.messages import AIMessage, AIMessageChunk
+from aion.langgraph import emit_file_artifact, emit_data_artifact, emit_message, emit_task_update
 
 def my_node(state: dict, writer: StreamWriter):
     # Emit file artifact
-    emit_file(writer, url="https://example.com/report.pdf", mime_type="application/pdf")
+    emit_file_artifact(writer, url="https://example.com/report.pdf", mime_type="application/pdf")
 
     # Emit data artifact
-    emit_data(writer, {"status": "success", "results": [...]}, name="analysis")
+    emit_data_artifact(writer, {"status": "success", "results": [...]}, name="analysis")
 
-    # Emit message (not from LLM output)
-    emit_message(writer, AIMessage(content="Processing complete"))
+    # Emit streaming text chunk
+    emit_message(writer, AIMessageChunk(content="Processing..."))
 
-    # Update task metadata
-    emit_task_metadata(writer, {"progress": 100})
+    # Emit ephemeral notification — sent to client, not saved in task history
+    emit_message(writer, AIMessage(content="Searching knowledge base..."), ephemeral=True)
+
+    # Emit full message + metadata as one event
+    emit_task_update(
+        writer,
+        message=AIMessage(content="Processing complete"),
+        metadata={"progress": 100},
+    )
 
     return state
 ```
 
-### 3.5 Event Type: `updates` (optional)
+### 3.5 Event Type: `updates`
 
-Primarily used for debugging/observability. Not required for A2A protocol mapping.
+Used to track the currently executing node. Aion Server extracts the node name and updates the execution context accordingly.
 
 ---
 

@@ -3,7 +3,7 @@
 These classes provide type-safe, validated event models for LangGraph streaming.
 """
 
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Optional
 from pydantic import BaseModel, Field
 
 from a2a.types import Artifact
@@ -24,7 +24,6 @@ class ArtifactCustomEvent(AionCustomEvent):
     """Artifact emission event.
 
     Emitted from nodes via emit_file() or emit_data().
-    Converted to ArtifactEvent by CustomEventConverter.
     """
 
     event_type: ClassVar[str] = "artifact"
@@ -35,24 +34,31 @@ class ArtifactCustomEvent(AionCustomEvent):
 
 
 class MessageCustomEvent(AionCustomEvent):
-    """Message emission event.
+    """Message emission event supporting both full messages and streaming chunks.
 
     Emitted from nodes via emit_message().
-    Converted to MessageEvent by CustomEventConverter.
+    ephemeral=False:
+        AIMessage > TaskStatusUpdateEvent(working, message=...)
+        AIMessageChunk > TaskArtifactUpdateEvent(STREAM_DELTA)
+    ephemeral=True:
+        AIMessage | AIMessageChunk > TaskArtifactUpdateEvent(EPHEMERAL_MESSAGE), not persisted
     """
 
     event_type: ClassVar[str] = "message"
 
     message: AIMessage | AIMessageChunk = Field(description="LangChain message to emit")
+    ephemeral: bool = Field(default=False, description="Emit as ephemeral artifact (not persisted in task history)")
 
 
-class TaskMetadataCustomEvent(AionCustomEvent):
-    """Task metadata update event.
+class TaskUpdateCustomEvent(AionCustomEvent):
+    """Combined task update event: message and/or metadata in a single emission.
 
-    Emitted from nodes via emit_task_metadata().
-    Converted to StateUpdateEvent by CustomEventConverter.
+    Emitted from nodes via emit_task_update().
+    Always produces a single TaskStatusUpdateEvent(working, message=..., metadata=...).
+    Only accepts AIMessage (not chunks) — use emit_message() for streaming chunks.
     """
 
-    event_type: ClassVar[str] = "task_metadata"
+    event_type: ClassVar[str] = "task_update"
 
-    metadata: dict[str, Any] = Field(description="Metadata to merge into task")
+    message: Optional[AIMessage] = Field(default=None, description="Message to emit")
+    metadata: Optional[dict[str, Any]] = Field(default=None, description="Metadata to merge into task")

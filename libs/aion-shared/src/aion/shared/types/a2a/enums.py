@@ -13,7 +13,6 @@ __all__ = [
 
 class MessageType(str, Enum):
     """Types of messages that can be processed in the system."""
-    STREAM_DELTA = "stream_delta"
     MESSAGE = "message"
     EVENT = "event"
     LANGRAPH_VALUES = "langraph_values"
@@ -22,12 +21,14 @@ class MessageType(str, Enum):
 class ArtifactId(str, Enum):
     """Artifact IDs used in A2A message headers."""
     STREAM_DELTA = "aion:streamDelta"
+    EPHEMERAL_MESSAGE = "aion:ephemeralMessage"
 
 
 class ArtifactName(str, Enum):
     """Named artifacts that can be created and referenced."""
     MESSAGE_RESULT = "Message Result"
     STREAM_DELTA = "Stream Delta"
+    EPHEMERAL_MESSAGE = "Ephemeral Message"
     OUTPUT_FILE = "Output File"
 
 

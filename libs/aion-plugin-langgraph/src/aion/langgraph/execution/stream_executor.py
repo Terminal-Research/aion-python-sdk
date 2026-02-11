@@ -2,14 +2,18 @@
 
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Optional
 
-from aion.shared.agent.adapters import ExecutionEvent, MessageEvent
+from a2a.types import TaskArtifactUpdateEvent, TaskStatusUpdateEvent, TextPart
 from aion.shared.logging import get_logger
+from aion.shared.types import ArtifactId
 
-from ..events import LangGraphEventConverter
+from .a2a_converter import LangGraphA2AConverter
+from .event_preprocessor import LangGraphEventPreprocessor
 
 logger = get_logger()
+
+AgentEvent = TaskStatusUpdateEvent | TaskArtifactUpdateEvent
 
 STREAM_MODES = ["values", "messages", "custom", "updates"]
 
@@ -37,9 +41,15 @@ class StreamExecutor:
     assembly or state persistence.
     """
 
-    def __init__(self, compiled_graph: Any, event_converter: LangGraphEventConverter):
+    def __init__(
+        self,
+        compiled_graph: Any,
+        converter: LangGraphA2AConverter,
+        preprocessor: Optional[LangGraphEventPreprocessor] = None,
+    ):
         self._graph = compiled_graph
-        self._converter = event_converter
+        self._converter = converter
+        self._preprocessor = preprocessor
         self._accumulated_text: str = ""
         self._has_final_message: bool = False
 
@@ -55,18 +65,17 @@ class StreamExecutor:
         self,
         inputs: Any,
         config: dict[str, Any],
-    ) -> AsyncIterator[ExecutionEvent]:
-        """Run astream and yield converted ExecutionEvents.
+    ) -> AsyncIterator[AgentEvent]:
+        """Run astream and yield A2A events directly.
 
         Tracks streaming text and final-message presence as events pass through.
-        None results from the converter (skipped event types) are dropped.
 
         Args:
             inputs: astream input — state dict or Command object (for resume).
             config: LangGraph config dict (thread_id, etc.).
 
         Yields:
-            Converted ExecutionEvent objects.
+            A2A AgentEvent objects.
         """
         async for event_type, event_data in self._graph.astream(
             inputs, config, stream_mode=STREAM_MODES
@@ -76,19 +85,23 @@ class StreamExecutor:
             else:
                 metadata = None
 
-            aion_event = self._converter.convert(event_type, event_data, metadata)
-            if aion_event is None:
-                continue
+            if self._preprocessor:
+                self._preprocessor.process(event_type, event_data)
 
-            self._track(aion_event)
-            yield aion_event
+            a2a_events = self._converter.convert(event_type, event_data, metadata)
+            for a2a_event in a2a_events:
+                self._track(a2a_event)
+                yield a2a_event
 
-    def _track(self, aion_event: ExecutionEvent) -> None:
+    def _track(self, a2a_event: AgentEvent) -> None:
         """Update internal state based on the outgoing event."""
-        if not isinstance(aion_event, MessageEvent):
+        if isinstance(a2a_event, TaskArtifactUpdateEvent):
+            if a2a_event.artifact.artifact_id == ArtifactId.STREAM_DELTA.value:
+                for part in (a2a_event.artifact.parts or []):
+                    if isinstance(part.root, TextPart):
+                        self._accumulated_text += part.root.text
             return
 
-        if aion_event.is_chunk:
-            self._accumulated_text += aion_event.get_text_content()
-        else:
-            self._has_final_message = True
+        if isinstance(a2a_event, TaskStatusUpdateEvent):
+            if a2a_event.status.message is not None:
+                self._has_final_message = True

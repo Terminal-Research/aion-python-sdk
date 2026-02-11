@@ -1,11 +1,10 @@
 """Streaming helpers for emitting events from LangGraph nodes.
 
 This module provides helper functions to emit custom events during graph execution.
-All events are emitted via LangGraph's custom stream mode and converted to
-ExecutionEvent types by the plugin's event converter.
+All events are emitted via LangGraph's custom stream mode.
 """
 
-from typing import Any
+from typing import Any, Optional
 from uuid import uuid4
 
 from a2a.types import (
@@ -22,11 +21,11 @@ from langgraph.types import StreamWriter
 from .events.custom_events import (
     ArtifactCustomEvent,
     MessageCustomEvent,
-    TaskMetadataCustomEvent,
+    TaskUpdateCustomEvent,
 )
 
 
-def emit_file(
+def emit_file_artifact(
     writer: StreamWriter,
     *,
     url: str | None = None,
@@ -84,35 +83,30 @@ def emit_file(
 
             return state
     """
-    # Validate parameters
     if not url and not base64:
         raise ValueError("Either 'url' or 'base64' must be provided")
     if url and base64:
         raise ValueError("Provide either 'url' or 'base64', not both")
 
-    # Create FilePart based on provided parameters
     if url:
         file_data = FileWithUri(uri=url, mime_type=mime_type)
     else:
         file_data = FileWithBytes(bytes=base64, mime_type=mime_type)
 
-    # Create Artifact with FilePart
     artifact = Artifact(
         artifact_id=str(uuid4()),
         name=name or "file",
         parts=[Part(root=FilePart(file=file_data))]
     )
 
-    # Emit via custom event
-    event = ArtifactCustomEvent(
+    writer(ArtifactCustomEvent(
         artifact=artifact,
         append=append,
         is_last_chunk=is_last_chunk,
-    )
-    writer(event)
+    ))
 
 
-def emit_data(
+def emit_data_artifact(
     writer: StreamWriter,
     data: dict | Any,
     name: str | None = None,
@@ -132,92 +126,87 @@ def emit_data(
 
     Example:
         def my_node(state: dict, writer: StreamWriter):
-            # Emit analysis results
-            emit_data(writer, {
-                "status": "success",
-                "results": [...],
-                "metrics": {"accuracy": 0.95}
-            }, name="analysis_results")
-
-            # Streaming data chunks
-            for i, data_chunk in enumerate(data_chunks):
-                is_last = (i == len(data_chunks) - 1)
-                emit_data(
-                    writer,
-                    data_chunk,
-                    name="streaming_data",
-                    append=True,
-                    is_last_chunk=is_last
-                )
-
-            return state
+            emit_data(writer, {"status": "success", "results": [...]}, name="analysis_results")
     """
-    # Create Artifact with DataPart
     artifact = Artifact(
         artifact_id=str(uuid4()),
         name=name or "data",
         parts=[Part(root=DataPart(data=data))]
     )
 
-    # Emit via custom event
-    event = ArtifactCustomEvent(
+    writer(ArtifactCustomEvent(
         artifact=artifact,
         append=append,
         is_last_chunk=is_last_chunk,
-    )
-    writer(event)
+    ))
 
 
 def emit_message(
     writer: StreamWriter,
     message: AIMessage | AIMessageChunk,
+    ephemeral: bool = False,
 ) -> None:
     """Emit a message event during graph execution.
 
-    Accepts LangChain AIMessage or AIMessageChunk for programmatic message emission.
+    Supports both full messages and streaming chunks:
+    - AIMessage → TaskStatusUpdateEvent(working, message=...)
+    - AIMessageChunk → TaskArtifactUpdateEvent(STREAM_DELTA) for real-time streaming
+
+    When ephemeral=True, both AIMessage and AIMessageChunk produce a
+    TaskArtifactUpdateEvent(EPHEMERAL_MESSAGE) that is sent to the client
+    but filtered out by the task store (not persisted in task history).
 
     Args:
         writer: LangGraph StreamWriter from node signature
         message: LangChain message to emit (AIMessage or AIMessageChunk)
+        ephemeral: If True, message is not persisted in task history
 
     Example:
         def my_node(state: dict, writer: StreamWriter):
-            # Emit a programmatic message
-            emit_message(writer, AIMessage(content="Step complete"))
+            # Ephemeral progress notification (not saved)
+            emit_message(writer, AIMessage(content="Searching..."), ephemeral=True)
 
-            # Emit streaming chunk
-            emit_message(writer, AIMessageChunk(content="chunk..."))
-
-            return state
+            # Full message (saved in history)
+            emit_message(writer, AIMessage(content="Done"))
     """
-    # Emit via custom event
-    event = MessageCustomEvent(message=message)
-    writer(event)
+    writer(MessageCustomEvent(message=message, ephemeral=ephemeral))
 
 
-def emit_task_metadata(
+def emit_task_update(
     writer: StreamWriter,
-    metadata: dict[str, Any],
+    message: Optional[AIMessage] = None,
+    metadata: Optional[dict[str, Any]] = None,
 ) -> None:
-    """Emit task metadata update during graph execution.
+    """Emit a combined task update with message and/or metadata in a single event.
 
-    Metadata is merged with existing task metadata on the server side.
+    Produces exactly one TaskStatusUpdateEvent(working, message=..., metadata=...).
+    Use this when you need to emit both a message and metadata simultaneously.
+    For streaming chunks, use emit_message() with AIMessageChunk instead.
 
     Args:
         writer: LangGraph StreamWriter from node signature
-        metadata: Metadata dictionary to merge into task
+        message: Full message to emit (AIMessage only, not chunks)
+        metadata: Metadata dict to merge into the task
+
+    Raises:
+        ValueError: If neither message nor metadata is provided
 
     Example:
         def my_node(state: dict, writer: StreamWriter):
-            # Update progress
-            emit_task_metadata(writer, {
-                "progress": 50,
-                "step": "analysis",
-                "custom_field": "value"
-            })
+            # Message + metadata together as one event
+            emit_task_update(
+                writer,
+                message=AIMessage(content="Analysis complete"),
+                metadata={"progress": 100, "step": "done"},
+            )
 
-            return state
+            # Metadata only
+            emit_task_update(writer, metadata={"progress": 50})
+
+            # Message only (equivalent to emit_message with AIMessage)
+            emit_task_update(writer, message=AIMessage(content="Done"))
     """
-    # Emit via custom event
-    event = TaskMetadataCustomEvent(metadata=metadata)
-    writer(event)
+    if message is None and metadata is None:
+        raise ValueError("At least one of 'message' or 'metadata' must be provided")
+
+    writer(TaskUpdateCustomEvent(message=message, metadata=metadata))

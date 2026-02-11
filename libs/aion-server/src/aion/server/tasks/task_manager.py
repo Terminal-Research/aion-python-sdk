@@ -9,6 +9,8 @@ from aion.server.utils import check_if_task_is_interrupted
 
 logger = get_logger()
 
+SKIP_ARTIFACTS_IDS = (ArtifactId.STREAM_DELTA.value, ArtifactId.EPHEMERAL_MESSAGE.value)
+
 
 class AionTaskManager(TaskManager):
     """
@@ -49,7 +51,7 @@ class AionTaskManager(TaskManager):
             True if the event should be skipped, False otherwise.
         """
         if isinstance(event, TaskArtifactUpdateEvent):
-            if event.artifact.artifact_id == ArtifactId.STREAM_DELTA.value:
+            if event.artifact.artifact_id in SKIP_ARTIFACTS_IDS:
                 return True
         return False
 
