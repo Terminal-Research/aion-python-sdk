@@ -33,12 +33,6 @@ class ExecutionResultHandler:
     current a2a Task. If no outbox is present, falls back to streaming
     accumulated text.
 
-    Priority:
-        1. `a2a_outbox` in snapshot.state > Message or Task (authoritative).
-        2. A final non-streaming message was already yielded > empty list.
-        3. Accumulated text from streaming chunks > fallback message event.
-        4. Otherwise > empty list.
-
     Subclass and override `handle` to extend or replace the default logic.
     """
 
@@ -69,16 +63,13 @@ class ExecutionResultHandler:
                 return result
 
         # Fallback: no outbox or outbox type not yet handled
-        if stream_result.has_final_message:
-            return []
-
-        if stream_result.accumulated_text:
+        if stream_result.delta_text and not snapshot.requires_input():
             msg = Message(
                 context_id=context_id,
                 task_id=task_id,
                 message_id=str(uuid.uuid4()),
                 role=Role.agent,
-                parts=[Part(root=TextPart(text=stream_result.accumulated_text))],
+                parts=[Part(root=TextPart(text=stream_result.delta_text))],
             )
             return [TaskStatusUpdateEvent(
                 task_id=task_id,

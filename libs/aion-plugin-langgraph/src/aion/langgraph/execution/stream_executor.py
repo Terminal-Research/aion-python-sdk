@@ -22,15 +22,12 @@ STREAM_MODES = ["values", "messages", "custom", "updates"]
 class StreamResult:
     """Accumulated state after one stream cycle.
 
-    accumulated_text — concatenated text extracted from streaming message chunks.
-        Non-empty only when the graph streamed AIMessageChunks but did not
-        emit a final complete message.
-    has_final_message — True if at least one complete (non-streaming) MessageEvent
-        was yielded during the cycle. When True, ResponseAssembler skips fallback.
+    delta_text — concatenated text extracted from STREAM_DELTA chunks.
+        Non-empty only when the graph streamed AIMessageChunks without
+        a subsequent complete TaskStatusUpdateEvent message.
     """
 
-    accumulated_text: str
-    has_final_message: bool
+    delta_text: str
 
 
 class StreamExecutor:
@@ -50,16 +47,12 @@ class StreamExecutor:
         self._graph = compiled_graph
         self._converter = converter
         self._preprocessor = preprocessor
-        self._accumulated_text: str = ""
-        self._has_final_message: bool = False
+        self._delta_text: str = ""
 
     @property
     def result(self) -> StreamResult:
         """Accumulated state. Valid after `execute()` iteration is complete."""
-        return StreamResult(
-            accumulated_text=self._accumulated_text,
-            has_final_message=self._has_final_message,
-        )
+        return StreamResult(delta_text=self._delta_text)
 
     async def execute(
         self,
@@ -99,9 +92,9 @@ class StreamExecutor:
             if a2a_event.artifact.artifact_id == ArtifactId.STREAM_DELTA.value:
                 for part in (a2a_event.artifact.parts or []):
                     if isinstance(part.root, TextPart):
-                        self._accumulated_text += part.root.text
+                        self._delta_text += part.root.text
             return
 
         if isinstance(a2a_event, TaskStatusUpdateEvent):
             if a2a_event.status.message is not None:
-                self._has_final_message = True
+                self._delta_text = ""
