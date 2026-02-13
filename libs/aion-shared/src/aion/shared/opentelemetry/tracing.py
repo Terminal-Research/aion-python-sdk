@@ -57,7 +57,7 @@ def generate_request_span_context(
 
         elif isinstance(span_id, str):
             try:
-                span_id = int(span_id, 8)
+                span_id = int(span_id, 16)
             except (ValueError, TypeError) as e:
                 logger.warning(
                     f"Failed to convert span_id '{span_id}' from hex to int: {e}. "

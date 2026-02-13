@@ -1,8 +1,17 @@
+from typing import Any, Dict, Optional
+
 from a2a.types import JSONRPCRequest
 from a2a.utils import DEFAULT_RPC_URL
-from aion.shared.agent.execution import set_context_from_a2a_request
+from aion.shared.context import set_context_from_a2a
 from aion.shared.logging import get_logger
+from aion.shared.types.a2a.extensions import (
+    DISTRIBUTION_EXTENSION_URI_V1,
+    TRACEABILITY_EXTENSION_URI_V1,
+    DistributionExtensionV1,
+    TraceabilityExtensionV1,
+)
 from fastapi import Request, Response
+from pydantic import ValidationError
 from starlette.middleware.base import BaseHTTPMiddleware
 
 __all__ = [
@@ -44,17 +53,55 @@ class AionContextMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         try:
-            if request_obj.params.metadata:
-                set_context_from_a2a_request(
-                    metadata=request_obj.params.metadata,
+            metadata = request_obj.params.metadata
+            if metadata:
+                set_context_from_a2a(
+                    distribution=self._get_distribution_extension(metadata),
+                    traceability=self._get_traceability_extension(metadata),
                     request_method=request.method,
                     request_path=request.url.path,
-                    jrpc_method=request_obj.method
+                    jrpc_method=request_obj.method,
                 )
         except Exception as ex:
             logger.exception(f"Error while setting request context: {ex}")
 
         return await call_next(request)
+
+    @staticmethod
+    def _get_distribution_extension(metadata: Dict[str, Any]) -> Optional[DistributionExtensionV1]:
+        """
+        Extract the distribution extension from A2A metadata.
+
+        Tries known version URIs in precedence order, so future versions
+        can be added here without touching call sites.
+        """
+        raw = metadata.get(DISTRIBUTION_EXTENSION_URI_V1)
+        if raw is None:
+            return None
+
+        try:
+            return DistributionExtensionV1.model_validate(raw)
+        except ValidationError as ex:
+            logger.warning(f"Failed to parse distribution extension: {ex}")
+            return None
+
+    @staticmethod
+    def _get_traceability_extension(metadata: Dict[str, Any]) -> Optional[TraceabilityExtensionV1]:
+        """
+        Extract the traceability extension from A2A metadata.
+
+        Tries known version URIs in precedence order, so future versions
+        can be added here without touching call sites.
+        """
+        raw = metadata.get(TRACEABILITY_EXTENSION_URI_V1)
+        if raw is None:
+            return None
+        try:
+            return TraceabilityExtensionV1.model_validate(raw)
+
+        except ValidationError as ex:
+            logger.warning(f"Failed to parse traceability extension: {ex}")
+            return None
 
     @staticmethod
     async def _get_request_object(request: Request):

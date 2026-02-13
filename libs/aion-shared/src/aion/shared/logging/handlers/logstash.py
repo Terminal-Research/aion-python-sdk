@@ -61,6 +61,12 @@ class AionLogstashFilter(logging.Filter):
         return bool(record.trace_id)
 
 
+_LOG_LEVEL_MAP = {
+    "WARNING": "WARN",
+    "CRITICAL": "FATAL",
+}
+
+
 class AionLogstashFormatter(LogstashFormatter):
     """Format log records into Logstash-compatible JSON format.
 
@@ -103,42 +109,43 @@ class AionLogstashFormatter(LogstashFormatter):
                 - error.type: Exception type name (only if exception present)
                 - error.stack_trace: Full stack trace (only if exception present)
         """
+        trace_baggage = record.trace_baggage if isinstance(record.trace_baggage, dict) else {}
+        user_id = trace_baggage.get("aion.sender.id", None)
+
         message = {
             '@timestamp': datetime.datetime.fromtimestamp(
                 record.created,
                 tz=datetime.timezone.utc
             ).strftime('%Y-%m-%dT%H:%M:%S') + f'.{int(record.msecs):03d}Z',
             'clientId': self._client_id,
-            'logLevel': record.levelname,
+            'logLevel': _LOG_LEVEL_MAP.get(record.levelname, record.levelname),
             'message': record.getMessage(),
             'logger': record.name,
+            'user.id': user_id,
 
             # Host & Process metadata
             'host.name': self._node_name,
             'process.pid': os.getpid(),
 
+            # Application & trace context
+            'service.name': get_service_name(),
             "trace.id": record.trace_id,
-            "span.id": record.trace_span_id,
-            "span.name": record.trace_span_name,
-            "parent.span.id": record.trace_patent_span_id,
-
-            # Context information
             "transaction.id": record.transaction_id,
             "transaction.name": record.transaction_name,
-            "tags": {
+            "span.id": record.trace_span_id,
+            "span.name": record.trace_span_name,
+            "parent.span.id": record.trace_parent_span_id,
+
+            "tags": trace_baggage | {
                 "aion.distribution.id": record.aion_distribution_id,
                 "aion.version.id": record.aion_version_id,
                 "aion.agentEnvironment.id": record.aion_agent_environment_id,
                 "http.method": record.http_request_method,
                 "http.target": record.http_request_target,
-                "langgraph.node": record.langgraph_node
+                "langgraph.node": record.current_node,
+                "a2a.rpc.method": record.a2a_rpc_method,
+                "a2a.taskStatus.state": record.a2a_task_status,
             },
-
-            # Application context
-            'service.name': get_service_name(),
-            'error.message': None,
-            'error.type': None,
-            'error.stack_trace': None
         }
         # Add exception information if present
         if record.exc_info:

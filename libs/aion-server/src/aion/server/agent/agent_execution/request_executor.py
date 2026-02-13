@@ -15,7 +15,7 @@ from a2a.utils import new_task
 from a2a.utils.errors import ServerError
 from a2a.utils.telemetry import trace_function
 from aion.shared.agent import AionAgent
-from aion.shared.agent.execution import task_context
+from aion.shared.context import task_context
 from aion.shared.logging import get_logger
 
 from aion.server.utils import check_if_task_is_interrupted
