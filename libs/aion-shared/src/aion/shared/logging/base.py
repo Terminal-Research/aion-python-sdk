@@ -6,10 +6,10 @@ from typing import Optional
 
 class AionLogRecord(logging.LogRecord):
     """
-    Custom LogRecord that captures request context information.
+    Custom LogRecord that captures a snapshot of the execution context at log time.
 
-    This class extends the standard logging.LogRecord to automatically
-    capture and store the current request context when a log record is created.
+    Extends logging.LogRecord with fields from ExecutionContext (inbound + runtime),
+    OpenTelemetry span info, and Aion deployment metadata.
 
     Attributes:
         # OpenTelemetry tracing
@@ -17,11 +17,12 @@ class AionLogRecord(logging.LogRecord):
         trace_span_id (Optional[str]): Current span ID in hex format.
         trace_span_name (Optional[str]): Current span name.
         trace_parent_span_id (Optional[str]): Parent span ID in hex format.
-        trace_baggage (Optional[dict]): W3C baggage propagated via trace context.
+        trace_baggage (Optional[dict]): Snapshot of W3C baggage from inbound trace context.
+        agent_trace_baggage (Optional[dict]): Snapshot of agent framework baggage from runtime context.
 
         # Request / transaction
         transaction_id (Optional[str]): Unique identifier of the current transaction.
-        transaction_name (Optional[str]): Human-readable name of the transaction.
+        transaction_name (Optional[str]): Human-readable transaction name (method + path + rpc method).
 
         # Aion deployment
         aion_distribution_id (Optional[str]): Agent distribution identifier.
@@ -29,20 +30,20 @@ class AionLogRecord(logging.LogRecord):
         aion_agent_environment_id (Optional[str]): Agent environment identifier.
 
         # HTTP request
-        http_request_method (Optional[str]): HTTP method of the incoming request (e.g. GET, POST).
+        http_request_method (Optional[str]): HTTP method of the incoming request (e.g. POST).
         http_request_target (Optional[str]): HTTP request path / target URI.
 
         # A2A protocol
-        current_node (Optional[str]): Name of the currently executing graph node.
         task_id (Optional[str]): A2A task identifier.
         a2a_rpc_method (Optional[str]): JSON-RPC method name of the A2A call.
-        a2a_task_status (Optional[str]): Current status of the A2A task.
+        a2a_task_status (Optional[str]): Current state of the A2A task.
     """
     trace_id: Optional[str]
     trace_span_id: Optional[str]
     trace_span_name: Optional[str]
     trace_parent_span_id: Optional[str]
     trace_baggage: Optional[dict]
+    agent_trace_baggage: Optional[dict]
     transaction_id: Optional[str]
     transaction_name: Optional[str]
     aion_distribution_id: Optional[str]
@@ -50,7 +51,6 @@ class AionLogRecord(logging.LogRecord):
     aion_agent_environment_id: Optional[str]
     http_request_method: Optional[str]
     http_request_target: Optional[str]
-    current_node: Optional[str]
     task_id: Optional[str]
     a2a_rpc_method: Optional[str]
     a2a_task_status: Optional[str]
@@ -70,35 +70,38 @@ class AionLogRecord(logging.LogRecord):
         super().__init__(*args, **kwargs)
 
         try:
-            request_context = get_context()
+            execution_context = get_context()
         except Exception:
-            request_context = None
+            execution_context = None
 
         try:
             trace_span_info = get_span_info()
         except Exception:
             trace_span_info = None
 
+        ec_inbound = execution_context.inbound if execution_context else None
+        ec_runtime = execution_context.runtime if execution_context else None
+
         # Opentelemetry tracing
         self.trace_id = getattr(trace_span_info, "trace_id_hex", None)
         self.trace_span_id = getattr(trace_span_info, "span_id_hex", None)
         self.trace_span_name = getattr(trace_span_info, "span_name", None)
         self.trace_parent_span_id = getattr(trace_span_info, "parent_span_id_hex", None)
-        self.trace_baggage = request_context.trace.baggage if request_context else None
+        self.trace_baggage = ec_inbound.trace.baggage.copy() if execution_context else None
+        self.agent_trace_baggage = ec_runtime.agent_framework.trace.baggage.copy() if execution_context else None
 
         # request context / deployment info
-        self.transaction_id = request_context.trace.transaction_id if request_context else None
-        self.transaction_name = request_context.transaction_name if request_context else None
+        self.transaction_id = ec_inbound.trace.transaction_id if execution_context else None
+        self.transaction_name = ec_inbound.transaction_name if execution_context else None
 
-        self.aion_distribution_id = request_context.aion.distribution_id if request_context else None
-        self.aion_version_id = request_context.aion.version_id if request_context else app_settings.version_id
-        self.aion_agent_environment_id = request_context.aion.environment_id if request_context else None
-        self.http_request_method = request_context.request.method if request_context else None
-        self.http_request_target = request_context.request.path if request_context else None
-        self.current_node = request_context.current_node if request_context else None
-        self.task_id = request_context.a2a.task_id if request_context else None
-        self.a2a_rpc_method = request_context.request.jrpc_method if request_context else None
-        self.a2a_task_status = request_context.a2a.task_status if request_context else None
+        self.aion_distribution_id = ec_inbound.aion.distribution_id if execution_context else None
+        self.aion_version_id = ec_inbound.aion.version_id if execution_context else app_settings.version_id
+        self.aion_agent_environment_id = ec_inbound.aion.environment_id if execution_context else None
+        self.http_request_method = ec_inbound.request.method if execution_context else None
+        self.http_request_target = ec_inbound.request.path if execution_context else None
+        self.task_id = ec_inbound.a2a.task_id if execution_context else None
+        self.a2a_rpc_method = ec_inbound.request.jrpc_method if execution_context else None
+        self.a2a_task_status = ec_inbound.a2a.task_status if execution_context else None
 
 
 class AionLogger(logging.Logger):
