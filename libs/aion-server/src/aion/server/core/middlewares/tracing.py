@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 from a2a.utils import DEFAULT_RPC_URL
 from a2a.utils.telemetry import trace_function
-from aion.shared.context import get_context
+from aion.shared.context import get_context, InboundContext
 from aion.shared.logging import get_logger
 from aion.shared.opentelemetry import generate_request_span_context
 from fastapi import Request, Response
@@ -54,8 +54,8 @@ class TracingMiddleware(BaseHTTPMiddleware):
 
         # Generate trace context and attach it globally
         trace_context = generate_request_span_context(
-            trace_id=request_context.trace.trace_id if request_context else None,
-            span_id=request_context.trace.span_id if request_context else None
+            trace_id=request_context.inbound.trace.trace_id if request_context else None,
+            span_id=request_context.inbound.trace.span_id if request_context else None
         )
         if trace_context:
             token = context.attach(trace_context)
@@ -84,13 +84,13 @@ class TracingMiddleware(BaseHTTPMiddleware):
         """
         if request.url.path == DEFAULT_RPC_URL and request.method == "POST":
             if request_context:
-                text = f"Received RPC request: {request_context.transaction_name}"
+                text = f"Received RPC request: {request_context.inbound.transaction_name}"
             else:
                 text = f"Received RPC request: {request.method} {request.url.path}"
 
             self.logger.info(text)
 
-    def _log_request_response(self, request: Request, response: Response, request_context):
+    def _log_request_response(self, request: Request, response: Response, execution_context: ExecutionContext):
         """Log request completion with transaction name and status code.
 
         Uses transaction name from request context if available,
@@ -99,10 +99,10 @@ class TracingMiddleware(BaseHTTPMiddleware):
         Args:
             request: The HTTP request object
             response: The HTTP response object
-            request_context: Request context containing transaction metadata
+            execution_context: execution context containing transaction metadata
         """
-        if request_context:
-            text = f"{request_context.transaction_name} | {response.status_code}"
+        if execution_context:
+            text = f"{execution_context.inbound.transaction_name} | {response.status_code}"
         else:
             text = f"{request.method} {request.url.path} | {response.status_code}"
 

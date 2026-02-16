@@ -6,7 +6,7 @@ before events are converted to A2A protocol format.
 
 from typing import Any
 
-from aion.shared.context import set_current_node
+from aion.shared.context import update_agent_framework_baggage
 from aion.shared.logging import get_logger
 
 logger = get_logger()
@@ -16,7 +16,7 @@ class LangGraphEventPreprocessor:
     """Processes raw LangGraph events for side-effects prior to A2A conversion.
 
     Responsibilities:
-    - Track the currently executing node via set_current_node ("updates" events)
+    - Track the currently executing node via agent_framework baggage ("updates" events)
 
     Extend this class to add further LangGraph-specific pre-processing
     without touching the A2A conversion logic.
@@ -40,14 +40,15 @@ class LangGraphEventPreprocessor:
         """Extract the active node name from an "updates" event and register it.
 
         LangGraph "updates" events are dicts keyed by node name. The first key
-        is taken as the currently executing node and forwarded to
-        set_current_node so that downstream code (e.g. logging, tracing) can
-        identify which node is running. Non-dict payloads are silently ignored.
+        is taken as the currently executing node and stored in the agent
+        framework baggage as "langgraph.node" so that downstream code
+        (e.g. logging, tracing) can identify which node is running.
+        Non-dict payloads are silently ignored.
         """
         if not isinstance(event_data, dict):
             return
         
         node_name = next(iter(event_data.keys()), None)
         if node_name:
-            set_current_node(node_name)
+            update_agent_framework_baggage({"langgraph.node": node_name})
             logger.debug(f"Node: {node_name}")

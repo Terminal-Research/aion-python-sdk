@@ -125,6 +125,7 @@ class AionLogstashFormatter(LogstashFormatter):
                 - error.stack_trace: Full stack trace (only if exception present)
         """
         trace_baggage = record.trace_baggage if isinstance(record.trace_baggage, dict) else {}
+        agent_framework_baggage = record.agent_trace_baggage if isinstance(record.agent_trace_baggage, dict) else {}
         user_id = trace_baggage.get("aion.sender.id", None)
 
         message = {
@@ -151,13 +152,12 @@ class AionLogstashFormatter(LogstashFormatter):
             "span.name": record.trace_span_name,
             "parent.span.id": record.trace_parent_span_id,
 
-            "tags": trace_baggage | {
+            "tags": trace_baggage | agent_framework_baggage | {
                 "aion.distribution.id": record.aion_distribution_id,
                 "aion.version.id": record.aion_version_id,
                 "aion.agentEnvironment.id": record.aion_agent_environment_id,
                 "http.method": record.http_request_method,
                 "http.target": record.http_request_target,
-                "langgraph.node": record.current_node,
                 "a2a.rpc.method": record.a2a_rpc_method,
                 "a2a.taskStatus.state": _TASK_STATE_MAP.get(TaskState(record.a2a_task_status)) if record.a2a_task_status else None,
             },
