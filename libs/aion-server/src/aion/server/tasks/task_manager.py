@@ -1,11 +1,11 @@
 from a2a.server.events import Event
 from a2a.server.tasks import TaskManager
-from a2a.types import Task, TaskArtifactUpdateEvent
-from aion.shared.logging import get_logger
-from aion.shared.types import ArtifactId
-
+from a2a.types import Task, TaskArtifactUpdateEvent, TaskStatusUpdateEvent
 from aion.server.tasks import store_manager
 from aion.server.utils import check_if_task_is_interrupted
+from aion.shared.context import set_task_status
+from aion.shared.logging import get_logger
+from aion.shared.types import ArtifactId
 
 logger = get_logger()
 
@@ -35,7 +35,17 @@ class AionTaskManager(TaskManager):
         if self._check_process_skip_event(event):
             return event
 
-        return await super().process(event)
+        result = await super().process(event)
+        self._track_task_status(event)
+        return result
+
+    @staticmethod
+    def _track_task_status(event: Event) -> None:
+        """Update task status in ExecutionContext when a TaskStatusUpdateEvent is received."""
+        if not isinstance(event, TaskStatusUpdateEvent):
+            return
+
+        set_task_status(event.status.state.value)
 
     @staticmethod
     def _check_process_skip_event(event: Event) -> bool:

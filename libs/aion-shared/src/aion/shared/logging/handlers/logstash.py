@@ -17,6 +17,7 @@ import logging
 import os
 import traceback
 
+from a2a.types import TaskState
 from aion.shared.logging.base import AionLogRecord
 from logstash_async.formatter import LogstashFormatter
 from logstash_async.handler import AsynchronousLogstashHandler
@@ -64,6 +65,20 @@ class AionLogstashFilter(logging.Filter):
 _LOG_LEVEL_MAP = {
     "WARNING": "WARN",
     "CRITICAL": "FATAL",
+}
+
+# Maps a2a.types.TaskState to A2A v1 spec string values.
+# See: https://a2a-protocol.org/latest/specification/#413-taskstate
+_TASK_STATE_MAP = {
+    TaskState.unknown.value: "TASK_STATE_UNSPECIFIED",
+    TaskState.submitted.value: "TASK_STATE_SUBMITTED",
+    TaskState.working.value: "TASK_STATE_WORKING",
+    TaskState.completed.value: "TASK_STATE_COMPLETED",
+    TaskState.failed.value: "TASK_STATE_FAILED",
+    TaskState.canceled.value: "TASK_STATE_CANCELED",
+    TaskState.input_required.value: "TASK_STATE_INPUT_REQUIRED",
+    TaskState.rejected.value: "TASK_STATE_REJECTED",
+    TaskState.auth_required.value: "TASK_STATE_AUTH_REQUIRED",
 }
 
 
@@ -144,7 +159,7 @@ class AionLogstashFormatter(LogstashFormatter):
                 "http.target": record.http_request_target,
                 "langgraph.node": record.current_node,
                 "a2a.rpc.method": record.a2a_rpc_method,
-                "a2a.taskStatus.state": record.a2a_task_status,
+                "a2a.taskStatus.state": _TASK_STATE_MAP.get(TaskState(record.a2a_task_status)) if record.a2a_task_status else None,
             },
         }
         # Add exception information if present

@@ -2,7 +2,7 @@ import uuid
 from contextvars import ContextVar
 from typing import Dict, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 __all__ = [
     "RequestContext",
@@ -10,21 +10,17 @@ __all__ = [
     "AionContext",
     "A2AContext",
     "ExecutionContext",
-    "request_context_var",
+    "execution_context_var",
 ]
 
 
 class RequestContext(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
     method: str = "POST"
     path: str = "/"
     jrpc_method: Optional[str] = None
 
 
 class TraceContext(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
     transaction_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     traceparent: Optional[str] = None
     baggage: Dict[str, str] = Field(default_factory=dict)
@@ -56,16 +52,12 @@ class TraceContext(BaseModel):
 
 
 class AionContext(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
     distribution_id: Optional[str] = None
     version_id: Optional[str] = None
     environment_id: Optional[str] = None
 
 
 class A2AContext(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
     task_id: Optional[str] = None
     task_status: Optional[str] = None
 
@@ -75,8 +67,6 @@ class ExecutionContext(BaseModel):
     Represents the context of a request with all relevant tracking information
     for logging and distributed tracing.
     """
-    model_config = ConfigDict(frozen=True)
-
     request: RequestContext = Field(default_factory=RequestContext)
     trace: TraceContext = Field(default_factory=TraceContext)
     aion: AionContext = Field(default_factory=AionContext)
@@ -91,9 +81,5 @@ class ExecutionContext(BaseModel):
             name = f"{name} [{self.request.jrpc_method}]"
         return name
 
-    def update(self, **kwargs) -> 'ExecutionContext':
-        """Create new instance with updated fields."""
-        return self.model_copy(update=kwargs)
 
-
-request_context_var: ContextVar[Optional[ExecutionContext]] = ContextVar('request_context', default=None)
+execution_context_var: ContextVar[Optional[ExecutionContext]] = ContextVar('execution_context', default=None)
