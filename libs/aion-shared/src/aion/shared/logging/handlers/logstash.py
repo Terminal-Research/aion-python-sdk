@@ -17,6 +17,7 @@ import logging
 import os
 import traceback
 
+from a2a.types import TaskState
 from aion.shared.logging.base import AionLogRecord
 from logstash_async.formatter import LogstashFormatter
 from logstash_async.handler import AsynchronousLogstashHandler
@@ -61,6 +62,26 @@ class AionLogstashFilter(logging.Filter):
         return bool(record.trace_id)
 
 
+_LOG_LEVEL_MAP = {
+    "WARNING": "WARN",
+    "CRITICAL": "FATAL",
+}
+
+# Maps a2a.types.TaskState to A2A v1 spec string values.
+# See: https://a2a-protocol.org/latest/specification/#413-taskstate
+_TASK_STATE_MAP = {
+    TaskState.unknown.value: "TASK_STATE_UNSPECIFIED",
+    TaskState.submitted.value: "TASK_STATE_SUBMITTED",
+    TaskState.working.value: "TASK_STATE_WORKING",
+    TaskState.completed.value: "TASK_STATE_COMPLETED",
+    TaskState.failed.value: "TASK_STATE_FAILED",
+    TaskState.canceled.value: "TASK_STATE_CANCELED",
+    TaskState.input_required.value: "TASK_STATE_INPUT_REQUIRED",
+    TaskState.rejected.value: "TASK_STATE_REJECTED",
+    TaskState.auth_required.value: "TASK_STATE_AUTH_REQUIRED",
+}
+
+
 class AionLogstashFormatter(LogstashFormatter):
     """Format log records into Logstash-compatible JSON format.
 
@@ -103,42 +124,43 @@ class AionLogstashFormatter(LogstashFormatter):
                 - error.type: Exception type name (only if exception present)
                 - error.stack_trace: Full stack trace (only if exception present)
         """
+        trace_baggage = record.trace_baggage if isinstance(record.trace_baggage, dict) else {}
+        user_id = trace_baggage.get("aion.sender.id", None)
+
         message = {
             '@timestamp': datetime.datetime.fromtimestamp(
                 record.created,
                 tz=datetime.timezone.utc
             ).strftime('%Y-%m-%dT%H:%M:%S') + f'.{int(record.msecs):03d}Z',
             'clientId': self._client_id,
-            'logLevel': record.levelname,
+            'logLevel': _LOG_LEVEL_MAP.get(record.levelname, record.levelname),
             'message': record.getMessage(),
             'logger': record.name,
+            'user.id': user_id,
 
             # Host & Process metadata
             'host.name': self._node_name,
             'process.pid': os.getpid(),
 
+            # Application & trace context
+            'service.name': get_service_name(),
             "trace.id": record.trace_id,
-            "span.id": record.trace_span_id,
-            "span.name": record.trace_span_name,
-            "parent.span.id": record.trace_patent_span_id,
-
-            # Context information
             "transaction.id": record.transaction_id,
             "transaction.name": record.transaction_name,
-            "tags": {
+            "span.id": record.trace_span_id,
+            "span.name": record.trace_span_name,
+            "parent.span.id": record.trace_parent_span_id,
+
+            "tags": trace_baggage | {
                 "aion.distribution.id": record.aion_distribution_id,
                 "aion.version.id": record.aion_version_id,
                 "aion.agentEnvironment.id": record.aion_agent_environment_id,
                 "http.method": record.http_request_method,
                 "http.target": record.http_request_target,
-                "langgraph.node": record.langgraph_node
+                "langgraph.node": record.current_node,
+                "a2a.rpc.method": record.a2a_rpc_method,
+                "a2a.taskStatus.state": _TASK_STATE_MAP.get(TaskState(record.a2a_task_status)) if record.a2a_task_status else None,
             },
-
-            # Application context
-            'service.name': get_service_name(),
-            'error.message': None,
-            'error.type': None,
-            'error.stack_trace': None
         }
         # Add exception information if present
         if record.exc_info:

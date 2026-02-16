@@ -1,6 +1,6 @@
 """Framework-agnostic A2A executor for AionAgent."""
 
-from typing import Tuple, Optional
+from typing import Tuple
 
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
@@ -9,16 +9,14 @@ from a2a.types import (
     InternalError,
     InvalidParamsError,
     Task,
-    UnsupportedOperationError,
-)
+    UnsupportedOperationError, )
 from a2a.utils import new_task
 from a2a.utils.errors import ServerError
 from a2a.utils.telemetry import trace_function
-from aion.shared.agent import AionAgent
-from aion.shared.agent.execution import task_context
-from aion.shared.logging import get_logger
-
 from aion.server.utils import check_if_task_is_interrupted
+from aion.shared.agent import AionAgent
+from aion.shared.context import set_task_id as execution_context_set_task_id
+from aion.shared.logging import get_logger
 
 logger = get_logger()
 
@@ -46,34 +44,32 @@ class AionAgentRequestExecutor(AgentExecutor):
             raise ServerError(error=InvalidParamsError())
 
         task, is_new_task = await self._get_task_for_execution(context)
+        self._task_updater = TaskUpdater(event_queue, task.id, task.context_id)
 
-        with task_context(str(task.id)):
-            self._task_updater = TaskUpdater(event_queue, task.id, task.context_id)
+        if is_new_task:
+            logger.info("Created task")
+            await event_queue.enqueue_event(task)
+        else:
+            logger.info("Resuming task")
 
-            if is_new_task:
-                logger.info("Created task")
-                await event_queue.enqueue_event(task)
-            else:
-                logger.info("Resuming task")
+        try:
+            event_stream = (
+                self.agent.stream(context=context)
+                if is_new_task
+                else self.agent.resume(context=context)
+            )
 
-            try:
-                event_stream = (
-                    self.agent.stream(context=context)
-                    if is_new_task
-                    else self.agent.resume(context=context)
-                )
+            first_event = True
+            async for agent_event in event_stream:
+                if first_event:
+                    await self._update_task_status_working(event_queue, task)
+                    first_event = False
 
-                first_event = True
-                async for agent_event in event_stream:
-                    if first_event:
-                        await self._update_task_status_working(event_queue, task)
-                        first_event = False
+                await event_queue.enqueue_event(agent_event)
 
-                    await event_queue.enqueue_event(agent_event)
-
-            except Exception as ex:
-                logger.exception("Execution failed")
-                raise ServerError(error=InternalError()) from ex
+        except Exception as ex:
+            logger.exception("Execution failed")
+            raise ServerError(error=InternalError()) from ex
 
     async def cancel(
             self, context: RequestContext, event_queue: EventQueue
@@ -128,6 +124,8 @@ class AionAgentRequestExecutor(AgentExecutor):
         task = new_task(context.message)
         task.metadata = context.metadata or None
         context.current_task = task
+
+        execution_context_set_task_id(task.id)
         return task, True
 
     @staticmethod

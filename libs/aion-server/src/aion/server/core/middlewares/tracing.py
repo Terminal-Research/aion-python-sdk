@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 from a2a.utils import DEFAULT_RPC_URL
 from a2a.utils.telemetry import trace_function
-from aion.shared.agent.execution import get_context
+from aion.shared.context import get_context
 from aion.shared.logging import get_logger
 from aion.shared.opentelemetry import generate_request_span_context
 from fastapi import Request, Response
@@ -13,7 +13,7 @@ from opentelemetry.trace import SpanKind
 from starlette.middleware.base import BaseHTTPMiddleware
 
 if TYPE_CHECKING:
-    from aion.shared.agent.execution import ExecutionContext
+    from aion.shared.context import ExecutionContext
 
 
 __all__ = ["TracingMiddleware"]
@@ -49,9 +49,14 @@ class TracingMiddleware(BaseHTTPMiddleware):
             HTTP response from the application
         """
         request_context: ExecutionContext = get_context()
+        if request_context:
+            d1=1
 
         # Generate trace context and attach it globally
-        trace_context = generate_request_span_context(trace_id=getattr(request_context, "trace_id", None))
+        trace_context = generate_request_span_context(
+            trace_id=request_context.trace.trace_id if request_context else None,
+            span_id=request_context.trace.span_id if request_context else None
+        )
         if trace_context:
             token = context.attach(trace_context)
         else:

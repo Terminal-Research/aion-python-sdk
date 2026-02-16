@@ -2,70 +2,93 @@ import secrets
 import uuid
 from typing import Dict, Any, Optional
 
+from aion.shared.types.a2a.extensions.distribution import (
+    DISTRIBUTION_EXTENSION_URI_V1,
+    AgentIdentityRecord,
+    BehaviorRecord,
+    DistributionExtensionV1,
+    DistributionRecord,
+    EnvironmentRecord,
+)
+from aion.shared.types.a2a.extensions.traceability import (
+    TRACEABILITY_EXTENSION_URI_V1,
+    TraceStateEntry,
+    TraceabilityExtensionV1,
+)
+
 
 class A2ARequestHelper:
-    def __init__(self, sender_id: Optional[str] = None):
-        """
-        Initialize the metadata generator
-
-        Args:
-            sender_id: ID of the message sender
-        """
-        self.sender_id = sender_id or str(uuid.uuid4())
+    def __init__(self, sender_id: Optional[str] = None, node_id: Optional[str] = None):
+        self.sender_id = sender_id or "aion:user:2244994945"
+        self.node_id = node_id or "cli-node-local"
 
     def generate_task_metadata(
             self,
-            network: str = "Aion",
             agent_name: str = "Test Agent",
-            agent_at_name: str = "@TestAgent",
-            graph_id: str = "testGraph",
+            agent_username: str = "testagent",
+            behavior_key: str = "testGraph",
             environment_name: str = "Development",
             system_prompt: Optional[str] = None
     ) -> Dict[str, Any]:
-        """
-        Generate metadata dictionary with mock/test data
+        org_id = str(uuid.uuid4())
+        trace_id = secrets.token_hex(16)
+        span_id = secrets.token_hex(8)
 
-        Args:
-            network: Source network name (default: "Aion")
-            agent_name: Display name of the agent (default: "Test Agent")
-            agent_at_name: Addressable name in Aion network (default: "@TestAgent")
-            graph_id: Langgraph graph name (default: "testGraph")
-            environment_name: Environment name (default: "Development")
-            system_prompt: Custom system prompt (optional)
-
-        Returns:
-            Dictionary with complete A2A metadata structure
-        """
-        return {
-            "aion:senderId": self.sender_id,
-            "aion:network": network,
-            "aion:traceId": secrets.token_hex(16),
-            "aion:distribution": {
-                "id": str(uuid.uuid4()),
-                "identity": {
-                    "id": str(uuid.uuid4()),
-                    "userId": str(uuid.uuid4()),
-                    "name": agent_name,
-                    "atName": agent_at_name,
-                    "biography": f"This is a test agent named {agent_name}",
-                    "avatarImageUrl": "https://example.com/avatar.png",
-                    "backgroundImageUrl": "https://example.com/background.png"
-                }
-            },
-            "aion:behavior": {
-                "id": str(uuid.uuid4()),
-                "graphId": graph_id,
-                "versionId": str(uuid.uuid4())
-            },
-            "aion:environment": {
-                "id": str(uuid.uuid4()),
-                "name": environment_name,
-                "configurationVariables": {
+        distribution = DistributionExtensionV1(
+            sender_id=self.sender_id,
+            distribution=DistributionRecord(
+                id=str(uuid.uuid4()),
+                endpoint_type="Aion",
+                url="https://example.com/agent-card",
+                identities=[
+                    AgentIdentityRecord(
+                        kind="agent",
+                        id=str(uuid.uuid4()),
+                        network_type="Aion",
+                        represented_user_id=str(uuid.uuid4()),
+                        organization_id=org_id,
+                        display_name=agent_name,
+                        user_name=agent_username,
+                        avatar_image_url="https://example.com/avatar.png",
+                        agent_type="Deployed",
+                        url="https://example.com/agent",
+                    )
+                ],
+            ),
+            behavior=BehaviorRecord(
+                id=str(uuid.uuid4()),
+                behavior_key=behavior_key,
+                version_id=str(uuid.uuid4()),
+            ),
+            environment=EnvironmentRecord(
+                id=str(uuid.uuid4()),
+                name=environment_name,
+                deployment_id=str(uuid.uuid4()),
+                configuration_variables={
                     "API_TIMEOUT": "30",
                     "MAX_RETRIES": "3",
-                    "LOG_LEVEL": "INFO"
+                    "LOG_LEVEL": "INFO",
                 },
-                "useLongTermMemory": False,
-                "systemPrompt": system_prompt or f"You are {agent_name}, a helpful assistant."
-            }
+                system_prompt=system_prompt or f"You are {agent_name}, a helpful assistant.",
+            ),
+        )
+
+        traceability = TraceabilityExtensionV1(
+            traceparent=f"00-{trace_id}-{span_id}-01",
+            tracestate=[TraceStateEntry(key="aion", value=span_id)],
+            baggage={
+                "aion.sender.id": self.node_id,
+                "channel": "cli",
+                "tenant": "local",
+            },
+        )
+
+        distribution_val = distribution.model_dump(by_alias=True, exclude_none=True)
+        traceability_val = traceability.model_dump(by_alias=True, exclude_none=True)
+        del distribution_val["version"]
+        del traceability_val["version"]
+
+        return {
+            DISTRIBUTION_EXTENSION_URI_V1: distribution_val,
+            TRACEABILITY_EXTENSION_URI_V1: traceability_val,
         }
