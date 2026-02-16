@@ -5,13 +5,13 @@ Events provide real-time feedback about execution progress, including:
 - Messages (streaming or final)
 - State updates
 - Node/step updates
-- Custom framework-specific events
+- Artifacts
 - Completion and error events
 """
 
 from typing import Any, Literal, Optional
 
-from a2a.types import Part, TextPart, FilePart
+from a2a.types import Artifact, Part, TextPart
 from pydantic import BaseModel, ConfigDict, Field
 
 from .state import InterruptInfo
@@ -50,9 +50,13 @@ class MessageEvent(ExecutionEvent):
         default=None,
         description="Message role (user, assistant, system, etc.)"
     )
-    is_streaming: bool = Field(
+    is_chunk: bool = Field(
         default=False,
         description="Whether this is a streaming chunk"
+    )
+    is_last_chunk: bool = Field(
+        default=False,
+        description="Whether this is the last chunk in a streaming sequence"
     )
 
     def get_text_content(self) -> str:
@@ -96,13 +100,26 @@ class NodeUpdateEvent(ExecutionEvent):
     )
 
 
-class CustomEvent(ExecutionEvent):
-    """Event for custom framework-specific events."""
+class ArtifactEvent(ExecutionEvent):
+    """Event for task artifact updates.
 
-    event_type: Literal["custom"] = Field(
-        default="custom",
-        description="Always 'custom'")
-    data: Any = Field(description="Custom event data (any type)")
+    Supports streaming/chunking via append and is_last_chunk flags.
+    Each event contains a single artifact.
+    """
+
+    event_type: Literal["artifact"] = Field(
+        default="artifact",
+        description="Always 'artifact'"
+    )
+    artifact: Artifact = Field(description="Artifact to attach to the task")
+    append: bool = Field(
+        default=False,
+        description="If true, append to previously sent artifact"
+    )
+    is_last_chunk: bool = Field(
+        default=True,
+        description="If true, this is the final chunk"
+    )
 
 
 class InterruptEvent(ExecutionEvent):

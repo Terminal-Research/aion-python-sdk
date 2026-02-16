@@ -1,16 +1,41 @@
-from typing import List, Dict
+from typing import Any, List, Dict, Optional
 
-from a2a.types import Message, Artifact, TaskState
-from pydantic import RootModel, Field
+from a2a.types import Message, Artifact, Task, TaskState
+from pydantic import ConfigDict, RootModel, Field
 
 from aion.shared.a2a import A2ABaseModel
 
 __all__ = [
+    "A2AInbox",
     "Conversation",
     "ContextsList",
     "ConversationTaskStatus",
     "A2AManifest",
 ]
+
+
+class A2AInbox(A2ABaseModel):
+    """Server-populated input envelope for graphs that opt into A2A.
+
+    Graphs declare `a2a_inbox: A2AInbox` in their state schema to receive
+    a snapshot of the current A2A context at invocation time.  All fields are
+    defensive copies — mutating them does not affect server state.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    task: Optional[Task] = None
+    """
+    Current A2A Task.  None before a task has been created.
+    """
+    message: Optional[Message] = None
+    """
+    Inbound A2A Message that triggered this execution
+    """
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    """
+    Request-level metadata (e.g. `aion:network`)
+    """
 
 
 class ConversationTaskStatus(A2ABaseModel):

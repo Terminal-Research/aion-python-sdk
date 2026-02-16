@@ -1,12 +1,6 @@
-"""Framework-agnostic A2A executor for AionAgent.
+"""Framework-agnostic A2A executor for AionAgent."""
 
-This module provides an adapter that bridges A2A protocol's AgentExecutor
-interface with the framework-agnostic AionAgent. It translates A2A concepts
-(RequestContext, EventQueue) to AionAgent's unified interface (ExecutionConfig,
-ExecutionEvent).
-"""
-
-from typing import Tuple
+from typing import Tuple, Optional
 
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
@@ -21,59 +15,25 @@ from a2a.utils import new_task
 from a2a.utils.errors import ServerError
 from a2a.utils.telemetry import trace_function
 from aion.shared.agent import AionAgent
-from aion.shared.agent.adapters import ExecutionEvent
 from aion.shared.agent.execution import task_context
 from aion.shared.logging import get_logger
 
-from aion.server.utils import check_if_task_is_interrupted, StreamingArtifactBuilder
-from .event_translator import ExecutionEventTranslator
-from .event_handler import ExecutionEventHandler
+from aion.server.utils import check_if_task_is_interrupted
 
 logger = get_logger()
 
 
 class AionAgentRequestExecutor(AgentExecutor):
-    """A2A executor adapter for framework-agnostic AionAgent.
+    """A2A executor adapter for AionAgent.
 
-    This class implements the A2A AgentExecutor interface while delegating
-    actual execution to AionAgent. It handles:
-    - Converting RequestContext to ExecutionConfig
-    - Translating ExecutionEvent stream to A2A EventQueue events
-    - Task lifecycle management (creation, resumption)
-    - Error handling and propagation
-
-    The executor is framework-agnostic: the specific framework logic
-    (LangGraph, AutoGen, etc.) is handled by the AionAgent's ExecutorAdapter.
-
-    Architecture:
-        1. ExecutorAdapter (e.g., LangGraphExecutor) normalizes framework types
-           → ExecutionEvent with simple data (str, dict, list)
-        2. ExecutionEventTranslator converts ExecutionEvent to A2A protocol types
-           → A2A Message, TaskStatusUpdateEvent, etc.
+    Bridges A2A protocol's AgentExecutor interface with AionAgent.
+    Plugins are responsible for producing A2A events directly —
+    this executor simply enqueues them.
     """
 
-    def __init__(
-            self,
-            aion_agent: AionAgent,
-            event_translator: ExecutionEventTranslator | None = None,
-    ):
-        """Initialize executor with an AionAgent.
-
-        Args:
-            aion_agent: Framework-agnostic agent instance
-            event_translator: Optional custom event translator.
-                            If not provided, uses default ExecutionEventTranslator.
-        """
+    def __init__(self, aion_agent: AionAgent):
         self.agent = aion_agent
-
-        # Use provided translator or default
-        if event_translator is None:
-            event_translator = ExecutionEventTranslator()
-
-        self.event_translator = event_translator
-        self.task_updater: TaskUpdater | None = None
-        self.streaming_artifact_builder: StreamingArtifactBuilder | None = None
-        self.event_handler: ExecutionEventHandler | None = None
+        self._task_updater: TaskUpdater | None = None
 
     @trace_function
     async def execute(
@@ -81,33 +41,14 @@ class AionAgentRequestExecutor(AgentExecutor):
             context: RequestContext,
             event_queue: EventQueue,
     ) -> None:
-        """Execute the agent with the given context and event queue.
-
-        Args:
-            context: A2A request context with message and task info
-            event_queue: Queue for publishing A2A events
-
-        Raises:
-            ServerError: If validation fails or execution encounters errors
-        """
-        # Validate request
         error = self._validate_request(context)
         if error:
             raise ServerError(error=InvalidParamsError())
 
-        # Get or create task
         task, is_new_task = await self._get_task_for_execution(context)
 
-        # Set task_id in context for automatic logging throughout execution
         with task_context(str(task.id)):
-            # Create task updater, streaming artifact builder, and event handler
-            self.task_updater = TaskUpdater(event_queue, task.id, task.context_id)
-            self.streaming_artifact_builder = StreamingArtifactBuilder(task)
-            self.event_handler = ExecutionEventHandler(
-                task_updater=self.task_updater,
-                streaming_artifact_builder=self.streaming_artifact_builder,
-                event_translator=self.event_translator,
-            )
+            self._task_updater = TaskUpdater(event_queue, task.id, task.context_id)
 
             if is_new_task:
                 logger.info("Created task")
@@ -116,25 +57,19 @@ class AionAgentRequestExecutor(AgentExecutor):
                 logger.info("Resuming task")
 
             try:
+                event_stream = (
+                    self.agent.stream(context=context)
+                    if is_new_task
+                    else self.agent.resume(context=context)
+                )
+
                 first_event = True
-
-                # Execute agent (stream or resume)
-                if is_new_task:
-                    # New execution
-                    event_stream = self.agent.stream(context=context)
-                else:
-                    # Resume interrupted execution
-                    event_stream = self.agent.resume(context=context)
-
-                # Process events
-                async for execution_event in event_stream:
-                    # Update task status to working on first event
+                async for agent_event in event_stream:
                     if first_event:
                         await self._update_task_status_working(event_queue, task)
                         first_event = False
 
-                    # Translate and publish event
-                    await self._handle_execution_event(execution_event, event_queue, task)
+                    await event_queue.enqueue_event(agent_event)
 
             except Exception as ex:
                 logger.exception("Execution failed")
@@ -179,6 +114,7 @@ class AionAgentRequestExecutor(AgentExecutor):
 
         if current_task is not None:
             if check_if_task_is_interrupted(current_task):
+                context.current_task = current_task
                 return current_task, False
             else:
                 raise ServerError(
@@ -190,6 +126,8 @@ class AionAgentRequestExecutor(AgentExecutor):
 
         # Create new task
         task = new_task(context.message)
+        task.metadata = context.metadata or None
+        context.current_task = task
         return task, True
 
     @staticmethod
@@ -212,23 +150,6 @@ class AionAgentRequestExecutor(AgentExecutor):
             event_queue: Queue to publish status update
             task: Task to update
         """
-        if self.task_updater:
-            await self.task_updater.start_work()
+        if self._task_updater:
+            await self._task_updater.start_work()
 
-    async def _handle_execution_event(
-            self,
-            execution_event: ExecutionEvent,
-            event_queue: EventQueue,
-            task: Task,
-    ) -> None:
-        """Translate ExecutionEvent to A2A events and publish.
-
-        This method delegates to ExecutionEventHandler for actual event processing.
-
-        Args:
-            execution_event: Event from agent execution
-            event_queue: Queue to publish A2A events
-            task: Current task
-        """
-        if self.event_handler:
-            await self.event_handler.handle_event(execution_event, event_queue, task)

@@ -107,7 +107,8 @@ class ADKEventConverter:
         return MessageEvent(
             content=content_parts,
             role=author,
-            is_streaming=False,
+            is_chunk=False,
+            is_last_chunk=False,
             metadata=event_metadata,
         )
 
