@@ -11,6 +11,8 @@ from typing import Any, Optional
 
 from aion.shared.db import DbManagerProtocol
 from aion.shared.logging import get_logger
+from google.adk.sessions import InMemorySessionService
+from google.adk.sessions.database_session_service import DatabaseSessionService
 
 from .backends import SessionServiceBackendFactory
 
@@ -44,7 +46,7 @@ class SessionServiceManager:
         """
         self._db_manager = db_manager
 
-    def create_session_service(self) -> Any:
+    def create_session_service(self) -> InMemorySessionService | DatabaseSessionService:
         """Create appropriate session service based on database availability.
 
         Returns:

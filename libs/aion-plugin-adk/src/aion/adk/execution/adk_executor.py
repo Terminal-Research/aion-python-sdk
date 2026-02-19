@@ -2,31 +2,32 @@ import uuid
 from collections.abc import AsyncIterator
 from typing import Any, Optional, TYPE_CHECKING
 
-from aion.shared.agent.exceptions import ExecutionError, StateRetrievalError
+from a2a.types import TaskArtifactUpdateEvent, TaskStatusUpdateEvent
 from aion.shared.agent.adapters import (
-    CompleteEvent,
-    ErrorEvent,
     ExecutionConfig,
-    ExecutionEvent,
     ExecutionSnapshot,
     ExecutorAdapter,
 )
+from aion.shared.agent.exceptions import ExecutionError, StateRetrievalError
 from aion.shared.config.models import AgentConfig
-from aion.shared.db import DbManagerProtocol
 from aion.shared.logging import get_logger
 from google.adk.agents import InvocationContext
-from google.adk.agents.run_config import RunConfig
+from google.adk.agents.run_config import RunConfig, StreamingMode
 from google.adk.events import Event
-from google.adk.sessions import Session
+from google.adk.sessions import Session, BaseSessionService
 from google.genai import types
 
+from .event_converter import ADKToA2AEventConverter
+from .result_handler import ADKExecutionResultHandler
+from .stream_executor import ADKStreamExecutor, StreamResult
+from aion.adk.transformers import ADKTransformer
 from ..constants import DEFAULT_USER_ID
-from ..events import ADKEventConverter
-from ..session import SessionServiceManager
 from ..state import StateConverter
 
 if TYPE_CHECKING:
     from a2a.server.agent_execution import RequestContext
+
+AgentEvent = TaskStatusUpdateEvent | TaskArtifactUpdateEvent
 
 logger = get_logger()
 
@@ -37,22 +38,20 @@ class ADKExecutor(ExecutorAdapter):
             self,
             agent: Any,
             config: AgentConfig,
-            db_manager: Optional[DbManagerProtocol] = None,
+            session_service: BaseSessionService,
+            result_handler: Optional[ADKExecutionResultHandler] = None,
     ):
         self.agent = agent
         self.config = config
-
-        session_manager = SessionServiceManager(db_manager=db_manager)
-        self._session_service = session_manager.create_session_service()
-
-        self._event_converter = ADKEventConverter()
+        self._session_service = session_service
+        self._result_handler = result_handler or ADKExecutionResultHandler()
         self._state_converter = StateConverter()
 
     async def stream(
             self,
             context: "RequestContext",
             config: Optional[ExecutionConfig] = None,
-    ) -> AsyncIterator[ExecutionEvent]:
+    ) -> AsyncIterator[AgentEvent]:
         """Stream agent execution using ADK's run_async method.
 
         Args:
@@ -60,14 +59,17 @@ class ADKExecutor(ExecutorAdapter):
             config: Execution configuration with context_id
 
         Yields:
-            ExecutionEvent: Unified events converted from ADK Events
+            A2A events converted directly from ADK Events
         """
+        task_id = context.task_id or str(uuid.uuid4())
+        context_id = ADKTransformer.to_session_id(config) or str(uuid.uuid4())
+        converter = ADKToA2AEventConverter(task_id=task_id, context_id=context_id)
+
         try:
-            context_id = config.context_id if config else str(uuid.uuid4())
             logger.info(f"Starting ADK stream: context_id={context_id}")
 
             session = await self._get_or_create_session(context_id)
-            user_content = self._transform_context(context)
+            user_content = ADKTransformer.transform_context(context)
 
             # IMPORTANT: Add user message to session BEFORE creating invocation context
             # ADK expects user messages to be in session.events, not just in user_content
@@ -84,33 +86,30 @@ class ADKExecutor(ExecutorAdapter):
                 user_content=user_content,
             )
 
-            logger.debug(f"Stream inputs: {user_content}, context_id: {context_id}")
+            stream_exec = ADKStreamExecutor(self.agent, self._session_service, converter)
+            async for a2a_event in stream_exec.execute(invocation_context, session):
+                yield a2a_event
 
-            async for adk_event in self.agent.run_async(invocation_context):
-                logger.debug(
-                    f"ADK stream event: {type(adk_event).__name__}, "
-                    f"author={adk_event.author}, partial={adk_event.partial}"
-                )
-
-                unified_event = self._event_converter.convert(adk_event)
-                if unified_event:
-                    yield unified_event
-
-                if not adk_event.partial:
-                    await self._session_service.append_event(session, adk_event)
+            async for a2a_event in self._finalize(stream_exec.result, converter):
+                yield a2a_event
 
             logger.info(f"ADK stream completed: context_id={context_id}")
 
-            # ADK doesn't support interrupts, always yield CompleteEvent
-            yield CompleteEvent()
-
         except Exception as e:
             logger.error(f"ADK stream failed: {e}", exc_info=True)
-            yield ErrorEvent(
-                error=str(e),
-                error_type=type(e).__name__,
-            )
+            yield converter.convert_error(error=str(e), error_type=type(e).__name__)
             raise ExecutionError(f"Failed to stream agent: {e}") from e
+
+    async def _finalize(
+            self,
+            stream_result: StreamResult,
+            converter: ADKToA2AEventConverter,
+    ) -> AsyncIterator[AgentEvent]:
+        """Emit result events and the terminal complete event."""
+        for a2a_event in self._result_handler.handle(stream_result, converter):
+            yield a2a_event
+
+        yield converter.convert_complete()
 
     async def get_state(self, config: ExecutionConfig) -> ExecutionSnapshot:
         """Retrieve the current execution state snapshot from ADK session.
@@ -157,7 +156,7 @@ class ADKExecutor(ExecutorAdapter):
             self,
             context: "RequestContext",
             config: ExecutionConfig,
-    ) -> AsyncIterator[ExecutionEvent]:
+    ) -> AsyncIterator[AgentEvent]:
         """Resume ADK agent execution with new user input.
 
         For ADK, resuming means continuing the conversation with the same session.
@@ -172,7 +171,7 @@ class ADKExecutor(ExecutorAdapter):
             config: Execution configuration with context_id
 
         Yields:
-            ExecutionEvent: Events from resumed execution
+            A2A events from resumed execution
 
         Raises:
             ValueError: If context_id is not provided
@@ -239,6 +238,7 @@ class ADKExecutor(ExecutorAdapter):
         # response_modalities defaults to None which means AUDIO, so we set it to TEXT
         run_config = RunConfig(
             response_modalities=["TEXT"],
+            streaming_mode=StreamingMode.SSE
         )
 
         return InvocationContext(
@@ -248,21 +248,6 @@ class ADKExecutor(ExecutorAdapter):
             user_content=user_content,
             session=session,
             run_config=run_config,
-        )
-
-    def _transform_context(self, context: "RequestContext") -> types.Content:
-        """Transform A2A RequestContext to ADK Content format.
-
-        Args:
-            context: A2A request context
-
-        Returns:
-            types.Content: ADK Content object with user message
-        """
-        user_input = context.get_user_input()
-        return types.Content(
-            role="user",
-            parts=[types.Part(text=user_input)],
         )
 
     def _get_app_name(self) -> str:

@@ -6,14 +6,12 @@ for building and running A2A (Agent-to-Agent) agents.
 Architecture:
 - adapter.py: Main agent adapter and orchestration
 - plugin.py: Plugin entry point
-- execution/: Agent execution and streaming
+- execution/: Agent execution and A2A event generation
 - session/: Session management with pluggable backends (memory, database)
 - state/: State extraction and conversion with specialized extractors
-- events/: Event conversion with specialized handlers
 """
 
 from .adapter import ADKAdapter
-from .events import ADKEventConverter
 from .execution import ADKExecutor
 from .plugin import ADKPlugin
 from .session import SessionServiceManager
@@ -23,7 +21,6 @@ __all__ = [
     "ADKPlugin",
     "ADKAdapter",
     "ADKExecutor",
-    "ADKEventConverter",
     "SessionServiceManager",
     "StateConverter",
 ]
