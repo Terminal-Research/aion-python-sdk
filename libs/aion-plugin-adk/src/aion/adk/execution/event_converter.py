@@ -5,6 +5,7 @@ from typing import Any
 
 from a2a.types import (
     Artifact,
+    FilePart,
     Message,
     Part,
     Role,
@@ -51,12 +52,11 @@ class ADKToA2AEventConverter:
         if adk_event is None:
             return []
 
-        if not hasattr(adk_event, "content") or not adk_event.content:
-            return []
-
         is_partial = getattr(adk_event, "partial", False)
 
         if is_partial:
+            if not hasattr(adk_event, "content") or not adk_event.content:
+                return []
             return self._convert_partial(adk_event)
         else:
             return self._convert_non_partial(adk_event)
@@ -93,9 +93,11 @@ class ADKToA2AEventConverter:
         """Convert a complete (non-partial) ADK event to A2A events.
 
         If streaming was active, the STREAM_DELTA is closed first with an
-        empty last_chunk=True event. The complete content is then emitted as
-        a TaskStatusUpdateEvent(state=working) so the client receives the
-        durable message while the task is still running.
+        empty last_chunk=True event. Each file part is then emitted as a
+        standalone TaskArtifactUpdateEvent with a unique artifact id. All
+        remaining text parts are grouped into a single TaskStatusUpdateEvent
+        (state=working) so the client receives the durable message while the
+        task is still running.
         """
         results: list[AgentEvent] = []
 
@@ -114,8 +116,30 @@ class ADKToA2AEventConverter:
             ))
             self._streaming_started = False
 
+        if not hasattr(adk_event, "content") or not adk_event.content:
+            return results
+
         content_parts = A2ATransformer.transform_content(adk_event.content)
-        if content_parts:
+        if not content_parts:
+            return results
+
+        for idx, part in enumerate(content_parts):
+            if isinstance(part.root, FilePart):
+                results.append(TaskArtifactUpdateEvent(
+                    task_id=self._task_id,
+                    context_id=self._context_id,
+                    artifact=Artifact(
+                        artifact_id=str(uuid.uuid4()),
+                        name=ArtifactName.OUTPUT_FILE.value,
+                        parts=[part],
+                        metadata={"file_index": idx},
+                    ),
+                    append=False,
+                    last_chunk=True,
+                ))
+
+        text_parts = [p for p in content_parts if not isinstance(p.root, FilePart)]
+        if text_parts:
             author = getattr(adk_event, "author", "agent")
             role = Role.user if author == "user" else Role.agent
             msg = Message(
@@ -123,7 +147,7 @@ class ADKToA2AEventConverter:
                 task_id=self._task_id,
                 message_id=str(uuid.uuid4()),
                 role=role,
-                parts=content_parts,
+                parts=text_parts,
             )
             results.append(TaskStatusUpdateEvent(
                 task_id=self._task_id,

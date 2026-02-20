@@ -5,6 +5,7 @@ import json
 import mimetypes
 from typing import Any, Optional, TYPE_CHECKING
 
+from a2a.types import TextPart, FilePart, FileWithBytes, FileWithUri, DataPart
 from aion.shared.agent.adapters import ExecutionConfig
 from google.genai import types
 
@@ -44,32 +45,29 @@ class ADKTransformer:
             for part in context.message.parts:
                 part_obj = part.root
 
-                if part_obj.kind == "text":
+                if isinstance(part_obj, TextPart):
                     parts.append(types.Part(text=part_obj.text))
 
-                elif part_obj.kind == "file":
+                elif isinstance(part_obj, FilePart):
                     file_info = part_obj.file
                     mime_type = ADKTransformer._detect_mime_type(file_info)
 
-                    file_bytes = getattr(file_info, "bytes", None)
-                    file_uri = getattr(file_info, "uri", None)
-
-                    if file_bytes:
+                    if isinstance(file_info, FileWithBytes):
                         parts.append(types.Part(
                             inline_data=types.Blob(
                                 mime_type=mime_type,
-                                data=base64.b64decode(file_bytes),
+                                data=base64.b64decode(file_info.bytes),
                             )
                         ))
-                    elif file_uri:
+                    elif isinstance(file_info, FileWithUri):
                         parts.append(types.Part(
                             file_data=types.FileData(
                                 mime_type=mime_type,
-                                file_uri=file_uri,
+                                file_uri=file_info.uri,
                             )
                         ))
 
-                elif part_obj.kind == "data":
+                elif isinstance(part_obj, DataPart):
                     parts.append(types.Part(text=json.dumps(part_obj.data, indent=2)))
 
         if not parts:

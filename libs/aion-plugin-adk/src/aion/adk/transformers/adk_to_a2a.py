@@ -1,9 +1,11 @@
 """Transforms ADK Content into A2A Parts."""
 
-from typing import Any, List
+import base64
+from typing import List
 
-from a2a.types import Part, TextPart
+from a2a.types import FilePart, FileWithBytes, FileWithUri, Part, TextPart
 from aion.shared.logging import get_logger
+from google.genai import types
 
 logger = get_logger()
 
@@ -18,7 +20,7 @@ class A2ATransformer:
     @classmethod
     def transform_content(
         cls,
-        content: Any,
+        content: types.Content | str,
         *,
         merge_consecutive: bool = True,
     ) -> List[Part]:
@@ -39,7 +41,7 @@ class A2ATransformer:
         if isinstance(content, str):
             return [Part(root=TextPart(text=content))] if content else []
 
-        if not hasattr(content, "parts"):
+        if not isinstance(content, types.Content):
             content_str = str(content) if content else ""
             return [Part(root=TextPart(text=content_str))] if content_str else []
 
@@ -53,7 +55,7 @@ class A2ATransformer:
             return [Part(root=TextPart(text=content_str))] if content_str else []
 
     @classmethod
-    def _transform_flat(cls, content: Any) -> List[Part]:
+    def _transform_flat(cls, content: types.Content) -> List[Part]:
         """One a2a Part per ADK part — no merging."""
         parts = []
         for part in content.parts:
@@ -63,7 +65,7 @@ class A2ATransformer:
         return parts
 
     @classmethod
-    def _transform_merged(cls, content: Any) -> List[Part]:
+    def _transform_merged(cls, content: types.Content) -> List[Part]:
         """Merge consecutive text parts into a single a2a Part."""
         parts: List[Part] = []
         buffer_text = ""
@@ -73,13 +75,30 @@ class A2ATransformer:
                 parts.append(Part(root=TextPart(text=buffer_text)))
 
         for part in content.parts:
-            if hasattr(part, "function_call") and part.function_call:
+            if part.function_call:
                 continue
-            if hasattr(part, "function_response") and part.function_response:
+            if part.function_response:
                 continue
-            if not (hasattr(part, "text") and part.text):
+            if part.thought:
                 continue
-            if bool(getattr(part, "thought", False)):
+
+            if part.file_data:
+                flush()
+                buffer_text = ""
+                a2a_part = cls._file_data_to_part(part.file_data)
+                if a2a_part is not None:
+                    parts.append(a2a_part)
+                continue
+
+            if part.inline_data:
+                flush()
+                buffer_text = ""
+                a2a_part = cls._inline_data_to_part(part.inline_data)
+                if a2a_part is not None:
+                    parts.append(a2a_part)
+                continue
+
+            if not part.text:
                 continue
 
             buffer_text += part.text
@@ -87,18 +106,48 @@ class A2ATransformer:
         flush()
         return parts
 
-    @staticmethod
-    def _transform_part(part: Any) -> Part | None:
+    @classmethod
+    def _transform_part(cls, part: types.Part) -> Part | None:
         """Transform a single ADK part to an a2a Part, or None if it should be skipped."""
-        if hasattr(part, "function_call") and part.function_call:
+        if part.function_call:
             return None
-        if hasattr(part, "function_response") and part.function_response:
+        if part.function_response:
             return None
-        if bool(getattr(part, "thought", False)):
+        if part.thought:
             return None
-        if hasattr(part, "text") and part.text:
+        if part.file_data:
+            return cls._file_data_to_part(part.file_data)
+        if part.inline_data:
+            return cls._inline_data_to_part(part.inline_data)
+        if part.text:
             return Part(root=TextPart(text=part.text))
         return None
+
+    @staticmethod
+    def _file_data_to_part(file_data: types.FileData) -> Part | None:
+        """Convert an ADK FileData (URI-based) to an A2A FilePart."""
+        if not file_data.file_uri:
+            return None
+
+        return Part(root=FilePart(file=FileWithUri(
+            uri=file_data.file_uri,
+            mimeType=file_data.mime_type,
+            name=file_data.display_name,
+        )))
+
+    @staticmethod
+    def _inline_data_to_part(inline_data: types.Blob) -> Part | None:
+        """Convert an ADK Blob (bytes-based inline data) to an A2A FilePart."""
+        if not inline_data.data:
+            return None
+
+        data = inline_data.data
+        encoded = base64.b64encode(data).decode() if isinstance(data, bytes) else data
+        return Part(root=FilePart(file=FileWithBytes(
+            bytes=encoded,
+            mimeType=inline_data.mime_type,
+            name=inline_data.display_name,
+        )))
 
 
 __all__ = ["A2ATransformer"]

@@ -4,9 +4,10 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any
 
-from a2a.types import TaskArtifactUpdateEvent, TaskStatusUpdateEvent, TextPart
+from a2a.types import Message, Task, TaskArtifactUpdateEvent, TaskStatusUpdateEvent, TextPart
 from aion.shared.logging import get_logger
 from aion.shared.types import ArtifactId
+from google.adk.events import Event
 
 from .event_converter import ADKToA2AEventConverter
 
@@ -69,12 +70,27 @@ class ADKStreamExecutor:
             A2A AgentEvent objects.
         """
         async for adk_event in self._agent.run_async(invocation_context):
-            if not adk_event.partial:
+            if isinstance(adk_event, Event):
+                self._prepare_event(adk_event, invocation_context)
                 await self._session_service.append_event(session, adk_event)
 
             for a2a_event in self._converter.convert(adk_event):
                 self._track(a2a_event)
                 yield a2a_event
+
+    def _prepare_event(self, event: Event, ctx: Any) -> None:
+        """Stamp context fields and normalize state_delta for serialization."""
+        event.invocation_id = ctx.invocation_id
+        event.branch = ctx.branch
+        event.author = ctx.agent.name
+
+        if event.actions and event.actions.state_delta:
+            outbox = event.actions.state_delta.pop("a2a_outbox", None)
+            if outbox:
+                if isinstance(outbox, (Task, Message)):
+                    event.actions.state_delta["a2a_outbox"] = outbox.model_dump()
+                else:
+                    logger.warning(f"Unexpected a2a_outbox type: {type(outbox)}")
 
     def _track(self, a2a_event: AgentEvent) -> None:
         """Update internal state based on the outgoing event."""

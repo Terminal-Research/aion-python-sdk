@@ -1,9 +1,12 @@
-from typing import Any, List, Dict, Optional
+from typing import Any, List, Dict, Optional, TYPE_CHECKING
 
 from a2a.types import Message, Artifact, Task, TaskState
 from pydantic import ConfigDict, RootModel, Field
 
 from aion.shared.a2a import A2ABaseModel
+
+if TYPE_CHECKING:
+    from a2a.server.agent_execution import RequestContext
 
 __all__ = [
     "A2AInbox",
@@ -36,6 +39,15 @@ class A2AInbox(A2ABaseModel):
     """
     Request-level metadata (e.g. `aion:network`)
     """
+
+    @classmethod
+    def from_request_context(cls, context: "RequestContext") -> "A2AInbox":
+        """Build a frozen A2AInbox snapshot from an A2A RequestContext."""
+        return cls(
+            task=context.current_task.model_copy(deep=True) if context.current_task else None,
+            message=context.message.model_copy(deep=True) if context.message else None,
+            metadata=dict(context.metadata) if context.metadata else {},
+        )
 
 
 class ConversationTaskStatus(A2ABaseModel):

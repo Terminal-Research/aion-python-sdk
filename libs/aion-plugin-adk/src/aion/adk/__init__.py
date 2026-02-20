@@ -12,6 +12,7 @@ Architecture:
 """
 
 from .adapter import ADKAdapter
+from .agents import AionInvocationContext
 from .execution import ADKExecutor
 from .plugin import ADKPlugin
 from .session import SessionServiceManager
@@ -21,6 +22,7 @@ __all__ = [
     "ADKPlugin",
     "ADKAdapter",
     "ADKExecutor",
+    "AionInvocationContext",
     "SessionServiceManager",
     "StateConverter",
 ]

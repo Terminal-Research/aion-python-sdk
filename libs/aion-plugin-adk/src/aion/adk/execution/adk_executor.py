@@ -11,18 +11,19 @@ from aion.shared.agent.adapters import (
 from aion.shared.agent.exceptions import ExecutionError, StateRetrievalError
 from aion.shared.config.models import AgentConfig
 from aion.shared.logging import get_logger
-from google.adk.agents import InvocationContext
+from aion.shared.types.a2a.models import A2AInbox
 from google.adk.agents.run_config import RunConfig, StreamingMode
 from google.adk.events import Event
 from google.adk.sessions import Session, BaseSessionService
 from google.genai import types
 
+from aion.adk.agents.invocation_context import AionInvocationContext
+from aion.adk.constants import DEFAULT_USER_ID
+from aion.adk.state.converter import StateConverter
+from aion.adk.transformers.a2a_to_adk import ADKTransformer
 from .event_converter import ADKToA2AEventConverter
 from .result_handler import ADKExecutionResultHandler
 from .stream_executor import ADKStreamExecutor, StreamResult
-from aion.adk.transformers import ADKTransformer
-from ..constants import DEFAULT_USER_ID
-from ..state import StateConverter
 
 if TYPE_CHECKING:
     from a2a.server.agent_execution import RequestContext
@@ -84,13 +85,16 @@ class ADKExecutor(ExecutorAdapter):
             invocation_context = await self._create_invocation_context(
                 session=session,
                 user_content=user_content,
+                request_context=context,
             )
 
             stream_exec = ADKStreamExecutor(self.agent, self._session_service, converter)
             async for a2a_event in stream_exec.execute(invocation_context, session):
                 yield a2a_event
 
-            async for a2a_event in self._finalize(stream_exec.result, converter):
+            async for a2a_event in self._finalize(
+                stream_exec.result, converter, session, context, task_id, context_id
+            ):
                 yield a2a_event
 
             logger.info(f"ADK stream completed: context_id={context_id}")
@@ -104,9 +108,15 @@ class ADKExecutor(ExecutorAdapter):
             self,
             stream_result: StreamResult,
             converter: ADKToA2AEventConverter,
+            session: Any,
+            context: "RequestContext",
+            task_id: str,
+            context_id: str,
     ) -> AsyncIterator[AgentEvent]:
         """Emit result events and the terminal complete event."""
-        for a2a_event in self._result_handler.handle(stream_result, converter):
+        for a2a_event in self._result_handler.handle(
+            stream_result, converter, session, context, task_id, context_id
+        ):
             yield a2a_event
 
         yield converter.convert_complete()
@@ -222,15 +232,17 @@ class ADKExecutor(ExecutorAdapter):
             self,
             session: Session,
             user_content: types.Content,
-    ) -> InvocationContext:
-        """Create an InvocationContext for ADK agent execution.
+            request_context: "RequestContext",
+    ) -> AionInvocationContext:
+        """Create an AionInvocationContext for ADK agent execution.
 
         Args:
             session: ADK Session object
             user_content: User message content
+            request_context: A2A request context used to populate a2a_inbox
 
         Returns:
-            InvocationContext: ADK invocation context
+            AionInvocationContext: ADK invocation context with A2A inbox
         """
         invocation_id = str(uuid.uuid4())
 
@@ -241,13 +253,16 @@ class ADKExecutor(ExecutorAdapter):
             streaming_mode=StreamingMode.SSE
         )
 
-        return InvocationContext(
+        a2a_inbox = A2AInbox.from_request_context(request_context)
+
+        return AionInvocationContext(
             invocation_id=invocation_id,
             session_service=self._session_service,
             agent=self.agent,
             user_content=user_content,
             session=session,
             run_config=run_config,
+            a2a_inbox=a2a_inbox,
         )
 
     def _get_app_name(self) -> str:
