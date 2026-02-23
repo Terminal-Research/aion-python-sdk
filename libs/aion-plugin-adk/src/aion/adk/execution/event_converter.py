@@ -12,6 +12,7 @@ from a2a.types import (
     TaskStatus,
     TaskStatusUpdateEvent,
     TextPart,
+    DataPart,
 )
 from aion.shared.logging import get_logger
 from aion.shared.types import ArtifactId, ArtifactName
@@ -127,8 +128,9 @@ class ADKToA2AEventConverter:
         if not content_parts:
             return results
 
+        text_parts = []
         for part in content_parts:
-            if isinstance(part.root, FilePart):
+            if isinstance(part.root, (FilePart, DataPart)):
                 results.append(TaskArtifactUpdateEvent(
                     task_id=self._task_id,
                     context_id=self._context_id,
@@ -140,8 +142,9 @@ class ADKToA2AEventConverter:
                     append=False,
                     last_chunk=True,
                 ))
+            else:
+                text_parts.append(part)
 
-        text_parts = [p for p in content_parts if not isinstance(p.root, FilePart)]
         if text_parts:
             role = Role.user if adk_event.author == "user" else Role.agent
             msg = Message(
