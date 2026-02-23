@@ -1,10 +1,10 @@
 """Transforms ADK Content into A2A Parts."""
 
-import base64
 from typing import List
 
-from a2a.types import FilePart, FileWithBytes, FileWithUri, Part, TextPart
+from a2a.types import Part, TextPart
 from aion.shared.logging import get_logger
+from google.adk.a2a.converters.part_converter import convert_genai_part_to_a2a_part
 from google.genai import types
 
 logger = get_logger()
@@ -14,7 +14,10 @@ class A2ATransformer:
     """Transforms ADK Content objects into a2a Parts.
 
     NOTE: Tool calls, tool results, and thought parts are SKIPPED - only
-    regular text is extracted for end users.
+    regular text and file/data parts are extracted for end users.
+
+    Part conversion is delegated to ADK's convert_genai_part_to_a2a_part,
+    which handles FilePart (URI/bytes) and DataPart (application/json).
     """
 
     @classmethod
@@ -36,7 +39,7 @@ class A2ATransformer:
                 Part (original behaviour).
 
         Returns:
-            List of a2a Part objects (TextPart only, thoughts excluded).
+            List of a2a Part objects (tool calls and thoughts excluded).
         """
         if isinstance(content, str):
             return [Part(root=TextPart(text=content))] if content else []
@@ -71,29 +74,18 @@ class A2ATransformer:
         buffer_text = ""
 
         def flush() -> None:
+            nonlocal buffer_text
             if buffer_text:
                 parts.append(Part(root=TextPart(text=buffer_text)))
+                buffer_text = ""
 
         for part in content.parts:
-            if part.function_call:
-                continue
-            if part.function_response:
-                continue
-            if part.thought:
+            if part.function_call or part.function_response or part.thought:
                 continue
 
-            if part.file_data:
+            if part.file_data or part.inline_data:
                 flush()
-                buffer_text = ""
-                a2a_part = cls._file_data_to_part(part.file_data)
-                if a2a_part is not None:
-                    parts.append(a2a_part)
-                continue
-
-            if part.inline_data:
-                flush()
-                buffer_text = ""
-                a2a_part = cls._inline_data_to_part(part.inline_data)
+                a2a_part = convert_genai_part_to_a2a_part(part)
                 if a2a_part is not None:
                     parts.append(a2a_part)
                 continue
@@ -106,48 +98,12 @@ class A2ATransformer:
         flush()
         return parts
 
-    @classmethod
-    def _transform_part(cls, part: types.Part) -> Part | None:
+    @staticmethod
+    def _transform_part(part: types.Part) -> Part | None:
         """Transform a single ADK part to an a2a Part, or None if it should be skipped."""
-        if part.function_call:
+        if part.function_call or part.function_response or part.thought:
             return None
-        if part.function_response:
-            return None
-        if part.thought:
-            return None
-        if part.file_data:
-            return cls._file_data_to_part(part.file_data)
-        if part.inline_data:
-            return cls._inline_data_to_part(part.inline_data)
-        if part.text:
-            return Part(root=TextPart(text=part.text))
-        return None
-
-    @staticmethod
-    def _file_data_to_part(file_data: types.FileData) -> Part | None:
-        """Convert an ADK FileData (URI-based) to an A2A FilePart."""
-        if not file_data.file_uri:
-            return None
-
-        return Part(root=FilePart(file=FileWithUri(
-            uri=file_data.file_uri,
-            mimeType=file_data.mime_type,
-            name=file_data.display_name,
-        )))
-
-    @staticmethod
-    def _inline_data_to_part(inline_data: types.Blob) -> Part | None:
-        """Convert an ADK Blob (bytes-based inline data) to an A2A FilePart."""
-        if not inline_data.data:
-            return None
-
-        data = inline_data.data
-        encoded = base64.b64encode(data).decode() if isinstance(data, bytes) else data
-        return Part(root=FilePart(file=FileWithBytes(
-            bytes=encoded,
-            mimeType=inline_data.mime_type,
-            name=inline_data.display_name,
-        )))
+        return convert_genai_part_to_a2a_part(part)
 
 
 __all__ = ["A2ATransformer"]

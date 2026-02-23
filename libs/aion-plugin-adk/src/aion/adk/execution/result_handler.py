@@ -70,7 +70,7 @@ class ADKExecutionResultHandler:
                 if result is not None:
                     return result
 
-        return converter.convert_pending_stream(stream_result.delta_text)
+        return converter.finalize_stream(stream_result.delta_text)
 
     def _handle_outbox(
             self,
@@ -94,8 +94,8 @@ class ADKExecutionResultHandler:
 
         return None
 
+    @staticmethod
     def _handle_outbox_message(
-            self,
             message: Message,
             context: "RequestContext | None",
             task_id: str,
@@ -120,8 +120,8 @@ class ADKExecutionResultHandler:
             status=TaskStatus(state=TaskState.working, message=message),
         )]
 
+    @staticmethod
     def _handle_outbox_task(
-            self,
             patch: Task,
             context: "RequestContext | None",
             task_id: str,
@@ -192,7 +192,8 @@ class ADKExecutionResultHandler:
     def _parse_message(raw: Any) -> Message | None:
         if isinstance(raw, Message):
             return raw
-        if isinstance(raw, dict) and raw.get("kind") == "message":
+
+        if isinstance(raw, dict):
             try:
                 return Message.model_validate(raw)
             except Exception:
@@ -203,7 +204,8 @@ class ADKExecutionResultHandler:
     def _parse_task(raw: Any) -> Task | None:
         if isinstance(raw, Task):
             return raw
-        if isinstance(raw, dict) and raw.get("kind") == "task":
+
+        if isinstance(raw, dict):
             try:
                 return Task.model_validate(raw)
             except Exception:

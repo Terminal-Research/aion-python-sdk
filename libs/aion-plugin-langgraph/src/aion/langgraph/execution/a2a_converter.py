@@ -234,6 +234,7 @@ class LangGraphA2AConverter:
         text = self._get_text_content(message)
         if not text:
             return []
+
         return [TaskArtifactUpdateEvent(
             task_id=self._task_id,
             context_id=self._context_id,

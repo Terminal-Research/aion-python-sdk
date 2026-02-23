@@ -70,15 +70,19 @@ class ADKStreamExecutor:
             A2A AgentEvent objects.
         """
         async for adk_event in self._agent.run_async(invocation_context):
-            if isinstance(adk_event, Event):
-                self._prepare_event(adk_event, invocation_context)
-                await self._session_service.append_event(session, adk_event)
+            if not isinstance(adk_event, Event):
+                logger.warning("Unexpected non-Event from run_async: %s (%s)", adk_event, type(adk_event))
+                continue
+
+            self._stamp_event(adk_event, invocation_context)
+            await self._session_service.append_event(session, adk_event)
 
             for a2a_event in self._converter.convert(adk_event):
                 self._track(a2a_event)
                 yield a2a_event
 
-    def _prepare_event(self, event: Event, ctx: Any) -> None:
+    @staticmethod
+    def _stamp_event(event: Event, ctx: Any) -> None:
         """Stamp context fields and normalize state_delta for serialization."""
         event.invocation_id = ctx.invocation_id
         event.branch = ctx.branch

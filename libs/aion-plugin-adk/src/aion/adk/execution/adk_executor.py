@@ -101,7 +101,7 @@ class ADKExecutor(ExecutorAdapter):
 
         except Exception as e:
             logger.error(f"ADK stream failed: {e}", exc_info=True)
-            yield converter.convert_error(error=str(e), error_type=type(e).__name__)
+            yield converter.generate_error(error=str(e), error_type=type(e).__name__)
             raise ExecutionError(f"Failed to stream agent: {e}") from e
 
     async def _finalize(
@@ -119,7 +119,7 @@ class ADKExecutor(ExecutorAdapter):
         ):
             yield a2a_event
 
-        yield converter.convert_complete()
+        yield converter.generate_complete()
 
     async def get_state(self, config: ExecutionConfig) -> ExecutionSnapshot:
         """Retrieve the current execution state snapshot from ADK session.
