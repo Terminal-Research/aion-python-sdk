@@ -28,23 +28,24 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
 
     async def save(self, entity: TaskRecord) -> None:
         """Save or update a task entity."""
-        # Check if exists
         stmt = select(self.model_class).where(self.model_class.id == entity.id)
         result = await self._session.execute(stmt)
         existing_model = result.scalar_one_or_none()
 
         if existing_model:
-            # Update existing
             existing_model.context_id = entity.context_id
-            existing_model.task = entity.task
-            # updated_at will be set automatically by SQLAlchemy
-            model = existing_model
+            existing_model.status = entity.status
+            existing_model.artifacts = entity.artifacts
+            existing_model.history = entity.history
+            existing_model.task_metadata = entity.task_metadata
         else:
-            # Create new
             model = self.model_class(
                 id=entity.id,
                 context_id=entity.context_id,
-                task=entity.task,
+                status=entity.status,
+                artifacts=entity.artifacts,
+                history=entity.history,
+                task_metadata=entity.task_metadata,
             )
             self._session.add(model)
 
@@ -76,16 +77,7 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
             limit: Optional[int] = None,
             offset: Optional[int] = None
     ) -> List[str]:
-        """
-        Find all unique context_id values ordered by latest task creation.
-
-        Args:
-            limit: Maximum number of context_ids to return
-            offset: Number of context_ids to skip
-
-        Returns:
-            List of unique context_id strings ordered by latest created_at DESC
-        """
+        """Find all unique context_id values ordered by latest task creation."""
         subquery = (
             select(
                 self.model_class.context_id,

@@ -1,17 +1,17 @@
-"""Pydantic models for database records."""
+"""SQLAlchemy models for database records."""
 
 from __future__ import annotations
 
 import uuid
-from sqlalchemy import Column, DateTime, String, func
+from sqlalchemy import Column, DateTime, JSON, String, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.ext.declarative import declarative_base
 
-from .fields import JSONType
+from .fields import PydanticType
 
 
 try:  # pragma: no cover - optional dependency
-    from a2a.types import Artifact, Task
+    from a2a.types import Artifact, Message, TaskStatus
 except Exception as exc:  # pragma: no cover - explicit failure if missing
     raise ImportError(
         "The 'a2a-sdk' package is required to use these models"
@@ -24,6 +24,7 @@ __all__ = [
 ]
 
 BaseModel = declarative_base()
+
 
 class TaskRecordModel(BaseModel):
     """Representation of a row in the ``tasks`` table."""
@@ -40,9 +41,22 @@ class TaskRecordModel(BaseModel):
         nullable=False,
         index=True)
 
-    task = Column(
-        JSONType,
+    status = Column(
+        PydanticType(TaskStatus),
         nullable=False)
+
+    artifacts = Column(
+        PydanticType(Artifact, many=True),
+        nullable=True)
+
+    history = Column(
+        PydanticType(Message, many=True),
+        nullable=True)
+
+    task_metadata = Column(
+        "metadata",
+        JSON,
+        nullable=True)
 
     created_at = Column(
         DateTime(timezone=True),
