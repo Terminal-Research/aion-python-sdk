@@ -11,14 +11,14 @@ from aion.shared.agent.adapters import (
 from aion.shared.agent.exceptions import ExecutionError, StateRetrievalError
 from aion.shared.config.models import AgentConfig
 from aion.shared.logging import get_logger
-from aion.shared.types.a2a.models import A2AInbox
-from google.adk.agents.run_config import RunConfig, StreamingMode
+from google.adk.artifacts import BaseArtifactService
 from google.adk.events import Event
 from google.adk.sessions import Session, BaseSessionService
-from google.genai import types
 
-from aion.adk.agents.invocation_context import AionInvocationContext
+from aion.adk.agents.invocation_context import AionInvocationContextFactory
+from aion.adk.artifacts import ArtifactServiceFactory
 from aion.adk.constants import DEFAULT_USER_ID
+from aion.adk.session import SessionServiceFactory
 from aion.adk.state.converter import StateConverter
 from aion.adk.transformers.a2a_to_adk import ADKTransformer
 from .event_converter import ADKToA2AEventConverter
@@ -39,14 +39,21 @@ class ADKExecutor(ExecutorAdapter):
             self,
             agent: Any,
             config: AgentConfig,
-            session_service: BaseSessionService,
+            session_service: Optional[BaseSessionService] = None,
+            artifact_service: Optional[BaseArtifactService] = None,
             result_handler: Optional[ADKExecutionResultHandler] = None,
     ):
         self.agent = agent
         self.config = config
-        self._session_service = session_service
+        self._session_service = session_service or SessionServiceFactory().create()
+        self._artifact_service = artifact_service or ArtifactServiceFactory().create()
         self._result_handler = result_handler or ADKExecutionResultHandler()
         self._state_converter = StateConverter()
+        self._invocation_context_factory = AionInvocationContextFactory(
+            agent=agent,
+            session_service=session_service,
+            artifact_service=self._artifact_service,
+        )
 
     async def stream(
             self,
@@ -82,7 +89,7 @@ class ADKExecutor(ExecutorAdapter):
             await self._session_service.append_event(session, user_event)
             logger.debug(f"Added user message to session: {user_content}")
 
-            invocation_context = await self._create_invocation_context(
+            invocation_context = self._invocation_context_factory.create(
                 session=session,
                 user_content=user_content,
                 request_context=context,
@@ -93,7 +100,7 @@ class ADKExecutor(ExecutorAdapter):
                 yield a2a_event
 
             async for a2a_event in self._finalize(
-                stream_exec.result, converter, session, context, task_id, context_id
+                    stream_exec.result, converter, session, context, task_id, context_id
             ):
                 yield a2a_event
 
@@ -115,7 +122,7 @@ class ADKExecutor(ExecutorAdapter):
     ) -> AsyncIterator[AgentEvent]:
         """Emit result events and the terminal complete event."""
         for a2a_event in self._result_handler.handle(
-            stream_result, converter, session, context, task_id, context_id
+                stream_result, converter, session, context, task_id, context_id
         ):
             yield a2a_event
 
@@ -227,43 +234,6 @@ class ADKExecutor(ExecutorAdapter):
             )
 
         return session
-
-    async def _create_invocation_context(
-            self,
-            session: Session,
-            user_content: types.Content,
-            request_context: "RequestContext",
-    ) -> AionInvocationContext:
-        """Create an AionInvocationContext for ADK agent execution.
-
-        Args:
-            session: ADK Session object
-            user_content: User message content
-            request_context: A2A request context used to populate a2a_inbox
-
-        Returns:
-            AionInvocationContext: ADK invocation context with A2A inbox
-        """
-        invocation_id = str(uuid.uuid4())
-
-        # Create run config with default settings for text-based interaction
-        # response_modalities defaults to None which means AUDIO, so we set it to TEXT
-        run_config = RunConfig(
-            response_modalities=["TEXT"],
-            streaming_mode=StreamingMode.SSE
-        )
-
-        a2a_inbox = A2AInbox.from_request_context(request_context)
-
-        return AionInvocationContext(
-            invocation_id=invocation_id,
-            session_service=self._session_service,
-            agent=self.agent,
-            user_content=user_content,
-            session=session,
-            run_config=run_config,
-            a2a_inbox=a2a_inbox,
-        )
 
     def _get_app_name(self) -> str:
         """Get application name from config or use default.

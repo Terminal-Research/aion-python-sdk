@@ -13,9 +13,10 @@ Architecture:
 
 from .adapter import ADKAdapter
 from .agents import AionInvocationContext
+from .artifacts import ArtifactServiceFactory
 from .execution import ADKExecutor
 from .plugin import ADKPlugin
-from .session import SessionServiceManager
+from .session import SessionServiceFactory
 from .state import StateConverter
 
 __all__ = [
@@ -23,6 +24,7 @@ __all__ = [
     "ADKAdapter",
     "ADKExecutor",
     "AionInvocationContext",
-    "SessionServiceManager",
+    "ArtifactServiceFactory",
+    "SessionServiceFactory",
     "StateConverter",
 ]

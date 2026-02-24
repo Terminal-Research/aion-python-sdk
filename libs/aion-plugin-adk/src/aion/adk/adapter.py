@@ -10,7 +10,7 @@ from aion.shared.logging import get_logger
 from google.adk.agents import BaseAgent
 
 from .execution import ADKExecutor
-from .session import SessionServiceManager
+from .session import SessionServiceFactory
 
 logger = get_logger()
 
@@ -81,7 +81,7 @@ class ADKAdapter(AgentAdapter):
                 f"Agent must be an ADK agent instance, got {type(agent).__name__}"
             )
 
-        session_service = SessionServiceManager(db_manager=self.db_manager).create_session_service()
+        session_service = SessionServiceFactory.create(db_manager=self.db_manager)
         return ADKExecutor(agent, config, session_service=session_service)
 
     def validate_config(self, config: AgentConfig) -> None:

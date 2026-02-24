@@ -4,6 +4,6 @@ This module handles session creation, storage, and lifecycle management
 with support for multiple storage backends (memory, database).
 """
 
-from .manager import SessionServiceManager
+from .factory import SessionServiceFactory
 
-__all__ = ["SessionServiceManager"]
+__all__ = ["SessionServiceFactory"]

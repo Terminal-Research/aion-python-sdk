@@ -7,13 +7,12 @@ This module provides different storage backends for ADK sessions:
 New backends can be added by implementing the SessionServiceBackend interface.
 """
 
-from .base import SessionServiceBackend, SessionServiceBackendFactory
+from .base import SessionServiceBackend
 from .database import DatabaseBackend
 from .memory import MemoryBackend
 
 __all__ = [
     "SessionServiceBackend",
-    "SessionServiceBackendFactory",
     "MemoryBackend",
     "DatabaseBackend",
 ]
