@@ -2,7 +2,7 @@ from typing import Optional
 
 from aion.shared.logging import get_logger
 
-from aion.server.db import db_manager
+from aion.db.postgres import db_manager
 from .stores import (
     BaseTaskStore,
     InMemoryTaskStore,

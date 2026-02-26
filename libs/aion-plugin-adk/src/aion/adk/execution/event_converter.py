@@ -18,6 +18,7 @@ from aion.shared.logging import get_logger
 from aion.shared.types import ArtifactId, ArtifactName
 from google.adk.events import Event
 
+from aion.adk.agents.invocation_context import AionInvocationContext
 from aion.adk.transformers import A2ATransformer
 
 AgentEvent = TaskStatusUpdateEvent | TaskArtifactUpdateEvent
@@ -35,12 +36,13 @@ class ADKToA2AEventConverter:
     TaskStatusUpdateEvent with state=working.
     """
 
-    def __init__(self, task_id: str, context_id: str):
+    def __init__(self, task_id: str, context_id: str, ctx: AionInvocationContext):
         self._task_id = task_id
         self._context_id = context_id
+        self._ctx = ctx
         self._streaming_started = False
 
-    def convert(self, adk_event: Event) -> list[AgentEvent]:
+    async def convert(self, adk_event: Event) -> list[AgentEvent]:
         """Convert an ADK event to zero or more A2A events.
 
         Args:
@@ -57,7 +59,7 @@ class ADKToA2AEventConverter:
                 return []
             return self._convert_partial(adk_event)
         else:
-            return self._convert_non_partial(adk_event)
+            return await self._convert_non_partial(adk_event)
 
     def _convert_partial(self, adk_event: Event) -> list[AgentEvent]:
         """Emit a STREAM_DELTA artifact update for a partial (streaming) ADK event.
@@ -106,7 +108,7 @@ class ADKToA2AEventConverter:
             last_chunk=True,
         )
 
-    def _convert_non_partial(self, adk_event: Event) -> list[AgentEvent]:
+    async def _convert_non_partial(self, adk_event: Event) -> list[AgentEvent]:
         """Convert a complete (non-partial) ADK event to A2A events.
 
         If streaming was active, the STREAM_DELTA is closed first with an
@@ -114,53 +116,88 @@ class ADKToA2AEventConverter:
         standalone TaskArtifactUpdateEvent with a unique artifact id. All
         remaining text parts are grouped into a single TaskStatusUpdateEvent
         (state=working) so the client receives the durable message while the
-        task is still running.
+        task is still running. Finally, artifacts from artifact_delta are
+        loaded and emitted as TaskArtifactUpdateEvents.
         """
         results: list[AgentEvent] = []
 
         if close_event := self._close_stream_delta():
             results.append(close_event)
 
-        if not adk_event.content:
-            return results
+        if adk_event.content:
+            content_parts = A2ATransformer.transform_content(adk_event.content)
+            text_parts = []
+            for part in content_parts:
+                if isinstance(part.root, (FilePart, DataPart)):
+                    results.append(TaskArtifactUpdateEvent(
+                        task_id=self._task_id,
+                        context_id=self._context_id,
+                        artifact=Artifact(
+                            artifact_id=str(uuid.uuid4()),
+                            name=ArtifactName.OUTPUT_FILE.value,
+                            parts=[part],
+                        ),
+                        append=False,
+                        last_chunk=True,
+                    ))
+                else:
+                    text_parts.append(part)
 
-        content_parts = A2ATransformer.transform_content(adk_event.content)
-        if not content_parts:
-            return results
-
-        text_parts = []
-        for part in content_parts:
-            if isinstance(part.root, (FilePart, DataPart)):
-                results.append(TaskArtifactUpdateEvent(
+            if text_parts:
+                role = Role.user if adk_event.author == "user" else Role.agent
+                msg = Message(
+                    context_id=self._context_id,
+                    task_id=self._task_id,
+                    message_id=str(uuid.uuid4()),
+                    role=role,
+                    parts=text_parts,
+                )
+                results.append(TaskStatusUpdateEvent(
                     task_id=self._task_id,
                     context_id=self._context_id,
-                    artifact=Artifact(
-                        artifact_id=str(uuid.uuid4()),
-                        name=ArtifactName.OUTPUT_FILE.value,
-                        parts=[part],
-                    ),
-                    append=False,
-                    last_chunk=True,
+                    final=False,
+                    status=TaskStatus(state=TaskState.working, message=msg),
                 ))
-            else:
-                text_parts.append(part)
 
-        if text_parts:
-            role = Role.user if adk_event.author == "user" else Role.agent
-            msg = Message(
-                context_id=self._context_id,
-                task_id=self._task_id,
-                message_id=str(uuid.uuid4()),
-                role=role,
-                parts=text_parts,
+        results.extend(await self._convert_artifact_delta(adk_event))
+        return results
+
+    async def _convert_artifact_delta(self, adk_event: Event) -> list[AgentEvent]:
+        """Load artifacts from artifact_delta and emit TaskArtifactUpdateEvents."""
+        if not adk_event.actions or not adk_event.actions.artifact_delta:
+            return []
+        if self._ctx.artifact_service is None:
+            return []
+
+        results: list[AgentEvent] = []
+        for filename, version in adk_event.actions.artifact_delta.items():
+            part = await self._ctx.artifact_service.load_artifact(
+                app_name=self._ctx.app_name,
+                user_id=self._ctx.user_id,
+                session_id=self._ctx.session.id,
+                filename=filename,
+                version=version,
             )
-            results.append(TaskStatusUpdateEvent(
+            if part is None:
+                logger.warning("Artifact not found: %s v%s", filename, version)
+                continue
+
+            a2a_part = A2ATransformer._transform_part(part)
+            if a2a_part is None:
+                logger.warning("Could not transform artifact part: %s", filename)
+                continue
+
+            results.append(TaskArtifactUpdateEvent(
                 task_id=self._task_id,
                 context_id=self._context_id,
-                final=False,
-                status=TaskStatus(state=TaskState.working, message=msg),
+                artifact=Artifact(
+                    artifact_id=str(uuid.uuid4()),
+                    name=filename,
+                    parts=[a2a_part],
+                ),
+                append=False,
+                last_chunk=True,
             ))
-
         return results
 
     def finalize_stream(self, delta_text: str) -> list[AgentEvent]:

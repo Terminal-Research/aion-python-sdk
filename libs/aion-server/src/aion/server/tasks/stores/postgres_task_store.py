@@ -9,9 +9,10 @@ from typing import Optional, List
 from a2a.server.context import ServerCallContext
 from a2a.types import Task
 
-from aion.server.db.manager import db_manager
-from aion.server.db.repositories import TasksRepository
-from aion.server.types import TaskRecord
+from aion.db.postgres.manager import db_manager
+from aion.db.postgres.types import Pagination, Sorting, SortKey
+from aion.db.postgres.repositories import TasksRepository
+from aion.db.postgres.records import TaskRecord
 from .base_task_store import BaseTaskStore
 
 
@@ -102,10 +103,10 @@ class PostgresTaskStore(BaseTaskStore):
         """Get all tasks for a given context."""
         async with db_manager.get_session() as session:
             repository = TasksRepository(session)
-            entities = await repository.find_by_context(
+            entities = await repository.find(
                 context_id=context_id,
-                limit=limit,
-                offset=offset,
+                pagination=Pagination(limit=limit, offset=offset),
+                sorting=Sorting(SortKey(column="created_at")),
             )
             return [self._entity_to_task(str(e.id), e) for e in entities]
 
@@ -121,7 +122,7 @@ class PostgresTaskStore(BaseTaskStore):
         """Retrieve unique context IDs with pagination support."""
         async with db_manager.get_session() as session:
             repository = TasksRepository(session)
-            return await repository.find_unique_context_ids(offset=offset, limit=limit)
+            return await repository.find_unique_context_ids(pagination=Pagination(limit=limit, offset=offset))
 
     async def get_context_tasks(
             self,
@@ -132,10 +133,10 @@ class PostgresTaskStore(BaseTaskStore):
         """Retrieve tasks for a specific context with pagination support."""
         async with db_manager.get_session() as session:
             repository = TasksRepository(session)
-            records = await repository.find_by_context(
+            records = await repository.find(
                 context_id=context_id,
-                offset=offset,
-                limit=limit,
+                pagination=Pagination(limit=limit, offset=offset),
+                sorting=Sorting(SortKey(column="created_at")),
             )
         return [self._entity_to_task(str(r.id), r) for r in records]
 

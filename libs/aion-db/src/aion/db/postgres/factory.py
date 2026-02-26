@@ -7,9 +7,9 @@ migrations, and resource cleanup.
 from aion.shared.logging import get_logger
 from aion.shared.settings import db_settings
 
-from aion.server.db import verify_connection
-from aion.server.db.manager import DbManager
-from aion.server.db.migrations import upgrade_to_head
+from aion.db.postgres.utils import verify_connection
+from aion.db.postgres.manager import DbManager
+from aion.db.postgres.migrations import upgrade_to_head
 
 logger = get_logger()
 

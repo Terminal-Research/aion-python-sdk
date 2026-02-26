@@ -12,7 +12,7 @@ from sqlalchemy import create_engine
 logger = get_logger()
 
 from aion.shared.settings import db_settings
-from aion.shared.utils.db import convert_pg_url
+from aion.db.postgres.utils import convert_pg_url
 
 # ``alembic.context`` exposes ``config`` only when executed via Alembic's
 # command line utilities. When this module is imported directly (e.g. during

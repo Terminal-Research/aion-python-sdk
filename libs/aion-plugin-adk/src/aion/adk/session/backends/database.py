@@ -8,7 +8,7 @@ from typing import Optional
 
 from aion.shared.db import DbManagerProtocol
 from aion.shared.logging import get_logger
-from aion.shared.utils.db import convert_pg_url
+from aion.db.postgres.utils import convert_pg_url
 from google.adk.sessions import DatabaseSessionService
 
 from .base import SessionServiceBackend

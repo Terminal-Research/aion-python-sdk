@@ -1,13 +1,14 @@
 from typing import Any, Type
 
-from sqlalchemy import TypeDecorator, JSON
+from sqlalchemy import TypeDecorator
+from sqlalchemy.dialects.postgresql import JSONB
 from pydantic import BaseModel
 
 
 class PydanticType(TypeDecorator):
-    """JSON column that deserializes into a Pydantic model or a list of Pydantic models."""
+    """JSONB column that deserializes into a Pydantic model or a list of Pydantic models."""
 
-    impl = JSON
+    impl = JSONB
     cache_ok = True
 
     def __init__(self, pydantic_class: Type[BaseModel], *args: Any, many: bool = False, **kwargs: Any):

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import uuid
-from sqlalchemy import Column, DateTime, JSON, String, func
+from sqlalchemy import Column, DateTime, String, func
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.ext.declarative import declarative_base
 
@@ -55,7 +56,7 @@ class TaskRecordModel(BaseModel):
 
     task_metadata = Column(
         "metadata",
-        JSON,
+        JSONB,
         nullable=True)
 
     created_at = Column(

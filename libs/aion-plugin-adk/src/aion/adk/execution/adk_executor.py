@@ -51,7 +51,7 @@ class ADKExecutor(ExecutorAdapter):
         self._state_converter = StateConverter()
         self._invocation_context_factory = AionInvocationContextFactory(
             agent=agent,
-            session_service=session_service,
+            session_service=self._session_service,
             artifact_service=self._artifact_service,
         )
 
@@ -71,7 +71,6 @@ class ADKExecutor(ExecutorAdapter):
         """
         task_id = context.task_id or str(uuid.uuid4())
         context_id = ADKTransformer.to_session_id(config) or str(uuid.uuid4())
-        converter = ADKToA2AEventConverter(task_id=task_id, context_id=context_id)
 
         try:
             logger.info(f"Starting ADK stream: context_id={context_id}")
@@ -95,6 +94,7 @@ class ADKExecutor(ExecutorAdapter):
                 request_context=context,
             )
 
+            converter = ADKToA2AEventConverter(task_id=task_id, context_id=context_id, ctx=invocation_context)
             stream_exec = ADKStreamExecutor(self.agent, self._session_service, converter)
             async for a2a_event in stream_exec.execute(invocation_context, session):
                 yield a2a_event

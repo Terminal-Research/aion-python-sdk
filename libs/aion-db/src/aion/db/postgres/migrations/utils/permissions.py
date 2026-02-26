@@ -4,8 +4,7 @@ import sys
 
 from aion.shared.logging import get_logger
 
-from aion.server.db import validate_permissions
-from aion.shared.utils.db import convert_pg_url
+from aion.db.postgres.utils import validate_permissions, convert_pg_url
 from ..env import config
 
 logger = get_logger()

@@ -77,7 +77,7 @@ class ADKStreamExecutor:
             self._stamp_event(adk_event, invocation_context)
             await self._session_service.append_event(session, adk_event)
 
-            for a2a_event in self._converter.convert(adk_event):
+            for a2a_event in await self._converter.convert(adk_event):
                 self._track(a2a_event)
                 yield a2a_event
 
