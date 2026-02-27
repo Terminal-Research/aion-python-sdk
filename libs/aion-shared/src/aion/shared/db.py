@@ -5,6 +5,7 @@ Concrete implementations are provided by packages that need database functionali
 """
 
 from abc import ABC, abstractmethod
+from contextlib import AbstractAsyncContextManager
 from typing import Any
 
 
@@ -58,6 +59,18 @@ class DbManagerProtocol(ABC):
 
         This should be called during application shutdown to ensure
         proper cleanup of database connections.
+        """
+        pass
+
+    @abstractmethod
+    def get_session(self) -> AbstractAsyncContextManager[Any]:
+        """Get a database session as an async context manager.
+
+        Returns:
+            Async context manager yielding a session instance.
+
+        Raises:
+            RuntimeError: If manager is not initialized
         """
         pass
 

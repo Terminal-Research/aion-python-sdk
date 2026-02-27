@@ -9,6 +9,7 @@ from aion.shared.db import DbManagerProtocol
 from aion.shared.logging import get_logger
 from google.adk.agents import BaseAgent
 
+from .artifacts.factory import ArtifactServiceFactory
 from .execution import ADKExecutor
 from .session import SessionServiceFactory
 
@@ -82,7 +83,8 @@ class ADKAdapter(AgentAdapter):
             )
 
         session_service = SessionServiceFactory.create(db_manager=self.db_manager)
-        return ADKExecutor(agent, config, session_service=session_service)
+        artifact_service = ArtifactServiceFactory.create(db_manager=self.db_manager)
+        return ADKExecutor(agent, config, session_service=session_service, artifact_service=artifact_service)
 
     def validate_config(self, config: AgentConfig) -> None:
         if not config.path:

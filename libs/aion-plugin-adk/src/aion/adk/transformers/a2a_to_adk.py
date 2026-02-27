@@ -23,7 +23,7 @@ class ADKTransformer:
     def to_session_id(config: Optional[ExecutionConfig]) -> Optional[str]:
         """Extract session_id from ExecutionConfig.
 
-        Maps context_id → ADK session_id.
+        Maps context_id > ADK session_id.
         Returns None when config is absent; the executor is responsible
         for generating a fallback id in that case.
         """

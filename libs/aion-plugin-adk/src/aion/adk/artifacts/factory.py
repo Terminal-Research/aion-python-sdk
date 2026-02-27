@@ -4,10 +4,13 @@ This module provides the ArtifactServiceFactory for creating artifact service
 instances by selecting the appropriate storage backend.
 """
 
+from typing import Optional
+
+from aion.shared.db import DbManagerProtocol
 from aion.shared.logging import get_logger
 from google.adk.artifacts import BaseArtifactService
 
-from .backends import MemoryBackend
+from .backends import A2ABackend, MemoryBackend
 
 logger = get_logger()
 
@@ -15,25 +18,31 @@ logger = get_logger()
 class ArtifactServiceFactory:
     """Factory for creating ADK artifact service instances.
 
-    Selects the appropriate backend and returns a ready-to-use artifact service.
-    Currently supports in-memory storage with extensibility for custom backends.
+    When a db_manager is provided, returns A2AArtifactService with DB fallback
+    and TTL memory eviction. Otherwise falls back to plain InMemoryArtifactService.
     """
 
     @classmethod
-    def create(cls) -> BaseArtifactService:
+    def create(cls, db_manager: Optional[DbManagerProtocol] = None) -> BaseArtifactService:
         """Create artifact service using the most appropriate backend.
+
+        Args:
+            db_manager: Optional database manager. When provided and initialized,
+                        creates A2AArtifactService with DB fallback and TTL eviction.
 
         Returns:
             BaseArtifactService: An artifact service instance
         """
-        service = cls._create_memory()
+        service = None
+        if db_manager:
+            backend = A2ABackend(db_manager=db_manager)
+            service = backend.create()
+
+        if not service:
+            service = MemoryBackend().create()
+
         logger.info(f"Initialized {type(service).__name__}")
         return service
-
-    @staticmethod
-    def _create_memory() -> BaseArtifactService:
-        """Create an in-memory artifact service as the default backend."""
-        return MemoryBackend().create()
 
 
 __all__ = ["ArtifactServiceFactory"]

@@ -31,6 +31,19 @@ def latest_artifacts(
     return artifacts
 
 
+def all_versions_by_name(
+        rows: Sequence[List[Artifact] | None],
+        artifact_name: str,
+) -> List[Artifact]:
+    """Return all versions of an artifact with the given name, sorted by task creation order (desc)."""
+    artifacts: List[Artifact] = []
+    for task_artifacts in rows:
+        for artifact in (task_artifacts or []):
+            if artifact.name == artifact_name:
+                artifacts.append(artifact)
+    return artifacts
+
+
 def artifacts_by_version(
         rows: Sequence[List[Artifact] | None],
         artifact_version: str,

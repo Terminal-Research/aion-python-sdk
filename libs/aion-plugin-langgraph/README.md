@@ -39,7 +39,7 @@ When an inbound A2A `Message` arrives:
 
 ## 2. Outbound Messages
 
-### 2.1 MessageSendRequest → `graph.astream()`
+### 2.1 MessageSendRequest > `graph.astream()`
 
 Valid responses to an A2A `MessageSendRequest` RPC are a **`Message`** or **`Task`**.
 
@@ -52,8 +52,8 @@ If the returned dict contains `a2a_outbox`, it must contain either a **Task** or
 - Canonical routing/identity metadata (e.g. `aion:network`, sender IDs) is server-controlled.
 
 Behavior:
-- If `a2a_outbox` is a **Message** → append to current Task history.
-- If `a2a_outbox` is a **Task** → treat as a **patch** to the server's Task:
+- If `a2a_outbox` is a **Message** > append to current Task history.
+- If `a2a_outbox` is a **Task** > treat as a **patch** to the server's Task:
   - server merges/extends history and artifacts
   - graph-provided metadata merges shallowly (server-controlled keys take precedence)
 
@@ -69,7 +69,7 @@ If no `a2a_outbox` exists and the returned dict contains a `messages` list — u
 
 ## 3. Streaming
 
-### 3.1 MessageStreamRequest → `graph.astream()`
+### 3.1 MessageStreamRequest > `graph.astream()`
 
 Valid responses to an A2A `MessageStreamRequest` are:
 - `TaskStatusUpdateEvent`
@@ -168,11 +168,11 @@ Emits a programmatic message during graph execution. Supports both full messages
 | `ephemeral` | If `True`, message is sent to the client but **not persisted** in task history (default: `False`) |
 
 **`ephemeral=False` (default):**
-- `AIMessage` → `TaskStatusUpdateEvent(working, message=...)` — saved to conversation history.
-- `AIMessageChunk` → `TaskArtifactUpdateEvent(STREAM_DELTA)` — streamed to client, not persisted.
+- `AIMessage` > `TaskStatusUpdateEvent(working, message=...)` — saved to conversation history.
+- `AIMessageChunk` > `TaskArtifactUpdateEvent(STREAM_DELTA)` — streamed to client, not persisted.
 
 **`ephemeral=True`:**
-- `AIMessage` | `AIMessageChunk` → `TaskArtifactUpdateEvent(EPHEMERAL_MESSAGE)` — sent to client, filtered out by the task store (not persisted in task history). Does not affect streaming accumulation or final response fallback logic.
+- `AIMessage` | `AIMessageChunk` > `TaskArtifactUpdateEvent(EPHEMERAL_MESSAGE)` — sent to client, filtered out by the task store (not persisted in task history). Does not affect streaming accumulation or final response fallback logic.
 
 Use cases: intermediate progress notifications, "thinking" indicators, transient status messages that should reach the client in real time but must not appear in task history.
 

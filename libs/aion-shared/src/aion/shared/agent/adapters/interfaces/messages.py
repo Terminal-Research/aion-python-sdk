@@ -26,8 +26,8 @@ def normalize_role_to_a2a(role: str) -> Role:
     """Normalize framework-specific roles to a2a Role enum.
 
     Maps:
-    - "user" → Role.user
-    - "assistant", "system", "agent" → Role.agent
+    - "user" > Role.user
+    - "assistant", "system", "agent" > Role.agent
 
     Args:
         role: Framework-specific role string

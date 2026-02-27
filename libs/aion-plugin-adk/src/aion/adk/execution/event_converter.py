@@ -194,6 +194,7 @@ class ADKToA2AEventConverter:
                     artifact_id=str(uuid.uuid4()),
                     name=filename,
                     parts=[a2a_part],
+                    metadata={"version": str(version)},
                 ),
                 append=False,
                 last_chunk=True,

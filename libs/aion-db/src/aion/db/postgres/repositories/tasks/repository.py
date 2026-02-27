@@ -16,7 +16,7 @@ from aion.db.postgres.records import TaskRecord
 from aion.db.postgres.repositories.base import BaseRepository
 from aion.db.postgres.models import TaskRecordModel
 from aion.db.postgres.types import Pagination, Sorting
-from aion.db.postgres.repositories.tasks.selectors import latest_artifacts, artifacts_by_version
+from aion.db.postgres.repositories.tasks.selectors import latest_artifacts, artifacts_by_version, all_versions_by_name
 
 
 class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
@@ -117,14 +117,19 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
 
         Either ``task_id`` or ``context_id`` must be provided to scope the search.
 
-        ``artifact_version`` controls the search scope:
-        - None → latest version of each artifact resolved by task creation order
-        - specified → all artifacts within the scope matching ``artifact.metadata["version"]``
-
-        ``artifact_name`` is an optional filter applied on top in both cases.
+        Behaviour matrix:
+        - name=None,  version=None   > latest version of each artifact (by task creation order)
+        - name=given, version=None   > all versions of the named artifact
+        - name=None,  version="-1"   > latest version of each artifact (explicit sentinel)
+        - name=given, version="-1"   > latest version of the named artifact
+        - name=None,  version=given  > all artifacts matching that version
+        - name=given, version=given  > all artifacts matching both name and version
         """
         if task_id is None and context_id is None:
             raise ValueError("Either 'task_id' or 'context_id' must be provided.")
+
+        want_latest = artifact_version == "-1"
+        effective_version = None if want_latest else artifact_version
 
         stmt = (
             select(self.model_class.artifacts)
@@ -135,13 +140,16 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
 
         if artifact_name is not None:
             stmt = stmt.where(self.model_class.artifacts.contains([{"name": artifact_name}]))
-        if artifact_version is not None:
-            stmt = stmt.where(self.model_class.artifacts.contains([{"metadata": {"version": artifact_version}}]))
+        if effective_version is not None:
+            stmt = stmt.where(self.model_class.artifacts.contains([{"metadata": {"version": effective_version}}]))
 
         result = await self._session.execute(stmt)
         rows = result.scalars().all()
 
-        if artifact_version is not None:
-            return artifacts_by_version(rows, artifact_version, artifact_name)
+        if effective_version is not None:
+            return artifacts_by_version(rows, effective_version, artifact_name)
+
+        if artifact_name is not None and not want_latest:
+            return all_versions_by_name(rows, artifact_name)
 
         return latest_artifacts(rows, artifact_name)

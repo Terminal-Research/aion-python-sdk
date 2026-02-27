@@ -41,12 +41,12 @@ class ADKExecutor(ExecutorAdapter):
             config: AgentConfig,
             session_service: Optional[BaseSessionService] = None,
             artifact_service: Optional[BaseArtifactService] = None,
-            result_handler: Optional[ADKExecutionResultHandler] = None,
+            result_handler: Optional[ADKExecutionResultHandler] = None
     ):
         self.agent = agent
         self.config = config
         self._session_service = session_service or SessionServiceFactory().create()
-        self._artifact_service = artifact_service or ArtifactServiceFactory().create()
+        self._artifact_service = artifact_service or ArtifactServiceFactory.create()
         self._result_handler = result_handler or ADKExecutionResultHandler()
         self._state_converter = StateConverter()
         self._invocation_context_factory = AionInvocationContextFactory(
