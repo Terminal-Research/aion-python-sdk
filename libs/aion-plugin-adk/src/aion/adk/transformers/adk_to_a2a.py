@@ -4,8 +4,9 @@ from typing import List
 
 from a2a.types import Part, TextPart
 from aion.shared.logging import get_logger
-from google.adk.a2a.converters.part_converter import convert_genai_part_to_a2a_part
 from google.genai import types
+
+from aion.adk.transformers.utils import genai_part_to_a2a_part
 
 logger = get_logger()
 
@@ -16,7 +17,7 @@ class A2ATransformer:
     NOTE: Tool calls, tool results, and thought parts are SKIPPED - only
     regular text and file/data parts are extracted for end users.
 
-    Part conversion is delegated to ADK's convert_genai_part_to_a2a_part,
+    Part conversion is delegated to ADK's genai_part_to_a2a_part,
     which handles FilePart (URI/bytes) and DataPart (application/json).
     """
 
@@ -62,7 +63,7 @@ class A2ATransformer:
         """One a2a Part per ADK part — no merging."""
         parts = []
         for part in content.parts:
-            a2a_part = cls._transform_part(part)
+            a2a_part = cls.transform_part(part)
             if a2a_part is not None:
                 parts.append(a2a_part)
         return parts
@@ -85,7 +86,7 @@ class A2ATransformer:
 
             if part.file_data or part.inline_data:
                 flush()
-                a2a_part = convert_genai_part_to_a2a_part(part)
+                a2a_part = genai_part_to_a2a_part(part)
                 if a2a_part is not None:
                     parts.append(a2a_part)
                 continue
@@ -99,11 +100,11 @@ class A2ATransformer:
         return parts
 
     @staticmethod
-    def _transform_part(part: types.Part) -> Part | None:
+    def transform_part(part: types.Part) -> Part | None:
         """Transform a single ADK part to an a2a Part, or None if it should be skipped."""
         if part.function_call or part.function_response or part.thought:
             return None
-        return convert_genai_part_to_a2a_part(part)
+        return genai_part_to_a2a_part(part)
 
 
 __all__ = ["A2ATransformer"]

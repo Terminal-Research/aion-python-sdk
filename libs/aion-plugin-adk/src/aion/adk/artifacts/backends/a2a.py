@@ -9,7 +9,7 @@ from typing import Any, Optional
 
 from google.adk.artifacts import BaseArtifactService
 from google.adk.artifacts.base_artifact_service import ArtifactVersion
-from google.adk.a2a.converters.part_converter import convert_a2a_part_to_genai_part
+from aion.adk.transformers.utils import a2a_part_to_genai_part
 from google.adk.errors.input_validation_error import InputValidationError
 from google.genai import types
 from typing_extensions import override
@@ -472,7 +472,7 @@ class A2AArtifactService(BaseArtifactService):
         artifact = artifacts[0]
         if not artifact.parts:
             return None
-        return convert_a2a_part_to_genai_part(artifact.parts[0])
+        return a2a_part_to_genai_part(artifact.parts[0])
 
     def _ensure_cleanup_task(self) -> None:
         """Starts the background eviction loop if it's not already running."""

@@ -3,7 +3,6 @@
 import uuid
 from a2a.types import (
     Artifact,
-    FilePart,
     Message,
     Part,
     Role,
@@ -12,7 +11,6 @@ from a2a.types import (
     TaskStatus,
     TaskStatusUpdateEvent,
     TextPart,
-    DataPart,
 )
 from aion.shared.logging import get_logger
 from aion.shared.types import ArtifactId, ArtifactName
@@ -126,31 +124,15 @@ class ADKToA2AEventConverter:
 
         if adk_event.content:
             content_parts = A2ATransformer.transform_content(adk_event.content)
-            text_parts = []
-            for part in content_parts:
-                if isinstance(part.root, (FilePart, DataPart)):
-                    results.append(TaskArtifactUpdateEvent(
-                        task_id=self._task_id,
-                        context_id=self._context_id,
-                        artifact=Artifact(
-                            artifact_id=str(uuid.uuid4()),
-                            name=ArtifactName.OUTPUT_FILE.value,
-                            parts=[part],
-                        ),
-                        append=False,
-                        last_chunk=True,
-                    ))
-                else:
-                    text_parts.append(part)
 
-            if text_parts:
+            if content_parts:
                 role = Role.user if adk_event.author == "user" else Role.agent
                 msg = Message(
                     context_id=self._context_id,
                     task_id=self._task_id,
                     message_id=str(uuid.uuid4()),
                     role=role,
-                    parts=text_parts,
+                    parts=content_parts,
                 )
                 results.append(TaskStatusUpdateEvent(
                     task_id=self._task_id,
@@ -182,7 +164,7 @@ class ADKToA2AEventConverter:
                 logger.warning("Artifact not found: %s v%s", filename, version)
                 continue
 
-            a2a_part = A2ATransformer._transform_part(part)
+            a2a_part = A2ATransformer.transform_part(part)
             if a2a_part is None:
                 logger.warning("Could not transform artifact part: %s", filename)
                 continue
