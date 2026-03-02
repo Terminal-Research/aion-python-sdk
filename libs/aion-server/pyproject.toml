@@ -10,14 +10,10 @@ packages = [{ include = "aion", from = "src" }]
 python = "^3.12.0"
 uvicorn = ">=0.23.2"
 fastapi = ">=0.115.2"
-# PostgreSQL
-psycopg = { version = ">=3.1.12,<4.0.0", extras = ["binary", "pool"] }
-asyncpg = ">=0.29.0,<1.0.0"  # native psql protocol (faster than psycopg)
-greenlet = ">=3.0.3,<4.0.0"   # supports async pg operations
-alembic = ">=1.13.0,<2.0.0"   # migrations
-SQLAlchemy = "^2.0.0"
 
 aion-api-client = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-api-client" }
+aion-db = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-db" }
+aion-shared = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-shared" }
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=8.0.0"

@@ -25,7 +25,7 @@ from aion.cli.handlers import start_chat
     help='Comma-separated list of extension URIs to enable',
 )
 @click.option(
-    '--agent_id',
+    '--agent-id',
     default=None,
     help='Graph ID to use via proxy server',
 )

@@ -1,0 +1,21 @@
+[tool.poetry]
+name = "aion-db"
+version = "0.1.0"
+description = "Centralized DB management layer for Aion (postgres driver, migrations, repositories, models)"
+authors = ["Terminal Research Team <support@terminal.exchange>"]
+readme = "README.md"
+packages = [{ include = "aion", from = "src" }]
+
+[tool.poetry.dependencies]
+python = "^3.12.0"
+SQLAlchemy = "^2.0.0"
+pydantic = ">=2.0.0"
+alembic = ">=1.13.0,<2.0.0"
+psycopg = { version = ">=3.1.12,<4.0.0", extras = ["binary", "pool"] }
+asyncpg = ">=0.29.0,<1.0.0"
+greenlet = ">=3.0.3,<4.0.0"
+aion-shared = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-shared" }
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

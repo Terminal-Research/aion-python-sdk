@@ -13,7 +13,7 @@ from aion.shared.agent.adapters import (
 )
 from aion.shared.logging import get_logger
 
-from ...utils import extract_message_parts
+from aion.adk.transformers import A2ATransformer
 
 logger = get_logger()
 
@@ -87,7 +87,7 @@ class MessagesExtractor(StateExtractor):
         Returns:
             List of Message objects (usually 1, may be multiple for complex events)
         """
-        # Handle message events (extract_message_parts will filter out tool calls/responses)
+        # Handle message events (A2ATransformer will filter out tool calls/responses)
         if self._is_message_event(adk_event):
             return self._handle_message(adk_event)
 
@@ -118,7 +118,7 @@ class MessagesExtractor(StateExtractor):
         author = getattr(adk_event, "author", "assistant")
 
         # Extract text from ADK event content using shared utility
-        message_parts = extract_message_parts(adk_event.content)
+        message_parts = A2ATransformer.transform_content(adk_event.content)
 
         if not message_parts:
             logger.debug(f"No parts extracted from content, skipping message")

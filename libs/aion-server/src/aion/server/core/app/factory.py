@@ -15,7 +15,7 @@ from aion.server.agent import AionAgentRequestExecutor, AgentFactory
 from aion.server.core.app.a2a_fastapi import AionA2AFastAPIApplication
 from aion.server.core.middlewares import TracingMiddleware, AionContextMiddleware
 from aion.server.core.request_handlers import AionRequestHandler
-from aion.server.db import DbFactory
+from aion.db.postgres import DbFactory
 from aion.server.plugins import PluginFactory
 from aion.server.tasks import StoreManager
 from .lifespan import AppLifespan

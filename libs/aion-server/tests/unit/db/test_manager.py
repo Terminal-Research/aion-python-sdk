@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import AsyncMock, Mock, patch
 from psycopg_pool import AsyncConnectionPool
 from sqlalchemy.ext.asyncio import AsyncSession
-from aion.server.db.manager import DbManager
+from aion.db.postgres.manager import DbManager
 
 
 class TestDbManager:
@@ -39,9 +39,9 @@ class TestDbManager:
         assert manager1 is manager2
 
     @pytest.mark.asyncio
-    @patch('aion.server.db.manager.AsyncConnectionPool')
-    @patch('aion.server.db.manager.create_async_engine')
-    @patch('aion.server.db.manager.async_sessionmaker')
+    @patch('aion.db.postgres.manager.AsyncConnectionPool')
+    @patch('aion.db.postgres.manager.create_async_engine')
+    @patch('aion.db.postgres.manager.async_sessionmaker')
     async def test_initialize_success(self, mock_sessionmaker, mock_engine, mock_pool_class, db_manager, sample_dsn):
         """Test successful database initialization."""
         # Setup mocks
@@ -94,7 +94,7 @@ class TestDbManager:
         assert db_manager._session_factory == mock_session_factory
 
     @pytest.mark.asyncio
-    @patch('aion.server.db.manager.AsyncConnectionPool')
+    @patch('aion.db.postgres.manager.AsyncConnectionPool')
     async def test_initialize_already_initialized(self, mock_pool_class, db_manager, sample_dsn):
         """Test initialization when already initialized."""
         # Setup mock pool as already initialized
@@ -108,7 +108,7 @@ class TestDbManager:
         mock_pool_class.assert_not_called()
 
     @pytest.mark.asyncio
-    @patch('aion.server.db.manager.AsyncConnectionPool')
+    @patch('aion.db.postgres.manager.AsyncConnectionPool')
     async def test_initialize_pool_failure(self, mock_pool_class, db_manager, sample_dsn):
         """Test initialization failure when pool open fails."""
         mock_pool = AsyncMock(spec=AsyncConnectionPool)
@@ -209,8 +209,8 @@ class TestDbManager:
         with pytest.raises(RuntimeError, match="DSN not available for SQLAlchemy setup"):
             db_manager._setup_sqlalchemy()
 
-    @patch('aion.server.db.manager.create_async_engine')
-    @patch('aion.server.db.manager.async_sessionmaker')
+    @patch('aion.db.postgres.manager.create_async_engine')
+    @patch('aion.db.postgres.manager.async_sessionmaker')
     def test_setup_sqlalchemy_success(self, mock_sessionmaker, mock_engine, db_manager):
         """Test successful SQLAlchemy setup."""
         dsn = "postgresql://user:pass@localhost:5432/testdb"

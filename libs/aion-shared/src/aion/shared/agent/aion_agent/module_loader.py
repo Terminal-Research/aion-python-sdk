@@ -165,9 +165,9 @@ class ModuleLoader:
         """Load module from agent config path format.
 
         Agent config paths can specify a module and optionally an item within it:
-        - "module.path" → load module, no specific item
-        - "module.path:ItemName" → load module, extract "ItemName"
-        - "path/to/file.py:ItemName" → load file, extract "ItemName"
+        - "module.path" > load module, no specific item
+        - "module.path:ItemName" > load module, extract "ItemName"
+        - "path/to/file.py:ItemName" > load file, extract "ItemName"
 
         Args:
             config_path: Configuration path string

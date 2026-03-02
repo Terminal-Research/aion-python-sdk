@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 
 from aion.server.agent import AgentFactory
 from aion.server.core.app import AppFactory
-from aion.server.db import DbFactory, db_manager
+from aion.db.postgres import DbFactory, db_manager
 from aion.server.plugins import PluginFactory
 from aion.server.tasks import store_manager
 

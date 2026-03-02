@@ -4,6 +4,7 @@ import json
 import mimetypes
 from typing import Any, Optional, TYPE_CHECKING
 
+from a2a.types import TextPart, FilePart, FileWithBytes, FileWithUri, DataPart
 from aion.shared.agent.adapters import ExecutionConfig
 from aion.shared.types.a2a import A2AInbox
 from langchain_core.messages import HumanMessage
@@ -54,23 +55,23 @@ class LangGraphTransformer:
             for part in context.message.parts:
                 part_obj = part.root
 
-                if part_obj.kind == "text":
+                if isinstance(part_obj, TextPart):
                     content_blocks.append(create_text_block(text=part_obj.text))
 
-                elif part_obj.kind == "file":
+                elif isinstance(part_obj, FilePart):
                     file_info = part_obj.file
                     mime_type = LangGraphTransformer._detect_mime_type(file_info)
 
-                    if hasattr(file_info, "bytes"):
+                    if isinstance(file_info, FileWithBytes):
                         content_blocks.append(
                             create_file_block(base64=file_info.bytes, mime_type=mime_type)
                         )
-                    elif hasattr(file_info, "uri"):
+                    elif isinstance(file_info, FileWithUri):
                         content_blocks.append(
                             create_file_block(url=file_info.uri, mime_type=mime_type)
                         )
 
-                elif part_obj.kind == "data":
+                elif isinstance(part_obj, DataPart):
                     content_blocks.append(
                         create_text_block(text=json.dumps(part_obj.data, indent=2))
                     )
@@ -80,11 +81,7 @@ class LangGraphTransformer:
 
         return {
             "messages": messages,
-            "a2a_inbox": A2AInbox(
-                task=context.current_task.model_copy(deep=True) if context.current_task else None,
-                message=context.message.model_copy(deep=True) if context.message else None,
-                metadata=dict(context.metadata) if context.metadata else {},
-            ),
+            "a2a_inbox": A2AInbox.from_request_context(context),
         }
 
     @staticmethod

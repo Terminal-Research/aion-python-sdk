@@ -1,4 +1,4 @@
-from aion.shared.utils.db import convert_pg_url
+from aion.db.postgres.utils import convert_pg_url
 
 class TestConvertPgUrl:
     """Test cases for convert_pg_url function."""

@@ -1,0 +1,242 @@
+"""Converts ADK events directly to A2A protocol events."""
+
+import uuid
+from a2a.types import (
+    Artifact,
+    Message,
+    Part,
+    Role,
+    TaskArtifactUpdateEvent,
+    TaskState,
+    TaskStatus,
+    TaskStatusUpdateEvent,
+    TextPart,
+)
+from aion.shared.logging import get_logger
+from aion.shared.types import ArtifactId, ArtifactName
+from google.adk.events import Event
+
+from aion.adk.agents.invocation_context import AionInvocationContext
+from aion.adk.transformers import A2ATransformer
+
+AgentEvent = TaskStatusUpdateEvent | TaskArtifactUpdateEvent
+
+logger = get_logger()
+
+
+class ADKToA2AEventConverter:
+    """Converts ADK events directly to A2A protocol events.
+
+    Handles partial (streaming) and non-partial (complete) ADK events.
+
+    Partial ADK events are emitted as STREAM_DELTA artifact updates for live
+    display. Non-partial events close the stream and emit a durable
+    TaskStatusUpdateEvent with state=working.
+    """
+
+    def __init__(self, task_id: str, context_id: str, ctx: AionInvocationContext):
+        self._task_id = task_id
+        self._context_id = context_id
+        self._ctx = ctx
+        self._streaming_started = False
+
+    async def convert(self, adk_event: Event) -> list[AgentEvent]:
+        """Convert an ADK event to zero or more A2A events.
+
+        Args:
+            adk_event: ADK Event object with content, partial, author fields.
+
+        Returns:
+            List of A2A events (may be empty if the event has no content).
+        """
+        if adk_event is None:
+            return []
+
+        if adk_event.partial:
+            if not adk_event.content:
+                return []
+            return self._convert_partial(adk_event)
+        else:
+            return await self._convert_non_partial(adk_event)
+
+    def _convert_partial(self, adk_event: Event) -> list[AgentEvent]:
+        """Emit a STREAM_DELTA artifact update for a partial (streaming) ADK event.
+
+        The first chunk opens the artifact (append=False); subsequent chunks
+        use append=True. All partial events carry last_chunk=False because the
+        stream is only closed when the final non-partial event arrives.
+        """
+        parts = A2ATransformer.transform_content(adk_event.content)
+        if not parts:
+            return []
+
+        append = self._streaming_started
+        if not self._streaming_started:
+            self._streaming_started = True
+
+        return [TaskArtifactUpdateEvent(
+            task_id=self._task_id,
+            context_id=self._context_id,
+            artifact=Artifact(
+                artifact_id=ArtifactId.STREAM_DELTA.value,
+                name=ArtifactName.STREAM_DELTA.value,
+                parts=parts,
+                metadata={"status": "active", "status_reason": "chunk_streaming"},
+            ),
+            append=append,
+            last_chunk=False,
+        )]
+
+    def _close_stream_delta(self) -> TaskArtifactUpdateEvent | None:
+        """Close the open STREAM_DELTA artifact if streaming was active."""
+        if not self._streaming_started:
+            return None
+
+        self._streaming_started = False
+        return TaskArtifactUpdateEvent(
+            task_id=self._task_id,
+            context_id=self._context_id,
+            artifact=Artifact(
+                artifact_id=ArtifactId.STREAM_DELTA.value,
+                name=ArtifactName.STREAM_DELTA.value,
+                parts=[],
+                metadata={"status": "completed"},
+            ),
+            append=True,
+            last_chunk=True,
+        )
+
+    async def _convert_non_partial(self, adk_event: Event) -> list[AgentEvent]:
+        """Convert a complete (non-partial) ADK event to A2A events.
+
+        If streaming was active, the STREAM_DELTA is closed first with an
+        empty last_chunk=True event. Each file part is then emitted as a
+        standalone TaskArtifactUpdateEvent with a unique artifact id. All
+        remaining text parts are grouped into a single TaskStatusUpdateEvent
+        (state=working) so the client receives the durable message while the
+        task is still running. Finally, artifacts from artifact_delta are
+        loaded and emitted as TaskArtifactUpdateEvents.
+        """
+        results: list[AgentEvent] = []
+
+        if close_event := self._close_stream_delta():
+            results.append(close_event)
+
+        if adk_event.content:
+            content_parts = A2ATransformer.transform_content(adk_event.content)
+
+            if content_parts:
+                role = Role.user if adk_event.author == "user" else Role.agent
+                msg = Message(
+                    context_id=self._context_id,
+                    task_id=self._task_id,
+                    message_id=str(uuid.uuid4()),
+                    role=role,
+                    parts=content_parts,
+                )
+                results.append(TaskStatusUpdateEvent(
+                    task_id=self._task_id,
+                    context_id=self._context_id,
+                    final=False,
+                    status=TaskStatus(state=TaskState.working, message=msg),
+                ))
+
+        results.extend(await self._convert_artifact_delta(adk_event))
+        return results
+
+    async def _convert_artifact_delta(self, adk_event: Event) -> list[AgentEvent]:
+        """Load artifacts from artifact_delta and emit TaskArtifactUpdateEvents."""
+        if not adk_event.actions or not adk_event.actions.artifact_delta:
+            return []
+        if self._ctx.artifact_service is None:
+            return []
+
+        results: list[AgentEvent] = []
+        for filename, version in adk_event.actions.artifact_delta.items():
+            part = await self._ctx.artifact_service.load_artifact(
+                app_name=self._ctx.app_name,
+                user_id=self._ctx.user_id,
+                session_id=self._ctx.session.id,
+                filename=filename,
+                version=version,
+            )
+            if part is None:
+                logger.warning("Artifact not found: %s v%s", filename, version)
+                continue
+
+            a2a_part = A2ATransformer.transform_part(part)
+            if a2a_part is None:
+                logger.warning("Could not transform artifact part: %s", filename)
+                continue
+
+            results.append(TaskArtifactUpdateEvent(
+                task_id=self._task_id,
+                context_id=self._context_id,
+                artifact=Artifact(
+                    artifact_id=str(uuid.uuid4()),
+                    name=filename,
+                    parts=[a2a_part],
+                    metadata={"version": str(version)},
+                ),
+                append=False,
+                last_chunk=True,
+            ))
+        return results
+
+    def finalize_stream(self, delta_text: str) -> list[AgentEvent]:
+        """Close any open STREAM_DELTA and emit accumulated text as working status.
+
+        Called when the agent stream ends with active streaming — partial events
+        arrived but no closing non-partial event followed. Handles the edge case
+        where the last ADK event was partial, leaving an open stream artifact and
+        unconfirmed text that needs to be emitted before the terminal event.
+        """
+        results: list[AgentEvent] = []
+
+        if close_event := self._close_stream_delta():
+            results.append(close_event)
+
+        if delta_text:
+            msg = Message(
+                context_id=self._context_id,
+                task_id=self._task_id,
+                message_id=str(uuid.uuid4()),
+                role=Role.agent,
+                parts=[Part(root=TextPart(text=delta_text))],
+            )
+            results.append(TaskStatusUpdateEvent(
+                task_id=self._task_id,
+                context_id=self._context_id,
+                final=False,
+                status=TaskStatus(state=TaskState.working, message=msg),
+            ))
+
+        return results
+
+    def generate_complete(self) -> TaskStatusUpdateEvent:
+        """Produce a final TaskStatusUpdateEvent with state=completed.
+
+        Called after the ADK agent finishes without error.
+        """
+        return TaskStatusUpdateEvent(
+            task_id=self._task_id,
+            context_id=self._context_id,
+            final=True,
+            status=TaskStatus(state=TaskState.completed),
+        )
+
+    def generate_error(self, error: str, error_type: str) -> TaskStatusUpdateEvent:
+        """Produce a final TaskStatusUpdateEvent with state=failed and log the error.
+
+        Called when the ADK agent raises an unhandled exception. The error
+        details are logged at ERROR level but are not forwarded to the client.
+        """
+        logger.error(f"Execution error: {error}, type={error_type}")
+        return TaskStatusUpdateEvent(
+            task_id=self._task_id,
+            context_id=self._context_id,
+            final=True,
+            status=TaskStatus(state=TaskState.failed),
+        )
+
+__all__ = ["ADKToA2AEventConverter"]

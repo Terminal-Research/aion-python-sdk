@@ -149,8 +149,8 @@ def emit_message(
     """Emit a message event during graph execution.
 
     Supports both full messages and streaming chunks:
-    - AIMessage → TaskStatusUpdateEvent(working, message=...)
-    - AIMessageChunk → TaskArtifactUpdateEvent(STREAM_DELTA) for real-time streaming
+    - AIMessage > TaskStatusUpdateEvent(working, message=...)
+    - AIMessageChunk > TaskArtifactUpdateEvent(STREAM_DELTA) for real-time streaming
 
     When ephemeral=True, both AIMessage and AIMessageChunk produce a
     TaskArtifactUpdateEvent(EPHEMERAL_MESSAGE) that is sent to the client
