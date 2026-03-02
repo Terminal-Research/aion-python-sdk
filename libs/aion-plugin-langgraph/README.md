@@ -148,7 +148,7 @@ Emits a structured data artifact. `data` must be JSON-serializable.
 | Parameter | Description |
 |---|---|
 | `writer` | LangGraph `StreamWriter` from node signature |
-| `data` | Dict or any JSON-serializable value |
+| `data` | Dict or any JSON-serializable value |``
 | `name` | Artifact name (defaults to `"data"`) |
 | `append` | Set to `True` to append to a previously sent artifact |
 | `is_last_chunk` | Set to `False` if more chunks are coming |
@@ -159,7 +159,7 @@ Use cases: sending analysis results, metrics, structured outputs, JSON-formatted
 
 ##### `emit_message(writer, message, ephemeral=False)`
 
-Emits a programmatic message during graph execution. Supports both full messages and streaming chunks.
+Emits a programmatic message during graph execution. Supports both full messag``es and streaming chunks.
 
 | Parameter | Description |
 |---|---|

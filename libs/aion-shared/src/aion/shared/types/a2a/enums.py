@@ -20,8 +20,8 @@ class MessageType(str, Enum):
 
 class ArtifactId(str, Enum):
     """Artifact IDs used in A2A message headers."""
-    STREAM_DELTA = "aion:streamDelta"
-    EPHEMERAL_MESSAGE = "aion:ephemeralMessage"
+    STREAM_DELTA = "aion:stream-delta"
+    EPHEMERAL_MESSAGE = "aion:ephemeral-message"
 
 
 class ArtifactName(str, Enum):
