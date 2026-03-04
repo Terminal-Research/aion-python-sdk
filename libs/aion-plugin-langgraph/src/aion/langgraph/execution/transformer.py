@@ -1,19 +1,12 @@
 """Transforms A2A RequestContext and ExecutionConfig into LangGraph format."""
 
-import json
-import mimetypes
 from typing import Any, Optional, TYPE_CHECKING
 
-from a2a.types import TextPart, FilePart, FileWithBytes, FileWithUri, DataPart
 from aion.shared.agent.adapters import ExecutionConfig
 from aion.shared.types.a2a import A2AInbox
 from langchain_core.messages import HumanMessage
-from langchain_core.messages.content import (
-    create_text_block,
-    create_file_block,
-    TextContentBlock,
-    FileContentBlock,
-)
+
+from ..converters.a2a_to_lc import A2AToLcConverter
 
 if TYPE_CHECKING:
     from a2a.server.agent_execution import RequestContext
@@ -50,32 +43,7 @@ class LangGraphTransformer:
         messages: list = []
 
         if context.message:
-            content_blocks: list[TextContentBlock | FileContentBlock] = []
-
-            for part in context.message.parts:
-                part_obj = part.root
-
-                if isinstance(part_obj, TextPart):
-                    content_blocks.append(create_text_block(text=part_obj.text))
-
-                elif isinstance(part_obj, FilePart):
-                    file_info = part_obj.file
-                    mime_type = LangGraphTransformer._detect_mime_type(file_info)
-
-                    if isinstance(file_info, FileWithBytes):
-                        content_blocks.append(
-                            create_file_block(base64=file_info.bytes, mime_type=mime_type)
-                        )
-                    elif isinstance(file_info, FileWithUri):
-                        content_blocks.append(
-                            create_file_block(url=file_info.uri, mime_type=mime_type)
-                        )
-
-                elif isinstance(part_obj, DataPart):
-                    content_blocks.append(
-                        create_text_block(text=json.dumps(part_obj.data, indent=2))
-                    )
-
+            content_blocks = A2AToLcConverter.from_parts(context.message.parts)
             if content_blocks:
                 messages = [HumanMessage(content=content_blocks)]
 
@@ -83,18 +51,3 @@ class LangGraphTransformer:
             "messages": messages,
             "a2a_inbox": A2AInbox.from_request_context(context),
         }
-
-    @staticmethod
-    def _detect_mime_type(file_info: Any) -> str:
-        """Detect MIME type: explicit attr > guess from name > fallback."""
-        mime_type = getattr(file_info, "mime_type", None)
-        if mime_type:
-            return mime_type
-
-        filename = getattr(file_info, "name", None)
-        if filename:
-            guessed, _ = mimetypes.guess_type(filename)
-            if guessed:
-                return guessed
-
-        return "application/octet-stream"

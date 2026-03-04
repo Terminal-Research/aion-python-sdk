@@ -290,23 +290,6 @@ class AionConfig(BaseModel):
         else:
             raise ValueError("Agents must be a dictionary or list")
 
-    @model_validator(mode='after')
-    def validate_unique_paths(self):
-        """Validate that all agent paths are unique."""
-        if self.agents:
-            agent_paths = [agent.path for agent in self.agents.values()]
-            if len(agent_paths) != len(set(agent_paths)):
-                # Find duplicate paths for better error message
-                path_counts = {}
-                for path in agent_paths:
-                    path_counts[path] = path_counts.get(path, 0) + 1
-
-                duplicates = [path for path, count in path_counts.items() if count > 1]
-                raise ValueError(
-                    f"Agent path conflicts detected. The following paths are used multiple times: {duplicates}")
-
-        return self
-
     def get_agent(self, agent_id: str) -> Optional[AgentConfig]:
         """Get an agent configuration by ID."""
         return self.agents.get(agent_id)

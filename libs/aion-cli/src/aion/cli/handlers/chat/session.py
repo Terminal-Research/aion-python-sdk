@@ -44,6 +44,7 @@ class ChatSession:
             agent_id: Optional[str] = None,
             request_helper: Optional[A2ARequestHelper] = None,
             session_id: int = 0,
+            no_stream: bool = False,
     ):
         self.host = host
         self.enabled_extensions = enabled_extensions
@@ -53,6 +54,7 @@ class ChatSession:
         self.agent_id = agent_id
         self.request_helper = request_helper or A2ARequestHelper()
         self.context_id = session_id if session_id > 0 else 0
+        self.no_stream = no_stream
 
         # Setup headers
         self.headers = {}
@@ -98,7 +100,7 @@ class ChatSession:
                 agent_card=card,
                 url=client_url,
             )
-            streaming = card.capabilities.streaming
+            streaming = card.capabilities.streaming and not self.no_stream
 
             # Main chat loop
             continue_loop = True
@@ -422,6 +424,7 @@ async def start_chat(
         enabled_extensions: Optional[str] = None,
         custom_headers: Optional[dict] = None,
         agent_id: Optional[str] = None,
+        no_stream: bool = False,
 ):
     """Start a chat session with the A2A agent"""
     chat_session = ChatSession(
@@ -431,7 +434,8 @@ async def start_chat(
         use_push_notifications=use_push_notifications,
         push_notification_receiver=push_notification_receiver,
         agent_id=agent_id,
-        session_id=session_id
+        session_id=session_id,
+        no_stream=no_stream,
     )
 
     await chat_session.start(show_history=show_history)

@@ -14,7 +14,7 @@ from aion.shared.config.models import AgentConfig
 from aion.shared.logging import get_logger
 
 from ..state import LangGraphStateAdapter
-from .a2a_converter import LangGraphA2AConverter
+from .event_converter import LangGraphA2AConverter
 from .event_preprocessor import LangGraphEventPreprocessor
 from .result_handler import ExecutionResultHandler
 from .stream_executor import StreamExecutor, StreamResult
