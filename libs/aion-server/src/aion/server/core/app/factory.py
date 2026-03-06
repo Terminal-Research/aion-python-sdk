@@ -9,6 +9,7 @@ from typing import Optional
 from a2a.server.tasks import InMemoryPushNotificationConfigStore
 from aion.shared.agent import AionAgent
 from aion.shared.logging import get_logger
+from aion.shared.files.storage import FilePartTransformer
 from fastapi import FastAPI
 
 from aion.server.agent import AionAgentRequestExecutor, AgentFactory
@@ -42,7 +43,8 @@ class AppFactory:
             agent_factory: AgentFactory,
             plugin_factory: PluginFactory,
             store_manager: StoreManager,
-            startup_callback=None
+            startup_callback=None,
+            file_transformer: Optional[FilePartTransformer] = None,
     ):
         """Initialize factory with all dependencies via dependency injection.
 
@@ -53,6 +55,10 @@ class AppFactory:
             plugin_factory: Factory for plugin lifecycle management (already has db_manager)
             store_manager: Task store manager
             startup_callback: Optional callback to call after initialization
+            file_transformer: Optional pre-built FilePartTransformer. If None,
+                one is created automatically — its backend is resolved from
+                AION_FILE_STORAGE_BACKEND env var. If the env var is not set,
+                the transformer is a no-op and inline parts pass through unchanged.
         """
         self.aion_agent = aion_agent
         self.db_factory = db_factory
@@ -60,10 +66,12 @@ class AppFactory:
         self.plugin_factory = plugin_factory
         self.store_manager = store_manager
         self.startup_callback = startup_callback
+        self._file_transformer = file_transformer or FilePartTransformer()
 
         # Application components (created during initialization)
         self.a2a_app: Optional[AionA2AFastAPIApplication] = None
         self.fastapi_app: Optional[FastAPI] = None
+        self._executor: Optional[AionAgentRequestExecutor] = None
 
     async def initialize(self):
         """Initialize the application factory.
@@ -130,8 +138,13 @@ class AppFactory:
         self.store_manager.initialize()
         task_store = self.store_manager.get_store()
 
+        self._executor = AionAgentRequestExecutor(
+            self.aion_agent,
+            file_transformer=self._file_transformer,
+        )
+
         return AionRequestHandler(
-            agent_executor=AionAgentRequestExecutor(self.aion_agent),
+            agent_executor=self._executor,
             task_store=task_store,
             push_config_store=InMemoryPushNotificationConfigStore()
         )
@@ -148,6 +161,13 @@ class AppFactory:
     async def shutdown(self) -> None:
         """Shutdown the application and cleanup resources."""
         logger.info("Shutting down application factory")
+
+        # Drain any in-flight background file uploads before shutting down
+        if self._executor is not None:
+            try:
+                await self._executor.drain()
+            except Exception as exc:
+                logger.error("Error draining uploads", exc_info=exc)
 
         # Cleanup plugins (via PluginFactory)
         if self.plugin_factory.is_initialized():

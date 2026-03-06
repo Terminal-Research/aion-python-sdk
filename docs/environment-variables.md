@@ -13,6 +13,7 @@ LOG_LEVEL=INFO
 AION_DOCS_URL=https://docs.aion.to/
 LOGSTASH_HOST=0.0.0.0
 LOGSTASH_PORT=5000
+AION_FILE_STORAGE_BACKEND=stub
 
 # AION API Client (Required)
 AION_CLIENT_ID=your_client_id_here
@@ -44,6 +45,14 @@ AION_API_KEEP_ALIVE=60
 - Type: `string`
 - Default: `https://docs.aion.to/`
 - URL to the Aion API documentation
+
+**`AION_FILE_STORAGE_BACKEND`**
+- Type: `string` (optional)
+- Default: not set (disabled)
+- Enables conversion of inline (base64) file parts in outgoing A2A events to URL references, minimizing binary content stored in task history tables
+- When not set, file parts are passed through unchanged (base64 preserved)
+- Allowed values: `stub`
+  - `stub` — development/testing only; generates placeholder URLs without uploading any data
 
 **`LOGSTASH_HOST`**
 - Type: `string` (optional)

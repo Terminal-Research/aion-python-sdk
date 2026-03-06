@@ -261,6 +261,17 @@ class ApiSettings(BaseEnvSettings):
 class AppSettings(BaseEnvSettings):
     """Application configuration settings."""
 
+    file_storage_backend: Optional[Literal["stub"]] = Field(
+        default=None,
+        alias="AION_FILE_STORAGE_BACKEND",
+        description=(
+            "File storage backend for converting inline (base64) file parts to URLs. "
+            "When set, outgoing A2A events with binary content are uploaded to storage "
+            "and replaced with URL references, minimizing content stored in tables. "
+            "Options: 'stub' (development only). Default: None (disabled, base64 passthrough)."
+        )
+    )
+
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = Field(
         description="Logging level to use.",
         alias="LOG_LEVEL",
