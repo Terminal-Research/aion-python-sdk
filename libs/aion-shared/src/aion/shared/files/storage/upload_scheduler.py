@@ -26,9 +26,7 @@ class BackgroundUploadScheduler:
         self,
         data: bytes,
         mime_type: str,
-        file_name: str | None = None,
         context_id: str | None = None,
-        task_id: str | None = None,
     ) -> str:
         """Prepare a file URL and schedule a background upload. Returns URL immediately.
 
@@ -45,13 +43,11 @@ class BackgroundUploadScheduler:
         #   pass should re-upload any orphaned staging files.
         """
         file_id, url = self._storage.prepare(
-            file_name=file_name,
             mime_type=mime_type,
             context_id=context_id,
-            task_id=task_id,
         )
         task = asyncio.create_task(
-            self._upload_safe(file_id, data, mime_type, context_id, task_id)
+            self._upload_safe(file_id, data, mime_type, context_id)
         )
         self._pending.add(task)
         task.add_done_callback(self._pending.discard)
@@ -81,7 +77,6 @@ class BackgroundUploadScheduler:
         data: bytes,
         mime_type: str,
         context_id: str | None,
-        task_id: str | None,
     ) -> None:
         try:
             await self._storage.upload(
@@ -89,7 +84,6 @@ class BackgroundUploadScheduler:
                 data=data,
                 mime_type=mime_type,
                 context_id=context_id,
-                task_id=task_id,
             )
         except Exception:
             logger.exception("Background upload failed for file_id=%s", file_id)

@@ -27,6 +27,7 @@ from opentelemetry import trace
 from pydantic import ValidationError
 from starlette.status import HTTP_413_REQUEST_ENTITY_TOO_LARGE
 
+from aion.server.core.app.preprocessors import A2ARequestPreprocessor
 from aion.server.core.request_handlers import AionJSONRPCHandler
 from aion.server.interfaces import IRequestHandler
 from .api import AionExtraHTTPRoutes
@@ -43,7 +44,8 @@ class AionA2AFastAPIApplication(A2AFastAPIApplication):
             aion_agent: AionAgent,
             http_handler: IRequestHandler,
             extended_agent_card: AgentCard | None = None,
-            context_builder: CallContextBuilder | None = None
+            context_builder: CallContextBuilder | None = None,
+            preprocessors: list[A2ARequestPreprocessor] | None = None,
     ):
         """Initialize the Aion A2A application with custom handler.
 
@@ -52,8 +54,12 @@ class AionA2AFastAPIApplication(A2AFastAPIApplication):
             http_handler: Request handler implementation
             extended_agent_card: Optional extended agent configuration
             context_builder: Optional context builder for requests
+            preprocessors: Optional list of request preprocessors applied before
+                           handler routing. Executed in order for every request.
         """
         self.aion_agent = aion_agent
+        self._preprocessors: list[A2ARequestPreprocessor] = preprocessors or []
+
         super().__init__(
             agent_card=self.aion_agent.card,
             http_handler=http_handler,
@@ -112,6 +118,9 @@ class AionA2AFastAPIApplication(A2AFastAPIApplication):
 
             request_id = a2a_request.root.id
             request_obj = a2a_request.root
+
+            for preprocessor in self._preprocessors:
+                await preprocessor.preprocess(request_obj)
 
             if self._check_if_request_is_custom_method(request_obj):
                 return await self._handle_custom_requests(

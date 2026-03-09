@@ -14,6 +14,7 @@ from fastapi import FastAPI
 
 from aion.server.agent import AionAgentRequestExecutor, AgentFactory
 from aion.server.core.app.a2a_fastapi import AionA2AFastAPIApplication
+from aion.server.core.app.preprocessors import FilePartPreprocessor
 from aion.server.core.middlewares import TracingMiddleware, AionContextMiddleware
 from aion.server.core.request_handlers import AionRequestHandler
 from aion.db.postgres import DbFactory
@@ -123,7 +124,8 @@ class AppFactory:
         # Create A2A application
         self.a2a_app = AionA2AFastAPIApplication(
             aion_agent=self.aion_agent,
-            http_handler=request_handler
+            http_handler=request_handler,
+            preprocessors=[FilePartPreprocessor(self._file_transformer)],
         )
 
         # Build FastAPI application from A2A app

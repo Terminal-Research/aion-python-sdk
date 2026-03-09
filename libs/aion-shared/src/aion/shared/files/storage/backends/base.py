@@ -21,21 +21,20 @@ class FileStorageBackend(ABC):
     @abstractmethod
     def prepare(
         self,
-        file_name: str | None = None,
         mime_type: str | None = None,
         context_id: str | None = None,
-        task_id: str | None = None,
     ) -> tuple[str, str]:
         """Generate a file_id and return (file_id, url) synchronously.
 
         Called before upload() to obtain the final URL immediately, so it can
         be sent to the client while the upload happens in the background.
 
+        File is stored under {context_id}/{file_id}.{ext} - unique by UUID,
+        extension derived from mime_type for readability.
+
         Args:
-            file_name: Original file name from the A2A part, if available.
             mime_type: MIME type of the content.
             context_id: Session/conversation identifier.
-            task_id: Task identifier within the session.
 
         Returns:
             A (file_id, url) tuple. file_id is used in the subsequent upload()
@@ -49,7 +48,6 @@ class FileStorageBackend(ABC):
         data: bytes,
         mime_type: str,
         context_id: str | None = None,
-        task_id: str | None = None,
     ) -> None:
         """Upload file bytes to storage.
 
@@ -61,5 +59,4 @@ class FileStorageBackend(ABC):
             data: Raw file bytes.
             mime_type: MIME type of the content.
             context_id: Session/conversation identifier.
-            task_id: Task identifier within the session.
         """

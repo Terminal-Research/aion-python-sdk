@@ -8,6 +8,7 @@ If no backend is provided or resolved, all transform methods are no-ops.
 """
 
 import base64
+import mimetypes
 
 from a2a.types import (
     FilePart,
@@ -15,7 +16,6 @@ from a2a.types import (
     FileWithUri,
     Message,
     Part,
-    Task,
     TaskArtifactUpdateEvent,
     TaskStatusUpdateEvent,
 )
@@ -36,11 +36,12 @@ class FilePartTransformer:
 
     For each inline file part found:
     1. Generates a UUID file_id
-    2. Gets the final URL via BackgroundUploadScheduler.get_url() (synchronous)
-    3. Schedules the upload via BackgroundUploadScheduler.schedule() (background, safe)
+    2. Gets the final URL via BackgroundUploadScheduler.schedule() (synchronous)
+    3. Schedules the actual upload as a background task
     4. Returns a new part with FileWithUri pointing at that URL
 
-    context_id and task_id are extracted from the event and forwarded to the backend.
+    context_id is extracted from the event and forwarded to the backend for
+    organizing files by conversation/session.
     """
 
     def __init__(self, backend: FileStorageBackend | None = None) -> None:
@@ -66,8 +67,8 @@ class FilePartTransformer:
 
     async def transform_event(
             self,
-            event: TaskStatusUpdateEvent | TaskArtifactUpdateEvent | Task,
-    ) -> TaskStatusUpdateEvent | TaskArtifactUpdateEvent | Task:
+            event: TaskStatusUpdateEvent | TaskArtifactUpdateEvent,
+    ) -> TaskStatusUpdateEvent | TaskArtifactUpdateEvent:
         """Return a transformed copy of the event, or the original if unchanged."""
         if self._scheduler is None:
             return event
@@ -77,16 +78,11 @@ class FilePartTransformer:
             return await self._transform_artifact_event(event)
         return event
 
-    async def transform_message(
-            self,
-            message: Message,
-            context_id: str | None = None,
-            task_id: str | None = None,
-    ) -> Message:
+    async def transform_message(self, message: Message) -> Message:
         """Transform inline parts in a standalone Message (incoming or outgoing)."""
         if self._scheduler is None or not message.parts:
             return message
-        new_parts = await self._transform_parts(message.parts, context_id, task_id)
+        new_parts = await self._transform_parts(message.parts, message.context_id)
         if new_parts is message.parts:
             return message
         return message.model_copy(update={"parts": new_parts})
@@ -98,11 +94,7 @@ class FilePartTransformer:
         if not message or not message.parts:
             return event
 
-        new_parts = await self._transform_parts(
-            message.parts,
-            context_id=event.context_id,
-            task_id=event.task_id,
-        )
+        new_parts = await self._transform_parts(message.parts, context_id=event.context_id)
         if new_parts is message.parts:
             return event
 
@@ -117,11 +109,7 @@ class FilePartTransformer:
         if not artifact.parts:
             return event
 
-        new_parts = await self._transform_parts(
-            artifact.parts,
-            context_id=event.context_id,
-            task_id=event.task_id,
-        )
+        new_parts = await self._transform_parts(artifact.parts, context_id=event.context_id)
         if new_parts is artifact.parts:
             return event
 
@@ -132,13 +120,12 @@ class FilePartTransformer:
             self,
             parts: list[Part],
             context_id: str | None,
-            task_id: str | None,
     ) -> list[Part]:
         new_parts = []
         changed = False
 
         for part in parts:
-            new_part = await self._transform_part(part, context_id, task_id)
+            new_part = await self._transform_part(part, context_id)
             if new_part is not part:
                 changed = True
             new_parts.append(new_part)
@@ -149,7 +136,6 @@ class FilePartTransformer:
             self,
             part: Part,
             context_id: str | None,
-            task_id: str | None,
     ) -> Part:
         root = part.root
         if not isinstance(root, FilePart):
@@ -165,13 +151,16 @@ class FilePartTransformer:
             logger.warning("Failed to decode base64 bytes in FilePart — skipping upload")
             return part
 
-        mime_type = file.mime_type or "application/octet-stream"
+        mime_type = file.mime_type
+        if not mime_type and file.name:
+            guessed, _ = mimetypes.guess_type(file.name)
+            mime_type = guessed
+        mime_type = mime_type or "application/octet-stream"
+
         url = self._scheduler.schedule(
             data=data,
             mime_type=mime_type,
-            file_name=file.name,
             context_id=context_id,
-            task_id=task_id,
         )
 
         return Part(root=FilePart(file=FileWithUri(

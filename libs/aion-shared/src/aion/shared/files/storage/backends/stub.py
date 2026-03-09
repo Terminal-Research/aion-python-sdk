@@ -20,19 +20,11 @@ class StubFileStorageBackend(FileStorageBackend):
 
     def prepare(
         self,
-        file_name: str | None = None,
         mime_type: str | None = None,
         context_id: str | None = None,
-        task_id: str | None = None,
     ) -> tuple[str, str]:
         file_id = str(uuid4())
-        ext = mimetypes.guess_extension(mime_type) if mime_type else None
-        name = file_name or f"{file_id}{ext or ''}"
-        if context_id:
-            url = f"{self.BASE_URL}/{context_id}/{name}"
-        else:
-            url = f"{self.BASE_URL}/{name}"
-        return file_id, url
+        return file_id, self._build_url(file_id, mime_type, context_id)
 
     async def upload(
         self,
@@ -40,9 +32,13 @@ class StubFileStorageBackend(FileStorageBackend):
         data: bytes,
         mime_type: str,
         context_id: str | None = None,
-        task_id: str | None = None,
     ) -> None:
-        logger.debug(
-            "[StubStorage] upload skipped: file_id=%s context_id=%s task_id=%s size=%d mime_type=%s",
-            file_id, context_id, task_id, len(data), mime_type,
-        )
+        url = self._build_url(file_id, mime_type, context_id)
+        logger.debug("[StubStorage] upload skipped: url=%s size=%d", url, len(data))
+
+    def _build_url(self, file_id: str, mime_type: str | None, context_id: str | None) -> str:
+        ext = mimetypes.guess_extension(mime_type) if mime_type else None
+        name = f"{file_id}{ext or ''}"
+        if context_id:
+            return f"{self.BASE_URL}/{context_id}/{name}"
+        return f"{self.BASE_URL}/{name}"
