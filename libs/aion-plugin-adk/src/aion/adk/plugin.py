@@ -1,6 +1,7 @@
 from typing import Optional, Any, override
 
 from aion.shared.db import DbManagerProtocol
+from aion.shared.files.storage import FileUploadManager
 from aion.shared.logging import AionLogger, get_logger
 from aion.shared.plugins import AgentPluginProtocol
 
@@ -28,9 +29,14 @@ class ADKPlugin(AgentPluginProtocol):
         return self.NAME
 
     @override
-    async def initialize(self, db_manager: DbManagerProtocol, **deps: Any) -> None:
+    async def initialize(
+            self,
+            db_manager: DbManagerProtocol,
+            file_upload_manager: Optional[FileUploadManager] = None,
+            **deps: Any
+    ) -> None:
         self._db_manager = db_manager
-        self._adapter = ADKAdapter(db_manager=db_manager)
+        self._adapter = ADKAdapter(db_manager=db_manager, file_uploader=file_upload_manager)
 
     @override
     async def teardown(self) -> None:

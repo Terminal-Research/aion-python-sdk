@@ -3,7 +3,7 @@
 from typing import Any
 
 from a2a.types import SendMessageRequest, SendStreamingMessageRequest
-from aion.shared.files.storage import FilePartTransformer
+from aion.shared.files.a2a import A2AFileTransformer
 
 
 class FilePartPreprocessor:
@@ -17,8 +17,9 @@ class FilePartPreprocessor:
     for the uploads triggered by this request.
     """
 
-    def __init__(self, file_transformer: FilePartTransformer) -> None:
+    def __init__(self, file_transformer: A2AFileTransformer, *, wait_upload: bool = True) -> None:
         self._transformer = file_transformer
+        self._wait_upload = wait_upload
 
     async def preprocess(self, request_obj: Any) -> None:
         if not isinstance(request_obj, (SendMessageRequest, SendStreamingMessageRequest)):
@@ -28,8 +29,6 @@ class FilePartPreprocessor:
         if not params or not params.message:
             return
 
-        transformed = await self._transformer.transform_message(params.message)
-        if transformed is not params.message:
-            params.message = transformed
-
-        await self._transformer.drain()
+        transformed_message = await self._transformer.transform_message(params.message, wait_upload=self._wait_upload)
+        if transformed_message is not params.message:
+            params.message = transformed_message

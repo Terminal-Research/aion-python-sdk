@@ -17,7 +17,7 @@ from aion.server.utils import check_if_task_is_interrupted
 from aion.shared.agent import AionAgent
 from aion.shared.context import set_task_id as execution_context_set_task_id
 from aion.shared.logging import get_logger
-from aion.shared.files.storage import FilePartTransformer
+from aion.shared.files.a2a import A2AFileTransformer
 
 logger = get_logger()
 
@@ -29,7 +29,7 @@ class AionAgentRequestExecutor(AgentExecutor):
     Plugins are responsible for producing A2A events directly —
     this executor simply enqueues them.
 
-    If an FilePartTransformer is provided, inline (base64) file parts in
+    If an A2AFileTransformer is provided, inline (base64) file parts in
     outgoing events are transparently replaced with URL parts before
     being enqueued. The actual upload happens in the background.
     """
@@ -37,7 +37,7 @@ class AionAgentRequestExecutor(AgentExecutor):
     def __init__(
         self,
         aion_agent: AionAgent,
-        file_transformer: Optional[FilePartTransformer] = None,
+        file_transformer: Optional[A2AFileTransformer] = None,
     ):
         self.agent = aion_agent
         self._task_updater: TaskUpdater | None = None
@@ -76,7 +76,7 @@ class AionAgentRequestExecutor(AgentExecutor):
                     first_event = False
 
                 if self._file_transformer is not None:
-                    agent_event = await self._file_transformer.transform_event(agent_event)
+                    agent_event = await self._file_transformer.transform_event(agent_event, wait_upload=False)
 
                 await event_queue.enqueue_event(agent_event)
 

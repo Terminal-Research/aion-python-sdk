@@ -1,11 +1,8 @@
-from .backends import FileStorageBackend, StubFileStorageBackend, StorageBackendFactory
-from .part_transformer import FilePartTransformer
-from .upload_scheduler import BackgroundUploadScheduler
+from .backends import FileStorageBackend, StubFileStorageBackend
+from .manager import FileUploadManager
 
 __all__ = [
     "FileStorageBackend",
     "StubFileStorageBackend",
-    "StorageBackendFactory",
-    "FilePartTransformer",
-    "BackgroundUploadScheduler",
+    "FileUploadManager",
 ]

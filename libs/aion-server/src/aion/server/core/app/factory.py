@@ -7,9 +7,11 @@ database, plugins, agent, and FastAPI application using dependency injection.
 from typing import Optional
 
 from a2a.server.tasks import InMemoryPushNotificationConfigStore
+from aion.db.postgres import DbFactory
 from aion.shared.agent import AionAgent
+from aion.shared.files.a2a import A2AFileTransformer
+from aion.shared.files.storage.manager import FileUploadManager
 from aion.shared.logging import get_logger
-from aion.shared.files.storage import FilePartTransformer
 from fastapi import FastAPI
 
 from aion.server.agent import AionAgentRequestExecutor, AgentFactory
@@ -17,7 +19,6 @@ from aion.server.core.app.a2a_fastapi import AionA2AFastAPIApplication
 from aion.server.core.app.preprocessors import FilePartPreprocessor
 from aion.server.core.middlewares import TracingMiddleware, AionContextMiddleware
 from aion.server.core.request_handlers import AionRequestHandler
-from aion.db.postgres import DbFactory
 from aion.server.plugins import PluginFactory
 from aion.server.tasks import StoreManager
 from .lifespan import AppLifespan
@@ -44,8 +45,8 @@ class AppFactory:
             agent_factory: AgentFactory,
             plugin_factory: PluginFactory,
             store_manager: StoreManager,
+            upload_manager: Optional[FileUploadManager] = None,
             startup_callback=None,
-            file_transformer: Optional[FilePartTransformer] = None,
     ):
         """Initialize factory with all dependencies via dependency injection.
 
@@ -55,11 +56,11 @@ class AppFactory:
             agent_factory: Factory for agent building
             plugin_factory: Factory for plugin lifecycle management (already has db_manager)
             store_manager: Task store manager
+            upload_manager: Optional pre-built FileUploadManager. If None, one is
+                created automatically from AION_FILE_STORAGE_BACKEND env var. If the
+                env var is not set, file uploading is disabled and inline parts pass
+                through unchanged.
             startup_callback: Optional callback to call after initialization
-            file_transformer: Optional pre-built FilePartTransformer. If None,
-                one is created automatically — its backend is resolved from
-                AION_FILE_STORAGE_BACKEND env var. If the env var is not set,
-                the transformer is a no-op and inline parts pass through unchanged.
         """
         self.aion_agent = aion_agent
         self.db_factory = db_factory
@@ -67,7 +68,8 @@ class AppFactory:
         self.plugin_factory = plugin_factory
         self.store_manager = store_manager
         self.startup_callback = startup_callback
-        self._file_transformer = file_transformer or FilePartTransformer()
+        self.upload_manager = upload_manager or FileUploadManager.from_settings()
+        self.file_transformer = A2AFileTransformer(self.upload_manager)
 
         # Application components (created during initialization)
         self.a2a_app: Optional[AionA2AFastAPIApplication] = None
@@ -99,7 +101,7 @@ class AppFactory:
         await self._build_app()
 
         # 3. Initialize plugins - Phase 1: infrastructure setup
-        await self.plugin_factory.initialize()
+        await self.plugin_factory.initialize(file_upload_manager=self.upload_manager)
 
         # 4. Build agent
         await self.agent_factory.build()
@@ -125,7 +127,9 @@ class AppFactory:
         self.a2a_app = AionA2AFastAPIApplication(
             aion_agent=self.aion_agent,
             http_handler=request_handler,
-            preprocessors=[FilePartPreprocessor(self._file_transformer)],
+            preprocessors=[
+                FilePartPreprocessor(self.file_transformer, wait_upload=True),
+            ],
         )
 
         # Build FastAPI application from A2A app
@@ -142,7 +146,7 @@ class AppFactory:
 
         self._executor = AionAgentRequestExecutor(
             self.aion_agent,
-            file_transformer=self._file_transformer,
+            file_transformer=self.file_transformer,
         )
 
         return AionRequestHandler(

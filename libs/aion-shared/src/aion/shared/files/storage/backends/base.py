@@ -11,7 +11,7 @@ class FileStorageBackend(ABC):
     """Abstract file storage service.
 
     Implementations must support the presigned-URL pattern:
-    - get_url() returns the final URL for a file_id BEFORE upload starts
+    - generate_uri() returns the final URL for a file_id BEFORE upload starts
     - upload() persists the actual bytes asynchronously
 
     This decoupling allows the server to send the URL to the client
@@ -19,12 +19,12 @@ class FileStorageBackend(ABC):
     """
 
     @abstractmethod
-    def prepare(
+    def generate_uri(
         self,
         mime_type: str | None = None,
         context_id: str | None = None,
     ) -> tuple[str, str]:
-        """Generate a file_id and return (file_id, url) synchronously.
+        """Generate a file_id and return (file_id, uri) synchronously.
 
         Called before upload() to obtain the final URL immediately, so it can
         be sent to the client while the upload happens in the background.
@@ -37,8 +37,8 @@ class FileStorageBackend(ABC):
             context_id: Session/conversation identifier.
 
         Returns:
-            A (file_id, url) tuple. file_id is used in the subsequent upload()
-            call. url is the publicly accessible URL that will serve the file.
+            A (file_id, uri) tuple. file_id is used in the subsequent upload()
+            call. uri is the publicly accessible URL that will serve the file.
         """
 
     @abstractmethod
@@ -51,11 +51,11 @@ class FileStorageBackend(ABC):
     ) -> None:
         """Upload file bytes to storage.
 
-        Called in the background after prepare(). Failures are logged
+        Called in the background after generate_uri(). Failures are logged
         but do not affect the event already sent to the client.
 
         Args:
-            file_id: The file_id returned by prepare().
+            file_id: The file_id returned by generate_uri().
             data: Raw file bytes.
             mime_type: MIME type of the content.
             context_id: Session/conversation identifier.

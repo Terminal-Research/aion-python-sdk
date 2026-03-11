@@ -16,6 +16,7 @@ from typing_extensions import override
 
 from aion.db.postgres.repositories.tasks.repository import TasksRepository
 from aion.shared.db import DbManagerProtocol
+from aion.shared.files.storage import FileUploadManager
 from aion.shared.logging import get_logger
 
 from .base import ArtifactServiceBackend
@@ -51,16 +52,21 @@ class A2AArtifactService(BaseArtifactService):
         db_manager: Optional[DbManagerProtocol] = None,
         ttl: int = 300,
         cleanup_interval: int = 60,
+        file_uploader: Optional[FileUploadManager] = None,
     ):
         """
         Args:
             db_manager: Optional DB connection manager for persistence and fallback reads.
             ttl: Seconds before an artifact path is evicted from memory.
             cleanup_interval: How often (in seconds) the background eviction loop runs.
+            file_uploader: Optional uploader for converting inline_data parts to
+                file_data (URI) parts on save. When provided, raw bytes are uploaded
+                to file storage and replaced with a URL reference.
         """
         self._db_manager = db_manager
         self._ttl = ttl
         self._cleanup_interval = cleanup_interval
+        self._file_uploader = file_uploader
         self._artifacts: dict[str, list[_ArtifactEntry]] = {}
         self._timestamps: dict[str, float] = {}
         self._version_offsets: dict[str, int] = {}
@@ -127,6 +133,35 @@ class A2AArtifactService(BaseArtifactService):
                     pass
         return versions
 
+    def _upload_inline_data(
+        self,
+        artifact: types.Part,
+        context_id: Optional[str],
+    ) -> types.Part:
+        """Converts inline_data to file_data (URI) if a file uploader is configured.
+
+        Returns the original part unchanged if no uploader is set or the part
+        has no inline_data.
+        """
+        if self._file_uploader is None or artifact.inline_data is None:
+            return artifact
+
+        inline = artifact.inline_data
+        if not inline.data:
+            return artifact
+
+        url = self._file_uploader.schedule(
+            data=inline.data,
+            mime_type=inline.mime_type or "application/octet-stream",
+            context_id=context_id,
+        )
+        return types.Part(
+            file_data=types.FileData(
+                file_uri=url,
+                mime_type=inline.mime_type,
+            )
+        )
+
     @override
     async def save_artifact(
         self,
@@ -143,6 +178,7 @@ class A2AArtifactService(BaseArtifactService):
         On the first write to an empty path, queries DB for the current version count
         and uses it as an offset so logical versions stay continuous with what's in DB.
         """
+        artifact = self._upload_inline_data(artifact, context_id=session_id)
         path = self._artifact_path(app_name, user_id, filename, session_id)
 
         if path not in self._version_offsets:
@@ -521,10 +557,12 @@ class A2ABackend(ArtifactServiceBackend):
         db_manager: Optional[DbManagerProtocol] = None,
         ttl: int = 300,
         cleanup_interval: int = 60,
+        file_uploader: Optional[FileUploadManager] = None,
     ):
         self._db_manager = db_manager
         self._ttl = ttl
         self._cleanup_interval = cleanup_interval
+        self._file_uploader = file_uploader
 
     def create(self) -> A2AArtifactService:
         """Instantiates a new A2AArtifactService with the configured DB manager and TTL."""
@@ -532,6 +570,7 @@ class A2ABackend(ArtifactServiceBackend):
             db_manager=self._db_manager,
             ttl=self._ttl,
             cleanup_interval=self._cleanup_interval,
+            file_uploader=self._file_uploader,
         )
 
     def is_available(self) -> bool:
