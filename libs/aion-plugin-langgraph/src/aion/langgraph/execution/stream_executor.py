@@ -8,7 +8,7 @@ from a2a.types import TaskArtifactUpdateEvent, TaskStatusUpdateEvent, TextPart
 from aion.shared.logging import get_logger
 from aion.shared.types import ArtifactId
 
-from .a2a_converter import LangGraphA2AConverter
+from .event_converter import LangGraphA2AConverter
 from .event_preprocessor import LangGraphEventPreprocessor
 
 logger = get_logger()
@@ -74,14 +74,12 @@ class StreamExecutor:
             inputs, config, stream_mode=STREAM_MODES
         ):
             if event_type == "messages":
-                event_data, metadata = event_data
-            else:
-                metadata = None
+                event_data, _ = event_data
 
             if self._preprocessor:
                 self._preprocessor.process(event_type, event_data)
 
-            a2a_events = self._converter.convert(event_type, event_data, metadata)
+            a2a_events = self._converter.convert(event_type, event_data)
             for a2a_event in a2a_events:
                 self._track(a2a_event)
                 yield a2a_event

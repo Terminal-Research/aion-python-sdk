@@ -32,6 +32,7 @@ def emit_file_artifact(
     base64: str | None = None,
     mime_type: str,
     name: str | None = None,
+    artifact_id: str | None = None,
     append: bool = False,
     is_last_chunk: bool = True,
 ) -> None:
@@ -46,6 +47,7 @@ def emit_file_artifact(
         base64: File content as base64 string (for FileWithBytes)
         mime_type: MIME type of the file (e.g., "application/pdf", "image/png")
         name: Artifact name (defaults to "file")
+        artifact_id: Explicit artifact ID; auto-generated if not provided
         append: If True, append to previously sent artifact
         is_last_chunk: If True, this is the final chunk
 
@@ -70,13 +72,15 @@ def emit_file_artifact(
                 name="generated_document"
             )
 
-            # Streaming file chunks
+            # Streaming file chunks with a stable artifact_id
+            artifact_id = str(uuid4())
             for i, chunk_base64 in enumerate(file_chunks):
                 is_last = (i == len(file_chunks) - 1)
                 emit_file(
                     writer,
                     base64=chunk_base64,
                     mime_type="text/plain",
+                    artifact_id=artifact_id,
                     append=True,
                     is_last_chunk=is_last
                 )
@@ -94,7 +98,7 @@ def emit_file_artifact(
         file_data = FileWithBytes(bytes=base64, mime_type=mime_type)
 
     artifact = Artifact(
-        artifact_id=str(uuid4()),
+        artifact_id=artifact_id or str(uuid4()),
         name=name or "file",
         parts=[Part(root=FilePart(file=file_data))]
     )
@@ -110,6 +114,7 @@ def emit_data_artifact(
     writer: StreamWriter,
     data: dict | Any,
     name: str | None = None,
+    artifact_id: str | None = None,
     append: bool = False,
     is_last_chunk: bool = True,
 ) -> None:
@@ -121,6 +126,7 @@ def emit_data_artifact(
         writer: LangGraph StreamWriter from node signature
         data: Data to emit (dict or any JSON-serializable value)
         name: Artifact name (defaults to "data")
+        artifact_id: Explicit artifact ID; auto-generated if not provided
         append: If True, append to previously sent artifact
         is_last_chunk: If True, this is the final chunk
 
@@ -129,7 +135,7 @@ def emit_data_artifact(
             emit_data(writer, {"status": "success", "results": [...]}, name="analysis_results")
     """
     artifact = Artifact(
-        artifact_id=str(uuid4()),
+        artifact_id=artifact_id or str(uuid4()),
         name=name or "data",
         parts=[Part(root=DataPart(data=data))]
     )

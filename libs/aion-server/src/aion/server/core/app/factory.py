@@ -7,15 +7,18 @@ database, plugins, agent, and FastAPI application using dependency injection.
 from typing import Optional
 
 from a2a.server.tasks import InMemoryPushNotificationConfigStore
+from aion.db.postgres import DbFactory
 from aion.shared.agent import AionAgent
+from aion.shared.files.a2a import A2AFileTransformer
+from aion.shared.files.storage.manager import FileUploadManager
 from aion.shared.logging import get_logger
 from fastapi import FastAPI
 
 from aion.server.agent import AionAgentRequestExecutor, AgentFactory
 from aion.server.core.app.a2a_fastapi import AionA2AFastAPIApplication
+from aion.server.core.app.preprocessors import FilePartPreprocessor
 from aion.server.core.middlewares import TracingMiddleware, AionContextMiddleware
 from aion.server.core.request_handlers import AionRequestHandler
-from aion.db.postgres import DbFactory
 from aion.server.plugins import PluginFactory
 from aion.server.tasks import StoreManager
 from .lifespan import AppLifespan
@@ -42,7 +45,8 @@ class AppFactory:
             agent_factory: AgentFactory,
             plugin_factory: PluginFactory,
             store_manager: StoreManager,
-            startup_callback=None
+            upload_manager: Optional[FileUploadManager] = None,
+            startup_callback=None,
     ):
         """Initialize factory with all dependencies via dependency injection.
 
@@ -52,6 +56,10 @@ class AppFactory:
             agent_factory: Factory for agent building
             plugin_factory: Factory for plugin lifecycle management (already has db_manager)
             store_manager: Task store manager
+            upload_manager: Optional pre-built FileUploadManager. If None, one is
+                created automatically from AION_FILE_STORAGE_BACKEND env var. If the
+                env var is not set, file uploading is disabled and inline parts pass
+                through unchanged.
             startup_callback: Optional callback to call after initialization
         """
         self.aion_agent = aion_agent
@@ -60,10 +68,13 @@ class AppFactory:
         self.plugin_factory = plugin_factory
         self.store_manager = store_manager
         self.startup_callback = startup_callback
+        self.upload_manager = upload_manager or FileUploadManager.from_settings()
+        self.file_transformer = A2AFileTransformer(self.upload_manager)
 
         # Application components (created during initialization)
         self.a2a_app: Optional[AionA2AFastAPIApplication] = None
         self.fastapi_app: Optional[FastAPI] = None
+        self._executor: Optional[AionAgentRequestExecutor] = None
 
     async def initialize(self):
         """Initialize the application factory.
@@ -90,7 +101,7 @@ class AppFactory:
         await self._build_app()
 
         # 3. Initialize plugins - Phase 1: infrastructure setup
-        await self.plugin_factory.initialize()
+        await self.plugin_factory.initialize(file_upload_manager=self.upload_manager)
 
         # 4. Build agent
         await self.agent_factory.build()
@@ -115,7 +126,10 @@ class AppFactory:
         # Create A2A application
         self.a2a_app = AionA2AFastAPIApplication(
             aion_agent=self.aion_agent,
-            http_handler=request_handler
+            http_handler=request_handler,
+            preprocessors=[
+                FilePartPreprocessor(self.file_transformer, wait_upload=True),
+            ],
         )
 
         # Build FastAPI application from A2A app
@@ -130,8 +144,13 @@ class AppFactory:
         self.store_manager.initialize()
         task_store = self.store_manager.get_store()
 
+        self._executor = AionAgentRequestExecutor(
+            self.aion_agent,
+            file_transformer=self.file_transformer,
+        )
+
         return AionRequestHandler(
-            agent_executor=AionAgentRequestExecutor(self.aion_agent),
+            agent_executor=self._executor,
             task_store=task_store,
             push_config_store=InMemoryPushNotificationConfigStore()
         )
@@ -148,6 +167,13 @@ class AppFactory:
     async def shutdown(self) -> None:
         """Shutdown the application and cleanup resources."""
         logger.info("Shutting down application factory")
+
+        # Drain any in-flight background file uploads before shutting down
+        if self._executor is not None:
+            try:
+                await self._executor.drain()
+            except Exception as exc:
+                logger.error("Error draining uploads", exc_info=exc)
 
         # Cleanup plugins (via PluginFactory)
         if self.plugin_factory.is_initialized():

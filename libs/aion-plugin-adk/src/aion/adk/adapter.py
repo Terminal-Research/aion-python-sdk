@@ -6,6 +6,7 @@ from aion.shared.agent.adapters import AgentAdapter, ExecutorAdapter
 from aion.shared.agent.exceptions import ConfigurationError
 from aion.shared.config.models import AgentConfig
 from aion.shared.db import DbManagerProtocol
+from aion.shared.files.storage import FileUploadManager
 from aion.shared.logging import get_logger
 from google.adk.agents import BaseAgent
 
@@ -21,6 +22,7 @@ class ADKAdapter(AgentAdapter):
             self,
             base_path: Optional[Path] = None,
             db_manager: Optional[DbManagerProtocol] = None,
+            file_uploader: Optional[FileUploadManager] = None,
     ):
         """Initialize ADK adapter.
 
@@ -28,9 +30,12 @@ class ADKAdapter(AgentAdapter):
             base_path: Base path for agent files (defaults to current directory)
             db_manager: Database manager instance for DatabaseSessionService support.
                        If None, InMemorySessionService will be used.
+            file_uploader: Optional upload manager for converting inline artifact
+                           data to URI references on save.
         """
         self.base_path = base_path or Path.cwd()
         self.db_manager = db_manager
+        self.file_uploader = file_uploader
 
     @staticmethod
     def framework_name() -> str:
@@ -83,7 +88,7 @@ class ADKAdapter(AgentAdapter):
             )
 
         session_service = SessionServiceFactory.create(db_manager=self.db_manager)
-        artifact_service = ArtifactServiceFactory.create(db_manager=self.db_manager)
+        artifact_service = ArtifactServiceFactory.create(db_manager=self.db_manager, file_uploader=self.file_uploader)
         return ADKExecutor(agent, config, session_service=session_service, artifact_service=artifact_service)
 
     def validate_config(self, config: AgentConfig) -> None:

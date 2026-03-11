@@ -1,6 +1,6 @@
 """Framework-agnostic A2A executor for AionAgent."""
 
-from typing import Tuple
+from typing import Optional, Tuple
 
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
@@ -17,6 +17,7 @@ from aion.server.utils import check_if_task_is_interrupted
 from aion.shared.agent import AionAgent
 from aion.shared.context import set_task_id as execution_context_set_task_id
 from aion.shared.logging import get_logger
+from aion.shared.files.a2a import A2AFileTransformer
 
 logger = get_logger()
 
@@ -27,11 +28,20 @@ class AionAgentRequestExecutor(AgentExecutor):
     Bridges A2A protocol's AgentExecutor interface with AionAgent.
     Plugins are responsible for producing A2A events directly —
     this executor simply enqueues them.
+
+    If an A2AFileTransformer is provided, inline (base64) file parts in
+    outgoing events are transparently replaced with URL parts before
+    being enqueued. The actual upload happens in the background.
     """
 
-    def __init__(self, aion_agent: AionAgent):
+    def __init__(
+        self,
+        aion_agent: AionAgent,
+        file_transformer: Optional[A2AFileTransformer] = None,
+    ):
         self.agent = aion_agent
         self._task_updater: TaskUpdater | None = None
+        self._file_transformer = file_transformer
 
     @trace_function
     async def execute(
@@ -65,11 +75,23 @@ class AionAgentRequestExecutor(AgentExecutor):
                     await self._update_task_status_working(event_queue, task)
                     first_event = False
 
+                if self._file_transformer is not None:
+                    agent_event = await self._file_transformer.transform_event(agent_event, wait_upload=False)
+
                 await event_queue.enqueue_event(agent_event)
 
         except Exception as ex:
             logger.exception("Execution failed")
             raise ServerError(error=InternalError()) from ex
+
+    async def drain(self) -> None:
+        """Wait for all in-flight background uploads to complete.
+
+        Should be called during graceful shutdown to ensure no uploads are
+        silently dropped when the server stops.
+        """
+        if self._file_transformer is not None:
+            await self._file_transformer.drain()
 
     async def cancel(
             self, context: RequestContext, event_queue: EventQueue

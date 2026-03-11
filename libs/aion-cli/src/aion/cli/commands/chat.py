@@ -29,6 +29,12 @@ from aion.cli.handlers import start_chat
     default=None,
     help='Graph ID to use via proxy server',
 )
+@click.option(
+    '--no-stream',
+    is_flag=True,
+    default=False,
+    help='Disable streaming, use message/send even if agent supports streaming',
+)
 async def chat(
         host: str,
         session: int,
@@ -38,6 +44,7 @@ async def chat(
         header: tuple,
         extensions: Optional[str],
         agent_id: Optional[str],
+        no_stream: bool,
 ):
     """Start an interactive chat session with A2A agent"""
     custom_headers = _parse_headers(header)
@@ -52,6 +59,7 @@ async def chat(
             enabled_extensions=extensions,
             custom_headers=custom_headers,
             agent_id=agent_id,
+            no_stream=no_stream,
         )
     except KeyboardInterrupt:
         click.echo("\nChat session interrupted by user")
