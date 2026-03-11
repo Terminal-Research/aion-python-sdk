@@ -1,6 +1,6 @@
 import json
 import traceback
-from typing import get_args
+from typing import get_args, override
 
 from a2a.server.apps import A2AFastAPIApplication
 from a2a.server.apps.jsonrpc.jsonrpc_app import (
@@ -12,6 +12,7 @@ from a2a.types import (
     UnsupportedOperationError, JSONRPCErrorResponse, JSONRPCRequest
 )
 from a2a.types import AgentCard
+from a2a.utils import PREV_AGENT_CARD_WELL_KNOWN_PATH, AGENT_CARD_WELL_KNOWN_PATH
 from a2a.utils.errors import MethodNotImplementedError
 from aion.shared.agent import AionAgent
 from aion.shared.logging import get_logger
@@ -25,8 +26,10 @@ from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import HTTPException
 from opentelemetry import trace
 from pydantic import ValidationError
+from starlette.responses import JSONResponse
 from starlette.status import HTTP_413_REQUEST_ENTITY_TOO_LARGE
 
+from aion.server.compat import A2AV1Adapter
 from aion.server.core.request_handlers import AionJSONRPCHandler
 from aion.server.interfaces import IRequestHandler
 from .api import AionExtraHTTPRoutes
@@ -203,6 +206,71 @@ class AionA2AFastAPIApplication(A2AFastAPIApplication):
                 )
 
         return self._create_response(context=context, handler_result=handler_result)
+
+    @override
+    async def _handle_get_agent_card(self, request: Request) -> JSONResponse:
+        """Handles GET requests for the agent card endpoint.
+
+        Args:
+            request: The incoming Starlette Request object.
+
+        Returns:
+            A JSONResponse containing the agent card data.
+        """
+        if request.url.path == PREV_AGENT_CARD_WELL_KNOWN_PATH:
+            logger.warning(
+                "Deprecated agent card endpoint '%s' accessed. "
+                "Please use '%s' instead. This endpoint will be removed in a future version.",
+                PREV_AGENT_CARD_WELL_KNOWN_PATH,
+                AGENT_CARD_WELL_KNOWN_PATH,
+            )
+
+        card_to_serve = self.agent_card
+        if self.card_modifier:
+            card_to_serve = self.card_modifier(card_to_serve)
+
+        return JSONResponse(
+            A2AV1Adapter.transform_agent_card_response(
+                card_to_serve.model_dump(
+                    exclude_none=True,
+                    by_alias=True,
+                )
+            )
+        )
+
+    @override
+    def _create_response(self, context, handler_result):
+        # ---- COMPAT: a2a v0.3 → v1.0 ----------------------------------------
+        # Strips `kind` from Part objects so the wire format matches a2a v1.0.
+        # Remove this entire method when upgrading a2a-sdk to ≥ 1.0:
+        from collections.abc import AsyncGenerator
+        from a2a.extensions.common import HTTP_EXTENSION_HEADER
+        from a2a.types import JSONRPCErrorResponse
+        from sse_starlette.sse import EventSourceResponse
+        from starlette.responses import JSONResponse
+
+        headers = {}
+        if exts := context.activated_extensions:
+            headers[HTTP_EXTENSION_HEADER] = ', '.join(sorted(exts))
+
+        if isinstance(handler_result, AsyncGenerator):
+            async def event_generator(stream):
+                async for item in stream:
+                    raw = item.root.model_dump_json(exclude_none=True)
+                    yield {'data': A2AV1Adapter.transform_sse_event(raw)}
+
+            return EventSourceResponse(event_generator(handler_result), headers=headers)
+
+        if isinstance(handler_result, JSONRPCErrorResponse):
+            return JSONResponse(
+                handler_result.model_dump(mode='json', exclude_none=True),
+                headers=headers,
+            )
+
+        return JSONResponse(
+            A2AV1Adapter.transform_response(handler_result.root.model_dump(mode='json', exclude_none=True)),
+            headers=headers,
+        )
 
     @staticmethod
     def _check_if_request_is_custom_method(request_obj):
