@@ -17,7 +17,7 @@ from fastapi import FastAPI
 from aion.server.agent import AionAgentRequestExecutor, AgentFactory
 from aion.server.core.app.a2a_fastapi import AionA2AFastAPIApplication
 from aion.server.core.app.preprocessors import FilePartPreprocessor
-from aion.server.core.middlewares import TracingMiddleware, AionContextMiddleware
+from aion.server.core.middlewares import TracingMiddleware, AionContextMiddleware, A2ACompatMiddleware
 from aion.server.core.request_handlers import AionRequestHandler
 from aion.server.plugins import PluginFactory
 from aion.server.tasks import StoreManager
@@ -163,6 +163,7 @@ class AppFactory:
         """
         self.fastapi_app.add_middleware(TracingMiddleware)
         self.fastapi_app.add_middleware(AionContextMiddleware)
+        self.fastapi_app.add_middleware(A2ACompatMiddleware)
 
     async def shutdown(self) -> None:
         """Shutdown the application and cleanup resources."""

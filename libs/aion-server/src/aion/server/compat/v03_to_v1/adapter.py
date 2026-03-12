@@ -1,35 +1,14 @@
-# Shim: rewrites a2a v0.3 JSON wire format to v1.0 before it leaves the server.
-#
-# v0.3 > v1.0 mapping:
-#
-#   Parts
-#     {"kind":"text","text":"…"}                             > {"text":"…"}
-#     {"kind":"data","data":{…}}                             > {"data":{…}}
-#     {"kind":"file","file":{"bytes":"…","mimeType":"…",…}}  > {"raw":"…","mediaType":"…",…}
-#     {"kind":"file","file":{"uri":"…","mimeType":"…"}}      > {"url":"…","mediaType":"…"}
-#
-#   Streaming events (result field)
-#     {"kind":"status-update",  …} > {"statusUpdate":  {…}}
-#     {"kind":"artifact-update",…} > {"artifactUpdate":{…}}
-#
-#   Other objects
-#     Message.kind stripped; Task.kind stripped + history/artifacts recursed
-#
-# To remove when upgrading a2a-sdk to >= 1.0:
-#   1. Delete src/aion/server/compat/
-#   2. Remove AionA2AFastAPIApplication._create_response() from core/app/a2a_fastapi.py
-#   3. Remove AionA2AFastAPIApplication._handle_get_agent_card() from core/app/a2a_fastapi.py
-#   4. Remove AION_A2A_COMPAT_ENABLED from environment / deployment configs
-#
 # AION_A2A_COMPAT_ENABLED=true   (default) — transformation active
-# AION_A2A_COMPAT_ENABLED=false            — pass-through, for debugging
+# AION_A2A_COMPAT_ENABLED=false            — pass-through
 
 import json
 import os
 from typing import Any
 
-from a2a.types import TaskState
+from a2a.types import AgentCard, TaskState
 from aion.shared.logging import get_logger
+
+from .agent_card import AgentCardMigrator
 
 logger = get_logger()
 
@@ -204,11 +183,9 @@ class A2AV1Adapter:
         return data
 
     @classmethod
-    def transform_agent_card_response(cls, data: dict) -> dict:
-        """Transform an Agent Card response dict from v0.3 to v1.0 wire format."""
+    def transform_agent_card_response(cls, card: AgentCard) -> dict:
+        """Transform an AgentCard pydantic instance from v0.3 to v1.0 wire format."""
         if not cls.enabled:
-            return data
+            return card.model_dump(by_alias=True, exclude_none=True)
 
-        data.pop("protocolVersion", None)
-        data["protocolVersions"] = ["1.0"]
-        return data
+        return AgentCardMigrator(card).migrate()

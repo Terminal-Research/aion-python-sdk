@@ -239,12 +239,7 @@ class AionA2AFastAPIApplication(A2AFastAPIApplication):
             card_to_serve = self.card_modifier(card_to_serve)
 
         return JSONResponse(
-            A2AV1Adapter.transform_agent_card_response(
-                card_to_serve.model_dump(
-                    exclude_none=True,
-                    by_alias=True,
-                )
-            )
+            A2AV1Adapter.transform_agent_card_response(card_to_serve)
         )
 
     @override
