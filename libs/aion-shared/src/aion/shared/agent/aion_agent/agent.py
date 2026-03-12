@@ -144,12 +144,11 @@ class AionAgent:
 
     @property
     def framework(self) -> str:
-        """Framework name (e.g., 'langgraph', 'autogen').
+        """Framework name (e.g., 'langgraph', 'adk').
 
-        Returns framework from config if available, otherwise from adapter.
+        Derived from the adapter detected during build().
+        Returns 'unknown' if agent is not yet built.
         """
-        if hasattr(self._config, "framework") and self._config.framework:
-            return self._config.framework
         if self._adapter:
             return self._adapter.framework_name()
         return "unknown"

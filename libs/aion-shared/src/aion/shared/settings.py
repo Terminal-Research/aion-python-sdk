@@ -279,7 +279,7 @@ class AppSettings(BaseEnvSettings):
     )
 
     docs_url: str = Field(
-        default="https://docs.aion.to/",
+        default="https://docs.aion.to",
         description="Url to the documentation of Aion API.",
         alias="AION_DOCS_URL"
     )
