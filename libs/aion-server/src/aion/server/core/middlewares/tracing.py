@@ -49,8 +49,6 @@ class TracingMiddleware(BaseHTTPMiddleware):
             HTTP response from the application
         """
         request_context: ExecutionContext = get_context()
-        if request_context:
-            d1=1
 
         # Generate trace context and attach it globally
         trace_context = generate_request_span_context(

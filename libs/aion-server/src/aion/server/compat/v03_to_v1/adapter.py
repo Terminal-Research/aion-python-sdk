@@ -1,8 +1,4 @@
-# AION_A2A_COMPAT_ENABLED=true   (default) — transformation active
-# AION_A2A_COMPAT_ENABLED=false            — pass-through
-
 import json
-import os
 from typing import Any
 
 from a2a.types import AgentCard, TaskState
@@ -14,8 +10,6 @@ logger = get_logger()
 
 
 class A2AV1Adapter:
-    enabled: bool = os.getenv("AION_A2A_COMPAT_ENABLED", "true").lower() != "false"
-
     _EVENT_WRAPPERS: dict[str, str] = {
         "status-update": "statusUpdate",
         "artifact-update": "artifactUpdate",
@@ -161,9 +155,6 @@ class A2AV1Adapter:
     @classmethod
     def transform_sse_event(cls, event_json: str) -> str:
         """Transform a JSON-RPC SSE event string from v0.3 to v1.0 wire format."""
-        if not cls.enabled:
-            return event_json
-
         data = json.loads(event_json)
         if isinstance(data, dict) and isinstance(data.get("result"), dict):
             data = {**data, "result": cls._transform_result(data["result"])}
@@ -174,9 +165,6 @@ class A2AV1Adapter:
     @classmethod
     def transform_response(cls, data: dict) -> dict:
         """Transform a JSON-RPC response dict from v0.3 to v1.0 wire format."""
-        if not cls.enabled:
-            return data
-
         if isinstance(data.get("result"), dict):
             data = {**data, "result": cls._transform_result(data["result"])}
         logger.debug("a2a compat response: %s", json.dumps(data, ensure_ascii=False))
@@ -185,7 +173,4 @@ class A2AV1Adapter:
     @classmethod
     def transform_agent_card_response(cls, card: AgentCard) -> dict:
         """Transform an AgentCard pydantic instance from v0.3 to v1.0 wire format."""
-        if not cls.enabled:
-            return card.model_dump(by_alias=True, exclude_none=True)
-
         return AgentCardMigrator(card).migrate()

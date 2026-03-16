@@ -41,7 +41,7 @@
 #   3. Remove A2ACompatMiddleware from core/middlewares/__init__.py and factory._add_extra_middlewares()
 #   4. Remove AionA2AFastAPIApplication._create_response() from core/app/a2a_fastapi.py
 #   5. Remove AionA2AFastAPIApplication._handle_get_agent_card() from core/app/a2a_fastapi.py
-#   6. Remove AION_A2A_COMPAT_ENABLED from environment / deployment configs
+#   6. Remove _request_a2a_version ContextVar from core/app/a2a_fastapi.py
 
 from .v03_to_v1 import A2AV1Adapter
 from .v1_to_v03 import A2AV03Adapter

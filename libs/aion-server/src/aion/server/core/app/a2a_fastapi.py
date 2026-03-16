@@ -1,6 +1,11 @@
 import json
 import traceback
+from _contextvars import ContextVar
 from typing import get_args, override
+
+# Holds the resolved A2A-Version for the current request so _create_response
+# (called by parent-class methods without a Request object) can read it.
+_request_a2a_version: ContextVar[str] = ContextVar("a2a_version", default="1.0")
 
 from a2a.server.apps import A2AFastAPIApplication
 from a2a.server.apps.jsonrpc.jsonrpc_app import (
@@ -106,6 +111,10 @@ class AionA2AFastAPIApplication(A2AFastAPIApplication):
         request_id = None
         body = None
 
+        # Propagate the A2A-Version resolved by A2ACompatMiddleware so that
+        # _create_response (called from parent-class methods) can read it.
+        _request_a2a_version.set(request.scope.get("a2a_version", "1.0"))
+
         try:
             body = await request.json()
             if isinstance(body, dict):
@@ -168,8 +177,7 @@ class AionA2AFastAPIApplication(A2AFastAPIApplication):
                 )
             raise e
         except Exception as e:
-            logger.error(f'Unhandled exception: {e}')
-            traceback.print_exc()
+            logger.error("Unhandled exception: %s %s", request.method, request.url.path, exc_info=True)
             return self._generate_error_response(
                 request_id, A2AError(root=InternalError(message=str(e)))
             )
@@ -245,7 +253,8 @@ class AionA2AFastAPIApplication(A2AFastAPIApplication):
     @override
     def _create_response(self, context, handler_result):
         # ---- COMPAT: a2a v0.3 → v1.0 ----------------------------------------
-        # Strips `kind` from Part objects so the wire format matches a2a v1.0.
+        # Applies outgoing transformation only when the client requested v1.0.
+        # v0.3 clients receive the raw SDK output unchanged.
         # Remove this entire method when upgrading a2a-sdk to ≥ 1.0:
         from collections.abc import AsyncGenerator
         from a2a.extensions.common import HTTP_EXTENSION_HEADER
@@ -257,11 +266,13 @@ class AionA2AFastAPIApplication(A2AFastAPIApplication):
         if exts := context.activated_extensions:
             headers[HTTP_EXTENSION_HEADER] = ', '.join(sorted(exts))
 
+        use_v1 = _request_a2a_version.get() == "1.0"
+
         if isinstance(handler_result, AsyncGenerator):
             async def event_generator(stream):
                 async for item in stream:
                     raw = item.root.model_dump_json(exclude_none=True)
-                    yield {'data': A2AV1Adapter.transform_sse_event(raw)}
+                    yield {'data': A2AV1Adapter.transform_sse_event(raw) if use_v1 else raw}
 
             return EventSourceResponse(event_generator(handler_result), headers=headers)
 
@@ -271,8 +282,9 @@ class AionA2AFastAPIApplication(A2AFastAPIApplication):
                 headers=headers,
             )
 
+        raw = handler_result.root.model_dump(mode='json', exclude_none=True)
         return JSONResponse(
-            A2AV1Adapter.transform_response(handler_result.root.model_dump(mode='json', exclude_none=True)),
+            A2AV1Adapter.transform_response(raw) if use_v1 else raw,
             headers=headers,
         )
 
