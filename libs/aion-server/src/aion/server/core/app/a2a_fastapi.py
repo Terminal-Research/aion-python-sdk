@@ -1,24 +1,29 @@
 import json
-import traceback
-from typing import get_args, override
+from _contextvars import ContextVar
+from typing import Type, get_args, override
 
 from a2a.server.apps import A2AFastAPIApplication
-from a2a.server.apps.jsonrpc.jsonrpc_app import (
-    CallContextBuilder,
-)
+from a2a.server.apps.jsonrpc.jsonrpc_app import CallContextBuilder
 from a2a.types import (
-    A2AError, JSONParseError, InternalError, TaskResubscriptionRequest,
-    SendStreamingMessageRequest, InvalidRequestError,
-    UnsupportedOperationError, JSONRPCErrorResponse, JSONRPCRequest
+    A2AError,
+    InternalError,
+    InvalidRequestError,
+    JSONParseError,
+    JSONRPCError,
+    JSONRPCErrorResponse,
+    JSONRPCRequest,
+    SendStreamingMessageRequest,
+    TaskResubscriptionRequest,
+    UnsupportedOperationError,
 )
 from a2a.types import AgentCard
-from a2a.utils import PREV_AGENT_CARD_WELL_KNOWN_PATH, AGENT_CARD_WELL_KNOWN_PATH
+from a2a.utils import AGENT_CARD_WELL_KNOWN_PATH, PREV_AGENT_CARD_WELL_KNOWN_PATH
 from a2a.utils.errors import MethodNotImplementedError
 from aion.shared.agent import AionAgent
 from aion.shared.logging import get_logger
 from aion.shared.types import (
-    ExtendedA2ARequest,
     CustomA2ARequest,
+    ExtendedA2ARequest,
     GetContextRequest,
     GetContextsListRequest,
 )
@@ -26,21 +31,42 @@ from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import HTTPException
 from opentelemetry import trace
 from pydantic import ValidationError
+from collections.abc import AsyncGenerator
+
+from a2a.extensions.common import HTTP_EXTENSION_HEADER
+from sse_starlette.sse import EventSourceResponse
 from starlette.responses import JSONResponse
 from starlette.status import HTTP_413_REQUEST_ENTITY_TOO_LARGE
 
-from aion.server.core.app.preprocessors import A2ARequestPreprocessor
 from aion.server.compat import A2AV1Adapter
+from aion.server.constants import A2A_VERSION_DEFAULT
+from aion.server.core.app.preprocessors import A2ARequestPreprocessor
 from aion.server.core.request_handlers import AionJSONRPCHandler
 from aion.server.interfaces import IRequestHandler
 from .api import AionExtraHTTPRoutes
+
+# Holds the resolved A2A-Version for the current request so _create_response
+# (called by parent-class methods without a Request object) can read it.
+_request_a2a_version: ContextVar[str] = ContextVar("a2a_version", default=A2A_VERSION_DEFAULT)
 
 logger = get_logger()
 request_tracer = trace.get_tracer("langgraph.agent")
 
 
+def _build_method_type_map() -> dict[str, type]:
+    """Returns {method_name: RequestType} for every type in ExtendedA2ARequest union."""
+    result: dict[str, type] = {}
+    for request_type in get_args(ExtendedA2ARequest.model_fields['root'].annotation):
+        method_field = request_type.model_fields.get('method')
+        if method_field and method_field.default:
+            result[method_field.default] = request_type
+    return result
+
+
 class AionA2AFastAPIApplication(A2AFastAPIApplication):
     """Extended A2A FastAPI application with custom request handling capabilities."""
+
+    _METHOD_TYPE_MAP: dict[str, type] = _build_method_type_map()
 
     def __init__(
             self,
@@ -94,6 +120,7 @@ class AionA2AFastAPIApplication(A2AFastAPIApplication):
         # Add aion extra routes
         AionExtraHTTPRoutes(self.aion_agent).register(app)
 
+    @override
     async def _handle_requests(self, request: Request) -> Response:
         """Handle incoming HTTP requests with comprehensive error handling.
 
@@ -106,21 +133,32 @@ class AionA2AFastAPIApplication(A2AFastAPIApplication):
         request_id = None
         body = None
 
+        # Propagate the A2A-Version resolved by A2ACompatMiddleware so that
+        # _create_response (called from parent-class methods) can read it.
+        _request_a2a_version.set(request.scope.get("a2a_version", A2A_VERSION_DEFAULT))
+
         try:
             body = await request.json()
             if isinstance(body, dict):
                 request_id = body.get('id')
 
-            # First, validate the basic JSON-RPC structure. This is crucial
-            # because the A2ARequest model is a discriminated union where some
-            # request types have default values for the 'method' field
             JSONRPCRequest.model_validate(body)
 
-            a2a_request = ExtendedA2ARequest.model_validate(body)
+            method = body.get('method')
+            request_type = self._METHOD_TYPE_MAP.get(method)
+            if request_type is None:
+                return self._generate_error_response(
+                    request_id,
+                    A2AError(root=UnsupportedOperationError(
+                        message=f"Unsupported method: {method!r}"
+                    )),
+                )
+
+            request_obj = request_type.model_validate(body)
+            a2a_request = ExtendedA2ARequest.model_construct(root=request_obj)
             call_context = self._context_builder.build(request)
 
-            request_id = a2a_request.root.id
-            request_obj = a2a_request.root
+            request_id = request_obj.id
 
             for preprocessor in self._preprocessors:
                 await preprocessor.preprocess(request_obj)
@@ -143,17 +181,14 @@ class AionA2AFastAPIApplication(A2AFastAPIApplication):
                 request_id, a2a_request, call_context
             )
         except MethodNotImplementedError:
-            traceback.print_exc()
             return self._generate_error_response(
                 request_id, A2AError(root=UnsupportedOperationError())
             )
         except json.decoder.JSONDecodeError as e:
-            traceback.print_exc()
             return self._generate_error_response(
                 None, A2AError(root=JSONParseError(message=str(e)))
             )
         except ValidationError as e:
-            traceback.print_exc()
             return self._generate_error_response(
                 request_id,
                 A2AError(root=InvalidRequestError(data=json.loads(e.json()))),
@@ -168,8 +203,7 @@ class AionA2AFastAPIApplication(A2AFastAPIApplication):
                 )
             raise e
         except Exception as e:
-            logger.error(f'Unhandled exception: {e}')
-            traceback.print_exc()
+            logger.error("Unhandled exception: %s %s", request.method, request.url.path, exc_info=True)
             return self._generate_error_response(
                 request_id, A2AError(root=InternalError(message=str(e)))
             )
@@ -244,24 +278,22 @@ class AionA2AFastAPIApplication(A2AFastAPIApplication):
 
     @override
     def _create_response(self, context, handler_result):
-        # ---- COMPAT: a2a v0.3 → v1.0 ----------------------------------------
-        # Strips `kind` from Part objects so the wire format matches a2a v1.0.
-        # Remove this entire method when upgrading a2a-sdk to ≥ 1.0:
-        from collections.abc import AsyncGenerator
-        from a2a.extensions.common import HTTP_EXTENSION_HEADER
-        from a2a.types import JSONRPCErrorResponse
-        from sse_starlette.sse import EventSourceResponse
-        from starlette.responses import JSONResponse
+        # ---- COMPAT: a2a v0.3 > v1.0 ----------------------------------------
+        # Applies outgoing transformation only when the client requested v1.0.
+        # v0.3 clients receive the raw SDK output unchanged.
+        # Remove this entire method when upgrading a2a-sdk to > 1.0:
 
         headers = {}
         if exts := context.activated_extensions:
             headers[HTTP_EXTENSION_HEADER] = ', '.join(sorted(exts))
 
+        use_v1 = _request_a2a_version.get() == "1.0"
+
         if isinstance(handler_result, AsyncGenerator):
             async def event_generator(stream):
                 async for item in stream:
                     raw = item.root.model_dump_json(exclude_none=True)
-                    yield {'data': A2AV1Adapter.transform_sse_event(raw)}
+                    yield {'data': A2AV1Adapter.transform_sse_event(raw) if use_v1 else raw}
 
             return EventSourceResponse(event_generator(handler_result), headers=headers)
 
@@ -271,10 +303,38 @@ class AionA2AFastAPIApplication(A2AFastAPIApplication):
                 headers=headers,
             )
 
+        raw = handler_result.root.model_dump(mode='json', exclude_none=True)
         return JSONResponse(
-            A2AV1Adapter.transform_response(handler_result.root.model_dump(mode='json', exclude_none=True)),
+            A2AV1Adapter.transform_response(raw) if use_v1 else raw,
             headers=headers,
         )
+
+    @override
+    def _generate_error_response(
+        self, request_id: str | int | None, error: JSONRPCError | A2AError
+    ) -> JSONResponse:
+        """Build a JSON-RPC error response, logging client errors before delegating to the parent.
+
+        Logging is adapted for production mode: client errors (InvalidRequest, UnsupportedOperation)
+        are emitted at WARNING level without stack traces; all other errors are handled by the parent.
+        """
+        if isinstance(error, A2AError) and isinstance(
+            error.root, InvalidRequestError | UnsupportedOperationError
+        ):
+            error_resp = JSONRPCErrorResponse(
+                id=request_id,
+                error=error.root,
+            )
+            logger.warning(
+                "Request Error (ID: %s): Code=%s, Message='%s'%s",
+                request_id,
+                error_resp.error.code,
+                error_resp.error.message,
+                ', Data=' + str(error_resp.error.data) if error_resp.error.data else '',
+            )
+            return JSONResponse(error_resp.model_dump(mode='json', exclude_none=True))
+
+        return super()._generate_error_response(request_id, error)
 
     @staticmethod
     def _check_if_request_is_custom_method(request_obj):

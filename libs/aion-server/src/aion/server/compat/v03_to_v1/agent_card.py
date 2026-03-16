@@ -50,17 +50,17 @@ class AgentCardMigrator:
 
     def _migrate_interfaces(self) -> None:
         """
-        Build supportedInterfaces with a single JSONRPC entry.
+        Build supportedInterfaces advertising both supported protocol versions.
 
-        v0.3 fields preferredTransport and additionalInterfaces are ignored —
-        only the primary url is carried over.
+        Both v1.0 and v0.3 are listed because the server accepts either via the
+        A2A-Version request header (v1.0 is handled through the compat layer).
+        v0.3 additionalInterfaces from the source card are ignored — only the
+        primary url is carried over.
         """
+        url = self._src.url or ""
         self._dst["supportedInterfaces"] = [
-            {
-                "url": self._src.url or "",
-                "protocolBinding": "JSONRPC",
-                "protocolVersion": "1.0",
-            }
+            {"url": url, "protocolBinding": "JSONRPC", "protocolVersion": "0.3"},
+            {"url": url, "protocolBinding": "JSONRPC", "protocolVersion": "1.0"},
         ]
 
     def _migrate_capabilities(self) -> None:
