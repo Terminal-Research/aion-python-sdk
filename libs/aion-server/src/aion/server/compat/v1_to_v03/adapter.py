@@ -1,7 +1,3 @@
-# AION_A2A_COMPAT_ENABLED=true   (default) — transformation active
-# AION_A2A_COMPAT_ENABLED=false            — pass-through
-
-import os
 from typing import Any
 
 from aion.shared.logging import get_logger
@@ -10,8 +6,6 @@ logger = get_logger()
 
 
 class A2AV03Adapter:
-    enabled: bool = os.getenv("AION_A2A_COMPAT_ENABLED", "true").lower() != "false"
-
     # v1.0 PascalCase > v0.3 namespace/method
     _METHOD_MAP: dict[str, str] = {
         "SendMessage": "message/send",
@@ -93,9 +87,6 @@ class A2AV03Adapter:
     @classmethod
     def transform_request(cls, data: dict) -> dict:
         """Transform a JSON-RPC request dict from v1.0 to v0.3 wire format."""
-        if not cls.enabled:
-            return data
-
         if isinstance(data.get("method"), str):
             data = {**data, "method": cls._METHOD_MAP.get(data["method"], data["method"])}
 
