@@ -78,3 +78,15 @@ class DbManagerProtocol(ABC):
     def get_dsn(self) -> str:
         """Get the database connection string (DSN)."""
         pass
+
+    @abstractmethod
+    def get_engine(self) -> Any:
+        """Get the SQLAlchemy async engine.
+
+        Returns:
+            AsyncEngine instance.
+
+        Raises:
+            RuntimeError: If manager is not initialized
+        """
+        pass

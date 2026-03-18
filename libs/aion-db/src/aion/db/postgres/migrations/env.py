@@ -7,7 +7,7 @@ from pathlib import Path
 from aion.shared.logging import get_logger
 from alembic import context
 from alembic.config import Config
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, Engine
 
 logger = get_logger()
 
