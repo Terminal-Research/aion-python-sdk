@@ -9,6 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 from google.adk.sessions import DatabaseSessionService
 
+from aion.adk.constants import AION_ADK_SCHEMA
 from .base import SessionServiceBackend
 
 logger = get_logger()
@@ -22,7 +23,7 @@ class AionADKSessionService(DatabaseSessionService):
     schema_translate_map — no additional pool is created.
     """
 
-    def __init__(self, engine: AsyncEngine, schema: str = "aion_adk"):
+    def __init__(self, engine: AsyncEngine, schema: str = AION_ADK_SCHEMA):
         self._schema = schema
         self.db_engine = engine.execution_options(
             schema_translate_map={None: schema}
@@ -36,6 +37,9 @@ class AionADKSessionService(DatabaseSessionService):
         self._session_locks = {}
         self._session_lock_ref_count = {}
         self._session_locks_guard = asyncio.Lock()
+
+    async def setup(self) -> None:
+        await self._prepare_tables()
 
     async def _prepare_tables(self):
         if self._tables_created:
@@ -52,8 +56,8 @@ class AionADKSessionService(DatabaseSessionService):
         await super()._prepare_tables()
 
 
-class DatabaseBackend(SessionServiceBackend):
-    """Database session service backend using shared engine with schema isolation.
+class PostgresBackend(SessionServiceBackend):
+    """PostgreSQL session service backend using shared engine with schema isolation.
 
     Uses AionADKSessionService which reuses the shared SQLAlchemy engine
     from DbManager — no additional connection pool is created.
@@ -63,18 +67,20 @@ class DatabaseBackend(SessionServiceBackend):
         _schema: PostgreSQL schema name for table isolation
     """
 
-    def __init__(self, db_manager: DbManagerProtocol, schema: str = "aion_adk"):
+    def __init__(self, db_manager: DbManagerProtocol, schema: str = AION_ADK_SCHEMA):
         self._db_manager = db_manager
         self._schema = schema
 
-    def create(self) -> Optional[AionADKSessionService]:
+    async def create(self) -> Optional[AionADKSessionService]:
         try:
             if not self._db_manager or not self._db_manager.is_initialized:
                 logger.warning("Database manager not initialized")
                 return None
 
             engine = self._db_manager.get_engine()
-            return AionADKSessionService(engine=engine, schema=self._schema)
+            service = AionADKSessionService(engine=engine, schema=self._schema)
+            await service.setup()
+            return service
 
         except Exception as ex:
             logger.error(f"Failed to create AionADKSessionService: {ex}")
@@ -87,4 +93,4 @@ class DatabaseBackend(SessionServiceBackend):
         )
 
 
-__all__ = ["DatabaseBackend", "AionADKSessionService"]
+__all__ = ["PostgresBackend", "AionADKSessionService"]

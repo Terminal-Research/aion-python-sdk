@@ -2,17 +2,17 @@
 
 This module provides different storage backends for ADK sessions:
 - MemoryBackend: In-memory session storage (non-persistent)
-- DatabaseBackend: PostgreSQL-backed session storage (persistent)
+- PostgresBackend: PostgreSQL-backed session storage (persistent)
 
 New backends can be added by implementing the SessionServiceBackend interface.
 """
 
 from .base import SessionServiceBackend
-from .database import DatabaseBackend
+from .postgres import PostgresBackend
 from .memory import MemoryBackend
 
 __all__ = [
     "SessionServiceBackend",
     "MemoryBackend",
-    "DatabaseBackend",
+    "PostgresBackend",
 ]

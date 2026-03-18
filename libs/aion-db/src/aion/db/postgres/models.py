@@ -8,6 +8,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.ext.declarative import declarative_base
 
+from .constants import TASKS_TABLE
 from .fields import PydanticType
 
 
@@ -30,7 +31,7 @@ BaseModel = declarative_base()
 class TaskRecordModel(BaseModel):
     """Representation of a row in the ``tasks`` table."""
 
-    __tablename__ = 'tasks'
+    __tablename__ = TASKS_TABLE
 
     id = Column(
         UUID(as_uuid=True),

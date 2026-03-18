@@ -7,12 +7,13 @@ from pathlib import Path
 from aion.shared.logging import get_logger
 from alembic import context
 from alembic.config import Config
-from sqlalchemy import create_engine, Engine
+from sqlalchemy import create_engine, Engine, text
 
 logger = get_logger()
 
 from aion.shared.settings import db_settings
 from aion.db.postgres.utils import convert_pg_url
+from aion.db.postgres.constants import AION_SCHEMA
 
 # ``alembic.context`` exposes ``config`` only when executed via Alembic's
 # command line utilities. When this module is imported directly (e.g. during
@@ -39,7 +40,7 @@ def _get_engine() -> "Engine":
 
     url = convert_pg_url(db_settings.pg_url, driver="psycopg")
     config.set_main_option("sqlalchemy.url", url)
-    return create_engine(url)
+    return create_engine(url, connect_args={"options": f"-csearch_path={AION_SCHEMA}"})
 
 
 def _log_revision_start(
@@ -62,6 +63,9 @@ def run_migrations() -> None:
     engine = _get_engine()
 
     with engine.connect() as connection:
+        connection.execute(text(f"CREATE SCHEMA IF NOT EXISTS {AION_SCHEMA}"))
+        connection.execute(text(f"SET search_path TO {AION_SCHEMA}"))
+        connection.commit()
         context.configure(
             connection=connection,
             process_revision_directives=_log_revision_start,

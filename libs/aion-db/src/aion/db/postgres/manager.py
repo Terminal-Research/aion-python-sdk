@@ -8,6 +8,7 @@ from psycopg_pool import AsyncConnectionPool
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 
 from aion.db.postgres.utils import convert_pg_url
+from aion.db.postgres.constants import AION_SCHEMA
 
 
 class DbManager(DbManagerProtocol, metaclass=SingletonABCMeta):
@@ -59,7 +60,8 @@ class DbManager(DbManagerProtocol, metaclass=SingletonABCMeta):
             max_lifetime=3600,
             timeout=30,
             max_waiting=20,
-            open=False
+            open=False,
+            kwargs={"options": f"-csearch_path={AION_SCHEMA}"},
         )
 
         await self._pool.open()
@@ -79,6 +81,7 @@ class DbManager(DbManagerProtocol, metaclass=SingletonABCMeta):
 
         self._engine = create_async_engine(
             sqlalchemy_dsn,
+            connect_args={"options": f"-csearch_path={AION_SCHEMA}"},
             pool_pre_ping=True,
             echo=False,  # Set to True for SQL debugging
         )

@@ -1,5 +1,6 @@
 """Remove unique constraint from context_id in tasks table."""
 from alembic import op
+from aion.db.postgres.constants import TASKS_TABLE
 
 revision = "002"
 down_revision = "001"
@@ -15,7 +16,7 @@ def upgrade() -> None:
     logger.debug("Removing unique constraint from context_id in tasks table")
 
     # Drop the unique constraint
-    op.drop_constraint("tasks_context_id_key", "tasks", type_="unique")
+    op.drop_constraint("tasks_context_id_key", TASKS_TABLE, type_="unique")
 
 
 def downgrade() -> None:
@@ -23,4 +24,4 @@ def downgrade() -> None:
     logger.debug("Adding back unique constraint to context_id in tasks table")
 
     # Add back the unique constraint
-    op.create_unique_constraint("tasks_context_id_key", "tasks", ["context_id"])
+    op.create_unique_constraint("tasks_context_id_key", TASKS_TABLE, ["context_id"])
