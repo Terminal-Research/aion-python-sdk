@@ -8,7 +8,7 @@ from aion.api.http import AionJWTManager
 from .generated.graphql_client import (
     MessageInput,
     ChatCompletionStream,
-    JsonRpcRequestGQLInput,
+    A2AJsonRpcRequestGQLInput,
     A2AStream,
 )
 from .generated.graphql_client.client import GqlClient
@@ -189,7 +189,7 @@ class AionGqlClient:
 
     async def a2a_stream(
             self,
-            request: JsonRpcRequestGQLInput,
+            request: A2AJsonRpcRequestGQLInput,
             distribution_id: str,
             **kwargs: Any
     ) -> AsyncIterator[A2AStream]:
@@ -200,7 +200,7 @@ class AionGqlClient:
         execution.
 
         Args:
-            request (JsonRpcRequestGQLInput): JSON-RPC request payload.
+            request (A2AJsonRpcRequestGQLInput): JSON-RPC request payload.
             distribution_id (str): Identifier of the distribution to handle the request.
             **kwargs (Any): Additional parameters forwarded to the underlying client.
         """

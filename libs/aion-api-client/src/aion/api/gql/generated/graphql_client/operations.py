@@ -30,14 +30,14 @@ subscription ChatCompletionStream($model: String!, $messages: [MessageInput!]!, 
 """
 
 A_2_A_STREAM_GQL = """
-subscription A2AStream($request: JsonRpcRequestGQLInput!, $distributionId: ID!) {
+subscription A2AStream($request: A2AJsonRpcRequestGQLInput!, $distributionId: ID!) {
   a2aRpc(request: $request, distributionId: $distributionId) {
     __typename
-    ... on JsonRpcSuccessResponseGQL {
+    ... on A2AJsonRpcSuccessResponseGQL {
       id
       result
     }
-    ... on JsonRpcErrorResponseGQL {
+    ... on A2AJsonRpcErrorResponseGQL {
       errorId: id
       error {
         code

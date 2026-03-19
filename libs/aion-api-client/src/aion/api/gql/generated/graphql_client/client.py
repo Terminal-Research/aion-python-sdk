@@ -21,7 +21,7 @@ from .a_2_a_stream import A2AStream
 from .async_base_client_open_telemetry import AsyncBaseClientOpenTelemetry
 from .base_operation import GraphQLField
 from .chat_completion_stream import ChatCompletionStream
-from .input_types import JsonRpcRequestGQLInput, MessageInput
+from .input_types import A2AJsonRpcRequestGQLInput, MessageInput
 from .operations import A_2_A_STREAM_GQL, CHAT_COMPLETION_STREAM_GQL
 
 
@@ -47,7 +47,7 @@ class GqlClient(AsyncBaseClientOpenTelemetry):
             yield ChatCompletionStream.model_validate(data)
 
     async def a_2_a_stream(
-        self, request: JsonRpcRequestGQLInput, distribution_id: str, **kwargs: Any
+        self, request: A2AJsonRpcRequestGQLInput, distribution_id: str, **kwargs: Any
     ) -> AsyncIterator[A2AStream]:
         variables: dict[str, object] = {
             "request": request,

@@ -3,13 +3,10 @@
 
 from typing import Any, Optional
 
-from pydantic import Field
-
 from .base_model import BaseModel
-from .enums import LogLevel
 
 
-class JsonRpcRequestGQLInput(BaseModel):
+class A2AJsonRpcRequestGQLInput(BaseModel):
     """JSON-RPC request envelope for agent-to-agent workflows"""
 
     jsonrpc: str
@@ -19,20 +16,27 @@ class JsonRpcRequestGQLInput(BaseModel):
     params: Optional[Any] = None
     "Parameters forwarded to the method call"
     id: Optional[Any] = None
-    "Identifier for correlating responses to the request"
+    "Identifier for correlating responses to the request. May be a string or a number."
 
 
-class LogFiltersInput(BaseModel):
-    start_time: Any = Field(alias="startTime")
-    end_time: Optional[Any] = Field(alias="endTime", default=None)
-    log_levels: list[LogLevel] = Field(alias="logLevels")
-    trace_id: Optional[str] = Field(alias="traceId", default=None)
-    distribution_id: Optional[str] = Field(alias="distributionId", default=None)
-    version_id: Optional[str] = Field(alias="versionId", default=None)
-    agent_environment_id: Optional[str] = Field(
-        alias="agentEnvironmentId", default=None
-    )
-    message_search: Optional[str] = Field(alias="messageSearch", default=None)
+class A2AServiceParameterGQLInput(BaseModel):
+    """Key/value pair describing an A2A service parameter"""
+
+    key: str
+    "Service parameter key (case-insensitive)"
+    value: str
+    "Service parameter value"
+
+
+class A2AServiceParametersGQLInput(BaseModel):
+    """Service parameters associated with an A2A request"""
+
+    version: Optional[str] = None
+    "A2A protocol version requested by the client"
+    extensions: Optional[list[str]] = None
+    "Extension URIs requested by the client"
+    additional: Optional[list["A2AServiceParameterGQLInput"]] = None
+    "Additional service parameters"
 
 
 class MessageInput(BaseModel):
@@ -40,24 +44,4 @@ class MessageInput(BaseModel):
     content: str
 
 
-class SequencePathInput(BaseModel):
-    """Ordered sequence path submitted for validation. The first step is the distribution (ingress) and the last step is the terminal behavior."""
-
-    sequence_id: str = Field(alias="sequenceId")
-    "Synthetic identifier used to correlate validation results, typically the distribution node id."
-    steps: list["SequenceStepInput"]
-    "Ordered sequence steps from distribution to terminal behavior."
-
-
-class SequenceStepInput(BaseModel):
-    """Single step in a sequence path submitted for validation. A sequence represents the ordered path a request takes from a distribution (ingress) through downstream behaviors to the terminal behavior."""
-
-    node_id: str = Field(alias="nodeId")
-    "Identifier of the graph node represented by this step."
-    agent_behavior: Optional[Any] = Field(alias="agentBehavior", default=None)
-    "AgentBehavior payload used for validation. The validator inspects extension requirements and fulfillment on each step."
-    incoming_edge_id: Optional[str] = Field(alias="incomingEdgeId", default=None)
-    "Edge identifier connecting from the previous node. Required for all steps after the first."
-
-
-SequencePathInput.model_rebuild()
+A2AServiceParametersGQLInput.model_rebuild()
