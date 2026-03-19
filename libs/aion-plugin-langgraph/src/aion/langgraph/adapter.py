@@ -7,16 +7,11 @@ from aion.shared.agent.exceptions import ConfigurationError
 from aion.shared.config.models import AgentConfig
 from aion.shared.db import DbManagerProtocol
 from aion.shared.logging import get_logger
-from aion.shared.settings import db_settings
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import StateGraph
 from langgraph.pregel import Pregel
 
-from .state import (
-    CheckpointerConfig,
-    CheckpointerType,
-    LangGraphCheckpointerAdapter,
-)
+from .checkpoint import CheckpointerFactory
 from .execution import LangGraphExecutor
 
 logger = get_logger()
@@ -31,9 +26,9 @@ class LangGraphAdapter(AgentAdapter):
     """
 
     def __init__(
-        self,
-        base_path: Optional[Path] = None,
-        db_manager: Optional[DbManagerProtocol] = None
+            self,
+            base_path: Optional[Path] = None,
+            db_manager: Optional[DbManagerProtocol] = None
     ):
         """Initialize LangGraph adapter.
 
@@ -43,7 +38,7 @@ class LangGraphAdapter(AgentAdapter):
                        If None, only memory checkpointers will be available.
         """
         self.base_path = base_path or Path.cwd()
-        self.checkpointer_adapter = LangGraphCheckpointerAdapter(db_manager=db_manager)
+        self._db_manager = db_manager
 
     @staticmethod
     def framework_name() -> str:
@@ -155,16 +150,7 @@ class LangGraphAdapter(AgentAdapter):
             Checkpointer instance or None if creation fails
         """
         try:
-            checkpointer_type = CheckpointerType.MEMORY
-
-            if db_settings.pg_url:
-                logger.debug("PostgreSQL URL found, will use PostgreSQL checkpointer")
-                checkpointer_type = CheckpointerType.POSTGRES
-
-            checkpointer_config = CheckpointerConfig(type=checkpointer_type)
-            checkpointer = await self.checkpointer_adapter.create_checkpointer(checkpointer_config)
-            return checkpointer
-
+            return await CheckpointerFactory.create(db_manager=self._db_manager)
         except Exception as ex:
             logger.warning(f"Failed to create checkpointer: {ex}")
 
