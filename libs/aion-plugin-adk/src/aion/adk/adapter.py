@@ -87,7 +87,7 @@ class ADKAdapter(AgentAdapter):
                 f"Agent must be an ADK agent instance, got {type(agent).__name__}"
             )
 
-        session_service = SessionServiceFactory.create(db_manager=self.db_manager)
+        session_service = await SessionServiceFactory.create(db_manager=self.db_manager)
         artifact_service = ArtifactServiceFactory.create(db_manager=self.db_manager, file_uploader=self.file_uploader)
         return ADKExecutor(agent, config, session_service=session_service, artifact_service=artifact_service)
 

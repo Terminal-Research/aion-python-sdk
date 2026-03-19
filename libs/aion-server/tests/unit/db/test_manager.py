@@ -74,7 +74,7 @@ class TestDbManager:
         mock_pool.wait.assert_called_once()
 
         # Verify SQLAlchemy setup
-        expected_sqlalchemy_dsn = sample_dsn.replace('postgresql://', 'postgresql+asyncpg://')
+        expected_sqlalchemy_dsn = sample_dsn.replace('postgresql://', 'postgresql+psycopg://')
         mock_engine.assert_called_once_with(
             expected_sqlalchemy_dsn,
             pool_pre_ping=True,
@@ -223,7 +223,7 @@ class TestDbManager:
 
         db_manager._setup_sqlalchemy()
 
-        expected_dsn = "postgresql+asyncpg://user:pass@localhost:5432/testdb"
+        expected_dsn = "postgresql+psycopg://user:pass@localhost:5432/testdb"
         mock_engine.assert_called_once_with(
             expected_dsn,
             pool_pre_ping=True,

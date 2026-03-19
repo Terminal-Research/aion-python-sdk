@@ -12,7 +12,6 @@ SQLAlchemy = "^2.0.0"
 pydantic = ">=2.0.0"
 alembic = ">=1.13.0,<2.0.0"
 psycopg = { version = ">=3.1.12,<4.0.0", extras = ["binary", "pool"] }
-asyncpg = ">=0.29.0,<1.0.0"
 greenlet = ">=3.0.3,<4.0.0"
 aion-shared = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-shared" }
 

@@ -1,10 +1,14 @@
+from typing import Optional, override
+
 from aion.shared.db import DbManagerProtocol
 from aion.shared.logging import get_logger
 from aion.shared.logging.base import AionLogger
 from aion.shared.metaclasses import SingletonABCMeta
 from psycopg_pool import AsyncConnectionPool
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
-from typing import Optional, override
+
+from aion.db.postgres.utils import convert_pg_url
+from aion.db.postgres.constants import AION_SCHEMA
 
 
 class DbManager(DbManagerProtocol, metaclass=SingletonABCMeta):
@@ -56,7 +60,8 @@ class DbManager(DbManagerProtocol, metaclass=SingletonABCMeta):
             max_lifetime=3600,
             timeout=30,
             max_waiting=20,
-            open=False
+            open=False,
+            kwargs={"options": f"-csearch_path={AION_SCHEMA}"},
         )
 
         await self._pool.open()
@@ -72,11 +77,11 @@ class DbManager(DbManagerProtocol, metaclass=SingletonABCMeta):
         if not self._dsn:
             raise RuntimeError("DSN not available for SQLAlchemy setup")
 
-        # Convert psycopg DSN to asyncpg format for SQLAlchemy
-        sqlalchemy_dsn = self._dsn.replace('postgresql://', 'postgresql+asyncpg://')
+        sqlalchemy_dsn = convert_pg_url(self._dsn, driver="psycopg")
 
         self._engine = create_async_engine(
             sqlalchemy_dsn,
+            connect_args={"options": f"-csearch_path={AION_SCHEMA}"},
             pool_pre_ping=True,
             echo=False,  # Set to True for SQL debugging
         )
@@ -101,6 +106,14 @@ class DbManager(DbManagerProtocol, metaclass=SingletonABCMeta):
             self.logger.error("No database connection pool initialized.")
             raise RuntimeError("Pool not initialized")
         return self._pool
+
+    @override
+    def get_engine(self):
+        """Get the SQLAlchemy async engine."""
+        if not self._engine:
+            self.logger.error("SQLAlchemy engine not initialized.")
+            raise RuntimeError("Engine not initialized")
+        return self._engine
 
     @override
     def get_dsn(self) -> str:

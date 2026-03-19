@@ -2,6 +2,7 @@
 from aion.shared.logging import get_logger
 from alembic import op
 import sqlalchemy as sa
+from aion.db.postgres.constants import TASKS_TABLE
 
 revision = "001"
 down_revision = None
@@ -15,7 +16,7 @@ def upgrade() -> None:
     """Create tasks table."""
     logger.debug("Creating tasks table")
     op.create_table(
-        "tasks",
+        TASKS_TABLE,
         sa.Column("id", sa.Uuid(), primary_key=True),
         sa.Column("context_id", sa.String(), unique=True, nullable=False),
         sa.Column("task", sa.JSON(), nullable=False),
@@ -32,9 +33,9 @@ def upgrade() -> None:
             server_default=sa.func.now(),
         ),
     )
-    op.create_index("ix_tasks_context_id", "tasks", ["context_id"])
+    op.create_index("ix_tasks_context_id", TASKS_TABLE, ["context_id"])
 
 
 def downgrade() -> None:
     """Drop tasks table."""
-    op.drop_table("tasks")
+    op.drop_table(TASKS_TABLE)

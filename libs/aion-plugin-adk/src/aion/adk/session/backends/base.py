@@ -16,7 +16,7 @@ class SessionServiceBackend(ABC):
     """
 
     @abstractmethod
-    def create(self) -> Any:
+    async def create(self) -> Any:
         """Create and return a session service instance.
 
         Returns:

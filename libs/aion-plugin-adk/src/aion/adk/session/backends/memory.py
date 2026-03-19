@@ -26,7 +26,7 @@ class MemoryBackend(SessionServiceBackend):
     - When database is not available
     """
 
-    def create(self) -> InMemorySessionService:
+    async def create(self) -> InMemorySessionService:
         """Create in-memory session service instance.
 
         Returns:

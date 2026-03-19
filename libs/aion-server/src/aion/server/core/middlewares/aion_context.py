@@ -1,9 +1,8 @@
-from typing import Any, Dict, Optional
-
 from a2a.types import JSONRPCRequest
 from a2a.utils import DEFAULT_RPC_URL
 from aion.shared.context import set_context_from_a2a
 from aion.shared.logging import get_logger
+from aion.shared.types import ExtendedA2ARequest
 from aion.shared.types.a2a.extensions import (
     DISTRIBUTION_EXTENSION_URI_V1,
     TRACEABILITY_EXTENSION_URI_V1,
@@ -13,14 +12,13 @@ from aion.shared.types.a2a.extensions import (
 from fastapi import Request, Response
 from pydantic import ValidationError
 from starlette.middleware.base import BaseHTTPMiddleware
+from typing import Any, Dict, Optional
+
+logger = get_logger(use_logstash=False)
 
 __all__ = [
     "AionContextMiddleware",
 ]
-
-from aion.shared.types import ExtendedA2ARequest
-
-logger = get_logger(use_logstash=False)
 
 
 class AionContextMiddleware(BaseHTTPMiddleware):
