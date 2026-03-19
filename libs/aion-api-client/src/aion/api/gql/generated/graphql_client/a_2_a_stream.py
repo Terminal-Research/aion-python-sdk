@@ -12,31 +12,31 @@ class A2AStream(BaseModel):
     a_2_a_rpc: Optional[
         Annotated[
             Union[
-                "A2AStreamA2ARpcJsonRpcErrorResponseGQL",
-                "A2AStreamA2ARpcJsonRpcSuccessResponseGQL",
+                "A2AStreamA2ARpcA2AJsonRpcErrorResponseGQL",
+                "A2AStreamA2ARpcA2AJsonRpcSuccessResponseGQL",
             ],
             Field(discriminator="typename__"),
         ]
     ] = Field(alias="a2aRpc")
 
 
-class A2AStreamA2ARpcJsonRpcErrorResponseGQL(BaseModel):
-    typename__: Literal["JsonRpcErrorResponseGQL"] = Field(alias="__typename")
+class A2AStreamA2ARpcA2AJsonRpcErrorResponseGQL(BaseModel):
+    typename__: Literal["A2AJsonRpcErrorResponseGQL"] = Field(alias="__typename")
     error_id: Optional[Any] = Field(alias="errorId")
-    error: "A2AStreamA2ARpcJsonRpcErrorResponseGQLError"
+    error: "A2AStreamA2ARpcA2AJsonRpcErrorResponseGQLError"
 
 
-class A2AStreamA2ARpcJsonRpcErrorResponseGQLError(BaseModel):
+class A2AStreamA2ARpcA2AJsonRpcErrorResponseGQLError(BaseModel):
     code: int
     message: str
     data: Optional[Any]
 
 
-class A2AStreamA2ARpcJsonRpcSuccessResponseGQL(BaseModel):
-    typename__: Literal["JsonRpcSuccessResponseGQL"] = Field(alias="__typename")
+class A2AStreamA2ARpcA2AJsonRpcSuccessResponseGQL(BaseModel):
+    typename__: Literal["A2AJsonRpcSuccessResponseGQL"] = Field(alias="__typename")
     id: Optional[Any]
     result: Any
 
 
 A2AStream.model_rebuild()
-A2AStreamA2ARpcJsonRpcErrorResponseGQL.model_rebuild()
+A2AStreamA2ARpcA2AJsonRpcErrorResponseGQL.model_rebuild()
