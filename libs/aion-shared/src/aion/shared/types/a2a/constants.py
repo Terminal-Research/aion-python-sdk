@@ -6,5 +6,8 @@ __all__ = [
     "TERMINAL_TASK_STATES",
 ]
 
-INTERRUPT_TASK_STATES = (TaskState.input_required, TaskState.auth_required)
+INTERRUPT_TASK_STATES = (
+    TaskState.TASK_STATE_INPUT_REQUIRED,
+    TaskState.TASK_STATE_AUTH_REQUIRED,
+)
 TERMINAL_TASK_STATES = A2A_TERMINAL_TASK_STATES

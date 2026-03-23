@@ -6,7 +6,6 @@ database, plugins, agent, and FastAPI application using dependency injection.
 
 from typing import Optional
 
-from a2a.server.tasks import InMemoryPushNotificationConfigStore
 from aion.db.postgres import DbFactory
 from aion.shared.agent import AionAgent
 from aion.shared.files.a2a import A2AFileTransformer
@@ -17,7 +16,7 @@ from fastapi import FastAPI
 from aion.server.agent import AionAgentRequestExecutor, AgentFactory
 from aion.server.core.app.a2a_fastapi import AionA2AFastAPIApplication
 from aion.server.core.app.preprocessors import FilePartPreprocessor
-from aion.server.core.middlewares import TracingMiddleware, AionContextMiddleware, A2ACompatMiddleware
+from aion.server.core.middlewares import TracingMiddleware, AionContextMiddleware
 from aion.server.core.request_handlers import AionRequestHandler
 from aion.server.plugins import PluginFactory
 from aion.server.tasks import StoreManager
@@ -151,8 +150,7 @@ class AppFactory:
 
         return AionRequestHandler(
             agent_executor=self._executor,
-            task_store=task_store,
-            push_config_store=InMemoryPushNotificationConfigStore()
+            task_store=task_store
         )
 
     def _add_extra_middlewares(self):
@@ -163,7 +161,6 @@ class AppFactory:
         """
         self.fastapi_app.add_middleware(TracingMiddleware)
         self.fastapi_app.add_middleware(AionContextMiddleware)
-        self.fastapi_app.add_middleware(A2ACompatMiddleware)
 
     async def shutdown(self) -> None:
         """Shutdown the application and cleanup resources."""

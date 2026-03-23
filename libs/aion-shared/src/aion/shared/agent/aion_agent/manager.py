@@ -6,10 +6,9 @@ a proxy instead.
 """
 from __future__ import annotations
 
-from typing import Optional, TYPE_CHECKING
-
 from aion.shared.config.models import AgentConfig
 from aion.shared.metaclasses import Singleton
+from typing import Optional, TYPE_CHECKING
 
 from .agent import AionAgent
 
@@ -18,7 +17,7 @@ if TYPE_CHECKING:
 
 
 class AgentManager(metaclass=Singleton):
-    """Manager for single agent instance.
+    """Manager for a single agent instance.
 
     This class manages the lifecycle of a single agent in the AION server.
     It ensures only one agent is active at a time and provides access to
@@ -44,7 +43,7 @@ class AgentManager(metaclass=Singleton):
 
     @property
     def agent(self) -> Optional[AionAgent]:
-        """Get current agent instance.
+        """Get the current agent instance.
 
         Returns:
             Optional[AionAgent]: Current agent or None if no agent is loaded
@@ -62,7 +61,7 @@ class AgentManager(metaclass=Singleton):
 
     @property
     def agent_config(self) -> Optional[AgentConfig]:
-        """Get current agent configuration.
+        """Get the current agent configuration.
 
         Returns:
             Optional[AgentConfig]: Current agent config or None if no agent is loaded
@@ -74,7 +73,7 @@ class AgentManager(metaclass=Singleton):
         """Check if an agent is currently loaded.
 
         Returns:
-            bool: True if agent is loaded, False otherwise
+            bool: True if the agent is loaded, False otherwise
         """
         return self._agent is not None
 
@@ -115,7 +114,7 @@ class AgentManager(metaclass=Singleton):
             AionAgent: Created agent instance (not yet built)
 
         Raises:
-            RuntimeError: If an agent is already loaded
+            RuntimeError: If an agent is already loaded,
             ValueError: If configuration is not provided and not set
         """
         if self._agent is not None:
@@ -149,7 +148,7 @@ class AgentManager(metaclass=Singleton):
         return agent
 
     def get_agent(self, raise_: bool = False) -> Optional[AionAgent]:
-        """Get current agent instance.
+        """Get the current agent instance.
 
         Returns:
             Optional[AionAgent]: Current agent or None if no agent is loaded
@@ -162,7 +161,7 @@ class AgentManager(metaclass=Singleton):
         return self._agent
 
     def clear(self) -> None:
-        """Clear current agent.
+        """Clear the current agent.
 
         This removes the current agent from the manager, allowing a new
         agent to be created.

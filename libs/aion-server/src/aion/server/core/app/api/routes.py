@@ -5,8 +5,8 @@ from aion.shared.utils.deployment import get_protocol_version
 from fastapi import FastAPI
 from starlette.responses import JSONResponse
 
-from aion.server.types import ConfigurationFileResponse
 from aion.server.constants import CONFIGURATION_FILE_URL, HEALTH_CHECK_URL
+from aion.server.types import ConfigurationFileResponse
 
 
 class AionExtraHTTPRoutes:

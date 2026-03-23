@@ -1,8 +1,6 @@
 """Chat session command"""
-from typing import Optional
 import asyncclick as click
-
-from aion.cli.handlers import start_chat
+from typing import Optional
 
 
 @click.command(name="chat")
@@ -47,6 +45,8 @@ async def chat(
         no_stream: bool,
 ):
     """Start an interactive chat session with A2A agent"""
+    from aion.cli.handlers import start_chat
+
     custom_headers = _parse_headers(header)
 
     try:

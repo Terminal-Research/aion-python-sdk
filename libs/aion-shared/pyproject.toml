@@ -12,7 +12,8 @@ pydantic = ">=2.11.3"
 pydantic-settings = ">=2.3.4"
 python-dotenv = ">=1.0.1"
 PyYAML = "^6.0.0"
-a2a-sdk = { extras = ["telemetry", "http-server"], version = "^0.3.4" }
+#a2a-sdk = { extras = ["telemetry", "http-server"], version = "^0.3.4" }
+a2a-sdk = { extras = ["telemetry", "http-server"], version = "^1.0.0a0" }
 python-logstash-async = "^4.0.1"
 
 [build-system]

@@ -8,19 +8,18 @@ operations to adapters.
 from __future__ import annotations
 
 import time
-from collections.abc import AsyncIterator
-from typing import Any, Optional, TYPE_CHECKING
-
+from a2a.types import TaskStatusUpdateEvent, TaskArtifactUpdateEvent
 from aion.shared.agent.adapters import (
     ExecutionConfig,
     AgentAdapter,
     ExecutionSnapshot,
-    ExecutionEvent,
     ExecutorAdapter,
 )
 from aion.shared.agent.card import AionAgentCard
 from aion.shared.config.models import AgentConfig
 from aion.shared.logging.base import AionLogger
+from collections.abc import AsyncIterator
+from typing import Any, Optional, TYPE_CHECKING
 
 from .models import AgentMetadata
 
@@ -111,12 +110,12 @@ class AionAgent:
 
     @property
     def port(self):
-        """Port number where agent is running."""
+        """Port number where the agent is running."""
         return self._port
 
     @port.setter
     def port(self, port: Optional[int]) -> None:
-        """Set port number."""
+        """Set the port number."""
         if port is None:
             self._port = None
             return
@@ -135,10 +134,10 @@ class AionAgent:
 
     @property
     def is_built(self) -> bool:
-        """Check if agent has been built (framework discovered and executor created).
+        """Check if an agent has been built (a framework discovered and executor created).
 
         Returns:
-            bool: True if agent is ready for execution, False otherwise
+            bool: True if the agent is ready for execution, False otherwise
         """
         return self._is_built
 
@@ -147,7 +146,7 @@ class AionAgent:
         """Framework name (e.g., 'langgraph', 'adk').
 
         Derived from the adapter detected during build().
-        Returns 'unknown' if agent is not yet built.
+        Returns 'unknown' if the agent is not yet built.
         """
         if self._adapter:
             return self._adapter.framework_name()
@@ -184,7 +183,7 @@ class AionAgent:
             context: "RequestContext",
             timeout: Optional[float] = None,
             **metadata,
-    ) -> AsyncIterator[ExecutionEvent]:
+    ) -> AsyncIterator[TaskStatusUpdateEvent | TaskArtifactUpdateEvent]:
         """Execute agent with streaming output.
 
         Args:
@@ -220,7 +219,7 @@ class AionAgent:
             context_id: str,
             task_id: Optional[str] = None,
     ) -> ExecutionSnapshot:
-        """Get current execution state snapshot for a context.
+        """Get the current execution state snapshot for a context.
 
         Args:
             context_id: Context identifier (A2A context_id)
@@ -230,7 +229,7 @@ class AionAgent:
             ExecutionSnapshot: Current execution snapshot including state, messages, status, and metadata
 
         Raises:
-            RuntimeError: If agent is not built yet
+            RuntimeError: If the agent is not built yet
             StateRetrievalError: If state cannot be retrieved
         """
         if not self._is_built:
@@ -250,7 +249,7 @@ class AionAgent:
             self,
             context: "RequestContext",
             **metadata,
-    ) -> AsyncIterator[ExecutionEvent]:
+    ) -> AsyncIterator[TaskStatusUpdateEvent | TaskArtifactUpdateEvent]:
         """Resume interrupted execution.
 
         Args:
@@ -345,7 +344,7 @@ class AionAgent:
         return agent
 
     async def build(self, base_path: Optional[Any] = None) -> "AionAgent":
-        """Build the agent by discovering framework and creating executor.
+        """Build the agent by discovering a framework and creating an executor.
 
         This method completes the agent initialization by:
         1. Loading the agent module from config.path
@@ -361,8 +360,8 @@ class AionAgent:
             AionAgent: Self for method chaining
 
         Raises:
-            RuntimeError: If agent is already built
-            ValueError: If no adapter can handle the agent or path is missing
+            RuntimeError: If the agent is already built,
+            ValueError: If no adapter can handle the agent or a path is missing
             FileNotFoundError: If agent module not found
         """
         if self._is_built:
@@ -389,14 +388,14 @@ class AionAgent:
         errors = []
         for adapter in adapter_registry.list_adapters():
             try:
-                # Try to discover object in module using adapter's supported types
+                # Try to discover an object in the module using adapter's supported types
                 native_agent = module_loader.discover_object(
                     module=module,
                     supported_types=adapter.get_supported_types(),
                     item_name=item_name
                 )
 
-                # Check if adapter can handle the discovered agent
+                # Check if the adapter can handle the discovered agent
                 if adapter.can_handle(native_agent):
                     self.logger.debug(
                         f"Auto-detected framework '{adapter.framework_name()}' for agent '{self._id}'"
@@ -425,7 +424,7 @@ class AionAgent:
                     return self
 
             except Exception as ex:
-                # Store error and try next adapter
+                # Store error and try the next adapter
                 errors.append(f"{adapter.framework_name()}: {ex}")
                 continue
 

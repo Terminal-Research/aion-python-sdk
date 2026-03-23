@@ -1,10 +1,8 @@
 """CLI command for serving AION agents and proxy"""
-from dataclasses import dataclass
-
 import asyncclick as click
-from aion.cli.handlers import ServeHandler
 from aion.shared.config.reader import ConfigurationError, AionConfigReader
 from aion.shared.logging import get_logger
+from dataclasses import dataclass
 
 logger = get_logger()
 
@@ -21,10 +19,10 @@ class PortAllocationStrategy:
 
     @classmethod
     def calculate(
-        cls,
-        proxy_port: int | None,
-        port_range_start: int | None,
-        port_range_end: int | None
+            cls,
+            proxy_port: int | None,
+            port_range_start: int | None,
+            port_range_end: int | None
     ) -> "PortAllocationStrategy":
         """
         Calculate port allocation strategy based on CLI parameters.
@@ -94,12 +92,13 @@ class PortAllocationStrategy:
     help="Timeout in seconds to wait for startup confirmation from agents and proxy (0 to skip, default: 30)"
 )
 async def serve(
-    port: int | None,
-    port_range_start: int | None,
-    port_range_end: int | None,
-    startup_timeout: int
+        port: int | None,
+        port_range_start: int | None,
+        port_range_end: int | None,
+        startup_timeout: int
 ) -> None:
     """Run all configured AION agents and proxy server in separate processes"""
+    from aion.cli.handlers import ServeHandler
 
     try:
         # Load configuration
