@@ -16,7 +16,7 @@ def cli() -> None:
 
 
 cli.add_command(commands.serve)
-cli.add_command(commands.chat)
+# cli.add_command(commands.chat)
 
 if __name__ == "__main__":
     cli()

@@ -11,6 +11,8 @@ Utilities:
 - create_message_from_parts: Helper to create a2a.Message with proper defaults
 """
 
+from __future__ import annotations
+
 from typing import Any
 from uuid import uuid4
 

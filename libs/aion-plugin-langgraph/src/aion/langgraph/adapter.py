@@ -7,14 +7,32 @@ from aion.shared.agent.exceptions import ConfigurationError
 from aion.shared.config.models import AgentConfig
 from aion.shared.db import DbManagerProtocol
 from aion.shared.logging import get_logger
+from langgraph.channels.ephemeral_value import EphemeralValue
+from langgraph.channels.untracked_value import UntrackedValue
 from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.constants import START
 from langgraph.graph import StateGraph
 from langgraph.pregel import Pregel
 
 from .checkpoint import CheckpointerFactory
+from .constants import AION_UNTRACKED_CHANNEL_NAMES
 from .execution import LangGraphExecutor
 
 logger = get_logger()
+
+
+class _FilteredEphemeralValue(EphemeralValue):
+    """EphemeralValue that strips untracked keys from the input dict before checkpointing.
+
+    Prevents SDK-managed fields (e.g. a2a_inbox) from being saved to the checkpoint
+    via the __start__ channel, which stores the full input dict on every invocation.
+    """
+
+    def checkpoint(self):
+        value = super().checkpoint()
+        if isinstance(value, dict):
+            return {k: v for k, v in value.items() if k not in AION_UNTRACKED_CHANNEL_NAMES}
+        return value
 
 
 class LangGraphAdapter(AgentAdapter):
@@ -135,7 +153,9 @@ class LangGraphAdapter(AgentAdapter):
         if hasattr(graph, "compile") and callable(getattr(graph, "compile")):
             logger.debug(f"Compiling graph")
             checkpointer = await self._get_checkpointer()
+            self._patch_untracked_channels(graph)
             compiled_graph = graph.compile(checkpointer=checkpointer)
+            self._patch_start_channel(compiled_graph)
             return compiled_graph
         else:
             logger.debug(f"Graph doesn't require compilation")
@@ -153,6 +173,43 @@ class LangGraphAdapter(AgentAdapter):
             return await CheckpointerFactory.create(db_manager=self._db_manager)
         except Exception as ex:
             logger.warning(f"Failed to create checkpointer: {ex}")
+
+    @staticmethod
+    def _patch_untracked_channels(graph: StateGraph) -> None:
+        """Replace channels for SDK-managed fields with UntrackedValue.
+
+        Fields like a2a_inbox are re-injected on every invocation from the
+        request context and must never be saved to checkpoints.
+        """
+        if not hasattr(graph, "channels"):
+            return
+
+        for name, channel in list(graph.channels.items()):
+            if name not in AION_UNTRACKED_CHANNEL_NAMES:
+                continue
+
+            logger.debug(f"Marking channel '{name}' as untracked (not checkpointed)")
+            graph.channels[name] = UntrackedValue(channel.ValueType)
+
+    @staticmethod
+    def _patch_start_channel(compiled_graph: Any) -> None:
+        """Replace __start__ EphemeralValue with a filtered version.
+
+        __start__ stores the full input dict on every invocation and checkpoints it.
+        The filtered version strips untracked keys before storing, preventing
+        SDK-managed fields from leaking into checkpoints via this channel.
+        """
+        if not hasattr(compiled_graph, "channels"):
+            return
+
+        start_channel = compiled_graph.channels.get(START)
+        if not isinstance(start_channel, EphemeralValue):
+            return
+
+        filtered = _FilteredEphemeralValue(start_channel.typ)
+        filtered.key = start_channel.key
+        compiled_graph.channels[START] = filtered
+        logger.debug(f"Patched __start__ channel to filter untracked keys")
 
     @staticmethod
     def _is_graph_instance(obj: Any) -> bool:

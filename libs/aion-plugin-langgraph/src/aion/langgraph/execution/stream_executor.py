@@ -4,7 +4,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any, Optional
 
-from a2a.types import TaskArtifactUpdateEvent, TaskStatusUpdateEvent, TextPart
+from a2a.types import TaskArtifactUpdateEvent, TaskStatusUpdateEvent
 from aion.shared.logging import get_logger
 from aion.shared.types import ArtifactId
 
@@ -88,9 +88,9 @@ class StreamExecutor:
         """Update internal state based on the outgoing event."""
         if isinstance(a2a_event, TaskArtifactUpdateEvent):
             if a2a_event.artifact.artifact_id == ArtifactId.STREAM_DELTA.value:
-                for part in (a2a_event.artifact.parts or []):
-                    if isinstance(part.root, TextPart):
-                        self._delta_text += part.root.text
+                for part in a2a_event.artifact.parts:
+                    if part.text:
+                        self._delta_text += part.text
             return
 
         if isinstance(a2a_event, TaskStatusUpdateEvent):

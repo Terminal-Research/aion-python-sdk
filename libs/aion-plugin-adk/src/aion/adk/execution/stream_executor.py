@@ -4,7 +4,8 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any
 
-from a2a.types import Message, Task, TaskArtifactUpdateEvent, TaskStatusUpdateEvent, TextPart
+from a2a.types import Message, Task, TaskArtifactUpdateEvent, TaskStatusUpdateEvent
+from google.protobuf import json_format
 from aion.shared.logging import get_logger
 from aion.shared.types import ArtifactId
 from google.adk.events import Event
@@ -92,7 +93,7 @@ class ADKStreamExecutor:
             outbox = event.actions.state_delta.pop("a2a_outbox", None)
             if outbox:
                 if isinstance(outbox, (Task, Message)):
-                    event.actions.state_delta["a2a_outbox"] = outbox.model_dump()
+                    event.actions.state_delta["a2a_outbox"] = json_format.MessageToDict(outbox)
                 else:
                     logger.warning(f"Unexpected a2a_outbox type: {type(outbox)}")
 
@@ -100,9 +101,9 @@ class ADKStreamExecutor:
         """Update internal state based on the outgoing event."""
         if isinstance(a2a_event, TaskArtifactUpdateEvent):
             if a2a_event.artifact.artifact_id == ArtifactId.STREAM_DELTA.value:
-                for part in (a2a_event.artifact.parts or []):
-                    if isinstance(part.root, TextPart):
-                        self._delta_text += part.root.text
+                for part in a2a_event.artifact.parts:
+                    if part.text:
+                        self._delta_text += part.text
             return
 
         if isinstance(a2a_event, TaskStatusUpdateEvent):

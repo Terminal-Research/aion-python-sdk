@@ -129,6 +129,7 @@ class AppFactory:
             preprocessors=[
                 FilePartPreprocessor(self.file_transformer, wait_upload=True),
             ],
+            enable_v0_3_compat=True
         )
 
         # Build FastAPI application from A2A app

@@ -14,9 +14,9 @@ from a2a.types import (
     TaskState,
     TaskStatus,
     TaskStatusUpdateEvent,
-    TextPart,
 )
 
+from aion.shared.types import A2AOutbox
 from .stream_executor import StreamResult
 
 if TYPE_CHECKING:
@@ -68,14 +68,13 @@ class ExecutionResultHandler:
                 context_id=context_id,
                 task_id=task_id,
                 message_id=str(uuid.uuid4()),
-                role=Role.agent,
-                parts=[Part(root=TextPart(text=stream_result.delta_text))],
+                role=Role.ROLE_AGENT,
+                parts=[Part(text=stream_result.delta_text)],
             )
             return [TaskStatusUpdateEvent(
                 task_id=task_id,
                 context_id=context_id,
-                final=False,
-                status=TaskStatus(state=TaskState.working, message=msg),
+                    status=TaskStatus(state=TaskState.TASK_STATE_WORKING, message=msg),
             )]
 
         return []
@@ -92,13 +91,14 @@ class ExecutionResultHandler:
         Returns None if the outbox type is not recognized — caller
         falls through to fallback logic.
         """
-        message = self._parse_message(outbox)
-        if message is not None:
-            return self._handle_outbox_message(message, context, task_id, context_id)
+        if not isinstance(outbox, A2AOutbox):
+            return None
 
-        task = self._parse_task(outbox)
-        if task is not None:
-            return self._handle_outbox_task(task, context, task_id, context_id)
+        if outbox.message is not None:
+            return self._handle_outbox_message(outbox.message, context, task_id, context_id)
+
+        if outbox.task is not None:
+            return self._handle_outbox_task(outbox.task, context, task_id, context_id)
 
         return None
 
@@ -110,21 +110,22 @@ class ExecutionResultHandler:
             context_id: str,
     ) -> list[AgentEvent]:
         """Process outbox Message: enforce server fields, append to history, emit event."""
-        message = message.model_copy(update={
-            "task_id": task_id,
-            "context_id": context_id,
-        })
+        new_msg = Message()
+        new_msg.CopyFrom(message)
+        new_msg.task_id = task_id
+        new_msg.context_id = context_id
+
         task = context.current_task
         if task is not None:
-            history = list(task.history or [])
-            history.append(message)
-            context.current_task = task.model_copy(update={"history": history})
+            updated_task = Task()
+            updated_task.CopyFrom(task)
+            updated_task.history.append(new_msg)
+            context.current_task = updated_task
 
         return [TaskStatusUpdateEvent(
             task_id=task_id,
             context_id=context_id,
-            final=False,
-            status=TaskStatus(state=TaskState.working, message=message),
+            status=TaskStatus(state=TaskState.TASK_STATE_WORKING, message=new_msg),
         )]
 
     def _handle_outbox_task(
@@ -149,19 +150,20 @@ class ExecutionResultHandler:
         if task is None:
             return []
 
-        patched_history = [
-            msg.model_copy(update={
-                "task_id": task_id,
-                "context_id": context_id,
-            })
-            for msg in (patch.history or [])
-        ]
+        patched_history = []
+        for msg in patch.history:
+            new_msg = Message()
+            new_msg.CopyFrom(msg)
+            new_msg.task_id = task_id
+            new_msg.context_id = context_id
+            patched_history.append(new_msg)
 
-        merged = task.model_copy(update={
-            "history": list(task.history or []) + patched_history,
-            "artifacts": list(task.artifacts or []) + list(patch.artifacts or []),
-            "metadata": {**(task.metadata or {}), **(patch.metadata or {})},
-        })
+        merged = Task()
+        merged.CopyFrom(task)
+        merged.history.extend(patched_history)
+        merged.artifacts.extend(patch.artifacts)
+        for k, v in patch.metadata.items():
+            merged.metadata[k] = v
         context.current_task = merged
 
         events: list[AgentEvent] = []
@@ -174,17 +176,15 @@ class ExecutionResultHandler:
                 events.append(TaskStatusUpdateEvent(
                     task_id=task_id,
                     context_id=context_id,
-                    final=False,
-                    metadata=filtered,
-                    status=TaskStatus(state=TaskState.working),
+                            metadata=filtered,
+                    status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
                 ))
 
         for msg in patched_history:
             events.append(TaskStatusUpdateEvent(
                 task_id=task_id,
                 context_id=context_id,
-                final=False,
-                status=TaskStatus(state=TaskState.working, message=msg),
+                    status=TaskStatus(state=TaskState.TASK_STATE_WORKING, message=msg),
             ))
 
         for artifact in (patch.artifacts or []):
@@ -198,18 +198,3 @@ class ExecutionResultHandler:
 
         return events
 
-    @staticmethod
-    def _parse_message(outbox: Any) -> Message | None:
-        if isinstance(outbox, Message):
-            return outbox
-        if isinstance(outbox, dict) and outbox.get("kind") == "message":
-            return Message.model_validate(outbox)
-        return None
-
-    @staticmethod
-    def _parse_task(outbox: Any) -> Task | None:
-        if isinstance(outbox, Task):
-            return outbox
-        if isinstance(outbox, dict) and outbox.get("kind") == "task":
-            return Task.model_validate(outbox)
-        return None

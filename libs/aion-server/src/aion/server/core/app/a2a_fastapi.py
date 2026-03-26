@@ -84,9 +84,9 @@ class AionA2AFastAPIApplication(A2AFastAPIApplication):
         self.handler = AionJSONRPCHandler.from_existing(self.handler)
 
     @override
-    def add_routes_to_app(self, app, **kwargs) -> None:
+    def add_routes_to_app(self, app, *args, **kwargs) -> None:
         """Add custom routes to the FastAPI application."""
-        super().add_routes_to_app(**kwargs)
+        super().add_routes_to_app(app, *args, **kwargs)
         AionExtraHTTPRoutes(self.aion_agent).register(app)
 
     @override

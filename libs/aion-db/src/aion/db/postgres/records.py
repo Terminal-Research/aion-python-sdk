@@ -6,14 +6,9 @@ import datetime as _dt
 import uuid
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
-try:  # pragma: no cover - optional dependency
-    from a2a.types import Artifact, Message, Task, TaskStatus
-except Exception as exc:  # pragma: no cover - explicit failure if missing
-    raise ImportError(
-        "The 'a2a-sdk' package is required to use these models"
-    ) from exc
+from a2a.types import Artifact, Message, Task, TaskStatus
 
 __all__ = [
     "TaskRecord",
@@ -22,6 +17,8 @@ __all__ = [
 
 class TaskRecord(BaseModel):
     """Database record model for storing task information."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     id: uuid.UUID
     context_id: str

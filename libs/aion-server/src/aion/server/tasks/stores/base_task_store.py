@@ -2,7 +2,7 @@ from abc import abstractmethod
 from typing import Optional, List
 
 from a2a.server.tasks import TaskStore
-from a2a.types import Task
+from a2a.types.a2a_pb2 import Task
 
 
 

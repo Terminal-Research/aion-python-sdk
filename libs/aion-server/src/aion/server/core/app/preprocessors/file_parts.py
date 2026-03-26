@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from a2a.types import SendMessageRequest, SendStreamingMessageRequest
+from a2a.types import SendMessageRequest, SubscribeToTaskRequest
 from aion.shared.files.a2a import A2AFileTransformer
 
 
@@ -22,13 +22,12 @@ class FilePartPreprocessor:
         self._wait_upload = wait_upload
 
     async def preprocess(self, request_obj: Any) -> None:
-        if not isinstance(request_obj, (SendMessageRequest, SendStreamingMessageRequest)):
+        if not isinstance(request_obj, (SendMessageRequest, SubscribeToTaskRequest)):
             return
 
-        params = request_obj.params
-        if not params or not params.message:
+        if not request_obj.message:
             return
 
-        transformed_message = await self._transformer.transform_message(params.message, wait_upload=self._wait_upload)
-        if transformed_message is not params.message:
-            params.message = transformed_message
+        transformed_message = await self._transformer.transform_message(request_obj.message, wait_upload=self._wait_upload)
+        if transformed_message is not request_obj.message:
+            request_obj.message = transformed_message
