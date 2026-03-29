@@ -263,7 +263,7 @@ class AppSettings(BaseEnvSettings):
 
     file_storage_backend: Optional[Literal["stub"]] = Field(
         default=None,
-        alias="AION_FILE_STORAGE_BACKEND",
+        alias="FILE_STORAGE_BACKEND",
         description=(
             "File storage backend for converting inline (base64) file parts to URLs. "
             "When set, outgoing A2A events with binary content are uploaded to storage "

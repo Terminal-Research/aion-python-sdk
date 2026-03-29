@@ -56,7 +56,7 @@ class AppFactory:
             plugin_factory: Factory for plugin lifecycle management (already has db_manager)
             store_manager: Task store manager
             upload_manager: Optional pre-built FileUploadManager. If None, one is
-                created automatically from AION_FILE_STORAGE_BACKEND env var. If the
+                created automatically from FILE_STORAGE_BACKEND env var. If the
                 env var is not set, file uploading is disabled and inline parts pass
                 through unchanged.
             startup_callback: Optional callback to call after initialization
