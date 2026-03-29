@@ -4,10 +4,9 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any
 
-from a2a.types import Message, Task, TaskArtifactUpdateEvent, TaskStatusUpdateEvent
-from google.protobuf import json_format
+from a2a.types import TaskArtifactUpdateEvent, TaskStatusUpdateEvent
 from aion.shared.logging import get_logger
-from aion.shared.types import ArtifactId
+from aion.shared.types import ArtifactId, A2AOutbox
 from google.adk.events import Event
 
 from .event_converter import ADKToA2AEventConverter
@@ -92,8 +91,8 @@ class ADKStreamExecutor:
         if event.actions and event.actions.state_delta:
             outbox = event.actions.state_delta.pop("a2a_outbox", None)
             if outbox:
-                if isinstance(outbox, (Task, Message)):
-                    event.actions.state_delta["a2a_outbox"] = json_format.MessageToDict(outbox)
+                if isinstance(outbox, A2AOutbox):
+                    event.actions.state_delta["a2a_outbox"] = outbox.model_dump()
                 else:
                     logger.warning(f"Unexpected a2a_outbox type: {type(outbox)}")
 

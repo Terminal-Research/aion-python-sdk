@@ -7,7 +7,11 @@ from datetime import datetime, timezone
 from typing import Optional, List
 
 from a2a.server.context import ServerCallContext
-from a2a.types import Task
+from a2a.types import Task, TaskState
+from a2a.types import a2a_pb2
+from a2a.utils.constants import DEFAULT_LIST_TASKS_PAGE_SIZE
+from a2a.utils.errors import InvalidParamsError
+from a2a.utils.task import decode_page_token, encode_page_token
 
 from aion.db.postgres.manager import db_manager
 from aion.db.postgres.types import Pagination, Sorting, SortKey
@@ -36,7 +40,7 @@ class PostgresTaskStore(BaseTaskStore):
             status=task.status,
             artifacts=task.artifacts,
             history=task.history,
-            task_metadata=task.metadata,
+            task_metadata=task.metadata if task.HasField('metadata') else None,
             created_at=now,
             updated_at=now,
         )
@@ -94,25 +98,62 @@ class PostgresTaskStore(BaseTaskStore):
             await repository.delete_by_id(task_uuid)
             await session.commit()
 
-    async def get_by_context(
+    async def list(
             self,
-            context_id: str,
-            limit: Optional[int] = None,
-            offset: Optional[int] = None
-    ) -> list[Task]:
-        """Get all tasks for a given context."""
+            params: a2a_pb2.ListTasksRequest,
+            context: ServerCallContext | None = None,
+    ) -> a2a_pb2.ListTasksResponse:
+        """List tasks with optional filtering and pagination."""
+        status_state = TaskState.Name(params.status) if params.status else None
+        status_timestamp_after = (
+            params.status_timestamp_after.ToJsonString()
+            if params.HasField('status_timestamp_after')
+            else None
+        )
+
         async with db_manager.get_session() as session:
             repository = TasksRepository(session)
             entities = await repository.find(
-                context_id=context_id,
-                pagination=Pagination(limit=limit, offset=offset),
-                sorting=Sorting(SortKey(column="created_at")),
+                context_id=params.context_id or None,
+                status_state=status_state,
+                status_timestamp_after=status_timestamp_after,
             )
-            return [self._entity_to_task(str(e.id), e) for e in entities]
 
-    async def save_task(self, task: Task) -> None:
-        """Backwards compatibility method."""
-        await self.save(task)
+        tasks = [self._entity_to_task(str(e.id), e) for e in entities]
+
+        tasks.sort(
+            key=lambda task: (
+                task.HasField('status') and task.status.HasField('timestamp'),
+                task.status.timestamp.ToJsonString()
+                if task.HasField('status') and task.status.HasField('timestamp')
+                else '',
+                task.id,
+            ),
+            reverse=True,
+        )
+
+        total_size = len(tasks)
+        start_idx = 0
+        if params.page_token:
+            start_task_id = decode_page_token(params.page_token)
+            for i, task in enumerate(tasks):
+                if task.id == start_task_id:
+                    start_idx = i
+                    break
+            else:
+                raise InvalidParamsError(f'Invalid page token: {params.page_token}')
+
+        page_size = params.page_size or DEFAULT_LIST_TASKS_PAGE_SIZE
+        end_idx = start_idx + page_size
+        next_page_token = (
+            encode_page_token(tasks[end_idx].id) if end_idx < total_size else None
+        )
+        tasks = tasks[start_idx:end_idx]
+
+        response_kwargs: dict = dict(tasks=tasks, total_size=total_size, page_size=page_size)
+        if next_page_token:
+            response_kwargs['next_page_token'] = next_page_token
+        return a2a_pb2.ListTasksResponse(**response_kwargs)
 
     async def get_context_ids(
             self,

@@ -51,8 +51,8 @@ class AionAgentCard:
             skills.append(skill)
 
         supported_interfaces = [
-            AgentInterface(url=base_url, protocol_binding="JSONRPC", protocol_version="0.3"),
             AgentInterface(url=base_url, protocol_binding="JSONRPC", protocol_version="1.0"),
+            AgentInterface(url=base_url, protocol_binding="JSONRPC", protocol_version="0.3"),
         ]
 
         return AgentCard(

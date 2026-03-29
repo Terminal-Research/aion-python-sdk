@@ -2,6 +2,7 @@ from unittest.mock import Mock
 import pytest
 from a2a.types import Task, TaskState, Artifact, Message, TaskStatus
 from aion.shared.types import ArtifactName, ConversationTaskStatus
+from aion.shared.types.a2a.enums import A2AMetadataKey, MessageType
 from aion.server.utils import ConversationBuilder
 
 
@@ -10,17 +11,17 @@ class TestConversationBuilder:
 
     @pytest.fixture
     def mock_task_status(self):
-        """Create a mock TaskStatus."""
+        """Create a mock TaskStatus with no result message."""
         status = Mock(spec=TaskStatus)
-        status.state = TaskState.completed
-        status.message = None
+        status.state = TaskState.TASK_STATE_COMPLETED
+        status.HasField.return_value = False
         return status
 
     @pytest.fixture
     def mock_message(self):
-        """Create a mock Message."""
+        """Create a mock Message with no metadata."""
         message = Mock(spec=Message)
-        message.metadata = None
+        message.HasField.return_value = False
         return message
 
     @pytest.fixture
@@ -38,7 +39,7 @@ class TestConversationBuilder:
         assert result.context_id == "ctx_123"
         assert result.history == []
         assert result.artifacts == []
-        assert result.status.state == TaskState.unknown
+        assert result.status.state == TaskState.TASK_STATE_UNSPECIFIED
 
     def test_build_from_tasks_with_tasks(self, mock_task_status, mock_message, mock_artifact):
         """Test building conversation from tasks with content."""
@@ -52,7 +53,7 @@ class TestConversationBuilder:
         assert result.context_id == "ctx_123"
         assert len(result.history) == 1
         assert len(result.artifacts) == 1
-        assert result.status.state == TaskState.completed
+        assert result.status.state == TaskState.TASK_STATE_COMPLETED
 
     def test_extract_messages_from_tasks_no_history(self):
         """Test extracting messages from tasks with no history."""
@@ -67,18 +68,21 @@ class TestConversationBuilder:
         """Test message extraction with metadata filtering."""
         # Message with no metadata - should be included
         msg1 = Mock(spec=Message)
-        msg1.metadata = None
+        msg1.HasField.return_value = False
 
         # Message with message type - should be included
         msg2 = Mock(spec=Message)
-        msg2.metadata = {"aion:message_type": "message"}
+        msg2.HasField.return_value = True
+        msg2.metadata = {A2AMetadataKey.MESSAGE_TYPE.value: MessageType.MESSAGE.value}
 
         # Message with other type - should be excluded
         msg3 = Mock(spec=Message)
-        msg3.metadata = {"aion:message_type": "system"}
+        msg3.HasField.return_value = True
+        msg3.metadata = {A2AMetadataKey.MESSAGE_TYPE.value: "system"}
 
         # Task with result message - should be included
         result_message = Mock(spec=Message)
+        mock_task_status.HasField.return_value = True
         mock_task_status.message = result_message
 
         task = Mock(spec=Task)
@@ -97,11 +101,9 @@ class TestConversationBuilder:
     def test_extract_messages_from_tasks_reverse_order(self, mock_task_status):
         """Test message extraction with reverse order."""
         msg1 = Mock(spec=Message)
-        msg1.metadata = None
+        msg1.HasField.return_value = False
         msg2 = Mock(spec=Message)
-        msg2.metadata = None
-
-        mock_task_status.message = None
+        msg2.HasField.return_value = False
 
         task = Mock(spec=Task)
         task.history = [msg1, msg2]
@@ -169,21 +171,6 @@ class TestConversationBuilder:
         assert artifact1 in result
         assert artifact_no_id in result
         assert artifact2 not in result
-
-    def test_extract_artifacts_from_tasks_fallback_to_id(self):
-        """Test artifact extraction falls back to 'id' attribute if 'artifact_id' not present."""
-        artifact = Mock(spec=Artifact)
-        artifact.name = "test"
-        artifact.artifact_id = None  # No artifact_id
-        artifact.id = "fallback_id"  # But has id
-
-        task = Mock(spec=Task)
-        task.artifacts = [artifact]
-
-        result = ConversationBuilder.extract_artifacts_from_tasks([task])
-
-        assert len(result) == 1
-        assert artifact in result
 
     def test_extract_artifacts_from_tasks_reverse_order(self):
         """Test artifact extraction with reverse order."""

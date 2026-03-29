@@ -1,30 +1,33 @@
 """Chat functionality for A2A client debugging"""
-import base64
+import json
 import os
 import urllib
 from typing import Optional
 from uuid import uuid4
 
 import httpx
-from a2a.client import A2AClient
+from a2a.client import A2ACardResolver, ClientConfig, ClientFactory
+from aion.shared.types.a2a.enums import ArtifactId
+
+_SKIP_ARTIFACT_IDS = frozenset({ArtifactId.STREAM_DELTA.value, ArtifactId.EPHEMERAL_MESSAGE.value})
 from a2a.types import (
-    FilePart,
-    FileWithBytes,
     GetTaskRequest,
-    JSONRPCErrorResponse,
     Message,
-    MessageSendConfiguration,
-    MessageSendParams,
     Part,
+    Role,
+    SendMessageConfiguration,
     SendMessageRequest,
-    SendStreamingMessageRequest,
+    StreamResponse,
     Task,
     TaskArtifactUpdateEvent,
-    TaskQueryParams,
     TaskState,
     TaskStatusUpdateEvent,
-    TextPart,
 )
+from google.protobuf import json_format
+
+def _to_json(msg) -> str:
+    return json.dumps(json_format.MessageToDict(msg), ensure_ascii=False)
+
 
 from .card_resolver import AionA2ACardResolver
 from .utils import A2ARequestHelper
@@ -85,7 +88,7 @@ class ChatSession:
             card = await card_resolver.get_agent_card()
 
             print('======= Agent Card ========')
-            print(card.model_dump_json(exclude_none=True))
+            print(_to_json(card))
 
             # Setup push notifications if needed
             if self.use_push_notifications:
@@ -95,11 +98,13 @@ class ChatSession:
             if self.agent_id:
                 client_url = "{host}{path}".format(host=self.host, path=format_agent_proxy_path(self.agent_id))
 
-            client = A2AClient(
-                httpx_client=httpx_client,
-                agent_card=card,
-                url=client_url,
+            factory = ClientFactory(
+                config=ClientConfig(
+                    httpx_client=httpx_client,
+                    streaming=not self.no_stream,
+                ),
             )
+            client = factory.create(card)
             streaming = card.capabilities.streaming and not self.no_stream
 
             # Main chat loop
@@ -132,7 +137,7 @@ class ChatSession:
 
     async def _complete_task(
             self,
-            client: A2AClient,
+            client,
             streaming: bool,
             task_id: Optional[str],
     ):
@@ -148,8 +153,8 @@ class ChatSession:
 
         # Create message
         message = Message(
-            role='user',
-            parts=[TextPart(text=prompt)],
+            role=Role.ROLE_USER,
+            parts=[Part(text=prompt)],
             message_id=str(uuid4()),
             task_id=task_id,
             context_id=self.context_id,
@@ -160,202 +165,104 @@ class ChatSession:
         if file_path:
             try:
                 with open(file_path, 'rb') as f:
-                    file_content = base64.b64encode(f.read()).decode('utf-8')
+                    file_content = f.read()
                     file_name = os.path.basename(file_path)
 
                 message.parts.append(
-                    Part(
-                        root=FilePart(
-                            file=FileWithBytes(name=file_name, bytes=file_content)
-                        )
-                    )
+                    Part(raw=file_content, filename=file_name)
                 )
             except FileNotFoundError:
                 print(f"File not found: {file_path}")
             except Exception as e:
                 print(f"Error reading file: {e}")
 
-        # Create payload
-        payload = MessageSendParams(
-            id=str(uuid4()),
+        request = SendMessageRequest(
             message=message,
-            configuration=MessageSendConfiguration(
+            configuration=SendMessageConfiguration(
                 accepted_output_modes=['text'],
             ),
-            metadata=self.request_helper.generate_task_metadata()
+            metadata=self.request_helper.generate_task_metadata(),
         )
 
-        # Add push notification config if enabled
-        if self.use_push_notifications:
-            notif_receiver_parsed = urllib.parse.urlparse(
-                self.push_notification_receiver
-            )
-            payload['pushNotification'] = {
-                'url': f'http://{notif_receiver_parsed.hostname}:{notif_receiver_parsed.port}/notify',
-                'authentication': {
-                    'schemes': ['bearer'],
-                },
-            }
+        return await self._handle_response(client, request, task_id)
 
-        # Send message and handle response
-        if streaming:
-            return await self._handle_streaming_response(client, payload, task_id)
-        else:
-            return await self._handle_non_streaming_response(client, payload, task_id)
-
-    async def _handle_streaming_response(
+    async def _handle_response(
             self,
-            client: A2AClient,
-            payload: MessageSendParams,
+            client,
+            request: SendMessageRequest,
             task_id: Optional[str]
     ):
-        """Handle streaming response with auto-continue after errors"""
-        try:
-            response_stream = client.send_message_streaming(
-                SendStreamingMessageRequest(
-                    id=str(uuid4()),
-                    params=payload,
-                )
-            )
-
-            task_result = None
-            message = None
-            task_completed = False
-
-            async for result in response_stream:
-                if isinstance(result.root, JSONRPCErrorResponse):
-                    error_info = result.root.error
-                    print(f'JSON-RPC error in streaming response: {error_info}')
-                    # Auto-continue to next task
-                    return True, task_id
-
-                event = result.root.result
-                self.context_id = event.context_id
-
-                if isinstance(event, Task):
-                    task_id = event.id
-                elif isinstance(event, (TaskStatusUpdateEvent, TaskArtifactUpdateEvent)):
-                    task_id = event.task_id
-                    if (isinstance(event, TaskStatusUpdateEvent) and
-                            event.status.state == 'completed'):
-                        task_completed = True
-                elif isinstance(event, Message):
-                    message = event
-
-                print(f'stream event => {event.model_dump_json(exclude_none=True)}')
-
-        except httpx.TimeoutException as e:
-            print(f'Request timed out: {str(e)}. Continuing to next input.')
-            # Auto-continue to next task
-            return True, task_id
-
-        except httpx.ConnectError as e:
-            print(f'Connection failed: {str(e)}. Please check if the server is running.')
-            return False, task_id
-
-        except Exception as e:
-            print(f'Unexpected error during streaming: {e}')
-            return False, task_id
-
-        # Get full task if needed
-        if task_id and not task_completed:
-            task_result = await self._get_task_result(client, task_id)
-            if task_result is None:
-                return False, task_id
-
-        return await self._process_task_result(
-            message, task_result, client, task_id, streaming=True
-        )
-
-    async def _handle_non_streaming_response(
-            self,
-            client: A2AClient,
-            payload: MessageSendParams,
-            task_id: Optional[str]
-    ):
-        """Handle non-streaming response with auto-continue after errors"""
-        try:
-            response = await client.send_message(
-                SendMessageRequest(
-                    id=str(uuid4()),
-                    params=payload,
-                )
-            )
-
-            # Check for JSON-RPC error response
-            if isinstance(response.root, JSONRPCErrorResponse):
-                error_info = response.root.error
-                print(f'JSON-RPC error in non-streaming response: {error_info}')
-                # Auto-continue to next task
-                return True, task_id
-
-            event = response.root.result
-
-        except httpx.TimeoutException as e:
-            print(f'Request timed out: {str(e)}. Continuing to next input.')
-            # Auto-continue to next task
-            return True, task_id
-
-        except httpx.ConnectError as e:
-            print(f'Connection failed: {str(e)}. Please check if the server is running.')
-            return False, task_id
-
-        except Exception as e:
-            print(f'Failed to complete the call: {e}')
-            return False, task_id
-
-        if not self.context_id:
-            self.context_id = event.context_id
-
+        """Handle response from send_message (works for both streaming and non-streaming)"""
         task_result = None
         message = None
+        had_stream_events = False
 
-        if isinstance(event, Task):
-            if not task_id:
-                task_id = event.id
-            task_result = event
-        elif isinstance(event, Message):
-            message = event
+        try:
+            async for stream_response, task in client.send_message(request):
+                if stream_response.HasField('task'):
+                    task_result = stream_response.task
+                    task_id = task_result.id
+                elif stream_response.HasField('message'):
+                    message = stream_response.message
+                    if message.context_id:
+                        self.context_id = message.context_id
+                elif stream_response.HasField('status_update'):
+                    had_stream_events = True
+                    event = stream_response.status_update
+                    task_id = event.task_id
+                    if event.context_id:
+                        self.context_id = event.context_id
+                    print(f'stream event => {_to_json(event)}')
+                elif stream_response.HasField('artifact_update'):
+                    had_stream_events = True
+                    event = stream_response.artifact_update
+                    task_id = event.task_id
+                    print(f'stream event => {_to_json(event)}')
+
+        except httpx.TimeoutException as e:
+            print(f'Request timed out: {str(e)}. Continuing to next input.')
+            return True, task_id
+
+        except httpx.ConnectError as e:
+            print(f'Connection failed: {str(e)}. Please check if the server is running.')
+            return False, task_id
+
+        except Exception as e:
+            print(f'Unexpected error: {e}')
+            return False, task_id
 
         return await self._process_task_result(
-            message, task_result, client, task_id, streaming=False
+            message, task_result, client, task_id, streaming=had_stream_events
         )
 
     async def _process_task_result(
             self,
             message: Optional[Message],
             task_result: Optional[Task],
-            client: A2AClient,
+            client,
             task_id: Optional[str],
             streaming: bool = False
     ):
         """Process the final task result"""
         if message:
-            print(f'\n{message.model_dump_json(exclude_none=True)}')
+            print(f'\n{_to_json(message)}')
             return True, task_id
 
         if task_result:
-            # Print task content (excluding file contents)
-            task_content = task_result.model_dump_json(
-                exclude={
-                    'history': {
-                        '__all__': {
-                            'parts': {
-                                '__all__': {'file'},
-                            },
-                        },
-                    },
-                },
-                exclude_none=True,
-            )
-            print(f'\n{task_content}')
+            # Filter out ephemeral streaming artifacts (not persisted on server)
+            visible_artifacts = [
+                a for a in task_result.artifacts
+                if a.artifact_id not in _SKIP_ARTIFACT_IDS
+            ]
+            del task_result.artifacts[:]
+            task_result.artifacts.extend(visible_artifacts)
+            print(f'\n{_to_json(task_result)}')
 
             # Check if more input is required
-            state = TaskState(task_result.status.state)
-            if state.name == TaskState.input_required.name:
+            if task_result.status.state == TaskState.TASK_STATE_INPUT_REQUIRED:
                 return await self._complete_task(
                     client,
-                    streaming,  # Use the same streaming mode as the parent call
+                    streaming,
                     task_id,
                 )
 
@@ -364,28 +271,19 @@ class ChatSession:
         # Fallback case
         return True, task_id
 
-    async def _get_task_result(self, client: A2AClient, task_id: str):
+    async def _get_task_result(self, client, task_id: str):
         """Get task result by ID with improved error handling"""
         try:
-            task_result_response = await client.get_task(
-                GetTaskRequest(
-                    id=str(uuid4()),
-                    params=TaskQueryParams(id=task_id),
-                )
+            task = await client.get_task(
+                GetTaskRequest(id=task_id)
             )
+            return task
 
-            if isinstance(task_result_response.root, JSONRPCErrorResponse):
-                error_info = task_result_response.root.error
-                print(f'Error getting task result: {error_info}')
-                return None
-
-            return task_result_response.root.result
-
-        except httpx.TimeoutException as e:
+        except httpx.TimeoutException:
             print('Timeout while getting task result')
             return None
 
-        except httpx.ConnectError as e:
+        except httpx.ConnectError:
             print('Connection failed while getting task result')
             return None
 
@@ -393,24 +291,14 @@ class ChatSession:
             print(f'Unexpected error getting task result: {e}')
             return None
 
-    async def _show_task_history(self, client: A2AClient, task_id: str):
+    async def _show_task_history(self, client, task_id: str):
         """Show task history with error handling"""
         try:
             print('========= history ======== ')
-            task_response = await client.get_task(
-                {'id': task_id, 'historyLength': 10}
+            task = await client.get_task(
+                GetTaskRequest(id=task_id, history_length=10)
             )
-
-            if isinstance(task_response.root, JSONRPCErrorResponse):
-                error_info = task_response.root.error
-                print(f'Error getting task history: {error_info}')
-                return
-
-            print(
-                task_response.model_dump_json(
-                    include={'result': {'history': True}}
-                )
-            )
+            print(_to_json(task))
         except Exception as e:
             print(f'Failed to get task history: {e}')
 

@@ -139,7 +139,11 @@ def a2a_part_to_genai_part(a2a_part: a2a_types.Part) -> Optional[genai_types.Par
         )
 
     if a2a_part.HasField("data"):
-        meta_type = a2a_part.metadata.get(_META_TYPE_KEY) if a2a_part.metadata else None
+        meta_type = (
+            a2a_part.metadata[_META_TYPE_KEY]
+            if a2a_part.HasField("metadata") and _META_TYPE_KEY in a2a_part.metadata
+            else None
+        )
         data_dict = json_format.MessageToDict(a2a_part.data)
 
         if meta_type == _META_TYPE_FUNCTION_CALL:

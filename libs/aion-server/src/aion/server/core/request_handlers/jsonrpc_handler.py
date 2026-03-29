@@ -10,9 +10,12 @@ from aion.shared.types import (
     GetContextRequest,
     GetContextsListRequest,
 )
+from aion.shared.logging import get_logger
 
 if TYPE_CHECKING:
     from aion.server.core.request_handlers import AionRequestHandler
+
+logger = get_logger()
 
 
 class AionJSONRPCHandler(JSONRPCHandler):
@@ -52,8 +55,10 @@ class AionJSONRPCHandler(JSONRPCHandler):
                 success_response_types=(dict,),
             )
         except A2AError as e:
+            logger.exception(e)
             return build_error_response(request_id=request.id, error=e)
-        except Exception:
+        except Exception as e:
+            logger.exception(e)
             return build_error_response(request_id=request.id, error=InternalError())
 
     async def on_get_contexts_list(
@@ -77,9 +82,11 @@ class AionJSONRPCHandler(JSONRPCHandler):
             return prepare_response_object(
                 request_id=request.id,
                 response=context_ids.model_dump(mode='json'),
-                success_response_types=(dict,),
+                success_response_types=(list,),
             )
         except A2AError as e:
+            logger.exception(e)
             return build_error_response(request_id=request.id, error=e)
-        except Exception:
+        except Exception as e:
+            logger.exception(e)
             return build_error_response(request_id=request.id, error=InternalError())

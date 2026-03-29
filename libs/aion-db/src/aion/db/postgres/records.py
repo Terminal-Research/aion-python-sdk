@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import datetime as _dt
 import uuid
-from typing import Any
-
 from pydantic import BaseModel, ConfigDict
 
 from a2a.types import Artifact, Message, Task, TaskStatus
+from google.protobuf.struct_pb2 import Struct
 
 __all__ = [
     "TaskRecord",
@@ -25,7 +24,7 @@ class TaskRecord(BaseModel):
     status: TaskStatus
     artifacts: list[Artifact] | None = None
     history: list[Message] | None = None
-    task_metadata: dict[str, Any] | None = None
+    task_metadata: Struct | None = None
     created_at: _dt.datetime
     updated_at: _dt.datetime
 

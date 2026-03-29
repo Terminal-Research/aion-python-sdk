@@ -13,8 +13,8 @@ from a2a.types import (
     TaskStatus,
     TaskStatusUpdateEvent,
 )
-from google.protobuf import json_format
 
+from aion.shared.types import A2AOutbox
 from .event_converter import ADKToA2AEventConverter
 from .stream_executor import StreamResult
 
@@ -86,13 +86,19 @@ class ADKExecutionResultHandler:
         Returns None if the outbox type is not recognized — caller
         falls through to fallback logic.
         """
-        message = self._parse_message(outbox)
-        if message is not None:
-            return self._handle_outbox_message(message, context, task_id, context_id)
+        if not isinstance(outbox, dict):
+            return None
 
-        task = self._parse_task(outbox)
-        if task is not None:
-            return self._handle_outbox_task(task, context, task_id, context_id)
+        try:
+            parsed = A2AOutbox.model_validate(outbox)
+        except Exception:
+            return None
+
+        if parsed.message is not None:
+            return self._handle_outbox_message(parsed.message, context, task_id, context_id)
+
+        if parsed.task is not None:
+            return self._handle_outbox_task(parsed.task, context, task_id, context_id)
 
         return None
 
@@ -186,30 +192,6 @@ class ADKExecutionResultHandler:
             ))
 
         return events
-
-    @staticmethod
-    def _parse_message(raw: Any) -> Message | None:
-        if isinstance(raw, Message):
-            return raw
-
-        if isinstance(raw, dict):
-            try:
-                return json_format.ParseDict(raw, Message())
-            except Exception:
-                return None
-        return None
-
-    @staticmethod
-    def _parse_task(raw: Any) -> Task | None:
-        if isinstance(raw, Task):
-            return raw
-
-        if isinstance(raw, dict):
-            try:
-                return json_format.ParseDict(raw, Task())
-            except Exception:
-                return None
-        return None
 
 
 __all__ = ["ADKExecutionResultHandler"]

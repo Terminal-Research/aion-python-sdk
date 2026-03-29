@@ -30,4 +30,4 @@ class FilePartPreprocessor:
 
         transformed_message = await self._transformer.transform_message(request_obj.message, wait_upload=self._wait_upload)
         if transformed_message is not request_obj.message:
-            request_obj.message = transformed_message
+            request_obj.message.CopyFrom(transformed_message)
