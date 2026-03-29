@@ -141,7 +141,17 @@ class ChatSession:
             streaming: bool,
             task_id: Optional[str],
     ):
-        """Complete a single chat task"""
+        """Collect input for one task and send it to the agent.
+
+        Args:
+            client: A2A client instance used to send the message.
+            streaming: Whether the server supports streaming responses.
+            task_id: Optional task identifier to continue.
+
+        Returns:
+            A tuple containing a flag indicating whether the chat loop should
+            continue and the current task identifier.
+        """
         # Get user input
         try:
             prompt = input('\nWhat do you want to send to the agent? (:q or quit to exit): ')
@@ -160,21 +170,9 @@ class ChatSession:
             context_id=self.context_id,
         )
 
-        # Handle file attachment
-        file_path = input('Select a file path to attach? (press enter to skip): ').strip()
-        if file_path:
-            try:
-                with open(file_path, 'rb') as f:
-                    file_content = f.read()
-                    file_name = os.path.basename(file_path)
-
-                message.parts.append(
-                    Part(raw=file_content, filename=file_name)
-                )
-            except FileNotFoundError:
-                print(f"File not found: {file_path}")
-            except Exception as e:
-                print(f"Error reading file: {e}")
+        attachment = self._prompt_attachment_part()
+        if attachment is not None:
+            message.parts.append(attachment)
 
         request = SendMessageRequest(
             message=message,
@@ -185,6 +183,53 @@ class ChatSession:
         )
 
         return await self._handle_response(client, request, task_id)
+
+    def _prompt_attachment_part(self) -> Optional[Part]:
+        """Prompt for an attachment until the user skips or selects a valid input.
+
+        Returns:
+            A part ready to be attached to the outgoing message, or ``None``
+            when the user chooses to continue without an attachment.
+        """
+        while True:
+            file_path = input(
+                'Select a file path or http/https URL to attach? (press enter to skip): '
+            ).strip()
+            if not file_path:
+                return None
+
+            url_part = self._build_remote_attachment_part(file_path)
+            if url_part is not None:
+                return url_part
+
+            try:
+                with open(file_path, 'rb') as file_obj:
+                    file_content = file_obj.read()
+            except FileNotFoundError:
+                print(f"File not found: {file_path}")
+                continue
+            except Exception as error:
+                print(f"Error reading file: {error}")
+                continue
+
+            return Part(raw=file_content, filename=os.path.basename(file_path))
+
+    def _build_remote_attachment_part(self, file_path: str) -> Optional[Part]:
+        """Build an attachment part for supported remote URLs.
+
+        Args:
+            file_path: Raw user input from the attachment prompt.
+
+        Returns:
+            A URL-based attachment part when the input is a supported remote
+            resource; otherwise ``None``.
+        """
+        parsed_path = urllib.parse.urlparse(file_path)
+        if parsed_path.scheme not in {"http", "https"}:
+            return None
+
+        filename = os.path.basename(urllib.parse.unquote(parsed_path.path)) or None
+        return Part(url=file_path, filename=filename)
 
     async def _handle_response(
             self,
