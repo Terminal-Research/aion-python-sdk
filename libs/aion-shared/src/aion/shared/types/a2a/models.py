@@ -2,7 +2,7 @@ import copy
 from typing import Any, List, Dict, Optional, TYPE_CHECKING
 
 from a2a.types import Message, Artifact, Task, TaskState
-from pydantic import ConfigDict, RootModel, Field
+from pydantic import ConfigDict, RootModel, Field, field_serializer
 
 from aion.shared.a2a import A2ABaseModel
 from aion.shared.utils.pydantic import Protobuf, ProtobufEnum
@@ -72,6 +72,10 @@ class ConversationTaskStatus(A2ABaseModel):
     """
     The current state of the task's lifecycle.
     """
+
+    @field_serializer('state')
+    def serialize_state(self, value: int) -> str:
+        return TaskState.Name(value)
 
 
 class Conversation(A2ABaseModel):
