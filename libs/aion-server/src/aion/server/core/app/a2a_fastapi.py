@@ -49,8 +49,8 @@ class AionA2AFastAPIApplication(A2AFastAPIApplication):
     # Custom Aion JSON-RPC methods: method name → Pydantic model.
     # Extend this dict to add new methods without touching _handle_requests.
     AION_METHOD_TO_MODEL: dict[str, type] = {
-        'context/get': GetContextRequest,
-        'contexts/get': GetContextsListRequest,
+        'GetContext': GetContextRequest,
+        'GetContexts': GetContextsListRequest,
     }
 
     @override

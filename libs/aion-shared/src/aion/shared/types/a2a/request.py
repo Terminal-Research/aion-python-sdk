@@ -21,7 +21,7 @@ class GetContextRequest(A2ABaseModel):
     """
     Specifies the version of the JSON-RPC protocol. MUST be exactly "2.0".
     """
-    method: Literal['context/get'] = 'context/get'
+    method: Literal['GetContext'] = 'GetContext'
     """
     A String containing the name of the method to be invoked.
     """
@@ -41,7 +41,7 @@ class GetContextsListRequest(A2ABaseModel):
     """
     Specifies the version of the JSON-RPC protocol. MUST be exactly "2.0".
     """
-    method: Literal['contexts/get'] = 'contexts/get'
+    method: Literal['GetContexts'] = 'GetContexts'
     """
     A String containing the name of the method to be invoked.
     """

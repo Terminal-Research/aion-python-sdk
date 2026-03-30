@@ -21,11 +21,11 @@ Formal protocol extensions that extend the base A2A communication capabilities w
 
 Methods for retrieving conversation contexts and managing context lists:
 
-- **`context/get`** - Retrieve a specific conversation context with message history
+- **`GetContext`** - Retrieve a specific conversation context with message history
   - Parameters: `context_id`, `history_length`, `history_offset`
   - Returns: [Conversation](#conversation-model) object with full context and message history
 
-- **`contexts/get`** - Retrieve a list of available contexts
+- **`GetContexts`** - Retrieve a list of available contexts
   - Returns: [ContextsList](#contextslist-model) with all accessible context identifiers
 
 ---

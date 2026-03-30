@@ -4,33 +4,33 @@ The Context extension provides JSON-RPC methods for retrieving conversation cont
 
 ## Methods
 
-- [context/get](#contextget) - Retrieve a specific conversation context
-- [contexts/get](#contextsget) - Retrieve a list of available contexts
+- [GetContext](#getcontext) - Retrieve a specific conversation context
+- [GetContexts](#getcontexts) - Retrieve a list of available contexts
 
-## context/get
+## GetContext
 
 Retrieves a specific conversation context with its message history.
-
-### Request
+````
+### Reque``st
 
 ```json
 {
   "id": "request-id",
   "jsonrpc": "2.0",
-  "method": "context/get",
+  "method": "GetContext",
   "params": {
-    "context_id": "string",
-    "history_length": 10,
-    "history_offset": 0
+    "contextId": "string",
+    "historyLength": 10,
+    "historyOffset": 0
   }
 }
 ```
 
 ### Parameters
 
-- **`context_id`** (required): Context identifier
-- **`history_length`** (optional): Number of recent tasks to be retrieved
-- **`history_offset`** (optional): The offset starting with the most recent message
+- **`contextId`** (required): Context identifier
+- **`historyLength`** (optional): Number of recent tasks to be retrieved
+- **`historyOffset`** (optional): The offset starting with the most recent message
 
 ### Success Response
 
@@ -67,17 +67,17 @@ The `result` field contains a [Conversation](../models.md#conversation) object w
 request = {
     "id": "get-context-1",
     "jsonrpc": "2.0",
-    "method": "context/get",
-    "params": {
-        "context_id": "conversation-123",
-        "history_length": 5
+    "method": "GetContext",
+    "params": {``
+        "contextId": "conversation-123",
+        "historyLength": 5
     }
 }
 ```
 
 ---
 
-## contexts/get
+## GetContexts
 
 Retrieves a list of available conversation contexts.
 
@@ -87,18 +87,18 @@ Retrieves a list of available conversation contexts.
 {
   "id": "request-id", 
   "jsonrpc": "2.0",
-  "method": "contexts/get",
+  "method": "GetContexts",
   "params": {
-    "history_length": 50,
-    "history_offset": 0
+    "historyLength": 50,
+    "historyOffset": 0
   }
 }
 ```
 
 ### Parameters
 
-- **`history_length`** (optional): Number of recent contexts to be retrieved
-- **`history_offset`** (optional): The offset starting with the most recent context from which the server should start returning history
+- **`historyLength`** (optional): Number of recent contexts to be retrieved
+- **`historyOffset`** (optional): The offset starting with the most recent context from which the server should start returning history
 
 ### Success Response
 
@@ -135,9 +135,9 @@ The `result` field contains a [ContextsList](../models.md#contextslist) object w
 request = {
     "id": "list-contexts-1", 
     "jsonrpc": "2.0",
-    "method": "contexts/get",
+    "method": "GetContexts",
     "params": {
-        "history_length": 20
+        "historyLength": 20
     }
 }
 ```
@@ -146,8 +146,8 @@ request = {
 
 ## Implementation Notes
 
-- Both methods support pagination through `history_length` and `history_offset` parameters
+- Both methods support pagination through `historyLength` and `historyOffset` parameters
 - Responses follow standard A2A data models:
-  - `context/get` returns a [Conversation](../models.md#conversation) object
-  - `contexts/get` returns a [ContextsList](../models.md#contextslist) object
+  - `GetContext` returns a [Conversation](../models.md#conversation) object
+  - `GetContexts` returns a [ContextsList](../models.md#contextslist) object
 - Error handling follows JSON-RPC 2.0 specification
