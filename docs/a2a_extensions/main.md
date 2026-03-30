@@ -19,8 +19,8 @@ Formal protocol extensions that extend the base A2A communication capabilities w
 
 Methods for retrieving conversation contexts and managing context lists:
 
-- **[GetContext](https://docs.aion.to/a2a/extensions/get-context)** - Retrieve a specific conversation context with message history
-- **[GetContexts](https://docs.aion.to/a2a/extensions/get-contexts)** - Retrieve a list of available contexts
+- **[GetContext](https://docs.aion.to/extensions/aion/context/get-context/1.0.0)** - Retrieve a specific conversation context with message history
+- **[GetContexts](https://docs.aion.to/extensions/aion/context/get-contexts/1.0.0)** - Retrieve a list of available contexts
 
 ---
 
