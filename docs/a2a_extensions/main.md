@@ -17,16 +17,10 @@ Formal protocol extensions that extend the base A2A communication capabilities w
 
 ### Context Extension
 
-**[Full Documentation](./json_rpc/context.md)**
-
 Methods for retrieving conversation contexts and managing context lists:
 
-- **`GetContext`** - Retrieve a specific conversation context with message history
-  - Parameters: `context_id`, `history_length`, `history_offset`
-  - Returns: [Conversation](#conversation-model) object with full context and message history
-
-- **`GetContexts`** - Retrieve a list of available contexts
-  - Returns: [ContextsList](#contextslist-model) with all accessible context identifiers
+- **[GetContext](https://docs.aion.to/extensions/aion/context/get-context/1.0.0)** - Retrieve a specific conversation context with message history
+- **[GetContexts](https://docs.aion.to/extensions/aion/context/get-contexts/1.0.0)** - Retrieve a list of available contexts
 
 ---
 
