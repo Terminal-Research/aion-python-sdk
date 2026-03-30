@@ -31,6 +31,10 @@ class AionADKSessionService(DatabaseSessionService):
         self.database_session_factory = async_sessionmaker(
             bind=self.db_engine, expire_on_commit=False
         )
+        read_only_engine = self.db_engine.execution_options(read_only=True)
+        self._read_only_database_session_factory = async_sessionmaker(
+            bind=read_only_engine, expire_on_commit=False
+        )
         self._tables_created = False
         self._table_creation_lock = asyncio.Lock()
         self._db_schema_version = None
