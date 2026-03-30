@@ -16,7 +16,7 @@ from enum import Enum
 from typing import Any, Optional
 
 from a2a.types import Message
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ExecutionStatus(str, Enum):
@@ -94,6 +94,8 @@ class ExecutionSnapshot(BaseModel):
     including conversation history, state variables, execution status, and metadata.
     Framework-specific data (like next_steps in LangGraph) should be stored in metadata.
     """
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     messages: list[Message] = Field(
         default_factory=list,

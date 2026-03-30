@@ -2,10 +2,12 @@ import json
 from typing import Optional, Any
 
 import httpx
-from a2a.client import A2ACardResolver, A2AClientHTTPError, A2AClientJSONError
+from a2a.client import A2ACardResolver
+from a2a.client.errors import AgentCardResolutionError
+from a2a.client.helpers import parse_agent_card
 from a2a.types import AgentCard
+from google.protobuf.json_format import ParseError
 from aion.shared.logging import get_logger
-from pydantic import ValidationError
 
 from aion.cli.utils.proxy_utils import format_agent_proxy_path
 
@@ -46,9 +48,9 @@ class AionA2ACardResolver(A2ACardResolver):
             An `AgentCard` object representing the agent's capabilities.
 
         Raises:
-            A2AClientHTTPError: If an HTTP error occurs during the request.
-            A2AClientJSONError: If the response body cannot be decoded as JSON
-                or validated against the AgentCard schema.
+            AgentCardResolutionError: If an HTTP error occurs, if the response
+                cannot be decoded as JSON, or if it cannot be validated
+                against the AgentCard schema.
         """
         if relative_card_path is None:
             # Use the default public agent card path configured during initialization
@@ -69,24 +71,23 @@ class AionA2ACardResolver(A2ACardResolver):
                 'Successfully fetched agent card data from %s',
                 target_url,
             )
-            agent_card = AgentCard.model_validate(agent_card_data)
+            agent_card = parse_agent_card(agent_card_data)
         except httpx.HTTPStatusError as e:
-            raise A2AClientHTTPError(
-                e.response.status_code,
-                f'Failed to fetch agent card from {target_url}: {e}',
+            raise AgentCardResolutionError(
+                f'Failed to fetch agent card from {target_url} (HTTP {e.response.status_code}): {e}',
+                status_code=e.response.status_code,
             ) from e
         except json.JSONDecodeError as e:
-            raise A2AClientJSONError(
+            raise AgentCardResolutionError(
                 f'Failed to parse JSON for agent card from {target_url}: {e}'
             ) from e
         except httpx.RequestError as e:
-            raise A2AClientHTTPError(
-                503,
+            raise AgentCardResolutionError(
                 f'Network communication error fetching agent card from {target_url}: {e}',
             ) from e
-        except ValidationError as e:  # Pydantic validation error
-            raise A2AClientJSONError(
-                f'Failed to validate agent card structure from {target_url}: {e.json()}'
+        except ParseError as e:
+            raise AgentCardResolutionError(
+                f'Failed to validate agent card structure from {target_url}: {e}'
             ) from e
 
         return agent_card

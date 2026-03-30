@@ -3,6 +3,7 @@ from typing import List
 from a2a.types import Task, TaskState, Artifact, Message
 
 from aion.shared.types import Conversation, ConversationTaskStatus, ArtifactName
+from aion.shared.types.a2a.enums import A2AMetadataKey, MessageType
 
 
 class ConversationBuilder:
@@ -30,7 +31,7 @@ class ConversationBuilder:
                 context_id=context_id,
                 history=[],
                 artifacts=[],
-                status=ConversationTaskStatus(state=TaskState.unknown)
+                status=ConversationTaskStatus(state=TaskState.TASK_STATE_UNSPECIFIED)
             )
 
         # Extract messages and artifacts from tasks
@@ -69,23 +70,18 @@ class ConversationBuilder:
 
             task_messages = []
             for message in task.history:
-                task_metadata = getattr(message, 'metadata', None)
-                if not task_metadata:
+                if not message.HasField('metadata'):
                     task_messages.append(message)
                     continue
 
-                message_type = task_metadata.get('aion:message_type')
-                if message_type is None:
+                key = A2AMetadataKey.MESSAGE_TYPE.value
+                message_type = message.metadata[key] if key in message.metadata else None
+                if message_type is None or message_type == MessageType.MESSAGE.value:
                     task_messages.append(message)
                     continue
 
-                if message_type == 'message':
-                    task_messages.append(message)
-                    continue
-
-            result_message = task.status.message
-            if result_message is not None:
-                task_messages.append(result_message)
+            if task.status.HasField('message'):
+                task_messages.append(task.status.message)
 
             if task_messages:
                 all_messages.extend(reversed(task_messages) if reverse else task_messages)
@@ -118,7 +114,7 @@ class ConversationBuilder:
                 if artifact.name == ArtifactName.MESSAGE_RESULT.value:
                     continue
 
-                artifact_id = getattr(artifact, 'artifact_id', None) or getattr(artifact, 'id', None)
+                artifact_id = artifact.artifact_id or None
                 if artifact_id and artifact_id not in artifact_ids_seen:
                     all_artifacts.append(artifact)
                     artifact_ids_seen.add(artifact_id)

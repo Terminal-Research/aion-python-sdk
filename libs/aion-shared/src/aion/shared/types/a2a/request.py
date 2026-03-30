@@ -1,18 +1,13 @@
 from __future__ import annotations
 
-from typing import Literal, Union
+from typing import Literal
 
 from aion.shared.a2a import A2ABaseModel
-from a2a.types import A2ARequest
-from pydantic import RootModel
-
 from .request_params import GetContextParams, GetContextsListParams
 
 __all__ = [
     "GetContextRequest",
     "GetContextsListRequest",
-    "CustomA2ARequest",
-    "ExtendedA2ARequest",
 ]
 
 
@@ -26,7 +21,7 @@ class GetContextRequest(A2ABaseModel):
     """
     Specifies the version of the JSON-RPC protocol. MUST be exactly "2.0".
     """
-    method: Literal['context/get'] = 'context/get'
+    method: Literal['GetContext'] = 'GetContext'
     """
     A String containing the name of the method to be invoked.
     """
@@ -46,7 +41,7 @@ class GetContextsListRequest(A2ABaseModel):
     """
     Specifies the version of the JSON-RPC protocol. MUST be exactly "2.0".
     """
-    method: Literal['contexts/get'] = 'contexts/get'
+    method: Literal['GetContexts'] = 'GetContexts'
     """
     A String containing the name of the method to be invoked.
     """
@@ -54,18 +49,3 @@ class GetContextsListRequest(A2ABaseModel):
     """
     A Structured value that holds the parameter values to be used during the invocation of the method.
     """
-
-
-CustomA2ARequestTypes = Union[
-    GetContextRequest,
-    GetContextsListRequest,
-]
-class CustomA2ARequest(RootModel[CustomA2ARequestTypes]):
-    root: CustomA2ARequestTypes
-
-
-class ExtendedA2ARequest(CustomA2ARequest, A2ARequest):
-    root: Union[
-        A2ARequest.model_fields['root'].annotation,
-        CustomA2ARequest.model_fields['root'].annotation
-    ]

@@ -15,7 +15,7 @@ def serialize_socket(sock: socket.socket) -> tuple:
     Returns:
         tuple: Serialized socket data (reducer function and args)
     """
-    from multiprocessing.reduction import _reduce_socket
+    from multiprocessing.reduction import _reduce_socket # noqa
     # _reduce_socket returns (rebuild_func, (dup_fd, family, type, proto))
     # We only need the args tuple for passing to subprocess
     _, args = _reduce_socket(sock)
@@ -32,7 +32,7 @@ def deserialize_socket(data: tuple) -> socket.socket:
     Returns:
         socket.socket: Deserialized socket
     """
-    from multiprocessing.reduction import _rebuild_socket
+    from multiprocessing.reduction import _rebuild_socket # noqa
     # _rebuild_socket expects (dup_fd, family, type, proto)
     return _rebuild_socket(*data)
 

@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import uuid
 from sqlalchemy import Column, DateTime, String, func
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.ext.declarative import declarative_base
+from google.protobuf.struct_pb2 import Struct
 
 from .constants import TASKS_TABLE
-from .fields import PydanticType
+from .fields import ProtobufType
 
 
 try:  # pragma: no cover - optional dependency
@@ -44,20 +44,20 @@ class TaskRecordModel(BaseModel):
         index=True)
 
     status = Column(
-        PydanticType(TaskStatus),
+        ProtobufType(TaskStatus),
         nullable=False)
 
     artifacts = Column(
-        PydanticType(Artifact, many=True),
+        ProtobufType(Artifact, many=True),
         nullable=True)
 
     history = Column(
-        PydanticType(Message, many=True),
+        ProtobufType(Message, many=True),
         nullable=True)
 
     task_metadata = Column(
         "metadata",
-        JSONB,
+        ProtobufType(Struct),
         nullable=True)
 
     created_at = Column(

@@ -5,8 +5,9 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import time
-from typing import Any, Optional
+from typing import Any, Optional, List
 
+from a2a.types import Artifact
 from google.adk.artifacts import BaseArtifactService
 from google.adk.artifacts.base_artifact_service import ArtifactVersion
 from aion.adk.transformers.utils import a2a_part_to_genai_part
@@ -122,13 +123,13 @@ class A2AArtifactService(BaseArtifactService):
         raise InputValidationError("Not supported artifact type.")
 
     @staticmethod
-    def _parse_versions_from_db(artifacts: list) -> list[int]:
+    def _parse_versions_from_db(artifacts: List[Artifact]) -> list[int]:
         """Pulls integer version numbers out of DB artifact metadata."""
         versions = []
-        for a in artifacts:
-            if a.metadata and (v := a.metadata.get("version")) is not None:
+        for artifact in artifacts:
+            if artifact.HasField("metadata") and "version" in artifact.metadata:
                 try:
-                    versions.append(int(v))
+                    versions.append(int(artifact.metadata["version"]))
                 except (ValueError, TypeError):
                     pass
         return versions
@@ -411,7 +412,7 @@ class A2AArtifactService(BaseArtifactService):
         session_id: str,
         filename: str,
         version: Optional[int] = None,
-    ) -> list:
+    ) -> List[Artifact]:
         """Fetches artifact records from DB. Returns empty list on any failure."""
         if not self._is_db_available():
             return []
@@ -460,11 +461,11 @@ class A2AArtifactService(BaseArtifactService):
         )
         if not artifacts:
             return None
-        a = artifacts[0]
+        artifact = artifacts[0]
         logical_version = version
-        if logical_version is None and a.metadata:
+        if logical_version is None and artifact.HasField("metadata") and "version" in artifact.metadata:
             try:
-                logical_version = int(a.metadata["version"])
+                logical_version = int(artifact.metadata["version"])
             except (KeyError, ValueError, TypeError):
                 logical_version = 0
         if logical_version is None:

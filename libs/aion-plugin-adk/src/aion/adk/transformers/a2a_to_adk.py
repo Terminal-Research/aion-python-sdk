@@ -1,13 +1,13 @@
 """Transforms A2A RequestContext and ExecutionConfig into ADK format."""
 
-import base64
 import json
 import mimetypes
-from typing import Any, Optional, TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING
 
-from a2a.types import TextPart, FilePart, FileWithBytes, FileWithUri, DataPart
+from a2a.types import Part
 from aion.shared.agent.adapters import ExecutionConfig
 from google.genai import types
+from google.protobuf import json_format
 
 if TYPE_CHECKING:
     from a2a.server.agent_execution import RequestContext
@@ -43,32 +43,30 @@ class ADKTransformer:
 
         if context.message:
             for part in context.message.parts:
-                part_obj = part.root
+                if part.text:
+                    parts.append(types.Part(text=part.text))
 
-                if isinstance(part_obj, TextPart):
-                    parts.append(types.Part(text=part_obj.text))
+                elif part.raw:
+                    mime_type = part.media_type or "application/octet-stream"
+                    parts.append(types.Part(
+                        inline_data=types.Blob(
+                            mime_type=mime_type,
+                            data=part.raw,
+                        )
+                    ))
 
-                elif isinstance(part_obj, FilePart):
-                    file_info = part_obj.file
-                    mime_type = ADKTransformer._detect_mime_type(file_info)
+                elif part.url:
+                    mime_type = ADKTransformer._detect_mime_type_from_part(part)
+                    parts.append(types.Part(
+                        file_data=types.FileData(
+                            mime_type=mime_type,
+                            file_uri=part.url,
+                        )
+                    ))
 
-                    if isinstance(file_info, FileWithBytes):
-                        parts.append(types.Part(
-                            inline_data=types.Blob(
-                                mime_type=mime_type,
-                                data=base64.b64decode(file_info.bytes),
-                            )
-                        ))
-                    elif isinstance(file_info, FileWithUri):
-                        parts.append(types.Part(
-                            file_data=types.FileData(
-                                mime_type=mime_type,
-                                file_uri=file_info.uri,
-                            )
-                        ))
-
-                elif isinstance(part_obj, DataPart):
-                    parts.append(types.Part(text=json.dumps(part_obj.data, indent=2)))
+                elif part.HasField("data"):
+                    data_dict = json_format.MessageToDict(part.data)
+                    parts.append(types.Part(text=json.dumps(data_dict, indent=2)))
 
         if not parts:
             user_input = context.get_user_input()
@@ -78,15 +76,13 @@ class ADKTransformer:
         return types.Content(role="user", parts=parts)
 
     @staticmethod
-    def _detect_mime_type(file_info: Any) -> str:
-        """Detect MIME type: explicit attr > guess from name > fallback."""
-        mime_type = getattr(file_info, "mime_type", None)
-        if mime_type:
-            return mime_type
+    def _detect_mime_type_from_part(part: Part) -> str:
+        """Detect MIME type: explicit media_type > guess from filename > fallback."""
+        if part.media_type:
+            return part.media_type
 
-        filename = getattr(file_info, "name", None)
-        if filename:
-            guessed, _ = mimetypes.guess_type(filename)
+        if part.filename:
+            guessed, _ = mimetypes.guess_type(part.filename)
             if guessed:
                 return guessed
 

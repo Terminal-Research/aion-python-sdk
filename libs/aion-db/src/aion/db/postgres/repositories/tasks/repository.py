@@ -38,12 +38,22 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
             stmt,
             task_id: Optional[str] = None,
             context_id: Optional[str] = None,
+            status_state: Optional[str] = None,
+            status_timestamp_after: Optional[str] = None,
     ):
         """Apply task filter conditions to ``stmt`` and return the updated statement."""
         if task_id is not None:
             stmt = stmt.where(self.model_class.id == task_id)
         if context_id is not None:
             stmt = stmt.where(self.model_class.context_id == context_id)
+        if status_state is not None:
+            stmt = stmt.where(
+                self.model_class.status["state"].astext == status_state
+            )
+        if status_timestamp_after is not None:
+            stmt = stmt.where(
+                self.model_class.status["timestamp"].astext >= status_timestamp_after
+            )
         return stmt
 
     async def save(self, entity: TaskRecord) -> None:
@@ -75,12 +85,20 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
             self,
             task_id: Optional[str] = None,
             context_id: Optional[str] = None,
+            status_state: Optional[str] = None,
+            status_timestamp_after: Optional[str] = None,
             pagination: Optional[Pagination] = None,
             sorting: Optional[Sorting] = None,
     ) -> List[TaskRecord]:
         """Find tasks matching the given filter."""
         stmt = select(self.model_class)
-        stmt = self._apply_filter(stmt, task_id=task_id, context_id=context_id)
+        stmt = self._apply_filter(
+            stmt,
+            task_id=task_id,
+            context_id=context_id,
+            status_state=status_state,
+            status_timestamp_after=status_timestamp_after,
+        )
 
         if sorting is not None:
             stmt = self._apply_sorting(stmt, sorting)

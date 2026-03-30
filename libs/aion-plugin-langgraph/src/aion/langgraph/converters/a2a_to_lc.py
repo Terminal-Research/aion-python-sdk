@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import mimetypes
 
-from a2a.types import DataPart, FilePart, FileWithBytes, FileWithUri, Part, TextPart
+from a2a.types import Part
+from google.protobuf import json_format
 from langchain_core.messages.content import (
     FileContentBlock,
     TextContentBlock,
@@ -36,40 +38,31 @@ class A2AToLcConverter:
 
         Returns None for unrecognised part types.
         """
-        part_obj = part.root
+        if part.text:
+            return create_text_block(text=part.text)
 
-        if isinstance(part_obj, TextPart):
-            return create_text_block(text=part_obj.text)
+        if part.raw:
+            mime_type = cls._detect_mime_type(part)
+            return create_file_block(base64=base64.b64encode(part.raw).decode(), mime_type=mime_type)
 
-        if isinstance(part_obj, FilePart):
-            return cls._from_file_part(part_obj)
+        if part.url:
+            mime_type = cls._detect_mime_type(part)
+            return create_file_block(url=part.url, mime_type=mime_type)
 
-        if isinstance(part_obj, DataPart):
-            return create_text_block(text=json.dumps(part_obj.data, indent=2))
+        if part.data:
+            data_dict = json_format.MessageToDict(part).get("data", {})
+            return create_text_block(text=json.dumps(data_dict, indent=2))
 
         return None
 
     @staticmethod
-    def _from_file_part(part: FilePart) -> FileContentBlock:
-        file_info = part.file
-        mime_type = A2AToLcConverter._detect_mime_type(file_info)
+    def _detect_mime_type(part: Part) -> str:
+        """Detect MIME type: explicit attr > guess from filename > fallback."""
+        if part.media_type:
+            return part.media_type
 
-        if isinstance(file_info, FileWithBytes):
-            return create_file_block(base64=file_info.bytes, mime_type=mime_type)
-
-        if isinstance(file_info, FileWithUri):
-            return create_file_block(url=file_info.uri, mime_type=mime_type)
-
-    @staticmethod
-    def _detect_mime_type(file_info: FileWithBytes | FileWithUri) -> str:
-        """Detect MIME type: explicit attr > guess from name > fallback."""
-        mime_type = getattr(file_info, "mime_type", None)
-        if mime_type:
-            return mime_type
-
-        filename = getattr(file_info, "name", None)
-        if filename:
-            guessed, _ = mimetypes.guess_type(filename)
+        if part.filename:
+            guessed, _ = mimetypes.guess_type(part.filename)
             if guessed:
                 return guessed
 

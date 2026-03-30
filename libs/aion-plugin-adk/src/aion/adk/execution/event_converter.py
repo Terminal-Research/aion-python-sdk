@@ -10,7 +10,6 @@ from a2a.types import (
     TaskState,
     TaskStatus,
     TaskStatusUpdateEvent,
-    TextPart,
 )
 from aion.shared.logging import get_logger
 from aion.shared.types import ArtifactId, ArtifactName
@@ -34,7 +33,7 @@ class ADKToA2AEventConverter:
     TaskStatusUpdateEvent with state=working.
     """
 
-    def __init__(self, task_id: str, context_id: str, ctx: AionInvocationContext):
+    def __init__(self, task_id: str, context_id: str, ctx: AionInvocationContext | None = None):
         self._task_id = task_id
         self._context_id = context_id
         self._ctx = ctx
@@ -126,7 +125,7 @@ class ADKToA2AEventConverter:
             content_parts = A2ATransformer.transform_content(adk_event.content)
 
             if content_parts:
-                role = Role.user if adk_event.author == "user" else Role.agent
+                role = Role.ROLE_USER if adk_event.author == "user" else Role.ROLE_AGENT
                 msg = Message(
                     context_id=self._context_id,
                     task_id=self._task_id,
@@ -137,8 +136,7 @@ class ADKToA2AEventConverter:
                 results.append(TaskStatusUpdateEvent(
                     task_id=self._task_id,
                     context_id=self._context_id,
-                    final=False,
-                    status=TaskStatus(state=TaskState.working, message=msg),
+                    status=TaskStatus(state=TaskState.TASK_STATE_WORKING, message=msg),
                 ))
 
         results.extend(await self._convert_artifact_delta(adk_event))
@@ -201,14 +199,13 @@ class ADKToA2AEventConverter:
                 context_id=self._context_id,
                 task_id=self._task_id,
                 message_id=str(uuid.uuid4()),
-                role=Role.agent,
-                parts=[Part(root=TextPart(text=delta_text))],
+                role=Role.ROLE_AGENT,
+                parts=[Part(text=delta_text)],
             )
             results.append(TaskStatusUpdateEvent(
                 task_id=self._task_id,
                 context_id=self._context_id,
-                final=False,
-                status=TaskStatus(state=TaskState.working, message=msg),
+                status=TaskStatus(state=TaskState.TASK_STATE_WORKING, message=msg),
             ))
 
         return results
@@ -221,8 +218,7 @@ class ADKToA2AEventConverter:
         return TaskStatusUpdateEvent(
             task_id=self._task_id,
             context_id=self._context_id,
-            final=True,
-            status=TaskStatus(state=TaskState.completed),
+            status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED),
         )
 
     def generate_error(self, error: str, error_type: str) -> TaskStatusUpdateEvent:
@@ -235,8 +231,7 @@ class ADKToA2AEventConverter:
         return TaskStatusUpdateEvent(
             task_id=self._task_id,
             context_id=self._context_id,
-            final=True,
-            status=TaskStatus(state=TaskState.failed),
+            status=TaskStatus(state=TaskState.TASK_STATE_FAILED),
         )
 
 __all__ = ["ADKToA2AEventConverter"]

@@ -16,7 +16,7 @@ AION agents expose the following HTTP endpoints:
 
 Handles all agent-to-agent method calls including:
 - Standard A2A methods (`task/send`, `task/cancel`, etc.)
-- Custom AION methods (`context/get`, `context/list`, etc.)
+- Custom AION methods (`GetContext`, `GetContexts`, etc.)
 - Streaming requests and responses
 
 ### 2. Agent Card Endpoint

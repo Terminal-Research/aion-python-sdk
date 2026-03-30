@@ -61,7 +61,7 @@ Data model representing a complete conversation context including message histor
 ```
 A list of context identifiers representing available conversations.
 
-- Each string is a unique `context_id` that can be used with `context/get` method
+- Each string is a unique `context_id` that can be used with `GetContext` method
 
 ```json
 [

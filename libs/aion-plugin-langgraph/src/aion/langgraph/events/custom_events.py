@@ -4,10 +4,11 @@ These classes provide type-safe, validated event models for LangGraph streaming.
 """
 
 from typing import Any, ClassVar, Optional
-from pydantic import BaseModel, Field
 
 from a2a.types import Artifact
+from aion.shared.utils.pydantic import Protobuf
 from langchain_core.messages import AIMessage, AIMessageChunk
+from pydantic import BaseModel, Field
 
 
 class AionCustomEvent(BaseModel):
@@ -25,10 +26,9 @@ class ArtifactCustomEvent(AionCustomEvent):
 
     Emitted from nodes via emit_file() or emit_data().
     """
-
     event_type: ClassVar[str] = "artifact"
 
-    artifact: Artifact = Field(description="Artifact to emit")
+    artifact: Protobuf[Artifact] = Field(description="Artifact to emit")
     append: bool = Field(default=False, description="Append to previous artifact")
     is_last_chunk: bool = Field(default=True, description="Final chunk indicator")
 

@@ -4,16 +4,10 @@ from __future__ import annotations
 
 import datetime as _dt
 import uuid
-from typing import Any
+from pydantic import BaseModel, ConfigDict
 
-from pydantic import BaseModel
-
-try:  # pragma: no cover - optional dependency
-    from a2a.types import Artifact, Message, Task, TaskStatus
-except Exception as exc:  # pragma: no cover - explicit failure if missing
-    raise ImportError(
-        "The 'a2a-sdk' package is required to use these models"
-    ) from exc
+from a2a.types import Artifact, Message, Task, TaskStatus
+from google.protobuf.struct_pb2 import Struct
 
 __all__ = [
     "TaskRecord",
@@ -23,12 +17,14 @@ __all__ = [
 class TaskRecord(BaseModel):
     """Database record model for storing task information."""
 
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     id: uuid.UUID
     context_id: str
     status: TaskStatus
     artifacts: list[Artifact] | None = None
     history: list[Message] | None = None
-    task_metadata: dict[str, Any] | None = None
+    task_metadata: Struct | None = None
     created_at: _dt.datetime
     updated_at: _dt.datetime
 
