@@ -1,15 +1,18 @@
+import copy
 from typing import Any, List, Dict, Optional, TYPE_CHECKING
 
 from a2a.types import Message, Artifact, Task, TaskState
-from pydantic import ConfigDict, RootModel, Field
+from pydantic import ConfigDict, RootModel, Field, field_serializer
 
 from aion.shared.a2a import A2ABaseModel
+from aion.shared.utils.pydantic import Protobuf, ProtobufEnum
 
 if TYPE_CHECKING:
     from a2a.server.agent_execution import RequestContext
 
 __all__ = [
     "A2AInbox",
+    "A2AOutbox",
     "Conversation",
     "ContextsList",
     "ConversationTaskStatus",
@@ -25,13 +28,13 @@ class A2AInbox(A2ABaseModel):
     defensive copies — mutating them does not affect server state.
     """
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
-    task: Optional[Task] = None
+    task: Optional[Protobuf[Task]] = None
     """
     Current A2A Task.  None before a task has been created.
     """
-    message: Optional[Message] = None
+    message: Optional[Protobuf[Message]] = None
     """
     Inbound A2A Message that triggered this execution
     """
@@ -44,30 +47,49 @@ class A2AInbox(A2ABaseModel):
     def from_request_context(cls, context: "RequestContext") -> "A2AInbox":
         """Build a frozen A2AInbox snapshot from an A2A RequestContext."""
         return cls(
-            task=context.current_task.model_copy(deep=True) if context.current_task else None,
-            message=context.message.model_copy(deep=True) if context.message else None,
+            task=copy.deepcopy(context.current_task) if context.current_task else None,
+            message=copy.deepcopy(context.message) if context.message else None,
             metadata=dict(context.metadata) if context.metadata else {},
         )
 
 
+class A2AOutbox(A2ABaseModel):
+    """Serializable wrapper for the agent's outgoing A2A Task or Message.
+
+    Graphs set `a2a_outbox` in their state to return a Task or Message at the
+    end of execution. Wrapping in a Pydantic model with Protobuf annotations
+    ensures LangGraph's checkpoint saver can serialize the state.
+    """
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    task: Optional[Protobuf[Task]] = None
+    message: Optional[Protobuf[Message]] = None
+
+
 class ConversationTaskStatus(A2ABaseModel):
-    state: TaskState
+    state: ProtobufEnum[TaskState]
     """
     The current state of the task's lifecycle.
     """
 
+    @field_serializer('state')
+    def serialize_state(self, value: int) -> str:
+        return TaskState.Name(value)
+
 
 class Conversation(A2ABaseModel):
     """Data model for conversation representation"""
+
     context_id: str
     """
     Unique identifier for the conversation context.
     """
-    history: List[Message] = Field(default_factory=list)
+    history: List[Protobuf[Message]] = Field(default_factory=list)
     """
     List of messages in the conversation history.
     """
-    artifacts: List[Artifact] = Field(default_factory=list)
+    artifacts: List[Protobuf[Artifact]] = Field(default_factory=list)
     """
     List of artifacts associated with the conversation.
     """

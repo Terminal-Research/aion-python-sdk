@@ -1,5 +1,4 @@
 """Chat session command."""
-
 from typing import Optional
 
 import asyncclick as click

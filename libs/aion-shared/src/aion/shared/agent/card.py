@@ -1,16 +1,19 @@
-from a2a.types import AgentCard
-from a2a.types import AgentExtension, AgentCapabilities, AgentSkill
+from a2a.types import (
+    AgentExtension,
+    AgentCapabilities,
+    AgentInterface,
+    AgentSkill,
+    AgentCard,
+)
 
 from aion.shared.config import AgentConfig
 from aion.shared.settings import app_settings
 from aion.shared.types import GetContextParams, GetContextsListParams
 
 
-class AionAgentCard(AgentCard):
+class AionAgentCard:
     """
-    Extended AgentCard.
-
-    This class extends the base AgentCard with custom extensions
+    Factory for creating AgentCard with Aion-specific extensions.
     """
 
     @classmethod
@@ -18,7 +21,7 @@ class AionAgentCard(AgentCard):
             cls,
             config: AgentConfig,
             base_url: str,
-    ) -> "AionAgentCard":
+    ) -> AgentCard:
         capabilities = AgentCapabilities(
             streaming=config.capabilities.streaming,
             push_notifications=config.capabilities.pushNotifications,
@@ -27,13 +30,13 @@ class AionAgentCard(AgentCard):
                     description="Get Conversation info based on context",
                     params=GetContextParams.model_json_schema(),
                     required=False,
-                    uri=f"{app_settings.docs_url}/a2a/extensions/get-context"
+                    uri=f"{app_settings.docs_url}/extensions/aion/context/get-context/1.0.0"
                 ),
                 AgentExtension(
                     description="Get list of available contexts",
                     params=GetContextsListParams.model_json_schema(),
                     required=False,
-                    uri=f"{app_settings.docs_url}/a2a/extensions/get-contexts"
+                    uri=f"{app_settings.docs_url}/extensions/aion/context/get-contexts/1.0.0"
                 )
             ])
 
@@ -47,10 +50,15 @@ class AionAgentCard(AgentCard):
                 examples=skill_config.examples)
             skills.append(skill)
 
-        return cls(
+        supported_interfaces = [
+            AgentInterface(url=base_url, protocol_binding="JSONRPC", protocol_version="1.0"),
+            AgentInterface(url=base_url, protocol_binding="JSONRPC", protocol_version="0.3"),
+        ]
+
+        return AgentCard(
             name=config.name or "Graph Agent",
             description=config.description or "Agent based on external graph",
-            url=base_url,
+            supported_interfaces=supported_interfaces,
             version=config.version or "1.0.0",
             default_input_modes=config.input_modes,
             default_output_modes=config.output_modes,

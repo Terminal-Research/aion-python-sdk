@@ -2,7 +2,7 @@
 
 from typing import List
 
-from a2a.types import Part, TextPart
+from a2a.types import Part
 from aion.shared.logging import get_logger
 from google.genai import types
 
@@ -43,11 +43,11 @@ class A2ATransformer:
             List of a2a Part objects (tool calls and thoughts excluded).
         """
         if isinstance(content, str):
-            return [Part(root=TextPart(text=content))] if content else []
+            return [Part(text=content)] if content else []
 
         if not isinstance(content, types.Content):
             content_str = str(content) if content else ""
-            return [Part(root=TextPart(text=content_str))] if content_str else []
+            return [Part(text=content_str)] if content_str else []
 
         try:
             if merge_consecutive:
@@ -56,7 +56,7 @@ class A2ATransformer:
         except Exception as e:
             logger.warning(f"Failed to transform content parts: {e}")
             content_str = str(content)
-            return [Part(root=TextPart(text=content_str))] if content_str else []
+            return [Part(text=content_str)] if content_str else []
 
     @classmethod
     def _transform_flat(cls, content: types.Content) -> List[Part]:
@@ -77,7 +77,7 @@ class A2ATransformer:
         def flush() -> None:
             nonlocal buffer_text
             if buffer_text:
-                parts.append(Part(root=TextPart(text=buffer_text)))
+                parts.append(Part(text=buffer_text))
                 buffer_text = ""
 
         for part in content.parts:

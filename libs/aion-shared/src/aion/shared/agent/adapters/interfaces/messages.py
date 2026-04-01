@@ -11,6 +11,8 @@ Utilities:
 - create_message_from_parts: Helper to create a2a.Message with proper defaults
 """
 
+from __future__ import annotations
+
 from typing import Any
 from uuid import uuid4
 
@@ -36,10 +38,10 @@ def normalize_role_to_a2a(role: str) -> Role:
         a2a Role enum value
     """
     if role.lower() == "user":
-        return Role.user
+        return Role.ROLE_USER
     else:
         # assistant, system, agent all map to agent
-        return Role.agent
+        return Role.ROLE_AGENT
 
 
 def create_message_from_parts(

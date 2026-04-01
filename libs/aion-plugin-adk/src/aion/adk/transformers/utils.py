@@ -1,10 +1,10 @@
 """Utility functions for GenAI ↔ A2A part conversion."""
 
-import base64
 from typing import Optional
 
 from a2a import types as a2a_types
 from google.genai import types as genai_types
+from google.protobuf import json_format, struct_pb2
 
 from aion.shared.logging import get_logger
 
@@ -25,28 +25,31 @@ _META_THOUGHT_KEY = f"{_ADK_METADATA_PREFIX}thought"
 _META_VIDEO_METADATA_KEY = f"{_ADK_METADATA_PREFIX}video_metadata"
 
 
+def _dict_to_value(value: dict) -> struct_pb2.Value:
+    """Convert a Python dict to a protobuf Value (struct_value)."""
+    _val = struct_pb2.Value()
+    json_format.ParseDict(value, _val)
+    return _val
+
+
 def genai_part_to_a2a_part(part: genai_types.Part) -> Optional[a2a_types.Part]:
     """Convert a Google GenAI Part to an A2A Part.
 
     Equivalent to ADK's convert_genai_part_to_a2a_part but without the
     @a2a_experimental decorator. For file_data, the display_name is mapped
-    to FileWithUri.name.
+    to Part.filename.
     """
     if part.text:
-        a2a_part = a2a_types.TextPart(text=part.text)
+        kwargs: dict = {"text": part.text}
         if part.thought is not None:
-            a2a_part.metadata = {_META_THOUGHT_KEY: part.thought}
-        return a2a_types.Part(root=a2a_part)
+            kwargs["metadata"] = {_META_THOUGHT_KEY: part.thought}
+        return a2a_types.Part(**kwargs)
 
     if part.file_data:
         return a2a_types.Part(
-            root=a2a_types.FilePart(
-                file=a2a_types.FileWithUri(
-                    uri=part.file_data.file_uri,
-                    mime_type=part.file_data.mime_type,
-                    name=part.file_data.display_name,
-                )
-            )
+            url=part.file_data.file_uri,
+            media_type=part.file_data.mime_type,
+            filename=part.file_data.display_name,
         )
 
     if part.inline_data:
@@ -57,56 +60,51 @@ def genai_part_to_a2a_part(part: genai_types.Part) -> Optional[a2a_types.Part]:
             and data.startswith(_DATA_PART_START_TAG)
             and data.endswith(_DATA_PART_END_TAG)
         ):
-            return a2a_types.Part(
-                root=a2a_types.DataPart.model_validate_json(
-                    data[len(_DATA_PART_START_TAG):-len(_DATA_PART_END_TAG)]
-                )
-            )
+            json_str = data[len(_DATA_PART_START_TAG):-len(_DATA_PART_END_TAG)].decode()
+            return json_format.Parse(json_str, a2a_types.Part())
 
-        a2a_file = a2a_types.FilePart(
-            file=a2a_types.FileWithBytes(
-                bytes=base64.b64encode(data).decode("utf-8"),
-                mime_type=part.inline_data.mime_type,
-            )
-        )
+        kwargs = {
+            "raw": data,
+            "media_type": part.inline_data.mime_type,
+        }
         if part.video_metadata:
-            a2a_file.metadata = {
+            kwargs["metadata"] = {
                 _META_VIDEO_METADATA_KEY: part.video_metadata.model_dump(
                     by_alias=True, exclude_none=True
                 )
             }
-        return a2a_types.Part(root=a2a_file)
+        return a2a_types.Part(**kwargs)
 
     if part.function_call:
         return a2a_types.Part(
-            root=a2a_types.DataPart(
-                data=part.function_call.model_dump(by_alias=True, exclude_none=True),
-                metadata={_META_TYPE_KEY: _META_TYPE_FUNCTION_CALL},
-            )
+            data=_dict_to_value(
+                part.function_call.model_dump(by_alias=True, exclude_none=True)
+            ),
+            metadata={_META_TYPE_KEY: _META_TYPE_FUNCTION_CALL},
         )
 
     if part.function_response:
         return a2a_types.Part(
-            root=a2a_types.DataPart(
-                data=part.function_response.model_dump(by_alias=True, exclude_none=True),
-                metadata={_META_TYPE_KEY: _META_TYPE_FUNCTION_RESPONSE},
-            )
+            data=_dict_to_value(
+                part.function_response.model_dump(by_alias=True, exclude_none=True)
+            ),
+            metadata={_META_TYPE_KEY: _META_TYPE_FUNCTION_RESPONSE},
         )
 
     if part.code_execution_result:
         return a2a_types.Part(
-            root=a2a_types.DataPart(
-                data=part.code_execution_result.model_dump(by_alias=True, exclude_none=True),
-                metadata={_META_TYPE_KEY: _META_TYPE_CODE_EXECUTION_RESULT},
-            )
+            data=_dict_to_value(
+                part.code_execution_result.model_dump(by_alias=True, exclude_none=True)
+            ),
+            metadata={_META_TYPE_KEY: _META_TYPE_CODE_EXECUTION_RESULT},
         )
 
     if part.executable_code:
         return a2a_types.Part(
-            root=a2a_types.DataPart(
-                data=part.executable_code.model_dump(by_alias=True, exclude_none=True),
-                metadata={_META_TYPE_KEY: _META_TYPE_EXECUTABLE_CODE},
-            )
+            data=_dict_to_value(
+                part.executable_code.model_dump(by_alias=True, exclude_none=True)
+            ),
+            metadata={_META_TYPE_KEY: _META_TYPE_EXECUTABLE_CODE},
         )
 
     logger.warning("Cannot convert unsupported GenAI part: %s", part)
@@ -117,69 +115,76 @@ def a2a_part_to_genai_part(a2a_part: a2a_types.Part) -> Optional[genai_types.Par
     """Convert an A2A Part to a Google GenAI Part.
 
     Equivalent to ADK's convert_a2a_part_to_genai_part but without the
-    @a2a_experimental decorator. For FileWithUri, the name is mapped back
+    @a2a_experimental decorator. For url parts, the filename is mapped back
     to FileData.display_name.
     """
-    part = a2a_part.root
+    if a2a_part.text:
+        return genai_types.Part(text=a2a_part.text)
 
-    if isinstance(part, a2a_types.TextPart):
-        return genai_types.Part(text=part.text)
-
-    if isinstance(part, a2a_types.FilePart):
-        if isinstance(part.file, a2a_types.FileWithUri):
-            return genai_types.Part(
-                file_data=genai_types.FileData(
-                    file_uri=part.file.uri,
-                    mime_type=part.file.mime_type,
-                    display_name=part.file.name,
-                )
+    if a2a_part.url:
+        return genai_types.Part(
+            file_data=genai_types.FileData(
+                file_uri=a2a_part.url,
+                mime_type=a2a_part.media_type,
+                display_name=a2a_part.filename,
             )
-        if isinstance(part.file, a2a_types.FileWithBytes):
-            return genai_types.Part(
-                inline_data=genai_types.Blob(
-                    data=base64.b64decode(part.file.bytes),
-                    mime_type=part.file.mime_type,
-                )
-            )
-        logger.warning("Cannot convert unsupported file type: %s", type(part.file))
-        return None
+        )
 
-    if isinstance(part, a2a_types.DataPart):
-        meta_type = (part.metadata or {}).get(_META_TYPE_KEY)
+    if a2a_part.raw:
+        return genai_types.Part(
+            inline_data=genai_types.Blob(
+                data=a2a_part.raw,  # already bytes in v1.0
+                mime_type=a2a_part.media_type,
+            )
+        )
+
+    if a2a_part.HasField("data"):
+        meta_type = (
+            a2a_part.metadata[_META_TYPE_KEY]
+            if a2a_part.HasField("metadata") and _META_TYPE_KEY in a2a_part.metadata
+            else None
+        )
+        data_dict = json_format.MessageToDict(a2a_part.data)
+
         if meta_type == _META_TYPE_FUNCTION_CALL:
             return genai_types.Part(
                 function_call=genai_types.FunctionCall.model_validate(
-                    part.data, by_alias=True
+                    data_dict, by_alias=True
                 )
             )
         if meta_type == _META_TYPE_FUNCTION_RESPONSE:
             return genai_types.Part(
                 function_response=genai_types.FunctionResponse.model_validate(
-                    part.data, by_alias=True
+                    data_dict, by_alias=True
                 )
             )
         if meta_type == _META_TYPE_CODE_EXECUTION_RESULT:
             return genai_types.Part(
                 code_execution_result=genai_types.CodeExecutionResult.model_validate(
-                    part.data, by_alias=True
+                    data_dict, by_alias=True
                 )
             )
         if meta_type == _META_TYPE_EXECUTABLE_CODE:
             return genai_types.Part(
                 executable_code=genai_types.ExecutableCode.model_validate(
-                    part.data, by_alias=True
+                    data_dict, by_alias=True
                 )
             )
+
+        # Generic data part — encode as inline_data with tags for round-trip
+        part_json = json_format.MessageToJson(
+            a2a_part, including_default_value_fields=False
+        )
         return genai_types.Part(
             inline_data=genai_types.Blob(
                 data=_DATA_PART_START_TAG
-                + part.model_dump_json(by_alias=True, exclude_none=True).encode("utf-8")
+                + part_json.encode("utf-8")
                 + _DATA_PART_END_TAG,
                 mime_type=_MIME_TYPE_DATA_PART,
             )
         )
 
-    logger.warning("Cannot convert unsupported A2A part type: %s", type(part))
+    logger.warning("Cannot convert unsupported A2A part type: %s", a2a_part)
     return None
 
 

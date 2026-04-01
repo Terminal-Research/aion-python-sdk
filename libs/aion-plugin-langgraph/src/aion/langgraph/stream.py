@@ -4,17 +4,15 @@ This module provides helper functions to emit custom events during graph executi
 All events are emitted via LangGraph's custom stream mode.
 """
 
+import base64 as _base64
 from typing import Any, Optional
 from uuid import uuid4
 
 from a2a.types import (
     Artifact,
     Part,
-    FilePart,
-    FileWithBytes,
-    FileWithUri,
-    DataPart,
 )
+from google.protobuf import json_format, struct_pb2
 from langchain_core.messages import AIMessage, AIMessageChunk
 from langgraph.types import StreamWriter
 
@@ -93,14 +91,14 @@ def emit_file_artifact(
         raise ValueError("Provide either 'url' or 'base64', not both")
 
     if url:
-        file_data = FileWithUri(uri=url, mime_type=mime_type)
+        file_part = Part(url=url, media_type=mime_type)
     else:
-        file_data = FileWithBytes(bytes=base64, mime_type=mime_type)
+        file_part = Part(raw=_base64.b64decode(base64), media_type=mime_type)
 
     artifact = Artifact(
         artifact_id=artifact_id or str(uuid4()),
         name=name or "file",
-        parts=[Part(root=FilePart(file=file_data))]
+        parts=[file_part]
     )
 
     writer(ArtifactCustomEvent(
@@ -134,10 +132,12 @@ def emit_data_artifact(
         def my_node(state: dict, writer: StreamWriter):
             emit_data(writer, {"status": "success", "results": [...]}, name="analysis_results")
     """
+    proto_value = struct_pb2.Value()
+    json_format.ParseDict(data, proto_value)
     artifact = Artifact(
         artifact_id=artifact_id or str(uuid4()),
         name=name or "data",
-        parts=[Part(root=DataPart(data=data))]
+        parts=[Part(data=proto_value)]
     )
 
     writer(ArtifactCustomEvent(

@@ -5,13 +5,13 @@ from typing import Optional, Tuple
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
-from a2a.types import (
+from a2a.types import Task
+from a2a.utils import new_task
+from a2a.utils.errors import (
     InternalError,
     InvalidParamsError,
-    Task,
-    UnsupportedOperationError, )
-from a2a.utils import new_task
-from a2a.utils.errors import ServerError
+    UnsupportedOperationError,
+)
 from a2a.utils.telemetry import trace_function
 from aion.server.utils import check_if_task_is_interrupted
 from aion.shared.agent import AionAgent
@@ -51,7 +51,7 @@ class AionAgentRequestExecutor(AgentExecutor):
     ) -> None:
         error = self._validate_request(context)
         if error:
-            raise ServerError(error=InvalidParamsError())
+            raise InvalidParamsError()
 
         task, is_new_task = await self._get_task_for_execution(context)
         self._task_updater = TaskUpdater(event_queue, task.id, task.context_id)
@@ -82,7 +82,7 @@ class AionAgentRequestExecutor(AgentExecutor):
 
         except Exception as ex:
             logger.exception("Execution failed")
-            raise ServerError(error=InternalError()) from ex
+            raise InternalError() from ex
 
     async def drain(self) -> None:
         """Wait for all in-flight background uploads to complete.
@@ -106,9 +106,9 @@ class AionAgentRequestExecutor(AgentExecutor):
             event_queue: Queue for publishing cancellation events
 
         Raises:
-            ServerError: Always raises UnsupportedOperationError
+            UnsupportedOperationError: always
         """
-        raise ServerError(error=UnsupportedOperationError())
+        raise UnsupportedOperationError()
 
     @staticmethod
     async def _get_task_for_execution(context: RequestContext) -> Tuple[Task, bool]:
@@ -126,7 +126,7 @@ class AionAgentRequestExecutor(AgentExecutor):
             Tuple of (task, is_new_task)
 
         Raises:
-            ServerError: If task is in terminal state
+            InvalidParamsError: if task is in a terminal state
         """
         current_task = context.current_task
 
@@ -135,11 +135,9 @@ class AionAgentRequestExecutor(AgentExecutor):
                 context.current_task = current_task
                 return current_task, False
             else:
-                raise ServerError(
-                    error=InvalidParamsError(
-                        message=f"Task {current_task.id} is in terminal state: "
-                                f"{current_task.status.state}"
-                    )
+                raise InvalidParamsError(
+                    message=f"Task {current_task.id} is in terminal state: "
+                            f"{current_task.status.state}"
                 )
 
         # Create new task

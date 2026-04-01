@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from typing import Any, TYPE_CHECKING
 
 from a2a.types import (
@@ -13,6 +14,7 @@ from a2a.types import (
     TaskStatusUpdateEvent,
 )
 
+from aion.shared.types import A2AOutbox
 from .event_converter import ADKToA2AEventConverter
 from .stream_executor import StreamResult
 
@@ -84,13 +86,19 @@ class ADKExecutionResultHandler:
         Returns None if the outbox type is not recognized — caller
         falls through to fallback logic.
         """
-        message = self._parse_message(outbox)
-        if message is not None:
-            return self._handle_outbox_message(message, context, task_id, context_id)
+        if not isinstance(outbox, dict):
+            return None
 
-        task = self._parse_task(outbox)
-        if task is not None:
-            return self._handle_outbox_task(task, context, task_id, context_id)
+        try:
+            parsed = A2AOutbox.model_validate(outbox)
+        except Exception:
+            return None
+
+        if parsed.message is not None:
+            return self._handle_outbox_message(parsed.message, context, task_id, context_id)
+
+        if parsed.task is not None:
+            return self._handle_outbox_task(parsed.task, context, task_id, context_id)
 
         return None
 
@@ -102,22 +110,21 @@ class ADKExecutionResultHandler:
             context_id: str,
     ) -> list[AgentEvent]:
         """Enforce server fields, append to history, emit working-status event."""
-        message = message.model_copy(update={
-            "task_id": task_id,
-            "context_id": context_id,
-        })
+        message = copy.deepcopy(message)
+        message.task_id = task_id
+        message.context_id = context_id
+
         if context is not None:
             task = context.current_task
             if task is not None:
-                history = list(task.history or [])
-                history.append(message)
-                context.current_task = task.model_copy(update={"history": history})
+                updated = copy.deepcopy(task)
+                updated.history.append(message)
+                context.current_task = updated
 
         return [TaskStatusUpdateEvent(
             task_id=task_id,
             context_id=context_id,
-            final=False,
-            status=TaskStatus(state=TaskState.working, message=message),
+            status=TaskStatus(state=TaskState.TASK_STATE_WORKING, message=message),
         )]
 
     @staticmethod
@@ -140,22 +147,22 @@ class ADKExecutionResultHandler:
         """
         events: list[AgentEvent] = []
 
-        patched_history = [
-            msg.model_copy(update={
-                "task_id": task_id,
-                "context_id": context_id,
-            })
-            for msg in (patch.history or [])
-        ]
+        patched_history = []
+        for msg in patch.history:
+            new_msg = copy.deepcopy(msg)
+            new_msg.task_id = task_id
+            new_msg.context_id = context_id
+            patched_history.append(new_msg)
 
         if context is not None:
             current = context.current_task
             if current is not None:
-                merged = current.model_copy(update={
-                    "history": list(current.history or []) + patched_history,
-                    "artifacts": list(current.artifacts or []) + list(patch.artifacts or []),
-                    "metadata": {**(current.metadata or {}), **(patch.metadata or {})},
-                })
+                merged = copy.deepcopy(current)
+                merged.history.extend(patched_history)
+                merged.artifacts.extend(patch.artifacts)
+                # patch overwrites current keys (preserves original merge behaviour)
+                for k, v in patch.metadata.items():
+                    merged.metadata[k] = v
                 context.current_task = merged
 
         if patch.metadata:
@@ -164,20 +171,18 @@ class ADKExecutionResultHandler:
                 events.append(TaskStatusUpdateEvent(
                     task_id=task_id,
                     context_id=context_id,
-                    final=False,
                     metadata=filtered,
-                    status=TaskStatus(state=TaskState.working),
+                    status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
                 ))
 
         for msg in patched_history:
             events.append(TaskStatusUpdateEvent(
                 task_id=task_id,
                 context_id=context_id,
-                final=False,
-                status=TaskStatus(state=TaskState.working, message=msg),
+                status=TaskStatus(state=TaskState.TASK_STATE_WORKING, message=msg),
             ))
 
-        for artifact in (patch.artifacts or []):
+        for artifact in patch.artifacts:
             events.append(TaskArtifactUpdateEvent(
                 task_id=task_id,
                 context_id=context_id,
@@ -187,30 +192,6 @@ class ADKExecutionResultHandler:
             ))
 
         return events
-
-    @staticmethod
-    def _parse_message(raw: Any) -> Message | None:
-        if isinstance(raw, Message):
-            return raw
-
-        if isinstance(raw, dict):
-            try:
-                return Message.model_validate(raw)
-            except Exception:
-                return None
-        return None
-
-    @staticmethod
-    def _parse_task(raw: Any) -> Task | None:
-        if isinstance(raw, Task):
-            return raw
-
-        if isinstance(raw, dict):
-            try:
-                return Task.model_validate(raw)
-            except Exception:
-                return None
-        return None
 
 
 __all__ = ["ADKExecutionResultHandler"]

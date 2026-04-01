@@ -6,8 +6,7 @@ from a2a.server.events import EventQueue
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.request_handlers.default_request_handler import TERMINAL_TASK_STATES
 from a2a.server.tasks import TaskManager, ResultAggregator
-from a2a.types import MessageSendParams, Task, InvalidParamsError, TaskNotFoundError
-from a2a.utils.errors import ServerError
+from a2a.types import Task, InvalidParamsError, TaskNotFoundError, SendMessageRequest
 from aion.shared.types import (
     GetContextParams,
     GetContextsListParams,
@@ -15,18 +14,17 @@ from aion.shared.types import (
     ContextsList
 )
 
-from aion.server.interfaces import IRequestHandler
 from aion.server.tasks import store_manager, AionTaskManager
 from aion.server.utils import ConversationBuilder
 
 
-class AionRequestHandler(DefaultRequestHandler, IRequestHandler):
+class AionRequestHandler(DefaultRequestHandler):
     """Request handler implementation for Aion management operations."""
 
     async def _setup_message_execution(
             self,
-            params: MessageSendParams,
-            context: ServerCallContext | None = None,
+            params: SendMessageRequest,
+            context: ServerCallContext,
     ) -> tuple[TaskManager, str, EventQueue, ResultAggregator, asyncio.Task]:
         """ !! Overrides default message execution setup. !!
 
@@ -36,9 +34,11 @@ class AionRequestHandler(DefaultRequestHandler, IRequestHandler):
             A tuple of (task_manager, task_id, queue, result_aggregator, producer_task)
         """
         # Create task manager and validate existing task
+        task_id = params.message.task_id or None
+        context_id = params.message.context_id or None
         task_manager = AionTaskManager(
-            task_id=params.message.task_id,
-            context_id=params.message.context_id,
+            task_id=task_id,
+            context_id=context_id,
             task_store=self.task_store,
             initial_message=params.message,
             context=context,
@@ -51,18 +51,14 @@ class AionRequestHandler(DefaultRequestHandler, IRequestHandler):
         task: Task | None = await task_manager.get_task()
         if task:
             if task.status.state in TERMINAL_TASK_STATES:
-                raise ServerError(
-                    error=InvalidParamsError(
-                        message=f'Task {task.id} is in terminal state: {task.status.state}'
-                    )
+                raise InvalidParamsError(
+                    message=f'Task {task.id} is in terminal state: {task.status.state}'
                 )
-
             task = task_manager.update_with_message(params.message, task)
+
         elif params.message.task_id:
-            raise ServerError(
-                error=TaskNotFoundError(
-                    message=f'Task {params.message.task_id} was specified but does not exist'
-                )
+            raise TaskNotFoundError(
+                message=f'Task {params.message.task_id} was specified but does not exist'
             )
 
         # Build request context
@@ -82,10 +78,12 @@ class AionRequestHandler(DefaultRequestHandler, IRequestHandler):
         if (
                 self._push_config_store
                 and params.configuration
-                and params.configuration.push_notification_config
+                and params.configuration.task_push_notification_config
         ):
             await self._push_config_store.set_info(
-                task_id, params.configuration.push_notification_config
+                task_id,
+                params.configuration.task_push_notification_config,
+                context or ServerCallContext(),
             )
 
         queue = await self._queue_manager.create_or_tap(task_id)

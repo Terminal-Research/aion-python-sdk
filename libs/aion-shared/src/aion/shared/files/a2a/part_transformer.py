@@ -1,19 +1,16 @@
 """File part transformer for A2A events and messages.
 
-Walks A2A events/messages looking for FilePart(FileWithBytes) — base64 inline
-content — and replaces them with FilePart(FileWithUri) using a presigned URL.
+Walks A2A events/messages looking for Part(raw=...) — inline bytes content —
+and replaces them with Part(url=...) using a presigned URL.
 The actual upload is scheduled in the background via FileUploadManager.
 
 If no upload_manager is provided or resolved, all transform methods are no-ops.
 """
 
-import base64
+import copy
 import mimetypes
 
 from a2a.types import (
-    FilePart,
-    FileWithBytes,
-    FileWithUri,
     Message,
     Part,
     TaskArtifactUpdateEvent,
@@ -26,7 +23,7 @@ logger = get_logger()
 
 
 class A2AFileTransformer:
-    """Transforms FilePart(FileWithBytes) > FilePart(FileWithUri) in A2A events.
+    """Transforms Part(raw=...) > Part(url=...) in A2A events.
 
     If upload_manager is not provided, one is created from settings automatically.
     If no storage backend is configured, all transform methods are no-ops — events
@@ -36,7 +33,7 @@ class A2AFileTransformer:
     For each inline file part found:
     1. Prepares a URL synchronously via FileUploadManager.schedule()
     2. Schedules the actual upload as a background task
-    3. Returns a new part with FileWithUri pointing at that URL
+    3. Returns a new part with url pointing at that URL
 
     context_id is extracted from the event and forwarded to the backend for
     organizing files by conversation/session.
@@ -107,14 +104,17 @@ class A2AFileTransformer:
         if self._upload_manager is None or not message.parts:
             return message
 
-        new_parts, urls = await self._transform_parts(message.parts, message.context_id)
+        new_parts, urls = await self._transform_parts(list(message.parts), message.context_id)
         if not urls:
             return message
 
         if wait_upload and urls:
             await self._upload_manager.wait(urls)
 
-        return message.model_copy(update={"parts": new_parts})
+        new_message = copy.deepcopy(message)
+        del new_message.parts[:]
+        new_message.parts.extend(new_parts)
+        return new_message
 
     async def _transform_status_event(
             self, event: TaskStatusUpdateEvent, *, wait_upload: bool = False
@@ -124,16 +124,17 @@ class A2AFileTransformer:
         if not message or not message.parts:
             return event
 
-        new_parts, urls = await self._transform_parts(message.parts, context_id=event.context_id)
+        new_parts, urls = await self._transform_parts(list(message.parts), context_id=event.context_id)
         if not urls:
             return event
 
         if wait_upload and urls:
             await self._upload_manager.wait(urls)
 
-        new_message = message.model_copy(update={"parts": new_parts})
-        new_status = event.status.model_copy(update={"message": new_message})
-        return event.model_copy(update={"status": new_status})
+        new_event = copy.deepcopy(event)
+        del new_event.status.message.parts[:]
+        new_event.status.message.parts.extend(new_parts)
+        return new_event
 
     async def _transform_artifact_event(
             self, event: TaskArtifactUpdateEvent, *, wait_upload: bool = False
@@ -143,15 +144,17 @@ class A2AFileTransformer:
         if not artifact.parts:
             return event
 
-        new_parts, urls = await self._transform_parts(artifact.parts, context_id=event.context_id)
+        new_parts, urls = await self._transform_parts(list(artifact.parts), context_id=event.context_id)
         if not urls:
             return event
 
         if wait_upload and urls:
             await self._upload_manager.wait(urls)
 
-        new_artifact = artifact.model_copy(update={"parts": new_parts})
-        return event.model_copy(update={"artifact": new_artifact})
+        new_event = copy.deepcopy(event)
+        del new_event.artifact.parts[:]
+        new_event.artifact.parts.extend(new_parts)
+        return new_event
 
     async def _transform_parts(
             self,
@@ -176,23 +179,14 @@ class A2AFileTransformer:
             context_id: str | None,
     ) -> tuple[Part, str | None]:
         """Transform a single Part if it contains inline bytes; returns the part and upload URL."""
-        root = part.root
-        if not isinstance(root, FilePart):
+        if not part.raw:
             return part, None
 
-        file = root.file
-        if not isinstance(file, FileWithBytes):
-            return part, None
+        data: bytes = part.raw
 
-        try:
-            data = base64.b64decode(file.bytes)
-        except Exception:
-            logger.warning("Failed to decode base64 bytes in FilePart — skipping upload")
-            return part, None
-
-        mime_type = file.mime_type
-        if not mime_type and file.name:
-            guessed, _ = mimetypes.guess_type(file.name)
+        mime_type = part.media_type
+        if not mime_type and part.filename:
+            guessed, _ = mimetypes.guess_type(part.filename)
             mime_type = guessed
         mime_type = mime_type or "application/octet-stream"
 
@@ -202,8 +196,4 @@ class A2AFileTransformer:
             context_id=context_id,
         )
 
-        return Part(root=FilePart(file=FileWithUri(
-            uri=url,
-            mime_type=mime_type,
-            name=file.name,
-        ))), url
+        return Part(url=url, media_type=mime_type, filename=part.filename), url

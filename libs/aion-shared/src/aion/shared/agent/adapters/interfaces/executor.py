@@ -19,8 +19,6 @@ from .state import ExecutionSnapshot
 if TYPE_CHECKING:
     from a2a.server.agent_execution import RequestContext
 
-AgentEvent = TaskStatusUpdateEvent | TaskArtifactUpdateEvent
-
 
 class ExecutionConfig:
     """Configuration for a single agent execution.
@@ -73,7 +71,7 @@ class ExecutorAdapter(ABC):
         self,
         context: "RequestContext",
         config: Optional[ExecutionConfig] = None,
-    ) -> AsyncIterator[AgentEvent]:
+    ) -> AsyncIterator[TaskStatusUpdateEvent | TaskArtifactUpdateEvent]:
         """Stream agent execution, yielding A2A events in real-time.
 
         Args:
@@ -109,7 +107,7 @@ class ExecutorAdapter(ABC):
         self,
         context: "RequestContext",
         config: ExecutionConfig,
-    ) -> AsyncIterator[AgentEvent]:
+    ) -> AsyncIterator[TaskStatusUpdateEvent | TaskArtifactUpdateEvent]:
         """Resume a paused/interrupted agent execution.
 
         Args:

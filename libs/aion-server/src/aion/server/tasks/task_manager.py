@@ -45,7 +45,8 @@ class AionTaskManager(TaskManager):
         if not isinstance(event, TaskStatusUpdateEvent):
             return
 
-        set_task_status(event.status.state.value)
+        state = event.status.state
+        set_task_status(state.value if hasattr(state, 'value') else state)
 
     @staticmethod
     def _check_process_skip_event(event: Event) -> bool:

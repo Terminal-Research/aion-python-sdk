@@ -1,8 +1,10 @@
-from a2a.types import JSONRPCRequest
+from typing import Any
+
+from a2a.server.jsonrpc_models import InternalError, InvalidRequestError
+from a2a.server.request_handlers import build_error_response
 from a2a.utils import DEFAULT_RPC_URL
 from aion.shared.context import set_context_from_a2a
 from aion.shared.logging import get_logger
-from aion.shared.types import ExtendedA2ARequest
 from aion.shared.types.a2a.extensions import (
     DISTRIBUTION_EXTENSION_URI_V1,
     TRACEABILITY_EXTENSION_URI_V1,
@@ -12,7 +14,7 @@ from aion.shared.types.a2a.extensions import (
 from fastapi import Request, Response
 from pydantic import ValidationError
 from starlette.middleware.base import BaseHTTPMiddleware
-from typing import Any, Dict, Optional
+from starlette.responses import JSONResponse
 
 logger = get_logger(use_logstash=False)
 
@@ -46,27 +48,60 @@ class AionContextMiddleware(BaseHTTPMiddleware):
         Returns:
             Response from the next handler in the chain
         """
-        request_obj = await self._get_request_object(request)
-        if not request_obj:
-            return await call_next(request)
+        method, request_id, metadata = await self._extract_method_and_metadata(request)
 
-        try:
-            metadata = request_obj.params.metadata
-            if metadata:
+        if metadata:
+            try:
                 set_context_from_a2a(
                     distribution=self._get_distribution_extension(metadata),
                     traceability=self._get_traceability_extension(metadata),
                     request_method=request.method,
                     request_path=request.url.path,
-                    jrpc_method=request_obj.method,
+                    jrpc_method=method,
                 )
-        except Exception as ex:
-            logger.exception(f"Error while setting request context: {ex}")
+            except ValidationError as ex:
+                logger.warning("Invalid extension data in request metadata: %s", ex)
+                return JSONResponse(
+                    build_error_response(request_id, InvalidRequestError(data=str(ex))),
+                    status_code=200,
+                )
+            except Exception as ex:
+                logger.exception("Failed to set request context: %s", ex)
+                return JSONResponse(
+                    build_error_response(request_id, InternalError()),
+                    status_code=200,
+                )
 
         return await call_next(request)
 
     @staticmethod
-    def _get_distribution_extension(metadata: Dict[str, Any]) -> Optional[DistributionExtensionV1]:
+    async def _extract_method_and_metadata(
+            request: Request,
+    ) -> tuple[str | None, str | int | None, dict[str, Any] | None]:
+        """Extract JSON-RPC method name and params.metadata from the raw body.
+
+        Does not perform full A2A schema validation — only accesses the fields
+        this middleware actually needs.
+
+        Returns:
+            (method, metadata) tuple; both None if the body is not a valid
+            JSON-RPC dict or has no metadata.
+        """
+        try:
+            body = await request.json()
+            if not isinstance(body, dict):
+                return None, None, None
+
+            method = body.get('method')
+            request_id = body.get('id')
+            params = body.get('params')
+            metadata = params.get('metadata') if isinstance(params, dict) else None
+            return method, request_id, metadata
+        except Exception:
+            return None, None, None
+
+    @staticmethod
+    def _get_distribution_extension(metadata: dict[str, Any]) -> DistributionExtensionV1 | None:
         """
         Extract the distribution extension from A2A metadata.
 
@@ -76,15 +111,10 @@ class AionContextMiddleware(BaseHTTPMiddleware):
         raw = metadata.get(DISTRIBUTION_EXTENSION_URI_V1)
         if raw is None:
             return None
-
-        try:
-            return DistributionExtensionV1.model_validate(raw)
-        except ValidationError as ex:
-            logger.warning(f"Failed to parse distribution extension: {ex}")
-            return None
+        return DistributionExtensionV1.model_validate(raw)
 
     @staticmethod
-    def _get_traceability_extension(metadata: Dict[str, Any]) -> Optional[TraceabilityExtensionV1]:
+    def _get_traceability_extension(metadata: dict[str, Any]) -> TraceabilityExtensionV1 | None:
         """
         Extract the traceability extension from A2A metadata.
 
@@ -94,28 +124,4 @@ class AionContextMiddleware(BaseHTTPMiddleware):
         raw = metadata.get(TRACEABILITY_EXTENSION_URI_V1)
         if raw is None:
             return None
-        try:
-            return TraceabilityExtensionV1.model_validate(raw)
-
-        except ValidationError as ex:
-            logger.warning(f"Failed to parse traceability extension: {ex}")
-            return None
-
-    @staticmethod
-    async def _get_request_object(request: Request):
-        """
-        Parse and validate the request body as an A2A request.
-
-        Args:
-            request: The incoming HTTP request
-
-        Returns:
-            Validated A2A request object or None if validation fails
-        """
-        try:
-            body = await request.json()
-            JSONRPCRequest.model_validate(body)
-            a2a_request = ExtendedA2ARequest.model_validate(body)
-            return a2a_request.root
-        except Exception:
-            return None
+        return TraceabilityExtensionV1.model_validate(raw)

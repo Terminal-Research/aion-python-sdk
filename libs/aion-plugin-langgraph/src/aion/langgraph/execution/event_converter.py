@@ -12,7 +12,6 @@ from a2a.types import (
     TaskState,
     TaskStatus,
     TaskStatusUpdateEvent,
-    TextPart,
 )
 from aion.shared.agent.adapters import InterruptInfo
 from aion.shared.logging import get_logger
@@ -117,8 +116,7 @@ class LangGraphA2AConverter:
         if not a2a_parts:
             return []
 
-        role_str = self._detect_role(message)
-        role = Role(role_str)
+        role = self._detect_role(message)
         msg = Message(
             context_id=self._context_id,
             task_id=self._task_id,
@@ -129,8 +127,7 @@ class LangGraphA2AConverter:
         return [TaskStatusUpdateEvent(
             task_id=self._task_id,
             context_id=self._context_id,
-            final=False,
-            status=TaskStatus(state=TaskState.working, message=msg),
+            status=TaskStatus(state=TaskState.TASK_STATE_WORKING, message=msg),
         )]
 
     def _convert_custom(self, event_data: SupportedCustomEvents) -> list[A2AAgentEvent]:
@@ -176,7 +173,7 @@ class LangGraphA2AConverter:
                     context_id=self._context_id,
                     task_id=self._task_id,
                     message_id=str(uuid.uuid4()),
-                    role=Role.agent,
+                    role=Role.ROLE_AGENT,
                     parts=parts,
                 )
 
@@ -190,9 +187,8 @@ class LangGraphA2AConverter:
         return [TaskStatusUpdateEvent(
             task_id=self._task_id,
             context_id=self._context_id,
-            final=False,
             metadata=filtered,
-            status=TaskStatus(state=TaskState.working, message=msg),
+            status=TaskStatus(state=TaskState.TASK_STATE_WORKING, message=msg),
         )]
 
     def _convert_ephemeral(self, message: LangChainAgentMessage) -> list[A2AAgentEvent]:
@@ -234,8 +230,8 @@ class LangGraphA2AConverter:
                 context_id=self._context_id,
                 task_id=self._task_id,
                 message_id=str(uuid.uuid4()),
-                role=Role.agent,
-                parts=[Part(root=TextPart(text=info.get_prompt_text()))],
+                role=Role.ROLE_AGENT,
+                parts=[Part(text=info.get_prompt_text())],
                 metadata={"interruptId": interrupt_id},
             )
 
@@ -248,8 +244,7 @@ class LangGraphA2AConverter:
         return TaskStatusUpdateEvent(
             task_id=self._task_id,
             context_id=self._context_id,
-            final=False,
-            status=TaskStatus(state=TaskState.input_required, message=message),
+            status=TaskStatus(state=TaskState.TASK_STATE_INPUT_REQUIRED, message=message),
         )
 
     def convert_complete(self) -> TaskStatusUpdateEvent:
@@ -260,8 +255,7 @@ class LangGraphA2AConverter:
         return TaskStatusUpdateEvent(
             task_id=self._task_id,
             context_id=self._context_id,
-            final=True,
-            status=TaskStatus(state=TaskState.completed),
+            status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED),
         )
 
     def convert_error(self, error: str, error_type: str) -> TaskStatusUpdateEvent:
@@ -274,17 +268,16 @@ class LangGraphA2AConverter:
         return TaskStatusUpdateEvent(
             task_id=self._task_id,
             context_id=self._context_id,
-            final=True,
-            status=TaskStatus(state=TaskState.failed),
+            status=TaskStatus(state=TaskState.TASK_STATE_FAILED),
         )
 
     @staticmethod
-    def _detect_role(message: LangChainAgentMessage) -> str:
-        """Map a LangChain message type to an A2A role string.
+    def _detect_role(message: LangChainAgentMessage) -> Role:
+        """Map a LangChain message type to an A2A Role.
 
-        AIMessage and AIMessageChunk map to "agent";
-        HumanMessage maps to "user". Defaults to "agent" for unknown types.
+        AIMessage and AIMessageChunk map to ROLE_AGENT;
+        HumanMessage maps to ROLE_USER. Defaults to ROLE_AGENT for unknown types.
         """
         if isinstance(message, HumanMessage):
-            return "user"
-        return "agent"
+            return Role.ROLE_USER
+        return Role.ROLE_AGENT

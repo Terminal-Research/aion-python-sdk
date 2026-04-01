@@ -2,16 +2,10 @@
 
 from __future__ import annotations
 
+import base64
 import logging
 
-from a2a.types import (
-    DataPart,
-    FilePart,
-    FileWithBytes,
-    FileWithUri,
-    Part,
-    TextPart,
-)
+from a2a.types import Part
 from langchain_core.messages import BaseMessage
 from langchain_core.messages.content import ContentBlock  # type: ignore[attr-defined]
 
@@ -66,13 +60,13 @@ class LcToA2AConverter:
 
     @staticmethod
     def _from_text(block: ContentBlock) -> Part:
-        return Part(root=TextPart(text=block.get("text", "")))
+        return Part(text=block.get("text", ""))
 
     @staticmethod
     def _from_reasoning(block: ContentBlock) -> Part:
         """Reasoning blocks are surfaced as plain text with metadata marking their origin."""
         return Part(
-            root=TextPart(text=block.get("reasoning", "")),
+            text=block.get("reasoning", ""),
             metadata={
                 "lc_block_type": "reasoning",
                 "lc_block_id": block.get("id", ""),
@@ -86,25 +80,17 @@ class LcToA2AConverter:
         mime_type: str | None = block.get("mime_type")
 
         if source_type == "url":
-            return Part(root=FilePart(
-                file=FileWithUri(uri=block.get("url", ""), mimeType=mime_type),
-            ))
+            return Part(url=block.get("url", ""), media_type=mime_type)
 
         if source_type == "base64":
-            return Part(root=FilePart(
-                file=FileWithBytes(
-                    bytes=block.get("data", ""),
-                    mimeType=mime_type or "application/octet-stream",
-                ),
-            ))
+            raw_bytes = base64.b64decode(block.get("data", ""))
+            return Part(raw=raw_bytes, media_type=mime_type or "application/octet-stream")
 
         if source_type == "id":
-            return Part(root=FilePart(
-                file=FileWithUri(uri=block.get("id", ""), mimeType=mime_type),
-            ))
+            return Part(url=block.get("id", ""), media_type=mime_type)
 
         if source_type == "plain_text":
-            return Part(root=TextPart(text=block.get("text", "")))
+            return Part(text=block.get("text", ""))
 
         logger.warning(
             "Unknown source_type %r in block type %r",
@@ -115,8 +101,8 @@ class LcToA2AConverter:
 
     @staticmethod
     def _fallback(block: ContentBlock) -> Part:
-        """Wrap an unknown block verbatim as a DataPart."""
+        """Wrap an unknown block verbatim as a data Part."""
         return Part(
-            root=DataPart(data=dict(block)),
+            data=dict(block),
             metadata={"lc_block_type": block.get("type", "unknown")},
         )
