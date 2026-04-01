@@ -1,45 +1,107 @@
-"""Tests for the Aion CLI package."""
+"""Tests for the ``aion`` CLI entrypoint."""
 
 from __future__ import annotations
 
-import logging
-import os
-import sys
-import types
+import importlib
 
 from click.testing import CliRunner
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
-
-from aion.cli.cli import cli, __version__
+from aion.cli.cli import __version__, cli
+from aion.cli.services.chat2 import BinaryResolutionError
 
 
 def test_version() -> None:
+    """Verify that the version flag renders the package version."""
     runner = CliRunner()
+
     result = runner.invoke(cli, ["--version"])
+
     assert result.exit_code == 0
     assert __version__ in result.output
 
 
-def test_help_lists_commands() -> None:
+def test_help_lists_chat2_command() -> None:
+    """Ensure the help output advertises the experimental chat2 command."""
     runner = CliRunner()
+
     result = runner.invoke(cli, ["--help"])
+
     assert result.exit_code == 0
-    assert "serve" in result.output
+    assert "chat2" in result.output
 
 
-def test_serve_invokes_server(monkeypatch) -> None:
-    """Ensure the serve command delegates to the example server."""
-    called = {}
-
-    def fake_server(host: str, port: int) -> None:
-        called["args"] = (host, port)
-
-    mod = types.SimpleNamespace(main=types.SimpleNamespace(callback=fake_server))
-    monkeypatch.setitem(sys.modules, "aion.server.langgraph.__main__", mod)
-
+def test_chat2_launches_ui(monkeypatch) -> None:
+    """Ensure ``aion chat2`` forwards CLI flags into launch options."""
     runner = CliRunner()
-    result = runner.invoke(cli, ["serve", "--host", "0.0.0.0", "--port", "1234"])
+    chat2_module = importlib.import_module("aion.cli.commands.chat2")
+    called: dict[str, object] = {}
+
+    def fake_launch(options):
+        called["options"] = options
+        return 0
+
+    monkeypatch.setattr(chat2_module, "launch_chat2", fake_launch)
+
+    result = runner.invoke(
+        cli,
+        [
+            "chat2",
+            "--url",
+            "http://localhost:8000",
+            "--agent-id",
+            "demo-agent",
+            "--token",
+            "secret-token",
+            "--header",
+            "X-Test=one",
+            "--push-notifications",
+            "--push-receiver",
+            "http://localhost:5050",
+            "--no-stream",
+        ],
+    )
 
     assert result.exit_code == 0
-    assert called["args"] == ("0.0.0.0", 1234)
+    options = called["options"]
+    assert options.endpoint == "http://localhost:8000"
+    assert options.agent_id == "demo-agent"
+    assert options.token == "secret-token"
+    assert options.headers == {"X-Test": "one"}
+    assert options.push_notifications is True
+    assert options.push_receiver == "http://localhost:5050"
+    assert options.no_stream is True
+
+
+def test_chat2_reports_missing_artifact(monkeypatch) -> None:
+    """Ensure binary resolution failures surface as Click exceptions."""
+    runner = CliRunner()
+    chat2_module = importlib.import_module("aion.cli.commands.chat2")
+
+    def fake_launch(_options):
+        raise BinaryResolutionError("missing chat2 artifact")
+
+    monkeypatch.setattr(chat2_module, "launch_chat2", fake_launch)
+
+    result = runner.invoke(cli, ["chat2", "--url", "http://localhost:8000"])
+
+    assert result.exit_code != 0
+    assert "missing chat2 artifact" in result.output
+
+
+def test_chat2_defaults_to_local_proxy(monkeypatch) -> None:
+    """Ensure ``aion chat2`` defaults to the local proxy discovery URL."""
+    runner = CliRunner()
+    chat2_module = importlib.import_module("aion.cli.commands.chat2")
+    called: dict[str, object] = {}
+
+    def fake_launch(options):
+        called["options"] = options
+        return 0
+
+    monkeypatch.setattr(chat2_module, "launch_chat2", fake_launch)
+
+    result = runner.invoke(cli, ["chat2"])
+
+    assert result.exit_code == 0
+    options = called["options"]
+    assert options.endpoint == "http://localhost:8000"
