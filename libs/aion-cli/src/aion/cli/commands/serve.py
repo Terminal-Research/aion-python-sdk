@@ -98,7 +98,7 @@ async def serve(
         startup_timeout: int
 ) -> None:
     """Run all configured AION agents and proxy server in separate processes"""
-    from aion.cli.handlers import ServeHandler
+    from aion.cli.handlers.serve import ServeHandler
 
     try:
         # Load configuration
