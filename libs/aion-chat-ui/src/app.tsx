@@ -535,11 +535,19 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 						selectedAgentId={selectedAgentId}
 					/>
 				) : (
-					entries.map((entry, index) => (
-						<Box key={entry.id} marginBottom={index < entries.length - 1 ? 1 : 0}>
-							<MessageBubble entry={entry} />
-						</Box>
-					))
+					<Box flexDirection="column">
+						<HomeScreen
+							discoveredCount={discoveredAgents.length}
+							discoveryState={discoveryLabel}
+							selectedAgentId={selectedAgentId}
+							mode="inline"
+						/>
+						{entries.map((entry, index) => (
+							<Box key={entry.id} marginBottom={index < entries.length - 1 ? 1 : 0}>
+								<MessageBubble entry={entry} />
+							</Box>
+						))}
+					</Box>
 				)}
 			</Box>
 			<StatusBar

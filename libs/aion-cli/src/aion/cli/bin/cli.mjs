@@ -9632,14 +9632,14 @@ var require_react_reconciler_production = __commonJS({
       }
       var exports2 = {};
       "use strict";
-      var React12 = require_react(), Scheduler2 = require_scheduler(), assign = Object.assign, REACT_LEGACY_ELEMENT_TYPE = /* @__PURE__ */ Symbol.for("react.element"), REACT_ELEMENT_TYPE = /* @__PURE__ */ Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = /* @__PURE__ */ Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = /* @__PURE__ */ Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = /* @__PURE__ */ Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = /* @__PURE__ */ Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = /* @__PURE__ */ Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = /* @__PURE__ */ Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = /* @__PURE__ */ Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = /* @__PURE__ */ Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = /* @__PURE__ */ Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = /* @__PURE__ */ Symbol.for("react.memo"), REACT_LAZY_TYPE = /* @__PURE__ */ Symbol.for("react.lazy");
+      var React14 = require_react(), Scheduler2 = require_scheduler(), assign = Object.assign, REACT_LEGACY_ELEMENT_TYPE = /* @__PURE__ */ Symbol.for("react.element"), REACT_ELEMENT_TYPE = /* @__PURE__ */ Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = /* @__PURE__ */ Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = /* @__PURE__ */ Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = /* @__PURE__ */ Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = /* @__PURE__ */ Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = /* @__PURE__ */ Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = /* @__PURE__ */ Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = /* @__PURE__ */ Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = /* @__PURE__ */ Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = /* @__PURE__ */ Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = /* @__PURE__ */ Symbol.for("react.memo"), REACT_LAZY_TYPE = /* @__PURE__ */ Symbol.for("react.lazy");
       /* @__PURE__ */ Symbol.for("react.scope");
       var REACT_ACTIVITY_TYPE = /* @__PURE__ */ Symbol.for("react.activity");
       /* @__PURE__ */ Symbol.for("react.legacy_hidden");
       /* @__PURE__ */ Symbol.for("react.tracing_marker");
       var REACT_MEMO_CACHE_SENTINEL = /* @__PURE__ */ Symbol.for("react.memo_cache_sentinel");
       /* @__PURE__ */ Symbol.for("react.view_transition");
-      var MAYBE_ITERATOR_SYMBOL = Symbol.iterator, REACT_CLIENT_REFERENCE = /* @__PURE__ */ Symbol.for("react.client.reference"), isArrayImpl = Array.isArray, ReactSharedInternals = React12.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, rendererVersion = $$$config.rendererVersion, rendererPackageName = $$$config.rendererPackageName, extraDevToolsConfig = $$$config.extraDevToolsConfig, getPublicInstance = $$$config.getPublicInstance, getRootHostContext = $$$config.getRootHostContext, getChildHostContext = $$$config.getChildHostContext, prepareForCommit = $$$config.prepareForCommit, resetAfterCommit = $$$config.resetAfterCommit, createInstance = $$$config.createInstance;
+      var MAYBE_ITERATOR_SYMBOL = Symbol.iterator, REACT_CLIENT_REFERENCE = /* @__PURE__ */ Symbol.for("react.client.reference"), isArrayImpl = Array.isArray, ReactSharedInternals = React14.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, rendererVersion = $$$config.rendererVersion, rendererPackageName = $$$config.rendererPackageName, extraDevToolsConfig = $$$config.extraDevToolsConfig, getPublicInstance = $$$config.getPublicInstance, getRootHostContext = $$$config.getRootHostContext, getChildHostContext = $$$config.getChildHostContext, prepareForCommit = $$$config.prepareForCommit, resetAfterCommit = $$$config.resetAfterCommit, createInstance = $$$config.createInstance;
       $$$config.cloneMutableInstance;
       var appendInitialChild = $$$config.appendInitialChild, finalizeInitialChildren = $$$config.finalizeInitialChildren, shouldSetTextContent = $$$config.shouldSetTextContent, createTextInstance = $$$config.createTextInstance;
       $$$config.cloneMutableTextInstance;
@@ -22232,14 +22232,14 @@ var require_react_reconciler_development = __commonJS({
       }
       var exports2 = {};
       "use strict";
-      var React12 = require_react(), Scheduler2 = require_scheduler(), assign = Object.assign, REACT_LEGACY_ELEMENT_TYPE = /* @__PURE__ */ Symbol.for("react.element"), REACT_ELEMENT_TYPE = /* @__PURE__ */ Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = /* @__PURE__ */ Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = /* @__PURE__ */ Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = /* @__PURE__ */ Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = /* @__PURE__ */ Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = /* @__PURE__ */ Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = /* @__PURE__ */ Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = /* @__PURE__ */ Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = /* @__PURE__ */ Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = /* @__PURE__ */ Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = /* @__PURE__ */ Symbol.for("react.memo"), REACT_LAZY_TYPE = /* @__PURE__ */ Symbol.for("react.lazy");
+      var React14 = require_react(), Scheduler2 = require_scheduler(), assign = Object.assign, REACT_LEGACY_ELEMENT_TYPE = /* @__PURE__ */ Symbol.for("react.element"), REACT_ELEMENT_TYPE = /* @__PURE__ */ Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = /* @__PURE__ */ Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = /* @__PURE__ */ Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = /* @__PURE__ */ Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = /* @__PURE__ */ Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = /* @__PURE__ */ Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = /* @__PURE__ */ Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = /* @__PURE__ */ Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = /* @__PURE__ */ Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = /* @__PURE__ */ Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = /* @__PURE__ */ Symbol.for("react.memo"), REACT_LAZY_TYPE = /* @__PURE__ */ Symbol.for("react.lazy");
       /* @__PURE__ */ Symbol.for("react.scope");
       var REACT_ACTIVITY_TYPE = /* @__PURE__ */ Symbol.for("react.activity");
       /* @__PURE__ */ Symbol.for("react.legacy_hidden");
       /* @__PURE__ */ Symbol.for("react.tracing_marker");
       var REACT_MEMO_CACHE_SENTINEL = /* @__PURE__ */ Symbol.for("react.memo_cache_sentinel");
       /* @__PURE__ */ Symbol.for("react.view_transition");
-      var MAYBE_ITERATOR_SYMBOL = Symbol.iterator, REACT_CLIENT_REFERENCE = /* @__PURE__ */ Symbol.for("react.client.reference"), isArrayImpl = Array.isArray, ReactSharedInternals = React12.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, rendererVersion = $$$config.rendererVersion, rendererPackageName = $$$config.rendererPackageName, extraDevToolsConfig = $$$config.extraDevToolsConfig, getPublicInstance = $$$config.getPublicInstance, getRootHostContext = $$$config.getRootHostContext, getChildHostContext = $$$config.getChildHostContext, prepareForCommit = $$$config.prepareForCommit, resetAfterCommit = $$$config.resetAfterCommit, createInstance = $$$config.createInstance;
+      var MAYBE_ITERATOR_SYMBOL = Symbol.iterator, REACT_CLIENT_REFERENCE = /* @__PURE__ */ Symbol.for("react.client.reference"), isArrayImpl = Array.isArray, ReactSharedInternals = React14.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, rendererVersion = $$$config.rendererVersion, rendererPackageName = $$$config.rendererPackageName, extraDevToolsConfig = $$$config.extraDevToolsConfig, getPublicInstance = $$$config.getPublicInstance, getRootHostContext = $$$config.getRootHostContext, getChildHostContext = $$$config.getChildHostContext, prepareForCommit = $$$config.prepareForCommit, resetAfterCommit = $$$config.resetAfterCommit, createInstance = $$$config.createInstance;
       $$$config.cloneMutableInstance;
       var appendInitialChild = $$$config.appendInitialChild, finalizeInitialChildren = $$$config.finalizeInitialChildren, shouldSetTextContent = $$$config.shouldSetTextContent, createTextInstance = $$$config.createTextInstance;
       $$$config.cloneMutableTextInstance;
@@ -28590,18 +28590,18 @@ var require_react_jsx_runtime_development = __commonJS({
       function isValidElement(object) {
         return "object" === typeof object && null !== object && object.$$typeof === REACT_ELEMENT_TYPE;
       }
-      var React12 = require_react(), REACT_ELEMENT_TYPE = /* @__PURE__ */ Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = /* @__PURE__ */ Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = /* @__PURE__ */ Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = /* @__PURE__ */ Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = /* @__PURE__ */ Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = /* @__PURE__ */ Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = /* @__PURE__ */ Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = /* @__PURE__ */ Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = /* @__PURE__ */ Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = /* @__PURE__ */ Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = /* @__PURE__ */ Symbol.for("react.memo"), REACT_LAZY_TYPE = /* @__PURE__ */ Symbol.for("react.lazy"), REACT_ACTIVITY_TYPE = /* @__PURE__ */ Symbol.for("react.activity"), REACT_CLIENT_REFERENCE = /* @__PURE__ */ Symbol.for("react.client.reference"), ReactSharedInternals = React12.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, hasOwnProperty = Object.prototype.hasOwnProperty, isArrayImpl = Array.isArray, createTask = console.createTask ? console.createTask : function() {
+      var React14 = require_react(), REACT_ELEMENT_TYPE = /* @__PURE__ */ Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = /* @__PURE__ */ Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = /* @__PURE__ */ Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = /* @__PURE__ */ Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = /* @__PURE__ */ Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = /* @__PURE__ */ Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = /* @__PURE__ */ Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = /* @__PURE__ */ Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = /* @__PURE__ */ Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = /* @__PURE__ */ Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = /* @__PURE__ */ Symbol.for("react.memo"), REACT_LAZY_TYPE = /* @__PURE__ */ Symbol.for("react.lazy"), REACT_ACTIVITY_TYPE = /* @__PURE__ */ Symbol.for("react.activity"), REACT_CLIENT_REFERENCE = /* @__PURE__ */ Symbol.for("react.client.reference"), ReactSharedInternals = React14.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, hasOwnProperty = Object.prototype.hasOwnProperty, isArrayImpl = Array.isArray, createTask = console.createTask ? console.createTask : function() {
         return null;
       };
-      React12 = {
+      React14 = {
         react_stack_bottom_frame: function(callStackForError) {
           return callStackForError();
         }
       };
       var specialPropKeyWarningShown;
       var didWarnAboutElementRef = {};
-      var unknownOwnerDebugStack = React12.react_stack_bottom_frame.bind(
-        React12,
+      var unknownOwnerDebugStack = React14.react_stack_bottom_frame.bind(
+        React14,
         UnknownOwner
       )();
       var unknownOwnerDebugTask = createTask(getTaskName(UnknownOwner));
@@ -81198,6 +81198,8 @@ var use_app_default = useApp;
 
 // node_modules/ink/build/hooks/use-stdout.js
 var import_react23 = __toESM(require_react(), 1);
+var useStdout = () => (0, import_react23.useContext)(StdoutContext_default);
+var use_stdout_default = useStdout;
 
 // node_modules/ink/build/hooks/use-stderr.js
 var import_react24 = __toESM(require_react(), 1);
@@ -81329,11 +81331,17 @@ function parseArgs(argv) {
 }
 
 // src/app.tsx
-var import_react29 = __toESM(require_react(), 1);
+var import_react31 = __toESM(require_react(), 1);
 import { randomUUID as randomUUID2 } from "crypto";
 
 // src/components/ChatComposer.tsx
+var import_react29 = __toESM(require_react(), 1);
 var import_jsx_runtime = __toESM(require_jsx_runtime(), 1);
+function buildControls(hasDraft, hasSuggestions) {
+  const controls = hasSuggestions ? ["Enter selects", "\u2191\u2193 move", "Esc cancels"] : ["Enter sends", "Shift+Enter newline"];
+  controls.push(hasDraft ? "Ctrl+C clears" : "Ctrl+C exits");
+  return controls;
+}
 function ChatComposer({
   connected,
   draft,
@@ -81341,67 +81349,210 @@ function ChatComposer({
   agentSuggestions,
   selectedSuggestionIndex
 }) {
-  const controlHint = draft.length > 0 ? "Ctrl+C clears content" : "Ctrl+C exits";
-  return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
-    Box_default,
-    {
-      borderStyle: "round",
-      borderColor: connected ? "cyan" : "gray",
-      paddingX: 1,
-      flexDirection: "column",
-      children: [
-        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { color: connected ? "cyan" : "gray", children: [
-          "Composer",
-          activeAgentId ? ` \u2022 @${activeAgentId}` : " \u2022 No agent selected"
-        ] }),
-        agentSuggestions.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { flexDirection: "column", marginBottom: 1, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { dimColor: true, children: "Available agents" }),
-          agentSuggestions.map((suggestion, index) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
-            Text,
-            {
-              color: index === selectedSuggestionIndex ? "green" : "gray",
-              children: [
-                index === selectedSuggestionIndex ? "\u203A " : "  ",
-                "@",
-                suggestion
-              ]
-            },
-            suggestion
-          ))
-        ] }) : null,
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { children: draft || "Type @ to choose an agent, then write a message..." }),
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { dimColor: true, children: controlHint })
-      ]
-    }
-  );
+  const { stdout } = use_stdout_default();
+  const [dividerWidth, setDividerWidth] = (0, import_react29.useState)(stdout?.columns ?? process.stdout.columns ?? 80);
+  const controls = buildControls(draft.length > 0, agentSuggestions.length > 0).join("  \u2022  ");
+  const agentLabel = activeAgentId ? `@${activeAgentId}` : "@no-agent";
+  (0, import_react29.useEffect)(() => {
+    const handleResize = () => {
+      setDividerWidth(stdout?.columns ?? process.stdout.columns ?? 80);
+    };
+    handleResize();
+    stdout?.on("resize", handleResize);
+    return () => {
+      stdout?.off("resize", handleResize);
+    };
+  }, [stdout]);
+  return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { color: connected ? "gray" : "gray", children: "\u2500".repeat(Math.max(24, dividerWidth - 4)) }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { marginTop: 1, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { color: connected ? "gray" : "gray", children: "\u203A " }),
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { color: draft ? "white" : "gray", children: draft || "Send message" })
+    ] }),
+    agentSuggestions.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { flexDirection: "column", marginTop: 1, children: agentSuggestions.map((suggestion, index) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
+      Text,
+      {
+        color: index === selectedSuggestionIndex ? "green" : "gray",
+        children: [
+          index === selectedSuggestionIndex ? "\u203A " : "  ",
+          "@",
+          suggestion
+        ]
+      },
+      suggestion
+    )) }) : null,
+    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { justifyContent: "space-between", marginTop: 1, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { color: activeAgentId ? "green" : "gray", children: agentLabel }),
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { dimColor: true, children: controls })
+    ] })
+  ] });
 }
 
 // src/components/HomeScreen.tsx
+var import_react30 = __toESM(require_react(), 1);
 var import_jsx_runtime2 = __toESM(require_jsx_runtime(), 1);
-var AION_LOGO = [
-  "\u2554\u2550\u2557\u2566\u2554\u2550\u2557\u2554\u2557\u2554  \u2554\u2550\u2557\u2554\u2550\u2557\u2554\u2550\u2557\u2554\u2557\u2554\u2554\u2566\u2557  \u2554\u2550\u2557\u2554\u2550\u2557\u2566",
-  "\u2560\u2550\u2563\u2551\u2551 \u2551\u2551\u2551\u2551  \u2560\u2550\u2563\u2551 \u2566\u2551\u2563 \u2551\u2551\u2551 \u2551   \u2560\u2550\u2563\u2560\u2550\u255D\u2551",
-  "\u2569 \u2569\u2569\u255A\u2550\u255D\u255D\u255A\u255D  \u2569 \u2569\u255A\u2550\u255D\u255A\u2550\u255D\u255D\u255A\u255D \u2569   \u2569 \u2569\u2569  \u2569"
+var COLORS = {
+  lavender: "#C5AFFF",
+  purple: "#816CFF",
+  cream: "#FAF8F3",
+  ink: "#05070C"
+};
+var MASCOT_ROWS = [
+  [
+    { text: "              \u2584\u2588\u2588\u2584          \u2584\u2588\u2588\u2584              ", color: COLORS.lavender }
+  ],
+  [
+    { text: "           \u2584\u2588\u2588\u2588\u2588\u2588\u2588\u2584\u2584      \u2584\u2584\u2588\u2588\u2588\u2588\u2588\u2588\u2584           ", color: COLORS.lavender }
+  ],
+  [
+    { text: "        \u2584\u2588\u2588\u2588\u2588\u2580\u2580\u2580\u2580\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2580\u2580\u2580\u2580\u2588\u2588\u2588\u2588\u2584         ", color: COLORS.purple }
+  ],
+  [
+    { text: "      \u2584\u2588\u2588\u2588\u2580    \u2584\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2584    \u2580\u2588\u2588\u2588\u2584      ", color: COLORS.purple }
+  ],
+  [
+    { text: "     \u2590\u2588\u2588\u2580    \u2584\u2588\u2588\u2580\u2580\u2580\u2580\u2580\u2580  \u2580\u2580\u2580\u2580\u2580\u2580\u2588\u2588\u2584    \u2580\u2588\u2588\u258C     ", color: COLORS.purple }
+  ],
+  [
+    { text: "    \u2590\u2588\u2588   \u2584\u2588\u2588\u2580                    \u2580\u2588\u2588\u2584  \u2588\u2588\u258C   ", color: COLORS.purple }
+  ],
+  [
+    { text: "   \u2590\u2588\u2588   \u2588\u2588 ", color: COLORS.purple },
+    { text: "\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584", color: COLORS.cream },
+    { text: " \u2588\u2588   \u2588\u2588\u258C  ", color: COLORS.purple }
+  ],
+  [
+    { text: "   \u2588\u2588\u258C  \u2588\u2588 ", color: COLORS.purple },
+    { text: "\u2588\u2588 ", color: COLORS.cream },
+    { text: "\u2584\u2584\u2584", color: COLORS.ink },
+    { text: "      ", color: COLORS.cream },
+    { text: "\u2584\u2584\u2584", color: COLORS.ink },
+    { text: " \u2588\u2588", color: COLORS.cream },
+    { text: "  \u2588\u2588  \u2590\u2588\u2588   ", color: COLORS.purple }
+  ],
+  [
+    { text: "   \u2588\u2588\u258C  \u2588\u2588 ", color: COLORS.purple },
+    { text: "\u2588\u2588                  \u2588\u2588", color: COLORS.cream },
+    { text: "  \u2588\u2588  \u2590\u2588\u2588   ", color: COLORS.purple }
+  ],
+  [
+    { text: "   \u2590\u2588\u2588   \u2588\u2588 ", color: COLORS.purple },
+    { text: "\u2580\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2580", color: COLORS.cream },
+    { text: " \u2588\u2588   \u2588\u2588\u258C  ", color: COLORS.purple }
+  ],
+  [
+    { text: "    \u2580\u2588\u2588\u2584  \u2580\u2588\u2588\u2584                  \u2584\u2588\u2588\u2580  \u2584\u2588\u2588\u2580    ", color: COLORS.purple }
+  ],
+  [
+    { text: "      \u2580\u2588\u2588\u2584  \u2580\u2588\u2588\u2588\u2588\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2588\u2588\u2588\u2588\u2580  \u2584\u2588\u2588\u2580       ", color: COLORS.purple }
+  ],
+  [
+    { text: "        \u2580\u2588\u2588\u2588\u2588\u2584    \u2580\u2580\u2580\u2588\u2588\u2580\u2580\u2580    \u2584\u2588\u2588\u2588\u2588\u2580         ", color: COLORS.purple }
+  ],
+  [
+    { text: "           \u2580\u2588\u2588\u2588\u2588\u2584\u2584        \u2584\u2584\u2588\u2588\u2588\u2588\u2580            ", color: COLORS.purple }
+  ],
+  [
+    { text: "               \u2580\u2580\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2580\u2580                ", color: COLORS.purple }
+  ]
 ];
+var WORDMARK_ROWS = [
+  [{ text: "                     \u2726                     ", color: COLORS.lavender }],
+  [
+    { text: "      \u2584\u2588\u2588\u2588\u2588\u2584       \u2584\u2588\u2588\u2588\u2588\u2584    \u2584\u2588\u2588\u2588\u2588\u2588\u2588\u2584   \u2588\u2588\u2584      \u2588\u2588      ", color: COLORS.cream }
+  ],
+  [
+    { text: "     \u2588\u2588    \u2588\u2588        \u2588\u2588     \u2588\u2588      \u2588\u2588  \u2588\u2588\u2588\u2584     \u2588\u2588      ", color: COLORS.cream }
+  ],
+  [
+    { text: "    \u2588\u2588      \u2588\u2588       \u2588\u2588    \u2588\u2588        \u2588\u2588 \u2588\u2588 \u2588\u2588\u2584   \u2588\u2588      ", color: COLORS.cream }
+  ],
+  [
+    { text: "    \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588       \u2588\u2588    \u2588\u2588        \u2588\u2588 \u2588\u2588  \u2588\u2588\u2584  \u2588\u2588      ", color: COLORS.cream }
+  ],
+  [
+    { text: "    \u2588\u2588      \u2588\u2588       \u2588\u2588    \u2588\u2588        \u2588\u2588 \u2588\u2588   \u2588\u2588\u2584 \u2588\u2588      ", color: COLORS.cream }
+  ],
+  [
+    { text: "    \u2588\u2588      \u2588\u2588       \u2588\u2588     \u2588\u2588      \u2588\u2588  \u2588\u2588    \u2588\u2588\u2588\u2588\u2588      ", color: COLORS.cream }
+  ],
+  [
+    { text: "    \u2588\u2588      \u2588\u2588     \u2584\u2588\u2588\u2588\u2588\u2584    \u2580\u2588\u2588\u2588\u2588\u2588\u2588\u2580   \u2588\u2588      \u2588\u2588\u2588      ", color: COLORS.cream }
+  ]
+];
+var COMPACT_ROWS = [
+  [{ text: "\u2554\u2550\u2557\u2566\u2554\u2550\u2557\u2554\u2557\u2554  \u2554\u2550\u2557\u2554\u2550\u2557\u2554\u2550\u2557\u2554\u2557\u2554\u2554\u2566\u2557  \u2554\u2550\u2557\u2554\u2550\u2557\u2566", color: COLORS.purple }],
+  [{ text: "\u2560\u2550\u2563\u2551\u2551 \u2551\u2551\u2551\u2551  \u2560\u2550\u2563\u2551 \u2566\u2551\u2563 \u2551\u2551\u2551 \u2551   \u2560\u2550\u2563\u2560\u2550\u255D\u2551", color: COLORS.cream }],
+  [{ text: "\u2569 \u2569\u2569\u255A\u2550\u255D\u255D\u255A\u255D  \u2569 \u2569\u255A\u2550\u255D\u255A\u2550\u255D\u255D\u255A\u255D \u2569   \u2569 \u2569\u2569  \u2569", color: COLORS.cream }]
+];
+function renderRows(rows, keyPrefix) {
+  return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Box_default, { flexDirection: "column", children: rows.map((row, rowIndex) => /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Box_default, { children: row.map((segment, segmentIndex) => /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { color: segment.color, children: segment.text }, `${keyPrefix}-${rowIndex}-${segmentIndex}`)) }, `${keyPrefix}-${rowIndex}`)) });
+}
+function getLayout(width) {
+  if (width >= 150) {
+    return "wide";
+  }
+  if (width >= 96) {
+    return "stacked";
+  }
+  return "compact";
+}
 function HomeScreen({
   discoveredCount,
   discoveryState,
-  selectedAgentId
+  selectedAgentId,
+  terminalWidth,
+  mode = "standalone"
 }) {
+  const { stdout } = use_stdout_default();
+  const [liveWidth, setLiveWidth] = (0, import_react30.useState)(
+    terminalWidth ?? stdout?.columns ?? process.stdout.columns ?? 120
+  );
   const suffix = discoveredCount === 1 ? "" : "s";
-  return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Box_default, { flexGrow: 1, justifyContent: "center", alignItems: "center", children: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Box_default, { flexDirection: "column", alignItems: "center", children: [
-    AION_LOGO.map((line) => /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { color: "cyanBright", children: line }, line)),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Box_default, { marginTop: 1, flexDirection: "column", alignItems: "center", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { children: [
-        discoveredCount,
-        " agent",
-        suffix,
-        " discovered"
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { dimColor: true, children: discoveryState }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { color: selectedAgentId ? "green" : "gray", children: selectedAgentId ? `Selected agent: ${selectedAgentId}` : "Type @ to select an agent" })
-    ] })
-  ] }) });
+  (0, import_react30.useEffect)(() => {
+    if (terminalWidth !== void 0) {
+      setLiveWidth(terminalWidth);
+      return;
+    }
+    const handleResize = () => {
+      setLiveWidth(stdout?.columns ?? process.stdout.columns ?? 120);
+    };
+    handleResize();
+    stdout?.on("resize", handleResize);
+    return () => {
+      stdout?.off("resize", handleResize);
+    };
+  }, [stdout, terminalWidth]);
+  const layout = (0, import_react30.useMemo)(() => getLayout(liveWidth), [liveWidth]);
+  const outerProps = mode === "standalone" ? { flexGrow: 1, justifyContent: "center", alignItems: "center" } : { alignItems: "center" };
+  return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Box_default, { ...outerProps, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(
+    Box_default,
+    {
+      flexDirection: "column",
+      alignItems: "center",
+      marginTop: mode === "standalone" ? 2 : 1,
+      marginBottom: mode === "standalone" ? 2 : 1,
+      children: [
+        layout === "wide" ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Box_default, { alignItems: "center", children: [
+          renderRows(MASCOT_ROWS, "mascot"),
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Box_default, { marginLeft: 4, children: renderRows(WORDMARK_ROWS, "wordmark") })
+        ] }) : layout === "stacked" ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Box_default, { flexDirection: "column", alignItems: "center", children: [
+          renderRows(MASCOT_ROWS, "mascot"),
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Box_default, { marginTop: 2, children: renderRows(WORDMARK_ROWS, "wordmark") })
+        ] }) : renderRows(COMPACT_ROWS, "compact"),
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Box_default, { marginTop: 2, flexDirection: "column", alignItems: "center", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { color: COLORS.cream, children: [
+            discoveredCount,
+            " agent",
+            suffix,
+            " discovered"
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { dimColor: true, children: discoveryState }),
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { color: selectedAgentId ? "green" : COLORS.lavender, children: selectedAgentId ? `Selected agent: ${selectedAgentId}` : "Type @ to select an agent" })
+        ] })
+      ]
+    }
+  ) });
 }
 
 // src/lib/markdown.tsx
@@ -85095,40 +85246,40 @@ function upsertEntry(entries, entryId, role, body) {
 }
 function ChatApp({ options }) {
   const { exit } = use_app_default();
-  const [connectionState, setConnectionState] = (0, import_react29.useState)("connecting");
-  const [connectionLabel, setConnectionLabel] = (0, import_react29.useState)("Discovering agents...");
-  const [discoveryLabel, setDiscoveryLabel] = (0, import_react29.useState)("Scanning manifest...");
-  const [pushLabel, setPushLabel] = (0, import_react29.useState)(
+  const [connectionState, setConnectionState] = (0, import_react31.useState)("connecting");
+  const [connectionLabel, setConnectionLabel] = (0, import_react31.useState)("Discovering agents...");
+  const [discoveryLabel, setDiscoveryLabel] = (0, import_react31.useState)("Scanning manifest...");
+  const [pushLabel, setPushLabel] = (0, import_react31.useState)(
     options.pushNotifications ? "Starting..." : "Disabled"
   );
-  const [streamLabel, setStreamLabel] = (0, import_react29.useState)(options.noStream ? "Disabled" : "Idle");
-  const [agentName, setAgentName] = (0, import_react29.useState)("Unknown Agent");
-  const [draft, setDraft] = (0, import_react29.useState)("");
-  const [entries, setEntries] = (0, import_react29.useState)([]);
-  const [contextId, setContextId] = (0, import_react29.useState)();
-  const [taskId, setTaskId] = (0, import_react29.useState)();
-  const [clientState, setClientState] = (0, import_react29.useState)();
-  const [pushConfig, setPushConfig] = (0, import_react29.useState)();
-  const [discoveredAgents, setDiscoveredAgents] = (0, import_react29.useState)([]);
-  const [selectedAgentId, setSelectedAgentId] = (0, import_react29.useState)(
+  const [streamLabel, setStreamLabel] = (0, import_react31.useState)(options.noStream ? "Disabled" : "Idle");
+  const [agentName, setAgentName] = (0, import_react31.useState)("Unknown Agent");
+  const [draft, setDraft] = (0, import_react31.useState)("");
+  const [entries, setEntries] = (0, import_react31.useState)([]);
+  const [contextId, setContextId] = (0, import_react31.useState)();
+  const [taskId, setTaskId] = (0, import_react31.useState)();
+  const [clientState, setClientState] = (0, import_react31.useState)();
+  const [pushConfig, setPushConfig] = (0, import_react31.useState)();
+  const [discoveredAgents, setDiscoveredAgents] = (0, import_react31.useState)([]);
+  const [selectedAgentId, setSelectedAgentId] = (0, import_react31.useState)(
     options.agentId
   );
-  const [selectedSuggestionIndex, setSelectedSuggestionIndex] = (0, import_react29.useState)(0);
-  const [directFallback, setDirectFallback] = (0, import_react29.useState)(false);
-  const connectionSummary = (0, import_react29.useMemo)(() => {
+  const [selectedSuggestionIndex, setSelectedSuggestionIndex] = (0, import_react31.useState)(0);
+  const [directFallback, setDirectFallback] = (0, import_react31.useState)(false);
+  const connectionSummary = (0, import_react31.useMemo)(() => {
     if (!clientState) {
       return connectionLabel;
     }
     return `${clientState.endpoints.rpcUrl}`;
   }, [clientState, connectionLabel]);
-  const agentSuggestions = (0, import_react29.useMemo)(() => {
+  const agentSuggestions = (0, import_react31.useMemo)(() => {
     const mentionMatch = getAgentMentionMatch(draft);
     if (!mentionMatch) {
       return [];
     }
     return discoveredAgents.map((agent) => agent.id).filter((agentId) => agentId.startsWith(mentionMatch.query)).slice(0, 6);
   }, [discoveredAgents, draft]);
-  (0, import_react29.useEffect)(() => {
+  (0, import_react31.useEffect)(() => {
     setSelectedSuggestionIndex((current) => {
       if (agentSuggestions.length === 0) {
         return 0;
@@ -85136,7 +85287,7 @@ function ChatApp({ options }) {
       return Math.min(current, agentSuggestions.length - 1);
     });
   }, [agentSuggestions]);
-  (0, import_react29.useEffect)(() => {
+  (0, import_react31.useEffect)(() => {
     let closed = false;
     const discover = async () => {
       try {
@@ -85176,7 +85327,7 @@ function ChatApp({ options }) {
       closed = true;
     };
   }, [options.agentId, options.url]);
-  (0, import_react29.useEffect)(() => {
+  (0, import_react31.useEffect)(() => {
     let closed = false;
     let closePush;
     const handlePushEvent = (event) => {
@@ -85504,7 +85655,18 @@ ${JSON.stringify(
         discoveryState: discoveryLabel,
         selectedAgentId
       }
-    ) : entries.map((entry, index) => /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Box_default, { marginBottom: index < entries.length - 1 ? 1 : 0, children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(MessageBubble, { entry }) }, entry.id)) }),
+    ) : /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Box_default, { flexDirection: "column", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+        HomeScreen,
+        {
+          discoveredCount: discoveredAgents.length,
+          discoveryState: discoveryLabel,
+          selectedAgentId,
+          mode: "inline"
+        }
+      ),
+      entries.map((entry, index) => /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Box_default, { marginBottom: index < entries.length - 1 ? 1 : 0, children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(MessageBubble, { entry }) }, entry.id))
+    ] }) }),
     /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
       StatusBar,
       {

@@ -18,10 +18,11 @@ describe("Ink components", () => {
 			/>
 		);
 
-		expect(app.lastFrame()).toContain("Type @ to choose an agent");
+		expect(app.lastFrame()).toContain("Send message");
 		expect(app.lastFrame()).toContain("@command-agent");
 		expect(app.lastFrame()).toContain("Ctrl+C exits");
-		expect(app.lastFrame()).not.toContain("Tab completes agent");
+		expect(app.lastFrame()).toContain("Enter selects");
+		expect(app.lastFrame()).not.toContain("Composer");
 		app.unmount();
 	});
 
@@ -36,7 +37,8 @@ describe("Ink components", () => {
 			/>
 		);
 
-		expect(app.lastFrame()).toContain("Ctrl+C clears content");
+		expect(app.lastFrame()).toContain("Ctrl+C clears");
+		expect(app.lastFrame()).toContain("Enter sends");
 		expect(app.lastFrame()).not.toContain("Ctrl+C exits");
 		app.unmount();
 	});
@@ -63,6 +65,7 @@ describe("Ink components", () => {
 			<HomeScreen
 				discoveredCount={2}
 				discoveryState="Discovered 2 agents from the proxy manifest"
+				terminalWidth={160}
 			/>
 		);
 
