@@ -107,10 +107,17 @@ def resolve_chat2_command() -> list[str]:
     """Resolve the best available command for running the standalone UI.
 
     Resolution order:
-    1. Packaged macOS binary inside ``aion.cli.bin``.
-    2. Packaged Node bundle ``cli.mjs`` inside ``aion.cli.bin`` when ``node`` exists.
-    3. Source-checkout bundle in ``libs/aion-chat-ui/dist/cli.mjs`` when ``node`` exists.
+    1. Source-checkout bundle in ``libs/aion-chat-ui/dist/cli.mjs`` when ``node`` exists.
+    2. Packaged macOS binary inside ``aion.cli.bin``.
+    3. Packaged Node bundle ``cli.mjs`` inside ``aion.cli.bin`` when ``node`` exists.
     """
+
+    node_binary = shutil.which("node")
+    repo_root = _repo_root_from_checkout()
+    if repo_root and node_binary:
+        checkout_bundle = repo_root / "libs" / "aion-chat-ui" / "dist" / "cli.mjs"
+        if checkout_bundle.exists():
+            return [node_binary, str(checkout_bundle)]
 
     resource_root = _packaged_resource_root()
     try:
@@ -121,16 +128,9 @@ def resolve_chat2_command() -> list[str]:
     if binary_path and _is_executable(binary_path):
         return [str(binary_path)]
 
-    node_binary = shutil.which("node")
     packaged_js_bundle = resource_root / "cli.mjs"
     if node_binary and packaged_js_bundle.exists():
         return [node_binary, str(packaged_js_bundle)]
-
-    repo_root = _repo_root_from_checkout()
-    if repo_root and node_binary:
-        checkout_bundle = repo_root / "libs" / "aion-chat-ui" / "dist" / "cli.mjs"
-        if checkout_bundle.exists():
-            return [node_binary, str(checkout_bundle)]
 
     raise BinaryResolutionError(
         "Unable to locate the standalone chat2 artifact. "

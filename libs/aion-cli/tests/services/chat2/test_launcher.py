@@ -39,7 +39,7 @@ def test_chat2_launch_options_to_args() -> None:
 def test_resolve_chat2_command_prefers_packaged_binary(
     monkeypatch, tmp_path: Path
 ) -> None:
-    """Ensure packaged binaries win over JavaScript fallbacks when available."""
+    """Ensure packaged binaries win when no source-checkout UI is available."""
     binary = tmp_path / "aion-chat-ui-darwin-arm64"
     binary.write_text("#!/bin/sh\n")
     binary.chmod(0o755)
@@ -47,6 +47,7 @@ def test_resolve_chat2_command_prefers_packaged_binary(
     monkeypatch.setattr(launcher, "_packaged_resource_root", lambda: tmp_path)
     monkeypatch.setattr(launcher, "_platform_binary_name", lambda: binary.name)
     monkeypatch.setattr(launcher.shutil, "which", lambda _name: "/usr/bin/node")
+    monkeypatch.setattr(launcher, "_repo_root_from_checkout", lambda: None)
 
     assert launcher.resolve_chat2_command() == [str(binary)]
 
@@ -65,25 +66,27 @@ def test_resolve_chat2_command_falls_back_to_packaged_bundle(
         lambda: (_ for _ in ()).throw(launcher.BinaryResolutionError("unsupported")),
     )
     monkeypatch.setattr(launcher.shutil, "which", lambda _name: "/usr/bin/node")
+    monkeypatch.setattr(launcher, "_repo_root_from_checkout", lambda: None)
 
     assert launcher.resolve_chat2_command() == ["/usr/bin/node", str(bundle)]
 
 
-def test_resolve_chat2_command_uses_checkout_bundle(
+def test_resolve_chat2_command_prefers_checkout_bundle_over_packaged_artifacts(
     monkeypatch, tmp_path: Path
 ) -> None:
-    """Ensure source-checkout bundles remain runnable during local development."""
+    """Ensure source-checkout bundles win during local editable development."""
     repo_root = tmp_path / "repo"
     checkout_bundle = repo_root / "libs" / "aion-chat-ui" / "dist" / "cli.mjs"
     checkout_bundle.parent.mkdir(parents=True)
     checkout_bundle.write_text("console.log('checkout');\n")
+    packaged_bundle = tmp_path / "cli.mjs"
+    packaged_bundle.write_text("console.log('packaged');\n")
+    binary = tmp_path / "aion-chat-ui-darwin-arm64"
+    binary.write_text("#!/bin/sh\n")
+    binary.chmod(0o755)
 
     monkeypatch.setattr(launcher, "_packaged_resource_root", lambda: tmp_path)
-    monkeypatch.setattr(
-        launcher,
-        "_platform_binary_name",
-        lambda: (_ for _ in ()).throw(launcher.BinaryResolutionError("unsupported")),
-    )
+    monkeypatch.setattr(launcher, "_platform_binary_name", lambda: binary.name)
     monkeypatch.setattr(launcher.shutil, "which", lambda _name: "/usr/bin/node")
     monkeypatch.setattr(launcher, "_repo_root_from_checkout", lambda: repo_root)
 
