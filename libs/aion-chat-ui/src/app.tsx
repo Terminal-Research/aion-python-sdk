@@ -17,7 +17,6 @@ import {
 	type TranscriptEntry,
 	MessageBubble
 } from "./components/MessageBubble.js";
-import { StatusBar } from "./components/StatusBar.js";
 import {
 	clearAgentMention,
 	getAgentMentionMatch,
@@ -550,17 +549,13 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 					</Box>
 				)}
 			</Box>
-			<StatusBar
-				connectionState={connectionLabel}
-				pushState={pushLabel}
-				streamState={streamLabel}
-				discoveredAgents={discoveredAgents.length}
-				activeAgentId={selectedAgentId}
-			/>
 			<ChatComposer
 				connected={connectionState === "connected"}
 				draft={draft}
 				activeAgentId={selectedAgentId}
+				discoveredCount={discoveredAgents.length}
+				pushState={pushLabel}
+				streamState={streamLabel}
 				agentSuggestions={agentSuggestions}
 				selectedSuggestionIndex={selectedSuggestionIndex}
 			/>

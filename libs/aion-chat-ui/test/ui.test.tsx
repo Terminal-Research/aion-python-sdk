@@ -4,7 +4,6 @@ import { render } from "ink-testing-library";
 
 import { ChatComposer } from "../src/components/ChatComposer.js";
 import { HomeScreen } from "../src/components/HomeScreen.js";
-import { StatusBar } from "../src/components/StatusBar.js";
 
 describe("Ink components", () => {
 	it("renders the chat composer placeholder", () => {
@@ -13,15 +12,20 @@ describe("Ink components", () => {
 				connected={true}
 				draft=""
 				activeAgentId={undefined}
+				discoveredCount={2}
+				pushState="Disabled"
+				streamState="Idle"
 				agentSuggestions={["command-agent", "openrouter-chat"]}
 				selectedSuggestionIndex={0}
 			/>
 		);
 
 		expect(app.lastFrame()).toContain("Send message");
+		expect(app.lastFrame()).toContain("Discovered: 2");
 		expect(app.lastFrame()).toContain("@command-agent");
-		expect(app.lastFrame()).toContain("Ctrl+C exits");
-		expect(app.lastFrame()).toContain("Enter selects");
+		expect(app.lastFrame()).not.toContain("Stream: Idle");
+		expect(app.lastFrame()).not.toContain("Push:");
+		expect(app.lastFrame()).not.toContain("Ctrl+C");
 		expect(app.lastFrame()).not.toContain("Composer");
 		app.unmount();
 	});
@@ -32,31 +36,23 @@ describe("Ink components", () => {
 				connected={true}
 				draft="hello"
 				activeAgentId="command-agent"
+				discoveredCount={2}
+				pushState="Disabled"
+				streamState="Idle"
 				agentSuggestions={[]}
 				selectedSuggestionIndex={0}
 			/>
 		);
 
-		expect(app.lastFrame()).toContain("Ctrl+C clears");
+		expect(app.lastFrame()).toContain("Ctrl+C");
+		expect(app.lastFrame()).toContain("clears");
 		expect(app.lastFrame()).toContain("Enter sends");
+		expect(app.lastFrame()).toContain("@command-agent");
+		expect(app.lastFrame()).toContain("Stream: Idle");
+		expect(app.lastFrame()).toContain("Push:");
+		expect(app.lastFrame()).toContain("Disabled");
+		expect(app.lastFrame()).not.toContain("Discovered: 2");
 		expect(app.lastFrame()).not.toContain("Ctrl+C exits");
-		app.unmount();
-	});
-
-	it("renders the status bar values", () => {
-		const app = render(
-			<StatusBar
-				connectionState="Connected"
-				pushState="Disabled"
-				streamState="Idle"
-				discoveredAgents={2}
-				activeAgentId="command-agent"
-			/>
-		);
-
-		expect(app.lastFrame()).toContain("Connection: Connected");
-		expect(app.lastFrame()).toContain("Push: Disabled");
-		expect(app.lastFrame()).toContain("Agent: @command-agent");
 		app.unmount();
 	});
 
