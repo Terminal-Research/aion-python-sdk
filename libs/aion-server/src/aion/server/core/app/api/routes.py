@@ -23,7 +23,7 @@ class AionExtraHTTPRoutes:
 
         app.add_api_route(
             CONFIGURATION_FILE_URL,
-            self._handle_health_check,
+            self._handle_get_configuration_info,
             methods=["GET"],
             response_class=JSONResponse,
         )
