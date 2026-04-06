@@ -27,7 +27,6 @@ class Chat2LaunchOptions:
         headers: Additional HTTP headers.
         push_notifications: Whether to start the push notification receiver.
         push_receiver: Push notification receiver URL.
-        no_stream: Whether to force the non-streaming A2A path.
     """
 
     endpoint: str
@@ -36,7 +35,6 @@ class Chat2LaunchOptions:
     headers: dict[str, str]
     push_notifications: bool
     push_receiver: str
-    no_stream: bool
 
     def to_args(self) -> list[str]:
         """Convert the options to CLI arguments for the standalone UI."""
@@ -51,8 +49,6 @@ class Chat2LaunchOptions:
         if self.push_notifications:
             args.append("--push-notifications")
             args.extend(["--push-receiver", self.push_receiver])
-        if self.no_stream:
-            args.append("--no-stream")
 
         return args
 

@@ -28,7 +28,8 @@
     "ink": "^6.2.3",
     "marked": "^15.0.12",
     "react": "^19.0.0",
-    "uuid": "^11.1.0"
+    "uuid": "^11.1.0",
+    "yaml": "^2.8.3"
   },
   "devDependencies": {
     "@types/ink-testing-library": "^1.0.4",

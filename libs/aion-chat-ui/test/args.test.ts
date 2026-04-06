@@ -16,8 +16,7 @@ describe("parseArgs", () => {
 				"X-Test=one",
 				"--push-notifications",
 				"--push-receiver",
-				"http://localhost:5050",
-				"--no-stream"
+				"http://localhost:5050"
 			])
 		).toEqual({
 			url: "http://localhost:8000",
@@ -25,8 +24,7 @@ describe("parseArgs", () => {
 			token: "secret-token",
 			headers: { "X-Test": "one" },
 			pushNotifications: true,
-			pushReceiver: "http://localhost:5050",
-			noStream: true
+			pushReceiver: "http://localhost:5050"
 		});
 	});
 

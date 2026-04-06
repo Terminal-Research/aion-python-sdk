@@ -15,7 +15,6 @@ function buildOptions(overrides: Partial<ChatCliOptions> = {}): ChatCliOptions {
 		headers: {},
 		pushNotifications: false,
 		pushReceiver: "http://localhost:5000",
-		noStream: false,
 		...overrides
 	};
 }

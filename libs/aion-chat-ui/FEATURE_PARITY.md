@@ -11,7 +11,7 @@ the experimental Ink-based `aion chat2` experience.
 - [x] Root manifest discovery from `/.well-known/manifest.json`
 - [x] `@agent-id` composer selection with autocomplete
 - [x] Streaming A2A task consumption
-- [x] `--no-stream` fallback path
+- [x] Persistent slash-menu request and response modes
 - [x] Optional push-notification webhook listener
 - [x] Custom header injection
 - [x] Bearer token convenience flag

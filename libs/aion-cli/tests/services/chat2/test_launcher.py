@@ -17,7 +17,6 @@ def test_chat2_launch_options_to_args() -> None:
         headers={"X-Test": "one"},
         push_notifications=True,
         push_receiver="http://localhost:5050",
-        no_stream=True,
     )
 
     assert options.to_args() == [
@@ -32,7 +31,6 @@ def test_chat2_launch_options_to_args() -> None:
         "--push-notifications",
         "--push-receiver",
         "http://localhost:5050",
-        "--no-stream",
     ]
 
 
@@ -105,7 +103,6 @@ def test_launch_chat2_returns_process_exit_code(monkeypatch) -> None:
         headers={},
         push_notifications=False,
         push_receiver="http://localhost:5000",
-        no_stream=False,
     )
     recorded: dict[str, object] = {}
 

@@ -9,7 +9,6 @@ export interface ChatCliOptions {
 	headers: Record<string, string>;
 	pushNotifications: boolean;
 	pushReceiver: string;
-	noStream: boolean;
 }
 
 const HELP_TEXT = `
@@ -23,15 +22,16 @@ Options:
       --header <key=value>       Repeatable custom HTTP header
       --push-notifications       Enable the local push notification receiver
       --push-receiver <url>      Push notification receiver URL
-      --no-stream                Disable streaming even if the agent supports it
       --help                     Show this help text
       --version                  Print the package version
 
 Composer controls:
-  Enter     Insert newline
-  Ctrl+X    Send message
-  Esc       Clear draft
-  Ctrl+C    Exit
+  Enter          Send message or select the active menu item
+  Shift+Enter    Insert newline
+  @              Open the agent picker
+  /              Open the slash command picker
+  Esc            Dismiss the active menu or clear the draft
+  Ctrl+C         Clear the draft or exit when empty
 `.trim();
 
 function requireValue(argv: string[], index: number, option: string): string {
@@ -62,7 +62,6 @@ export function parseArgs(argv: string[]): ChatCliOptions {
 	let token: string | undefined;
 	let pushNotifications = false;
 	let pushReceiver = "http://localhost:5000";
-	let noStream = false;
 	const headers: Record<string, string> = {};
 
 	for (let index = 0; index < argv.length; index += 1) {
@@ -99,9 +98,6 @@ export function parseArgs(argv: string[]): ChatCliOptions {
 				pushReceiver = requireValue(argv, index, arg);
 				index += 1;
 				break;
-			case "--no-stream":
-				noStream = true;
-				break;
 			case "--help":
 				printHelp();
 				process.exit(0);
@@ -124,7 +120,6 @@ export function parseArgs(argv: string[]): ChatCliOptions {
 		token,
 		headers,
 		pushNotifications,
-		pushReceiver,
-		noStream
+		pushReceiver
 	};
 }

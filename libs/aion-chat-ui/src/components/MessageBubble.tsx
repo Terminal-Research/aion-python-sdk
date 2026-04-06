@@ -6,7 +6,7 @@ import { MarkdownBlock } from "../lib/markdown.js";
 export interface TranscriptEntry {
 	id: string;
 	body: string;
-	role: "agent" | "user" | "status" | "system";
+	role: "agent" | "user" | "status" | "system" | "protocol";
 }
 
 function colorsForRole(role: TranscriptEntry["role"]): {
@@ -21,6 +21,8 @@ function colorsForRole(role: TranscriptEntry["role"]): {
 			return { borderColor: "cyan", label: "You", labelColor: "cyan" };
 		case "status":
 			return { borderColor: "yellow", label: "Status", labelColor: "yellow" };
+		case "protocol":
+			return { borderColor: "blue", label: "A2A", labelColor: "blue" };
 		case "system":
 		default:
 			return { borderColor: "magenta", label: "System", labelColor: "magenta" };

@@ -6,10 +6,9 @@ import { ChatComposer } from "../src/components/ChatComposer.js";
 import { HomeScreen } from "../src/components/HomeScreen.js";
 
 describe("Ink components", () => {
-	it("renders the chat composer placeholder", () => {
+	it("renders the agent picker and hides the footer while the @ menu is open", () => {
 		const app = render(
 			<ChatComposer
-				connected={true}
 				draft=""
 				activeAgentId={undefined}
 				discoveredCount={2}
@@ -17,6 +16,9 @@ describe("Ink components", () => {
 				streamState="Idle"
 				agentSuggestions={["command-agent", "openrouter-chat"]}
 				selectedSuggestionIndex={0}
+				slashCommands={[]}
+				selectedSlashCommandIndex={0}
+				slashMenuVisible={false}
 			/>
 		);
 
@@ -26,14 +28,84 @@ describe("Ink components", () => {
 		expect(app.lastFrame()).not.toContain("Stream: Idle");
 		expect(app.lastFrame()).not.toContain("Push:");
 		expect(app.lastFrame()).not.toContain("Ctrl+C");
-		expect(app.lastFrame()).not.toContain("Composer");
+		app.unmount();
+	});
+
+	it("renders the slash command list and hides the footer while it is open", () => {
+		const app = render(
+			<ChatComposer
+				draft="/re"
+				activeAgentId="command-agent"
+				discoveredCount={2}
+				pushState="Disabled"
+				streamState="Idle"
+				agentSuggestions={[]}
+				selectedSuggestionIndex={0}
+				slashCommands={[
+					{
+						label: "/request",
+						description: "Choose how Aion Chat sends requests to the agents."
+					},
+					{
+						label: "/response",
+						description: "Choose how Aion Chat renders responses from the agents."
+					}
+				]}
+				selectedSlashCommandIndex={0}
+				slashMenuVisible={true}
+			/>
+		);
+
+		expect(app.lastFrame()).toContain("/request");
+		expect(app.lastFrame()).toContain("/response");
+		expect(app.lastFrame()).toContain("Choose how Aion Chat sends requests to the agents.");
+		expect(app.lastFrame()).not.toContain("Stream: Idle");
+		expect(app.lastFrame()).not.toContain("Ctrl+C");
+		app.unmount();
+	});
+
+	it("renders the slash submenu inside the composer", () => {
+		const app = render(
+			<ChatComposer
+				draft=""
+				activeAgentId="command-agent"
+				discoveredCount={2}
+				pushState="Disabled"
+				streamState="Idle"
+				agentSuggestions={[]}
+				selectedSuggestionIndex={0}
+				slashCommands={[]}
+				selectedSlashCommandIndex={0}
+				slashMenuVisible={false}
+				slashSubmenu={{
+					title: "Request Mode",
+					subtitle: "Choose how Aion Chat sends requests to the agents.",
+					options: [
+						{
+							label: "Send message",
+							description: "Send a synchronous request and wait for a single reply."
+						},
+						{
+							label: "Streaming message",
+							description:
+								"Send a streaming request and render incremental events as they arrive."
+						}
+					],
+					selectedIndex: 0
+				}}
+			/>
+		);
+
+		expect(app.lastFrame()).toContain("Request Mode");
+		expect(app.lastFrame()).toContain("1. Send message");
+		expect(app.lastFrame()).toContain("2. Streaming message");
+		expect(app.lastFrame()).not.toContain("Ctrl+C");
 		app.unmount();
 	});
 
 	it("renders the composer clear hint when draft content exists", () => {
 		const app = render(
 			<ChatComposer
-				connected={true}
 				draft="hello"
 				activeAgentId="command-agent"
 				discoveredCount={2}
@@ -41,6 +113,9 @@ describe("Ink components", () => {
 				streamState="Idle"
 				agentSuggestions={[]}
 				selectedSuggestionIndex={0}
+				slashCommands={[]}
+				selectedSlashCommandIndex={0}
+				slashMenuVisible={false}
 			/>
 		);
 

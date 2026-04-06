@@ -57,7 +57,6 @@ def test_chat2_launches_ui(monkeypatch) -> None:
             "--push-notifications",
             "--push-receiver",
             "http://localhost:5050",
-            "--no-stream",
         ],
     )
 
@@ -69,7 +68,6 @@ def test_chat2_launches_ui(monkeypatch) -> None:
     assert options.headers == {"X-Test": "one"}
     assert options.push_notifications is True
     assert options.push_receiver == "http://localhost:5050"
-    assert options.no_stream is True
 
 
 def test_chat2_reports_missing_artifact(monkeypatch) -> None:

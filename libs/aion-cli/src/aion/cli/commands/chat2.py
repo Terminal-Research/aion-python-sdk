@@ -49,12 +49,6 @@ from aion.cli.utils.header_parser import parse_headers
     default="http://localhost:5000",
     help="Push notification receiver URL.",
 )
-@click.option(
-    "--no-stream",
-    is_flag=True,
-    default=False,
-    help="Disable streaming even if the agent supports it.",
-)
 def chat2(
     endpoint: str,
     agent_id: Optional[str],
@@ -62,7 +56,6 @@ def chat2(
     header: tuple[str, ...],
     push_notifications: bool,
     push_receiver: str,
-    no_stream: bool,
 ) -> None:
     """Launch the experimental standalone Ink-based chat UI."""
     options = Chat2LaunchOptions(
@@ -72,7 +65,6 @@ def chat2(
         headers=parse_headers(header),
         push_notifications=push_notifications,
         push_receiver=push_receiver,
-        no_stream=no_stream,
     )
 
     try:
