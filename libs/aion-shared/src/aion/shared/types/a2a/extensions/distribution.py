@@ -15,12 +15,12 @@ __all__ = [
     "DISTRIBUTION_EXTENSION_URI_V1",
 ]
 
-DISTRIBUTION_EXTENSION_URI_V1 = "https://docs.aion.to/extensions/aion/distribution/1.0.0"
+DISTRIBUTION_EXTENSION_URI_V1 = "https://docs.aion.to/a2a/extensions/aion/distribution/1.0.0"
 
 
 class AgentIdentityRecord(A2ABaseModel):
     """Agent identity projection within a distribution."""
-    kind: Literal["agent"]
+    kind: Literal["principal"]
     id: str
     network_type: str
     organization_id: str
@@ -34,7 +34,7 @@ class AgentIdentityRecord(A2ABaseModel):
 
 class ExternalIdentityRecord(A2ABaseModel):
     """External identity projection within a distribution."""
-    kind: Literal["external"]
+    kind: Literal["service"]
     id: str
     network_type: str
     organization_id: str
@@ -72,6 +72,7 @@ class EnvironmentRecord(A2ABaseModel):
     name: str
     deployment_id: str
     configuration_variables: Dict[str, str]
+    daemon_agent_identity_id: Optional[str] = None
     system_prompt: Optional[str] = None
 
 

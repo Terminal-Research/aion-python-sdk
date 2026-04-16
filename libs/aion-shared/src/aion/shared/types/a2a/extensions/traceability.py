@@ -10,7 +10,7 @@ __all__ = [
     "TRACEABILITY_EXTENSION_URI_V1",
 ]
 
-TRACEABILITY_EXTENSION_URI_V1 = "https://docs.aion.to/extensions/aion/traceability/1.0.0"
+TRACEABILITY_EXTENSION_URI_V1 = "https://docs.aion.to/a2a/extensions/aion/traceability/1.0.0"
 
 
 class TraceStateEntry(A2ABaseModel):

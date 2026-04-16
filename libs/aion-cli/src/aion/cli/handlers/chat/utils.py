@@ -42,7 +42,7 @@ class A2ARequestHelper:
                 url="https://example.com/agent-card",
                 identities=[
                     AgentIdentityRecord(
-                        kind="agent",
+                        kind="principal",
                         id=str(uuid.uuid4()),
                         network_type="Aion",
                         represented_user_id=str(uuid.uuid4()),
