@@ -12,10 +12,7 @@ __all__ = [
     "BehaviorRecord",
     "EnvironmentRecord",
     "DistributionExtensionV1",
-    "DISTRIBUTION_EXTENSION_URI_V1",
 ]
-
-DISTRIBUTION_EXTENSION_URI_V1 = "https://docs.aion.to/a2a/extensions/aion/distribution/1.0.0"
 
 
 class AgentIdentityRecord(A2ABaseModel):

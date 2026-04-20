@@ -3,16 +3,11 @@ from typing import Any, Dict, Literal, Optional
 from aion.shared.a2a import A2ABaseModel
 
 __all__ = [
-    "MESSAGING_EXTENSION_URI_V1",
     "MessageEventPayload",
     "ReactionEventPayload",
     "CommandEventPayload",
     "SourceSystemEventPayload",
 ]
-
-MESSAGING_EXTENSION_URI_V1 = (
-    "https://docs.aion.to/a2a/extensions/aion/distribution/messaging/1.0.0"
-)
 
 
 class MessageEventPayload(A2ABaseModel):

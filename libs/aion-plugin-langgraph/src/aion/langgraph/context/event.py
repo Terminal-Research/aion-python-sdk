@@ -23,4 +23,6 @@ class Event:
     """Typed inbound event extracted from an A2A inbox message."""
 
     kind: EventKind
+    """Type of event: 'message', 'reaction', 'command', or 'card_action'."""
     payload: NormalizedPayload
+    """Normalized event payload matching the event kind (MessageEventPayload, ReactionEventPayload, etc.)."""

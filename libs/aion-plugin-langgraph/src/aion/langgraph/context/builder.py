@@ -1,31 +1,30 @@
 from __future__ import annotations
 
-from typing import Callable, Optional
-
-from google.protobuf.json_format import MessageToDict
-
+from aion.shared.constants import (
+    CARD_ACTION_EVENT_PAYLOAD_SCHEMA_V1,
+    COMMAND_EVENT_PAYLOAD_SCHEMA_V1,
+    DISTRIBUTION_EXTENSION_URI_V1,
+    EVENT_EXTENSION_URI_V1,
+    MESSAGE_EVENT_PAYLOAD_SCHEMA_V1,
+    REACTION_EVENT_PAYLOAD_SCHEMA_V1,
+    SOURCE_SYSTEM_EVENT_PAYLOAD_SCHEMA_V1,
+)
 from aion.shared.logging import get_logger
 from aion.shared.types.a2a import A2AInbox
-from aion.shared.types.a2a.extensions.cards import (
-    CARDS_EXTENSION_URI_V1,
-    CardActionEventPayload,
-)
-from aion.shared.types.a2a.extensions.distribution import (
-    DISTRIBUTION_EXTENSION_URI_V1,
-    DistributionExtensionV1,
-)
+from aion.shared.types.a2a.extensions.cards import CardActionEventPayload
+from aion.shared.types.a2a.extensions.distribution import DistributionExtensionV1
 from aion.shared.types.a2a.extensions.event import (
-    EVENT_EXTENSION_URI_V1,
     EventMessageMetadataV1,
     EventPartMetadataV1,
 )
 from aion.shared.types.a2a.extensions.messaging import (
-    MESSAGING_EXTENSION_URI_V1,
     CommandEventPayload,
     MessageEventPayload,
     ReactionEventPayload,
     SourceSystemEventPayload,
 )
+from google.protobuf.json_format import MessageToDict
+from typing import Optional
 
 from .context import AionContext
 from .event import Event, EventKind, NormalizedPayload
@@ -43,23 +42,18 @@ _EVENT_TYPE_MAP: dict[str, EventKind] = {
 }
 
 _SCHEMA_TO_PAYLOAD_CLS = {
-    f"{MESSAGING_EXTENSION_URI_V1}#MessageEventPayload": MessageEventPayload,
-    f"{MESSAGING_EXTENSION_URI_V1}#ReactionEventPayload": ReactionEventPayload,
-    f"{MESSAGING_EXTENSION_URI_V1}#CommandEventPayload": CommandEventPayload,
-    f"{CARDS_EXTENSION_URI_V1}#CardActionEventPayload": CardActionEventPayload,
+    MESSAGE_EVENT_PAYLOAD_SCHEMA_V1: MessageEventPayload,
+    REACTION_EVENT_PAYLOAD_SCHEMA_V1: ReactionEventPayload,
+    COMMAND_EVENT_PAYLOAD_SCHEMA_V1: CommandEventPayload,
+    CARD_ACTION_EVENT_PAYLOAD_SCHEMA_V1: CardActionEventPayload,
 }
-
-_SOURCE_SYSTEM_SCHEMA = f"{MESSAGING_EXTENSION_URI_V1}#SourceSystemEventPayload"
 
 
 class AionContextBuilder:
 
     @staticmethod
     def build(
-        inbox: A2AInbox,
-        reply_fn: Callable,
-        history_fn: Callable,
-        typing_fn: Callable,
+            inbox: A2AInbox,
     ) -> AionContext:
         if DISTRIBUTION_EXTENSION_URI_V1 not in inbox.metadata:
             raise ValueError(f"Missing distribution extension: {DISTRIBUTION_EXTENSION_URI_V1}")
@@ -75,9 +69,6 @@ class AionContextBuilder:
             parent_id=getattr(payload, "parent_context_id", None),
             network=dist_ext.distribution.endpoint_type,
             default_reply_target=getattr(payload, "trajectory", None),
-            _reply_fn=reply_fn,
-            _history_fn=history_fn,
-            _typing_fn=typing_fn,
         )
 
         message = None
@@ -149,7 +140,7 @@ class AionContextBuilder:
                 continue
             part_meta_dict = MessageToDict(part.metadata[EVENT_EXTENSION_URI_V1])
             part_meta = EventPartMetadataV1.model_validate(part_meta_dict)
-            if part_meta.schema_uri == _SOURCE_SYSTEM_SCHEMA:
+            if part_meta.schema_uri == SOURCE_SYSTEM_EVENT_PAYLOAD_SCHEMA_V1:
                 source = SourceSystemEventPayload.model_validate(MessageToDict(part.data))
                 return source.event
         return None

@@ -4,6 +4,8 @@ export const DISTRIBUTION_EXTENSION_URI_V1 =
 	"https://docs.aion.to/a2a/extensions/aion/distribution/1.0.0";
 export const EVENT_EXTENSION_URI_V1 =
 	"https://docs.aion.to/a2a/extensions/aion/event/1.0.0";
+export const MESSAGING_EXTENSION_URI_V1 =
+	"https://docs.aion.to/a2a/extensions/aion/distribution/messaging/1.0.0";
 export const TRACEABILITY_EXTENSION_URI_V1 =
 	"https://docs.aion.to/a2a/extensions/aion/traceability/1.0.0";
 export const STREAM_DELTA_ARTIFACT_ID = "aion:stream-delta";
