@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Union
 from uuid import uuid4
 
 from a2a.types import Artifact, Part
@@ -18,6 +18,14 @@ from ..events.custom_events import ArtifactCustomEvent
 from ..stream import emit_message
 
 logger = get_logger()
+
+ReplyResult = Optional[Union[AIMessage, Artifact]]
+"""Return type of Thread.reply(): the object that was sent, or None if nothing was sent.
+
+- AIMessage / AIMessageChunk (subclass) — a text message or streaming chunk
+- Artifact — a card or other artifact
+- None — writer was unavailable; nothing was sent
+"""
 
 
 @dataclass
@@ -66,7 +74,7 @@ class Thread:
             writer,
             content: str,
             metadata: dict | None = None,
-    ) -> None:
+    ) -> ReplyResult:
         """Emit string content as either plain text or a JSX card document.
 
         If the string starts with <Card markup, it's treated as a JSX card document.
@@ -76,47 +84,60 @@ class Thread:
             writer: LangGraph StreamWriter
             content: String content to emit
             metadata: Optional metadata to attach to the message
+
+        Returns:
+            The emitted AIMessage for plain text, or the Artifact for JSX card documents.
         """
         if self._detect_jsx_card_markup(content):
-            await self._emit_jsx_card_as_artifact(writer, content, metadata)
+            return await self._emit_jsx_card_as_artifact(writer, content, metadata)
         else:
             msg = AIMessage(content=content, metadata=metadata)
             emit_message(writer, msg)
+            return msg
 
-    async def reply(self, content: Any, *, metadata: dict | None = None) -> None:
+    async def reply(self, content: Any, *, metadata: dict | None = None) -> ReplyResult:
         """Add a durable reply to the current thread via LangGraph stream.
 
         Supports multiple content types:
         - str: plain text or JSX-like card document
         - AIMessage: full message with optional metadata
-        - AIMessageChunk: streaming message chunk
-        - async iterator: yields text chunks or AIMessageChunk objects
-          Chunks are streamed in real-time, and accumulated into a final durable message
+        - AIMessageChunk: single streaming chunk
+        - async iterator: yields str or AIMessageChunk objects;
+          chunks are streamed in real-time and accumulated into a final durable AIMessage
         - TODO: message builder for low-level message construction
 
         Args:
             content: Message content in one of the supported formats
             metadata: Optional metadata dict to attach to the final message
+
+        Returns:
+            The object that was sent:
+            - AIMessage for str, AIMessage, or accumulated async iterator
+            - AIMessageChunk for a single chunk
+            - Artifact for JSX card documents
+            - None if the writer was unavailable (nothing was sent)
         """
         writer = self._get_writer()
         if writer is None:
-            return
+            return None
 
         # Plain text or JSX card document
         if isinstance(content, str):
-            await self._emit_string_as_text_or_card_document(writer, content, metadata)
+            return await self._emit_string_as_text_or_card_document(writer, content, metadata)
 
         # Full AIMessage
         elif isinstance(content, AIMessage):
             emit_message(writer, content)
+            return content
 
         # Single AIMessageChunk (streaming chunk, not accumulated)
         elif isinstance(content, AIMessageChunk):
             emit_message(writer, content)
+            return content
 
         # Async iterator: stream chunks + accumulate final message
         elif hasattr(content, '__aiter__'):
-            await self._stream_from_async_iterator(writer, content, metadata)
+            return await self._stream_from_async_iterator(writer, content, metadata)
 
         else:
             logger.warning(
@@ -124,13 +145,14 @@ class Thread:
                 "Supported types: str, AIMessage, AIMessageChunk, async iterator.",
                 type(content).__name__,
             )
+            return None
 
     @staticmethod
     async def _stream_from_async_iterator(
             writer,
             iterator: Any,
             metadata: dict | None = None,
-    ) -> None:
+    ) -> Optional[AIMessage]:
         """Stream chunks in real-time while accumulating content, then emit final durable message.
 
         For each chunk yielded by iterator:
@@ -144,18 +166,18 @@ class Thread:
             writer: LangGraph StreamWriter
             iterator: Async iterator yielding str or AIMessageChunk objects
             metadata: Optional metadata to attach to the final durable message
+
+        Returns:
+            The final accumulated AIMessage, or None if nothing was accumulated.
         """
         accumulated = ""
         try:
             async for chunk in iterator:
                 if isinstance(chunk, str):
-                    # Wrap string chunk in AIMessageChunk and emit for streaming
                     emit_message(writer, AIMessageChunk(content=chunk))
                     accumulated += chunk
                 elif isinstance(chunk, AIMessageChunk):
-                    # Emit chunk directly for streaming
                     emit_message(writer, chunk)
-                    # Accumulate the text content if available
                     if chunk.content:
                         accumulated += chunk.content
                 else:
@@ -171,17 +193,19 @@ class Thread:
                 exc_info=True,
             )
 
-        # Emit accumulated message as the final durable reply
         if accumulated:
             msg = AIMessage(content=accumulated, metadata=metadata)
             emit_message(writer, msg)
+            return msg
+
+        return None
 
     @staticmethod
     async def _emit_jsx_card_as_artifact(
             writer,
             card_jsx: str,
             metadata: dict | None = None,
-    ) -> None:
+    ) -> Artifact:
         """Emit JSX card as an A2A artifact with card payload metadata extension.
 
         JSX card document is encoded as a Part, wrapped in an Artifact, and emitted
@@ -191,26 +215,25 @@ class Thread:
             writer: LangGraph StreamWriter
             card_jsx: JSX-like card document string to emit
             metadata: Optional metadata to merge with card payload metadata
+
+        Returns:
+            The emitted Artifact.
         """
-        # Card payload metadata according to spec
         card_metadata = {
             CARDS_EXTENSION_URI_V1: {
                 "schema": CARDS_PAYLOAD_SCHEMA_V1
             }
         }
 
-        # Merge with user-provided metadata if any
         if metadata:
             card_metadata.update(metadata)
 
-        # Create a file part with the JSX card document
         card_part = Part(
             raw=card_jsx.encode("utf-8"),
             media_type=CARDS_MEDIA_TYPE,
             metadata=card_metadata,
         )
 
-        # Wrap in an artifact and emit via ArtifactCustomEvent
         card_artifact = Artifact(
             artifact_id=str(uuid4()),
             name="card",
@@ -218,6 +241,7 @@ class Thread:
         )
 
         writer(ArtifactCustomEvent(artifact=card_artifact, is_last_chunk=True))
+        return card_artifact
 
     @staticmethod
     async def post(content, *, target=None, metadata=None) -> None:
