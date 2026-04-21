@@ -13,7 +13,8 @@ export interface ChatCliOptions {
 
 const HELP_TEXT = `
 Usage:
-  aion-chat-ui [options]
+  aio [options]
+  aion-chat [options]
 
 Options:
   -u, --url, --host <endpoint>   Agent or proxy URL to connect to (default: ${DEFAULT_PROXY_URL})

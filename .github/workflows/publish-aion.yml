@@ -1,0 +1,65 @@
+name: Publish Aion npm package
+
+on:
+  release:
+    types:
+      - published
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: libs/aion-chat-ui
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.14.0
+          registry-url: https://registry.npmjs.org
+          cache: npm
+          cache-dependency-path: libs/aion-chat-ui/package-lock.json
+
+      - name: Upgrade npm for trusted publishing
+        run: npm install --global npm@^11.5.1
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build package
+        run: npm run build
+
+      - name: Verify release tag matches package version
+        if: github.event_name == 'release'
+        run: |
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          RELEASE_TAG="${{ github.event.release.tag_name }}"
+          EXPECTED_TAG="v${PACKAGE_VERSION}"
+
+          if [ "$RELEASE_TAG" != "$EXPECTED_TAG" ]; then
+            echo "Release tag $RELEASE_TAG does not match package version $EXPECTED_TAG" >&2
+            exit 1
+          fi
+
+      - name: Publish prerelease to npm next
+        if: github.event_name == 'release' && github.event.release.prerelease
+        run: npm publish --tag next
+
+      - name: Publish release to npm latest
+        if: github.event_name == 'release' && !github.event.release.prerelease
+        run: npm publish
+
+      - name: Pack tarball for manual inspection
+        if: github.event_name == 'workflow_dispatch'
+        run: npm pack
