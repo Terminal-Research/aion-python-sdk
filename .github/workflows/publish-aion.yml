@@ -54,11 +54,11 @@ jobs:
 
       - name: Publish prerelease to npm next
         if: github.event_name == 'release' && github.event.release.prerelease
-        run: npm publish --tag next
+        run: npm publish --access public --tag next
 
       - name: Publish release to npm latest
         if: github.event_name == 'release' && !github.event.release.prerelease
-        run: npm publish
+        run: npm publish --access public
 
       - name: Pack tarball for manual inspection
         if: github.event_name == 'workflow_dispatch'

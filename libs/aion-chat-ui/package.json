@@ -5,8 +5,8 @@
   "type": "module",
   "description": "Terminal chat UI for Aion agents, published as the aio CLI.",
   "bin": {
-    "aio": "./dist/cli.mjs",
-    "aion-chat": "./dist/cli.mjs"
+    "aio": "bin/aio",
+    "aion-chat": "bin/aion-chat"
   },
   "engines": {
     "node": ">=22.0.0"
@@ -44,6 +44,7 @@
     "vitest": "^3.0.9"
   },
   "files": [
+    "bin",
     "dist",
     "README.md"
   ],
@@ -53,7 +54,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+ssh://git@github.com/Terminal-Research/aion-python-sdk.git",
+    "url": "git+https://github.com/Terminal-Research/aion-python-sdk.git",
     "directory": "libs/aion-chat-ui"
   },
   "homepage": "https://github.com/Terminal-Research/aion-python-sdk/tree/main/libs/aion-chat-ui",
