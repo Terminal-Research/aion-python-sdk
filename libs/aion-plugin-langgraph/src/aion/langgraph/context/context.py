@@ -22,7 +22,7 @@ class AionContext:
     """Current conversation thread with metadata and reply routing information."""
     message: Optional[Message]
     """Normalized inbound message, None for non-message events (reactions, commands, card actions)."""
-    event: Event
-    """Typed event with kind ('message', 'reaction', 'command', 'card_action') and normalized payload."""
-    self: AgentIdentity
-    """Agent identity and metadata for the agent handling this invocation."""
+    event: Optional[Event]
+    """Typed event with kind and normalized payload. None for direct A2A requests without event metadata."""
+    self: Optional[AgentIdentity]
+    """Agent identity and metadata for the agent handling this invocation. None for direct A2A requests."""

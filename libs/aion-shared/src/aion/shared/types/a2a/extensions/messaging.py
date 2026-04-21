@@ -16,7 +16,7 @@ class MessageEventPayload(A2ABaseModel):
     user_id: str
     context_id: str
     message_id: str
-    trajectory: Literal["direct-message", "reply", "timeline", "conversation"]
+    trajectory: str
     parent_context_id: Optional[str] = None
 
 

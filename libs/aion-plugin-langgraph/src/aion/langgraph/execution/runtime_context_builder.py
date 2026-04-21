@@ -48,5 +48,5 @@ class RuntimeContextBuilder:
             )
             return None
         except Exception as e:
-            logger.warning("Failed to build AionContext: %s", e)
+            logger.exception("Failed to build AionContext: %s", e)
             return None

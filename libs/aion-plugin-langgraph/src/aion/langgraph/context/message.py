@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from aion.shared.logging import get_logger
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from .thread import Thread
@@ -14,7 +14,7 @@ logger = get_logger()
 class User:
     """Sender identity on the source network."""
 
-    id: str
+    id: Optional[str]
     """Unique identifier of the user who sent the message on the source network."""
 
 
@@ -30,9 +30,6 @@ class Message:
     """Identity of the user who sent this message."""
     thread: Thread
     """Thread context this message belongs to."""
-    raw: Optional[Any]
-    """Raw provider event payload from SourceSystemEventPayload, or None if not available.
-    Provides access to original provider-specific data for advanced use cases."""
 
     async def reply(self, content, *, metadata=None) -> None:
         """Convenience wrapper: delegates to thread.reply()."""

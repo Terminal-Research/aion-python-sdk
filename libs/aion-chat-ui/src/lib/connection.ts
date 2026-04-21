@@ -18,11 +18,7 @@ import {
 } from "@a2a-js/sdk/client";
 
 import type { ChatCliOptions } from "../args.js";
-import {
-	generateTaskMetadata,
-	EVENT_EXTENSION_URI_V1,
-	MESSAGING_EXTENSION_URI_V1
-} from "./a2aMetadata.js";
+import { generateTaskMetadata } from "./a2aMetadata.js";
 
 export interface EndpointConfig {
 	baseUrl: string;
@@ -190,40 +186,14 @@ export function buildMessageParams(
 	taskId: string | undefined,
 	pushNotificationConfig?: PushNotificationConfig
 ): MessageSendParams {
-	const messageId = randomUUID();
-	const userId = "aion:user:2244994945";
-
 	return {
 		message: {
 			kind: "message",
-			messageId,
+			messageId: randomUUID(),
 			role: "user",
 			taskId,
 			contextId,
-			parts: [
-				{ kind: "text", text: prompt },
-				{
-					kind: "data",
-					data: {
-						user_id: userId,
-						context_id: contextId || randomUUID(),
-						message_id: messageId,
-						trajectory: "direct-message" as const
-					},
-					metadata: {
-						[EVENT_EXTENSION_URI_V1]: {
-							schema: `${MESSAGING_EXTENSION_URI_V1}#MessageEventPayload`
-						}
-					}
-				}
-			],
-			metadata: {
-				[EVENT_EXTENSION_URI_V1]: {
-					type: "to.aion.distribution.message.1.0.0",
-					source: "aion://local/cli",
-					id: randomUUID()
-				}
-			}
+			parts: [{ kind: "text", text: prompt }]
 		},
 		metadata: generateTaskMetadata(),
 		configuration: {

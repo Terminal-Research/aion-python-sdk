@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 
 from aion.shared.constants import (
@@ -27,7 +28,7 @@ from google.protobuf.json_format import MessageToDict
 from typing import Optional
 
 from .context import AionContext
-from .event import Event, EventKind, NormalizedPayload
+from .event import Event, NormalizedPayload, EventKind
 from .identity import AgentIdentity
 from .message import Message, User
 from .thread import Thread
@@ -55,31 +56,64 @@ class AionContextBuilder:
     def build(
             inbox: A2AInbox,
     ) -> AionContext:
-        if DISTRIBUTION_EXTENSION_URI_V1 not in inbox.metadata:
-            raise ValueError(f"Missing distribution extension: {DISTRIBUTION_EXTENSION_URI_V1}")
+        if DISTRIBUTION_EXTENSION_URI_V1 in inbox.metadata:
+            return AionContextBuilder._build_from_distribution(inbox)
+        return AionContextBuilder._build_without_distribution(inbox)
 
+    @staticmethod
+    def _build_from_distribution(inbox: A2AInbox) -> AionContext:
         dist_dict = MessageToDict(inbox.metadata[DISTRIBUTION_EXTENSION_URI_V1])
         dist_ext = DistributionExtensionV1.model_validate(dist_dict)
 
-        event = AionContextBuilder._extract_event(inbox)
-        payload = event.payload
+        has_event = (
+                inbox.message is not None
+                and EVENT_EXTENSION_URI_V1 in inbox.message.metadata
+        )
+
+        event = AionContextBuilder._extract_event(inbox) if has_event else None
+
+        payload = event.payload if event is not None else None
+        context_id = getattr(payload, "context_id", None)
+        if context_id is None:
+            if inbox.message is not None and inbox.message.context_id:
+                context_id = inbox.message.context_id
+            elif inbox.task is not None and inbox.task.context_id:
+                context_id = inbox.task.context_id
+            else:
+                raise ValueError("context_id is missing and no task context available to use as fallback")
+
+        trajectory = getattr(payload, "trajectory", None)
+        parent_context_id = getattr(payload, "parent_context_id", None)
+        default_reply_target = (
+            parent_context_id
+            if trajectory == "reply" and parent_context_id
+            else context_id
+        )
 
         thread = Thread(
-            id=payload.context_id,
-            parent_id=getattr(payload, "parent_context_id", None),
+            id=context_id,
+            parent_id=parent_context_id,
             network=dist_ext.distribution.endpoint_type,
-            default_reply_target=getattr(payload, "trajectory", None),
+            default_reply_target=default_reply_target,
         )
 
         message = None
-        if event.kind == "message":
+        if event is not None and event.kind == "message":
             message = Message(
-                id=payload.message_id,
+                id=getattr(payload, "message_id", inbox.message.message_id),
                 text=AionContextBuilder._extract_text(inbox),
-                user=User(id=payload.user_id),
+                user=User(id=getattr(payload, "user_id", None)),
                 thread=thread,
-                raw=AionContextBuilder._extract_raw(inbox),
             )
+        elif event is None and inbox.message is not None:
+            text = AionContextBuilder._extract_text(inbox)
+            if text is not None:
+                message = Message(
+                    id=inbox.message.message_id,
+                    text=text,
+                    user=User(id=None),
+                    thread=thread,
+                )
 
         return AionContext(
             inbox=inbox,
@@ -90,10 +124,46 @@ class AionContextBuilder:
         )
 
     @staticmethod
+    def _build_without_distribution(inbox: A2AInbox) -> AionContext:
+        context_id = None
+        if inbox.message is not None and inbox.message.context_id:
+            context_id = inbox.message.context_id
+        elif inbox.task is not None and inbox.task.context_id:
+            context_id = inbox.task.context_id
+        if context_id is None:
+            raise ValueError("context_id is missing in direct A2A request")
+
+        thread = Thread(
+            id=context_id,
+            parent_id=None,
+            network="A2A",
+            default_reply_target=None,
+        )
+
+        message = None
+        if inbox.message is not None:
+            text = AionContextBuilder._extract_text(inbox)
+            if text is not None:
+                message = Message(
+                    id=inbox.message.message_id,
+                    text=text,
+                    user=User(id=None),
+                    thread=thread,
+                )
+
+        return AionContext(
+            inbox=inbox,
+            thread=thread,
+            message=message,
+            event=None,
+            self=None,
+        )
+
+    @staticmethod
     def _extract_event(inbox: A2AInbox) -> Event:
         message = inbox.message
         if message is None:
-            raise ValueError("A2AInbox.message is required to build AionContext")
+            raise ValueError("A2AInbox.message is missing")
 
         if EVENT_EXTENSION_URI_V1 not in message.metadata:
             raise ValueError(f"Missing event metadata: {EVENT_EXTENSION_URI_V1}")
@@ -103,9 +173,10 @@ class AionContextBuilder:
 
         kind = _EVENT_TYPE_MAP.get(event_meta.type)
         if kind is None:
-            raise ValueError(f"Unknown event type: {event_meta.type}")
+            raise ValueError(f"Unrecognized event type: {event_meta.type}")
 
         payload: Optional[NormalizedPayload] = None
+        raw: Optional[SourceSystemEventPayload] = None
         for part in message.parts:
             if EVENT_EXTENSION_URI_V1 not in part.metadata:
                 continue
@@ -116,10 +187,13 @@ class AionContextBuilder:
             if payload_cls is not None and payload is None:
                 payload = payload_cls.model_validate(MessageToDict(part.data))
 
+            if part_meta.schema_uri == SOURCE_SYSTEM_EVENT_PAYLOAD_SCHEMA_V1 and raw is None:
+                raw = SourceSystemEventPayload.model_validate(MessageToDict(part.data))
+
         if payload is None:
             raise ValueError(f"No recognized payload found for event kind: {kind}")
 
-        return Event(kind=kind, payload=payload)
+        return Event(kind=kind, payload=payload, id=event_meta.id, source=event_meta.source, raw=raw)
 
     @staticmethod
     def _extract_text(inbox: A2AInbox) -> Optional[str]:
@@ -128,19 +202,4 @@ class AionContextBuilder:
         for part in inbox.message.parts:
             if part.text:
                 return part.text
-        return None
-
-    @staticmethod
-    def _extract_raw(inbox: A2AInbox) -> Optional[dict]:
-        """Extract raw provider event from SourceSystemEventPayload."""
-        if inbox.message is None:
-            return None
-        for part in inbox.message.parts:
-            if EVENT_EXTENSION_URI_V1 not in part.metadata:
-                continue
-            part_meta_dict = MessageToDict(part.metadata[EVENT_EXTENSION_URI_V1])
-            part_meta = EventPartMetadataV1.model_validate(part_meta_dict)
-            if part_meta.schema_uri == SOURCE_SYSTEM_EVENT_PAYLOAD_SCHEMA_V1:
-                source = SourceSystemEventPayload.model_validate(MessageToDict(part.data))
-                return source.event
         return None
