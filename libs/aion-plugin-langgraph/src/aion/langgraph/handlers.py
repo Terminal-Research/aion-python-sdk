@@ -55,7 +55,16 @@ def add_event_handlers(
             logger.warning("No context found in runtime")
             return END
 
-        kind = runtime.context.event.kind
+        event = runtime.context.event
+        if event is None:
+            if on_message is not None and runtime.context.message is not None:
+                return on_message.__name__
+            if on_event is not None:
+                return on_event.__name__
+            logger.warning("No event found in runtime context and no fallback handler registered")
+            return END
+
+        kind = event.kind
         handler = _kind_to_handler.get(kind) or on_event
         if handler is None:
             logger.warning("No handler registered for event kind: %s", kind)
