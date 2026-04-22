@@ -31,7 +31,6 @@ Composer controls:
   Shift+Enter    Insert newline
   @              Open the agent picker
   /              Open the slash command picker
-  /clear         Clear the transcript
   Esc            Dismiss the active menu or clear the draft
   Ctrl+C         Clear the draft or exit when empty
 `.trim();

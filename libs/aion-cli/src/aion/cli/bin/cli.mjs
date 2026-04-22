@@ -88523,7 +88523,8 @@ import { readFileSync as readFileSync2 } from "fs";
 var DEFAULT_PROXY_URL = "http://localhost:8000";
 var HELP_TEXT = `
 Usage:
-  aion-chat-ui [options]
+  aio [options]
+  aion-chat [options]
 
 Options:
   -u, --url, --host <endpoint>   Agent or proxy URL to connect to (default: ${DEFAULT_PROXY_URL})
@@ -88667,6 +88668,14 @@ var RESPONSE_MODE_OPTIONS = [
 ];
 var SLASH_COMMANDS = [
   {
+    id: "clear",
+    label: "/clear",
+    description: "Clear the visible transcript and start fresh.",
+    title: "Clear Transcript",
+    subtitle: "Clear the visible transcript and start fresh.",
+    options: []
+  },
+  {
     id: "request",
     label: "/request",
     description: "Choose how Aion Chat sends requests to the agents.",
@@ -88732,7 +88741,7 @@ var INPUT_PLACEHOLDER = "#C2C8D0";
 var INPUT_ACCENT = "#FFFFFF";
 var SECONDARY_TEXT = "#8B96A5";
 var PRIMARY_TEXT = INPUT_FOREGROUND;
-var MENU_INDENT = "   ";
+var MENU_INDENT = "  ";
 function buildControls(hasDraft) {
   const controls = ["Enter sends", "Shift+Enter newline"];
   controls.push(hasDraft ? "Ctrl+C clears" : "Ctrl+C exits");
@@ -92572,8 +92581,8 @@ var CaseInsensitiveMap = class extends Map {
 
 // src/lib/a2aMetadata.ts
 import crypto from "crypto";
-var DISTRIBUTION_EXTENSION_URI_V1 = "https://docs.aion.to/extensions/aion/distribution/1.0.0";
-var TRACEABILITY_EXTENSION_URI_V1 = "https://docs.aion.to/extensions/aion/traceability/1.0.0";
+var DISTRIBUTION_EXTENSION_URI_V1 = "https://docs.aion.to/a2a/extensions/aion/distribution/1.0.0";
+var TRACEABILITY_EXTENSION_URI_V1 = "https://docs.aion.to/a2a/extensions/aion/traceability/1.0.0";
 var STREAM_DELTA_ARTIFACT_ID = "aion:stream-delta";
 function tokenHex(bytes) {
   return crypto.randomBytes(bytes).toString("hex");
@@ -92597,7 +92606,7 @@ function generateTaskMetadata(options = {}) {
         url: "https://example.com/agent-card",
         identities: [
           {
-            kind: "agent",
+            kind: "principal",
             id: crypto.randomUUID(),
             network_type: "Aion",
             represented_user_id: crypto.randomUUID(),
@@ -92912,6 +92921,17 @@ async function startPushNotificationServer(receiverUrl, onEvent) {
   };
 }
 
+// src/lib/taskState.ts
+var TERMINAL_TASK_STATES = [
+  "completed",
+  "canceled",
+  "failed",
+  "rejected"
+];
+function isTerminalTaskState(state) {
+  return TERMINAL_TASK_STATES.includes(state);
+}
+
 // src/app.tsx
 var import_jsx_runtime5 = __toESM(require_jsx_runtime(), 1);
 function extractText(parts) {
@@ -93036,6 +93056,13 @@ function ChatApp({ options }) {
     setResponseMode(mode);
     persistModes(requestMode, mode);
     appendSystem(`Response mode: ${getResponseModeLabel(mode)}`);
+  };
+  const clearTranscript = () => {
+    setEntries([]);
+    setContextId(void 0);
+    setTaskId(void 0);
+    taskDisplayState.current.clear();
+    setStreamLabel("Idle");
   };
   (0, import_react31.useEffect)(() => {
     if (initialSettingsResult.warning) {
@@ -93260,7 +93287,7 @@ ${JSON.stringify(
   };
   const handleTaskSnapshot = (task) => {
     setContextId(task.contextId);
-    setTaskId(task.id);
+    setTaskId(isTerminalTaskState(task.status.state) ? void 0 : task.id);
     if (responseMode === "a2a-protocol") {
       appendProtocol(task);
       return;
@@ -93280,7 +93307,7 @@ ${JSON.stringify(
   };
   const handleStatusUpdate = (event) => {
     setContextId(event.contextId);
-    setTaskId(event.taskId);
+    setTaskId(isTerminalTaskState(event.status.state) ? void 0 : event.taskId);
     setStreamLabel(event.status.state);
     if (responseMode === "a2a-protocol") {
       appendProtocol(event);
@@ -93341,9 +93368,20 @@ ${JSON.stringify(
     setSelectedSlashSubmenuIndex(0);
     setDraft((current) => clearLeadingSlashDraft(current));
   };
+  const resetSlashSelection = () => {
+    setSlashSubmenuId(void 0);
+    setSelectedSlashIndex(0);
+    setSelectedSlashSubmenuIndex(0);
+    setDraft("");
+  };
   const openSelectedSlashCommand = () => {
     const command = slashCommands[selectedSlashIndex];
     if (!command) {
+      return;
+    }
+    if (command.id === "clear") {
+      clearTranscript();
+      resetSlashSelection();
       return;
     }
     setSlashSubmenuId(command.id);
@@ -93361,10 +93399,7 @@ ${JSON.stringify(
     } else if (command.id === "response") {
       applyResponseMode(option.value);
     }
-    setSlashSubmenuId(void 0);
-    setSelectedSlashIndex(0);
-    setSelectedSlashSubmenuIndex(0);
-    setDraft("");
+    resetSlashSelection();
   };
   const submitPrompt = async () => {
     const selection = parseAgentSelection(

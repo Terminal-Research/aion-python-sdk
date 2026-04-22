@@ -16,6 +16,11 @@ describe("slashCommands", () => {
 	});
 
 	it("filters slash commands alphabetically by prefix", () => {
+		expect(filterSlashCommands("").map((command) => command.label)).toEqual([
+			"/clear",
+			"/request",
+			"/response"
+		]);
 		expect(filterSlashCommands("r").map((command) => command.label)).toEqual([
 			"/request",
 			"/response"

@@ -64,6 +64,33 @@ describe("Ink components", () => {
 		app.unmount();
 	});
 
+	it("renders the clear command in the slash command list", () => {
+		const app = render(
+			<ChatComposer
+				draft="/c"
+				activeAgentId="command-agent"
+				discoveredCount={2}
+				pushState="Disabled"
+				streamState="Idle"
+				agentSuggestions={[]}
+				selectedSuggestionIndex={0}
+				slashCommands={[
+					{
+						label: "/clear",
+						description: "Clear the visible transcript and start fresh."
+					}
+				]}
+				selectedSlashCommandIndex={0}
+				slashMenuVisible={true}
+			/>
+		);
+
+		expect(app.lastFrame()).toContain("/clear");
+		expect(app.lastFrame()).toContain("Clear the visible transcript and start fresh.");
+		expect(app.lastFrame()).not.toContain("Ctrl+C");
+		app.unmount();
+	});
+
 	it("renders the slash submenu inside the composer", () => {
 		const app = render(
 			<ChatComposer
