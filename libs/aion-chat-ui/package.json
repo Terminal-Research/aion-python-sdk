@@ -1,11 +1,12 @@
 {
-  "name": "aion-chat-ui",
-  "version": "0.1.0",
-  "private": true,
+  "name": "@terminal-research/aion",
+  "version": "0.1.2",
+  "private": false,
   "type": "module",
-  "description": "Experimental Ink-based terminal UI for Aion chat workflows.",
+  "description": "Terminal chat UI for Aion agents, published as the aio CLI.",
   "bin": {
-    "aion-chat-ui": "./dist/cli.mjs"
+    "aio": "bin/aio",
+    "aion-chat": "bin/aion-chat"
   },
   "engines": {
     "node": ">=22.0.0"
@@ -20,7 +21,8 @@
     "compile:darwin-x64": "bun build ./src/cli.tsx --compile --outfile ./dist/aion-chat-ui-darwin-x64 --target bun-darwin-x64",
     "compile": "npm run build && npm run compile:darwin-arm64 && npm run compile:darwin-x64",
     "stage:python": "node ./scripts/stage-python.mjs",
-    "prepare:python": "npm run build && npm run stage:python"
+    "prepare:python": "npm run build && npm run stage:python",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "@a2a-js/sdk": "^0.3.13",
@@ -40,5 +42,23 @@
     "tsx": "^4.19.3",
     "typescript": "^5.8.2",
     "vitest": "^3.0.9"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Terminal-Research/aion-python-sdk.git",
+    "directory": "libs/aion-chat-ui"
+  },
+  "homepage": "https://github.com/Terminal-Research/aion-python-sdk/tree/main/libs/aion-chat-ui",
+  "bugs": {
+    "url": "https://github.com/Terminal-Research/aion-python-sdk/issues"
   }
 }
