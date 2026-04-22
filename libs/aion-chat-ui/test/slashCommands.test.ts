@@ -23,6 +23,7 @@ describe("slashCommands", () => {
 		expect(filterSlashCommands("request").map((command) => command.label)).toEqual([
 			"/request"
 		]);
+		expect(filterSlashCommands("c").map((command) => command.label)).toEqual(["/clear"]);
 	});
 
 	it("clears the leading slash draft while preserving leading whitespace", () => {

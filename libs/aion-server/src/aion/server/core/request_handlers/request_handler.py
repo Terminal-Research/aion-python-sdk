@@ -1,21 +1,30 @@
 import asyncio
-from typing import cast
-
 from a2a.server.context import ServerCallContext
-from a2a.server.events import EventQueue
+from a2a.server.events import EventQueue, Event
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.request_handlers.default_request_handler import TERMINAL_TASK_STATES
 from a2a.server.tasks import TaskManager, ResultAggregator
-from a2a.types import Task, InvalidParamsError, TaskNotFoundError, SendMessageRequest
+from a2a.types import InvalidParamsError, TaskNotFoundError, SendMessageRequest, Task, TaskState
+from aion.server.tasks import store_manager, AionTaskManager
+from aion.server.utils import ConversationBuilder
 from aion.shared.types import (
     GetContextParams,
     GetContextsListParams,
     Conversation,
     ContextsList
 )
+from collections.abc import AsyncGenerator
+from typing import cast
 
-from aion.server.tasks import store_manager, AionTaskManager
-from aion.server.utils import ConversationBuilder
+# Final states that should trigger sending the completed Task to the client
+_FINAL_STATES = frozenset({
+    TaskState.TASK_STATE_COMPLETED,
+    TaskState.TASK_STATE_CANCELED,
+    TaskState.TASK_STATE_FAILED,
+    TaskState.TASK_STATE_REJECTED,
+    TaskState.TASK_STATE_INPUT_REQUIRED,
+    TaskState.TASK_STATE_AUTH_REQUIRED,
+})
 
 
 class AionRequestHandler(DefaultRequestHandler):
@@ -137,3 +146,24 @@ class AionRequestHandler(DefaultRequestHandler):
             limit=params.history_length,
             offset=params.history_offset)
         return ContextsList.model_validate(context_ids)
+
+    async def on_message_send_stream(
+            self,
+            params: SendMessageRequest,
+            context: ServerCallContext,
+    ) -> AsyncGenerator[Event]:
+        """Stream handler that emits final Task before stream closes.
+
+        Overrides DefaultRequestHandler to emit the final Task object after
+        all other events have been streamed. This ensures the client receives
+        a complete Task snapshot with all accumulated state at stream end.
+        """
+        async for event in super().on_message_send_stream(params, context):
+            yield event
+
+        # After stream completes, emit final Task if it's in a final state
+        task_id = params.message.task_id
+        if task_id:
+            final_task = await self.task_store.get(task_id, context)
+            if final_task and final_task.status.state in _FINAL_STATES:
+                yield final_task

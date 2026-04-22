@@ -58,6 +58,7 @@ class StreamExecutor:
         self,
         inputs: Any,
         config: dict[str, Any],
+        runtime_context: Optional[Any] = None,
     ) -> AsyncIterator[AgentEvent]:
         """Run astream and yield A2A events directly.
 
@@ -66,12 +67,17 @@ class StreamExecutor:
         Args:
             inputs: astream input — state dict or Command object (for resume).
             config: LangGraph config dict (thread_id, etc.).
+            runtime_context: Optional AionContext passed to graph.astream() as runtime context.
 
         Yields:
             A2A AgentEvent objects.
         """
+        kwargs = {}
+        if runtime_context is not None:
+            kwargs["context"] = runtime_context
+
         async for event_type, event_data in self._graph.astream(
-            inputs, config, stream_mode=STREAM_MODES
+            inputs, config, stream_mode=STREAM_MODES, **kwargs
         ):
             if event_type == "messages":
                 event_data, _ = event_data

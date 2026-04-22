@@ -3,14 +3,14 @@ from typing import Any
 from a2a.server.jsonrpc_models import InternalError, InvalidRequestError
 from a2a.server.request_handlers import build_error_response
 from a2a.utils import DEFAULT_RPC_URL
-from aion.shared.context import set_context_from_a2a
-from aion.shared.logging import get_logger
-from aion.shared.types.a2a.extensions import (
+from aion.shared.constants import (
     DISTRIBUTION_EXTENSION_URI_V1,
     TRACEABILITY_EXTENSION_URI_V1,
-    DistributionExtensionV1,
-    TraceabilityExtensionV1,
 )
+from aion.shared.context import set_context_from_a2a
+from aion.shared.logging import get_logger
+from aion.shared.types.a2a.extensions.distribution import DistributionExtensionV1
+from aion.shared.types.a2a.extensions.traceability import TraceabilityExtensionV1
 from fastapi import Request, Response
 from pydantic import ValidationError
 from starlette.middleware.base import BaseHTTPMiddleware
