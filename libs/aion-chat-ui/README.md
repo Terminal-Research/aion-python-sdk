@@ -49,15 +49,6 @@ npm run stage:python
 
 The package is published by GitHub Actions when a GitHub release is published for the repository. The workflow lives at `.github/workflows/publish-aion.yml` and works from `libs/aion-chat-ui`.
 
-### One-time setup
-
-1. Create or confirm the npm organization scope `@terminal-research`.
-2. If npm requires the package record to exist before you can attach the trusted publisher, seed `@terminal-research/aion` once with a maintainer-owned manual publish, then switch publishing over to GitHub Actions.
-3. In npm package settings for `@terminal-research/aion`, configure a trusted publisher for this GitHub repository and the `publish-aion.yml` workflow.
-4. Keep the workflow's `id-token: write` permission enabled so GitHub Actions can mint the OIDC token during publish.
-
-Trusted publishing removes the need for an `NPM_TOKEN` secret and enables provenance on publish. The workflow upgrades to `npm@^11.5.1` because current npm trusted publishing requires npm 11.5.1 or newer.
-
 ### Release steps
 
 1. Update `libs/aion-chat-ui/package.json` with the next version.
