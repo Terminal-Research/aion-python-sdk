@@ -1,9 +1,9 @@
 import crypto from "node:crypto";
 
 export const DISTRIBUTION_EXTENSION_URI_V1 =
-	"https://docs.aion.to/extensions/aion/distribution/1.0.0";
+	"https://docs.aion.to/a2a/extensions/aion/distribution/1.0.0";
 export const TRACEABILITY_EXTENSION_URI_V1 =
-	"https://docs.aion.to/extensions/aion/traceability/1.0.0";
+	"https://docs.aion.to/a2a/extensions/aion/traceability/1.0.0";
 export const STREAM_DELTA_ARTIFACT_ID = "aion:stream-delta";
 export const EPHEMERAL_MESSAGE_ARTIFACT_ID = "aion:ephemeral-message";
 
@@ -43,7 +43,7 @@ export function generateTaskMetadata(
 				url: "https://example.com/agent-card",
 				identities: [
 					{
-						kind: "agent",
+						kind: "principal",
 						id: crypto.randomUUID(),
 						network_type: "Aion",
 						represented_user_id: crypto.randomUUID(),

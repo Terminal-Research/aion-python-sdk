@@ -49,6 +49,7 @@ import {
 	type ResponseMode,
 	type SlashCommandId
 } from "./lib/slashCommands.js";
+import { isTerminalTaskState } from "./lib/taskState.js";
 
 type ConnectionState = "connecting" | "connected" | "error";
 
@@ -208,6 +209,14 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		setResponseMode(mode);
 		persistModes(requestMode, mode);
 		appendSystem(`Response mode: ${getResponseModeLabel(mode)}`);
+	};
+
+	const clearTranscript = (): void => {
+		setEntries([]);
+		setContextId(undefined);
+		setTaskId(undefined);
+		taskDisplayState.current.clear();
+		setStreamLabel("Idle");
 	};
 
 	useEffect(() => {
@@ -473,7 +482,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 
 	const handleTaskSnapshot = (task: Task): void => {
 		setContextId(task.contextId);
-		setTaskId(task.id);
+		setTaskId(isTerminalTaskState(task.status.state) ? undefined : task.id);
 
 		if (responseMode === "a2a-protocol") {
 			appendProtocol(task);
@@ -496,7 +505,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 
 	const handleStatusUpdate = (event: TaskStatusUpdateEvent): void => {
 		setContextId(event.contextId);
-		setTaskId(event.taskId);
+		setTaskId(isTerminalTaskState(event.status.state) ? undefined : event.taskId);
 		setStreamLabel(event.status.state);
 
 		if (responseMode === "a2a-protocol") {
@@ -571,9 +580,22 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		setDraft((current) => clearLeadingSlashDraft(current));
 	};
 
+	const resetSlashSelection = (): void => {
+		setSlashSubmenuId(undefined);
+		setSelectedSlashIndex(0);
+		setSelectedSlashSubmenuIndex(0);
+		setDraft("");
+	};
+
 	const openSelectedSlashCommand = (): void => {
 		const command = slashCommands[selectedSlashIndex];
 		if (!command) {
+			return;
+		}
+
+		if (command.id === "clear") {
+			clearTranscript();
+			resetSlashSelection();
 			return;
 		}
 
@@ -595,10 +617,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			applyResponseMode(option.value as ResponseMode);
 		}
 
-		setSlashSubmenuId(undefined);
-		setSelectedSlashIndex(0);
-		setSelectedSlashSubmenuIndex(0);
-		setDraft("");
+		resetSlashSelection();
 	};
 
 	const submitPrompt = async (): Promise<void> => {

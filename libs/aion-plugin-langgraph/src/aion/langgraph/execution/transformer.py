@@ -19,8 +19,8 @@ class LangGraphTransformer:
     """
 
     @staticmethod
-    def to_langgraph_config(config: Optional[ExecutionConfig]) -> dict[str, Any]:
-        """Convert ExecutionConfig to LangGraph config.
+    def generate_langgraph_config(config: Optional[ExecutionConfig]) -> dict[str, Any]:
+        """Generate LangGraph config from ExecutionConfig.
 
         Maps context_id > thread_id.
         """
@@ -29,8 +29,8 @@ class LangGraphTransformer:
         return {"configurable": {"thread_id": config.context_id}}
 
     @staticmethod
-    def transform_context(context: "RequestContext") -> dict[str, Any]:
-        """Transform A2A RequestContext to LangGraph input.
+    def generate_langgraph_inputs(context: "RequestContext") -> dict[str, Any]:
+        """Generate LangGraph inputs from A2A RequestContext.
 
         Produces two keys:
             messages    — LangChain HumanMessage built from the inbound message parts.

@@ -7,10 +7,7 @@ from aion.shared.a2a import A2ABaseModel
 __all__ = [
     "TraceStateEntry",
     "TraceabilityExtensionV1",
-    "TRACEABILITY_EXTENSION_URI_V1",
 ]
-
-TRACEABILITY_EXTENSION_URI_V1 = "https://docs.aion.to/extensions/aion/traceability/1.0.0"
 
 
 class TraceStateEntry(A2ABaseModel):

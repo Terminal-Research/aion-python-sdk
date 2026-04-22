@@ -2,8 +2,11 @@ import secrets
 import uuid
 from typing import Dict, Any, Optional
 
-from aion.shared.types.a2a.extensions.distribution import (
+from aion.shared.constants import (
     DISTRIBUTION_EXTENSION_URI_V1,
+    TRACEABILITY_EXTENSION_URI_V1,
+)
+from aion.shared.types.a2a.extensions.distribution import (
     AgentIdentityRecord,
     BehaviorRecord,
     DistributionExtensionV1,
@@ -11,7 +14,6 @@ from aion.shared.types.a2a.extensions.distribution import (
     EnvironmentRecord,
 )
 from aion.shared.types.a2a.extensions.traceability import (
-    TRACEABILITY_EXTENSION_URI_V1,
     TraceStateEntry,
     TraceabilityExtensionV1,
 )
@@ -42,7 +44,7 @@ class A2ARequestHelper:
                 url="https://example.com/agent-card",
                 identities=[
                     AgentIdentityRecord(
-                        kind="agent",
+                        kind="principal",
                         id=str(uuid.uuid4()),
                         network_type="Aion",
                         represented_user_id=str(uuid.uuid4()),

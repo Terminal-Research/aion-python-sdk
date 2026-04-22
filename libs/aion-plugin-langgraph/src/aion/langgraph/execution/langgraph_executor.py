@@ -1,8 +1,5 @@
 """LangGraph executor — orchestrates stream, state retrieval, and result handling."""
 
-from collections.abc import AsyncIterator
-from typing import Any, Optional, TYPE_CHECKING
-
 from a2a.types import TaskArtifactUpdateEvent, TaskStatusUpdateEvent
 from aion.shared.agent.adapters import (
     ExecutionConfig,
@@ -12,14 +9,17 @@ from aion.shared.agent.adapters import (
 from aion.shared.agent.exceptions import ExecutionError, StateRetrievalError
 from aion.shared.config.models import AgentConfig
 from aion.shared.logging import get_logger
+from collections.abc import AsyncIterator
+from typing import Any, Optional, TYPE_CHECKING
 
-from ..constants import AION_UNTRACKED_CHANNEL_NAMES
-from ..state import LangGraphStateAdapter
 from .event_converter import LangGraphA2AConverter
 from .event_preprocessor import LangGraphEventPreprocessor
 from .result_handler import ExecutionResultHandler
+from .runtime_context_builder import RuntimeContextBuilder
 from .stream_executor import StreamExecutor, StreamResult
 from .transformer import LangGraphTransformer
+from ..constants import AION_UNTRACKED_CHANNEL_NAMES
+from ..state import LangGraphStateAdapter
 
 if TYPE_CHECKING:
     from a2a.server.agent_execution import RequestContext
@@ -45,10 +45,10 @@ class LangGraphExecutor(ExecutorAdapter):
     """Orchestrator for LangGraph agent execution."""
 
     def __init__(
-        self,
-        compiled_graph: Any,
-        config: AgentConfig,
-        result_handler: Optional[ExecutionResultHandler] = None,
+            self,
+            compiled_graph: Any,
+            config: AgentConfig,
+            result_handler: Optional[ExecutionResultHandler] = None,
     ):
         """
         Args:
@@ -64,9 +64,9 @@ class LangGraphExecutor(ExecutorAdapter):
         self._preprocessor = LangGraphEventPreprocessor()
 
     async def stream(
-        self,
-        context: "RequestContext",
-        config: Optional[ExecutionConfig] = None,
+            self,
+            context: "RequestContext",
+            config: Optional[ExecutionConfig] = None,
     ) -> AsyncIterator[AgentEvent]:
         """Run the graph from scratch and stream A2A events."""
         converter = LangGraphA2AConverter(
@@ -74,11 +74,12 @@ class LangGraphExecutor(ExecutorAdapter):
             context_id=context.context_id,
         )
         try:
-            lg_inputs = LangGraphTransformer.transform_context(context)
-            lg_config = LangGraphTransformer.to_langgraph_config(config)
+            lg_inputs = LangGraphTransformer.generate_langgraph_inputs(context)
+            lg_config = LangGraphTransformer.generate_langgraph_config(config)
 
+            runtime_context = RuntimeContextBuilder(request_context=context).build()
             stream_exec = StreamExecutor(self.compiled_graph, converter, self._preprocessor)
-            async for a2a_event in stream_exec.execute(lg_inputs, lg_config):
+            async for a2a_event in stream_exec.execute(lg_inputs, lg_config, runtime_context=runtime_context):
                 yield a2a_event
 
             async for a2a_event in self._finalize(stream_exec.result, config, context, converter):
@@ -90,9 +91,9 @@ class LangGraphExecutor(ExecutorAdapter):
             raise ExecutionError(f"Failed to stream agent: {e}") from e
 
     async def resume(
-        self,
-        context: "RequestContext",
-        config: ExecutionConfig,
+            self,
+            context: "RequestContext",
+            config: ExecutionConfig,
     ) -> AsyncIterator[AgentEvent]:
         """Resume a previously interrupted graph execution and stream A2A events."""
         if not config or not config.context_id:
@@ -120,16 +121,17 @@ class LangGraphExecutor(ExecutorAdapter):
                 task_id=context.task_id,
                 context_id=context.context_id,
             )
-            lg_inputs = LangGraphTransformer.transform_context(context)
+            lg_inputs = LangGraphTransformer.generate_langgraph_inputs(context)
             resume_command = self._state_adapter.create_resume_input(
                 _strip_untracked(lg_inputs), state
             )
-            lg_config = LangGraphTransformer.to_langgraph_config(config)
+            lg_config = LangGraphTransformer.generate_langgraph_config(config)
 
             logger.debug(f"Resuming task")
 
+            runtime_context = RuntimeContextBuilder(request_context=context).build()
             stream_exec = StreamExecutor(self.compiled_graph, converter, self._preprocessor)
-            async for a2a_event in stream_exec.execute(resume_command, lg_config):
+            async for a2a_event in stream_exec.execute(resume_command, lg_config, runtime_context=runtime_context):
                 yield a2a_event
 
             async for a2a_event in self._finalize(stream_exec.result, config, context, converter):
@@ -145,7 +147,7 @@ class LangGraphExecutor(ExecutorAdapter):
             raise ValueError("context_id is required to get state")
 
         try:
-            lg_config = LangGraphTransformer.to_langgraph_config(config)
+            lg_config = LangGraphTransformer.generate_langgraph_config(config)
             snapshot = await self.compiled_graph.aget_state(lg_config)
             return self._state_adapter.get_state_from_snapshot(snapshot)
 
@@ -154,19 +156,19 @@ class LangGraphExecutor(ExecutorAdapter):
             raise StateRetrievalError(f"Failed to retrieve state: {e}") from e
 
     async def _finalize(
-        self,
-        stream_result: StreamResult,
-        config: Optional[ExecutionConfig],
-        context: "RequestContext",
-        converter: LangGraphA2AConverter,
+            self,
+            stream_result: StreamResult,
+            config: Optional[ExecutionConfig],
+            context: "RequestContext",
+            converter: LangGraphA2AConverter,
     ) -> AsyncIterator[AgentEvent]:
         """Emit result events and the terminal complete or interrupt event."""
         snapshot = await self.get_state(config)
 
         for a2a_event in self._result_handler.handle(
-            stream_result, snapshot, context,
-            task_id=context.task_id,
-            context_id=context.context_id,
+                stream_result, snapshot, context,
+                task_id=context.task_id,
+                context_id=context.context_id,
         ):
             yield a2a_event
 

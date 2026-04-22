@@ -56,6 +56,14 @@ export const RESPONSE_MODE_OPTIONS: readonly SlashCommandOption<ResponseMode>[] 
 
 export const SLASH_COMMANDS = [
 	{
+		id: "clear",
+		label: "/clear",
+		description: "Clear the visible transcript and start fresh.",
+		title: "Clear Transcript",
+		subtitle: "Clear the visible transcript and start fresh.",
+		options: []
+	},
+	{
 		id: "request",
 		label: "/request",
 		description: "Choose how Aion Chat sends requests to the agents.",
