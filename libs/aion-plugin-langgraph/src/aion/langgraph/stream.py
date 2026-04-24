@@ -27,7 +27,7 @@ def emit_file_artifact(
     writer: StreamWriter,
     *,
     url: str | None = None,
-    base64: str | None = None,
+    data: bytes | None = None,
     mime_type: str,
     name: str | None = None,
     artifact_id: str | None = None,
@@ -42,7 +42,7 @@ def emit_file_artifact(
     Args:
         writer: LangGraph StreamWriter from node signature
         url: File URL (for FileWithUri)
-        base64: File content as base64 string (for FileWithBytes)
+        data: File content as bytes (for FileWithBytes)
         mime_type: MIME type of the file (e.g., "application/pdf", "image/png")
         name: Artifact name (defaults to "file")
         artifact_id: Explicit artifact ID; auto-generated if not provided
@@ -50,33 +50,34 @@ def emit_file_artifact(
         is_last_chunk: If True, this is the final chunk
 
     Raises:
-        ValueError: If neither url nor base64 is provided, or if both are provided
+        ValueError: If neither url nor data is provided, or if both are provided
+        TypeError: If data is not bytes
 
     Example:
         def my_node(state: dict, writer: StreamWriter):
             # Emit file by URL
-            emit_file(
+            emit_file_artifact(
                 writer,
                 url="https://example.com/report.pdf",
                 mime_type="application/pdf",
                 name="analysis_report"
             )
 
-            # Emit file by base64
-            emit_file(
+            # Emit file by bytes
+            emit_file_artifact(
                 writer,
-                base64="JVBERi0xLjQK...",
+                data=file_bytes,
                 mime_type="application/pdf",
                 name="generated_document"
             )
 
             # Streaming file chunks with a stable artifact_id
             artifact_id = str(uuid4())
-            for i, chunk_base64 in enumerate(file_chunks):
+            for i, chunk_bytes in enumerate(file_chunks):
                 is_last = (i == len(file_chunks) - 1)
-                emit_file(
+                emit_file_artifact(
                     writer,
-                    base64=chunk_base64,
+                    data=chunk_bytes,
                     mime_type="text/plain",
                     artifact_id=artifact_id,
                     append=True,
@@ -85,15 +86,17 @@ def emit_file_artifact(
 
             return state
     """
-    if not url and not base64:
-        raise ValueError("Either 'url' or 'base64' must be provided")
-    if url and base64:
-        raise ValueError("Provide either 'url' or 'base64', not both")
+    if not url and data is None:
+        raise ValueError("Either 'url' or 'data' must be provided")
+    if url and data is not None:
+        raise ValueError("Provide either 'url' or 'data', not both")
 
     if url:
         file_part = Part(url=url, media_type=mime_type)
     else:
-        file_part = Part(raw=_base64.b64decode(base64), media_type=mime_type)
+        if not isinstance(data, bytes):
+            raise TypeError(f"'data' must be bytes, got {type(data).__name__}")
+        file_part = Part(raw=data, media_type=mime_type)
 
     artifact = Artifact(
         artifact_id=artifact_id or str(uuid4()),
