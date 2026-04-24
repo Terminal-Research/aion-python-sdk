@@ -91,7 +91,7 @@ class Thread:
         if self._detect_jsx_card_markup(content):
             return await self._emit_jsx_card_as_artifact(writer, content, metadata)
         else:
-            msg = AIMessage(content=content, metadata=metadata)
+            msg = AIMessage(content=content, id=str(uuid4()), metadata=metadata)
             emit_message(writer, msg)
             return msg
 
@@ -194,7 +194,7 @@ class Thread:
             )
 
         if accumulated:
-            msg = AIMessage(content=accumulated, metadata=metadata)
+            msg = AIMessage(content=accumulated, id=str(uuid4()), metadata=metadata)
             emit_message(writer, msg)
             return msg
 

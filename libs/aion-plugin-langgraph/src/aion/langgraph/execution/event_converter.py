@@ -117,10 +117,12 @@ class LangGraphA2AConverter:
             return []
 
         role = self._detect_role(message)
+        # Use message.id if set (e.g. from reply), otherwise generate a new one
+        message_id = message.id or str(uuid.uuid4())
         msg = Message(
             context_id=self._context_id,
             task_id=self._task_id,
-            message_id=str(uuid.uuid4()),
+            message_id=message_id,
             role=role,
             parts=a2a_parts,
         )
@@ -169,10 +171,11 @@ class LangGraphA2AConverter:
         if event.message is not None:
             parts = LcToA2AConverter.from_message(event.message)
             if parts:
+                message_id = event.message.id or str(uuid.uuid4())
                 msg = Message(
                     context_id=self._context_id,
                     task_id=self._task_id,
-                    message_id=str(uuid.uuid4()),
+                    message_id=message_id,
                     role=Role.ROLE_AGENT,
                     parts=parts,
                 )

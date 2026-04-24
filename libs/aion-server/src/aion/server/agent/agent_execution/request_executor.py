@@ -1,7 +1,4 @@
 """Framework-agnostic A2A executor for AionAgent."""
-
-from typing import Optional, Tuple
-
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
@@ -15,9 +12,12 @@ from a2a.utils.errors import (
 from a2a.utils.telemetry import trace_function
 from aion.server.utils import check_if_task_is_interrupted
 from aion.shared.agent import AionAgent
-from aion.shared.context import set_task_id as execution_context_set_task_id
-from aion.shared.logging import get_logger
+from aion.shared.agent.execution.scope import AgentExecutionScopeHelper
 from aion.shared.files.a2a import A2AFileTransformer
+from aion.shared.logging import get_logger
+from typing import Optional, Tuple
+
+from .event_pipeline import AionEventPipeline
 
 logger = get_logger()
 
@@ -35,9 +35,9 @@ class AionAgentRequestExecutor(AgentExecutor):
     """
 
     def __init__(
-        self,
-        aion_agent: AionAgent,
-        file_transformer: Optional[A2AFileTransformer] = None,
+            self,
+            aion_agent: AionAgent,
+            file_transformer: Optional[A2AFileTransformer] = None,
     ):
         self.agent = aion_agent
         self._task_updater: TaskUpdater | None = None
@@ -69,16 +69,9 @@ class AionAgentRequestExecutor(AgentExecutor):
                 else self.agent.resume(context=context)
             )
 
-            first_event = True
+            pipeline = AionEventPipeline(event_queue, self._task_updater, self._file_transformer)
             async for agent_event in event_stream:
-                if first_event:
-                    await self._update_task_status_working(event_queue, task)
-                    first_event = False
-
-                if self._file_transformer is not None:
-                    agent_event = await self._file_transformer.transform_event(agent_event, wait_upload=False)
-
-                await event_queue.enqueue_event(agent_event)
+                await pipeline.process(agent_event)
 
         except Exception as ex:
             logger.exception("Execution failed")
@@ -145,7 +138,7 @@ class AionAgentRequestExecutor(AgentExecutor):
         task.metadata = context.metadata or None
         context.current_task = task
 
-        execution_context_set_task_id(task.id)
+        AgentExecutionScopeHelper.set_task_id(task.id)
         return task, True
 
     @staticmethod
@@ -170,4 +163,3 @@ class AionAgentRequestExecutor(AgentExecutor):
         """
         if self._task_updater:
             await self._task_updater.start_work()
-

@@ -7,7 +7,7 @@ from aion.shared.constants import (
     DISTRIBUTION_EXTENSION_URI_V1,
     TRACEABILITY_EXTENSION_URI_V1,
 )
-from aion.shared.context import set_context_from_a2a
+from aion.shared.agent.execution.scope import AgentExecutionScopeHelper
 from aion.shared.logging import get_logger
 from aion.shared.types.a2a.extensions.distribution import DistributionExtensionV1
 from aion.shared.types.a2a.extensions.traceability import TraceabilityExtensionV1
@@ -52,7 +52,7 @@ class AionContextMiddleware(BaseHTTPMiddleware):
 
         if metadata:
             try:
-                set_context_from_a2a(
+                AgentExecutionScopeHelper.set_scope_from_a2a(
                     distribution=self._get_distribution_extension(metadata),
                     traceability=self._get_traceability_extension(metadata),
                     request_method=request.method,

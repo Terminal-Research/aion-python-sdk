@@ -1,8 +1,5 @@
 import json
 import logging
-from _contextvars import ContextVar
-from typing import Any, override
-
 from a2a.server.apps import A2AFastAPIApplication
 from a2a.server.apps.jsonrpc.jsonrpc_app import INTERNAL_ERROR_CODE
 from a2a.server.context import ServerCallContext
@@ -20,6 +17,8 @@ from a2a.types import (
     UnsupportedOperationError,
 )
 from a2a.utils.errors import A2AError
+from aion.server.core.app.preprocessors import A2ARequestPreprocessor
+from aion.server.core.request_handlers import AionJSONRPCHandler
 from aion.shared.agent import AionAgent
 from aion.shared.logging import get_logger
 from aion.shared.types import (
@@ -30,15 +29,9 @@ from fastapi import Request, Response
 from jsonrpc.jsonrpc2 import JSONRPC20Request
 from pydantic import ValidationError
 from starlette.responses import JSONResponse
+from typing import Any, override
 
-from aion.server.constants import A2A_VERSION_DEFAULT
-from aion.server.core.app.preprocessors import A2ARequestPreprocessor
-from aion.server.core.request_handlers import AionJSONRPCHandler
 from .api import AionExtraHTTPRoutes
-
-# Holds the resolved A2A-Version for the current request so _create_response
-# (called by parent-class methods without a Request object) can read it.
-_request_a2a_version: ContextVar[str] = ContextVar("a2a_version", default=A2A_VERSION_DEFAULT)
 
 logger = get_logger()
 
