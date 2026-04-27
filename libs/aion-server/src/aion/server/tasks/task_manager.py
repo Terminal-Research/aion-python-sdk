@@ -5,11 +5,9 @@ from aion.server.tasks import store_manager
 from aion.server.utils import check_if_task_is_interrupted
 from aion.shared.agent.execution.scope import AgentExecutionScopeHelper
 from aion.shared.logging import get_logger
-from aion.shared.types import ArtifactId
+from aion.shared.types import TRANSIENT_ARTIFACT_IDS
 
 logger = get_logger()
-
-SKIP_ARTIFACTS_IDS = (ArtifactId.STREAM_DELTA.value, ArtifactId.EPHEMERAL_MESSAGE.value)
 
 
 class AionTaskManager(TaskManager):
@@ -62,7 +60,7 @@ class AionTaskManager(TaskManager):
             True if the event should be skipped, False otherwise.
         """
         if isinstance(event, TaskArtifactUpdateEvent):
-            if event.artifact.artifact_id in SKIP_ARTIFACTS_IDS:
+            if event.artifact.artifact_id in TRANSIENT_ARTIFACT_IDS:
                 return True
         return False
 

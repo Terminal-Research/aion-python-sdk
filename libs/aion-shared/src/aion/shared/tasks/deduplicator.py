@@ -18,6 +18,7 @@ from a2a.types import Artifact, Message, Task, TaskArtifactUpdateEvent, TaskStat
 from google.protobuf.json_format import MessageToDict, ParseDict
 from google.protobuf.struct_pb2 import Struct
 from aion.shared.logging import get_logger
+from aion.shared.types import TRANSIENT_ARTIFACT_IDS
 
 __all__ = ["A2ATaskDeduplicator"]
 
@@ -41,7 +42,9 @@ class A2ATaskDeduplicator:
             original_task: The authoritative task to normalize against.
                           Message and artifact IDs are cached for efficient lookups.
         """
-        self._original_task = original_task
+        # Keep an isolated copy so apply_processed_item() cannot mutate the
+        # task manager's in-memory task through shared references.
+        self._original_task = copy.deepcopy(original_task)
         self._known_message_ids: set[str] = self._collect_known_message_ids(original_task)
         self._known_artifact_ids: set[str] = self._collect_known_artifact_ids(original_task)
 
@@ -103,6 +106,9 @@ class A2ATaskDeduplicator:
                 self._known_message_ids.add(item.status.message.message_id)
 
         elif isinstance(item, TaskArtifactUpdateEvent):
+            if item.artifact.artifact_id in TRANSIENT_ARTIFACT_IDS:
+                return
+
             self._original_task.artifacts.append(copy.deepcopy(item.artifact))
             if item.artifact.artifact_id:
                 self._known_artifact_ids.add(item.artifact.artifact_id)
