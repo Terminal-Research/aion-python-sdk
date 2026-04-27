@@ -3,13 +3,11 @@ from a2a.server.tasks import TaskManager
 from a2a.types import Task, TaskArtifactUpdateEvent, TaskStatusUpdateEvent
 from aion.server.tasks import store_manager
 from aion.server.utils import check_if_task_is_interrupted
-from aion.shared.context import set_task_status
+from aion.shared.agent.execution.scope import AgentExecutionScopeHelper
 from aion.shared.logging import get_logger
-from aion.shared.types import ArtifactId
+from aion.shared.types import TRANSIENT_ARTIFACT_IDS
 
 logger = get_logger()
-
-SKIP_ARTIFACTS_IDS = (ArtifactId.STREAM_DELTA.value, ArtifactId.EPHEMERAL_MESSAGE.value)
 
 
 class AionTaskManager(TaskManager):
@@ -41,12 +39,12 @@ class AionTaskManager(TaskManager):
 
     @staticmethod
     def _track_task_status(event: Event) -> None:
-        """Update task status in ExecutionContext when a TaskStatusUpdateEvent is received."""
+        """Update task status in ExecutionScope when a TaskStatusUpdateEvent is received."""
         if not isinstance(event, TaskStatusUpdateEvent):
             return
 
         state = event.status.state
-        set_task_status(state.value if hasattr(state, 'value') else state)
+        AgentExecutionScopeHelper.set_task_status(state.value if hasattr(state, 'value') else state)
 
     @staticmethod
     def _check_process_skip_event(event: Event) -> bool:
@@ -62,7 +60,7 @@ class AionTaskManager(TaskManager):
             True if the event should be skipped, False otherwise.
         """
         if isinstance(event, TaskArtifactUpdateEvent):
-            if event.artifact.artifact_id in SKIP_ARTIFACTS_IDS:
+            if event.artifact.artifact_id in TRANSIENT_ARTIFACT_IDS:
                 return True
         return False
 

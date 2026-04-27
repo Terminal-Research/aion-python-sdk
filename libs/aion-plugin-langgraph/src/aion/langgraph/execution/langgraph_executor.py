@@ -1,6 +1,6 @@
 """LangGraph executor — orchestrates stream, state retrieval, and result handling."""
 
-from a2a.types import TaskArtifactUpdateEvent, TaskStatusUpdateEvent
+from a2a.types import Message, Task, TaskArtifactUpdateEvent, TaskStatusUpdateEvent
 from aion.shared.agent.adapters import (
     ExecutionConfig,
     ExecutionSnapshot,
@@ -24,7 +24,7 @@ from ..state import LangGraphStateAdapter
 if TYPE_CHECKING:
     from a2a.server.agent_execution import RequestContext
 
-AgentEvent = TaskStatusUpdateEvent | TaskArtifactUpdateEvent
+AgentEvent = TaskStatusUpdateEvent | TaskArtifactUpdateEvent | Task | Message
 
 logger = get_logger()
 

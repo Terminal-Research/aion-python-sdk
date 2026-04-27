@@ -63,45 +63,45 @@ class AionLogRecord(logging.LogRecord):
             *args: Positional arguments passed to logging.LogRecord
             **kwargs: Keyword arguments passed to logging.LogRecord
         """
-        from aion.shared.context import get_context
+        from aion.shared.agent.execution.scope import AgentExecutionScopeHelper
         from aion.shared.opentelemetry.tracing import get_span_info
         from aion.shared.settings import app_settings
 
         super().__init__(*args, **kwargs)
 
         try:
-            execution_context = get_context()
+            scope = AgentExecutionScopeHelper.get_scope()
         except Exception:
-            execution_context = None
+            scope = None
 
         try:
             trace_span_info = get_span_info()
         except Exception:
             trace_span_info = None
 
-        ec_inbound = execution_context.inbound if execution_context else None
-        ec_runtime = execution_context.runtime if execution_context else None
+        ec_inbound = scope.inbound if scope else None
+        ec_framework = scope.framework if scope else None
 
         # Opentelemetry tracing
         self.trace_id = getattr(trace_span_info, "trace_id_hex", None)
         self.trace_span_id = getattr(trace_span_info, "span_id_hex", None)
         self.trace_span_name = getattr(trace_span_info, "span_name", None)
         self.trace_parent_span_id = getattr(trace_span_info, "parent_span_id_hex", None)
-        self.trace_baggage = ec_inbound.trace.baggage.copy() if execution_context else None
-        self.agent_trace_baggage = ec_runtime.agent_framework.trace.baggage.copy() if execution_context else None
+        self.trace_baggage = ec_inbound.trace.baggage.copy() if scope else None
+        self.agent_trace_baggage = ec_framework.agent_framework.trace.baggage.copy() if scope else None
 
         # request context / deployment info
-        self.transaction_id = ec_inbound.trace.transaction_id if execution_context else None
-        self.transaction_name = ec_inbound.transaction_name if execution_context else None
+        self.transaction_id = ec_inbound.trace.transaction_id if scope else None
+        self.transaction_name = ec_inbound.transaction_name if scope else None
 
-        self.aion_distribution_id = ec_inbound.aion.distribution_id if execution_context else None
-        self.aion_version_id = ec_inbound.aion.version_id if execution_context else app_settings.version_id
-        self.aion_agent_environment_id = ec_inbound.aion.environment_id if execution_context else None
-        self.http_request_method = ec_inbound.request.method if execution_context else None
-        self.http_request_target = ec_inbound.request.path if execution_context else None
-        self.task_id = ec_inbound.a2a.task_id if execution_context else None
-        self.a2a_rpc_method = ec_inbound.request.jrpc_method if execution_context else None
-        self.a2a_task_status = ec_inbound.a2a.task_status if execution_context else None
+        self.aion_distribution_id = ec_inbound.aion.distribution_id if scope else None
+        self.aion_version_id = ec_inbound.aion.version_id if scope else app_settings.version_id
+        self.aion_agent_environment_id = ec_inbound.aion.environment_id if scope else None
+        self.http_request_method = ec_inbound.request.method if scope else None
+        self.http_request_target = ec_inbound.request.path if scope else None
+        self.task_id = ec_inbound.a2a.task_id if scope else None
+        self.a2a_rpc_method = ec_inbound.request.jrpc_method if scope else None
+        self.a2a_task_status = ec_inbound.a2a.task_status if scope else None
 
 
 class AionLogger(logging.Logger):

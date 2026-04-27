@@ -91,7 +91,7 @@ class Thread:
         if self._detect_jsx_card_markup(content):
             return await self._emit_jsx_card_as_artifact(writer, content, metadata)
         else:
-            msg = AIMessage(content=content, metadata=metadata)
+            msg = AIMessage(content=content, id=str(uuid4()), metadata=metadata)
             emit_message(writer, msg)
             return msg
 
@@ -194,7 +194,7 @@ class Thread:
             )
 
         if accumulated:
-            msg = AIMessage(content=accumulated, metadata=metadata)
+            msg = AIMessage(content=accumulated, id=str(uuid4()), metadata=metadata)
             emit_message(writer, msg)
             return msg
 
@@ -258,10 +258,30 @@ class Thread:
         )
         return []
 
-    async def typing(self) -> None:
-        """Emit a stream-only typing/progress indicator."""
+    async def typing(
+        self,
+        content: Union[str, AIMessage, AIMessageChunk],
+    ) -> None:
+        """Emit a stream-only ephemeral typing/progress indicator.
+
+        Args:
+            content: Message content to emit. Accepts str, AIMessage, or AIMessageChunk.
+                     Required — a warning is logged and the call is a no-op if omitted.
+        """
         writer = self._get_writer()
         if writer is None:
             return
 
-        emit_message(writer, AIMessage(content="..."), ephemeral=True)
+        if isinstance(content, str):
+            msg = AIMessage(content=content)
+        elif isinstance(content, (AIMessage, AIMessageChunk)):
+            msg = content
+        else:
+            logger.warning(
+                "Thread.typing() received unsupported content type: %s. "
+                "Supported types: str, AIMessage, AIMessageChunk.",
+                type(content).__name__,
+            )
+            return
+
+        emit_message(writer, msg, ephemeral=True)
