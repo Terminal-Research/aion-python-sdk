@@ -108,12 +108,6 @@ class ConfigurationField(BaseModel):
         return data
 
 
-class AgentCapabilities(BaseModel):
-    """Agent capabilities configuration."""
-    streaming: bool = Field(default=False, description="Whether agent supports streaming responses")
-    pushNotifications: bool = Field(default=False, description="Whether agent supports push notifications")
-
-
 class AgentSkill(BaseModel):
     """Agent skill configuration."""
     id: str = Field(..., description="Unique identifier for the skill")
@@ -141,11 +135,6 @@ class AgentConfig(BaseModel):
     version: str = Field(
         default="1.0.0",
         description="Agent version")
-
-    # Capabilities and features
-    capabilities: AgentCapabilities = Field(
-        default_factory=AgentCapabilities,
-        description="Agent capabilities")
 
     skills: List[AgentSkill] = Field(
         default_factory=list,
