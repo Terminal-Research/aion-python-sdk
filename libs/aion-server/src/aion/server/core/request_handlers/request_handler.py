@@ -7,6 +7,7 @@ from a2a.server.tasks import TaskManager, ResultAggregator
 from a2a.types import InvalidParamsError, TaskNotFoundError, SendMessageRequest, Task, TaskState
 from aion.server.tasks import store_manager, AionTaskManager
 from aion.server.utils import ConversationBuilder
+from aion.shared.agent.execution.scope import AgentExecutionScopeHelper
 from aion.shared.types import (
     GetContextParams,
     GetContextsListParams,
@@ -56,6 +57,9 @@ class AionRequestHandler(DefaultRequestHandler):
         if not task_manager.task_id:
             await task_manager.auto_discover_and_assign_task(interrupted=True)
         # ======= END =======
+
+        # Store task manager in execution scope for access throughout execution
+        AgentExecutionScopeHelper.set_task_manager(task_manager)
 
         task: Task | None = await task_manager.get_task()
         if task:

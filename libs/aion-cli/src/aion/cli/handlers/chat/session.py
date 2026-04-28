@@ -7,9 +7,7 @@ from uuid import uuid4
 
 import httpx
 from a2a.client import A2ACardResolver, ClientConfig, ClientFactory
-from aion.shared.types.a2a.enums import ArtifactId
-
-_SKIP_ARTIFACT_IDS = frozenset({ArtifactId.STREAM_DELTA.value, ArtifactId.EPHEMERAL_MESSAGE.value})
+from aion.shared.types import TRANSIENT_ARTIFACT_IDS
 from a2a.types import (
     GetTaskRequest,
     Message,
@@ -297,7 +295,7 @@ class ChatSession:
             # Filter out ephemeral streaming artifacts (not persisted on server)
             visible_artifacts = [
                 a for a in task_result.artifacts
-                if a.artifact_id not in _SKIP_ARTIFACT_IDS
+                if a.artifact_id not in TRANSIENT_ARTIFACT_IDS
             ]
             del task_result.artifacts[:]
             task_result.artifacts.extend(visible_artifacts)
