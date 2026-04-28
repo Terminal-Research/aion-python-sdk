@@ -15,7 +15,7 @@ from aion.shared.types import (
     ContextsList
 )
 from collections.abc import AsyncGenerator
-from typing import cast
+from typing import cast, override
 
 # Final states that should trigger sending the completed Task to the client
 _FINAL_STATES = frozenset({
@@ -31,6 +31,7 @@ _FINAL_STATES = frozenset({
 class AionRequestHandler(DefaultRequestHandler):
     """Request handler implementation for Aion management operations."""
 
+    @override
     async def _setup_message_execution(
             self,
             params: SendMessageRequest,
@@ -90,8 +91,7 @@ class AionRequestHandler(DefaultRequestHandler):
 
         if (
                 self._push_config_store
-                and params.configuration
-                and params.configuration.task_push_notification_config
+                and params.configuration.HasField('task_push_notification_config')
         ):
             await self._push_config_store.set_info(
                 task_id,
