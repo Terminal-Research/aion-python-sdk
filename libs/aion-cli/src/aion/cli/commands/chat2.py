@@ -20,8 +20,7 @@ from aion.cli.utils.header_parser import parse_headers
     "--host",
     "-u",
     "endpoint",
-    default="http://localhost:8000",
-    show_default=True,
+    default=None,
     help="Agent or proxy URL to connect to.",
 )
 @click.option(
@@ -50,7 +49,7 @@ from aion.cli.utils.header_parser import parse_headers
     help="Push notification receiver URL.",
 )
 def chat2(
-    endpoint: str,
+    endpoint: Optional[str],
     agent_id: Optional[str],
     token: Optional[str],
     header: tuple[str, ...],

@@ -878,8 +878,8 @@ var require_react_development = __commonJS({
       function enqueueTask(task) {
         if (null === enqueueTaskImpl)
           try {
-            var requireString = ("require" + Math.random()).slice(0, 7);
-            enqueueTaskImpl = (module && module[requireString]).call(
+            var requireString2 = ("require" + Math.random()).slice(0, 7);
+            enqueueTaskImpl = (module && module[requireString2]).call(
               module,
               "timers"
             ).setImmediate;
@@ -88520,14 +88520,50 @@ var import_react28 = __toESM(require_react(), 1);
 
 // src/args.ts
 import { readFileSync as readFileSync2 } from "fs";
-var DEFAULT_PROXY_URL = "http://localhost:8000";
+
+// src/lib/environment.ts
+var AION_ENVIRONMENT_IDS = [
+  "production",
+  "staging",
+  "development"
+];
+var DEFAULT_AION_ENVIRONMENT_ID = "production";
+var AION_ENVIRONMENTS = {
+  production: {
+    id: "production",
+    controlPlaneApiBaseUrl: "https://api.aion.to"
+  },
+  staging: {
+    id: "staging",
+    controlPlaneApiBaseUrl: "https://api-staging.aion.to"
+  },
+  development: {
+    id: "development",
+    controlPlaneApiBaseUrl: "http://localhost:8080"
+  }
+};
+function isAionEnvironmentId(value) {
+  return AION_ENVIRONMENT_IDS.includes(value);
+}
+function getAionEnvironment(id) {
+  return AION_ENVIRONMENTS[id];
+}
+function getControlPlaneApiBaseUrl(id) {
+  return getAionEnvironment(id).controlPlaneApiBaseUrl;
+}
+function getAuthConfigUrl(id) {
+  return `${getControlPlaneApiBaseUrl(id)}/auth/cli/config`;
+}
+
+// src/args.ts
 var HELP_TEXT = `
 Usage:
   aio [options]
+  aio login
   aion-chat [options]
 
 Options:
-  -u, --url, --host <endpoint>   Agent or proxy URL to connect to (default: ${DEFAULT_PROXY_URL})
+  -u, --url, --host <endpoint>   Agent or proxy URL to connect to
       --agent-id <agent-id>      Agent identifier for proxy-aware routing
       --token <token>            Bearer token for authenticated endpoints
       --header <key=value>       Repeatable custom HTTP header
@@ -88558,9 +88594,37 @@ function parseHeader(rawHeader) {
   }
   return [rawHeader.slice(0, separator), rawHeader.slice(separator + 1)];
 }
+function printVersion() {
+  const packagePath = new URL("../package.json", import.meta.url);
+  const packageJson2 = JSON.parse(
+    readFileSync2(packagePath, "utf8")
+  );
+  process.stdout.write(`${packageJson2.version ?? "0.0.0"}
+`);
+}
 function printHelp() {
   process.stdout.write(`${HELP_TEXT}
 `);
+}
+function parseEnvironmentCommand(argv) {
+  const [command, environmentId, extra] = argv;
+  if (command !== "environment" && command !== "env") {
+    return void 0;
+  }
+  if (!environmentId || extra) {
+    throw new Error(
+      `Expected one environment: ${AION_ENVIRONMENT_IDS.join(", ")}`
+    );
+  }
+  if (!isAionEnvironmentId(environmentId)) {
+    throw new Error(
+      `Unknown environment '${environmentId}', expected one of ${AION_ENVIRONMENT_IDS.join(", ")}`
+    );
+  }
+  return {
+    kind: "environment",
+    environmentId
+  };
 }
 function parseArgs(argv) {
   let url;
@@ -88606,26 +88670,36 @@ function parseArgs(argv) {
       case "--help":
         printHelp();
         process.exit(0);
-      case "--version": {
-        const packagePath = new URL("../package.json", import.meta.url);
-        const packageJson2 = JSON.parse(
-          readFileSync2(packagePath, "utf8")
-        );
-        process.stdout.write(`${packageJson2.version ?? "0.0.0"}
-`);
+      case "--version":
+        printVersion();
         process.exit(0);
-      }
       default:
         throw new Error(`Unknown argument '${arg}'`);
     }
   }
   return {
-    url: url ?? DEFAULT_PROXY_URL,
+    ...url ? { url } : {},
     agentId,
     token,
     headers,
     pushNotifications,
     pushReceiver
+  };
+}
+function parseCliArgs(argv) {
+  if (argv[0] === "login") {
+    if (argv.length > 1) {
+      throw new Error("The login command does not accept arguments.");
+    }
+    return { kind: "login" };
+  }
+  const environmentCommand = parseEnvironmentCommand(argv);
+  if (environmentCommand) {
+    return environmentCommand;
+  }
+  return {
+    kind: "chat",
+    options: parseArgs(argv)
   };
 }
 
@@ -88673,6 +88747,14 @@ var SLASH_COMMANDS = [
     description: "Clear the visible transcript and start fresh.",
     title: "Clear Transcript",
     subtitle: "Clear the visible transcript and start fresh.",
+    options: []
+  },
+  {
+    id: "login",
+    label: "/login",
+    description: "Authenticate Aion Chat with your Aion account.",
+    title: "Login",
+    subtitle: "Authenticate Aion Chat with your Aion account.",
     options: []
   },
   {
@@ -89354,47 +89436,187 @@ function isRequestMode(value) {
 function isResponseMode(value) {
   return value === "message-output" || value === "a2a-protocol";
 }
+function defaultEnvironmentSettings() {
+  return {
+    ...DEFAULT_CHAT_MODE_SETTINGS
+  };
+}
+function defaultSettings() {
+  return {
+    selectedEnvironment: DEFAULT_AION_ENVIRONMENT_ID,
+    environments: Object.fromEntries(
+      AION_ENVIRONMENT_IDS.map((id) => [id, defaultEnvironmentSettings()])
+    )
+  };
+}
+function normalizeEnvironmentSettings(value, fallback) {
+  const requestMode = isRequestMode(value?.requestMode) ? value.requestMode : fallback.requestMode;
+  const responseMode = isResponseMode(value?.responseMode) ? value.responseMode : fallback.responseMode;
+  const selectedAgentId = typeof value?.selectedAgentId === "string" && value.selectedAgentId.trim() ? value.selectedAgentId : void 0;
+  return {
+    requestMode,
+    responseMode,
+    ...selectedAgentId ? { selectedAgentId } : {}
+  };
+}
+function normalizeSettings(parsed) {
+  const defaults = defaultSettings();
+  const selectedEnvironment = isAionEnvironmentId(parsed.selectedEnvironment) ? parsed.selectedEnvironment : DEFAULT_AION_ENVIRONMENT_ID;
+  const legacyFallback = normalizeEnvironmentSettings(
+    {
+      requestMode: parsed.requestMode,
+      responseMode: parsed.responseMode
+    },
+    defaults.environments[selectedEnvironment]
+  );
+  const environments = Object.fromEntries(
+    AION_ENVIRONMENT_IDS.map((id) => [
+      id,
+      normalizeEnvironmentSettings(
+        parsed.environments?.[id],
+        id === selectedEnvironment ? legacyFallback : defaults.environments[id]
+      )
+    ])
+  );
+  const hadInvalidEnvironment = parsed.selectedEnvironment !== void 0 && !isAionEnvironmentId(parsed.selectedEnvironment);
+  return {
+    settings: {
+      selectedEnvironment,
+      environments
+    },
+    ...hadInvalidEnvironment ? {
+      warning: "chat2 ignored an invalid saved environment and restored production."
+    } : {}
+  };
+}
+function readRawSettings(settingsPath) {
+  try {
+    return JSON.parse(readFileSync3(settingsPath, "utf8"));
+  } catch {
+    return void 0;
+  }
+}
+function serializeSettings(settings, rawSettings) {
+  const {
+    selectedEnvironment: _selectedEnvironment,
+    environments: _environments,
+    requestMode: _requestMode,
+    responseMode: _responseMode,
+    ...unknownFields
+  } = rawSettings ?? {};
+  return {
+    ...unknownFields,
+    selectedEnvironment: settings.selectedEnvironment,
+    environments: settings.environments
+  };
+}
 function resolveChatSettingsPath(env3 = process.env, homeDirectory = os3.homedir()) {
   const configHome = env3.XDG_CONFIG_HOME || path.join(homeDirectory, ".config");
   return path.join(configHome, "aion", "chat2.json");
 }
-function loadChatModeSettings(settingsPath = resolveChatSettingsPath()) {
+function loadChatSettings(settingsPath = resolveChatSettingsPath()) {
   try {
     const raw = readFileSync3(settingsPath, "utf8");
     const parsed = JSON.parse(raw);
-    const requestMode = isRequestMode(parsed.requestMode) ? parsed.requestMode : DEFAULT_CHAT_MODE_SETTINGS.requestMode;
-    const responseMode = isResponseMode(parsed.responseMode) ? parsed.responseMode : DEFAULT_CHAT_MODE_SETTINGS.responseMode;
-    if (requestMode !== parsed.requestMode || responseMode !== parsed.responseMode) {
-      return {
-        settings: { requestMode, responseMode },
-        warning: "chat2 ignored invalid saved mode settings and restored defaults."
-      };
-    }
-    return {
-      settings: { requestMode, responseMode }
-    };
+    return normalizeSettings(parsed);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (message.includes("ENOENT")) {
       return {
-        settings: { ...DEFAULT_CHAT_MODE_SETTINGS }
+        settings: defaultSettings()
       };
     }
     return {
-      settings: { ...DEFAULT_CHAT_MODE_SETTINGS },
-      warning: `chat2 could not load saved mode settings: ${message}`
+      settings: defaultSettings(),
+      warning: `chat2 could not load saved settings: ${message}`
     };
   }
 }
-function saveChatModeSettings(settings, settingsPath = resolveChatSettingsPath()) {
+function saveChatSettings(settings, settingsPath = resolveChatSettingsPath()) {
   try {
+    const rawSettings = readRawSettings(settingsPath);
+    const serialized = serializeSettings(settings, rawSettings);
     mkdirSync(path.dirname(settingsPath), { recursive: true });
-    writeFileSync(`${settingsPath}`, `${JSON.stringify(settings, null, 2)}
-`, "utf8");
+    writeFileSync(
+      settingsPath,
+      `${JSON.stringify(serialized, null, 2)}
+`,
+      "utf8"
+    );
     return void 0;
   } catch (error) {
-    return `chat2 could not save mode settings: ${error instanceof Error ? error.message : String(error)}`;
+    return `chat2 could not save settings: ${error instanceof Error ? error.message : String(error)}`;
   }
+}
+function updateChatSettings(update, settingsPath = resolveChatSettingsPath()) {
+  const { settings } = loadChatSettings(settingsPath);
+  return saveChatSettings(update(settings), settingsPath);
+}
+function saveSelectedEnvironment(environmentId, settingsPath = resolveChatSettingsPath()) {
+  return updateChatSettings((settings) => ({
+    ...settings,
+    selectedEnvironment: environmentId
+  }), settingsPath);
+}
+
+// src/lib/browser.ts
+import { spawn } from "child_process";
+function validateBrowserUrl(url) {
+  const parsed = new URL(url);
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error("Only HTTP and HTTPS login URLs can be opened in a browser.");
+  }
+}
+function buildBrowserOpenCommand(url, platform2 = process.platform) {
+  validateBrowserUrl(url);
+  const options = {
+    detached: true,
+    stdio: "ignore"
+  };
+  switch (platform2) {
+    case "darwin":
+      return {
+        command: "open",
+        args: [url],
+        options
+      };
+    case "win32":
+      return {
+        command: "cmd",
+        args: ["/c", "start", "", url],
+        options: {
+          ...options,
+          windowsHide: true
+        }
+      };
+    default:
+      return {
+        command: "xdg-open",
+        args: [url],
+        options
+      };
+  }
+}
+async function openUrlInDefaultBrowser(url, spawnImpl = spawn) {
+  const openCommand = buildBrowserOpenCommand(url);
+  return new Promise((resolve) => {
+    try {
+      const child = spawnImpl(
+        openCommand.command,
+        openCommand.args,
+        openCommand.options
+      );
+      child.once("spawn", () => {
+        child.unref();
+        resolve(true);
+      });
+      child.once("error", () => {
+        resolve(false);
+      });
+    } catch {
+      resolve(false);
+    }
+  });
 }
 
 // src/lib/connection.ts
@@ -92688,19 +92910,59 @@ function buildEndpointConfig(options) {
     rpcUrl: `${direct.baseUrl}${formatProxyPath(options.agentId)}`
   };
 }
+async function buildAuthHeaders(options, initHeaders, requestHeaders) {
+  const headers = new Headers(initHeaders ?? requestHeaders);
+  for (const [key, value] of Object.entries(options.headers)) {
+    headers.set(key, value);
+  }
+  const token = options.token ?? await options.tokenProvider?.();
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+  return headers;
+}
+function buildAuthenticatedFetch(options) {
+  return async (input, init) => {
+    const isRequest = input instanceof Request;
+    const originalRequest = isRequest ? input : void 0;
+    const method = init?.method ?? originalRequest?.method ?? "GET";
+    const headers = await buildAuthHeaders(
+      options,
+      init?.headers,
+      originalRequest?.headers
+    );
+    if (isRequest) {
+      const request = originalRequest;
+      const body = init?.body ?? (method.toUpperCase() === "GET" || method.toUpperCase() === "HEAD" ? void 0 : request.body ?? void 0);
+      const nextRequest = {
+        ...init,
+        method,
+        headers,
+        body
+      };
+      if (body !== void 0) {
+        nextRequest.duplex = "half";
+      }
+      return fetch(new Request(request, nextRequest));
+    }
+    return fetch(input, {
+      ...init,
+      method,
+      headers
+    });
+  };
+}
 function buildFetch(options, endpoints) {
   return async (input, init) => {
     const isRequest = input instanceof Request;
     const originalRequest = isRequest ? input : void 0;
     const method = init?.method ?? originalRequest?.method ?? "GET";
     const targetUrl = options.agentId && method.toUpperCase() !== "GET" ? endpoints.rpcUrl : isRequest ? input.url : String(input);
-    const headers = new Headers(init?.headers ?? originalRequest?.headers);
-    for (const [key, value] of Object.entries(options.headers)) {
-      headers.set(key, value);
-    }
-    if (options.token) {
-      headers.set("Authorization", `Bearer ${options.token}`);
-    }
+    const headers = await buildAuthHeaders(
+      options,
+      init?.headers,
+      originalRequest?.headers
+    );
     if (isRequest) {
       const request = originalRequest;
       const body = init?.body ?? (method.toUpperCase() === "GET" || method.toUpperCase() === "HEAD" ? void 0 : request.body ?? void 0);
@@ -92932,6 +93194,261 @@ function isTerminalTaskState(state) {
   return TERMINAL_TASK_STATES.includes(state);
 }
 
+// src/lib/authConfig.ts
+function isObject2(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+function readString(value, key, path2) {
+  const next = value[key];
+  if (typeof next !== "string" || !next.trim()) {
+    throw new Error(`Invalid CLI auth config: missing ${path2}`);
+  }
+  return next;
+}
+function readBoolean(value, key, path2) {
+  const next = value[key];
+  if (typeof next !== "boolean") {
+    throw new Error(`Invalid CLI auth config: missing ${path2}`);
+  }
+  return next;
+}
+function parseCliAuthConfig(value) {
+  if (!isObject2(value)) {
+    throw new Error("Invalid CLI auth config: expected object response");
+  }
+  const authProvider = readString(value, "authProvider", "authProvider");
+  const authMode = readString(value, "authMode", "authMode");
+  if (authProvider !== "workos") {
+    throw new Error(`Unsupported CLI auth provider: ${authProvider}`);
+  }
+  if (authMode !== "cliDevice") {
+    throw new Error(`Unsupported CLI auth mode: ${authMode}`);
+  }
+  const workos = value.workos;
+  if (!isObject2(workos)) {
+    throw new Error("Invalid CLI auth config: missing workos");
+  }
+  return {
+    apiBaseUrl: readString(value, "apiBaseUrl", "apiBaseUrl"),
+    authProvider,
+    authMode,
+    workos: {
+      clientId: readString(workos, "clientId", "workos.clientId"),
+      issuer: readString(workos, "issuer", "workos.issuer"),
+      deviceAuthorizationUrl: readString(
+        workos,
+        "deviceAuthorizationUrl",
+        "workos.deviceAuthorizationUrl"
+      ),
+      tokenUrl: readString(workos, "tokenUrl", "workos.tokenUrl"),
+      refreshTokenUrl: readString(
+        workos,
+        "refreshTokenUrl",
+        "workos.refreshTokenUrl"
+      ),
+      supportsDirectRefresh: readBoolean(
+        workos,
+        "supportsDirectRefresh",
+        "workos.supportsDirectRefresh"
+      )
+    }
+  };
+}
+async function fetchCliAuthConfig(environmentId, fetchImpl = fetch) {
+  const url = getAuthConfigUrl(environmentId);
+  const response = await fetchImpl(url);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch CLI auth config from ${url}: ${response.status}`);
+  }
+  return parseCliAuthConfig(await response.json());
+}
+
+// src/lib/credentialStore.ts
+var SERVICE_NAME = "aion-chat";
+function accountName(environmentId) {
+  return `${environmentId}:user`;
+}
+function credentialError(action, error) {
+  const message = error instanceof Error ? error.message : String(error);
+  return new Error(
+    `Unable to ${action} Aion login credentials from the operating system keychain: ${message}`
+  );
+}
+async function loadKeyring() {
+  const packageName = "@napi-rs/keyring";
+  return import(packageName);
+}
+var KeyringCredentialStore = class {
+  async getRefreshToken(environmentId) {
+    try {
+      const { AsyncEntry } = await loadKeyring();
+      const token = await new AsyncEntry(
+        SERVICE_NAME,
+        accountName(environmentId)
+      ).getPassword();
+      return token ?? void 0;
+    } catch (error) {
+      throw credentialError("read", error);
+    }
+  }
+  async setRefreshToken(environmentId, refreshToken) {
+    try {
+      const { AsyncEntry } = await loadKeyring();
+      await new AsyncEntry(SERVICE_NAME, accountName(environmentId)).setPassword(
+        refreshToken
+      );
+    } catch (error) {
+      throw credentialError("store", error);
+    }
+  }
+  async deleteRefreshToken(environmentId) {
+    try {
+      const { AsyncEntry } = await loadKeyring();
+      await new AsyncEntry(
+        SERVICE_NAME,
+        accountName(environmentId)
+      ).deletePassword();
+    } catch (error) {
+      throw credentialError("delete", error);
+    }
+  }
+};
+var keyringCredentialStore = new KeyringCredentialStore();
+
+// src/lib/workosAuth.ts
+var DEVICE_CODE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code";
+var DEFAULT_POLL_INTERVAL_SECONDS = 5;
+var SLOW_DOWN_INCREMENT_SECONDS = 5;
+var accessTokenCache = /* @__PURE__ */ new Map();
+function wait(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+function requireString(value, name) {
+  if (!value) {
+    throw new Error(`WorkOS response was missing ${name}`);
+  }
+  return value;
+}
+function normalizeTokenResponse(response) {
+  const accessToken = response.access_token ?? response.accessToken;
+  const refreshToken = response.refresh_token ?? response.refreshToken;
+  const expiresIn = response.expires_in ?? response.expiresIn;
+  return {
+    accessToken: requireString(accessToken, "access token"),
+    refreshToken: requireString(refreshToken, "refresh token"),
+    ...typeof expiresIn === "number" ? { expiresAt: Date.now() + expiresIn * 1e3 } : {}
+  };
+}
+async function postJson(url, body, fetchImpl) {
+  return fetchImpl(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(body)
+  });
+}
+async function postForm(url, body, fetchImpl) {
+  return fetchImpl(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded"
+    },
+    body: new URLSearchParams(body)
+  });
+}
+async function readOAuthError(response) {
+  try {
+    return await response.json();
+  } catch {
+    return {};
+  }
+}
+async function requestDeviceAuthorization(config, fetchImpl) {
+  const response = await postJson(
+    config.workos.deviceAuthorizationUrl,
+    { client_id: config.workos.clientId },
+    fetchImpl
+  );
+  if (!response.ok) {
+    throw new Error(
+      `Failed to start WorkOS CLI login: ${response.status} ${response.statusText}`
+    );
+  }
+  const payload = await response.json();
+  return {
+    device_code: requireString(payload.device_code, "device code"),
+    user_code: requireString(payload.user_code, "user code"),
+    verification_uri: requireString(payload.verification_uri, "verification URI"),
+    expires_in: typeof payload.expires_in === "number" ? payload.expires_in : 300,
+    ...payload.verification_uri_complete ? { verification_uri_complete: payload.verification_uri_complete } : {},
+    ...typeof payload.interval === "number" ? { interval: payload.interval } : {}
+  };
+}
+async function pollForToken(config, deviceCode, expiresInSeconds, initialIntervalSeconds, callbacks, fetchImpl) {
+  let intervalSeconds = Math.max(1, initialIntervalSeconds);
+  const expiresAt = Date.now() + expiresInSeconds * 1e3;
+  while (Date.now() < expiresAt) {
+    await wait(intervalSeconds * 1e3);
+    const response = await postForm(
+      config.workos.tokenUrl,
+      {
+        grant_type: DEVICE_CODE_GRANT_TYPE,
+        device_code: deviceCode,
+        client_id: config.workos.clientId
+      },
+      fetchImpl
+    );
+    if (response.ok) {
+      return normalizeTokenResponse(await response.json());
+    }
+    const error = await readOAuthError(response);
+    switch (error.error) {
+      case "authorization_pending":
+        callbacks.onPending?.();
+        break;
+      case "slow_down":
+        intervalSeconds += SLOW_DOWN_INCREMENT_SECONDS;
+        callbacks.onSlowDown?.(intervalSeconds);
+        break;
+      case "access_denied":
+        throw new Error("WorkOS login was denied.");
+      case "expired_token":
+        throw new Error("WorkOS login expired before authorization completed.");
+      default:
+        throw new Error(
+          `WorkOS login failed: ${error.error_description ?? error.error ?? response.statusText}`
+        );
+    }
+  }
+  throw new Error("WorkOS login expired before authorization completed.");
+}
+async function loginWithWorkOS(environmentId, callbacks = {}, options = {}) {
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const credentialStore = options.credentialStore ?? keyringCredentialStore;
+  const config = await fetchCliAuthConfig(environmentId, fetchImpl);
+  const deviceAuthorization = await requestDeviceAuthorization(config, fetchImpl);
+  await callbacks.onDeviceAuthorization?.({
+    userCode: deviceAuthorization.user_code,
+    verificationUri: deviceAuthorization.verification_uri,
+    ...deviceAuthorization.verification_uri_complete ? { verificationUriComplete: deviceAuthorization.verification_uri_complete } : {},
+    expiresInSeconds: deviceAuthorization.expires_in
+  });
+  const session = await pollForToken(
+    config,
+    deviceAuthorization.device_code,
+    deviceAuthorization.expires_in,
+    deviceAuthorization.interval ?? DEFAULT_POLL_INTERVAL_SECONDS,
+    callbacks,
+    fetchImpl
+  );
+  await credentialStore.setRefreshToken(environmentId, session.refreshToken);
+  accessTokenCache.set(environmentId, session);
+  return session;
+}
+
 // src/app.tsx
 var import_jsx_runtime5 = __toESM(require_jsx_runtime(), 1);
 function extractText(parts) {
@@ -92964,9 +93481,33 @@ function upsertEntry(entries, entryId, role, body) {
 function isFinalStatusEvent(event) {
   return Boolean(event.final);
 }
+function parseExactSlashCommand(value) {
+  const [command, environmentId, extra] = value.trim().split(/\s+/);
+  if (command === "/login" && !environmentId) {
+    return { kind: "login" };
+  }
+  if ((command === "/environment" || command === "/env") && !extra) {
+    if (!environmentId) {
+      return { kind: "environment" };
+    }
+    if (isAionEnvironmentId(environmentId)) {
+      return { kind: "environment", environmentId };
+    }
+  }
+  return void 0;
+}
 function ChatApp({ options }) {
   const { exit } = use_app_default();
-  const initialSettingsResult = (0, import_react31.useMemo)(() => loadChatModeSettings(), []);
+  const initialSettingsResult = (0, import_react31.useMemo)(() => loadChatSettings(), []);
+  const [chatSettings, setChatSettings] = (0, import_react31.useState)(
+    initialSettingsResult.settings
+  );
+  const [selectedEnvironment, setSelectedEnvironment] = (0, import_react31.useState)(
+    initialSettingsResult.settings.selectedEnvironment
+  );
+  const activeEnvironmentSettings = chatSettings.environments[selectedEnvironment];
+  const controlPlaneApiBaseUrl = getControlPlaneApiBaseUrl(selectedEnvironment);
+  const agentEndpointUrl = options.url;
   const [connectionState, setConnectionState] = (0, import_react31.useState)("connecting");
   const [connectionLabel, setConnectionLabel] = (0, import_react31.useState)("Discovering agents...");
   const [discoveryLabel, setDiscoveryLabel] = (0, import_react31.useState)("Scanning manifest...");
@@ -92983,19 +93524,20 @@ function ChatApp({ options }) {
   const [pushConfig, setPushConfig] = (0, import_react31.useState)();
   const [discoveredAgents, setDiscoveredAgents] = (0, import_react31.useState)([]);
   const [selectedAgentId, setSelectedAgentId] = (0, import_react31.useState)(
-    options.agentId
+    options.agentId ?? activeEnvironmentSettings.selectedAgentId
   );
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = (0, import_react31.useState)(0);
   const [selectedSlashIndex, setSelectedSlashIndex] = (0, import_react31.useState)(0);
   const [selectedSlashSubmenuIndex, setSelectedSlashSubmenuIndex] = (0, import_react31.useState)(0);
   const [slashSubmenuId, setSlashSubmenuId] = (0, import_react31.useState)();
   const [requestMode, setRequestMode] = (0, import_react31.useState)(
-    initialSettingsResult.settings.requestMode
+    activeEnvironmentSettings.requestMode
   );
   const [responseMode, setResponseMode] = (0, import_react31.useState)(
-    initialSettingsResult.settings.responseMode
+    activeEnvironmentSettings.responseMode
   );
   const [directFallback, setDirectFallback] = (0, import_react31.useState)(false);
+  const [reconnectNonce, setReconnectNonce] = (0, import_react31.useState)(0);
   const taskDisplayState = (0, import_react31.useRef)(/* @__PURE__ */ new Map());
   const appendEntry = (role, body) => {
     setEntries((current) => [
@@ -93038,14 +93580,31 @@ function ChatApp({ options }) {
     const state = getTaskDisplayState(nextTaskId);
     return !state.hasMessage && !state.hasStreamDelta;
   };
-  const persistModes = (nextRequestMode, nextResponseMode) => {
-    const warning = saveChatModeSettings({
-      requestMode: nextRequestMode,
-      responseMode: nextResponseMode
-    });
+  const persistSettings = (nextSettings) => {
+    setChatSettings(nextSettings);
+    const warning = saveChatSettings(nextSettings);
     if (warning) {
       appendSystem(warning);
     }
+  };
+  const persistEnvironmentSettings = (environmentId, update) => {
+    const current = chatSettings.environments[environmentId];
+    persistSettings({
+      ...chatSettings,
+      environments: {
+        ...chatSettings.environments,
+        [environmentId]: {
+          ...current,
+          ...update
+        }
+      }
+    });
+  };
+  const persistModes = (nextRequestMode, nextResponseMode) => {
+    persistEnvironmentSettings(selectedEnvironment, {
+      requestMode: nextRequestMode,
+      responseMode: nextResponseMode
+    });
   };
   const applyRequestMode = (mode) => {
     setRequestMode(mode);
@@ -93063,6 +93622,27 @@ function ChatApp({ options }) {
     setTaskId(void 0);
     taskDisplayState.current.clear();
     setStreamLabel("Idle");
+  };
+  const reloadEnvironmentState = (environmentId) => {
+    const nextSettings = {
+      ...chatSettings,
+      selectedEnvironment: environmentId
+    };
+    const nextEnvironmentSettings = nextSettings.environments[environmentId];
+    persistSettings(nextSettings);
+    setSelectedEnvironment(environmentId);
+    setRequestMode(nextEnvironmentSettings.requestMode);
+    setResponseMode(nextEnvironmentSettings.responseMode);
+    setSelectedAgentId(options.agentId ?? nextEnvironmentSettings.selectedAgentId);
+    setDirectFallback(false);
+    setDiscoveredAgents([]);
+    clearTranscript();
+    setClientState(void 0);
+    setAgentName("Unknown Agent");
+    setDiscoveryLabel("Scanning manifest...");
+    setConnectionLabel("Discovering agents...");
+    setConnectionState("connecting");
+    setReconnectNonce((current) => current + 1);
   };
   (0, import_react31.useEffect)(() => {
     if (initialSettingsResult.warning) {
@@ -93134,8 +93714,26 @@ function ChatApp({ options }) {
   (0, import_react31.useEffect)(() => {
     let closed = false;
     const discover = async () => {
+      if (!agentEndpointUrl) {
+        setDiscoveredAgents([]);
+        setDirectFallback(false);
+        setDiscoveryLabel(
+          `No A2A endpoint configured for ${selectedEnvironment}.`
+        );
+        setConnectionState("connecting");
+        setConnectionLabel(
+          `Using ${selectedEnvironment} control plane at ${controlPlaneApiBaseUrl}`
+        );
+        return;
+      }
       try {
-        const discovery = await discoverAgents(options.url);
+        const discovery = await discoverAgents(
+          agentEndpointUrl,
+          buildAuthenticatedFetch({
+            headers: options.headers,
+            token: options.token
+          })
+        );
         if (closed) {
           return;
         }
@@ -93147,9 +93745,19 @@ function ChatApp({ options }) {
         if (options.agentId) {
           setSelectedAgentId(options.agentId);
           setConnectionLabel(`Connecting to @${options.agentId}...`);
-        } else {
+        } else if (selectedAgentId && !discovery.agents.some((agent) => agent.id === selectedAgentId)) {
+          setSelectedAgentId(void 0);
+          persistEnvironmentSettings(selectedEnvironment, {
+            selectedAgentId: void 0
+          });
+          appendSystem("The selected agent is no longer available.");
           setConnectionState("connecting");
           setConnectionLabel("Choose an agent with @");
+        } else {
+          setConnectionState("connecting");
+          setConnectionLabel(
+            selectedAgentId ? `Connecting to @${selectedAgentId}...` : "Choose an agent with @"
+          );
         }
       } catch (error) {
         if (closed) {
@@ -93172,7 +93780,15 @@ function ChatApp({ options }) {
     return () => {
       closed = true;
     };
-  }, [options.agentId, options.url]);
+  }, [
+    agentEndpointUrl,
+    controlPlaneApiBaseUrl,
+    options.agentId,
+    options.headers,
+    options.token,
+    reconnectNonce,
+    selectedEnvironment
+  ]);
   (0, import_react31.useEffect)(() => {
     let closed = false;
     let closePush;
@@ -93194,6 +93810,13 @@ ${JSON.stringify(
       );
     };
     const connect = async () => {
+      if (!agentEndpointUrl) {
+        setConnectionState("connecting");
+        setConnectionLabel(
+          `Using ${selectedEnvironment} control plane at ${controlPlaneApiBaseUrl}`
+        );
+        return;
+      }
       const shouldConnect = directFallback || Boolean(selectedAgentId);
       if (!shouldConnect) {
         setConnectionState("connecting");
@@ -93224,6 +93847,7 @@ ${JSON.stringify(
         );
         const connected = await connectClient({
           ...options,
+          url: agentEndpointUrl,
           agentId: directFallback ? void 0 : selectedAgentId
         });
         if (closed) {
@@ -93254,7 +93878,15 @@ ${JSON.stringify(
         void closePush();
       }
     };
-  }, [directFallback, options, selectedAgentId]);
+  }, [
+    agentEndpointUrl,
+    controlPlaneApiBaseUrl,
+    directFallback,
+    options,
+    reconnectNonce,
+    selectedAgentId,
+    selectedEnvironment
+  ]);
   const handleMessage = (message) => {
     if (message.contextId) {
       setContextId(message.contextId);
@@ -93359,6 +93991,9 @@ ${JSON.stringify(
     setDraft((current) => clearAgentMention(current));
     if (selectedAgentId !== suggestion) {
       setSelectedAgentId(suggestion);
+      persistEnvironmentSettings(selectedEnvironment, {
+        selectedAgentId: suggestion
+      });
       setDirectFallback(false);
     }
   };
@@ -93384,9 +94019,75 @@ ${JSON.stringify(
       resetSlashSelection();
       return;
     }
+    if (command.id === "login") {
+      resetSlashSelection();
+      void runLoginSlashCommand();
+      return;
+    }
     setSlashSubmenuId(command.id);
     setSelectedSlashSubmenuIndex(0);
     setDraft("");
+  };
+  const runLoginSlashCommand = async () => {
+    appendSystem(`Starting Aion login for ${selectedEnvironment}.`);
+    try {
+      await loginWithWorkOS(selectedEnvironment, {
+        onDeviceAuthorization: async (prompt) => {
+          const url = prompt.verificationUriComplete ?? prompt.verificationUri;
+          if (await openUrlInDefaultBrowser(url)) {
+            appendSystem(
+              `Opening login screen in default browser.
+
+Code: ${prompt.userCode}`
+            );
+            return;
+          }
+          appendSystem(
+            `Open this URL to continue login:
+${url}
+
+Code: ${prompt.userCode}`
+          );
+        },
+        onSlowDown: (intervalSeconds) => {
+          appendStatus(`Login polling slowed to every ${intervalSeconds}s.`);
+        }
+      });
+      appendSystem(`Logged in to Aion ${selectedEnvironment}.`);
+      setReconnectNonce((current) => current + 1);
+    } catch (error) {
+      appendSystem(
+        `Login failed: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  };
+  const runEnvironmentSlashCommand = (environmentId) => {
+    if (!environmentId) {
+      appendSystem(
+        `Current environment: ${selectedEnvironment}
+Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
+      );
+      return;
+    }
+    if (environmentId === selectedEnvironment) {
+      appendSystem(`Current environment: ${selectedEnvironment}`);
+      return;
+    }
+    reloadEnvironmentState(environmentId);
+    appendSystem(`Aion environment set to ${environmentId}.`);
+  };
+  const runExactSlashCommand = () => {
+    const command = parseExactSlashCommand(draft);
+    if (!command) {
+      return false;
+    }
+    resetSlashSelection();
+    if (command.kind === "login") {
+      void runLoginSlashCommand();
+      return true;
+    }
+    runEnvironmentSlashCommand(command.environmentId);
+    return true;
   };
   const applySlashSubmenuSelection = (optionIndex = selectedSlashSubmenuIndex) => {
     const command = getSlashCommandById(slashSubmenuId);
@@ -93408,6 +94109,9 @@ ${JSON.stringify(
     );
     if (selection.agentId && selection.agentId !== selectedAgentId) {
       setSelectedAgentId(selection.agentId);
+      persistEnvironmentSettings(selectedEnvironment, {
+        selectedAgentId: selection.agentId
+      });
       setDirectFallback(false);
       appendStatus(`Active agent changed to @${selection.agentId}`);
     }
@@ -93560,6 +94264,9 @@ ${JSON.stringify(
         return;
       }
       if (isSlashMenuOpen) {
+        if (runExactSlashCommand()) {
+          return;
+        }
         openSelectedSlashCommand();
         return;
       }
@@ -93641,10 +94348,59 @@ ${JSON.stringify(
 
 // src/cli.tsx
 var import_jsx_runtime6 = __toESM(require_jsx_runtime(), 1);
-function main() {
+async function runLoginCommand() {
+  const { settings } = loadChatSettings();
+  const environmentId = settings.selectedEnvironment;
+  process.stdout.write(`Starting Aion login for ${environmentId}...
+`);
+  await loginWithWorkOS(environmentId, {
+    onDeviceAuthorization: async (prompt) => {
+      const url = prompt.verificationUriComplete ?? prompt.verificationUri;
+      if (await openUrlInDefaultBrowser(url)) {
+        process.stdout.write("Opening login screen in default browser.\n");
+        process.stdout.write(`Code: ${prompt.userCode}
+`);
+        return;
+      }
+      process.stdout.write(`Open this URL to continue login:
+${url}
+`);
+      process.stdout.write(`Code: ${prompt.userCode}
+`);
+    },
+    onPending: () => {
+      process.stdout.write(".");
+    },
+    onSlowDown: (intervalSeconds) => {
+      process.stdout.write(`
+Polling slowed to every ${intervalSeconds}s.
+`);
+    }
+  });
+  process.stdout.write(`
+Logged in to Aion ${environmentId}.
+`);
+}
+function runEnvironmentCommand(environmentId) {
+  const warning = saveSelectedEnvironment(environmentId);
+  if (warning) {
+    throw new Error(warning);
+  }
+  process.stdout.write(`Aion environment set to ${environmentId}.
+`);
+}
+async function main() {
   try {
-    const options = parseArgs(process.argv.slice(2));
-    render_default(/* @__PURE__ */ (0, import_jsx_runtime6.jsx)(ChatApp, { options }), {
+    const command = parseCliArgs(process.argv.slice(2));
+    if (command.kind === "login") {
+      await runLoginCommand();
+      return;
+    }
+    if (command.kind === "environment") {
+      runEnvironmentCommand(command.environmentId);
+      return;
+    }
+    render_default(/* @__PURE__ */ (0, import_jsx_runtime6.jsx)(ChatApp, { options: command.options }), {
       exitOnCtrlC: false
     });
   } catch (error) {
@@ -93657,7 +94413,7 @@ function main() {
     process.exit(1);
   }
 }
-main();
+void main();
 /*! Bundled license information:
 
 react/cjs/react.production.js:

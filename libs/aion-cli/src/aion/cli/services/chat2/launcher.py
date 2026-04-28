@@ -21,7 +21,7 @@ class Chat2LaunchOptions:
     """Arguments forwarded from ``aion chat2`` to the standalone UI.
 
     Args:
-        endpoint: Direct or proxied A2A endpoint URL.
+        endpoint: Optional direct or proxied A2A endpoint URL.
         agent_id: Optional agent identifier for proxy-aware routing.
         token: Optional bearer token.
         headers: Additional HTTP headers.
@@ -29,7 +29,7 @@ class Chat2LaunchOptions:
         push_receiver: Push notification receiver URL.
     """
 
-    endpoint: str
+    endpoint: Optional[str]
     agent_id: Optional[str]
     token: Optional[str]
     headers: dict[str, str]
@@ -38,8 +38,10 @@ class Chat2LaunchOptions:
 
     def to_args(self) -> list[str]:
         """Convert the options to CLI arguments for the standalone UI."""
-        args = ["--url", self.endpoint]
+        args: list[str] = []
 
+        if self.endpoint:
+            args.extend(["--url", self.endpoint])
         if self.agent_id:
             args.extend(["--agent-id", self.agent_id])
         if self.token:

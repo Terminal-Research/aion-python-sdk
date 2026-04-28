@@ -1,13 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { ChatCliOptions } from "../src/args.js";
 import {
+	buildAuthenticatedFetch,
 	buildEndpointConfig,
 	buildMessageParams,
+	type ChatConnectionOptions,
 	createPushNotificationConfig
 } from "../src/lib/connection.js";
 
-function buildOptions(overrides: Partial<ChatCliOptions> = {}): ChatCliOptions {
+function buildOptions(overrides: Partial<ChatConnectionOptions> = {}): ChatConnectionOptions {
 	return {
 		url: "http://localhost:8000",
 		agentId: undefined,
@@ -18,6 +19,10 @@ function buildOptions(overrides: Partial<ChatCliOptions> = {}): ChatCliOptions {
 		...overrides
 	};
 }
+
+afterEach(() => {
+	vi.unstubAllGlobals();
+});
 
 describe("buildEndpointConfig", () => {
 	it("derives direct agent-card endpoints from a base URL", () => {
@@ -58,6 +63,50 @@ describe("buildEndpointConfig", () => {
 			cardPath: "/agents/demo-agent/.well-known/agent-card.json",
 			rpcUrl: "http://localhost:8000/agents/demo-agent/"
 		});
+	});
+});
+
+describe("buildAuthenticatedFetch", () => {
+	it("adds custom headers and an explicit bearer token without calling the token provider", async () => {
+		const tokenProvider = vi.fn(async () => "stored-token");
+		const fetchMock = vi.fn(async () => new Response("ok"));
+		vi.stubGlobal("fetch", fetchMock);
+
+		const fetchImpl = buildAuthenticatedFetch({
+			headers: { "X-Test": "one" },
+			token: "explicit-token",
+			tokenProvider
+		});
+		await fetchImpl("http://localhost:8000/.well-known/manifest.json");
+
+		const calls = fetchMock.mock.calls as unknown as Array<
+			[RequestInfo | URL, RequestInit?]
+		>;
+		const [, init] = calls[0] ?? [];
+		const headers = (init as RequestInit).headers as Headers;
+		expect(headers.get("Authorization")).toBe("Bearer explicit-token");
+		expect(headers.get("X-Test")).toBe("one");
+		expect(tokenProvider).not.toHaveBeenCalled();
+	});
+
+	it("uses the token provider when no explicit token is supplied", async () => {
+		const tokenProvider = vi.fn(async () => "stored-token");
+		const fetchMock = vi.fn(async () => new Response("ok"));
+		vi.stubGlobal("fetch", fetchMock);
+
+		const fetchImpl = buildAuthenticatedFetch({
+			headers: {},
+			tokenProvider
+		});
+		await fetchImpl("http://localhost:8000/.well-known/manifest.json");
+
+		const calls = fetchMock.mock.calls as unknown as Array<
+			[RequestInfo | URL, RequestInit?]
+		>;
+		const [, init] = calls[0] ?? [];
+		const headers = (init as RequestInit).headers as Headers;
+		expect(headers.get("Authorization")).toBe("Bearer stored-token");
+		expect(tokenProvider).toHaveBeenCalledOnce();
 	});
 });
 

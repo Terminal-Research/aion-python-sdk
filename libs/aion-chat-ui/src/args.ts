@@ -1,9 +1,13 @@
 import { readFileSync } from "node:fs";
 
-export const DEFAULT_PROXY_URL = "http://localhost:8000";
+import {
+	type AionEnvironmentId,
+	AION_ENVIRONMENT_IDS,
+	isAionEnvironmentId
+} from "./lib/environment.js";
 
 export interface ChatCliOptions {
-	url: string;
+	url?: string;
 	agentId?: string;
 	token?: string;
 	headers: Record<string, string>;
@@ -11,13 +15,27 @@ export interface ChatCliOptions {
 	pushReceiver: string;
 }
 
+export type CliCommand =
+	| {
+			kind: "chat";
+			options: ChatCliOptions;
+	  }
+	| {
+			kind: "login";
+	  }
+	| {
+			kind: "environment";
+			environmentId: AionEnvironmentId;
+	  };
+
 const HELP_TEXT = `
 Usage:
   aio [options]
+  aio login
   aion-chat [options]
 
 Options:
-  -u, --url, --host <endpoint>   Agent or proxy URL to connect to (default: ${DEFAULT_PROXY_URL})
+  -u, --url, --host <endpoint>   Agent or proxy URL to connect to
       --agent-id <agent-id>      Agent identifier for proxy-aware routing
       --token <token>            Bearer token for authenticated endpoints
       --header <key=value>       Repeatable custom HTTP header
@@ -53,8 +71,38 @@ function parseHeader(rawHeader: string): [string, string] {
 	return [rawHeader.slice(0, separator), rawHeader.slice(separator + 1)];
 }
 
+function printVersion(): void {
+	const packagePath = new URL("../package.json", import.meta.url);
+	const packageJson = JSON.parse(
+		readFileSync(packagePath, "utf8")
+	) as { version?: string };
+	process.stdout.write(`${packageJson.version ?? "0.0.0"}\n`);
+}
+
 export function printHelp(): void {
 	process.stdout.write(`${HELP_TEXT}\n`);
+}
+
+function parseEnvironmentCommand(argv: string[]): CliCommand | undefined {
+	const [command, environmentId, extra] = argv;
+	if (command !== "environment" && command !== "env") {
+		return undefined;
+	}
+	if (!environmentId || extra) {
+		throw new Error(
+			`Expected one environment: ${AION_ENVIRONMENT_IDS.join(", ")}`
+		);
+	}
+	if (!isAionEnvironmentId(environmentId)) {
+		throw new Error(
+			`Unknown environment '${environmentId}', expected one of ${AION_ENVIRONMENT_IDS.join(", ")}`
+		);
+	}
+
+	return {
+		kind: "environment",
+		environmentId
+	};
 }
 
 export function parseArgs(argv: string[]): ChatCliOptions {
@@ -102,25 +150,39 @@ export function parseArgs(argv: string[]): ChatCliOptions {
 			case "--help":
 				printHelp();
 				process.exit(0);
-			case "--version": {
-				const packagePath = new URL("../package.json", import.meta.url);
-				const packageJson = JSON.parse(
-					readFileSync(packagePath, "utf8")
-				) as { version?: string };
-				process.stdout.write(`${packageJson.version ?? "0.0.0"}\n`);
+			case "--version":
+				printVersion();
 				process.exit(0);
-			}
 			default:
 				throw new Error(`Unknown argument '${arg}'`);
 		}
 	}
 
 	return {
-		url: url ?? DEFAULT_PROXY_URL,
+		...(url ? { url } : {}),
 		agentId,
 		token,
 		headers,
 		pushNotifications,
 		pushReceiver
+	};
+}
+
+export function parseCliArgs(argv: string[]): CliCommand {
+	if (argv[0] === "login") {
+		if (argv.length > 1) {
+			throw new Error("The login command does not accept arguments.");
+		}
+		return { kind: "login" };
+	}
+
+	const environmentCommand = parseEnvironmentCommand(argv);
+	if (environmentCommand) {
+		return environmentCommand;
+	}
+
+	return {
+		kind: "chat",
+		options: parseArgs(argv)
 	};
 }

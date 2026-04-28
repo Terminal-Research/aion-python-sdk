@@ -34,6 +34,20 @@ def test_chat2_launch_options_to_args() -> None:
     ]
 
 
+def test_chat2_launch_options_omits_endpoint_when_not_supplied() -> None:
+    """Ensure environment-backed chat launches do not force a local URL."""
+    options = launcher.Chat2LaunchOptions(
+        endpoint=None,
+        agent_id=None,
+        token=None,
+        headers={},
+        push_notifications=False,
+        push_receiver="http://localhost:5000",
+    )
+
+    assert options.to_args() == []
+
+
 def test_resolve_chat2_command_prefers_packaged_binary(
     monkeypatch, tmp_path: Path
 ) -> None:
@@ -97,7 +111,7 @@ def test_resolve_chat2_command_prefers_checkout_bundle_over_packaged_artifacts(
 def test_launch_chat2_returns_process_exit_code(monkeypatch) -> None:
     """Ensure the launcher returns the child process exit status."""
     options = launcher.Chat2LaunchOptions(
-        endpoint="http://localhost:8000",
+        endpoint=None,
         agent_id=None,
         token=None,
         headers={},
@@ -119,7 +133,5 @@ def test_launch_chat2_returns_process_exit_code(monkeypatch) -> None:
     assert recorded["command"] == [
         "node",
         "/tmp/cli.mjs",
-        "--url",
-        "http://localhost:8000",
     ]
     assert recorded["check"] is False
