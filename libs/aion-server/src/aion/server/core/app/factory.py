@@ -19,7 +19,7 @@ from aion.server.core.app.preprocessors import FilePartPreprocessor
 from aion.server.core.middlewares import TracingMiddleware, AionContextMiddleware
 from aion.server.core.request_handlers import AionRequestHandler
 from aion.server.plugins import PluginFactory
-from aion.server.tasks import StoreManager
+from aion.server.tasks import StoreManager, PushNotificationFactory
 from .lifespan import AppLifespan
 from .registry import app_registry
 
@@ -149,9 +149,13 @@ class AppFactory:
             file_transformer=self.file_transformer,
         )
 
+        push_config_store, push_sender = PushNotificationFactory.create(self.db_factory.db_manager)
+
         return AionRequestHandler(
             agent_executor=self._executor,
-            task_store=task_store
+            task_store=task_store,
+            push_config_store=push_config_store,
+            push_sender=push_sender,
         )
 
     def _add_extra_middlewares(self):
