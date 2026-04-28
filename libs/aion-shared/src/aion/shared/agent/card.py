@@ -23,8 +23,8 @@ class AionAgentCard:
             base_url: str,
     ) -> AgentCard:
         capabilities = AgentCapabilities(
-            streaming=config.capabilities.streaming,
-            push_notifications=config.capabilities.pushNotifications,
+            streaming=True,
+            push_notifications=True,
             extensions=[
                 AgentExtension(
                     description="Get Conversation info based on context",
