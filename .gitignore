@@ -60,3 +60,6 @@ dmypy.json
 
 # Windsurf specific
 .windsurfrules
+
+# Agents
+.codex
