@@ -64,6 +64,14 @@ export const SLASH_COMMANDS = [
 		options: []
 	},
 	{
+		id: "login",
+		label: "/login",
+		description: "Authenticate Aion Chat with your Aion account.",
+		title: "Login",
+		subtitle: "Authenticate Aion Chat with your Aion account.",
+		options: []
+	},
+	{
 		id: "exit",
 		label: "/exit",
 		description: "Exit Aion Chat.",

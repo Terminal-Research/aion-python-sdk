@@ -3,13 +3,59 @@
 import React from "react";
 import { render } from "ink";
 
-import { parseArgs, printHelp } from "./args.js";
+import { parseCliArgs, printHelp } from "./args.js";
 import { ChatApp } from "./app.js";
+import { openUrlInDefaultBrowser } from "./lib/browser.js";
+import { loadChatSettings, saveSelectedEnvironment } from "./lib/chatSettings.js";
+import { loginWithWorkOS } from "./lib/workosAuth.js";
 
-function main(): void {
+async function runLoginCommand(): Promise<void> {
+	const { settings } = loadChatSettings();
+	const environmentId = settings.selectedEnvironment;
+	process.stdout.write(`Starting Aion login for ${environmentId}...\n`);
+	await loginWithWorkOS(environmentId, {
+		onDeviceAuthorization: async (prompt) => {
+			const url = prompt.verificationUriComplete ?? prompt.verificationUri;
+			if (await openUrlInDefaultBrowser(url)) {
+				process.stdout.write("Opening login screen in default browser.\n");
+				process.stdout.write(`Code: ${prompt.userCode}\n`);
+				return;
+			}
+
+			process.stdout.write(`Open this URL to continue login:\n${url}\n`);
+			process.stdout.write(`Code: ${prompt.userCode}\n`);
+		},
+		onPending: () => {
+			process.stdout.write(".");
+		},
+		onSlowDown: (intervalSeconds) => {
+			process.stdout.write(`\nPolling slowed to every ${intervalSeconds}s.\n`);
+		}
+	});
+	process.stdout.write(`\nLogged in to Aion ${environmentId}.\n`);
+}
+
+function runEnvironmentCommand(environmentId: Parameters<typeof saveSelectedEnvironment>[0]): void {
+	const warning = saveSelectedEnvironment(environmentId);
+	if (warning) {
+		throw new Error(warning);
+	}
+	process.stdout.write(`Aion environment set to ${environmentId}.\n`);
+}
+
+async function main(): Promise<void> {
 	try {
-		const options = parseArgs(process.argv.slice(2));
-		render(<ChatApp options={options} />, {
+		const command = parseCliArgs(process.argv.slice(2));
+		if (command.kind === "login") {
+			await runLoginCommand();
+			return;
+		}
+		if (command.kind === "environment") {
+			runEnvironmentCommand(command.environmentId);
+			return;
+		}
+
+		render(<ChatApp options={command.options} />, {
 			exitOnCtrlC: false
 		});
 	} catch (error) {
@@ -21,4 +67,4 @@ function main(): void {
 	}
 }
 
-main();
+void main();

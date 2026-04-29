@@ -87,7 +87,7 @@ def test_chat2_reports_missing_artifact(monkeypatch) -> None:
 
 
 def test_chat2_defaults_to_local_proxy(monkeypatch) -> None:
-    """Ensure ``aion chat2`` defaults to the local proxy discovery URL."""
+    """Ensure ``aion chat2`` lets the UI resolve the selected environment."""
     runner = CliRunner()
     chat2_module = importlib.import_module("aion.cli.commands.chat2")
     called: dict[str, object] = {}
@@ -102,4 +102,24 @@ def test_chat2_defaults_to_local_proxy(monkeypatch) -> None:
 
     assert result.exit_code == 0
     options = called["options"]
-    assert options.endpoint == "http://localhost:8000"
+    assert options.endpoint is None
+
+
+def test_login_is_not_a_python_cli_command() -> None:
+    """Ensure chat UI login remains scoped to the npm CLI and composer."""
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["login"])
+
+    assert result.exit_code != 0
+    assert "No such command" in result.output
+
+
+def test_environment_is_not_a_python_cli_command() -> None:
+    """Ensure chat UI environment switching remains scoped to npm and composer."""
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["env", "development"])
+
+    assert result.exit_code != 0
+    assert "No such command" in result.output

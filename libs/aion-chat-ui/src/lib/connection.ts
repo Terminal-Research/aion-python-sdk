@@ -35,6 +35,18 @@ export interface ConnectedClient {
 }
 
 export type StreamEvent = Message | Task | TaskStatusUpdateEvent | TaskArtifactUpdateEvent;
+export type TokenProvider = () => Promise<string | undefined>;
+
+export interface AuthenticatedFetchOptions {
+	token?: string;
+	tokenProvider?: TokenProvider;
+	headers: Record<string, string>;
+}
+
+export interface ChatConnectionOptions extends ChatCliOptions {
+	url: string;
+	tokenProvider?: TokenProvider;
+}
 
 const AGENT_CARD_PATH = "/.well-known/agent-card.json";
 
@@ -68,7 +80,7 @@ export function formatProxyPath(agentId: string, path = ""): string {
 	return `/agents/${agentId}/${cleanPath}`;
 }
 
-export function buildEndpointConfig(options: ChatCliOptions): EndpointConfig {
+export function buildEndpointConfig(options: ChatConnectionOptions): EndpointConfig {
 	const direct = buildDirectEndpoints(options.url);
 	if (!options.agentId) {
 		return direct;
@@ -83,7 +95,64 @@ export function buildEndpointConfig(options: ChatCliOptions): EndpointConfig {
 	};
 }
 
-function buildFetch(options: ChatCliOptions, endpoints: EndpointConfig): typeof fetch {
+async function buildAuthHeaders(
+	options: AuthenticatedFetchOptions,
+	initHeaders: HeadersInit | undefined,
+	requestHeaders: HeadersInit | undefined
+): Promise<Headers> {
+	const headers = new Headers(initHeaders ?? requestHeaders);
+	for (const [key, value] of Object.entries(options.headers)) {
+		headers.set(key, value);
+	}
+	const token = options.token ?? (await options.tokenProvider?.());
+	if (token) {
+		headers.set("Authorization", `Bearer ${token}`);
+	}
+	return headers;
+}
+
+export function buildAuthenticatedFetch(
+	options: AuthenticatedFetchOptions
+): typeof fetch {
+	return async (input, init) => {
+		const isRequest = input instanceof Request;
+		const originalRequest = isRequest ? input : undefined;
+		const method = init?.method ?? originalRequest?.method ?? "GET";
+		const headers = await buildAuthHeaders(
+			options,
+			init?.headers,
+			originalRequest?.headers
+		);
+
+		if (isRequest) {
+			const request = originalRequest as Request;
+			const body =
+				init?.body ??
+				(method.toUpperCase() === "GET" || method.toUpperCase() === "HEAD"
+					? undefined
+					: (request.body ?? undefined));
+			const nextRequest: RequestInit & { duplex?: "half" } = {
+				...init,
+				method,
+				headers,
+				body
+			};
+			if (body !== undefined) {
+				nextRequest.duplex = "half";
+			}
+
+			return fetch(new Request(request, nextRequest));
+		}
+
+		return fetch(input, {
+			...init,
+			method,
+			headers
+		});
+	};
+}
+
+function buildFetch(options: ChatConnectionOptions, endpoints: EndpointConfig): typeof fetch {
 	return async (input, init) => {
 		const isRequest = input instanceof Request;
 		const originalRequest = isRequest ? input : undefined;
@@ -95,13 +164,11 @@ function buildFetch(options: ChatCliOptions, endpoints: EndpointConfig): typeof 
 					? input.url
 					: String(input);
 
-		const headers = new Headers(init?.headers ?? originalRequest?.headers);
-		for (const [key, value] of Object.entries(options.headers)) {
-			headers.set(key, value);
-		}
-		if (options.token) {
-			headers.set("Authorization", `Bearer ${options.token}`);
-		}
+		const headers = await buildAuthHeaders(
+			options,
+			init?.headers,
+			originalRequest?.headers
+		);
 
 		if (isRequest) {
 			const request = originalRequest as Request;
@@ -144,7 +211,7 @@ function rewriteAgentCard(agentCard: AgentCard, endpoints: EndpointConfig): Agen
 	};
 }
 
-export async function connectClient(options: ChatCliOptions): Promise<ConnectedClient> {
+export async function connectClient(options: ChatConnectionOptions): Promise<ConnectedClient> {
 	const endpoints = buildEndpointConfig(options);
 	const fetchImpl = buildFetch(options, endpoints);
 	const resolver = new DefaultAgentCardResolver({ fetchImpl });

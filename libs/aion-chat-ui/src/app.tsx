@@ -24,6 +24,12 @@ import {
 	parseAgentSelection
 } from "./lib/agentSelection.js";
 import {
+	loadChatSettings,
+	saveChatSettings,
+	type ChatSettings
+} from "./lib/chatSettings.js";
+import { openUrlInDefaultBrowser } from "./lib/browser.js";
+import {
 	applyFileSuggestion,
 	buildMessageParts,
 	clearFileMention,
@@ -33,11 +39,18 @@ import {
 } from "./lib/input";
 import { loadChatModeSettings, saveChatModeSettings } from "./lib/chatSettings.js";
 import {
+	buildAuthenticatedFetch,
 	buildMessageParams,
 	connectClient,
 	createPushNotificationConfig
 } from "./lib/connection.js";
 import { type DiscoveredAgent, discoverAgents } from "./lib/discovery.js";
+import {
+	type AionEnvironmentId,
+	AION_ENVIRONMENT_IDS,
+	getControlPlaneApiBaseUrl,
+	isAionEnvironmentId
+} from "./lib/environment.js";
 import { formatProtocolPayload } from "./lib/protocolOutput.js";
 import {
 	EPHEMERAL_MESSAGE_ARTIFACT_ID,
@@ -59,6 +72,7 @@ import {
 	type SlashCommandId
 } from "./lib/slashCommands.js";
 import { isTerminalTaskState } from "./lib/taskState.js";
+import { loginWithWorkOS } from "./lib/workosAuth.js";
 
 type ConnectionState = "connecting" | "connected" | "error";
 
@@ -109,9 +123,39 @@ function isFinalStatusEvent(event: TaskStatusUpdateEvent): boolean {
 	return Boolean((event as TaskStatusUpdateEvent & { final?: boolean }).final);
 }
 
+type ExactSlashCommand =
+	| { kind: "login" }
+	| { kind: "environment"; environmentId?: AionEnvironmentId };
+
+function parseExactSlashCommand(value: string): ExactSlashCommand | undefined {
+	const [command, environmentId, extra] = value.trim().split(/\s+/);
+	if (command === "/login" && !environmentId) {
+		return { kind: "login" };
+	}
+	if ((command === "/environment" || command === "/env") && !extra) {
+		if (!environmentId) {
+			return { kind: "environment" };
+		}
+		if (isAionEnvironmentId(environmentId)) {
+			return { kind: "environment", environmentId };
+		}
+	}
+	return undefined;
+}
+
 export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Element {
 	const { exit } = useApp();
-	const initialSettingsResult = useMemo(() => loadChatModeSettings(), []);
+	const initialSettingsResult = useMemo(() => loadChatSettings(), []);
+	const [chatSettings, setChatSettings] = useState<ChatSettings>(
+		initialSettingsResult.settings
+	);
+	const [selectedEnvironment, setSelectedEnvironment] = useState<AionEnvironmentId>(
+		initialSettingsResult.settings.selectedEnvironment
+	);
+	const activeEnvironmentSettings =
+		chatSettings.environments[selectedEnvironment];
+	const controlPlaneApiBaseUrl = getControlPlaneApiBaseUrl(selectedEnvironment);
+	const agentEndpointUrl = options.url;
 	const [connectionState, setConnectionState] = useState<ConnectionState>("connecting");
 	const [connectionLabel, setConnectionLabel] = useState("Discovering agents...");
 	const [discoveryLabel, setDiscoveryLabel] = useState("Scanning manifest...");
@@ -130,7 +174,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 	>();
 	const [discoveredAgents, setDiscoveredAgents] = useState<DiscoveredAgent[]>([]);
 	const [selectedAgentId, setSelectedAgentId] = useState<string | undefined>(
-		options.agentId
+		options.agentId ?? activeEnvironmentSettings.selectedAgentId
 	);
 	const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0);
 	const [selectedFileSuggestionIndex, setSelectedFileSuggestionIndex] = useState(0);
@@ -138,12 +182,13 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 	const [selectedSlashSubmenuIndex, setSelectedSlashSubmenuIndex] = useState(0);
 	const [slashSubmenuId, setSlashSubmenuId] = useState<SlashCommandId | undefined>();
 	const [requestMode, setRequestMode] = useState<RequestMode>(
-		initialSettingsResult.settings.requestMode
+		activeEnvironmentSettings.requestMode
 	);
 	const [responseMode, setResponseMode] = useState<ResponseMode>(
-		initialSettingsResult.settings.responseMode
+		activeEnvironmentSettings.responseMode
 	);
 	const [directFallback, setDirectFallback] = useState(false);
+	const [reconnectNonce, setReconnectNonce] = useState(0);
 	const taskDisplayState = useRef<Map<string, TaskDisplayState>>(new Map());
 
 	const appendEntry = (role: TranscriptEntry["role"], body: string): void => {
@@ -199,14 +244,36 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		return !state.hasMessage && !state.hasStreamDelta;
 	};
 
-	const persistModes = (nextRequestMode: RequestMode, nextResponseMode: ResponseMode): void => {
-		const warning = saveChatModeSettings({
-			requestMode: nextRequestMode,
-			responseMode: nextResponseMode
-		});
+	const persistSettings = (nextSettings: ChatSettings): void => {
+		setChatSettings(nextSettings);
+		const warning = saveChatSettings(nextSettings);
 		if (warning) {
 			appendSystem(warning);
 		}
+	};
+
+	const persistEnvironmentSettings = (
+		environmentId: AionEnvironmentId,
+		update: Partial<(typeof chatSettings.environments)[AionEnvironmentId]>
+	): void => {
+		const current = chatSettings.environments[environmentId];
+		persistSettings({
+			...chatSettings,
+			environments: {
+				...chatSettings.environments,
+				[environmentId]: {
+					...current,
+					...update
+				}
+			}
+		});
+	};
+
+	const persistModes = (nextRequestMode: RequestMode, nextResponseMode: ResponseMode): void => {
+		persistEnvironmentSettings(selectedEnvironment, {
+			requestMode: nextRequestMode,
+			responseMode: nextResponseMode
+		});
 	};
 
 	const applyRequestMode = (mode: RequestMode): void => {
@@ -227,6 +294,28 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		setTaskId(undefined);
 		taskDisplayState.current.clear();
 		setStreamLabel("Idle");
+	};
+
+	const reloadEnvironmentState = (environmentId: AionEnvironmentId): void => {
+		const nextSettings: ChatSettings = {
+			...chatSettings,
+			selectedEnvironment: environmentId
+		};
+		const nextEnvironmentSettings = nextSettings.environments[environmentId];
+		persistSettings(nextSettings);
+		setSelectedEnvironment(environmentId);
+		setRequestMode(nextEnvironmentSettings.requestMode);
+		setResponseMode(nextEnvironmentSettings.responseMode);
+		setSelectedAgentId(options.agentId ?? nextEnvironmentSettings.selectedAgentId);
+		setDirectFallback(false);
+		setDiscoveredAgents([]);
+		clearTranscript();
+		setClientState(undefined);
+		setAgentName("Unknown Agent");
+		setDiscoveryLabel("Scanning manifest...");
+		setConnectionLabel("Discovering agents...");
+		setConnectionState("connecting");
+		setReconnectNonce((current) => current + 1);
 	};
 
 	useEffect(() => {
@@ -335,8 +424,27 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		let closed = false;
 
 		const discover = async (): Promise<void> => {
+			if (!agentEndpointUrl) {
+				setDiscoveredAgents([]);
+				setDirectFallback(false);
+				setDiscoveryLabel(
+					`No A2A endpoint configured for ${selectedEnvironment}.`
+				);
+				setConnectionState("connecting");
+				setConnectionLabel(
+					`Using ${selectedEnvironment} control plane at ${controlPlaneApiBaseUrl}`
+				);
+				return;
+			}
+
 			try {
-				const discovery = await discoverAgents(options.url);
+				const discovery = await discoverAgents(
+					agentEndpointUrl,
+					buildAuthenticatedFetch({
+						headers: options.headers,
+						token: options.token
+					})
+				);
 				if (closed) {
 					return;
 				}
@@ -351,12 +459,23 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				if (options.agentId) {
 					setSelectedAgentId(options.agentId);
 					setConnectionLabel(`Connecting to @${options.agentId}...`);
+				} else if (
+					selectedAgentId &&
+					!discovery.agents.some((agent) => agent.id === selectedAgentId)
+				) {
+					setSelectedAgentId(undefined);
+					persistEnvironmentSettings(selectedEnvironment, {
+						selectedAgentId: undefined
+					});
+					appendSystem("The selected agent is no longer available.");
 				} else if (discovery.agents.length === 1) {
 					setSelectedAgentId(discovery.agents[0].id);
 					setConnectionLabel(`Connecting to @${discovery.agents[0].id}...`);
 				} else {
 					setConnectionState("connecting");
-					setConnectionLabel("Choose an agent with @");
+					setConnectionLabel(
+						selectedAgentId ? `Connecting to @${selectedAgentId}...` : "Choose an agent with @"
+					);
 				}
 			} catch (error) {
 				if (closed) {
@@ -385,7 +504,15 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		return () => {
 			closed = true;
 		};
-	}, [options.agentId, options.url]);
+	}, [
+		agentEndpointUrl,
+		controlPlaneApiBaseUrl,
+		options.agentId,
+		options.headers,
+		options.token,
+		reconnectNonce,
+		selectedEnvironment
+	]);
 
 	useEffect(() => {
 		let closed = false;
@@ -407,6 +534,14 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		};
 
 		const connect = async (): Promise<void> => {
+			if (!agentEndpointUrl) {
+				setConnectionState("connecting");
+				setConnectionLabel(
+					`Using ${selectedEnvironment} control plane at ${controlPlaneApiBaseUrl}`
+				);
+				return;
+			}
+
 			const shouldConnect = directFallback || Boolean(selectedAgentId);
 			if (!shouldConnect) {
 				setConnectionState("connecting");
@@ -440,6 +575,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 
 				const connected = await connectClient({
 					...options,
+					url: agentEndpointUrl,
 					agentId: directFallback ? undefined : selectedAgentId
 				});
 				if (closed) {
@@ -473,7 +609,15 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				void closePush();
 			}
 		};
-	}, [directFallback, options, selectedAgentId]);
+	}, [
+		agentEndpointUrl,
+		controlPlaneApiBaseUrl,
+		directFallback,
+		options,
+		reconnectNonce,
+		selectedAgentId,
+		selectedEnvironment
+	]);
 
 	const handleMessage = (message: Message): void => {
 		if (message.contextId) {
@@ -607,6 +751,9 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		setDraft((current) => clearAgentMention(current));
 		if (selectedAgentId !== suggestion) {
 			setSelectedAgentId(suggestion);
+			persistEnvironmentSettings(selectedEnvironment, {
+				selectedAgentId: suggestion
+			});
 			setDirectFallback(false);
 		}
 	};
@@ -636,6 +783,11 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			resetSlashSelection();
 			return;
 		}
+		if (command.id === "login") {
+			resetSlashSelection();
+			void runLoginSlashCommand();
+			return;
+		}
 
 		if (command.id === "exit") {
 			exit();
@@ -645,6 +797,71 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		setSlashSubmenuId(command.id as SlashCommandId);
 		setSelectedSlashSubmenuIndex(0);
 		setDraft("");
+	};
+
+	const runLoginSlashCommand = async (): Promise<void> => {
+		appendSystem(`Starting Aion login for ${selectedEnvironment}.`);
+		try {
+			await loginWithWorkOS(selectedEnvironment, {
+				onDeviceAuthorization: async (prompt) => {
+					const url = prompt.verificationUriComplete ?? prompt.verificationUri;
+					if (await openUrlInDefaultBrowser(url)) {
+						appendSystem(
+							`Opening login screen in default browser.\n\nCode: ${prompt.userCode}`
+						);
+						return;
+					}
+
+					appendSystem(
+						`Open this URL to continue login:\n${url}\n\nCode: ${prompt.userCode}`
+					);
+				},
+				onSlowDown: (intervalSeconds) => {
+					appendStatus(`Login polling slowed to every ${intervalSeconds}s.`);
+				}
+			});
+			appendSystem(`Logged in to Aion ${selectedEnvironment}.`);
+			setReconnectNonce((current) => current + 1);
+		} catch (error) {
+			appendSystem(
+				`Login failed: ${error instanceof Error ? error.message : String(error)}`
+			);
+		}
+	};
+
+	const runEnvironmentSlashCommand = (
+		environmentId: AionEnvironmentId | undefined
+	): void => {
+		if (!environmentId) {
+			appendSystem(
+				`Current environment: ${selectedEnvironment}\nAvailable environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
+			);
+			return;
+		}
+
+		if (environmentId === selectedEnvironment) {
+			appendSystem(`Current environment: ${selectedEnvironment}`);
+			return;
+		}
+
+		reloadEnvironmentState(environmentId);
+		appendSystem(`Aion environment set to ${environmentId}.`);
+	};
+
+	const runExactSlashCommand = (): boolean => {
+		const command = parseExactSlashCommand(draft);
+		if (!command) {
+			return false;
+		}
+
+		resetSlashSelection();
+		if (command.kind === "login") {
+			void runLoginSlashCommand();
+			return true;
+		}
+
+		runEnvironmentSlashCommand(command.environmentId);
+		return true;
 	};
 
 	const applySlashSubmenuSelection = (optionIndex = selectedSlashSubmenuIndex): void => {
@@ -670,6 +887,9 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		);
 		if (selection.agentId && selection.agentId !== selectedAgentId) {
 			setSelectedAgentId(selection.agentId);
+			persistEnvironmentSettings(selectedEnvironment, {
+				selectedAgentId: selection.agentId
+			});
 			setDirectFallback(false);
 			appendStatus(`Active agent changed to @${selection.agentId}`);
 		}
@@ -872,6 +1092,9 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			}
 
 			if (isSlashMenuOpen) {
+				if (runExactSlashCommand()) {
+					return;
+				}
 				openSelectedSlashCommand();
 				return;
 			}

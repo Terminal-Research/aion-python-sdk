@@ -18,8 +18,12 @@ describe("slashCommands", () => {
 	it("filters slash commands alphabetically by prefix", () => {
 		expect(filterSlashCommands("").map((command) => command.label)).toEqual([
 			"/clear",
+			"/login",
 			"/request",
 			"/response"
+		]);
+		expect(filterSlashCommands("l").map((command) => command.label)).toEqual([
+			"/login"
 		]);
 		expect(filterSlashCommands("r").map((command) => command.label)).toEqual([
 			"/request",

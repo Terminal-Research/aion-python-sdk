@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parseArgs } from "../src/args.js";
+import { parseArgs, parseCliArgs } from "../src/args.js";
 
 describe("parseArgs", () => {
 	it("parses the core chat2 flags", () => {
@@ -28,7 +28,24 @@ describe("parseArgs", () => {
 		});
 	});
 
-	it("defaults to the local proxy when no endpoint is provided", () => {
-		expect(parseArgs([]).url).toBe("http://localhost:8000");
+	it("leaves the A2A endpoint unset when no endpoint is provided", () => {
+		expect(parseArgs([]).url).toBeUndefined();
+	});
+
+	it("parses login as a command", () => {
+		expect(parseCliArgs(["login"])).toEqual({
+			kind: "login"
+		});
+	});
+
+	it("parses hidden environment commands", () => {
+		expect(parseCliArgs(["environment", "development"])).toEqual({
+			kind: "environment",
+			environmentId: "development"
+		});
+		expect(parseCliArgs(["env", "staging"])).toEqual({
+			kind: "environment",
+			environmentId: "staging"
+		});
 	});
 });

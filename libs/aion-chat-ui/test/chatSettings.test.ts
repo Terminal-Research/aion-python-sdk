@@ -1,12 +1,14 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+	loadChatSettings,
 	loadChatModeSettings,
 	resolveChatSettingsPath,
+	saveChatSettings,
 	saveChatModeSettings
 } from "../src/lib/chatSettings.js";
 
@@ -45,6 +47,77 @@ describe("chatSettings", () => {
 				requestMode: "streaming-message",
 				responseMode: "a2a-protocol"
 			}
+		});
+	});
+
+	it("stores selected environment and per-environment settings in one file", () => {
+		const directory = mkdtempSync(path.join(os.tmpdir(), "chat2-settings-"));
+		tempDirectories.push(directory);
+		const settingsPath = path.join(directory, "aion", "chat2.json");
+
+		expect(
+			saveChatSettings(
+				{
+					selectedEnvironment: "development",
+					environments: {
+						production: {
+							requestMode: "send-message",
+							responseMode: "message-output"
+						},
+						staging: {
+							requestMode: "send-message",
+							responseMode: "message-output"
+						},
+						development: {
+							requestMode: "streaming-message",
+							responseMode: "a2a-protocol",
+							selectedAgentId: "dev-agent"
+						}
+					}
+				},
+				settingsPath
+			)
+		).toBeUndefined();
+
+		expect(loadChatSettings(settingsPath)).toEqual({
+			settings: {
+				selectedEnvironment: "development",
+				environments: {
+					production: {
+						requestMode: "send-message",
+						responseMode: "message-output"
+					},
+					staging: {
+						requestMode: "send-message",
+						responseMode: "message-output"
+					},
+					development: {
+						requestMode: "streaming-message",
+						responseMode: "a2a-protocol",
+						selectedAgentId: "dev-agent"
+					}
+				}
+			}
+		});
+	});
+
+	it("migrates legacy flat mode settings into the selected environment", () => {
+		const directory = mkdtempSync(path.join(os.tmpdir(), "chat2-settings-"));
+		tempDirectories.push(directory);
+		const settingsPath = path.join(directory, "aion", "chat2.json");
+		mkdirSync(path.dirname(settingsPath), { recursive: true });
+		writeFileSync(
+			settingsPath,
+			`${JSON.stringify({
+				requestMode: "streaming-message",
+				responseMode: "a2a-protocol"
+			})}\n`,
+			"utf8"
+		);
+
+		expect(loadChatSettings(settingsPath).settings.environments.production).toEqual({
+			requestMode: "streaming-message",
+			responseMode: "a2a-protocol"
 		});
 	});
 
