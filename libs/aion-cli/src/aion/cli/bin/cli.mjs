@@ -93966,9 +93966,6 @@ function ChatApp({ options }) {
             selectedAgentId: void 0
           });
           appendSystem("The selected agent is no longer available.");
-        } else if (discovery.agents.length === 1) {
-          setSelectedAgentId(discovery.agents[0].id);
-          setConnectionLabel(`Connecting to @${discovery.agents[0].id}...`);
         } else {
           setConnectionState("connecting");
           setConnectionLabel(
