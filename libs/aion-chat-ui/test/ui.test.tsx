@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { render } from "ink-testing-library";
 
 import { ChatComposer } from "../src/components/ChatComposer.js";
+import { ChatSession } from "../src/components/ChatSession.js";
 import { HomeScreen } from "../src/components/HomeScreen.js";
 import {
 	MessageBubble,
@@ -200,6 +201,23 @@ describe("Ink components", () => {
 		expect(app.lastFrame()).toContain("@season-agent");
 		expect(app.lastFrame()).toContain("SendStreamingMessage");
 		expect(app.lastFrame()).toContain("A2A");
+		app.unmount();
+	});
+
+	it("renders chat session entries below the inline home screen", () => {
+		const app = render(
+			<ChatSession
+				entries={[{ id: "agent-1", role: "agent", body: "agent reply" }]}
+				discoveredCount={2}
+				sourceCount={1}
+				selectedAgentId="season-agent"
+				requestMode="send-message"
+				responseMode="message-output"
+			/>
+		);
+
+		expect(app.lastFrame()).toContain("2 agents discovered from 1 source");
+		expect(app.lastFrame()).toContain("· agent reply");
 		app.unmount();
 	});
 

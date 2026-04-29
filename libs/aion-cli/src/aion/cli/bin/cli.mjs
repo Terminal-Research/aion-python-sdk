@@ -45460,6 +45460,44 @@ function MessageBubble({ entry }) {
   );
 }
 
+// src/components/ChatSession.tsx
+var import_jsx_runtime8 = __toESM(require_jsx_runtime(), 1);
+function ChatSession({
+  entries,
+  discoveredCount,
+  sourceCount,
+  selectedAgentId,
+  requestMode,
+  responseMode
+}) {
+  if (entries.length === 0) {
+    return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+      HomeScreen,
+      {
+        discoveredCount,
+        sourceCount,
+        selectedAgentId,
+        requestMode,
+        responseMode
+      }
+    );
+  }
+  return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(Box_default, { flexDirection: "column", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+      HomeScreen,
+      {
+        discoveredCount,
+        sourceCount,
+        selectedAgentId,
+        requestMode,
+        responseMode,
+        mode: "inline"
+      }
+    ),
+    entries.map((entry, index) => /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Box_default, { marginBottom: index < entries.length - 1 ? 1 : 0, children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(MessageBubble, { entry }) }, entry.id))
+  ] });
+}
+
 // src/lib/agentSelection.ts
 var AGENT_MENTION_PATTERN = /(?:^|\s)@([a-zA-Z0-9._-]*)$/;
 function getAgentMentionMatch(draft) {
@@ -49874,6 +49912,101 @@ ${yaml}
 \`\`\``;
 }
 
+// src/lib/messageDisplay.ts
+function formatFilePart(part) {
+  const file = part.file;
+  const metadata = {};
+  if (file.name) {
+    metadata.name = file.name;
+  }
+  if (file.mimeType) {
+    metadata.mimeType = file.mimeType;
+  }
+  if ("uri" in file) {
+    metadata.uri = file.uri;
+  }
+  if ("bytes" in file) {
+    metadata.bytesBase64Length = file.bytes.length;
+  }
+  if (part.metadata) {
+    metadata.metadata = part.metadata;
+  }
+  return `File part returned:
+${JSON.stringify(metadata, null, 2)}`;
+}
+function formatMessageParts(parts) {
+  return parts.map((part) => {
+    if (part.kind === "text") {
+      return part.text;
+    }
+    if (part.kind === "file") {
+      return formatFilePart(part);
+    }
+    if (part.kind === "data") {
+      return JSON.stringify(part.data, null, 2);
+    }
+    return "";
+  }).filter(Boolean).join("\n");
+}
+function getTaskMessages(task) {
+  const statusMessage = task.status.message;
+  if (task.history && task.history.length > 0) {
+    const history = task.history;
+    if (statusMessage && !history.some((message) => message.messageId === statusMessage.messageId)) {
+      return [...history, statusMessage];
+    }
+    return history;
+  }
+  return statusMessage ? [statusMessage] : [];
+}
+
+// src/lib/chatSession.ts
+var NO_TASK_ID = "no-task";
+function getMessageTaskId(message, fallbackTaskId) {
+  return message.taskId ?? fallbackTaskId;
+}
+function createShownMessageKey(reference) {
+  return `${reference.taskId ?? NO_TASK_ID}:${reference.messageId}`;
+}
+function getShownMessageKey(message, fallbackTaskId) {
+  return createShownMessageKey({
+    taskId: getMessageTaskId(message, fallbackTaskId),
+    messageId: message.messageId
+  });
+}
+function hasShownMessage(shownMessageKeys, message, fallbackTaskId) {
+  return shownMessageKeys.has(getShownMessageKey(message, fallbackTaskId));
+}
+function markShownMessage(shownMessageKeys, message, fallbackTaskId) {
+  const key = getShownMessageKey(message, fallbackTaskId);
+  shownMessageKeys.add(key);
+  return key;
+}
+function getUnshownTaskAgentMessages(task, shownMessageKeys) {
+  return getTaskMessages(task).filter(
+    (message) => message.role === "agent" && !hasShownMessage(shownMessageKeys, message, task.id)
+  );
+}
+function shouldRenderLiveResponseMessage(message) {
+  return message.role === "agent";
+}
+function shouldRenderLiveStatusMessage({
+  message,
+  taskId,
+  streamedTaskIds
+}) {
+  return Boolean(
+    message && shouldRenderLiveResponseMessage(message) && !streamedTaskIds.has(taskId)
+  );
+}
+function shouldShowNoAgentMessageNotice({
+  responseMode,
+  reachedTerminal,
+  renderedAgentOutput
+}) {
+  return responseMode !== "a2a-protocol" && reachedTerminal && !renderedAgentOutput;
+}
+
 // src/lib/pushListener.ts
 import http from "http";
 async function startPushNotificationServer(receiverUrl, onEvent) {
@@ -50210,21 +50343,8 @@ async function loginWithWorkOS(environmentId, callbacks = {}, options = {}) {
 }
 
 // src/app.tsx
-var import_jsx_runtime8 = __toESM(require_jsx_runtime(), 1);
-function extractText(parts) {
-  return parts.map((part) => {
-    if (part.kind === "text") {
-      return part.text;
-    }
-    if (part.kind === "file") {
-      return `[Attached file: ${part.file.name ?? "unnamed"}]`;
-    }
-    if (part.kind === "data") {
-      return JSON.stringify(part.data, null, 2);
-    }
-    return "";
-  }).filter(Boolean).join("\n");
-}
+var import_jsx_runtime9 = __toESM(require_jsx_runtime(), 1);
+var NO_AGENT_MESSAGE_NOTICE = "Task completed with no agent message.";
 function upsertEntry(entries, entryId, role, body) {
   const existingIndex = entries.findIndex((item) => item.id === entryId);
   if (existingIndex === -1) {
@@ -50304,7 +50424,8 @@ function ChatApp({ options }) {
     activeEnvironmentSettings.responseMode
   );
   const [reconnectNonce, setReconnectNonce] = (0, import_react33.useState)(0);
-  const taskDisplayState = (0, import_react33.useRef)(/* @__PURE__ */ new Map());
+  const shownMessageKeysRef = (0, import_react33.useRef)(/* @__PURE__ */ new Set());
+  const streamedTaskIdsRef = (0, import_react33.useRef)(/* @__PURE__ */ new Set());
   const lastConnectionNoticeRef = (0, import_react33.useRef)(void 0);
   const appendEntry = (role, body) => {
     setEntries((current) => [
@@ -50324,28 +50445,6 @@ function ChatApp({ options }) {
   };
   const appendProtocol = (payload) => {
     appendEntry("protocol", formatProtocolPayload(payload));
-  };
-  const getTaskDisplayState = (nextTaskId) => {
-    return taskDisplayState.current.get(nextTaskId) ?? {
-      hasMessage: false,
-      hasStreamDelta: false
-    };
-  };
-  const updateTaskDisplayState = (nextTaskId, update) => {
-    if (!nextTaskId) {
-      return;
-    }
-    taskDisplayState.current.set(nextTaskId, {
-      ...getTaskDisplayState(nextTaskId),
-      ...update
-    });
-  };
-  const shouldRenderFinalTaskMessage = (nextTaskId) => {
-    if (!nextTaskId) {
-      return true;
-    }
-    const state = getTaskDisplayState(nextTaskId);
-    return !state.hasMessage && !state.hasStreamDelta;
   };
   const persistSettings = (nextSettings) => {
     setChatSettings(nextSettings);
@@ -50385,9 +50484,10 @@ function ChatApp({ options }) {
   };
   const clearTranscript = () => {
     setEntries([]);
+    shownMessageKeysRef.current.clear();
+    streamedTaskIdsRef.current.clear();
     setContextId(void 0);
     setTaskId(void 0);
-    taskDisplayState.current.clear();
     setStreamLabel("Idle");
     setWorkingStartedAt(void 0);
   };
@@ -50659,7 +50759,6 @@ ${JSON.stringify(
           activeEnvironmentSettings.agents[selectedAgent.agentKey]?.activeContextId
         );
         setTaskId(void 0);
-        taskDisplayState.current.clear();
         setConnectionState("connecting");
         setConnectionLabel(`Connecting to @${selectedAgent.id}...`);
         const connected = await connectClient({
@@ -50708,6 +50807,27 @@ ${JSON.stringify(
     selectedAgent,
     selectedEnvironment
   ]);
+  const renderAgentResponseBubble = (message, fallbackTaskId) => {
+    if (!shouldRenderLiveResponseMessage(message)) {
+      return false;
+    }
+    if (shownMessageKeysRef.current.has(getShownMessageKey(message, fallbackTaskId))) {
+      return false;
+    }
+    const body = formatMessageParts(message.parts);
+    if (!body) {
+      return false;
+    }
+    const shownMessageKey = markShownMessage(
+      shownMessageKeysRef.current,
+      message,
+      fallbackTaskId
+    );
+    setEntries(
+      (current) => upsertEntry(current, `message:${shownMessageKey}`, "agent", body)
+    );
+    return true;
+  };
   const handleMessage = (message) => {
     if (message.contextId) {
       setContextId(message.contextId);
@@ -50717,46 +50837,30 @@ ${JSON.stringify(
     }
     if (responseMode === "a2a-protocol") {
       appendProtocol(message);
-      return;
+      return true;
     }
-    if (!shouldRenderFinalTaskMessage(message.taskId)) {
-      return;
-    }
-    const text = extractText(message.parts);
-    if (!text) {
-      return;
-    }
-    if (message.taskId) {
-      updateTaskDisplayState(message.taskId, { hasMessage: true });
-    }
-    setEntries((current) => [
-      ...current,
-      {
-        id: message.messageId,
-        role: message.role === "user" ? "user" : "agent",
-        body: text
-      }
-    ]);
+    return renderAgentResponseBubble(message);
   };
   const handleTaskSnapshot = (task) => {
     setContextId(task.contextId);
-    setTaskId(isTerminalTaskState(task.status.state) ? void 0 : task.id);
+    const isTerminalTask = isTerminalTaskState(task.status.state);
+    setTaskId(isTerminalTask ? void 0 : task.id);
     if (responseMode === "a2a-protocol") {
       appendProtocol(task);
-      return;
+      return true;
     }
-    if (task.status.message && shouldRenderFinalTaskMessage(task.id)) {
-      const message = task.status.message;
-      updateTaskDisplayState(task.id, { hasMessage: true });
-      setEntries((current) => [
-        ...current,
-        {
-          id: message.messageId,
-          role: message.role === "user" ? "user" : "agent",
-          body: extractText(message.parts)
-        }
-      ]);
+    if (!isTerminalTask) {
+      return false;
     }
+    if (streamedTaskIdsRef.current.has(task.id)) {
+      return false;
+    }
+    const messages = getUnshownTaskAgentMessages(task, shownMessageKeysRef.current);
+    let renderedAgentOutput = false;
+    for (const message of messages) {
+      renderedAgentOutput = renderAgentResponseBubble(message, task.id) || renderedAgentOutput;
+    }
+    return renderedAgentOutput;
   };
   const handleStatusUpdate = (event) => {
     setContextId(event.contextId);
@@ -50764,20 +50868,16 @@ ${JSON.stringify(
     setStreamLabel(event.status.state);
     if (responseMode === "a2a-protocol") {
       appendProtocol(event);
-      return;
+      return true;
     }
-    if (isFinalStatusEvent(event) && event.status.message && shouldRenderFinalTaskMessage(event.taskId)) {
-      const message = event.status.message;
-      updateTaskDisplayState(event.taskId, { hasMessage: true });
-      setEntries((current) => [
-        ...current,
-        {
-          id: message.messageId,
-          role: message.role === "user" ? "user" : "agent",
-          body: extractText(message.parts)
-        }
-      ]);
+    if (shouldRenderLiveStatusMessage({
+      message: event.status.message,
+      taskId: event.taskId,
+      streamedTaskIds: streamedTaskIdsRef.current
+    })) {
+      return renderAgentResponseBubble(event.status.message, event.taskId);
     }
+    return false;
   };
   const handleArtifactUpdate = (event) => {
     setContextId(event.contextId);
@@ -50787,34 +50887,29 @@ ${JSON.stringify(
     }
     if (responseMode === "a2a-protocol") {
       appendProtocol(event);
-      return;
+      return true;
     }
     if (event.artifact.artifactId !== STREAM_DELTA_ARTIFACT_ID) {
-      return;
+      return false;
     }
-    const artifactText = extractText(event.artifact.parts);
+    const artifactText = formatMessageParts(event.artifact.parts);
     if (!artifactText) {
-      return;
+      return false;
     }
-    updateTaskDisplayState(event.taskId, { hasStreamDelta: true });
+    streamedTaskIdsRef.current.add(event.taskId);
     const entryId = `artifact:${event.taskId}:${event.artifact.artifactId}`;
     setEntries((current) => {
       const existing = current.find((item) => item.id === entryId);
       const nextBody = event.append && existing ? `${existing.body}${artifactText}` : artifactText;
       return upsertEntry(current, entryId, "agent", nextBody);
     });
+    return true;
   };
   const applySelectedFileSuggestion = () => {
     const suggestion = fileSuggestions[selectedFileSuggestionIndex];
     if (!suggestion) return;
     setDraft((current) => applyFileSuggestion(current, suggestion));
     setSelectedFileSuggestionIndex(0);
-  };
-  const messagesFromTask = (task) => {
-    if (task.history && task.history.length > 0) {
-      return task.history;
-    }
-    return task.status.message ? [task.status.message] : [];
   };
   const persistCompletedExchange = (nextContextId, messages, nextTaskId) => {
     if (!selectedAgentKey || !nextContextId || messages.length === 0) {
@@ -51049,7 +51144,6 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
         body: displayBody
       }
     ]);
-    taskDisplayState.current.clear();
     const params = buildMessageParams(parts, contextId, taskId, pushConfig);
     const canStream = Boolean(clientState.agentCard.capabilities.streaming);
     const useStreaming = requestMode === "streaming-message" && canStream;
@@ -51062,34 +51156,47 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
         setStreamLabel("Streaming");
         let completedTask;
         let finalStatusUpdate;
+        let reachedTerminal = false;
+        let renderedAgentOutput = false;
         for await (const event of clientState.client.sendMessageStream(params)) {
           switch (event.kind) {
             case "message":
-              handleMessage(event);
+              renderedAgentOutput = handleMessage(event) || renderedAgentOutput;
               break;
             case "task":
               if (isTerminalTaskState(event.status.state)) {
                 completedTask = event;
+                reachedTerminal = true;
               }
-              handleTaskSnapshot(event);
+              renderedAgentOutput = handleTaskSnapshot(event) || renderedAgentOutput;
               break;
             case "status-update":
+              if (isTerminalTaskState(event.status.state)) {
+                reachedTerminal = true;
+              }
               if (isFinalStatusEvent(event)) {
                 finalStatusUpdate = event;
               }
-              handleStatusUpdate(event);
+              renderedAgentOutput = handleStatusUpdate(event) || renderedAgentOutput;
               break;
             case "artifact-update":
-              handleArtifactUpdate(event);
+              renderedAgentOutput = handleArtifactUpdate(event) || renderedAgentOutput;
               break;
             default:
               break;
           }
         }
+        if (shouldShowNoAgentMessageNotice({
+          responseMode,
+          reachedTerminal,
+          renderedAgentOutput
+        })) {
+          appendSystem(NO_AGENT_MESSAGE_NOTICE);
+        }
         if (completedTask) {
           persistCompletedExchange(
             completedTask.contextId,
-            messagesFromTask(completedTask),
+            getTaskMessages(completedTask),
             completedTask.id
           );
         } else if (finalStatusUpdate?.status.message) {
@@ -51103,22 +51210,32 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
       } else {
         setStreamLabel("Waiting");
         const response = await clientState.client.sendMessage(params);
+        let reachedTerminal = response.kind === "message";
+        let renderedAgentOutput = false;
         if (response.kind === "message") {
-          handleMessage(response);
+          renderedAgentOutput = handleMessage(response);
           persistCompletedExchange(
             response.contextId ?? params.message.contextId,
             [params.message, response],
             response.taskId
           );
         } else {
-          handleTaskSnapshot(response);
-          if (isTerminalTaskState(response.status.state)) {
+          reachedTerminal = isTerminalTaskState(response.status.state);
+          renderedAgentOutput = handleTaskSnapshot(response);
+          if (reachedTerminal) {
             persistCompletedExchange(
               response.contextId,
-              messagesFromTask(response),
+              getTaskMessages(response),
               response.id
             );
           }
+        }
+        if (shouldShowNoAgentMessageNotice({
+          responseMode,
+          reachedTerminal,
+          renderedAgentOutput
+        })) {
+          appendSystem(NO_AGENT_MESSAGE_NOTICE);
         }
         setStreamLabel("Idle");
       }
@@ -51261,47 +51378,35 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
       setDraft((current) => `${current}${input}`);
     }
   });
-  return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(Box_default, { flexDirection: "column", height: "100%", children: [
-    /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(
+  return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Box_default, { flexDirection: "column", height: "100%", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(
       Box_default,
       {
         borderStyle: "round",
         borderColor: connectionColor,
         paddingX: 1,
         children: [
-          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { color: connectionColor, children: selectedAgentId ? `@${selectedAgentId}` : agentName }),
-          /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(Text, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { color: connectionColor, children: selectedAgentId ? `@${selectedAgentId}` : agentName }),
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Text, { children: [
             " \u2022 ",
             connectionSummary
           ] })
         ]
       }
     ),
-    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Box_default, { flexDirection: "column", flexGrow: 1, marginY: 1, children: entries.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
-      HomeScreen,
+    /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Box_default, { flexDirection: "column", flexGrow: 1, marginY: 1, children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
+      ChatSession,
       {
+        entries,
         discoveredCount: discoveredAgents.length,
         sourceCount: Object.keys(agentSources).length,
         selectedAgentId,
         requestMode,
         responseMode
       }
-    ) : /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(Box_default, { flexDirection: "column", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
-        HomeScreen,
-        {
-          discoveredCount: discoveredAgents.length,
-          sourceCount: Object.keys(agentSources).length,
-          selectedAgentId,
-          requestMode,
-          responseMode,
-          mode: "inline"
-        }
-      ),
-      entries.map((entry, index) => /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Box_default, { marginBottom: index < entries.length - 1 ? 1 : 0, children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(MessageBubble, { entry }) }, entry.id))
-    ] }) }),
-    workingStartedAt ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Box_default, { marginBottom: 1, children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(WorkingIndicator, { startedAt: workingStartedAt }) }) : null,
-    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+    ) }),
+    workingStartedAt ? /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Box_default, { marginBottom: 1, children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(WorkingIndicator, { startedAt: workingStartedAt }) }) : null,
+    /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
       ChatComposer,
       {
         draft,
@@ -51326,7 +51431,7 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
 }
 
 // src/cli.tsx
-var import_jsx_runtime9 = __toESM(require_jsx_runtime(), 1);
+var import_jsx_runtime10 = __toESM(require_jsx_runtime(), 1);
 async function runLoginCommand() {
   const { settings } = loadChatSettings();
   const environmentId = settings.selectedEnvironment;
@@ -51379,7 +51484,7 @@ async function main() {
       runEnvironmentCommand(command.environmentId);
       return;
     }
-    render_default(/* @__PURE__ */ (0, import_jsx_runtime9.jsx)(ChatApp, { options: command.options }), {
+    render_default(/* @__PURE__ */ (0, import_jsx_runtime10.jsx)(ChatApp, { options: command.options }), {
       exitOnCtrlC: false
     });
   } catch (error) {

@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 
 import type {
-	Artifact,
 	FilePart,
 	Message,
 	Task,
@@ -13,10 +12,9 @@ import { Box, Text, useApp, useInput } from "ink";
 
 import type { ChatCliOptions } from "./args.js";
 import { ChatComposer } from "./components/ChatComposer.js";
-import { HomeScreen } from "./components/HomeScreen.js";
+import { ChatSession } from "./components/ChatSession.js";
 import {
 	type TranscriptEntry,
-	MessageBubble,
 	WorkingIndicator
 } from "./components/MessageBubble.js";
 import {
@@ -71,6 +69,18 @@ import {
 	STREAM_DELTA_ARTIFACT_ID
 } from "./lib/a2aMetadata.js";
 import {
+	formatMessageParts,
+	getTaskMessages
+} from "./lib/messageDisplay.js";
+import {
+	getShownMessageKey,
+	getUnshownTaskAgentMessages,
+	markShownMessage,
+	shouldShowNoAgentMessageNotice,
+	shouldRenderLiveStatusMessage,
+	shouldRenderLiveResponseMessage
+} from "./lib/chatSession.js";
+import {
 	type PushNotificationEvent,
 	startPushNotificationServer
 } from "./lib/pushListener.js";
@@ -89,29 +99,7 @@ import { isTerminalTaskState } from "./lib/taskState.js";
 import { loginWithWorkOS } from "./lib/workosAuth.js";
 
 type ConnectionState = "connecting" | "connected" | "error";
-
-interface TaskDisplayState {
-	hasMessage: boolean;
-	hasStreamDelta: boolean;
-}
-
-function extractText(parts: Message["parts"] | Artifact["parts"]): string {
-	return parts
-		.map((part) => {
-			if (part.kind === "text") {
-				return part.text;
-			}
-			if (part.kind === "file") {
-				return `[Attached file: ${part.file.name ?? "unnamed"}]`;
-			}
-			if (part.kind === "data") {
-				return JSON.stringify(part.data, null, 2);
-			}
-			return "";
-		})
-		.filter(Boolean)
-		.join("\n");
-}
+const NO_AGENT_MESSAGE_NOTICE = "Task completed with no agent message.";
 
 function upsertEntry(
 	entries: TranscriptEntry[],
@@ -208,7 +196,8 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		activeEnvironmentSettings.responseMode
 	);
 	const [reconnectNonce, setReconnectNonce] = useState(0);
-	const taskDisplayState = useRef<Map<string, TaskDisplayState>>(new Map());
+	const shownMessageKeysRef = useRef<Set<string>>(new Set());
+	const streamedTaskIdsRef = useRef<Set<string>>(new Set());
 	const lastConnectionNoticeRef = useRef<string | undefined>(undefined);
 
 	const appendEntry = (role: TranscriptEntry["role"], body: string): void => {
@@ -232,36 +221,6 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 
 	const appendProtocol = (payload: unknown): void => {
 		appendEntry("protocol", formatProtocolPayload(payload));
-	};
-
-	const getTaskDisplayState = (nextTaskId: string): TaskDisplayState => {
-		return taskDisplayState.current.get(nextTaskId) ?? {
-			hasMessage: false,
-			hasStreamDelta: false
-		};
-	};
-
-	const updateTaskDisplayState = (
-		nextTaskId: string | undefined,
-		update: Partial<TaskDisplayState>
-	): void => {
-		if (!nextTaskId) {
-			return;
-		}
-
-		taskDisplayState.current.set(nextTaskId, {
-			...getTaskDisplayState(nextTaskId),
-			...update
-		});
-	};
-
-	const shouldRenderFinalTaskMessage = (nextTaskId: string | undefined): boolean => {
-		if (!nextTaskId) {
-			return true;
-		}
-
-		const state = getTaskDisplayState(nextTaskId);
-		return !state.hasMessage && !state.hasStreamDelta;
 	};
 
 	const persistSettings = (nextSettings: ChatSettings): void => {
@@ -310,9 +269,10 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 
 	const clearTranscript = (): void => {
 		setEntries([]);
+		shownMessageKeysRef.current.clear();
+		streamedTaskIdsRef.current.clear();
 		setContextId(undefined);
 		setTaskId(undefined);
-		taskDisplayState.current.clear();
 		setStreamLabel("Idle");
 		setWorkingStartedAt(undefined);
 	};
@@ -633,7 +593,6 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 					activeEnvironmentSettings.agents[selectedAgent.agentKey]?.activeContextId
 				);
 				setTaskId(undefined);
-				taskDisplayState.current.clear();
 				setConnectionState("connecting");
 				setConnectionLabel(`Connecting to @${selectedAgent.id}...`);
 
@@ -687,7 +646,34 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		selectedEnvironment
 	]);
 
-	const handleMessage = (message: Message): void => {
+	const renderAgentResponseBubble = (
+		message: Message,
+		fallbackTaskId?: string
+	): boolean => {
+		if (!shouldRenderLiveResponseMessage(message)) {
+			return false;
+		}
+		if (shownMessageKeysRef.current.has(getShownMessageKey(message, fallbackTaskId))) {
+			return false;
+		}
+
+		const body = formatMessageParts(message.parts);
+		if (!body) {
+			return false;
+		}
+
+		const shownMessageKey = markShownMessage(
+			shownMessageKeysRef.current,
+			message,
+			fallbackTaskId
+		);
+		setEntries((current) =>
+			upsertEntry(current, `message:${shownMessageKey}`, "agent", body)
+		);
+		return true;
+	};
+
+	const handleMessage = (message: Message): boolean => {
 		if (message.contextId) {
 			setContextId(message.contextId);
 		}
@@ -697,80 +683,60 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 
 		if (responseMode === "a2a-protocol") {
 			appendProtocol(message);
-			return;
+			return true;
 		}
 
-		if (!shouldRenderFinalTaskMessage(message.taskId)) {
-			return;
-		}
-
-		const text = extractText(message.parts);
-		if (!text) {
-			return;
-		}
-
-		if (message.taskId) {
-			updateTaskDisplayState(message.taskId, { hasMessage: true });
-		}
-
-		setEntries((current) => [
-			...current,
-			{
-				id: message.messageId,
-				role: message.role === "user" ? "user" : "agent",
-				body: text
-			}
-		]);
+		return renderAgentResponseBubble(message);
 	};
 
-	const handleTaskSnapshot = (task: Task): void => {
+	const handleTaskSnapshot = (task: Task): boolean => {
 		setContextId(task.contextId);
-		setTaskId(isTerminalTaskState(task.status.state) ? undefined : task.id);
+		const isTerminalTask = isTerminalTaskState(task.status.state);
+		setTaskId(isTerminalTask ? undefined : task.id);
 
 		if (responseMode === "a2a-protocol") {
 			appendProtocol(task);
-			return;
+			return true;
 		}
 
-		if (task.status.message && shouldRenderFinalTaskMessage(task.id)) {
-			const message = task.status.message;
-			updateTaskDisplayState(task.id, { hasMessage: true });
-			setEntries((current) => [
-				...current,
-				{
-					id: message.messageId,
-					role: message.role === "user" ? "user" : "agent",
-					body: extractText(message.parts)
-				}
-			]);
+		if (!isTerminalTask) {
+			return false;
 		}
+		if (streamedTaskIdsRef.current.has(task.id)) {
+			return false;
+		}
+
+		const messages = getUnshownTaskAgentMessages(task, shownMessageKeysRef.current);
+		let renderedAgentOutput = false;
+		for (const message of messages) {
+			renderedAgentOutput = renderAgentResponseBubble(message, task.id) || renderedAgentOutput;
+		}
+		return renderedAgentOutput;
 	};
 
-	const handleStatusUpdate = (event: TaskStatusUpdateEvent): void => {
+	const handleStatusUpdate = (event: TaskStatusUpdateEvent): boolean => {
 		setContextId(event.contextId);
 		setTaskId(isTerminalTaskState(event.status.state) ? undefined : event.taskId);
 		setStreamLabel(event.status.state);
 
 		if (responseMode === "a2a-protocol") {
 			appendProtocol(event);
-			return;
+			return true;
 		}
 
-		if (isFinalStatusEvent(event) && event.status.message && shouldRenderFinalTaskMessage(event.taskId)) {
-			const message = event.status.message;
-			updateTaskDisplayState(event.taskId, { hasMessage: true });
-			setEntries((current) => [
-				...current,
-				{
-					id: message.messageId,
-					role: message.role === "user" ? "user" : "agent",
-					body: extractText(message.parts)
-				}
-			]);
+		if (
+			shouldRenderLiveStatusMessage({
+				message: event.status.message as Message | undefined,
+				taskId: event.taskId,
+				streamedTaskIds: streamedTaskIdsRef.current
+			})
+		) {
+			return renderAgentResponseBubble(event.status.message as Message, event.taskId);
 		}
+		return false;
 	};
 
-	const handleArtifactUpdate = (event: TaskArtifactUpdateEvent): void => {
+	const handleArtifactUpdate = (event: TaskArtifactUpdateEvent): boolean => {
 		setContextId(event.contextId);
 		setTaskId(event.taskId);
 
@@ -780,19 +746,19 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 
 		if (responseMode === "a2a-protocol") {
 			appendProtocol(event);
-			return;
+			return true;
 		}
 
 		if (event.artifact.artifactId !== STREAM_DELTA_ARTIFACT_ID) {
-			return;
+			return false;
 		}
 
-		const artifactText = extractText(event.artifact.parts);
+		const artifactText = formatMessageParts(event.artifact.parts);
 		if (!artifactText) {
-			return;
+			return false;
 		}
 
-		updateTaskDisplayState(event.taskId, { hasStreamDelta: true });
+		streamedTaskIdsRef.current.add(event.taskId);
 		const entryId = `artifact:${event.taskId}:${event.artifact.artifactId}`;
 
 		setEntries((current) => {
@@ -801,6 +767,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				event.append && existing ? `${existing.body}${artifactText}` : artifactText;
 			return upsertEntry(current, entryId, "agent", nextBody);
 		});
+		return true;
 	};
 
 	const applySelectedFileSuggestion = (): void => {
@@ -808,13 +775,6 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		if (!suggestion) return;
 		setDraft((current) => applyFileSuggestion(current, suggestion));
 		setSelectedFileSuggestionIndex(0);
-	};
-
-	const messagesFromTask = (task: Task): Message[] => {
-		if (task.history && task.history.length > 0) {
-			return task.history as Message[];
-		}
-		return task.status.message ? ([task.status.message] as Message[]) : [];
 	};
 
 	const persistCompletedExchange = (
@@ -1089,7 +1049,6 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			}
 		]);
 
-		taskDisplayState.current.clear();
 		const params = buildMessageParams(parts, contextId, taskId, pushConfig);
 		const canStream = Boolean(clientState.agentCard.capabilities.streaming);
 		const useStreaming = requestMode === "streaming-message" && canStream;
@@ -1105,34 +1064,49 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				setStreamLabel("Streaming");
 				let completedTask: Task | undefined;
 				let finalStatusUpdate: TaskStatusUpdateEvent | undefined;
+				let reachedTerminal = false;
+				let renderedAgentOutput = false;
 				for await (const event of clientState.client.sendMessageStream(params)) {
 					switch (event.kind) {
 						case "message":
-							handleMessage(event);
+							renderedAgentOutput = handleMessage(event) || renderedAgentOutput;
 							break;
 						case "task":
 							if (isTerminalTaskState(event.status.state)) {
 								completedTask = event;
+								reachedTerminal = true;
 							}
-							handleTaskSnapshot(event);
+							renderedAgentOutput = handleTaskSnapshot(event) || renderedAgentOutput;
 							break;
 						case "status-update":
+							if (isTerminalTaskState(event.status.state)) {
+								reachedTerminal = true;
+							}
 							if (isFinalStatusEvent(event)) {
 								finalStatusUpdate = event;
 							}
-							handleStatusUpdate(event);
+							renderedAgentOutput = handleStatusUpdate(event) || renderedAgentOutput;
 							break;
 						case "artifact-update":
-							handleArtifactUpdate(event);
+							renderedAgentOutput = handleArtifactUpdate(event) || renderedAgentOutput;
 							break;
 						default:
 							break;
 					}
 				}
+				if (
+					shouldShowNoAgentMessageNotice({
+						responseMode,
+						reachedTerminal,
+						renderedAgentOutput
+					})
+				) {
+					appendSystem(NO_AGENT_MESSAGE_NOTICE);
+				}
 				if (completedTask) {
 					persistCompletedExchange(
 						completedTask.contextId,
-						messagesFromTask(completedTask),
+						getTaskMessages(completedTask),
 						completedTask.id
 					);
 				} else if (finalStatusUpdate?.status.message) {
@@ -1146,22 +1120,34 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			} else {
 				setStreamLabel("Waiting");
 				const response = await clientState.client.sendMessage(params);
+				let reachedTerminal = response.kind === "message";
+				let renderedAgentOutput = false;
 				if (response.kind === "message") {
-					handleMessage(response);
+					renderedAgentOutput = handleMessage(response);
 					persistCompletedExchange(
 						response.contextId ?? params.message.contextId,
 						[params.message, response],
 						response.taskId
 					);
 				} else {
-					handleTaskSnapshot(response);
-					if (isTerminalTaskState(response.status.state)) {
+					reachedTerminal = isTerminalTaskState(response.status.state);
+					renderedAgentOutput = handleTaskSnapshot(response);
+					if (reachedTerminal) {
 						persistCompletedExchange(
 							response.contextId,
-							messagesFromTask(response),
+							getTaskMessages(response),
 							response.id
 						);
 					}
+				}
+				if (
+					shouldShowNoAgentMessageNotice({
+						responseMode,
+						reachedTerminal,
+						renderedAgentOutput
+					})
+				) {
+					appendSystem(NO_AGENT_MESSAGE_NOTICE);
 				}
 				setStreamLabel("Idle");
 			}
@@ -1342,31 +1328,14 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				<Text> • {connectionSummary}</Text>
 			</Box>
 			<Box flexDirection="column" flexGrow={1} marginY={1}>
-				{entries.length === 0 ? (
-					<HomeScreen
-						discoveredCount={discoveredAgents.length}
-						sourceCount={Object.keys(agentSources).length}
-						selectedAgentId={selectedAgentId}
-						requestMode={requestMode}
-						responseMode={responseMode}
-					/>
-				) : (
-					<Box flexDirection="column">
-						<HomeScreen
-							discoveredCount={discoveredAgents.length}
-							sourceCount={Object.keys(agentSources).length}
-							selectedAgentId={selectedAgentId}
-							requestMode={requestMode}
-							responseMode={responseMode}
-							mode="inline"
-						/>
-						{entries.map((entry, index) => (
-							<Box key={entry.id} marginBottom={index < entries.length - 1 ? 1 : 0}>
-								<MessageBubble entry={entry} />
-							</Box>
-						))}
-					</Box>
-				)}
+				<ChatSession
+					entries={entries}
+					discoveredCount={discoveredAgents.length}
+					sourceCount={Object.keys(agentSources).length}
+					selectedAgentId={selectedAgentId}
+					requestMode={requestMode}
+					responseMode={responseMode}
+				/>
 			</Box>
 			{workingStartedAt ? (
 				<Box marginBottom={1}>
