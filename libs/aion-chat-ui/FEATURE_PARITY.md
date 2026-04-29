@@ -1,7 +1,6 @@
-# `chat2` Feature Parity Tracking
+# `aion chat` Feature Parity Tracking
 
-This document tracks the gap between the current Python `aion chat` command and
-the experimental Ink-based `aion chat2` experience.
+This document tracks the feature parity of the Ink-based `aion chat` experience.
 
 ## Shipped In Prototype
 
@@ -17,7 +16,7 @@ the experimental Ink-based `aion chat2` experience.
 - [x] Custom header injection
 - [x] Bearer token convenience flag
 - [x] Aion distribution and traceability metadata on outgoing requests
-- [x] Experimental Python launcher command: `aion chat2`
+- [x] Python launcher command: `aion chat`
 - [x] File attachment via prompt flow, absolute/relative paths, and `@file:` autocomplete
 - [x] `/exit` slash command to quit the chat
 

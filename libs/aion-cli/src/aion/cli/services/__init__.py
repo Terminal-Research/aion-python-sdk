@@ -2,7 +2,7 @@
 
 This package contains several service trees with optional sibling-package
 dependencies. Importing them eagerly makes lightweight CLI paths, such as
-``aion chat2``, pull in unrelated GraphQL and server dependencies during module
+``aion chat``, pull in unrelated GraphQL and server dependencies during module
 import. The namespace now resolves exported symbols lazily so subpackages can be
 used independently.
 """

@@ -155,41 +155,6 @@ When enabled, the chat interface can receive real-time notifications from the ag
 **Agent ID:**
 Specifies which agent to interact with when multiple agents are available via a proxy server.
 
----
-
-### `aion chat2`
-
-Launches the standalone React/Ink Aion Chat UI packaged from `libs/aion-chat-ui`.
-
-**Usage:**
-
-```bash
-poetry run aion chat2 [OPTIONS]
-```
-
-**Options:**
-
-* `--url`, `--host`, `-u TEXT` - A2A endpoint URL used for agent manifest discovery, agent-card resolution, and A2A JSON-RPC calls
-* `--agent-id TEXT` - Agent ID to use when connecting through an A2A proxy
-* `--token TEXT` - Bearer token for the A2A endpoint
-* `--header TEXT` - Custom HTTP headers in format `key=value` (can be used multiple times)
-* `--push-notifications` - Enable the local push notification receiver
-* `--push-receiver TEXT` - Push notification receiver URL
-
-The selected Aion environment is separate from `--url`; it identifies the Aion control-plane API used for login and auth configuration. Use `--url` when you want to connect to a local or hosted A2A endpoint.
-
-Login and environment switching are owned by the standalone chat UI, not by the Python `aion` CLI. Use the npm package commands `aio login`, `aio environment <environment>`, `aio env <environment>` or their `aion-chat` aliases. Inside the `chat2` composer, `/login` is visible in the slash command picker; `/environment` and `/env` are hidden from the picker but still executable when typed exactly.
-
-**Examples:**
-
-```bash
-# Connect to an A2A proxy and pick from discovered agents
-poetry run aion chat2 --url http://localhost:8000
-
-# Connect through an A2A proxy to a specific agent
-poetry run aion chat2 --url http://localhost:8000 --agent-id hello-world
-```
-
 ## Configuration
 
 The CLI reads configuration from your `aion.yaml` file. The configuration must include:

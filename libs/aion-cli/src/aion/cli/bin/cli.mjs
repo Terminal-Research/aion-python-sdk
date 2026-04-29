@@ -904,21 +904,21 @@ var require_react_development = __commonJS({
         );
         actScopeDepth = prevActScopeDepth;
       }
-      function recursivelyFlushAsyncActWork(returnValue, resolve, reject) {
+      function recursivelyFlushAsyncActWork(returnValue, resolve3, reject) {
         var queue = ReactSharedInternals.actQueue;
         if (null !== queue)
           if (0 !== queue.length)
             try {
               flushActQueue(queue);
               enqueueTask(function() {
-                return recursivelyFlushAsyncActWork(returnValue, resolve, reject);
+                return recursivelyFlushAsyncActWork(returnValue, resolve3, reject);
               });
               return;
             } catch (error) {
               ReactSharedInternals.thrownErrors.push(error);
             }
           else ReactSharedInternals.actQueue = null;
-        0 < ReactSharedInternals.thrownErrors.length ? (queue = aggregateErrors(ReactSharedInternals.thrownErrors), ReactSharedInternals.thrownErrors.length = 0, reject(queue)) : resolve(returnValue);
+        0 < ReactSharedInternals.thrownErrors.length ? (queue = aggregateErrors(ReactSharedInternals.thrownErrors), ReactSharedInternals.thrownErrors.length = 0, reject(queue)) : resolve3(returnValue);
       }
       function flushActQueue(queue) {
         if (!isFlushing) {
@@ -1105,7 +1105,7 @@ var require_react_development = __commonJS({
             ));
           });
           return {
-            then: function(resolve, reject) {
+            then: function(resolve3, reject) {
               didAwaitActCall = true;
               thenable.then(
                 function(returnValue) {
@@ -1115,7 +1115,7 @@ var require_react_development = __commonJS({
                       flushActQueue(queue), enqueueTask(function() {
                         return recursivelyFlushAsyncActWork(
                           returnValue,
-                          resolve,
+                          resolve3,
                           reject
                         );
                       });
@@ -1129,7 +1129,7 @@ var require_react_development = __commonJS({
                       ReactSharedInternals.thrownErrors.length = 0;
                       reject(_thrownError);
                     }
-                  } else resolve(returnValue);
+                  } else resolve3(returnValue);
                 },
                 function(error) {
                   popActScope(prevActQueue, prevActScopeDepth);
@@ -1151,15 +1151,15 @@ var require_react_development = __commonJS({
         if (0 < ReactSharedInternals.thrownErrors.length)
           throw callback = aggregateErrors(ReactSharedInternals.thrownErrors), ReactSharedInternals.thrownErrors.length = 0, callback;
         return {
-          then: function(resolve, reject) {
+          then: function(resolve3, reject) {
             didAwaitActCall = true;
             0 === prevActScopeDepth ? (ReactSharedInternals.actQueue = queue, enqueueTask(function() {
               return recursivelyFlushAsyncActWork(
                 returnValue$jscomp$0,
-                resolve,
+                resolve3,
                 reject
               );
-            })) : resolve(returnValue$jscomp$0);
+            })) : resolve3(returnValue$jscomp$0);
           }
         };
       };
@@ -3243,8 +3243,8 @@ var require_react_reconciler_production = __commonJS({
           currentEntangledActionThenable = {
             status: "pending",
             value: void 0,
-            then: function(resolve) {
-              entangledListeners.push(resolve);
+            then: function(resolve3) {
+              entangledListeners.push(resolve3);
             }
           };
         }
@@ -3267,8 +3267,8 @@ var require_react_reconciler_production = __commonJS({
           status: "pending",
           value: null,
           reason: null,
-          then: function(resolve) {
-            listeners.push(resolve);
+          then: function(resolve3) {
+            listeners.push(resolve3);
           }
         };
         thenable.then(
@@ -12867,8 +12867,8 @@ var require_react_reconciler_development = __commonJS({
           currentEntangledActionThenable = {
             status: "pending",
             value: void 0,
-            then: function(resolve) {
-              entangledListeners.push(resolve);
+            then: function(resolve3) {
+              entangledListeners.push(resolve3);
             }
           };
         }
@@ -12891,8 +12891,8 @@ var require_react_reconciler_development = __commonJS({
           status: "pending",
           value: null,
           reason: null,
-          then: function(resolve) {
-            listeners.push(resolve);
+          then: function(resolve3) {
+            listeners.push(resolve3);
           }
         };
         thenable.then(
@@ -26169,9 +26169,9 @@ var require_event_target = __commonJS({
         }
         let wrapper;
         if (type === "message") {
-          wrapper = function onMessage(data, isBinary) {
+          wrapper = function onMessage(data, isBinary2) {
             const event = new MessageEvent("message", {
-              data: isBinary ? data : data.toString()
+              data: isBinary2 ? data : data.toString()
             });
             event[kTarget] = this;
             callListener(handler, this, event);
@@ -27208,8 +27208,8 @@ var require_websocket = __commonJS({
     function receiverOnFinish() {
       this[kWebSocket].emitClose();
     }
-    function receiverOnMessage(data, isBinary) {
-      this[kWebSocket].emit("message", data, isBinary);
+    function receiverOnMessage(data, isBinary2) {
+      this[kWebSocket].emit("message", data, isBinary2);
     }
     function receiverOnPing(data) {
       const websocket = this[kWebSocket];
@@ -27314,8 +27314,8 @@ var require_stream = __commonJS({
         objectMode: false,
         writableObjectMode: false
       });
-      ws.on("message", function message(msg, isBinary) {
-        const data = !isBinary && duplex._readableState.objectMode ? msg.toString() : msg;
+      ws.on("message", function message(msg, isBinary2) {
+        const data = !isBinary2 && duplex._readableState.objectMode ? msg.toString() : msg;
         if (!duplex.push(data)) ws.pause();
       });
       ws.once("error", function error(err) {
@@ -28900,7 +28900,7 @@ var require_core = __commonJS({
       return match && match.index === 0;
     }
     var BACKREF_RE = /\[(?:[^\\\]]|\\.)*\]|\(\??|\\([1-9][0-9]*)|\\./;
-    function join(regexps, separator = "|") {
+    function join2(regexps, separator = "|") {
       let numCaptures = 0;
       return regexps.map((regex2) => {
         numCaptures += 1;
@@ -29204,7 +29204,7 @@ var require_core = __commonJS({
             this.exec = () => null;
           }
           const terminators = this.regexes.map((el) => el[1]);
-          this.matcherRe = langRe(join(terminators), true);
+          this.matcherRe = langRe(join2(terminators), true);
           this.lastIndex = 0;
         }
         /** @param {string} s */
@@ -67515,7 +67515,7 @@ var require_foreign_content = __commonJS({
     var $ = HTML.TAG_NAMES;
     var NS = HTML.NAMESPACES;
     var ATTRS = HTML.ATTRS;
-    var MIME_TYPES = {
+    var MIME_TYPES2 = {
       TEXT_HTML: "text/html",
       APPLICATION_XML: "application/xhtml+xml"
     };
@@ -67724,7 +67724,7 @@ var require_foreign_content = __commonJS({
         for (let i = 0; i < attrs.length; i++) {
           if (attrs[i].name === ATTRS.ENCODING) {
             const value = attrs[i].value.toLowerCase();
-            return value === MIME_TYPES.TEXT_HTML || value === MIME_TYPES.APPLICATION_XML;
+            return value === MIME_TYPES2.TEXT_HTML || value === MIME_TYPES2.APPLICATION_XML;
           }
         }
       }
@@ -87820,8 +87820,8 @@ var Ink = class {
     }
   }
   async waitUntilExit() {
-    this.exitPromise ||= new Promise((resolve, reject) => {
-      this.resolveExitPromise = resolve;
+    this.exitPromise ||= new Promise((resolve3, reject) => {
+      this.resolveExitPromise = resolve3;
       this.rejectExitPromise = reject;
     });
     if (!this.beforeExitHandler) {
@@ -88758,6 +88758,14 @@ var SLASH_COMMANDS = [
     options: []
   },
   {
+    id: "exit",
+    label: "/exit",
+    description: "Exit Aion Chat.",
+    title: "Exit",
+    subtitle: "Exit Aion Chat.",
+    options: []
+  },
+  {
     id: "request",
     label: "/request",
     description: "Choose how Aion Chat sends requests to the agents.",
@@ -88861,6 +88869,8 @@ function ChatComposer({
   streamState,
   agentSuggestions,
   selectedSuggestionIndex,
+  fileSuggestions,
+  selectedFileSuggestionIndex,
   slashCommands,
   selectedSlashCommandIndex,
   slashMenuVisible,
@@ -88877,8 +88887,9 @@ function ChatComposer({
   const draftLines = draft.length > 0 ? wrapToWidth(draft, contentWidth) : [""];
   const fillerRow = " ".repeat(lineWidth);
   const showAgentSuggestions = agentSuggestions.length > 0;
+  const showFileSuggestions = fileSuggestions.length > 0;
   const showSlashList = slashMenuVisible && !slashSubmenu;
-  const showFooter = !showAgentSuggestions && !slashMenuVisible && !slashSubmenu;
+  const showFooter = !showAgentSuggestions && !showFileSuggestions && !slashMenuVisible && !slashSubmenu;
   const slashLabelWidth = getTableLabelWidth(slashCommands);
   const slashSubmenuLabelWidth = getTableLabelWidth(slashSubmenu?.options ?? [], true);
   (0, import_react29.useEffect)(() => {
@@ -88959,6 +88970,20 @@ function ChatComposer({
           ]
         },
         suggestion
+      ))
+    ] }) : null,
+    showFileSuggestions ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { flexDirection: "column", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { color: SECONDARY_TEXT, children: "Files" }),
+      fileSuggestions.map((label, index) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
+        Text,
+        {
+          color: index === selectedFileSuggestionIndex ? SELECTION_HIGHLIGHT : PRIMARY_TEXT,
+          children: [
+            index === selectedFileSuggestionIndex ? "\u203A " : "  ",
+            label
+          ]
+        },
+        label
       ))
     ] }) : null,
     showSlashList ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { flexDirection: "column", children: slashCommands.map((command, index) => {
@@ -89599,7 +89624,7 @@ function buildBrowserOpenCommand(url, platform2 = process.platform) {
 }
 async function openUrlInDefaultBrowser(url, spawnImpl = spawn) {
   const openCommand = buildBrowserOpenCommand(url);
-  return new Promise((resolve) => {
+  return new Promise((resolve3) => {
     try {
       const child = spawnImpl(
         openCommand.command,
@@ -89608,15 +89633,190 @@ async function openUrlInDefaultBrowser(url, spawnImpl = spawn) {
       );
       child.once("spawn", () => {
         child.unref();
-        resolve(true);
+        resolve3(true);
       });
       child.once("error", () => {
-        resolve(false);
+        resolve3(false);
       });
     } catch {
-      resolve(false);
+      resolve3(false);
     }
   });
+}
+
+// src/lib/input/parser/extractors/filePathExtractor.ts
+import { existsSync as existsSync2, readFileSync as readFileSync4, statSync } from "fs";
+import { basename, extname, resolve } from "path";
+var MAX_FILE_SIZE = 512 * 1024;
+var PATH_PATTERN = /(?:^|\s)(\.{0,2}\/[^\s"'`)\]]+)/gm;
+var MIME_TYPES = {
+  ".txt": "text/plain",
+  ".log": "text/plain",
+  ".md": "text/markdown",
+  ".json": "application/json",
+  ".yaml": "text/yaml",
+  ".yml": "text/yaml",
+  ".toml": "text/toml",
+  ".csv": "text/csv",
+  ".ts": "text/x-typescript",
+  ".js": "text/javascript",
+  ".py": "text/x-python",
+  ".sh": "text/x-sh",
+  ".html": "text/html",
+  ".xml": "text/xml",
+  ".css": "text/css",
+  ".env": "text/plain",
+  ".conf": "text/plain",
+  ".ini": "text/plain"
+};
+function isBinary(buffer) {
+  const limit = Math.min(buffer.length, 512);
+  for (let i = 0; i < limit; i++) {
+    if (buffer[i] === 0) return true;
+  }
+  return false;
+}
+function getMimeType(filePath) {
+  return MIME_TYPES[extname(filePath).toLowerCase()] ?? "application/octet-stream";
+}
+var filePathExtractor = {
+  detect(text) {
+    const spans = [];
+    const regex2 = new RegExp(PATH_PATTERN.source, PATH_PATTERN.flags);
+    let match;
+    while ((match = regex2.exec(text)) !== null) {
+      const raw = match[1].replace(/[,;:.!?]+$/, "");
+      if (!raw) continue;
+      const absolute = resolve(raw);
+      if (!existsSync2(absolute)) continue;
+      try {
+        if (!statSync(absolute).isFile()) continue;
+      } catch {
+        continue;
+      }
+      const start = match.index + match[0].indexOf(raw);
+      spans.push({ start, end: start + raw.length, raw: absolute });
+    }
+    return spans;
+  },
+  async parse(span) {
+    try {
+      const stat = statSync(span.raw);
+      if (stat.size > MAX_FILE_SIZE) return null;
+      const buffer = readFileSync4(span.raw);
+      if (isBinary(buffer)) return null;
+      return {
+        kind: "file",
+        file: {
+          name: basename(span.raw),
+          mimeType: getMimeType(span.raw),
+          bytes: buffer.toString("base64")
+        }
+      };
+    } catch {
+      return null;
+    }
+  }
+};
+
+// src/lib/input/parser/extractors/index.ts
+var EXTRACTORS = [filePathExtractor];
+
+// src/lib/input/parser/pipeline.ts
+function makeTextPart(text) {
+  return { kind: "text", text };
+}
+async function buildMessageParts(text, extractors) {
+  const allSpans = [];
+  for (const extractor of extractors) {
+    for (const span of extractor.detect(text)) {
+      allSpans.push({ span, extractor });
+    }
+  }
+  allSpans.sort((a, b) => a.span.start - b.span.start);
+  const resolved = [];
+  let cursor = 0;
+  for (const item of allSpans) {
+    if (item.span.start >= cursor) {
+      resolved.push(item);
+      cursor = item.span.end;
+    }
+  }
+  const parts = [];
+  let pos = 0;
+  for (const { span, extractor } of resolved) {
+    const before = text.slice(pos, span.start).trim();
+    if (before) parts.push(makeTextPart(before));
+    const part = await extractor.parse(span);
+    if (part) parts.push(part);
+    pos = span.end;
+  }
+  const remainder = text.slice(pos).trim();
+  if (remainder) parts.push(makeTextPart(remainder));
+  if (parts.length === 0) parts.push(makeTextPart(text));
+  return parts;
+}
+
+// src/lib/input/parser/index.ts
+var buildMessageParts2 = (text) => buildMessageParts(text, EXTRACTORS);
+
+// src/lib/input/mentions/fileMention.ts
+import { readdirSync, statSync as statSync2 } from "fs";
+import { homedir } from "os";
+import { basename as basename2, dirname, isAbsolute, join, resolve as resolve2 } from "path";
+var FILE_MENTION_PATTERN = /(?:^|\s)@file:(\S*)$/;
+function getFileMentionMatch(draft) {
+  const match = FILE_MENTION_PATTERN.exec(draft);
+  if (!match) return void 0;
+  return {
+    query: match[1] ?? "",
+    start: match.index + match[0].lastIndexOf("@"),
+    end: draft.length
+  };
+}
+function clearFileMention(draft) {
+  const match = getFileMentionMatch(draft);
+  if (!match) return draft;
+  return draft.slice(0, match.start).trimEnd();
+}
+function getFileSuggestions(query, limit = 8) {
+  try {
+    const expanded = query.startsWith("~/") ? `${homedir()}/${query.slice(2)}` : query;
+    let dirPart;
+    let filePart;
+    if (expanded.endsWith("/")) {
+      dirPart = expanded;
+      filePart = "";
+    } else if (expanded.includes("/")) {
+      dirPart = dirname(expanded);
+      filePart = basename2(expanded);
+    } else {
+      dirPart = ".";
+      filePart = expanded;
+    }
+    const absDir = isAbsolute(dirPart) ? dirPart : resolve2(dirPart);
+    return readdirSync(absDir).filter((name) => name.startsWith(filePart) && !name.startsWith(".")).flatMap((name) => {
+      const abs = join(absDir, name);
+      try {
+        const isDirectory = statSync2(abs).isDirectory();
+        return [{ label: isDirectory ? `${name}/` : name, absolutePath: abs, isDirectory }];
+      } catch {
+        return [];
+      }
+    }).slice(0, limit);
+  } catch {
+    return [];
+  }
+}
+function applyFileSuggestion(draft, suggestion) {
+  const match = getFileMentionMatch(draft);
+  if (!match) return draft;
+  const before = draft.slice(0, match.start).trimEnd();
+  if (suggestion.isDirectory) {
+    const mention = `@file:${suggestion.absolutePath}/`;
+    return before ? `${before} ${mention}` : mention;
+  }
+  return before ? `${before} ${suggestion.absolutePath}` : suggestion.absolutePath;
 }
 
 // src/lib/connection.ts
@@ -93026,7 +93226,7 @@ function createPushNotificationConfig(receiverUrl) {
     }
   };
 }
-function buildMessageParams(prompt, contextId, taskId, pushNotificationConfig) {
+function buildMessageParams(parts, contextId, taskId, pushNotificationConfig) {
   return {
     message: {
       kind: "message",
@@ -93034,7 +93234,7 @@ function buildMessageParams(prompt, contextId, taskId, pushNotificationConfig) {
       role: "user",
       taskId,
       contextId,
-      parts: [{ kind: "text", text: prompt }]
+      parts
     },
     metadata: generateTaskMetadata(),
     configuration: {
@@ -93158,11 +93358,11 @@ async function startPushNotificationServer(receiverUrl, onEvent) {
     }
     response.writeHead(405).end();
   });
-  await new Promise((resolve, reject) => {
+  await new Promise((resolve3, reject) => {
     server.once("error", reject);
     server.listen(port, hostname, () => {
       server.off("error", reject);
-      resolve();
+      resolve3();
     });
   });
   const address = server.address();
@@ -93170,13 +93370,13 @@ async function startPushNotificationServer(receiverUrl, onEvent) {
   return {
     callbackUrl: `http://${hostname}:${boundPort}/notify`,
     close: async () => {
-      await new Promise((resolve, reject) => {
+      await new Promise((resolve3, reject) => {
         server.close((error) => {
           if (error) {
             reject(error);
             return;
           }
-          resolve();
+          resolve3();
         });
       });
     }
@@ -93321,8 +93521,8 @@ var DEFAULT_POLL_INTERVAL_SECONDS = 5;
 var SLOW_DOWN_INCREMENT_SECONDS = 5;
 var accessTokenCache = /* @__PURE__ */ new Map();
 function wait(ms) {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
+  return new Promise((resolve3) => {
+    setTimeout(resolve3, ms);
   });
 }
 function requireString(value, name) {
@@ -93527,6 +93727,7 @@ function ChatApp({ options }) {
     options.agentId ?? activeEnvironmentSettings.selectedAgentId
   );
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = (0, import_react31.useState)(0);
+  const [selectedFileSuggestionIndex, setSelectedFileSuggestionIndex] = (0, import_react31.useState)(0);
   const [selectedSlashIndex, setSelectedSlashIndex] = (0, import_react31.useState)(0);
   const [selectedSlashSubmenuIndex, setSelectedSlashSubmenuIndex] = (0, import_react31.useState)(0);
   const [slashSubmenuId, setSlashSubmenuId] = (0, import_react31.useState)();
@@ -93686,6 +93887,14 @@ function ChatApp({ options }) {
     }
     return discoveredAgents.map((agent) => agent.id).filter((agentId) => agentId.startsWith(mentionMatch.query)).slice(0, 6);
   }, [discoveredAgents, draft, slashQuery, slashSubmenuId]);
+  const fileSuggestions = (0, import_react31.useMemo)(() => {
+    if (slashQuery !== void 0 || slashSubmenuId) {
+      return [];
+    }
+    const match = getFileMentionMatch(draft);
+    if (!match) return [];
+    return getFileSuggestions(match.query);
+  }, [draft, slashQuery, slashSubmenuId]);
   (0, import_react31.useEffect)(() => {
     setSelectedSuggestionIndex((current) => {
       if (agentSuggestions.length === 0) {
@@ -93694,6 +93903,12 @@ function ChatApp({ options }) {
       return Math.min(current, agentSuggestions.length - 1);
     });
   }, [agentSuggestions]);
+  (0, import_react31.useEffect)(() => {
+    setSelectedFileSuggestionIndex((current) => {
+      if (fileSuggestions.length === 0) return 0;
+      return Math.min(current, fileSuggestions.length - 1);
+    });
+  }, [fileSuggestions]);
   (0, import_react31.useEffect)(() => {
     setSelectedSlashIndex((current) => {
       if (slashCommands.length === 0) {
@@ -93751,8 +93966,9 @@ function ChatApp({ options }) {
             selectedAgentId: void 0
           });
           appendSystem("The selected agent is no longer available.");
-          setConnectionState("connecting");
-          setConnectionLabel("Choose an agent with @");
+        } else if (discovery.agents.length === 1) {
+          setSelectedAgentId(discovery.agents[0].id);
+          setConnectionLabel(`Connecting to @${discovery.agents[0].id}...`);
         } else {
           setConnectionState("connecting");
           setConnectionLabel(
@@ -93983,6 +94199,12 @@ ${JSON.stringify(
       return upsertEntry(current, entryId, "agent", nextBody);
     });
   };
+  const applySelectedFileSuggestion = () => {
+    const suggestion = fileSuggestions[selectedFileSuggestionIndex];
+    if (!suggestion) return;
+    setDraft((current) => applyFileSuggestion(current, suggestion));
+    setSelectedFileSuggestionIndex(0);
+  };
   const applySelectedAgentSuggestion = () => {
     const suggestion = agentSuggestions[selectedSuggestionIndex];
     if (!suggestion) {
@@ -94022,6 +94244,10 @@ ${JSON.stringify(
     if (command.id === "login") {
       resetSlashSelection();
       void runLoginSlashCommand();
+      return;
+    }
+    if (command.id === "exit") {
+      exit();
       return;
     }
     setSlashSubmenuId(command.id);
@@ -94125,16 +94351,21 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
       return;
     }
     setDraft("");
+    const parts = await buildMessageParts2(trimmed);
+    const attachedFiles = parts.filter((p) => p.kind === "file").map((p) => p.file.name ?? "unnamed");
+    const displayBody = attachedFiles.length > 0 ? `${trimmed}
+
+*Attached: ${attachedFiles.join(", ")}*` : trimmed;
     setEntries((current) => [
       ...current,
       {
         id: randomUUID2(),
         role: "user",
-        body: trimmed
+        body: displayBody
       }
     ]);
     taskDisplayState.current.clear();
-    const params = buildMessageParams(trimmed, contextId, taskId, pushConfig);
+    const params = buildMessageParams(parts, contextId, taskId, pushConfig);
     const canStream = Boolean(clientState.agentCard.capabilities.streaming);
     const useStreaming = requestMode === "streaming-message" && canStream;
     try {
@@ -94235,9 +94466,25 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
       );
       return;
     }
+    if (fileSuggestions.length > 0 && key.upArrow) {
+      setSelectedFileSuggestionIndex(
+        (current) => current === 0 ? fileSuggestions.length - 1 : current - 1
+      );
+      return;
+    }
+    if (fileSuggestions.length > 0 && key.downArrow) {
+      setSelectedFileSuggestionIndex(
+        (current) => current === fileSuggestions.length - 1 ? 0 : current + 1
+      );
+      return;
+    }
     if (key.escape) {
       if (isSlashSubmenuOpen || isSlashMenuOpen) {
         dismissSlashDialog();
+        return;
+      }
+      if (fileSuggestions.length > 0) {
+        setDraft((current) => clearFileMention(current));
         return;
       }
       setDraft("");
@@ -94277,6 +94524,10 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
       }
       if (agentSuggestions.length > 0) {
         applySelectedAgentSuggestion();
+        return;
+      }
+      if (fileSuggestions.length > 0) {
+        applySelectedFileSuggestion();
         return;
       }
       void submitPrompt();
@@ -94334,6 +94585,8 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
         streamState: streamLabel,
         agentSuggestions,
         selectedSuggestionIndex,
+        fileSuggestions: fileSuggestions.map((s) => s.label),
+        selectedFileSuggestionIndex,
         slashCommands: slashCommands.map((command) => ({
           label: command.label,
           description: command.description

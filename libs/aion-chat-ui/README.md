@@ -61,14 +61,14 @@ Run the UI directly from `libs/aion-chat-ui` when you want to work on the Ink/Re
 
 Use `npm run dev`, not `node src/cli.tsx` or `node src/app.tsx`. The source tree uses TypeScript files with `.js` import specifiers, so it must be run through `tsx` in development or through the built `dist/cli.mjs` bundle.
 
-If you want to test the integrated Python entrypoint instead, run `aion chat2` from an agent project that depends on your local editable `aion-cli`. In that flow, the Python launcher uses `libs/aion-chat-ui/dist/cli.mjs`, so rebuild after UI changes:
+If you want to test the integrated Python entrypoint instead, run `aion chat` from an agent project that depends on your local editable `aion-cli`. In that flow, the Python launcher uses `libs/aion-chat-ui/dist/cli.mjs`, so rebuild after UI changes:
 
 ```bash
 npm run build
 npm run stage:python
 ```
 
-Then in the agent project, run `poetry run aion chat2`.
+Then in the agent project, run `poetry run aion chat`.
 
 ## Build
 
