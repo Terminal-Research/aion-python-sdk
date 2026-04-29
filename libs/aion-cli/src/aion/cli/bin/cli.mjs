@@ -93639,7 +93639,7 @@ function selectDiscoveredAgent(agents, options) {
 }
 
 // src/lib/agents/sessionStore.ts
-import { mkdirSync as mkdirSync2, readFileSync as readFileSync4, readdirSync, writeFileSync as writeFileSync2 } from "fs";
+import { mkdirSync as mkdirSync2, readFileSync as readFileSync5, readdirSync as readdirSync2, writeFileSync as writeFileSync2 } from "fs";
 import path2 from "path";
 function resolveSessionsDirectory(env3 = process.env, homeDirectory) {
   return path2.join(resolveAionConfigDirectory(env3, homeDirectory), "sessions");
@@ -93662,7 +93662,7 @@ function resolveSessionFilePath(environment, agentKey, contextId, sessionsDirect
 }
 function readSessionFile(filePath) {
   try {
-    return JSON.parse(readFileSync4(filePath, "utf8"));
+    return JSON.parse(readFileSync5(filePath, "utf8"));
   } catch {
     return void 0;
   }
