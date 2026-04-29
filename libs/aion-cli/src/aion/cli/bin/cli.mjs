@@ -89277,10 +89277,83 @@ function getLayout(width) {
   }
   return "compact";
 }
+function renderSettingsPanel(selectedAgentId, requestMode, responseMode) {
+  const innerWidth = 42;
+  const valueWidth = 25;
+  const labels = ["Selected Agent", "Request Mode", "Response Mode"];
+  const labelWidth = Math.max(...labels.map((label) => label.length));
+  const selectedAgent = selectedAgentId ? `@${selectedAgentId}` : "None";
+  const requestModeLabel = requestMode === "streaming-message" ? "SendStreamingMessage" : "SendMessage";
+  const responseModeLabel = responseMode === "a2a-protocol" ? "A2A" : "Message";
+  const row = (label, value) => ` ${label.padStart(labelWidth)}: ${padValue(value, valueWidth)}`;
+  return renderFramedPanel("Settings", innerWidth, [
+    row("Selected Agent", selectedAgent),
+    row("Request Mode", requestModeLabel),
+    row("Response Mode", responseModeLabel)
+  ]);
+}
+function renderPrefixMenusPanel() {
+  const innerWidth = 19;
+  const row = (value) => ` ${padValue(value, innerWidth - 1)}`;
+  return renderFramedPanel("Prefix Menus", innerWidth, [
+    row("/ Commands"),
+    row("@ Select Agent"),
+    row("# Attach File")
+  ]);
+}
+function renderHomeMenus(inline, selectedAgentId, requestMode, responseMode) {
+  return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Box_default, { flexDirection: inline ? "row" : "column", alignItems: "center", children: [
+    renderSettingsPanel(selectedAgentId, requestMode, responseMode),
+    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Box_default, { marginLeft: inline ? 3 : 0, marginTop: inline ? 0 : 1, children: renderPrefixMenusPanel() })
+  ] });
+}
+function truncateValue(value, maxLength) {
+  if (value.length <= maxLength) {
+    return value;
+  }
+  if (maxLength <= 1) {
+    return value.slice(0, maxLength);
+  }
+  return `${value.slice(0, maxLength - 1)}\u2026`;
+}
+function padValue(value, width) {
+  return truncateValue(value, width).padEnd(width);
+}
+function centerTitle(title, width) {
+  const titleText = ` ${title} `;
+  if (titleText.length >= width) {
+    return padValue(titleText, width);
+  }
+  const remaining = width - titleText.length;
+  const left = Math.floor(remaining / 2);
+  const right = remaining - left;
+  return `${"\u2550".repeat(left)}${titleText}${"\u2550".repeat(right)}`;
+}
+function renderFramedPanel(title, innerWidth, rows) {
+  return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Box_default, { flexDirection: "column", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { color: COLORS.lavender, children: [
+      "\u2554",
+      centerTitle(title, innerWidth),
+      "\u2557"
+    ] }),
+    rows.map((row, index) => /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Box_default, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { color: COLORS.lavender, children: "\u2551" }),
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { color: COLORS.cream, children: padValue(row, innerWidth) }),
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { color: COLORS.lavender, children: "\u2551" })
+    ] }, `${title}-${index}`)),
+    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { color: COLORS.lavender, children: [
+      "\u255A",
+      "\u2550".repeat(innerWidth),
+      "\u255D"
+    ] })
+  ] });
+}
 function HomeScreen({
   discoveredCount,
   sourceCount = 0,
   selectedAgentId,
+  requestMode = "send-message",
+  responseMode = "message-output",
   terminalWidth,
   mode = "standalone"
 }) {
@@ -89305,6 +89378,7 @@ function HomeScreen({
   }, [stdout, terminalWidth]);
   const layout = (0, import_react30.useMemo)(() => getLayout(liveWidth), [liveWidth]);
   const sourceSuffix = sourceCount === 1 ? "" : "s";
+  const showMenusInline = liveWidth >= 96;
   const outerProps = mode === "standalone" ? { flexGrow: 1, justifyContent: "center", alignItems: "center" } : { alignItems: "center" };
   return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Box_default, { ...outerProps, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(
     Box_default,
@@ -89325,7 +89399,7 @@ function HomeScreen({
             " source",
             sourceSuffix
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { color: selectedAgentId ? "green" : COLORS.lavender, children: selectedAgentId ? `Selected agent: ${selectedAgentId}` : "Type @ to select an agent" })
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Box_default, { marginTop: 1, children: renderHomeMenus(showMenusInline, selectedAgentId, requestMode, responseMode) })
         ] })
       ]
     }
@@ -89923,13 +89997,13 @@ var buildMessageParts2 = (text) => buildMessageParts(text, EXTRACTORS);
 import { readdirSync, statSync as statSync2 } from "fs";
 import { homedir } from "os";
 import { basename as basename2, dirname, isAbsolute, join, resolve as resolve2 } from "path";
-var FILE_MENTION_PATTERN = /(?:^|\s)@file:(\S*)$/;
+var FILE_MENTION_PATTERN = /(?:^|\s)#(\S*)$/;
 function getFileMentionMatch(draft) {
   const match = FILE_MENTION_PATTERN.exec(draft);
   if (!match) return void 0;
   return {
     query: match[1] ?? "",
-    start: match.index + match[0].lastIndexOf("@"),
+    start: match.index + match[0].lastIndexOf("#"),
     end: draft.length
   };
 }
@@ -89972,7 +90046,7 @@ function applyFileSuggestion(draft, suggestion) {
   if (!match) return draft;
   const before = draft.slice(0, match.start).trimEnd();
   if (suggestion.isDirectory) {
-    const mention = `@file:${suggestion.absolutePath}/`;
+    const mention = `#${suggestion.absolutePath}/`;
     return before ? `${before} ${mention}` : mention;
   }
   return before ? `${before} ${suggestion.absolutePath}` : suggestion.absolutePath;
@@ -95116,7 +95190,9 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
       {
         discoveredCount: discoveredAgents.length,
         sourceCount: Object.keys(agentSources).length,
-        selectedAgentId
+        selectedAgentId,
+        requestMode,
+        responseMode
       }
     ) : /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { flexDirection: "column", children: [
       /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
@@ -95125,6 +95201,8 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
           discoveredCount: discoveredAgents.length,
           sourceCount: Object.keys(agentSources).length,
           selectedAgentId,
+          requestMode,
+          responseMode,
           mode: "inline"
         }
       ),

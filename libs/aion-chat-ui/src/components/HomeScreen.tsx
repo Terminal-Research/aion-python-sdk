@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Box, Text, useStdout } from "ink";
 
+import type { RequestMode, ResponseMode } from "../lib/slashCommands.js";
+
 const COLORS = {
 	lavender: "#C5AFFF",
 	purple: "#816CFF",
@@ -321,10 +323,109 @@ function getLayout(width: number): LogoLayout {
 	return "compact";
 }
 
+function renderSettingsPanel(
+	selectedAgentId: string | undefined,
+	requestMode: RequestMode,
+	responseMode: ResponseMode
+): React.JSX.Element {
+	const innerWidth = 42;
+	const valueWidth = 25;
+	const labels = ["Selected Agent", "Request Mode", "Response Mode"];
+	const labelWidth = Math.max(...labels.map((label) => label.length));
+	const selectedAgent = selectedAgentId ? `@${selectedAgentId}` : "None";
+	const requestModeLabel =
+		requestMode === "streaming-message" ? "SendStreamingMessage" : "SendMessage";
+	const responseModeLabel = responseMode === "a2a-protocol" ? "A2A" : "Message";
+
+	const row = (label: string, value: string): string =>
+		` ${label.padStart(labelWidth)}: ${padValue(value, valueWidth)}`;
+
+	return renderFramedPanel("Settings", innerWidth, [
+		row("Selected Agent", selectedAgent),
+		row("Request Mode", requestModeLabel),
+		row("Response Mode", responseModeLabel)
+	]);
+}
+
+function renderPrefixMenusPanel(): React.JSX.Element {
+	const innerWidth = 19;
+	const row = (value: string): string => ` ${padValue(value, innerWidth - 1)}`;
+
+	return renderFramedPanel("Prefix Menus", innerWidth, [
+		row("/ Commands"),
+		row("@ Select Agent"),
+		row("# Attach File")
+	]);
+}
+
+function renderHomeMenus(
+	inline: boolean,
+	selectedAgentId: string | undefined,
+	requestMode: RequestMode,
+	responseMode: ResponseMode
+): React.JSX.Element {
+	return (
+		<Box flexDirection={inline ? "row" : "column"} alignItems="center">
+			{renderSettingsPanel(selectedAgentId, requestMode, responseMode)}
+			<Box marginLeft={inline ? 3 : 0} marginTop={inline ? 0 : 1}>
+				{renderPrefixMenusPanel()}
+			</Box>
+		</Box>
+	);
+}
+
+function truncateValue(value: string, maxLength: number): string {
+	if (value.length <= maxLength) {
+		return value;
+	}
+	if (maxLength <= 1) {
+		return value.slice(0, maxLength);
+	}
+	return `${value.slice(0, maxLength - 1)}…`;
+}
+
+function padValue(value: string, width: number): string {
+	return truncateValue(value, width).padEnd(width);
+}
+
+function centerTitle(title: string, width: number): string {
+	const titleText = ` ${title} `;
+	if (titleText.length >= width) {
+		return padValue(titleText, width);
+	}
+
+	const remaining = width - titleText.length;
+	const left = Math.floor(remaining / 2);
+	const right = remaining - left;
+	return `${"═".repeat(left)}${titleText}${"═".repeat(right)}`;
+}
+
+function renderFramedPanel(
+	title: string,
+	innerWidth: number,
+	rows: string[]
+): React.JSX.Element {
+	return (
+		<Box flexDirection="column">
+			<Text color={COLORS.lavender}>╔{centerTitle(title, innerWidth)}╗</Text>
+			{rows.map((row, index) => (
+				<Box key={`${title}-${index}`}>
+					<Text color={COLORS.lavender}>║</Text>
+					<Text color={COLORS.cream}>{padValue(row, innerWidth)}</Text>
+					<Text color={COLORS.lavender}>║</Text>
+				</Box>
+			))}
+			<Text color={COLORS.lavender}>╚{"═".repeat(innerWidth)}╝</Text>
+		</Box>
+	);
+}
+
 export interface HomeScreenProps {
 	discoveredCount: number;
 	sourceCount?: number;
 	selectedAgentId?: string;
+	requestMode?: RequestMode;
+	responseMode?: ResponseMode;
 	terminalWidth?: number;
 	mode?: "standalone" | "inline";
 }
@@ -333,6 +434,8 @@ export function HomeScreen({
 	discoveredCount,
 	sourceCount = 0,
 	selectedAgentId,
+	requestMode = "send-message",
+	responseMode = "message-output",
 	terminalWidth,
 	mode = "standalone"
 }: HomeScreenProps): React.JSX.Element {
@@ -362,6 +465,7 @@ export function HomeScreen({
 
 	const layout = useMemo(() => getLayout(liveWidth), [liveWidth]);
 	const sourceSuffix = sourceCount === 1 ? "" : "s";
+	const showMenusInline = liveWidth >= 96;
 	const outerProps =
 		mode === "standalone"
 			? { flexGrow: 1, justifyContent: "center" as const, alignItems: "center" as const }
@@ -390,11 +494,9 @@ export function HomeScreen({
 					<Text color={COLORS.cream}>
 						{discoveredCount} agent{suffix} discovered from {sourceCount} source{sourceSuffix}
 					</Text>
-					<Text color={selectedAgentId ? "green" : COLORS.lavender}>
-						{selectedAgentId
-							? `Selected agent: ${selectedAgentId}`
-							: "Type @ to select an agent"}
-					</Text>
+					<Box marginTop={1}>
+						{renderHomeMenus(showMenusInline, selectedAgentId, requestMode, responseMode)}
+					</Box>
 				</Box>
 			</Box>
 		</Box>

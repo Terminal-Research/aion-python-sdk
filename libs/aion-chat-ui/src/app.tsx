@@ -1333,20 +1333,24 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				<Text> • {connectionSummary}</Text>
 			</Box>
 			<Box flexDirection="column" flexGrow={1} marginY={1}>
-					{entries.length === 0 ? (
+				{entries.length === 0 ? (
+					<HomeScreen
+						discoveredCount={discoveredAgents.length}
+						sourceCount={Object.keys(agentSources).length}
+						selectedAgentId={selectedAgentId}
+						requestMode={requestMode}
+						responseMode={responseMode}
+					/>
+				) : (
+					<Box flexDirection="column">
 						<HomeScreen
 							discoveredCount={discoveredAgents.length}
 							sourceCount={Object.keys(agentSources).length}
 							selectedAgentId={selectedAgentId}
+							requestMode={requestMode}
+							responseMode={responseMode}
+							mode="inline"
 						/>
-					) : (
-					<Box flexDirection="column">
-							<HomeScreen
-								discoveredCount={discoveredAgents.length}
-								sourceCount={Object.keys(agentSources).length}
-								selectedAgentId={selectedAgentId}
-								mode="inline"
-							/>
 						{entries.map((entry, index) => (
 							<Box key={entry.id} marginBottom={index < entries.length - 1 ? 1 : 0}>
 								<MessageBubble entry={entry} />

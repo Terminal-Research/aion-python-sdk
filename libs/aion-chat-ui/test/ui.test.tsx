@@ -167,7 +167,35 @@ describe("Ink components", () => {
 		);
 
 		expect(app.lastFrame()).toContain("2 agents discovered");
-		expect(app.lastFrame()).toContain("Type @ to select an agent");
+		expect(app.lastFrame()).toContain("Settings");
+		expect(app.lastFrame()).toContain("Selected Agent");
+		expect(app.lastFrame()).toContain("None");
+		expect(app.lastFrame()).toContain("Request Mode");
+		expect(app.lastFrame()).toContain("SendMessage");
+		expect(app.lastFrame()).toContain("Response Mode");
+		expect(app.lastFrame()).toContain("Message");
+		expect(app.lastFrame()).toContain("Prefix Menus");
+		expect(app.lastFrame()).toContain("/ Commands");
+		expect(app.lastFrame()).toContain("@ Select Agent");
+		expect(app.lastFrame()).toContain("# Attach File");
+		app.unmount();
+	});
+
+	it("renders selected request and response modes in the home configuration panel", () => {
+		const app = render(
+			<HomeScreen
+				discoveredCount={1}
+				sourceCount={1}
+				selectedAgentId="season-agent"
+				requestMode="streaming-message"
+				responseMode="a2a-protocol"
+				terminalWidth={160}
+			/>
+		);
+
+		expect(app.lastFrame()).toContain("@season-agent");
+		expect(app.lastFrame()).toContain("SendStreamingMessage");
+		expect(app.lastFrame()).toContain("A2A");
 		app.unmount();
 	});
 });

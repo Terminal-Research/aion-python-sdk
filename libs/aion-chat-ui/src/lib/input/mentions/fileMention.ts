@@ -14,7 +14,7 @@ export interface FileSuggestion {
 	isDirectory: boolean;
 }
 
-const FILE_MENTION_PATTERN = /(?:^|\s)@file:(\S*)$/;
+const FILE_MENTION_PATTERN = /(?:^|\s)#(\S*)$/;
 
 export function getFileMentionMatch(draft: string): FileMentionMatch | undefined {
 	const match = FILE_MENTION_PATTERN.exec(draft);
@@ -22,7 +22,7 @@ export function getFileMentionMatch(draft: string): FileMentionMatch | undefined
 
 	return {
 		query: match[1] ?? "",
-		start: match.index + match[0].lastIndexOf("@"),
+		start: match.index + match[0].lastIndexOf("#"),
 		end: draft.length
 	};
 }
@@ -73,7 +73,7 @@ export function getFileSuggestions(query: string, limit = 8): FileSuggestion[] {
 
 /**
  * Applies a file suggestion to the draft.
- * Directories insert `@file:<path>/` to keep the menu open for further navigation.
+ * Directories insert `#<path>/` to keep the menu open for further navigation.
  * Files insert the absolute path and close the mention.
  */
 export function applyFileSuggestion(draft: string, suggestion: FileSuggestion): string {
@@ -82,7 +82,7 @@ export function applyFileSuggestion(draft: string, suggestion: FileSuggestion): 
 	const before = draft.slice(0, match.start).trimEnd();
 
 	if (suggestion.isDirectory) {
-		const mention = `@file:${suggestion.absolutePath}/`;
+		const mention = `#${suggestion.absolutePath}/`;
 		return before ? `${before} ${mention}` : mention;
 	}
 
