@@ -26169,9 +26169,9 @@ var require_event_target = __commonJS({
         }
         let wrapper;
         if (type === "message") {
-          wrapper = function onMessage(data, isBinary) {
+          wrapper = function onMessage(data, isBinary2) {
             const event = new MessageEvent("message", {
-              data: isBinary ? data : data.toString()
+              data: isBinary2 ? data : data.toString()
             });
             event[kTarget] = this;
             callListener(handler, this, event);
@@ -27208,8 +27208,8 @@ var require_websocket = __commonJS({
     function receiverOnFinish() {
       this[kWebSocket].emitClose();
     }
-    function receiverOnMessage(data, isBinary) {
-      this[kWebSocket].emit("message", data, isBinary);
+    function receiverOnMessage(data, isBinary2) {
+      this[kWebSocket].emit("message", data, isBinary2);
     }
     function receiverOnPing(data) {
       const websocket = this[kWebSocket];
@@ -27314,8 +27314,8 @@ var require_stream = __commonJS({
         objectMode: false,
         writableObjectMode: false
       });
-      ws.on("message", function message(msg, isBinary) {
-        const data = !isBinary && duplex._readableState.objectMode ? msg.toString() : msg;
+      ws.on("message", function message(msg, isBinary2) {
+        const data = !isBinary2 && duplex._readableState.objectMode ? msg.toString() : msg;
         if (!duplex.push(data)) ws.pause();
       });
       ws.once("error", function error(err) {
@@ -67515,7 +67515,7 @@ var require_foreign_content = __commonJS({
     var $ = HTML.TAG_NAMES;
     var NS = HTML.NAMESPACES;
     var ATTRS = HTML.ATTRS;
-    var MIME_TYPES = {
+    var MIME_TYPES2 = {
       TEXT_HTML: "text/html",
       APPLICATION_XML: "application/xhtml+xml"
     };
@@ -67724,7 +67724,7 @@ var require_foreign_content = __commonJS({
         for (let i = 0; i < attrs.length; i++) {
           if (attrs[i].name === ATTRS.ENCODING) {
             const value = attrs[i].value.toLowerCase();
-            return value === MIME_TYPES.TEXT_HTML || value === MIME_TYPES.APPLICATION_XML;
+            return value === MIME_TYPES2.TEXT_HTML || value === MIME_TYPES2.APPLICATION_XML;
           }
         }
       }
@@ -89344,8 +89344,126 @@ function parseAgentSelection(draft, availableAgentIds) {
   };
 }
 
+// src/lib/input/parser/extractors/filePathExtractor.ts
+import { existsSync as existsSync2, readFileSync as readFileSync3, statSync } from "fs";
+import { basename, extname } from "path";
+var MAX_FILE_SIZE = 512 * 1024;
+var PATH_PATTERN = /(?:^|\s)(\.{0,2}\/[^\s"'`)\]]+)/gm;
+var MIME_TYPES = {
+  ".txt": "text/plain",
+  ".log": "text/plain",
+  ".md": "text/markdown",
+  ".json": "application/json",
+  ".yaml": "text/yaml",
+  ".yml": "text/yaml",
+  ".toml": "text/toml",
+  ".csv": "text/csv",
+  ".ts": "text/x-typescript",
+  ".js": "text/javascript",
+  ".py": "text/x-python",
+  ".sh": "text/x-sh",
+  ".html": "text/html",
+  ".xml": "text/xml",
+  ".css": "text/css",
+  ".env": "text/plain",
+  ".conf": "text/plain",
+  ".ini": "text/plain"
+};
+function isBinary(buffer) {
+  const limit = Math.min(buffer.length, 512);
+  for (let i = 0; i < limit; i++) {
+    if (buffer[i] === 0) return true;
+  }
+  return false;
+}
+function getMimeType(filePath) {
+  return MIME_TYPES[extname(filePath).toLowerCase()] ?? "application/octet-stream";
+}
+var filePathExtractor = {
+  detect(text) {
+    const spans = [];
+    const regex2 = new RegExp(PATH_PATTERN.source, PATH_PATTERN.flags);
+    let match;
+    while ((match = regex2.exec(text)) !== null) {
+      let raw = match[1].replace(/[,;:.!?]+$/, "");
+      if (!raw || !existsSync2(raw)) continue;
+      try {
+        if (!statSync(raw).isFile()) continue;
+      } catch {
+        continue;
+      }
+      const start = match.index + match[0].indexOf(raw);
+      spans.push({ start, end: start + raw.length, raw });
+    }
+    return spans;
+  },
+  async parse(span) {
+    try {
+      const stat = statSync(span.raw);
+      if (stat.size > MAX_FILE_SIZE) return null;
+      const buffer = readFileSync3(span.raw);
+      if (isBinary(buffer)) return null;
+      return {
+        kind: "file",
+        file: {
+          name: basename(span.raw),
+          mimeType: getMimeType(span.raw),
+          bytes: buffer.toString("base64")
+        }
+      };
+    } catch {
+      return null;
+    }
+  }
+};
+
+// src/lib/input/parser/parser.ts
+var EXTRACTORS = [filePathExtractor];
+function makeTextPart(text) {
+  return { kind: "text", text };
+}
+async function buildMessageParts(text) {
+  const extractors = EXTRACTORS;
+  const allSpans = [];
+  for (const extractor of extractors) {
+    for (const span of extractor.detect(text)) {
+      allSpans.push({ span, extractor });
+    }
+  }
+  allSpans.sort((a, b) => a.span.start - b.span.start);
+  const resolved = [];
+  let cursor = 0;
+  for (const item of allSpans) {
+    if (item.span.start >= cursor) {
+      resolved.push(item);
+      cursor = item.span.end;
+    }
+  }
+  const parts = [];
+  let pos = 0;
+  for (const { span, extractor } of resolved) {
+    const before = text.slice(pos, span.start).trim();
+    if (before) {
+      parts.push(makeTextPart(before));
+    }
+    const part = await extractor.parse(span);
+    if (part) {
+      parts.push(part);
+    }
+    pos = span.end;
+  }
+  const remainder = text.slice(pos).trim();
+  if (remainder) {
+    parts.push(makeTextPart(remainder));
+  }
+  if (parts.length === 0) {
+    parts.push(makeTextPart(text));
+  }
+  return parts;
+}
+
 // src/lib/chatSettings.ts
-import { mkdirSync, readFileSync as readFileSync3, writeFileSync } from "fs";
+import { mkdirSync, readFileSync as readFileSync4, writeFileSync } from "fs";
 import os3 from "os";
 import path from "path";
 function isRequestMode(value) {
@@ -89360,7 +89478,7 @@ function resolveChatSettingsPath(env3 = process.env, homeDirectory = os3.homedir
 }
 function loadChatModeSettings(settingsPath = resolveChatSettingsPath()) {
   try {
-    const raw = readFileSync3(settingsPath, "utf8");
+    const raw = readFileSync4(settingsPath, "utf8");
     const parsed = JSON.parse(raw);
     const requestMode = isRequestMode(parsed.requestMode) ? parsed.requestMode : DEFAULT_CHAT_MODE_SETTINGS.requestMode;
     const responseMode = isResponseMode(parsed.responseMode) ? parsed.responseMode : DEFAULT_CHAT_MODE_SETTINGS.responseMode;
@@ -92764,7 +92882,7 @@ function createPushNotificationConfig(receiverUrl) {
     }
   };
 }
-function buildMessageParams(prompt, contextId, taskId, pushNotificationConfig) {
+function buildMessageParams(parts, contextId, taskId, pushNotificationConfig) {
   return {
     message: {
       kind: "message",
@@ -92772,7 +92890,7 @@ function buildMessageParams(prompt, contextId, taskId, pushNotificationConfig) {
       role: "user",
       taskId,
       contextId,
-      parts: [{ kind: "text", text: prompt }]
+      parts
     },
     metadata: generateTaskMetadata(),
     configuration: {
@@ -93421,16 +93539,21 @@ ${JSON.stringify(
       return;
     }
     setDraft("");
+    const parts = await buildMessageParts(trimmed);
+    const attachedFiles = parts.filter((p) => p.kind === "file").map((p) => p.file.name ?? "unnamed");
+    const displayBody = attachedFiles.length > 0 ? `${trimmed}
+
+*Attached: ${attachedFiles.join(", ")}*` : trimmed;
     setEntries((current) => [
       ...current,
       {
         id: randomUUID2(),
         role: "user",
-        body: trimmed
+        body: displayBody
       }
     ]);
     taskDisplayState.current.clear();
-    const params = buildMessageParams(trimmed, contextId, taskId, pushConfig);
+    const params = buildMessageParams(parts, contextId, taskId, pushConfig);
     const canStream = Boolean(clientState.agentCard.capabilities.streaming);
     const useStreaming = requestMode === "streaming-message" && canStream;
     try {

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type {
 	Artifact,
+	FilePart,
 	Message,
 	Task,
 	TaskArtifactUpdateEvent,
@@ -22,6 +23,7 @@ import {
 	getAgentMentionMatch,
 	parseAgentSelection
 } from "./lib/agentSelection.js";
+import { buildMessageParts } from "./lib/input/parser";
 import { loadChatModeSettings, saveChatModeSettings } from "./lib/chatSettings.js";
 import {
 	buildMessageParams,
@@ -642,17 +644,27 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		}
 
 		setDraft("");
+
+		const parts = await buildMessageParts(trimmed);
+		const attachedFiles = parts
+			.filter((p): p is FilePart => p.kind === "file")
+			.map((p) => p.file.name ?? "unnamed");
+		const displayBody =
+			attachedFiles.length > 0
+				? `${trimmed}\n\n*Attached: ${attachedFiles.join(", ")}*`
+				: trimmed;
+
 		setEntries((current) => [
 			...current,
 			{
 				id: randomUUID(),
 				role: "user",
-				body: trimmed
+				body: displayBody
 			}
 		]);
 
 		taskDisplayState.current.clear();
-		const params = buildMessageParams(trimmed, contextId, taskId, pushConfig);
+		const params = buildMessageParams(parts, contextId, taskId, pushConfig);
 		const canStream = Boolean(clientState.agentCard.capabilities.streaming);
 		const useStreaming = requestMode === "streaming-message" && canStream;
 

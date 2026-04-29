@@ -4,6 +4,7 @@ import type {
 	AgentCard,
 	Message,
 	MessageSendParams,
+	Part,
 	PushNotificationConfig,
 	Task,
 	TaskArtifactUpdateEvent,
@@ -180,8 +181,12 @@ export function createPushNotificationConfig(receiverUrl: string): PushNotificat
 	};
 }
 
+/**
+ * Builds an A2A `MessageSendParams` from pre-parsed parts.
+ * Parts are produced by `buildMessageParts` and may include text, files, or other A2A part types.
+ */
 export function buildMessageParams(
-	prompt: string,
+	parts: Part[],
 	contextId: string | undefined,
 	taskId: string | undefined,
 	pushNotificationConfig?: PushNotificationConfig
@@ -193,7 +198,7 @@ export function buildMessageParams(
 			role: "user",
 			taskId,
 			contextId,
-			parts: [{ kind: "text", text: prompt }]
+			parts
 		},
 		metadata: generateTaskMetadata(),
 		configuration: {

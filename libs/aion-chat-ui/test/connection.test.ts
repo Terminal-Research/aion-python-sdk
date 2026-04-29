@@ -63,14 +63,14 @@ describe("buildEndpointConfig", () => {
 
 describe("buildMessageParams", () => {
 	it("includes push configuration only when requested", () => {
-		const withoutPush = buildMessageParams("hello", "context-1", "task-1");
+		const withoutPush = buildMessageParams([{ kind: "text", text: "hello" }], "context-1", "task-1");
 		expect(withoutPush.configuration).toEqual({
 			acceptedOutputModes: ["text"]
 		});
 
 		const pushConfig = createPushNotificationConfig("http://127.0.0.1:5000");
 		const withPush = buildMessageParams(
-			"hello",
+			[{ kind: "text", text: "hello" }],
 			"context-1",
 			"task-1",
 			pushConfig
