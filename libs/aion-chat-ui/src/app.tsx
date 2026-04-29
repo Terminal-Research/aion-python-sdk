@@ -16,7 +16,8 @@ import { ChatComposer } from "./components/ChatComposer.js";
 import { HomeScreen } from "./components/HomeScreen.js";
 import {
 	type TranscriptEntry,
-	MessageBubble
+	MessageBubble,
+	WorkingIndicator
 } from "./components/MessageBubble.js";
 import {
 	clearAgentMention,
@@ -179,6 +180,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 	const [entries, setEntries] = useState<TranscriptEntry[]>([]);
 	const [contextId, setContextId] = useState<string>();
 	const [taskId, setTaskId] = useState<string>();
+	const [workingStartedAt, setWorkingStartedAt] = useState<number>();
 	const [clientState, setClientState] = useState<Awaited<ReturnType<typeof connectClient>>>();
 	const [pushConfig, setPushConfig] = useState<
 		ReturnType<typeof createPushNotificationConfig> | undefined
@@ -311,6 +313,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		setTaskId(undefined);
 		taskDisplayState.current.clear();
 		setStreamLabel("Idle");
+		setWorkingStartedAt(undefined);
 	};
 
 	const reloadEnvironmentState = (environmentId: AionEnvironmentId): void => {
@@ -1090,6 +1093,8 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		const useStreaming = requestMode === "streaming-message" && canStream;
 
 		try {
+			setWorkingStartedAt(Date.now());
+
 			if (requestMode === "streaming-message" && !canStream) {
 				appendSystem("Request mode fallback: agent does not support streaming, using Send message.");
 			}
@@ -1161,6 +1166,8 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		} catch (error) {
 			setStreamLabel("Error");
 			appendStatus(`Request failed: ${error instanceof Error ? error.message : String(error)}`);
+		} finally {
+			setWorkingStartedAt(undefined);
 		}
 	};
 
@@ -1359,6 +1366,11 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 					</Box>
 				)}
 			</Box>
+			{workingStartedAt ? (
+				<Box marginBottom={1}>
+					<WorkingIndicator startedAt={workingStartedAt} />
+				</Box>
+			) : null}
 			<ChatComposer
 				draft={draft}
 				activeAgentId={selectedAgentId}

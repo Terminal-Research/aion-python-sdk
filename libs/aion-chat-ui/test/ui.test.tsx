@@ -4,6 +4,10 @@ import { render } from "ink-testing-library";
 
 import { ChatComposer } from "../src/components/ChatComposer.js";
 import { HomeScreen } from "../src/components/HomeScreen.js";
+import {
+	MessageBubble,
+	WorkingIndicator
+} from "../src/components/MessageBubble.js";
 
 describe("Ink components", () => {
 	it("renders the agent picker and hides the footer while the @ menu is open", () => {
@@ -196,6 +200,45 @@ describe("Ink components", () => {
 		expect(app.lastFrame()).toContain("@season-agent");
 		expect(app.lastFrame()).toContain("SendStreamingMessage");
 		expect(app.lastFrame()).toContain("A2A");
+		app.unmount();
+	});
+
+	it("renders user messages with the composer-style chevron", () => {
+		const app = render(
+			<MessageBubble entry={{ id: "user-1", role: "user", body: "hello there" }} />
+		);
+
+		expect(app.lastFrame()).toContain("› hello there");
+		expect(app.lastFrame()).not.toContain("╭");
+		expect(app.lastFrame()).not.toContain("You");
+		app.unmount();
+	});
+
+	it("renders agent messages without the old bordered card", () => {
+		const app = render(
+			<MessageBubble entry={{ id: "agent-1", role: "agent", body: "agent reply" }} />
+		);
+
+		expect(app.lastFrame()).toContain("· agent reply");
+		expect(app.lastFrame()).not.toContain("╭");
+		app.unmount();
+	});
+
+	it("renders system messages with a title-case label", () => {
+		const app = render(
+			<MessageBubble entry={{ id: "system-1", role: "system", body: "connected" }} />
+		);
+
+		expect(app.lastFrame()).toContain("· System connected");
+		expect(app.lastFrame()).not.toContain("╭");
+		app.unmount();
+	});
+
+	it("renders the working indicator with elapsed time", () => {
+		const app = render(<WorkingIndicator startedAt={Date.now()} />);
+
+		expect(app.lastFrame()).toContain("· Working");
+		expect(app.lastFrame()).toContain("(0s)");
 		app.unmount();
 	});
 });

@@ -1,7 +1,10 @@
 import React from "react";
-import { Box, Text } from "ink";
 
-import { MarkdownBlock } from "../lib/markdown.js";
+import { AgentMessageBubble } from "./messages/AgentMessageBubble.js";
+import { SystemMessageBubble } from "./messages/SystemMessageBubble.js";
+import { UserMessageBubble } from "./messages/UserMessageBubble.js";
+import { useTerminalWidth } from "./messages/messageLayout.js";
+export { WorkingIndicator } from "./messages/WorkingIndicator.js";
 
 export interface TranscriptEntry {
 	id: string;
@@ -9,33 +12,22 @@ export interface TranscriptEntry {
 	role: "agent" | "user" | "status" | "system" | "protocol";
 }
 
-function colorsForRole(role: TranscriptEntry["role"]): {
-	borderColor: string;
-	label: string;
-	labelColor: string;
-} {
-	switch (role) {
-		case "agent":
-			return { borderColor: "green", label: "Agent", labelColor: "green" };
-		case "user":
-			return { borderColor: "cyan", label: "You", labelColor: "cyan" };
-		case "status":
-			return { borderColor: "yellow", label: "Status", labelColor: "yellow" };
-		case "protocol":
-			return { borderColor: "blue", label: "A2A", labelColor: "blue" };
-		case "system":
-		default:
-			return { borderColor: "magenta", label: "System", labelColor: "magenta" };
-	}
-}
-
 export function MessageBubble({ entry }: { entry: TranscriptEntry }): React.JSX.Element {
-	const palette = colorsForRole(entry.role);
+	const lineWidth = useTerminalWidth();
+
+	if (entry.role === "user") {
+		return <UserMessageBubble body={entry.body} lineWidth={lineWidth} />;
+	}
+
+	if (entry.role === "agent") {
+		return <AgentMessageBubble body={entry.body} lineWidth={lineWidth} />;
+	}
 
 	return (
-		<Box borderStyle="round" borderColor={palette.borderColor} paddingX={1} flexDirection="column">
-			<Text color={palette.labelColor}>{palette.label}</Text>
-			<MarkdownBlock content={entry.body} />
-		</Box>
+		<SystemMessageBubble
+			body={entry.body}
+			kind={entry.role}
+			lineWidth={lineWidth}
+		/>
 	);
 }
