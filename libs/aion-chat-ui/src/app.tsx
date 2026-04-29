@@ -44,13 +44,25 @@ import {
 	connectClient,
 	createPushNotificationConfig
 } from "./lib/connection.js";
-import { type DiscoveredAgent, discoverAgents } from "./lib/discovery.js";
 import {
 	type AionEnvironmentId,
 	AION_ENVIRONMENT_IDS,
 	getControlPlaneApiBaseUrl,
 	isAionEnvironmentId
 } from "./lib/environment.js";
+import {
+	discoverAgentSources,
+	selectDiscoveredAgent,
+	toPersistedAgents
+} from "./lib/agents/discovery.js";
+import {
+	type AgentSourceRecord,
+	type DiscoveredAgentRecord,
+	createExplicitAgentSource,
+	isTransientAgentSource,
+	mergeAgentSources
+} from "./lib/agents/model.js";
+import { saveCompletedExchange } from "./lib/agents/sessionStore.js";
 import { formatProtocolPayload } from "./lib/protocolOutput.js";
 import {
 	EPHEMERAL_MESSAGE_ARTIFACT_ID,
@@ -158,7 +170,6 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 	const agentEndpointUrl = options.url;
 	const [connectionState, setConnectionState] = useState<ConnectionState>("connecting");
 	const [connectionLabel, setConnectionLabel] = useState("Discovering agents...");
-	const [discoveryLabel, setDiscoveryLabel] = useState("Scanning manifest...");
 	const [pushLabel, setPushLabel] = useState(
 		options.pushNotifications ? "Starting..." : "Disabled"
 	);
@@ -172,7 +183,13 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 	const [pushConfig, setPushConfig] = useState<
 		ReturnType<typeof createPushNotificationConfig> | undefined
 	>();
-	const [discoveredAgents, setDiscoveredAgents] = useState<DiscoveredAgent[]>([]);
+	const [discoveredAgents, setDiscoveredAgents] = useState<DiscoveredAgentRecord[]>([]);
+	const [agentSources, setAgentSources] = useState<Record<string, AgentSourceRecord>>(
+		activeEnvironmentSettings.agentSources
+	);
+	const [selectedAgentKey, setSelectedAgentKey] = useState<string | undefined>(
+		options.agentId ? undefined : activeEnvironmentSettings.selectedAgentKey
+	);
 	const [selectedAgentId, setSelectedAgentId] = useState<string | undefined>(
 		options.agentId ?? activeEnvironmentSettings.selectedAgentId
 	);
@@ -187,9 +204,9 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 	const [responseMode, setResponseMode] = useState<ResponseMode>(
 		activeEnvironmentSettings.responseMode
 	);
-	const [directFallback, setDirectFallback] = useState(false);
 	const [reconnectNonce, setReconnectNonce] = useState(0);
 	const taskDisplayState = useRef<Map<string, TaskDisplayState>>(new Map());
+	const lastConnectionNoticeRef = useRef<string | undefined>(undefined);
 
 	const appendEntry = (role: TranscriptEntry["role"], body: string): void => {
 		setEntries((current) => [
@@ -306,13 +323,13 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		setSelectedEnvironment(environmentId);
 		setRequestMode(nextEnvironmentSettings.requestMode);
 		setResponseMode(nextEnvironmentSettings.responseMode);
+		setAgentSources(nextEnvironmentSettings.agentSources);
+		setSelectedAgentKey(options.agentId ? undefined : nextEnvironmentSettings.selectedAgentKey);
 		setSelectedAgentId(options.agentId ?? nextEnvironmentSettings.selectedAgentId);
-		setDirectFallback(false);
 		setDiscoveredAgents([]);
 		clearTranscript();
 		setClientState(undefined);
 		setAgentName("Unknown Agent");
-		setDiscoveryLabel("Scanning manifest...");
 		setConnectionLabel("Discovering agents...");
 		setConnectionState("connecting");
 		setReconnectNonce((current) => current + 1);
@@ -385,6 +402,16 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		return getFileSuggestions(match.query);
 	}, [draft, slashQuery, slashSubmenuId]);
 
+	const selectedAgent = useMemo(() => {
+		return discoveredAgents.find((agent) =>
+			selectedAgentKey
+				? agent.agentKey === selectedAgentKey
+				: selectedAgentId
+					? agent.id === selectedAgentId
+					: false
+		);
+	}, [discoveredAgents, selectedAgentId, selectedAgentKey]);
+
 	useEffect(() => {
 		setSelectedSuggestionIndex((current) => {
 			if (agentSuggestions.length === 0) {
@@ -424,22 +451,16 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		let closed = false;
 
 		const discover = async (): Promise<void> => {
-			if (!agentEndpointUrl) {
-				setDiscoveredAgents([]);
-				setDirectFallback(false);
-				setDiscoveryLabel(
-					`No A2A endpoint configured for ${selectedEnvironment}.`
-				);
-				setConnectionState("connecting");
-				setConnectionLabel(
-					`Using ${selectedEnvironment} control plane at ${controlPlaneApiBaseUrl}`
-				);
-				return;
-			}
-
 			try {
-				const discovery = await discoverAgents(
-					agentEndpointUrl,
+				const runtimeSources = mergeAgentSources(
+					activeEnvironmentSettings.agentSources,
+					agentEndpointUrl
+				);
+				const explicitSourceKey = agentEndpointUrl
+					? createExplicitAgentSource(agentEndpointUrl).sourceKey
+					: undefined;
+				const discovery = await discoverAgentSources(
+					runtimeSources,
 					buildAuthenticatedFetch({
 						headers: options.headers,
 						token: options.token
@@ -449,29 +470,81 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 					return;
 				}
 
-				setDiscoveredAgents(discovery.agents);
-				setDirectFallback(false);
-				setDiscoveryLabel(
-					`Discovered ${discovery.agents.length} agent${
-						discovery.agents.length === 1 ? "" : "s"
-					} from ${discovery.manifestUrl}`
+				const nextSources = Object.fromEntries(
+					discovery.sources.map((source) => [source.sourceKey, source])
 				);
-				if (options.agentId) {
-					setSelectedAgentId(options.agentId);
-					setConnectionLabel(`Connecting to @${options.agentId}...`);
-				} else if (
-					selectedAgentId &&
-					!discovery.agents.some((agent) => agent.id === selectedAgentId)
-				) {
+				const persistentSources = Object.fromEntries(
+					discovery.sources
+						.filter(
+							(source) =>
+								!isTransientAgentSource(source) &&
+								source.sourceKey !== explicitSourceKey
+						)
+						.map((source) => [source.sourceKey, source])
+				);
+				const nextAgents = toPersistedAgents(
+					discovery.agents.filter(
+						(agent) =>
+							!isTransientAgentSource(agent.source) &&
+							agent.sourceKey !== explicitSourceKey
+					),
+					activeEnvironmentSettings.agents
+				);
+				setAgentSources(nextSources);
+				setDiscoveredAgents(discovery.agents);
+				persistEnvironmentSettings(selectedEnvironment, {
+					agents: nextAgents,
+					agentSources: persistentSources
+				});
+
+				for (const error of discovery.errors) {
+					if (!error.source.isDefault && error.error) {
+						appendSystem(
+							`No agents were found from the provided URL: ${error.source.url}\n${error.error}`
+						);
+					}
+				}
+
+				const nextSelected = selectDiscoveredAgent(discovery.agents, {
+					requestedAgentId: options.agentId,
+					selectedAgentKey,
+					selectedAgentId: options.agentId ? undefined : selectedAgentId,
+					explicitSourceKey,
+					autoSelectExplicit: Boolean(agentEndpointUrl)
+				});
+
+				if (nextSelected) {
+					const shouldPersistSelection = !isTransientAgentSource(nextSelected.source);
+					setSelectedAgentKey(nextSelected.agentKey);
+					setSelectedAgentId(nextSelected.id);
+					persistEnvironmentSettings(selectedEnvironment, {
+						...(shouldPersistSelection
+							? {
+									selectedAgentKey: nextSelected.agentKey,
+									selectedAgentId: nextSelected.id
+								}
+							: {}),
+						agents: nextAgents,
+						agentSources: persistentSources
+					});
+					setConnectionState("connecting");
+					setConnectionLabel(`Connecting to @${nextSelected.id}...`);
+				} else if (selectedAgentKey || (!options.agentId && selectedAgentId)) {
+					setSelectedAgentKey(undefined);
 					setSelectedAgentId(undefined);
 					persistEnvironmentSettings(selectedEnvironment, {
-						selectedAgentId: undefined
+						selectedAgentKey: undefined,
+						selectedAgentId: undefined,
+						agents: nextAgents,
+						agentSources: persistentSources
 					});
 					appendSystem("The selected agent is no longer available.");
 				} else {
 					setConnectionState("connecting");
 					setConnectionLabel(
-						selectedAgentId ? `Connecting to @${selectedAgentId}...` : "Choose an agent with @"
+						discovery.agents.length > 0
+							? "Choose an agent with @"
+							: `Using ${selectedEnvironment} control plane at ${controlPlaneApiBaseUrl}`
 					);
 				}
 			} catch (error) {
@@ -479,20 +552,14 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 					return;
 				}
 				setDiscoveredAgents([]);
-				setDirectFallback(true);
-				setDiscoveryLabel(
-					error instanceof Error
-						? `Manifest discovery failed, falling back to direct mode: ${error.message}`
-						: `Manifest discovery failed, falling back to direct mode: ${String(error)}`
-				);
-				if (options.agentId) {
-					setSelectedAgentId(options.agentId);
-				}
+				setConnectionState("connecting");
 				setConnectionLabel(
-					options.agentId
-						? `Connecting to @${options.agentId}...`
-						: "Connecting directly..."
+					`Using ${selectedEnvironment} control plane at ${controlPlaneApiBaseUrl}`
 				);
+				const message = error instanceof Error ? error.message : String(error);
+				if (agentEndpointUrl) {
+					appendSystem(`No agents were found from the provided URL: ${agentEndpointUrl}\n${message}`);
+				}
 			}
 		};
 
@@ -531,18 +598,13 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		};
 
 		const connect = async (): Promise<void> => {
-			if (!agentEndpointUrl) {
+			if (!selectedAgent) {
 				setConnectionState("connecting");
 				setConnectionLabel(
-					`Using ${selectedEnvironment} control plane at ${controlPlaneApiBaseUrl}`
+					discoveredAgents.length > 0
+						? "Choose an agent with @"
+						: `Using ${selectedEnvironment} control plane at ${controlPlaneApiBaseUrl}`
 				);
-				return;
-			}
-
-			const shouldConnect = directFallback || Boolean(selectedAgentId);
-			if (!shouldConnect) {
-				setConnectionState("connecting");
-				setConnectionLabel("Choose an agent with @");
 				return;
 			}
 
@@ -562,18 +624,18 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				}
 
 				setClientState(undefined);
-				setContextId(undefined);
+				setContextId(
+					activeEnvironmentSettings.agents[selectedAgent.agentKey]?.activeContextId
+				);
 				setTaskId(undefined);
 				taskDisplayState.current.clear();
 				setConnectionState("connecting");
-				setConnectionLabel(
-					selectedAgentId ? `Connecting to @${selectedAgentId}...` : "Connecting directly..."
-				);
+				setConnectionLabel(`Connecting to @${selectedAgent.id}...`);
 
 				const connected = await connectClient({
 					...options,
-					url: agentEndpointUrl,
-					agentId: directFallback ? undefined : selectedAgentId
+					url: selectedAgent.connectionUrl,
+					agentId: selectedAgent.connectionAgentId
 				});
 				if (closed) {
 					return;
@@ -583,9 +645,13 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				setAgentName(connected.agentCard.name);
 				setConnectionState("connected");
 				setConnectionLabel("Connected");
-				appendSystem(
-					`Connected to **${connected.agentCard.name}** via ${connected.endpoints.rpcUrl}`
-				);
+				const connectionNoticeKey = `${selectedAgent.agentKey}:${connected.agentCard.name}:${connected.endpoints.rpcUrl}`;
+				if (lastConnectionNoticeRef.current !== connectionNoticeKey) {
+					lastConnectionNoticeRef.current = connectionNoticeKey;
+					appendSystem(
+						`Connected to **${connected.agentCard.name}** via ${connected.endpoints.rpcUrl}`
+					);
+				}
 			} catch (error) {
 				if (closed) {
 					return;
@@ -609,10 +675,10 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 	}, [
 		agentEndpointUrl,
 		controlPlaneApiBaseUrl,
-		directFallback,
+		discoveredAgents.length,
 		options,
 		reconnectNonce,
-		selectedAgentId,
+		selectedAgent,
 		selectedEnvironment
 	]);
 
@@ -739,6 +805,61 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		setSelectedFileSuggestionIndex(0);
 	};
 
+	const messagesFromTask = (task: Task): Message[] => {
+		if (task.history && task.history.length > 0) {
+			return task.history as Message[];
+		}
+		return task.status.message ? ([task.status.message] as Message[]) : [];
+	};
+
+	const persistCompletedExchange = (
+		nextContextId: string | undefined,
+		messages: Message[],
+		nextTaskId?: string
+	): void => {
+		if (!selectedAgentKey || !nextContextId || messages.length === 0) {
+			return;
+		}
+
+		const warning = saveCompletedExchange({
+			environment: selectedEnvironment,
+			agentKey: selectedAgentKey,
+			contextId: nextContextId,
+			...(nextTaskId ? { lastTaskId: nextTaskId } : {}),
+			messages
+		});
+		if (warning) {
+			appendSystem(warning);
+		}
+
+			const currentAgent =
+				chatSettings.environments[selectedEnvironment].agents[selectedAgentKey] ??
+				selectedAgent;
+			const shouldPersistAgentContext =
+				!selectedAgent ||
+				selectedAgent.agentKey !== selectedAgentKey ||
+				!isTransientAgentSource(selectedAgent.source);
+			if (currentAgent && shouldPersistAgentContext) {
+				persistEnvironmentSettings(selectedEnvironment, {
+					agents: {
+					...chatSettings.environments[selectedEnvironment].agents,
+					[selectedAgentKey]: {
+						agentKey: currentAgent.agentKey,
+						agentId: currentAgent.agentId,
+						sourceKey: currentAgent.sourceKey,
+						agentCardUrl: currentAgent.agentCardUrl,
+						agentCardName: currentAgent.agentCardName,
+						agentHandle: currentAgent.agentHandle,
+						lastSeenAt: currentAgent.lastSeenAt,
+						lastLoadedAt: currentAgent.lastLoadedAt,
+						status: currentAgent.status,
+						activeContextId: nextContextId
+					}
+				}
+			});
+		}
+	};
+
 	const applySelectedAgentSuggestion = (): void => {
 		const suggestion = agentSuggestions[selectedSuggestionIndex];
 		if (!suggestion) {
@@ -747,11 +868,15 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 
 		setDraft((current) => clearAgentMention(current));
 		if (selectedAgentId !== suggestion) {
+			const agent = discoveredAgents.find((item) => item.id === suggestion);
 			setSelectedAgentId(suggestion);
-			persistEnvironmentSettings(selectedEnvironment, {
-				selectedAgentId: suggestion
-			});
-			setDirectFallback(false);
+			setSelectedAgentKey(agent?.agentKey);
+			if (!agent || !isTransientAgentSource(agent.source)) {
+				persistEnvironmentSettings(selectedEnvironment, {
+					selectedAgentId: suggestion,
+					selectedAgentKey: agent?.agentKey
+				});
+			}
 		}
 	};
 
@@ -788,6 +913,11 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 
 		if (command.id === "exit") {
 			exit();
+			return;
+		}
+		if (command.id === "sources") {
+			resetSlashSelection();
+			runSourcesSlashCommand();
 			return;
 		}
 
@@ -845,6 +975,35 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		appendSystem(`Aion environment set to ${environmentId}.`);
 	};
 
+	const runSourcesSlashCommand = (): void => {
+		const sources = Object.values(agentSources).sort((left, right) =>
+			left.sourceKey.localeCompare(right.sourceKey)
+		);
+		if (sources.length === 0) {
+			appendSystem("No agent sources configured.");
+			return;
+		}
+
+		appendSystem(
+			[
+				"Agent sources",
+				"",
+				...sources.map((source) =>
+					[
+						source.sourceKey,
+						`Type: ${source.type}`,
+						`Description: ${source.description}`,
+						`URL: ${source.url}`,
+						`Status: ${source.status ?? "unchecked"}`,
+						source.lastError && !source.isDefault ? `Last error: ${source.lastError}` : undefined
+					]
+						.filter(Boolean)
+						.join("\n")
+				)
+			].join("\n\n")
+		);
+	};
+
 	const runExactSlashCommand = (): boolean => {
 		const command = parseExactSlashCommand(draft);
 		if (!command) {
@@ -881,13 +1040,17 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		const selection = parseAgentSelection(
 			draft,
 			discoveredAgents.map((agent) => agent.id)
-		);
+	);
 		if (selection.agentId && selection.agentId !== selectedAgentId) {
+			const agent = discoveredAgents.find((item) => item.id === selection.agentId);
 			setSelectedAgentId(selection.agentId);
-			persistEnvironmentSettings(selectedEnvironment, {
-				selectedAgentId: selection.agentId
-			});
-			setDirectFallback(false);
+			setSelectedAgentKey(agent?.agentKey);
+			if (!agent || !isTransientAgentSource(agent.source)) {
+				persistEnvironmentSettings(selectedEnvironment, {
+					selectedAgentId: selection.agentId,
+					selectedAgentKey: agent?.agentKey
+				});
+			}
 			appendStatus(`Active agent changed to @${selection.agentId}`);
 		}
 
@@ -933,15 +1096,23 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 
 			if (useStreaming) {
 				setStreamLabel("Streaming");
+				let completedTask: Task | undefined;
+				let finalStatusUpdate: TaskStatusUpdateEvent | undefined;
 				for await (const event of clientState.client.sendMessageStream(params)) {
 					switch (event.kind) {
 						case "message":
 							handleMessage(event);
 							break;
 						case "task":
+							if (isTerminalTaskState(event.status.state)) {
+								completedTask = event;
+							}
 							handleTaskSnapshot(event);
 							break;
 						case "status-update":
+							if (isFinalStatusEvent(event)) {
+								finalStatusUpdate = event;
+							}
 							handleStatusUpdate(event);
 							break;
 						case "artifact-update":
@@ -951,14 +1122,39 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 							break;
 					}
 				}
+				if (completedTask) {
+					persistCompletedExchange(
+						completedTask.contextId,
+						messagesFromTask(completedTask),
+						completedTask.id
+					);
+				} else if (finalStatusUpdate?.status.message) {
+					persistCompletedExchange(
+						finalStatusUpdate.contextId,
+						[params.message, finalStatusUpdate.status.message as Message],
+						finalStatusUpdate.taskId
+					);
+				}
 				setStreamLabel("Idle");
 			} else {
 				setStreamLabel("Waiting");
 				const response = await clientState.client.sendMessage(params);
 				if (response.kind === "message") {
 					handleMessage(response);
+					persistCompletedExchange(
+						response.contextId ?? params.message.contextId,
+						[params.message, response],
+						response.taskId
+					);
 				} else {
 					handleTaskSnapshot(response);
+					if (isTerminalTaskState(response.status.state)) {
+						persistCompletedExchange(
+							response.contextId,
+							messagesFromTask(response),
+							response.id
+						);
+					}
 				}
 				setStreamLabel("Idle");
 			}
@@ -1137,20 +1333,20 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				<Text> • {connectionSummary}</Text>
 			</Box>
 			<Box flexDirection="column" flexGrow={1} marginY={1}>
-				{entries.length === 0 ? (
-					<HomeScreen
-						discoveredCount={discoveredAgents.length}
-						discoveryState={discoveryLabel}
-						selectedAgentId={selectedAgentId}
-					/>
-				) : (
-					<Box flexDirection="column">
+					{entries.length === 0 ? (
 						<HomeScreen
 							discoveredCount={discoveredAgents.length}
-							discoveryState={discoveryLabel}
+							sourceCount={Object.keys(agentSources).length}
 							selectedAgentId={selectedAgentId}
-							mode="inline"
 						/>
+					) : (
+					<Box flexDirection="column">
+							<HomeScreen
+								discoveredCount={discoveredAgents.length}
+								sourceCount={Object.keys(agentSources).length}
+								selectedAgentId={selectedAgentId}
+								mode="inline"
+							/>
 						{entries.map((entry, index) => (
 							<Box key={entry.id} marginBottom={index < entries.length - 1 ? 1 : 0}>
 								<MessageBubble entry={entry} />

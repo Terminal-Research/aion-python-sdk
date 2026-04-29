@@ -323,7 +323,7 @@ function getLayout(width: number): LogoLayout {
 
 export interface HomeScreenProps {
 	discoveredCount: number;
-	discoveryState: string;
+	sourceCount?: number;
 	selectedAgentId?: string;
 	terminalWidth?: number;
 	mode?: "standalone" | "inline";
@@ -331,7 +331,7 @@ export interface HomeScreenProps {
 
 export function HomeScreen({
 	discoveredCount,
-	discoveryState,
+	sourceCount = 0,
 	selectedAgentId,
 	terminalWidth,
 	mode = "standalone"
@@ -361,6 +361,7 @@ export function HomeScreen({
 	}, [stdout, terminalWidth]);
 
 	const layout = useMemo(() => getLayout(liveWidth), [liveWidth]);
+	const sourceSuffix = sourceCount === 1 ? "" : "s";
 	const outerProps =
 		mode === "standalone"
 			? { flexGrow: 1, justifyContent: "center" as const, alignItems: "center" as const }
@@ -386,8 +387,9 @@ export function HomeScreen({
 					renderRows(COMPACT_ROWS, "compact")
 				)}
 				<Box marginTop={2} flexDirection="column" alignItems="center">
-					<Text color={COLORS.cream}>{discoveredCount} agent{suffix} discovered</Text>
-					<Text dimColor>{discoveryState}</Text>
+					<Text color={COLORS.cream}>
+						{discoveredCount} agent{suffix} discovered from {sourceCount} source{sourceSuffix}
+					</Text>
 					<Text color={selectedAgentId ? "green" : COLORS.lavender}>
 						{selectedAgentId
 							? `Selected agent: ${selectedAgentId}`

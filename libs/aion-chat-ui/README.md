@@ -35,6 +35,20 @@ aion-chat login
 
 Inside the composer, `/login` is visible in the slash command picker and runs the same login flow.
 
+### Agent Sources and Sessions
+
+Agent sources are discovered per selected Aion environment. Every environment includes a default manifest source at `http://localhost:8000`; this default is silent when no local server is running. Passing `--url` adds an explicit source for that run. Explicit URLs are resolved as a manifest first and then as a direct agent card.
+
+Inside the composer, `/sources` is visible in the slash command picker and lists configured sources, their type, URL, description, and current status.
+
+The chat UI stores source and agent indexes in `chat2.json`. Context session previews are stored separately under the Aion config directory:
+
+```text
+~/.config/aion/sessions/<environment>/<agent-key>/<context-id>.json
+```
+
+Session files store A2A `Message` objects for the latest completed exchange, not full transcripts.
+
 ### Environments
 
 ```bash

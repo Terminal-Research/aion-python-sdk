@@ -20,7 +20,8 @@ describe("slashCommands", () => {
 			"/clear",
 			"/login",
 			"/request",
-			"/response"
+			"/response",
+			"/sources"
 		]);
 		expect(filterSlashCommands("l").map((command) => command.label)).toEqual([
 			"/login"
@@ -33,6 +34,9 @@ describe("slashCommands", () => {
 			"/request"
 		]);
 		expect(filterSlashCommands("c").map((command) => command.label)).toEqual(["/clear"]);
+		expect(filterSlashCommands("s").map((command) => command.label)).toEqual([
+			"/sources"
+		]);
 	});
 
 	it("clears the leading slash draft while preserving leading whitespace", () => {

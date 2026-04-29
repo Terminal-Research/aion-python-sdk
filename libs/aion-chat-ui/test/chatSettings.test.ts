@@ -11,8 +11,16 @@ import {
 	saveChatSettings,
 	saveChatModeSettings
 } from "../src/lib/chatSettings.js";
+import { createDefaultLocalAgentSource } from "../src/lib/agents/model.js";
 
 const tempDirectories: string[] = [];
+const defaultSource = createDefaultLocalAgentSource();
+const defaultWorkspace = {
+	agentSources: {
+		[defaultSource.sourceKey]: defaultSource
+	},
+	agents: {}
+};
 
 afterEach(() => {
 	for (const directory of tempDirectories.splice(0)) {
@@ -62,16 +70,19 @@ describe("chatSettings", () => {
 					environments: {
 						production: {
 							requestMode: "send-message",
-							responseMode: "message-output"
+							responseMode: "message-output",
+							...defaultWorkspace
 						},
 						staging: {
 							requestMode: "send-message",
-							responseMode: "message-output"
+							responseMode: "message-output",
+							...defaultWorkspace
 						},
 						development: {
 							requestMode: "streaming-message",
 							responseMode: "a2a-protocol",
-							selectedAgentId: "dev-agent"
+							selectedAgentId: "dev-agent",
+							...defaultWorkspace
 						}
 					}
 				},
@@ -85,16 +96,19 @@ describe("chatSettings", () => {
 				environments: {
 					production: {
 						requestMode: "send-message",
-						responseMode: "message-output"
+						responseMode: "message-output",
+						...defaultWorkspace
 					},
 					staging: {
 						requestMode: "send-message",
-						responseMode: "message-output"
+						responseMode: "message-output",
+						...defaultWorkspace
 					},
 					development: {
 						requestMode: "streaming-message",
 						responseMode: "a2a-protocol",
-						selectedAgentId: "dev-agent"
+						selectedAgentId: "dev-agent",
+						...defaultWorkspace
 					}
 				}
 			}
@@ -117,7 +131,8 @@ describe("chatSettings", () => {
 
 		expect(loadChatSettings(settingsPath).settings.environments.production).toEqual({
 			requestMode: "streaming-message",
-			responseMode: "a2a-protocol"
+			responseMode: "a2a-protocol",
+			...defaultWorkspace
 		});
 	});
 

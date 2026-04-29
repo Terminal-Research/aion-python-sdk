@@ -94,6 +94,14 @@ export const SLASH_COMMANDS = [
 		title: "Response Mode",
 		subtitle: "Choose how Aion Chat renders responses from the agents.",
 		options: RESPONSE_MODE_OPTIONS
+	},
+	{
+		id: "sources",
+		label: "/sources",
+		description: "Show configured agent discovery sources.",
+		title: "Agent Sources",
+		subtitle: "Show configured agent discovery sources.",
+		options: []
 	}
 ] as const satisfies readonly SlashCommandDefinition<string>[];
 

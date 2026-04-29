@@ -158,11 +158,10 @@ describe("Ink components", () => {
 		app.unmount();
 	});
 
-	it("renders the home screen discovery state", () => {
+	it("renders the home screen discovery summary", () => {
 		const app = render(
 			<HomeScreen
 				discoveredCount={2}
-				discoveryState="Discovered 2 agents from the proxy manifest"
 				terminalWidth={160}
 			/>
 		);

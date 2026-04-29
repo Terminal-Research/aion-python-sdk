@@ -10429,10 +10429,10 @@ var require_react_reconciler_development = __commonJS({
           fiber = fiber.next, id--;
         return fiber;
       }
-      function copyWithSetImpl(obj, path2, index, value) {
-        if (index >= path2.length) return value;
-        var key = path2[index], updated = isArrayImpl(obj) ? obj.slice() : assign({}, obj);
-        updated[key] = copyWithSetImpl(obj[key], path2, index + 1, value);
+      function copyWithSetImpl(obj, path3, index, value) {
+        if (index >= path3.length) return value;
+        var key = path3[index], updated = isArrayImpl(obj) ? obj.slice() : assign({}, obj);
+        updated[key] = copyWithSetImpl(obj[key], path3, index + 1, value);
         return updated;
       }
       function copyWithRename(obj, oldPath, newPath) {
@@ -10459,11 +10459,11 @@ var require_react_reconciler_development = __commonJS({
         );
         return updated;
       }
-      function copyWithDeleteImpl(obj, path2, index) {
-        var key = path2[index], updated = isArrayImpl(obj) ? obj.slice() : assign({}, obj);
-        if (index + 1 === path2.length)
+      function copyWithDeleteImpl(obj, path3, index) {
+        var key = path3[index], updated = isArrayImpl(obj) ? obj.slice() : assign({}, obj);
+        if (index + 1 === path3.length)
           return isArrayImpl(updated) ? updated.splice(key, 1) : delete updated[key], updated;
-        updated[key] = copyWithDeleteImpl(obj[key], path2, index + 1);
+        updated[key] = copyWithDeleteImpl(obj[key], path3, index + 1);
         return updated;
       }
       function shouldSuspendImpl() {
@@ -23740,29 +23740,29 @@ var require_react_reconciler_development = __commonJS({
       var didWarnAboutNestedUpdates = false;
       var didWarnAboutFindNodeInStrictMode = {};
       var overrideHookState = null, overrideHookStateDeletePath = null, overrideHookStateRenamePath = null, overrideProps = null, overridePropsDeletePath = null, overridePropsRenamePath = null, scheduleUpdate = null, scheduleRetry = null, setErrorHandler = null, setSuspenseHandler = null;
-      overrideHookState = function(fiber, id, path2, value) {
+      overrideHookState = function(fiber, id, path3, value) {
         id = findHook(fiber, id);
-        null !== id && (path2 = copyWithSetImpl(id.memoizedState, path2, 0, value), id.memoizedState = path2, id.baseState = path2, fiber.memoizedProps = assign({}, fiber.memoizedProps), path2 = enqueueConcurrentRenderForLane(fiber, 2), null !== path2 && scheduleUpdateOnFiber(path2, fiber, 2));
+        null !== id && (path3 = copyWithSetImpl(id.memoizedState, path3, 0, value), id.memoizedState = path3, id.baseState = path3, fiber.memoizedProps = assign({}, fiber.memoizedProps), path3 = enqueueConcurrentRenderForLane(fiber, 2), null !== path3 && scheduleUpdateOnFiber(path3, fiber, 2));
       };
-      overrideHookStateDeletePath = function(fiber, id, path2) {
+      overrideHookStateDeletePath = function(fiber, id, path3) {
         id = findHook(fiber, id);
-        null !== id && (path2 = copyWithDeleteImpl(id.memoizedState, path2, 0), id.memoizedState = path2, id.baseState = path2, fiber.memoizedProps = assign({}, fiber.memoizedProps), path2 = enqueueConcurrentRenderForLane(fiber, 2), null !== path2 && scheduleUpdateOnFiber(path2, fiber, 2));
+        null !== id && (path3 = copyWithDeleteImpl(id.memoizedState, path3, 0), id.memoizedState = path3, id.baseState = path3, fiber.memoizedProps = assign({}, fiber.memoizedProps), path3 = enqueueConcurrentRenderForLane(fiber, 2), null !== path3 && scheduleUpdateOnFiber(path3, fiber, 2));
       };
       overrideHookStateRenamePath = function(fiber, id, oldPath, newPath) {
         id = findHook(fiber, id);
         null !== id && (oldPath = copyWithRename(id.memoizedState, oldPath, newPath), id.memoizedState = oldPath, id.baseState = oldPath, fiber.memoizedProps = assign({}, fiber.memoizedProps), oldPath = enqueueConcurrentRenderForLane(fiber, 2), null !== oldPath && scheduleUpdateOnFiber(oldPath, fiber, 2));
       };
-      overrideProps = function(fiber, path2, value) {
-        fiber.pendingProps = copyWithSetImpl(fiber.memoizedProps, path2, 0, value);
+      overrideProps = function(fiber, path3, value) {
+        fiber.pendingProps = copyWithSetImpl(fiber.memoizedProps, path3, 0, value);
         fiber.alternate && (fiber.alternate.pendingProps = fiber.pendingProps);
-        path2 = enqueueConcurrentRenderForLane(fiber, 2);
-        null !== path2 && scheduleUpdateOnFiber(path2, fiber, 2);
+        path3 = enqueueConcurrentRenderForLane(fiber, 2);
+        null !== path3 && scheduleUpdateOnFiber(path3, fiber, 2);
       };
-      overridePropsDeletePath = function(fiber, path2) {
-        fiber.pendingProps = copyWithDeleteImpl(fiber.memoizedProps, path2, 0);
+      overridePropsDeletePath = function(fiber, path3) {
+        fiber.pendingProps = copyWithDeleteImpl(fiber.memoizedProps, path3, 0);
         fiber.alternate && (fiber.alternate.pendingProps = fiber.pendingProps);
-        path2 = enqueueConcurrentRenderForLane(fiber, 2);
-        null !== path2 && scheduleUpdateOnFiber(path2, fiber, 2);
+        path3 = enqueueConcurrentRenderForLane(fiber, 2);
+        null !== path3 && scheduleUpdateOnFiber(path3, fiber, 2);
       };
       overridePropsRenamePath = function(fiber, oldPath, newPath) {
         fiber.pendingProps = copyWithRename(
@@ -26407,7 +26407,7 @@ var require_websocket = __commonJS({
     var http2 = __require("http");
     var net = __require("net");
     var tls = __require("tls");
-    var { randomBytes, createHash } = __require("crypto");
+    var { randomBytes, createHash: createHash2 } = __require("crypto");
     var { Duplex, Readable } = __require("stream");
     var { URL: URL2 } = __require("url");
     var PerMessageDeflate2 = require_permessage_deflate();
@@ -27067,7 +27067,7 @@ var require_websocket = __commonJS({
           abortHandshake(websocket, socket, "Invalid Upgrade header");
           return;
         }
-        const digest = createHash("sha1").update(key + GUID).digest("base64");
+        const digest = createHash2("sha1").update(key + GUID).digest("base64");
         if (res.headers["sec-websocket-accept"] !== digest) {
           abortHandshake(websocket, socket, "Invalid Sec-WebSocket-Accept header");
           return;
@@ -27434,7 +27434,7 @@ var require_websocket_server = __commonJS({
     var EventEmitter3 = __require("events");
     var http2 = __require("http");
     var { Duplex } = __require("stream");
-    var { createHash } = __require("crypto");
+    var { createHash: createHash2 } = __require("crypto");
     var extension2 = require_extension();
     var PerMessageDeflate2 = require_permessage_deflate();
     var subprotocol2 = require_subprotocol();
@@ -27735,7 +27735,7 @@ var require_websocket_server = __commonJS({
           );
         }
         if (this._state > RUNNING) return abortHandshake(socket, 503);
-        const digest = createHash("sha1").update(key + GUID).digest("base64");
+        const digest = createHash2("sha1").update(key + GUID).digest("base64");
         const headers = [
           "HTTP/1.1 101 Switching Protocols",
           "Upgrade: websocket",
@@ -71675,15 +71675,15 @@ var require_route = __commonJS({
       };
     }
     function wrapConversion(toModel, graph) {
-      const path2 = [graph[toModel].parent, toModel];
+      const path3 = [graph[toModel].parent, toModel];
       let fn = conversions[graph[toModel].parent][toModel];
       let cur = graph[toModel].parent;
       while (graph[cur].parent) {
-        path2.unshift(graph[cur].parent);
+        path3.unshift(graph[cur].parent);
         fn = link2(conversions[graph[cur].parent][cur], fn);
         cur = graph[cur].parent;
       }
-      fn.conversion = path2;
+      fn.conversion = path3;
       return fn;
     }
     module.exports = function(fromModel) {
@@ -72759,17 +72759,17 @@ var require_visit = __commonJS({
     visit.BREAK = BREAK;
     visit.SKIP = SKIP;
     visit.REMOVE = REMOVE;
-    function visit_(key, node, visitor, path2) {
-      const ctrl = callVisitor(key, node, visitor, path2);
+    function visit_(key, node, visitor, path3) {
+      const ctrl = callVisitor(key, node, visitor, path3);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path2, ctrl);
-        return visit_(key, ctrl, visitor, path2);
+        replaceNode(key, path3, ctrl);
+        return visit_(key, ctrl, visitor, path3);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node)) {
-          path2 = Object.freeze(path2.concat(node));
+          path3 = Object.freeze(path3.concat(node));
           for (let i = 0; i < node.items.length; ++i) {
-            const ci = visit_(i, node.items[i], visitor, path2);
+            const ci = visit_(i, node.items[i], visitor, path3);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -72780,13 +72780,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node)) {
-          path2 = Object.freeze(path2.concat(node));
-          const ck = visit_("key", node.key, visitor, path2);
+          path3 = Object.freeze(path3.concat(node));
+          const ck = visit_("key", node.key, visitor, path3);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node.key = null;
-          const cv = visit_("value", node.value, visitor, path2);
+          const cv = visit_("value", node.value, visitor, path3);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -72807,17 +72807,17 @@ var require_visit = __commonJS({
     visitAsync.BREAK = BREAK;
     visitAsync.SKIP = SKIP;
     visitAsync.REMOVE = REMOVE;
-    async function visitAsync_(key, node, visitor, path2) {
-      const ctrl = await callVisitor(key, node, visitor, path2);
+    async function visitAsync_(key, node, visitor, path3) {
+      const ctrl = await callVisitor(key, node, visitor, path3);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path2, ctrl);
-        return visitAsync_(key, ctrl, visitor, path2);
+        replaceNode(key, path3, ctrl);
+        return visitAsync_(key, ctrl, visitor, path3);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node)) {
-          path2 = Object.freeze(path2.concat(node));
+          path3 = Object.freeze(path3.concat(node));
           for (let i = 0; i < node.items.length; ++i) {
-            const ci = await visitAsync_(i, node.items[i], visitor, path2);
+            const ci = await visitAsync_(i, node.items[i], visitor, path3);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -72828,13 +72828,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node)) {
-          path2 = Object.freeze(path2.concat(node));
-          const ck = await visitAsync_("key", node.key, visitor, path2);
+          path3 = Object.freeze(path3.concat(node));
+          const ck = await visitAsync_("key", node.key, visitor, path3);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node.key = null;
-          const cv = await visitAsync_("value", node.value, visitor, path2);
+          const cv = await visitAsync_("value", node.value, visitor, path3);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -72861,23 +72861,23 @@ var require_visit = __commonJS({
       }
       return visitor;
     }
-    function callVisitor(key, node, visitor, path2) {
+    function callVisitor(key, node, visitor, path3) {
       if (typeof visitor === "function")
-        return visitor(key, node, path2);
+        return visitor(key, node, path3);
       if (identity.isMap(node))
-        return visitor.Map?.(key, node, path2);
+        return visitor.Map?.(key, node, path3);
       if (identity.isSeq(node))
-        return visitor.Seq?.(key, node, path2);
+        return visitor.Seq?.(key, node, path3);
       if (identity.isPair(node))
-        return visitor.Pair?.(key, node, path2);
+        return visitor.Pair?.(key, node, path3);
       if (identity.isScalar(node))
-        return visitor.Scalar?.(key, node, path2);
+        return visitor.Scalar?.(key, node, path3);
       if (identity.isAlias(node))
-        return visitor.Alias?.(key, node, path2);
+        return visitor.Alias?.(key, node, path3);
       return void 0;
     }
-    function replaceNode(key, path2, node) {
-      const parent = path2[path2.length - 1];
+    function replaceNode(key, path3, node) {
+      const parent = path3[path3.length - 1];
       if (identity.isCollection(parent)) {
         parent.items[key] = node;
       } else if (identity.isPair(parent)) {
@@ -73485,10 +73485,10 @@ var require_Collection = __commonJS({
     var createNode2 = require_createNode();
     var identity = require_identity();
     var Node = require_Node();
-    function collectionFromPath(schema, path2, value) {
+    function collectionFromPath(schema, path3, value) {
       let v = value;
-      for (let i = path2.length - 1; i >= 0; --i) {
-        const k = path2[i];
+      for (let i = path3.length - 1; i >= 0; --i) {
+        const k = path3[i];
         if (typeof k === "number" && Number.isInteger(k) && k >= 0) {
           const a = [];
           a[k] = v;
@@ -73507,7 +73507,7 @@ var require_Collection = __commonJS({
         sourceObjects: /* @__PURE__ */ new Map()
       });
     }
-    var isEmptyPath = (path2) => path2 == null || typeof path2 === "object" && !!path2[Symbol.iterator]().next().done;
+    var isEmptyPath = (path3) => path3 == null || typeof path3 === "object" && !!path3[Symbol.iterator]().next().done;
     var Collection = class extends Node.NodeBase {
       constructor(type, schema) {
         super(type);
@@ -73537,11 +73537,11 @@ var require_Collection = __commonJS({
        * be a Pair instance or a `{ key, value }` object, which may not have a key
        * that already exists in the map.
        */
-      addIn(path2, value) {
-        if (isEmptyPath(path2))
+      addIn(path3, value) {
+        if (isEmptyPath(path3))
           this.add(value);
         else {
-          const [key, ...rest] = path2;
+          const [key, ...rest] = path3;
           const node = this.get(key, true);
           if (identity.isCollection(node))
             node.addIn(rest, value);
@@ -73555,8 +73555,8 @@ var require_Collection = __commonJS({
        * Removes a value from the collection.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path2) {
-        const [key, ...rest] = path2;
+      deleteIn(path3) {
+        const [key, ...rest] = path3;
         if (rest.length === 0)
           return this.delete(key);
         const node = this.get(key, true);
@@ -73570,8 +73570,8 @@ var require_Collection = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path2, keepScalar) {
-        const [key, ...rest] = path2;
+      getIn(path3, keepScalar) {
+        const [key, ...rest] = path3;
         const node = this.get(key, true);
         if (rest.length === 0)
           return !keepScalar && identity.isScalar(node) ? node.value : node;
@@ -73589,8 +73589,8 @@ var require_Collection = __commonJS({
       /**
        * Checks if the collection includes a value with the key `key`.
        */
-      hasIn(path2) {
-        const [key, ...rest] = path2;
+      hasIn(path3) {
+        const [key, ...rest] = path3;
         if (rest.length === 0)
           return this.has(key);
         const node = this.get(key, true);
@@ -73600,8 +73600,8 @@ var require_Collection = __commonJS({
        * Sets a value in this collection. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path2, value) {
-        const [key, ...rest] = path2;
+      setIn(path3, value) {
+        const [key, ...rest] = path3;
         if (rest.length === 0) {
           this.set(key, value);
         } else {
@@ -76113,9 +76113,9 @@ var require_Document = __commonJS({
           this.contents.add(value);
       }
       /** Adds a value to the document. */
-      addIn(path2, value) {
+      addIn(path3, value) {
         if (assertCollection(this.contents))
-          this.contents.addIn(path2, value);
+          this.contents.addIn(path3, value);
       }
       /**
        * Create a new `Alias` node, ensuring that the target `node` has the required anchor.
@@ -76190,14 +76190,14 @@ var require_Document = __commonJS({
        * Removes a value from the document.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path2) {
-        if (Collection.isEmptyPath(path2)) {
+      deleteIn(path3) {
+        if (Collection.isEmptyPath(path3)) {
           if (this.contents == null)
             return false;
           this.contents = null;
           return true;
         }
-        return assertCollection(this.contents) ? this.contents.deleteIn(path2) : false;
+        return assertCollection(this.contents) ? this.contents.deleteIn(path3) : false;
       }
       /**
        * Returns item at `key`, or `undefined` if not found. By default unwraps
@@ -76212,10 +76212,10 @@ var require_Document = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path2, keepScalar) {
-        if (Collection.isEmptyPath(path2))
+      getIn(path3, keepScalar) {
+        if (Collection.isEmptyPath(path3))
           return !keepScalar && identity.isScalar(this.contents) ? this.contents.value : this.contents;
-        return identity.isCollection(this.contents) ? this.contents.getIn(path2, keepScalar) : void 0;
+        return identity.isCollection(this.contents) ? this.contents.getIn(path3, keepScalar) : void 0;
       }
       /**
        * Checks if the document includes a value with the key `key`.
@@ -76226,10 +76226,10 @@ var require_Document = __commonJS({
       /**
        * Checks if the document includes a value at `path`.
        */
-      hasIn(path2) {
-        if (Collection.isEmptyPath(path2))
+      hasIn(path3) {
+        if (Collection.isEmptyPath(path3))
           return this.contents !== void 0;
-        return identity.isCollection(this.contents) ? this.contents.hasIn(path2) : false;
+        return identity.isCollection(this.contents) ? this.contents.hasIn(path3) : false;
       }
       /**
        * Sets a value in this document. For `!!set`, `value` needs to be a
@@ -76246,13 +76246,13 @@ var require_Document = __commonJS({
        * Sets a value in this document. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path2, value) {
-        if (Collection.isEmptyPath(path2)) {
+      setIn(path3, value) {
+        if (Collection.isEmptyPath(path3)) {
           this.contents = value;
         } else if (this.contents == null) {
-          this.contents = Collection.collectionFromPath(this.schema, Array.from(path2), value);
+          this.contents = Collection.collectionFromPath(this.schema, Array.from(path3), value);
         } else if (assertCollection(this.contents)) {
-          this.contents.setIn(path2, value);
+          this.contents.setIn(path3, value);
         }
       }
       /**
@@ -78209,9 +78209,9 @@ var require_cst_visit = __commonJS({
     visit.BREAK = BREAK;
     visit.SKIP = SKIP;
     visit.REMOVE = REMOVE;
-    visit.itemAtPath = (cst, path2) => {
+    visit.itemAtPath = (cst, path3) => {
       let item = cst;
-      for (const [field, index] of path2) {
+      for (const [field, index] of path3) {
         const tok = item?.[field];
         if (tok && "items" in tok) {
           item = tok.items[index];
@@ -78220,23 +78220,23 @@ var require_cst_visit = __commonJS({
       }
       return item;
     };
-    visit.parentCollection = (cst, path2) => {
-      const parent = visit.itemAtPath(cst, path2.slice(0, -1));
-      const field = path2[path2.length - 1][0];
+    visit.parentCollection = (cst, path3) => {
+      const parent = visit.itemAtPath(cst, path3.slice(0, -1));
+      const field = path3[path3.length - 1][0];
       const coll = parent?.[field];
       if (coll && "items" in coll)
         return coll;
       throw new Error("Parent collection not found");
     };
-    function _visit(path2, item, visitor) {
-      let ctrl = visitor(item, path2);
+    function _visit(path3, item, visitor) {
+      let ctrl = visitor(item, path3);
       if (typeof ctrl === "symbol")
         return ctrl;
       for (const field of ["key", "value"]) {
         const token = item[field];
         if (token && "items" in token) {
           for (let i = 0; i < token.items.length; ++i) {
-            const ci = _visit(Object.freeze(path2.concat([[field, i]])), token.items[i], visitor);
+            const ci = _visit(Object.freeze(path3.concat([[field, i]])), token.items[i], visitor);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -78247,10 +78247,10 @@ var require_cst_visit = __commonJS({
             }
           }
           if (typeof ctrl === "function" && field === "key")
-            ctrl = ctrl(item, path2);
+            ctrl = ctrl(item, path3);
         }
       }
-      return typeof ctrl === "function" ? ctrl(item, path2) : ctrl;
+      return typeof ctrl === "function" ? ctrl(item, path3) : ctrl;
     }
     exports.visit = visit;
   }
@@ -86882,8 +86882,8 @@ function Text({ color, backgroundColor, dimColor = false, bold = false, italic =
 }
 
 // node_modules/ink/build/components/ErrorOverview.js
-var cleanupPath = (path2) => {
-  return path2?.replace(`file://${cwd()}/`, "");
+var cleanupPath = (path3) => {
+  return path3?.replace(`file://${cwd()}/`, "");
 };
 var stackUtils = new import_stack_utils.default({
   cwd: cwd(),
@@ -88780,6 +88780,14 @@ var SLASH_COMMANDS = [
     title: "Response Mode",
     subtitle: "Choose how Aion Chat renders responses from the agents.",
     options: RESPONSE_MODE_OPTIONS
+  },
+  {
+    id: "sources",
+    label: "/sources",
+    description: "Show configured agent discovery sources.",
+    title: "Agent Sources",
+    subtitle: "Show configured agent discovery sources.",
+    options: []
   }
 ];
 function getRequestModeLabel(mode) {
@@ -89271,7 +89279,7 @@ function getLayout(width) {
 }
 function HomeScreen({
   discoveredCount,
-  discoveryState,
+  sourceCount = 0,
   selectedAgentId,
   terminalWidth,
   mode = "standalone"
@@ -89296,6 +89304,7 @@ function HomeScreen({
     };
   }, [stdout, terminalWidth]);
   const layout = (0, import_react30.useMemo)(() => getLayout(liveWidth), [liveWidth]);
+  const sourceSuffix = sourceCount === 1 ? "" : "s";
   const outerProps = mode === "standalone" ? { flexGrow: 1, justifyContent: "center", alignItems: "center" } : { alignItems: "center" };
   return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Box_default, { ...outerProps, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(
     Box_default,
@@ -89311,9 +89320,11 @@ function HomeScreen({
             discoveredCount,
             " agent",
             suffix,
-            " discovered"
+            " discovered from ",
+            sourceCount,
+            " source",
+            sourceSuffix
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { dimColor: true, children: discoveryState }),
           /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { color: selectedAgentId ? "green" : COLORS.lavender, children: selectedAgentId ? `Selected agent: ${selectedAgentId}` : "Type @ to select an agent" })
         ] })
       ]
@@ -89455,6 +89466,73 @@ function parseAgentSelection(draft, availableAgentIds) {
 import { mkdirSync, readFileSync as readFileSync3, writeFileSync } from "fs";
 import os3 from "os";
 import path from "path";
+
+// src/lib/agents/model.ts
+import { createHash } from "crypto";
+var DEFAULT_LOCAL_AGENT_SOURCE_KEY = "default-localhost-8000";
+var DEFAULT_LOCAL_AGENT_SOURCE_URL = "http://localhost:8000";
+function hashValue(value) {
+  return createHash("sha256").update(value).digest("hex").slice(0, 12);
+}
+function slugKey(value) {
+  const slug = value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48);
+  return slug || hashValue(value);
+}
+function normalizeSourceUrl(url) {
+  const parsed = new URL(url);
+  if (parsed.pathname !== "/" && parsed.pathname.endsWith("/")) {
+    parsed.pathname = parsed.pathname.replace(/\/+$/u, "");
+  }
+  parsed.hash = "";
+  return parsed.toString().replace(/\/$/u, "");
+}
+function createDefaultLocalAgentSource() {
+  return {
+    sourceKey: DEFAULT_LOCAL_AGENT_SOURCE_KEY,
+    type: "manifest",
+    url: DEFAULT_LOCAL_AGENT_SOURCE_URL,
+    description: "Local Aion SDK server",
+    enabled: true,
+    isDefault: true,
+    status: "unchecked"
+  };
+}
+function createExplicitAgentSource(url) {
+  const normalizedUrl = normalizeSourceUrl(url);
+  return {
+    sourceKey: `cli-${hashValue(normalizedUrl)}`,
+    type: "manifest",
+    url: normalizedUrl,
+    description: "Provided with --url",
+    enabled: true,
+    resolveMode: "auto",
+    transient: true,
+    status: "unchecked"
+  };
+}
+function isTransientAgentSource(source) {
+  return "transient" in source && source.transient === true;
+}
+function createAgentKey(sourceKey, identifier) {
+  return `${sourceKey}:${slugKey(identifier)}-${hashValue(identifier).slice(0, 8)}`;
+}
+function mergeAgentSources(persistedSources, explicitUrl) {
+  const sources = /* @__PURE__ */ new Map();
+  const defaultSource = createDefaultLocalAgentSource();
+  sources.set(defaultSource.sourceKey, defaultSource);
+  for (const source of Object.values(persistedSources)) {
+    if (source.enabled) {
+      sources.set(source.sourceKey, source);
+    }
+  }
+  if (explicitUrl) {
+    const explicitSource = createExplicitAgentSource(explicitUrl);
+    sources.set(explicitSource.sourceKey, explicitSource);
+  }
+  return [...sources.values()];
+}
+
+// src/lib/chatSettings.ts
 function isRequestMode(value) {
   return value === "send-message" || value === "streaming-message";
 }
@@ -89462,8 +89540,58 @@ function isResponseMode(value) {
   return value === "message-output" || value === "a2a-protocol";
 }
 function defaultEnvironmentSettings() {
+  const defaultSource = createDefaultLocalAgentSource();
   return {
-    ...DEFAULT_CHAT_MODE_SETTINGS
+    ...DEFAULT_CHAT_MODE_SETTINGS,
+    agentSources: {
+      [defaultSource.sourceKey]: defaultSource
+    },
+    agents: {}
+  };
+}
+function normalizeAgentSourceRecord(key, value, fallback) {
+  if (!value && !fallback) {
+    return void 0;
+  }
+  const source = value ?? {};
+  const sourceKey = typeof source.sourceKey === "string" && source.sourceKey.trim() ? source.sourceKey : fallback?.sourceKey ?? key;
+  const type = source.type === "manifest" || source.type === "agentCard" || source.type === "registry" ? source.type : fallback?.type ?? "manifest";
+  const url = typeof source.url === "string" && source.url.trim() ? source.url : fallback?.url;
+  const description = typeof source.description === "string" && source.description.trim() ? source.description : fallback?.description ?? sourceKey;
+  if (!url) {
+    return void 0;
+  }
+  return {
+    sourceKey,
+    type,
+    url,
+    description,
+    enabled: typeof source.enabled === "boolean" ? source.enabled : fallback?.enabled ?? true,
+    ...source.isDefault ?? fallback?.isDefault ? { isDefault: source.isDefault ?? fallback?.isDefault } : {},
+    ...source.status === "unchecked" || source.status === "available" || source.status === "unavailable" ? { status: source.status } : fallback?.status ? { status: fallback.status } : {},
+    ...typeof source.lastCheckedAt === "string" ? { lastCheckedAt: source.lastCheckedAt } : fallback?.lastCheckedAt ? { lastCheckedAt: fallback.lastCheckedAt } : {},
+    ...typeof source.lastError === "string" ? { lastError: source.lastError } : fallback?.lastError ? { lastError: fallback.lastError } : {}
+  };
+}
+function normalizeAgentRecord(key, value) {
+  if (!value) {
+    return void 0;
+  }
+  const agentKey = typeof value.agentKey === "string" && value.agentKey.trim() ? value.agentKey : key;
+  if (typeof value.sourceKey !== "string" || !value.sourceKey.trim() || typeof value.agentCardUrl !== "string" || !value.agentCardUrl.trim() || typeof value.lastSeenAt !== "string" || !value.lastSeenAt.trim()) {
+    return void 0;
+  }
+  return {
+    agentKey,
+    ...typeof value.agentId === "string" && value.agentId.trim() ? { agentId: value.agentId } : {},
+    sourceKey: value.sourceKey,
+    agentCardUrl: value.agentCardUrl,
+    ...typeof value.agentCardName === "string" && value.agentCardName.trim() ? { agentCardName: value.agentCardName } : {},
+    ...typeof value.agentHandle === "string" && value.agentHandle.trim() ? { agentHandle: value.agentHandle } : {},
+    lastSeenAt: value.lastSeenAt,
+    ...typeof value.lastLoadedAt === "string" && value.lastLoadedAt.trim() ? { lastLoadedAt: value.lastLoadedAt } : {},
+    ...value.status === "available" || value.status === "unavailable" ? { status: value.status } : {},
+    ...typeof value.activeContextId === "string" && value.activeContextId.trim() ? { activeContextId: value.activeContextId } : {}
   };
 }
 function defaultSettings() {
@@ -89478,10 +89606,38 @@ function normalizeEnvironmentSettings(value, fallback) {
   const requestMode = isRequestMode(value?.requestMode) ? value.requestMode : fallback.requestMode;
   const responseMode = isResponseMode(value?.responseMode) ? value.responseMode : fallback.responseMode;
   const selectedAgentId = typeof value?.selectedAgentId === "string" && value.selectedAgentId.trim() ? value.selectedAgentId : void 0;
+  const selectedAgentKey = typeof value?.selectedAgentKey === "string" && value.selectedAgentKey.trim() ? value.selectedAgentKey : void 0;
+  const agentSources = {};
+  for (const [key, fallbackSource] of Object.entries(fallback.agentSources)) {
+    const normalized = normalizeAgentSourceRecord(
+      key,
+      value?.agentSources?.[key],
+      fallbackSource
+    );
+    if (normalized) {
+      agentSources[normalized.sourceKey] = normalized;
+    }
+  }
+  for (const [key, source] of Object.entries(value?.agentSources ?? {})) {
+    const normalized = normalizeAgentSourceRecord(key, source);
+    if (normalized) {
+      agentSources[normalized.sourceKey] = normalized;
+    }
+  }
+  const agents = {};
+  for (const [key, agent] of Object.entries(value?.agents ?? {})) {
+    const normalized = normalizeAgentRecord(key, agent);
+    if (normalized) {
+      agents[normalized.agentKey] = normalized;
+    }
+  }
   return {
     requestMode,
     responseMode,
-    ...selectedAgentId ? { selectedAgentId } : {}
+    ...selectedAgentId ? { selectedAgentId } : {},
+    ...selectedAgentKey ? { selectedAgentKey } : {},
+    agentSources,
+    agents
   };
 }
 function normalizeSettings(parsed) {
@@ -89536,8 +89692,11 @@ function serializeSettings(settings, rawSettings) {
   };
 }
 function resolveChatSettingsPath(env3 = process.env, homeDirectory = os3.homedir()) {
+  return path.join(resolveAionConfigDirectory(env3, homeDirectory), "chat2.json");
+}
+function resolveAionConfigDirectory(env3 = process.env, homeDirectory = os3.homedir()) {
   const configHome = env3.XDG_CONFIG_HOME || path.join(homeDirectory, ".config");
-  return path.join(configHome, "aion", "chat2.json");
+  return path.join(configHome, "aion");
 }
 function loadChatSettings(settingsPath = resolveChatSettingsPath()) {
   try {
@@ -92253,8 +92412,8 @@ var DefaultAgentCardResolver = class {
    * 2) path from options
    * 3) .well-known/agent-card.json
    */
-  async resolve(baseUrl, path2) {
-    const agentCardUrl = new URL(path2 ?? this.options?.path ?? AGENT_CARD_PATH, baseUrl);
+  async resolve(baseUrl, path3) {
+    const agentCardUrl = new URL(path3 ?? this.options?.path ?? AGENT_CARD_PATH, baseUrl);
     const response = await this.fetchImpl(agentCardUrl);
     if (!response.ok) {
       throw new Error(`Failed to fetch Agent Card from ${agentCardUrl}: ${response.status}`);
@@ -92676,10 +92835,10 @@ var RestTransport = class _RestTransport {
       queryParams.set("historyLength", String(params.historyLength));
     }
     const queryString = queryParams.toString();
-    const path2 = `/v1/tasks/${encodeURIComponent(params.id)}${queryString ? `?${queryString}` : ""}`;
+    const path3 = `/v1/tasks/${encodeURIComponent(params.id)}${queryString ? `?${queryString}` : ""}`;
     const response = await this._sendRequest(
       "GET",
-      path2,
+      path3,
       void 0,
       options,
       void 0,
@@ -92723,8 +92882,8 @@ var RestTransport = class _RestTransport {
       Accept: acceptHeader
     };
   }
-  async _sendRequest(method, path2, body, options, requestType, responseType) {
-    const url = `${this.endpoint}${path2}`;
+  async _sendRequest(method, path3, body, options, requestType, responseType) {
+    const url = `${this.endpoint}${path3}`;
     const requestInit = {
       method,
       headers: this._buildHeaders(options),
@@ -92733,14 +92892,14 @@ var RestTransport = class _RestTransport {
     if (body !== void 0 && method !== "GET") {
       if (!requestType) {
         throw new Error(
-          `Bug: Request body provided for ${method} ${path2} but no toJson serializer provided.`
+          `Bug: Request body provided for ${method} ${path3} but no toJson serializer provided.`
         );
       }
       requestInit.body = JSON.stringify(requestType.toJSON(body));
     }
     const response = await this._fetch(url, requestInit);
     if (!response.ok) {
-      await this._handleErrorResponse(response, path2);
+      await this._handleErrorResponse(response, path3);
     }
     if (response.status === 204 || !responseType) {
       return void 0;
@@ -92748,7 +92907,7 @@ var RestTransport = class _RestTransport {
     const result = await response.json();
     return responseType.fromJSON(result);
   }
-  async _handleErrorResponse(response, path2) {
+  async _handleErrorResponse(response, path3) {
     let errorBodyText = "(empty or non-JSON response)";
     let errorBody;
     try {
@@ -92758,7 +92917,7 @@ var RestTransport = class _RestTransport {
       }
     } catch (e) {
       throw new Error(
-        `HTTP error for ${path2}! Status: ${response.status} ${response.statusText}. Response: ${errorBodyText}`,
+        `HTTP error for ${path3}! Status: ${response.status} ${response.statusText}. Response: ${errorBodyText}`,
         { cause: e }
       );
     }
@@ -92766,11 +92925,11 @@ var RestTransport = class _RestTransport {
       throw _RestTransport.mapToError(errorBody);
     }
     throw new Error(
-      `HTTP error for ${path2}! Status: ${response.status} ${response.statusText}. Response: ${errorBodyText}`
+      `HTTP error for ${path3}! Status: ${response.status} ${response.statusText}. Response: ${errorBodyText}`
     );
   }
-  async *_sendStreamingRequest(path2, body, options) {
-    const url = `${this.endpoint}${path2}`;
+  async *_sendStreamingRequest(path3, body, options) {
+    const url = `${this.endpoint}${path3}`;
     const requestInit = {
       method: "POST",
       headers: this._buildHeaders(options, "text/event-stream"),
@@ -92781,7 +92940,7 @@ var RestTransport = class _RestTransport {
     }
     const response = await this._fetch(url, requestInit);
     if (!response.ok) {
-      await this._handleErrorResponse(response, path2);
+      await this._handleErrorResponse(response, path3);
     }
     const contentType = response.headers.get("Content-Type");
     if (!contentType?.startsWith("text/event-stream")) {
@@ -92948,8 +93107,8 @@ var ClientFactory = class {
    * const client3 = await factory.createFromUrl('https://example.com/my-agent-card.json', ''); // specify full URL and set path to empty
    * ```
    */
-  async createFromUrl(baseUrl, path2) {
-    const agentCard = await this.agentCardResolver.resolve(baseUrl, path2);
+  async createFromUrl(baseUrl, path3) {
+    const agentCard = await this.agentCardResolver.resolve(baseUrl, path3);
     return this.createFromAgentCard(agentCard);
   }
 };
@@ -93093,8 +93252,8 @@ function buildDirectEndpoints(url) {
     rpcUrl: `${normalized}/`
   };
 }
-function formatProxyPath(agentId, path2 = "") {
-  const cleanPath = path2.replace(/^\/+/, "");
+function formatProxyPath(agentId, path3 = "") {
+  const cleanPath = path3.replace(/^\/+/, "");
   return `/agents/${agentId}/${cleanPath}`;
 }
 function buildEndpointConfig(options) {
@@ -93244,10 +93403,13 @@ function buildMessageParams(parts, contextId, taskId, pushNotificationConfig) {
   };
 }
 
-// src/lib/discovery.ts
+// src/lib/agents/discovery.ts
 var MANIFEST_PATH = "/.well-known/manifest.json";
 var AGENT_CARD_PATH3 = "/.well-known/agent-card.json";
 var AGENT_PROXY_PREFIX = "/agents/";
+function trimTrailingSlash(value) {
+  return value.endsWith("/") ? value.slice(0, -1) : value;
+}
 function normalizeBase(url) {
   const parsed = new URL(url);
   if (!parsed.pathname || parsed.pathname === "/") {
@@ -93269,33 +93431,271 @@ function normalizeBase(url) {
   }
   return parsed;
 }
-function trimTrailingSlash(value) {
-  return value.endsWith("/") ? value.slice(0, -1) : value;
-}
 function getManifestUrl(url) {
-  const base = normalizeBase(url);
-  return new URL(MANIFEST_PATH, base).toString();
+  if (new URL(url).pathname.endsWith(MANIFEST_PATH)) {
+    return url;
+  }
+  return new URL(MANIFEST_PATH, normalizeBase(url)).toString();
 }
-async function discoverAgents(url, fetchImpl = fetch) {
-  const base = normalizeBase(url);
-  const rootUrl = trimTrailingSlash(base.toString());
-  const manifestUrl = getManifestUrl(url);
-  const response = await fetchImpl(manifestUrl);
+function getAgentCardUrl(url) {
+  if (new URL(url).pathname.endsWith(AGENT_CARD_PATH3)) {
+    return url;
+  }
+  return new URL(AGENT_CARD_PATH3, normalizeBase(url)).toString();
+}
+function resolveEndpoint(rootUrl, endpoint) {
+  return endpoint.startsWith("http") ? trimTrailingSlash(endpoint) : trimTrailingSlash(new URL(endpoint, `${rootUrl}/`).toString());
+}
+function cardUrlForEndpoint(endpointUrl) {
+  return endpointUrl.endsWith(AGENT_CARD_PATH3) ? endpointUrl : `${trimTrailingSlash(endpointUrl)}${AGENT_CARD_PATH3}`;
+}
+async function fetchJson(url, fetchImpl) {
+  const response = await fetchImpl(url);
   if (!response.ok) {
-    throw new Error(
-      `Failed to fetch manifest from ${manifestUrl}: ${response.status}`
+    return void 0;
+  }
+  return await response.json();
+}
+function createDiscoveredAgent(source, agentId, path3, agentCardUrl, connectionUrl, connectionAgentId, now, agentCard) {
+  const identifier = agentId ?? agentCard?.name ?? agentCardUrl;
+  const agentKey = createAgentKey(source.sourceKey, identifier);
+  return {
+    agentKey,
+    ...agentId ? { agentId } : {},
+    id: agentId ?? agentCard?.name ?? agentKey,
+    path: path3,
+    sourceKey: source.sourceKey,
+    source,
+    agentCardUrl,
+    agentCardName: agentCard?.name,
+    lastSeenAt: now,
+    ...agentCard ? { lastLoadedAt: now } : {},
+    status: agentCard ? "available" : "unavailable",
+    connectionUrl,
+    ...connectionAgentId ? { connectionAgentId } : {},
+    ...agentCard ? { agentCard } : {}
+  };
+}
+async function discoverManifestSource(source, fetchImpl, now) {
+  const manifestUrl = getManifestUrl(source.url);
+  const manifest = await fetchJson(manifestUrl, fetchImpl);
+  if (!manifest) {
+    throw new Error(`Failed to fetch manifest from ${manifestUrl}`);
+  }
+  const rootUrl = trimTrailingSlash(normalizeBase(source.url).toString());
+  const resolvedSource = {
+    ...source,
+    type: "manifest",
+    url: rootUrl,
+    status: "available",
+    lastCheckedAt: now,
+    lastError: void 0
+  };
+  const agents = [];
+  for (const [agentId, endpoint] of Object.entries(manifest.endpoints ?? {})) {
+    const endpointUrl = resolveEndpoint(rootUrl, endpoint);
+    const agentCardUrl = cardUrlForEndpoint(endpointUrl);
+    const agentCard = await fetchJson(agentCardUrl, fetchImpl);
+    agents.push(
+      createDiscoveredAgent(
+        resolvedSource,
+        agentId,
+        endpoint,
+        agentCardUrl,
+        rootUrl,
+        agentId,
+        now,
+        agentCard
+      )
     );
   }
-  const manifest = await response.json();
-  const agents = Object.entries(manifest.endpoints ?? {}).map(([id, path2]) => ({
-    id,
-    path: path2
-  })).sort((left, right) => left.id.localeCompare(right.id));
-  return {
-    rootUrl,
-    manifestUrl,
-    agents
+  return { source: resolvedSource, agents };
+}
+async function discoverAgentCardSource(source, fetchImpl, now) {
+  const agentCardUrl = getAgentCardUrl(source.url);
+  const agentCard = await fetchJson(agentCardUrl, fetchImpl);
+  if (!agentCard) {
+    throw new Error(`Failed to fetch agent card from ${agentCardUrl}`);
+  }
+  const resolvedSource = {
+    ...source,
+    type: "agentCard",
+    url: trimTrailingSlash(agentCardUrl),
+    status: "available",
+    lastCheckedAt: now,
+    lastError: void 0
   };
+  const connectionUrl = trimTrailingSlash(agentCardUrl);
+  const agent = createDiscoveredAgent(
+    resolvedSource,
+    void 0,
+    agentCardUrl,
+    agentCardUrl,
+    connectionUrl,
+    void 0,
+    now,
+    agentCard
+  );
+  return { source: resolvedSource, agents: [agent] };
+}
+async function discoverSource(source, fetchImpl, now) {
+  if (!source.enabled) {
+    return { source, agents: [] };
+  }
+  if (source.resolveMode === "auto") {
+    try {
+      return await discoverManifestSource(source, fetchImpl, now);
+    } catch {
+      return discoverAgentCardSource(source, fetchImpl, now);
+    }
+  }
+  if (source.type === "manifest") {
+    return discoverManifestSource(source, fetchImpl, now);
+  }
+  if (source.type === "agentCard") {
+    return discoverAgentCardSource(source, fetchImpl, now);
+  }
+  throw new Error("Registry agent sources are not supported yet.");
+}
+async function discoverAgentSources(sources, fetchImpl = fetch) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const resolvedSources = [];
+  const agents = [];
+  const errors = [];
+  for (const source of sources) {
+    try {
+      const result = await discoverSource(source, fetchImpl, now);
+      resolvedSources.push(result.source);
+      agents.push(...result.agents);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const failedSource = {
+        ...source,
+        status: "unavailable",
+        lastCheckedAt: now,
+        lastError: message
+      };
+      resolvedSources.push(failedSource);
+      errors.push({
+        source: failedSource,
+        agents: [],
+        error: message
+      });
+    }
+  }
+  const agentMap = /* @__PURE__ */ new Map();
+  for (const agent of agents) {
+    agentMap.set(agent.agentKey, agent);
+  }
+  return {
+    sources: resolvedSources,
+    agents: [...agentMap.values()].sort((left, right) => left.id.localeCompare(right.id)),
+    errors
+  };
+}
+function toPersistedAgents(agents, existingAgents) {
+  const nextAgents = { ...existingAgents };
+  for (const agent of agents) {
+    const current = nextAgents[agent.agentKey];
+    nextAgents[agent.agentKey] = {
+      ...current,
+      agentKey: agent.agentKey,
+      agentId: agent.agentId,
+      sourceKey: agent.sourceKey,
+      agentCardUrl: agent.agentCardUrl,
+      agentCardName: agent.agentCardName,
+      agentHandle: current?.agentHandle,
+      lastSeenAt: agent.lastSeenAt,
+      lastLoadedAt: agent.lastLoadedAt ?? current?.lastLoadedAt,
+      status: agent.status,
+      activeContextId: current?.activeContextId
+    };
+  }
+  return nextAgents;
+}
+function selectDiscoveredAgent(agents, options) {
+  const explicitAgents = options.explicitSourceKey ? agents.filter((agent) => agent.sourceKey === options.explicitSourceKey) : [];
+  const findByRequestedId = (candidates) => candidates.find((agent) => agent.id === options.requestedAgentId);
+  if (options.requestedAgentId) {
+    return findByRequestedId(explicitAgents) ?? findByRequestedId(agents);
+  }
+  const selectedByKey = options.selectedAgentKey ? agents.find((agent) => agent.agentKey === options.selectedAgentKey) : void 0;
+  if (selectedByKey) {
+    return selectedByKey;
+  }
+  const selectedByLegacyId = options.selectedAgentId ? agents.find((agent) => agent.id === options.selectedAgentId) : void 0;
+  if (selectedByLegacyId) {
+    return selectedByLegacyId;
+  }
+  if (options.autoSelectExplicit) {
+    if (explicitAgents.length === 1) {
+      return explicitAgents[0];
+    }
+    if (agents.length === 1) {
+      return agents[0];
+    }
+  }
+  return void 0;
+}
+
+// src/lib/agents/sessionStore.ts
+import { mkdirSync as mkdirSync2, readFileSync as readFileSync4, readdirSync, writeFileSync as writeFileSync2 } from "fs";
+import path2 from "path";
+function resolveSessionsDirectory(env3 = process.env, homeDirectory) {
+  return path2.join(resolveAionConfigDirectory(env3, homeDirectory), "sessions");
+}
+function safeSessionPathSegment(value) {
+  return `${slugKey(value)}-${hashValue(value).slice(0, 8)}`;
+}
+function resolveAgentSessionsDirectory(environment, agentKey, sessionsDirectory = resolveSessionsDirectory()) {
+  return path2.join(
+    sessionsDirectory,
+    safeSessionPathSegment(environment),
+    safeSessionPathSegment(agentKey)
+  );
+}
+function resolveSessionFilePath(environment, agentKey, contextId, sessionsDirectory = resolveSessionsDirectory()) {
+  return path2.join(
+    resolveAgentSessionsDirectory(environment, agentKey, sessionsDirectory),
+    `${safeSessionPathSegment(contextId)}.json`
+  );
+}
+function readSessionFile(filePath) {
+  try {
+    return JSON.parse(readFileSync4(filePath, "utf8"));
+  } catch {
+    return void 0;
+  }
+}
+function saveCompletedExchange(snapshot, sessionsDirectory = resolveSessionsDirectory()) {
+  try {
+    const filePath = resolveSessionFilePath(
+      snapshot.environment,
+      snapshot.agentKey,
+      snapshot.contextId,
+      sessionsDirectory
+    );
+    const existing = readSessionFile(filePath);
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const nextSession = {
+      schemaVersion: 1,
+      environment: snapshot.environment,
+      agentKey: snapshot.agentKey,
+      contextId: snapshot.contextId,
+      createdAt: existing?.createdAt ?? now,
+      lastUpdatedAt: now,
+      localTurnCount: (existing?.localTurnCount ?? 0) + 1,
+      ...snapshot.lastTaskId ? { lastTaskId: snapshot.lastTaskId } : {},
+      ...existing?.summary ? { summary: existing.summary } : {},
+      messages: snapshot.messages
+    };
+    mkdirSync2(path2.dirname(filePath), { recursive: true });
+    writeFileSync2(filePath, `${JSON.stringify(nextSession, null, 2)}
+`, "utf8");
+    return void 0;
+  } catch (error) {
+    return `chat2 could not save session: ${error instanceof Error ? error.message : String(error)}`;
+  }
 }
 
 // src/lib/protocolOutput.ts
@@ -93398,17 +93798,17 @@ function isTerminalTaskState(state) {
 function isObject2(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
-function readString(value, key, path2) {
+function readString(value, key, path3) {
   const next = value[key];
   if (typeof next !== "string" || !next.trim()) {
-    throw new Error(`Invalid CLI auth config: missing ${path2}`);
+    throw new Error(`Invalid CLI auth config: missing ${path3}`);
   }
   return next;
 }
-function readBoolean(value, key, path2) {
+function readBoolean(value, key, path3) {
   const next = value[key];
   if (typeof next !== "boolean") {
-    throw new Error(`Invalid CLI auth config: missing ${path2}`);
+    throw new Error(`Invalid CLI auth config: missing ${path3}`);
   }
   return next;
 }
@@ -93710,7 +94110,6 @@ function ChatApp({ options }) {
   const agentEndpointUrl = options.url;
   const [connectionState, setConnectionState] = (0, import_react31.useState)("connecting");
   const [connectionLabel, setConnectionLabel] = (0, import_react31.useState)("Discovering agents...");
-  const [discoveryLabel, setDiscoveryLabel] = (0, import_react31.useState)("Scanning manifest...");
   const [pushLabel, setPushLabel] = (0, import_react31.useState)(
     options.pushNotifications ? "Starting..." : "Disabled"
   );
@@ -93723,6 +94122,12 @@ function ChatApp({ options }) {
   const [clientState, setClientState] = (0, import_react31.useState)();
   const [pushConfig, setPushConfig] = (0, import_react31.useState)();
   const [discoveredAgents, setDiscoveredAgents] = (0, import_react31.useState)([]);
+  const [agentSources, setAgentSources] = (0, import_react31.useState)(
+    activeEnvironmentSettings.agentSources
+  );
+  const [selectedAgentKey, setSelectedAgentKey] = (0, import_react31.useState)(
+    options.agentId ? void 0 : activeEnvironmentSettings.selectedAgentKey
+  );
   const [selectedAgentId, setSelectedAgentId] = (0, import_react31.useState)(
     options.agentId ?? activeEnvironmentSettings.selectedAgentId
   );
@@ -93737,9 +94142,9 @@ function ChatApp({ options }) {
   const [responseMode, setResponseMode] = (0, import_react31.useState)(
     activeEnvironmentSettings.responseMode
   );
-  const [directFallback, setDirectFallback] = (0, import_react31.useState)(false);
   const [reconnectNonce, setReconnectNonce] = (0, import_react31.useState)(0);
   const taskDisplayState = (0, import_react31.useRef)(/* @__PURE__ */ new Map());
+  const lastConnectionNoticeRef = (0, import_react31.useRef)(void 0);
   const appendEntry = (role, body) => {
     setEntries((current) => [
       ...current,
@@ -93834,13 +94239,13 @@ function ChatApp({ options }) {
     setSelectedEnvironment(environmentId);
     setRequestMode(nextEnvironmentSettings.requestMode);
     setResponseMode(nextEnvironmentSettings.responseMode);
+    setAgentSources(nextEnvironmentSettings.agentSources);
+    setSelectedAgentKey(options.agentId ? void 0 : nextEnvironmentSettings.selectedAgentKey);
     setSelectedAgentId(options.agentId ?? nextEnvironmentSettings.selectedAgentId);
-    setDirectFallback(false);
     setDiscoveredAgents([]);
     clearTranscript();
     setClientState(void 0);
     setAgentName("Unknown Agent");
-    setDiscoveryLabel("Scanning manifest...");
     setConnectionLabel("Discovering agents...");
     setConnectionState("connecting");
     setReconnectNonce((current) => current + 1);
@@ -93895,6 +94300,11 @@ function ChatApp({ options }) {
     if (!match) return [];
     return getFileSuggestions(match.query);
   }, [draft, slashQuery, slashSubmenuId]);
+  const selectedAgent = (0, import_react31.useMemo)(() => {
+    return discoveredAgents.find(
+      (agent) => selectedAgentKey ? agent.agentKey === selectedAgentKey : selectedAgentId ? agent.id === selectedAgentId : false
+    );
+  }, [discoveredAgents, selectedAgentId, selectedAgentKey]);
   (0, import_react31.useEffect)(() => {
     setSelectedSuggestionIndex((current) => {
       if (agentSuggestions.length === 0) {
@@ -93929,21 +94339,14 @@ function ChatApp({ options }) {
   (0, import_react31.useEffect)(() => {
     let closed = false;
     const discover = async () => {
-      if (!agentEndpointUrl) {
-        setDiscoveredAgents([]);
-        setDirectFallback(false);
-        setDiscoveryLabel(
-          `No A2A endpoint configured for ${selectedEnvironment}.`
-        );
-        setConnectionState("connecting");
-        setConnectionLabel(
-          `Using ${selectedEnvironment} control plane at ${controlPlaneApiBaseUrl}`
-        );
-        return;
-      }
       try {
-        const discovery = await discoverAgents(
-          agentEndpointUrl,
+        const runtimeSources = mergeAgentSources(
+          activeEnvironmentSettings.agentSources,
+          agentEndpointUrl
+        );
+        const explicitSourceKey = agentEndpointUrl ? createExplicitAgentSource(agentEndpointUrl).sourceKey : void 0;
+        const discovery = await discoverAgentSources(
+          runtimeSources,
           buildAuthenticatedFetch({
             headers: options.headers,
             token: options.token
@@ -93952,24 +94355,69 @@ function ChatApp({ options }) {
         if (closed) {
           return;
         }
-        setDiscoveredAgents(discovery.agents);
-        setDirectFallback(false);
-        setDiscoveryLabel(
-          `Discovered ${discovery.agents.length} agent${discovery.agents.length === 1 ? "" : "s"} from ${discovery.manifestUrl}`
+        const nextSources = Object.fromEntries(
+          discovery.sources.map((source) => [source.sourceKey, source])
         );
-        if (options.agentId) {
-          setSelectedAgentId(options.agentId);
-          setConnectionLabel(`Connecting to @${options.agentId}...`);
-        } else if (selectedAgentId && !discovery.agents.some((agent) => agent.id === selectedAgentId)) {
+        const persistentSources = Object.fromEntries(
+          discovery.sources.filter(
+            (source) => !isTransientAgentSource(source) && source.sourceKey !== explicitSourceKey
+          ).map((source) => [source.sourceKey, source])
+        );
+        const nextAgents = toPersistedAgents(
+          discovery.agents.filter(
+            (agent) => !isTransientAgentSource(agent.source) && agent.sourceKey !== explicitSourceKey
+          ),
+          activeEnvironmentSettings.agents
+        );
+        setAgentSources(nextSources);
+        setDiscoveredAgents(discovery.agents);
+        persistEnvironmentSettings(selectedEnvironment, {
+          agents: nextAgents,
+          agentSources: persistentSources
+        });
+        for (const error of discovery.errors) {
+          if (!error.source.isDefault && error.error) {
+            appendSystem(
+              `No agents were found from the provided URL: ${error.source.url}
+${error.error}`
+            );
+          }
+        }
+        const nextSelected = selectDiscoveredAgent(discovery.agents, {
+          requestedAgentId: options.agentId,
+          selectedAgentKey,
+          selectedAgentId: options.agentId ? void 0 : selectedAgentId,
+          explicitSourceKey,
+          autoSelectExplicit: Boolean(agentEndpointUrl)
+        });
+        if (nextSelected) {
+          const shouldPersistSelection = !isTransientAgentSource(nextSelected.source);
+          setSelectedAgentKey(nextSelected.agentKey);
+          setSelectedAgentId(nextSelected.id);
+          persistEnvironmentSettings(selectedEnvironment, {
+            ...shouldPersistSelection ? {
+              selectedAgentKey: nextSelected.agentKey,
+              selectedAgentId: nextSelected.id
+            } : {},
+            agents: nextAgents,
+            agentSources: persistentSources
+          });
+          setConnectionState("connecting");
+          setConnectionLabel(`Connecting to @${nextSelected.id}...`);
+        } else if (selectedAgentKey || !options.agentId && selectedAgentId) {
+          setSelectedAgentKey(void 0);
           setSelectedAgentId(void 0);
           persistEnvironmentSettings(selectedEnvironment, {
-            selectedAgentId: void 0
+            selectedAgentKey: void 0,
+            selectedAgentId: void 0,
+            agents: nextAgents,
+            agentSources: persistentSources
           });
           appendSystem("The selected agent is no longer available.");
         } else {
           setConnectionState("connecting");
           setConnectionLabel(
-            selectedAgentId ? `Connecting to @${selectedAgentId}...` : "Choose an agent with @"
+            discovery.agents.length > 0 ? "Choose an agent with @" : `Using ${selectedEnvironment} control plane at ${controlPlaneApiBaseUrl}`
           );
         }
       } catch (error) {
@@ -93977,16 +94425,15 @@ function ChatApp({ options }) {
           return;
         }
         setDiscoveredAgents([]);
-        setDirectFallback(true);
-        setDiscoveryLabel(
-          error instanceof Error ? `Manifest discovery failed, falling back to direct mode: ${error.message}` : `Manifest discovery failed, falling back to direct mode: ${String(error)}`
-        );
-        if (options.agentId) {
-          setSelectedAgentId(options.agentId);
-        }
+        setConnectionState("connecting");
         setConnectionLabel(
-          options.agentId ? `Connecting to @${options.agentId}...` : "Connecting directly..."
+          `Using ${selectedEnvironment} control plane at ${controlPlaneApiBaseUrl}`
         );
+        const message = error instanceof Error ? error.message : String(error);
+        if (agentEndpointUrl) {
+          appendSystem(`No agents were found from the provided URL: ${agentEndpointUrl}
+${message}`);
+        }
       }
     };
     void discover();
@@ -94023,17 +94470,11 @@ ${JSON.stringify(
       );
     };
     const connect = async () => {
-      if (!agentEndpointUrl) {
+      if (!selectedAgent) {
         setConnectionState("connecting");
         setConnectionLabel(
-          `Using ${selectedEnvironment} control plane at ${controlPlaneApiBaseUrl}`
+          discoveredAgents.length > 0 ? "Choose an agent with @" : `Using ${selectedEnvironment} control plane at ${controlPlaneApiBaseUrl}`
         );
-        return;
-      }
-      const shouldConnect = directFallback || Boolean(selectedAgentId);
-      if (!shouldConnect) {
-        setConnectionState("connecting");
-        setConnectionLabel("Choose an agent with @");
         return;
       }
       try {
@@ -94051,17 +94492,17 @@ ${JSON.stringify(
           setPushLabel(server.callbackUrl);
         }
         setClientState(void 0);
-        setContextId(void 0);
+        setContextId(
+          activeEnvironmentSettings.agents[selectedAgent.agentKey]?.activeContextId
+        );
         setTaskId(void 0);
         taskDisplayState.current.clear();
         setConnectionState("connecting");
-        setConnectionLabel(
-          selectedAgentId ? `Connecting to @${selectedAgentId}...` : "Connecting directly..."
-        );
+        setConnectionLabel(`Connecting to @${selectedAgent.id}...`);
         const connected = await connectClient({
           ...options,
-          url: agentEndpointUrl,
-          agentId: directFallback ? void 0 : selectedAgentId
+          url: selectedAgent.connectionUrl,
+          agentId: selectedAgent.connectionAgentId
         });
         if (closed) {
           return;
@@ -94070,9 +94511,13 @@ ${JSON.stringify(
         setAgentName(connected.agentCard.name);
         setConnectionState("connected");
         setConnectionLabel("Connected");
-        appendSystem(
-          `Connected to **${connected.agentCard.name}** via ${connected.endpoints.rpcUrl}`
-        );
+        const connectionNoticeKey = `${selectedAgent.agentKey}:${connected.agentCard.name}:${connected.endpoints.rpcUrl}`;
+        if (lastConnectionNoticeRef.current !== connectionNoticeKey) {
+          lastConnectionNoticeRef.current = connectionNoticeKey;
+          appendSystem(
+            `Connected to **${connected.agentCard.name}** via ${connected.endpoints.rpcUrl}`
+          );
+        }
       } catch (error) {
         if (closed) {
           return;
@@ -94094,10 +94539,10 @@ ${JSON.stringify(
   }, [
     agentEndpointUrl,
     controlPlaneApiBaseUrl,
-    directFallback,
+    discoveredAgents.length,
     options,
     reconnectNonce,
-    selectedAgentId,
+    selectedAgent,
     selectedEnvironment
   ]);
   const handleMessage = (message) => {
@@ -94202,6 +94647,48 @@ ${JSON.stringify(
     setDraft((current) => applyFileSuggestion(current, suggestion));
     setSelectedFileSuggestionIndex(0);
   };
+  const messagesFromTask = (task) => {
+    if (task.history && task.history.length > 0) {
+      return task.history;
+    }
+    return task.status.message ? [task.status.message] : [];
+  };
+  const persistCompletedExchange = (nextContextId, messages, nextTaskId) => {
+    if (!selectedAgentKey || !nextContextId || messages.length === 0) {
+      return;
+    }
+    const warning = saveCompletedExchange({
+      environment: selectedEnvironment,
+      agentKey: selectedAgentKey,
+      contextId: nextContextId,
+      ...nextTaskId ? { lastTaskId: nextTaskId } : {},
+      messages
+    });
+    if (warning) {
+      appendSystem(warning);
+    }
+    const currentAgent = chatSettings.environments[selectedEnvironment].agents[selectedAgentKey] ?? selectedAgent;
+    const shouldPersistAgentContext = !selectedAgent || selectedAgent.agentKey !== selectedAgentKey || !isTransientAgentSource(selectedAgent.source);
+    if (currentAgent && shouldPersistAgentContext) {
+      persistEnvironmentSettings(selectedEnvironment, {
+        agents: {
+          ...chatSettings.environments[selectedEnvironment].agents,
+          [selectedAgentKey]: {
+            agentKey: currentAgent.agentKey,
+            agentId: currentAgent.agentId,
+            sourceKey: currentAgent.sourceKey,
+            agentCardUrl: currentAgent.agentCardUrl,
+            agentCardName: currentAgent.agentCardName,
+            agentHandle: currentAgent.agentHandle,
+            lastSeenAt: currentAgent.lastSeenAt,
+            lastLoadedAt: currentAgent.lastLoadedAt,
+            status: currentAgent.status,
+            activeContextId: nextContextId
+          }
+        }
+      });
+    }
+  };
   const applySelectedAgentSuggestion = () => {
     const suggestion = agentSuggestions[selectedSuggestionIndex];
     if (!suggestion) {
@@ -94209,11 +94696,15 @@ ${JSON.stringify(
     }
     setDraft((current) => clearAgentMention(current));
     if (selectedAgentId !== suggestion) {
+      const agent = discoveredAgents.find((item) => item.id === suggestion);
       setSelectedAgentId(suggestion);
-      persistEnvironmentSettings(selectedEnvironment, {
-        selectedAgentId: suggestion
-      });
-      setDirectFallback(false);
+      setSelectedAgentKey(agent?.agentKey);
+      if (!agent || !isTransientAgentSource(agent.source)) {
+        persistEnvironmentSettings(selectedEnvironment, {
+          selectedAgentId: suggestion,
+          selectedAgentKey: agent?.agentKey
+        });
+      }
     }
   };
   const dismissSlashDialog = () => {
@@ -94245,6 +94736,11 @@ ${JSON.stringify(
     }
     if (command.id === "exit") {
       exit();
+      return;
+    }
+    if (command.id === "sources") {
+      resetSlashSelection();
+      runSourcesSlashCommand();
       return;
     }
     setSlashSubmenuId(command.id);
@@ -94299,6 +94795,31 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
     reloadEnvironmentState(environmentId);
     appendSystem(`Aion environment set to ${environmentId}.`);
   };
+  const runSourcesSlashCommand = () => {
+    const sources = Object.values(agentSources).sort(
+      (left, right) => left.sourceKey.localeCompare(right.sourceKey)
+    );
+    if (sources.length === 0) {
+      appendSystem("No agent sources configured.");
+      return;
+    }
+    appendSystem(
+      [
+        "Agent sources",
+        "",
+        ...sources.map(
+          (source) => [
+            source.sourceKey,
+            `Type: ${source.type}`,
+            `Description: ${source.description}`,
+            `URL: ${source.url}`,
+            `Status: ${source.status ?? "unchecked"}`,
+            source.lastError && !source.isDefault ? `Last error: ${source.lastError}` : void 0
+          ].filter(Boolean).join("\n")
+        )
+      ].join("\n\n")
+    );
+  };
   const runExactSlashCommand = () => {
     const command = parseExactSlashCommand(draft);
     if (!command) {
@@ -94331,11 +94852,15 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
       discoveredAgents.map((agent) => agent.id)
     );
     if (selection.agentId && selection.agentId !== selectedAgentId) {
+      const agent = discoveredAgents.find((item) => item.id === selection.agentId);
       setSelectedAgentId(selection.agentId);
-      persistEnvironmentSettings(selectedEnvironment, {
-        selectedAgentId: selection.agentId
-      });
-      setDirectFallback(false);
+      setSelectedAgentKey(agent?.agentKey);
+      if (!agent || !isTransientAgentSource(agent.source)) {
+        persistEnvironmentSettings(selectedEnvironment, {
+          selectedAgentId: selection.agentId,
+          selectedAgentKey: agent?.agentKey
+        });
+      }
       appendStatus(`Active agent changed to @${selection.agentId}`);
     }
     const trimmed = selection.message.trim();
@@ -94371,15 +94896,23 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
       }
       if (useStreaming) {
         setStreamLabel("Streaming");
+        let completedTask;
+        let finalStatusUpdate;
         for await (const event of clientState.client.sendMessageStream(params)) {
           switch (event.kind) {
             case "message":
               handleMessage(event);
               break;
             case "task":
+              if (isTerminalTaskState(event.status.state)) {
+                completedTask = event;
+              }
               handleTaskSnapshot(event);
               break;
             case "status-update":
+              if (isFinalStatusEvent(event)) {
+                finalStatusUpdate = event;
+              }
               handleStatusUpdate(event);
               break;
             case "artifact-update":
@@ -94389,14 +94922,39 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
               break;
           }
         }
+        if (completedTask) {
+          persistCompletedExchange(
+            completedTask.contextId,
+            messagesFromTask(completedTask),
+            completedTask.id
+          );
+        } else if (finalStatusUpdate?.status.message) {
+          persistCompletedExchange(
+            finalStatusUpdate.contextId,
+            [params.message, finalStatusUpdate.status.message],
+            finalStatusUpdate.taskId
+          );
+        }
         setStreamLabel("Idle");
       } else {
         setStreamLabel("Waiting");
         const response = await clientState.client.sendMessage(params);
         if (response.kind === "message") {
           handleMessage(response);
+          persistCompletedExchange(
+            response.contextId ?? params.message.contextId,
+            [params.message, response],
+            response.taskId
+          );
         } else {
           handleTaskSnapshot(response);
+          if (isTerminalTaskState(response.status.state)) {
+            persistCompletedExchange(
+              response.contextId,
+              messagesFromTask(response),
+              response.id
+            );
+          }
         }
         setStreamLabel("Idle");
       }
@@ -94557,7 +95115,7 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
       HomeScreen,
       {
         discoveredCount: discoveredAgents.length,
-        discoveryState: discoveryLabel,
+        sourceCount: Object.keys(agentSources).length,
         selectedAgentId
       }
     ) : /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { flexDirection: "column", children: [
@@ -94565,7 +95123,7 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
         HomeScreen,
         {
           discoveredCount: discoveredAgents.length,
-          discoveryState: discoveryLabel,
+          sourceCount: Object.keys(agentSources).length,
           selectedAgentId,
           mode: "inline"
         }

@@ -12,11 +12,19 @@ import {
 	type ChatModeSettings,
 	DEFAULT_CHAT_MODE_SETTINGS
 } from "./slashCommands.js";
+import {
+	type AgentRecord,
+	type AgentSourceRecord,
+	createDefaultLocalAgentSource
+} from "./agents/model.js";
 
 interface ChatEnvironmentSettingsFile {
 	requestMode?: string;
 	responseMode?: string;
 	selectedAgentId?: string | null;
+	selectedAgentKey?: string | null;
+	agentSources?: Record<string, Partial<AgentSourceRecord>>;
+	agents?: Record<string, Partial<AgentRecord>>;
 }
 
 interface ChatSettingsFile {
@@ -29,6 +37,9 @@ interface ChatSettingsFile {
 
 export interface ChatEnvironmentSettings extends ChatModeSettings {
 	selectedAgentId?: string;
+	selectedAgentKey?: string;
+	agentSources: Record<string, AgentSourceRecord>;
+	agents: Record<string, AgentRecord>;
 }
 
 export interface ChatSettings {
@@ -55,8 +66,123 @@ function isResponseMode(value: string | undefined): value is ChatModeSettings["r
 }
 
 function defaultEnvironmentSettings(): ChatEnvironmentSettings {
+	const defaultSource = createDefaultLocalAgentSource();
 	return {
-		...DEFAULT_CHAT_MODE_SETTINGS
+		...DEFAULT_CHAT_MODE_SETTINGS,
+		agentSources: {
+			[defaultSource.sourceKey]: defaultSource
+		},
+		agents: {}
+	};
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+	return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function normalizeAgentSourceRecord(
+	key: string,
+	value: Partial<AgentSourceRecord> | undefined,
+	fallback?: AgentSourceRecord
+): AgentSourceRecord | undefined {
+	if (!value && !fallback) {
+		return undefined;
+	}
+	const source = value ?? {};
+	const sourceKey =
+		typeof source.sourceKey === "string" && source.sourceKey.trim()
+			? source.sourceKey
+			: (fallback?.sourceKey ?? key);
+	const type =
+		source.type === "manifest" || source.type === "agentCard" || source.type === "registry"
+			? source.type
+			: (fallback?.type ?? "manifest");
+	const url =
+		typeof source.url === "string" && source.url.trim()
+			? source.url
+			: fallback?.url;
+	const description =
+		typeof source.description === "string" && source.description.trim()
+			? source.description
+			: (fallback?.description ?? sourceKey);
+	if (!url) {
+		return undefined;
+	}
+
+	return {
+		sourceKey,
+		type,
+		url,
+		description,
+		enabled: typeof source.enabled === "boolean" ? source.enabled : (fallback?.enabled ?? true),
+		...(source.isDefault ?? fallback?.isDefault
+			? { isDefault: source.isDefault ?? fallback?.isDefault }
+			: {}),
+		...(source.status === "unchecked" ||
+		source.status === "available" ||
+		source.status === "unavailable"
+			? { status: source.status }
+			: fallback?.status
+				? { status: fallback.status }
+				: {}),
+		...(typeof source.lastCheckedAt === "string"
+			? { lastCheckedAt: source.lastCheckedAt }
+			: fallback?.lastCheckedAt
+				? { lastCheckedAt: fallback.lastCheckedAt }
+				: {}),
+		...(typeof source.lastError === "string"
+			? { lastError: source.lastError }
+			: fallback?.lastError
+				? { lastError: fallback.lastError }
+				: {})
+	};
+}
+
+function normalizeAgentRecord(
+	key: string,
+	value: Partial<AgentRecord> | undefined
+): AgentRecord | undefined {
+	if (!value) {
+		return undefined;
+	}
+	const agentKey =
+		typeof value.agentKey === "string" && value.agentKey.trim()
+			? value.agentKey
+			: key;
+	if (
+		typeof value.sourceKey !== "string" ||
+		!value.sourceKey.trim() ||
+		typeof value.agentCardUrl !== "string" ||
+		!value.agentCardUrl.trim() ||
+		typeof value.lastSeenAt !== "string" ||
+		!value.lastSeenAt.trim()
+	) {
+		return undefined;
+	}
+
+	return {
+		agentKey,
+		...(typeof value.agentId === "string" && value.agentId.trim()
+			? { agentId: value.agentId }
+			: {}),
+		sourceKey: value.sourceKey,
+		agentCardUrl: value.agentCardUrl,
+		...(typeof value.agentCardName === "string" && value.agentCardName.trim()
+			? { agentCardName: value.agentCardName }
+			: {}),
+		...(typeof value.agentHandle === "string" && value.agentHandle.trim()
+			? { agentHandle: value.agentHandle }
+			: {}),
+		lastSeenAt: value.lastSeenAt,
+		...(typeof value.lastLoadedAt === "string" && value.lastLoadedAt.trim()
+			? { lastLoadedAt: value.lastLoadedAt }
+			: {}),
+		...(value.status === "available" || value.status === "unavailable"
+			? { status: value.status }
+			: {}),
+		...(typeof value.activeContextId === "string" && value.activeContextId.trim()
+			? { activeContextId: value.activeContextId }
+			: {})
 	};
 }
 
@@ -83,11 +209,42 @@ function normalizeEnvironmentSettings(
 		typeof value?.selectedAgentId === "string" && value.selectedAgentId.trim()
 			? value.selectedAgentId
 			: undefined;
+	const selectedAgentKey =
+		typeof value?.selectedAgentKey === "string" && value.selectedAgentKey.trim()
+			? value.selectedAgentKey
+			: undefined;
+	const agentSources: Record<string, AgentSourceRecord> = {};
+	for (const [key, fallbackSource] of Object.entries(fallback.agentSources)) {
+		const normalized = normalizeAgentSourceRecord(
+			key,
+			value?.agentSources?.[key],
+			fallbackSource
+		);
+		if (normalized) {
+			agentSources[normalized.sourceKey] = normalized;
+		}
+	}
+	for (const [key, source] of Object.entries(value?.agentSources ?? {})) {
+		const normalized = normalizeAgentSourceRecord(key, source);
+		if (normalized) {
+			agentSources[normalized.sourceKey] = normalized;
+		}
+	}
+	const agents: Record<string, AgentRecord> = {};
+	for (const [key, agent] of Object.entries(value?.agents ?? {})) {
+		const normalized = normalizeAgentRecord(key, agent);
+		if (normalized) {
+			agents[normalized.agentKey] = normalized;
+		}
+	}
 
 	return {
 		requestMode,
 		responseMode,
-		...(selectedAgentId ? { selectedAgentId } : {})
+		...(selectedAgentId ? { selectedAgentId } : {}),
+		...(selectedAgentKey ? { selectedAgentKey } : {}),
+		agentSources,
+		agents
 	};
 }
 
@@ -164,8 +321,15 @@ export function resolveChatSettingsPath(
 	env: NodeJS.ProcessEnv = process.env,
 	homeDirectory = os.homedir()
 ): string {
+	return path.join(resolveAionConfigDirectory(env, homeDirectory), "chat2.json");
+}
+
+export function resolveAionConfigDirectory(
+	env: NodeJS.ProcessEnv = process.env,
+	homeDirectory = os.homedir()
+): string {
 	const configHome = env.XDG_CONFIG_HOME || path.join(homeDirectory, ".config");
-	return path.join(configHome, "aion", "chat2.json");
+	return path.join(configHome, "aion");
 }
 
 export function loadChatSettings(
