@@ -1,5 +1,3 @@
-export const SELECTION_HIGHLIGHT = "#715CFF";
-
 export type RequestMode = "send-message" | "streaming-message";
 export type ResponseMode = "message-output" | "a2a-protocol";
 

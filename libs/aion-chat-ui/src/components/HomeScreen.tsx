@@ -2,13 +2,9 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Box, Text, useStdout } from "ink";
 
 import type { RequestMode, ResponseMode } from "../lib/slashCommands.js";
+import { HOME_THEME } from "../lib/theme.js";
 
-const COLORS = {
-	lavender: "#C5AFFF",
-	purple: "#816CFF",
-	cream: "#FAF8F3",
-	ink: "#05070C"
-} as const;
+const HOME = HOME_THEME;
 
 interface LogoSegment {
 	text: string;
@@ -55,7 +51,7 @@ const ANSI_LOGO_ART = String.raw`\e[49m       \e[38;5;183;49m▄▄▄\e[38;5;18
 
 function xtermToHex(index: number): string {
 	if (index < 16) {
-		return XTERM_BASE_COLORS[index] ?? COLORS.cream;
+		return XTERM_BASE_COLORS[index] ?? HOME.ansiFallback;
 	}
 
 	if (index >= 16 && index <= 231) {
@@ -88,7 +84,7 @@ function parseAnsiArt(input: string): LogoRow[] {
 
 		currentRow.push({
 			text: buffer,
-			color: foreground ?? COLORS.cream,
+			color: foreground ?? HOME.ansiFallback,
 			backgroundColor: background
 		});
 		buffer = "";
@@ -232,63 +228,63 @@ const ANSI_LOGO_WIDTH = measureRows(DISPLAY_ANSI_LOGO_ROWS);
 
 const MASCOT_ROWS: LogoRow[] = [
 	[
-		{ text: "                 ▄▄▄▄▄▄                 ", color: COLORS.lavender }
+		{ text: "                 ▄▄▄▄▄▄                 ", color: HOME.logoAccent }
 	],
 	[
-		{ text: "            ▄▄████████▄▄             ", color: COLORS.lavender }
+		{ text: "            ▄▄████████▄▄             ", color: HOME.logoAccent }
 	],
 	[
-		{ text: "         ▄████████▀▀████████▄         ", color: COLORS.purple }
+		{ text: "         ▄████████▀▀████████▄         ", color: HOME.logoPrimary }
 	],
 	[
-		{ text: "       ▄████▀            ▀████▄      ", color: COLORS.purple }
+		{ text: "       ▄████▀            ▀████▄      ", color: HOME.logoPrimary }
 	],
 	[
-		{ text: "      ████    ▄▄▄▄▄▄▄▄▄▄    ████      ", color: COLORS.purple }
+		{ text: "      ████    ▄▄▄▄▄▄▄▄▄▄    ████      ", color: HOME.logoPrimary }
 	],
 	[
-		{ text: "     ███   ▄██▀▀▀▀▀▀▀▀▀██▄   ███      ", color: COLORS.purple }
+		{ text: "     ███   ▄██▀▀▀▀▀▀▀▀▀██▄   ███      ", color: HOME.logoPrimary }
 	],
 	[
-		{ text: "    ███   ██ ", color: COLORS.purple },
-		{ text: "████████████", color: COLORS.cream },
-		{ text: " ██   ███     ", color: COLORS.purple }
+		{ text: "    ███   ██ ", color: HOME.logoPrimary },
+		{ text: "████████████", color: HOME.logoText },
+		{ text: " ██   ███     ", color: HOME.logoPrimary }
 	],
 	[
-		{ text: "    ██▌  ██ ", color: COLORS.purple },
-		{ text: "██ ", color: COLORS.cream },
-		{ text: "▄▄", color: COLORS.ink },
-		{ text: "      ", color: COLORS.cream },
-		{ text: "▄▄", color: COLORS.ink },
-		{ text: " ██", color: COLORS.cream },
-		{ text: "  ██  ▐██     ", color: COLORS.purple }
+		{ text: "    ██▌  ██ ", color: HOME.logoPrimary },
+		{ text: "██ ", color: HOME.logoText },
+		{ text: "▄▄", color: HOME.logoCutout },
+		{ text: "      ", color: HOME.logoText },
+		{ text: "▄▄", color: HOME.logoCutout },
+		{ text: " ██", color: HOME.logoText },
+		{ text: "  ██  ▐██     ", color: HOME.logoPrimary }
 	],
 	[
-		{ text: "    ██▌  ██ ", color: COLORS.purple },
-		{ text: "██████████████", color: COLORS.cream },
-		{ text: " ██  ▐██     ", color: COLORS.purple }
+		{ text: "    ██▌  ██ ", color: HOME.logoPrimary },
+		{ text: "██████████████", color: HOME.logoText },
+		{ text: " ██  ▐██     ", color: HOME.logoPrimary }
 	],
 	[
-		{ text: "    ███▄   ▀██▄▄▄▄▄▄██▀   ▄███      ", color: COLORS.purple }
+		{ text: "    ███▄   ▀██▄▄▄▄▄▄██▀   ▄███      ", color: HOME.logoPrimary }
 	],
 	[
-		{ text: "      ▀████▄   ▀████▀   ▄████▀       ", color: COLORS.purple }
+		{ text: "      ▀████▄   ▀████▀   ▄████▀       ", color: HOME.logoPrimary }
 	],
 	[
-		{ text: "         ▀████▄▄    ▄▄████▀   ▄▄     ", color: COLORS.purple }
+		{ text: "         ▀████▄▄    ▄▄████▀   ▄▄     ", color: HOME.logoPrimary }
 	],
 	[
-		{ text: "             ▀██████▀      ▄████     ", color: COLORS.purple }
+		{ text: "             ▀██████▀      ▄████     ", color: HOME.logoPrimary }
 	],
 	[
-		{ text: "                 ▀▀▀▀        ▀██▀      ", color: COLORS.purple }
+		{ text: "                 ▀▀▀▀        ▀██▀      ", color: HOME.logoPrimary }
 	]
 ];
 
 const COMPACT_ROWS: LogoRow[] = [
-	[{ text: "╔═╗╦╔═╗╔╗╔  ╔═╗╔═╗╔═╗╔╗╔╔╦╗  ╔═╗╔═╗╦", color: COLORS.purple }],
-	[{ text: "╠═╣║║ ║║║║  ╠═╣║ ╦║╣ ║║║ ║   ╠═╣╠═╝║", color: COLORS.cream }],
-	[{ text: "╩ ╩╩╚═╝╝╚╝  ╩ ╩╚═╝╚═╝╝╚╝ ╩   ╩ ╩╩  ╩", color: COLORS.cream }]
+	[{ text: "╔═╗╦╔═╗╔╗╔  ╔═╗╔═╗╔═╗╔╗╔╔╦╗  ╔═╗╔═╗╦", color: HOME.logoPrimary }],
+	[{ text: "╠═╣║║ ║║║║  ╠═╣║ ╦║╣ ║║║ ║   ╠═╣╠═╝║", color: HOME.logoText }],
+	[{ text: "╩ ╩╩╚═╝╝╚╝  ╩ ╩╚═╝╚═╝╝╚╝ ╩   ╩ ╩╩  ╩", color: HOME.logoText }]
 ];
 
 function renderRows(rows: LogoRow[], keyPrefix: string): React.JSX.Element {
@@ -407,15 +403,15 @@ function renderFramedPanel(
 ): React.JSX.Element {
 	return (
 		<Box flexDirection="column">
-			<Text color={COLORS.lavender}>╔{centerTitle(title, innerWidth)}╗</Text>
+			<Text color={HOME.frame}>╔{centerTitle(title, innerWidth)}╗</Text>
 			{rows.map((row, index) => (
 				<Box key={`${title}-${index}`}>
-					<Text color={COLORS.lavender}>║</Text>
-					<Text color={COLORS.cream}>{padValue(row, innerWidth)}</Text>
-					<Text color={COLORS.lavender}>║</Text>
+					<Text color={HOME.frame}>║</Text>
+					<Text color={HOME.panelText}>{padValue(row, innerWidth)}</Text>
+					<Text color={HOME.frame}>║</Text>
 				</Box>
 			))}
-			<Text color={COLORS.lavender}>╚{"═".repeat(innerWidth)}╝</Text>
+			<Text color={HOME.frame}>╚{"═".repeat(innerWidth)}╝</Text>
 		</Box>
 	);
 }
@@ -491,7 +487,7 @@ export function HomeScreen({
 					renderRows(COMPACT_ROWS, "compact")
 				)}
 				<Box marginTop={2} flexDirection="column" alignItems="center">
-					<Text color={COLORS.cream}>
+					<Text color={HOME.summaryText}>
 						{discoveredCount} agent{suffix} discovered from {sourceCount} source{sourceSuffix}
 					</Text>
 					<Box marginTop={1}>

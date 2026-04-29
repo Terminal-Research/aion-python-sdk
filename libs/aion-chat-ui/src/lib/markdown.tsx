@@ -2,6 +2,8 @@ import React from "react";
 import { Box, Text } from "ink";
 import { highlight } from "cli-highlight";
 
+import { MARKDOWN_THEME } from "./theme.js";
+
 interface Block {
 	kind: "text" | "code";
 	content: string;
@@ -67,12 +69,12 @@ export function MarkdownBlock({ content }: { content: string }): React.JSX.Eleme
 						<Box
 							key={`code-${index}`}
 							borderStyle="round"
-							borderColor="yellow"
+							borderColor={MARKDOWN_THEME.codeBorder}
 							paddingX={1}
 							flexDirection="column"
 							marginBottom={index < blocks.length - 1 ? 1 : 0}
 						>
-							<Text color="yellow">{renderCode(block.content, block.language)}</Text>
+							<Text color={MARKDOWN_THEME.codeText}>{renderCode(block.content, block.language)}</Text>
 						</Box>
 					);
 				}

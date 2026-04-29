@@ -1,12 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Box, Text } from "ink";
 
-import {
-	MESSAGE_ACCENT,
-	MESSAGE_BACKGROUND,
-	MESSAGE_MENU_ACCENT,
-	MESSAGE_MUTED
-} from "./messageTheme.js";
+import { MESSAGE_THEME } from "../../lib/theme.js";
 
 function formatElapsed(startedAt: number, now: number): string {
 	const elapsedSeconds = Math.max(0, Math.floor((now - startedAt) / 1000));
@@ -47,13 +42,13 @@ export function WorkingIndicator({
 			{animatedLabel.split("").map((character, index) => (
 				<Text
 					key={`${character}-${index}`}
-					backgroundColor={index === activeIndex ? MESSAGE_ACCENT : undefined}
-					color={index === activeIndex ? MESSAGE_BACKGROUND : MESSAGE_MENU_ACCENT}
+					backgroundColor={index === activeIndex ? MESSAGE_THEME.accent : undefined}
+					color={index === activeIndex ? MESSAGE_THEME.background : MESSAGE_THEME.labelAccent}
 				>
 					{character}
 				</Text>
 			))}
-			<Text color={MESSAGE_MUTED}> ({elapsedLabel})</Text>
+			<Text color={MESSAGE_THEME.muted}> ({elapsedLabel})</Text>
 		</Box>
 	);
 }

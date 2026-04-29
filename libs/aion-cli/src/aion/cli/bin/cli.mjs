@@ -44673,135 +44673,61 @@ import { randomUUID as randomUUID2 } from "crypto";
 // src/components/ChatComposer.tsx
 var import_react29 = __toESM(require_react(), 1);
 
-// src/lib/slashCommands.ts
-var SELECTION_HIGHLIGHT = "#715CFF";
-var DEFAULT_CHAT_MODE_SETTINGS = {
-  requestMode: "send-message",
-  responseMode: "message-output"
+// src/lib/theme.ts
+var AION_THEME = {
+  colors: {
+    brandAccent: "#C5AFFF",
+    brandPrimary: "#816CFF",
+    textWarm: "#FAF8F3",
+    appBackground: "#05070C",
+    panelBackground: "#2A2F36",
+    textPrimary: "#F5F7FA",
+    textPlaceholder: "#C2C8D0",
+    textStrong: "#FFFFFF",
+    textMuted: "#8B96A5",
+    selection: "#715CFF"
+  }
 };
-var REQUEST_MODE_OPTIONS = [
-  {
-    value: "send-message",
-    label: "Send message",
-    description: "Send a synchronous request and wait for a single reply."
-  },
-  {
-    value: "streaming-message",
-    label: "Streaming message",
-    description: "Send a streaming request and render incremental events as they arrive."
-  }
-];
-var RESPONSE_MODE_OPTIONS = [
-  {
-    value: "message-output",
-    label: "Message output",
-    description: "Render the agent message output instead of raw protocol events."
-  },
-  {
-    value: "a2a-protocol",
-    label: "A2A protocol",
-    description: "Render raw A2A protocol payloads as YAML."
-  }
-];
-var SLASH_COMMANDS = [
-  {
-    id: "clear",
-    label: "/clear",
-    description: "Clear the visible transcript and start fresh.",
-    title: "Clear Transcript",
-    subtitle: "Clear the visible transcript and start fresh.",
-    options: []
-  },
-  {
-    id: "login",
-    label: "/login",
-    description: "Authenticate Aion Chat with your Aion account.",
-    title: "Login",
-    subtitle: "Authenticate Aion Chat with your Aion account.",
-    options: []
-  },
-  {
-    id: "exit",
-    label: "/exit",
-    description: "Exit Aion Chat.",
-    title: "Exit",
-    subtitle: "Exit Aion Chat.",
-    options: []
-  },
-  {
-    id: "request",
-    label: "/request",
-    description: "Choose how Aion Chat sends requests to the agents.",
-    title: "Request Mode",
-    subtitle: "Choose how Aion Chat sends requests to the agents.",
-    options: REQUEST_MODE_OPTIONS
-  },
-  {
-    id: "response",
-    label: "/response",
-    description: "Choose how Aion Chat renders responses from the agents.",
-    title: "Response Mode",
-    subtitle: "Choose how Aion Chat renders responses from the agents.",
-    options: RESPONSE_MODE_OPTIONS
-  },
-  {
-    id: "sources",
-    label: "/sources",
-    description: "Show configured agent discovery sources.",
-    title: "Agent Sources",
-    subtitle: "Show configured agent discovery sources.",
-    options: []
-  }
-];
-function getRequestModeLabel(mode) {
-  return REQUEST_MODE_OPTIONS.find((option) => option.value === mode)?.label ?? "Send message";
-}
-function getResponseModeLabel(mode) {
-  return RESPONSE_MODE_OPTIONS.find((option) => option.value === mode)?.label ?? "Message output";
-}
-function getLeadingSlashQuery(draft) {
-  const trimmedStartIndex = draft.search(/\S/u);
-  if (trimmedStartIndex === -1) {
-    return void 0;
-  }
-  const trimmedDraft = draft.slice(trimmedStartIndex);
-  if (!trimmedDraft.startsWith("/")) {
-    return void 0;
-  }
-  return trimmedDraft.slice(1);
-}
-function clearLeadingSlashDraft(draft) {
-  const trimmedStartIndex = draft.search(/\S/u);
-  if (trimmedStartIndex === -1) {
-    return "";
-  }
-  const trimmedDraft = draft.slice(trimmedStartIndex);
-  if (!trimmedDraft.startsWith("/")) {
-    return draft;
-  }
-  return draft.slice(0, trimmedStartIndex);
-}
-function getSlashCommandById(commandId) {
-  return SLASH_COMMANDS.find((command) => command.id === commandId);
-}
-function filterSlashCommands(query) {
-  if (query === void 0) {
-    return [];
-  }
-  const normalizedQuery = query.trim().toLowerCase();
-  return [...SLASH_COMMANDS].sort((left, right) => left.label.localeCompare(right.label)).filter(
-    (command) => normalizedQuery.length === 0 ? true : command.label.slice(1).toLowerCase().startsWith(normalizedQuery)
-  );
-}
+var HOME_THEME = {
+  ansiFallback: AION_THEME.colors.textWarm,
+  logoAccent: AION_THEME.colors.brandAccent,
+  logoPrimary: AION_THEME.colors.brandPrimary,
+  logoText: AION_THEME.colors.textWarm,
+  logoCutout: AION_THEME.colors.appBackground,
+  frame: AION_THEME.colors.brandAccent,
+  panelText: AION_THEME.colors.textWarm,
+  summaryText: AION_THEME.colors.textWarm
+};
+var COMPOSER_THEME = {
+  background: AION_THEME.colors.panelBackground,
+  foreground: AION_THEME.colors.textPrimary,
+  placeholder: AION_THEME.colors.textPlaceholder,
+  accent: AION_THEME.colors.textStrong,
+  muted: AION_THEME.colors.textMuted,
+  selection: AION_THEME.colors.selection
+};
+var MESSAGE_THEME = {
+  background: AION_THEME.colors.panelBackground,
+  foreground: AION_THEME.colors.textPrimary,
+  accent: AION_THEME.colors.textStrong,
+  muted: AION_THEME.colors.textMuted,
+  labelAccent: AION_THEME.colors.brandAccent
+};
+var CONNECTION_THEME = {
+  connected: "green",
+  connecting: "yellow",
+  error: "red"
+};
 
 // src/components/ChatComposer.tsx
 var import_jsx_runtime = __toESM(require_jsx_runtime(), 1);
-var INPUT_BACKGROUND = "#2A2F36";
-var INPUT_FOREGROUND = "#F5F7FA";
-var INPUT_PLACEHOLDER = "#C2C8D0";
-var INPUT_ACCENT = "#FFFFFF";
-var SECONDARY_TEXT = "#8B96A5";
+var INPUT_BACKGROUND = COMPOSER_THEME.background;
+var INPUT_FOREGROUND = COMPOSER_THEME.foreground;
+var INPUT_PLACEHOLDER = COMPOSER_THEME.placeholder;
+var INPUT_ACCENT = COMPOSER_THEME.accent;
+var SECONDARY_TEXT = COMPOSER_THEME.muted;
 var PRIMARY_TEXT = INPUT_FOREGROUND;
+var SELECTION_HIGHLIGHT = COMPOSER_THEME.selection;
 var MENU_INDENT = "  ";
 function buildControls(hasDraft) {
   const controls = ["Enter sends", "Shift+Enter newline"];
@@ -44978,12 +44904,7 @@ function ChatComposer({
 // src/components/HomeScreen.tsx
 var import_react30 = __toESM(require_react(), 1);
 var import_jsx_runtime2 = __toESM(require_jsx_runtime(), 1);
-var COLORS = {
-  lavender: "#C5AFFF",
-  purple: "#816CFF",
-  cream: "#FAF8F3",
-  ink: "#05070C"
-};
+var HOME = HOME_THEME;
 var XTERM_BASE_COLORS = [
   "#000000",
   "#800000",
@@ -45017,7 +44938,7 @@ var ANSI_LOGO_ART = String.raw`\e[49m       \e[38;5;183;49m▄▄▄\e[38;5;183;
 `.replaceAll("\\e", "\x1B");
 function xtermToHex(index) {
   if (index < 16) {
-    return XTERM_BASE_COLORS[index] ?? COLORS.cream;
+    return XTERM_BASE_COLORS[index] ?? HOME.ansiFallback;
   }
   if (index >= 16 && index <= 231) {
     const colorIndex = index - 16;
@@ -45043,7 +44964,7 @@ function parseAnsiArt(input) {
     }
     currentRow.push({
       text: buffer,
-      color: foreground ?? COLORS.cream,
+      color: foreground ?? HOME.ansiFallback,
       backgroundColor: background
     });
     buffer = "";
@@ -45163,62 +45084,62 @@ var DISPLAY_ANSI_LOGO_ROWS = trimRowsEnd(ANSI_LOGO_ROWS);
 var ANSI_LOGO_WIDTH = measureRows(DISPLAY_ANSI_LOGO_ROWS);
 var MASCOT_ROWS = [
   [
-    { text: "                 \u2584\u2584\u2584\u2584\u2584\u2584                 ", color: COLORS.lavender }
+    { text: "                 \u2584\u2584\u2584\u2584\u2584\u2584                 ", color: HOME.logoAccent }
   ],
   [
-    { text: "            \u2584\u2584\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2584\u2584             ", color: COLORS.lavender }
+    { text: "            \u2584\u2584\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2584\u2584             ", color: HOME.logoAccent }
   ],
   [
-    { text: "         \u2584\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2580\u2580\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2584         ", color: COLORS.purple }
+    { text: "         \u2584\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2580\u2580\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2584         ", color: HOME.logoPrimary }
   ],
   [
-    { text: "       \u2584\u2588\u2588\u2588\u2588\u2580            \u2580\u2588\u2588\u2588\u2588\u2584      ", color: COLORS.purple }
+    { text: "       \u2584\u2588\u2588\u2588\u2588\u2580            \u2580\u2588\u2588\u2588\u2588\u2584      ", color: HOME.logoPrimary }
   ],
   [
-    { text: "      \u2588\u2588\u2588\u2588    \u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584    \u2588\u2588\u2588\u2588      ", color: COLORS.purple }
+    { text: "      \u2588\u2588\u2588\u2588    \u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584    \u2588\u2588\u2588\u2588      ", color: HOME.logoPrimary }
   ],
   [
-    { text: "     \u2588\u2588\u2588   \u2584\u2588\u2588\u2580\u2580\u2580\u2580\u2580\u2580\u2580\u2580\u2580\u2588\u2588\u2584   \u2588\u2588\u2588      ", color: COLORS.purple }
+    { text: "     \u2588\u2588\u2588   \u2584\u2588\u2588\u2580\u2580\u2580\u2580\u2580\u2580\u2580\u2580\u2580\u2588\u2588\u2584   \u2588\u2588\u2588      ", color: HOME.logoPrimary }
   ],
   [
-    { text: "    \u2588\u2588\u2588   \u2588\u2588 ", color: COLORS.purple },
-    { text: "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588", color: COLORS.cream },
-    { text: " \u2588\u2588   \u2588\u2588\u2588     ", color: COLORS.purple }
+    { text: "    \u2588\u2588\u2588   \u2588\u2588 ", color: HOME.logoPrimary },
+    { text: "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588", color: HOME.logoText },
+    { text: " \u2588\u2588   \u2588\u2588\u2588     ", color: HOME.logoPrimary }
   ],
   [
-    { text: "    \u2588\u2588\u258C  \u2588\u2588 ", color: COLORS.purple },
-    { text: "\u2588\u2588 ", color: COLORS.cream },
-    { text: "\u2584\u2584", color: COLORS.ink },
-    { text: "      ", color: COLORS.cream },
-    { text: "\u2584\u2584", color: COLORS.ink },
-    { text: " \u2588\u2588", color: COLORS.cream },
-    { text: "  \u2588\u2588  \u2590\u2588\u2588     ", color: COLORS.purple }
+    { text: "    \u2588\u2588\u258C  \u2588\u2588 ", color: HOME.logoPrimary },
+    { text: "\u2588\u2588 ", color: HOME.logoText },
+    { text: "\u2584\u2584", color: HOME.logoCutout },
+    { text: "      ", color: HOME.logoText },
+    { text: "\u2584\u2584", color: HOME.logoCutout },
+    { text: " \u2588\u2588", color: HOME.logoText },
+    { text: "  \u2588\u2588  \u2590\u2588\u2588     ", color: HOME.logoPrimary }
   ],
   [
-    { text: "    \u2588\u2588\u258C  \u2588\u2588 ", color: COLORS.purple },
-    { text: "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588", color: COLORS.cream },
-    { text: " \u2588\u2588  \u2590\u2588\u2588     ", color: COLORS.purple }
+    { text: "    \u2588\u2588\u258C  \u2588\u2588 ", color: HOME.logoPrimary },
+    { text: "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588", color: HOME.logoText },
+    { text: " \u2588\u2588  \u2590\u2588\u2588     ", color: HOME.logoPrimary }
   ],
   [
-    { text: "    \u2588\u2588\u2588\u2584   \u2580\u2588\u2588\u2584\u2584\u2584\u2584\u2584\u2584\u2588\u2588\u2580   \u2584\u2588\u2588\u2588      ", color: COLORS.purple }
+    { text: "    \u2588\u2588\u2588\u2584   \u2580\u2588\u2588\u2584\u2584\u2584\u2584\u2584\u2584\u2588\u2588\u2580   \u2584\u2588\u2588\u2588      ", color: HOME.logoPrimary }
   ],
   [
-    { text: "      \u2580\u2588\u2588\u2588\u2588\u2584   \u2580\u2588\u2588\u2588\u2588\u2580   \u2584\u2588\u2588\u2588\u2588\u2580       ", color: COLORS.purple }
+    { text: "      \u2580\u2588\u2588\u2588\u2588\u2584   \u2580\u2588\u2588\u2588\u2588\u2580   \u2584\u2588\u2588\u2588\u2588\u2580       ", color: HOME.logoPrimary }
   ],
   [
-    { text: "         \u2580\u2588\u2588\u2588\u2588\u2584\u2584    \u2584\u2584\u2588\u2588\u2588\u2588\u2580   \u2584\u2584     ", color: COLORS.purple }
+    { text: "         \u2580\u2588\u2588\u2588\u2588\u2584\u2584    \u2584\u2584\u2588\u2588\u2588\u2588\u2580   \u2584\u2584     ", color: HOME.logoPrimary }
   ],
   [
-    { text: "             \u2580\u2588\u2588\u2588\u2588\u2588\u2588\u2580      \u2584\u2588\u2588\u2588\u2588     ", color: COLORS.purple }
+    { text: "             \u2580\u2588\u2588\u2588\u2588\u2588\u2588\u2580      \u2584\u2588\u2588\u2588\u2588     ", color: HOME.logoPrimary }
   ],
   [
-    { text: "                 \u2580\u2580\u2580\u2580        \u2580\u2588\u2588\u2580      ", color: COLORS.purple }
+    { text: "                 \u2580\u2580\u2580\u2580        \u2580\u2588\u2588\u2580      ", color: HOME.logoPrimary }
   ]
 ];
 var COMPACT_ROWS = [
-  [{ text: "\u2554\u2550\u2557\u2566\u2554\u2550\u2557\u2554\u2557\u2554  \u2554\u2550\u2557\u2554\u2550\u2557\u2554\u2550\u2557\u2554\u2557\u2554\u2554\u2566\u2557  \u2554\u2550\u2557\u2554\u2550\u2557\u2566", color: COLORS.purple }],
-  [{ text: "\u2560\u2550\u2563\u2551\u2551 \u2551\u2551\u2551\u2551  \u2560\u2550\u2563\u2551 \u2566\u2551\u2563 \u2551\u2551\u2551 \u2551   \u2560\u2550\u2563\u2560\u2550\u255D\u2551", color: COLORS.cream }],
-  [{ text: "\u2569 \u2569\u2569\u255A\u2550\u255D\u255D\u255A\u255D  \u2569 \u2569\u255A\u2550\u255D\u255A\u2550\u255D\u255D\u255A\u255D \u2569   \u2569 \u2569\u2569  \u2569", color: COLORS.cream }]
+  [{ text: "\u2554\u2550\u2557\u2566\u2554\u2550\u2557\u2554\u2557\u2554  \u2554\u2550\u2557\u2554\u2550\u2557\u2554\u2550\u2557\u2554\u2557\u2554\u2554\u2566\u2557  \u2554\u2550\u2557\u2554\u2550\u2557\u2566", color: HOME.logoPrimary }],
+  [{ text: "\u2560\u2550\u2563\u2551\u2551 \u2551\u2551\u2551\u2551  \u2560\u2550\u2563\u2551 \u2566\u2551\u2563 \u2551\u2551\u2551 \u2551   \u2560\u2550\u2563\u2560\u2550\u255D\u2551", color: HOME.logoText }],
+  [{ text: "\u2569 \u2569\u2569\u255A\u2550\u255D\u255D\u255A\u255D  \u2569 \u2569\u255A\u2550\u255D\u255A\u2550\u255D\u255D\u255A\u255D \u2569   \u2569 \u2569\u2569  \u2569", color: HOME.logoText }]
 ];
 function renderRows(rows, keyPrefix) {
   return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Box_default, { flexDirection: "column", children: rows.map((row, rowIndex) => /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Box_default, { children: row.map((segment, segmentIndex) => /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
@@ -45294,17 +45215,17 @@ function centerTitle(title, width) {
 }
 function renderFramedPanel(title, innerWidth, rows) {
   return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Box_default, { flexDirection: "column", children: [
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { color: COLORS.lavender, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { color: HOME.frame, children: [
       "\u2554",
       centerTitle(title, innerWidth),
       "\u2557"
     ] }),
     rows.map((row, index) => /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Box_default, { children: [
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { color: COLORS.lavender, children: "\u2551" }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { color: COLORS.cream, children: padValue(row, innerWidth) }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { color: COLORS.lavender, children: "\u2551" })
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { color: HOME.frame, children: "\u2551" }),
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { color: HOME.panelText, children: padValue(row, innerWidth) }),
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { color: HOME.frame, children: "\u2551" })
     ] }, `${title}-${index}`)),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { color: COLORS.lavender, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { color: HOME.frame, children: [
       "\u255A",
       "\u2550".repeat(innerWidth),
       "\u255D"
@@ -45353,7 +45274,7 @@ function HomeScreen({
       children: [
         layout === "wide" ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Box_default, { width: liveWidth, justifyContent: "center", children: renderRows(DISPLAY_ANSI_LOGO_ROWS, "ansi-logo") }) : layout === "stacked" ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Box_default, { flexDirection: "column", alignItems: "center", children: renderRows(MASCOT_ROWS, "mascot") }) : renderRows(COMPACT_ROWS, "compact"),
         /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Box_default, { marginTop: 2, flexDirection: "column", alignItems: "center", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { color: COLORS.cream, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { color: HOME.summaryText, children: [
             discoveredCount,
             " agent",
             suffix,
@@ -45368,13 +45289,6 @@ function HomeScreen({
     }
   ) });
 }
-
-// src/components/messages/messageTheme.ts
-var MESSAGE_BACKGROUND = "#2A2F36";
-var MESSAGE_FOREGROUND = "#F5F7FA";
-var MESSAGE_ACCENT = "#FFFFFF";
-var MESSAGE_MUTED = "#8B96A5";
-var MESSAGE_MENU_ACCENT = "#C5AFFF";
 
 // src/components/messages/messageLayout.ts
 var import_react31 = __toESM(require_react(), 1);
@@ -45422,8 +45336,8 @@ function AgentMessageBubble({
   const contentWidth = Math.max(1, lineWidth - markerWidth);
   const lines = wrapToWidth2(body, contentWidth);
   return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { flexDirection: "column", width: lineWidth, children: lines.map((line, index) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { children: [
-    index === 0 ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { color: MESSAGE_MENU_ACCENT, children: marker }) : /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { children: " ".repeat(markerWidth) }),
-    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { color: MESSAGE_FOREGROUND, children: line })
+    index === 0 ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { color: MESSAGE_THEME.labelAccent, children: marker }) : /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { children: " ".repeat(markerWidth) }),
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { color: MESSAGE_THEME.foreground, children: line })
   ] }, `agent-${index}`)) });
 }
 
@@ -45450,8 +45364,8 @@ function SystemMessageBubble({
   const contentWidth = Math.max(1, lineWidth - markerWidth);
   const lines = wrapToWidth2(body, contentWidth);
   return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { flexDirection: "column", width: lineWidth, children: lines.map((line, index) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { children: [
-    index === 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: MESSAGE_MENU_ACCENT, children: marker }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { children: " ".repeat(markerWidth) }),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: MESSAGE_FOREGROUND, children: line })
+    index === 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: MESSAGE_THEME.labelAccent, children: marker }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { children: " ".repeat(markerWidth) }),
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: MESSAGE_THEME.foreground, children: line })
   ] }, `${kind}-${index}`)) });
 }
 
@@ -45465,17 +45379,17 @@ function UserMessageBubble({
   const lines = wrapToWidth2(body, contentWidth);
   const fillerRow = " ".repeat(lineWidth);
   return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { flexDirection: "column", width: lineWidth, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { backgroundColor: MESSAGE_BACKGROUND, children: fillerRow }),
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { backgroundColor: MESSAGE_THEME.background, children: fillerRow }),
     lines.map((line, index) => {
       const prefix = index === 0 ? "\u203A " : "  ";
       const padding = " ".repeat(Math.max(0, contentWidth - line.length));
       return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { children: [
-        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { backgroundColor: MESSAGE_BACKGROUND, color: MESSAGE_ACCENT, children: prefix }),
-        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { backgroundColor: MESSAGE_BACKGROUND, color: MESSAGE_FOREGROUND, children: line }),
-        padding.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { backgroundColor: MESSAGE_BACKGROUND, children: padding }) : null
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { backgroundColor: MESSAGE_THEME.background, color: MESSAGE_THEME.accent, children: prefix }),
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { backgroundColor: MESSAGE_THEME.background, color: MESSAGE_THEME.foreground, children: line }),
+        padding.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { backgroundColor: MESSAGE_THEME.background, children: padding }) : null
       ] }, `user-${index}`);
     }),
-    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { backgroundColor: MESSAGE_BACKGROUND, children: fillerRow })
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { backgroundColor: MESSAGE_THEME.background, children: fillerRow })
   ] });
 }
 
@@ -45512,13 +45426,13 @@ function WorkingIndicator({
     animatedLabel.split("").map((character, index) => /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
       Text,
       {
-        backgroundColor: index === activeIndex ? MESSAGE_ACCENT : void 0,
-        color: index === activeIndex ? MESSAGE_BACKGROUND : MESSAGE_MENU_ACCENT,
+        backgroundColor: index === activeIndex ? MESSAGE_THEME.accent : void 0,
+        color: index === activeIndex ? MESSAGE_THEME.background : MESSAGE_THEME.labelAccent,
         children: character
       },
       `${character}-${index}`
     )),
-    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Text, { color: MESSAGE_MUTED, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Text, { color: MESSAGE_THEME.muted, children: [
       " (",
       elapsedLabel,
       ")"
@@ -45592,6 +45506,126 @@ function parseAgentSelection(draft, availableAgentIds) {
 import { mkdirSync, readFileSync as readFileSync3, writeFileSync } from "fs";
 import os3 from "os";
 import path from "path";
+
+// src/lib/slashCommands.ts
+var DEFAULT_CHAT_MODE_SETTINGS = {
+  requestMode: "send-message",
+  responseMode: "message-output"
+};
+var REQUEST_MODE_OPTIONS = [
+  {
+    value: "send-message",
+    label: "Send message",
+    description: "Send a synchronous request and wait for a single reply."
+  },
+  {
+    value: "streaming-message",
+    label: "Streaming message",
+    description: "Send a streaming request and render incremental events as they arrive."
+  }
+];
+var RESPONSE_MODE_OPTIONS = [
+  {
+    value: "message-output",
+    label: "Message output",
+    description: "Render the agent message output instead of raw protocol events."
+  },
+  {
+    value: "a2a-protocol",
+    label: "A2A protocol",
+    description: "Render raw A2A protocol payloads as YAML."
+  }
+];
+var SLASH_COMMANDS = [
+  {
+    id: "clear",
+    label: "/clear",
+    description: "Clear the visible transcript and start fresh.",
+    title: "Clear Transcript",
+    subtitle: "Clear the visible transcript and start fresh.",
+    options: []
+  },
+  {
+    id: "login",
+    label: "/login",
+    description: "Authenticate Aion Chat with your Aion account.",
+    title: "Login",
+    subtitle: "Authenticate Aion Chat with your Aion account.",
+    options: []
+  },
+  {
+    id: "exit",
+    label: "/exit",
+    description: "Exit Aion Chat.",
+    title: "Exit",
+    subtitle: "Exit Aion Chat.",
+    options: []
+  },
+  {
+    id: "request",
+    label: "/request",
+    description: "Choose how Aion Chat sends requests to the agents.",
+    title: "Request Mode",
+    subtitle: "Choose how Aion Chat sends requests to the agents.",
+    options: REQUEST_MODE_OPTIONS
+  },
+  {
+    id: "response",
+    label: "/response",
+    description: "Choose how Aion Chat renders responses from the agents.",
+    title: "Response Mode",
+    subtitle: "Choose how Aion Chat renders responses from the agents.",
+    options: RESPONSE_MODE_OPTIONS
+  },
+  {
+    id: "sources",
+    label: "/sources",
+    description: "Show configured agent discovery sources.",
+    title: "Agent Sources",
+    subtitle: "Show configured agent discovery sources.",
+    options: []
+  }
+];
+function getRequestModeLabel(mode) {
+  return REQUEST_MODE_OPTIONS.find((option) => option.value === mode)?.label ?? "Send message";
+}
+function getResponseModeLabel(mode) {
+  return RESPONSE_MODE_OPTIONS.find((option) => option.value === mode)?.label ?? "Message output";
+}
+function getLeadingSlashQuery(draft) {
+  const trimmedStartIndex = draft.search(/\S/u);
+  if (trimmedStartIndex === -1) {
+    return void 0;
+  }
+  const trimmedDraft = draft.slice(trimmedStartIndex);
+  if (!trimmedDraft.startsWith("/")) {
+    return void 0;
+  }
+  return trimmedDraft.slice(1);
+}
+function clearLeadingSlashDraft(draft) {
+  const trimmedStartIndex = draft.search(/\S/u);
+  if (trimmedStartIndex === -1) {
+    return "";
+  }
+  const trimmedDraft = draft.slice(trimmedStartIndex);
+  if (!trimmedDraft.startsWith("/")) {
+    return draft;
+  }
+  return draft.slice(0, trimmedStartIndex);
+}
+function getSlashCommandById(commandId) {
+  return SLASH_COMMANDS.find((command) => command.id === commandId);
+}
+function filterSlashCommands(query) {
+  if (query === void 0) {
+    return [];
+  }
+  const normalizedQuery = query.trim().toLowerCase();
+  return [...SLASH_COMMANDS].sort((left, right) => left.label.localeCompare(right.label)).filter(
+    (command) => normalizedQuery.length === 0 ? true : command.label.slice(1).toLowerCase().startsWith(normalizedQuery)
+  );
+}
 
 // src/lib/agents/model.ts
 import { createHash } from "crypto";
@@ -50389,6 +50423,7 @@ function ChatApp({ options }) {
     }
     return `${clientState.endpoints.rpcUrl}`;
   }, [clientState, connectionLabel]);
+  const connectionColor = CONNECTION_THEME[connectionState];
   const slashQuery = (0, import_react33.useMemo)(() => {
     if (slashSubmenuId) {
       return void 0;
@@ -51231,10 +51266,10 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
       Box_default,
       {
         borderStyle: "round",
-        borderColor: connectionState === "connected" ? "green" : "yellow",
+        borderColor: connectionColor,
         paddingX: 1,
         children: [
-          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { color: connectionState === "connected" ? "green" : "yellow", children: selectedAgentId ? `@${selectedAgentId}` : agentName }),
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { color: connectionColor, children: selectedAgentId ? `@${selectedAgentId}` : agentName }),
           /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(Text, { children: [
             " \u2022 ",
             connectionSummary

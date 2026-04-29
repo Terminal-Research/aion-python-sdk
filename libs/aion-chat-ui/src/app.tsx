@@ -30,6 +30,7 @@ import {
 	type ChatSettings
 } from "./lib/chatSettings.js";
 import { openUrlInDefaultBrowser } from "./lib/browser.js";
+import { CONNECTION_THEME } from "./lib/theme.js";
 import {
 	applyFileSuggestion,
 	buildMessageParts,
@@ -351,6 +352,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 
 		return `${clientState.endpoints.rpcUrl}`;
 	}, [clientState, connectionLabel]);
+	const connectionColor = CONNECTION_THEME[connectionState];
 
 	const slashQuery = useMemo(() => {
 		if (slashSubmenuId) {
@@ -1331,10 +1333,10 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		<Box flexDirection="column" height="100%">
 			<Box
 				borderStyle="round"
-				borderColor={connectionState === "connected" ? "green" : "yellow"}
+				borderColor={connectionColor}
 				paddingX={1}
 			>
-				<Text color={connectionState === "connected" ? "green" : "yellow"}>
+				<Text color={connectionColor}>
 					{selectedAgentId ? `@${selectedAgentId}` : agentName}
 				</Text>
 				<Text> • {connectionSummary}</Text>

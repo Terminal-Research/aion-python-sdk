@@ -1,7 +1,7 @@
 import React from "react";
 import { Box, Text } from "ink";
 
-import { MESSAGE_FOREGROUND, MESSAGE_MENU_ACCENT } from "./messageTheme.js";
+import { MESSAGE_THEME } from "../../lib/theme.js";
 import { wrapToWidth } from "./messageLayout.js";
 
 export type SystemMessageKind = "system" | "status" | "protocol";
@@ -37,11 +37,11 @@ export function SystemMessageBubble({
 			{lines.map((line, index) => (
 				<Box key={`${kind}-${index}`}>
 					{index === 0 ? (
-						<Text color={MESSAGE_MENU_ACCENT}>{marker}</Text>
+						<Text color={MESSAGE_THEME.labelAccent}>{marker}</Text>
 					) : (
 						<Text>{" ".repeat(markerWidth)}</Text>
 					)}
-					<Text color={MESSAGE_FOREGROUND}>{line}</Text>
+					<Text color={MESSAGE_THEME.foreground}>{line}</Text>
 				</Box>
 			))}
 		</Box>

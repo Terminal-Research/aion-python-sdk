@@ -1,14 +1,15 @@
 import React, { useEffect, useState } from "react";
 import { Box, Text, useStdout } from "ink";
 
-import { SELECTION_HIGHLIGHT } from "../lib/slashCommands.js";
+import { COMPOSER_THEME } from "../lib/theme.js";
 
-const INPUT_BACKGROUND = "#2A2F36";
-const INPUT_FOREGROUND = "#F5F7FA";
-const INPUT_PLACEHOLDER = "#C2C8D0";
-const INPUT_ACCENT = "#FFFFFF";
-const SECONDARY_TEXT = "#8B96A5";
+const INPUT_BACKGROUND = COMPOSER_THEME.background;
+const INPUT_FOREGROUND = COMPOSER_THEME.foreground;
+const INPUT_PLACEHOLDER = COMPOSER_THEME.placeholder;
+const INPUT_ACCENT = COMPOSER_THEME.accent;
+const SECONDARY_TEXT = COMPOSER_THEME.muted;
 const PRIMARY_TEXT = INPUT_FOREGROUND;
+const SELECTION_HIGHLIGHT = COMPOSER_THEME.selection;
 const MENU_INDENT = "  ";
 
 export interface ComposerMenuItem {
