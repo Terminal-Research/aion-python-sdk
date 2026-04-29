@@ -904,21 +904,21 @@ var require_react_development = __commonJS({
         );
         actScopeDepth = prevActScopeDepth;
       }
-      function recursivelyFlushAsyncActWork(returnValue, resolve, reject) {
+      function recursivelyFlushAsyncActWork(returnValue, resolve3, reject) {
         var queue = ReactSharedInternals.actQueue;
         if (null !== queue)
           if (0 !== queue.length)
             try {
               flushActQueue(queue);
               enqueueTask(function() {
-                return recursivelyFlushAsyncActWork(returnValue, resolve, reject);
+                return recursivelyFlushAsyncActWork(returnValue, resolve3, reject);
               });
               return;
             } catch (error) {
               ReactSharedInternals.thrownErrors.push(error);
             }
           else ReactSharedInternals.actQueue = null;
-        0 < ReactSharedInternals.thrownErrors.length ? (queue = aggregateErrors(ReactSharedInternals.thrownErrors), ReactSharedInternals.thrownErrors.length = 0, reject(queue)) : resolve(returnValue);
+        0 < ReactSharedInternals.thrownErrors.length ? (queue = aggregateErrors(ReactSharedInternals.thrownErrors), ReactSharedInternals.thrownErrors.length = 0, reject(queue)) : resolve3(returnValue);
       }
       function flushActQueue(queue) {
         if (!isFlushing) {
@@ -1105,7 +1105,7 @@ var require_react_development = __commonJS({
             ));
           });
           return {
-            then: function(resolve, reject) {
+            then: function(resolve3, reject) {
               didAwaitActCall = true;
               thenable.then(
                 function(returnValue) {
@@ -1115,7 +1115,7 @@ var require_react_development = __commonJS({
                       flushActQueue(queue), enqueueTask(function() {
                         return recursivelyFlushAsyncActWork(
                           returnValue,
-                          resolve,
+                          resolve3,
                           reject
                         );
                       });
@@ -1129,7 +1129,7 @@ var require_react_development = __commonJS({
                       ReactSharedInternals.thrownErrors.length = 0;
                       reject(_thrownError);
                     }
-                  } else resolve(returnValue);
+                  } else resolve3(returnValue);
                 },
                 function(error) {
                   popActScope(prevActQueue, prevActScopeDepth);
@@ -1151,15 +1151,15 @@ var require_react_development = __commonJS({
         if (0 < ReactSharedInternals.thrownErrors.length)
           throw callback = aggregateErrors(ReactSharedInternals.thrownErrors), ReactSharedInternals.thrownErrors.length = 0, callback;
         return {
-          then: function(resolve, reject) {
+          then: function(resolve3, reject) {
             didAwaitActCall = true;
             0 === prevActScopeDepth ? (ReactSharedInternals.actQueue = queue, enqueueTask(function() {
               return recursivelyFlushAsyncActWork(
                 returnValue$jscomp$0,
-                resolve,
+                resolve3,
                 reject
               );
-            })) : resolve(returnValue$jscomp$0);
+            })) : resolve3(returnValue$jscomp$0);
           }
         };
       };
@@ -3243,8 +3243,8 @@ var require_react_reconciler_production = __commonJS({
           currentEntangledActionThenable = {
             status: "pending",
             value: void 0,
-            then: function(resolve) {
-              entangledListeners.push(resolve);
+            then: function(resolve3) {
+              entangledListeners.push(resolve3);
             }
           };
         }
@@ -3267,8 +3267,8 @@ var require_react_reconciler_production = __commonJS({
           status: "pending",
           value: null,
           reason: null,
-          then: function(resolve) {
-            listeners.push(resolve);
+          then: function(resolve3) {
+            listeners.push(resolve3);
           }
         };
         thenable.then(
@@ -12867,8 +12867,8 @@ var require_react_reconciler_development = __commonJS({
           currentEntangledActionThenable = {
             status: "pending",
             value: void 0,
-            then: function(resolve) {
-              entangledListeners.push(resolve);
+            then: function(resolve3) {
+              entangledListeners.push(resolve3);
             }
           };
         }
@@ -12891,8 +12891,8 @@ var require_react_reconciler_development = __commonJS({
           status: "pending",
           value: null,
           reason: null,
-          then: function(resolve) {
-            listeners.push(resolve);
+          then: function(resolve3) {
+            listeners.push(resolve3);
           }
         };
         thenable.then(
@@ -28900,7 +28900,7 @@ var require_core = __commonJS({
       return match && match.index === 0;
     }
     var BACKREF_RE = /\[(?:[^\\\]]|\\.)*\]|\(\??|\\([1-9][0-9]*)|\\./;
-    function join(regexps, separator = "|") {
+    function join2(regexps, separator = "|") {
       let numCaptures = 0;
       return regexps.map((regex2) => {
         numCaptures += 1;
@@ -29204,7 +29204,7 @@ var require_core = __commonJS({
             this.exec = () => null;
           }
           const terminators = this.regexes.map((el) => el[1]);
-          this.matcherRe = langRe(join(terminators), true);
+          this.matcherRe = langRe(join2(terminators), true);
           this.lastIndex = 0;
         }
         /** @param {string} s */
@@ -87820,8 +87820,8 @@ var Ink = class {
     }
   }
   async waitUntilExit() {
-    this.exitPromise ||= new Promise((resolve, reject) => {
-      this.resolveExitPromise = resolve;
+    this.exitPromise ||= new Promise((resolve3, reject) => {
+      this.resolveExitPromise = resolve3;
       this.rejectExitPromise = reject;
     });
     if (!this.beforeExitHandler) {
@@ -88779,6 +88779,8 @@ function ChatComposer({
   streamState,
   agentSuggestions,
   selectedSuggestionIndex,
+  fileSuggestions,
+  selectedFileSuggestionIndex,
   slashCommands,
   selectedSlashCommandIndex,
   slashMenuVisible,
@@ -88795,8 +88797,9 @@ function ChatComposer({
   const draftLines = draft.length > 0 ? wrapToWidth(draft, contentWidth) : [""];
   const fillerRow = " ".repeat(lineWidth);
   const showAgentSuggestions = agentSuggestions.length > 0;
+  const showFileSuggestions = fileSuggestions.length > 0;
   const showSlashList = slashMenuVisible && !slashSubmenu;
-  const showFooter = !showAgentSuggestions && !slashMenuVisible && !slashSubmenu;
+  const showFooter = !showAgentSuggestions && !showFileSuggestions && !slashMenuVisible && !slashSubmenu;
   const slashLabelWidth = getTableLabelWidth(slashCommands);
   const slashSubmenuLabelWidth = getTableLabelWidth(slashSubmenu?.options ?? [], true);
   (0, import_react29.useEffect)(() => {
@@ -88877,6 +88880,20 @@ function ChatComposer({
           ]
         },
         suggestion
+      ))
+    ] }) : null,
+    showFileSuggestions ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { flexDirection: "column", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { color: SECONDARY_TEXT, children: "Files" }),
+      fileSuggestions.map((label, index) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
+        Text,
+        {
+          color: index === selectedFileSuggestionIndex ? SELECTION_HIGHLIGHT : PRIMARY_TEXT,
+          children: [
+            index === selectedFileSuggestionIndex ? "\u203A " : "  ",
+            label
+          ]
+        },
+        label
       ))
     ] }) : null,
     showSlashList ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { flexDirection: "column", children: slashCommands.map((command, index) => {
@@ -89346,7 +89363,7 @@ function parseAgentSelection(draft, availableAgentIds) {
 
 // src/lib/input/parser/extractors/filePathExtractor.ts
 import { existsSync as existsSync2, readFileSync as readFileSync3, statSync } from "fs";
-import { basename, extname } from "path";
+import { basename, extname, resolve } from "path";
 var MAX_FILE_SIZE = 512 * 1024;
 var PATH_PATTERN = /(?:^|\s)(\.{0,2}\/[^\s"'`)\]]+)/gm;
 var MIME_TYPES = {
@@ -89385,15 +89402,17 @@ var filePathExtractor = {
     const regex2 = new RegExp(PATH_PATTERN.source, PATH_PATTERN.flags);
     let match;
     while ((match = regex2.exec(text)) !== null) {
-      let raw = match[1].replace(/[,;:.!?]+$/, "");
-      if (!raw || !existsSync2(raw)) continue;
+      const raw = match[1].replace(/[,;:.!?]+$/, "");
+      if (!raw) continue;
+      const absolute = resolve(raw);
+      if (!existsSync2(absolute)) continue;
       try {
-        if (!statSync(raw).isFile()) continue;
+        if (!statSync(absolute).isFile()) continue;
       } catch {
         continue;
       }
       const start = match.index + match[0].indexOf(raw);
-      spans.push({ start, end: start + raw.length, raw });
+      spans.push({ start, end: start + raw.length, raw: absolute });
     }
     return spans;
   },
@@ -89417,13 +89436,14 @@ var filePathExtractor = {
   }
 };
 
-// src/lib/input/parser/parser.ts
+// src/lib/input/parser/extractors/index.ts
 var EXTRACTORS = [filePathExtractor];
+
+// src/lib/input/parser/pipeline.ts
 function makeTextPart(text) {
   return { kind: "text", text };
 }
-async function buildMessageParts(text) {
-  const extractors = EXTRACTORS;
+async function buildMessageParts(text, extractors) {
   const allSpans = [];
   for (const extractor of extractors) {
     for (const span of extractor.detect(text)) {
@@ -89443,23 +89463,77 @@ async function buildMessageParts(text) {
   let pos = 0;
   for (const { span, extractor } of resolved) {
     const before = text.slice(pos, span.start).trim();
-    if (before) {
-      parts.push(makeTextPart(before));
-    }
+    if (before) parts.push(makeTextPart(before));
     const part = await extractor.parse(span);
-    if (part) {
-      parts.push(part);
-    }
+    if (part) parts.push(part);
     pos = span.end;
   }
   const remainder = text.slice(pos).trim();
-  if (remainder) {
-    parts.push(makeTextPart(remainder));
-  }
-  if (parts.length === 0) {
-    parts.push(makeTextPart(text));
-  }
+  if (remainder) parts.push(makeTextPart(remainder));
+  if (parts.length === 0) parts.push(makeTextPart(text));
   return parts;
+}
+
+// src/lib/input/parser/index.ts
+var buildMessageParts2 = (text) => buildMessageParts(text, EXTRACTORS);
+
+// src/lib/input/mentions/fileMention.ts
+import { readdirSync, statSync as statSync2 } from "fs";
+import { homedir } from "os";
+import { basename as basename2, dirname, isAbsolute, join, resolve as resolve2 } from "path";
+var FILE_MENTION_PATTERN = /(?:^|\s)@file:(\S*)$/;
+function getFileMentionMatch(draft) {
+  const match = FILE_MENTION_PATTERN.exec(draft);
+  if (!match) return void 0;
+  return {
+    query: match[1] ?? "",
+    start: match.index + match[0].lastIndexOf("@"),
+    end: draft.length
+  };
+}
+function clearFileMention(draft) {
+  const match = getFileMentionMatch(draft);
+  if (!match) return draft;
+  return draft.slice(0, match.start).trimEnd();
+}
+function getFileSuggestions(query, limit = 8) {
+  try {
+    const expanded = query.startsWith("~/") ? `${homedir()}/${query.slice(2)}` : query;
+    let dirPart;
+    let filePart;
+    if (expanded.endsWith("/")) {
+      dirPart = expanded;
+      filePart = "";
+    } else if (expanded.includes("/")) {
+      dirPart = dirname(expanded);
+      filePart = basename2(expanded);
+    } else {
+      dirPart = ".";
+      filePart = expanded;
+    }
+    const absDir = isAbsolute(dirPart) ? dirPart : resolve2(dirPart);
+    return readdirSync(absDir).filter((name) => name.startsWith(filePart) && !name.startsWith(".")).flatMap((name) => {
+      const abs = join(absDir, name);
+      try {
+        const isDirectory = statSync2(abs).isDirectory();
+        return [{ label: isDirectory ? `${name}/` : name, absolutePath: abs, isDirectory }];
+      } catch {
+        return [];
+      }
+    }).slice(0, limit);
+  } catch {
+    return [];
+  }
+}
+function applyFileSuggestion(draft, suggestion) {
+  const match = getFileMentionMatch(draft);
+  if (!match) return draft;
+  const before = draft.slice(0, match.start).trimEnd();
+  if (suggestion.isDirectory) {
+    const mention = `@file:${suggestion.absolutePath}/`;
+    return before ? `${before} ${mention}` : mention;
+  }
+  return before ? `${before} ${suggestion.absolutePath}` : suggestion.absolutePath;
 }
 
 // src/lib/chatSettings.ts
@@ -93014,11 +93088,11 @@ async function startPushNotificationServer(receiverUrl, onEvent) {
     }
     response.writeHead(405).end();
   });
-  await new Promise((resolve, reject) => {
+  await new Promise((resolve3, reject) => {
     server.once("error", reject);
     server.listen(port, hostname, () => {
       server.off("error", reject);
-      resolve();
+      resolve3();
     });
   });
   const address = server.address();
@@ -93026,13 +93100,13 @@ async function startPushNotificationServer(receiverUrl, onEvent) {
   return {
     callbackUrl: `http://${hostname}:${boundPort}/notify`,
     close: async () => {
-      await new Promise((resolve, reject) => {
+      await new Promise((resolve3, reject) => {
         server.close((error) => {
           if (error) {
             reject(error);
             return;
           }
-          resolve();
+          resolve3();
         });
       });
     }
@@ -93104,6 +93178,7 @@ function ChatApp({ options }) {
     options.agentId
   );
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = (0, import_react31.useState)(0);
+  const [selectedFileSuggestionIndex, setSelectedFileSuggestionIndex] = (0, import_react31.useState)(0);
   const [selectedSlashIndex, setSelectedSlashIndex] = (0, import_react31.useState)(0);
   const [selectedSlashSubmenuIndex, setSelectedSlashSubmenuIndex] = (0, import_react31.useState)(0);
   const [slashSubmenuId, setSlashSubmenuId] = (0, import_react31.useState)();
@@ -93224,6 +93299,14 @@ function ChatApp({ options }) {
     }
     return discoveredAgents.map((agent) => agent.id).filter((agentId) => agentId.startsWith(mentionMatch.query)).slice(0, 6);
   }, [discoveredAgents, draft, slashQuery, slashSubmenuId]);
+  const fileSuggestions = (0, import_react31.useMemo)(() => {
+    if (slashQuery !== void 0 || slashSubmenuId) {
+      return [];
+    }
+    const match = getFileMentionMatch(draft);
+    if (!match) return [];
+    return getFileSuggestions(match.query);
+  }, [draft, slashQuery, slashSubmenuId]);
   (0, import_react31.useEffect)(() => {
     setSelectedSuggestionIndex((current) => {
       if (agentSuggestions.length === 0) {
@@ -93232,6 +93315,12 @@ function ChatApp({ options }) {
       return Math.min(current, agentSuggestions.length - 1);
     });
   }, [agentSuggestions]);
+  (0, import_react31.useEffect)(() => {
+    setSelectedFileSuggestionIndex((current) => {
+      if (fileSuggestions.length === 0) return 0;
+      return Math.min(current, fileSuggestions.length - 1);
+    });
+  }, [fileSuggestions]);
   (0, import_react31.useEffect)(() => {
     setSelectedSlashIndex((current) => {
       if (slashCommands.length === 0) {
@@ -93265,6 +93354,9 @@ function ChatApp({ options }) {
         if (options.agentId) {
           setSelectedAgentId(options.agentId);
           setConnectionLabel(`Connecting to @${options.agentId}...`);
+        } else if (discovery.agents.length === 1) {
+          setSelectedAgentId(discovery.agents[0].id);
+          setConnectionLabel(`Connecting to @${discovery.agents[0].id}...`);
         } else {
           setConnectionState("connecting");
           setConnectionLabel("Choose an agent with @");
@@ -93469,6 +93561,12 @@ ${JSON.stringify(
       return upsertEntry(current, entryId, "agent", nextBody);
     });
   };
+  const applySelectedFileSuggestion = () => {
+    const suggestion = fileSuggestions[selectedFileSuggestionIndex];
+    if (!suggestion) return;
+    setDraft((current) => applyFileSuggestion(current, suggestion));
+    setSelectedFileSuggestionIndex(0);
+  };
   const applySelectedAgentSuggestion = () => {
     const suggestion = agentSuggestions[selectedSuggestionIndex];
     if (!suggestion) {
@@ -93539,7 +93637,7 @@ ${JSON.stringify(
       return;
     }
     setDraft("");
-    const parts = await buildMessageParts(trimmed);
+    const parts = await buildMessageParts2(trimmed);
     const attachedFiles = parts.filter((p) => p.kind === "file").map((p) => p.file.name ?? "unnamed");
     const displayBody = attachedFiles.length > 0 ? `${trimmed}
 
@@ -93654,9 +93752,25 @@ ${JSON.stringify(
       );
       return;
     }
+    if (fileSuggestions.length > 0 && key.upArrow) {
+      setSelectedFileSuggestionIndex(
+        (current) => current === 0 ? fileSuggestions.length - 1 : current - 1
+      );
+      return;
+    }
+    if (fileSuggestions.length > 0 && key.downArrow) {
+      setSelectedFileSuggestionIndex(
+        (current) => current === fileSuggestions.length - 1 ? 0 : current + 1
+      );
+      return;
+    }
     if (key.escape) {
       if (isSlashSubmenuOpen || isSlashMenuOpen) {
         dismissSlashDialog();
+        return;
+      }
+      if (fileSuggestions.length > 0) {
+        setDraft((current) => clearFileMention(current));
         return;
       }
       setDraft("");
@@ -93693,6 +93807,10 @@ ${JSON.stringify(
       }
       if (agentSuggestions.length > 0) {
         applySelectedAgentSuggestion();
+        return;
+      }
+      if (fileSuggestions.length > 0) {
+        applySelectedFileSuggestion();
         return;
       }
       void submitPrompt();
@@ -93750,6 +93868,8 @@ ${JSON.stringify(
         streamState: streamLabel,
         agentSuggestions,
         selectedSuggestionIndex,
+        fileSuggestions: fileSuggestions.map((s) => s.label),
+        selectedFileSuggestionIndex,
         slashCommands: slashCommands.map((command) => ({
           label: command.label,
           description: command.description
