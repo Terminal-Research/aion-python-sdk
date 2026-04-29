@@ -33,7 +33,6 @@ class AppRegistry(RouterRegistryMixin, metaclass=Singleton):
         """Initialize the registry with empty collections."""
         self._lock = threading.Lock()
         self._routers: List["APIRouter"] = []
-        logger.debug("AppRegistry initialized")
 
     def apply_to_app(self, app: "FastAPI") -> None:
         """Apply all registered extensions to the FastAPI application.

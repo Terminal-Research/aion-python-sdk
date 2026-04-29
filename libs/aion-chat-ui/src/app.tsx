@@ -351,6 +351,9 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				if (options.agentId) {
 					setSelectedAgentId(options.agentId);
 					setConnectionLabel(`Connecting to @${options.agentId}...`);
+				} else if (discovery.agents.length === 1) {
+					setSelectedAgentId(discovery.agents[0].id);
+					setConnectionLabel(`Connecting to @${discovery.agents[0].id}...`);
 				} else {
 					setConnectionState("connecting");
 					setConnectionLabel("Choose an agent with @");
