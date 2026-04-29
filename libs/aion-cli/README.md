@@ -108,18 +108,16 @@ poetry run aion chat [OPTIONS]
 ```
 
 **Description:**
-Connects to a running A2A server and provides an interactive command-line chat interface. Supports session management, task history, push notifications, and custom extensions.
+Connects to a running A2A server and provides an interactive Ink-based chat UI. Supports agent discovery via proxy, bearer token auth, push notifications, and custom headers.
 
 **Options:**
 
-* `--host TEXT` - Agent URL to connect to (default: `http://localhost:10000`)
-* `--session INTEGER` - Session ID to use; `0` creates a random session (default: `0`)
-* `--history / --no-history` - Show task history in the chat interface (default: `--no-history`)
-* `--push-notifications / --no-push-notifications` - Enable push notifications (default: `--no-push-notifications`)
+* `--url, --host, -u TEXT` - Agent or proxy URL to connect to (default: `http://localhost:8000`)
+* `--agent-id TEXT` - Agent identifier for proxy-aware routing
+* `--token TEXT` - Bearer token for authenticated A2A endpoints
+* `--header TEXT` - Custom HTTP header in `key=value` format (can be repeated)
+* `--push-notifications / --no-push-notifications` - Enable the local push notification receiver (default: `--no-push-notifications`)
 * `--push-receiver TEXT` - Push notification receiver URL (default: `http://localhost:5000`)
-* `--header TEXT` - Custom HTTP headers in format `key=value` (can be used multiple times)
-* `--extensions TEXT` - Comma-separated list of extension URIs to enable
-* `--agent-id TEXT` - Agent ID to use in proxy (e.g., `hello-world`, `hello-world-chunked`). Be sure, that you passed proxy host in `--host`
 
 **Examples:**
 
@@ -128,82 +126,34 @@ Connects to a running A2A server and provides an interactive command-line chat i
 poetry run aion chat
 
 # Chat with custom agent URL
-poetry run aion chat --host http://localhost:8080
+poetry run aion chat --url http://localhost:8080
 
-# Chat with specific session ID and history
-poetry run aion chat --session 12345 --history
+# Chat via proxy with specific agent
+poetry run aion chat --url http://localhost:8000 --agent-id hello-world
 
-# Chat with push notifications enabled
-poetry run aion chat --push-notifications --push-receiver http://localhost:3000
+# Chat with bearer token auth
+poetry run aion chat --token mytoken
 
 # Chat with custom headers
 poetry run aion chat --header "X-Custom-Header=value" --header "Authorization=Bearer token"
 
-# Chat with extensions enabled
-poetry run aion chat --extensions "ext1.example.com,ext2.example.com"
-
-# Chat with explicit agent ID (when using proxy)
-poetry run aion chat --agent-id hello-world
-
-# Connect to specific agent server directly
-poetry run aion chat --host http://localhost:10001
+# Chat with push notifications enabled
+poetry run aion chat --push-notifications --push-receiver http://localhost:3000
 
 # Complex example with multiple options
 poetry run aion chat \
-  --host http://localhost:10000 \
-  --session 999 \
-  --history \
+  --url http://localhost:8000 \
+  --agent-id hello-world \
+  --token mytoken \
   --push-notifications \
-  --header "X-Client=aion-cli" \
-  --agent-id hello-world-chunked
+  --header "X-Client=aion-cli"
 ```
-
-**Session Management:**
-
-* Use `--session 0` to create a new random session
-* Use `--session <ID>` to continue or create a specific session
-* Session history persists across chat sessions when using the same ID
 
 **Push Notifications:**
 When enabled, the chat interface can receive real-time notifications from the agent. Ensure your push receiver service is running on the specified URL.
 
-**Graph ID:**
-Specifies which agent to interact with when multiple agents are available (works with proxy server).
-
----
-
-### `aion chat2`
-
-Launches the standalone React/Ink Aion Chat UI packaged from `libs/aion-chat-ui`.
-
-**Usage:**
-
-```bash
-poetry run aion chat2 [OPTIONS]
-```
-
-**Options:**
-
-* `--url`, `--host`, `-u TEXT` - A2A endpoint URL used for agent manifest discovery, agent-card resolution, and A2A JSON-RPC calls
-* `--agent-id TEXT` - Agent ID to use when connecting through an A2A proxy
-* `--token TEXT` - Bearer token for the A2A endpoint
-* `--header TEXT` - Custom HTTP headers in format `key=value` (can be used multiple times)
-* `--push-notifications` - Enable the local push notification receiver
-* `--push-receiver TEXT` - Push notification receiver URL
-
-The selected Aion environment is separate from `--url`; it identifies the Aion control-plane API used for login and auth configuration. Use `--url` when you want to connect to a local or hosted A2A endpoint.
-
-Login and environment switching are owned by the standalone chat UI, not by the Python `aion` CLI. Use the npm package commands `aio login`, `aio environment <environment>`, `aio env <environment>` or their `aion-chat` aliases. Inside the `chat2` composer, `/login` is visible in the slash command picker; `/environment` and `/env` are hidden from the picker but still executable when typed exactly.
-
-**Examples:**
-
-```bash
-# Connect to an A2A proxy and pick from discovered agents
-poetry run aion chat2 --url http://localhost:8000
-
-# Connect through an A2A proxy to a specific agent
-poetry run aion chat2 --url http://localhost:8000 --agent-id hello-world
-```
+**Agent ID:**
+Specifies which agent to interact with when multiple agents are available via a proxy server.
 
 ## Configuration
 

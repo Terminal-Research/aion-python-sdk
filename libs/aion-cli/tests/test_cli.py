@@ -7,7 +7,7 @@ import importlib
 from click.testing import CliRunner
 
 from aion.cli.cli import __version__, cli
-from aion.cli.services.chat2 import BinaryResolutionError
+from aion.cli.services.chat import BinaryResolutionError
 
 
 def test_version() -> None:
@@ -20,32 +20,32 @@ def test_version() -> None:
     assert __version__ in result.output
 
 
-def test_help_lists_chat2_command() -> None:
-    """Ensure the help output advertises the experimental chat2 command."""
+def test_help_lists_chat_command() -> None:
+    """Ensure the help output advertises the experimental chat command."""
     runner = CliRunner()
 
     result = runner.invoke(cli, ["--help"])
 
     assert result.exit_code == 0
-    assert "chat2" in result.output
+    assert "chat" in result.output
 
 
-def test_chat2_launches_ui(monkeypatch) -> None:
-    """Ensure ``aion chat2`` forwards CLI flags into launch options."""
+def test_chat_launches_ui(monkeypatch) -> None:
+    """Ensure ``aion chat`` forwards CLI flags into launch options."""
     runner = CliRunner()
-    chat2_module = importlib.import_module("aion.cli.commands.chat2")
+    chat_module = importlib.import_module("aion.cli.commands.chat")
     called: dict[str, object] = {}
 
     def fake_launch(options):
         called["options"] = options
         return 0
 
-    monkeypatch.setattr(chat2_module, "launch_chat2", fake_launch)
+    monkeypatch.setattr(chat_module, "launch_chat", fake_launch)
 
     result = runner.invoke(
         cli,
         [
-            "chat2",
+            "chat",
             "--url",
             "http://localhost:8000",
             "--agent-id",
@@ -70,35 +70,35 @@ def test_chat2_launches_ui(monkeypatch) -> None:
     assert options.push_receiver == "http://localhost:5050"
 
 
-def test_chat2_reports_missing_artifact(monkeypatch) -> None:
+def test_chat_reports_missing_artifact(monkeypatch) -> None:
     """Ensure binary resolution failures surface as Click exceptions."""
     runner = CliRunner()
-    chat2_module = importlib.import_module("aion.cli.commands.chat2")
+    chat_module = importlib.import_module("aion.cli.commands.chat")
 
     def fake_launch(_options):
-        raise BinaryResolutionError("missing chat2 artifact")
+        raise BinaryResolutionError("missing chat artifact")
 
-    monkeypatch.setattr(chat2_module, "launch_chat2", fake_launch)
+    monkeypatch.setattr(chat_module, "launch_chat", fake_launch)
 
-    result = runner.invoke(cli, ["chat2", "--url", "http://localhost:8000"])
+    result = runner.invoke(cli, ["chat", "--url", "http://localhost:8000"])
 
     assert result.exit_code != 0
-    assert "missing chat2 artifact" in result.output
+    assert "missing chat artifact" in result.output
 
 
-def test_chat2_defaults_to_local_proxy(monkeypatch) -> None:
-    """Ensure ``aion chat2`` lets the UI resolve the selected environment."""
+def test_chat_defaults_to_local_proxy(monkeypatch) -> None:
+    """Ensure ``aion chat`` lets the UI resolve the selected environment."""
     runner = CliRunner()
-    chat2_module = importlib.import_module("aion.cli.commands.chat2")
+    chat_module = importlib.import_module("aion.cli.commands.chat")
     called: dict[str, object] = {}
 
     def fake_launch(options):
         called["options"] = options
         return 0
 
-    monkeypatch.setattr(chat2_module, "launch_chat2", fake_launch)
+    monkeypatch.setattr(chat_module, "launch_chat", fake_launch)
 
-    result = runner.invoke(cli, ["chat2"])
+    result = runner.invoke(cli, ["chat"])
 
     assert result.exit_code == 0
     options = called["options"]

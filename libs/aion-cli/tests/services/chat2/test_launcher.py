@@ -1,16 +1,16 @@
-"""Tests for the standalone chat2 launcher."""
+"""Tests for the standalone chat launcher."""
 
 from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
 
-from aion.cli.services.chat2 import launcher
+from aion.cli.services.chat import launcher
 
 
-def test_chat2_launch_options_to_args() -> None:
+def test_chat_launch_options_to_args() -> None:
     """Ensure launcher arguments are serialized for the UI binary."""
-    options = launcher.Chat2LaunchOptions(
+    options = launcher.ChatLaunchOptions(
         endpoint="http://localhost:8000",
         agent_id="demo-agent",
         token="secret-token",
@@ -34,9 +34,9 @@ def test_chat2_launch_options_to_args() -> None:
     ]
 
 
-def test_chat2_launch_options_omits_endpoint_when_not_supplied() -> None:
+def test_chat_launch_options_omits_endpoint_when_not_supplied() -> None:
     """Ensure environment-backed chat launches do not force a local URL."""
-    options = launcher.Chat2LaunchOptions(
+    options = launcher.ChatLaunchOptions(
         endpoint=None,
         agent_id=None,
         token=None,
@@ -48,7 +48,7 @@ def test_chat2_launch_options_omits_endpoint_when_not_supplied() -> None:
     assert options.to_args() == []
 
 
-def test_resolve_chat2_command_prefers_packaged_binary(
+def test_resolve_chat_command_prefers_packaged_binary(
     monkeypatch, tmp_path: Path
 ) -> None:
     """Ensure packaged binaries win when no source-checkout UI is available."""
@@ -61,15 +61,15 @@ def test_resolve_chat2_command_prefers_packaged_binary(
     monkeypatch.setattr(launcher.shutil, "which", lambda _name: "/usr/bin/node")
     monkeypatch.setattr(launcher, "_repo_root_from_checkout", lambda: None)
 
-    assert launcher.resolve_chat2_command() == [str(binary)]
+    assert launcher.resolve_chat_command() == [str(binary)]
 
 
-def test_resolve_chat2_command_falls_back_to_packaged_bundle(
+def test_resolve_chat_command_falls_back_to_packaged_bundle(
     monkeypatch, tmp_path: Path
 ) -> None:
     """Ensure unsupported binary platforms still fall back to the bundled JS UI."""
     bundle = tmp_path / "cli.mjs"
-    bundle.write_text("console.log('chat2');\n")
+    bundle.write_text("console.log('chat');\n")
 
     monkeypatch.setattr(launcher, "_packaged_resource_root", lambda: tmp_path)
     monkeypatch.setattr(
@@ -80,10 +80,10 @@ def test_resolve_chat2_command_falls_back_to_packaged_bundle(
     monkeypatch.setattr(launcher.shutil, "which", lambda _name: "/usr/bin/node")
     monkeypatch.setattr(launcher, "_repo_root_from_checkout", lambda: None)
 
-    assert launcher.resolve_chat2_command() == ["/usr/bin/node", str(bundle)]
+    assert launcher.resolve_chat_command() == ["/usr/bin/node", str(bundle)]
 
 
-def test_resolve_chat2_command_prefers_checkout_bundle_over_packaged_artifacts(
+def test_resolve_chat_command_prefers_checkout_bundle_over_packaged_artifacts(
     monkeypatch, tmp_path: Path
 ) -> None:
     """Ensure source-checkout bundles win during local editable development."""
@@ -102,15 +102,15 @@ def test_resolve_chat2_command_prefers_checkout_bundle_over_packaged_artifacts(
     monkeypatch.setattr(launcher.shutil, "which", lambda _name: "/usr/bin/node")
     monkeypatch.setattr(launcher, "_repo_root_from_checkout", lambda: repo_root)
 
-    assert launcher.resolve_chat2_command() == [
+    assert launcher.resolve_chat_command() == [
         "/usr/bin/node",
         str(checkout_bundle),
     ]
 
 
-def test_launch_chat2_returns_process_exit_code(monkeypatch) -> None:
+def test_launch_chat_returns_process_exit_code(monkeypatch) -> None:
     """Ensure the launcher returns the child process exit status."""
-    options = launcher.Chat2LaunchOptions(
+    options = launcher.ChatLaunchOptions(
         endpoint=None,
         agent_id=None,
         token=None,
@@ -125,9 +125,9 @@ def test_launch_chat2_returns_process_exit_code(monkeypatch) -> None:
         recorded["check"] = check
         return SimpleNamespace(returncode=7)
 
-    monkeypatch.setattr(launcher, "resolve_chat2_command", lambda: ["node", "/tmp/cli.mjs"])
+    monkeypatch.setattr(launcher, "resolve_chat_command", lambda: ["node", "/tmp/cli.mjs"])
 
-    exit_code = launcher.launch_chat2(options, runner=fake_runner)
+    exit_code = launcher.launch_chat(options, runner=fake_runner)
 
     assert exit_code == 7
     assert recorded["command"] == [

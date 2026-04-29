@@ -31,6 +31,8 @@ export interface ChatComposerProps {
 	streamState: string;
 	agentSuggestions: string[];
 	selectedSuggestionIndex: number;
+	fileSuggestions: string[];
+	selectedFileSuggestionIndex: number;
 	slashCommands: readonly ComposerMenuItem[];
 	selectedSlashCommandIndex: number;
 	slashMenuVisible: boolean;
@@ -84,6 +86,8 @@ export function ChatComposer({
 	streamState,
 	agentSuggestions,
 	selectedSuggestionIndex,
+	fileSuggestions,
+	selectedFileSuggestionIndex,
 	slashCommands,
 	selectedSlashCommandIndex,
 	slashMenuVisible,
@@ -102,8 +106,9 @@ export function ChatComposer({
 	const draftLines = draft.length > 0 ? wrapToWidth(draft, contentWidth) : [""];
 	const fillerRow = " ".repeat(lineWidth);
 	const showAgentSuggestions = agentSuggestions.length > 0;
+	const showFileSuggestions = fileSuggestions.length > 0;
 	const showSlashList = slashMenuVisible && !slashSubmenu;
-	const showFooter = !showAgentSuggestions && !slashMenuVisible && !slashSubmenu;
+	const showFooter = !showAgentSuggestions && !showFileSuggestions && !slashMenuVisible && !slashSubmenu;
 	const slashLabelWidth = getTableLabelWidth(slashCommands);
 	const slashSubmenuLabelWidth = getTableLabelWidth(slashSubmenu?.options ?? [], true);
 
@@ -224,6 +229,19 @@ export function ChatComposer({
 							color={index === selectedSuggestionIndex ? SELECTION_HIGHLIGHT : PRIMARY_TEXT}
 						>
 							{index === selectedSuggestionIndex ? "› " : "  "}@{suggestion}
+						</Text>
+					))}
+				</Box>
+			) : null}
+			{showFileSuggestions ? (
+				<Box flexDirection="column">
+					<Text color={SECONDARY_TEXT}>Files</Text>
+					{fileSuggestions.map((label, index) => (
+						<Text
+							key={label}
+							color={index === selectedFileSuggestionIndex ? SELECTION_HIGHLIGHT : PRIMARY_TEXT}
+						>
+							{index === selectedFileSuggestionIndex ? "› " : "  "}{label}
 						</Text>
 					))}
 				</Box>

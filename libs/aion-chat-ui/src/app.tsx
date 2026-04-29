@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type {
 	Artifact,
+	FilePart,
 	Message,
 	Task,
 	TaskArtifactUpdateEvent,
@@ -28,6 +29,15 @@ import {
 	type ChatSettings
 } from "./lib/chatSettings.js";
 import { openUrlInDefaultBrowser } from "./lib/browser.js";
+import {
+	applyFileSuggestion,
+	buildMessageParts,
+	clearFileMention,
+	getFileMentionMatch,
+	getFileSuggestions,
+	type FileSuggestion
+} from "./lib/input";
+import { loadChatModeSettings, saveChatModeSettings } from "./lib/chatSettings.js";
 import {
 	buildAuthenticatedFetch,
 	buildMessageParams,
@@ -167,6 +177,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		options.agentId ?? activeEnvironmentSettings.selectedAgentId
 	);
 	const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0);
+	const [selectedFileSuggestionIndex, setSelectedFileSuggestionIndex] = useState(0);
 	const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
 	const [selectedSlashSubmenuIndex, setSelectedSlashSubmenuIndex] = useState(0);
 	const [slashSubmenuId, setSlashSubmenuId] = useState<SlashCommandId | undefined>();
@@ -363,6 +374,17 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			.slice(0, 6);
 	}, [discoveredAgents, draft, slashQuery, slashSubmenuId]);
 
+	const fileSuggestions = useMemo((): FileSuggestion[] => {
+		if (slashQuery !== undefined || slashSubmenuId) {
+			return [];
+		}
+
+		const match = getFileMentionMatch(draft);
+		if (!match) return [];
+
+		return getFileSuggestions(match.query);
+	}, [draft, slashQuery, slashSubmenuId]);
+
 	useEffect(() => {
 		setSelectedSuggestionIndex((current) => {
 			if (agentSuggestions.length === 0) {
@@ -371,6 +393,13 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			return Math.min(current, agentSuggestions.length - 1);
 		});
 	}, [agentSuggestions]);
+
+	useEffect(() => {
+		setSelectedFileSuggestionIndex((current) => {
+			if (fileSuggestions.length === 0) return 0;
+			return Math.min(current, fileSuggestions.length - 1);
+		});
+	}, [fileSuggestions]);
 
 	useEffect(() => {
 		setSelectedSlashIndex((current) => {
@@ -439,8 +468,6 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 						selectedAgentId: undefined
 					});
 					appendSystem("The selected agent is no longer available.");
-					setConnectionState("connecting");
-					setConnectionLabel("Choose an agent with @");
 				} else {
 					setConnectionState("connecting");
 					setConnectionLabel(
@@ -705,6 +732,13 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		});
 	};
 
+	const applySelectedFileSuggestion = (): void => {
+		const suggestion = fileSuggestions[selectedFileSuggestionIndex];
+		if (!suggestion) return;
+		setDraft((current) => applyFileSuggestion(current, suggestion));
+		setSelectedFileSuggestionIndex(0);
+	};
+
 	const applySelectedAgentSuggestion = (): void => {
 		const suggestion = agentSuggestions[selectedSuggestionIndex];
 		if (!suggestion) {
@@ -749,6 +783,11 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		if (command.id === "login") {
 			resetSlashSelection();
 			void runLoginSlashCommand();
+			return;
+		}
+
+		if (command.id === "exit") {
+			exit();
 			return;
 		}
 
@@ -863,17 +902,27 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		}
 
 		setDraft("");
+
+		const parts = await buildMessageParts(trimmed);
+		const attachedFiles = parts
+			.filter((p): p is FilePart => p.kind === "file")
+			.map((p) => p.file.name ?? "unnamed");
+		const displayBody =
+			attachedFiles.length > 0
+				? `${trimmed}\n\n*Attached: ${attachedFiles.join(", ")}*`
+				: trimmed;
+
 		setEntries((current) => [
 			...current,
 			{
 				id: randomUUID(),
 				role: "user",
-				body: trimmed
+				body: displayBody
 			}
 		]);
 
 		taskDisplayState.current.clear();
-		const params = buildMessageParams(trimmed, contextId, taskId, pushConfig);
+		const params = buildMessageParams(parts, contextId, taskId, pushConfig);
 		const canStream = Boolean(clientState.agentCard.capabilities.streaming);
 		const useStreaming = requestMode === "streaming-message" && canStream;
 
@@ -986,9 +1035,28 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			return;
 		}
 
+		if (fileSuggestions.length > 0 && key.upArrow) {
+			setSelectedFileSuggestionIndex((current) =>
+				current === 0 ? fileSuggestions.length - 1 : current - 1
+			);
+			return;
+		}
+
+		if (fileSuggestions.length > 0 && key.downArrow) {
+			setSelectedFileSuggestionIndex((current) =>
+				current === fileSuggestions.length - 1 ? 0 : current + 1
+			);
+			return;
+		}
+
 		if (key.escape) {
 			if (isSlashSubmenuOpen || isSlashMenuOpen) {
 				dismissSlashDialog();
+				return;
+			}
+
+			if (fileSuggestions.length > 0) {
+				setDraft((current) => clearFileMention(current));
 				return;
 			}
 
@@ -1035,6 +1103,11 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 
 			if (agentSuggestions.length > 0) {
 				applySelectedAgentSuggestion();
+				return;
+			}
+
+			if (fileSuggestions.length > 0) {
+				applySelectedFileSuggestion();
 				return;
 			}
 
@@ -1094,6 +1167,8 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				streamState={streamLabel}
 				agentSuggestions={agentSuggestions}
 				selectedSuggestionIndex={selectedSuggestionIndex}
+				fileSuggestions={fileSuggestions.map((s) => s.label)}
+				selectedFileSuggestionIndex={selectedFileSuggestionIndex}
 				slashCommands={slashCommands.map((command) => ({
 					label: command.label,
 					description: command.description
