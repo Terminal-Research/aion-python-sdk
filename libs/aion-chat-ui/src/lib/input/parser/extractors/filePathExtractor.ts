@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { basename, extname } from "node:path";
+import { basename, extname, resolve } from "node:path";
 
 import type { FilePart } from "@a2a-js/sdk";
 
@@ -67,17 +67,20 @@ export const filePathExtractor: PartExtractor<FilePart> = {
 		let match: RegExpExecArray | null;
 
 		while ((match = regex.exec(text)) !== null) {
-			let raw = match[1].replace(/[,;:.!?]+$/, "");
-			if (!raw || !existsSync(raw)) continue;
+			const raw = match[1].replace(/[,;:.!?]+$/, "");
+			if (!raw) continue;
+
+			const absolute = resolve(raw);
+			if (!existsSync(absolute)) continue;
 
 			try {
-				if (!statSync(raw).isFile()) continue;
+				if (!statSync(absolute).isFile()) continue;
 			} catch {
 				continue;
 			}
 
 			const start = match.index + match[0].indexOf(raw);
-			spans.push({ start, end: start + raw.length, raw });
+			spans.push({ start, end: start + raw.length, raw: absolute });
 		}
 
 		return spans;
@@ -85,7 +88,7 @@ export const filePathExtractor: PartExtractor<FilePart> = {
 
 	async parse(span: DetectedSpan): Promise<FilePart | null> {
 		try {
-			const stat = statSync(span.raw);
+			const stat = statSync(span.raw);  // span.raw is already absolute after detect()
 			if (stat.size > MAX_FILE_SIZE) return null;
 
 			const buffer = readFileSync(span.raw);

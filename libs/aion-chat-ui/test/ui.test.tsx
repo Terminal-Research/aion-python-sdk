@@ -18,7 +18,7 @@ describe("Ink components", () => {
 				selectedSuggestionIndex={0}
 				slashCommands={[]}
 				selectedSlashCommandIndex={0}
-				slashMenuVisible={false}
+				fileSuggestions={[]} selectedFileSuggestionIndex={0} slashMenuVisible={false}
 			/>
 		);
 
@@ -52,7 +52,7 @@ describe("Ink components", () => {
 					}
 				]}
 				selectedSlashCommandIndex={0}
-				slashMenuVisible={true}
+				fileSuggestions={[]} selectedFileSuggestionIndex={0} slashMenuVisible={true}
 			/>
 		);
 
@@ -81,7 +81,7 @@ describe("Ink components", () => {
 					}
 				]}
 				selectedSlashCommandIndex={0}
-				slashMenuVisible={true}
+				fileSuggestions={[]} selectedFileSuggestionIndex={0} slashMenuVisible={true}
 			/>
 		);
 
@@ -103,7 +103,7 @@ describe("Ink components", () => {
 				selectedSuggestionIndex={0}
 				slashCommands={[]}
 				selectedSlashCommandIndex={0}
-				slashMenuVisible={false}
+				fileSuggestions={[]} selectedFileSuggestionIndex={0} slashMenuVisible={false}
 				slashSubmenu={{
 					title: "Request Mode",
 					subtitle: "Choose how Aion Chat sends requests to the agents.",
@@ -142,7 +142,7 @@ describe("Ink components", () => {
 				selectedSuggestionIndex={0}
 				slashCommands={[]}
 				selectedSlashCommandIndex={0}
-				slashMenuVisible={false}
+				fileSuggestions={[]} selectedFileSuggestionIndex={0} slashMenuVisible={false}
 			/>
 		);
 
