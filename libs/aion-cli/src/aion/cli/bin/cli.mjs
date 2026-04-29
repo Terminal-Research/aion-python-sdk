@@ -88676,6 +88676,14 @@ var SLASH_COMMANDS = [
     options: []
   },
   {
+    id: "exit",
+    label: "/exit",
+    description: "Exit Aion Chat.",
+    title: "Exit",
+    subtitle: "Exit Aion Chat.",
+    options: []
+  },
+  {
     id: "request",
     label: "/request",
     description: "Choose how Aion Chat sends requests to the agents.",
@@ -93598,6 +93606,10 @@ ${JSON.stringify(
     if (command.id === "clear") {
       clearTranscript();
       resetSlashSelection();
+      return;
+    }
+    if (command.id === "exit") {
+      exit();
       return;
     }
     setSlashSubmenuId(command.id);

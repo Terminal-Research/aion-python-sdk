@@ -637,6 +637,11 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			return;
 		}
 
+		if (command.id === "exit") {
+			exit();
+			return;
+		}
+
 		setSlashSubmenuId(command.id as SlashCommandId);
 		setSelectedSlashSubmenuIndex(0);
 		setDraft("");

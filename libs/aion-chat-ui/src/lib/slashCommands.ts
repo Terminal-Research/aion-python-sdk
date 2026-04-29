@@ -64,6 +64,14 @@ export const SLASH_COMMANDS = [
 		options: []
 	},
 	{
+		id: "exit",
+		label: "/exit",
+		description: "Exit Aion Chat.",
+		title: "Exit",
+		subtitle: "Exit Aion Chat.",
+		options: []
+	},
+	{
 		id: "request",
 		label: "/request",
 		description: "Choose how Aion Chat sends requests to the agents.",

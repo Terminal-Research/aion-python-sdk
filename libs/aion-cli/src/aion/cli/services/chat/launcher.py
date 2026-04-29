@@ -1,4 +1,4 @@
-"""Launch the experimental standalone ``chat2`` UI."""
+"""Launch the standalone chat UI."""
 
 from __future__ import annotations
 
@@ -17,8 +17,8 @@ class BinaryResolutionError(RuntimeError):
 
 
 @dataclass(frozen=True)
-class Chat2LaunchOptions:
-    """Arguments forwarded from ``aion chat2`` to the standalone UI.
+class ChatLaunchOptions:
+    """Arguments forwarded from ``aion chat`` to the standalone UI.
 
     Args:
         endpoint: Direct or proxied A2A endpoint URL.
@@ -54,7 +54,7 @@ class Chat2LaunchOptions:
 
 
 def _packaged_resource_root() -> Path:
-    """Return the packaged resource directory for bundled chat2 artifacts."""
+    """Return the packaged resource directory for bundled chat artifacts."""
     return Path(importlib.resources.files("aion.cli.bin"))
 
 
@@ -65,7 +65,7 @@ def _platform_binary_name() -> str:
 
     if system != "darwin":
         raise BinaryResolutionError(
-            "chat2 currently ships macOS artifacts only. "
+            "chat currently ships macOS artifacts only. "
             f"Unsupported platform: {platform.system()}."
         )
 
@@ -78,7 +78,7 @@ def _platform_binary_name() -> str:
     suffix = aliases.get(machine)
     if suffix is None:
         raise BinaryResolutionError(
-            "chat2 does not have a packaged artifact for the current architecture. "
+            "chat does not have a packaged artifact for the current architecture. "
             f"Unsupported machine: {platform.machine()}."
         )
 
@@ -99,7 +99,7 @@ def _repo_root_from_checkout() -> Optional[Path]:
     return None
 
 
-def resolve_chat2_command() -> list[str]:
+def resolve_chat_command() -> list[str]:
     """Resolve the best available command for running the standalone UI.
 
     Resolution order:
@@ -129,13 +129,13 @@ def resolve_chat2_command() -> list[str]:
         return [node_binary, str(packaged_js_bundle)]
 
     raise BinaryResolutionError(
-        "Unable to locate the standalone chat2 artifact. "
+        "Unable to locate the standalone chat artifact. "
         "Build and stage it with 'npm run prepare:python' from libs/aion-chat-ui."
     )
 
 
-def launch_chat2(
-    options: Chat2LaunchOptions,
+def launch_chat(
+    options: ChatLaunchOptions,
     runner: Callable[..., subprocess.CompletedProcess] = subprocess.run,
 ) -> int:
     """Launch the standalone UI and return its exit code.
@@ -147,6 +147,6 @@ def launch_chat2(
     Returns:
         Exit code from the standalone UI process.
     """
-    command = [*resolve_chat2_command(), *options.to_args()]
+    command = [*resolve_chat_command(), *options.to_args()]
     result = runner(command, check=False)
     return int(result.returncode)

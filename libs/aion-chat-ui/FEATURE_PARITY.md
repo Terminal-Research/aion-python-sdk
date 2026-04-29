@@ -19,6 +19,7 @@ the experimental Ink-based `aion chat2` experience.
 - [x] Aion distribution and traceability metadata on outgoing requests
 - [x] Experimental Python launcher command: `aion chat2`
 - [x] File attachment via prompt flow, absolute/relative paths, and `@file:` autocomplete
+- [x] `/exit` slash command to quit the chat
 
 ## Still Missing For Full Parity
 
