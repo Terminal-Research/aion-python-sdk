@@ -23,14 +23,14 @@ import {
 	getAgentMentionMatch,
 	parseAgentSelection
 } from "./lib/agentSelection.js";
-import { buildMessageParts } from "./lib/input/parser";
 import {
 	applyFileSuggestion,
+	buildMessageParts,
 	clearFileMention,
 	getFileMentionMatch,
 	getFileSuggestions,
 	type FileSuggestion
-} from "./lib/input/fileMention.js";
+} from "./lib/input";
 import { loadChatModeSettings, saveChatModeSettings } from "./lib/chatSettings.js";
 import {
 	buildMessageParams,

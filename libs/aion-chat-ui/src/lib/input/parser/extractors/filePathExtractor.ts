@@ -3,7 +3,7 @@ import { basename, extname, resolve } from "node:path";
 
 import type { FilePart } from "@a2a-js/sdk";
 
-import type { DetectedSpan, PartExtractor } from "../parser.js";
+import type { DetectedSpan, PartExtractor } from "../types";
 
 /** Files larger than this are skipped to avoid bloating the A2A message payload. */
 const MAX_FILE_SIZE = 512 * 1024;  // ~0.5 MB
