@@ -245,7 +245,8 @@ class ApiSettings(BaseEnvSettings):
         Get the complete WebSocket URL for GraphQL subscriptions.
 
         Constructs and caches the WebSocket URL with appropriate protocol
-        (ws for HTTP, wss for HTTPS) and GraphQL endpoint path.
+        (ws for HTTP, wss for HTTPS), matching the host and port behavior of
+        the HTTP URL, and appends the GraphQL endpoint path.
 
         Returns:
             str: Complete WebSocket URL for GraphQL subscriptions
@@ -254,7 +255,8 @@ class ApiSettings(BaseEnvSettings):
             return self._ws_gql_url
 
         prefix = "wss" if self.scheme == "https" else "ws"
-        self._ws_gql_url = f"{prefix}://{self.hostname}/ws/graphql"
+        websocket_base_url = self.http_url.replace(f"{self.scheme}://", f"{prefix}://", 1)
+        self._ws_gql_url = f"{websocket_base_url}/ws/graphql"
         return self._ws_gql_url
 
 
