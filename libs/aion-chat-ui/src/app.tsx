@@ -8,7 +8,7 @@ import type {
 	TaskStatusUpdateEvent
 } from "@a2a-js/sdk";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Box, Text, useApp, useInput } from "ink";
+import { Box, useApp, useInput } from "ink";
 
 import type { ChatCliOptions } from "./args.js";
 import { ChatComposer } from "./components/ChatComposer.js";
@@ -28,7 +28,6 @@ import {
 	type ChatSettings
 } from "./lib/chatSettings.js";
 import { openUrlInDefaultBrowser } from "./lib/browser.js";
-import { CONNECTION_THEME } from "./lib/theme.js";
 import {
 	applyFileSuggestion,
 	buildMessageParts,
@@ -98,7 +97,6 @@ import {
 import { isTerminalTaskState } from "./lib/taskState.js";
 import { loginWithWorkOS } from "./lib/workosAuth.js";
 
-type ConnectionState = "connecting" | "connected" | "error";
 const NO_AGENT_MESSAGE_NOTICE = "Task completed with no agent message.";
 
 function upsertEntry(
@@ -158,13 +156,10 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		chatSettings.environments[selectedEnvironment];
 	const controlPlaneApiBaseUrl = getControlPlaneApiBaseUrl(selectedEnvironment);
 	const agentEndpointUrl = options.url;
-	const [connectionState, setConnectionState] = useState<ConnectionState>("connecting");
-	const [connectionLabel, setConnectionLabel] = useState("Discovering agents...");
 	const [pushLabel, setPushLabel] = useState(
 		options.pushNotifications ? "Starting..." : "Disabled"
 	);
 	const [streamLabel, setStreamLabel] = useState("Idle");
-	const [agentName, setAgentName] = useState("Unknown Agent");
 	const [draft, setDraft] = useState("");
 	const [entries, setEntries] = useState<TranscriptEntry[]>([]);
 	const [contextId, setContextId] = useState<string>();
@@ -293,9 +288,6 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		setDiscoveredAgents([]);
 		clearTranscript();
 		setClientState(undefined);
-		setAgentName("Unknown Agent");
-		setConnectionLabel("Discovering agents...");
-		setConnectionState("connecting");
 		setReconnectNonce((current) => current + 1);
 	};
 
@@ -304,15 +296,6 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			appendSystem(initialSettingsResult.warning);
 		}
 	}, [initialSettingsResult.warning]);
-
-	const connectionSummary = useMemo(() => {
-		if (!clientState) {
-			return connectionLabel;
-		}
-
-		return `${clientState.endpoints.rpcUrl}`;
-	}, [clientState, connectionLabel]);
-	const connectionColor = CONNECTION_THEME[connectionState];
 
 	const slashQuery = useMemo(() => {
 		if (slashSubmenuId) {
@@ -492,8 +475,6 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 						agents: nextAgents,
 						agentSources: persistentSources
 					});
-					setConnectionState("connecting");
-					setConnectionLabel(`Connecting to @${nextSelected.id}...`);
 				} else if (selectedAgentKey || (!options.agentId && selectedAgentId)) {
 					setSelectedAgentKey(undefined);
 					setSelectedAgentId(undefined);
@@ -504,23 +485,12 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 						agentSources: persistentSources
 					});
 					appendSystem("The selected agent is no longer available.");
-				} else {
-					setConnectionState("connecting");
-					setConnectionLabel(
-						discovery.agents.length > 0
-							? "Choose an agent with @"
-							: `Using ${selectedEnvironment} control plane at ${controlPlaneApiBaseUrl}`
-					);
 				}
 			} catch (error) {
 				if (closed) {
 					return;
 				}
 				setDiscoveredAgents([]);
-				setConnectionState("connecting");
-				setConnectionLabel(
-					`Using ${selectedEnvironment} control plane at ${controlPlaneApiBaseUrl}`
-				);
 				const message = error instanceof Error ? error.message : String(error);
 				if (agentEndpointUrl) {
 					appendSystem(`No agents were found from the provided URL: ${agentEndpointUrl}\n${message}`);
@@ -564,12 +534,6 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 
 		const connect = async (): Promise<void> => {
 			if (!selectedAgent) {
-				setConnectionState("connecting");
-				setConnectionLabel(
-					discoveredAgents.length > 0
-						? "Choose an agent with @"
-						: `Using ${selectedEnvironment} control plane at ${controlPlaneApiBaseUrl}`
-				);
 				return;
 			}
 
@@ -593,8 +557,6 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 					activeEnvironmentSettings.agents[selectedAgent.agentKey]?.activeContextId
 				);
 				setTaskId(undefined);
-				setConnectionState("connecting");
-				setConnectionLabel(`Connecting to @${selectedAgent.id}...`);
 
 				const connected = await connectClient({
 					...options,
@@ -606,9 +568,6 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				}
 
 				setClientState(connected);
-				setAgentName(connected.agentCard.name);
-				setConnectionState("connected");
-				setConnectionLabel("Connected");
 				const connectionNoticeKey = `${selectedAgent.agentKey}:${connected.agentCard.name}:${connected.endpoints.rpcUrl}`;
 				if (lastConnectionNoticeRef.current !== connectionNoticeKey) {
 					lastConnectionNoticeRef.current = connectionNoticeKey;
@@ -620,8 +579,6 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				if (closed) {
 					return;
 				}
-				setConnectionState("error");
-				setConnectionLabel(error instanceof Error ? error.message : String(error));
 				appendSystem(
 					`Connection failed: ${error instanceof Error ? error.message : String(error)}`
 				);
@@ -1317,16 +1274,6 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 
 	return (
 		<Box flexDirection="column" height="100%">
-			<Box
-				borderStyle="round"
-				borderColor={connectionColor}
-				paddingX={1}
-			>
-				<Text color={connectionColor}>
-					{selectedAgentId ? `@${selectedAgentId}` : agentName}
-				</Text>
-				<Text> • {connectionSummary}</Text>
-			</Box>
 			<Box flexDirection="column" flexGrow={1} marginY={1}>
 				<ChatSession
 					entries={entries}

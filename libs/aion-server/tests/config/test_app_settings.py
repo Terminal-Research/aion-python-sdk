@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import patch
 import os
 
-from aion.shared.settings import AppSettings, app_settings
+from aion.shared.settings import ApiSettings, AppSettings, app_settings
 
 
 class TestAppSettings:
@@ -78,3 +78,50 @@ class TestAppSettings:
         """Test that logstash_port can be set via environment variable."""
         settings = AppSettings()
         assert settings.logstash_port == 5000
+
+
+class TestApiSettings:
+    """Test suite for API connection settings."""
+
+    @pytest.mark.parametrize(
+        ("api_host", "expected_http_url", "expected_ws_gql_url"),
+        [
+            (
+                "https://api.aion.to",
+                "https://api.aion.to",
+                "wss://api.aion.to/ws/graphql",
+            ),
+            (
+                "https://api.aion.to:443",
+                "https://api.aion.to",
+                "wss://api.aion.to/ws/graphql",
+            ),
+            (
+                "http://localhost:80",
+                "http://localhost",
+                "ws://localhost/ws/graphql",
+            ),
+            (
+                "http://localhost:8080",
+                "http://localhost:8080",
+                "ws://localhost:8080/ws/graphql",
+            ),
+            (
+                "http://127.0.0.1:8080",
+                "http://127.0.0.1:8080",
+                "ws://127.0.0.1:8080/ws/graphql",
+            ),
+        ],
+    )
+    def test_websocket_url_matches_http_url_port_behavior(
+            self,
+            api_host,
+            expected_http_url,
+            expected_ws_gql_url,
+    ):
+        """Test that WebSocket URLs preserve non-default API host ports."""
+        with patch.dict(os.environ, {"AION_API_HOST": api_host}):
+            settings = ApiSettings()
+
+            assert settings.http_url == expected_http_url
+            assert settings.ws_gql_url == expected_ws_gql_url

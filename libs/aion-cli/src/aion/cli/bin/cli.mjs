@@ -44713,11 +44713,6 @@ var MESSAGE_THEME = {
   muted: AION_THEME.colors.textMuted,
   labelAccent: AION_THEME.colors.brandAccent
 };
-var CONNECTION_THEME = {
-  connected: "green",
-  connecting: "yellow",
-  error: "red"
-};
 
 // src/components/ChatComposer.tsx
 var import_jsx_runtime = __toESM(require_jsx_runtime(), 1);
@@ -50388,13 +50383,10 @@ function ChatApp({ options }) {
   const activeEnvironmentSettings = chatSettings.environments[selectedEnvironment];
   const controlPlaneApiBaseUrl = getControlPlaneApiBaseUrl(selectedEnvironment);
   const agentEndpointUrl = options.url;
-  const [connectionState, setConnectionState] = (0, import_react33.useState)("connecting");
-  const [connectionLabel, setConnectionLabel] = (0, import_react33.useState)("Discovering agents...");
   const [pushLabel, setPushLabel] = (0, import_react33.useState)(
     options.pushNotifications ? "Starting..." : "Disabled"
   );
   const [streamLabel, setStreamLabel] = (0, import_react33.useState)("Idle");
-  const [agentName, setAgentName] = (0, import_react33.useState)("Unknown Agent");
   const [draft, setDraft] = (0, import_react33.useState)("");
   const [entries, setEntries] = (0, import_react33.useState)([]);
   const [contextId, setContextId] = (0, import_react33.useState)();
@@ -50507,9 +50499,6 @@ function ChatApp({ options }) {
     setDiscoveredAgents([]);
     clearTranscript();
     setClientState(void 0);
-    setAgentName("Unknown Agent");
-    setConnectionLabel("Discovering agents...");
-    setConnectionState("connecting");
     setReconnectNonce((current) => current + 1);
   };
   (0, import_react33.useEffect)(() => {
@@ -50517,13 +50506,6 @@ function ChatApp({ options }) {
       appendSystem(initialSettingsResult.warning);
     }
   }, [initialSettingsResult.warning]);
-  const connectionSummary = (0, import_react33.useMemo)(() => {
-    if (!clientState) {
-      return connectionLabel;
-    }
-    return `${clientState.endpoints.rpcUrl}`;
-  }, [clientState, connectionLabel]);
-  const connectionColor = CONNECTION_THEME[connectionState];
   const slashQuery = (0, import_react33.useMemo)(() => {
     if (slashSubmenuId) {
       return void 0;
@@ -50665,8 +50647,6 @@ ${error.error}`
             agents: nextAgents,
             agentSources: persistentSources
           });
-          setConnectionState("connecting");
-          setConnectionLabel(`Connecting to @${nextSelected.id}...`);
         } else if (selectedAgentKey || !options.agentId && selectedAgentId) {
           setSelectedAgentKey(void 0);
           setSelectedAgentId(void 0);
@@ -50677,21 +50657,12 @@ ${error.error}`
             agentSources: persistentSources
           });
           appendSystem("The selected agent is no longer available.");
-        } else {
-          setConnectionState("connecting");
-          setConnectionLabel(
-            discovery.agents.length > 0 ? "Choose an agent with @" : `Using ${selectedEnvironment} control plane at ${controlPlaneApiBaseUrl}`
-          );
         }
       } catch (error) {
         if (closed) {
           return;
         }
         setDiscoveredAgents([]);
-        setConnectionState("connecting");
-        setConnectionLabel(
-          `Using ${selectedEnvironment} control plane at ${controlPlaneApiBaseUrl}`
-        );
         const message = error instanceof Error ? error.message : String(error);
         if (agentEndpointUrl) {
           appendSystem(`No agents were found from the provided URL: ${agentEndpointUrl}
@@ -50734,10 +50705,6 @@ ${JSON.stringify(
     };
     const connect = async () => {
       if (!selectedAgent) {
-        setConnectionState("connecting");
-        setConnectionLabel(
-          discoveredAgents.length > 0 ? "Choose an agent with @" : `Using ${selectedEnvironment} control plane at ${controlPlaneApiBaseUrl}`
-        );
         return;
       }
       try {
@@ -50759,8 +50726,6 @@ ${JSON.stringify(
           activeEnvironmentSettings.agents[selectedAgent.agentKey]?.activeContextId
         );
         setTaskId(void 0);
-        setConnectionState("connecting");
-        setConnectionLabel(`Connecting to @${selectedAgent.id}...`);
         const connected = await connectClient({
           ...options,
           url: selectedAgent.connectionUrl,
@@ -50770,9 +50735,6 @@ ${JSON.stringify(
           return;
         }
         setClientState(connected);
-        setAgentName(connected.agentCard.name);
-        setConnectionState("connected");
-        setConnectionLabel("Connected");
         const connectionNoticeKey = `${selectedAgent.agentKey}:${connected.agentCard.name}:${connected.endpoints.rpcUrl}`;
         if (lastConnectionNoticeRef.current !== connectionNoticeKey) {
           lastConnectionNoticeRef.current = connectionNoticeKey;
@@ -50784,8 +50746,6 @@ ${JSON.stringify(
         if (closed) {
           return;
         }
-        setConnectionState("error");
-        setConnectionLabel(error instanceof Error ? error.message : String(error));
         appendSystem(
           `Connection failed: ${error instanceof Error ? error.message : String(error)}`
         );
@@ -51379,21 +51339,6 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
     }
   });
   return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Box_default, { flexDirection: "column", height: "100%", children: [
-    /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(
-      Box_default,
-      {
-        borderStyle: "round",
-        borderColor: connectionColor,
-        paddingX: 1,
-        children: [
-          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { color: connectionColor, children: selectedAgentId ? `@${selectedAgentId}` : agentName }),
-          /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Text, { children: [
-            " \u2022 ",
-            connectionSummary
-          ] })
-        ]
-      }
-    ),
     /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Box_default, { flexDirection: "column", flexGrow: 1, marginY: 1, children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
       ChatSession,
       {
