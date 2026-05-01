@@ -1,12 +1,14 @@
 import copy
-from typing import Optional
-
 from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
 from a2a.types import Message, Task, TaskArtifactUpdateEvent
 from aion.shared.agent.execution.scope import AgentExecutionScopeHelper
 from aion.shared.files.a2a import A2AFileTransformer
+from aion.shared.logging import get_logger
 from aion.shared.tasks import A2ATaskDeduplicator
+from typing import Optional
+
+logger = get_logger()
 
 
 class AionEventPipeline:
@@ -54,6 +56,8 @@ class AionEventPipeline:
         task_manager = self._task_manager
         if task_manager:
             await task_manager.process(event)
+        else:
+            logger.warning("Cannot process event silently: task_manager is not initialized.")
 
     async def _emit_to_client(self, event) -> None:
         """Emit event to client via event queue.

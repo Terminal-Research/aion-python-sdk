@@ -10,6 +10,7 @@ from collections.abc import AsyncGenerator
 from functools import wraps
 from typing import cast, override
 
+from aion.server.agent.agent_execution.active_task_registry import AionActiveTaskRegistry
 from aion.server.tasks import store_manager
 from aion.server.utils import ConversationBuilder
 from .request_preprocessors import A2ARequestPreprocessor
@@ -44,6 +45,11 @@ class AionRequestHandler(DefaultRequestHandlerV2):
 
     def __init__(self, *args, preprocessors: list[A2ARequestPreprocessor] | None = None, **kwargs) -> None:
         super().__init__(*args, **kwargs)
+        self._active_task_registry = AionActiveTaskRegistry(
+            agent_executor=self.agent_executor,
+            task_store=self.task_store,
+            push_sender=self._push_sender,
+        )
         self._preprocessors = preprocessors or []
 
     @override
