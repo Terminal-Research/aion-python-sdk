@@ -60,3 +60,16 @@ class FileStorageBackend(ABC):
             mime_type: MIME type of the content.
             context_id: Session/conversation identifier.
         """
+
+    @abstractmethod
+    async def delete(
+        self,
+        file_id: str,
+        context_id: str | None = None,
+    ) -> None:
+        """Delete a previously uploaded file from storage.
+
+        Args:
+            file_id: The file_id returned by generate_uri().
+            context_id: Session/conversation identifier.
+        """

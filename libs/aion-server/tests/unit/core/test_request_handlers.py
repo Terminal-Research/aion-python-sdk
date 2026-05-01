@@ -1,17 +1,10 @@
 import pytest
 from unittest.mock import Mock, AsyncMock, patch
 from a2a.server.context import ServerCallContext
-from a2a.types import JSONRPCErrorResponse, InternalError, InvalidParamsError, TaskState
-from a2a.utils.errors import ServerError
+from a2a.types import TaskState
 
-from aion.server.core.request_handlers import AionJSONRPCHandler, AionRequestHandler
+from aion.server.core.app.handlers.request_handler import AionRequestHandler
 from aion.shared.types import (
-    GetContextRequest,
-    GetContextsListRequest,
-    GetContextResponse,
-    GetContextSuccessResponse,
-    GetContextsListResponse,
-    GetContextsListSuccessResponse,
     ContextsList,
     Conversation,
     GetContextParams,
@@ -21,7 +14,7 @@ from aion.shared.types import (
 
 
 # !! Test Data Factories !!
-def create_test_conversation(context_id="test_ctx", state=TaskState.completed):
+def create_test_conversation(context_id="test_ctx", state=TaskState.TASK_STATE_COMPLETED):
     """Factory function to create test conversation objects."""
     return Conversation(
         context_id=context_id,
@@ -39,7 +32,7 @@ def create_test_tasks(count=2):
         task.history = []
         task.artifacts = []
         task.status = Mock()
-        task.status.state = TaskState.completed
+        task.status.state = TaskState.TASK_STATE_COMPLETED
         tasks.append(task)
     return tasks
 
@@ -53,15 +46,9 @@ def mock_context():
 
 
 @pytest.fixture
-def mock_agent_card():
-    """Create mock agent card."""
-    return Mock()
-
-
-@pytest.fixture
-def mock_request_handler():
-    """Create mock request handler."""
-    return AsyncMock()
+def anyio_backend():
+    """Run async tests on asyncio only."""
+    return "asyncio"
 
 
 @pytest.fixture
@@ -73,20 +60,12 @@ def mock_task_store():
 # !! Composite Fixtures !!
 
 @pytest.fixture
-def json_rpc_handler(mock_agent_card, mock_request_handler):
-    """Create JSON-RPC handler with mocked dependencies."""
-    return AionJSONRPCHandler(
-        agent_card=mock_agent_card,
-        request_handler=mock_request_handler
-    )
-
-
-@pytest.fixture
 def request_handler():
     """Create request handler with mocked dependencies."""
     return AionRequestHandler(
         agent_executor=Mock(),
-        task_store=Mock()
+        task_store=Mock(),
+        agent_card=Mock(),
     )
 
 
@@ -95,14 +74,14 @@ def request_handler():
 @pytest.fixture
 def mock_conversation_builder():
     """Mock ConversationBuilder."""
-    with patch('aion.server.core.request_handlers.request_handler.ConversationBuilder') as mock:
+    with patch('aion.server.core.app.handlers.request_handler.ConversationBuilder') as mock:
         yield mock
 
 
 @pytest.fixture
 def mock_store_manager():
     """Mock store_manager."""
-    with patch('aion.server.core.request_handlers.request_handler.store_manager') as mock:
+    with patch('aion.server.core.app.handlers.request_handler.store_manager') as mock:
         yield mock
 
 
@@ -126,111 +105,12 @@ def configured_success_scenario(mock_conversation_builder, mock_store_manager, m
     }
 
 
-# !! JSON-RPC Handler Tests !!
-
-class TestAionJSONRPCHandler:
-    """Unit tests for AionJSONRPCHandler error handling and response formatting."""
-
-    @pytest.mark.asyncio
-    async def test_get_context_success(self, json_rpc_handler, mock_context):
-        """Test successful context retrieval and response formatting."""
-        # Setup
-        request = GetContextRequest(
-            id="test_request_123",
-            params=GetContextParams(context_id="test_context_456")
-        )
-        mock_conversation = Mock(spec=Conversation)
-        json_rpc_handler.request_handler.on_get_context = AsyncMock(return_value = mock_conversation)
-
-        # Execute
-        result = await json_rpc_handler.on_get_context(request, mock_context)
-
-        # Verify
-        assert isinstance(result, GetContextResponse)
-        assert isinstance(result.root, GetContextSuccessResponse)
-        assert result.root.id == request.id
-        assert result.root.jsonrpc == "2.0"
-        assert result.root.result == mock_conversation
-        json_rpc_handler.request_handler.on_get_context.assert_called_once_with(
-            request.params, mock_context
-        )
-
-    @pytest.mark.parametrize("error_type,expected_error", [
-        (InvalidParamsError(message="Context not found"), InvalidParamsError),
-        (InternalError(), InternalError),
-    ])
-    @pytest.mark.asyncio
-    async def test_get_context_server_errors(self, json_rpc_handler, mock_context, error_type, expected_error):
-        """Test handling of different ServerError types in get_context."""
-        # Setup
-        request = GetContextRequest(
-            id="test_request_123",
-            params=GetContextParams(context_id="test_context_456")
-        )
-        server_error = ServerError(error=error_type)
-        json_rpc_handler.request_handler.on_get_context.side_effect = server_error
-
-        # Execute
-        result = await json_rpc_handler.on_get_context(request, mock_context)
-
-        # Verify
-        assert isinstance(result, GetContextResponse)
-        assert isinstance(result.root, JSONRPCErrorResponse)
-        assert result.root.id == request.id
-        assert isinstance(result.root.error, expected_error)
-
-    @pytest.mark.asyncio
-    async def test_get_contexts_list_success(self, json_rpc_handler, mock_context):
-        """Test successful contexts list retrieval and response formatting."""
-        # Setup
-        request = GetContextsListRequest(
-            id="test_request_789",
-            params=GetContextsListParams()
-        )
-        mock_context_ids = Mock(spec=ContextsList)
-        json_rpc_handler.request_handler.on_get_contexts_list = AsyncMock(return_value = mock_context_ids)
-
-        # Execute
-        result = await json_rpc_handler.on_get_contexts_list(request, mock_context)
-
-        # Verify
-        assert isinstance(result, GetContextsListResponse)
-        assert isinstance(result.root, GetContextsListSuccessResponse)
-        assert result.root.id == request.id
-        assert result.root.jsonrpc == "2.0"
-        assert result.root.result == mock_context_ids
-        json_rpc_handler.request_handler.on_get_contexts_list.assert_called_once_with(
-            request.params, mock_context
-        )
-
-    @pytest.mark.asyncio
-    async def test_get_contexts_list_server_error(self, json_rpc_handler, mock_context):
-        """Test handling of ServerError in get_contexts_list."""
-        # Setup
-        request = GetContextsListRequest(
-            id="test_request_789",
-            params=GetContextsListParams()
-        )
-        custom_error = InvalidParamsError(message="Invalid parameters")
-        server_error = ServerError(error=custom_error)
-        json_rpc_handler.request_handler.on_get_contexts_list.side_effect = server_error
-
-        # Execute
-        result = await json_rpc_handler.on_get_contexts_list(request, mock_context)
-
-        # Verify
-        assert isinstance(result, GetContextsListResponse)
-        assert isinstance(result.root, JSONRPCErrorResponse)
-        assert result.root.id == request.id
-        assert result.root.error == custom_error
-
-
 # !! Request Handler Tests !!
 
 class TestAionRequestHandler:
     """Unit tests for AionRequestHandler business logic methods."""
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_get_context_success(self, request_handler, mock_context, configured_success_scenario):
         """Test successful context retrieval with proper data flow."""
         # Setup
@@ -262,7 +142,7 @@ class TestAionRequestHandler:
         (100, 0),
         (5, 25),
     ])
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_get_context_custom_pagination(
             self,
             request_handler,
@@ -290,7 +170,7 @@ class TestAionRequestHandler:
             offset=history_offset
         )
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_get_contexts_list_success(self, request_handler, mock_context, mock_store_manager, mock_task_store):
         """Test successful contexts list retrieval with proper data flow."""
         # Setup
@@ -315,7 +195,7 @@ class TestAionRequestHandler:
         ("Database error", "get_context_tasks"),
         ("Connection timeout", "get_context_ids"),
     ])
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_store_error_propagation(
             self,
             request_handler,
@@ -342,7 +222,7 @@ class TestAionRequestHandler:
         with pytest.raises(Exception, match=exception_msg):
             await test_method(params, mock_context)
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_get_context_empty_tasks(self, request_handler, mock_context, mock_conversation_builder,
                                            mock_store_manager, mock_task_store):
         """Test handling of empty task list."""
@@ -365,7 +245,7 @@ class TestAionRequestHandler:
             tasks=[]
         )
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_get_contexts_list_empty_result(self, request_handler, mock_context, mock_store_manager,
                                                   mock_task_store):
         """Test handling of empty contexts list."""
