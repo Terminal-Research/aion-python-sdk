@@ -91,7 +91,7 @@ class AionEventPipeline:
                 insert_idx = i + 1
         incoming_task.history.insert(insert_idx, pending)
 
-    async def _save_silently(self, event) -> None:
+    async def _save_silently(self, event: Task | Message) -> None:
         """Persist event to database without emitting to client.
 
         Task and Message events bypass the event queue and are saved
