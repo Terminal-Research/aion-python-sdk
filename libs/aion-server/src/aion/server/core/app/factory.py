@@ -4,24 +4,27 @@ This module provides AppFactory which coordinates the initialization of
 database, plugins, agent, and FastAPI application using dependency injection.
 """
 
-from typing import Optional
-
+from a2a.server.routes import create_agent_card_routes
+from a2a.utils.constants import DEFAULT_RPC_URL
 from aion.db.postgres import DbFactory
 from aion.shared.agent import AionAgent
 from aion.shared.files.a2a import A2AFileTransformer
 from aion.shared.files.storage.manager import FileUploadManager
 from aion.shared.logging import get_logger
 from fastapi import FastAPI
+from starlette.routing import Route
+from typing import Optional
 
 from aion.server.agent import AionAgentRequestExecutor, AgentFactory
-from aion.server.core.app.a2a_fastapi import AionA2AFastAPIApplication
-from aion.server.core.app.preprocessors import FilePartPreprocessor
+from aion.server.core.app.api import AionExtraHTTPRoutes
+from aion.server.core.app.handlers import AionJsonRpcDispatcher, AionRequestHandler
+from aion.server.core.app.handlers.request_preprocessors import A2ARequestPreprocessor, FilePartPreprocessor
 from aion.server.core.middlewares import TracingMiddleware, AionContextMiddleware
-from aion.server.core.request_handlers import AionRequestHandler
 from aion.server.plugins import PluginFactory
 from aion.server.tasks import StoreManager, PushNotificationFactory
 from .lifespan import AppLifespan
 from .registry import app_registry
+from ...agent.agent_execution.request_context_builder import AionRequestContextBuilder
 
 logger = get_logger()
 
@@ -70,8 +73,6 @@ class AppFactory:
         self.upload_manager = upload_manager or FileUploadManager.from_settings()
         self.file_transformer = A2AFileTransformer(self.upload_manager)
 
-        # Application components (created during initialization)
-        self.a2a_app: Optional[AionA2AFastAPIApplication] = None
         self.fastapi_app: Optional[FastAPI] = None
         self._executor: Optional[AionAgentRequestExecutor] = None
 
@@ -96,7 +97,7 @@ class AppFactory:
         # 1. Initialize database
         await self.db_factory.initialize()
 
-        # 2. Build application (A2A + FastAPI)
+        # 2. Build FastAPI application
         await self._build_app()
 
         # 3. Initialize plugins - Phase 1: infrastructure setup
@@ -115,32 +116,28 @@ class AppFactory:
                     self.aion_agent.id, self.aion_agent.host, self.aion_agent.port)
 
     async def _build_app(self) -> None:
-        """Build A2A and FastAPI applications with all necessary configuration."""
-        if self.a2a_app or self.fastapi_app:
-            raise RuntimeError("Applications are already created")
+        """Build FastAPI application with all necessary configuration."""
+        if self.fastapi_app:
+            raise RuntimeError("Application is already created")
 
-        # Create request handler
         request_handler = await self._create_request_handler()
 
-        # Create A2A application
-        self.a2a_app = AionA2AFastAPIApplication(
-            aion_agent=self.aion_agent,
-            http_handler=request_handler,
-            preprocessors=[
-                FilePartPreprocessor(self.file_transformer, wait_upload=True),
-            ],
-            enable_v0_3_compat=True
+        jsonrpc_dispatcher = AionJsonRpcDispatcher(
+            request_handler=request_handler,
+            enable_v0_3_compat=True,
         )
+        routes = [
+            *create_agent_card_routes(self.aion_agent.card),
+            Route(DEFAULT_RPC_URL, endpoint=jsonrpc_dispatcher.handle_requests, methods=['POST']),
+        ]
 
-        # Build FastAPI application from A2A app
         lifespan = AppLifespan(app_factory=self)
-        self.fastapi_app = self.a2a_app.build(lifespan=lifespan.executor)
+        self.fastapi_app = FastAPI(routes=routes, lifespan=lifespan.executor)
+        AionExtraHTTPRoutes(self.aion_agent).register(self.fastapi_app)
         self._add_extra_middlewares()
 
     async def _create_request_handler(self) -> AionRequestHandler:
         """Create and configure the request handler with task store and agent executor."""
-
-        # Initialize task store
         self.store_manager.initialize()
         task_store = self.store_manager.get_store()
 
@@ -156,14 +153,17 @@ class AppFactory:
             task_store=task_store,
             push_config_store=push_config_store,
             push_sender=push_sender,
+            agent_card=self.aion_agent.card,
+            request_context_builder=AionRequestContextBuilder(
+                task_store=task_store,
+                auto_discover_interrupted_task=True,
+            ),
+            preprocessors=[
+                FilePartPreprocessor(self.file_transformer, wait_upload=True),
+            ],
         )
 
     def _add_extra_middlewares(self):
-        """Adds extra middleware to the FastAPI application.
-
-        This method is used to extend the FastAPI application's functionality
-        with additional middleware that are not included by default.
-        """
         self.fastapi_app.add_middleware(TracingMiddleware)
         self.fastapi_app.add_middleware(AionContextMiddleware)
 
@@ -171,14 +171,12 @@ class AppFactory:
         """Shutdown the application and cleanup resources."""
         logger.info("Shutting down application factory")
 
-        # Drain any in-flight background file uploads before shutting down
         if self._executor is not None:
             try:
                 await self._executor.drain()
             except Exception as exc:
                 logger.error("Error draining uploads", exc_info=exc)
 
-        # Cleanup plugins (via PluginFactory)
         if self.plugin_factory.is_initialized():
             try:
                 await self.plugin_factory.teardown_all()
@@ -186,7 +184,6 @@ class AppFactory:
             except Exception as exc:
                 logger.error("Error cleaning up plugins", exc_info=exc)
 
-        # Cleanup database (via DbFactory)
         if self.db_factory.is_initialized:
             try:
                 await self.db_factory.cleanup()
@@ -196,20 +193,9 @@ class AppFactory:
 
     @property
     def is_initialized(self) -> bool:
-        """Check if the factory is fully initialized.
-
-        Returns:
-            bool: True if both A2A app and FastAPI app exist
-        """
-        return (
-                self.a2a_app is not None and
-                self.fastapi_app is not None
-        )
+        """Check if the factory is fully initialized."""
+        return self.fastapi_app is not None
 
     def get_fastapi_app(self) -> Optional[FastAPI]:
-        """Get the FastAPI application instance.
-
-        Returns:
-            Optional[FastAPI]: The FastAPI app if initialized, None otherwise
-        """
+        """Get the FastAPI application instance."""
         return self.fastapi_app

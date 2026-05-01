@@ -3,7 +3,7 @@ from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
 from a2a.types import Task
-from a2a.utils import new_task
+from a2a.helpers import new_task_from_user_message
 from a2a.utils.errors import (
     InternalError,
     InvalidParamsError,
@@ -134,7 +134,7 @@ class AionAgentRequestExecutor(AgentExecutor):
                 )
 
         # Create new task
-        task = new_task(context.message)
+        task = new_task_from_user_message(context.message)
         task.metadata = context.metadata or None
         context.current_task = task
 

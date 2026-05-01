@@ -56,6 +56,13 @@ class StubFileStorageBackend(FileStorageBackend):
         uri = self._build_uri(file_id, mime_type, context_id)
         logger.debug("[StubStorage] upload skipped: uri=%s size=%d", uri, len(data))
 
+    async def delete(
+        self,
+        file_id: str,
+        context_id: str | None = None,
+    ) -> None:
+        logger.debug("[StubStorage] delete skipped: file_id=%s", file_id)
+
     def _build_uri(self, file_id: str, mime_type: str | None, context_id: str | None) -> str:
         """Build a fake file URI with optional context prefix.
 

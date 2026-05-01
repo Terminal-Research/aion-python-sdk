@@ -34,7 +34,8 @@ class FileUploadManager:
             backend: The file storage backend to use for uploads.
         """
         self._backend = backend
-        self._pending: dict[str, asyncio.Task] = {}  # uri > task
+        self._pending: dict[str, asyncio.Task] = {}  # uri -> task
+        self._uri_to_file_id: dict[str, str] = {}  # uri -> file_id
 
     @classmethod
     def from_settings(cls) -> "FileUploadManager | None":
@@ -83,10 +84,27 @@ class FileUploadManager:
             The file URI for the scheduled upload.
         """
         file_id, uri = self._backend.generate_uri(mime_type=mime_type, context_id=context_id)
+        self._uri_to_file_id[uri] = file_id
         task = asyncio.create_task(self._upload_safe(file_id, data, mime_type, context_id))
         self._pending[uri] = task
         task.add_done_callback(lambda _: self._pending.pop(uri, None))
         return uri
+
+    async def delete(self, uri: str, context_id: str | None = None) -> None:
+        """Cancel a pending upload or delete an already-uploaded file.
+
+        Args:
+            uri: The file URI returned by schedule().
+            context_id: Optional context identifier passed to the backend delete.
+        """
+        pending_task = self._pending.get(uri)
+        if pending_task and not pending_task.done():
+            pending_task.cancel()
+            logger.debug("Cancelled pending upload: uri=%s", uri)
+
+        file_id = self._uri_to_file_id.pop(uri, None)
+        if file_id:
+            await self._backend.delete(file_id, context_id=context_id)
 
     async def wait(self, uris: list[str]) -> None:
         """Wait for uploads of specific URIs to complete.

@@ -1,6 +1,6 @@
 from a2a.server.events import Event
 from a2a.server.tasks import TaskManager
-from a2a.types import Task, TaskArtifactUpdateEvent, TaskStatusUpdateEvent
+from a2a.types import Message, Task, TaskArtifactUpdateEvent, TaskState, TaskStatus, TaskStatusUpdateEvent
 from aion.server.tasks import store_manager
 from aion.server.utils import check_if_task_is_interrupted
 from aion.shared.agent.execution.scope import AgentExecutionScopeHelper
@@ -33,9 +33,27 @@ class AionTaskManager(TaskManager):
         if self._check_process_skip_event(event):
             return event
 
+        if isinstance(event, Message):
+            event = await self._wrap_message_as_status_event(event)
+
         result = await super().process(event)
         self._track_task_status(event)
         return result
+
+    async def _wrap_message_as_status_event(self, message: Message) -> TaskStatusUpdateEvent:
+        """Wrap a standalone Message into a TaskStatusUpdateEvent.
+
+        The base TaskManager does not persist raw Message objects. Wrapping the
+        message in a working-state status event ensures it is saved to history
+        via the standard status-update chain.
+        """
+        current_task = await self.get_task()
+        state = current_task.status.state if current_task else TaskState.TASK_STATE_WORKING
+        return TaskStatusUpdateEvent(
+            task_id=self.task_id,
+            context_id=self.context_id,
+            status=TaskStatus(state=state, message=message),
+        )
 
     @staticmethod
     def _track_task_status(event: Event) -> None:

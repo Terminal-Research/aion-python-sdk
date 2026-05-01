@@ -1,5 +1,3 @@
-"""Base protocol for A2A request preprocessors."""
-
 from typing import Any, Protocol, runtime_checkable
 
 
@@ -15,12 +13,21 @@ class A2ARequestPreprocessor(Protocol):
     transformation, content filtering, or request enrichment.
     """
 
-    async def preprocess(self, request_obj: Any) -> None:
+    async def process(self, request_obj: Any) -> None:
         """Transform the request object in-place.
 
         Args:
             request_obj: Parsed A2A request (e.g. SendMessageRequest).
                          Only handle types relevant to this preprocessor;
                          ignore the rest.
+        """
+        ...
+
+    async def rollback(self) -> None:
+        """Undo side effects produced by the last preprocess() call.
+
+        Called automatically when an error occurs after preprocess() has run.
+        Preprocessors that produce side effects (e.g. file uploads) must
+        implement this to clean up.
         """
         ...

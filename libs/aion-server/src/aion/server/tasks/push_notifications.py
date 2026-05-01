@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import httpx
-from a2a.server.context import ServerCallContext
 from a2a.server.tasks import InMemoryPushNotificationConfigStore
 from a2a.server.tasks.base_push_notification_sender import BasePushNotificationSender
 from a2a.server.tasks.push_notification_config_store import PushNotificationConfigStore
@@ -31,7 +30,6 @@ class PushNotificationFactory:
         sender = BasePushNotificationSender(
             httpx_client=httpx.AsyncClient(),
             config_store=config_store,
-            context=ServerCallContext(),
         )
         return config_store, sender
 
