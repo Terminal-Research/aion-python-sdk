@@ -49,7 +49,7 @@ export interface LoginCallbacks {
 	onSlowDown?: (nextIntervalSeconds: number) => void;
 }
 
-interface AuthSession {
+export interface AuthSession {
 	accessToken: string;
 	refreshToken: string;
 	expiresAt?: number;

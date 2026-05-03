@@ -15,7 +15,8 @@ import {
 import {
 	type AgentRecord,
 	type AgentSourceRecord,
-	createDefaultLocalAgentSource
+	createDefaultLocalAgentSource,
+	createDefaultRegistryAgentSource
 } from "./agents/model.js";
 
 interface ChatEnvironmentSettingsFile {
@@ -65,12 +66,16 @@ function isResponseMode(value: string | undefined): value is ChatModeSettings["r
 	return value === "message-output" || value === "a2a-protocol";
 }
 
-function defaultEnvironmentSettings(): ChatEnvironmentSettings {
+function defaultEnvironmentSettings(
+	environmentId: AionEnvironmentId
+): ChatEnvironmentSettings {
 	const defaultSource = createDefaultLocalAgentSource();
+	const registrySource = createDefaultRegistryAgentSource(environmentId);
 	return {
 		...DEFAULT_CHAT_MODE_SETTINGS,
 		agentSources: {
-			[defaultSource.sourceKey]: defaultSource
+			[defaultSource.sourceKey]: defaultSource,
+			[registrySource.sourceKey]: registrySource
 		},
 		agents: {}
 	};
@@ -190,7 +195,7 @@ function defaultSettings(): ChatSettings {
 	return {
 		selectedEnvironment: DEFAULT_AION_ENVIRONMENT_ID,
 		environments: Object.fromEntries(
-			AION_ENVIRONMENT_IDS.map((id) => [id, defaultEnvironmentSettings()])
+			AION_ENVIRONMENT_IDS.map((id) => [id, defaultEnvironmentSettings(id)])
 		) as Record<AionEnvironmentId, ChatEnvironmentSettings>
 	};
 }

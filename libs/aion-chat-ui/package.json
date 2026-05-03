@@ -13,6 +13,7 @@
   },
   "scripts": {
     "dev": "tsx src/cli.tsx",
+    "graphql:codegen": "graphql-codegen --config codegen.ts",
     "typecheck": "tsc --noEmit",
     "build": "npm run typecheck && tsup --config tsup.config.ts",
     "test": "vitest run",
@@ -35,9 +36,13 @@
     "yaml": "^2.8.3"
   },
   "devDependencies": {
+    "@graphql-codegen/cli": "^7.0.0",
+    "@graphql-codegen/typescript": "^6.0.0",
+    "@graphql-codegen/typescript-operations": "^6.0.0",
     "@types/ink-testing-library": "^1.0.4",
     "@types/node": "^22.13.10",
     "@types/react": "^19.0.10",
+    "graphql": "^16.13.2",
     "ink-testing-library": "^4.0.0",
     "tsup": "^8.4.0",
     "tsx": "^4.19.3",
@@ -47,6 +52,7 @@
   "files": [
     "bin",
     "dist",
+    "src/graphql",
     "README.md"
   ],
   "publishConfig": {

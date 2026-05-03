@@ -1,7 +1,13 @@
 import type { AgentCard } from "@a2a-js/sdk";
 
 import {
+	type AionEnvironmentId,
+	getGraphQLHttpUrlForBaseUrl
+} from "../environment.js";
+import { fetchRegistryAgentIdentities } from "../graphql/registry.js";
+import {
 	createAgentKey,
+	slugKey,
 	type AgentRecord,
 	type AgentSourceRecord,
 	type DiscoveredAgentRecord,
@@ -36,6 +42,13 @@ export interface DiscoveredAgentSelectionOptions {
 	selectedAgentId?: string;
 	explicitSourceKey?: string;
 	autoSelectExplicit?: boolean;
+}
+
+export interface AgentDiscoveryOptions {
+	environmentId: AionEnvironmentId;
+	controlPlaneAccessTokenProvider?: () => Promise<string | undefined>;
+	graphQLFetchImpl?: typeof fetch;
+	sourceFetchImpl?: (source: RuntimeAgentSource) => typeof fetch;
 }
 
 function trimTrailingSlash(value: string): string {
@@ -211,10 +224,98 @@ async function discoverAgentCardSource(
 	return { source: resolvedSource, agents: [agent] };
 }
 
+function normalizeAgentHandle(value: string | undefined): string | undefined {
+	const trimmed = value?.trim();
+	if (!trimmed) {
+		return undefined;
+	}
+	return trimmed.startsWith("@") ? trimmed : `@${trimmed}`;
+}
+
+function identityDisplayId(identity: {
+	id: string;
+	name?: string;
+	atName?: string;
+}): string {
+	const handle = normalizeAgentHandle(identity.atName);
+	if (handle) {
+		return handle.slice(1);
+	}
+	if (identity.name?.trim()) {
+		return slugKey(identity.name);
+	}
+	return identity.id;
+}
+
+async function discoverRegistrySource(
+	source: RuntimeAgentSource,
+	fetchImpl: typeof fetch,
+	now: string,
+	options: AgentDiscoveryOptions | undefined
+): Promise<SourceDiscoveryResult> {
+	const accessToken = await options?.controlPlaneAccessTokenProvider?.();
+	if (!accessToken || !options) {
+		return {
+			source: {
+				...source,
+				type: "registry",
+				status: "unavailable",
+				lastCheckedAt: now,
+				lastError: "Login required to load Aion registry agent sources."
+			},
+			agents: []
+		};
+	}
+
+	const identities = await fetchRegistryAgentIdentities({
+		environmentId: options.environmentId,
+		accessToken,
+		graphQLUrl: getGraphQLHttpUrlForBaseUrl(source.url),
+		fetchImpl: options.graphQLFetchImpl ?? fetch
+	});
+	const resolvedSource: AgentSourceRecord = {
+		...source,
+		type: "registry",
+		status: "available",
+		lastCheckedAt: now,
+		lastError: undefined
+	};
+	const agents: DiscoveredAgentRecord[] = [];
+
+	for (const identity of identities) {
+		const agentCardUrl = cardUrlForEndpoint(identity.a2aUrl);
+		const agentCard = await fetchJson<AgentCard>(agentCardUrl, fetchImpl);
+		if (!agentCard) {
+			continue;
+		}
+
+		const displayId = identityDisplayId(identity);
+		agents.push({
+			agentKey: createAgentKey(source.sourceKey, identity.id),
+			agentId: identity.id,
+			id: displayId,
+			path: identity.a2aUrl,
+			sourceKey: source.sourceKey,
+			source: resolvedSource,
+			agentCardUrl,
+			agentCardName: agentCard.name ?? identity.name,
+			agentHandle: normalizeAgentHandle(identity.atName),
+			lastSeenAt: now,
+			lastLoadedAt: now,
+			status: "available",
+			connectionUrl: agentCardUrl,
+			agentCard
+		});
+	}
+
+	return { source: resolvedSource, agents };
+}
+
 async function discoverSource(
 	source: RuntimeAgentSource,
 	fetchImpl: typeof fetch,
-	now: string
+	now: string,
+	options?: AgentDiscoveryOptions
 ): Promise<SourceDiscoveryResult> {
 	if (!source.enabled) {
 		return { source, agents: [] };
@@ -234,13 +335,17 @@ async function discoverSource(
 	if (source.type === "agentCard") {
 		return discoverAgentCardSource(source, fetchImpl, now);
 	}
+	if (source.type === "registry") {
+		return discoverRegistrySource(source, fetchImpl, now, options);
+	}
 
 	throw new Error("Registry agent sources are not supported yet.");
 }
 
 export async function discoverAgentSources(
 	sources: RuntimeAgentSource[],
-	fetchImpl: typeof fetch = fetch
+	fetchImpl: typeof fetch = fetch,
+	options?: AgentDiscoveryOptions
 ): Promise<AgentDiscoveryResult> {
 	const now = new Date().toISOString();
 	const resolvedSources: AgentSourceRecord[] = [];
@@ -249,7 +354,8 @@ export async function discoverAgentSources(
 
 	for (const source of sources) {
 		try {
-			const result = await discoverSource(source, fetchImpl, now);
+			const sourceFetchImpl = options?.sourceFetchImpl?.(source) ?? fetchImpl;
+			const result = await discoverSource(source, sourceFetchImpl, now, options);
 			resolvedSources.push(result.source);
 			agents.push(...result.agents);
 		} catch (error) {
@@ -295,7 +401,7 @@ export function toPersistedAgents(
 			sourceKey: agent.sourceKey,
 			agentCardUrl: agent.agentCardUrl,
 			agentCardName: agent.agentCardName,
-			agentHandle: current?.agentHandle,
+			agentHandle: agent.agentHandle ?? current?.agentHandle,
 			lastSeenAt: agent.lastSeenAt,
 			lastLoadedAt: agent.lastLoadedAt ?? current?.lastLoadedAt,
 			status: agent.status,

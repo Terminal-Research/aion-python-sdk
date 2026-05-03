@@ -1,0 +1,52 @@
+query CurrentUser {
+	user {
+		id
+		homeOrganization {
+			id
+			name
+		}
+		agentIdentity {
+			id
+			name
+			atName
+			a2aUrl
+			agentType
+			organizationId
+			updatedAt
+		}
+	}
+}
+
+query AgentCatalogIdentities(
+	$organizationId: ID!
+	$networkTypes: [NetworkTypeGQL!]
+) {
+	agentIdentityDetails(
+		organizationId: $organizationId
+		types: [Principal, Personal]
+		networkTypes: $networkTypes
+		includePersonalSelf: true
+	) {
+		identity {
+			id
+			agentType
+			userId
+			organizationId
+			systemKey
+			name
+			a2aUrl
+			website
+			email
+			atName
+			biography
+			avatarImageUrl
+			backgroundImageUrl
+			updatedAt
+			notes
+		}
+		distributionUsages {
+			distributionId
+			networkType
+		}
+	}
+}

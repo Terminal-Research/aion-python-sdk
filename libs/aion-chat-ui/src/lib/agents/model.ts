@@ -2,7 +2,10 @@ import { createHash } from "node:crypto";
 
 import type { AgentCard } from "@a2a-js/sdk";
 
-import type { AionEnvironmentId } from "../environment.js";
+import {
+	type AionEnvironmentId,
+	getControlPlaneApiBaseUrl
+} from "../environment.js";
 
 export type AgentSourceType = "manifest" | "agentCard" | "registry";
 export type AgentSourceStatus = "unchecked" | "available" | "unavailable";
@@ -61,6 +64,7 @@ export interface AgentContextSessionFile {
 
 export const DEFAULT_LOCAL_AGENT_SOURCE_KEY = "default-localhost-8000";
 export const DEFAULT_LOCAL_AGENT_SOURCE_URL = "http://localhost:8000";
+export const DEFAULT_REGISTRY_AGENT_SOURCE_KEY_PREFIX = "aion-registry";
 
 export function hashValue(value: string): string {
 	return createHash("sha256").update(value).digest("hex").slice(0, 12);
@@ -96,6 +100,20 @@ export function createDefaultLocalAgentSource(): AgentSourceRecord {
 	};
 }
 
+export function createDefaultRegistryAgentSource(
+	environmentId: AionEnvironmentId
+): AgentSourceRecord {
+	return {
+		sourceKey: `${DEFAULT_REGISTRY_AGENT_SOURCE_KEY_PREFIX}-${environmentId}`,
+		type: "registry",
+		url: getControlPlaneApiBaseUrl(environmentId),
+		description: `Aion ${environmentId} registry`,
+		enabled: true,
+		isDefault: true,
+		status: "unchecked"
+	};
+}
+
 export function createExplicitAgentSource(url: string): RuntimeAgentSource {
 	const normalizedUrl = normalizeSourceUrl(url);
 	return {
@@ -122,11 +140,14 @@ export function createAgentKey(sourceKey: string, identifier: string): string {
 
 export function mergeAgentSources(
 	persistedSources: Record<string, AgentSourceRecord>,
+	environmentId: AionEnvironmentId,
 	explicitUrl?: string
 ): RuntimeAgentSource[] {
 	const sources = new Map<string, RuntimeAgentSource>();
 	const defaultSource = createDefaultLocalAgentSource();
 	sources.set(defaultSource.sourceKey, defaultSource);
+	const defaultRegistrySource = createDefaultRegistryAgentSource(environmentId);
+	sources.set(defaultRegistrySource.sourceKey, defaultRegistrySource);
 
 	for (const source of Object.values(persistedSources)) {
 		if (source.enabled) {

@@ -44494,15 +44494,18 @@ var DEFAULT_AION_ENVIRONMENT_ID = "production";
 var AION_ENVIRONMENTS = {
   production: {
     id: "production",
-    controlPlaneApiBaseUrl: "https://api.aion.to"
+    controlPlaneApiBaseUrl: "https://api.aion.to",
+    webAppBaseUrl: "https://app.aion.to"
   },
   staging: {
     id: "staging",
-    controlPlaneApiBaseUrl: "https://api-staging.aion.to"
+    controlPlaneApiBaseUrl: "https://api-staging.aion.to",
+    webAppBaseUrl: "https://app-staging.aion.to"
   },
   development: {
     id: "development",
-    controlPlaneApiBaseUrl: "http://localhost:8080"
+    controlPlaneApiBaseUrl: "http://localhost:8080",
+    webAppBaseUrl: "https://localhost:3000"
   }
 };
 function isAionEnvironmentId(value) {
@@ -44514,8 +44517,21 @@ function getAionEnvironment(id) {
 function getControlPlaneApiBaseUrl(id) {
   return getAionEnvironment(id).controlPlaneApiBaseUrl;
 }
+function getWebAppBaseUrl(id) {
+  return getAionEnvironment(id).webAppBaseUrl;
+}
 function getAuthConfigUrl(id) {
   return `${getControlPlaneApiBaseUrl(id)}/auth/cli/config`;
+}
+function getGraphQLHttpUrlForBaseUrl(baseUrl) {
+  const parsed = new URL(baseUrl);
+  parsed.pathname = "/api/graphql";
+  parsed.search = "";
+  parsed.hash = "";
+  return parsed.toString();
+}
+function getGraphQLHttpUrl(id) {
+  return getGraphQLHttpUrlForBaseUrl(getControlPlaneApiBaseUrl(id));
 }
 
 // src/args.ts
@@ -44528,8 +44544,8 @@ Usage:
 Options:
   -u, --url, --host <endpoint>   Agent or proxy URL to connect to
       --agent-id <agent-id>      Agent identifier for proxy-aware routing
-      --token <token>            Bearer token for authenticated endpoints
-      --header <key=value>       Repeatable custom HTTP header
+      --token <token>            Bearer token for the explicit --url endpoint
+      --header <key=value>       Repeatable custom HTTP header for the explicit --url endpoint
       --push-notifications       Enable the local push notification receiver
       --push-receiver <url>      Push notification receiver URL
       --help                     Show this help text
@@ -45664,6 +45680,7 @@ function filterSlashCommands(query) {
 import { createHash } from "crypto";
 var DEFAULT_LOCAL_AGENT_SOURCE_KEY = "default-localhost-8000";
 var DEFAULT_LOCAL_AGENT_SOURCE_URL = "http://localhost:8000";
+var DEFAULT_REGISTRY_AGENT_SOURCE_KEY_PREFIX = "aion-registry";
 function hashValue(value) {
   return createHash("sha256").update(value).digest("hex").slice(0, 12);
 }
@@ -45690,6 +45707,17 @@ function createDefaultLocalAgentSource() {
     status: "unchecked"
   };
 }
+function createDefaultRegistryAgentSource(environmentId) {
+  return {
+    sourceKey: `${DEFAULT_REGISTRY_AGENT_SOURCE_KEY_PREFIX}-${environmentId}`,
+    type: "registry",
+    url: getControlPlaneApiBaseUrl(environmentId),
+    description: `Aion ${environmentId} registry`,
+    enabled: true,
+    isDefault: true,
+    status: "unchecked"
+  };
+}
 function createExplicitAgentSource(url) {
   const normalizedUrl = normalizeSourceUrl(url);
   return {
@@ -45709,10 +45737,12 @@ function isTransientAgentSource(source) {
 function createAgentKey(sourceKey, identifier) {
   return `${sourceKey}:${slugKey(identifier)}-${hashValue(identifier).slice(0, 8)}`;
 }
-function mergeAgentSources(persistedSources, explicitUrl) {
+function mergeAgentSources(persistedSources, environmentId, explicitUrl) {
   const sources = /* @__PURE__ */ new Map();
   const defaultSource = createDefaultLocalAgentSource();
   sources.set(defaultSource.sourceKey, defaultSource);
+  const defaultRegistrySource = createDefaultRegistryAgentSource(environmentId);
+  sources.set(defaultRegistrySource.sourceKey, defaultRegistrySource);
   for (const source of Object.values(persistedSources)) {
     if (source.enabled) {
       sources.set(source.sourceKey, source);
@@ -45732,12 +45762,14 @@ function isRequestMode(value) {
 function isResponseMode(value) {
   return value === "message-output" || value === "a2a-protocol";
 }
-function defaultEnvironmentSettings() {
+function defaultEnvironmentSettings(environmentId) {
   const defaultSource = createDefaultLocalAgentSource();
+  const registrySource = createDefaultRegistryAgentSource(environmentId);
   return {
     ...DEFAULT_CHAT_MODE_SETTINGS,
     agentSources: {
-      [defaultSource.sourceKey]: defaultSource
+      [defaultSource.sourceKey]: defaultSource,
+      [registrySource.sourceKey]: registrySource
     },
     agents: {}
   };
@@ -45791,7 +45823,7 @@ function defaultSettings() {
   return {
     selectedEnvironment: DEFAULT_AION_ENVIRONMENT_ID,
     environments: Object.fromEntries(
-      AION_ENVIRONMENT_IDS.map((id) => [id, defaultEnvironmentSettings()])
+      AION_ENVIRONMENT_IDS.map((id) => [id, defaultEnvironmentSettings(id)])
     )
   };
 }
@@ -49596,6 +49628,239 @@ function buildMessageParams(parts, contextId, taskId, pushNotificationConfig) {
   };
 }
 
+// src/lib/graphql/client.ts
+var GraphQLRequestError = class extends Error {
+  status;
+  errors;
+  constructor(message, options = {}) {
+    super(message);
+    this.name = "GraphQLRequestError";
+    this.status = options.status;
+    this.errors = options.errors;
+  }
+};
+function formatGraphQLErrors(errors) {
+  const messages = errors.map((error) => error.message?.trim()).filter((message) => Boolean(message));
+  return messages.length > 0 ? messages.join("; ") : "GraphQL request failed";
+}
+async function executeGraphQL(options) {
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const headers = new Headers({
+    "Content-Type": "application/json"
+  });
+  if (options.accessToken) {
+    headers.set("Authorization", `Bearer ${options.accessToken}`);
+  }
+  const response = await fetchImpl(options.url ?? getGraphQLHttpUrl(options.environmentId), {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      query: options.query,
+      variables: options.variables ?? {}
+    })
+  });
+  if (!response.ok) {
+    throw new GraphQLRequestError(
+      `GraphQL HTTP request failed: ${response.status} ${response.statusText}`,
+      { status: response.status }
+    );
+  }
+  const payload = await response.json();
+  if (payload.errors && payload.errors.length > 0) {
+    throw new GraphQLRequestError(formatGraphQLErrors(payload.errors), {
+      errors: payload.errors
+    });
+  }
+  return payload;
+}
+
+// src/lib/graphql/authBootstrap.ts
+var LOGIN_BOOTSTRAP_QUERY = `
+query LoginBootstrap($token: String!) {
+	login(token: $token) {
+		nextRoute
+		email
+		name
+	}
+}
+`;
+var ONBOARDING_ENTRY_PATH = "/onboarding/name";
+function isValidWebAppPath(value) {
+  return Boolean(
+    value && value.startsWith("/") && !value.startsWith("//") && !/^[a-z][a-z0-9+.-]*:/iu.test(value)
+  );
+}
+function normalizeRoute(nextRoute) {
+  if (typeof nextRoute !== "string") {
+    return { nextRouteKind: "NONE", nextRoutePath: null };
+  }
+  const trimmed = nextRoute.trim();
+  if (!trimmed) {
+    return { nextRouteKind: "NONE", nextRoutePath: null };
+  }
+  const normalized = trimmed.toLowerCase();
+  if (nextRoute === "Onboarding" || normalized === "onboarding" || normalized === "/onboarding" || normalized.startsWith("/onboarding/")) {
+    return { nextRouteKind: "ONBOARDING", nextRoutePath: null };
+  }
+  if (isValidWebAppPath(trimmed)) {
+    return { nextRouteKind: "PATH", nextRoutePath: trimmed };
+  }
+  return { nextRouteKind: "NONE", nextRoutePath: null };
+}
+function normalizeOptionalString(value) {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+}
+async function runLoginBootstrap(options) {
+  const response = await executeGraphQL({
+    environmentId: options.environmentId,
+    query: LOGIN_BOOTSTRAP_QUERY,
+    variables: { token: options.accessToken },
+    accessToken: options.accessToken,
+    fetchImpl: options.fetchImpl,
+    url: options.graphQLUrl
+  });
+  const login = response.data?.login ?? null;
+  const route = normalizeRoute(login?.nextRoute);
+  return {
+    ...route,
+    loginEmail: normalizeOptionalString(login?.email),
+    loginName: normalizeOptionalString(login?.name)
+  };
+}
+function resolvePostAuthPath(bootstrap) {
+  if (bootstrap.nextRouteKind === "ONBOARDING") {
+    return ONBOARDING_ENTRY_PATH;
+  }
+  if (bootstrap.nextRouteKind === "PATH" && isValidWebAppPath(bootstrap.nextRoutePath)) {
+    return bootstrap.nextRoutePath;
+  }
+  return void 0;
+}
+function buildWebAppRouteUrl(environmentId, pathname) {
+  const url = new URL(getWebAppBaseUrl(environmentId));
+  url.pathname = pathname;
+  url.search = "";
+  url.hash = "";
+  return url.toString();
+}
+
+// src/lib/graphql/registry.ts
+var CURRENT_USER_QUERY = `
+query CurrentUser {
+	user {
+		id
+		homeOrganization {
+			id
+			name
+		}
+		agentIdentity {
+			id
+			name
+			atName
+			a2aUrl
+			agentType
+			organizationId
+			updatedAt
+		}
+	}
+}
+`;
+var AGENT_CATALOG_IDENTITIES_QUERY = `
+query AgentCatalogIdentities($organizationId: ID!, $networkTypes: [NetworkTypeGQL!]) {
+	agentIdentityDetails(
+		organizationId: $organizationId
+		types: [Principal, Personal]
+		networkTypes: $networkTypes
+		includePersonalSelf: true
+	) {
+		identity {
+			id
+			agentType
+			userId
+			organizationId
+			systemKey
+			name
+			a2aUrl
+			website
+			email
+			atName
+			biography
+			avatarImageUrl
+			backgroundImageUrl
+			updatedAt
+			notes
+		}
+		distributionUsages {
+			distributionId
+			networkType
+		}
+	}
+}
+`;
+function normalizeIdentity(identity) {
+  const a2aUrl = identity.a2aUrl?.trim();
+  if (!a2aUrl) {
+    return void 0;
+  }
+  return {
+    id: identity.id,
+    ...identity.name?.trim() ? { name: identity.name.trim() } : {},
+    ...identity.atName?.trim() ? { atName: identity.atName.trim() } : {},
+    a2aUrl,
+    updatedAt: identity.updatedAt
+  };
+}
+async function fetchRegistryAgentIdentities(options) {
+  const graphQLUrl = options.graphQLUrl ?? getGraphQLHttpUrl(options.environmentId);
+  await runLoginBootstrap({
+    environmentId: options.environmentId,
+    accessToken: options.accessToken,
+    fetchImpl: options.fetchImpl,
+    graphQLUrl
+  });
+  const currentUser = await executeGraphQL({
+    environmentId: options.environmentId,
+    url: graphQLUrl,
+    query: CURRENT_USER_QUERY,
+    variables: {},
+    accessToken: options.accessToken,
+    fetchImpl: options.fetchImpl
+  });
+  const user = currentUser.data?.user;
+  if (!user) {
+    throw new Error("Aion registry did not return the current user.");
+  }
+  const organizationId = user.homeOrganization?.id ?? user.agentIdentity.organizationId;
+  const catalog = await executeGraphQL({
+    environmentId: options.environmentId,
+    url: graphQLUrl,
+    query: AGENT_CATALOG_IDENTITIES_QUERY,
+    variables: {
+      organizationId,
+      networkTypes: ["A2A"]
+    },
+    accessToken: options.accessToken,
+    fetchImpl: options.fetchImpl
+  });
+  const identities = /* @__PURE__ */ new Map();
+  const personalIdentity = normalizeIdentity(user.agentIdentity);
+  if (personalIdentity) {
+    identities.set(personalIdentity.id, personalIdentity);
+  }
+  for (const detail of catalog.data?.agentIdentityDetails ?? []) {
+    const identity = normalizeIdentity(detail.identity);
+    if (identity) {
+      identities.set(identity.id, identity);
+    }
+  }
+  return [...identities.values()].sort(
+    (left, right) => (left.atName ?? left.name ?? left.id).localeCompare(
+      right.atName ?? right.name ?? right.id
+    )
+  );
+}
+
 // src/lib/agents/discovery.ts
 var MANIFEST_PATH = "/.well-known/manifest.json";
 var AGENT_CARD_PATH3 = "/.well-known/agent-card.json";
@@ -49731,7 +49996,78 @@ async function discoverAgentCardSource(source, fetchImpl, now) {
   );
   return { source: resolvedSource, agents: [agent] };
 }
-async function discoverSource(source, fetchImpl, now) {
+function normalizeAgentHandle(value) {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return void 0;
+  }
+  return trimmed.startsWith("@") ? trimmed : `@${trimmed}`;
+}
+function identityDisplayId(identity) {
+  const handle = normalizeAgentHandle(identity.atName);
+  if (handle) {
+    return handle.slice(1);
+  }
+  if (identity.name?.trim()) {
+    return slugKey(identity.name);
+  }
+  return identity.id;
+}
+async function discoverRegistrySource(source, fetchImpl, now, options) {
+  const accessToken = await options?.controlPlaneAccessTokenProvider?.();
+  if (!accessToken || !options) {
+    return {
+      source: {
+        ...source,
+        type: "registry",
+        status: "unavailable",
+        lastCheckedAt: now,
+        lastError: "Login required to load Aion registry agent sources."
+      },
+      agents: []
+    };
+  }
+  const identities = await fetchRegistryAgentIdentities({
+    environmentId: options.environmentId,
+    accessToken,
+    graphQLUrl: getGraphQLHttpUrlForBaseUrl(source.url),
+    fetchImpl: options.graphQLFetchImpl ?? fetch
+  });
+  const resolvedSource = {
+    ...source,
+    type: "registry",
+    status: "available",
+    lastCheckedAt: now,
+    lastError: void 0
+  };
+  const agents = [];
+  for (const identity of identities) {
+    const agentCardUrl = cardUrlForEndpoint(identity.a2aUrl);
+    const agentCard = await fetchJson(agentCardUrl, fetchImpl);
+    if (!agentCard) {
+      continue;
+    }
+    const displayId = identityDisplayId(identity);
+    agents.push({
+      agentKey: createAgentKey(source.sourceKey, identity.id),
+      agentId: identity.id,
+      id: displayId,
+      path: identity.a2aUrl,
+      sourceKey: source.sourceKey,
+      source: resolvedSource,
+      agentCardUrl,
+      agentCardName: agentCard.name ?? identity.name,
+      agentHandle: normalizeAgentHandle(identity.atName),
+      lastSeenAt: now,
+      lastLoadedAt: now,
+      status: "available",
+      connectionUrl: agentCardUrl,
+      agentCard
+    });
+  }
+  return { source: resolvedSource, agents };
+}
+async function discoverSource(source, fetchImpl, now, options) {
   if (!source.enabled) {
     return { source, agents: [] };
   }
@@ -49748,16 +50084,20 @@ async function discoverSource(source, fetchImpl, now) {
   if (source.type === "agentCard") {
     return discoverAgentCardSource(source, fetchImpl, now);
   }
+  if (source.type === "registry") {
+    return discoverRegistrySource(source, fetchImpl, now, options);
+  }
   throw new Error("Registry agent sources are not supported yet.");
 }
-async function discoverAgentSources(sources, fetchImpl = fetch) {
+async function discoverAgentSources(sources, fetchImpl = fetch, options) {
   const now = (/* @__PURE__ */ new Date()).toISOString();
   const resolvedSources = [];
   const agents = [];
   const errors = [];
   for (const source of sources) {
     try {
-      const result = await discoverSource(source, fetchImpl, now);
+      const sourceFetchImpl = options?.sourceFetchImpl?.(source) ?? fetchImpl;
+      const result = await discoverSource(source, sourceFetchImpl, now, options);
       resolvedSources.push(result.source);
       agents.push(...result.agents);
     } catch (error) {
@@ -49797,7 +50137,7 @@ function toPersistedAgents(agents, existingAgents) {
       sourceKey: agent.sourceKey,
       agentCardUrl: agent.agentCardUrl,
       agentCardName: agent.agentCardName,
-      agentHandle: current?.agentHandle,
+      agentHandle: agent.agentHandle ?? current?.agentHandle,
       lastSeenAt: agent.lastSeenAt,
       lastLoadedAt: agent.lastLoadedAt ?? current?.lastLoadedAt,
       status: agent.status,
@@ -50205,8 +50545,10 @@ var keyringCredentialStore = new KeyringCredentialStore();
 
 // src/lib/workosAuth.ts
 var DEVICE_CODE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code";
+var REFRESH_TOKEN_GRANT_TYPE = "refresh_token";
 var DEFAULT_POLL_INTERVAL_SECONDS = 5;
 var SLOW_DOWN_INCREMENT_SECONDS = 5;
+var REFRESH_SKEW_SECONDS = 60;
 var accessTokenCache = /* @__PURE__ */ new Map();
 function wait(ms) {
   return new Promise((resolve3) => {
@@ -50228,6 +50570,12 @@ function normalizeTokenResponse(response) {
     refreshToken: requireString(refreshToken, "refresh token"),
     ...typeof expiresIn === "number" ? { expiresAt: Date.now() + expiresIn * 1e3 } : {}
   };
+}
+function tokenNeedsRefresh(session) {
+  if (!session.expiresAt) {
+    return false;
+  }
+  return Date.now() >= session.expiresAt - REFRESH_SKEW_SECONDS * 1e3;
 }
 async function postJson(url, body, fetchImpl) {
   return fetchImpl(url, {
@@ -50313,6 +50661,30 @@ async function pollForToken(config, deviceCode, expiresInSeconds, initialInterva
   }
   throw new Error("WorkOS login expired before authorization completed.");
 }
+async function refreshSession(environmentId, config, refreshToken, fetchImpl, credentialStore) {
+  if (!config.workos.supportsDirectRefresh) {
+    throw new Error("This Aion API environment does not support direct CLI refresh.");
+  }
+  const response = await postForm(
+    config.workos.refreshTokenUrl,
+    {
+      grant_type: REFRESH_TOKEN_GRANT_TYPE,
+      refresh_token: refreshToken,
+      client_id: config.workos.clientId
+    },
+    fetchImpl
+  );
+  if (!response.ok) {
+    const error = await readOAuthError(response);
+    throw new Error(
+      `WorkOS token refresh failed: ${error.error_description ?? error.error ?? response.statusText}`
+    );
+  }
+  const session = normalizeTokenResponse(await response.json());
+  await credentialStore.setRefreshToken(environmentId, session.refreshToken);
+  accessTokenCache.set(environmentId, session);
+  return session;
+}
 async function loginWithWorkOS(environmentId, callbacks = {}, options = {}) {
   const fetchImpl = options.fetchImpl ?? fetch;
   const credentialStore = options.credentialStore ?? keyringCredentialStore;
@@ -50335,6 +50707,27 @@ async function loginWithWorkOS(environmentId, callbacks = {}, options = {}) {
   await credentialStore.setRefreshToken(environmentId, session.refreshToken);
   accessTokenCache.set(environmentId, session);
   return session;
+}
+async function getStoredAccessToken(environmentId, options = {}) {
+  const cached = accessTokenCache.get(environmentId);
+  if (cached && !tokenNeedsRefresh(cached)) {
+    return cached.accessToken;
+  }
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const credentialStore = options.credentialStore ?? keyringCredentialStore;
+  const refreshToken = await credentialStore.getRefreshToken(environmentId);
+  if (!refreshToken) {
+    return void 0;
+  }
+  const config = await fetchCliAuthConfig(environmentId, fetchImpl);
+  const session = await refreshSession(
+    environmentId,
+    config,
+    refreshToken,
+    fetchImpl,
+    credentialStore
+  );
+  return session.accessToken;
 }
 
 // src/app.tsx
@@ -50587,15 +50980,23 @@ function ChatApp({ options }) {
       try {
         const runtimeSources = mergeAgentSources(
           activeEnvironmentSettings.agentSources,
+          selectedEnvironment,
           agentEndpointUrl
         );
         const explicitSourceKey = agentEndpointUrl ? createExplicitAgentSource(agentEndpointUrl).sourceKey : void 0;
+        const explicitSourceFetch = buildAuthenticatedFetch({
+          headers: options.headers,
+          token: options.token
+        });
         const discovery = await discoverAgentSources(
           runtimeSources,
-          buildAuthenticatedFetch({
-            headers: options.headers,
-            token: options.token
-          })
+          fetch,
+          {
+            environmentId: selectedEnvironment,
+            controlPlaneAccessTokenProvider: () => getStoredAccessToken(selectedEnvironment),
+            graphQLFetchImpl: fetch,
+            sourceFetchImpl: (source) => source.sourceKey === explicitSourceKey ? explicitSourceFetch : fetch
+          }
         );
         if (closed) {
           return;
@@ -50726,8 +51127,11 @@ ${JSON.stringify(
           activeEnvironmentSettings.agents[selectedAgent.agentKey]?.activeContextId
         );
         setTaskId(void 0);
+        const useCliEndpointAuth = isTransientAgentSource(selectedAgent.source);
         const connected = await connectClient({
           ...options,
+          headers: useCliEndpointAuth ? options.headers : {},
+          token: useCliEndpointAuth ? options.token : void 0,
           url: selectedAgent.connectionUrl,
           agentId: selectedAgent.connectionAgentId
         });
@@ -50968,7 +51372,7 @@ ${JSON.stringify(
   const runLoginSlashCommand = async () => {
     appendSystem(`Starting Aion login for ${selectedEnvironment}.`);
     try {
-      await loginWithWorkOS(selectedEnvironment, {
+      const session = await loginWithWorkOS(selectedEnvironment, {
         onDeviceAuthorization: async (prompt) => {
           const url = prompt.verificationUriComplete ?? prompt.verificationUri;
           if (await openUrlInDefaultBrowser(url)) {
@@ -50990,6 +51394,20 @@ Code: ${prompt.userCode}`
           appendStatus(`Login polling slowed to every ${intervalSeconds}s.`);
         }
       });
+      const bootstrap = await runLoginBootstrap({
+        environmentId: selectedEnvironment,
+        accessToken: session.accessToken
+      });
+      const postAuthPath = resolvePostAuthPath(bootstrap);
+      if (postAuthPath) {
+        const postAuthUrl = buildWebAppRouteUrl(selectedEnvironment, postAuthPath);
+        if (await openUrlInDefaultBrowser(postAuthUrl)) {
+          appendSystem("Opening Aion app in default browser.");
+        } else {
+          appendSystem(`Open this URL to continue:
+${postAuthUrl}`);
+        }
+      }
       appendSystem(`Logged in to Aion ${selectedEnvironment}.`);
       setReconnectNonce((current) => current + 1);
     } catch (error) {
@@ -51382,7 +51800,7 @@ async function runLoginCommand() {
   const environmentId = settings.selectedEnvironment;
   process.stdout.write(`Starting Aion login for ${environmentId}...
 `);
-  await loginWithWorkOS(environmentId, {
+  const session = await loginWithWorkOS(environmentId, {
     onDeviceAuthorization: async (prompt) => {
       const url = prompt.verificationUriComplete ?? prompt.verificationUri;
       if (await openUrlInDefaultBrowser(url)) {
@@ -51406,6 +51824,22 @@ Polling slowed to every ${intervalSeconds}s.
 `);
     }
   });
+  const bootstrap = await runLoginBootstrap({
+    environmentId,
+    accessToken: session.accessToken
+  });
+  const postAuthPath = resolvePostAuthPath(bootstrap);
+  if (postAuthPath) {
+    const postAuthUrl = buildWebAppRouteUrl(environmentId, postAuthPath);
+    if (await openUrlInDefaultBrowser(postAuthUrl)) {
+      process.stdout.write("\nOpening Aion app in default browser.\n");
+    } else {
+      process.stdout.write(`
+Open this URL to continue:
+${postAuthUrl}
+`);
+    }
+  }
   process.stdout.write(`
 Logged in to Aion ${environmentId}.
 `);

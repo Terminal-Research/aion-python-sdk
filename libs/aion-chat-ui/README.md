@@ -22,7 +22,9 @@ aio --url http://localhost:8000
 aio --agent-id my-agent --url http://localhost:8000
 ```
 
-`--url` is an A2A endpoint URL used for agent manifest discovery, agent-card resolution, and A2A JSON-RPC calls. The selected Aion environment is separate from `--url`; it identifies the Aion control-plane API used for login and auth configuration.
+`--url` is an A2A endpoint URL used to discover and connect to agents. The selected Aion environment is separate from `--url`; it controls which Aion account and registry services are used for login and hosted agent discovery.
+
+CLI endpoint auth values such as `--token` and `--header` are sent only to the explicit `--url` source. They are not sent to default localhost discovery or Aion registry-discovered agents.
 
 ### Login
 
@@ -31,13 +33,13 @@ aio login
 aion-chat login
 ```
 
-`aio login` authenticates against the currently selected Aion environment, defaulting to production when no environment has been selected. The login flow opens the WorkOS login screen in the default browser when possible and shows the user code in the terminal.
+`aio login` signs in to the currently selected Aion environment, defaulting to production when no environment has been selected. The login flow opens the Aion sign-in page in the default browser when possible and shows the user code in the terminal. If your account needs additional setup, the CLI opens the appropriate Aion web app page after sign-in.
 
 Inside the composer, `/login` is visible in the slash command picker and runs the same login flow.
 
 ### Agent Sources and Sessions
 
-Agent sources are discovered per selected Aion environment. Every environment includes a default manifest source at `http://localhost:8000`; this default is silent when no local server is running. Passing `--url` adds an explicit source for that run. Explicit URLs are resolved as a manifest first and then as a direct agent card.
+Agent sources are discovered per selected Aion environment. Every environment includes a default local source at `http://localhost:8000`; this default is silent when no local server is running. When you are logged in, the selected Aion environment can also provide registry-backed agents for that account. Passing `--url` adds an explicit source for that run. Explicit URLs are resolved as a manifest first and then as a direct agent card.
 
 Inside the composer, `/sources` is visible in the slash command picker and lists configured sources, their type, URL, description, and current status.
 
@@ -60,7 +62,7 @@ aion-chat environment staging
 aion-chat env development
 ```
 
-Environment commands switch the selected Aion control-plane environment used by `aio login`, `/login`, and control-plane API calls. They do not change the A2A endpoint supplied with `--url`.
+Environment commands switch the selected Aion service environment used by `aio login`, `/login`, and registry-backed agent discovery. They do not change the A2A endpoint supplied with `--url`.
 
 These commands are intentionally hidden: `aio environment ...`, `aio env ...`, `aion-chat environment ...`, and `aion-chat env ...` do not appear in command-line `--help`, and `/environment` and `/env` do not appear in the composer slash command picker. They are still executable when typed exactly.
 
@@ -68,10 +70,13 @@ These commands are intentionally hidden: `aio environment ...`, `aio env ...`, `
 
 ```bash
 npm install
+npm run graphql:codegen
 npm run dev -- --url http://localhost:8000
 ```
 
 Run the UI directly from `libs/aion-chat-ui` when you want to work on the Ink/React interface itself. Pass an A2A endpoint with `--url` when you want agent discovery and chat connection.
+
+The GraphQL schema used by this package lives at `src/graphql/chat-client-schema.graphql`. Operations live under `src/graphql/operations/`, and generated TypeScript operation types are committed under `src/graphql/generated/`. Regenerate them with `npm run graphql:codegen` after schema or operation changes.
 
 Use `npm run dev`, not `node src/cli.tsx` or `node src/app.tsx`. The source tree uses TypeScript files with `.js` import specifiers, so it must be run through `tsx` in development or through the built `dist/cli.mjs` bundle.
 

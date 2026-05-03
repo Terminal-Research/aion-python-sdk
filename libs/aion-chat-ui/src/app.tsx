@@ -50,6 +50,11 @@ import {
 	isAionEnvironmentId
 } from "./lib/environment.js";
 import {
+	buildWebAppRouteUrl,
+	resolvePostAuthPath,
+	runLoginBootstrap
+} from "./lib/graphql/authBootstrap.js";
+import {
 	discoverAgentSources,
 	selectDiscoveredAgent,
 	toPersistedAgents
@@ -95,7 +100,7 @@ import {
 	type SlashCommandId
 } from "./lib/slashCommands.js";
 import { isTerminalTaskState } from "./lib/taskState.js";
-import { loginWithWorkOS } from "./lib/workosAuth.js";
+import { getStoredAccessToken, loginWithWorkOS } from "./lib/workosAuth.js";
 
 const NO_AGENT_MESSAGE_NOTICE = "Task completed with no agent message.";
 
@@ -402,17 +407,27 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			try {
 				const runtimeSources = mergeAgentSources(
 					activeEnvironmentSettings.agentSources,
+					selectedEnvironment,
 					agentEndpointUrl
 				);
 				const explicitSourceKey = agentEndpointUrl
 					? createExplicitAgentSource(agentEndpointUrl).sourceKey
 					: undefined;
+				const explicitSourceFetch = buildAuthenticatedFetch({
+					headers: options.headers,
+					token: options.token
+				});
 				const discovery = await discoverAgentSources(
 					runtimeSources,
-					buildAuthenticatedFetch({
-						headers: options.headers,
-						token: options.token
-					})
+					fetch,
+					{
+						environmentId: selectedEnvironment,
+						controlPlaneAccessTokenProvider: () =>
+							getStoredAccessToken(selectedEnvironment),
+						graphQLFetchImpl: fetch,
+						sourceFetchImpl: (source) =>
+							source.sourceKey === explicitSourceKey ? explicitSourceFetch : fetch
+					}
 				);
 				if (closed) {
 					return;
@@ -558,8 +573,11 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				);
 				setTaskId(undefined);
 
+				const useCliEndpointAuth = isTransientAgentSource(selectedAgent.source);
 				const connected = await connectClient({
 					...options,
+					headers: useCliEndpointAuth ? options.headers : {},
+					token: useCliEndpointAuth ? options.token : undefined,
 					url: selectedAgent.connectionUrl,
 					agentId: selectedAgent.connectionAgentId
 				});
@@ -851,7 +869,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 	const runLoginSlashCommand = async (): Promise<void> => {
 		appendSystem(`Starting Aion login for ${selectedEnvironment}.`);
 		try {
-			await loginWithWorkOS(selectedEnvironment, {
+			const session = await loginWithWorkOS(selectedEnvironment, {
 				onDeviceAuthorization: async (prompt) => {
 					const url = prompt.verificationUriComplete ?? prompt.verificationUri;
 					if (await openUrlInDefaultBrowser(url)) {
@@ -869,6 +887,19 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 					appendStatus(`Login polling slowed to every ${intervalSeconds}s.`);
 				}
 			});
+			const bootstrap = await runLoginBootstrap({
+				environmentId: selectedEnvironment,
+				accessToken: session.accessToken
+			});
+			const postAuthPath = resolvePostAuthPath(bootstrap);
+			if (postAuthPath) {
+				const postAuthUrl = buildWebAppRouteUrl(selectedEnvironment, postAuthPath);
+				if (await openUrlInDefaultBrowser(postAuthUrl)) {
+					appendSystem("Opening Aion app in default browser.");
+				} else {
+					appendSystem(`Open this URL to continue:\n${postAuthUrl}`);
+				}
+			}
 			appendSystem(`Logged in to Aion ${selectedEnvironment}.`);
 			setReconnectNonce((current) => current + 1);
 		} catch (error) {

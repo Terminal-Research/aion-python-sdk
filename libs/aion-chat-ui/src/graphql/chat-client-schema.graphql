@@ -1,0 +1,367 @@
+"Describes API authentication requirements."
+directive @auth("which authenticated subjects have access"
+subjectType: String, "which roles have access"
+roles: [String]) on QUERY | MUTATION
+"Marks a fragment as being optionally deferrable. Allowing the backend to split the query and return non-deferred parts first. This implicitly uses a streaming transport protocol which requires client support."
+directive @defer(if: Boolean, label: String) on FRAGMENT_SPREAD | INLINE_FRAGMENT
+
+schema {
+  query: Queries
+  subscription: Subscriptions
+}
+scalar Json
+"A date-time with an offset from UTC/Greenwich in the ISO-8601 calendar system using the format 1970-01-01T00:00:00Z"
+scalar OffsetDateTime
+"""
+
+An identifier established by the Client that MUST contain a String, Number,
+or NULL value if included. If it is not included it is assumed to be a
+notification. The value SHOULD NOT be NULL for requests expecting a response,
+and Numbers SHOULD NOT contain fractional parts. The Server MUST reply with
+the same value in the Response object if included. This member is used to
+correlate the context between the two objects. A2A methods typically expect a
+response or stream, so id will usually be present and non-null.
+        
+"""
+scalar RequestCorrelationId
+
+union A2AJsonRpcResponseGQL = A2AJsonRpcErrorResponseGQL | A2AJsonRpcSuccessResponseGQL
+
+"Result union returned by runtime health-check queries."
+union HealthCheckResult = FailedHealthCheckResult | HealthyHealthCheckResult | UnhealthyHealthCheckResult
+
+"""
+Classifies the role of the identity.
+
+- `Personal`: personal identity for an individual user and their profile/presence
+- `Principal`: externally reachable non-daemon actor, such as a distribution-facing identity
+- `Daemon`: internal project node daemon identity used for daemon addressing and capability-scoped permissions
+- `System`: platform-managed identity reserved for internal system actors
+"""
+enum AgentIdentityType {
+  Daemon
+  Personal
+  Principal
+  System
+}
+
+"Authorization resource kinds that can anchor scopes and grants."
+enum AuthorizationResourceKindGQL {
+  AgentBehavior
+  AgentEnvironment
+  AgentIdentity
+  Deployment
+  Distribution
+  Identity
+  Organization
+  Project
+}
+
+"Normalized status for a health-check response."
+enum HealthCheckStatus {
+  Failed
+  Healthy
+  Unhealthy
+}
+
+"Enumeration of supported network types."
+enum NetworkTypeGQL {
+  A2A
+  Aion
+  GitHub
+  Playground
+  Telegram
+  Twitter
+}
+
+enum OrganizationTypeGQL {
+  "Administrative organization reserved for Aion system operations"
+  Admin
+  "Personal organization created for an individual user"
+  Personal
+  "Shared organization with multiple members"
+  Team
+}
+
+enum Route {
+  Onboarding
+}
+
+"JSON-RPC request envelope for agent-to-agent workflows"
+input A2AJsonRpcRequestGQLInput {
+  "JSON-RPC protocol version, defaults to 2.0"
+  jsonrpc: String!
+  "Method invoked on the destination agent"
+  method: String!
+  "Parameters forwarded to the method call"
+  params: Json
+  "Identifier for correlating responses to the request. May be a string or a number."
+  id: RequestCorrelationId
+}
+
+"Key/value pair describing an A2A service parameter"
+input A2AServiceParameterGQLInput {
+  "Service parameter key (case-insensitive)"
+  key: String!
+  "Service parameter value"
+  value: String!
+}
+
+"Service parameters associated with an A2A request"
+input A2AServiceParametersGQLInput {
+  "A2A protocol version requested by the client"
+  version: String
+  "Extension URIs requested by the client"
+  extensions: [String!]
+  "Additional service parameters"
+  additional: [A2AServiceParameterGQLInput!]
+}
+
+"Select exactly one A2A ingress target. Supplying zero or multiple selectors causes the request to be rejected."
+input A2ATargetGQLInput {
+  "Direct distribution identifier. Targets the external ingress path for a distribution-backed agent sequence."
+  distributionId: ID
+  "Direct agent environment identifier. Targets the daemon for the specific project node instance represented by that environment. The authenticated user will require privileged access."
+  agentEnvironmentId: ID
+  "Agent identity identifier for identity-addressed ingress. Personal or principal identities resolve to an A2A distribution endpoint, while daemon identities resolve directly to the component daemon."
+  agentIdentityId: ID
+  "Agent @name handle for identity-addressed ingress. Values may be provided with or without the leading @ symbol. Personal or principal identities resolve to an A2A distribution endpoint, while daemon identities resolve directly to the project node's daemon."
+  agentAtName: String
+}
+
+type A2AJsonRpcError {
+  code: Int!
+  message: String!
+  data: Json
+}
+
+type A2AJsonRpcErrorResponseGQL {
+  "Identifier correlating the response to its request"
+  id: RequestCorrelationId
+  error: A2AJsonRpcError!
+  jsonrpc: String!
+}
+
+type A2AJsonRpcSuccessResponseGQL {
+  "Identifier correlating the response to its request"
+  id: RequestCorrelationId
+  result: Json!
+  jsonrpc: String!
+}
+
+"Public profile information for a user or agent"
+type AgentIdentity {
+  "Unique identifier for the identity"
+  id: ID!
+"""
+Type of identity, indicating whether it is personal, principal,
+daemon, or system-managed
+"""
+  agentType: AgentIdentityType!
+"""
+Reference to the owning user account. Personal identities always map to
+their user.
+"""
+  userId: ID
+  "Reference to the associated organization"
+  organizationId: ID!
+  "Stable key used by platform-managed system identities"
+  systemKey: String
+  "Identity name; personal identities should match the owning user's name"
+  name: String
+  "Agent-to-Agent protocol endpoint URL"
+  a2aUrl: String
+  "Website URL for human consumption"
+  website: String
+  "Primary contact email address"
+  email: String
+  "Addressable handle applicable inside the Aion network"
+  atName: String
+"""
+Description of the identity's purpose; personal identities use the
+user's bio
+"""
+  biography: String
+  "URL to the identity's avatar image"
+  avatarImageUrl: String
+  "URL to the identity's profile background image"
+  backgroundImageUrl: String
+  "Timestamp when the identity record was last updated. Serialized as RFC 3339 (ISO-8601) with offset, in UTC."
+  updatedAt: OffsetDateTime!
+  "Internal notes for administrators"
+  notes: String
+}
+
+"One daemon-identity usage on an agent environment."
+type AgentIdentityDaemonUsage {
+  "Owning project identifier"
+  projectId: ID!
+  "Owning project display name"
+  projectName: String!
+  "Agent environment identifier using the daemon identity"
+  agentEnvironmentId: ID!
+  "Agent environment display name"
+  agentEnvironmentName: String!
+}
+
+"Detailed agent identity payload for one identity page."
+type AgentIdentityDetail {
+  "Agent identity information associated with this detail view."
+  identity: AgentIdentity!
+  "Total number of active agent-environment and distribution bindings that reference this identity."
+  usageCount: Int!
+  "Agent environments currently using this identity as their daemon identity."
+  daemonUsages: [AgentIdentityDaemonUsage!]!
+  "Distributions currently using this identity as their principal identity."
+  distributionUsages: [AgentIdentityDistributionUsage!]!
+  "Active direct role keys currently assigned to this agent identity."
+  roleKeys: [String!]!
+}
+
+"One principal-identity usage on a distribution."
+type AgentIdentityDistributionUsage {
+  "Owning project identifier"
+  projectId: ID!
+  "Owning project display name"
+  projectName: String!
+  "Distribution identifier using the principal identity"
+  distributionId: ID!
+  "Network type of the distribution using the principal identity"
+  networkType: NetworkTypeGQL!
+  "Linked service identity profile, when one exists"
+  serviceIdentity: IdentityProfile
+}
+
+"Health-check result for a check that failed to complete."
+type FailedHealthCheckResult {
+  "Failure reason reported by the health check."
+  message: String!
+  "Normalized health-check status."
+  status: HealthCheckStatus!
+}
+
+"Health-check result for a target that reported healthy."
+type HealthyHealthCheckResult {
+  "Normalized health-check status."
+  status: HealthCheckStatus!
+}
+
+"Normalized identity profile for display and auditing. When fields typed as IdentityProfile are null, the referenced profile is no longer available in the system."
+type IdentityProfile {
+  "Identifier of the source identity record"
+  id: ID!
+  "Network this profile belongs to"
+  networkType: NetworkTypeGQL!
+  "Identifier of the profile in its network"
+  networkUserId: String!
+  "Optional user handle for the profile"
+  userName: String
+  "Optional local user id linked to this profile"
+  userId: ID
+  "Display name for the profile"
+  name: String
+  "Website associated with the profile"
+  website: String
+  "Avatar image URL"
+  avatarImageUrl: String
+  "Profile biography"
+  biography: String
+  "True when this profile represents a platform-managed system identity"
+  systemIdentity: Boolean!
+}
+
+"Details returned from login query to let backend decide post-login routing"
+type LoginResponse {
+  "The next route the client should navigate to"
+  nextRoute: Route
+  "AgentIdentity name"
+  name: String
+  "AgentIdentity email"
+  email: String
+}
+
+"Links a user to an organization"
+type Membership {
+  "Unique identifier for the membership"
+  id: ID!
+  "Organization associated with the membership"
+  organization: Organization!
+}
+
+"Represents a tenant workspace within Aion"
+type Organization {
+  "Unique identifier of the organization"
+  id: ID!
+  "Display name of the organization"
+  name: String!
+  "Classification describing the organization type"
+  organizationType: OrganizationTypeGQL!
+}
+
+type Queries {
+  "Retrieves a user by ID. When no userId is supplied, returns the currently authenticated user."
+  user(userId: ID): User @auth(subjectType: "User")
+  "Retrieves agent identity details for the authenticated user. GraphQL field selection determines whether usage rows and role keys are loaded."
+  agentIdentityDetails("Organization whose visible identities should be listed" organizationId: ID!, "Optional identity-type filter applied to organization-visible identities." types: [AgentIdentityType!], "Optional distribution network types used to keep only identities that are used by at least one active distribution for every requested network. For example, choosing A2A and Playground returns only identities that have distributions for both." networkTypes: [NetworkTypeGQL!], "When true, include the caller's own personal identity for the requested organization even when it falls outside the normal visible set or type filter." includePersonalSelf: Boolean!): [AgentIdentityDetail!] @auth(subjectType: "User")
+  "Retrieves one agent identity detail payload by identifier for the authenticated user."
+  agentIdentityDetail(agentIdentityId: ID!): AgentIdentityDetail @auth(subjectType: "User")
+  "Checks runtime health for the agent actor bound to an agent environment."
+  healthCheckAgent("Agent environment identifier" agentEnvironmentId: ID!): HealthCheckResult @auth(subjectType: "User")
+  "Returns post-login routing."
+  login("Authentication bearer token" token: String!): LoginResponse @auth(subjectType: "User")
+}
+
+type Subscriptions {
+  "Executes an agent-to-agent JSON-RPC request and streams the responses."
+  a2aRpc("JSON-RPC request body" request: A2AJsonRpcRequestGQLInput!, "A2A ingress target" target: A2ATargetGQLInput!, "Service parameters associated with the request" serviceParameters: A2AServiceParametersGQLInput): A2AJsonRpcResponseGQL
+}
+
+"Health-check result for a target that reported unhealthy."
+type UnhealthyHealthCheckResult {
+  "Normalized health-check status."
+  status: HealthCheckStatus!
+}
+
+"Represents a user account"
+type User {
+  "Unique identifier of the user"
+  id: ID!
+  "Personal agent identity associated with this user"
+  agentIdentity: AgentIdentity!
+  "Identifier from the authentication provider"
+  authId: String!
+  "Preferred IANA timezone for user-facing date/time display"
+  timezone: String
+  "Networks linked to this user"
+  networks: [UserConnection!]
+  "Personal organization associated with the user"
+  homeOrganization: Organization
+  "Organizations the user is a member of"
+  memberships: [Membership!]
+  "Effective action-level permissions for the user in one organization"
+  permissions("Organization identifier. When omitted, the user's home organization is used." organizationId: ID): [UserPermissionGQL!]
+}
+
+"Association between a user and an external network"
+type UserConnection {
+  "Type of network linked to the user"
+  network: NetworkTypeGQL!
+}
+
+"One effective user permission grouped by action key and deduplicated effective scopes."
+type UserPermissionGQL {
+  "Canonical action key"
+  actionKey: String!
+  "Distinct scopes where the action is effective"
+  scopes: [UserPermissionScopeGQL!]!
+  "Earliest expiry across contributing grants, used to refresh permission state before it changes"
+  expiresAt: OffsetDateTime
+}
+
+"One effective permission scope for a user action."
+type UserPermissionScopeGQL {
+  "Resource kind the permission scope applies to"
+  resourceKind: AuthorizationResourceKindGQL!
+  "Concrete resource identifier for the scope"
+  resourceId: ID!
+}

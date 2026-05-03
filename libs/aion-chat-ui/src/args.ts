@@ -37,8 +37,8 @@ Usage:
 Options:
   -u, --url, --host <endpoint>   Agent or proxy URL to connect to
       --agent-id <agent-id>      Agent identifier for proxy-aware routing
-      --token <token>            Bearer token for authenticated endpoints
-      --header <key=value>       Repeatable custom HTTP header
+      --token <token>            Bearer token for the explicit --url endpoint
+      --header <key=value>       Repeatable custom HTTP header for the explicit --url endpoint
       --push-notifications       Enable the local push notification receiver
       --push-receiver <url>      Push notification receiver URL
       --help                     Show this help text
