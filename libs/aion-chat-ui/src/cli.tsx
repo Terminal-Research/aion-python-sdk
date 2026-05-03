@@ -12,6 +12,13 @@ import {
 	resolvePostAuthPath,
 	runLoginBootstrap
 } from "./lib/graphql/authBootstrap.js";
+import {
+	detectPackageUpdate,
+	formatInstallCommand,
+	getUpdateInstallCommand,
+	promptForUpdate,
+	runUpdateInstall
+} from "./lib/updateCheck.js";
 import { loginWithWorkOS } from "./lib/workosAuth.js";
 
 async function runLoginCommand(): Promise<void> {
@@ -61,6 +68,28 @@ function runEnvironmentCommand(environmentId: Parameters<typeof saveSelectedEnvi
 	process.stdout.write(`Aion environment set to ${environmentId}.\n`);
 }
 
+async function continueAfterUpdateCheck(): Promise<boolean> {
+	if (!process.stdin.isTTY || !process.stdout.isTTY) {
+		return true;
+	}
+
+	const update = await detectPackageUpdate();
+	if (!update) {
+		return true;
+	}
+
+	const choice = await promptForUpdate({ update });
+	if (choice === "skip") {
+		return true;
+	}
+
+	const command = getUpdateInstallCommand(choice, update.packageName);
+	process.stdout.write(`\nRunning ${formatInstallCommand(command)}\n`);
+	const exitCode = await runUpdateInstall(command);
+	process.exitCode = exitCode;
+	return false;
+}
+
 async function main(): Promise<void> {
 	try {
 		const command = parseCliArgs(process.argv.slice(2));
@@ -70,6 +99,10 @@ async function main(): Promise<void> {
 		}
 		if (command.kind === "environment") {
 			runEnvironmentCommand(command.environmentId);
+			return;
+		}
+
+		if (!(await continueAfterUpdateCheck())) {
 			return;
 		}
 

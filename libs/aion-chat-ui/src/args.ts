@@ -1,10 +1,9 @@
-import { readFileSync } from "node:fs";
-
 import {
 	type AionEnvironmentId,
 	AION_ENVIRONMENT_IDS,
 	isAionEnvironmentId
 } from "./lib/environment.js";
+import { getPackageInfo } from "./packageInfo.js";
 
 export interface ChatCliOptions {
 	url?: string;
@@ -72,11 +71,7 @@ function parseHeader(rawHeader: string): [string, string] {
 }
 
 function printVersion(): void {
-	const packagePath = new URL("../package.json", import.meta.url);
-	const packageJson = JSON.parse(
-		readFileSync(packagePath, "utf8")
-	) as { version?: string };
-	process.stdout.write(`${packageJson.version ?? "0.0.0"}\n`);
+	process.stdout.write(`${getPackageInfo().version}\n`);
 }
 
 export function printHelp(): void {

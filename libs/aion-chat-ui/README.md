@@ -37,6 +37,10 @@ aion-chat login
 
 Inside the composer, `/login` is visible in the slash command picker and runs the same login flow.
 
+### Updates
+
+When an interactive chat session starts, `aio` checks npm for the latest published version. If a newer version is available, it asks whether to install it globally, install it in the current project, or continue without updating. Choosing an install option runs the npm command and exits; start `aio` again after the install completes.
+
 ### Agent Sources and Sessions
 
 Agent sources are discovered per selected Aion environment. Every environment includes a default local source at `http://localhost:8000`; this default is silent when no local server is running. When you are logged in, the selected Aion environment can also provide registry-backed agents for that account. Passing `--url` adds an explicit source for that run. Explicit URLs are resolved as a manifest first and then as a direct agent card.
@@ -79,6 +83,8 @@ Run the UI directly from `libs/aion-chat-ui` when you want to work on the Ink/Re
 The GraphQL schema used by this package lives at `src/graphql/chat-client-schema.graphql`. Operations live under `src/graphql/operations/`, and generated TypeScript operation types are committed under `src/graphql/generated/`. Regenerate them with `npm run graphql:codegen` after schema or operation changes.
 
 Use `npm run dev`, not `node src/cli.tsx` or `node src/app.tsx`. The source tree uses TypeScript files with `.js` import specifiers, so it must be run through `tsx` in development or through the built `dist/cli.mjs` bundle.
+
+Set `AION_CHAT_SKIP_UPDATE_CHECK=1` or `AION_CHAT_UPDATE_CHECK=0` to skip the startup update prompt while developing.
 
 If you want to test the integrated Python entrypoint instead, run `aion chat` from an agent project that depends on your local editable `aion-cli`. In that flow, the Python launcher uses `libs/aion-chat-ui/dist/cli.mjs`, so rebuild after UI changes:
 

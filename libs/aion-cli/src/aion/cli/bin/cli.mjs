@@ -44481,9 +44481,6 @@ var import_react27 = __toESM(require_react(), 1);
 // node_modules/ink/build/hooks/use-cursor.js
 var import_react28 = __toESM(require_react(), 1);
 
-// src/args.ts
-import { readFileSync as readFileSync2 } from "fs";
-
 // src/lib/environment.ts
 var AION_ENVIRONMENT_IDS = [
   "production",
@@ -44534,6 +44531,87 @@ function getGraphQLHttpUrl(id) {
   return getGraphQLHttpUrlForBaseUrl(getControlPlaneApiBaseUrl(id));
 }
 
+// package.json
+var package_default = {
+  name: "@terminal-research/aion",
+  version: "0.1.2",
+  private: false,
+  type: "module",
+  description: "Terminal chat UI for Aion agents, published as the aio CLI.",
+  bin: {
+    aio: "bin/aio",
+    "aion-chat": "bin/aion-chat"
+  },
+  engines: {
+    node: ">=22.0.0"
+  },
+  scripts: {
+    dev: "tsx src/cli.tsx",
+    "graphql:codegen": "graphql-codegen --config codegen.ts",
+    typecheck: "tsc --noEmit",
+    build: "npm run typecheck && tsup --config tsup.config.ts",
+    test: "vitest run",
+    "test:watch": "vitest",
+    "compile:darwin-arm64": "bun build ./src/cli.tsx --compile --outfile ./dist/aion-chat-ui-darwin-arm64 --target bun-darwin-arm64",
+    "compile:darwin-x64": "bun build ./src/cli.tsx --compile --outfile ./dist/aion-chat-ui-darwin-x64 --target bun-darwin-x64",
+    compile: "npm run build && npm run compile:darwin-arm64 && npm run compile:darwin-x64",
+    "stage:python": "node ./scripts/stage-python.mjs",
+    "prepare:python": "npm run build && npm run stage:python",
+    prepublishOnly: "npm run build"
+  },
+  dependencies: {
+    "@a2a-js/sdk": "^0.3.13",
+    "@napi-rs/keyring": "^1.2.0",
+    "cli-highlight": "^2.1.11",
+    ink: "^6.2.3",
+    marked: "^15.0.12",
+    react: "^19.0.0",
+    uuid: "^11.1.0",
+    yaml: "^2.8.3"
+  },
+  devDependencies: {
+    "@graphql-codegen/cli": "^7.0.0",
+    "@graphql-codegen/typescript": "^6.0.0",
+    "@graphql-codegen/typescript-operations": "^6.0.0",
+    "@types/ink-testing-library": "^1.0.4",
+    "@types/node": "^22.13.10",
+    "@types/react": "^19.0.10",
+    graphql: "^16.13.2",
+    "ink-testing-library": "^4.0.0",
+    tsup: "^8.4.0",
+    tsx: "^4.19.3",
+    typescript: "^5.8.2",
+    vitest: "^3.0.9"
+  },
+  files: [
+    "bin",
+    "dist",
+    "src/graphql",
+    "README.md"
+  ],
+  publishConfig: {
+    access: "public",
+    provenance: true
+  },
+  repository: {
+    type: "git",
+    url: "git+https://github.com/Terminal-Research/aion-python-sdk.git",
+    directory: "libs/aion-chat-ui"
+  },
+  homepage: "https://github.com/Terminal-Research/aion-python-sdk/tree/main/libs/aion-chat-ui",
+  bugs: {
+    url: "https://github.com/Terminal-Research/aion-python-sdk/issues"
+  }
+};
+
+// src/packageInfo.ts
+function getPackageInfo() {
+  return {
+    name: package_default.name,
+    version: package_default.version
+  };
+}
+
 // src/args.ts
 var HELP_TEXT = `
 Usage:
@@ -44574,11 +44652,7 @@ function parseHeader(rawHeader) {
   return [rawHeader.slice(0, separator), rawHeader.slice(separator + 1)];
 }
 function printVersion() {
-  const packagePath = new URL("../package.json", import.meta.url);
-  const packageJson2 = JSON.parse(
-    readFileSync2(packagePath, "utf8")
-  );
-  process.stdout.write(`${packageJson2.version ?? "0.0.0"}
+  process.stdout.write(`${getPackageInfo().version}
 `);
 }
 function printHelp() {
@@ -45552,7 +45626,7 @@ function parseAgentSelection(draft, availableAgentIds) {
 }
 
 // src/lib/chatSettings.ts
-import { mkdirSync, readFileSync as readFileSync3, writeFileSync } from "fs";
+import { mkdirSync, readFileSync as readFileSync2, writeFileSync } from "fs";
 import os3 from "os";
 import path from "path";
 
@@ -45897,7 +45971,7 @@ function normalizeSettings(parsed) {
 }
 function readRawSettings(settingsPath) {
   try {
-    return JSON.parse(readFileSync3(settingsPath, "utf8"));
+    return JSON.parse(readFileSync2(settingsPath, "utf8"));
   } catch {
     return void 0;
   }
@@ -45925,7 +45999,7 @@ function resolveAionConfigDirectory(env3 = process.env, homeDirectory = os3.home
 }
 function loadChatSettings(settingsPath = resolveChatSettingsPath()) {
   try {
-    const raw = readFileSync3(settingsPath, "utf8");
+    const raw = readFileSync2(settingsPath, "utf8");
     const parsed = JSON.parse(raw);
     return normalizeSettings(parsed);
   } catch (error) {
@@ -46029,7 +46103,7 @@ async function openUrlInDefaultBrowser(url, spawnImpl = spawn) {
 }
 
 // src/lib/input/parser/extractors/filePathExtractor.ts
-import { existsSync as existsSync2, readFileSync as readFileSync4, statSync } from "fs";
+import { existsSync as existsSync2, readFileSync as readFileSync3, statSync } from "fs";
 import { basename, extname, resolve } from "path";
 var MAX_FILE_SIZE = 512 * 1024;
 var PATH_PATTERN = /(?:^|\s)(\.{0,2}\/[^\s"'`)\]]+)/gm;
@@ -46087,7 +46161,7 @@ var filePathExtractor = {
     try {
       const stat = statSync(span.raw);
       if (stat.size > MAX_FILE_SIZE) return null;
-      const buffer = readFileSync4(span.raw);
+      const buffer = readFileSync3(span.raw);
       if (isBinary(buffer)) return null;
       return {
         kind: "file",
@@ -50172,7 +50246,7 @@ function selectDiscoveredAgent(agents, options) {
 }
 
 // src/lib/agents/sessionStore.ts
-import { mkdirSync as mkdirSync2, readFileSync as readFileSync5, readdirSync as readdirSync2, writeFileSync as writeFileSync2 } from "fs";
+import { mkdirSync as mkdirSync2, readFileSync as readFileSync4, readdirSync as readdirSync2, writeFileSync as writeFileSync2 } from "fs";
 import path2 from "path";
 function resolveSessionsDirectory(env3 = process.env, homeDirectory) {
   return path2.join(resolveAionConfigDirectory(env3, homeDirectory), "sessions");
@@ -50195,7 +50269,7 @@ function resolveSessionFilePath(environment, agentKey, contextId, sessionsDirect
 }
 function readSessionFile(filePath) {
   try {
-    return JSON.parse(readFileSync5(filePath, "utf8"));
+    return JSON.parse(readFileSync4(filePath, "utf8"));
   } catch {
     return void 0;
   }
@@ -51793,6 +51867,152 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
   ] });
 }
 
+// src/lib/updateCheck.ts
+import { spawn as spawn2 } from "child_process";
+import { createInterface } from "readline/promises";
+var DEFAULT_TIMEOUT_MS = 1500;
+function buildNpmLatestVersionUrl(packageName) {
+  return `https://registry.npmjs.org/${packageName.replace("/", "%2F")}/latest`;
+}
+function parseVersion(value) {
+  const match = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?/u.exec(value);
+  if (!match) {
+    return void 0;
+  }
+  return {
+    major: Number(match[1]),
+    minor: Number(match[2]),
+    patch: Number(match[3]),
+    ...match[4] ? { prerelease: match[4] } : {}
+  };
+}
+function comparePackageVersions(left, right) {
+  const parsedLeft = parseVersion(left);
+  const parsedRight = parseVersion(right);
+  if (!parsedLeft || !parsedRight) {
+    return left.localeCompare(right);
+  }
+  for (const key of ["major", "minor", "patch"]) {
+    const delta = parsedLeft[key] - parsedRight[key];
+    if (delta !== 0) {
+      return delta;
+    }
+  }
+  if (parsedLeft.prerelease && !parsedRight.prerelease) {
+    return -1;
+  }
+  if (!parsedLeft.prerelease && parsedRight.prerelease) {
+    return 1;
+  }
+  return (parsedLeft.prerelease ?? "").localeCompare(parsedRight.prerelease ?? "");
+}
+function shouldSkipUpdateCheck(env3 = process.env) {
+  return env3.CI === "true" || env3.AION_CHAT_SKIP_UPDATE_CHECK === "1" || env3.AION_CHAT_UPDATE_CHECK === "0";
+}
+async function fetchLatestPackageVersion(options) {
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => {
+    controller.abort();
+  }, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+  try {
+    const response = await fetchImpl(buildNpmLatestVersionUrl(options.packageName), {
+      headers: {
+        Accept: "application/json"
+      },
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      return void 0;
+    }
+    const payload = await response.json();
+    return typeof payload.version === "string" && payload.version.trim() ? payload.version.trim() : void 0;
+  } catch {
+    return void 0;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+async function detectPackageUpdate(options = {}) {
+  if (shouldSkipUpdateCheck(options.env)) {
+    return void 0;
+  }
+  const packageInfo = getPackageInfo();
+  const packageName = options.packageName ?? packageInfo.name;
+  const currentVersion = options.currentVersion ?? packageInfo.version;
+  const latestVersion = await fetchLatestPackageVersion({
+    packageName,
+    fetchImpl: options.fetchImpl,
+    timeoutMs: options.timeoutMs
+  });
+  if (!latestVersion || comparePackageVersions(latestVersion, currentVersion) <= 0) {
+    return void 0;
+  }
+  return {
+    packageName,
+    currentVersion,
+    latestVersion
+  };
+}
+function getUpdateInstallCommand(choice, packageName) {
+  const packageTarget = `${packageName}@latest`;
+  return {
+    command: process.platform === "win32" ? "npm.cmd" : "npm",
+    args: choice === "global" ? ["install", "-g", packageTarget] : ["install", packageTarget]
+  };
+}
+function formatInstallCommand(command) {
+  return [command.command, ...command.args].join(" ");
+}
+async function promptForUpdate(options) {
+  const input = options.input ?? process.stdin;
+  const output = options.output ?? process.stdout;
+  const globalCommand = getUpdateInstallCommand("global", options.update.packageName);
+  const localCommand = getUpdateInstallCommand("local", options.update.packageName);
+  output.write(
+    [
+      "",
+      `A new ${options.update.packageName} version is available: ${options.update.currentVersion} -> ${options.update.latestVersion}`,
+      `1. Install globally: ${formatInstallCommand(globalCommand)}`,
+      `2. Install in this project: ${formatInstallCommand(localCommand)}`,
+      "3. Skip for now",
+      ""
+    ].join("\n")
+  );
+  const readline = createInterface({ input, output });
+  try {
+    while (true) {
+      const answer = (await readline.question("Choose 1, 2, or 3: ")).trim();
+      if (answer === "1") {
+        return "global";
+      }
+      if (answer === "2") {
+        return "local";
+      }
+      if (answer === "3" || answer === "") {
+        return "skip";
+      }
+      output.write("Please choose 1, 2, or 3.\n");
+    }
+  } finally {
+    readline.close();
+  }
+}
+async function runUpdateInstall(command, cwd2 = process.cwd()) {
+  return new Promise((resolve3) => {
+    const child = spawn2(command.command, command.args, {
+      cwd: cwd2,
+      stdio: "inherit"
+    });
+    child.on("error", () => {
+      resolve3(1);
+    });
+    child.on("close", (code) => {
+      resolve3(code ?? 1);
+    });
+  });
+}
+
 // src/cli.tsx
 var import_jsx_runtime10 = __toESM(require_jsx_runtime(), 1);
 async function runLoginCommand() {
@@ -51852,6 +52072,26 @@ function runEnvironmentCommand(environmentId) {
   process.stdout.write(`Aion environment set to ${environmentId}.
 `);
 }
+async function continueAfterUpdateCheck() {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    return true;
+  }
+  const update = await detectPackageUpdate();
+  if (!update) {
+    return true;
+  }
+  const choice = await promptForUpdate({ update });
+  if (choice === "skip") {
+    return true;
+  }
+  const command = getUpdateInstallCommand(choice, update.packageName);
+  process.stdout.write(`
+Running ${formatInstallCommand(command)}
+`);
+  const exitCode = await runUpdateInstall(command);
+  process.exitCode = exitCode;
+  return false;
+}
 async function main() {
   try {
     const command = parseCliArgs(process.argv.slice(2));
@@ -51861,6 +52101,9 @@ async function main() {
     }
     if (command.kind === "environment") {
       runEnvironmentCommand(command.environmentId);
+      return;
+    }
+    if (!await continueAfterUpdateCheck()) {
       return;
     }
     render_default(/* @__PURE__ */ (0, import_jsx_runtime10.jsx)(ChatApp, { options: command.options }), {

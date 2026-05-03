@@ -120,9 +120,10 @@ def test_launch_chat_returns_process_exit_code(monkeypatch) -> None:
     )
     recorded: dict[str, object] = {}
 
-    def fake_runner(command, check):
+    def fake_runner(command, check, env):
         recorded["command"] = command
         recorded["check"] = check
+        recorded["env"] = env
         return SimpleNamespace(returncode=7)
 
     monkeypatch.setattr(launcher, "resolve_chat_command", lambda: ["node", "/tmp/cli.mjs"])
@@ -135,3 +136,5 @@ def test_launch_chat_returns_process_exit_code(monkeypatch) -> None:
         "/tmp/cli.mjs",
     ]
     assert recorded["check"] is False
+    assert isinstance(recorded["env"], dict)
+    assert recorded["env"]["AION_CHAT_SKIP_UPDATE_CHECK"] == "1"

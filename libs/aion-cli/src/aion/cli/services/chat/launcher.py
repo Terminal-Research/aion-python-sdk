@@ -16,6 +16,9 @@ class BinaryResolutionError(RuntimeError):
     """Raised when the standalone chat UI entrypoint cannot be located."""
 
 
+AION_CHAT_SKIP_UPDATE_CHECK_ENV = "AION_CHAT_SKIP_UPDATE_CHECK"
+
+
 @dataclass(frozen=True)
 class ChatLaunchOptions:
     """Arguments forwarded from ``aion chat`` to the standalone UI.
@@ -136,6 +139,17 @@ def resolve_chat_command() -> list[str]:
     )
 
 
+def build_chat_environment() -> dict[str, str]:
+    """Build the child-process environment for the standalone UI.
+
+    The Python launcher owns Python package updates, so the embedded chat UI
+    should not prompt for npm package updates when started through ``aion chat``.
+    """
+    env = dict(os.environ)
+    env[AION_CHAT_SKIP_UPDATE_CHECK_ENV] = "1"
+    return env
+
+
 def launch_chat(
     options: ChatLaunchOptions,
     runner: Callable[..., subprocess.CompletedProcess] = subprocess.run,
@@ -150,5 +164,5 @@ def launch_chat(
         Exit code from the standalone UI process.
     """
     command = [*resolve_chat_command(), *options.to_args()]
-    result = runner(command, check=False)
+    result = runner(command, check=False, env=build_chat_environment())
     return int(result.returncode)
