@@ -19,6 +19,7 @@ import {
 	promptForUpdate,
 	runUpdateInstall
 } from "./lib/updateCheck.js";
+import { runHeadless } from "./lib/headlessRun.js";
 import { loginWithWorkOS } from "./lib/workosAuth.js";
 
 async function runLoginCommand(): Promise<void> {
@@ -69,6 +70,9 @@ function runEnvironmentCommand(environmentId: Parameters<typeof saveSelectedEnvi
 }
 
 async function continueAfterUpdateCheck(): Promise<boolean> {
+	if (process.env.AION_CHAT_SKIP_UPDATE_CHECK === "1") {
+		return true;
+	}
 	if (!process.stdin.isTTY || !process.stdout.isTTY) {
 		return true;
 	}
@@ -90,15 +94,47 @@ async function continueAfterUpdateCheck(): Promise<boolean> {
 	return false;
 }
 
+async function readStdin(): Promise<string> {
+	process.stdin.setEncoding("utf8");
+	let input = "";
+	for await (const chunk of process.stdin) {
+		input += String(chunk);
+	}
+	return input;
+}
+
+async function runHeadlessCommand(
+	options: Parameters<typeof runHeadless>[0]
+): Promise<void> {
+	const shouldReadStdin =
+		options.readMessageFromStdin ||
+		(!options.message && !process.stdin.isTTY);
+	const message = shouldReadStdin ? await readStdin() : options.message;
+	if (!message?.trim()) {
+		throw new Error("Missing message for run command.");
+	}
+
+	process.exitCode = await runHeadless({
+		...options,
+		message
+	});
+}
+
 async function main(): Promise<void> {
+	let parsedCommand: ReturnType<typeof parseCliArgs> | undefined;
 	try {
 		const command = parseCliArgs(process.argv.slice(2));
+		parsedCommand = command;
 		if (command.kind === "login") {
 			await runLoginCommand();
 			return;
 		}
 		if (command.kind === "environment") {
 			runEnvironmentCommand(command.environmentId);
+			return;
+		}
+		if (command.kind === "run") {
+			await runHeadlessCommand(command.options);
 			return;
 		}
 
@@ -113,7 +149,9 @@ async function main(): Promise<void> {
 		process.stderr.write(
 			`${error instanceof Error ? error.message : String(error)}\n\n`
 		);
-		printHelp();
+		if (!parsedCommand) {
+			printHelp();
+		}
 		process.exit(1);
 	}
 }

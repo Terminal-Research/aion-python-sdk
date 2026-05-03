@@ -105,6 +105,54 @@ def test_chat_defaults_to_local_proxy(monkeypatch) -> None:
     assert options.endpoint is None
 
 
+def test_chat_run_launches_headless_ui(monkeypatch) -> None:
+    """Ensure ``aion chat run`` forwards one-shot request options."""
+    runner = CliRunner()
+    chat_module = importlib.import_module("aion.cli.commands.chat")
+    called: dict[str, object] = {}
+
+    def fake_launch(options):
+        called["options"] = options
+        return 0
+
+    monkeypatch.setattr(chat_module, "launch_chat_run", fake_launch)
+
+    result = runner.invoke(
+        cli,
+        [
+            "chat",
+            "run",
+            "--agent",
+            "@team-agent",
+            "--request-mode",
+            "streaming-message",
+            "--response-mode",
+            "a2a",
+            "hello",
+            "there",
+        ],
+    )
+
+    assert result.exit_code == 0
+    options = called["options"]
+    assert options.agent == "@team-agent"
+    assert options.request_mode == "streaming-message"
+    assert options.response_mode == "a2a"
+    assert options.message == "hello there"
+
+
+def test_chat_run_help_describes_headless_usage() -> None:
+    """Ensure ``aion chat run --help`` includes headless usage guidance."""
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["chat", "run", "--help"])
+
+    assert result.exit_code == 0
+    assert "Agent selection:" in result.output
+    assert "a2a mode writes raw A2A JSON" in result.output
+    assert "aion chat run --agent @team-agent" in result.output
+
+
 def test_login_is_not_a_python_cli_command() -> None:
     """Ensure chat UI login remains scoped to the npm CLI and composer."""
     runner = CliRunner()

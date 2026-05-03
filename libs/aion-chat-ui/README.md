@@ -26,6 +26,21 @@ aio --agent-id my-agent --url http://localhost:8000
 
 CLI endpoint auth values such as `--token` and `--header` are sent only to the explicit `--url` source. They are not sent to default localhost discovery or Aion registry-discovered agents.
 
+### Headless Run
+
+```bash
+aio run --agent @team-agent "Summarize the latest status"
+cat prompt.txt | aio run --agent @team-agent -
+aio run --url http://localhost:8000 --agent-id demo-agent "Hello"
+aio run --agent @team-agent --response-mode a2a "Hello"
+```
+
+`aio run` sends one message without opening the terminal UI. It uses the currently selected Aion environment for registry discovery and account-backed access, the same as interactive chat. Use `--agent` to select a discovered agent by handle, display id, identity id, or agent key. Use `--agent-id` with `--url` when you need proxy-aware routing for an explicit A2A endpoint.
+
+By default, headless mode writes the rendered agent response to stdout and progress or diagnostic notices to stderr. `--response-mode a2a` writes raw A2A JSON instead: one JSON object for `send-message`, or JSONL events for `streaming-message`. `--request-mode streaming-message` falls back to `send-message` when the selected agent does not advertise streaming support.
+
+The Python package forwards `aion chat run ...` to the same implementation. Headless runs skip the interactive npm update prompt.
+
 ### Login
 
 ```bash

@@ -58,6 +58,59 @@ class ChatLaunchOptions:
         return args
 
 
+@dataclass(frozen=True)
+class ChatRunLaunchOptions:
+    """Arguments forwarded from ``aion chat run`` to the standalone UI.
+
+    Args:
+        endpoint: Optional direct or proxied A2A endpoint URL.
+        agent_id: Optional agent identifier for proxy-aware routing.
+        agent: Optional discovered agent selector, such as an ``@`` handle.
+        token: Optional bearer token.
+        headers: Additional HTTP headers for the explicit endpoint.
+        push_notifications: Whether to include push notification configuration.
+        push_receiver: Push notification receiver URL.
+        request_mode: A2A request mode to use.
+        response_mode: Output rendering mode to use.
+        message: Message text, or ``-`` to read from standard input.
+    """
+
+    endpoint: Optional[str]
+    agent_id: Optional[str]
+    agent: Optional[str]
+    token: Optional[str]
+    headers: dict[str, str]
+    push_notifications: bool
+    push_receiver: str
+    request_mode: str
+    response_mode: str
+    message: Optional[str]
+
+    def to_args(self) -> list[str]:
+        """Convert the options to CLI arguments for the standalone UI."""
+        args: list[str] = ["run"]
+
+        if self.endpoint:
+            args.extend(["--url", self.endpoint])
+        if self.agent_id:
+            args.extend(["--agent-id", self.agent_id])
+        if self.agent:
+            args.extend(["--agent", self.agent])
+        if self.token:
+            args.extend(["--token", self.token])
+        for key, value in self.headers.items():
+            args.extend(["--header", f"{key}={value}"])
+        if self.push_notifications:
+            args.append("--push-notifications")
+            args.extend(["--push-receiver", self.push_receiver])
+        args.extend(["--request-mode", self.request_mode])
+        args.extend(["--response-mode", self.response_mode])
+        if self.message:
+            args.append(self.message)
+
+        return args
+
+
 def _packaged_resource_root() -> Path:
     """Return the packaged resource directory for bundled chat artifacts."""
     return Path(importlib.resources.files("aion.cli.bin"))
@@ -158,6 +211,24 @@ def launch_chat(
 
     Args:
         options: Launch options supplied by the Python CLI.
+        runner: Process runner used for testability.
+
+    Returns:
+        Exit code from the standalone UI process.
+    """
+    command = [*resolve_chat_command(), *options.to_args()]
+    result = runner(command, check=False, env=build_chat_environment())
+    return int(result.returncode)
+
+
+def launch_chat_run(
+    options: ChatRunLaunchOptions,
+    runner: Callable[..., subprocess.CompletedProcess] = subprocess.run,
+) -> int:
+    """Launch a non-interactive chat request and return its exit code.
+
+    Args:
+        options: Headless run options supplied by the Python CLI.
         runner: Process runner used for testability.
 
     Returns:

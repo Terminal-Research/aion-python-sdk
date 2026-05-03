@@ -44616,8 +44616,10 @@ function getPackageInfo() {
 var HELP_TEXT = `
 Usage:
   aio [options]
+  aio run [options] [message]
   aio login
   aion-chat [options]
+  aion-chat run [options] [message]
 
 Options:
   -u, --url, --host <endpoint>   Agent or proxy URL to connect to
@@ -44637,6 +44639,61 @@ Composer controls:
   Esc            Dismiss the active menu or clear the draft
   Ctrl+C         Clear the draft or exit when empty
 `.trim();
+var RUN_HELP_TEXT = `
+Usage:
+  aio run [options] [message]
+  aion-chat run [options] [message]
+
+Send one non-interactive message to an Aion agent without opening the terminal UI.
+
+Message input:
+  Pass the message as positional text, pass "-" to read stdin, or pipe stdin with no
+  positional message.
+
+Agent selection:
+      --agent <selector>         Discovered agent handle, display id, identity id, or agent key
+      --agent-id <agent-id>      Agent identifier for proxy-aware routing with --url
+  -u, --url, --host <endpoint>   Explicit A2A endpoint or proxy URL
+
+Authentication:
+      --token <token>            Bearer token for the explicit --url endpoint
+      --header <key=value>       Repeatable custom HTTP header for the explicit --url endpoint
+
+Modes:
+      --request-mode <mode>      send-message or streaming-message (default: send-message)
+      --response-mode <mode>     message or a2a (default: message)
+
+Push notifications:
+      --push-notifications       Include local push notification configuration
+      --push-receiver <url>      Push notification receiver URL
+
+Output:
+  message mode writes rendered agent output to stdout and diagnostics to stderr.
+  a2a mode writes raw A2A JSON to stdout. Streaming a2a mode writes JSONL events.
+  If streaming is requested but unsupported, aio falls back to send-message and
+  writes a notice to stderr.
+
+Examples:
+  aio run --agent @team-agent "Summarize the latest status"
+  cat prompt.txt | aio run --agent @team-agent -
+  aio run --url http://localhost:8000 --agent-id demo-agent "Hello"
+  aio run --agent @team-agent --request-mode streaming-message "Hello"
+  aio run --agent @team-agent --response-mode a2a "Hello"
+`.trim();
+var REQUEST_MODE_ALIASES = {
+  "send-message": "send-message",
+  send: "send-message",
+  message: "send-message",
+  "streaming-message": "streaming-message",
+  streaming: "streaming-message",
+  stream: "streaming-message"
+};
+var RESPONSE_MODE_ALIASES = {
+  message: "message-output",
+  "message-output": "message-output",
+  a2a: "a2a-protocol",
+  "a2a-protocol": "a2a-protocol"
+};
 function requireValue(argv, index, option) {
   const value = argv[index + 1];
   if (!value || value.startsWith("-")) {
@@ -44651,12 +44708,32 @@ function parseHeader(rawHeader) {
   }
   return [rawHeader.slice(0, separator), rawHeader.slice(separator + 1)];
 }
+function parseRequestMode(value) {
+  const mode = REQUEST_MODE_ALIASES[value];
+  if (!mode) {
+    throw new Error(
+      "Invalid --request-mode value, expected send-message or streaming-message"
+    );
+  }
+  return mode;
+}
+function parseResponseMode(value) {
+  const mode = RESPONSE_MODE_ALIASES[value];
+  if (!mode) {
+    throw new Error("Invalid --response-mode value, expected message or a2a");
+  }
+  return mode;
+}
 function printVersion() {
   process.stdout.write(`${getPackageInfo().version}
 `);
 }
 function printHelp() {
   process.stdout.write(`${HELP_TEXT}
+`);
+}
+function printRunHelp() {
+  process.stdout.write(`${RUN_HELP_TEXT}
 `);
 }
 function parseEnvironmentCommand(argv) {
@@ -44739,7 +44816,101 @@ function parseArgs(argv) {
     pushReceiver
   };
 }
+function parseRunArgs(argv) {
+  let url;
+  let agentId;
+  let agentSelector;
+  let token;
+  let pushNotifications = false;
+  let pushReceiver = "http://localhost:5000";
+  let requestMode = "send-message";
+  let responseMode = "message-output";
+  let readMessageFromStdin = false;
+  const headers = {};
+  const messageArgs = [];
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    switch (arg) {
+      case "--url":
+      case "--host":
+      case "-u":
+        url = requireValue(argv, index, arg);
+        index += 1;
+        break;
+      case "--agent-id":
+        agentId = requireValue(argv, index, arg);
+        index += 1;
+        break;
+      case "--agent":
+        agentSelector = requireValue(argv, index, arg);
+        index += 1;
+        break;
+      case "--token":
+        token = requireValue(argv, index, arg);
+        index += 1;
+        break;
+      case "--header": {
+        const headerValue = requireValue(argv, index, arg);
+        const [key, value] = parseHeader(headerValue);
+        headers[key] = value;
+        index += 1;
+        break;
+      }
+      case "--push-notifications":
+        pushNotifications = true;
+        break;
+      case "--no-push-notifications":
+        pushNotifications = false;
+        break;
+      case "--push-receiver":
+        pushReceiver = requireValue(argv, index, arg);
+        index += 1;
+        break;
+      case "--request-mode":
+        requestMode = parseRequestMode(requireValue(argv, index, arg));
+        index += 1;
+        break;
+      case "--response-mode":
+        responseMode = parseResponseMode(requireValue(argv, index, arg));
+        index += 1;
+        break;
+      case "--help":
+        printRunHelp();
+        process.exit(0);
+      case "--version":
+        printVersion();
+        process.exit(0);
+      case "-":
+        readMessageFromStdin = true;
+        break;
+      default:
+        if (arg.startsWith("-")) {
+          throw new Error(`Unknown argument '${arg}'`);
+        }
+        messageArgs.push(arg);
+    }
+  }
+  return {
+    ...url ? { url } : {},
+    agentId,
+    agentSelector,
+    token,
+    headers,
+    pushNotifications,
+    pushReceiver,
+    requestMode,
+    responseMode,
+    readMessageFromStdin,
+    ...messageArgs.length > 0 ? { message: messageArgs.join(" ") } : {}
+  };
+}
 function parseCliArgs(argv) {
+  if (argv[0] === "run") {
+    return {
+      kind: "run",
+      options: parseRunArgs(argv.slice(1))
+    };
+  }
   if (argv[0] === "login") {
     if (argv.length > 1) {
       throw new Error("The login command does not accept arguments.");
@@ -51597,11 +51768,11 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
       }
     ]);
     const params = buildMessageParams(parts, contextId, taskId, pushConfig);
-    const canStream = Boolean(clientState.agentCard.capabilities.streaming);
-    const useStreaming = requestMode === "streaming-message" && canStream;
+    const canStream2 = Boolean(clientState.agentCard.capabilities.streaming);
+    const useStreaming = requestMode === "streaming-message" && canStream2;
     try {
       setWorkingStartedAt(Date.now());
-      if (requestMode === "streaming-message" && !canStream) {
+      if (requestMode === "streaming-message" && !canStream2) {
         appendSystem("Request mode fallback: agent does not support streaming, using Send message.");
       }
       if (useStreaming) {
@@ -52013,6 +52184,363 @@ async function runUpdateInstall(command, cwd2 = process.cwd()) {
   });
 }
 
+// src/lib/headlessRun.ts
+var NO_AGENT_MESSAGE_NOTICE2 = "Task completed with no agent message.";
+function writeLine(stream, line) {
+  stream.write(`${line}
+`);
+}
+function writeDiscoveryErrors(discovery, stderr) {
+  for (const error of discovery.errors) {
+    if (error.source.isDefault) {
+      continue;
+    }
+    writeLine(
+      stderr,
+      `Failed to discover agents from ${error.source.description}: ${error.error ?? error.source.lastError ?? "unknown error"}`
+    );
+  }
+}
+function normalizeSelector(value) {
+  return value.trim().toLowerCase();
+}
+function withoutAtPrefix(value) {
+  return value.startsWith("@") ? value.slice(1) : value;
+}
+function getAgentSelectorValues(agent) {
+  return [
+    agent.agentHandle,
+    agent.agentHandle ? withoutAtPrefix(agent.agentHandle) : void 0,
+    agent.id,
+    agent.agentId,
+    agent.agentKey,
+    agent.agentCardName
+  ].filter((value) => Boolean(value?.trim())).map(normalizeSelector);
+}
+function formatAgentCandidate(agent) {
+  const label = agent.agentHandle ?? agent.id;
+  return `${label} (${agent.source.description})`;
+}
+function formatAgentCandidates(agents) {
+  if (agents.length === 0) {
+    return "none";
+  }
+  return agents.slice(0, 10).map(formatAgentCandidate).join(", ");
+}
+function selectAgentBySelector(agents, selector, explicitSourceKey) {
+  const normalizedSelector = normalizeSelector(selector);
+  const normalizedWithoutAt = withoutAtPrefix(normalizedSelector);
+  let matches = agents.filter((agent) => {
+    const values = getAgentSelectorValues(agent);
+    return values.includes(normalizedSelector) || values.includes(normalizedWithoutAt);
+  });
+  if (explicitSourceKey) {
+    const explicitMatches = matches.filter(
+      (agent) => agent.sourceKey === explicitSourceKey
+    );
+    if (explicitMatches.length > 0) {
+      matches = explicitMatches;
+    }
+  }
+  if (matches.length === 0) {
+    throw new Error(
+      `No discovered agent matched '${selector}'. Available agents: ${formatAgentCandidates(agents)}`
+    );
+  }
+  if (matches.length > 1) {
+    throw new Error(
+      `Agent selector '${selector}' matched multiple agents: ${formatAgentCandidates(matches)}`
+    );
+  }
+  return matches[0];
+}
+function selectHeadlessAgent(agents, options, selectedAgentKey, selectedAgentId, explicitSourceKey) {
+  if (options.agentSelector) {
+    return selectAgentBySelector(agents, options.agentSelector, explicitSourceKey);
+  }
+  const selected = selectDiscoveredAgent(agents, {
+    requestedAgentId: options.agentId,
+    selectedAgentKey,
+    selectedAgentId,
+    explicitSourceKey,
+    autoSelectExplicit: true
+  });
+  if (!selected) {
+    throw new Error(
+      `No agent selected. Use --agent with one of: ${formatAgentCandidates(agents)}`
+    );
+  }
+  return selected;
+}
+function appendOutput(state, key, body, append = false) {
+  if (!body) {
+    return false;
+  }
+  const existing = state.entries.find((entry) => entry.key === key);
+  if (existing) {
+    existing.body = append ? `${existing.body}${body}` : body;
+  } else {
+    state.entries.push({ key, body });
+  }
+  state.renderedAgentOutput = true;
+  return true;
+}
+function renderAgentMessage(state, message, fallbackTaskId) {
+  if (!shouldRenderLiveResponseMessage(message)) {
+    return false;
+  }
+  const body = formatMessageParts(message.parts);
+  if (!body) {
+    return false;
+  }
+  const shownMessageKey = markShownMessage(
+    state.shownMessageKeys,
+    message,
+    fallbackTaskId
+  );
+  return appendOutput(state, `message:${shownMessageKey}`, body);
+}
+function renderArtifact(state, artifact, taskId, append = false) {
+  const artifactKey = `${taskId}:${artifact.artifactId}`;
+  const body = formatMessageParts(artifact.parts);
+  if (!body) {
+    return false;
+  }
+  state.shownArtifactKeys.add(artifactKey);
+  return appendOutput(state, `artifact:${artifactKey}`, body, append);
+}
+function renderTaskArtifacts(state, task) {
+  let rendered = false;
+  for (const artifact of task.artifacts ?? []) {
+    const artifactKey = `${task.id}:${artifact.artifactId}`;
+    if (state.shownArtifactKeys.has(artifactKey)) {
+      continue;
+    }
+    rendered = renderArtifact(state, artifact, task.id) || rendered;
+  }
+  return rendered;
+}
+function handleMessageOutputMessage(state, message, reachedTerminal = false) {
+  if (reachedTerminal) {
+    state.reachedTerminal = true;
+  }
+  return renderAgentMessage(state, message);
+}
+function handleMessageOutputTask(state, task) {
+  const isTerminalTask = isTerminalTaskState(task.status.state);
+  if (isTerminalTask) {
+    state.reachedTerminal = true;
+  }
+  if (!isTerminalTask || state.streamedTaskIds.has(task.id)) {
+    return false;
+  }
+  let rendered = false;
+  for (const message of getUnshownTaskAgentMessages(task, state.shownMessageKeys)) {
+    rendered = renderAgentMessage(state, message, task.id) || rendered;
+  }
+  rendered = renderTaskArtifacts(state, task) || rendered;
+  return rendered;
+}
+function handleMessageOutputStatusUpdate(state, event) {
+  if (isTerminalTaskState(event.status.state)) {
+    state.reachedTerminal = true;
+  }
+  if (shouldRenderLiveStatusMessage({
+    message: event.status.message,
+    taskId: event.taskId,
+    streamedTaskIds: state.streamedTaskIds
+  })) {
+    return renderAgentMessage(
+      state,
+      event.status.message,
+      event.taskId
+    );
+  }
+  return false;
+}
+function handleMessageOutputArtifactUpdate(state, event) {
+  if (event.artifact.artifactId === STREAM_DELTA_ARTIFACT_ID) {
+    state.streamedTaskIds.add(event.taskId);
+  }
+  return renderArtifact(state, event.artifact, event.taskId, event.append);
+}
+function createMessageOutputState() {
+  return {
+    entries: [],
+    shownMessageKeys: /* @__PURE__ */ new Set(),
+    shownArtifactKeys: /* @__PURE__ */ new Set(),
+    streamedTaskIds: /* @__PURE__ */ new Set(),
+    reachedTerminal: false,
+    renderedAgentOutput: false
+  };
+}
+function writeMessageOutput(state, responseMode, stdout, stderr) {
+  const output = state.entries.map((entry) => entry.body).filter(Boolean).join("\n\n");
+  if (output) {
+    writeLine(stdout, output);
+  }
+  if (shouldShowNoAgentMessageNotice({
+    responseMode,
+    reachedTerminal: state.reachedTerminal,
+    renderedAgentOutput: state.renderedAgentOutput
+  })) {
+    writeLine(stderr, NO_AGENT_MESSAGE_NOTICE2);
+  }
+}
+function writeRawPayload(stream, payload) {
+  writeLine(stream, JSON.stringify(payload));
+}
+async function sendSingleMessage({
+  clientState,
+  params,
+  responseMode,
+  stdout,
+  stderr
+}) {
+  const response = await clientState.client.sendMessage(params);
+  if (responseMode === "a2a-protocol") {
+    writeRawPayload(stdout, response);
+    return;
+  }
+  const state = createMessageOutputState();
+  if (response.kind === "message") {
+    handleMessageOutputMessage(state, response, true);
+  } else {
+    handleMessageOutputTask(state, response);
+  }
+  writeMessageOutput(state, responseMode, stdout, stderr);
+}
+async function sendStreamingMessage({
+  clientState,
+  params,
+  responseMode,
+  stdout,
+  stderr
+}) {
+  const state = createMessageOutputState();
+  for await (const event of clientState.client.sendMessageStream(params)) {
+    if (responseMode === "a2a-protocol") {
+      writeRawPayload(stdout, event);
+      continue;
+    }
+    switch (event.kind) {
+      case "message":
+        handleMessageOutputMessage(state, event);
+        break;
+      case "task":
+        handleMessageOutputTask(state, event);
+        break;
+      case "status-update":
+        handleMessageOutputStatusUpdate(state, event);
+        break;
+      case "artifact-update":
+        handleMessageOutputArtifactUpdate(state, event);
+        break;
+      default:
+        break;
+    }
+  }
+  if (responseMode !== "a2a-protocol") {
+    writeMessageOutput(state, responseMode, stdout, stderr);
+  }
+}
+function canStream(agentCard) {
+  return Boolean(agentCard.capabilities.streaming);
+}
+function getConnectionOptions(options, selectedAgent) {
+  const useCliEndpointAuth = isTransientAgentSource(selectedAgent.source);
+  return {
+    ...options,
+    url: selectedAgent.connectionUrl,
+    agentId: selectedAgent.connectionAgentId,
+    token: useCliEndpointAuth ? options.token : void 0,
+    headers: useCliEndpointAuth ? options.headers : {},
+    pushNotifications: options.pushNotifications,
+    pushReceiver: options.pushReceiver
+  };
+}
+function getContextId(selectedAgent, environmentAgents) {
+  return environmentAgents[selectedAgent.agentKey]?.activeContextId ?? selectedAgent.activeContextId;
+}
+async function runHeadless(options, dependencies = {}) {
+  const stdout = dependencies.stdout ?? process.stdout;
+  const stderr = dependencies.stderr ?? process.stderr;
+  const fetchImpl = dependencies.fetchImpl ?? fetch;
+  const loadChatSettingsImpl = dependencies.loadChatSettingsImpl ?? loadChatSettings;
+  const discoverAgentSourcesImpl = dependencies.discoverAgentSourcesImpl ?? discoverAgentSources;
+  const connectClientImpl = dependencies.connectClientImpl ?? connectClient;
+  const buildMessagePartsImpl = dependencies.buildMessagePartsImpl ?? buildMessageParts2;
+  const getStoredAccessTokenImpl = dependencies.getStoredAccessTokenImpl ?? getStoredAccessToken;
+  const { settings, warning } = loadChatSettingsImpl();
+  if (warning) {
+    writeLine(stderr, warning);
+  }
+  const selectedEnvironment = settings.selectedEnvironment;
+  const environmentSettings = settings.environments[selectedEnvironment];
+  const explicitSourceKey = options.url ? createExplicitAgentSource(options.url).sourceKey : void 0;
+  const runtimeSources = mergeAgentSources(
+    environmentSettings.agentSources,
+    selectedEnvironment,
+    options.url
+  );
+  const explicitSourceFetch = buildAuthenticatedFetch({
+    token: options.token,
+    headers: options.headers
+  });
+  const discovery = await discoverAgentSourcesImpl(runtimeSources, fetchImpl, {
+    environmentId: selectedEnvironment,
+    controlPlaneAccessTokenProvider: () => getStoredAccessTokenImpl(selectedEnvironment),
+    graphQLFetchImpl: fetchImpl,
+    sourceFetchImpl: (source) => source.sourceKey === explicitSourceKey ? explicitSourceFetch : fetchImpl
+  });
+  writeDiscoveryErrors(discovery, stderr);
+  if (discovery.agents.length === 0) {
+    throw new Error("No agents discovered for the selected environment.");
+  }
+  const selectedAgent = selectHeadlessAgent(
+    discovery.agents,
+    options,
+    environmentSettings.selectedAgentKey,
+    environmentSettings.selectedAgentId,
+    explicitSourceKey
+  );
+  const clientState = await connectClientImpl(
+    getConnectionOptions(options, selectedAgent)
+  );
+  const parts = await buildMessagePartsImpl(options.message ?? "");
+  const pushConfig = options.pushNotifications ? createPushNotificationConfig(options.pushReceiver) : void 0;
+  const params = buildMessageParams(
+    parts,
+    getContextId(selectedAgent, environmentSettings.agents),
+    void 0,
+    pushConfig
+  );
+  if (options.requestMode === "streaming-message" && canStream(clientState.agentCard)) {
+    await sendStreamingMessage({
+      clientState,
+      params,
+      responseMode: options.responseMode,
+      stdout,
+      stderr
+    });
+    return 0;
+  }
+  if (options.requestMode === "streaming-message") {
+    writeLine(
+      stderr,
+      "Request mode fallback: agent does not support streaming, using Send message."
+    );
+  }
+  await sendSingleMessage({
+    clientState,
+    params,
+    responseMode: options.responseMode,
+    stdout,
+    stderr
+  });
+  return 0;
+}
+
 // src/cli.tsx
 var import_jsx_runtime10 = __toESM(require_jsx_runtime(), 1);
 async function runLoginCommand() {
@@ -52073,6 +52601,9 @@ function runEnvironmentCommand(environmentId) {
 `);
 }
 async function continueAfterUpdateCheck() {
+  if (process.env.AION_CHAT_SKIP_UPDATE_CHECK === "1") {
+    return true;
+  }
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     return true;
   }
@@ -52092,15 +52623,40 @@ Running ${formatInstallCommand(command)}
   process.exitCode = exitCode;
   return false;
 }
+async function readStdin() {
+  process.stdin.setEncoding("utf8");
+  let input = "";
+  for await (const chunk of process.stdin) {
+    input += String(chunk);
+  }
+  return input;
+}
+async function runHeadlessCommand(options) {
+  const shouldReadStdin = options.readMessageFromStdin || !options.message && !process.stdin.isTTY;
+  const message = shouldReadStdin ? await readStdin() : options.message;
+  if (!message?.trim()) {
+    throw new Error("Missing message for run command.");
+  }
+  process.exitCode = await runHeadless({
+    ...options,
+    message
+  });
+}
 async function main() {
+  let parsedCommand;
   try {
     const command = parseCliArgs(process.argv.slice(2));
+    parsedCommand = command;
     if (command.kind === "login") {
       await runLoginCommand();
       return;
     }
     if (command.kind === "environment") {
       runEnvironmentCommand(command.environmentId);
+      return;
+    }
+    if (command.kind === "run") {
+      await runHeadlessCommand(command.options);
       return;
     }
     if (!await continueAfterUpdateCheck()) {
@@ -52115,7 +52671,9 @@ async function main() {
 
 `
     );
-    printHelp();
+    if (!parsedCommand) {
+      printHelp();
+    }
     process.exit(1);
   }
 }

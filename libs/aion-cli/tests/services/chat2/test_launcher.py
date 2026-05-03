@@ -48,6 +48,44 @@ def test_chat_launch_options_omits_endpoint_when_not_supplied() -> None:
     assert options.to_args() == []
 
 
+def test_chat_run_launch_options_to_args() -> None:
+    """Ensure headless run arguments are serialized for the UI binary."""
+    options = launcher.ChatRunLaunchOptions(
+        endpoint="http://localhost:8000",
+        agent_id="demo-agent",
+        agent="@team-agent",
+        token="secret-token",
+        headers={"X-Test": "one"},
+        push_notifications=True,
+        push_receiver="http://localhost:5050",
+        request_mode="streaming-message",
+        response_mode="a2a",
+        message="hello there",
+    )
+
+    assert options.to_args() == [
+        "run",
+        "--url",
+        "http://localhost:8000",
+        "--agent-id",
+        "demo-agent",
+        "--agent",
+        "@team-agent",
+        "--token",
+        "secret-token",
+        "--header",
+        "X-Test=one",
+        "--push-notifications",
+        "--push-receiver",
+        "http://localhost:5050",
+        "--request-mode",
+        "streaming-message",
+        "--response-mode",
+        "a2a",
+        "hello there",
+    ]
+
+
 def test_resolve_chat_command_prefers_packaged_binary(
     monkeypatch, tmp_path: Path
 ) -> None:
@@ -134,6 +172,50 @@ def test_launch_chat_returns_process_exit_code(monkeypatch) -> None:
     assert recorded["command"] == [
         "node",
         "/tmp/cli.mjs",
+    ]
+    assert recorded["check"] is False
+    assert isinstance(recorded["env"], dict)
+    assert recorded["env"]["AION_CHAT_SKIP_UPDATE_CHECK"] == "1"
+
+
+def test_launch_chat_run_returns_process_exit_code(monkeypatch) -> None:
+    """Ensure headless launches include the run subcommand and return child status."""
+    options = launcher.ChatRunLaunchOptions(
+        endpoint=None,
+        agent_id=None,
+        agent="@team-agent",
+        token=None,
+        headers={},
+        push_notifications=False,
+        push_receiver="http://localhost:5000",
+        request_mode="send-message",
+        response_mode="message",
+        message="hello",
+    )
+    recorded: dict[str, object] = {}
+
+    def fake_runner(command, check, env):
+        recorded["command"] = command
+        recorded["check"] = check
+        recorded["env"] = env
+        return SimpleNamespace(returncode=5)
+
+    monkeypatch.setattr(launcher, "resolve_chat_command", lambda: ["node", "/tmp/cli.mjs"])
+
+    exit_code = launcher.launch_chat_run(options, runner=fake_runner)
+
+    assert exit_code == 5
+    assert recorded["command"] == [
+        "node",
+        "/tmp/cli.mjs",
+        "run",
+        "--agent",
+        "@team-agent",
+        "--request-mode",
+        "send-message",
+        "--response-mode",
+        "message",
+        "hello",
     ]
     assert recorded["check"] is False
     assert isinstance(recorded["env"], dict)
