@@ -67,6 +67,18 @@ input A2AServiceParametersGQLInput {
   additional: [A2AServiceParameterGQLInput!]
 }
 
+"Select exactly one A2A ingress target. Supplying zero or multiple selectors causes the request to be rejected."
+input A2ATargetGQLInput {
+  "Direct distribution identifier. Targets the external ingress path for a distribution-backed agent sequence."
+  distributionId: ID
+  "Direct agent environment identifier. Targets the daemon for the specific project node instance represented by that environment. The authenticated user will require privileged access."
+  agentEnvironmentId: ID
+  "Agent identity identifier for identity-addressed ingress. Personal or principal identities resolve to an A2A distribution endpoint, while daemon identities resolve directly to the component daemon."
+  agentIdentityId: ID
+  "Agent @name handle for identity-addressed ingress. Values may be provided with or without the leading @ symbol. Personal or principal identities resolve to an A2A distribution endpoint, while daemon identities resolve directly to the project node's daemon."
+  agentAtName: String
+}
+
 input MessageInput {
   role: String!
   content: String!
@@ -92,7 +104,7 @@ type A2AJsonRpcSuccessResponseGQL {
   jsonrpc: String!
 }
 
-"Configuration describing how an agent is deployed"
+"Core persisted configuration for one agent behavior"
 type AgentBehavior {
   "Unique identifier for the behavior"
   id: ID!
@@ -145,8 +157,8 @@ type Delta {
 }
 
 type Mutations {
-  "Registers a new Aion A2A server with the control plane. This should be called when the server first starts up. Returns all behaviors found in the configuration."
-  registerVersion("Serialized agent manifest retrieved from the runtime. This payload is forwarded to populate agent behaviors and configuration metadata during registration." manifest: String!, "Identifier of the version being registered. This is required when authenticating as a User. When authenticating as a Version, this query will only return the Version connected to your credentials." versionId: ID): [AgentBehavior!]
+  "Registers behavior metadata for a deployment version. Runtime metadata is resolved according to the deployment type."
+  registerVersion("Identifier of the version being registered. This is required when authenticating as a User. When authenticating as a Version, this query will only register the Version connected to your credentials." versionId: ID): [AgentBehavior!]
 }
 
 type Queries {
@@ -156,7 +168,7 @@ type Queries {
 
 type Subscriptions {
   "Executes an agent-to-agent JSON-RPC request and streams the responses."
-  a2aRpc("JSON-RPC request body" request: A2AJsonRpcRequestGQLInput!, "Distribution that should handle the request" distributionId: ID!, "Service parameters associated with the request" serviceParameters: A2AServiceParametersGQLInput): A2AJsonRpcResponseGQL @auth(subjectType: "User")
+  a2aRpc("JSON-RPC request body" request: A2AJsonRpcRequestGQLInput!, "A2A ingress target" target: A2ATargetGQLInput!, "Service parameters associated with the request" serviceParameters: A2AServiceParametersGQLInput): A2AJsonRpcResponseGQL
   "Streams delta chunks for an LLM chat-completion request. When `stream=true` is set, the underlying model returns partial responses; this subscription forwards those chunks to the client as they become available, enabling token-level streaming UIs."
   chatCompletionStream(model: String!, messages: [MessageInput!]!, stream: Boolean!): ChatCompletionStreamChunk @auth(subjectType: "Version")
 }

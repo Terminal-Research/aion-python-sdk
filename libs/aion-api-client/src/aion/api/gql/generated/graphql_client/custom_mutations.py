@@ -8,11 +8,10 @@ from .custom_fields import AgentBehaviorFields
 class Mutation:
     @classmethod
     def register_version(
-        cls, manifest: str, *, version_id: Optional[str] = None
+        cls, *, version_id: Optional[str] = None
     ) -> AgentBehaviorFields:
         """Registers a new Aion A2A server with the control plane. This should be called when the server first starts up. Returns all behaviors found in the configuration."""
         arguments: dict[str, dict[str, Any]] = {
-            "manifest": {"type": "String!", "value": manifest},
             "versionId": {"type": "ID", "value": version_id},
         }
         cleared_arguments = {

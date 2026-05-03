@@ -16,6 +16,27 @@ pytest.importorskip("gql")
 from aion.api.config import aion_api_settings
 from aion.api.gql.client import AionGqlClient
 from aion.api.gql.generated.graphql_client import JSONRPCRequestInput
+from aion.api.gql.generated.graphql_client.custom_fields import AgentBehaviorFields
+from aion.api.gql.generated.graphql_client.custom_mutations import Mutation
+
+
+class CapturingMutationClient:
+    """Test double that records generated custom mutation requests."""
+
+    def __init__(self) -> None:
+        """Initialize the capture container."""
+        self.calls: list[dict] = []
+
+    async def mutation(self, field, operation_name: str):
+        """Capture the mutation field and operation name."""
+        field.to_ast(0)
+        self.calls.append(
+            {
+                "operation_name": operation_name,
+                "variables": field.get_formatted_variables(),
+            }
+        )
+        return {"registerVersion": []}
 
 
 def test_settings_loaded() -> None:
@@ -75,6 +96,54 @@ async def test_a2a_stream_calls_gql(monkeypatch) -> None:
         chunks.append(chunk)
 
     assert chunks == [{"result": 1}]
+
+
+def test_register_version_custom_mutation_arguments_exclude_manifest() -> None:
+    """Generated registerVersion custom mutation should expose only versionId."""
+    field = Mutation.register_version(version_id="version-123").fields(
+        AgentBehaviorFields.id
+    )
+
+    field.to_ast(0)
+    argument_names = {
+        variable["name"] for variable in field.get_formatted_variables().values()
+    }
+
+    assert argument_names == {"versionId"}
+
+
+@pytest.mark.anyio("asyncio")
+async def test_register_version_sends_only_version_id_variable() -> None:
+    """register_version should send only the optional versionId variable."""
+    client = AionGqlClient()
+    gql_client = CapturingMutationClient()
+    client.client = gql_client
+    client._is_initialized = True
+
+    result = await client.register_version(version_id="version-123")
+
+    assert result == {"registerVersion": []}
+    assert len(gql_client.calls) == 1
+    call = gql_client.calls[0]
+    assert call["operation_name"] == "RegisterVersion"
+    assert {
+        variable["name"]: variable["value"]
+        for variable in call["variables"].values()
+    } == {"versionId": "version-123"}
+
+
+@pytest.mark.anyio("asyncio")
+async def test_register_version_allows_version_authenticated_call() -> None:
+    """register_version should support callers that omit version_id."""
+    client = AionGqlClient()
+    gql_client = CapturingMutationClient()
+    client.client = gql_client
+    client._is_initialized = True
+
+    await client.register_version()
+
+    assert gql_client.calls[0]["operation_name"] == "RegisterVersion"
+    assert gql_client.calls[0]["variables"] == {}
 
 
 # INITIALIZATION REQUIREMENT TESTS

@@ -1,8 +1,6 @@
 from typing import Optional, List, Any, AsyncIterator
 
-from aion.shared.config import AionConfig
 from aion.shared.logging import get_logger
-from aion.shared.types import A2AManifest
 
 from aion.api.http import AionJWTManager
 from .generated.graphql_client import (
@@ -212,31 +210,35 @@ class AionGqlClient:
                 **kwargs):
             yield chunk
 
-    async def register_version(self, manifest: A2AManifest, version_id: Optional[str] = None):
-        """Register a new agent version with the provided A2A manifest.
+    async def register_version(self, version_id: Optional[str] = None):
+        """Register deployment version metadata with the Aion API.
 
-        Submits the service manifest to the Aion platform for version registration
-        and service discovery. The manifest contains API version, service name,
-        and agent endpoint mappings according to the aion.manifest/v1 specification.
+        Starts backend-side registration for the deployment version. Runtime
+        metadata is resolved by the backend during registration, so this method
+        no longer serializes or sends a deployment manifest.
 
         Args:
-            manifest (A2AManifest): The A2A manifest containing service configuration,
-                including api_version, name, and endpoints mapping.
-            version_id (str): Version ID of the deployment version to register.
+            version_id (Optional[str]): Version ID to register. User-authenticated
+                callers should provide this value. Version-authenticated callers
+                can omit it so the backend uses the authenticated version.
         """
         from .generated.graphql_client.custom_fields import AgentBehaviorFields
 
-        manifest_val = manifest.model_dump_json()
         register_field = (
             Mutation
-            .register_version(
-                manifest=manifest_val,
-                version_id=version_id
-            ).fields(
+            .register_version(version_id=version_id)
+            .fields(
                 AgentBehaviorFields.id,
+                AgentBehaviorFields.organization_id,
+                AgentBehaviorFields.deployment_id,
+                AgentBehaviorFields.version_id,
+                AgentBehaviorFields.behavior_key,
                 AgentBehaviorFields.name,
+                AgentBehaviorFields.description,
                 AgentBehaviorFields.logical_version,
-                AgentBehaviorFields.kind
+                AgentBehaviorFields.kind,
+                AgentBehaviorFields.configuration_schema,
+                AgentBehaviorFields.agent_card
             )
         )
         return await self._execute_mutation(
