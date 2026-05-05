@@ -14,6 +14,11 @@ __all__ = [
     "CARD_ACTION_EVENT_PAYLOAD_SCHEMA_V1",
     # Event extension
     "EVENT_EXTENSION_URI_V1",
+    # Event type URIs (CloudEvents `type` field)
+    "MESSAGE_EVENT_TYPE_V1",
+    "REACTION_EVENT_TYPE_V1",
+    "COMMAND_EVENT_TYPE_V1",
+    "CARD_ACTION_EVENT_TYPE_V1",
     # Messaging extension
     "MESSAGING_EXTENSION_URI_V1",
     "MESSAGE_EVENT_PAYLOAD_SCHEMA_V1",
@@ -38,6 +43,12 @@ CARD_ACTION_EVENT_PAYLOAD_SCHEMA_V1 = f"{CARDS_EXTENSION_URI_V1}#CardActionEvent
 # Event extension
 # See: https://docs.aion.to/a2a/extensions/aion/event/1.0.0
 EVENT_EXTENSION_URI_V1 = "https://docs.aion.to/a2a/extensions/aion/event/1.0.0"
+
+# Event type URIs (CloudEvents `type` field values)
+MESSAGE_EVENT_TYPE_V1 = "to.aion.distribution.message.1.0.0"
+REACTION_EVENT_TYPE_V1 = "to.aion.distribution.reaction.1.0.0"
+COMMAND_EVENT_TYPE_V1 = "to.aion.distribution.command.1.0.0"
+CARD_ACTION_EVENT_TYPE_V1 = "to.aion.distribution.card-action.1.0.0"
 
 # Messaging extension
 # See: https://docs.aion.to/a2a/extensions/aion/distribution/messaging/1.0.0

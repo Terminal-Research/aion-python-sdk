@@ -1,53 +1,86 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any, List, Optional, Union
-from uuid import uuid4
-
 from a2a.types import Artifact, Part
 from aion.shared.constants import (
     CARDS_EXTENSION_URI_V1,
-    CARDS_PAYLOAD_SCHEMA_V1,
     CARDS_MEDIA_TYPE,
+    CARDS_PAYLOAD_SCHEMA_V1,
 )
 from aion.shared.logging import get_logger
+from aion.shared.runtime import AionRuntimeContext
 from langchain_core.messages import AIMessage, AIMessageChunk
 from langgraph.config import get_stream_writer
+from typing import TYPE_CHECKING, Any, List, Optional, Union
+from uuid import uuid4
 
-from ..events.custom_events import ArtifactCustomEvent
-from ..stream import emit_message
+from aion.langgraph.events.custom_events import ArtifactCustomEvent
+from aion.langgraph.stream import emit_message
+
+if TYPE_CHECKING:
+    from .message import Message
 
 logger = get_logger()
 
 ReplyResult = Optional[Union[AIMessage, Artifact]]
-"""Return type of Thread.reply(): the object that was sent, or None if nothing was sent.
-
-- AIMessage / AIMessageChunk (subclass) — a text message or streaming chunk
-- Artifact — a card or other artifact
-- None — writer was unavailable; nothing was sent
-"""
+"""Return type of Thread.reply(): the object that was sent, or None if nothing was sent."""
 
 
-@dataclass
 class Thread:
     """LangGraph conversation thread bound to the current invocation."""
 
-    id: str
-    """Unique identifier for this conversation thread (context_id from event payload)."""
-    parent_id: Optional[str]
-    """Parent thread identifier for thread continuity, None if this is a root thread."""
-    network: str
-    """Type of network/provider this thread exists on (e.g., 'slack', 'teams')."""
-    default_reply_target: Optional[str]
-    """Default target for replies (trajectory from event payload), routing agent responses appropriately."""
+    def __init__(
+            self,
+            context: AionRuntimeContext,
+            id: Optional[str],
+            parent_id: Optional[str],
+            network: str,
+            default_reply_target: Optional[str],
+            writer=None,
+    ) -> None:
+        self._context = context
+        self._writer = writer
+        self.id = id
+        self.parent_id = parent_id
+        self.network = network
+        self.default_reply_target = default_reply_target
+        # Inline import to break circular dependency
+        from .message import Message
+        self.message = Message.from_context(context, self) if context.inbox.message is not None else None
 
-    @staticmethod
-    def _get_writer():
-        """Get LangGraph stream writer, handling errors gracefully.
+    @classmethod
+    def from_context(cls, context: AionRuntimeContext, writer=None) -> "Thread":
+        """Create a Thread from an AionRuntimeContext, extracting thread metadata."""
+        payload = context.event.payload if context.event else None
 
-        Returns:
-            Stream writer if available, None otherwise.
-        """
+        context_id = getattr(payload, "context_id", None)
+        if context_id is None:
+            if context.inbox.message is not None and context.inbox.message.context_id:
+                context_id = context.inbox.message.context_id
+            elif context.inbox.task is not None and context.inbox.task.context_id:
+                context_id = context.inbox.task.context_id
+
+        trajectory = getattr(payload, "trajectory", None)
+        parent_context_id = getattr(payload, "parent_context_id", None)
+        default_reply_target = (
+            parent_context_id
+            if trajectory == "reply" and parent_context_id
+            else context_id
+        )
+
+        network = context.identity.network_type if context.identity else "A2A"
+
+        return cls(
+            context=context,
+            id=context_id,
+            parent_id=parent_context_id,
+            network=network,
+            default_reply_target=default_reply_target,
+            writer=writer,
+        )
+
+    def _get_writer(self):
+        if self._writer is not None:
+            return self._writer
         try:
             return get_stream_writer()
         except RuntimeError as e:
@@ -59,14 +92,6 @@ class Thread:
 
     @staticmethod
     def _detect_jsx_card_markup(text: str) -> bool:
-        """Detect if text contains JSX card markup (starts with <Card tag).
-
-        Args:
-            text: Text content to check
-
-        Returns:
-            True if text is a JSX card document, False for plain text
-        """
         return text.startswith("<Card")
 
     async def _emit_string_as_text_or_card_document(
@@ -75,19 +100,6 @@ class Thread:
             content: str,
             metadata: dict | None = None,
     ) -> ReplyResult:
-        """Emit string content as either plain text or a JSX card document.
-
-        If the string starts with <Card markup, it's treated as a JSX card document.
-        Otherwise, it's emitted as plain text message.
-
-        Args:
-            writer: LangGraph StreamWriter
-            content: String content to emit
-            metadata: Optional metadata to attach to the message
-
-        Returns:
-            The emitted AIMessage for plain text, or the Artifact for JSX card documents.
-        """
         if self._detect_jsx_card_markup(content):
             return await self._emit_jsx_card_as_artifact(writer, content, metadata)
         else:
@@ -98,47 +110,22 @@ class Thread:
     async def reply(self, content: Any, *, metadata: dict | None = None) -> ReplyResult:
         """Add a durable reply to the current thread via LangGraph stream.
 
-        Supports multiple content types:
-        - str: plain text or JSX-like card document
-        - AIMessage: full message with optional metadata
-        - AIMessageChunk: single streaming chunk
-        - async iterator: yields str or AIMessageChunk objects;
-          chunks are streamed in real-time and accumulated into a final durable AIMessage
-        - TODO: message builder for low-level message construction
-
-        Args:
-            content: Message content in one of the supported formats
-            metadata: Optional metadata dict to attach to the final message
-
-        Returns:
-            The object that was sent:
-            - AIMessage for str, AIMessage, or accumulated async iterator
-            - AIMessageChunk for a single chunk
-            - Artifact for JSX card documents
-            - None if the writer was unavailable (nothing was sent)
+        Supports str, AIMessage, AIMessageChunk, or async iterator of those types.
         """
         writer = self._get_writer()
         if writer is None:
             return None
 
-        # Plain text or JSX card document
         if isinstance(content, str):
             return await self._emit_string_as_text_or_card_document(writer, content, metadata)
-
-        # Full AIMessage
         elif isinstance(content, AIMessage):
             emit_message(writer, content)
             return content
-
-        # Single AIMessageChunk (streaming chunk, not accumulated)
         elif isinstance(content, AIMessageChunk):
             emit_message(writer, content)
             return content
-
-        # Async iterator: stream chunks + accumulate final message
-        elif hasattr(content, '__aiter__'):
+        elif hasattr(content, "__aiter__"):
             return await self._stream_from_async_iterator(writer, content, metadata)
-
         else:
             logger.warning(
                 "Thread.reply() received unsupported content type: %s. "
@@ -153,23 +140,6 @@ class Thread:
             iterator: Any,
             metadata: dict | None = None,
     ) -> Optional[AIMessage]:
-        """Stream chunks in real-time while accumulating content, then emit final durable message.
-
-        For each chunk yielded by iterator:
-        1. If it's a string, wrap in AIMessageChunk and emit for streaming
-        2. If it's AIMessageChunk, emit directly for streaming
-        3. Accumulate the text content from both
-
-        After iterator completes, emit all accumulated content as a single final AIMessage.
-
-        Args:
-            writer: LangGraph StreamWriter
-            iterator: Async iterator yielding str or AIMessageChunk objects
-            metadata: Optional metadata to attach to the final durable message
-
-        Returns:
-            The final accumulated AIMessage, or None if nothing was accumulated.
-        """
         accumulated = ""
         try:
             async for chunk in iterator:
@@ -206,24 +176,7 @@ class Thread:
             card_jsx: str,
             metadata: dict | None = None,
     ) -> Artifact:
-        """Emit JSX card as an A2A artifact with card payload metadata extension.
-
-        JSX card document is encoded as a Part, wrapped in an Artifact, and emitted
-        via ArtifactCustomEvent for streaming to the client.
-
-        Args:
-            writer: LangGraph StreamWriter
-            card_jsx: JSX-like card document string to emit
-            metadata: Optional metadata to merge with card payload metadata
-
-        Returns:
-            The emitted Artifact.
-        """
-        card_metadata = {
-            CARDS_EXTENSION_URI_V1: {
-                "schema": CARDS_PAYLOAD_SCHEMA_V1
-            }
-        }
+        card_metadata = {CARDS_EXTENSION_URI_V1: {"schema": CARDS_PAYLOAD_SCHEMA_V1}}
 
         if metadata:
             card_metadata.update(metadata)
@@ -259,15 +212,10 @@ class Thread:
         return []
 
     async def typing(
-        self,
-        content: Union[str, AIMessage, AIMessageChunk],
+            self,
+            content: Union[str, AIMessage, AIMessageChunk],
     ) -> None:
-        """Emit a stream-only ephemeral typing/progress indicator.
-
-        Args:
-            content: Message content to emit. Accepts str, AIMessage, or AIMessageChunk.
-                     Required — a warning is logged and the call is a no-op if omitted.
-        """
+        """Emit a stream-only ephemeral typing/progress indicator."""
         writer = self._get_writer()
         if writer is None:
             return
