@@ -8,6 +8,7 @@ from langgraph.graph import StateGraph
 from langgraph.runtime import Runtime
 
 from aion.shared.runtime.context import AionRuntimeContext
+from aion.shared.runtime.context.models import EventKind
 
 logger = get_logger()
 
@@ -39,10 +40,10 @@ def add_event_handlers(
         )
     """
     _kind_to_handler = {
-        "message": on_message,
-        "reaction": on_reaction,
-        "command": on_command,
-        "card_action": on_card_action,
+        EventKind.MESSAGE: on_message,
+        EventKind.REACTION: on_reaction,
+        EventKind.COMMAND: on_command,
+        EventKind.CARD_ACTION: on_card_action,
     }
 
     registered = [

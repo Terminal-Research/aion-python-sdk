@@ -43,9 +43,7 @@ class Thread:
         self.parent_id = parent_id
         self.network = network
         self.default_reply_target = default_reply_target
-        # Inline import to break circular dependency
-        from .message import Message
-        self.message = Message.from_context(context, self) if context.inbox.message is not None else None
+        self.message = self._build_message()
 
     @classmethod
     def from_context(cls, context: AionRuntimeContext, writer=None) -> "Thread":
@@ -77,6 +75,13 @@ class Thread:
             default_reply_target=default_reply_target,
             writer=writer,
         )
+
+    def _build_message(self):
+        if self._context.inbox.message is None:
+            return None
+
+        from .message import Message
+        return Message(context=self._context, thread=self)
 
     def _get_writer(self):
         if self._writer is not None:

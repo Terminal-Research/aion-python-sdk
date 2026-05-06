@@ -16,14 +16,15 @@ from aion.shared.constants.a2a import (
     TRACEABILITY_EXTENSION_URI_V1,
 )
 from aion.shared.types.a2a import A2AInbox
-from aion.shared.types.a2a.extensions.cards import CardActionEventPayload
-from aion.shared.types.a2a.extensions.distribution import DistributionExtensionV1
-from aion.shared.types.a2a.extensions.messaging import (
+from aion.shared.types.a2a.extensions import (
+    CardActionEventPayload,
+    DistributionExtensionV1,
     CommandEventPayload,
     MessageEventPayload,
     ReactionEventPayload,
     SourceSystemEventPayload,
 )
+
 
 class EventKind(str, Enum):
     MESSAGE = MESSAGE_EVENT_TYPE_V1
@@ -42,7 +43,6 @@ NormalizedPayload = Union[
 
 class AionExtensions(str, Enum):
     """Extension URIs declared in message.extensions[] by the A2A sender."""
-
     DISTRIBUTION = DISTRIBUTION_EXTENSION_URI_V1
     MESSAGING = MESSAGING_EXTENSION_URI_V1
     CARDS = CARDS_EXTENSION_URI_V1

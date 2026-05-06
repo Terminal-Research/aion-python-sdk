@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from aion.shared.constants import EVENT_EXTENSION_URI_V1
 from aion.shared.logging import get_logger
 from aion.shared.runtime import AionRuntimeContext
 from dataclasses import dataclass
@@ -30,10 +31,6 @@ class Message:
         self.text: Optional[str] = self._parse_text()
         self.user: Optional[User] = self._parse_user()
 
-    @classmethod
-    def from_context(cls, context: AionRuntimeContext, thread: "Thread") -> "Message":
-        return cls(context=context, thread=thread)
-
     def _parse_id(self) -> Optional[str]:
         payload = self.context.event.payload if self.context.event else None
         if payload is not None:
@@ -47,7 +44,10 @@ class Message:
     def _parse_text(self) -> Optional[str]:
         if self.context.inbox.message is None:
             return None
-        parts = [part.text for part in self.context.inbox.message.parts if part.text]
+        parts = [
+            p.text for p in self.context.inbox.message.parts
+            if p.text and EVENT_EXTENSION_URI_V1 not in p.metadata
+        ]
         return "\n".join(parts) if parts else None
 
     def _parse_user(self) -> Optional[User]:
