@@ -8,6 +8,7 @@ from aion.shared.constants import (
 )
 from aion.shared.logging import get_logger
 from aion.shared.runtime import AionRuntimeContext
+from aion.shared.types.a2a.extensions.messaging import MessageActionPayload
 from langchain_core.messages import AIMessage, AIMessageChunk
 from langgraph.config import get_stream_writer
 from typing import TYPE_CHECKING, Any, List, Optional, Union
@@ -83,7 +84,7 @@ class Thread:
         from .message import Message
         return Message(context=self._context, thread=self)
 
-    def _get_writer(self):
+    def get_writer(self):
         if self._writer is not None:
             return self._writer
         try:
@@ -95,6 +96,26 @@ class Thread:
             )
             return None
 
+    def _build_message_action_payload(self) -> Optional[MessageActionPayload]:
+        """Build MessageActionPayload from inbound event context for reply routing.
+
+        Returns None if event context is unavailable; callers should fall back to
+        the default distribution routing in that case.
+        """
+        event = self._context.event
+        if event is None or event.payload is None:
+            return None
+        p = event.payload
+        context_id = getattr(p, "context_id", None)
+        if context_id is None:
+            return None
+        return MessageActionPayload(
+            trajectory=getattr(p, "trajectory", "conversation"),
+            context_id=context_id,
+            parent_context_id=getattr(p, "parent_context_id", None),
+            reply_to_message_id=getattr(p, "message_id", None),
+        )
+
     @staticmethod
     def _detect_jsx_card_markup(text: str) -> bool:
         return text.startswith("<Card")
@@ -104,36 +125,77 @@ class Thread:
             writer,
             content: str,
             metadata: dict | None = None,
+            routing: Optional[MessageActionPayload] = None,
     ) -> ReplyResult:
         if self._detect_jsx_card_markup(content):
             return await self._emit_jsx_card_as_artifact(writer, content, metadata)
         else:
             msg = AIMessage(content=content, id=str(uuid4()), metadata=metadata)
-            emit_message(writer, msg)
+            emit_message(writer, msg, routing=routing)
             return msg
 
     async def reply(self, content: Any, *, metadata: dict | None = None) -> ReplyResult:
         """Add a durable reply to the current thread via LangGraph stream.
 
         Supports str, AIMessage, AIMessageChunk, or async iterator of those types.
+        Attaches MessageActionPayload routing when inbound event context is available;
+        falls back to distribution-inferred routing otherwise.
         """
-        writer = self._get_writer()
+        writer = self.get_writer()
+        if writer is None:
+            return None
+
+        routing = self._build_message_action_payload()
+
+        if isinstance(content, str):
+            return await self._emit_string_as_text_or_card_document(writer, content, metadata, routing=routing)
+        elif isinstance(content, AIMessage):
+            emit_message(writer, content, routing=routing)
+            return content
+        elif isinstance(content, AIMessageChunk):
+            emit_message(writer, content, routing=routing)
+            return content
+        elif hasattr(content, "__aiter__"):
+            return await self._stream_from_async_iterator(writer, content, metadata, routing=routing)
+        else:
+            logger.warning(
+                "Thread.reply() received unsupported content type: %s. "
+                "Supported types: str, AIMessage, AIMessageChunk, async iterator.",
+                type(content).__name__,
+            )
+            return None
+
+    async def post(
+            self,
+            content: Any,
+            *,
+            target: MessageActionPayload,
+            metadata: dict | None = None,
+    ) -> ReplyResult:
+        """Post a message to an explicit target context distinct from the inbound thread.
+
+        Unlike reply(), post() requires an explicit MessageActionPayload target so the
+        distribution knows where to deliver the message.
+
+        Supports str, AIMessage, AIMessageChunk, or async iterator of those types.
+        """
+        writer = self.get_writer()
         if writer is None:
             return None
 
         if isinstance(content, str):
-            return await self._emit_string_as_text_or_card_document(writer, content, metadata)
+            return await self._emit_string_as_text_or_card_document(writer, content, metadata, routing=target)
         elif isinstance(content, AIMessage):
-            emit_message(writer, content)
+            emit_message(writer, content, routing=target)
             return content
         elif isinstance(content, AIMessageChunk):
-            emit_message(writer, content)
+            emit_message(writer, content, routing=target)
             return content
         elif hasattr(content, "__aiter__"):
-            return await self._stream_from_async_iterator(writer, content, metadata)
+            return await self._stream_from_async_iterator(writer, content, metadata, routing=target)
         else:
             logger.warning(
-                "Thread.reply() received unsupported content type: %s. "
+                "Thread.post() received unsupported content type: %s. "
                 "Supported types: str, AIMessage, AIMessageChunk, async iterator.",
                 type(content).__name__,
             )
@@ -144,6 +206,7 @@ class Thread:
             writer,
             iterator: Any,
             metadata: dict | None = None,
+            routing: Optional[MessageActionPayload] = None,
     ) -> Optional[AIMessage]:
         accumulated = ""
         try:
@@ -170,7 +233,7 @@ class Thread:
 
         if accumulated:
             msg = AIMessage(content=accumulated, id=str(uuid4()), metadata=metadata)
-            emit_message(writer, msg)
+            emit_message(writer, msg, routing=routing)
             return msg
 
         return None
@@ -202,11 +265,6 @@ class Thread:
         return card_artifact
 
     @staticmethod
-    async def post(content, *, target=None, metadata=None) -> None:
-        """Explicit outbound post distinct from the default reply target."""
-        logger.warning("Thread.post() is not yet implemented.")
-
-    @staticmethod
     async def history(limit: int = 20, before=None) -> List:
         """Request recent conversation history through the control plane."""
         logger.warning(
@@ -221,7 +279,7 @@ class Thread:
             content: Union[str, AIMessage, AIMessageChunk],
     ) -> None:
         """Emit a stream-only ephemeral typing/progress indicator."""
-        writer = self._get_writer()
+        writer = self.get_writer()
         if writer is None:
             return
 

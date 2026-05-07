@@ -14,19 +14,27 @@ from a2a.types import (
     TaskStatusUpdateEvent,
 )
 from aion.shared.agent.adapters import InterruptInfo
+from aion.shared.constants import (
+    MESSAGE_ACTION_PAYLOAD_SCHEMA_V1,
+    MESSAGING_EXTENSION_URI_V1,
+    REACTION_ACTION_PAYLOAD_SCHEMA_V1,
+)
 from aion.shared.logging import get_logger
 from aion.shared.types import ArtifactId, ArtifactName
+from aion.shared.types.a2a.extensions.messaging import MessageActionPayload
+from google.protobuf import json_format, struct_pb2
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
 
 from ..converters.lc_to_a2a import LcToA2AConverter
 from ..events.custom_events import (
     ArtifactCustomEvent,
     MessageCustomEvent,
+    ReactionCustomEvent,
     TaskUpdateCustomEvent,
 )
 
 LangChainAgentMessage = AIMessage | AIMessageChunk
-SupportedCustomEvents = ArtifactCustomEvent | MessageCustomEvent | TaskUpdateCustomEvent
+SupportedCustomEvents = ArtifactCustomEvent | MessageCustomEvent | ReactionCustomEvent | TaskUpdateCustomEvent
 
 A2AAgentEvent = TaskStatusUpdateEvent | TaskArtifactUpdateEvent
 
@@ -152,13 +160,87 @@ class LangGraphA2AConverter:
         if isinstance(event_data, MessageCustomEvent):
             if event_data.ephemeral:
                 return self._convert_ephemeral(event_data.message)
+            if event_data.routing is not None:
+                return self._convert_message_with_routing(event_data.message, event_data.routing)
             return self._convert_message(event_data.message)
+
+        if isinstance(event_data, ReactionCustomEvent):
+            return self._convert_reaction(event_data)
 
         if isinstance(event_data, TaskUpdateCustomEvent):
             return self._convert_task_update(event_data)
 
         logger.warning(f"Ignoring unknown custom event type: {type(event_data)}")
         return []
+
+    @staticmethod
+    def _build_extension_part(data: dict, schema_uri: str) -> Part:
+        proto_value = struct_pb2.Value()
+        json_format.ParseDict(data, proto_value)
+        return Part(
+            data=proto_value,
+            metadata={MESSAGING_EXTENSION_URI_V1: {"schema": schema_uri}},
+        )
+
+    def _convert_message_with_routing(
+            self,
+            message: AIMessage,
+            routing: MessageActionPayload,
+    ) -> list[A2AAgentEvent]:
+        """Convert a message with explicit routing target to an A2A event.
+
+        Produces a TaskStatusUpdateEvent whose message contains both the text
+        parts from the AIMessage and a DataPart carrying the MessageActionPayload
+        so the distribution knows where to deliver the message.
+        """
+        a2a_parts = LcToA2AConverter.from_message(message)
+        if not a2a_parts:
+            return []
+
+        a2a_parts.append(self._build_extension_part(
+            routing.model_dump(by_alias=True, exclude_none=True),
+            MESSAGE_ACTION_PAYLOAD_SCHEMA_V1,
+        ))
+
+        message_id = message.id or str(uuid.uuid4())
+        msg = Message(
+            context_id=self._context_id,
+            task_id=self._task_id,
+            message_id=message_id,
+            role=Role.ROLE_AGENT,
+            parts=a2a_parts,
+            extensions=[MESSAGING_EXTENSION_URI_V1],
+        )
+        return [TaskStatusUpdateEvent(
+            task_id=self._task_id,
+            context_id=self._context_id,
+            status=TaskStatus(state=TaskState.TASK_STATE_WORKING, message=msg),
+        )]
+
+    def _convert_reaction(self, event: ReactionCustomEvent) -> list[A2AAgentEvent]:
+        """Convert a ReactionCustomEvent to an A2A event.
+
+        Produces a TaskStatusUpdateEvent whose message contains a single
+        DataPart carrying the ReactionActionPayload so the distribution
+        can add or remove the reaction on the provider message.
+        """
+        data_part = self._build_extension_part(
+            event.payload.model_dump(by_alias=True, exclude_none=True),
+            REACTION_ACTION_PAYLOAD_SCHEMA_V1,
+        )
+        msg = Message(
+            context_id=self._context_id,
+            task_id=self._task_id,
+            message_id=str(uuid.uuid4()),
+            role=Role.ROLE_AGENT,
+            parts=[data_part],
+            extensions=[MESSAGING_EXTENSION_URI_V1],
+        )
+        return [TaskStatusUpdateEvent(
+            task_id=self._task_id,
+            context_id=self._context_id,
+            status=TaskStatus(state=TaskState.TASK_STATE_WORKING, message=msg),
+        )]
 
     def _convert_task_update(self, event: TaskUpdateCustomEvent) -> list[A2AAgentEvent]:
         """Convert a TaskUpdateCustomEvent to a working-status update.

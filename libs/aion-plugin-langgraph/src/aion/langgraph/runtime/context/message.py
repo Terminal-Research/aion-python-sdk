@@ -3,8 +3,9 @@ from __future__ import annotations
 from aion.shared.constants import EVENT_EXTENSION_URI_V1
 from aion.shared.logging import get_logger
 from aion.shared.runtime import AionRuntimeContext
+from aion.shared.types.a2a.extensions.messaging import ReactionActionPayload
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Literal, Optional
 
 if TYPE_CHECKING:
     from .thread import Thread
@@ -61,6 +62,46 @@ class Message:
         """Convenience wrapper: delegates to thread.reply()."""
         await self.thread.reply(content, metadata=metadata)
 
-    async def react(self, key: str) -> None:
-        """Express a normalized reaction against the current message."""
-        logger.warning("Message.react() is not yet implemented.")
+    async def react(
+            self,
+            key: str,
+            *,
+            operation: Literal["add", "remove"] = "add",
+            display_value: Optional[str] = None,
+    ) -> None:
+        """Express a normalized reaction against the current message.
+
+        Requires an inbound event with context_id and message_id in its payload.
+        Logs a warning and does nothing if event context is unavailable.
+        """
+        from aion.langgraph.stream import emit_reaction
+
+        event = self.context.event
+        if event is None or event.payload is None:
+            logger.warning(
+                "Message.react() requires an inbound event with a payload. No reaction was sent."
+            )
+            return
+
+        context_id = getattr(event.payload, "context_id", None)
+        message_id = getattr(event.payload, "message_id", None)
+
+        if context_id is None or message_id is None:
+            logger.warning(
+                "Message.react() requires context_id and message_id in the event payload. No reaction was sent."
+            )
+            return
+
+        payload = ReactionActionPayload(
+            context_id=context_id,
+            message_id=message_id,
+            reaction_key=key,
+            operation=operation,
+            display_value=display_value,
+        )
+
+        writer = self.thread.get_writer()
+        if writer is None:
+            return
+
+        emit_reaction(writer, payload)
