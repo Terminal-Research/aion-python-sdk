@@ -18,6 +18,7 @@ from aion.shared.constants import (
     MESSAGE_ACTION_PAYLOAD_SCHEMA_V1,
     MESSAGING_EXTENSION_URI_V1,
     REACTION_ACTION_PAYLOAD_SCHEMA_V1,
+    STREAM_DELTA_PAYLOAD_SCHEMA_V1,
 )
 from aion.shared.logging import get_logger
 from aion.shared.types import ArtifactId, ArtifactName
@@ -106,6 +107,7 @@ class LangGraphA2AConverter:
                 metadata={
                     "status": "active",
                     "status_reason": "chunk_streaming",
+                    MESSAGING_EXTENSION_URI_V1: {"schema": STREAM_DELTA_PAYLOAD_SCHEMA_V1},
                 },
             ),
             append=append,

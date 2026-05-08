@@ -38,7 +38,7 @@ class Thread:
             default_reply_target: Optional[str],
             writer=None,
     ) -> None:
-        self._context = context
+        self.context = context
         self._writer = writer
         self.id = id
         self.parent_id = parent_id
@@ -78,11 +78,11 @@ class Thread:
         )
 
     def _build_message(self):
-        if self._context.inbox.message is None:
+        if self.context.inbox.message is None:
             return None
 
         from .message import Message
-        return Message(context=self._context, thread=self)
+        return Message(context=self.context, thread=self)
 
     def get_writer(self):
         if self._writer is not None:
@@ -102,18 +102,19 @@ class Thread:
         Returns None if event context is unavailable; callers should fall back to
         the default distribution routing in that case.
         """
-        event = self._context.event
+        event = self.context.event
         if event is None or event.payload is None:
             return None
-        p = event.payload
-        context_id = getattr(p, "context_id", None)
+
+        context_id = getattr(event.payload, "context_id", None)
         if context_id is None:
             return None
+
         return MessageActionPayload(
-            trajectory=getattr(p, "trajectory", "conversation"),
+            trajectory=getattr(event.payload, "trajectory", "conversation"),
             context_id=context_id,
-            parent_context_id=getattr(p, "parent_context_id", None),
-            reply_to_message_id=getattr(p, "message_id", None),
+            parent_context_id=getattr(event.payload, "parent_context_id", None),
+            reply_to_message_id=getattr(event.payload, "message_id", None),
         )
 
     @staticmethod
@@ -137,47 +138,26 @@ class Thread:
     async def reply(self, content: Any, *, metadata: dict | None = None) -> ReplyResult:
         """Add a durable reply to the current thread via LangGraph stream.
 
-        Supports str, AIMessage, AIMessageChunk, or async iterator of those types.
-        Attaches MessageActionPayload routing when inbound event context is available;
-        falls back to distribution-inferred routing otherwise.
+        Builds routing from the inbound event context when available;
+        falls back to local A2A delivery otherwise.
         """
-        writer = self.get_writer()
-        if writer is None:
-            return None
-
-        routing = self._build_message_action_payload()
-
-        if isinstance(content, str):
-            return await self._emit_string_as_text_or_card_document(writer, content, metadata, routing=routing)
-        elif isinstance(content, AIMessage):
-            emit_message(writer, content, routing=routing)
-            return content
-        elif isinstance(content, AIMessageChunk):
-            emit_message(writer, content, routing=routing)
-            return content
-        elif hasattr(content, "__aiter__"):
-            return await self._stream_from_async_iterator(writer, content, metadata, routing=routing)
-        else:
-            logger.warning(
-                "Thread.reply() received unsupported content type: %s. "
-                "Supported types: str, AIMessage, AIMessageChunk, async iterator.",
-                type(content).__name__,
-            )
-            return None
+        return await self.post(content, target=self._build_message_action_payload(), metadata=metadata)
 
     async def post(
             self,
             content: Any,
             *,
-            target: MessageActionPayload,
+            target: Optional[MessageActionPayload] = None,
             metadata: dict | None = None,
     ) -> ReplyResult:
-        """Post a message to an explicit target context distinct from the inbound thread.
+        """Post a message via LangGraph stream.
 
-        Unlike reply(), post() requires an explicit MessageActionPayload target so the
-        distribution knows where to deliver the message.
+        When target is provided, routes to that explicit context.
+        When target is None, falls back to local A2A delivery.
 
         Supports str, AIMessage, AIMessageChunk, or async iterator of those types.
+        metadata is applied only when the SDK constructs the message (str or async iterator);
+        it is ignored for AIMessage and AIMessageChunk which are sent as-is.
         """
         writer = self.get_writer()
         if writer is None:

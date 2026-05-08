@@ -87,8 +87,14 @@ class Message:
         message_id = getattr(event.payload, "message_id", None)
 
         if context_id is None or message_id is None:
+            event_type = type(event.payload).__name__ if event.payload is not None else "unknown"
+            missing = [f for f, v in [("context_id", context_id), ("message_id", message_id)] if v is None]
             logger.warning(
-                "Message.react() requires context_id and message_id in the event payload. No reaction was sent."
+                "Message.react() requires context_id and message_id in the event payload, "
+                "but the following field(s) are missing: %s "
+                "(event payload type: %s). No reaction was sent.",
+                ", ".join(missing),
+                event_type,
             )
             return
 
