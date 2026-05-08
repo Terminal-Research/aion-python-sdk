@@ -16,9 +16,12 @@ from google.protobuf import json_format, struct_pb2
 from langchain_core.messages import AIMessage, AIMessageChunk
 from langgraph.types import StreamWriter
 
+from aion.shared.types.a2a.extensions.messaging import MessageActionPayload, ReactionActionPayload
+
 from .events.custom_events import (
     ArtifactCustomEvent,
     MessageCustomEvent,
+    ReactionCustomEvent,
     TaskUpdateCustomEvent,
 )
 
@@ -154,6 +157,7 @@ def emit_message(
     writer: StreamWriter,
     message: AIMessage | AIMessageChunk,
     ephemeral: bool = False,
+    routing: MessageActionPayload | None = None,
 ) -> None:
     """Emit a message event during graph execution.
 
@@ -178,7 +182,7 @@ def emit_message(
             # Full message (saved in history)
             emit_message(writer, AIMessage(content="Done"))
     """
-    writer(MessageCustomEvent(message=message, ephemeral=ephemeral))
+    writer(MessageCustomEvent(message=message, ephemeral=ephemeral, routing=routing))
 
 
 def emit_task_update(
@@ -219,3 +223,28 @@ def emit_task_update(
         raise ValueError("At least one of 'message' or 'metadata' must be provided")
 
     writer(TaskUpdateCustomEvent(message=message, metadata=metadata))
+
+
+def emit_reaction(
+    writer: StreamWriter,
+    payload: ReactionActionPayload,
+) -> None:
+    """Emit a reaction action event during graph execution.
+
+    Instructs the distribution to add or remove a reaction on an existing provider message.
+    Produces an outbound A2A message with a single ReactionActionPayload DataPart.
+
+    Args:
+        writer: LangGraph StreamWriter from node signature
+        payload: Reaction action to perform
+
+    Example:
+        def my_node(state: dict, writer: StreamWriter):
+            emit_reaction(writer, ReactionActionPayload(
+                context_id="C06ROOM123",
+                message_id="1728162300.551219",
+                reaction_key="thumbsup",
+                operation="add",
+            ))
+    """
+    writer(ReactionCustomEvent(payload=payload))

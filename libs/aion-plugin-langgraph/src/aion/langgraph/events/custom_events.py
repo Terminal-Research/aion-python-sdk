@@ -6,6 +6,7 @@ These classes provide type-safe, validated event models for LangGraph streaming.
 from typing import Any, ClassVar, Optional
 
 from a2a.types import Artifact
+from aion.shared.types.a2a.extensions.messaging import MessageActionPayload, ReactionActionPayload
 from aion.shared.utils.pydantic import Protobuf
 from langchain_core.messages import AIMessage, AIMessageChunk
 from pydantic import BaseModel, Field
@@ -48,6 +49,19 @@ class MessageCustomEvent(AionCustomEvent):
 
     message: AIMessage | AIMessageChunk = Field(description="LangChain message to emit")
     ephemeral: bool = Field(default=False, description="Emit as ephemeral artifact (not persisted in task history)")
+    routing: Optional[MessageActionPayload] = Field(default=None, description="Outbound routing target; attached as DataPart by the distribution layer")
+
+
+class ReactionCustomEvent(AionCustomEvent):
+    """Reaction action event: instructs the distribution to add or remove a reaction.
+
+    Emitted from nodes via emit_reaction().
+    Produces an outbound A2A message with a single ReactionActionPayload DataPart.
+    """
+
+    event_type: ClassVar[str] = "reaction"
+
+    payload: ReactionActionPayload = Field(description="Reaction action to perform")
 
 
 class TaskUpdateCustomEvent(AionCustomEvent):

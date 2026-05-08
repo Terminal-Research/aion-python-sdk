@@ -7,7 +7,8 @@ from langgraph.constants import END, START
 from langgraph.graph import StateGraph
 from langgraph.runtime import Runtime
 
-from .context import AionContext
+from aion.shared.runtime.context import AionRuntimeContext
+from aion.shared.runtime.context.models import EventKind
 
 logger = get_logger()
 
@@ -28,7 +29,7 @@ def add_event_handlers(
     on_event acts as a fallback when no specific handler is registered.
 
     Usage:
-        builder = StateGraph(State, context_schema=AionContext)
+        builder = StateGraph(State, context_schema=AionRuntimeContext)
         add_event_handlers(
             builder,
             on_message=handle_message,
@@ -39,10 +40,10 @@ def add_event_handlers(
         )
     """
     _kind_to_handler = {
-        "message": on_message,
-        "reaction": on_reaction,
-        "command": on_command,
-        "card_action": on_card_action,
+        EventKind.MESSAGE: on_message,
+        EventKind.REACTION: on_reaction,
+        EventKind.COMMAND: on_command,
+        EventKind.CARD_ACTION: on_card_action,
     }
 
     registered = [
@@ -50,14 +51,14 @@ def add_event_handlers(
         if fn is not None
     ]
 
-    def _route(_state, runtime: Runtime[AionContext]) -> str:
+    def _route(_state, runtime: Runtime[AionRuntimeContext]) -> str:
         if not runtime.context:
             logger.warning("No context found in runtime")
             return END
 
         event = runtime.context.event
         if event is None:
-            if on_message is not None and runtime.context.message is not None:
+            if on_message is not None and runtime.context.inbox.message is not None:
                 return on_message.__name__
             if on_event is not None:
                 return on_event.__name__
