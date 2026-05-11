@@ -54,7 +54,7 @@ Inside the composer, `/login` is visible in the slash command picker and runs th
 
 ### Updates
 
-When an interactive chat session starts, `aio` checks npm for the latest published version. If a newer version is available, it asks whether to install it globally, install it in the current project, or continue without updating. Choosing an install option runs the npm command and exits; start `aio` again after the install completes.
+When an interactive chat session starts, `aio` checks npm for the latest published version. If a newer version is available, it links to that version's GitHub release notes and asks whether to update globally, update in the current project, skip once, or skip until the next version. Choosing an update option runs the npm command and exits; start `aio` again after the install completes.
 
 ### Agent Sources and Sessions
 

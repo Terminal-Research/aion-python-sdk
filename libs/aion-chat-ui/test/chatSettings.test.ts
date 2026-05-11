@@ -1,4 +1,10 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -7,9 +13,11 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
 	loadChatSettings,
 	loadChatModeSettings,
+	loadSkippedUpdateVersion,
 	resolveChatSettingsPath,
 	saveChatSettings,
-	saveChatModeSettings
+	saveChatModeSettings,
+	saveSkippedUpdateVersion
 } from "../src/lib/chatSettings.js";
 import {
 	createDefaultLocalAgentSource,
@@ -153,6 +161,22 @@ describe("chatSettings", () => {
 			settings: {
 				requestMode: "send-message",
 				responseMode: "message-output"
+			}
+		});
+	});
+
+	it("saves and reloads skipped update versions", () => {
+		const directory = mkdtempSync(path.join(os.tmpdir(), "chat2-settings-"));
+		tempDirectories.push(directory);
+		const settingsPath = path.join(directory, "aion", "chat2.json");
+
+		expect(saveSkippedUpdateVersion("0.2.0", settingsPath)).toBeUndefined();
+		expect(loadSkippedUpdateVersion(settingsPath)).toBe("0.2.0");
+		expect(
+			JSON.parse(readFileSync(settingsPath, "utf8")) as Record<string, unknown>
+		).toMatchObject({
+			updateCheck: {
+				skippedVersion: "0.2.0"
 			}
 		});
 	});

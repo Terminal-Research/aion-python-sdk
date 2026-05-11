@@ -33,6 +33,10 @@ interface ChatSettingsFile {
 	environments?: Partial<Record<AionEnvironmentId, ChatEnvironmentSettingsFile>>;
 	requestMode?: string;
 	responseMode?: string;
+	updateCheck?: {
+		skippedVersion?: string;
+		[key: string]: unknown;
+	};
 	[key: string]: unknown;
 }
 
@@ -375,6 +379,42 @@ export function saveChatSettings(
 		return undefined;
 	} catch (error) {
 		return `chat2 could not save settings: ${
+			error instanceof Error ? error.message : String(error)
+		}`;
+	}
+}
+
+export function loadSkippedUpdateVersion(
+	settingsPath = resolveChatSettingsPath()
+): string | undefined {
+	const rawSettings = readRawSettings(settingsPath);
+	const skippedVersion = rawSettings?.updateCheck?.skippedVersion;
+	return typeof skippedVersion === "string" && skippedVersion.trim()
+		? skippedVersion.trim()
+		: undefined;
+}
+
+export function saveSkippedUpdateVersion(
+	version: string,
+	settingsPath = resolveChatSettingsPath()
+): string | undefined {
+	try {
+		const rawSettings = readRawSettings(settingsPath);
+		const { settings } = loadChatSettings(settingsPath);
+		const serialized = serializeSettings(settings, rawSettings);
+		serialized.updateCheck = {
+			...(isObject(rawSettings?.updateCheck) ? rawSettings.updateCheck : {}),
+			skippedVersion: version
+		};
+		mkdirSync(path.dirname(settingsPath), { recursive: true });
+		writeFileSync(
+			settingsPath,
+			`${JSON.stringify(serialized, null, 2)}\n`,
+			"utf8"
+		);
+		return undefined;
+	} catch (error) {
+		return `chat2 could not save update settings: ${
 			error instanceof Error ? error.message : String(error)
 		}`;
 	}

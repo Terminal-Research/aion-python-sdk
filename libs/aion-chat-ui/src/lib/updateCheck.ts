@@ -5,12 +5,13 @@ import { getPackageInfo } from "../packageInfo.js";
 
 const DEFAULT_TIMEOUT_MS = 1500;
 
-export type UpdateChoice = "global" | "local" | "skip";
+export type UpdateChoice = "global" | "local" | "skip" | "skip-version";
 
 export interface PackageUpdate {
 	packageName: string;
 	currentVersion: string;
 	latestVersion: string;
+	releaseNotesUrl?: string;
 }
 
 export interface UpdateInstallCommand {
@@ -24,6 +25,53 @@ interface NpmLatestResponse {
 
 export function buildNpmLatestVersionUrl(packageName: string): string {
 	return `https://registry.npmjs.org/${packageName.replace("/", "%2F")}/latest`;
+}
+
+export function normalizeGitHubRepositoryUrl(
+	repositoryUrl: string | undefined
+): string | undefined {
+	if (!repositoryUrl?.trim()) {
+		return undefined;
+	}
+
+	const normalizedUrl = repositoryUrl
+		.trim()
+		.replace(/^git\+/u, "")
+		.replace(/^git@github\.com:/u, "https://github.com/")
+		.replace(/\.git$/u, "");
+
+	try {
+		const parsed = new URL(normalizedUrl);
+		if (parsed.hostname !== "github.com") {
+			return undefined;
+		}
+		const [owner, repository] = parsed.pathname
+			.split("/")
+			.filter((part) => part.length > 0);
+		if (!owner || !repository) {
+			return undefined;
+		}
+		return `https://github.com/${owner}/${repository}`;
+	} catch {
+		return undefined;
+	}
+}
+
+export function buildGitHubReleaseNotesUrl(options: {
+	repositoryUrl: string | undefined;
+	version: string;
+}): string | undefined {
+	const normalizedRepositoryUrl = normalizeGitHubRepositoryUrl(
+		options.repositoryUrl
+	);
+	if (!normalizedRepositoryUrl) {
+		return undefined;
+	}
+
+	const tag = options.version.startsWith("v")
+		? options.version
+		: `v${options.version}`;
+	return `${normalizedRepositoryUrl}/releases/tag/${encodeURIComponent(tag)}`;
 }
 
 function parseVersion(value: string): {
@@ -113,6 +161,8 @@ export async function fetchLatestPackageVersion(options: {
 export async function detectPackageUpdate(options: {
 	packageName?: string;
 	currentVersion?: string;
+	repositoryUrl?: string;
+	skippedVersion?: string;
 	fetchImpl?: typeof fetch;
 	timeoutMs?: number;
 	env?: NodeJS.ProcessEnv;
@@ -133,25 +183,33 @@ export async function detectPackageUpdate(options: {
 	if (!latestVersion || comparePackageVersions(latestVersion, currentVersion) <= 0) {
 		return undefined;
 	}
+	if (options.skippedVersion === latestVersion) {
+		return undefined;
+	}
+
+	const releaseNotesUrl = buildGitHubReleaseNotesUrl({
+		repositoryUrl: options.repositoryUrl ?? packageInfo.repositoryUrl,
+		version: latestVersion
+	});
 
 	return {
 		packageName,
 		currentVersion,
-		latestVersion
+		latestVersion,
+		...(releaseNotesUrl ? { releaseNotesUrl } : {})
 	};
 }
 
 export function getUpdateInstallCommand(
-	choice: Exclude<UpdateChoice, "skip">,
+	choice: Exclude<UpdateChoice, "skip" | "skip-version">,
 	packageName: string
 ): UpdateInstallCommand {
-	const packageTarget = `${packageName}@latest`;
 	return {
 		command: process.platform === "win32" ? "npm.cmd" : "npm",
 		args:
 			choice === "global"
-				? ["install", "-g", packageTarget]
-				: ["install", packageTarget]
+				? ["install", "-g", packageName]
+				: ["install", packageName]
 	};
 }
 
@@ -166,34 +224,49 @@ export async function promptForUpdate(options: {
 }): Promise<UpdateChoice> {
 	const input = options.input ?? process.stdin;
 	const output = options.output ?? process.stdout;
-	const globalCommand = getUpdateInstallCommand("global", options.update.packageName);
-	const localCommand = getUpdateInstallCommand("local", options.update.packageName);
+	const updateCommand = getUpdateInstallCommand(
+		"global",
+		options.update.packageName
+	);
+	const localCommand = getUpdateInstallCommand(
+		"local",
+		options.update.packageName
+	);
 
 	output.write(
 		[
 			"",
-			`A new ${options.update.packageName} version is available: ${options.update.currentVersion} -> ${options.update.latestVersion}`,
-			`1. Install globally: ${formatInstallCommand(globalCommand)}`,
-			`2. Install in this project: ${formatInstallCommand(localCommand)}`,
-			"3. Skip for now",
-			""
-		].join("\n")
+			`  ✨ Update available! ${options.update.currentVersion} -> ${options.update.latestVersion}`,
+			"",
+			...(options.update.releaseNotesUrl
+				? [`  Release notes: ${options.update.releaseNotesUrl}`, ""]
+				: []),
+			`› 1. Update globally (runs \`${formatInstallCommand(updateCommand)}\`)`,
+			`  2. Update in this project (runs \`${formatInstallCommand(localCommand)}\`)`,
+			"  3. Skip",
+			"  4. Skip until next version",
+			"",
+			"  Press enter to continue"
+		].join("\n") + "\n"
 	);
 
 	const readline = createInterface({ input, output });
 	try {
 		while (true) {
-			const answer = (await readline.question("Choose 1, 2, or 3: ")).trim();
-			if (answer === "1") {
+			const answer = (await readline.question("")).trim();
+			if (answer === "" || answer === "1") {
 				return "global";
 			}
 			if (answer === "2") {
 				return "local";
 			}
-			if (answer === "3" || answer === "") {
+			if (answer === "3") {
 				return "skip";
 			}
-			output.write("Please choose 1, 2, or 3.\n");
+			if (answer === "4") {
+				return "skip-version";
+			}
+			output.write("  Please choose 1, 2, 3, or 4.\n");
 		}
 	} finally {
 		readline.close();

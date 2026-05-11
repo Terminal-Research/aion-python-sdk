@@ -6,7 +6,12 @@ import { render } from "ink";
 import { parseCliArgs, printHelp } from "./args.js";
 import { ChatApp } from "./app.js";
 import { openUrlInDefaultBrowser } from "./lib/browser.js";
-import { loadChatSettings, saveSelectedEnvironment } from "./lib/chatSettings.js";
+import {
+	loadChatSettings,
+	loadSkippedUpdateVersion,
+	saveSelectedEnvironment,
+	saveSkippedUpdateVersion
+} from "./lib/chatSettings.js";
 import {
 	buildWebAppRouteUrl,
 	resolvePostAuthPath,
@@ -77,13 +82,22 @@ async function continueAfterUpdateCheck(): Promise<boolean> {
 		return true;
 	}
 
-	const update = await detectPackageUpdate();
+	const update = await detectPackageUpdate({
+		skippedVersion: loadSkippedUpdateVersion()
+	});
 	if (!update) {
 		return true;
 	}
 
 	const choice = await promptForUpdate({ update });
 	if (choice === "skip") {
+		return true;
+	}
+	if (choice === "skip-version") {
+		const warning = saveSkippedUpdateVersion(update.latestVersion);
+		if (warning) {
+			process.stderr.write(`${warning}\n`);
+		}
 		return true;
 	}
 
