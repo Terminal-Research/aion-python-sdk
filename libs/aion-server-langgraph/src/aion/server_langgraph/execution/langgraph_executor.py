@@ -18,7 +18,6 @@ from .event_preprocessor import LangGraphEventPreprocessor
 from .result_handler import ExecutionResultHandler
 from .stream_executor import StreamExecutor, StreamResult
 from .transformer import LangGraphTransformer
-from ..constants import AION_UNTRACKED_CHANNEL_NAMES
 from ..state import LangGraphStateAdapter
 
 if TYPE_CHECKING:
@@ -28,17 +27,6 @@ AgentEvent = TaskStatusUpdateEvent | TaskArtifactUpdateEvent | Task | Message
 
 logger = get_logger()
 
-
-def _strip_untracked(inputs: Any) -> Any:
-    """Remove untracked channel fields from a resume input dict.
-
-    Untracked fields (e.g. a2a_inbox) must not appear in Command(resume=...)
-    because LangGraph saves the resume value as a write to an internal channel,
-    bypassing the UntrackedValue filter and causing msgpack serialization errors.
-    """
-    if not isinstance(inputs, dict):
-        return inputs
-    return {k: v for k, v in inputs.items() if k not in AION_UNTRACKED_CHANNEL_NAMES}
 
 
 class LangGraphExecutor(ExecutorAdapter):
@@ -125,9 +113,7 @@ class LangGraphExecutor(ExecutorAdapter):
                 context_id=context.context_id,
             )
             lg_inputs = LangGraphTransformer.generate_langgraph_inputs(context)
-            resume_command = self._state_adapter.create_resume_input(
-                _strip_untracked(lg_inputs), state
-            )
+            resume_command = self._state_adapter.create_resume_input(lg_inputs, state)
             lg_config = LangGraphTransformer.generate_langgraph_config(config)
 
             logger.debug(f"Resuming task")

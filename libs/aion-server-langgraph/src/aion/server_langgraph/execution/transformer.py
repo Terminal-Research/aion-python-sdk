@@ -3,7 +3,6 @@
 from typing import Any, Optional, TYPE_CHECKING
 
 from aion.shared.agent.adapters import ExecutionConfig
-from aion.shared.types.a2a import A2AInbox
 from langchain_core.messages import HumanMessage
 
 from ..converters.a2a_to_lc import A2AToLcConverter
@@ -32,13 +31,11 @@ class LangGraphTransformer:
     def generate_langgraph_inputs(context: "RequestContext") -> dict[str, Any]:
         """Generate LangGraph inputs from A2A RequestContext.
 
-        Produces two keys:
-            messages    — LangChain HumanMessage built from the inbound message parts.
-            a2a_inbox   — full a2a context for graphs that opt in by declaring
-                           `a2a_inbox` in their state schema.  Contains:
-                            task       – current Task object
-                            message    – inbound a2a Message (full object)
-                            metadata   – request-level metadata (network, trace, etc.)
+        Produces one key:
+            messages — LangChain HumanMessage built from the inbound message parts.
+
+        The full A2A context (task, message, event kind, identity) is passed to the
+        graph separately via LangGraph's runtime context mechanism, not as a state field.
         """
         messages: list = []
 
@@ -47,7 +44,4 @@ class LangGraphTransformer:
             if content_blocks:
                 messages = [HumanMessage(content=content_blocks)]
 
-        return {
-            "messages": messages,
-            "a2a_inbox": A2AInbox.from_request_context(context),
-        }
+        return {"messages": messages}

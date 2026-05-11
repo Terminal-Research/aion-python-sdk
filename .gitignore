@@ -36,6 +36,7 @@ poetry.lock
 # IDE specific files
 .idea/
 .vscode/
+.zed/
 *.swp
 *.swo
 .DS_Store

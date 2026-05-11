@@ -24,8 +24,6 @@ def format_agent_proxy_path(agent_id: str, path: str = "") -> str:
     # Remove leading slashes from the path to avoid double slashes
     clean_path = path.lstrip("/")
 
-    return (
-        AGENT_PROXY_URL
-        .replace("{path:path}", "{path}")
-        .format(agent_id=agent_id, path=clean_path)
+    return AGENT_PROXY_URL.replace("{path:path}", "{path}").format(
+        agent_id=agent_id, path=clean_path
     )

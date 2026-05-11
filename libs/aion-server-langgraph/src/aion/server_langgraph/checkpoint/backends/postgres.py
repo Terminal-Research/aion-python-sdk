@@ -11,7 +11,7 @@ from aion.shared.db import DbManagerProtocol
 from aion.shared.logging import get_logger
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
-from aion.langgraph.constants import AION_LANGGRAPH_SCHEMA
+from aion.server_langgraph.constants import AION_LANGGRAPH_SCHEMA
 from .base import CheckpointerBackend
 
 logger = get_logger()

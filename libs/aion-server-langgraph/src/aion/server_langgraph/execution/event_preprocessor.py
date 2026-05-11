@@ -47,7 +47,7 @@ class LangGraphEventPreprocessor:
         """
         if not isinstance(event_data, dict):
             return
-        
+
         node_name = next(iter(event_data.keys()), None)
         if node_name:
             AgentExecutionScopeHelper.set_agent_framework_baggage({"langgraph.node": node_name}, update=True)
