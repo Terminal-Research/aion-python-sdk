@@ -1,6 +1,6 @@
 from enum import Enum
 from typing import List, Dict, Any, Optional, Union
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class ConfigurationType(str, Enum):
@@ -120,6 +120,12 @@ class AgentSkill(BaseModel):
 class AgentConfig(BaseModel):
     """Configuration for an agent."""
 
+    model_config = ConfigDict(
+        extra="ignore",
+        use_enum_values=True,
+        validate_assignment=True,
+    )
+
     # Required fields
     path: str = Field(..., description="Path to agent class, function, or graph instance")
 
@@ -215,15 +221,15 @@ class AgentConfig(BaseModel):
                 raise ValueError("Skill IDs must be unique")
         return value
 
-    class Config:
-        """Pydantic configuration."""
-        extra = "ignore"
-        use_enum_values = True
-        validate_assignment = True
-
 
 class AionConfig(BaseModel):
     """Main configuration for Aion system."""
+
+    model_config = ConfigDict(
+        extra="ignore",
+        use_enum_values=True,
+        validate_assignment=True,
+    )
 
     agents: Dict[str, AgentConfig] = Field(
         default_factory=dict,
@@ -281,9 +287,3 @@ class AionConfig(BaseModel):
     def list_agents(self) -> List[str]:
         """Get a list of all agent IDs."""
         return list(self.agents.keys())
-
-    class Config:
-        """Pydantic configuration."""
-        extra = "ignore"
-        use_enum_values = True
-        validate_assignment = True
