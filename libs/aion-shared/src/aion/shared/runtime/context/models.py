@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, Optional, Union
+from typing import Any, Dict, Optional, Union
 
 from aion.shared.constants.a2a import (
     CARD_ACTION_EVENT_TYPE_V1,
@@ -116,19 +116,33 @@ class AgentIdentity:
         )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, init=False)
 class AionRuntimeContext:
     """
     Serializable handle to the inbound A2A state for a single invocation.
     Contains only data — no framework-specific execution mechanisms.
     """
 
-    inbox: A2AInbox
+    inbox: Optional[A2AInbox]
     """Raw A2A inbox — escape hatch for direct access to underlying A2A structures."""
-    event: Optional[Event] = None
+    event: Optional[Event]
     """Typed inbound event with kind and normalized payload. None for direct A2A requests."""
-    identity: Optional[AgentIdentity] = None
+    identity: Optional[AgentIdentity]
     """Agent identity derived from the distribution extension. None for direct A2A requests."""
+    graph_kwargs: Dict[str, Any]
+    """Extra kwargs passed by the graph framework (e.g. thread_id from langgraph dev)."""
+
+    def __init__(
+            self,
+            inbox: Optional[A2AInbox] = None,
+            event: Optional[Event] = None,
+            identity: Optional[AgentIdentity] = None,
+            **graph_kwargs: Any,
+    ) -> None:
+        object.__setattr__(self, "inbox", inbox)
+        object.__setattr__(self, "event", event)
+        object.__setattr__(self, "identity", identity)
+        object.__setattr__(self, "graph_kwargs", graph_kwargs)
 
     def is_active(self, *extensions: AionExtensions) -> bool:
         """Return True if all given extensions are present in this invocation."""

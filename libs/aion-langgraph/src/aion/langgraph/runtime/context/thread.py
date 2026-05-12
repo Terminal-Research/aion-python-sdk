@@ -52,7 +52,7 @@ class Thread:
         payload = context.event.payload if context.event else None
 
         context_id = getattr(payload, "context_id", None)
-        if context_id is None:
+        if context_id is None and context.inbox is not None:
             if context.inbox.message is not None and context.inbox.message.context_id:
                 context_id = context.inbox.message.context_id
             elif context.inbox.task is not None and context.inbox.task.context_id:
@@ -78,7 +78,7 @@ class Thread:
         )
 
     def _build_message(self):
-        if self.context.inbox.message is None:
+        if self.context.inbox is None or self.context.inbox.message is None:
             return None
 
         from .message import Message

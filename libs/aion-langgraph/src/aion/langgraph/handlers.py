@@ -195,12 +195,13 @@ class AionEventHandlers:
         Falls back to on_message for direct inbox messages without a CloudEvents
         envelope, and to on_event when no more specific match is found.
         """
-        if context is None:
+        if not isinstance(context, AionRuntimeContext):
             return self._fallback
 
         event = context.event
         if event is None:
-            if self._direct_message is not None and context.inbox.message is not None:
+            inbox_message = getattr(context.inbox, "message", None)
+            if self._direct_message is not None and inbox_message is not None:
                 return self._direct_message
             return self._fallback
 
