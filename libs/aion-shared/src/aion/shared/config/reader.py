@@ -2,21 +2,26 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
 import yaml
 from pydantic import ValidationError
 
-from aion.shared.utils.path import get_config_path
-from .exceptions import ConfigurationError
-from .models import AionConfig, AgentConfig
 from aion.shared.logging import get_logger
+from aion.shared.utils.path import get_config_path
+
+from .exceptions import ConfigurationError
+from .models import AgentConfig, AionConfig
 
 
 class AionConfigReader:
     """Handles loading, parsing, and validation of Aion configuration files."""
 
-    def __init__(self, config_path: Optional[Path] = None, logger_: Optional[logging.Logger] = None):
+    def __init__(
+        self,
+        config_path: Optional[Path] = None,
+        logger_: Optional[logging.Logger] = None,
+    ):
         """Initialize the config reader.
 
         Args:
@@ -37,9 +42,9 @@ class AionConfigReader:
         """
         if not self.config_path.exists():
             raise ConfigurationError(
-                f"Configuration file not found",
+                "Configuration file not found",
                 details=f"File path: {self.config_path}",
-                file_path=self.config_path
+                file_path=self.config_path,
             )
 
         try:
@@ -48,15 +53,14 @@ class AionConfigReader:
 
             if data is None:
                 raise ConfigurationError(
-                    "Configuration file is empty",
-                    file_path=self.config_path
+                    "Configuration file is empty", file_path=self.config_path
                 )
 
             if not isinstance(data, dict):
                 raise ConfigurationError(
                     "Configuration file must contain a YAML mapping (dictionary) at the root level",
                     details=f"Found: {type(data).__name__}",
-                    file_path=self.config_path
+                    file_path=self.config_path,
                 )
 
             return data
@@ -65,22 +69,24 @@ class AionConfigReader:
             raise ConfigurationError(
                 "Invalid YAML syntax in configuration file",
                 details=str(e),
-                file_path=self.config_path
+                file_path=self.config_path,
             ) from e
         except UnicodeDecodeError as e:
             raise ConfigurationError(
                 "Configuration file encoding error",
                 details=f"Expected UTF-8 encoding. Error: {e}",
-                file_path=self.config_path
+                file_path=self.config_path,
             ) from e
         except Exception as e:
             raise ConfigurationError(
                 "Failed to read configuration file",
                 details=str(e),
-                file_path=self.config_path
+                file_path=self.config_path,
             ) from e
 
-    def _normalize_config_structure(self, config_data: Dict[str, Any]) -> Dict[str, Any]:
+    def _normalize_config_structure(
+        self, config_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Extract configuration from under 'aion' key.
 
         Args:
@@ -92,21 +98,21 @@ class AionConfigReader:
         Raises:
             ConfigurationError: If 'aion' key is missing or invalid
         """
-        if 'aion' not in config_data:
+        if "aion" not in config_data:
             raise ConfigurationError(
                 "Configuration file must contain an 'aion' section at the root level",
                 details="Expected structure: aion:\n  deployment:\n    ...\n  agents:\n    ...",
-                file_path=self.config_path
+                file_path=self.config_path,
             )
 
         self.logger.debug("Found 'aion' key in config, extracting nested configuration")
-        aion_data = config_data['aion']
+        aion_data = config_data["aion"]
 
         if not isinstance(aion_data, dict):
             raise ConfigurationError(
                 "The 'aion' section must be a dictionary",
                 details=f"Found: {type(aion_data).__name__}",
-                file_path=self.config_path
+                file_path=self.config_path,
             )
 
         return aion_data
@@ -165,8 +171,7 @@ class AionConfigReader:
 
             # Log the structure we're about to validate
             self.logger.debug(
-                "Validating configuration with keys: %s",
-                list(normalized_data.keys())
+                "Validating configuration with keys: %s", list(normalized_data.keys())
             )
 
             # Validate the entire configuration using AionConfig model
@@ -177,13 +182,13 @@ class AionConfigReader:
             raise ConfigurationError(
                 "Configuration validation failed",
                 details=formatted_error,
-                file_path=self.config_path
+                file_path=self.config_path,
             ) from e
         except Exception as e:
             raise ConfigurationError(
                 "Unexpected error during configuration validation",
                 details=str(e),
-                file_path=self.config_path
+                file_path=self.config_path,
             ) from e
 
     def load_and_validate_config(self) -> AionConfig:
@@ -205,7 +210,7 @@ class AionConfigReader:
             aion_config = self.validate_and_parse_config(config_data)
             self.logger.info(
                 "Successfully loaded configuration with %d agents",
-                len(aion_config.agents)
+                len(aion_config.agents),
             )
             return aion_config
 
@@ -217,7 +222,7 @@ class AionConfigReader:
             raise ConfigurationError(
                 "Unexpected error while loading configuration",
                 details=str(e),
-                file_path=self.config_path
+                file_path=self.config_path,
             ) from e
 
     def validate_agent_config(self, agent_data: Dict[str, Any]) -> AgentConfig:
@@ -240,6 +245,5 @@ class AionConfigReader:
         except ValidationError as e:
             formatted_error = self._format_pydantic_error(e)
             raise ConfigurationError(
-                "Agent configuration validation failed",
-                details=formatted_error
+                "Agent configuration validation failed", details=formatted_error
             ) from e

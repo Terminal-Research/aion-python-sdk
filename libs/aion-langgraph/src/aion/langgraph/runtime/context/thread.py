@@ -165,10 +165,10 @@ class Thread:
 
         if isinstance(content, str):
             return await self._emit_string_as_text_or_card_document(writer, content, metadata, routing=target)
-        elif isinstance(content, AIMessage):
+        elif isinstance(content, AIMessageChunk):
             emit_message(writer, content, routing=target)
             return content
-        elif isinstance(content, AIMessageChunk):
+        elif isinstance(content, AIMessage):
             emit_message(writer, content, routing=target)
             return content
         elif hasattr(content, "__aiter__"):
