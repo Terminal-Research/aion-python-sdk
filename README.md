@@ -96,6 +96,4 @@ The AION SDK supports custom agent extensions like adding custom API routes. For
 
 ## Contributing
 
-For development setup, working with local dependencies, and testing feature branches, see:
-- **[Local Development Setup](docs/local-setup.md)** - Full guide for working with monorepo dependencies
-- **[Dependency Management Scripts](scripts/deps/README.md)** - Detailed documentation for all dependency scripts
+For development setup, working with local dependencies, and testing feature branches, see the **[Development Guide](docs/development/README.md)**.

@@ -1,22 +1,25 @@
 [tool.poetry]
-name = "aion-server"
+name = "aion-server-langgraph"
 version = "0.1.0"
-description = "Generic A2A server with plugin-based agent framework support"
+description = "Aion server-side LangGraph integration"
 authors = ["Terminal Research Team <support@terminal.exchange>"]
 readme = "README.md"
 packages = [{ include = "aion", from = "src" }]
 
 [tool.poetry.dependencies]
 python = "^3.12.0"
-uvicorn = ">=0.23.2"
-fastapi = ">=0.115.2"
-
-aion-api-client = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-api-client" }
+langgraph = ">=0.6.0,<=1.0.5"
+langgraph-checkpoint-postgres = ">=2.0.0,<=3.0.2"
+aion-langgraph = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-langgraph" }
 aion-db = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-db" }
 aion-shared = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-shared" }
 
 [tool.poetry.group.dev.dependencies]
-pytest = ">=8.0.0"
+pytest = "^8.0"
+pytest-asyncio = "^0.24"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
 
 [build-system]
 requires = ["poetry-core"]

@@ -1,0 +1,54 @@
+"""Pre-conversion processor for raw LangGraph events.
+
+Handles LangGraph-specific side-effects (context tracking, logging, etc.)
+before events are converted to A2A protocol format.
+"""
+
+from typing import Any
+
+from aion.shared.agent.execution.scope import AgentExecutionScopeHelper
+from aion.shared.logging import get_logger
+
+logger = get_logger()
+
+
+class LangGraphEventPreprocessor:
+    """Processes raw LangGraph events for side-effects prior to A2A conversion.
+
+    Responsibilities:
+    - Track the currently executing node via agent_framework baggage ("updates" events)
+
+    Extend this class to add further LangGraph-specific pre-processing
+    without touching the A2A conversion logic.
+    """
+
+    def process(self, event_type: str, event_data: Any) -> None:
+        """Process a raw LangGraph event for side-effects.
+
+        Called for every event emitted by astream, before A2A conversion.
+        Returns nothing — all effects are side-effects only.
+
+        Args:
+            event_type: LangGraph event type (messages, custom, values, updates).
+            event_data: Raw event data as yielded by astream.
+        """
+        if event_type == "updates":
+            self._handle_node_update(event_data)
+
+    @staticmethod
+    def _handle_node_update(event_data: Any) -> None:
+        """Extract the active node name from an "updates" event and register it.
+
+        LangGraph "updates" events are dicts keyed by node name. The first key
+        is taken as the currently executing node and stored in the agent
+        framework baggage as "langgraph.node" so that downstream code
+        (e.g. logging, tracing) can identify which node is running.
+        Non-dict payloads are silently ignored.
+        """
+        if not isinstance(event_data, dict):
+            return
+
+        node_name = next(iter(event_data.keys()), None)
+        if node_name:
+            AgentExecutionScopeHelper.set_agent_framework_baggage({"langgraph.node": node_name}, update=True)
+            logger.debug(f"Node: {node_name}")
