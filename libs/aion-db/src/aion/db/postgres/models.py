@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from sqlalchemy import Column, DateTime, String, func
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import declarative_base
 from google.protobuf.struct_pb2 import Struct
 
 from .constants import TASKS_TABLE

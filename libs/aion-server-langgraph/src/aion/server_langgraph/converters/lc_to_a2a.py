@@ -6,6 +6,7 @@ import base64
 import logging
 
 from a2a.types import Part
+from google.protobuf import json_format, struct_pb2
 from langchain_core.messages import BaseMessage
 from langchain_core.messages.content import ContentBlock  # type: ignore[attr-defined]
 
@@ -102,7 +103,9 @@ class LcToA2AConverter:
     @staticmethod
     def _fallback(block: ContentBlock) -> Part:
         """Wrap an unknown block verbatim as a data Part."""
+        proto_value = struct_pb2.Value()
+        json_format.ParseDict(dict(block), proto_value)
         return Part(
-            data=dict(block),
+            data=proto_value,
             metadata={"lc_block_type": block.get("type", "unknown")},
         )
