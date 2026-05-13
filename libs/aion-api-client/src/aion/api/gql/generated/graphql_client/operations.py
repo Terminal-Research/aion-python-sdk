@@ -18,7 +18,7 @@ subscription ChatCompletionStream($request: ChatCompletionRequestInput!, $princi
             role
             content
           }
-          finish_reason
+          finishReason
         }
       }
     }

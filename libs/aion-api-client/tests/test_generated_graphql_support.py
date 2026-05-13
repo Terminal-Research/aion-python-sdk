@@ -75,3 +75,20 @@ def test_graphql_error_preserves_original_payload():
 
     assert parsed.original is raw_error
     assert constructed.original is raw_error
+
+
+def test_chat_completion_stream_contract_uses_optional_principal_selector():
+    from aion.api.gql.generated.graphql_client import (
+        CHAT_COMPLETION_STREAM_GQL,
+        ChatCompletionRequestInput,
+        PrincipalSelectorGQLInput,
+    )
+
+    assert "agent_environment_id" not in ChatCompletionRequestInput.model_fields
+    assert "agent_environment_id" in PrincipalSelectorGQLInput.model_fields
+    assert "$principal: PrincipalSelectorGQLInput" in CHAT_COMPLETION_STREAM_GQL
+    assert "chatCompletionStream(request: $request, principal: $principal)" in (
+        CHAT_COMPLETION_STREAM_GQL
+    )
+    assert "finishReason" in CHAT_COMPLETION_STREAM_GQL
+    assert "finish_reason" not in CHAT_COMPLETION_STREAM_GQL

@@ -81,6 +81,12 @@ class ChatCompletionUsageGraphQLField(GraphQLField):
         return self
 
 
+class CompletionTokensDetailsGraphQLField(GraphQLField):
+    def alias(self, alias: str) -> "CompletionTokensDetailsGraphQLField":
+        self._alias = alias
+        return self
+
+
 class DeltaGraphQLField(GraphQLField):
     def alias(self, alias: str) -> "DeltaGraphQLField":
         self._alias = alias
@@ -89,6 +95,12 @@ class DeltaGraphQLField(GraphQLField):
 
 class MutationsGraphQLField(GraphQLField):
     def alias(self, alias: str) -> "MutationsGraphQLField":
+        self._alias = alias
+        return self
+
+
+class PromptTokensDetailsGraphQLField(GraphQLField):
+    def alias(self, alias: str) -> "PromptTokensDetailsGraphQLField":
         self._alias = alias
         return self
 

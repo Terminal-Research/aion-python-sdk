@@ -48,7 +48,7 @@ class ChatCompletionStreamChatCompletionStreamChatCompletionStreamResponseChunkR
 ):
     index: int
     delta: "ChatCompletionStreamChatCompletionStreamChatCompletionStreamResponseChunkResponseChoicesDelta"
-    finish_reason: Optional[str]
+    finish_reason: Optional[str] = Field(alias="finishReason")
 
 
 class ChatCompletionStreamChatCompletionStreamChatCompletionStreamResponseChunkResponseChoicesDelta(

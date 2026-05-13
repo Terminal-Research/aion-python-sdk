@@ -22,6 +22,7 @@ from aion.api.gql.generated.graphql_client import (
     A2AJsonRpcRequestGQLInput,
     CapabilitySubjectGQLInput,
     ChatCompletionRequestInput,
+    PrincipalSelectorGQLInput,
 )
 from aion.api.gql.generated.graphql_client.custom_fields import AgentBehaviorFields
 from aion.api.gql.generated.graphql_client.custom_mutations import Mutation
@@ -51,6 +52,18 @@ def test_settings_loaded() -> None:
     assert aion_api_settings.keepalive == 60
 
 
+def test_chat_completion_request_uses_principal_for_agent_environment() -> None:
+    """Chat completion requests should no longer carry agent environment selectors."""
+    assert "agent_environment_id" not in ChatCompletionRequestInput.model_fields
+    assert "agent_environment_id" in PrincipalSelectorGQLInput.model_fields
+
+    principal = PrincipalSelectorGQLInput(agent_environment_id="agent-env-1")
+
+    assert principal.model_dump(by_alias=True, exclude_none=True) == {
+        "agentEnvironmentId": "agent-env-1"
+    }
+
+
 # Use ``anyio``'s pytest plugin to execute async tests using the ``asyncio`` backend
 # only. This avoids unnecessary parametrization for other event loops.
 
@@ -58,6 +71,7 @@ def test_settings_loaded() -> None:
 @pytest.mark.anyio("asyncio")
 async def test_chat_completion_stream_calls_gql(monkeypatch) -> None:
     """Test that chat_completion_stream properly calls the underlying GraphQL client."""
+    expected_principal = PrincipalSelectorGQLInput(agent_environment_id="agent-env-1")
 
     async def mock_chat_completion_stream(
         *, request: ChatCompletionRequestInput, principal=None
@@ -65,7 +79,7 @@ async def test_chat_completion_stream_calls_gql(monkeypatch) -> None:
         assert request == ChatCompletionRequestInput(
             model="test-model", messages=[], stream=True
         )
-        assert principal is None
+        assert principal == expected_principal
         yield {"done": True}
 
     from types import SimpleNamespace
@@ -77,7 +91,9 @@ async def test_chat_completion_stream_calls_gql(monkeypatch) -> None:
     client._is_initialized = True
 
     results = []
-    async for chunk in client.chat_completion_stream("test-model", [], True):
+    async for chunk in client.chat_completion_stream(
+        "test-model", [], True, principal=expected_principal
+    ):
         results.append(chunk)
 
     assert results == [{"done": True}]

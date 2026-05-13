@@ -60,9 +60,6 @@ class ChatCompletionRequestInput(BaseModel):
     model: str
     messages: list["MessageInput"]
     stream: bool
-    agent_environment_id: Optional[str] = Field(
-        alias="agentEnvironmentId", default=None
-    )
 
 
 class MessageInput(BaseModel):

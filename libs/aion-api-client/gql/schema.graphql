@@ -10,6 +10,7 @@ schema {
   mutation: Mutations
   subscription: Subscriptions
 }
+scalar BigDecimal
 scalar Json
 scalar Long
 """
@@ -83,7 +84,6 @@ input ChatCompletionRequestInput {
   model: String!
   messages: [MessageInput!]!
   stream: Boolean!
-  agentEnvironmentId: ID
 }
 
 input MessageInput {
@@ -150,7 +150,7 @@ type AgentBehavior {
 type ChatCompletionStreamChoice {
   index: Int!
   delta: Delta!
-  finish_reason: String
+  finishReason: String
 }
 
 type ChatCompletionStreamError {
@@ -171,9 +171,16 @@ type ChatCompletionStreamResponseChunk {
 }
 
 type ChatCompletionUsage {
-  prompt_tokens: Int!
-  completion_tokens: Int!
-  total_tokens: Int!
+  promptTokens: Int!
+  completionTokens: Int!
+  totalTokens: Int!
+  cost: BigDecimal
+  promptTokensDetails: PromptTokensDetails
+  completionTokensDetails: CompletionTokensDetails
+}
+
+type CompletionTokensDetails {
+  reasoningTokens: Int
 }
 
 type Delta {
@@ -184,6 +191,10 @@ type Delta {
 type Mutations {
   "Registers behavior metadata for a deployment version. Runtime metadata is resolved according to the deployment type."
   registerVersion("Identifier of the version being registered. This is required when authenticating as a User. When authenticating as a Version, this query will only register the Version connected to your credentials." versionId: ID): [AgentBehavior!]
+}
+
+type PromptTokensDetails {
+  cachedTokens: Int
 }
 
 type Queries {

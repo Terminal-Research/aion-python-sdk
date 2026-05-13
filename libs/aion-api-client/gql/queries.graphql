@@ -15,7 +15,7 @@ subscription ChatCompletionStream(
             role
             content
           }
-          finish_reason
+          finishReason
         }
       }
     }
