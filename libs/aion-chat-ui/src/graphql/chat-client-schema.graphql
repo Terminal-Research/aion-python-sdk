@@ -117,15 +117,25 @@ input A2AServiceParametersGQLInput {
   additional: [A2AServiceParameterGQLInput!]
 }
 
-"Select exactly one A2A ingress target. Supplying zero or multiple selectors causes the request to be rejected."
-input A2ATargetGQLInput {
-  "Direct distribution identifier. Targets the external ingress path for a distribution-backed agent sequence."
+"Select exactly one capability subject. Supplying zero or multiple selectors causes the request to be rejected."
+input CapabilitySubjectGQLInput {
+  "Direct distribution identifier. Addresses the external ingress path for a distribution-backed agent sequence."
   distributionId: ID
-  "Direct agent environment identifier. Targets the daemon for the specific project node instance represented by that environment. The authenticated user will require privileged access."
+  "Direct agent environment identifier. Addresses the daemon for the specific project node instance represented by that environment."
   agentEnvironmentId: ID
-  "Agent identity identifier for identity-addressed ingress. Personal or principal identities resolve to an A2A distribution endpoint, while daemon identities resolve directly to the component daemon."
+  "Agent identity identifier for identity-addressed ingress. Personal or principal identities resolve to a distribution endpoint, while daemon identities resolve directly to the component daemon."
   agentIdentityId: ID
-  "Agent @name handle for identity-addressed ingress. Values may be provided with or without the leading @ symbol. Personal or principal identities resolve to an A2A distribution endpoint, while daemon identities resolve directly to the project node's daemon."
+  "Agent @name handle for identity-addressed ingress. Values may be provided with or without the leading @ symbol."
+  agentAtName: String
+}
+
+"Select exactly one effective principal. Supplying zero or multiple selectors causes the request to be rejected."
+input PrincipalSelectorGQLInput {
+  "Agent environment identifier. This acts as the environment itself and is limited to that environment's own capabilities."
+  agentEnvironmentId: ID
+  "Agent identity identifier to act as for this request."
+  agentIdentityId: ID
+  "Agent @name handle to act as for this request. Values may be provided with or without the leading @ symbol."
   agentAtName: String
 }
 
@@ -301,19 +311,19 @@ type Organization {
 type Queries {
   "Retrieves a user by ID. When no userId is supplied, returns the currently authenticated user."
   user(userId: ID): User @auth(subjectType: "User")
+  "Checks runtime health for the agent actor bound to an agent environment."
+  healthCheckAgent("Agent environment identifier" agentEnvironmentId: ID!): HealthCheckResult @auth(subjectType: "User")
   "Retrieves agent identity details for the authenticated user. GraphQL field selection determines whether usage rows and role keys are loaded."
   agentIdentityDetails("Organization whose visible identities should be listed" organizationId: ID!, "Optional identity-type filter applied to organization-visible identities." types: [AgentIdentityType!], "Optional distribution network types used to keep only identities that are used by at least one active distribution for every requested network. For example, choosing A2A and Playground returns only identities that have distributions for both." networkTypes: [NetworkTypeGQL!], "When true, include the caller's own personal identity for the requested organization even when it falls outside the normal visible set or type filter." includePersonalSelf: Boolean!): [AgentIdentityDetail!] @auth(subjectType: "User")
   "Retrieves one agent identity detail payload by identifier for the authenticated user."
   agentIdentityDetail(agentIdentityId: ID!): AgentIdentityDetail @auth(subjectType: "User")
-  "Checks runtime health for the agent actor bound to an agent environment."
-  healthCheckAgent("Agent environment identifier" agentEnvironmentId: ID!): HealthCheckResult @auth(subjectType: "User")
   "Returns post-login routing."
   login("Authentication bearer token" token: String!): LoginResponse @auth(subjectType: "User")
 }
 
 type Subscriptions {
   "Executes an agent-to-agent JSON-RPC request and streams the responses."
-  a2aRpc("JSON-RPC request body" request: A2AJsonRpcRequestGQLInput!, "A2A ingress target" target: A2ATargetGQLInput!, "Service parameters associated with the request" serviceParameters: A2AServiceParametersGQLInput): A2AJsonRpcResponseGQL
+  a2aRpc("JSON-RPC request body" request: A2AJsonRpcRequestGQLInput!, "A2A capability subject" target: CapabilitySubjectGQLInput!, "Service parameters associated with the request" serviceParameters: A2AServiceParametersGQLInput, "Optional effective principal selector for this request. When omitted, the authenticated subject is used as the principal." principal: PrincipalSelectorGQLInput): A2AJsonRpcResponseGQL
 }
 
 "Health-check result for a target that reported unhealthy."
