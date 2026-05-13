@@ -7,6 +7,7 @@ from aion.shared.agent.execution.scope import AgentExecutionScopeHelper
 from aion.shared.files.a2a import A2AFileTransformer
 from aion.shared.logging import get_logger
 from aion.shared.tasks import A2ATaskDeduplicator
+from aion.shared.a2a.utils import task_history_message_ids, is_message_in_task_history
 from typing import Optional
 
 logger = get_logger()
@@ -79,12 +80,11 @@ class AionEventPipeline:
             return
 
         pending = current_task.status.message
-        incoming_ids = {m.message_id for m in incoming_task.history if m.message_id}
-        if pending.message_id in incoming_ids:
+        if is_message_in_task_history(incoming_task, message=pending):
             return
 
         # Insert after messages already in current task's history, before new ones
-        current_history_ids = {m.message_id for m in current_task.history if m.message_id}
+        current_history_ids = task_history_message_ids(current_task)
         insert_idx = 0
         for i, msg in enumerate(incoming_task.history):
             if msg.message_id and msg.message_id in current_history_ids:
