@@ -3,8 +3,9 @@ from a2a.server.agent_execution.active_task import ActiveTask
 from a2a.server.context import ServerCallContext
 from a2a.server.events import Event
 from a2a.server.request_handlers import DefaultRequestHandlerV2
-from a2a.types import SendMessageRequest, TaskNotFoundError, TaskState
+from a2a.types import SendMessageRequest, TaskNotFoundError
 from a2a.utils.task import validate_history_length
+from aion.shared.a2a.constants import NON_ACTIVE_TASK_STATES
 from aion.shared.types import ContextsList, Conversation, GetContextParams, GetContextsListParams
 from collections.abc import AsyncGenerator
 from functools import wraps
@@ -14,16 +15,6 @@ from aion.server.agent.agent_execution.active_task_registry import AionActiveTas
 from aion.server.tasks import store_manager
 from aion.server.utils import ConversationBuilder
 from .request_preprocessors import A2ARequestPreprocessor
-
-# Final states that should trigger sending the completed Task to the client
-_FINAL_STATES = frozenset({
-    TaskState.TASK_STATE_COMPLETED,
-    TaskState.TASK_STATE_CANCELED,
-    TaskState.TASK_STATE_FAILED,
-    TaskState.TASK_STATE_REJECTED,
-    TaskState.TASK_STATE_INPUT_REQUIRED,
-    TaskState.TASK_STATE_AUTH_REQUIRED,
-})
 
 
 def _with_preprocessors(method):
@@ -161,5 +152,5 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         task_id = params.message.task_id
         if task_id:
             final_task = await self.task_store.get(task_id, context)
-            if final_task and final_task.status.state in _FINAL_STATES:
+            if final_task and final_task.status.state in NON_ACTIVE_TASK_STATES:
                 yield final_task

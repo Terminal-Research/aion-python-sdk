@@ -1,2 +1,2 @@
 from .conversation import ConversationBuilder
-from .task import check_if_task_is_interrupted
+from aion.shared.a2a.utils import is_task_interrupted

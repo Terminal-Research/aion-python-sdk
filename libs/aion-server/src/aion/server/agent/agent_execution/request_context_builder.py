@@ -4,7 +4,7 @@ from a2a.server.id_generator import IDGenerator
 from a2a.types.a2a_pb2 import SendMessageRequest, Task
 
 from aion.server.tasks.stores.base_task_store import BaseTaskStore
-from aion.server.utils import check_if_task_is_interrupted
+from aion.shared.a2a.utils import is_task_interrupted
 
 
 class AionRequestContextBuilder(RequestContextBuilder):
@@ -76,7 +76,7 @@ class AionRequestContextBuilder(RequestContextBuilder):
             return None
 
         last_task = await self._task_store.get_context_last_task(context_id=context_id)
-        if not check_if_task_is_interrupted(last_task):
+        if not is_task_interrupted(last_task):
             return None
 
         return last_task

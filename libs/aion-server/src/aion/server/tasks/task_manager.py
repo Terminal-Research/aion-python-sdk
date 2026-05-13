@@ -1,13 +1,17 @@
 from a2a.server.events import Event
 from a2a.server.tasks import TaskManager
 from a2a.types import Message, Task, TaskArtifactUpdateEvent, TaskState, TaskStatus, TaskStatusUpdateEvent
-from aion.server.tasks import store_manager
-from aion.server.utils import check_if_task_is_interrupted
+from aion.shared.a2a.constants import TRANSIENT_ARTIFACT_IDS, NON_ACTIVE_TASK_STATES
+from aion.shared.a2a.utils import is_task_interrupted, task_history_message_ids, is_message_in_task_history
 from aion.shared.agent.execution.scope import AgentExecutionScopeHelper
 from aion.shared.logging import get_logger
-from aion.shared.types import TRANSIENT_ARTIFACT_IDS
+from typing import override
+
+from aion.server.tasks import store_manager
 
 logger = get_logger()
+
+_HISTORY_TERMINAL_STATES = NON_ACTIVE_TASK_STATES - {TaskState.TASK_STATE_COMPLETED}
 
 
 class AionTaskManager(TaskManager):
@@ -18,6 +22,7 @@ class AionTaskManager(TaskManager):
     the last task from a given context, with optional filtering for interrupted tasks only.
     """
 
+    @override
     async def process(self, event: Event) -> Event:
         """Processes an event, updates the task state if applicable, stores it, and returns the event.
 
@@ -38,7 +43,49 @@ class AionTaskManager(TaskManager):
 
         result = await super().process(event)
         self._track_task_status(event)
+
+        if (
+                isinstance(event, (TaskStatusUpdateEvent, Task))
+                and event.status.state in _HISTORY_TERMINAL_STATES
+                and event.status.HasField('message')
+        ):
+            await self._append_terminal_message_to_history(event.status.message)
+
         return result
+
+    @override
+    def update_with_message(self, message: Message, task: Task) -> Task:
+        """Override to prevent duplicate history entries when resuming an interrupted task.
+
+        The base implementation unconditionally moves task.status.message to history.
+        When _append_terminal_message_to_history has already committed the interrupt
+        message to history, this would create a duplicate on resume.
+        """
+        if task.status.HasField('message'):
+            if not is_message_in_task_history(task, message=task.status.message):
+                task.history.append(task.status.message)
+            task.status.ClearField('message')
+        task.history.append(message)
+        self._current_task = task
+        return task
+
+    async def _append_terminal_message_to_history(self, message: Message) -> None:
+        """Add terminal status message to task history if not already present.
+
+        The base TaskManager only moves the *previous* status.message to history
+        before overwriting it. For non-completed terminal states the incoming
+        message stays only in task.status — this method persists it to history
+        so all three invocation paths (blocking, non-blocking, streaming) expose it.
+        """
+        task = self._current_task
+        if task is None:
+            return
+
+        if is_message_in_task_history(task, message=message):
+            return
+
+        task.history.append(message)
+        await self.task_store.save(task, self._call_context)
 
     async def _wrap_message_as_status_event(self, message: Message) -> TaskStatusUpdateEvent:
         """Wrap a standalone Message into a TaskStatusUpdateEvent.
@@ -98,7 +145,7 @@ class AionTaskManager(TaskManager):
         if last_task is None:
             return None
 
-        if interrupted and not check_if_task_is_interrupted(last_task):
+        if interrupted and not is_task_interrupted(last_task):
             return None
 
         self.task_id = last_task.id

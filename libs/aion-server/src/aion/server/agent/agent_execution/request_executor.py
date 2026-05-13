@@ -10,7 +10,7 @@ from a2a.utils.errors import (
     UnsupportedOperationError,
 )
 from a2a.utils.telemetry import trace_function
-from aion.server.utils import check_if_task_is_interrupted
+from aion.shared.a2a.utils import is_task_interrupted
 from aion.shared.agent import AionAgent
 from aion.shared.agent.execution.scope import AgentExecutionScopeHelper
 from aion.shared.files.a2a import A2AFileTransformer
@@ -124,7 +124,7 @@ class AionAgentRequestExecutor(AgentExecutor):
         current_task = context.current_task
 
         if current_task is not None:
-            if check_if_task_is_interrupted(current_task):
+            if is_task_interrupted(current_task):
                 context.current_task = current_task
                 return current_task, False
             else:
@@ -153,13 +153,3 @@ class AionAgentRequestExecutor(AgentExecutor):
         """
         # Add validation logic as needed
         return False
-
-    async def _update_task_status_working(self, event_queue: EventQueue, task: Task) -> None:
-        """Update task status to WORKING.
-
-        Args:
-            event_queue: Queue to publish status update
-            task: Task to update
-        """
-        if self._task_updater:
-            await self._task_updater.start_work()

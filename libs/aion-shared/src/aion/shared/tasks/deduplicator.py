@@ -17,8 +17,9 @@ from typing import Any
 from a2a.types import Artifact, Message, Task, TaskArtifactUpdateEvent, TaskStatusUpdateEvent
 from google.protobuf.json_format import MessageToDict, ParseDict
 from google.protobuf.struct_pb2 import Struct
+from aion.shared.a2a.utils import task_history_message_ids
 from aion.shared.logging import get_logger
-from aion.shared.types import TRANSIENT_ARTIFACT_IDS
+from aion.shared.a2a.constants import TRANSIENT_ARTIFACT_IDS
 
 __all__ = ["A2ATaskDeduplicator"]
 
@@ -262,7 +263,7 @@ class A2ATaskDeduplicator:
     @classmethod
     def _collect_known_message_ids(cls, task: Task) -> set[str]:
         """Collect all known message IDs from task history and status message."""
-        ids = {message.message_id for message in task.history if message.message_id}
+        ids = task_history_message_ids(task)
         if cls._has_status_message(task):
             if task.status.message.message_id:
                 ids.add(task.status.message.message_id)
@@ -282,9 +283,7 @@ class A2ATaskDeduplicator:
         Purely additive patches and full canonical snapshots do not trigger a
         warning.
         """
-        patch_message_ids = {
-            message.message_id for message in patch.history if message.message_id
-        }
+        patch_message_ids = task_history_message_ids(patch)
         partial_message_overlap = self._get_partial_overlap_details(
             canonical_ids=self._known_message_ids,
             patch_ids=patch_message_ids,
