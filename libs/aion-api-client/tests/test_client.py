@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import os
 import sys
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
+
+sys.path.insert(
+    0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src"))
+)
 
 os.environ.setdefault("AION_CLIENT_ID", "test-client")
 os.environ.setdefault("AION_CLIENT_SECRET", "test-secret")
@@ -15,7 +18,11 @@ pytest.importorskip("gql")
 
 from aion.api.config import aion_api_settings
 from aion.api.gql.client import AionGqlClient
-from aion.api.gql.generated.graphql_client import JSONRPCRequestInput
+from aion.api.gql.generated.graphql_client import (
+    A2AJsonRpcRequestGQLInput,
+    CapabilitySubjectGQLInput,
+    ChatCompletionRequestInput,
+)
 from aion.api.gql.generated.graphql_client.custom_fields import AgentBehaviorFields
 from aion.api.gql.generated.graphql_client.custom_mutations import Mutation
 
@@ -51,10 +58,14 @@ def test_settings_loaded() -> None:
 @pytest.mark.anyio("asyncio")
 async def test_chat_completion_stream_calls_gql(monkeypatch) -> None:
     """Test that chat_completion_stream properly calls the underlying GraphQL client."""
-    async def mock_chat_completion_stream(*, model: str, messages: list, stream: bool):
-        assert model == "test-model"
-        assert messages == []
-        assert stream is True
+
+    async def mock_chat_completion_stream(
+        *, request: ChatCompletionRequestInput, principal=None
+    ):
+        assert request == ChatCompletionRequestInput(
+            model="test-model", messages=[], stream=True
+        )
+        assert principal is None
         yield {"done": True}
 
     from types import SimpleNamespace
@@ -75,11 +86,19 @@ async def test_chat_completion_stream_calls_gql(monkeypatch) -> None:
 @pytest.mark.anyio("asyncio")
 async def test_a2a_stream_calls_gql(monkeypatch) -> None:
     """Test that a2a_stream properly calls the underlying GraphQL client."""
-    request = JSONRPCRequestInput(jsonrpc="2.0", method="testMethod", params=None, id=None)
+    request = A2AJsonRpcRequestGQLInput(
+        jsonrpc="2.0", method="testMethod", params=None, id=None
+    )
 
-    async def mock_a_2_a_stream(*, request: JSONRPCRequestInput, distribution_id: str):
+    async def mock_a_2_a_stream(
+        *,
+        request: A2AJsonRpcRequestGQLInput,
+        target: CapabilitySubjectGQLInput,
+        principal=None,
+    ):
         assert request == request_model
-        assert distribution_id == "dist1"
+        assert target == CapabilitySubjectGQLInput(distribution_id="dist1")
+        assert principal is None
         yield {"result": 1}
 
     from types import SimpleNamespace
@@ -127,8 +146,7 @@ async def test_register_version_sends_only_version_id_variable() -> None:
     call = gql_client.calls[0]
     assert call["operation_name"] == "RegisterVersion"
     assert {
-        variable["name"]: variable["value"]
-        for variable in call["variables"].values()
+        variable["name"]: variable["value"] for variable in call["variables"].values()
     } == {"versionId": "version-123"}
 
 
@@ -157,12 +175,13 @@ async def test_chat_completion_stream_requires_initialize(dummy_jwt_manager) -> 
         client_secret="test-secret",
         jwt_manager=dummy_jwt_manager,
         gql_url=aion_api_settings.gql_url,
-        ws_url=aion_api_settings.ws_gql_url
+        ws_url=aion_api_settings.ws_gql_url,
     )
-    stream = client.chat_completion_stream(
-        model="test-model", messages=[], stream=True
-    )
-    with pytest.raises(RuntimeError, match="AionGqlClient is not initialized before executing operations"):
+    stream = client.chat_completion_stream(model="test-model", messages=[], stream=True)
+    with pytest.raises(
+        RuntimeError,
+        match="AionGqlClient is not initialized before executing operations",
+    ):
         await anext(stream)
 
 
@@ -174,19 +193,15 @@ async def test_a2a_stream_requires_initialize(dummy_jwt_manager) -> None:
         client_secret="test-secret",
         jwt_manager=dummy_jwt_manager,
         gql_url=aion_api_settings.gql_url,
-        ws_url=aion_api_settings.ws_gql_url
+        ws_url=aion_api_settings.ws_gql_url,
     )
 
-    request = JSONRPCRequestInput(
-        jsonrpc="2.0",
-        method="test",
-        id="test-id"
-    )
+    request = A2AJsonRpcRequestGQLInput(jsonrpc="2.0", method="test", id="test-id")
 
-    stream = client.a2a_stream(
-        request=request,
-        distribution_id="test-distribution"
-    )
+    stream = client.a2a_stream(request=request, distribution_id="test-distribution")
 
-    with pytest.raises(RuntimeError, match="AionGqlClient is not initialized before executing operations"):
+    with pytest.raises(
+        RuntimeError,
+        match="AionGqlClient is not initialized before executing operations",
+    ):
         await anext(stream)

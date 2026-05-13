@@ -6,7 +6,10 @@ from aion.api.http import AionJWTManager
 from .generated.graphql_client import (
     MessageInput,
     ChatCompletionStream,
+    ChatCompletionRequestInput,
     A2AJsonRpcRequestGQLInput,
+    CapabilitySubjectGQLInput,
+    PrincipalSelectorGQLInput,
     A2AStream,
 )
 from .generated.graphql_client.client import GqlClient
@@ -32,12 +35,12 @@ class AionGqlClient:
     """
 
     def __init__(
-            self,
-            client_id: Optional[str] = None,
-            client_secret: Optional[str] = None,
-            jwt_manager: Optional[AionJWTManager] = None,
-            gql_url: Optional[str] = None,
-            ws_url: Optional[str] = None
+        self,
+        client_id: Optional[str] = None,
+        client_secret: Optional[str] = None,
+        jwt_manager: Optional[AionJWTManager] = None,
+        gql_url: Optional[str] = None,
+        ws_url: Optional[str] = None,
     ):
         """
         Initialize the Aion GraphQL client.
@@ -121,7 +124,9 @@ class AionGqlClient:
         self._validate_client_before_execute()
         return await self.client.query(field, operation_name=operation_name)
 
-    async def _execute_mutation(self, field: Any, operation_name: str) -> dict[str, Any]:
+    async def _execute_mutation(
+        self, field: Any, operation_name: str
+    ) -> dict[str, Any]:
         """
         Execute a GraphQL mutation with automatic validation.
 
@@ -155,15 +160,21 @@ class AionGqlClient:
             raise ValueError("No token received from authentication")
 
         self.client = GqlClient(
-            url="{gql_url}?token={token}".format(gql_url=self.gql_url, token=aion_token),
-            ws_url="{ws_url}?token={token}".format(ws_url=self.ws_url, token=aion_token))
+            url="{gql_url}?token={token}".format(
+                gql_url=self.gql_url, token=aion_token
+            ),
+            ws_url="{ws_url}?token={token}".format(
+                ws_url=self.ws_url, token=aion_token
+            ),
+        )
 
     async def chat_completion_stream(
-            self,
-            model: str,
-            messages: List[MessageInput],
-            stream: bool,
-            **kwargs: Any
+        self,
+        model: str,
+        messages: List[MessageInput],
+        stream: bool,
+        principal: Optional[PrincipalSelectorGQLInput] = None,
+        **kwargs: Any
     ) -> AsyncIterator[ChatCompletionStream]:
         """Stream chat completion responses from the Aion API.
 
@@ -174,22 +185,26 @@ class AionGqlClient:
             model (str): The AI model to use for completion
             messages (List[MessageInput]): List of input messages for the conversation
             stream (bool): Whether to enable streaming mode
+            principal (Optional[PrincipalSelectorGQLInput]): Optional principal selector.
             **kwargs (Any): Additional parameters to pass to the completion request
         """
         self._validate_client_before_execute()
 
         async for chunk in self.client.chat_completion_stream(
-                model=model,
-                messages=messages,
-                stream=stream,
-                **kwargs):
+            request=ChatCompletionRequestInput(
+                model=model, messages=messages, stream=stream
+            ),
+            principal=principal,
+            **kwargs
+        ):
             yield chunk
 
     async def a2a_stream(
-            self,
-            request: A2AJsonRpcRequestGQLInput,
-            distribution_id: str,
-            **kwargs: Any
+        self,
+        request: A2AJsonRpcRequestGQLInput,
+        distribution_id: str,
+        principal: Optional[PrincipalSelectorGQLInput] = None,
+        **kwargs: Any
     ) -> AsyncIterator[A2AStream]:
         """Stream agent-to-agent JSON-RPC responses.
 
@@ -200,14 +215,17 @@ class AionGqlClient:
         Args:
             request (A2AJsonRpcRequestGQLInput): JSON-RPC request payload.
             distribution_id (str): Identifier of the distribution to handle the request.
+            principal (Optional[PrincipalSelectorGQLInput]): Optional principal selector.
             **kwargs (Any): Additional parameters forwarded to the underlying client.
         """
         self._validate_client_before_execute()
 
         async for chunk in self.client.a_2_a_stream(
-                request=request,
-                distribution_id=distribution_id,
-                **kwargs):
+            request=request,
+            target=CapabilitySubjectGQLInput(distribution_id=distribution_id),
+            principal=principal,
+            **kwargs
+        ):
             yield chunk
 
     async def register_version(self, version_id: Optional[str] = None):
@@ -224,26 +242,21 @@ class AionGqlClient:
         """
         from .generated.graphql_client.custom_fields import AgentBehaviorFields
 
-        register_field = (
-            Mutation
-            .register_version(version_id=version_id)
-            .fields(
-                AgentBehaviorFields.id,
-                AgentBehaviorFields.organization_id,
-                AgentBehaviorFields.deployment_id,
-                AgentBehaviorFields.version_id,
-                AgentBehaviorFields.behavior_key,
-                AgentBehaviorFields.name,
-                AgentBehaviorFields.description,
-                AgentBehaviorFields.logical_version,
-                AgentBehaviorFields.kind,
-                AgentBehaviorFields.configuration_schema,
-                AgentBehaviorFields.agent_card
-            )
+        register_field = Mutation.register_version(version_id=version_id).fields(
+            AgentBehaviorFields.id,
+            AgentBehaviorFields.organization_id,
+            AgentBehaviorFields.deployment_id,
+            AgentBehaviorFields.version_id,
+            AgentBehaviorFields.behavior_key,
+            AgentBehaviorFields.name,
+            AgentBehaviorFields.description,
+            AgentBehaviorFields.logical_version,
+            AgentBehaviorFields.kind,
+            AgentBehaviorFields.configuration_schema,
+            AgentBehaviorFields.agent_card,
         )
         return await self._execute_mutation(
-            register_field,
-            operation_name="RegisterVersion"
+            register_field, operation_name="RegisterVersion"
         )
 
     async def get_current_deployment_version(self) -> Optional[str]:
@@ -257,7 +270,6 @@ class AionGqlClient:
 
         version_id_field = Query.version_id_by_client_id(self.client_id)
         result = await self._execute_query(
-            version_id_field,
-            operation_name="GetVersionIdByClientId"
+            version_id_field, operation_name="GetVersionIdByClientId"
         )
         return result.get("versionIdByClientId")

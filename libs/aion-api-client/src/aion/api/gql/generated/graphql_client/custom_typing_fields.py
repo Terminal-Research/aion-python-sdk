@@ -75,6 +75,12 @@ class ChatCompletionStreamResponseChunkGraphQLField(GraphQLField):
         return self
 
 
+class ChatCompletionUsageGraphQLField(GraphQLField):
+    def alias(self, alias: str) -> "ChatCompletionUsageGraphQLField":
+        self._alias = alias
+        return self
+
+
 class DeltaGraphQLField(GraphQLField):
     def alias(self, alias: str) -> "DeltaGraphQLField":
         self._alias = alias

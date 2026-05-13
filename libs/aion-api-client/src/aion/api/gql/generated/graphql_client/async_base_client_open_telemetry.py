@@ -2,11 +2,14 @@
 
 import enum
 import json
-from collections.abc import AsyncIterator
 from typing import (
     IO,
     Any,
+    AsyncIterator,
+    Dict,
+    List,
     Optional,
+    Tuple,
     TypeVar,
     Union,
     cast,
@@ -26,10 +29,8 @@ from .exceptions import (
 )
 
 try:
-    from websockets import (  # type: ignore[import-not-found,unused-ignore]
-        ClientConnection,
-    )
-    from websockets import (  # type: ignore[import-not-found,unused-ignore]
+    from websockets.client import (  # type: ignore[import-not-found,unused-ignore]
+        WebSocketClientProtocol,
         connect as ws_connect,
     )
     from websockets.typing import (  # type: ignore[import-not-found,unused-ignore]
@@ -41,15 +42,15 @@ except ImportError:
     from contextlib import asynccontextmanager
 
     @asynccontextmanager  # type: ignore
-    async def ws_connect(*args, **kwargs):
+    async def ws_connect(*args, **kwargs):  # pylint: disable=unused-argument
         raise NotImplementedError("Subscriptions require 'websockets' package.")
-        yield
+        yield  # pylint: disable=unreachable
 
-    ClientConnection = Any  # type: ignore[misc,assignment,unused-ignore]
+    WebSocketClientProtocol = Any  # type: ignore[misc,assignment,unused-ignore]
     Data = Any  # type: ignore[misc,assignment,unused-ignore]
     Origin = Any  # type: ignore[misc,assignment,unused-ignore]
 
-    def Subprotocol(*args, **kwargs):  # type: ignore # noqa: N802, N803
+    def Subprotocol(*args, **kwargs):  # type: ignore # pylint: disable=invalid-name
         raise NotImplementedError("Subscriptions require 'websockets' package.")
 
 
@@ -95,12 +96,12 @@ class AsyncBaseClientOpenTelemetry:
     def __init__(
         self,
         url: str = "",
-        headers: Optional[dict[str, str]] = None,
+        headers: Optional[Dict[str, str]] = None,
         http_client: Optional[httpx.AsyncClient] = None,
         ws_url: str = "",
-        ws_headers: Optional[dict[str, Any]] = None,
+        ws_headers: Optional[Dict[str, Any]] = None,
         ws_origin: Optional[str] = None,
-        ws_connection_init_payload: Optional[dict[str, Any]] = None,
+        ws_connection_init_payload: Optional[Dict[str, Any]] = None,
         tracer: Optional[Union[str, Tracer]] = None,
         root_context: Optional[Context] = None,
         root_span_name: str = "GraphQL Operation",
@@ -141,7 +142,7 @@ class AsyncBaseClientOpenTelemetry:
         self,
         query: str,
         operation_name: Optional[str] = None,
-        variables: Optional[dict[str, Any]] = None,
+        variables: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
     ) -> httpx.Response:
         if self.tracer:
@@ -156,7 +157,7 @@ class AsyncBaseClientOpenTelemetry:
             query=query, operation_name=operation_name, variables=variables, **kwargs
         )
 
-    def get_data(self, response: httpx.Response) -> dict[str, Any]:
+    def get_data(self, response: httpx.Response) -> Dict[str, Any]:
         if not response.is_success:
             raise GraphQLClientHttpError(
                 status_code=response.status_code, response=response
@@ -180,15 +181,15 @@ class AsyncBaseClientOpenTelemetry:
                 errors_dicts=errors, data=data
             )
 
-        return cast(dict[str, Any], data)
+        return cast(Dict[str, Any], data)
 
     async def execute_ws(
         self,
         query: str,
         operation_name: Optional[str] = None,
-        variables: Optional[dict[str, Any]] = None,
+        variables: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
-    ) -> AsyncIterator[dict[str, Any]]:
+    ) -> AsyncIterator[Dict[str, Any]]:
         if self.tracer:
             generator = self._execute_ws_with_telemetry(
                 query=query,
@@ -211,7 +212,7 @@ class AsyncBaseClientOpenTelemetry:
         self,
         query: str,
         operation_name: Optional[str] = None,
-        variables: Optional[dict[str, Any]] = None,
+        variables: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
     ) -> httpx.Response:
         processed_variables, files, files_map = self._process_variables(variables)
@@ -234,9 +235,9 @@ class AsyncBaseClientOpenTelemetry:
         )
 
     def _process_variables(
-        self, variables: Optional[dict[str, Any]]
-    ) -> tuple[
-        dict[str, Any], dict[str, tuple[str, IO[bytes], str]], dict[str, list[str]]
+        self, variables: Optional[Dict[str, Any]]
+    ) -> Tuple[
+        Dict[str, Any], Dict[str, Tuple[str, IO[bytes], str]], Dict[str, List[str]]
     ]:
         if not variables:
             return {}, {}, {}
@@ -245,8 +246,8 @@ class AsyncBaseClientOpenTelemetry:
         return self._get_files_from_variables(serializable_variables)
 
     def _convert_dict_to_json_serializable(
-        self, dict_: dict[str, Any]
-    ) -> dict[str, Any]:
+        self, dict_: Dict[str, Any]
+    ) -> Dict[str, Any]:
         return {
             key: self._convert_value(value)
             for key, value in dict_.items()
@@ -261,12 +262,12 @@ class AsyncBaseClientOpenTelemetry:
         return value
 
     def _get_files_from_variables(
-        self, variables: dict[str, Any]
-    ) -> tuple[
-        dict[str, Any], dict[str, tuple[str, IO[bytes], str]], dict[str, list[str]]
+        self, variables: Dict[str, Any]
+    ) -> Tuple[
+        Dict[str, Any], Dict[str, Tuple[str, IO[bytes], str]], Dict[str, List[str]]
     ]:
-        files_map: dict[str, list[str]] = {}
-        files_list: list[Upload] = []
+        files_map: Dict[str, List[str]] = {}
+        files_list: List[Upload] = []
 
         def separate_files(path: str, obj: Any) -> Any:
             if isinstance(obj, list):
@@ -296,7 +297,7 @@ class AsyncBaseClientOpenTelemetry:
             return obj
 
         nulled_variables = separate_files("variables", variables)
-        files: dict[str, tuple[str, IO[bytes], str]] = {
+        files: Dict[str, Tuple[str, IO[bytes], str]] = {
             str(i): (file_.filename, cast(IO[bytes], file_.content), file_.content_type)
             for i, file_ in enumerate(files_list)
         }
@@ -306,9 +307,9 @@ class AsyncBaseClientOpenTelemetry:
         self,
         query: str,
         operation_name: Optional[str],
-        variables: dict[str, Any],
-        files: dict[str, tuple[str, IO[bytes], str]],
-        files_map: dict[str, list[str]],
+        variables: Dict[str, Any],
+        files: Dict[str, Tuple[str, IO[bytes], str]],
+        files_map: Dict[str, List[str]],
         **kwargs: Any,
     ) -> httpx.Response:
         data = {
@@ -331,13 +332,13 @@ class AsyncBaseClientOpenTelemetry:
         self,
         query: str,
         operation_name: Optional[str],
-        variables: dict[str, Any],
+        variables: Dict[str, Any],
         **kwargs: Any,
     ) -> httpx.Response:
-        headers: dict[str, str] = {"Content-type": "application/json"}
+        headers: Dict[str, str] = {"Content-Type": "application/json"}
         headers.update(kwargs.get("headers", {}))
 
-        merged_kwargs: dict[str, Any] = kwargs.copy()
+        merged_kwargs: Dict[str, Any] = kwargs.copy()
         merged_kwargs["headers"] = headers
 
         return await self.http_client.post(
@@ -357,15 +358,15 @@ class AsyncBaseClientOpenTelemetry:
         self,
         query: str,
         operation_name: Optional[str] = None,
-        variables: Optional[dict[str, Any]] = None,
+        variables: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
-    ) -> AsyncIterator[dict[str, Any]]:
+    ) -> AsyncIterator[Dict[str, Any]]:
         headers = self.ws_headers.copy()
-        headers.update(kwargs.pop("additional_headers", {}))
+        headers.update(kwargs.get("extra_headers", {}))
 
-        merged_kwargs: dict[str, Any] = {"origin": self.ws_origin}
+        merged_kwargs: Dict[str, Any] = {"origin": self.ws_origin}
         merged_kwargs.update(kwargs)
-        merged_kwargs["additional_headers"] = headers
+        merged_kwargs["extra_headers"] = headers
 
         operation_id = str(uuid4())
         async with ws_connect(
@@ -393,8 +394,8 @@ class AsyncBaseClientOpenTelemetry:
                 if data:
                     yield data
 
-    async def _send_connection_init(self, websocket: ClientConnection) -> None:
-        payload: dict[str, Any] = {
+    async def _send_connection_init(self, websocket: WebSocketClientProtocol) -> None:
+        payload: Dict[str, Any] = {
             "type": GraphQLTransportWSMessageType.CONNECTION_INIT.value
         }
         if self.ws_connection_init_payload:
@@ -403,13 +404,13 @@ class AsyncBaseClientOpenTelemetry:
 
     async def _send_subscribe(
         self,
-        websocket: ClientConnection,
+        websocket: WebSocketClientProtocol,
         operation_id: str,
         query: str,
         operation_name: Optional[str] = None,
-        variables: Optional[dict[str, Any]] = None,
+        variables: Optional[Dict[str, Any]] = None,
     ) -> None:
-        payload: dict[str, Any] = {
+        payload: Dict[str, Any] = {
             "id": operation_id,
             "type": GraphQLTransportWSMessageType.SUBSCRIBE.value,
             "payload": {"query": query, "operationName": operation_name},
@@ -423,9 +424,9 @@ class AsyncBaseClientOpenTelemetry:
     async def _handle_ws_message(
         self,
         message: Data,
-        websocket: ClientConnection,
+        websocket: WebSocketClientProtocol,
         expected_type: Optional[GraphQLTransportWSMessageType] = None,
-    ) -> Optional[dict[str, Any]]:
+    ) -> Optional[Dict[str, Any]]:
         try:
             message_dict = json.loads(message)
         except json.JSONDecodeError as exc:
@@ -445,7 +446,7 @@ class AsyncBaseClientOpenTelemetry:
         if type_ == GraphQLTransportWSMessageType.NEXT:
             if "data" not in payload:
                 raise GraphQLClientInvalidMessageFormat(message=message)
-            return cast(dict[str, Any], payload["data"])
+            return cast(Dict[str, Any], payload["data"])
 
         if type_ == GraphQLTransportWSMessageType.COMPLETE:
             await websocket.close()
@@ -464,7 +465,7 @@ class AsyncBaseClientOpenTelemetry:
         self,
         query: str,
         operation_name: Optional[str] = None,
-        variables: Optional[dict[str, Any]] = None,
+        variables: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
     ) -> httpx.Response:
         with self.tracer.start_as_current_span(  # type: ignore
@@ -498,9 +499,9 @@ class AsyncBaseClientOpenTelemetry:
         root_span: Span,
         query: str,
         operation_name: Optional[str],
-        variables: dict[str, Any],
-        files: dict[str, tuple[str, IO[bytes], str]],
-        files_map: dict[str, list[str]],
+        variables: Dict[str, Any],
+        files: Dict[str, Tuple[str, IO[bytes], str]],
+        files_map: Dict[str, List[str]],
         **kwargs: Any,
     ) -> httpx.Response:
         with self.tracer.start_as_current_span(  # type: ignore
@@ -529,7 +530,7 @@ class AsyncBaseClientOpenTelemetry:
         root_span: Span,
         query: str,
         operation_name: Optional[str],
-        variables: dict[str, Any],
+        variables: Dict[str, Any],
         **kwargs: Any,
     ) -> httpx.Response:
         with self.tracer.start_as_current_span(  # type: ignore
@@ -553,20 +554,20 @@ class AsyncBaseClientOpenTelemetry:
         self,
         query: str,
         operation_name: Optional[str] = None,
-        variables: Optional[dict[str, Any]] = None,
+        variables: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
-    ) -> AsyncIterator[dict[str, Any]]:
+    ) -> AsyncIterator[Dict[str, Any]]:
         with self.tracer.start_as_current_span(  # type: ignore
             self.ws_root_span_name, context=self.ws_root_context
         ) as root_span:
             root_span.set_attribute("component", "GraphQL Client")
 
             headers = self.ws_headers.copy()
-            headers.update(kwargs.pop("additional_headers", {}))
+            headers.update(kwargs.get("extra_headers", {}))
 
-            merged_kwargs: dict[str, Any] = {"origin": self.ws_origin}
+            merged_kwargs: Dict[str, Any] = {"origin": self.ws_origin}
             merged_kwargs.update(kwargs)
-            merged_kwargs["additional_headers"] = headers
+            merged_kwargs["extra_headers"] = headers
 
             operation_id = str(uuid4())
             async with ws_connect(
@@ -602,7 +603,7 @@ class AsyncBaseClientOpenTelemetry:
                         yield data
 
     async def _send_connection_init_with_telemetry(
-        self, root_span: Span, websocket: ClientConnection
+        self, root_span: Span, websocket: WebSocketClientProtocol
     ) -> None:
         with self.tracer.start_as_current_span(  # type: ignore
             "connection init", context=set_span_in_context(root_span)
@@ -621,11 +622,11 @@ class AsyncBaseClientOpenTelemetry:
     async def _send_subscribe_with_telemetry(
         self,
         root_span: Span,
-        websocket: ClientConnection,
+        websocket: WebSocketClientProtocol,
         operation_id: str,
         query: str,
         operation_name: Optional[str] = None,
-        variables: Optional[dict[str, Any]] = None,
+        variables: Optional[Dict[str, Any]] = None,
     ) -> None:
         with self.tracer.start_as_current_span(  # type: ignore
             "subscribe", context=set_span_in_context(root_span)
@@ -653,9 +654,9 @@ class AsyncBaseClientOpenTelemetry:
         self,
         root_span: Span,
         message: Data,
-        websocket: ClientConnection,
+        websocket: WebSocketClientProtocol,
         expected_type: Optional[GraphQLTransportWSMessageType] = None,
-    ) -> Optional[dict[str, Any]]:
+    ) -> Optional[Dict[str, Any]]:
         with self.tracer.start_as_current_span(  # type: ignore
             "received message", context=set_span_in_context(root_span)
         ) as span:
@@ -684,7 +685,7 @@ class AsyncBaseClientOpenTelemetry:
             if type_ == GraphQLTransportWSMessageType.NEXT:
                 if "data" not in payload:
                     raise GraphQLClientInvalidMessageFormat(message=message)
-                return cast(dict[str, Any], payload["data"])
+                return cast(Dict[str, Any], payload["data"])
 
             if type_ == GraphQLTransportWSMessageType.COMPLETE:
                 await websocket.close()

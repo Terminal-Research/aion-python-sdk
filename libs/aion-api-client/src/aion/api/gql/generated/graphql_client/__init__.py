@@ -29,7 +29,10 @@ from .input_types import (
     A2AJsonRpcRequestGQLInput,
     A2AServiceParameterGQLInput,
     A2AServiceParametersGQLInput,
+    CapabilitySubjectGQLInput,
+    ChatCompletionRequestInput,
     MessageInput,
+    PrincipalSelectorGQLInput,
 )
 from .operations import A_2_A_STREAM_GQL, CHAT_COMPLETION_STREAM_GQL
 
@@ -46,6 +49,8 @@ __all__ = [
     "AsyncBaseClientOpenTelemetry",
     "BaseModel",
     "CHAT_COMPLETION_STREAM_GQL",
+    "CapabilitySubjectGQLInput",
+    "ChatCompletionRequestInput",
     "ChatCompletionStream",
     "ChatCompletionStreamChatCompletionStreamChatCompletionStreamError",
     "ChatCompletionStreamChatCompletionStreamChatCompletionStreamResponseChunk",
@@ -59,5 +64,6 @@ __all__ = [
     "GraphQLClientHttpError",
     "GraphQLClientInvalidResponseError",
     "MessageInput",
+    "PrincipalSelectorGQLInput",
     "Upload",
 ]

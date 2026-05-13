@@ -67,21 +67,38 @@ input A2AServiceParametersGQLInput {
   additional: [A2AServiceParameterGQLInput!]
 }
 
-"Select exactly one A2A ingress target. Supplying zero or multiple selectors causes the request to be rejected."
-input A2ATargetGQLInput {
-  "Direct distribution identifier. Targets the external ingress path for a distribution-backed agent sequence."
+"Select exactly one capability subject. Supplying zero or multiple selectors causes the request to be rejected."
+input CapabilitySubjectGQLInput {
+  "Direct distribution identifier. Addresses the external ingress path for a distribution-backed agent sequence."
   distributionId: ID
-  "Direct agent environment identifier. Targets the daemon for the specific project node instance represented by that environment. The authenticated user will require privileged access."
+  "Direct agent environment identifier. Addresses the daemon for the specific project node instance represented by that environment."
   agentEnvironmentId: ID
-  "Agent identity identifier for identity-addressed ingress. Personal or principal identities resolve to an A2A distribution endpoint, while daemon identities resolve directly to the component daemon."
+  "Agent identity identifier for identity-addressed ingress. Personal or principal identities resolve to a distribution endpoint, while daemon identities resolve directly to the component daemon."
   agentIdentityId: ID
-  "Agent @name handle for identity-addressed ingress. Values may be provided with or without the leading @ symbol. Personal or principal identities resolve to an A2A distribution endpoint, while daemon identities resolve directly to the project node's daemon."
+  "Agent @name handle for identity-addressed ingress. Values may be provided with or without the leading @ symbol."
   agentAtName: String
+}
+
+input ChatCompletionRequestInput {
+  model: String!
+  messages: [MessageInput!]!
+  stream: Boolean!
+  agentEnvironmentId: ID
 }
 
 input MessageInput {
   role: String!
   content: String!
+}
+
+"Select exactly one effective principal. Supplying zero or multiple selectors causes the request to be rejected."
+input PrincipalSelectorGQLInput {
+  "Agent environment identifier. This acts as the environment itself and is limited to that environment's own capabilities."
+  agentEnvironmentId: ID
+  "Agent identity identifier to act as for this request."
+  agentIdentityId: ID
+  "Agent @name handle to act as for this request. Values may be provided with or without the leading @ symbol."
+  agentAtName: String
 }
 
 type A2AJsonRpcError {
@@ -142,13 +159,21 @@ type ChatCompletionStreamError {
 
 type ChatCompletionStreamResponse {
   id: String!
+  object: String!
   created: Long!
   model: String!
   choices: [ChatCompletionStreamChoice!]!
+  usage: ChatCompletionUsage
 }
 
 type ChatCompletionStreamResponseChunk {
   response: ChatCompletionStreamResponse!
+}
+
+type ChatCompletionUsage {
+  prompt_tokens: Int!
+  completion_tokens: Int!
+  total_tokens: Int!
 }
 
 type Delta {
@@ -168,7 +193,7 @@ type Queries {
 
 type Subscriptions {
   "Executes an agent-to-agent JSON-RPC request and streams the responses."
-  a2aRpc("JSON-RPC request body" request: A2AJsonRpcRequestGQLInput!, "A2A ingress target" target: A2ATargetGQLInput!, "Service parameters associated with the request" serviceParameters: A2AServiceParametersGQLInput): A2AJsonRpcResponseGQL
+  a2aRpc("JSON-RPC request body" request: A2AJsonRpcRequestGQLInput!, "A2A capability subject" target: CapabilitySubjectGQLInput!, "Service parameters associated with the request" serviceParameters: A2AServiceParametersGQLInput, "Optional effective principal selector for this request. When omitted, the authenticated subject is used as the principal." principal: PrincipalSelectorGQLInput): A2AJsonRpcResponseGQL
   "Streams delta chunks for an LLM chat-completion request. When `stream=true` is set, the underlying model returns partial responses; this subscription forwards those chunks to the client as they become available, enabling token-level streaming UIs."
-  chatCompletionStream(model: String!, messages: [MessageInput!]!, stream: Boolean!): ChatCompletionStreamChunk @auth(subjectType: "Version")
+  chatCompletionStream("Chat completion request payload." request: ChatCompletionRequestInput!, "Optional effective principal selector. When omitted, the authenticated subject is used as the principal." principal: PrincipalSelectorGQLInput): ChatCompletionStreamChunk @auth(subjectType: "Version")
 }
