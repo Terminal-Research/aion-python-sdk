@@ -41,6 +41,16 @@ class AionTaskManager(TaskManager):
         if isinstance(event, Message):
             event = await self._wrap_message_as_status_event(event)
 
+        # The base class unconditionally moves task.status.message to history before
+        # overwriting it. If _append_terminal_message_to_history already committed that
+        # message (e.g. on INPUT_REQUIRED), clear it first to avoid a duplicate when
+        # a subsequent event (e.g. TASK_STATE_CANCELED) is processed.
+        if isinstance(event, (TaskStatusUpdateEvent, Task)):
+            task = self._current_task
+            if task is not None and task.status.HasField('message'):
+                if is_message_in_task_history(task, message=task.status.message):
+                    task.status.ClearField('message')
+
         result = await super().process(event)
         self._track_task_status(event)
 

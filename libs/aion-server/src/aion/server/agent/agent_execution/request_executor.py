@@ -7,9 +7,11 @@ from a2a.helpers import new_task_from_user_message
 from a2a.utils.errors import (
     InternalError,
     InvalidParamsError,
-    UnsupportedOperationError,
+    TaskNotCancelableError,
+    TaskNotFoundError,
 )
 from a2a.utils.telemetry import trace_function
+from aion.shared.a2a.constants import TERMINAL_TASK_STATES
 from aion.shared.a2a.utils import is_task_interrupted
 from aion.shared.agent import AionAgent
 from aion.shared.agent.execution.scope import AgentExecutionScopeHelper
@@ -91,17 +93,29 @@ class AionAgentRequestExecutor(AgentExecutor):
     ) -> None:
         """Request cancellation of an ongoing task.
 
-        Note: Cancellation support depends on framework capabilities.
-        Currently not implemented.
+        Resolves the task from context, validates it is in a cancelable state,
+        delegates to the framework adapter, and emits a terminal CANCELED event.
 
         Args:
             context: A2A request context with task to cancel
             event_queue: Queue for publishing cancellation events
 
         Raises:
-            UnsupportedOperationError: always
+            TaskNotFoundError: if context carries no task
+            TaskNotCancelableError: if the task is already in a terminal state
+            UnsupportedOperationError: if the framework does not support cancellation
         """
-        raise UnsupportedOperationError()
+        task = context.current_task
+        if task is None:
+            raise TaskNotFoundError()
+
+        if task.status.state in TERMINAL_TASK_STATES:
+            raise TaskNotCancelableError(
+                message=f"Task {task.id} cannot be canceled - current state: {task.status.state}"
+            )
+
+        task_updater = TaskUpdater(event_queue, task.id, task.context_id)
+        await task_updater.cancel()
 
     @staticmethod
     async def _get_task_for_execution(context: RequestContext) -> Tuple[Task, bool]:
