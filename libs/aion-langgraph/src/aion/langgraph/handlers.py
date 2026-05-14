@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 import inspect
-from aion.shared.logging import get_logger
-from aion.shared.runtime.context import AionRuntimeContext
-from aion.shared.runtime.context.models import EventKind
+from aion.langgraph.runtime.context.thread import Thread
 from langgraph.constants import START
 from langgraph.graph import StateGraph
 from langgraph.runtime import Runtime
 from typing import Any, Callable, Dict, List, Optional, Set
 
-from aion.langgraph.runtime.context.thread import Thread
+from aion.shared.logging import get_logger
+from aion.shared.runtime.context import AionRuntimeContext
+from aion.shared.runtime.context.models import EventKind
 
 logger = get_logger()
 
@@ -104,7 +104,7 @@ class AionEventHandlers:
         state       — LangGraph graph state
         runtime     — full LangGraph Runtime[AionRuntimeContext]
         context     — AionRuntimeContext extracted from runtime
-        event       — typed inbound event (kind + payload), or None for direct A2A
+        event       — typed inbound event (kind + payload), or None when no event
         identity    — agent identity derived from the distribution extension
         inbox       — raw A2A inbox (escape hatch for direct access)
         thread      — Thread bound to the current invocation
@@ -114,6 +114,11 @@ class AionEventHandlers:
     for native injection, making the dispatcher forward-compatible with new
     LangGraph-injectable params without code changes.
 
+    Routing priority:
+        1. on_message / on_reaction / on_command / on_card_action — matched by event kind
+        2. on_event   — event is present but its kind has no registered handler
+        3. on_invoke  — no event at all (direct A2A invocation without Aion Events envelope)
+
     Usage:
         builder = StateGraph(State, context_schema=AionRuntimeContext)
         add_event_handlers(
@@ -121,6 +126,7 @@ class AionEventHandlers:
             on_message=handle_message,   # async def handle_message(thread, message): ...
             on_reaction=handle_reaction, # async def handle_reaction(event): ...
             on_event=handle_event,       # async def handle_event(state, context): ...
+            on_invoke=handle_invoke,     # async def handle_invoke(state, context): ...
         )
     """
 
@@ -132,6 +138,7 @@ class AionEventHandlers:
             on_command: Optional[Callable] = None,
             on_card_action: Optional[Callable] = None,
             on_event: Optional[Callable] = None,
+            on_invoke: Optional[Callable] = None,
     ) -> None:
         self._kind_map: Dict[EventKind, Callable] = {}
         if on_message:
@@ -143,13 +150,11 @@ class AionEventHandlers:
         if on_card_action:
             self._kind_map[EventKind.CARD_ACTION] = on_card_action
 
-        self._fallback = on_event
-        # Used as fallback when no event is present but an inbox message exists
-        # (e.g. direct A2A task/message without a CloudEvents envelope).
-        self._direct_message = on_message
+        self._on_event = on_event
+        self._on_invoke = on_invoke
 
         all_handlers: List[Callable] = [
-            handler for handler in [on_message, on_reaction, on_command, on_card_action, on_event]
+            handler for handler in [on_message, on_reaction, on_command, on_card_action, on_event, on_invoke]
             if handler is not None
         ]
         self._invokers: Dict[str, _HandlerInvoker] = {
@@ -190,22 +195,15 @@ class AionEventHandlers:
         return inspect.Signature(params)
 
     def _select_handler(self, context: Optional[AionRuntimeContext]) -> Optional[Callable]:
-        """Select which handler to invoke based on the inbound event kind.
-
-        Falls back to on_message for direct inbox messages without a CloudEvents
-        envelope, and to on_event when no more specific match is found.
-        """
+        """Select which handler to invoke based on the inbound event kind."""
         if not isinstance(context, AionRuntimeContext):
-            return self._fallback
+            return self._on_invoke
 
         event = context.event
         if event is None:
-            inbox_message = getattr(context.inbox, "message", None)
-            if self._direct_message is not None and inbox_message is not None:
-                return self._direct_message
-            return self._fallback
+            return self._on_invoke
 
-        return self._kind_map.get(event.kind) or self._fallback
+        return self._kind_map.get(event.kind) or self._on_event
 
     async def __call__(self, state: Any, **langgraph_kwargs: Any) -> Any:
         """LangGraph node entry point. Routes the invocation to the matching handler."""
@@ -233,11 +231,23 @@ def add_event_handlers(
         on_command: Optional[Callable] = None,
         on_card_action: Optional[Callable] = None,
         on_event: Optional[Callable] = None,
+        on_invoke: Optional[Callable] = None,
 ) -> None:
     """Register an event dispatcher node into a StateGraph.
 
     Creates an AionEventHandlers dispatcher and attaches it to the builder.
-    See AionEventHandlers for the full list of injectable parameters and behavior.
+
+    Handlers may declare any subset of these parameters — only declared ones are injected:
+        state, runtime, context, event, identity, inbox, thread, message.
+
+    Args:
+        builder: StateGraph to attach the dispatcher to.
+        on_message: Called when the inbound event kind is MESSAGE.
+        on_reaction: Called when the inbound event kind is REACTION.
+        on_command: Called when the inbound event kind is COMMAND.
+        on_card_action: Called when the inbound event kind is CARD_ACTION.
+        on_event: Fallback when an event is present but its kind has no specific handler.
+        on_invoke: Called when there is no Aion event (direct A2A invocation).
     """
     AionEventHandlers(
         on_message=on_message,
@@ -245,4 +255,5 @@ def add_event_handlers(
         on_command=on_command,
         on_card_action=on_card_action,
         on_event=on_event,
+        on_invoke=on_invoke,
     ).attach(builder)
