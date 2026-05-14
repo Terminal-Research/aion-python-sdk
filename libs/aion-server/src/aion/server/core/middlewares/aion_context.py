@@ -50,27 +50,26 @@ class AionContextMiddleware(BaseHTTPMiddleware):
         """
         method, request_id, metadata = await self._extract_method_and_metadata(request)
 
-        if metadata:
-            try:
-                AgentExecutionScopeHelper.set_scope_from_a2a(
-                    distribution=self._get_distribution_extension(metadata),
-                    traceability=self._get_traceability_extension(metadata),
-                    request_method=request.method,
-                    request_path=request.url.path,
-                    jrpc_method=method,
-                )
-            except ValidationError as ex:
-                logger.warning("Invalid extension data in request metadata: %s", ex)
-                return JSONResponse(
-                    build_error_response(request_id, InvalidRequestError(data=str(ex))),
-                    status_code=200,
-                )
-            except Exception as ex:
-                logger.exception("Failed to set request context: %s", ex)
-                return JSONResponse(
-                    build_error_response(request_id, InternalError()),
-                    status_code=200,
-                )
+        try:
+            AgentExecutionScopeHelper.set_scope_from_a2a(
+                distribution=self._get_distribution_extension(metadata) if metadata else None,
+                traceability=self._get_traceability_extension(metadata) if metadata else None,
+                request_method=request.method,
+                request_path=request.url.path,
+                jrpc_method=method,
+            )
+        except ValidationError as ex:
+            logger.warning("Invalid extension data in request metadata: %s", ex)
+            return JSONResponse(
+                build_error_response(request_id, InvalidRequestError(data=str(ex))),
+                status_code=200,
+            )
+        except Exception as ex:
+            logger.exception("Failed to set request context: %s", ex)
+            return JSONResponse(
+                build_error_response(request_id, InternalError()),
+                status_code=200,
+            )
 
         return await call_next(request)
 
