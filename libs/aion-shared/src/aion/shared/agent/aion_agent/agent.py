@@ -282,6 +282,33 @@ class AionAgent:
         async for event in self._executor.resume(context, config):
             yield event
 
+    async def cancel(self, context: "RequestContext") -> None:
+        """Notify the framework executor to cancel an active task.
+
+        Args:
+            context: A2A request context identifying the task to cancel
+
+        Raises:
+            RuntimeError: If agent is not built yet
+            UnsupportedOperationError: If the framework does not support cancellation
+        """
+        if not self._is_built:
+            raise RuntimeError(
+                f"Agent '{self._id}' is not built yet. Call build() before canceling."
+            )
+
+        config = ExecutionConfig(
+            task_id=context.task_id,
+            context_id=context.context_id,
+        )
+
+        self.logger.debug(
+            f"Notifying framework executor to cancel task '{context.task_id}' "
+            f"(context_id={context.context_id})'"
+        )
+
+        await self._executor.cancel(config)
+
     # ===== Factory Methods =====
 
     @classmethod

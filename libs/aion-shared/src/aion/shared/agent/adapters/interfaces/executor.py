@@ -13,6 +13,7 @@ from collections.abc import AsyncIterator
 from typing import Any, Optional, TYPE_CHECKING
 
 from a2a.types import TaskArtifactUpdateEvent, TaskStatusUpdateEvent
+from a2a.utils.errors import UnsupportedOperationError
 
 from .state import ExecutionSnapshot
 
@@ -122,3 +123,17 @@ class ExecutorAdapter(ABC):
             ValueError: If execution is not in a resumable state
         """
         pass
+
+    async def cancel(self, config: ExecutionConfig) -> None:
+        """Framework-specific cancellation hook.
+
+        Override to interrupt active execution (cancel asyncio tasks, set stop flags,
+        release resources, etc.). Called before the A2A CANCELED state is emitted.
+
+        Args:
+            config: Execution configuration identifying the task to cancel
+
+        Raises:
+            UnsupportedOperationError: Default — framework does not support cancellation.
+        """
+        raise UnsupportedOperationError()

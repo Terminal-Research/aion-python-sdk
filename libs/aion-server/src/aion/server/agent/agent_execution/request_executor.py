@@ -9,6 +9,7 @@ from a2a.utils.errors import (
     InvalidParamsError,
     TaskNotCancelableError,
     TaskNotFoundError,
+    UnsupportedOperationError,
 )
 from a2a.utils.telemetry import trace_function
 from aion.shared.a2a.constants import TERMINAL_TASK_STATES
@@ -113,6 +114,11 @@ class AionAgentRequestExecutor(AgentExecutor):
             raise TaskNotCancelableError(
                 message=f"Task {task.id} cannot be canceled - current state: {task.status.state}"
             )
+
+        try:
+            await self.agent.cancel(context)
+        except UnsupportedOperationError:
+            logger.debug("Framework does not support cancellation, proceeding with A2A cancel")
 
         task_updater = TaskUpdater(event_queue, task.id, task.context_id)
         await task_updater.cancel()
