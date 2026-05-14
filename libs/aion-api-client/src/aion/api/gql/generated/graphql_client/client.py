@@ -28,7 +28,8 @@ from .input_types import (
     ChatCompletionRequestInput,
     PrincipalSelectorGQLInput,
 )
-from .operations import A_2_A_STREAM_GQL, CHAT_COMPLETION_STREAM_GQL
+from .operations import A_2_A_STREAM_GQL, CHAT_COMPLETION_STREAM_GQL, VERSION_LOGS_GQL
+from .version_logs import VersionLogs
 
 
 def gql(q: str) -> str:
@@ -70,6 +71,18 @@ class GqlClient(AsyncBaseClientOpenTelemetry):
             **kwargs,
         ):
             yield A2AStream.model_validate(data)
+
+    async def version_logs(
+        self, start_time: Any, **kwargs: Any
+    ) -> AsyncIterator[VersionLogs]:
+        variables: dict[str, object] = {"startTime": start_time}
+        async for data in self.execute_ws(
+            query=VERSION_LOGS_GQL,
+            operation_name="VersionLogs",
+            variables=variables,
+            **kwargs,
+        ):
+            yield VersionLogs.model_validate(data)
 
     async def execute_custom_operation(
         self, *fields: GraphQLField, operation_type: OperationType, operation_name: str

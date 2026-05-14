@@ -46,3 +46,16 @@ subscription A2AStream(
     }
   }
 }
+
+subscription VersionLogs($startTime: OffsetDateTime!) {
+  versionLogs(startTime: $startTime) {
+    level
+    level_value
+    timestamp
+    message
+    properties {
+      key
+      value
+    }
+  }
+}

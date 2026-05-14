@@ -16,7 +16,7 @@ pytest.importorskip("httpx")
 pytest.importorskip("jwt")
 pytest.importorskip("gql")
 
-from aion.api.config import aion_api_settings
+from aion.shared.settings import api_settings as aion_api_settings
 from aion.api.gql.client import AionGqlClient
 from aion.api.gql.generated.graphql_client import (
     A2AJsonRpcRequestGQLInput,
@@ -49,7 +49,7 @@ class CapturingMutationClient:
 
 def test_settings_loaded() -> None:
     """Configuration values should load from defaults."""
-    assert aion_api_settings.keepalive == 60
+    assert aion_api_settings.api_keep_alive == 60
 
 
 def test_chat_completion_request_uses_principal_for_agent_environment() -> None:
@@ -131,6 +131,30 @@ async def test_a2a_stream_calls_gql(monkeypatch) -> None:
         chunks.append(chunk)
 
     assert chunks == [{"result": 1}]
+
+
+@pytest.mark.anyio("asyncio")
+async def test_version_logs_calls_gql(monkeypatch) -> None:
+    """version_logs should delegate to the generated websocket subscription."""
+    expected_start_time = "2026-05-14T15:00:00Z"
+
+    async def mock_version_logs(*, start_time: str):
+        assert start_time == expected_start_time
+        yield {"versionLogs": {"message": "ready"}}
+
+    from types import SimpleNamespace
+
+    client = AionGqlClient()
+    mock_client = SimpleNamespace()
+    mock_client.version_logs = mock_version_logs
+    client.client = mock_client
+    client._is_initialized = True
+
+    chunks = []
+    async for chunk in client.version_logs(start_time=expected_start_time):
+        chunks.append(chunk)
+
+    assert chunks == [{"versionLogs": {"message": "ready"}}]
 
 
 def test_register_version_custom_mutation_arguments_exclude_manifest() -> None:
@@ -215,6 +239,26 @@ async def test_a2a_stream_requires_initialize(dummy_jwt_manager) -> None:
     request = A2AJsonRpcRequestGQLInput(jsonrpc="2.0", method="test", id="test-id")
 
     stream = client.a2a_stream(request=request, distribution_id="test-distribution")
+
+    with pytest.raises(
+        RuntimeError,
+        match="AionGqlClient is not initialized before executing operations",
+    ):
+        await anext(stream)
+
+
+@pytest.mark.anyio("asyncio")
+async def test_version_logs_requires_initialize(dummy_jwt_manager) -> None:
+    """Calling version_logs before initialize should raise RuntimeError."""
+    client = AionGqlClient(
+        client_id="test-id",
+        client_secret="test-secret",
+        jwt_manager=dummy_jwt_manager,
+        gql_url=aion_api_settings.gql_url,
+        ws_url=aion_api_settings.ws_gql_url,
+    )
+
+    stream = client.version_logs(start_time="2026-05-14T15:00:00Z")
 
     with pytest.raises(
         RuntimeError,

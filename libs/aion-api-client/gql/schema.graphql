@@ -13,6 +13,8 @@ schema {
 scalar BigDecimal
 scalar Json
 scalar Long
+"A date-time with an offset from UTC/Greenwich in the ISO-8601 calendar system using the format 1970-01-01T00:00:00Z"
+scalar OffsetDateTime
 """
 
 An identifier established by the Client that MUST contain a String, Number,
@@ -188,6 +190,24 @@ type Delta {
   content: String
 }
 
+"A key-value pair of String and String"
+type KVStringString {
+  "Key"
+  key: String!
+  "Value"
+  value: String!
+}
+
+"A log event"
+type LogEvent {
+  level: String!
+  level_value: Int!
+  "Event timestamp serialized as RFC 3339 (ISO-8601) with offset, in UTC."
+  timestamp: OffsetDateTime!
+  message: String
+  properties: [KVStringString!]!
+}
+
 type Mutations {
   "Registers behavior metadata for a deployment version. Runtime metadata is resolved according to the deployment type."
   registerVersion("Identifier of the version being registered. This is required when authenticating as a User. When authenticating as a Version, this query will only register the Version connected to your credentials." versionId: ID): [AgentBehavior!]
@@ -207,4 +227,6 @@ type Subscriptions {
   a2aRpc("JSON-RPC request body" request: A2AJsonRpcRequestGQLInput!, "A2A capability subject" target: CapabilitySubjectGQLInput!, "Service parameters associated with the request" serviceParameters: A2AServiceParametersGQLInput, "Optional effective principal selector for this request. When omitted, the authenticated subject is used as the principal." principal: PrincipalSelectorGQLInput): A2AJsonRpcResponseGQL
   "Streams delta chunks for an LLM chat-completion request. When `stream=true` is set, the underlying model returns partial responses; this subscription forwards those chunks to the client as they become available, enabling token-level streaming UIs."
   chatCompletionStream("Chat completion request payload." request: ChatCompletionRequestInput!, "Optional effective principal selector. When omitted, the authenticated subject is used as the principal." principal: PrincipalSelectorGQLInput): ChatCompletionStreamChunk @auth(subjectType: "Version")
+  "Streams raw log events for the authenticated version."
+  versionLogs("Lower bound for log retrieval serialized as RFC 3339 (ISO-8601) with offset, in UTC." startTime: OffsetDateTime!): LogEvent @auth(subjectType: "Version")
 }

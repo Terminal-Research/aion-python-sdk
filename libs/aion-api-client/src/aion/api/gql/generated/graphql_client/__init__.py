@@ -34,7 +34,12 @@ from .input_types import (
     MessageInput,
     PrincipalSelectorGQLInput,
 )
-from .operations import A_2_A_STREAM_GQL, CHAT_COMPLETION_STREAM_GQL
+from .operations import A_2_A_STREAM_GQL, CHAT_COMPLETION_STREAM_GQL, VERSION_LOGS_GQL
+from .version_logs import (
+    VersionLogs,
+    VersionLogsVersionLogs,
+    VersionLogsVersionLogsProperties,
+)
 
 __all__ = [
     "A2AJsonRpcRequestGQLInput",
@@ -66,4 +71,8 @@ __all__ = [
     "MessageInput",
     "PrincipalSelectorGQLInput",
     "Upload",
+    "VERSION_LOGS_GQL",
+    "VersionLogs",
+    "VersionLogsVersionLogs",
+    "VersionLogsVersionLogsProperties",
 ]

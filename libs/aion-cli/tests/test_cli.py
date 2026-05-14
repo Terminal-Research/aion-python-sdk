@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import importlib
+import asyncio
+from threading import Event, Thread
 
 from click.testing import CliRunner
 
@@ -28,6 +30,7 @@ def test_help_lists_chat_command() -> None:
 
     assert result.exit_code == 0
     assert "chat" in result.output
+    assert "logs" in result.output
 
 
 def test_chat_launches_ui(monkeypatch) -> None:
@@ -151,6 +154,129 @@ def test_chat_run_help_describes_headless_usage() -> None:
     assert "Agent selection:" in result.output
     assert "a2a mode writes raw A2A JSON" in result.output
     assert "aion chat run --agent @team-agent" in result.output
+
+
+def test_logs_tails_authenticated_version_logs(monkeypatch) -> None:
+    """Ensure ``aion logs`` streams formatted version log events."""
+    runner = CliRunner()
+    logs_service = importlib.import_module("aion.cli.services.logs")
+    called: dict[str, object] = {}
+
+    class FakeClient:
+        """Minimal client exposing the version log subscription."""
+
+        async def version_logs(self, *, start_time: str):
+            called["start_time"] = start_time
+            yield {
+                "versionLogs": {
+                    "timestamp": "2026-05-14T15:00:01Z",
+                    "level": "INFO",
+                    "level_value": 20,
+                    "message": "version ready",
+                    "properties": [{"key": "requestId", "value": "req-1"}],
+                }
+            }
+
+    class FakeContextClient:
+        """Async context manager used instead of the real GraphQL client."""
+
+        def __init__(self) -> None:
+            called["initialized"] = True
+
+        async def __aenter__(self):
+            return FakeClient()
+
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            called["closed"] = True
+
+    monkeypatch.setattr(logs_service, "AionGqlContextClient", FakeContextClient)
+
+    result = runner.invoke(
+        cli, ["logs", "--since", "2026-05-14T15:00:00Z"]
+    )
+
+    assert result.exit_code == 0
+    assert called == {
+        "initialized": True,
+        "start_time": "2026-05-14T15:00:00Z",
+        "closed": True,
+    }
+    assert "[2026-05-14T15:00:01Z] INFO version ready" in result.output
+    assert "requestId=req-1" not in result.output
+
+
+def test_logs_can_include_properties(monkeypatch) -> None:
+    """Ensure structured properties are opt-in for log output."""
+    runner = CliRunner()
+    logs_service = importlib.import_module("aion.cli.services.logs")
+
+    class FakeClient:
+        """Minimal client exposing the version log subscription."""
+
+        async def version_logs(self, *, start_time: str):
+            yield {
+                "versionLogs": {
+                    "timestamp": "2026-05-14T15:00:01Z",
+                    "level": "ERROR",
+                    "level_value": 40,
+                    "message": "failed",
+                    "properties": [{"key": "taskId", "value": "task-1"}],
+                }
+            }
+
+    class FakeContextClient:
+        """Async context manager used instead of the real GraphQL client."""
+
+        async def __aenter__(self):
+            return FakeClient()
+
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            return None
+
+    monkeypatch.setattr(logs_service, "AionGqlContextClient", FakeContextClient)
+
+    result = runner.invoke(
+        cli,
+        [
+            "logs",
+            "--since",
+            "2026-05-14T15:00:00Z",
+            "--properties",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "[2026-05-14T15:00:01Z] ERROR failed taskId=task-1" in result.output
+
+
+def test_logs_worker_cancellation_stops_subscription_task() -> None:
+    """Ensure worker-thread cancellation stops the websocket task."""
+    logs_command = importlib.import_module("aion.cli.commands.logs")
+    started = Event()
+    cancelled = Event()
+    loop_ready = Event()
+    state: dict[str, object] = {}
+    errors: list[BaseException] = []
+
+    async def blocking_subscription() -> None:
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.set()
+
+    thread = Thread(
+        target=logs_command._run_coro_in_worker,
+        args=(blocking_subscription(), loop_ready, state, errors),
+        daemon=True,
+    )
+    thread.start()
+
+    assert started.wait(timeout=1)
+    logs_command._cancel_worker(loop_ready, state, thread, timeout=2)
+    assert cancelled.wait(timeout=2)
+    assert not thread.is_alive()
+    assert errors == []
 
 
 def test_login_is_not_a_python_cli_command() -> None:

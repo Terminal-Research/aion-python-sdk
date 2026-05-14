@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import logging
 import os
 import sys
 
-from aion.api.config import aion_api_settings
+from aion.shared.settings import api_settings as aion_api_settings
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
@@ -16,6 +15,7 @@ pytest.importorskip("httpx")
 pytest.importorskip("jwt")
 pytest.importorskip("gql")
 
+import aion.api.gql.client as gql_client_module
 from aion.api.gql.client import AionGqlClient
 from aion.api.http import aion_jwt_manager
 
@@ -26,7 +26,7 @@ from aion.api.http import aion_jwt_manager
 
 
 @pytest.mark.anyio("asyncio")
-async def test_initialize_twice_logs_warning(monkeypatch, caplog, dummy_jwt_manager) -> None:
+async def test_initialize_twice_logs_warning(monkeypatch, dummy_jwt_manager) -> None:
     """Repeated initialize calls log a warning and do not rebuild the client."""
     client = AionGqlClient(
         client_id="test-id",
@@ -41,15 +41,16 @@ async def test_initialize_twice_logs_warning(monkeypatch, caplog, dummy_jwt_mana
 
     mock_build_client.calls = 0
     monkeypatch.setattr(client, "_build_client", mock_build_client)
+    warning_messages: list[str] = []
+    monkeypatch.setattr(gql_client_module.logger, "warning", warning_messages.append)
 
     await client.initialize()
     assert mock_build_client.calls == 1
 
-    caplog.set_level(logging.WARNING)
     await client.initialize()
 
     assert mock_build_client.calls == 1
-    assert any("already initialized" in message for message in caplog.messages)
+    assert any("already initialized" in message for message in warning_messages)
 
 
 @pytest.mark.anyio("asyncio")

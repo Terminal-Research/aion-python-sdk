@@ -93,6 +93,18 @@ class DeltaGraphQLField(GraphQLField):
         return self
 
 
+class KVStringStringGraphQLField(GraphQLField):
+    def alias(self, alias: str) -> "KVStringStringGraphQLField":
+        self._alias = alias
+        return self
+
+
+class LogEventGraphQLField(GraphQLField):
+    def alias(self, alias: str) -> "LogEventGraphQLField":
+        self._alias = alias
+        return self
+
+
 class MutationsGraphQLField(GraphQLField):
     def alias(self, alias: str) -> "MutationsGraphQLField":
         self._alias = alias

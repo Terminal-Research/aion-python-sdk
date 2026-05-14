@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import Optional, List, Any, AsyncIterator
 
 from aion.shared.logging import get_logger
@@ -11,11 +12,30 @@ from .generated.graphql_client import (
     CapabilitySubjectGQLInput,
     PrincipalSelectorGQLInput,
     A2AStream,
+    VersionLogs,
 )
 from .generated.graphql_client.client import GqlClient
 from .generated.graphql_client.custom_mutations import Mutation
 
 logger = get_logger()
+
+
+def _serialize_offset_datetime(value: datetime | str) -> str:
+    """Serialize a datetime value for GraphQL OffsetDateTime inputs.
+
+    Args:
+        value (datetime | str): A datetime object or preformatted RFC 3339 string.
+
+    Returns:
+        str: RFC 3339-compatible timestamp string.
+    """
+    if isinstance(value, str):
+        return value
+
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+
+    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 class AionGqlClient:
@@ -224,6 +244,35 @@ class AionGqlClient:
             request=request,
             target=CapabilitySubjectGQLInput(distribution_id=distribution_id),
             principal=principal,
+            **kwargs
+        ):
+            yield chunk
+
+    async def version_logs(
+        self,
+        start_time: datetime | str,
+        **kwargs: Any
+    ) -> AsyncIterator[VersionLogs]:
+        """Stream log events for the authenticated deployment version.
+
+        The backend derives the version from the authenticated client
+        credentials/JWT, so callers must not provide a version or organization
+        identifier.
+
+        Args:
+            start_time (datetime | str): Inclusive lower bound for log events.
+                Datetimes are serialized as UTC RFC 3339 strings. Strings are
+                forwarded unchanged.
+            **kwargs (Any): Additional parameters forwarded to the generated
+                websocket subscription client.
+
+        Yields:
+            VersionLogs: Generated GraphQL subscription payload.
+        """
+        self._validate_client_before_execute()
+
+        async for chunk in self.client.version_logs(
+            start_time=_serialize_offset_datetime(start_time),
             **kwargs
         ):
             yield chunk

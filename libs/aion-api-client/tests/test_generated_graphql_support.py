@@ -92,3 +92,27 @@ def test_chat_completion_stream_contract_uses_optional_principal_selector():
     )
     assert "finishReason" in CHAT_COMPLETION_STREAM_GQL
     assert "finish_reason" not in CHAT_COMPLETION_STREAM_GQL
+
+
+def test_version_logs_subscription_is_generated():
+    from aion.api.gql.generated.graphql_client import (
+        VERSION_LOGS_GQL,
+        VersionLogs,
+    )
+    from aion.api.gql.generated.graphql_client.client import GqlClient
+
+    assert VersionLogs is not None
+    assert hasattr(GqlClient, "version_logs")
+    assert "subscription VersionLogs($startTime: OffsetDateTime!)" in (
+        VERSION_LOGS_GQL
+    )
+    assert "versionLogs(startTime: $startTime)" in VERSION_LOGS_GQL
+    assert "level" in VERSION_LOGS_GQL
+    assert "level_value" in VERSION_LOGS_GQL
+    assert "timestamp" in VERSION_LOGS_GQL
+    assert "message" in VERSION_LOGS_GQL
+    assert "properties" in VERSION_LOGS_GQL
+    assert "key" in VERSION_LOGS_GQL
+    assert "value" in VERSION_LOGS_GQL
+    assert "versionId" not in VERSION_LOGS_GQL
+    assert "organizationId" not in VERSION_LOGS_GQL

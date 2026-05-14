@@ -155,6 +155,38 @@ When enabled, the chat interface can receive real-time notifications from the ag
 **Agent ID:**
 Specifies which agent to interact with when multiple agents are available via a proxy server.
 
+---
+
+### `aion logs`
+
+Tails logs for the deployment version authenticated by the configured Aion
+client credentials. The backend derives the version from the JWT, so this
+command does not require a version ID or organization ID.
+
+**Usage:**
+
+```bash
+poetry run aion logs [OPTIONS]
+```
+
+**Options:**
+
+* `--since TEXT` - RFC 3339/ISO-8601 lower bound for log events. Defaults to the current UTC time.
+* `--properties` - Append structured log properties as `key=value` pairs.
+
+**Examples:**
+
+```bash
+# Tail logs from now
+poetry run aion logs
+
+# Tail logs from a specific UTC timestamp
+poetry run aion logs --since 2026-05-14T15:00:00Z
+
+# Include structured properties
+poetry run aion logs --properties
+```
+
 ## Configuration
 
 The CLI reads configuration from your `aion.yaml` file. The configuration must include:
