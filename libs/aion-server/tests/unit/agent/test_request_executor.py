@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from a2a.server.agent_execution import RequestContext
 from a2a.server.events import EventQueue
 from a2a.types import TaskState
-from a2a.utils.errors import TaskNotCancelableError, TaskNotFoundError
+from a2a.utils.errors import TaskNotCancelableError, TaskNotFoundError, UnsupportedOperationError
 
 from aion.server.agent.agent_execution.request_executor import AionAgentRequestExecutor
 
@@ -25,9 +25,24 @@ def _make_context(task=None):
     return ctx
 
 
+def _make_agent(cancel_side_effect=None):
+    """Create a mock AionAgent with configurable cancel behavior."""
+    agent = MagicMock()
+    if cancel_side_effect is not None:
+        agent.cancel = AsyncMock(side_effect=cancel_side_effect)
+    else:
+        agent.cancel = AsyncMock()
+    return agent
+
+
 @pytest.fixture
-def executor():
-    return AionAgentRequestExecutor(aion_agent=MagicMock())
+def agent():
+    return _make_agent()
+
+
+@pytest.fixture
+def executor(agent):
+    return AionAgentRequestExecutor(aion_agent=agent)
 
 
 @pytest.fixture
@@ -63,7 +78,10 @@ class TestCancel:
             await executor.cancel(ctx, event_queue)
 
     @pytest.mark.anyio
-    async def test_cancel_active_task_emits_canceled_event(self, executor, event_queue):
+    async def test_cancel_active_task_calls_framework_hook_and_emits_canceled(
+        self, agent, event_queue
+    ):
+        executor = AionAgentRequestExecutor(aion_agent=agent)
         task = _make_task(state=TaskState.TASK_STATE_WORKING)
         ctx = _make_context(task=task)
 
@@ -75,11 +93,31 @@ class TestCancel:
 
             await executor.cancel(ctx, event_queue)
 
+            agent.cancel.assert_awaited_once_with(ctx)
             MockUpdater.assert_called_once_with(event_queue, task.id, task.context_id)
             updater_instance.cancel.assert_awaited_once()
 
     @pytest.mark.anyio
-    async def test_cancel_input_required_task_is_cancelable(self, executor, event_queue):
+    async def test_cancel_unsupported_framework_still_emits_canceled(self, event_queue):
+        agent = _make_agent(cancel_side_effect=UnsupportedOperationError())
+        executor = AionAgentRequestExecutor(aion_agent=agent)
+        task = _make_task(state=TaskState.TASK_STATE_WORKING)
+        ctx = _make_context(task=task)
+
+        with patch(
+            "aion.server.agent.agent_execution.request_executor.TaskUpdater"
+        ) as MockUpdater:
+            updater_instance = AsyncMock()
+            MockUpdater.return_value = updater_instance
+
+            await executor.cancel(ctx, event_queue)
+
+            agent.cancel.assert_awaited_once_with(ctx)
+            updater_instance.cancel.assert_awaited_once()
+
+    @pytest.mark.anyio
+    async def test_cancel_input_required_task_is_cancelable(self, agent, event_queue):
+        executor = AionAgentRequestExecutor(aion_agent=agent)
         task = _make_task(state=TaskState.TASK_STATE_INPUT_REQUIRED)
         ctx = _make_context(task=task)
 
@@ -91,4 +129,5 @@ class TestCancel:
 
             await executor.cancel(ctx, event_queue)
 
+            agent.cancel.assert_awaited_once_with(ctx)
             updater_instance.cancel.assert_awaited_once()
