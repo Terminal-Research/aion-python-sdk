@@ -5,7 +5,7 @@ from aion.shared.agent.adapters import ExecutionSnapshot, ExecutionStatus, Inter
 
 from aion.server_langgraph.state.adapter import LangGraphStateAdapter
 
-from .helpers import make_execution_snapshot, make_interrupt_info
+from ..helpers import make_execution_snapshot, make_interrupt_info
 
 
 def make_mock_snapshot():
