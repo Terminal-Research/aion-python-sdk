@@ -1,16 +1,21 @@
 # Aion API Client
 
-This library provides a websocket GraphQL client for the Aion API. It uses
-[gql](https://gql.readthedocs.io/) and [ariadne-codegen](https://ariadnegraphql.org/docs/ariadne-codegen)
-to generate typed operations from the provided GraphQL schema. Settings are
-managed by [Pydantic Settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) and loaded from
-environment variables and `.env` file.
+This library provides low-level Aion control-plane API access. It includes a
+websocket GraphQL client generated with
+[gql](https://gql.readthedocs.io/) and
+[ariadne-codegen](https://ariadnegraphql.org/docs/ariadne-codegen), plus REST
+configuration helpers used by higher-level Aion framework packages.
 
-The client authenticates with the Aion API using a `client_id` and `secret_key`.
-A JWT is obtained by POSTing these values to `/auth/token`. The returned token is
-passed to the websocket endpoint `/ws/graphql` via the `token` query parameter.
-These credentials must be supplied via the `AION_CLIENT_ID` and `AION_CLIENT_SECRET`
-environment variables. The token is refreshed automatically when it expires.
+Settings are managed by
+[Pydantic Settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/)
+and loaded from environment variables and `.env` files.
+
+The client authenticates with the Aion API using a `client_id` and
+`client_secret`. A JWT is obtained by POSTing these values to `/auth/token`.
+The returned token is passed to the websocket endpoint `/ws/graphql` via the
+`token` query parameter. These credentials must be supplied via
+`AION_CLIENT_ID` and `AION_CLIENT_SECRET` environment variables. The token is
+refreshed automatically when it expires.
 
 ## Usage
 
@@ -33,6 +38,17 @@ AION_CLIENT_SECRET=your-secret
 AION_API_HOST=https://api.aion.to
 AION_API_KEEP_ALIVE=60
 ```
+
+## REST Endpoints
+
+The REST helpers target these control-plane endpoints:
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /auth/token` | Exchanges Aion client credentials for an API token. |
+| `GET /v1/models` | Lists model-service catalog entries available through Aion. |
+| `GET /v1/models/{model}` | Retrieves one model-service catalog entry. |
+| `POST /v1/chat/completions` | Creates a model-service chat completion, including streaming responses when requested. |
 
 ## Development
 

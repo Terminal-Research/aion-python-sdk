@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "aion-plugin-adk"
 version = "0.1.0"
-description = ""
+description = "Google ADK control-plane plugin for Aion Server"
 authors = ["Terminal Research Team <support@terminal.exchange>"]
 readme = "README.md"
 packages = [{ include = "aion", from = "src" }]
