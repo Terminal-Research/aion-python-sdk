@@ -7,7 +7,7 @@ managed by [Pydantic Settings](https://docs.pydantic.dev/latest/concepts/pydanti
 environment variables and `.env` file.
 
 The client authenticates with the Aion API using a `client_id` and `secret_key`.
-A JWT is obtained by POSTing these values to `/auth/token`. The returned token is
+A JWT is obtained by POSTing these values to `/auth/tokens`. The returned token is
 passed to the websocket endpoint `/ws/graphql` via the `token` query parameter.
 These credentials must be supplied via the `AION_CLIENT_ID` and `AION_CLIENT_SECRET`
 environment variables. The token is refreshed automatically when it expires.
