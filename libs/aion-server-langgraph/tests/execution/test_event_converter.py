@@ -16,7 +16,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 
 from aion.server_langgraph.execution.event_converter import LangGraphA2AConverter
 
-from .helpers import make_ai_message, make_interrupt_info, make_mock_chunk
+from ..helpers import make_ai_message, make_interrupt_info, make_mock_chunk
 
 LC_CONVERTER_PATH = "aion.server_langgraph.execution.event_converter.LcToA2AConverter.from_message"
 

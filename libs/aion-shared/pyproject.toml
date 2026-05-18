@@ -13,10 +13,16 @@ pydantic-settings = ">=2.3.4"
 python-dotenv = ">=1.0.1"
 PyYAML = "^6.0.0"
 a2a-sdk = { extras = ["telemetry", "http-server"], version = "^1.0.3" }
-# TODO: Remove this protobuf pin once a2a-sdk ships a release that replaces
-# FieldDescriptor.label with FieldDescriptor.is_repeated for protobuf 7+ compatibility.
-protobuf = ">=6,<7"
 python-logstash-async = "^4.0.1"
+
+[tool.poetry.group.dev.dependencies]
+pytest = ">=8.0.0"
+pytest-asyncio = ">=0.24"
+pytest-cov = "^7.1.0"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
 
 [build-system]
 requires = ["poetry-core"]

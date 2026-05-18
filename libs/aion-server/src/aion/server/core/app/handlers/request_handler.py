@@ -3,13 +3,12 @@ from a2a.server.agent_execution.active_task import ActiveTask
 from a2a.server.context import ServerCallContext
 from a2a.server.events import Event
 from a2a.server.request_handlers import DefaultRequestHandlerV2
-from a2a.types import SendMessageRequest, TaskNotFoundError
-from a2a.utils.task import validate_history_length
+from a2a.types import SendMessageRequest
 from aion.shared.a2a.constants import NON_ACTIVE_TASK_STATES
 from aion.shared.types import ContextsList, Conversation, GetContextParams, GetContextsListParams
 from collections.abc import AsyncGenerator
 from functools import wraps
-from typing import cast, override
+from typing import override
 
 from aion.server.agent.agent_execution.active_task_registry import AionActiveTaskRegistry
 from aion.server.tasks import store_manager
@@ -50,47 +49,8 @@ class AionRequestHandler(DefaultRequestHandlerV2):
             params: SendMessageRequest,
             call_context: ServerCallContext,
     ) -> tuple[ActiveTask, RequestContext]:
-        validate_history_length(params.configuration)
-
-        original_task_id = params.message.task_id or None
-        original_context_id = params.message.context_id or None
-
-        if original_task_id:
-            task = await self.task_store.get(original_task_id, call_context)
-            if not task:
-                raise TaskNotFoundError(f'Task {original_task_id} not found')
-
-        # Build context to resolve or generate missing IDs
-        request_context = await self._request_context_builder.build(
-            params=params,
-            task_id=original_task_id,
-            context_id=original_context_id,
-            # We will get the task when we have to process the request to avoid concurrent read/write issues.
-            task=None,
-            context=call_context,
-        )
-
-        task_id = cast('str', request_context.task_id)
-        context_id = cast('str', request_context.context_id)
-
-        if (
-                self._push_config_store
-                and params.configuration.HasField("task_push_notification_config")
-        ):
-            await self._push_config_store.set_info(
-                task_id,
-                params.configuration.task_push_notification_config,
-                call_context,
-            )
-
-        active_task = await self._active_task_registry.get_or_create(
-            task_id,
-            context_id=context_id,
-            call_context=call_context,
-            create_task_if_missing=True,
-        )
-
-        return active_task, request_context
+        """Setup the active task registry with preprocessors."""
+        return await super()._setup_active_task(params, call_context)
 
     @staticmethod
     async def on_get_context(

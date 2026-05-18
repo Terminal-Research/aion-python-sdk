@@ -30,7 +30,7 @@ class AionHttpClient:
         """
         response = await self.request(
             method="POST",
-            endpoint="/auth/token",
+            endpoint="/auth/tokens",
             token=None,
             json_data=self._authentication_payload(),
         )
@@ -93,7 +93,7 @@ class AionHttpClient:
 
         Args:
             method (str): HTTP method (GET, POST, PUT, DELETE, etc.)
-            endpoint (str): API endpoint path (e.g., '/users', '/auth/token')
+            endpoint (str): API endpoint path (e.g., '/users', '/auth/tokens')
             token (Optional[str]): Bearer token for authentication
             json_data (Optional[Dict[str, Any]]): JSON payload for the request body
             params (Optional[Dict[str, Any]]): URL query parameters

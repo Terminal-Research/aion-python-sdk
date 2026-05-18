@@ -6,7 +6,7 @@ from langchain_core.messages import HumanMessage
 
 from aion.server_langgraph.execution.transformer import LangGraphTransformer
 
-from .helpers import make_execution_config, make_mock_request_context
+from ..helpers import make_execution_config, make_mock_request_context
 
 A2A_CONVERTER_PATH = "aion.server_langgraph.execution.transformer.A2AToLcConverter.from_parts"
 
