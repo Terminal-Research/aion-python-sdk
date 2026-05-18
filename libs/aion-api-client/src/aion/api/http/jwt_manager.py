@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 from abc import ABC, abstractmethod
 from contextlib import suppress
 from dataclasses import dataclass
@@ -137,6 +138,7 @@ class AionRefreshingJWTManager(AionJWTManager):
         super().__init__()
         self._client = AionHttpClient()
         self._auth_failed = False
+        self._sync_lock = threading.Lock()
 
     async def get_token(self) -> Optional[str]:
         """
@@ -184,6 +186,64 @@ class AionRefreshingJWTManager(AionJWTManager):
 
             self._token = Token.from_jwt(token_value)
             # Reset auth failed flag on successful authentication
+            self._auth_failed = False
+
+            if first_token:
+                processed_action = "fetched"
+            else:
+                processed_action = "refreshed"
+            logger.info(
+                "Token %s successfully, expires at: %s",
+                processed_action,
+                self._token.expires_at,
+            )
+
+        except AionAuthenticationError:
+            self._auth_failed = True
+            self._token = None
+            logger.warning(
+                "Aion authentication failed with 401 error. "
+                "Further refresh attempts will be skipped until reset.")
+
+        except Exception as ex:
+            logger.error("Token refresh failed: %s", ex)
+            raise
+
+    def get_token_sync(self) -> Optional[str]:
+        """
+        Get a valid token string from synchronous code.
+
+        This checks the same cached token used by async callers and refreshes
+        it through the synchronous HTTP client when it is missing, expired, or
+        expiring soon.
+        """
+        with self._sync_lock:
+            if self._auth_failed:
+                return None
+
+            if self.should_refresh_token():
+                with suppress(Exception):
+                    self._refresh_token_sync()
+            return None if not self._token else self._token.value
+
+    def _refresh_token_sync(self) -> None:
+        """
+        Refresh the token through the synchronous HTTP client.
+
+        This is used by OpenAI-compatible model clients that call API-key
+        providers from synchronous request paths.
+        """
+        if self._auth_failed:
+            return
+
+        first_token = self._token is None
+        try:
+            data = self._client.authenticate_sync()
+            token_value = data.get("accessToken")
+            if not token_value:
+                raise ValueError("Access Token is missing in response.")
+
+            self._token = Token.from_jwt(token_value)
             self._auth_failed = False
 
             if first_token:

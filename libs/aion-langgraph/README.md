@@ -18,6 +18,25 @@ pip install aion-cli[langgraph]
 
 ---
 
+## Models
+
+Use `aion_chat_model` when you want LangGraph/LangChain model calls to flow
+through Aion's OpenAI-compatible model proxy:
+
+```python
+from aion.langgraph import aion_chat_model
+
+llm = aion_chat_model("model-id-from-control-plane")
+```
+
+The helper calls LangChain's `init_chat_model` with `model_provider="openai"`,
+`base_url="<AION_API_HOST>/v1"`, and an Aion JWT provider backed by the
+configured `AION_CLIENT_ID` and `AION_CLIENT_SECRET`. Any other keyword
+arguments are passed through to LangChain. Look up available model IDs in the
+Aion control plane model catalog.
+
+---
+
 ## Event Routing — `add_event_handlers`
 
 `add_event_handlers` registers a single dispatcher node in the graph that routes inbound A2A events to the appropriate handler based on event kind.
