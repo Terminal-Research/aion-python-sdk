@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "aion-cli"
+name = "aion-sdk"
 version = "0.1.0"
 description = "Command line interface for the Aion Python SDK"
 authors = ["Terminal Research Team <support@terminal.exchange>"]
