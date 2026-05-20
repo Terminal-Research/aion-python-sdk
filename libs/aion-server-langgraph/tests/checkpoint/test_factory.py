@@ -3,9 +3,9 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from langgraph.checkpoint.memory import InMemorySaver
 
-from aion.server_langgraph.checkpoint.backends.memory import MemoryBackend
-from aion.server_langgraph.checkpoint.backends.postgres import AionAsyncPostgresSaver, PostgresBackend
-from aion.server_langgraph.checkpoint.factory import CheckpointerFactory
+from aion.langgraph.server.checkpoint.backends.memory import MemoryBackend
+from aion.langgraph.server.checkpoint.backends.postgres import AionAsyncPostgresSaver, PostgresBackend
+from aion.langgraph.server.checkpoint.factory import CheckpointerFactory
 
 
 class TestCheckpointerFactory:

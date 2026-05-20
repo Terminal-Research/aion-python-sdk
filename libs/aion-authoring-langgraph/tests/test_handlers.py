@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, Mock, patch
 
 from langgraph.constants import START
 
-from aion.langgraph.handlers import (
+from aion.langgraph.authoring.handlers import (
     _HandlerInvoker,
     AionEventHandlers,
     AION_ROUTER_NODE_NAME,
@@ -88,13 +88,13 @@ class TestHandlerInvoker:
         invoker = _HandlerInvoker(handler)
         assert invoker._needs_runtime is False
 
-        with patch("aion.langgraph.handlers._build_context_dependencies") as mock_build:
+        with patch("aion.langgraph.authoring.handlers._build_context_dependencies") as mock_build:
             await invoker.invoke("state")
             mock_build.assert_not_called()
 
     async def test_thread_param_injected(self):
         # handler declaring 'thread' receives a Thread instance built from context
-        from aion.langgraph.runtime.context.thread import Thread
+        from aion.langgraph.authoring.runtime.context.thread import Thread
 
         received = {}
 
@@ -206,7 +206,7 @@ class TestAionEventHandlersCall:
         ctx = make_mock_context(event=make_mock_event(kind=EventKind.MESSAGE, payload=None))
         runtime = make_mock_runtime(ctx)
 
-        with patch("aion.langgraph.handlers.logger") as mock_logger:
+        with patch("aion.langgraph.authoring.handlers.logger") as mock_logger:
             result = await dispatcher({}, runtime=runtime)
 
         assert result is None

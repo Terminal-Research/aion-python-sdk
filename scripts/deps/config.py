@@ -11,15 +11,15 @@ LIBS_DIR = ROOT_DIR / "libs"
 PACKAGES = {
     "aion-sdk": [
         "aion-server",
-        "aion-langgraph",
+        "aion-authoring-langgraph",
         "aion-server-langgraph",
         "aion-adk",
         "aion-plugin-adk",
     ],
     "aion-server": ["aion-core", "aion-api-client", "aion-db"],
-    "aion-server-langgraph": ["aion-core", "aion-server", "aion-langgraph", "aion-db"],
+    "aion-server-langgraph": ["aion-core", "aion-server", "aion-authoring-langgraph", "aion-db"],
     "aion-adk": ["aion-api-client"],
-    "aion-langgraph": ["aion-core", "aion-api-client"],
+    "aion-authoring-langgraph": ["aion-core", "aion-api-client"],
     "aion-plugin-adk": ["aion-core", "aion-server", "aion-db"],
     "aion-api-client": ["aion-core"],
     "aion-mcp": [],

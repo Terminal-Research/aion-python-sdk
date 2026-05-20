@@ -27,7 +27,7 @@ from google.protobuf import json_format, struct_pb2
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
 
 from ..converters.lc_to_a2a import LcToA2AConverter
-from aion.langgraph.events.custom_events import (
+from aion.langgraph.authoring.events.custom_events import (
     ArtifactCustomEvent,
     MessageCustomEvent,
     ReactionCustomEvent,

@@ -4,11 +4,11 @@ import pytest
 from a2a.types import Part
 from langchain_core.messages import HumanMessage
 
-from aion.server_langgraph.execution.transformer import LangGraphTransformer
+from aion.langgraph.server.execution.transformer import LangGraphTransformer
 
 from ..helpers import make_execution_config, make_mock_request_context
 
-A2A_CONVERTER_PATH = "aion.server_langgraph.execution.transformer.A2AToLcConverter.from_parts"
+A2A_CONVERTER_PATH = "aion.langgraph.server.execution.transformer.A2AToLcConverter.from_parts"
 
 
 class TestGenerateLangGraphConfig:

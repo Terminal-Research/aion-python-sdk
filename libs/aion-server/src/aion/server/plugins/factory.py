@@ -201,7 +201,7 @@ class PluginFactory:
     async def _discover_plugins(self) -> list[BasePluginProtocol]:
         """Discover available plugins by attempting imports."""
         plugin_configs = [
-            ("aion.server_langgraph", "LangGraphPlugin", "LangGraph"),
+            ("aion.langgraph.server", "LangGraphPlugin", "LangGraph"),
             ("aion.adk", "ADKPlugin", "ADK"),
         ]
 

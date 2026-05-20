@@ -6,7 +6,7 @@ import pytest
 from a2a.types import Part
 from google.protobuf import json_format, struct_pb2
 
-from aion.server_langgraph.converters.a2a_to_lc import A2AToLcConverter
+from aion.langgraph.server.converters.a2a_to_lc import A2AToLcConverter
 
 
 class TestFromParts:

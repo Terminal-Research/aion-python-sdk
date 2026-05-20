@@ -3,7 +3,7 @@ from unittest.mock import Mock, patch
 import pytest
 from aion.server.agent.adapters import ExecutionSnapshot, ExecutionStatus, InterruptInfo
 
-from aion.server_langgraph.state.adapter import LangGraphStateAdapter
+from aion.langgraph.server.state.adapter import LangGraphStateAdapter
 
 from ..helpers import make_execution_snapshot, make_interrupt_info
 

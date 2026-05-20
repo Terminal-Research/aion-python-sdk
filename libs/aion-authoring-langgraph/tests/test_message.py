@@ -1,8 +1,8 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
-from aion.langgraph.runtime.context.message import Message, User
-from aion.langgraph.events.custom_events import ReactionCustomEvent
+from aion.langgraph.authoring.runtime.context.message import Message, User
+from aion.langgraph.authoring.events.custom_events import ReactionCustomEvent
 from aion.core.constants import EVENT_EXTENSION_URI_V1
 
 from tests.helpers import make_mock_context, make_mock_event, make_mock_inbox
@@ -187,7 +187,7 @@ class TestMessageReact:
         # react() builds and emits a ReactionActionPayload with all fields set
         msg, _ = self._make_react_ready_message()
 
-        with patch("aion.langgraph.stream.emit_reaction") as mock_emit:
+        with patch("aion.langgraph.authoring.stream.emit_reaction") as mock_emit:
             await msg.react("thumbsup")
             mock_emit.assert_called_once()
             _, reaction_payload = mock_emit.call_args[0]
@@ -199,7 +199,7 @@ class TestMessageReact:
         # operation defaults to "add" when not specified
         msg, _ = self._make_react_ready_message()
 
-        with patch("aion.langgraph.stream.emit_reaction") as mock_emit:
+        with patch("aion.langgraph.authoring.stream.emit_reaction") as mock_emit:
             await msg.react("thumbsup")
             _, reaction_payload = mock_emit.call_args[0]
             assert reaction_payload.operation == "add"
@@ -208,7 +208,7 @@ class TestMessageReact:
         # operation="remove" is passed through to the payload
         msg, _ = self._make_react_ready_message()
 
-        with patch("aion.langgraph.stream.emit_reaction") as mock_emit:
+        with patch("aion.langgraph.authoring.stream.emit_reaction") as mock_emit:
             await msg.react("thumbsup", operation="remove")
             _, reaction_payload = mock_emit.call_args[0]
             assert reaction_payload.operation == "remove"
@@ -217,7 +217,7 @@ class TestMessageReact:
         # display_value is forwarded to the ReactionActionPayload
         msg, _ = self._make_react_ready_message()
 
-        with patch("aion.langgraph.stream.emit_reaction") as mock_emit:
+        with patch("aion.langgraph.authoring.stream.emit_reaction") as mock_emit:
             await msg.react("thumbsup", display_value="+1")
             _, reaction_payload = mock_emit.call_args[0]
             assert reaction_payload.display_value == "+1"
@@ -227,8 +227,8 @@ class TestMessageReact:
         ctx = make_mock_context(event=None)
         msg = make_message(context=ctx)
 
-        with patch("aion.langgraph.runtime.context.message.logger") as mock_logger:
-            with patch("aion.langgraph.stream.emit_reaction") as mock_emit:
+        with patch("aion.langgraph.authoring.runtime.context.message.logger") as mock_logger:
+            with patch("aion.langgraph.authoring.stream.emit_reaction") as mock_emit:
                 await msg.react("thumbsup")
                 mock_emit.assert_not_called()
                 mock_logger.warning.assert_called_once()
@@ -242,8 +242,8 @@ class TestMessageReact:
         ctx = make_mock_context(event=make_mock_event(payload=payload))
         msg = make_message(context=ctx)
 
-        with patch("aion.langgraph.runtime.context.message.logger") as mock_logger:
-            with patch("aion.langgraph.stream.emit_reaction") as mock_emit:
+        with patch("aion.langgraph.authoring.runtime.context.message.logger") as mock_logger:
+            with patch("aion.langgraph.authoring.stream.emit_reaction") as mock_emit:
                 await msg.react("thumbsup")
                 mock_emit.assert_not_called()
                 mock_logger.warning.assert_called_once()
@@ -257,8 +257,8 @@ class TestMessageReact:
         ctx = make_mock_context(event=make_mock_event(payload=payload))
         msg = make_message(context=ctx)
 
-        with patch("aion.langgraph.runtime.context.message.logger") as mock_logger:
-            with patch("aion.langgraph.stream.emit_reaction") as mock_emit:
+        with patch("aion.langgraph.authoring.runtime.context.message.logger") as mock_logger:
+            with patch("aion.langgraph.authoring.stream.emit_reaction") as mock_emit:
                 await msg.react("thumbsup")
                 mock_emit.assert_not_called()
                 mock_logger.warning.assert_called_once()
@@ -275,6 +275,6 @@ class TestMessageReact:
         mock_thread.get_writer = Mock(return_value=None)
         msg = make_message(context=ctx, thread=mock_thread)
 
-        with patch("aion.langgraph.stream.emit_reaction") as mock_emit:
+        with patch("aion.langgraph.authoring.stream.emit_reaction") as mock_emit:
             await msg.react("thumbsup")
             mock_emit.assert_not_called()

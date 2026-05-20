@@ -2,7 +2,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 from a2a.types import Artifact, Part, Role, TaskArtifactUpdateEvent, TaskState, TaskStatusUpdateEvent
-from aion.langgraph.events.custom_events import (
+from aion.langgraph.authoring.events.custom_events import (
     ArtifactCustomEvent,
     MessageCustomEvent,
     ReactionCustomEvent,
@@ -14,11 +14,11 @@ from aion.core.types import ArtifactId
 from aion.core.types.a2a.extensions.messaging import MessageActionPayload, ReactionActionPayload
 from langchain_core.messages import AIMessage, HumanMessage
 
-from aion.server_langgraph.execution.event_converter import LangGraphA2AConverter
+from aion.langgraph.server.execution.event_converter import LangGraphA2AConverter
 
 from ..helpers import make_ai_message, make_interrupt_info, make_mock_chunk
 
-LC_CONVERTER_PATH = "aion.server_langgraph.execution.event_converter.LcToA2AConverter.from_message"
+LC_CONVERTER_PATH = "aion.langgraph.server.execution.event_converter.LcToA2AConverter.from_message"
 
 
 class TestConvert:

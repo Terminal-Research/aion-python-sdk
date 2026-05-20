@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import inspect
-from aion.langgraph.runtime.context.thread import Thread
+from aion.langgraph.authoring.runtime.context.thread import Thread
 from langgraph.constants import START
 from langgraph.graph import StateGraph
 from langgraph.runtime import Runtime

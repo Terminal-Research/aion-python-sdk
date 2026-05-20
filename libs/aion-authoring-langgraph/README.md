@@ -1,4 +1,4 @@
-# aion-langgraph
+# aion-authoring-langgraph
 
 LangGraph authoring toolkit for Aion. Provides state helpers, streaming utilities, and event-routing primitives that graph authors import directly. Safe to install without pulling in any server or plugin machinery.
 
@@ -7,7 +7,7 @@ LangGraph authoring toolkit for Aion. Provides state helpers, streaming utilitie
 ## Installation
 
 ```bash
-pip install aion-langgraph
+pip install aion-authoring-langgraph
 ```
 
 Or, if you are serving the agent with Aion:
@@ -24,7 +24,7 @@ Use `aion_chat_model` when you want LangGraph/LangChain model calls to flow
 through Aion's OpenAI-compatible model proxy:
 
 ```python
-from aion.langgraph import aion_chat_model
+from aion.langgraph.authoring import aion_chat_model
 
 llm = aion_chat_model("model-id-from-control-plane")
 ```
@@ -43,7 +43,7 @@ Aion control plane model catalog.
 
 ```python
 from langgraph.graph import StateGraph
-from aion.langgraph import add_event_handlers
+from aion.langgraph.authoring import add_event_handlers
 
 builder = StateGraph(State)
 builder.add_node("process", process_node)
@@ -121,7 +121,7 @@ Use these inside any graph node that receives a `StreamWriter`. They emit events
 ```python
 from langgraph.types import StreamWriter
 from langchain_core.messages import AIMessage, AIMessageChunk
-from aion.langgraph import emit_message, emit_task_update, emit_file_artifact, emit_data_artifact
+from aion.langgraph.authoring import emit_message, emit_task_update, emit_file_artifact, emit_data_artifact
 
 def my_node(state: dict, writer: StreamWriter):
     # Ephemeral notification — reaches client, not saved in task history

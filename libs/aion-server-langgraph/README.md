@@ -38,10 +38,10 @@ class State(TypedDict):
 
 ### Runtime context — A2A envelope
 
-The full A2A context (task, message, event kind, identity) is passed to the graph via LangGraph's native runtime context and is accessible through `AionRuntimeContext`. The recommended way to consume it is via `add_event_handlers` from `aion-langgraph`, which handles injection automatically:
+The full A2A context (task, message, event kind, identity) is passed to the graph via LangGraph's native runtime context and is accessible through `AionRuntimeContext`. The recommended way to consume it is via `add_event_handlers` from `aion-authoring-langgraph`, which handles injection automatically:
 
 ```python
-from aion.langgraph import add_event_handlers, Thread, Message
+from aion.langgraph.authoring import add_event_handlers, Thread, Message
 
 async def handle_message(thread: Thread, message: Message):
     await thread.reply(f"Got: {message.text}")
@@ -49,7 +49,7 @@ async def handle_message(thread: Thread, message: Message):
 add_event_handlers(builder, on_message=handle_message)
 ```
 
-For lower-level access, declare `runtime` or `context` in a handler signature — see [aion-langgraph](../aion-langgraph/README.md) for the full list of injectable parameters.
+For lower-level access, declare `runtime` or `context` in a handler signature — see [aion-authoring-langgraph](../aion-authoring-langgraph/README.md) for the full list of injectable parameters.
 
 ---
 
