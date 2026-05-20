@@ -1,6 +1,6 @@
 import pytest
 
-from aion.server_langgraph.execution.event_converter import LangGraphA2AConverter
+from aion.langgraph.server.execution.event_converter import LangGraphA2AConverter
 
 TASK_ID = "task-123"
 CONTEXT_ID = "ctx-456"

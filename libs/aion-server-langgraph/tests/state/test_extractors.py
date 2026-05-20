@@ -4,7 +4,7 @@ import pytest
 from aion.server.agent.adapters import ExecutionStatus
 from langgraph.types import Interrupt
 
-from aion.server_langgraph.state.extractors import (
+from aion.langgraph.server.state.extractors import (
     MessagesExtractor,
     MetadataExtractor,
     StateValuesExtractor,

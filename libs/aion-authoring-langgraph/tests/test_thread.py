@@ -3,9 +3,9 @@ from unittest.mock import MagicMock, Mock, patch
 from langchain_core.messages import AIMessage, AIMessageChunk
 from a2a.types import Artifact
 
-from aion.langgraph.runtime.context.thread import Thread
-from aion.langgraph.runtime.context.message import Message
-from aion.langgraph.events.custom_events import ArtifactCustomEvent, MessageCustomEvent
+from aion.langgraph.authoring.runtime.context.thread import Thread
+from aion.langgraph.authoring.runtime.context.message import Message
+from aion.langgraph.authoring.events.custom_events import ArtifactCustomEvent, MessageCustomEvent
 
 from tests.helpers import (
     make_mock_context,
@@ -270,7 +270,7 @@ class TestThreadPost:
             network="A2A", default_reply_target="C1", writer=None,
         )
 
-        with patch("aion.langgraph.runtime.context.thread.get_stream_writer", side_effect=RuntimeError("no writer")):
+        with patch("aion.langgraph.authoring.runtime.context.thread.get_stream_writer", side_effect=RuntimeError("no writer")):
             result = await thread.post("Hello")
 
         assert result is None
@@ -380,5 +380,5 @@ class TestThreadTyping:
             network="A2A", default_reply_target="C1", writer=None,
         )
 
-        with patch("aion.langgraph.runtime.context.thread.get_stream_writer", side_effect=RuntimeError("no writer")):
+        with patch("aion.langgraph.authoring.runtime.context.thread.get_stream_writer", side_effect=RuntimeError("no writer")):
             await thread.typing("Processing...")  # must not raise

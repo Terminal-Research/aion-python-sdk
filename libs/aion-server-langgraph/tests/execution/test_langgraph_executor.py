@@ -5,8 +5,8 @@ from a2a.types import Message, Part, Role, TaskState, TaskStatusUpdateEvent
 from aion.server.agent.adapters import ExecutionSnapshot, ExecutionStatus
 from aion.server.agent.exceptions import ExecutionError, StateRetrievalError
 
-from aion.server_langgraph.execution.langgraph_executor import LangGraphExecutor
-from aion.server_langgraph.execution.stream_executor import StreamResult
+from aion.langgraph.server.execution.langgraph_executor import LangGraphExecutor
+from aion.langgraph.server.execution.stream_executor import StreamResult
 
 from ..helpers import make_execution_config, make_mock_request_context
 
@@ -49,7 +49,7 @@ class TestStream:
         executor = LangGraphExecutor(compiled_graph=graph, config=Mock())
 
         with patch(
-            "aion.server_langgraph.execution.event_converter.LangGraphA2AConverter.convert",
+            "aion.langgraph.server.execution.event_converter.LangGraphA2AConverter.convert",
             return_value=[stream_event],
         ), patch.object(
             executor._state_adapter,
@@ -190,7 +190,7 @@ class TestGetStateAndFinalize:
                     make_config(),
                     make_context(),
                     converter=Mock(wraps=__import__(
-                        "aion.server_langgraph.execution.event_converter",
+                        "aion.langgraph.server.execution.event_converter",
                         fromlist=["LangGraphA2AConverter"],
                     ).LangGraphA2AConverter(task_id="task-1", context_id="ctx-1")),
                 )

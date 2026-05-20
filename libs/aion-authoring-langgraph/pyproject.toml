@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "aion-langgraph"
+name = "aion-authoring-langgraph"
 version = "0.1.0"
 description = "Aion LangGraph authoring toolkit"
 authors = ["Terminal Research Team <support@terminal.exchange>"]

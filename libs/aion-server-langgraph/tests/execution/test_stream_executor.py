@@ -4,8 +4,8 @@ import pytest
 from a2a.types import Artifact, Part, TaskArtifactUpdateEvent, TaskState, TaskStatus, TaskStatusUpdateEvent
 from aion.core.types import ArtifactId
 
-from aion.server_langgraph.execution.event_converter import LangGraphA2AConverter
-from aion.server_langgraph.execution.stream_executor import StreamExecutor
+from aion.langgraph.server.execution.event_converter import LangGraphA2AConverter
+from aion.langgraph.server.execution.stream_executor import StreamExecutor
 
 TASK_ID = "task-1"
 CONTEXT_ID = "ctx-1"

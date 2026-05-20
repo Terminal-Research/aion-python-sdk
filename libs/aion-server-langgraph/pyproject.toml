@@ -10,7 +10,7 @@ packages = [{ include = "aion", from = "src" }]
 python = "^3.12.0"
 langgraph = ">=0.6.0,<=1.0.5"
 langgraph-checkpoint-postgres = ">=2.0.0,<=3.0.2"
-aion-langgraph = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-langgraph" }
+aion-authoring-langgraph = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-authoring-langgraph" }
 aion-db = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-db" }
 aion-core = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-core" }
 aion-server = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-server" }

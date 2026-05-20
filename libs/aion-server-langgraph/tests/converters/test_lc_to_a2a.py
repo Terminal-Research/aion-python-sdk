@@ -4,7 +4,7 @@ from unittest.mock import Mock, patch
 import pytest
 from a2a.types import Part
 
-from aion.server_langgraph.converters.lc_to_a2a import LcToA2AConverter
+from aion.langgraph.server.converters.lc_to_a2a import LcToA2AConverter
 
 
 def make_mock_message(content_blocks):

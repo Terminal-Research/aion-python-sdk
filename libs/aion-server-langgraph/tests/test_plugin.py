@@ -2,8 +2,8 @@ from unittest.mock import Mock
 
 import pytest
 
-from aion.server_langgraph.adapter import LangGraphAdapter
-from aion.server_langgraph.plugin import LangGraphPlugin
+from aion.langgraph.server.adapter import LangGraphAdapter
+from aion.langgraph.server.plugin import LangGraphPlugin
 
 
 class TestLangGraphPlugin:

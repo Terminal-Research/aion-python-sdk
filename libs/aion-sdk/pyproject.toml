@@ -10,19 +10,19 @@ include = ["src/aion/cli/bin/*"]
 [tool.poetry.dependencies]
 python = "^3.12.0"
 aion-core = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-core" }
-aion-langgraph = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-langgraph", optional = true }
+aion-authoring-langgraph = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-authoring-langgraph", optional = true }
 aion-server-langgraph = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-server-langgraph", optional = true }
 aion-plugin-adk = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-plugin-adk", optional = true }
 aion-adk = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-adk", optional = true }
 asyncclick = "^8.0.1.2"
 
 [tool.poetry.extras]
-langgraph-authoring = ["aion-langgraph"]
-langgraph-server = ["aion-langgraph", "aion-server-langgraph"]
+langgraph-authoring = ["aion-authoring-langgraph"]
+langgraph-server = ["aion-authoring-langgraph", "aion-server-langgraph"]
 adk-authoring = ["aion-adk"]
 adk-server = ["aion-adk", "aion-plugin-adk"]
 all = [
-    "aion-langgraph",
+    "aion-authoring-langgraph",
     "aion-server-langgraph",
     "aion-adk",
     "aion-plugin-adk"

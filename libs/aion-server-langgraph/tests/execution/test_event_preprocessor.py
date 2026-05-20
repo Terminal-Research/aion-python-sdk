@@ -1,6 +1,6 @@
 from unittest.mock import patch
 
-from aion.server_langgraph.execution.event_preprocessor import LangGraphEventPreprocessor
+from aion.langgraph.server.execution.event_preprocessor import LangGraphEventPreprocessor
 
 
 class TestLangGraphEventPreprocessor:
@@ -8,7 +8,7 @@ class TestLangGraphEventPreprocessor:
         preprocessor = LangGraphEventPreprocessor()
 
         with patch(
-            "aion.server_langgraph.execution.event_preprocessor.AgentExecutionScopeHelper.set_agent_framework_baggage"
+            "aion.langgraph.server.execution.event_preprocessor.AgentExecutionScopeHelper.set_agent_framework_baggage"
         ) as set_baggage:
             preprocessor.process("updates", {"agent_node": {"state": 1}})
 
@@ -18,7 +18,7 @@ class TestLangGraphEventPreprocessor:
         preprocessor = LangGraphEventPreprocessor()
 
         with patch(
-            "aion.server_langgraph.execution.event_preprocessor.AgentExecutionScopeHelper.set_agent_framework_baggage"
+            "aion.langgraph.server.execution.event_preprocessor.AgentExecutionScopeHelper.set_agent_framework_baggage"
         ) as set_baggage:
             preprocessor.process("messages", object())
 
@@ -28,7 +28,7 @@ class TestLangGraphEventPreprocessor:
         preprocessor = LangGraphEventPreprocessor()
 
         with patch(
-            "aion.server_langgraph.execution.event_preprocessor.AgentExecutionScopeHelper.set_agent_framework_baggage"
+            "aion.langgraph.server.execution.event_preprocessor.AgentExecutionScopeHelper.set_agent_framework_baggage"
         ) as set_baggage:
             preprocessor.process("updates", ["node"])
 
@@ -38,7 +38,7 @@ class TestLangGraphEventPreprocessor:
         preprocessor = LangGraphEventPreprocessor()
 
         with patch(
-            "aion.server_langgraph.execution.event_preprocessor.AgentExecutionScopeHelper.set_agent_framework_baggage"
+            "aion.langgraph.server.execution.event_preprocessor.AgentExecutionScopeHelper.set_agent_framework_baggage"
         ) as set_baggage:
             preprocessor.process("updates", {})
 

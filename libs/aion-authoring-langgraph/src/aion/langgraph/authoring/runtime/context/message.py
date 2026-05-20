@@ -74,7 +74,7 @@ class Message:
         Requires an inbound event with context_id and message_id in its payload.
         Logs a warning and does nothing if event context is unavailable.
         """
-        from aion.langgraph.stream import emit_reaction
+        from aion.langgraph.authoring.stream import emit_reaction
 
         event = self.context.event
         if event is None or event.payload is None:

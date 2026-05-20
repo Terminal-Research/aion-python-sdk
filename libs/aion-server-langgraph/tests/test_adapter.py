@@ -6,8 +6,8 @@ from aion.server.agent.exceptions import ConfigurationError
 from langgraph.graph import StateGraph
 from langgraph.pregel import Pregel
 
-from aion.server_langgraph.adapter import LangGraphAdapter
-from aion.server_langgraph.execution import LangGraphExecutor
+from aion.langgraph.server.adapter import LangGraphAdapter
+from aion.langgraph.server.execution import LangGraphExecutor
 
 
 class TestCanHandle:
@@ -191,7 +191,7 @@ class TestGetCheckpointer:
     async def test_exception_in_factory_returns_none(self):
         """If CheckpointerFactory.create raises, _get_checkpointer logs and returns None."""
         with patch(
-            "aion.server_langgraph.adapter.CheckpointerFactory.create",
+            "aion.langgraph.server.adapter.CheckpointerFactory.create",
             new=AsyncMock(side_effect=RuntimeError("db down")),
         ):
             result = await self.adapter._get_checkpointer()
