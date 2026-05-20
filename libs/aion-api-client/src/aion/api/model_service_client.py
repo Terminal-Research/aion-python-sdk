@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 import logging
 from typing import Mapping
 
-from aion.shared.settings import api_settings
+from aion.core.settings import api_settings
 
 from aion.api.exceptions import AionAuthenticationError
 from aion.api.http.jwt_manager import (

@@ -4,8 +4,8 @@ This module provides DbFactory which handles database connection setup,
 migrations, and resource cleanup.
 """
 
-from aion.shared.logging import get_logger
-from aion.shared.settings import db_settings
+from aion.core.logging import get_logger
+from aion.db.settings import db_settings
 
 from aion.db.postgres.utils import verify_connection
 from aion.db.postgres.manager import DbManager

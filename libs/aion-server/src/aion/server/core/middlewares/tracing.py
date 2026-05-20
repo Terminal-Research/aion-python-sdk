@@ -4,16 +4,16 @@ from typing import TYPE_CHECKING, Optional
 
 from a2a.utils import DEFAULT_RPC_URL
 from a2a.utils.telemetry import trace_function
-from aion.shared.agent.execution.scope import AgentExecutionScopeHelper
-from aion.shared.logging import get_logger
-from aion.shared.opentelemetry import generate_request_span_context
+from aion.server.agent.execution.scope import AgentExecutionScopeHelper
+from aion.core.logging import get_logger
+from aion.server.opentelemetry import generate_request_span_context
 from fastapi import Request, Response
 from opentelemetry import context
 from opentelemetry.trace import SpanKind
 from starlette.middleware.base import BaseHTTPMiddleware
 
 if TYPE_CHECKING:
-    from aion.shared.agent.execution import AgentExecutionScope
+    from aion.server.agent.execution import AgentExecutionScope
 
 
 __all__ = ["TracingMiddleware"]

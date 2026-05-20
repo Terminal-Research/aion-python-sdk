@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from aion.shared.logging import get_logger
+from aion.core.logging import get_logger
 from alembic import context
 from alembic.config import Config
 from sqlalchemy import create_engine, Engine, text
 
 logger = get_logger()
 
-from aion.shared.settings import db_settings
+from aion.db.settings import db_settings
 from aion.db.postgres.utils import convert_pg_url
 from aion.db.postgres.constants import AION_SCHEMA
 

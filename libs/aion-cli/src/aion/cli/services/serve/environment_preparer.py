@@ -4,8 +4,8 @@ from dataclasses import dataclass
 from typing import Optional
 
 from aion.api.gql import AionGqlContextClient
-from aion.shared.services import BaseExecuteService
-from aion.shared.settings import app_settings
+from aion.server.services import BaseExecuteService
+from aion.server.settings import app_settings
 
 
 @dataclass

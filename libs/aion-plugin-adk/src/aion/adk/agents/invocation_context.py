@@ -1,7 +1,7 @@
 import uuid
 from typing import Optional, TYPE_CHECKING
 
-from aion.shared.types.a2a.models import A2AInbox
+from aion.core.types.a2a.models import A2AInbox
 from google.adk.agents import InvocationContext, BaseAgent
 from google.adk.agents.run_config import RunConfig, StreamingMode
 from google.adk.artifacts import BaseArtifactService

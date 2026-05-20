@@ -11,12 +11,12 @@ Uses a composable extractor pattern to separate concerns:
 
 from typing import Any, Optional
 
-from aion.shared.agent.adapters import (
+from aion.server.agent.adapters import (
     ExecutionSnapshot,
     ExecutionStatus,
     InterruptInfo,
 )
-from aion.shared.logging import get_logger
+from aion.core.logging import get_logger
 from langgraph.types import Command, StateSnapshot
 
 from .extractors import MessagesExtractor, MetadataExtractor, StateValuesExtractor

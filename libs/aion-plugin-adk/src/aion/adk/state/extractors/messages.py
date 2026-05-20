@@ -7,11 +7,11 @@ and converts them to unified Message format with a2a Part objects.
 from typing import Any, List, override
 
 from a2a.types import Message
-from aion.shared.agent.adapters import (
+from aion.server.agent.adapters import (
     StateExtractor,
     create_message_from_parts,
 )
-from aion.shared.logging import get_logger
+from aion.core.logging import get_logger
 
 from aion.adk.transformers import A2ATransformer
 

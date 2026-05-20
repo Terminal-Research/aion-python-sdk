@@ -16,12 +16,12 @@ from a2a.types import (
     TaskStatusUpdateEvent,
 )
 
-from aion.shared.types import A2AOutbox
+from aion.core.types import A2AOutbox
 from .stream_executor import StreamResult
 
 if TYPE_CHECKING:
     from a2a.server.agent_execution import RequestContext
-    from aion.shared.agent.adapters import ExecutionSnapshot
+    from aion.server.agent.adapters import ExecutionSnapshot
 
 AgentEvent = TaskStatusUpdateEvent | TaskArtifactUpdateEvent | Task | Message
 

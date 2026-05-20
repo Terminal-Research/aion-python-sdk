@@ -1,4 +1,4 @@
-from aion.shared.logging import get_logger
+from aion.core.logging import get_logger
 
 from ..env import config
 

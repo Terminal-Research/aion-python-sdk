@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from typing import Optional
 
 import httpx
-from aion.shared.logging import get_logger
+from aion.core.logging import get_logger
 
 logger = get_logger()
 

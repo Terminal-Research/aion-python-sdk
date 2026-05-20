@@ -2,7 +2,7 @@
 
 from typing import Any, Optional, TYPE_CHECKING
 
-from aion.shared.agent.adapters import ExecutionConfig
+from aion.server.agent.adapters import ExecutionConfig
 from langchain_core.messages import HumanMessage
 
 from ..converters.a2a_to_lc import A2AToLcConverter

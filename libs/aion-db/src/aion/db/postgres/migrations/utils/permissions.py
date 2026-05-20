@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 
-from aion.shared.logging import get_logger
+from aion.core.logging import get_logger
 
 from aion.db.postgres.utils import validate_permissions, convert_pg_url
 from ..env import config

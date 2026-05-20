@@ -10,7 +10,7 @@ import json
 import re
 from typing import Callable
 
-from aion.shared.logging import get_logger
+from aion.core.logging import get_logger
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response, HTMLResponse, JSONResponse

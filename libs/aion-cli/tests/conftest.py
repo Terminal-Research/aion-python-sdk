@@ -42,7 +42,7 @@ def _install_test_stubs() -> None:
     handlers_module.ServeHandler = ServeHandler
     sys.modules.setdefault("aion.cli.handlers", handlers_module)
 
-    reader_module = types.ModuleType("aion.shared.config.reader")
+    reader_module = types.ModuleType("aion.server.config.reader")
 
     class ConfigurationError(Exception):
         """Test double for the shared configuration exception."""
@@ -55,11 +55,11 @@ def _install_test_stubs() -> None:
 
     reader_module.ConfigurationError = ConfigurationError
     reader_module.AionConfigReader = AionConfigReader
-    sys.modules.setdefault("aion.shared.config.reader", reader_module)
+    sys.modules.setdefault("aion.server.config.reader", reader_module)
 
-    logging_module = types.ModuleType("aion.shared.logging")
+    logging_module = types.ModuleType("aion.server.logging")
     logging_module.get_logger = lambda: logging.getLogger("aion-cli-tests")
-    sys.modules.setdefault("aion.shared.logging", logging_module)
+    sys.modules.setdefault("aion.server.logging", logging_module)
 
 
 _install_test_stubs()

@@ -1,7 +1,7 @@
 """CLI command for serving AION agents and proxy"""
 import asyncclick as click
-from aion.shared.config.reader import ConfigurationError, AionConfigReader
-from aion.shared.logging import get_logger
+from aion.server.config.reader import ConfigurationError, AionConfigReader
+from aion.core.logging import get_logger
 from dataclasses import dataclass
 
 logger = get_logger()

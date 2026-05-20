@@ -3,9 +3,9 @@ from aion.api.gql.generated.graphql_client import (
     GraphQLClientHttpError,
     GraphQLClientGraphQLMultiError
 )
-from aion.shared.settings import app_settings
+from aion.server.settings import app_settings
 
-from aion.shared.services import BaseExecuteService
+from aion.server.services import BaseExecuteService
 
 
 class AionDeploymentRegisterVersionService(BaseExecuteService):

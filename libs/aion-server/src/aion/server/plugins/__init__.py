@@ -6,7 +6,13 @@ registry to provide full plugin lifecycle support.
 """
 
 from .factory import PluginFactory
+from .base import BasePluginProtocol
+from .agent import AgentPluginProtocol
+from .registry import PluginRegistry
 
 __all__ = [
     "PluginFactory",
+    "BasePluginProtocol",
+    "AgentPluginProtocol",
+    "PluginRegistry",
 ]

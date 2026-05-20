@@ -16,7 +16,7 @@ from google.protobuf import json_format, struct_pb2
 from langchain_core.messages import AIMessage, AIMessageChunk
 from langgraph.types import StreamWriter
 
-from aion.shared.types.a2a.extensions.messaging import MessageActionPayload, ReactionActionPayload
+from aion.core.types.a2a.extensions.messaging import MessageActionPayload, ReactionActionPayload
 
 from .events.custom_events import (
     ArtifactCustomEvent,

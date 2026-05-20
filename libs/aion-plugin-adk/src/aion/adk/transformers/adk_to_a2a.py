@@ -3,7 +3,7 @@
 from typing import List
 
 from a2a.types import Part
-from aion.shared.logging import get_logger
+from aion.core.logging import get_logger
 from google.genai import types
 
 from aion.adk.transformers.utils import genai_part_to_a2a_part

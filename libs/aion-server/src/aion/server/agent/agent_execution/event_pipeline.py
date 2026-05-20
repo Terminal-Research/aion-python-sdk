@@ -3,11 +3,11 @@ from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
 from a2a.types import Message, Task, TaskArtifactUpdateEvent, TaskState, TaskStatusUpdateEvent
 
-from aion.shared.agent.execution.scope import AgentExecutionScopeHelper
-from aion.shared.files.a2a import A2AFileTransformer
-from aion.shared.logging import get_logger
-from aion.shared.tasks import A2ATaskDeduplicator
-from aion.shared.a2a.utils import task_history_message_ids, is_message_in_task_history
+from aion.server.agent.execution.scope import AgentExecutionScopeHelper
+from aion.server.files.a2a import A2AFileTransformer
+from aion.core.logging import get_logger
+from aion.server.tasks import A2ATaskDeduplicator
+from aion.server.a2a.utils import task_history_message_ids, is_message_in_task_history
 from typing import Optional
 
 logger = get_logger()

@@ -1,0 +1,124 @@
+import copy
+from typing import Any, List, Dict, Optional, TYPE_CHECKING
+
+from a2a.types import Message, Artifact, Task, TaskState
+from pydantic import ConfigDict, RootModel, Field, field_serializer
+
+from aion.core.a2a import A2ABaseModel
+from aion.core.utils.pydantic import Protobuf, ProtobufEnum
+
+if TYPE_CHECKING:
+    from a2a.server.agent_execution import RequestContext
+
+__all__ = [
+    "A2AInbox",
+    "A2AOutbox",
+    "Conversation",
+    "ContextsList",
+    "ConversationTaskStatus",
+    "A2AManifest",
+]
+
+
+class A2AInbox(A2ABaseModel):
+    """Server-populated input envelope for graphs that opt into A2A.
+
+    Graphs declare `a2a_inbox: A2AInbox` in their state schema to receive
+    a snapshot of the current A2A context at invocation time.  All fields are
+    defensive copies — mutating them does not affect server state.
+    """
+
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
+
+    task: Optional[Protobuf[Task]] = None
+    """
+    Current A2A Task.  None before a task has been created.
+    """
+    message: Optional[Protobuf[Message]] = None
+    """
+    Inbound A2A Message that triggered this execution
+    """
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    """
+    Request-level metadata (e.g. `aion:network`)
+    """
+
+    @classmethod
+    def from_request_context(cls, context: "RequestContext") -> "A2AInbox":
+        """Build a frozen A2AInbox snapshot from an A2A RequestContext."""
+        return cls(
+            task=copy.deepcopy(context.current_task) if context.current_task else None,
+            message=copy.deepcopy(context.message) if context.message else None,
+            metadata=dict(context.metadata) if context.metadata else {},
+        )
+
+
+class A2AOutbox(A2ABaseModel):
+    """Serializable wrapper for the agent's outgoing A2A Task or Message.
+
+    Graphs set `a2a_outbox` in their state to return a Task or Message at the
+    end of execution. Wrapping in a Pydantic model with Protobuf annotations
+    ensures LangGraph's checkpoint saver can serialize the state.
+    """
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    task: Optional[Protobuf[Task]] = None
+    message: Optional[Protobuf[Message]] = None
+
+
+class ConversationTaskStatus(A2ABaseModel):
+    state: ProtobufEnum[TaskState]
+    """
+    The current state of the task's lifecycle.
+    """
+
+    @field_serializer('state')
+    def serialize_state(self, value: int) -> str:
+        return TaskState.Name(value)
+
+
+class Conversation(A2ABaseModel):
+    """Data model for conversation representation"""
+
+    context_id: str
+    """
+    Unique identifier for the conversation context.
+    """
+    history: List[Protobuf[Message]] = Field(default_factory=list)
+    """
+    List of messages in the conversation history.
+    """
+    artifacts: List[Protobuf[Artifact]] = Field(default_factory=list)
+    """
+    List of artifacts associated with the conversation.
+    """
+    status: ConversationTaskStatus
+    """
+    Current status of the conversation.
+    """
+
+
+class ContextsList(RootModel[List[str]]):
+    """A list of context strings for LangGraph agent communication."""
+    root: List[str]
+
+
+class A2AManifest(A2ABaseModel):
+    """Data model for root manifest representation.
+
+    Represents the root-level service manifest that defines the API version,
+    service name, and available agent endpoints for A2A communication.
+    """
+    api_version: str = Field(
+        ...,
+        description="Manifest API version."
+    )
+    name: str = Field(
+        ...,
+        description="Service name"
+    )
+    endpoints: Dict[str, str] = Field(
+        default_factory=dict,
+        description="A map of agent identifiers to relative paths"
+    )

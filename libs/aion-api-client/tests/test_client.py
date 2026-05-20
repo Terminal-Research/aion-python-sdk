@@ -16,7 +16,7 @@ pytest.importorskip("httpx")
 pytest.importorskip("jwt")
 pytest.importorskip("gql")
 
-from aion.shared.settings import api_settings as aion_api_settings
+from aion.core.settings import api_settings as aion_api_settings
 from aion.api.gql.client import AionGqlClient
 from aion.api.gql.generated.graphql_client import (
     A2AJsonRpcRequestGQLInput,

@@ -5,7 +5,7 @@ from typing import Dict, Any
 from urllib.parse import urljoin
 
 import httpx
-from aion.shared.logging import get_logger
+from aion.core.logging import get_logger
 from fastapi import Request, Response
 
 from .exceptions import (

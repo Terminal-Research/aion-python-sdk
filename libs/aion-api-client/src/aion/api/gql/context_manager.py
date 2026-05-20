@@ -1,7 +1,7 @@
 from typing import Optional
 
 from aion.api.gql import AionGqlClient
-from aion.shared.settings import api_settings
+from aion.core.settings import api_settings
 from aion.api.http import AionJWTManager, aion_jwt_manager
 
 

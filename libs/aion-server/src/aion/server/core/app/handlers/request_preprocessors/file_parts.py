@@ -4,8 +4,8 @@ from contextvars import ContextVar
 from typing import Any
 
 from a2a.types import SendMessageRequest, SubscribeToTaskRequest
-from aion.shared.files.a2a import A2AFileTransformer
-from aion.shared.logging import get_logger
+from aion.server.files.a2a import A2AFileTransformer
+from aion.core.logging import get_logger
 
 logger = get_logger()
 

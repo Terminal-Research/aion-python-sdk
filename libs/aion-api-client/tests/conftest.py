@@ -56,7 +56,7 @@ def dummy_jwt_manager(valid_jwt_token):
 
 @pytest.fixture
 def agent_config():
-    from aion.shared.config import AgentConfig
+    from aion.server.config import AgentConfig
 
     return AgentConfig(
         path="test_path.py:test_agent",

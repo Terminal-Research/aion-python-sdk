@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 
-from aion.shared.logging import get_logger
+from aion.core.logging import get_logger
 from alembic import command
 
 from .env import config

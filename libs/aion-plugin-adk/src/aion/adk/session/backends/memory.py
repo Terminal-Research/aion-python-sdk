@@ -6,7 +6,7 @@ Google ADK's InMemorySessionService.
 
 from typing import Any
 
-from aion.shared.logging import get_logger
+from aion.core.logging import get_logger
 from google.adk.sessions import InMemorySessionService
 
 from .base import SessionServiceBackend

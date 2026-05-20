@@ -4,7 +4,7 @@ This module provides a memory-based artifact storage backend using
 Google ADK's InMemoryArtifactService.
 """
 
-from aion.shared.logging import get_logger
+from aion.core.logging import get_logger
 from google.adk.artifacts import InMemoryArtifactService
 
 from .base import ArtifactServiceBackend

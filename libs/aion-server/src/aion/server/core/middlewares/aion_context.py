@@ -3,20 +3,20 @@ from typing import Any
 from a2a.server.jsonrpc_models import InternalError, InvalidRequestError
 from a2a.server.request_handlers import build_error_response
 from a2a.utils import DEFAULT_RPC_URL
-from aion.shared.constants import (
+from aion.core.constants import (
     DISTRIBUTION_EXTENSION_URI_V1,
     TRACEABILITY_EXTENSION_URI_V1,
 )
-from aion.shared.agent.execution.scope import AgentExecutionScopeHelper
-from aion.shared.logging import get_logger
-from aion.shared.types.a2a.extensions.distribution import DistributionExtensionV1
-from aion.shared.types.a2a.extensions.traceability import TraceabilityExtensionV1
+from aion.server.agent.execution.scope import AgentExecutionScopeHelper
+from aion.core.logging import get_logger
+from aion.core.types.a2a.extensions.distribution import DistributionExtensionV1
+from aion.core.types.a2a.extensions.traceability import TraceabilityExtensionV1
 from fastapi import Request, Response
 from pydantic import ValidationError
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
-logger = get_logger(use_logstash=False)
+logger = get_logger()
 
 __all__ = [
     "AionContextMiddleware",

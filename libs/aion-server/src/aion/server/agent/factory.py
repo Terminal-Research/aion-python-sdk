@@ -6,8 +6,8 @@ framework discovery, and executor creation.
 
 from typing import Optional, Any
 
-from aion.shared.agent import AionAgent
-from aion.shared.logging import get_logger
+from aion.server.agent.aion_agent import AionAgent
+from aion.core.logging import get_logger
 
 logger = get_logger()
 

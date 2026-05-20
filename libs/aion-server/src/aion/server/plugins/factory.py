@@ -7,16 +7,14 @@ server's systems.
 
 from typing import Optional
 
-from aion.shared.agent import AionAgent
-from aion.shared.agent.adapters import adapter_registry
-from aion.shared.db import DbManagerProtocol
-from aion.shared.logging import get_logger, AionLogger
-from aion.shared.plugins import (
-    AgentPluginProtocol,
-    BasePluginProtocol,
-    PluginRegistry,
-    plugin_registry,
-)
+from aion.server.agent.aion_agent import AionAgent
+from aion.server.agent.adapters import adapter_registry
+from aion.core.db import DbManagerProtocol
+from aion.core.logging import get_logger
+from aion.core.logging import AionLogger
+from aion.server.plugins.agent import AgentPluginProtocol
+from aion.server.plugins.base import BasePluginProtocol
+from aion.server.plugins.registry import PluginRegistry, plugin_registry
 from fastapi import FastAPI
 
 

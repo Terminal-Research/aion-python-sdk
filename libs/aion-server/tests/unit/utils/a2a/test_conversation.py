@@ -1,8 +1,8 @@
 from unittest.mock import Mock
 import pytest
 from a2a.types import Task, TaskState, Artifact, Message, TaskStatus
-from aion.shared.types import ArtifactName, ConversationTaskStatus
-from aion.shared.types.a2a.enums import A2AMetadataKey, MessageType
+from aion.core.types import ArtifactName, ConversationTaskStatus
+from aion.core.types.a2a.enums import A2AMetadataKey, MessageType
 from aion.server.utils import ConversationBuilder
 
 

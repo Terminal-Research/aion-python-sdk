@@ -6,7 +6,7 @@ from a2a import types as a2a_types
 from google.genai import types as genai_types
 from google.protobuf import json_format, struct_pb2
 
-from aion.shared.logging import get_logger
+from aion.core.logging import get_logger
 
 logger = get_logger()
 

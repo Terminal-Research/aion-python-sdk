@@ -4,10 +4,10 @@ import os
 from typing import Dict
 
 from aion.proxy import AionAgentProxyServer
-from aion.shared.config import AionConfig
-from aion.shared.services import BaseExecuteService
-from aion.shared.logging import get_logger
-from aion.shared.utils.processes import ProcessManager
+from aion.server.config import AionConfig
+from aion.server.services import BaseExecuteService
+from aion.core.logging import get_logger
+from aion.server.utils.processes import ProcessManager
 
 logger = get_logger()
 

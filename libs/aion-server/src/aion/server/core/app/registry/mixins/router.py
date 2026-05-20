@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import List, Set, TYPE_CHECKING
 
-from aion.shared.logging import get_logger
+from aion.core.logging import get_logger
 
 if TYPE_CHECKING:
     from fastapi import APIRouter, FastAPI

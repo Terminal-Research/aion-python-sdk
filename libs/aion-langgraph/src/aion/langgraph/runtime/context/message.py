@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from aion.shared.constants import EVENT_EXTENSION_URI_V1
-from aion.shared.logging import get_logger
-from aion.shared.runtime import AionRuntimeContext
-from aion.shared.types.a2a.extensions.messaging import ReactionActionPayload
+from aion.core.constants import EVENT_EXTENSION_URI_V1
+from aion.core.logging import get_logger
+from aion.core.runtime import AionRuntimeContext
+from aion.core.types.a2a.extensions.messaging import ReactionActionPayload
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, Optional
 

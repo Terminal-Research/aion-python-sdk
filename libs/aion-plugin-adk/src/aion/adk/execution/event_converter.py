@@ -11,8 +11,8 @@ from a2a.types import (
     TaskStatus,
     TaskStatusUpdateEvent,
 )
-from aion.shared.logging import get_logger
-from aion.shared.types import ArtifactId, ArtifactName
+from aion.core.logging import get_logger
+from aion.core.types import ArtifactId, ArtifactName
 from google.adk.events import Event
 
 from aion.adk.agents.invocation_context import AionInvocationContext

@@ -1,4 +1,4 @@
-from aion.shared.services import BaseService
+from aion.server.services._base import BaseService
 from aion.server.interfaces import IWebSocketManager
 
 

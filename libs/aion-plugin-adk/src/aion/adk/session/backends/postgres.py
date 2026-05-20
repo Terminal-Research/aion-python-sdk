@@ -3,8 +3,8 @@
 import asyncio
 from typing import Optional
 
-from aion.shared.db import DbManagerProtocol
-from aion.shared.logging import get_logger
+from aion.core.db import DbManagerProtocol
+from aion.core.logging import get_logger
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 from google.adk.sessions import DatabaseSessionService

@@ -7,8 +7,8 @@ from psycopg import AsyncConnection, AsyncCursor, sql
 from psycopg_pool import AsyncConnectionPool
 
 from aion.db.postgres.constants import AION_SCHEMA
-from aion.shared.db import DbManagerProtocol
-from aion.shared.logging import get_logger
+from aion.core.db import DbManagerProtocol
+from aion.core.logging import get_logger
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 from aion.server_langgraph.constants import AION_LANGGRAPH_SCHEMA

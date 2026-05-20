@@ -3,10 +3,10 @@ import asyncio
 import os
 
 from aion.server import run_server
-from aion.shared.config import AionConfig, AgentConfig
-from aion.shared.services import BaseExecuteService
-from aion.shared.logging import get_logger
-from aion.shared.utils.processes import ProcessManager
+from aion.server.config import AionConfig, AgentConfig
+from aion.server.services import BaseExecuteService
+from aion.core.logging import get_logger
+from aion.server.utils.processes import ProcessManager
 
 from aion.cli.utils.port_manager import AionPortManager
 
