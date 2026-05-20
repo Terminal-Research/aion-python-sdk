@@ -22,7 +22,7 @@ from aion.server.agent.adapters.interfaces.state import ExecutionSnapshot
 from aion.server.agent.aion_agent.agent import AionAgent
 from aion.server.agent.aion_agent.manager import AgentManager
 from aion.server.agent.aion_agent.models import AgentMetadata
-from aion.server.config.models import AgentConfig
+from aion.core.config.models import AgentConfig
 
 
 def _make_config(path: str = "my.module.agent") -> AgentConfig:

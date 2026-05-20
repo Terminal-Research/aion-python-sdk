@@ -13,7 +13,7 @@ pip install aion-langgraph
 Or, if you are serving the agent with Aion:
 
 ```bash
-pip install aion-cli[langgraph]
+pip install aion-sdk[langgraph]
 ```
 
 ---

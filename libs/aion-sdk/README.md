@@ -2,12 +2,6 @@
 
 Command-line interface for the Aion Python SDK.
 
-This project provides a minimal CLI for running the Aion Agent API server and interactive chat interface.
-
-## Installation
-
-Include `aion-cli` as a dependency in your Poetry project.
-
 ## Commands
 
 ### `aion serve`
@@ -146,7 +140,7 @@ poetry run aion chat \
   --agent-id hello-world \
   --token mytoken \
   --push-notifications \
-  --header "X-Client=aion-cli"
+  --header "X-Client=aion-sdk"
 ```
 
 **Push Notifications:**

@@ -1,8 +1,8 @@
 """Tests for AgentConfigurationCollector.collect()."""
 
 import pytest
-from aion.server.config import ConfigurationField, ConfigurationType
-from aion.server.config.collectors.agent_configuration import AgentConfigurationCollector
+from aion.core.config import ConfigurationField, ConfigurationType
+from aion.core.config.collectors.agent_configuration import AgentConfigurationCollector
 
 
 def _collect(cfg: dict) -> dict:

@@ -1,5 +1,5 @@
 from aion.server.agent.aion_agent import AionAgent
-from aion.server.config import AgentConfigurationCollector
+from aion.core.config import AgentConfigurationCollector
 from aion.core.types import HealthResponse
 from aion.server.utils.deployment import get_protocol_version
 from fastapi import FastAPI

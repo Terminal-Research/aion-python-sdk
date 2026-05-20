@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from aion.server.config.exceptions import ConfigurationError
-from aion.server.config.models import AionConfig
-from aion.server.config.reader import AionConfigReader
+from aion.core.config.exceptions import ConfigurationError
+from aion.core.config.models import AionConfig
+from aion.core.config.reader import AionConfigReader
 
 
 def _reader(tmp_path: Path, content: str) -> AionConfigReader:

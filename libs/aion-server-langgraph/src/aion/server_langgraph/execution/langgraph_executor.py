@@ -7,7 +7,7 @@ from aion.server.agent.adapters import (
     ExecutorAdapter,
 )
 from aion.server.agent.exceptions import ExecutionError, StateRetrievalError
-from aion.server.config.models import AgentConfig
+from aion.core.config.models import AgentConfig
 from aion.core.logging import get_logger
 from aion.core.runtime import AionRuntimeContextBuilder
 from collections.abc import AsyncIterator

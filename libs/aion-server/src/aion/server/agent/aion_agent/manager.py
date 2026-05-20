@@ -6,7 +6,7 @@ a proxy instead.
 """
 from __future__ import annotations
 
-from aion.server.config.models import AgentConfig
+from aion.core.config.models import AgentConfig
 from aion.core.metaclasses import Singleton
 from typing import Optional, TYPE_CHECKING
 

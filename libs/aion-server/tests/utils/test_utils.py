@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 from aion.server.utils.asyncio import has_event_loop
-from aion.server.utils.path import get_base_dir, get_config_path
+from aion.core.utils.path import get_base_dir, get_config_path
 from aion.server.utils.templates import substitute_vars
 from aion.server.utils.text import colorize_text
 from aion.server.utils.url import parse_host_port

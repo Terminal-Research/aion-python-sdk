@@ -4,7 +4,7 @@ import pytest
 from unittest.mock import patch
 
 from aion.server.agent.card import AionAgentCard
-from aion.server.config.models import AgentConfig, AgentSkill
+from aion.core.config.models import AgentConfig, AgentSkill
 
 
 DOCS_URL = "https://docs.example.com"

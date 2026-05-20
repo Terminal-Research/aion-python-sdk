@@ -1,6 +1,6 @@
 """CLI command for serving AION agents and proxy"""
 import asyncclick as click
-from aion.server.config.reader import ConfigurationError, AionConfigReader
+from aion.core.config.reader import ConfigurationError, AionConfigReader
 from aion.core.logging import get_logger
 from dataclasses import dataclass
 
@@ -98,6 +98,14 @@ async def serve(
         startup_timeout: int
 ) -> None:
     """Run all configured AION agents and proxy server in separate processes"""
+    try:
+        import aion.server  # noqa: F401
+    except ImportError:
+        raise click.ClickException(
+            "Server dependencies are not installed. "
+            "Please refer to the documentation for the required server extras."
+        )
+
     from aion.cli.handlers.serve import ServeHandler
 
     try:

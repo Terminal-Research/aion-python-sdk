@@ -18,7 +18,7 @@ not by the adapter.
 from abc import ABC, abstractmethod
 from typing import Any
 
-from aion.server.config.models import AgentConfig
+from aion.core.config.models import AgentConfig
 
 from .executor import ExecutorAdapter
 

@@ -9,7 +9,7 @@ from aion.server.agent.adapters import (
     ExecutorAdapter,
 )
 from aion.server.agent.exceptions import ExecutionError, StateRetrievalError
-from aion.server.config.models import AgentConfig
+from aion.core.config.models import AgentConfig
 from aion.core.logging import get_logger
 from google.adk.artifacts import BaseArtifactService
 from google.adk.events import Event

@@ -16,7 +16,7 @@ from aion.server.agent.adapters import (
     ExecutorAdapter,
 )
 from aion.server.agent.card import AionAgentCard
-from aion.server.config.models import AgentConfig
+from aion.core.config.models import AgentConfig
 from aion.server.logging.base import AionLogger
 from collections.abc import AsyncIterator
 from typing import Any, Optional, TYPE_CHECKING

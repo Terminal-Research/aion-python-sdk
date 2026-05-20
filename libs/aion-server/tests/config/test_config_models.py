@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from aion.server.config.models import AgentConfig, AgentSkill, AionConfig, ConfigurationField, ConfigurationType
+from aion.core.config.models import AgentConfig, AgentSkill, AionConfig, ConfigurationField, ConfigurationType
 
 
 class TestAgentConfigVersion:

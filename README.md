@@ -4,15 +4,21 @@ A Python SDK for integrating LangGraph agents with the Agent-to-Agent (A2A) prot
 
 ## Installation
 
-Install the SDK as a package:
-
 ```bash
 pip install aion-sdk
 ```
 
+| Extra | Framework | Authoring | Server |
+|---|---|:---:|:---:|
+| `aion-sdk[langgraph-authoring]` | LangGraph | ✅ | |
+| `aion-sdk[langgraph-server]` | LangGraph | ✅ | ✅ |
+| `aion-sdk[adk-authoring]` | ADK | ✅ | |
+| `aion-sdk[adk-server]` | ADK | ✅ | ✅ |
+| `aion-sdk[all]` | All | ✅ | ✅ |
+
 ## Environment Configuration
 
-Create a `.env` file in your project root with required credentials:
+Create a `.env` file in your project root with required credentials:``
 
 ```bash
 AION_CLIENT_ID=your_client_id
