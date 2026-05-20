@@ -5,7 +5,7 @@ import mimetypes
 from typing import Optional, TYPE_CHECKING
 
 from a2a.types import Part
-from aion.shared.agent.adapters import ExecutionConfig
+from aion.server.agent.adapters import ExecutionConfig
 from google.genai import types
 from google.protobuf import json_format
 

@@ -4,15 +4,21 @@ A Python SDK for integrating LangGraph agents with the Agent-to-Agent (A2A) prot
 
 ## Installation
 
-Install the SDK as a package:
-
 ```bash
-pip install aion-cli
+pip install aion-sdk
 ```
+
+| Extra | Framework | Authoring | Server |
+|---|---|:---:|:---:|
+| `aion-sdk[langgraph-authoring]` | LangGraph | ✅ | |
+| `aion-sdk[langgraph-server]` | LangGraph | ✅ | ✅ |
+| `aion-sdk[adk-authoring]` | ADK | ✅ | |
+| `aion-sdk[adk-server]` | ADK | ✅ | ✅ |
+| `aion-sdk[all]` | All | ✅ | ✅ |
 
 ## Environment Configuration
 
-Create a `.env` file in your project root with required credentials:
+Create a `.env` file in your project root with required credentials:``
 
 ```bash
 AION_CLIENT_ID=your_client_id
@@ -73,7 +79,7 @@ poetry run aion chat
 
 This provides a convenient way to test your agents locally before deployment.
 
-For all available CLI commands and options, see the **[CLI Reference](libs/aion-cli/README.md)**.
+For all available CLI commands and options, see the **[CLI Reference](libs/aion-sdk/README.md)**.
 
 For running multiple agents with a proxy server, see the **[Multiple Agents Guide](docs/multiple-agents.md)**.
 
@@ -90,7 +96,7 @@ The AION SDK supports custom agent extensions like adding custom API routes. For
 * **[HTTP Endpoints](docs/http_endpoints.md)** - Agent and Proxy Server HTTP endpoints reference
 * **[A2A Protocol Extensions](docs/a2a_extensions/main.md)** - Streaming, context management, JSON-RPC methods
 * **[API Client](libs/aion-api-client/README.md)** - GraphQL client for integration
-* **[CLI Reference](libs/aion-cli/README.md)** - Command-line interface and all available commands
+* **[CLI Reference](libs/aion-sdk/README.md)** - Command-line interface and all available commands
 
 ---
 

@@ -1,7 +1,7 @@
 from unittest.mock import Mock
 
 import pytest
-from aion.shared.agent.adapters import ExecutionStatus
+from aion.server.agent.adapters import ExecutionStatus
 from langgraph.types import Interrupt
 
 from aion.server_langgraph.state.extractors import (

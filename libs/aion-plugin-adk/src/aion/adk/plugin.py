@@ -1,9 +1,10 @@
 from typing import Optional, Any, override
 
-from aion.shared.db import DbManagerProtocol
-from aion.shared.files.storage import FileUploadManager
-from aion.shared.logging import AionLogger, get_logger
-from aion.shared.plugins import AgentPluginProtocol
+from aion.core.db import DbManagerProtocol
+from aion.server.files.storage import FileUploadManager
+from aion.core.logging import AionLogger
+from aion.core.logging import get_logger
+from aion.server.plugins import AgentPluginProtocol
 
 from .adapter import ADKAdapter
 

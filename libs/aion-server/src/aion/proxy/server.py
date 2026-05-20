@@ -7,9 +7,9 @@ from contextlib import asynccontextmanager
 from typing import Dict, Optional, Callable
 
 import uvicorn
-from aion.shared.logging import get_logger
-from aion.shared.logging.base import AionLogger
-from aion.shared.settings import app_settings
+from aion.core.logging import get_logger
+from aion.server.logging.base import AionLogger
+from aion.server.settings import app_settings
 from fastapi import FastAPI
 
 from .client import ProxyHttpClient
@@ -92,7 +92,7 @@ class AionAgentProxyServer:
         # Deserialize socket if provided
         sockets = None
         if serialized_socket is not None:
-            from aion.shared.utils.ports.reservation import deserialize_socket
+            from aion.server.utils.ports.reservation import deserialize_socket
             sock = deserialize_socket(serialized_socket)
             sockets = [sock]
             logger.debug(f"Using passed socket for proxy on port {port}")

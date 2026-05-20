@@ -12,7 +12,8 @@ langgraph = ">=0.6.0,<=1.0.5"
 langgraph-checkpoint-postgres = ">=2.0.0,<=3.0.2"
 aion-langgraph = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-langgraph" }
 aion-db = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-db" }
-aion-shared = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-shared" }
+aion-core = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-core" }
+aion-server = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-server" }
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0"

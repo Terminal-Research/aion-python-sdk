@@ -1,9 +1,9 @@
 from typing import Optional, override
 
-from aion.shared.db import DbManagerProtocol
-from aion.shared.logging import get_logger
-from aion.shared.logging.base import AionLogger
-from aion.shared.metaclasses import SingletonABCMeta
+from aion.core.db import DbManagerProtocol
+from aion.core.logging import get_logger
+import logging
+from aion.core.metaclasses import SingletonABCMeta
 from psycopg_pool import AsyncConnectionPool
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 
@@ -24,10 +24,10 @@ class DbManager(DbManagerProtocol, metaclass=SingletonABCMeta):
         self._engine = None
         self._session_factory = None
         self._dsn: Optional[str] = None
-        self._logger: Optional[AionLogger] = None
+        self._logger: Optional[logging.Logger] = None
 
     @property
-    def logger(self) -> AionLogger:
+    def logger(self) -> logging.Logger:
         if not self._logger:
             self._logger = get_logger()
         return self._logger

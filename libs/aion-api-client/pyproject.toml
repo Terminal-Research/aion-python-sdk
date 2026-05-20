@@ -15,7 +15,7 @@ PyJWT = "^2.9.0"
 httpx = "^0.28.1"
 websockets = ">=15.0.1,<16.0.0"
 
-aion-shared = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-shared" }
+aion-core = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-core" }
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=8.0.0"

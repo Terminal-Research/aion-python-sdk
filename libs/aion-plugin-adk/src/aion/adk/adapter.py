@@ -2,12 +2,12 @@ import inspect
 from pathlib import Path
 from typing import Any, Optional
 
-from aion.shared.agent.adapters import AgentAdapter, ExecutorAdapter
-from aion.shared.agent.exceptions import ConfigurationError
-from aion.shared.config.models import AgentConfig
-from aion.shared.db import DbManagerProtocol
-from aion.shared.files.storage import FileUploadManager
-from aion.shared.logging import get_logger
+from aion.server.agent.adapters import AgentAdapter, ExecutorAdapter
+from aion.server.agent.exceptions import ConfigurationError
+from aion.core.config.models import AgentConfig
+from aion.core.db import DbManagerProtocol
+from aion.server.files.storage import FileUploadManager
+from aion.core.logging import get_logger
 from google.adk.agents import BaseAgent
 
 from .artifacts.factory import ArtifactServiceFactory

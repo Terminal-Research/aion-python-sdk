@@ -1,7 +1,7 @@
 import asyncio
 from typing import Optional
 
-from aion.shared.logging import get_logger
+from aion.core.logging import get_logger
 
 from aion.server.interfaces import IWebsocketTransportFactory, IWebSocketManager
 

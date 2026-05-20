@@ -2,9 +2,10 @@
 
 from typing import Any, Optional, override
 
-from aion.shared.db import DbManagerProtocol
-from aion.shared.logging import AionLogger, get_logger
-from aion.shared.plugins import AgentPluginProtocol
+from aion.core.db import DbManagerProtocol
+from aion.core.logging import AionLogger
+from aion.core.logging import get_logger
+from aion.server.plugins import AgentPluginProtocol
 
 from .adapter import LangGraphAdapter
 

@@ -1,7 +1,7 @@
 from unittest.mock import Mock
 
 from a2a.types import Message, Part, Role, Task
-from aion.shared.agent.adapters import ExecutionSnapshot, ExecutionStatus, InterruptInfo
+from aion.server.agent.adapters import ExecutionSnapshot, ExecutionStatus, InterruptInfo
 from aion.server_langgraph.execution.stream_executor import StreamResult
 from langchain_core.messages import AIMessage, AIMessageChunk
 

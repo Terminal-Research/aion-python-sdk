@@ -5,8 +5,8 @@ from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, AsyncGenerator, Optional
 
 from aion.api.http import aion_jwt_manager
-from aion.shared.opentelemetry import init_tracing
-from aion.shared.settings import api_settings
+from aion.server.opentelemetry import init_tracing
+from aion.core.settings import api_settings
 from fastapi import FastAPI
 
 from aion.server import services as aion_services

@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 from a2a.types import Artifact, Part
-from aion.shared.constants import (
+from aion.core.constants import (
     CARDS_EXTENSION_URI_V1,
     CARDS_MEDIA_TYPE,
     CARDS_PAYLOAD_SCHEMA_V1,
 )
-from aion.shared.logging import get_logger
-from aion.shared.runtime import AionRuntimeContext
-from aion.shared.types.a2a.extensions.messaging import MessageActionPayload
+from aion.core.logging import get_logger
+from aion.core.runtime import AionRuntimeContext
+from aion.core.types.a2a.extensions.messaging import MessageActionPayload
 from langchain_core.messages import AIMessage, AIMessageChunk
 from langgraph.config import get_stream_writer
 from typing import TYPE_CHECKING, Any, List, Optional, Union

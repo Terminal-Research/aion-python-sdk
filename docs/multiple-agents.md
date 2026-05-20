@@ -76,4 +76,4 @@ poetry run aion serve --port 10000
 poetry run aion serve --port-range-start 7000 --port-range-end 8000
 ```
 
-See the **[CLI Reference](../libs/aion-cli/README.md)** for all available options.
+See the **[CLI Reference](../libs/aion-sdk/README.md)** for all available options.

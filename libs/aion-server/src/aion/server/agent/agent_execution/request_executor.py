@@ -12,12 +12,12 @@ from a2a.utils.errors import (
     UnsupportedOperationError,
 )
 from a2a.utils.telemetry import trace_function
-from aion.shared.a2a.constants import TERMINAL_TASK_STATES
-from aion.shared.a2a.utils import is_task_interrupted
-from aion.shared.agent import AionAgent
-from aion.shared.agent.execution.scope import AgentExecutionScopeHelper
-from aion.shared.files.a2a import A2AFileTransformer
-from aion.shared.logging import get_logger
+from aion.server.a2a.constants import TERMINAL_TASK_STATES
+from aion.server.a2a.utils import is_task_interrupted
+from aion.server.agent.aion_agent import AionAgent
+from aion.server.agent.execution.scope import AgentExecutionScopeHelper
+from aion.server.files.a2a import A2AFileTransformer
+from aion.core.logging import get_logger
 from typing import Optional, Tuple
 
 from .event_pipeline import AionEventPipeline

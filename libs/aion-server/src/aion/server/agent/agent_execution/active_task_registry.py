@@ -5,7 +5,7 @@ from a2a.server.agent_execution.active_task_registry import ActiveTaskRegistry
 from a2a.server.context import ServerCallContext
 
 from aion.server.tasks import AionTaskManager
-from aion.shared.agent.execution.scope import AgentExecutionScopeHelper
+from aion.server.agent.execution.scope import AgentExecutionScopeHelper
 
 
 class AionActiveTaskRegistry(ActiveTaskRegistry):

@@ -9,7 +9,7 @@ from aion.langgraph.handlers import (
     AION_ROUTER_NODE_NAME,
     add_event_handlers,
 )
-from aion.shared.runtime.context.models import EventKind
+from aion.core.runtime.context.models import EventKind
 
 from tests.helpers import (
     make_mock_context,

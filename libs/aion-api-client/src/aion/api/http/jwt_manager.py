@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import jwt
-from aion.shared.logging import get_logger
+from aion.core.logging import get_logger
 
 from aion.api.exceptions import AionAuthenticationError
 from .client import AionHttpClient

@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import Optional, List, Any, AsyncIterator
 
-from aion.shared.logging import get_logger
+from aion.core.logging import get_logger
 
 from aion.api.http import AionJWTManager
 from .generated.graphql_client import (

@@ -16,9 +16,9 @@ from google.genai import types
 from typing_extensions import override
 
 from aion.db.postgres.repositories.tasks.repository import TasksRepository
-from aion.shared.db import DbManagerProtocol
-from aion.shared.files.storage import FileUploadManager
-from aion.shared.logging import get_logger
+from aion.core.db import DbManagerProtocol
+from aion.server.files.storage import FileUploadManager
+from aion.core.logging import get_logger
 
 from .base import ArtifactServiceBackend
 

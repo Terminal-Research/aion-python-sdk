@@ -8,8 +8,8 @@ from a2a.server.jsonrpc_models import (
 from a2a.server.request_handlers import prepare_response_object
 from a2a.server.routes.jsonrpc_dispatcher import JsonRpcDispatcher
 from a2a.utils.errors import UnsupportedOperationError
-from aion.shared.logging import get_logger
-from aion.shared.types import GetContextParams, GetContextsListParams
+from aion.core.logging import get_logger
+from aion.core.types import GetContextParams, GetContextsListParams
 from jsonrpc.jsonrpc2 import JSONRPC20Request
 from pydantic import ValidationError
 from starlette.requests import Request

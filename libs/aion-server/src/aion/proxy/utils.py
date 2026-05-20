@@ -1,5 +1,5 @@
-from aion.shared.types import A2AManifest
-from aion.shared.utils.deployment import generate_a2a_manifest as generate_a2a_manifest_util
+from aion.core.types import A2AManifest
+from aion.server.utils.deployment import generate_a2a_manifest as generate_a2a_manifest_util
 
 from .constants import AGENT_PROXY_PREFIX
 

@@ -6,7 +6,7 @@ import uuid
 from typing import Literal, Optional
 
 import psycopg
-from aion.shared.logging import get_logger
+from aion.core.logging import get_logger
 
 logger = get_logger()
 

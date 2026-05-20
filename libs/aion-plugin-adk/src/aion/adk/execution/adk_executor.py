@@ -3,14 +3,14 @@ from collections.abc import AsyncIterator
 from typing import Any, Optional, TYPE_CHECKING
 
 from a2a.types import TaskArtifactUpdateEvent, TaskStatusUpdateEvent
-from aion.shared.agent.adapters import (
+from aion.server.agent.adapters import (
     ExecutionConfig,
     ExecutionSnapshot,
     ExecutorAdapter,
 )
-from aion.shared.agent.exceptions import ExecutionError, StateRetrievalError
-from aion.shared.config.models import AgentConfig
-from aion.shared.logging import get_logger
+from aion.server.agent.exceptions import ExecutionError, StateRetrievalError
+from aion.core.config.models import AgentConfig
+from aion.core.logging import get_logger
 from google.adk.artifacts import BaseArtifactService
 from google.adk.events import Event
 from google.adk.sessions import Session, BaseSessionService

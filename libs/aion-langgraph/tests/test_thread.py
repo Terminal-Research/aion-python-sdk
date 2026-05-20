@@ -327,7 +327,7 @@ class TestThreadReply:
 
     def test_build_payload_with_all_fields(self):
         # all event payload fields are mapped to MessageActionPayload correctly
-        from aion.shared.types.a2a.extensions.messaging import MessageActionPayload
+        from aion.core.types.a2a.extensions.messaging import MessageActionPayload
 
         payload = Mock()
         payload.context_id = "C123"

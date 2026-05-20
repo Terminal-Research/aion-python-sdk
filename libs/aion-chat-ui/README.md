@@ -101,7 +101,7 @@ Use `npm run dev`, not `node src/cli.tsx` or `node src/app.tsx`. The source tree
 
 Set `AION_CHAT_SKIP_UPDATE_CHECK=1` or `AION_CHAT_UPDATE_CHECK=0` to skip the startup update prompt while developing.
 
-If you want to test the integrated Python entrypoint instead, run `aion chat` from an agent project that depends on your local editable `aion-cli`. In that flow, the Python launcher uses `libs/aion-chat-ui/dist/cli.mjs`, so rebuild after UI changes:
+If you want to test the integrated Python entrypoint instead, run `aion chat` from an agent project that depends on your local editable `aion-sdk`. In that flow, the Python launcher uses `libs/aion-chat-ui/dist/cli.mjs`, so rebuild after UI changes:
 
 ```bash
 npm run build
@@ -120,7 +120,7 @@ npm run stage:python
 
 - `npm run build` produces a Node-compatible bundle in `dist/cli.mjs`.
 - `npm run compile` additionally produces macOS Bun executables.
-- `npm run stage:python` copies any available build artifacts into `libs/aion-cli/src/aion/cli/bin/` for packaging and local launch tests.
+- `npm run stage:python` copies any available build artifacts into `libs/aion-sdk/src/aion/cli/bin/` for packaging and local launch tests.
 
 ## Release Flow
 

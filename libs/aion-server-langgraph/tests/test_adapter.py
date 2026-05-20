@@ -2,7 +2,7 @@ import inspect
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
-from aion.shared.agent.exceptions import ConfigurationError
+from aion.server.agent.exceptions import ConfigurationError
 from langgraph.graph import StateGraph
 from langgraph.pregel import Pregel
 

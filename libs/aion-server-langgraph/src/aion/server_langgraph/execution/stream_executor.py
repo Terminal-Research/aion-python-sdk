@@ -5,8 +5,8 @@ from dataclasses import dataclass
 from typing import Any, Optional
 
 from a2a.types import TaskArtifactUpdateEvent, TaskStatusUpdateEvent
-from aion.shared.logging import get_logger
-from aion.shared.types import ArtifactId
+from aion.core.logging import get_logger
+from aion.core.types import ArtifactId
 
 from .event_converter import LangGraphA2AConverter
 from .event_preprocessor import LangGraphEventPreprocessor

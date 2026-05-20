@@ -2,8 +2,8 @@ from typing import List
 
 from a2a.types import Task, TaskState, Artifact, Message
 
-from aion.shared.types import Conversation, ConversationTaskStatus, ArtifactName
-from aion.shared.types.a2a.enums import A2AMetadataKey, MessageType
+from aion.core.types import Conversation, ConversationTaskStatus, ArtifactName
+from aion.core.types.a2a.enums import A2AMetadataKey, MessageType
 
 
 class ConversationBuilder:

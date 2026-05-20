@@ -5,8 +5,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from a2a.types import TaskArtifactUpdateEvent, TaskStatusUpdateEvent
-from aion.shared.logging import get_logger
-from aion.shared.types import ArtifactId, A2AOutbox
+from aion.core.logging import get_logger
+from aion.core.types import ArtifactId, A2AOutbox
 from google.adk.events import Event
 
 from .event_converter import ADKToA2AEventConverter

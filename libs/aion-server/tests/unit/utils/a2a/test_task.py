@@ -1,8 +1,8 @@
 from unittest.mock import Mock
 import pytest
 from a2a.types import Task, TaskState, TaskStatus
-from aion.shared.a2a.constants import INTERRUPT_TASK_STATES
-from aion.shared.a2a.utils import is_task_interrupted
+from aion.server.a2a.constants import INTERRUPT_TASK_STATES
+from aion.server.a2a.utils import is_task_interrupted
 
 
 class TestCheckIfTaskIsInterrupted:

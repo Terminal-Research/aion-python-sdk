@@ -6,7 +6,7 @@ This module provides extractors for retrieving information from LangGraph StateS
 - MetadataExtractor: Extract LangGraph-specific metadata (next_steps, interrupts, etc.)
 
 New extractors can be added by implementing the StateExtractor interface
-from aion.shared.agent.adapters.
+from aion.server.agent.adapters.
 """
 
 from .messages import MessagesExtractor

@@ -13,16 +13,16 @@ from a2a.types import (
     TaskStatus,
     TaskStatusUpdateEvent,
 )
-from aion.shared.agent.adapters import InterruptInfo
-from aion.shared.constants import (
+from aion.server.agent.adapters import InterruptInfo
+from aion.core.constants import (
     MESSAGE_ACTION_PAYLOAD_SCHEMA_V1,
     MESSAGING_EXTENSION_URI_V1,
     REACTION_ACTION_PAYLOAD_SCHEMA_V1,
     STREAM_DELTA_PAYLOAD_SCHEMA_V1,
 )
-from aion.shared.logging import get_logger
-from aion.shared.types import ArtifactId, ArtifactName
-from aion.shared.types.a2a.extensions.messaging import MessageActionPayload
+from aion.core.logging import get_logger
+from aion.core.types import ArtifactId, ArtifactName
+from aion.core.types.a2a.extensions.messaging import MessageActionPayload
 from google.protobuf import json_format, struct_pb2
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
 

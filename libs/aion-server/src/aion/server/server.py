@@ -3,11 +3,11 @@ import os
 import sys
 
 import uvicorn
-from aion.shared.agent import agent_manager
-from aion.shared.config import AgentConfig
-from aion.shared.logging import get_logger
-from aion.shared.logging.base import AionLogger
-from aion.shared.utils.logging import replace_uvicorn_loggers, replace_logstash_loggers
+from aion.server.agent import agent_manager
+from aion.core.config import AgentConfig
+from aion.core.logging import get_logger
+from aion.server.logging.base import AionLogger
+from aion.server.utils.logging import replace_uvicorn_loggers, replace_logstash_loggers
 from dotenv import load_dotenv
 
 from aion.server.agent import AgentFactory
@@ -62,7 +62,7 @@ async def async_serve(
         # Deserialize socket if provided
         sockets = None
         if serialized_socket is not None:
-            from aion.shared.utils.ports.reservation import deserialize_socket
+            from aion.server.utils.ports.reservation import deserialize_socket
             sock = deserialize_socket(serialized_socket)
             sockets = [sock]
             logger.debug(f"Using passed socket for agent '{agent_id}' on port {port}")

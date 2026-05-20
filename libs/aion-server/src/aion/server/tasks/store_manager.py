@@ -1,6 +1,6 @@
 from typing import Optional
 
-from aion.shared.logging import get_logger
+from aion.core.logging import get_logger
 
 from aion.db.postgres import db_manager
 from .stores import (

@@ -6,8 +6,8 @@ state information from ADK sessions into the unified ExecutionSnapshot format.
 
 from typing import Any
 
-from aion.shared.agent.adapters import ExecutionSnapshot, ExecutionStatus
-from aion.shared.logging import get_logger
+from aion.server.agent.adapters import ExecutionSnapshot, ExecutionStatus
+from aion.core.logging import get_logger
 
 from .extractors import MessagesExtractor, StateValuesExtractor
 

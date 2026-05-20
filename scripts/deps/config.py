@@ -9,21 +9,22 @@ LIBS_DIR = ROOT_DIR / "libs"
 # Note: Only direct dependencies need to be specified. Transitive dependencies
 # are resolved automatically using resolve_dependencies() function.
 PACKAGES = {
-    "aion-cli": [
+    "aion-sdk": [
         "aion-server",
         "aion-langgraph",
         "aion-server-langgraph",
+        "aion-adk",
         "aion-plugin-adk",
     ],
-    "aion-server": ["aion-api-client", "aion-db"],
-    "aion-server-langgraph": ["aion-langgraph", "aion-db"],
+    "aion-server": ["aion-core", "aion-api-client", "aion-db"],
+    "aion-server-langgraph": ["aion-core", "aion-server", "aion-langgraph", "aion-db"],
     "aion-adk": ["aion-api-client"],
-    "aion-langgraph": ["aion-api-client", "aion-shared"],
-    "aion-plugin-adk": ["aion-shared", "aion-db"],
-    "aion-api-client": ["aion-shared"],
-    "aion-mcp": ["aion-shared"],
-    "aion-db": ["aion-shared"],
-    "aion-shared": [],
+    "aion-langgraph": ["aion-core", "aion-api-client"],
+    "aion-plugin-adk": ["aion-core", "aion-server", "aion-db"],
+    "aion-api-client": ["aion-core"],
+    "aion-mcp": [],
+    "aion-db": ["aion-core"],
+    "aion-core": [],
 }
 
 

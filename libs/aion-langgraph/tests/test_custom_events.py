@@ -9,7 +9,7 @@ from aion.langgraph.events.custom_events import (
     ReactionCustomEvent,
     TaskUpdateCustomEvent,
 )
-from aion.shared.types.a2a.extensions.messaging import ReactionActionPayload
+from aion.core.types.a2a.extensions.messaging import ReactionActionPayload
 
 
 class TestArtifactCustomEvent:

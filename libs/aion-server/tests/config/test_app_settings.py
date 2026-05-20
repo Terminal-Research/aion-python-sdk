@@ -2,7 +2,8 @@ import pytest
 from unittest.mock import patch
 import os
 
-from aion.shared.settings import ApiSettings, AppSettings, app_settings
+from aion.server.settings import AppSettings, app_settings
+from aion.core.settings import ApiSettings
 
 
 class TestAppSettings:

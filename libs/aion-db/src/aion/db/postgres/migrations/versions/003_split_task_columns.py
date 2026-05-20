@@ -8,7 +8,7 @@ down_revision = "002"
 branch_labels = None
 depends_on = None
 
-from aion.shared.logging import get_logger
+from aion.core.logging import get_logger
 from aion.db.postgres.constants import TASKS_TABLE
 logger = get_logger(__name__)
 

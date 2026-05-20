@@ -6,8 +6,8 @@ These classes provide type-safe, validated event models for LangGraph streaming.
 from typing import Any, ClassVar, Optional
 
 from a2a.types import Artifact
-from aion.shared.types.a2a.extensions.messaging import MessageActionPayload, ReactionActionPayload
-from aion.shared.utils.pydantic import Protobuf
+from aion.core.types.a2a.extensions.messaging import MessageActionPayload, ReactionActionPayload
+from aion.core.utils.pydantic import Protobuf
 from langchain_core.messages import AIMessage, AIMessageChunk
 from pydantic import BaseModel, Field
 

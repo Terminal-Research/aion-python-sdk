@@ -15,7 +15,7 @@ from aion.langgraph.events.custom_events import (
     ReactionCustomEvent,
     TaskUpdateCustomEvent,
 )
-from aion.shared.types.a2a.extensions.messaging import ReactionActionPayload
+from aion.core.types.a2a.extensions.messaging import ReactionActionPayload
 
 
 @pytest.fixture
@@ -127,7 +127,7 @@ class TestEmitMessage:
 
     def test_routing_propagates(self, writer):
         # explicit routing target is attached to the event
-        from aion.shared.types.a2a.extensions.messaging import MessageActionPayload
+        from aion.core.types.a2a.extensions.messaging import MessageActionPayload
         routing = MessageActionPayload(trajectory="conversation", context_id="C1")
         emit_message(writer, AIMessage(content="Hi"), routing=routing)
         assert writer.call_args[0][0].routing == routing

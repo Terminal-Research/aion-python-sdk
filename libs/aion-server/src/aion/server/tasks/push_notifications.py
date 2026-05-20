@@ -6,7 +6,7 @@ from a2a.server.tasks.base_push_notification_sender import BasePushNotificationS
 from a2a.server.tasks.push_notification_config_store import PushNotificationConfigStore
 from a2a.server.tasks.push_notification_sender import PushNotificationSender
 from aion.db.postgres import AION_SCHEMA
-from aion.shared.db import DbManagerProtocol
+from aion.core.db import DbManagerProtocol
 from typing import Optional
 
 

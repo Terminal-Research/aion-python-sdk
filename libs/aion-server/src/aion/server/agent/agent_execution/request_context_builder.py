@@ -4,7 +4,7 @@ from a2a.server.id_generator import IDGenerator
 from a2a.types.a2a_pb2 import SendMessageRequest, Task
 
 from aion.server.tasks.stores.base_task_store import BaseTaskStore
-from aion.shared.a2a.utils import is_task_interrupted
+from aion.server.a2a.utils import is_task_interrupted
 
 
 class AionRequestContextBuilder(RequestContextBuilder):

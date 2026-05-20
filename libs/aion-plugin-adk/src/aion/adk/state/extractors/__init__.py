@@ -5,7 +5,7 @@ This module provides extractors for retrieving information from ADK sessions:
 - MessagesExtractor: Extract conversation messages from session.events
 
 New extractors can be added by implementing the StateExtractor interface
-from aion.shared.agent.adapters.
+from aion.server.agent.adapters.
 """
 
 from .messages import MessagesExtractor

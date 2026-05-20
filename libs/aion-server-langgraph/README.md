@@ -59,7 +59,7 @@ Return `a2a_outbox` in the graph's output to send an explicit A2A response. The 
 
 ```python
 from a2a.types import Message, Role, Part, TextPart
-from aion.shared.types import A2AOutbox
+from aion.core.types import A2AOutbox
 
 def my_node(state: State) -> State:
     return {

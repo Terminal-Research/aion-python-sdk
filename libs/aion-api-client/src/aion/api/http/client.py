@@ -1,8 +1,8 @@
 from typing import Any, Dict, Optional
 
 import httpx
-from aion.shared.logging import get_logger
-from aion.shared.settings import api_settings
+from aion.core.logging import get_logger
+from aion.core.settings import api_settings
 
 from aion.api.exceptions import AionAuthenticationError
 

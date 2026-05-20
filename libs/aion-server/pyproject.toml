@@ -10,10 +10,15 @@ packages = [{ include = "aion", from = "src" }]
 python = "^3.12.0"
 uvicorn = ">=0.23.2"
 fastapi = ">=0.115.2"
+pydantic-settings = ">=2.3.4"
+python-dotenv = ">=1.0.1"
+PyYAML = "^6.0.0"
+a2a-sdk = { extras = ["http-server", "telemetry"], version = "^1.0.3" }
+python-logstash-async = "^4.0.1"
 
+aion-core = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-core" }
 aion-api-client = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-api-client" }
 aion-db = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-db" }
-aion-shared = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-shared" }
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=8.0.0"

@@ -8,10 +8,10 @@ from aion.langgraph.events.custom_events import (
     ReactionCustomEvent,
     TaskUpdateCustomEvent,
 )
-from aion.shared.agent.adapters import InterruptInfo
-from aion.shared.constants import MESSAGING_EXTENSION_URI_V1
-from aion.shared.types import ArtifactId
-from aion.shared.types.a2a.extensions.messaging import MessageActionPayload, ReactionActionPayload
+from aion.server.agent.adapters import InterruptInfo
+from aion.core.constants import MESSAGING_EXTENSION_URI_V1
+from aion.core.types import ArtifactId
+from aion.core.types.a2a.extensions.messaging import MessageActionPayload, ReactionActionPayload
 from langchain_core.messages import AIMessage, HumanMessage
 
 from aion.server_langgraph.execution.event_converter import LangGraphA2AConverter

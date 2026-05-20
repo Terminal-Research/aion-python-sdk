@@ -6,8 +6,8 @@ before events are converted to A2A protocol format.
 
 from typing import Any
 
-from aion.shared.agent.execution.scope import AgentExecutionScopeHelper
-from aion.shared.logging import get_logger
+from aion.server.agent.execution.scope import AgentExecutionScopeHelper
+from aion.core.logging import get_logger
 
 logger = get_logger()
 

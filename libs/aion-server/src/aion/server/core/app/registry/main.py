@@ -7,8 +7,8 @@ to register custom FastAPI routers and other app-level extensions.
 import threading
 from typing import List, TYPE_CHECKING
 
-from aion.shared.logging import get_logger
-from aion.shared.metaclasses import Singleton
+from aion.core.logging import get_logger
+from aion.core.metaclasses import Singleton
 
 from .mixins import RouterRegistryMixin
 

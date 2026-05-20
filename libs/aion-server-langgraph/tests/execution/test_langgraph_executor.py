@@ -2,8 +2,8 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from a2a.types import Message, Part, Role, TaskState, TaskStatusUpdateEvent
-from aion.shared.agent.adapters import ExecutionSnapshot, ExecutionStatus
-from aion.shared.agent.exceptions import ExecutionError, StateRetrievalError
+from aion.server.agent.adapters import ExecutionSnapshot, ExecutionStatus
+from aion.server.agent.exceptions import ExecutionError, StateRetrievalError
 
 from aion.server_langgraph.execution.langgraph_executor import LangGraphExecutor
 from aion.server_langgraph.execution.stream_executor import StreamResult
