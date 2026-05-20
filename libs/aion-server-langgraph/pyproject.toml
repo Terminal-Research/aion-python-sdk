@@ -10,18 +10,10 @@ packages = [{ include = "aion", from = "src" }]
 python = "^3.12.0"
 langgraph = ">=0.6.0,<=1.0.5"
 langgraph-checkpoint-postgres = ">=2.0.0,<=3.0.2"
-# [ORIGINAL-DEP] aion-langgraph = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-langgraph" }
-# [LOCAL-DEP]
-aion-langgraph = { path = "../aion-langgraph", develop = true }
-# [ORIGINAL-DEP] aion-db = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-db" }
-# [LOCAL-DEP]
-aion-db = { path = "../aion-db", develop = true }
-# [ORIGINAL-DEP] aion-core = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-core" }
-# [LOCAL-DEP]
-aion-core = { path = "../aion-core", develop = true }
-# [ORIGINAL-DEP] aion-server = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-server" }
-# [LOCAL-DEP]
-aion-server = { path = "../aion-server", develop = true }
+aion-langgraph = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-langgraph" }
+aion-db = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-db" }
+aion-core = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-core" }
+aion-server = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-server" }
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0"
