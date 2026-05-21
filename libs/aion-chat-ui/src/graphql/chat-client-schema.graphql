@@ -72,6 +72,7 @@ enum NetworkTypeGQL {
   Playground
   Telegram
   Twitter
+  Voice
 }
 
 enum OrganizationTypeGQL {
@@ -81,10 +82,6 @@ enum OrganizationTypeGQL {
   Personal
   "Shared organization with multiple members"
   Team
-}
-
-enum Route {
-  Onboarding
 }
 
 "JSON-RPC request envelope for agent-to-agent workflows"
@@ -282,8 +279,8 @@ type IdentityProfile {
 
 "Details returned from login query to let backend decide post-login routing"
 type LoginResponse {
-  "The next route the client should navigate to"
-  nextRoute: Route
+  "Route path the client should navigate to when present"
+  nextRoute: String
   "AgentIdentity name"
   name: String
   "AgentIdentity email"
@@ -317,8 +314,8 @@ type Queries {
   agentIdentityDetails("Organization whose visible identities should be listed" organizationId: ID!, "Optional identity-type filter applied to organization-visible identities." types: [AgentIdentityType!], "Optional distribution network types used to keep only identities that are used by at least one active distribution for every requested network. For example, choosing A2A and Playground returns only identities that have distributions for both." networkTypes: [NetworkTypeGQL!], "When true, include the caller's own personal identity for the requested organization even when it falls outside the normal visible set or type filter." includePersonalSelf: Boolean!): [AgentIdentityDetail!] @auth(subjectType: "User")
   "Retrieves one agent identity detail payload by identifier for the authenticated user."
   agentIdentityDetail(agentIdentityId: ID!): AgentIdentityDetail @auth(subjectType: "User")
-  "Returns post-login routing."
-  login("Authentication bearer token" token: String!): LoginResponse @auth(subjectType: "User")
+  "Returns post-login routing. The optional intendedRoute is a one-time frontend route hint. Invitation accept routes are returned before onboarding so invitation acceptance can run first. Otherwise onboarding overrides the intended route. When no backend detour is needed, the intended route is echoed unchanged."
+  login("Authentication bearer token" token: String!, "Optional route the client tried to reach before login. The frontend owns sanitization and interpretation; the backend only gives invitation accept routes special priority before onboarding." intendedRoute: String): LoginResponse @auth(subjectType: "User")
 }
 
 type Subscriptions {

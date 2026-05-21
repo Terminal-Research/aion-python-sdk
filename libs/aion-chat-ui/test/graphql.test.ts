@@ -70,13 +70,13 @@ describe("GraphQL client", () => {
 });
 
 describe("login bootstrap", () => {
-	it("runs login bootstrap and resolves onboarding into the web app route", async () => {
+	it("runs login bootstrap and uses the returned app path directly", async () => {
 		const fetchImpl = vi.fn(async () =>
 			new Response(
 				JSON.stringify({
 					data: {
 						login: {
-							nextRoute: "Onboarding",
+							nextRoute: " /onboarding?step=name ",
 							email: " user@example.com ",
 							name: " User Name "
 						}
@@ -93,15 +93,78 @@ describe("login bootstrap", () => {
 		});
 
 		expect(bootstrap).toEqual({
-			nextRouteKind: "ONBOARDING",
-			nextRoutePath: null,
+			nextRoutePath: "/onboarding?step=name",
 			loginEmail: "user@example.com",
 			loginName: "User Name"
 		});
-		expect(resolvePostAuthPath(bootstrap)).toBe("/onboarding/name");
-		expect(buildWebAppRouteUrl("staging", "/onboarding/name")).toBe(
-			"https://app-staging.aion.to/onboarding/name"
+		expect(resolvePostAuthPath(bootstrap)).toBe("/onboarding?step=name");
+		expect(buildWebAppRouteUrl("staging", "/onboarding?step=name")).toBe(
+			"https://app-staging.aion.to/onboarding?step=name"
 		);
+
+		const body = JSON.parse(
+			String(vi.mocked(fetchImpl).mock.calls[0]?.[1]?.body)
+		) as { variables: Record<string, unknown> };
+		expect(body.variables).toEqual({ token: "access-token" });
+	});
+
+	it("falls back to the existing default when login does not return a route", async () => {
+		const fetchImpl = vi.fn(async () =>
+			new Response(
+				JSON.stringify({
+					data: {
+						login: {
+							nextRoute: null,
+							email: null,
+							name: null
+						}
+					}
+				}),
+				{ status: 200 }
+			)
+		) as unknown as typeof fetch;
+
+		const bootstrap = await runLoginBootstrap({
+			environmentId: "development",
+			accessToken: "access-token",
+			fetchImpl
+		});
+
+		expect(bootstrap).toEqual({
+			nextRoutePath: null,
+			loginEmail: null,
+			loginName: null
+		});
+		expect(resolvePostAuthPath(bootstrap)).toBeUndefined();
+	});
+
+	it("does not navigate to external login routes", async () => {
+		const fetchImpl = vi.fn(async () =>
+			new Response(
+				JSON.stringify({
+					data: {
+						login: {
+							nextRoute: "https://example.com/onboarding",
+							email: null,
+							name: null
+						}
+					}
+				}),
+				{ status: 200 }
+			)
+		) as unknown as typeof fetch;
+
+		const bootstrap = await runLoginBootstrap({
+			environmentId: "production",
+			accessToken: "access-token",
+			fetchImpl
+		});
+
+		expect(bootstrap.nextRoutePath).toBeNull();
+		expect(resolvePostAuthPath(bootstrap)).toBeUndefined();
+		expect(() =>
+			buildWebAppRouteUrl("production", "https://example.com/onboarding")
+		).toThrow("Invalid Aion app route path.");
 	});
 });
 

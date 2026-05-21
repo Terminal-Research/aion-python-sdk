@@ -44606,9 +44606,12 @@ var package_default = {
 
 // src/packageInfo.ts
 function getPackageInfo() {
+  const repository = package_default.repository;
+  const repositoryUrl = typeof repository === "string" ? repository : repository?.url;
   return {
     name: package_default.name,
-    version: package_default.version
+    version: package_default.version,
+    ...repositoryUrl ? { repositoryUrl } : {}
   };
 }
 
@@ -46019,6 +46022,9 @@ function defaultEnvironmentSettings(environmentId) {
     agents: {}
   };
 }
+function isObject(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
 function normalizeAgentSourceRecord(key, value, fallback) {
   if (!value && !fallback) {
     return void 0;
@@ -46200,6 +46206,32 @@ function saveChatSettings(settings, settingsPath = resolveChatSettingsPath()) {
     return void 0;
   } catch (error) {
     return `chat2 could not save settings: ${error instanceof Error ? error.message : String(error)}`;
+  }
+}
+function loadSkippedUpdateVersion(settingsPath = resolveChatSettingsPath()) {
+  const rawSettings = readRawSettings(settingsPath);
+  const skippedVersion = rawSettings?.updateCheck?.skippedVersion;
+  return typeof skippedVersion === "string" && skippedVersion.trim() ? skippedVersion.trim() : void 0;
+}
+function saveSkippedUpdateVersion(version, settingsPath = resolveChatSettingsPath()) {
+  try {
+    const rawSettings = readRawSettings(settingsPath);
+    const { settings } = loadChatSettings(settingsPath);
+    const serialized = serializeSettings(settings, rawSettings);
+    serialized.updateCheck = {
+      ...isObject(rawSettings?.updateCheck) ? rawSettings.updateCheck : {},
+      skippedVersion: version
+    };
+    mkdirSync(path.dirname(settingsPath), { recursive: true });
+    writeFileSync(
+      settingsPath,
+      `${JSON.stringify(serialized, null, 2)}
+`,
+      "utf8"
+    );
+    return void 0;
+  } catch (error) {
+    return `chat2 could not save update settings: ${error instanceof Error ? error.message : String(error)}`;
   }
 }
 function updateChatSettings(update, settingsPath = resolveChatSettingsPath()) {
@@ -46745,7 +46777,7 @@ var Task = {
       status: isSet(object.status) ? TaskStatus.fromJSON(object.status) : void 0,
       artifacts: globalThis.Array.isArray(object?.artifacts) ? object.artifacts.map((e) => Artifact.fromJSON(e)) : [],
       history: globalThis.Array.isArray(object?.history) ? object.history.map((e) => Message.fromJSON(e)) : [],
-      metadata: isObject(object.metadata) ? object.metadata : void 0
+      metadata: isObject2(object.metadata) ? object.metadata : void 0
     };
   },
   toJSON(message) {
@@ -46833,7 +46865,7 @@ var FilePart = {
 };
 var DataPart = {
   fromJSON(object) {
-    return { data: isObject(object.data) ? object.data : void 0 };
+    return { data: isObject2(object.data) ? object.data : void 0 };
   },
   toJSON(message) {
     const obj = {};
@@ -46851,7 +46883,7 @@ var Message = {
       taskId: isSet(object.taskId) ? globalThis.String(object.taskId) : isSet(object.task_id) ? globalThis.String(object.task_id) : "",
       role: isSet(object.role) ? roleFromJSON(object.role) : 0,
       content: globalThis.Array.isArray(object?.content) ? object.content.map((e) => Part.fromJSON(e)) : [],
-      metadata: isObject(object.metadata) ? object.metadata : void 0,
+      metadata: isObject2(object.metadata) ? object.metadata : void 0,
       extensions: globalThis.Array.isArray(object?.extensions) ? object.extensions.map((e) => globalThis.String(e)) : []
     };
   },
@@ -46888,7 +46920,7 @@ var Artifact = {
       name: isSet(object.name) ? globalThis.String(object.name) : "",
       description: isSet(object.description) ? globalThis.String(object.description) : "",
       parts: globalThis.Array.isArray(object?.parts) ? object.parts.map((e) => Part.fromJSON(e)) : [],
-      metadata: isObject(object.metadata) ? object.metadata : void 0,
+      metadata: isObject2(object.metadata) ? object.metadata : void 0,
       extensions: globalThis.Array.isArray(object?.extensions) ? object.extensions.map((e) => globalThis.String(e)) : []
     };
   },
@@ -46922,7 +46954,7 @@ var TaskStatusUpdateEvent = {
       contextId: isSet(object.contextId) ? globalThis.String(object.contextId) : isSet(object.context_id) ? globalThis.String(object.context_id) : "",
       status: isSet(object.status) ? TaskStatus.fromJSON(object.status) : void 0,
       final: isSet(object.final) ? globalThis.Boolean(object.final) : false,
-      metadata: isObject(object.metadata) ? object.metadata : void 0
+      metadata: isObject2(object.metadata) ? object.metadata : void 0
     };
   },
   toJSON(message) {
@@ -46953,7 +46985,7 @@ var TaskArtifactUpdateEvent = {
       artifact: isSet(object.artifact) ? Artifact.fromJSON(object.artifact) : void 0,
       append: isSet(object.append) ? globalThis.Boolean(object.append) : false,
       lastChunk: isSet(object.lastChunk) ? globalThis.Boolean(object.lastChunk) : isSet(object.last_chunk) ? globalThis.Boolean(object.last_chunk) : false,
-      metadata: isObject(object.metadata) ? object.metadata : void 0
+      metadata: isObject2(object.metadata) ? object.metadata : void 0
     };
   },
   toJSON(message) {
@@ -47054,13 +47086,13 @@ var AgentCard = {
       version: isSet(object.version) ? globalThis.String(object.version) : "",
       documentationUrl: isSet(object.documentationUrl) ? globalThis.String(object.documentationUrl) : isSet(object.documentation_url) ? globalThis.String(object.documentation_url) : "",
       capabilities: isSet(object.capabilities) ? AgentCapabilities.fromJSON(object.capabilities) : void 0,
-      securitySchemes: isObject(object.securitySchemes) ? globalThis.Object.entries(object.securitySchemes).reduce(
+      securitySchemes: isObject2(object.securitySchemes) ? globalThis.Object.entries(object.securitySchemes).reduce(
         (acc, [key, value]) => {
           acc[key] = SecurityScheme.fromJSON(value);
           return acc;
         },
         {}
-      ) : isObject(object.security_schemes) ? globalThis.Object.entries(object.security_schemes).reduce(
+      ) : isObject2(object.security_schemes) ? globalThis.Object.entries(object.security_schemes).reduce(
         (acc, [key, value]) => {
           acc[key] = SecurityScheme.fromJSON(value);
           return acc;
@@ -47183,7 +47215,7 @@ var AgentExtension = {
       uri: isSet(object.uri) ? globalThis.String(object.uri) : "",
       description: isSet(object.description) ? globalThis.String(object.description) : "",
       required: isSet(object.required) ? globalThis.Boolean(object.required) : false,
-      params: isObject(object.params) ? object.params : void 0
+      params: isObject2(object.params) ? object.params : void 0
     };
   },
   toJSON(message) {
@@ -47250,7 +47282,7 @@ var AgentCardSignature = {
     return {
       protected: isSet(object.protected) ? globalThis.String(object.protected) : "",
       signature: isSet(object.signature) ? globalThis.String(object.signature) : "",
-      header: isObject(object.header) ? object.header : void 0
+      header: isObject2(object.header) ? object.header : void 0
     };
   },
   toJSON(message) {
@@ -47300,7 +47332,7 @@ var StringList = {
 var Security = {
   fromJSON(object) {
     return {
-      schemes: isObject(object.schemes) ? globalThis.Object.entries(object.schemes).reduce(
+      schemes: isObject2(object.schemes) ? globalThis.Object.entries(object.schemes).reduce(
         (acc, [key, value]) => {
           acc[key] = StringList.fromJSON(value);
           return acc;
@@ -47473,7 +47505,7 @@ var AuthorizationCodeOAuthFlow = {
       authorizationUrl: isSet(object.authorizationUrl) ? globalThis.String(object.authorizationUrl) : isSet(object.authorization_url) ? globalThis.String(object.authorization_url) : "",
       tokenUrl: isSet(object.tokenUrl) ? globalThis.String(object.tokenUrl) : isSet(object.token_url) ? globalThis.String(object.token_url) : "",
       refreshUrl: isSet(object.refreshUrl) ? globalThis.String(object.refreshUrl) : isSet(object.refresh_url) ? globalThis.String(object.refresh_url) : "",
-      scopes: isObject(object.scopes) ? globalThis.Object.entries(object.scopes).reduce(
+      scopes: isObject2(object.scopes) ? globalThis.Object.entries(object.scopes).reduce(
         (acc, [key, value]) => {
           acc[key] = globalThis.String(value);
           return acc;
@@ -47510,7 +47542,7 @@ var ClientCredentialsOAuthFlow = {
     return {
       tokenUrl: isSet(object.tokenUrl) ? globalThis.String(object.tokenUrl) : isSet(object.token_url) ? globalThis.String(object.token_url) : "",
       refreshUrl: isSet(object.refreshUrl) ? globalThis.String(object.refreshUrl) : isSet(object.refresh_url) ? globalThis.String(object.refresh_url) : "",
-      scopes: isObject(object.scopes) ? globalThis.Object.entries(object.scopes).reduce(
+      scopes: isObject2(object.scopes) ? globalThis.Object.entries(object.scopes).reduce(
         (acc, [key, value]) => {
           acc[key] = globalThis.String(value);
           return acc;
@@ -47544,7 +47576,7 @@ var ImplicitOAuthFlow = {
     return {
       authorizationUrl: isSet(object.authorizationUrl) ? globalThis.String(object.authorizationUrl) : isSet(object.authorization_url) ? globalThis.String(object.authorization_url) : "",
       refreshUrl: isSet(object.refreshUrl) ? globalThis.String(object.refreshUrl) : isSet(object.refresh_url) ? globalThis.String(object.refresh_url) : "",
-      scopes: isObject(object.scopes) ? globalThis.Object.entries(object.scopes).reduce(
+      scopes: isObject2(object.scopes) ? globalThis.Object.entries(object.scopes).reduce(
         (acc, [key, value]) => {
           acc[key] = globalThis.String(value);
           return acc;
@@ -47578,7 +47610,7 @@ var PasswordOAuthFlow = {
     return {
       tokenUrl: isSet(object.tokenUrl) ? globalThis.String(object.tokenUrl) : isSet(object.token_url) ? globalThis.String(object.token_url) : "",
       refreshUrl: isSet(object.refreshUrl) ? globalThis.String(object.refreshUrl) : isSet(object.refresh_url) ? globalThis.String(object.refresh_url) : "",
-      scopes: isObject(object.scopes) ? globalThis.Object.entries(object.scopes).reduce(
+      scopes: isObject2(object.scopes) ? globalThis.Object.entries(object.scopes).reduce(
         (acc, [key, value]) => {
           acc[key] = globalThis.String(value);
           return acc;
@@ -47612,7 +47644,7 @@ var SendMessageRequest = {
     return {
       request: isSet(object.message) ? Message.fromJSON(object.message) : isSet(object.request) ? Message.fromJSON(object.request) : void 0,
       configuration: isSet(object.configuration) ? SendMessageConfiguration.fromJSON(object.configuration) : void 0,
-      metadata: isObject(object.metadata) ? object.metadata : void 0
+      metadata: isObject2(object.metadata) ? object.metadata : void 0
     };
   },
   toJSON(message) {
@@ -47689,7 +47721,7 @@ function bytesFromBase64(b64) {
 function base64FromBytes(arr) {
   return globalThis.Buffer.from(arr).toString("base64");
 }
-function isObject(value) {
+function isObject2(value) {
   return typeof value === "object" && value !== null;
 }
 function isSet(value) {
@@ -49929,28 +49961,23 @@ query LoginBootstrap($token: String!) {
 	}
 }
 `;
-var ONBOARDING_ENTRY_PATH = "/onboarding/name";
 function isValidWebAppPath(value) {
   return Boolean(
     value && value.startsWith("/") && !value.startsWith("//") && !/^[a-z][a-z0-9+.-]*:/iu.test(value)
   );
 }
-function normalizeRoute(nextRoute) {
+function normalizeNextRoutePath(nextRoute) {
   if (typeof nextRoute !== "string") {
-    return { nextRouteKind: "NONE", nextRoutePath: null };
+    return { nextRoutePath: null };
   }
   const trimmed = nextRoute.trim();
   if (!trimmed) {
-    return { nextRouteKind: "NONE", nextRoutePath: null };
-  }
-  const normalized = trimmed.toLowerCase();
-  if (nextRoute === "Onboarding" || normalized === "onboarding" || normalized === "/onboarding" || normalized.startsWith("/onboarding/")) {
-    return { nextRouteKind: "ONBOARDING", nextRoutePath: null };
+    return { nextRoutePath: null };
   }
   if (isValidWebAppPath(trimmed)) {
-    return { nextRouteKind: "PATH", nextRoutePath: trimmed };
+    return { nextRoutePath: trimmed };
   }
-  return { nextRouteKind: "NONE", nextRoutePath: null };
+  return { nextRoutePath: null };
 }
 function normalizeOptionalString(value) {
   const trimmed = value?.trim();
@@ -49966,7 +49993,7 @@ async function runLoginBootstrap(options) {
     url: options.graphQLUrl
   });
   const login = response.data?.login ?? null;
-  const route = normalizeRoute(login?.nextRoute);
+  const route = normalizeNextRoutePath(login?.nextRoute);
   return {
     ...route,
     loginEmail: normalizeOptionalString(login?.email),
@@ -49974,19 +50001,20 @@ async function runLoginBootstrap(options) {
   };
 }
 function resolvePostAuthPath(bootstrap) {
-  if (bootstrap.nextRouteKind === "ONBOARDING") {
-    return ONBOARDING_ENTRY_PATH;
-  }
-  if (bootstrap.nextRouteKind === "PATH" && isValidWebAppPath(bootstrap.nextRoutePath)) {
+  if (isValidWebAppPath(bootstrap.nextRoutePath)) {
     return bootstrap.nextRoutePath;
   }
   return void 0;
 }
 function buildWebAppRouteUrl(environmentId, pathname) {
-  const url = new URL(getWebAppBaseUrl(environmentId));
-  url.pathname = pathname;
-  url.search = "";
-  url.hash = "";
+  if (!isValidWebAppPath(pathname)) {
+    throw new Error("Invalid Aion app route path.");
+  }
+  const baseUrl = new URL(getWebAppBaseUrl(environmentId));
+  const url = new URL(pathname, baseUrl);
+  if (url.origin !== baseUrl.origin) {
+    throw new Error("Invalid Aion app route path.");
+  }
   return url.toString();
 }
 
@@ -50668,7 +50696,7 @@ function isTerminalTaskState(state) {
 }
 
 // src/lib/authConfig.ts
-function isObject2(value) {
+function isObject3(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 function readString(value, key, path3) {
@@ -50686,7 +50714,7 @@ function readBoolean(value, key, path3) {
   return next;
 }
 function parseCliAuthConfig(value) {
-  if (!isObject2(value)) {
+  if (!isObject3(value)) {
     throw new Error("Invalid CLI auth config: expected object response");
   }
   const authProvider = readString(value, "authProvider", "authProvider");
@@ -50698,7 +50726,7 @@ function parseCliAuthConfig(value) {
     throw new Error(`Unsupported CLI auth mode: ${authMode}`);
   }
   const workos = value.workos;
-  if (!isObject2(workos)) {
+  if (!isObject3(workos)) {
     throw new Error("Invalid CLI auth config: missing workos");
   }
   return {
@@ -52045,6 +52073,35 @@ var DEFAULT_TIMEOUT_MS = 1500;
 function buildNpmLatestVersionUrl(packageName) {
   return `https://registry.npmjs.org/${packageName.replace("/", "%2F")}/latest`;
 }
+function normalizeGitHubRepositoryUrl(repositoryUrl) {
+  if (!repositoryUrl?.trim()) {
+    return void 0;
+  }
+  const normalizedUrl = repositoryUrl.trim().replace(/^git\+/u, "").replace(/^git@github\.com:/u, "https://github.com/").replace(/\.git$/u, "");
+  try {
+    const parsed = new URL(normalizedUrl);
+    if (parsed.hostname !== "github.com") {
+      return void 0;
+    }
+    const [owner, repository] = parsed.pathname.split("/").filter((part) => part.length > 0);
+    if (!owner || !repository) {
+      return void 0;
+    }
+    return `https://github.com/${owner}/${repository}`;
+  } catch {
+    return void 0;
+  }
+}
+function buildGitHubReleaseNotesUrl(options) {
+  const normalizedRepositoryUrl = normalizeGitHubRepositoryUrl(
+    options.repositoryUrl
+  );
+  if (!normalizedRepositoryUrl) {
+    return void 0;
+  }
+  const tag = options.version.startsWith("v") ? options.version : `v${options.version}`;
+  return `${normalizedRepositoryUrl}/releases/tag/${encodeURIComponent(tag)}`;
+}
 function parseVersion(value) {
   const match = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?/u.exec(value);
   if (!match) {
@@ -52119,17 +52176,24 @@ async function detectPackageUpdate(options = {}) {
   if (!latestVersion || comparePackageVersions(latestVersion, currentVersion) <= 0) {
     return void 0;
   }
+  if (options.skippedVersion === latestVersion) {
+    return void 0;
+  }
+  const releaseNotesUrl = buildGitHubReleaseNotesUrl({
+    repositoryUrl: options.repositoryUrl ?? packageInfo.repositoryUrl,
+    version: latestVersion
+  });
   return {
     packageName,
     currentVersion,
-    latestVersion
+    latestVersion,
+    ...releaseNotesUrl ? { releaseNotesUrl } : {}
   };
 }
 function getUpdateInstallCommand(choice, packageName) {
-  const packageTarget = `${packageName}@latest`;
   return {
     command: process.platform === "win32" ? "npm.cmd" : "npm",
-    args: choice === "global" ? ["install", "-g", packageTarget] : ["install", packageTarget]
+    args: choice === "global" ? ["install", "-g", packageName] : ["install", packageName]
   };
 }
 function formatInstallCommand(command) {
@@ -52138,32 +52202,45 @@ function formatInstallCommand(command) {
 async function promptForUpdate(options) {
   const input = options.input ?? process.stdin;
   const output = options.output ?? process.stdout;
-  const globalCommand = getUpdateInstallCommand("global", options.update.packageName);
-  const localCommand = getUpdateInstallCommand("local", options.update.packageName);
+  const updateCommand = getUpdateInstallCommand(
+    "global",
+    options.update.packageName
+  );
+  const localCommand = getUpdateInstallCommand(
+    "local",
+    options.update.packageName
+  );
   output.write(
     [
       "",
-      `A new ${options.update.packageName} version is available: ${options.update.currentVersion} -> ${options.update.latestVersion}`,
-      `1. Install globally: ${formatInstallCommand(globalCommand)}`,
-      `2. Install in this project: ${formatInstallCommand(localCommand)}`,
-      "3. Skip for now",
-      ""
-    ].join("\n")
+      `  \u2728 Update available! ${options.update.currentVersion} -> ${options.update.latestVersion}`,
+      "",
+      ...options.update.releaseNotesUrl ? [`  Release notes: ${options.update.releaseNotesUrl}`, ""] : [],
+      `\u203A 1. Update globally (runs \`${formatInstallCommand(updateCommand)}\`)`,
+      `  2. Update in this project (runs \`${formatInstallCommand(localCommand)}\`)`,
+      "  3. Skip",
+      "  4. Skip until next version",
+      "",
+      "  Press enter to continue"
+    ].join("\n") + "\n"
   );
   const readline = createInterface({ input, output });
   try {
     while (true) {
-      const answer = (await readline.question("Choose 1, 2, or 3: ")).trim();
-      if (answer === "1") {
+      const answer = (await readline.question("")).trim();
+      if (answer === "" || answer === "1") {
         return "global";
       }
       if (answer === "2") {
         return "local";
       }
-      if (answer === "3" || answer === "") {
+      if (answer === "3") {
         return "skip";
       }
-      output.write("Please choose 1, 2, or 3.\n");
+      if (answer === "4") {
+        return "skip-version";
+      }
+      output.write("  Please choose 1, 2, 3, or 4.\n");
     }
   } finally {
     readline.close();
@@ -52258,10 +52335,11 @@ function selectHeadlessAgent(agents, options, selectedAgentKey, selectedAgentId,
   if (options.agentSelector) {
     return selectAgentBySelector(agents, options.agentSelector, explicitSourceKey);
   }
+  const shouldIgnoreSavedSelection = Boolean(explicitSourceKey && !options.agentId);
   const selected = selectDiscoveredAgent(agents, {
     requestedAgentId: options.agentId,
-    selectedAgentKey,
-    selectedAgentId,
+    selectedAgentKey: shouldIgnoreSavedSelection ? void 0 : selectedAgentKey,
+    selectedAgentId: shouldIgnoreSavedSelection ? void 0 : selectedAgentId,
     explicitSourceKey,
     autoSelectExplicit: true
   });
@@ -52359,10 +52437,11 @@ function handleMessageOutputStatusUpdate(state, event) {
   return false;
 }
 function handleMessageOutputArtifactUpdate(state, event) {
-  if (event.artifact.artifactId === STREAM_DELTA_ARTIFACT_ID) {
+  const rendered = renderArtifact(state, event.artifact, event.taskId, event.append);
+  if (rendered && event.artifact.artifactId === STREAM_DELTA_ARTIFACT_ID) {
     state.streamedTaskIds.add(event.taskId);
   }
-  return renderArtifact(state, event.artifact, event.taskId, event.append);
+  return rendered;
 }
 function createMessageOutputState() {
   return {
@@ -52607,12 +52686,22 @@ async function continueAfterUpdateCheck() {
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     return true;
   }
-  const update = await detectPackageUpdate();
+  const update = await detectPackageUpdate({
+    skippedVersion: loadSkippedUpdateVersion()
+  });
   if (!update) {
     return true;
   }
   const choice = await promptForUpdate({ update });
   if (choice === "skip") {
+    return true;
+  }
+  if (choice === "skip-version") {
+    const warning = saveSkippedUpdateVersion(update.latestVersion);
+    if (warning) {
+      process.stderr.write(`${warning}
+`);
+    }
     return true;
   }
   const command = getUpdateInstallCommand(choice, update.packageName);

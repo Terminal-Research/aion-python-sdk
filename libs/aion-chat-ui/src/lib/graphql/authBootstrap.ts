@@ -1,7 +1,6 @@
 import type {
 	LoginBootstrapQuery,
-	LoginBootstrapQueryVariables,
-	Route
+	LoginBootstrapQueryVariables
 } from "../../graphql/generated/graphql.js";
 import {
 	getWebAppBaseUrl,
@@ -9,10 +8,7 @@ import {
 } from "../environment.js";
 import { executeGraphQL } from "./client.js";
 
-export type NextRouteKind = "NONE" | "ONBOARDING" | "PATH";
-
 export interface AuthBootstrapResult {
-	nextRouteKind: NextRouteKind;
 	nextRoutePath: string | null;
 	loginEmail: string | null;
 	loginName: string | null;
@@ -28,8 +24,6 @@ query LoginBootstrap($token: String!) {
 }
 `;
 
-const ONBOARDING_ENTRY_PATH = "/onboarding/name";
-
 function isValidWebAppPath(value: string | null | undefined): value is string {
 	return Boolean(
 		value &&
@@ -39,33 +33,23 @@ function isValidWebAppPath(value: string | null | undefined): value is string {
 	);
 }
 
-function normalizeRoute(
-	nextRoute: Route | string | null | undefined
-): Pick<AuthBootstrapResult, "nextRouteKind" | "nextRoutePath"> {
+function normalizeNextRoutePath(
+	nextRoute: string | null | undefined
+): Pick<AuthBootstrapResult, "nextRoutePath"> {
 	if (typeof nextRoute !== "string") {
-		return { nextRouteKind: "NONE", nextRoutePath: null };
+		return { nextRoutePath: null };
 	}
 
 	const trimmed = nextRoute.trim();
 	if (!trimmed) {
-		return { nextRouteKind: "NONE", nextRoutePath: null };
-	}
-
-	const normalized = trimmed.toLowerCase();
-	if (
-		nextRoute === "Onboarding" ||
-		normalized === "onboarding" ||
-		normalized === "/onboarding" ||
-		normalized.startsWith("/onboarding/")
-	) {
-		return { nextRouteKind: "ONBOARDING", nextRoutePath: null };
+		return { nextRoutePath: null };
 	}
 
 	if (isValidWebAppPath(trimmed)) {
-		return { nextRouteKind: "PATH", nextRoutePath: trimmed };
+		return { nextRoutePath: trimmed };
 	}
 
-	return { nextRouteKind: "NONE", nextRoutePath: null };
+	return { nextRoutePath: null };
 }
 
 function normalizeOptionalString(value: string | null | undefined): string | null {
@@ -92,7 +76,7 @@ export async function runLoginBootstrap(options: {
 	});
 
 	const login = response.data?.login ?? null;
-	const route = normalizeRoute(login?.nextRoute);
+	const route = normalizeNextRoutePath(login?.nextRoute);
 	return {
 		...route,
 		loginEmail: normalizeOptionalString(login?.email),
@@ -103,13 +87,7 @@ export async function runLoginBootstrap(options: {
 export function resolvePostAuthPath(
 	bootstrap: AuthBootstrapResult
 ): string | undefined {
-	if (bootstrap.nextRouteKind === "ONBOARDING") {
-		return ONBOARDING_ENTRY_PATH;
-	}
-	if (
-		bootstrap.nextRouteKind === "PATH" &&
-		isValidWebAppPath(bootstrap.nextRoutePath)
-	) {
+	if (isValidWebAppPath(bootstrap.nextRoutePath)) {
 		return bootstrap.nextRoutePath;
 	}
 	return undefined;
@@ -119,9 +97,14 @@ export function buildWebAppRouteUrl(
 	environmentId: AionEnvironmentId,
 	pathname: string
 ): string {
-	const url = new URL(getWebAppBaseUrl(environmentId));
-	url.pathname = pathname;
-	url.search = "";
-	url.hash = "";
+	if (!isValidWebAppPath(pathname)) {
+		throw new Error("Invalid Aion app route path.");
+	}
+
+	const baseUrl = new URL(getWebAppBaseUrl(environmentId));
+	const url = new URL(pathname, baseUrl);
+	if (url.origin !== baseUrl.origin) {
+		throw new Error("Invalid Aion app route path.");
+	}
 	return url.toString();
 }
