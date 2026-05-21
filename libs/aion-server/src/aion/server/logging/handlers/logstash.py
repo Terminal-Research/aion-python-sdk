@@ -18,7 +18,7 @@ import os
 import traceback
 
 from a2a.types import TaskState
-from aion.server.logging.base import AionLogRecord
+from aion.core.logging.base import AionLogRecord
 from logstash_async.formatter import LogstashFormatter
 from logstash_async.handler import AsynchronousLogstashHandler
 

@@ -1,35 +1,24 @@
 import inspect
 import logging
-from typing import Any, Callable, Optional, Type
+from typing import Any, Callable, Optional
+
+from .base import AionLogger
 
 _logger_factory: Optional[Callable[[Optional[str]], Any]] = None
 _resolved: bool = False
-_aion_logger_class: Optional[Type] = None
+
+# Note: We do NOT set logging.setLoggerClass() here. That's the responsibility
+# of the consuming layer (e.g., aion-server.logging.factory). This keeps aion-core
+# serverless and avoids polluting global logging state.
 
 
-def _get_aion_logger_class() -> Type:
-    """Lazily load AionLogger to avoid circular imports."""
-    global _aion_logger_class
-    if _aion_logger_class is not None:
-        return _aion_logger_class
-
-    try:
-        from aion.server.logging import AionLogger
-        _aion_logger_class = AionLogger
-        return AionLogger
-    except ImportError:
-        _aion_logger_class = logging.Logger
-        return logging.Logger
-
-
-def get_logger(name: Optional[str] = None) -> Any:
+def get_logger(name: Optional[str] = None) -> AionLogger:
     """Return a logger for the given name.
 
     If name is None, automatically detects the caller's module name.
-    On the first call, lazily attempts to import aion.server.logging and use
-    its get_logger as the factory. If aion-server is not installed, falls back
-    to stdlib logging.getLogger. The resolved factory is cached — subsequent
-    calls skip the import attempt entirely.
+    Always returns an AionLogger instance with core tracing support.
+    Optionally uses aion.server.logging.get_logger for enhanced server-specific
+    handler configuration if available.
     """
     global _logger_factory, _resolved
     if name is None:
@@ -41,8 +30,6 @@ def get_logger(name: Optional[str] = None) -> Any:
         try:
             from aion.server.logging import get_logger as _server_get_logger
             _logger_factory = _server_get_logger
-            # Also ensure AionLogger class is loaded for setLoggerClass
-            _get_aion_logger_class()
         except ImportError:
             pass
         _resolved = True

@@ -3,7 +3,8 @@ from typing import Optional
 
 from aion.server.settings import app_settings
 from aion.core.settings import api_settings
-from .base import AionLogger
+from aion.core.logging.base import AionLogger
+from .filters import ServerAionContextFilter
 from .handlers import LogStreamHandler, AionLogstashHandler
 
 logging.setLoggerClass(AionLogger)
@@ -68,6 +69,9 @@ def _configure_logger(
     log_level = level or app_settings.log_level
     logger.setLevel(log_level)
     logger.propagate = False
+
+    # Enrich all records with tracing and server context before handlers run
+    logger.addFilter(ServerAionContextFilter())
 
     # Add stream handler if requested
     if use_stream:

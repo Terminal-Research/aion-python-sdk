@@ -13,7 +13,7 @@ from typing import Optional, TYPE_CHECKING
 from .agent import AionAgent
 
 if TYPE_CHECKING:
-    from aion.server.logging.base import AionLogger
+    from aion.core.logging.base import AionLogger
 
 
 class AgentManager(metaclass=Singleton):

@@ -1,8 +1,4 @@
-from .factory import get_logger, set_logger_factory, reset_logger_factory, _get_aion_logger_class
+from .base import AionLogger, AionLogRecord
+from .factory import get_logger, set_logger_factory, reset_logger_factory
 
-def __getattr__(name: str):
-    if name == "AionLogger":
-        return _get_aion_logger_class()
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
-__all__ = ["get_logger", "set_logger_factory", "reset_logger_factory", "AionLogger"]
+__all__ = ["AionLogger", "AionLogRecord", "get_logger", "set_logger_factory", "reset_logger_factory"]
