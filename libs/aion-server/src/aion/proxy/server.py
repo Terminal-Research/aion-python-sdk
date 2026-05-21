@@ -7,8 +7,7 @@ from contextlib import asynccontextmanager
 from typing import Dict, Optional, Callable
 
 import uvicorn
-from aion.core.logging import get_logger
-from aion.server.logging.base import AionLogger
+from aion.core.logging import get_logger, AionLogger
 from aion.server.settings import app_settings
 from fastapi import FastAPI
 
