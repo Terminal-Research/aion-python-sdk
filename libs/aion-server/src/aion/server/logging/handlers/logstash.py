@@ -51,15 +51,15 @@ class AionLogstashFilter(logging.Filter):
     @staticmethod
     def _validate_deployment(record: AionLogRecord):
         if not any((
-            getattr(record, 'aion_distribution_id', None),
-            getattr(record, 'aion_version_id', None)
+            record.aion_distribution_id,
+            record.aion_version_id
         )):
             return False
         return True
 
     @staticmethod
     def _validate_tracing(record: AionLogRecord):
-        return bool(getattr(record, 'trace_id', None))
+        return bool(record.trace_id)
 
 
 _LOG_LEVEL_MAP = {
@@ -110,8 +110,8 @@ class AionLogstashFormatter(LogstashFormatter):
                 - error.type: Exception type name (only if exception present)
                 - error.stack_trace: Full stack trace (only if exception present)
         """
-        trace_baggage = record.trace_baggage if isinstance(getattr(record, 'trace_baggage', None), dict) else {}
-        agent_framework_baggage = record.agent_trace_baggage if isinstance(getattr(record, 'agent_trace_baggage', None), dict) else {}
+        trace_baggage = record.trace_baggage if isinstance(record.trace_baggage, dict) else {}
+        agent_framework_baggage = record.agent_trace_baggage if isinstance(record.agent_trace_baggage, dict) else {}
         user_id = trace_baggage.get("aion.sender.id", None)
 
         message = {
@@ -131,21 +131,21 @@ class AionLogstashFormatter(LogstashFormatter):
 
             # Application & trace context
             'service.name': get_service_name(),
-            "trace.id": getattr(record, 'trace_id', None),
-            "transaction.id": getattr(record, 'transaction_id', None),
-            "transaction.name": getattr(record, 'transaction_name', None),
-            "span.id": getattr(record, 'trace_span_id', None),
-            "span.name": getattr(record, 'trace_span_name', None),
-            "parent.span.id": getattr(record, 'trace_parent_span_id', None),
+            "trace.id": record.trace_id,
+            "transaction.id": record.transaction_id,
+            "transaction.name": record.transaction_name,
+            "span.id": record.trace_span_id,
+            "span.name": record.trace_span_name,
+            "parent.span.id": record.trace_parent_span_id,
 
             "tags": trace_baggage | agent_framework_baggage | {
-                "aion.distribution.id": getattr(record, 'aion_distribution_id', None),
-                "aion.version.id": getattr(record, 'aion_version_id', None),
-                "aion.agentEnvironment.id": getattr(record, 'aion_agent_environment_id', None),
-                "http.method": getattr(record, 'http_request_method', None),
-                "http.target": getattr(record, 'http_request_target', None),
-                "a2a.rpc.method": getattr(record, 'a2a_rpc_method', None),
-                "a2a.taskStatus.state": TaskState.Name(a2a_status) if (a2a_status := getattr(record, 'a2a_task_status', None)) is not None else None,
+                "aion.distribution.id": record.aion_distribution_id,
+                "aion.version.id": record.aion_version_id,
+                "aion.agentEnvironment.id": record.aion_agent_environment_id,
+                "http.method": record.http_request_method,
+                "http.target": record.http_request_target,
+                "a2a.rpc.method": record.a2a_rpc_method,
+                "a2a.taskStatus.state": TaskState.Name(record.a2a_task_status) if record.a2a_task_status is not None else None,
             },
         }
         # Add exception information if present
