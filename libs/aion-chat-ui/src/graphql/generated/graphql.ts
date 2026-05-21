@@ -23,17 +23,15 @@ export type NetworkTypeGQL =
   | 'GitHub'
   | 'Playground'
   | 'Telegram'
-  | 'Twitter';
-
-export type Route =
-  | 'Onboarding';
+  | 'Twitter'
+  | 'Voice';
 
 export type LoginBootstrapQueryVariables = Exact<{
   token: string;
 }>;
 
 
-export type LoginBootstrapQuery = { login: { nextRoute: Route | null, email: string | null, name: string | null } | null };
+export type LoginBootstrapQuery = { login: { nextRoute: string | null, email: string | null, name: string | null } | null };
 
 export type CurrentUserQueryVariables = Exact<{ [key: string]: never; }>;
 
