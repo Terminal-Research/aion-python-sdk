@@ -17,14 +17,14 @@ from aion.server.agent.adapters import (
 )
 from aion.server.agent.card import AionAgentCard
 from aion.core.config.models import AgentConfig
-from aion.server.logging.base import AionLogger
+from aion.core.logging.base import AionLogger
 from collections.abc import AsyncIterator
 from typing import Any, Optional, TYPE_CHECKING
 
 from .models import AgentMetadata
 
 if TYPE_CHECKING:
-    from aion.server.logging.base import AionLogger
+    from aion.core.logging.base import AionLogger
     from a2a.server.agent_execution import RequestContext
 
 

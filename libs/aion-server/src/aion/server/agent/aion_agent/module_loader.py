@@ -15,7 +15,7 @@ from types import ModuleType
 from typing import Any, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from aion.server.logging.base import AionLogger
+    from aion.core.logging.base import AionLogger
 
 
 def _get_logger() -> AionLogger:

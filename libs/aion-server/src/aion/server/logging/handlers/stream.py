@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime
 
-from aion.server.logging.base import AionLogRecord
+from aion.core.logging.base import AionLogRecord
 from aion.core.utils.text import colorize_text
 
 
