@@ -15,7 +15,7 @@ from fastapi import FastAPI
 from starlette.routing import Route
 from typing import Optional
 
-from aion.server.agent.agent_execution import AionAgentRequestExecutor
+from aion.server.agent.execution import AionAgentRequestExecutor, AionRequestContextBuilder
 from aion.server.agent.factory import AgentFactory
 from aion.server.core.app.api import AionExtraHTTPRoutes
 from aion.server.core.app.handlers import AionJsonRpcDispatcher, AionRequestHandler
@@ -25,7 +25,6 @@ from aion.server.plugins import PluginFactory
 from aion.server.tasks import StoreManager, PushNotificationFactory
 from .lifespan import AppLifespan
 from .registry import app_registry
-from ...agent.agent_execution.request_context_builder import AionRequestContextBuilder
 
 logger = get_logger()
 

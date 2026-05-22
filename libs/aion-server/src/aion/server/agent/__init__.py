@@ -1,4 +1,4 @@
-from .agent_execution import AionAgentRequestExecutor
+from .execution import AionAgentRequestExecutor
 from .factory import AgentFactory
 from .aion_agent import AionAgent, agent_manager
 from . import execution

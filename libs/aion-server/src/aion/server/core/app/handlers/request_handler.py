@@ -10,7 +10,7 @@ from collections.abc import AsyncGenerator
 from functools import wraps
 from typing import override
 
-from aion.server.agent.agent_execution.active_task_registry import AionActiveTaskRegistry
+from aion.server.agent.execution import AionActiveTaskRegistry
 from aion.server.tasks import store_manager
 from aion.server.utils import ConversationBuilder
 from .request_preprocessors import A2ARequestPreprocessor

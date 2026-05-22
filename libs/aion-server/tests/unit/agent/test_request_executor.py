@@ -5,7 +5,7 @@ from a2a.server.events import EventQueue
 from a2a.types import TaskState
 from a2a.utils.errors import TaskNotCancelableError, TaskNotFoundError, UnsupportedOperationError
 
-from aion.server.agent.agent_execution.request_executor import AionAgentRequestExecutor
+from aion.server.agent.execution import AionAgentRequestExecutor
 
 
 def _make_task(state: TaskState = TaskState.TASK_STATE_WORKING):
@@ -86,7 +86,7 @@ class TestCancel:
         ctx = _make_context(task=task)
 
         with patch(
-            "aion.server.agent.agent_execution.request_executor.TaskUpdater"
+            "aion.server.agent.execution.request_executor.TaskUpdater"
         ) as MockUpdater:
             updater_instance = AsyncMock()
             MockUpdater.return_value = updater_instance
@@ -105,7 +105,7 @@ class TestCancel:
         ctx = _make_context(task=task)
 
         with patch(
-            "aion.server.agent.agent_execution.request_executor.TaskUpdater"
+            "aion.server.agent.execution.request_executor.TaskUpdater"
         ) as MockUpdater:
             updater_instance = AsyncMock()
             MockUpdater.return_value = updater_instance
@@ -122,7 +122,7 @@ class TestCancel:
         ctx = _make_context(task=task)
 
         with patch(
-            "aion.server.agent.agent_execution.request_executor.TaskUpdater"
+            "aion.server.agent.execution.request_executor.TaskUpdater"
         ) as MockUpdater:
             updater_instance = AsyncMock()
             MockUpdater.return_value = updater_instance
