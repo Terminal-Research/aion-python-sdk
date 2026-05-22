@@ -64,6 +64,25 @@ enum HealthCheckStatus {
   Unhealthy
 }
 
+"Category for an external identity principal."
+enum IdentityKindGQL {
+  Bot
+  PhoneNumber
+  User
+}
+
+"Communication-network namespace used by merged identity profile views."
+enum IdentityNetworkGQL {
+  A2A
+  Aion
+  GitHub
+  Google
+  Slack
+  Telegram
+  Twilio
+  Twitter
+}
+
 "Enumeration of supported network types."
 enum NetworkTypeGQL {
   A2A
@@ -172,6 +191,8 @@ their user.
   userId: ID
   "Reference to the associated organization"
   organizationId: ID!
+  "Identity network where the agent identity is addressable."
+  identityNetwork: IdentityNetworkGQL!
   "Stable key used by platform-managed system identities"
   systemKey: String
   "Identity name; personal identities should match the owning user's name"
@@ -257,10 +278,12 @@ type HealthyHealthCheckResult {
 type IdentityProfile {
   "Identifier of the source identity record"
   id: ID!
-  "Network this profile belongs to"
-  networkType: NetworkTypeGQL!
   "Identifier of the profile in its network"
   networkUserId: String!
+  "Communication network for this merged identity view, when applicable"
+  identityNetwork: IdentityNetworkGQL
+  "Category for this external principal, when applicable"
+  identityKind: IdentityKindGQL
   "Optional user handle for the profile"
   userName: String
   "Optional local user id linked to this profile"
