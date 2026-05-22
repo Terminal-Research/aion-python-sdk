@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Optional
 
 from a2a.utils import DEFAULT_RPC_URL
 from a2a.utils.telemetry import trace_function
-from aion.server.agent.execution.scope import AgentExecutionScopeHelper
+from aion.server.agent.execution.scope import get_execution_scope
 from aion.core.logging import get_logger
 from aion.server.opentelemetry import generate_request_span_context
 from fastapi import Request, Response
@@ -48,7 +48,7 @@ class TracingMiddleware(BaseHTTPMiddleware):
         Returns:
             HTTP response from the application
         """
-        scope: Optional[AgentExecutionScope] = AgentExecutionScopeHelper.get_scope()
+        scope: Optional[AgentExecutionScope] = get_execution_scope()
 
         # Generate trace context and attach it globally
         trace_context = generate_request_span_context(

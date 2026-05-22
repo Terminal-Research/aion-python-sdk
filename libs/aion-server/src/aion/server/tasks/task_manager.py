@@ -3,7 +3,7 @@ from a2a.server.tasks import TaskManager
 from a2a.types import Message, Task, TaskArtifactUpdateEvent, TaskState, TaskStatus, TaskStatusUpdateEvent
 from aion.server.a2a.constants import TRANSIENT_ARTIFACT_IDS, NON_ACTIVE_TASK_STATES
 from aion.server.a2a.utils import is_task_interrupted, task_history_message_ids, is_message_in_task_history
-from aion.server.agent.execution.scope import AgentExecutionScopeHelper
+from aion.server.agent.execution.scope import set_task_status
 from aion.core.logging import get_logger
 from typing import override
 
@@ -119,7 +119,7 @@ class AionTaskManager(TaskManager):
             return
 
         state = event.status.state
-        AgentExecutionScopeHelper.set_task_status(state.value if hasattr(state, 'value') else state)
+        set_task_status(state.value if hasattr(state, 'value') else state)
 
     @staticmethod
     def _check_process_skip_event(event: Event) -> bool:

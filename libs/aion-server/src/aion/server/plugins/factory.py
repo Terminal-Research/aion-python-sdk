@@ -192,11 +192,11 @@ class PluginFactory:
 
         except ImportError as e:
             self.logger.exception(f"Failed to import plugin '{module_name}': {e}")
-            return None
+            raise
 
         except Exception as e:
-            self.logger.warning(f"Failed to load {display_name} plugin: {e}")
-            return None
+            self.logger.exception(f"Failed to load {display_name} plugin: {e}")
+            raise
 
     async def _discover_plugins(self) -> list[BasePluginProtocol]:
         """Discover available plugins by attempting imports."""

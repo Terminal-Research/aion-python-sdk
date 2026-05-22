@@ -80,7 +80,9 @@ class AgentEnvironment:
 
     id: str
     name: str
+    deployment_id: str
     configuration_variables: Dict[str, str]
+    daemon_agent_identity_id: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -111,7 +113,9 @@ class AgentIdentity:
             environment=AgentEnvironment(
                 id=dist_ext.environment.id,
                 name=dist_ext.environment.name,
+                deployment_id=dist_ext.environment.deployment_id,
                 configuration_variables=dist_ext.environment.configuration_variables,
+                daemon_agent_identity_id=dist_ext.environment.daemon_agent_identity_id,
             ),
         )
 

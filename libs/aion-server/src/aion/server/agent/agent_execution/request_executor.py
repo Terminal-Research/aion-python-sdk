@@ -15,7 +15,7 @@ from a2a.utils.telemetry import trace_function
 from aion.server.a2a.constants import TERMINAL_TASK_STATES
 from aion.server.a2a.utils import is_task_interrupted
 from aion.server.agent.aion_agent import AionAgent
-from aion.server.agent.execution.scope import AgentExecutionScopeHelper
+from aion.server.agent.execution.scope import set_task_id
 from aion.server.files.a2a import A2AFileTransformer
 from aion.core.logging import get_logger
 from typing import Optional, Tuple
@@ -158,7 +158,7 @@ class AionAgentRequestExecutor(AgentExecutor):
         task.metadata = context.metadata or None
         context.current_task = task
 
-        AgentExecutionScopeHelper.set_task_id(task.id)
+        set_task_id(task.id)
         return task, True
 
     @staticmethod

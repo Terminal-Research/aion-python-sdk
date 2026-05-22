@@ -10,7 +10,19 @@ if TYPE_CHECKING:
     from aion.server.tasks.protocols import AionTaskManagerProtocol
 
 __all__ = [
-    "AgentExecutionScopeHelper",
+    "init_execution_scope",
+    "get_execution_scope",
+    "clear_execution_scope",
+    "set_distribution",
+    "set_traceability",
+    "set_request",
+    "set_task_id",
+    "set_task_status",
+    "set_agent_framework_baggage",
+    "set_task_manager",
+    "get_task_manager",
+    "set_aion_runtime_context",
+    "get_aion_runtime_context",
 ]
 
 _execution_scope_var: ContextVar[Optional[AgentExecutionScope]] = ContextVar(
@@ -18,191 +30,261 @@ _execution_scope_var: ContextVar[Optional[AgentExecutionScope]] = ContextVar(
 )
 
 
-class AgentExecutionScopeHelper:
-    """Static helpers for managing AgentExecutionScope.
+def get_execution_scope() -> Optional[AgentExecutionScope]:
+    """Get current execution scope.
 
-    Provides the exclusive interface for managing the execution scope. All access to
-    the scope must go through this helper to ensure consistency and proper lifecycle
-    management. The underlying ContextVar is private and should not be accessed directly.
+    Returns:
+        The current AgentExecutionScope if set, otherwise None.
     """
+    return _execution_scope_var.get()
 
-    @staticmethod
-    def set_scope(scope: Optional[AgentExecutionScope] = None) -> AgentExecutionScope:
-        """Initialize execution scope for the current agent execution.
 
-        Sets up the scope that will be shared across all async tasks within this execution.
-        Should be called once per agent execution at its entry point (typically in middleware
-        or request handler) to establish the execution context. Must be paired with a
-        corresponding clear_scope() call at the end of execution.
+def init_execution_scope(scope: Optional[AgentExecutionScope] = None) -> AgentExecutionScope:
+    """Initialize execution scope for the current agent execution.
 
-        Args:
-            scope: Optional pre-created AgentExecutionScope. If None, creates a new one.
+    Sets up the scope that will be shared across all async tasks within this execution.
+    Should be called once per agent execution at its entry point (typically in middleware
+    or request handler) to establish the execution context. Must be paired with a
+    corresponding clear_execution_scope() call at the end of execution.
 
-        Returns:
-            The set AgentExecutionScope instance.
-        """
-        if scope is None:
-            scope = AgentExecutionScope()
-        _execution_scope_var.set(scope)
-        return scope
+    Args:
+        scope: Optional pre-created AgentExecutionScope. If None, creates a new one.
 
-    @staticmethod
-    def get_scope() -> Optional[AgentExecutionScope]:
-        """Get current execution scope.
-
-        Returns:
-            The current AgentExecutionScope if set, otherwise None.
-        """
-        return _execution_scope_var.get()
-
-    @staticmethod
-    def clear_scope() -> None:
-        """Clear current scope."""
-        _execution_scope_var.set(None)
-
-    @staticmethod
-    def set_scope_from_a2a(
-            distribution: Optional['DistributionExtensionV1'] = None,
-            traceability: Optional['TraceabilityExtensionV1'] = None,
-            request_method: Optional[str] = None,
-            request_path: Optional[str] = None,
-            jrpc_method: Optional[str] = None,
-    ) -> AgentExecutionScope:
-        """Initialize execution scope from A2A protocol extensions.
-
-        Creates a new AgentExecutionScope with data extracted from A2A extensions.
-        Should be called at request entry point (in middleware) when A2A metadata
-        is available.
-
-        Args:
-            distribution: Optional DistributionExtensionV1 with agent deployment info
-            traceability: Optional TraceabilityExtensionV1 with tracing context
-            request_method: HTTP request method (defaults to "POST")
-            request_path: HTTP request path (defaults to "/")
-            jrpc_method: JSON-RPC method name if applicable
-
-        Returns:
-            The initialized AgentExecutionScope.
-        """
+    Returns:
+        The set AgentExecutionScope instance.
+    """
+    if scope is None:
         scope = AgentExecutionScope()
+    _execution_scope_var.set(scope)
+    return scope
 
-        # Set distribution/aion metadata
-        if distribution:
-            scope.inbound.aion.distribution_id = distribution.distribution.id
-            scope.inbound.aion.version_id = distribution.behavior.version_id
-            scope.inbound.aion.environment_id = distribution.environment.id
 
-        # Set tracing data
-        if traceability:
-            scope.inbound.trace.traceparent = traceability.traceparent
-            scope.inbound.trace.baggage = traceability.baggage or {}
+def clear_execution_scope() -> None:
+    """Clear current scope."""
+    _execution_scope_var.set(None)
 
-        # Set request metadata
-        scope.inbound.request.method = request_method or "POST"
-        scope.inbound.request.path = request_path or "/"
+
+def set_distribution(distribution: 'DistributionExtensionV1') -> AgentExecutionScope:
+    """Populate distribution metadata from DistributionExtensionV1.
+
+    Extracts and stores distribution_id, version_id, and environment_id from the
+    distribution extension into the current scope's inbound data.
+
+    Args:
+        distribution: DistributionExtensionV1 with agent deployment info.
+
+    Returns:
+        The current AgentExecutionScope.
+
+    Raises:
+        RuntimeError: If no scope is currently set.
+    """
+    scope = get_execution_scope()
+    if scope is None:
+        raise RuntimeError("No scope is currently set. Use set_execution_scope() first.")
+
+    scope.inbound.aion.distribution_id = distribution.distribution.id
+    scope.inbound.aion.version_id = distribution.behavior.version_id
+    scope.inbound.aion.environment_id = distribution.environment.id
+
+    return scope
+
+
+def set_traceability(traceability: 'TraceabilityExtensionV1') -> AgentExecutionScope:
+    """Populate tracing data from TraceabilityExtensionV1.
+
+    Extracts and stores traceparent and baggage from the traceability extension
+    into the current scope's inbound trace data.
+
+    Args:
+        traceability: TraceabilityExtensionV1 with tracing context.
+
+    Returns:
+        The current AgentExecutionScope.
+
+    Raises:
+        RuntimeError: If no scope is currently set.
+    """
+    scope = get_execution_scope()
+    if scope is None:
+        raise RuntimeError("No scope is currently set. Use set_execution_scope() first.")
+
+    scope.inbound.trace.traceparent = traceability.traceparent
+    scope.inbound.trace.baggage = traceability.baggage or {}
+
+    return scope
+
+
+def set_request(
+        request_method: Optional[str] = None,
+        request_path: Optional[str] = None,
+        jrpc_method: Optional[str] = None,
+) -> AgentExecutionScope:
+    """Populate HTTP request metadata.
+
+    Stores HTTP method, path, and JSON-RPC method into the current scope's
+    inbound request data.
+
+    Args:
+        request_method: HTTP request method (defaults to "POST" if not set).
+        request_path: HTTP request path (defaults to "/" if not set).
+        jrpc_method: JSON-RPC method name if applicable.
+
+    Returns:
+        The current AgentExecutionScope.
+
+    Raises:
+        RuntimeError: If no scope is currently set.
+    """
+    scope = get_execution_scope()
+    if scope is None:
+        raise RuntimeError("No scope is currently set. Use set_execution_scope() first.")
+
+    if request_method is not None:
+        scope.inbound.request.method = request_method
+    if request_path is not None:
+        scope.inbound.request.path = request_path
+    if jrpc_method is not None:
         scope.inbound.request.jrpc_method = jrpc_method
 
-        _execution_scope_var.set(scope)
-        return scope
+    return scope
 
-    @staticmethod
-    def set_task_id(task_id: Optional[str]) -> AgentExecutionScope:
-        """Set the task ID in the scope.
 
-        Args:
-            task_id: The task ID to set.
+def set_task_id(task_id: str) -> AgentExecutionScope:
+    """Set the task ID in the scope.
 
-        Returns:
-            The current AgentExecutionScope.
+    Args:
+        task_id: The task ID to set.
 
-        Raises:
-            RuntimeError: If no scope is currently set.
-        """
-        scope = AgentExecutionScopeHelper.get_scope()
-        if scope is None:
-            raise RuntimeError("No scope is currently set. Use set_scope() first.")
-        scope.inbound.a2a.task_id = task_id
-        return scope
+    Returns:
+        The current AgentExecutionScope.
 
-    @staticmethod
-    def set_task_status(task_status: Optional[str]) -> AgentExecutionScope:
-        """Set the current task status in the scope.
+    Raises:
+        RuntimeError: If no scope is currently set.
+    """
+    scope = get_execution_scope()
+    if scope is None:
+        raise RuntimeError("No scope is currently set. Use set_execution_scope() first.")
+    scope.inbound.a2a.task_id = task_id
+    return scope
 
-        Args:
-            task_status: The task status to set.
 
-        Returns:
-            The current AgentExecutionScope.
+def set_task_status(task_status: str) -> AgentExecutionScope:
+    """Set the current task status in the scope.
 
-        Raises:
-            RuntimeError: If no scope is currently set.
-        """
-        scope = AgentExecutionScopeHelper.get_scope()
-        if scope is None:
-            raise RuntimeError("No scope is currently set. Use set_scope() first.")
-        scope.inbound.a2a.task_status = task_status
-        return scope
+    Args:
+        task_status: The task status to set.
 
-    @staticmethod
-    def set_agent_framework_baggage(baggage: Dict[str, str], update: bool = True) -> AgentExecutionScope:
-        """Set or update agent framework trace baggage.
+    Returns:
+        The current AgentExecutionScope.
 
-        Args:
-            baggage: Dictionary of baggage entries.
-            update: If True, merge with existing baggage (default).
-                   If False, replace entire baggage.
+    Raises:
+        RuntimeError: If no scope is currently set.
+    """
+    scope = get_execution_scope()
+    if scope is None:
+        raise RuntimeError("No scope is currently set. Use set_execution_scope() first.")
+    scope.inbound.a2a.task_status = task_status
+    return scope
 
-        Returns:
-            The current AgentExecutionScope.
 
-        Raises:
-            RuntimeError: If no scope is currently set.
-        """
-        scope = AgentExecutionScopeHelper.get_scope()
-        if scope is None:
-            raise RuntimeError("No scope is currently set. Use set_scope() first.")
+def set_agent_framework_baggage(baggage: Dict[str, str], update: bool = True) -> AgentExecutionScope:
+    """Set or update agent framework trace baggage.
 
-        if update:
-            scope.framework.agent_framework.trace.baggage.update(baggage)
-        else:
-            scope.framework.agent_framework.trace.baggage = baggage
+    Args:
+        baggage: Dictionary of baggage entries.
+        update: If True, merge with existing baggage (default).
+               If False, replace entire baggage.
 
-        return scope
+    Returns:
+        The current AgentExecutionScope.
 
-    @staticmethod
-    def set_task_manager(task_manager: AionTaskManagerProtocol) -> AgentExecutionScope:
-        """Store the task manager in server runtime for use throughout execution.
+    Raises:
+        RuntimeError: If no scope is currently set.
+    """
+    scope = get_execution_scope()
+    if scope is None:
+        raise RuntimeError("No scope is currently set. Use set_execution_scope() first.")
 
-        Makes the task manager accessible from anywhere within the execution scope
-        without requiring it to be passed through function parameters. Typically called
-        early in the execution pipeline after the task manager is instantiated.
+    if update:
+        scope.framework.agent_framework.trace.baggage.update(baggage)
+    else:
+        scope.framework.agent_framework.trace.baggage = baggage
 
-        Args:
-            task_manager: The task manager instance (typically AionTaskManager).
+    return scope
 
-        Returns:
-            The current AgentExecutionScope.
 
-        Raises:
-            RuntimeError: If no scope is currently set. Use set_scope() first.
-        """
-        scope = AgentExecutionScopeHelper.get_scope()
-        if scope is None:
-            raise RuntimeError("No scope is currently set. Use set_scope() first.")
-        scope.server.task_manager = task_manager
-        return scope
+def set_task_manager(task_manager: 'AionTaskManagerProtocol') -> AgentExecutionScope:
+    """Store the task manager in execution runtime for use throughout execution.
 
-    @staticmethod
-    def get_task_manager() -> Optional[AionTaskManagerProtocol]:
-        """Get the task manager from server runtime.
+    Makes the task manager accessible from anywhere within the execution scope
+    without requiring it to be passed through function parameters. Typically called
+    early in the execution pipeline after the task manager is instantiated.
 
-        Returns:
-            The task manager instance if set, otherwise None.
+    Args:
+        task_manager: The task manager instance (typically AionTaskManager).
 
-        Raises:
-            RuntimeError: If no scope is currently set.
-        """
-        scope = AgentExecutionScopeHelper.get_scope()
-        if scope is None:
-            raise RuntimeError("No scope is currently set. Use set_scope() first.")
-        return scope.server.task_manager
+    Returns:
+        The current AgentExecutionScope.
+
+    Raises:
+        RuntimeError: If no scope is currently set. Use set_execution_scope() first.
+    """
+    scope = get_execution_scope()
+    if scope is None:
+        raise RuntimeError("No scope is currently set. Use set_execution_scope() first.")
+    scope.runtime.task_manager = task_manager
+    return scope
+
+
+def get_task_manager() -> Optional['AionTaskManagerProtocol']:
+    """Get the task manager from execution runtime.
+
+    Returns:
+        The task manager instance if set, otherwise None.
+
+    Raises:
+        RuntimeError: If no scope is currently set.
+    """
+    scope = get_execution_scope()
+    if scope is None:
+        raise RuntimeError("No scope is currently set. Use set_execution_scope() first.")
+    return scope.runtime.task_manager
+
+
+def set_aion_runtime_context(context) -> AgentExecutionScope:
+    """Store the Aion runtime context for use throughout execution.
+
+    Makes the context (containing agent environment, behavior, distribution info)
+    accessible from anywhere within the execution scope, enabling proper API
+    attribution and agent identity tracking.
+
+    Args:
+        context: The AionRuntimeContext instance from aion-core.
+
+    Returns:
+        The current AgentExecutionScope.
+
+    Raises:
+        RuntimeError: If no scope is currently set. Use set_execution_scope() first.
+    """
+    scope = get_execution_scope()
+    if scope is None:
+        raise RuntimeError("No scope is currently set. Use set_execution_scope() first.")
+    scope.runtime.aion_runtime_context = context
+    return scope
+
+
+def get_aion_runtime_context():
+    """Get the Aion runtime context from execution runtime.
+
+    Returns:
+        The AionRuntimeContext instance if set, otherwise None.
+
+    Raises:
+        RuntimeError: If no scope is currently set.
+    """
+    scope = get_execution_scope()
+    if scope is None:
+        raise RuntimeError("No scope is currently set. Use set_execution_scope() first.")
+    return scope.runtime.aion_runtime_context
