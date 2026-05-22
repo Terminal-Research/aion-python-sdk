@@ -6,7 +6,7 @@ import uvicorn
 from aion.server.agent import agent_manager
 from aion.core.config import AgentConfig
 from aion.core.logging import get_logger
-from aion.server.logging.base import AionLogger
+from aion.core.logging.base import AionLogger
 from aion.server.utils.logging import replace_uvicorn_loggers, replace_logstash_loggers
 from dotenv import load_dotenv
 

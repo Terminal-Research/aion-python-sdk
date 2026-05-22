@@ -100,7 +100,9 @@ async def serve(
     """Run all configured AION agents and proxy server in separate processes"""
     try:
         import aion.server  # noqa: F401
-    except ImportError:
+    except ImportError as ex:
+        if ex.name != "aion.server":
+            raise
         raise click.ClickException(
             "Server dependencies are not installed. "
             "Please refer to the documentation for the required server extras."

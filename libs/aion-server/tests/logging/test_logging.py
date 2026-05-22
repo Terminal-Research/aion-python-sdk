@@ -46,7 +46,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from aion.server.logging.base import AionLogRecord, AionLogger
+from aion.core.logging.base import AionLogRecord, AionLogger
 from aion.server.logging.handlers.logstash import (
     AionLogstashFilter,
     AionLogstashFormatter,

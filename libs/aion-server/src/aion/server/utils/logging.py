@@ -4,7 +4,7 @@ import logging
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from aion.server.logging.base import AionLogRecord
+    from aion.core.logging.base import AionLogRecord
 
 __all__ = [
     "replace_uvicorn_loggers",

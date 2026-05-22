@@ -1,24 +1,24 @@
 import inspect
 import logging
-from typing import Any, Callable, Optional, Type
+from typing import Any, Callable, Optional
 
-try:
-    from aion.server.logging import AionLogger
-except ImportError:
-    AionLogger: Type = logging.Logger
+from .base import AionLogger
 
 _logger_factory: Optional[Callable[[Optional[str]], Any]] = None
 _resolved: bool = False
 
+# Note: We do NOT set logging.setLoggerClass() here. That's the responsibility
+# of the consuming layer (e.g., aion-server.logging.factory). This keeps aion-core
+# serverless and avoids polluting global logging state.
 
-def get_logger(name: Optional[str] = None) -> Any:
+
+def get_logger(name: Optional[str] = None) -> AionLogger:
     """Return a logger for the given name.
 
     If name is None, automatically detects the caller's module name.
-    On the first call, lazily attempts to import aion.server.logging and use
-    its get_logger as the factory. If aion-server is not installed, falls back
-    to stdlib logging.getLogger. The resolved factory is cached — subsequent
-    calls skip the import attempt entirely.
+    Always returns an AionLogger instance with core tracing support.
+    Optionally uses aion.server.logging.get_logger for enhanced server-specific
+    handler configuration if available.
     """
     global _logger_factory, _resolved
     if name is None:

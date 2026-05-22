@@ -8,7 +8,7 @@ from multiprocessing.connection import Connection
 from typing import Dict, Callable, Any, Optional, Tuple, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from aion.server.logging.base import AionLogger
+    from aion.core.logging.base import AionLogger
 
 
 class ProcessStatus(Enum):

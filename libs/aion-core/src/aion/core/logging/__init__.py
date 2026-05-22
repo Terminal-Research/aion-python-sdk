@@ -1,3 +1,4 @@
-from .factory import get_logger, set_logger_factory, reset_logger_factory, AionLogger
+from .base import AionLogger, AionLogRecord
+from .factory import get_logger, set_logger_factory, reset_logger_factory
 
-__all__ = ["get_logger", "set_logger_factory", "reset_logger_factory", "AionLogger"]
+__all__ = ["AionLogger", "AionLogRecord", "get_logger", "set_logger_factory", "reset_logger_factory"]
