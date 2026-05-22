@@ -13,7 +13,7 @@ from opentelemetry.trace import SpanKind
 from starlette.middleware.base import BaseHTTPMiddleware
 
 if TYPE_CHECKING:
-    from aion.server.agent.execution import AgentExecutionScope
+    from aion.server.agent.execution.scope import AgentExecutionScope
 
 
 __all__ = ["TracingMiddleware"]
