@@ -7,7 +7,12 @@ from aion.core.constants import (
     DISTRIBUTION_EXTENSION_URI_V1,
     TRACEABILITY_EXTENSION_URI_V1,
 )
-from aion.server.agent.execution.scope import AgentExecutionScopeHelper
+from aion.server.agent.execution.scope import (
+    init_execution_scope,
+    set_distribution,
+    set_traceability,
+    set_request,
+)
 from aion.core.logging import get_logger
 from aion.core.types.a2a.extensions.distribution import DistributionExtensionV1
 from aion.core.types.a2a.extensions.traceability import TraceabilityExtensionV1
@@ -51,13 +56,14 @@ class AionContextMiddleware(BaseHTTPMiddleware):
         method, request_id, metadata = await self._extract_method_and_metadata(request)
 
         try:
-            AgentExecutionScopeHelper.set_scope_from_a2a(
-                distribution=self._get_distribution_extension(metadata) if metadata else None,
-                traceability=self._get_traceability_extension(metadata) if metadata else None,
-                request_method=request.method,
-                request_path=request.url.path,
-                jrpc_method=method,
-            )
+            # Initialize scope and populate from A2A extensions
+            init_execution_scope()
+            if metadata:
+                if distribution := self._get_distribution_extension(metadata):
+                    set_distribution(distribution)
+                if traceability := self._get_traceability_extension(metadata):
+                    set_traceability(traceability)
+            set_request(request.method, request.url.path, method)
         except ValidationError as ex:
             logger.warning("Invalid extension data in request metadata: %s", ex)
             return JSONResponse(

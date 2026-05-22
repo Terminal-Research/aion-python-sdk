@@ -18,7 +18,7 @@ asyncclick = "^8.0.1.2"
 
 [tool.poetry.extras]
 langgraph-authoring = ["aion-authoring-langgraph"]
-langgraph-server = ["aion-authoring-langgraph", "aion-server-langgraph"]
+langgraph-server = ["aion-server-langgraph"]
 adk-authoring = ["aion-adk"]
 adk-server = ["aion-adk", "aion-plugin-adk"]
 all = [

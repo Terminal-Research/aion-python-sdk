@@ -6,7 +6,7 @@ before events are converted to A2A protocol format.
 
 from typing import Any
 
-from aion.server.agent.execution.scope import AgentExecutionScopeHelper
+from aion.server.agent.execution.scope import set_agent_framework_baggage as exec_scope_set_agent_framework_baggage
 from aion.core.logging import get_logger
 
 logger = get_logger()
@@ -50,5 +50,5 @@ class LangGraphEventPreprocessor:
 
         node_name = next(iter(event_data.keys()), None)
         if node_name:
-            AgentExecutionScopeHelper.set_agent_framework_baggage({"langgraph.node": node_name}, update=True)
+            exec_scope_set_agent_framework_baggage({"langgraph.node": node_name}, update=True)
             logger.debug(f"Node: {node_name}")

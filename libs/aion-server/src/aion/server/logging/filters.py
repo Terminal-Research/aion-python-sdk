@@ -35,9 +35,9 @@ class ServerAionContextFilter(logging.Filter):
     @classmethod
     def _enrich_server_context(cls, record: AionLogRecord) -> None:
         try:
-            from aion.server.agent.execution.scope import AgentExecutionScopeHelper
+            from aion.server.agent.execution.scope import get_execution_scope
 
-            scope = AgentExecutionScopeHelper.get_scope()
+            scope = get_execution_scope()
             if not scope:
                 return
 

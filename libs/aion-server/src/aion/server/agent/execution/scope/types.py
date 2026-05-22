@@ -7,6 +7,7 @@ from typing import Dict, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from aion.server.tasks.protocols import AionTaskManagerProtocol
+    from aion.core.runtime.context import AionRuntimeContext
 
 __all__ = [
     "RequestData",
@@ -17,7 +18,7 @@ __all__ = [
     "AgentFrameworkData",
     "ProtocolScope",
     "FrameworkScope",
-    "ServerRuntime",
+    "ExecutionRuntime",
     "AgentExecutionScope",
 ]
 
@@ -119,14 +120,15 @@ class FrameworkScope(BaseModel):
 
 
 @dataclass
-class ServerRuntime:
-    """Server-side runtime objects created during agent execution.
+class ExecutionRuntime:
+    """Runtime objects and context for agent execution.
 
-    Holds references to server components (task managers, stores, etc.) that are
-    instantiated per agent execution. These objects are not protocol-level data
-    and may not be serializable, hence stored separately from inbound/runtime.
+    Holds references to runtime components (task managers, context, stores, etc.)
+    that are instantiated per agent execution. These objects are not protocol-level
+    data and may not be serializable, hence stored separately from inbound/framework.
     """
     task_manager: Optional[AionTaskManagerProtocol] = None
+    aion_runtime_context: Optional['AionRuntimeContext'] = None
 
 
 @dataclass
@@ -136,10 +138,10 @@ class AgentExecutionScope:
     Container for all execution data split into three zones:
     - inbound: immutable data from execution entry (request, trace, aion, a2a)
     - framework: mutable framework state accumulated during execution (baggage, framework data)
-    - server: server-side runtime objects (task managers, stores, etc.)
+    - runtime: runtime objects and context for execution (task managers, aion context, stores, etc.)
 
-    Access via AgentExecutionScopeHelper.
+    Access via the execution scope functions.
     """
     inbound: ProtocolScope = field(default_factory=ProtocolScope)
     framework: FrameworkScope = field(default_factory=FrameworkScope)
-    server: ServerRuntime = field(default_factory=ServerRuntime)
+    runtime: ExecutionRuntime = field(default_factory=ExecutionRuntime)

@@ -5,7 +5,7 @@ from a2a.server.agent_execution.active_task_registry import ActiveTaskRegistry
 from a2a.server.context import ServerCallContext
 
 from aion.server.tasks import AionTaskManager
-from aion.server.agent.execution.scope import AgentExecutionScopeHelper
+from aion.server.agent.execution.scope import set_task_manager
 
 
 class AionActiveTaskRegistry(ActiveTaskRegistry):
@@ -31,7 +31,7 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
                 context=call_context,
             )
 
-            AgentExecutionScopeHelper.set_task_manager(task_manager)
+            set_task_manager(task_manager)
 
             active_task = ActiveTask(
                 agent_executor=self._agent_executor,

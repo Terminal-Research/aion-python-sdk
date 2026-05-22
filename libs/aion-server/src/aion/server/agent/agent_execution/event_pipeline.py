@@ -3,7 +3,7 @@ from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
 from a2a.types import Message, Task, TaskArtifactUpdateEvent, TaskState, TaskStatusUpdateEvent
 
-from aion.server.agent.execution.scope import AgentExecutionScopeHelper
+from aion.server.agent.execution.scope import get_task_manager as exec_scope_get_task_manager
 from aion.server.files.a2a import A2AFileTransformer
 from aion.core.logging import get_logger
 from aion.server.tasks import A2ATaskDeduplicator
@@ -42,7 +42,7 @@ class AionEventPipeline:
 
     @property
     def _task_manager(self):
-        return AgentExecutionScopeHelper.get_task_manager()
+        return exec_scope_get_task_manager()
 
     async def process(self, event) -> None:
         await self._ensure_task_started()
