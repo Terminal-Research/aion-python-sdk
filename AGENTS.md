@@ -22,7 +22,9 @@ This repository is a monorepo containing multiple projects located primarily und
   authoring helpers such as Aion-backed ADK model configuration without
   pulling in server plugin machinery.
 - **aion-shared** – shared configuration, settings, logging, A2A types, file handling, and utility modules used across Aion Python SDK packages.
-- **aion-mcp** – creates an ASGI proxy for an MCP server defined in `aion.yaml`.
+- **aion-mcp** – creates an ASGI proxy for an MCP server defined in
+  `aion.yaml` and provides authenticated remote Aion MCP endpoint helpers for
+  direct capability servers and the control-plane MCP server.
 - **aion-db** – centralized DB management layer (postgres driver, migrations, repositories, models). Exposes the full `aion.db.postgres` namespace: `DbManager`, `DbFactory`, `TaskRecord`, `TaskRecordModel`, `TasksRepository`, Alembic migrations, and utilities (`convert_pg_url`, `verify_connection`, `validate_permissions`). Supports future `aion.db.redis` and similar sub-namespaces. Used by `aion-server` and plugins such as `aion-plugin-adk`.
 - **aion-plugin-adk** – Google ADK control-plane plugin for Aion Server. Adapts
   inbound A2A requests into ADK execution and maps ADK events back into A2A

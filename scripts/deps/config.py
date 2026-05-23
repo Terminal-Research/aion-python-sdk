@@ -22,7 +22,7 @@ PACKAGES = {
     "aion-authoring-langgraph": ["aion-core", "aion-api-client"],
     "aion-plugin-adk": ["aion-core", "aion-server", "aion-db"],
     "aion-api-client": ["aion-core"],
-    "aion-mcp": [],
+    "aion-mcp": ["aion-api-client"],
     "aion-db": ["aion-core"],
     "aion-core": [],
 }

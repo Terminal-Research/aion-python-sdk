@@ -7,12 +7,14 @@ import os
 from pathlib import Path
 from typing import Any
 
-from asgi_proxy_lib import ASGIProxy
 import yaml
 
+try:
+    from asgi_proxy_lib import ASGIProxy
+except ImportError:
+    from asgi_proxy import asgi_proxy as ASGIProxy
+
 logger = logging.getLogger(__name__)
-
-
 
 
 def load_proxy(config_path: str | Path = "aion.yaml") -> Any | None:
