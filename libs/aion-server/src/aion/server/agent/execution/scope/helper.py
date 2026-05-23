@@ -255,7 +255,7 @@ def get_task_manager() -> Optional['AionTaskManagerProtocol']:
 def set_aion_runtime_context(context) -> AgentExecutionScope:
     """Store the Aion runtime context for use throughout execution.
 
-    Makes the context (containing agent environment, behavior, distribution info)
+    Makes the context (containing the parsed distribution extension payload)
     accessible from anywhere within the execution scope, enabling proper API
     attribution and agent identity tracking.
 

@@ -114,8 +114,9 @@ def aion_principal_selector() -> str | None:
     - Agent environment selector: ``agent-environment:<agent-environment-id>``
     - Agent identity selector: ``agent-identity:<agent-identity-id>``
     """
-    # TODO: Resolve from Aion runtime context once the environment/identity
-    # model includes the fields needed for model-service attribution.
+    # TODO: Resolve from AionRuntimeContext once invocation context propagation
+    # is available here. The context exposes distribution/environment/identity
+    # records through distributionExtensionPayload helpers.
     return None
 
 

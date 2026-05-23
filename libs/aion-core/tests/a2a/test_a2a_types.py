@@ -19,8 +19,8 @@ Focus areas:
                    SourceSystemEventPayload, MessageActionPayload, ReactionActionPayload
     traceability.py — TraceabilityExtensionV1: version default, traceparent/tracestate/baggage
     cards.py — CardActionEventPayload
-    distribution.py — AgentIdentityRecord, ExternalIdentityRecord (discriminated union),
-                      DistributionRecord, BehaviorRecord, EnvironmentRecord, DistributionExtensionV1
+    distribution.py — PrincipalIdentity, ServiceIdentity (discriminated union),
+                      Distribution, Behavior, Environment, DistributionExtensionV1
 
   Request / Response (aion.shared.types.a2a.request, request_params, response):
     - GetContextParams: required context_id, optional pagination fields
@@ -49,12 +49,12 @@ from aion.core.types.a2a.enums import (
 )
 from aion.core.types.a2a.extensions.cards import CardActionEventPayload
 from aion.core.types.a2a.extensions.distribution import (
-    AgentIdentityRecord,
-    BehaviorRecord,
+    PrincipalIdentity,
+    Behavior,
     DistributionExtensionV1,
-    DistributionRecord,
-    EnvironmentRecord,
-    ExternalIdentityRecord,
+    Distribution,
+    Environment,
+    ServiceIdentity,
 )
 from aion.core.types.a2a.extensions.event import EventMessageMetadataV1, EventPartMetadataV1
 from aion.core.types.a2a.extensions.messaging import (
@@ -349,7 +349,7 @@ class TestEventExtensions:
 
 
 class TestMessagingModels:
-    def test_message_event_payload(self):
+    def test_message_event(self):
         """MessageEventPayload stores required fields and defaults parent_context_id to None."""
         p = MessageEventPayload(
             user_id="u1",
@@ -361,7 +361,7 @@ class TestMessagingModels:
         assert p.trajectory == "direct-message"
         assert p.parent_context_id is None
 
-    def test_message_event_payload_with_parent(self):
+    def test_message_event_with_parent(self):
         """MessageEventPayload stores parent_context_id when provided."""
         p = MessageEventPayload(
             user_id="u1",
@@ -372,7 +372,7 @@ class TestMessagingModels:
         )
         assert p.parent_context_id == "parent-ctx"
 
-    def test_reaction_event_payload(self):
+    def test_reaction_event(self):
         """ReactionEventPayload stores reaction fields and defaults optional fields to None."""
         r = ReactionEventPayload(
             user_id="u1",
@@ -385,7 +385,7 @@ class TestMessagingModels:
         assert r.display_value is None
         assert r.is_custom is None
 
-    def test_reaction_event_payload_with_custom(self):
+    def test_reaction_event_with_custom(self):
         """ReactionEventPayload stores is_custom and display_value when provided."""
         r = ReactionEventPayload(
             user_id="u1",
@@ -399,7 +399,7 @@ class TestMessagingModels:
         assert r.is_custom is True
         assert r.display_value == "👍"
 
-    def test_command_event_payload(self):
+    def test_command_event(self):
         """CommandEventPayload stores command and defaults optional fields to None."""
         c = CommandEventPayload(
             user_id="u1",
@@ -410,7 +410,7 @@ class TestMessagingModels:
         assert c.arguments is None
         assert c.invocation_id is None
 
-    def test_command_event_payload_with_args(self):
+    def test_command_event_with_args(self):
         """CommandEventPayload stores arguments and invocation_id when provided."""
         c = CommandEventPayload(
             user_id="u1",
@@ -422,7 +422,7 @@ class TestMessagingModels:
         assert c.arguments == "--verbose"
         assert c.invocation_id == "inv-123"
 
-    def test_source_system_event_payload(self):
+    def test_source_system_event(self):
         """SourceSystemEventPayload stores provider and raw event dict."""
         p = SourceSystemEventPayload(
             provider="slack",
@@ -541,7 +541,7 @@ class TestTraceabilityExtension:
 
 
 class TestCardsExtension:
-    def test_card_action_payload(self):
+    def test_card_action_event(self):
         """CardActionEventPayload stores action_id and defaults parent_context_id to None."""
         p = CardActionEventPayload(
             user_id="u1",
@@ -574,14 +574,14 @@ class TestCardsExtension:
         assert restored.action_id == "a"
 
 
-def _make_distribution_record() -> DistributionRecord:
-    identity = AgentIdentityRecord(
+def _make_distribution() -> Distribution:
+    identity = PrincipalIdentity(
         kind="principal",
         id="agent-1",
         network_type="slack",
         organization_id="org-1",
     )
-    return DistributionRecord(
+    return Distribution(
         id="dist-1",
         endpoint_type="webhook",
         url="https://example.com",
@@ -589,16 +589,16 @@ def _make_distribution_record() -> DistributionRecord:
     )
 
 
-def _make_behavior_record() -> BehaviorRecord:
-    return BehaviorRecord(
+def _make_behavior() -> Behavior:
+    return Behavior(
         id="beh-1",
         behavior_key="default",
         version_id="v1",
     )
 
 
-def _make_environment_record() -> EnvironmentRecord:
-    return EnvironmentRecord(
+def _make_environment() -> Environment:
+    return Environment(
         id="env-1",
         name="production",
         deployment_id="dep-1",
@@ -607,9 +607,9 @@ def _make_environment_record() -> EnvironmentRecord:
 
 
 class TestDistributionExtension:
-    def test_agent_identity_record(self):
-        """AgentIdentityRecord stores kind, id, network_type and defaults optional fields to None."""
-        r = AgentIdentityRecord(
+    def test_principal_identity(self):
+        """PrincipalIdentity stores kind, id, network_type and defaults optional fields to None."""
+        r = PrincipalIdentity(
             kind="principal",
             id="a1",
             network_type="slack",
@@ -619,9 +619,9 @@ class TestDistributionExtension:
         assert r.represented_user_id is None
         assert r.display_name is None
 
-    def test_external_identity_record(self):
-        """ExternalIdentityRecord stores kind correctly."""
-        r = ExternalIdentityRecord(
+    def test_service_identity(self):
+        """ServiceIdentity stores kind correctly."""
+        r = ServiceIdentity(
             kind="service",
             id="s1",
             network_type="webhook",
@@ -629,30 +629,32 @@ class TestDistributionExtension:
         )
         assert r.kind == "service"
 
-    def test_distribution_record_with_identities(self):
-        """DistributionRecord stores identities list and id correctly."""
-        rec = _make_distribution_record()
+    def test_distribution_with_identities(self):
+        """Distribution stores identities list and id correctly."""
+        rec = _make_distribution()
         assert rec.id == "dist-1"
         assert len(rec.identities) == 1
         assert rec.identities[0].id == "agent-1"
 
-    def test_behavior_record(self):
-        """BehaviorRecord stores behavior_key and version_id correctly."""
-        beh = _make_behavior_record()
+    def test_behavior(self):
+        """Behavior stores behavior_key and version_id correctly."""
+        beh = _make_behavior()
         assert beh.behavior_key == "default"
         assert beh.version_id == "v1"
 
-    def test_environment_record(self):
-        """EnvironmentRecord stores name, configuration_variables and defaults optional fields to None."""
-        env = _make_environment_record()
+    def test_environment(self):
+        """Environment stores configuration values and defaults optional fields to None."""
+        env = _make_environment()
         assert env.name == "production"
         assert env.configuration_variables["KEY"] == "VALUE"
+        assert env.get_configuration_variable("KEY") == "VALUE"
+        assert env.get_configuration_variable("MISSING") is None
         assert env.daemon_agent_identity_id is None
         assert env.system_prompt is None
 
-    def test_environment_record_with_optional_fields(self):
-        """EnvironmentRecord stores daemon_agent_identity_id and system_prompt when provided."""
-        env = EnvironmentRecord(
+    def test_environment_with_optional_fields(self):
+        """Environment stores daemon_agent_identity_id and system_prompt when provided."""
+        env = Environment(
             id="env-2",
             name="staging",
             deployment_id="dep-2",
@@ -666,9 +668,9 @@ class TestDistributionExtension:
     def test_distribution_extension_v1(self):
         """DistributionExtensionV1 defaults version to '1.0.0' and sender_id to None."""
         ext = DistributionExtensionV1(
-            distribution=_make_distribution_record(),
-            behavior=_make_behavior_record(),
-            environment=_make_environment_record(),
+            distribution=_make_distribution(),
+            behavior=_make_behavior(),
+            environment=_make_environment(),
         )
         assert ext.version == "1.0.0"
         assert ext.sender_id is None
@@ -677,40 +679,40 @@ class TestDistributionExtension:
         """DistributionExtensionV1 stores sender_id when provided."""
         ext = DistributionExtensionV1(
             sender_id="user-xyz",
-            distribution=_make_distribution_record(),
-            behavior=_make_behavior_record(),
-            environment=_make_environment_record(),
+            distribution=_make_distribution(),
+            behavior=_make_behavior(),
+            environment=_make_environment(),
         )
         assert ext.sender_id == "user-xyz"
 
     def test_discriminated_union_principal(self):
-        """AgentIdentityRecord parsed via discriminated union on 'kind'."""
-        rec = _make_distribution_record()
+        """PrincipalIdentity parsed via discriminated union on 'kind'."""
+        rec = _make_distribution()
         identity = rec.identities[0]
-        assert isinstance(identity, AgentIdentityRecord)
+        assert isinstance(identity, PrincipalIdentity)
 
     def test_discriminated_union_service(self):
-        """ExternalIdentityRecord is resolved via the discriminated union when kind is 'service'."""
-        svc_identity = ExternalIdentityRecord(
+        """ServiceIdentity is resolved via the discriminated union when kind is 'service'."""
+        svc_identity = ServiceIdentity(
             kind="service",
             id="s1",
             network_type="webhook",
             organization_id="org-1",
         )
-        rec = DistributionRecord(
+        rec = Distribution(
             id="d1",
             endpoint_type="webhook",
             url="https://x.com",
             identities=[svc_identity],
         )
-        assert isinstance(rec.identities[0], ExternalIdentityRecord)
+        assert isinstance(rec.identities[0], ServiceIdentity)
 
     def test_json_round_trip(self):
         """DistributionExtensionV1 survives a model_dump / model_validate round-trip."""
         ext = DistributionExtensionV1(
-            distribution=_make_distribution_record(),
-            behavior=_make_behavior_record(),
-            environment=_make_environment_record(),
+            distribution=_make_distribution(),
+            behavior=_make_behavior(),
+            environment=_make_environment(),
         )
         data = ext.model_dump()
         restored = DistributionExtensionV1.model_validate(data)

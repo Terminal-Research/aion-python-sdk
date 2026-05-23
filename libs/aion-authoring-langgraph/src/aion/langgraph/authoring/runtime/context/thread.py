@@ -66,7 +66,8 @@ class Thread:
             else context_id
         )
 
-        network = context.identity.network_type if context.identity else "A2A"
+        distribution = context.get_distribution()
+        network = distribution.endpoint_type if distribution is not None else "A2A"
 
         return cls(
             context=context,

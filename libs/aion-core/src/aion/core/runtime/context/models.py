@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional, Union, cast
 
 from aion.core.constants.a2a import (
     CARD_ACTION_EVENT_TYPE_V1,
@@ -17,11 +17,16 @@ from aion.core.constants.a2a import (
 )
 from aion.core.types.a2a import A2AInbox
 from aion.core.types.a2a.extensions import (
+    Behavior,
     CardActionEventPayload,
-    DistributionExtensionV1,
     CommandEventPayload,
+    Distribution,
+    DistributionExtensionV1,
+    Environment,
     MessageEventPayload,
+    PrincipalIdentity,
     ReactionEventPayload,
+    ServiceIdentity,
     SourceSystemEventPayload,
 )
 
@@ -66,89 +71,130 @@ class Event:
     """Raw provider event payload, or None for direct A2A requests."""
 
 
-@dataclass(frozen=True)
-class AgentBehavior:
-    """Behavior context for the active execution step."""
-
-    key: str
-    version_id: str
-
-
-@dataclass(frozen=True)
-class AgentEnvironment:
-    """Environment context for the active execution step."""
-
-    id: str
-    name: str
-    deployment_id: str
-    configuration_variables: Dict[str, str]
-    daemon_agent_identity_id: Optional[str] = None
-
-
-@dataclass(frozen=True)
-class AgentIdentity:
-    """Agent identity derived from the DistributionExtensionV1 envelope."""
-
-    id: str
-    display_name: Optional[str]
-    user_name: Optional[str]
-    network_type: str
-    behavior: AgentBehavior
-    environment: AgentEnvironment
-
-    @classmethod
-    def from_distribution(cls, dist_ext: DistributionExtensionV1) -> "AgentIdentity":
-        agent_record = next(
-            i for i in dist_ext.distribution.identities if i.kind == "principal"
-        )
-        return cls(
-            id=agent_record.id,
-            display_name=agent_record.display_name,
-            user_name=agent_record.user_name,
-            network_type=dist_ext.distribution.endpoint_type,
-            behavior=AgentBehavior(
-                key=dist_ext.behavior.behavior_key,
-                version_id=dist_ext.behavior.version_id,
-            ),
-            environment=AgentEnvironment(
-                id=dist_ext.environment.id,
-                name=dist_ext.environment.name,
-                deployment_id=dist_ext.environment.deployment_id,
-                configuration_variables=dist_ext.environment.configuration_variables,
-                daemon_agent_identity_id=dist_ext.environment.daemon_agent_identity_id,
-            ),
-        )
-
-
 @dataclass(frozen=True, init=False)
 class AionRuntimeContext:
-    """
-    Serializable handle to the inbound A2A state for a single invocation.
-    Contains only data — no framework-specific execution mechanisms.
+    """Serializable handle to the inbound A2A state for a single invocation.
+
+    The context stores the raw inbox, the optional typed Aion event, and the
+    parsed Aion distribution extension payload. It intentionally preserves the
+    distribution extension shape instead of projecting behavior, environment, or
+    distribution fields onto an identity.
     """
 
     inbox: Optional[A2AInbox]
-    """Raw A2A inbox — escape hatch for direct access to underlying A2A structures."""
+    """Raw A2A inbox - escape hatch for direct access to underlying A2A structures."""
     event: Optional[Event]
     """Typed inbound event with kind and normalized payload. None for direct A2A requests."""
-    identity: Optional[AgentIdentity]
-    """Agent identity derived from the distribution extension. None for direct A2A requests."""
+    distributionExtensionPayload: Optional[DistributionExtensionV1]
+    """Parsed Aion distribution extension payload, if the invocation carries one."""
     graph_kwargs: Dict[str, Any]
-    """Extra kwargs passed by the graph framework (e.g. thread_id from langgraph dev)."""
+    """Extra kwargs passed by the graph framework, such as LangGraph config."""
 
     def __init__(
             self,
             inbox: Optional[A2AInbox] = None,
             event: Optional[Event] = None,
-            identity: Optional[AgentIdentity] = None,
+            distributionExtensionPayload: Optional[DistributionExtensionV1] = None,
             **graph_kwargs: Any,
     ) -> None:
+        """Create an Aion runtime context.
+
+        Args:
+            inbox: Raw A2A request envelope for the current invocation.
+            event: Typed Aion event extracted from the inbox, when present.
+            distributionExtensionPayload: Parsed Aion distribution extension
+                payload. This mirrors the extension payload shape sent by the
+                control plane.
+            **graph_kwargs: Extra framework-specific values passed by the graph
+                runtime.
+        """
         object.__setattr__(self, "inbox", inbox)
         object.__setattr__(self, "event", event)
-        object.__setattr__(self, "identity", identity)
+        object.__setattr__(self, "distributionExtensionPayload", distributionExtensionPayload)
         object.__setattr__(self, "graph_kwargs", graph_kwargs)
 
     def is_active(self, *extensions: AionExtensions) -> bool:
-        """Return True if all given extensions are present in this invocation."""
+        """Return whether all requested Aion extensions are active.
+
+        Args:
+            *extensions: Extension identifiers to check against the inbound
+                message's declared extension list.
+
+        Returns:
+            ``True`` when every requested extension is declared on the inbound
+            message. When no extensions are requested, returns ``True``.
+        """
+        if not extensions:
+            return True
+        if self.inbox is None or self.inbox.message is None:
+            return False
+
         active = set(self.inbox.message.extensions or [])
         return all(ext.value in active for ext in extensions)
+
+    def get_distribution(self) -> Optional[Distribution]:
+        """Return the distribution model from the Aion distribution payload.
+
+        Returns:
+            The distribution model for this invocation, or ``None`` when the
+            request did not include an Aion distribution extension.
+        """
+        if self.distributionExtensionPayload is None:
+            return None
+        return self.distributionExtensionPayload.distribution
+
+    def get_behavior(self) -> Optional[Behavior]:
+        """Return the behavior model from the Aion distribution payload.
+
+        Returns:
+            The active behavior model for this invocation, or ``None`` when no
+            distribution extension is present.
+        """
+        if self.distributionExtensionPayload is None:
+            return None
+        return self.distributionExtensionPayload.behavior
+
+    def get_environment(self) -> Optional[Environment]:
+        """Return the environment model from the Aion distribution payload.
+
+        Returns:
+            The active environment model for this invocation, or ``None`` when
+            no distribution extension is present.
+        """
+        if self.distributionExtensionPayload is None:
+            return None
+        return self.distributionExtensionPayload.environment
+
+    def get_principal_identity(self) -> Optional[PrincipalIdentity]:
+        """Return the principal identity from the distribution.
+
+        Returns:
+            The first principal identity in the distribution identities
+            list, or ``None`` when the distribution has no principal identity.
+        """
+        distribution = self.get_distribution()
+        if distribution is None:
+            return None
+
+        identity = next(
+            (identity for identity in distribution.identities if identity.kind == "principal"),
+            None,
+        )
+        return cast(Optional[PrincipalIdentity], identity)
+
+    def get_service_identity(self) -> Optional[ServiceIdentity]:
+        """Return the service identity from the distribution.
+
+        Returns:
+            The first service identity in the distribution identities
+            list, or ``None`` when the distribution has no service identity.
+        """
+        distribution = self.get_distribution()
+        if distribution is None:
+            return None
+
+        identity = next(
+            (identity for identity in distribution.identities if identity.kind == "service"),
+            None,
+        )
+        return cast(Optional[ServiceIdentity], identity)

@@ -11,7 +11,7 @@ from tests.helpers import (
     make_mock_context,
     make_mock_event,
     make_mock_inbox,
-    make_mock_identity,
+    make_mock_distribution_extension,
     make_mock_runtime,
 )
 
@@ -82,16 +82,16 @@ class TestThreadFromContext:
         thread = Thread.from_context(ctx)
         assert thread.default_reply_target == "C-current"
 
-    def test_network_from_identity(self):
-        # network type is extracted from the agent identity
-        ctx = make_mock_context(event=None, identity=make_mock_identity(network_type="Slack"))
+    def test_network_from_distribution(self):
+        # network type is extracted from the distribution endpoint, not identity.
+        payload = make_mock_distribution_extension(endpoint_type="Slack")
+        ctx = make_mock_context(event=None, distribution_extension_payload=payload)
         thread = Thread.from_context(ctx)
         assert thread.network == "Slack"
 
-    def test_network_defaults_to_a2a_when_no_identity(self):
-        # when identity is absent, network falls back to "A2A"
+    def test_network_defaults_to_a2a_when_no_distribution(self):
+        # when distribution is absent, network falls back to "A2A".
         ctx = make_mock_context(event=None)
-        ctx.identity = None
         thread = Thread.from_context(ctx)
         assert thread.network == "A2A"
 

@@ -66,7 +66,7 @@ async def handle_reaction(context: AionRuntimeContext, event):
     ...
 ```
 
-Available injectable parameters: `state`, `runtime`, `context`, `event`, `identity`, `inbox`, `thread`, `message`. Any other declared parameter is forwarded to LangGraph for native injection (e.g. `config`, `store`).
+Available injectable parameters: `state`, `runtime`, `context`, `event`, `distribution`, `behavior`, `environment`, `principal_identity`, `service_identity`, `inbox`, `thread`, `message`. Any other declared parameter is forwarded to LangGraph for native injection (e.g. `config`, `store`).
 
 ---
 

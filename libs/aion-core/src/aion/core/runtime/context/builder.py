@@ -10,7 +10,7 @@ from aion.core.constants import (
 from aion.core.logging import get_logger
 from aion.core.types.a2a import A2AInbox
 from aion.core.types.a2a.extensions.distribution import DistributionExtensionV1
-from .models import AgentIdentity, AionRuntimeContext
+from .models import AionRuntimeContext
 from .utils import extract_event
 
 if TYPE_CHECKING:
@@ -49,7 +49,14 @@ class AionRuntimeContextBuilder:
 
     @staticmethod
     def _build_from_distribution(inbox: A2AInbox) -> AionRuntimeContext:
-        """Build context with identity and optional event from distribution extension."""
+        """Build context with distribution payload and optional event.
+
+        Args:
+            inbox: A2A inbox carrying the distribution extension metadata.
+
+        Returns:
+            Runtime context with the parsed distribution extension payload.
+        """
         dist_dict = MessageToDict(inbox.metadata[DISTRIBUTION_EXTENSION_URI_V1])
         dist_ext = DistributionExtensionV1.model_validate(dist_dict)
 
@@ -64,15 +71,21 @@ class AionRuntimeContextBuilder:
             logger.warning("Failed to extract event: %s", ex)
             event = None
 
-        try:
-            identity = AgentIdentity.from_distribution(dist_ext)
-        except Exception as ex:
-            logger.warning("Failed to build identity: %s", ex)
-            identity = None
-
-        return AionRuntimeContext(inbox=inbox, event=event, identity=identity)
+        return AionRuntimeContext(
+            inbox=inbox,
+            event=event,
+            distributionExtensionPayload=dist_ext,
+        )
 
     @staticmethod
     def _build_without_distribution(inbox: A2AInbox) -> AionRuntimeContext:
-        """Build minimal context when no distribution extension is present."""
-        return AionRuntimeContext(inbox=inbox, event=None, identity=None)
+        """Build minimal context when no distribution extension is present.
+
+        Args:
+            inbox: A2A inbox for a direct request without Aion distribution
+                metadata.
+
+        Returns:
+            Runtime context with no distribution extension payload.
+        """
+        return AionRuntimeContext(inbox=inbox, event=None)

@@ -13,6 +13,7 @@ from aion.core.runtime.context.models import EventKind
 
 from tests.helpers import (
     make_mock_context,
+    make_mock_distribution_extension,
     make_mock_event,
     make_mock_inbox,
     make_mock_runtime,
@@ -109,14 +110,44 @@ class TestHandlerInvoker:
 
         assert isinstance(received["thread"], Thread)
 
+    async def test_distribution_context_params_injected(self):
+        # distribution-derived handler params come from the distribution payload.
+        received = {}
+
+        async def handler(
+            distribution,
+            behavior,
+            environment,
+            principal_identity,
+            service_identity,
+        ):
+            received["distribution"] = distribution
+            received["behavior"] = behavior
+            received["environment"] = environment
+            received["principal_identity"] = principal_identity
+            received["service_identity"] = service_identity
+
+        payload = make_mock_distribution_extension(endpoint_type="slack", include_service=True)
+        mock_ctx = make_mock_context(event=None, distribution_extension_payload=payload)
+        mock_runtime = make_mock_runtime(mock_ctx)
+
+        invoker = _HandlerInvoker(handler)
+        await invoker.invoke({}, runtime=mock_runtime)
+
+        assert received["distribution"].id == "dist-1"
+        assert received["behavior"].behavior_key == "main"
+        assert received["environment"].id == "env-1"
+        assert received["principal_identity"].id == "agent-1"
+        assert received["service_identity"].id == "svc-1"
+
 
 class TestSelectHandler:
-    def test_context_none_returns_fallback(self):
-        # no context (no runtime) → on_event fallback is returned
-        def on_event(state): pass
+    def test_context_none_returns_invoke_handler(self):
+        # no context means a direct invocation, so on_invoke is returned.
+        def on_invoke(state): pass
 
-        dispatcher = AionEventHandlers(on_event=on_event)
-        assert dispatcher._select_handler(None) is on_event
+        dispatcher = AionEventHandlers(on_invoke=on_invoke)
+        assert dispatcher._select_handler(None) is on_invoke
 
     def test_context_none_no_fallback_returns_none(self):
         # no context and no fallback handler → None
@@ -163,22 +194,22 @@ class TestSelectHandler:
         ctx = make_mock_context(event=make_mock_event(kind=EventKind.REACTION))
         assert dispatcher._select_handler(ctx) is on_event
 
-    def test_no_event_with_inbox_message_routes_to_on_message(self):
-        # direct A2A inbox message (no CloudEvents envelope) routes to on_message
-        def on_message(state): pass
+    def test_no_event_with_inbox_message_routes_to_invoke(self):
+        # direct A2A inbox message without an Aion event routes to on_invoke.
+        def on_invoke(state): pass
 
         inbox = make_mock_inbox(message=Mock())
         ctx = make_mock_context(event=None, inbox=inbox)
-        dispatcher = AionEventHandlers(on_message=on_message)
-        assert dispatcher._select_handler(ctx) is on_message
+        dispatcher = AionEventHandlers(on_invoke=on_invoke)
+        assert dispatcher._select_handler(ctx) is on_invoke
 
-    def test_no_event_no_inbox_message_returns_fallback(self):
-        # no event and no inbox message → on_event fallback
-        def on_event(state): pass
+    def test_no_event_no_inbox_message_routes_to_invoke(self):
+        # no event and no inbox message also routes to on_invoke.
+        def on_invoke(state): pass
 
         ctx = make_mock_context(event=None, inbox=make_mock_inbox(message=None))
-        dispatcher = AionEventHandlers(on_event=on_event)
-        assert dispatcher._select_handler(ctx) is on_event
+        dispatcher = AionEventHandlers(on_invoke=on_invoke)
+        assert dispatcher._select_handler(ctx) is on_invoke
 
     def test_no_handlers_and_unknown_kind_returns_none(self):
         # dispatcher with no handlers registered → None for any kind
@@ -213,13 +244,13 @@ class TestAionEventHandlersCall:
         mock_logger.warning.assert_called_once()
 
     async def test_works_without_runtime(self):
-        # runtime kwarg absent → context=None → fallback handler is used
-        def on_event(state):
-            return "fallback_result"
+        # runtime kwarg absent means context=None, so on_invoke is used.
+        def on_invoke(state):
+            return "invoke_result"
 
-        dispatcher = AionEventHandlers(on_event=on_event)
+        dispatcher = AionEventHandlers(on_invoke=on_invoke)
         result = await dispatcher({})
-        assert result == "fallback_result"
+        assert result == "invoke_result"
 
     async def test_fallback_handler_called_for_unknown_event(self):
         # event kind not explicitly registered → on_event is called, not on_message
@@ -277,13 +308,14 @@ class TestBuildSignature:
         assert "store" in params
 
     def test_context_param_names_not_forwarded(self):
-        # thread/message/identity are resolved internally, not forwarded to LangGraph
-        def handler(thread, message, identity): pass
+        # context-derived params are resolved internally, not forwarded to LangGraph
+        def handler(thread, message, principal_identity, service_identity): pass
 
         sig = AionEventHandlers._build_signature([handler])
         assert "thread" not in sig.parameters
         assert "message" not in sig.parameters
-        assert "identity" not in sig.parameters
+        assert "principal_identity" not in sig.parameters
+        assert "service_identity" not in sig.parameters
         assert "runtime" in sig.parameters
 
     def test_runtime_deduplication_across_handlers(self):

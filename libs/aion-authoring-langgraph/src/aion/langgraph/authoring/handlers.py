@@ -19,7 +19,18 @@ _POSITIONAL = inspect.Parameter.POSITIONAL_OR_KEYWORD
 # Parameter names that we resolve ourselves from AionRuntimeContext.
 # Any handler parameter whose name is in this set will be populated by
 # _build_context_dependencies(), not forwarded to LangGraph for injection.
-_CONTEXT_PARAM_NAMES = frozenset({"context", "event", "identity", "inbox", "thread", "message"})
+_CONTEXT_PARAM_NAMES = frozenset({
+    "context",
+    "event",
+    "distribution",
+    "behavior",
+    "environment",
+    "principal_identity",
+    "service_identity",
+    "inbox",
+    "thread",
+    "message",
+})
 
 AION_ROUTER_NODE_NAME = "__aion_event_router__"
 
@@ -31,15 +42,20 @@ def _build_context_dependencies(
     """Build the full set of dependencies we can resolve from AionRuntimeContext.
 
     Returns a dict keyed by the parameter names that handlers may declare.
-    Always includes state, runtime, and context. Adds event, identity, inbox,
-    thread, and message when a context is present.
+    Always includes state, runtime, and context. Adds the Aion event,
+    distribution-derived models, principal/service identities, inbox, thread,
+    and message when a context is present.
     """
     context = runtime.context if runtime else None
     dependencies: Dict[str, Any] = {"state": state, "runtime": runtime, "context": context}
 
     if context is not None:
         dependencies["event"] = context.event
-        dependencies["identity"] = context.identity
+        dependencies["distribution"] = context.get_distribution()
+        dependencies["behavior"] = context.get_behavior()
+        dependencies["environment"] = context.get_environment()
+        dependencies["principal_identity"] = context.get_principal_identity()
+        dependencies["service_identity"] = context.get_service_identity()
         dependencies["inbox"] = context.inbox
         thread = Thread.from_context(context)
         dependencies["thread"] = thread
@@ -101,14 +117,18 @@ class AionEventHandlers:
     Handlers may declare any subset of the following parameters; only the declared
     ones are injected:
 
-        state       — LangGraph graph state
-        runtime     — full LangGraph Runtime[AionRuntimeContext]
-        context     — AionRuntimeContext extracted from runtime
-        event       — typed inbound event (kind + payload), or None when no event
-        identity    — agent identity derived from the distribution extension
-        inbox       — raw A2A inbox (escape hatch for direct access)
-        thread      — Thread bound to the current invocation
-        message     — normalized inbound Message, or None if no message in inbox
+        state              — LangGraph graph state.
+        runtime            — Full LangGraph `Runtime[AionRuntimeContext]`.
+        context            — `AionRuntimeContext` extracted from runtime.
+        event              — Typed inbound event (kind + payload), or None when no event exists.
+        distribution       — Distribution model from the Aion distribution extension.
+        behavior           — Behavior model from the Aion distribution extension.
+        environment        — Environment model from the Aion distribution extension.
+        principal_identity — Principal identity, or None when absent.
+        service_identity   — Service identity, or None when absent.
+        inbox              — Raw A2A inbox escape hatch.
+        thread             — Thread bound to the current invocation.
+        message            — Normalized inbound Message, or None if no message exists.
 
     Any other declared parameter (e.g. config, store) is forwarded to LangGraph
     for native injection, making the dispatcher forward-compatible with new
@@ -238,7 +258,8 @@ def add_event_handlers(
     Creates an AionEventHandlers dispatcher and attaches it to the builder.
 
     Handlers may declare any subset of these parameters — only declared ones are injected:
-        state, runtime, context, event, identity, inbox, thread, message.
+        state, runtime, context, event, distribution, behavior, environment,
+        principal_identity, service_identity, inbox, thread, message.
 
     Args:
         builder: StateGraph to attach the dispatcher to.
