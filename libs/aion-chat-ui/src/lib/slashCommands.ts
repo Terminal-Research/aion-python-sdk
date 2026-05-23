@@ -62,6 +62,14 @@ export const SLASH_COMMANDS = [
 		options: []
 	},
 	{
+		id: "copy",
+		label: "/copy",
+		description: "Copy the last agent response to the clipboard.",
+		title: "Copy Response",
+		subtitle: "Copy the last agent response to the clipboard.",
+		options: []
+	},
+	{
 		id: "login",
 		label: "/login",
 		description: "Authenticate Aion Chat with your Aion account.",

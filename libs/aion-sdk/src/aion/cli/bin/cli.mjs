@@ -45843,6 +45843,14 @@ var SLASH_COMMANDS = [
     options: []
   },
   {
+    id: "copy",
+    label: "/copy",
+    description: "Copy the last agent response to the clipboard.",
+    title: "Copy Response",
+    subtitle: "Copy the last agent response to the clipboard.",
+    options: []
+  },
+  {
     id: "login",
     label: "/login",
     description: "Authenticate Aion Chat with your Aion account.",
@@ -46303,6 +46311,65 @@ async function openUrlInDefaultBrowser(url, spawnImpl = spawn) {
       resolve3(false);
     }
   });
+}
+
+// src/lib/clipboard.ts
+import { spawn as spawn2 } from "child_process";
+function buildClipboardWriteCommands(platform2 = process.platform, env3 = process.env) {
+  if (platform2 === "darwin") {
+    return [{ command: "pbcopy", args: [] }];
+  }
+  if (platform2 === "win32") {
+    return [
+      { command: "clip", args: [], options: { windowsHide: true } }
+    ];
+  }
+  const linuxCommands = [
+    { command: "xclip", args: ["-selection", "clipboard"] },
+    { command: "xsel", args: ["--clipboard", "--input"] }
+  ];
+  if (env3.WAYLAND_DISPLAY) {
+    return [{ command: "wl-copy", args: [] }, ...linuxCommands];
+  }
+  return [...linuxCommands, { command: "wl-copy", args: [] }];
+}
+async function runClipboardCommand(clipboardCommand, content, spawnImpl) {
+  return new Promise((resolve3) => {
+    let settled = false;
+    const settle = (result) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      resolve3(result);
+    };
+    try {
+      const child = spawnImpl(clipboardCommand.command, clipboardCommand.args, {
+        ...clipboardCommand.options,
+        stdio: ["pipe", "ignore", "ignore"]
+      });
+      child.once("error", () => settle(false));
+      child.once("exit", (code) => settle(code === 0));
+      if (!child.stdin) {
+        settle(false);
+        return;
+      }
+      child.stdin.once("error", () => void 0);
+      child.stdin.end(content);
+    } catch {
+      settle(false);
+    }
+  });
+}
+async function writeClipboard(content, options = {}) {
+  const commands = options.commands ?? buildClipboardWriteCommands();
+  const spawnImpl = options.spawnImpl ?? spawn2;
+  for (const command of commands) {
+    if (await runClipboardCommand(command, content, spawnImpl)) {
+      return;
+    }
+  }
+  throw new Error("No supported clipboard command is available.");
 }
 
 // src/lib/input/parser/extractors/filePathExtractor.ts
@@ -50510,8 +50577,11 @@ function toPlainValue(value) {
   try {
     return JSON.parse(JSON.stringify(value));
   } catch {
-    return value;
+    return String(value);
   }
+}
+function formatProtocolPayloadAsJson(payload) {
+  return JSON.stringify(toPlainValue(payload), null, 2);
 }
 function formatProtocolPayload(payload) {
   const yaml = (0, import_yaml.stringify)(toPlainValue(payload)).trimEnd();
@@ -51027,6 +51097,9 @@ function parseExactSlashCommand(value) {
   if (command === "/login" && !environmentId) {
     return { kind: "login" };
   }
+  if (command === "/copy" && !environmentId) {
+    return { kind: "copy" };
+  }
   if ((command === "/environment" || command === "/env") && !extra) {
     if (!environmentId) {
       return { kind: "environment" };
@@ -51084,6 +51157,7 @@ function ChatApp({ options }) {
   const [reconnectNonce, setReconnectNonce] = (0, import_react33.useState)(0);
   const shownMessageKeysRef = (0, import_react33.useRef)(/* @__PURE__ */ new Set());
   const streamedTaskIdsRef = (0, import_react33.useRef)(/* @__PURE__ */ new Set());
+  const lastCopyableResponseRef = (0, import_react33.useRef)(void 0);
   const lastConnectionNoticeRef = (0, import_react33.useRef)(void 0);
   const appendEntry = (role, body) => {
     setEntries((current) => [
@@ -51102,6 +51176,10 @@ function ChatApp({ options }) {
     appendEntry("status", body);
   };
   const appendProtocol = (payload) => {
+    lastCopyableResponseRef.current = {
+      kind: "protocol",
+      content: formatProtocolPayloadAsJson(payload)
+    };
     appendEntry("protocol", formatProtocolPayload(payload));
   };
   const persistSettings = (nextSettings) => {
@@ -51144,6 +51222,7 @@ function ChatApp({ options }) {
     setEntries([]);
     shownMessageKeysRef.current.clear();
     streamedTaskIdsRef.current.clear();
+    lastCopyableResponseRef.current = void 0;
     setContextId(void 0);
     setTaskId(void 0);
     setStreamLabel("Idle");
@@ -51460,6 +51539,7 @@ ${JSON.stringify(
       message,
       fallbackTaskId
     );
+    lastCopyableResponseRef.current = { kind: "message", content: body };
     setEntries(
       (current) => upsertEntry(current, `message:${shownMessageKey}`, "agent", body)
     );
@@ -51538,6 +51618,7 @@ ${JSON.stringify(
     setEntries((current) => {
       const existing = current.find((item) => item.id === entryId);
       const nextBody = event.append && existing ? `${existing.body}${artifactText}` : artifactText;
+      lastCopyableResponseRef.current = { kind: "message", content: nextBody };
       return upsertEntry(current, entryId, "agent", nextBody);
     });
     return true;
@@ -51624,6 +51705,11 @@ ${JSON.stringify(
       resetSlashSelection();
       return;
     }
+    if (command.id === "copy") {
+      resetSlashSelection();
+      void runCopySlashCommand();
+      return;
+    }
     if (command.id === "login") {
       resetSlashSelection();
       void runLoginSlashCommand();
@@ -51704,6 +51790,23 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
     reloadEnvironmentState(environmentId);
     appendSystem(`Aion environment set to ${environmentId}.`);
   };
+  const runCopySlashCommand = async () => {
+    const response = lastCopyableResponseRef.current;
+    if (!response) {
+      appendSystem("No agent response to copy.");
+      return;
+    }
+    try {
+      await writeClipboard(response.content);
+      appendStatus(
+        response.kind === "protocol" ? "Copied last A2A response JSON to clipboard." : "Copied last response to clipboard."
+      );
+    } catch (error) {
+      appendSystem(
+        `Copy failed: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  };
   const runSourcesSlashCommand = () => {
     const sources = Object.values(agentSources).sort(
       (left, right) => left.sourceKey.localeCompare(right.sourceKey)
@@ -51737,6 +51840,10 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
     resetSlashSelection();
     if (command.kind === "login") {
       void runLoginSlashCommand();
+      return true;
+    }
+    if (command.kind === "copy") {
+      void runCopySlashCommand();
       return true;
     }
     runEnvironmentSlashCommand(command.environmentId);
@@ -52067,7 +52174,7 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
 }
 
 // src/lib/updateCheck.ts
-import { spawn as spawn2 } from "child_process";
+import { spawn as spawn3 } from "child_process";
 import { createInterface } from "readline/promises";
 var DEFAULT_TIMEOUT_MS = 1500;
 function buildNpmLatestVersionUrl(packageName) {
@@ -52248,7 +52355,7 @@ async function promptForUpdate(options) {
 }
 async function runUpdateInstall(command, cwd2 = process.cwd()) {
   return new Promise((resolve3) => {
-    const child = spawn2(command.command, command.args, {
+    const child = spawn3(command.command, command.args, {
       cwd: cwd2,
       stdio: "inherit"
     });

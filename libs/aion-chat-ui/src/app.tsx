@@ -28,6 +28,7 @@ import {
 	type ChatSettings
 } from "./lib/chatSettings.js";
 import { openUrlInDefaultBrowser } from "./lib/browser.js";
+import { writeClipboard } from "./lib/clipboard.js";
 import {
 	applyFileSuggestion,
 	buildMessageParts,
@@ -67,7 +68,10 @@ import {
 	mergeAgentSources
 } from "./lib/agents/model.js";
 import { saveCompletedExchange } from "./lib/agents/sessionStore.js";
-import { formatProtocolPayload } from "./lib/protocolOutput.js";
+import {
+	formatProtocolPayload,
+	formatProtocolPayloadAsJson
+} from "./lib/protocolOutput.js";
 import {
 	EPHEMERAL_MESSAGE_ARTIFACT_ID,
 	STREAM_DELTA_ARTIFACT_ID
@@ -128,14 +132,23 @@ function isFinalStatusEvent(event: TaskStatusUpdateEvent): boolean {
 	return Boolean((event as TaskStatusUpdateEvent & { final?: boolean }).final);
 }
 
+interface CopyableResponse {
+	kind: "message" | "protocol";
+	content: string;
+}
+
 type ExactSlashCommand =
 	| { kind: "login" }
+	| { kind: "copy" }
 	| { kind: "environment"; environmentId?: AionEnvironmentId };
 
 function parseExactSlashCommand(value: string): ExactSlashCommand | undefined {
 	const [command, environmentId, extra] = value.trim().split(/\s+/);
 	if (command === "/login" && !environmentId) {
 		return { kind: "login" };
+	}
+	if (command === "/copy" && !environmentId) {
+		return { kind: "copy" };
 	}
 	if ((command === "/environment" || command === "/env") && !extra) {
 		if (!environmentId) {
@@ -198,6 +211,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 	const [reconnectNonce, setReconnectNonce] = useState(0);
 	const shownMessageKeysRef = useRef<Set<string>>(new Set());
 	const streamedTaskIdsRef = useRef<Set<string>>(new Set());
+	const lastCopyableResponseRef = useRef<CopyableResponse | undefined>(undefined);
 	const lastConnectionNoticeRef = useRef<string | undefined>(undefined);
 
 	const appendEntry = (role: TranscriptEntry["role"], body: string): void => {
@@ -220,6 +234,10 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 	};
 
 	const appendProtocol = (payload: unknown): void => {
+		lastCopyableResponseRef.current = {
+			kind: "protocol",
+			content: formatProtocolPayloadAsJson(payload)
+		};
 		appendEntry("protocol", formatProtocolPayload(payload));
 	};
 
@@ -271,6 +289,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		setEntries([]);
 		shownMessageKeysRef.current.clear();
 		streamedTaskIdsRef.current.clear();
+		lastCopyableResponseRef.current = undefined;
 		setContextId(undefined);
 		setTaskId(undefined);
 		setStreamLabel("Idle");
@@ -642,6 +661,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			message,
 			fallbackTaskId
 		);
+		lastCopyableResponseRef.current = { kind: "message", content: body };
 		setEntries((current) =>
 			upsertEntry(current, `message:${shownMessageKey}`, "agent", body)
 		);
@@ -740,6 +760,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			const existing = current.find((item) => item.id === entryId);
 			const nextBody =
 				event.append && existing ? `${existing.body}${artifactText}` : artifactText;
+			lastCopyableResponseRef.current = { kind: "message", content: nextBody };
 			return upsertEntry(current, entryId, "agent", nextBody);
 		});
 		return true;
@@ -845,6 +866,11 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			resetSlashSelection();
 			return;
 		}
+		if (command.id === "copy") {
+			resetSlashSelection();
+			void runCopySlashCommand();
+			return;
+		}
 		if (command.id === "login") {
 			resetSlashSelection();
 			void runLoginSlashCommand();
@@ -928,6 +954,27 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		appendSystem(`Aion environment set to ${environmentId}.`);
 	};
 
+	const runCopySlashCommand = async (): Promise<void> => {
+		const response = lastCopyableResponseRef.current;
+		if (!response) {
+			appendSystem("No agent response to copy.");
+			return;
+		}
+
+		try {
+			await writeClipboard(response.content);
+			appendStatus(
+				response.kind === "protocol"
+					? "Copied last A2A response JSON to clipboard."
+					: "Copied last response to clipboard."
+			);
+		} catch (error) {
+			appendSystem(
+				`Copy failed: ${error instanceof Error ? error.message : String(error)}`
+			);
+		}
+	};
+
 	const runSourcesSlashCommand = (): void => {
 		const sources = Object.values(agentSources).sort((left, right) =>
 			left.sourceKey.localeCompare(right.sourceKey)
@@ -966,6 +1013,10 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		resetSlashSelection();
 		if (command.kind === "login") {
 			void runLoginSlashCommand();
+			return true;
+		}
+		if (command.kind === "copy") {
+			void runCopySlashCommand();
 			return true;
 		}
 

@@ -4,8 +4,12 @@ function toPlainValue(value: unknown): unknown {
 	try {
 		return JSON.parse(JSON.stringify(value)) as unknown;
 	} catch {
-		return value;
+		return String(value);
 	}
+}
+
+export function formatProtocolPayloadAsJson(payload: unknown): string {
+	return JSON.stringify(toPlainValue(payload), null, 2);
 }
 
 export function formatProtocolPayload(payload: unknown): string {
