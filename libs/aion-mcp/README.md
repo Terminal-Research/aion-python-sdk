@@ -19,7 +19,7 @@ from aion.api import CapabilityReference, CapabilitySubject, PrincipalSelector
 from aion.mcp import aion_mcp_endpoint
 
 principal = PrincipalSelector.agent_environment("env-id")
-control_plane = await aion_mcp_endpoint(
+metatools = await aion_mcp_endpoint(
     CapabilityReference.global_mcp(),
     principal_selector=principal,
 )
@@ -38,7 +38,7 @@ primary_distribution = await aion_mcp_endpoint(
 )
 
 client = MultiServerMCPClient(
-    control_plane.as_multi_server_config()
+    metatools.as_multi_server_config()
     | twitter.as_multi_server_config()
     | primary_distribution.as_multi_server_config()
 )
@@ -47,14 +47,14 @@ tools = await client.get_tools()
 
 Use `aion_mcp_endpoint_sync` from synchronous setup code.
 
-The control-plane endpoint exposes stable tools such as `aion_tool_search`
+The metatools endpoint exposes stable tools such as `aion_tool_search`
 and `aion_tool_execute`. Capability endpoints address concrete MCP servers
 exposed by distribution, environment, or agent subjects. New code can use
 `aion_mcp_endpoint` with a `CapabilityReference` when it wants SDK-level
 addressing by subject, kind, and primary-or-concrete key selector. For runtime
 code, `aion_runtime_context_mcp_endpoints` derives the principal selector from
 `AionRuntimeContext`; pass `CapabilityReference.global_mcp()` in
-`capability_references` when the global control-plane MCP server should be
+`capability_references` when the global metatools MCP server should be
 connected.
 
 ## Local proxy

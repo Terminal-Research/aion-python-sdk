@@ -165,8 +165,8 @@ async def aion_langgraph_mcp_server_config(
         capability_references: Explicit MCP references to load. Use these when
             addressing primary capabilities or subjects derived from runtime
             data other than the active environment. Include
-            ``CapabilityReference.global_mcp()`` when the global control-plane
-            MCP server should be connected.
+            ``CapabilityReference.global_mcp()`` when the global metatools MCP
+            server should be connected.
         runtime_capability_references: MCP reference templates resolved from
             ``context`` after the runtime subject is known.
         principal_selector: Optional explicit principal selector.
@@ -204,8 +204,8 @@ def aion_langgraph_mcp_server_config_sync(
         capability_references: Explicit MCP references to load. Use these when
             addressing primary capabilities or subjects derived from runtime
             data other than the active environment. Include
-            ``CapabilityReference.global_mcp()`` when the global control-plane
-            MCP server should be connected.
+            ``CapabilityReference.global_mcp()`` when the global metatools MCP
+            server should be connected.
         runtime_capability_references: MCP reference templates resolved from
             ``context`` after the runtime subject is known.
         principal_selector: Optional explicit principal selector.
@@ -244,8 +244,8 @@ def aion_langgraph_mcp_client(
         capability_references: Explicit MCP references to load. Use these when
             addressing primary capabilities or subjects derived from runtime
             data other than the active environment. Include
-            ``CapabilityReference.global_mcp()`` when the global control-plane
-            MCP server should be connected.
+            ``CapabilityReference.global_mcp()`` when the global metatools MCP
+            server should be connected.
         runtime_capability_references: MCP reference templates resolved from
             ``context`` after the runtime subject is known.
         principal_selector: Optional explicit principal selector.
@@ -287,8 +287,8 @@ async def load_aion_mcp_tools(
         capability_references: Explicit MCP references to load. Use these when
             addressing primary capabilities or subjects derived from runtime
             data other than the active environment. Include
-            ``CapabilityReference.global_mcp()`` when the global control-plane
-            MCP server should be connected.
+            ``CapabilityReference.global_mcp()`` when the global metatools MCP
+            server should be connected.
         runtime_capability_references: MCP reference templates resolved from
             ``context`` after the runtime subject is known.
         principal_selector: Optional explicit principal selector.

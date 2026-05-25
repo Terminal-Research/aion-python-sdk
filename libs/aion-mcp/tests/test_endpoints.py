@@ -9,7 +9,7 @@ from uuid import UUID
 import pytest
 
 from aion.api.control_plane import (
-    AION_CONTROL_PLANE_MCP_CAPABILITY_KEY,
+    AION_METATOOLS_MCP_CAPABILITY_KEY,
     AION_PRINCIPAL_SELECTOR_HEADER,
     CapabilityKind,
     CapabilityReference,
@@ -68,18 +68,18 @@ class FakeRuntimeContext:
 
 def test_endpoint_returns_langchain_multi_server_config() -> None:
     endpoint = AionMcpEndpoint(
-        name="aion_control_plane",
-        url="https://api.example.com/mcp",
+        name="aion_metatools",
+        url="https://api.example.com/mcp/capabilities/mcp.aion.metatools",
         headers={"Authorization": "Bearer jwt-token"},
     )
 
     assert endpoint.as_langchain_config() == {
         "transport": "http",
-        "url": "https://api.example.com/mcp",
+        "url": "https://api.example.com/mcp/capabilities/mcp.aion.metatools",
         "headers": {"Authorization": "Bearer jwt-token"},
     }
     assert endpoint.as_multi_server_config() == {
-        "aion_control_plane": endpoint.as_langchain_config()
+        "aion_metatools": endpoint.as_langchain_config()
     }
 
 
@@ -109,7 +109,7 @@ def test_authorization_headers_accept_typed_principal_selector() -> None:
     assert headers[AION_PRINCIPAL_SELECTOR_HEADER] == "agent-environment:env-id"
 
 
-def test_control_plane_endpoint_uses_async_token_manager() -> None:
+def test_metatools_endpoint_uses_async_token_manager() -> None:
     endpoint = asyncio.run(
         aion_mcp_endpoint(
             CapabilityReference.global_mcp(),
@@ -119,8 +119,10 @@ def test_control_plane_endpoint_uses_async_token_manager() -> None:
         )
     )
 
-    assert endpoint.name == "aion_control_plane"
-    assert endpoint.url == "https://api.example.com/mcp"
+    assert endpoint.name == "aion_metatools"
+    assert endpoint.url == (
+        "https://api.example.com/mcp/capabilities/mcp.aion.metatools"
+    )
     assert endpoint.headers["Authorization"] == "Bearer jwt-token"
     assert (
         endpoint.headers[AION_PRINCIPAL_SELECTOR_HEADER]
@@ -128,14 +130,16 @@ def test_control_plane_endpoint_uses_async_token_manager() -> None:
     )
 
 
-def test_control_plane_sync_endpoint_uses_sync_token_manager() -> None:
+def test_metatools_sync_endpoint_uses_sync_token_manager() -> None:
     endpoint = aion_mcp_endpoint_sync(
         CapabilityReference.global_mcp(),
         jwt_manager=FakeSyncTokenManager("jwt-token"),
         base_url="https://api.example.com/",
     )
 
-    assert endpoint.url == "https://api.example.com/mcp"
+    assert endpoint.url == (
+        "https://api.example.com/mcp/capabilities/mcp.aion.metatools"
+    )
     assert endpoint.headers == {"Authorization": "Bearer jwt-token"}
 
 
@@ -157,15 +161,15 @@ def test_generic_mcp_endpoint_accepts_keyed_system_reference() -> None:
     """Verify subjectless keyed MCP references address system capabilities."""
     endpoint = aion_mcp_endpoint_sync(
         CapabilityReference.global_mcp(
-            key=AION_CONTROL_PLANE_MCP_CAPABILITY_KEY
+            key=AION_METATOOLS_MCP_CAPABILITY_KEY
         ),
         jwt_manager=FakeSyncTokenManager("jwt-token"),
         base_url="https://api.example.com/",
     )
 
-    assert endpoint.name == "aion_control_plane"
+    assert endpoint.name == "aion_metatools"
     assert endpoint.url == (
-        "https://api.example.com/mcp/mcp.aion.control_plane"
+        "https://api.example.com/mcp/capabilities/mcp.aion.metatools"
     )
 
 
@@ -201,7 +205,7 @@ def test_generic_mcp_endpoint_addresses_distribution_capability() -> None:
     assert endpoint.url == (
         "https://api.example.com/distributions/"
         "11111111-1111-1111-1111-111111111111"
-        "/mcp/mcp.twitter.distribution"
+        "/mcp/capabilities/mcp.twitter.distribution"
     )
     assert endpoint.headers == {"Authorization": "Bearer jwt-token"}
 
@@ -220,7 +224,7 @@ def test_generic_mcp_sync_endpoint_accepts_custom_name() -> None:
     assert endpoint.name == "custom_distribution"
     assert endpoint.url == (
         "https://api.example.com/distributions/distribution-id/"
-        "mcp/custom%2Fkey"
+        "mcp/capabilities/custom%2Fkey"
     )
 
 
@@ -239,7 +243,7 @@ def test_generic_mcp_sync_endpoint_addresses_environment_capability() -> None:
     assert endpoint.name == "runtime_twitter"
     assert endpoint.url == (
         "https://api.example.com/environments/env-id/"
-        "mcp/mcp.twitter.distribution"
+        "mcp/capabilities/mcp.twitter.distribution"
     )
     assert endpoint.headers == {
         "Authorization": "Bearer jwt-token",
@@ -259,13 +263,13 @@ def test_runtime_context_sync_endpoints_use_global_reference_and_capability() ->
     )
 
     assert [endpoint.name for endpoint in endpoints] == [
-        "aion_control_plane",
+        "aion_metatools",
         "aion_environment_env_id_mcp_twitter_distribution",
     ]
     assert [endpoint.url for endpoint in endpoints] == [
-        "https://api.example.com/mcp",
+        "https://api.example.com/mcp/capabilities/mcp.aion.metatools",
         "https://api.example.com/environments/env-id/"
-        "mcp/mcp.twitter.distribution",
+        "mcp/capabilities/mcp.twitter.distribution",
     ]
     assert all(
         endpoint.headers[AION_PRINCIPAL_SELECTOR_HEADER]
@@ -310,10 +314,10 @@ def test_runtime_context_sync_endpoints_resolve_runtime_references() -> None:
     )
 
     assert [endpoint.name for endpoint in endpoints] == [
-        "aion_control_plane",
+        "aion_metatools",
         "aion_distribution_distribution_id_mcp_primary",
     ]
     assert [endpoint.url for endpoint in endpoints] == [
-        "https://api.example.com/mcp",
+        "https://api.example.com/mcp/capabilities/mcp.aion.metatools",
         "https://api.example.com/distributions/distribution-id/mcp",
     ]

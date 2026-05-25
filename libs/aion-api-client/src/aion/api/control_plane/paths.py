@@ -38,18 +38,18 @@ class AionControlPlanePaths:
         return (self.base_url or api_settings.http_url).rstrip("/")
 
     def control_plane_mcp_path(self) -> str:
-        """Return the relative path for the global control-plane MCP server.
+        """Return the relative path for the built-in metatools MCP server.
 
         Returns:
-            The relative HTTP path for the control-plane MCP endpoint.
+            The relative HTTP path for the keyed metatools MCP endpoint.
         """
-        return "/mcp"
+        return self.capability_path(CapabilityReference.global_mcp())
 
     def control_plane_mcp_url(self) -> str:
-        """Return the absolute URL for the global control-plane MCP server.
+        """Return the absolute URL for the built-in metatools MCP server.
 
         Returns:
-            The absolute HTTP URL for the control-plane MCP endpoint.
+            The absolute HTTP URL for the keyed metatools MCP endpoint.
         """
         return f"{self.api_base_url()}{self.control_plane_mcp_path()}"
 
@@ -194,16 +194,17 @@ class AionControlPlanePaths:
         if reference.key.is_primary:
             return path
         capability_key = _path_part(reference.key.require_concrete())
-        return f"{path}/{capability_key}"
+        return f"{path}/capabilities/{capability_key}"
 
     def _a2a_path(self, reference: CapabilityReference) -> str:
         if reference.subject is None:
-            raise ValueError("A2A endpoint references require a subject")
-        path = f"{self.subject_path(reference.subject)}/a2a"
+            path = "/a2a"
+        else:
+            path = f"{self.subject_path(reference.subject)}/a2a"
         if reference.key.is_primary:
             return path
         capability_key = _path_part(reference.key.require_concrete())
-        return f"{path}/{capability_key}"
+        return f"{path}/capabilities/{capability_key}"
 
 
 def _path_part(value: str) -> str:

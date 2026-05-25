@@ -64,15 +64,17 @@ def test_langgraph_mcp_server_config_sync_uses_runtime_context() -> None:
     )
 
     assert set(config.keys()) == {
-        "aion_control_plane",
+        "aion_metatools",
         "aion_environment_env_id_mcp_twitter_distribution",
     }
-    assert config["aion_control_plane"]["url"] == "https://api.example.test/mcp"
+    assert config["aion_metatools"]["url"] == (
+        "https://api.example.test/mcp/capabilities/mcp.aion.metatools"
+    )
     capability = config["aion_environment_env_id_mcp_twitter_distribution"]
     assert capability["transport"] == "http"
     assert capability["url"] == (
         "https://api.example.test/environments/env-id/"
-        "mcp/mcp.twitter.distribution"
+        "mcp/capabilities/mcp.twitter.distribution"
     )
     assert (
         capability["headers"][AION_PRINCIPAL_SELECTOR_HEADER]
@@ -117,7 +119,7 @@ def test_langgraph_mcp_server_config_sync_resolves_runtime_references() -> None:
     )
 
     assert set(config.keys()) == {
-        "aion_control_plane",
+        "aion_metatools",
         "aion_distribution_distribution_id_mcp_primary",
     }
 
@@ -146,4 +148,4 @@ async def test_load_aion_mcp_tools_uses_client_factory() -> None:
     )
 
     assert tools == ["tool-a", "tool-b"]
-    assert "aion_control_plane" in captured["config"]
+    assert "aion_metatools" in captured["config"]

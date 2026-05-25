@@ -1,5 +1,5 @@
 from .control_plane import (
-    AION_CONTROL_PLANE_MCP_CAPABILITY_KEY,
+    AION_METATOOLS_MCP_CAPABILITY_KEY,
     AION_PRINCIPAL_SELECTOR_HEADER,
     AionControlPlanePaths,
     CapabilityKey,
@@ -17,7 +17,7 @@ from .http import AionHttpClient
 from .model_service_client import aion_openai_config
 
 __all__ = [
-    "AION_CONTROL_PLANE_MCP_CAPABILITY_KEY",
+    "AION_METATOOLS_MCP_CAPABILITY_KEY",
     "AION_PRINCIPAL_SELECTOR_HEADER",
     "AionGqlClient",
     "AionHttpClient",

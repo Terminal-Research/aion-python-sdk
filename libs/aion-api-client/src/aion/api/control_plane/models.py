@@ -16,8 +16,8 @@ if TYPE_CHECKING:
 AION_PRINCIPAL_SELECTOR_HEADER = "Aion-Principal-Selector"
 """HTTP header used to supply an effective Aion principal selector."""
 
-AION_CONTROL_PLANE_MCP_CAPABILITY_KEY = "mcp.aion.control_plane"
-"""Concrete key for the built-in subjectless Aion control-plane MCP server."""
+AION_METATOOLS_MCP_CAPABILITY_KEY = "mcp.aion.metatools"
+"""Concrete key for the built-in subjectless Aion metatools MCP server."""
 
 
 class PrincipalSelectorKind(str, Enum):
@@ -450,12 +450,13 @@ class CapabilityReference:
 
     A reference combines the optional addressed subject, capability kind, and
     key selector. This is an SDK addressing model, not proof that a concrete
-    route or capability exists on the current server. Subjectless primary MCP
-    references address the application control-plane MCP server at ``/mcp``.
-    Subjectless keyed MCP references address system-owned capabilities, such as
-    ``/mcp/mcp.aion.control_plane``. Subject-qualified references
-    address runtime capabilities exposed by distributions, environments, or
-    agent identities.
+    route or capability exists on the current server. Subjectless keyed MCP
+    references address system-owned capabilities, such as
+    ``/mcp/capabilities/mcp.aion.metatools``. Subjectless primary references
+    can be represented for low-level route-shape tests, but current system
+    endpoints are expected to be keyed. Subject-qualified references address
+    runtime capabilities exposed by distributions, environments, or agent
+    identities.
     """
 
     kind: CapabilityKind
@@ -504,30 +505,34 @@ class CapabilityReference:
         *,
         key: CapabilityKey | str | None = None,
     ) -> Self:
-        """Create a reference to the application control-plane MCP server.
+        """Create a reference to the application metatools MCP server.
 
         Args:
             key: Optional concrete system MCP key. Omitted values select the
-                primary global MCP route at ``/mcp``.
+                built-in metatools MCP key. Use ``CapabilityReference.mcp`` with
+                ``CapabilityKey.primary()`` only when intentionally addressing
+                the low-level unkeyed route shape.
 
         Returns:
             The subjectless MCP capability reference.
         """
-        return cls.mcp(None, key=_capability_key(key))
+        selected_key = AION_METATOOLS_MCP_CAPABILITY_KEY if key is None else key
+        return cls.mcp(None, key=selected_key)
 
     @classmethod
     def a2a(
         cls,
-        subject: CapabilitySubject,
+        subject: CapabilitySubject | None = None,
         *,
         key: CapabilityKey | str | None = None,
     ) -> Self:
         """Create an A2A endpoint capability reference.
 
         Args:
-            subject: Subject exposing the A2A endpoint.
+            subject: Optional subject exposing the A2A endpoint. ``None``
+                addresses a subjectless system route shape.
             key: Concrete endpoint key or ``CapabilityKey.primary()``. Concrete
-                keys are routed under ``/a2a/{key}``.
+                keys are routed under ``/a2a/capabilities/{key}``.
 
         Returns:
             An A2A endpoint capability reference.
@@ -715,7 +720,7 @@ def _name_fragment(value: str) -> str:
 
 
 __all__ = [
-    "AION_CONTROL_PLANE_MCP_CAPABILITY_KEY",
+    "AION_METATOOLS_MCP_CAPABILITY_KEY",
     "AION_PRINCIPAL_SELECTOR_HEADER",
     "CapabilityKey",
     "CapabilityKeySelector",

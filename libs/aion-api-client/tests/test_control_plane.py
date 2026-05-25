@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from aion.api.control_plane import (
-    AION_CONTROL_PLANE_MCP_CAPABILITY_KEY,
+    AION_METATOOLS_MCP_CAPABILITY_KEY,
     AION_PRINCIPAL_SELECTOR_HEADER,
     AionControlPlanePaths,
     CapabilityKey,
@@ -179,13 +179,15 @@ def test_control_plane_paths_cover_mcp_a2a_and_agent_cards() -> None:
     """Verify control-plane paths match backend route shapes."""
     paths = AionControlPlanePaths(base_url="https://api.example.test/")
 
-    assert paths.control_plane_mcp_url() == "https://api.example.test/mcp"
+    assert paths.control_plane_mcp_url() == (
+        "https://api.example.test/mcp/capabilities/mcp.aion.metatools"
+    )
     assert paths.mcp_capability_url(
         CapabilitySubject.environment("env 123"),
         "custom/key",
     ) == (
         "https://api.example.test/environments/env%20123/"
-        "mcp/custom%2Fkey"
+        "mcp/capabilities/custom%2Fkey"
     )
     assert paths.a2a_path(
         CapabilitySubject.distribution("dist-123")
@@ -200,13 +202,13 @@ def test_control_plane_paths_accept_capability_references() -> None:
     paths = AionControlPlanePaths(base_url="https://api.example.test/")
 
     assert paths.capability_url(CapabilityReference.global_mcp()) == (
-        "https://api.example.test/mcp"
+        "https://api.example.test/mcp/capabilities/mcp.aion.metatools"
     )
     assert paths.capability_path(
         CapabilityReference.global_mcp(
-            key=AION_CONTROL_PLANE_MCP_CAPABILITY_KEY
+            key=AION_METATOOLS_MCP_CAPABILITY_KEY
         )
-    ) == "/mcp/mcp.aion.control_plane"
+    ) == "/mcp/capabilities/mcp.aion.metatools"
     assert paths.capability_path(
         CapabilityReference.primary_mcp(
             CapabilitySubject.distribution("dist-123")
@@ -217,7 +219,7 @@ def test_control_plane_paths_accept_capability_references() -> None:
             CapabilitySubject.distribution("dist-123"),
             key="custom/key",
         )
-    ) == "/distributions/dist-123/mcp/custom%2Fkey"
+    ) == "/distributions/dist-123/mcp/capabilities/custom%2Fkey"
     assert paths.capability_path(
         CapabilityReference.primary_a2a(
             CapabilitySubject.environment("env-123")
@@ -228,11 +230,14 @@ def test_control_plane_paths_accept_capability_references() -> None:
             CapabilitySubject.environment("env-123"),
             key="a2a.daemon",
         )
-    ) == "/environments/env-123/a2a/a2a.daemon"
+    ) == "/environments/env-123/a2a/capabilities/a2a.daemon"
+    assert paths.capability_path(
+        CapabilityReference.a2a(key="a2a.system")
+    ) == "/a2a/capabilities/a2a.system"
 
 
-def test_control_plane_paths_reject_unaddressable_references() -> None:
-    """Verify the SDK fails before constructing unsupported endpoint URLs."""
+def test_control_plane_paths_handle_unaddressable_references() -> None:
+    """Verify unsupported kinds fail while subjectless A2A remains addressable."""
     paths = AionControlPlanePaths(base_url="https://api.example.test/")
 
     with pytest.raises(ValueError, match="event emitter"):
@@ -243,10 +248,12 @@ def test_control_plane_paths_reject_unaddressable_references() -> None:
             )
         )
 
-    with pytest.raises(ValueError, match="A2A endpoint references"):
+    assert (
         paths.capability_path(
             CapabilityReference(
                 kind=CapabilityKind.A2A_ENDPOINT,
                 subject=None,
             )
         )
+        == "/a2a"
+    )

@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 from typing import Any, Protocol
 
 from aion.api.control_plane import (
-    AION_CONTROL_PLANE_MCP_CAPABILITY_KEY,
+    AION_METATOOLS_MCP_CAPABILITY_KEY,
     AionControlPlanePaths,
     CapabilityKind,
     CapabilityReference,
@@ -121,7 +121,7 @@ async def aion_mcp_endpoint(
 
     Args:
         reference: MCP capability reference to address. ``None`` selects the
-            global Aion control-plane MCP server.
+            global Aion metatools MCP server.
         jwt_manager: Optional async token manager. Defaults to the SDK's
             global refreshing JWT manager.
         principal_selector: Optional runtime principal selector header.
@@ -158,7 +158,7 @@ def aion_mcp_endpoint_sync(
 
     Args:
         reference: MCP capability reference to address. ``None`` selects the
-            global Aion control-plane MCP server.
+            global Aion metatools MCP server.
         jwt_manager: Optional synchronous token manager. Defaults to the SDK's
             global refreshing JWT manager.
         principal_selector: Optional runtime principal selector header.
@@ -200,7 +200,7 @@ async def aion_runtime_context_mcp_endpoints(
             for primary subject selection, distribution-scoped MCP, or any
             subject that should not default to the active environment. Include
             ``CapabilityReference.global_mcp()`` here when the global
-            control-plane MCP server should be connected.
+            metatools MCP server should be connected.
         runtime_capability_references: Reference templates to resolve from
             ``context`` after the runtime subject is known.
         principal_selector: Optional explicit principal selector. When omitted,
@@ -241,7 +241,7 @@ def aion_runtime_context_mcp_endpoints_sync(
             for primary subject selection, distribution-scoped MCP, or any
             subject that should not default to the active environment. Include
             ``CapabilityReference.global_mcp()`` here when the global
-            control-plane MCP server should be connected.
+            metatools MCP server should be connected.
         runtime_capability_references: Reference templates to resolve from
             ``context`` after the runtime subject is known.
         principal_selector: Optional explicit principal selector. When omitted,
@@ -343,8 +343,8 @@ def _mcp_reference(
 
 
 def _capability_endpoint_name(reference: CapabilityReference) -> str:
-    if reference.subject is None and _is_control_plane_key(reference):
-        return "aion_control_plane"
+    if reference.subject is None and _is_metatools_key(reference):
+        return "aion_metatools"
     if (
         reference.kind == CapabilityKind.MCP_SERVER
         and reference.subject is not None
@@ -357,12 +357,12 @@ def _capability_endpoint_name(reference: CapabilityReference) -> str:
     return f"aion_{reference.server_name_fragment}"
 
 
-def _is_control_plane_key(reference: CapabilityReference) -> bool:
+def _is_metatools_key(reference: CapabilityReference) -> bool:
     if reference.key.is_primary:
-        return True
+        return False
     return (
         reference.key.require_concrete()
-        == AION_CONTROL_PLANE_MCP_CAPABILITY_KEY
+        == AION_METATOOLS_MCP_CAPABILITY_KEY
     )
 
 

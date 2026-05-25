@@ -151,9 +151,9 @@ def test_aion_adk_mcp_toolsets_sync_create_remote_toolsets(monkeypatch) -> None:
     )
 
     assert [toolset.connection_params.url for toolset in toolsets] == [
-        "https://api.example.test/mcp",
+        "https://api.example.test/mcp/capabilities/mcp.aion.metatools",
         "https://api.example.test/environments/env-id/"
-        "mcp/mcp.twitter.distribution",
+        "mcp/capabilities/mcp.twitter.distribution",
     ]
     assert toolsets[0].connection_params.headers["Authorization"] == "Bearer jwt-token"
 
@@ -199,8 +199,8 @@ def test_aion_adk_mcp_toolset_resolves_tools_at_runtime(monkeypatch) -> None:
     tools = asyncio.run(toolset.get_tools(readonly_context))
 
     assert tools == [
-        "tool:https://api.example.test/mcp",
+        "tool:https://api.example.test/mcp/capabilities/mcp.aion.metatools",
         "tool:https://api.example.test/environments/env-id/"
-        "mcp/mcp.twitter.distribution",
+        "mcp/capabilities/mcp.twitter.distribution",
         "tool:https://api.example.test/distributions/distribution-id/mcp",
     ]

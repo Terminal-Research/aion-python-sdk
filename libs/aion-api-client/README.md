@@ -56,7 +56,9 @@ Use `CapabilitySubject`, `CapabilityReference`, `PrincipalSelector`, and
 `CapabilityReference` is the SDK-level address shape for capability URLs:
 optional subject, capability kind, and capability-key selector. A missing key
 selects the primary capability for that subject and kind; it is not encoded as
-the literal string `"primary"`.
+the literal string `"primary"`. Subjectless system MCP references should be
+keyed; `CapabilityReference.global_mcp()` selects the built-in metatools key
+and resolves to `/mcp/capabilities/mcp.aion.metatools`.
 
 ```python
 from aion.api import (
