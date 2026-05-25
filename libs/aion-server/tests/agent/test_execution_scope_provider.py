@@ -1,15 +1,15 @@
-"""Tests for ExecutionScopeRuntimeContextProvider."""
+"""Tests for RequestScopeRuntimeContextProvider."""
 
 import pytest
 from unittest.mock import MagicMock
 
-from aion.server.agent.execution.context.providers import ExecutionScopeRuntimeContextProvider
+from aion.server.agent.execution.context.providers import RequestScopeRuntimeContextProvider
 
 
 @pytest.fixture(autouse=True)
 def reset_context_var():
     """Reset the module-level ContextVar before and after each test."""
-    _provider = ExecutionScopeRuntimeContextProvider()
+    _provider = RequestScopeRuntimeContextProvider()
     _provider.set_current_context(None)
     yield
     _provider.set_current_context(None)
@@ -17,18 +17,18 @@ def reset_context_var():
 
 class TestGetCurrentContextSync:
     def test_returns_none_by_default(self):
-        provider = ExecutionScopeRuntimeContextProvider()
+        provider = RequestScopeRuntimeContextProvider()
         assert provider.get_current_context() is None
 
     def test_returns_context_when_set(self):
-        provider = ExecutionScopeRuntimeContextProvider()
+        provider = RequestScopeRuntimeContextProvider()
         ctx = MagicMock()
         provider.set_current_context(ctx)
 
         assert provider.get_current_context() is ctx
 
     def test_returns_none_after_set_none(self):
-        provider = ExecutionScopeRuntimeContextProvider()
+        provider = RequestScopeRuntimeContextProvider()
         provider.set_current_context(MagicMock())
         provider.set_current_context(None)
 
@@ -37,14 +37,14 @@ class TestGetCurrentContextSync:
 
 class TestSetCurrentContextSync:
     def test_stores_context(self):
-        provider = ExecutionScopeRuntimeContextProvider()
+        provider = RequestScopeRuntimeContextProvider()
         ctx = MagicMock()
         provider.set_current_context(ctx)
 
         assert provider.get_current_context() is ctx
 
     def test_overwrite_replaces_previous(self):
-        provider = ExecutionScopeRuntimeContextProvider()
+        provider = RequestScopeRuntimeContextProvider()
         ctx1, ctx2 = MagicMock(), MagicMock()
         provider.set_current_context(ctx1)
         provider.set_current_context(ctx2)
@@ -55,12 +55,12 @@ class TestSetCurrentContextSync:
 class TestAgetCurrentContext:
     @pytest.mark.anyio
     async def test_returns_none_by_default(self):
-        provider = ExecutionScopeRuntimeContextProvider()
+        provider = RequestScopeRuntimeContextProvider()
         assert await provider.aget_current_context() is None
 
     @pytest.mark.anyio
     async def test_returns_context_when_set(self):
-        provider = ExecutionScopeRuntimeContextProvider()
+        provider = RequestScopeRuntimeContextProvider()
         ctx = MagicMock()
         await provider.aset_current_context(ctx)
 
@@ -68,7 +68,7 @@ class TestAgetCurrentContext:
 
     @pytest.mark.anyio
     async def test_returns_none_after_set_none(self):
-        provider = ExecutionScopeRuntimeContextProvider()
+        provider = RequestScopeRuntimeContextProvider()
         await provider.aset_current_context(MagicMock())
         await provider.aset_current_context(None)
 
@@ -78,7 +78,7 @@ class TestAgetCurrentContext:
 class TestAsetCurrentContext:
     @pytest.mark.anyio
     async def test_stores_context(self):
-        provider = ExecutionScopeRuntimeContextProvider()
+        provider = RequestScopeRuntimeContextProvider()
         ctx = MagicMock()
         await provider.aset_current_context(ctx)
 
@@ -86,7 +86,7 @@ class TestAsetCurrentContext:
 
     @pytest.mark.anyio
     async def test_overwrite_replaces_previous(self):
-        provider = ExecutionScopeRuntimeContextProvider()
+        provider = RequestScopeRuntimeContextProvider()
         ctx1, ctx2 = MagicMock(), MagicMock()
         await provider.aset_current_context(ctx1)
         await provider.aset_current_context(ctx2)
@@ -98,7 +98,7 @@ class TestSyncAsyncConsistency:
     @pytest.mark.anyio
     async def test_sync_set_visible_via_async_get(self):
         """Verify sync set is immediately visible via async get (same ContextVar)."""
-        provider = ExecutionScopeRuntimeContextProvider()
+        provider = RequestScopeRuntimeContextProvider()
         ctx = MagicMock()
         provider.set_current_context(ctx)
 
@@ -107,7 +107,7 @@ class TestSyncAsyncConsistency:
     @pytest.mark.anyio
     async def test_async_set_visible_via_sync_get(self):
         """Verify async set is immediately visible via sync get (same ContextVar)."""
-        provider = ExecutionScopeRuntimeContextProvider()
+        provider = RequestScopeRuntimeContextProvider()
         ctx = MagicMock()
         await provider.aset_current_context(ctx)
 

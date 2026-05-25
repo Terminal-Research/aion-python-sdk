@@ -51,6 +51,7 @@ class AionModelClientConfig:
             "api_key": self.api_key,
         }
         headers = self.request_headers()
+        headers.setdefault("Accept", "application/json, text/event-stream")
         if headers:
             kwargs["default_headers"] = headers
         return kwargs

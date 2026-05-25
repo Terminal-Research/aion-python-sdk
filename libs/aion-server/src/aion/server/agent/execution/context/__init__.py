@@ -1,3 +1,3 @@
-from .providers import ExecutionScopeRuntimeContextProvider
+from .providers import RequestScopeRuntimeContextProvider
 
-__all__ = ["ExecutionScopeRuntimeContextProvider"]
+__all__ = ["RequestScopeRuntimeContextProvider"]
