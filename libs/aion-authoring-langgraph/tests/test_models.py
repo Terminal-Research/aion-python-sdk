@@ -4,7 +4,7 @@ from pathlib import Path
 from types import ModuleType
 
 
-_MODELS_PATH = Path(__file__).parents[1] / "src/aion/langgraph/models.py"
+_MODELS_PATH = Path(__file__).parents[1] / "src/aion/langgraph/authoring/models.py"
 _SPEC = spec_from_file_location("aion_langgraph_models", _MODELS_PATH)
 assert _SPEC is not None and _SPEC.loader is not None
 _MODULE = module_from_spec(_SPEC)

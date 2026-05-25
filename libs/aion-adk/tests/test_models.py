@@ -2,7 +2,7 @@ import asyncio
 from types import ModuleType
 import sys
 
-from aion.adk import aion_lite_llm
+from aion.adk.models import aion_lite_llm
 import aion.adk.models as models
 
 

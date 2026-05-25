@@ -2,20 +2,25 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 from typing import Any, Protocol
-from urllib.parse import quote
-from uuid import UUID
 
+from aion.api.control_plane import (
+    AION_CONTROL_PLANE_MCP_CAPABILITY_KEY,
+    AionControlPlanePaths,
+    CapabilityKind,
+    CapabilityReference,
+    PrincipalSelector,
+    RuntimeCapabilityReference,
+)
 from aion.api.exceptions import AionAuthenticationError
 from aion.api.http import aion_jwt_manager
-from aion.api.model_service_client import AION_PRINCIPAL_SELECTOR_HEADER
-from aion.core.settings import api_settings
 
-DEFAULT_TWITTER_DISTRIBUTION_CAPABILITY_KEY = "mcp.twitter.distribution"
-"""Default capability key for the Twitter distribution MCP server."""
-
+if TYPE_CHECKING:
+    from aion.core.runtime.context.models import AionRuntimeContext
 
 class AsyncTokenManager(Protocol):
     """Async token provider used by remote Aion MCP endpoint builders."""
@@ -80,7 +85,7 @@ class AionMcpEndpoint:
 def aion_mcp_authorization_headers(
     token: str | None,
     *,
-    principal_selector: str | None = None,
+    principal_selector: PrincipalSelector | None = None,
 ) -> dict[str, str]:
     """Build authenticated headers for remote Aion MCP requests.
 
@@ -100,105 +105,40 @@ def aion_mcp_authorization_headers(
 
     headers = {"Authorization": f"Bearer {token}"}
     if principal_selector:
-        headers[AION_PRINCIPAL_SELECTOR_HEADER] = principal_selector
+        headers.update(principal_selector.to_headers())
     return headers
 
 
-async def aion_control_plane_mcp_endpoint(
+async def aion_mcp_endpoint(
+    reference: CapabilityReference | None = None,
     *,
     jwt_manager: AsyncTokenManager | None = None,
-    principal_selector: str | None = None,
+    principal_selector: PrincipalSelector | None = None,
     base_url: str | None = None,
-    name: str = "aion_control_plane",
+    name: str | None = None,
 ) -> AionMcpEndpoint:
-    """Create the authenticated Aion control-plane MCP endpoint.
-
-    The control-plane MCP server exposes stable tools such as
-    ``aion_tool_search`` and ``aion_tool_execute``. The bearer token comes from
-    the configured Aion SDK client credentials.
+    """Create an authenticated endpoint for an Aion MCP capability reference.
 
     Args:
+        reference: MCP capability reference to address. ``None`` selects the
+            global Aion control-plane MCP server.
         jwt_manager: Optional async token manager. Defaults to the SDK's
             global refreshing JWT manager.
         principal_selector: Optional runtime principal selector header.
         base_url: Optional API base URL. Defaults to ``AION_API_HOST``.
-        name: Server name used in multi-server MCP client maps.
+        name: Optional server name used in multi-server MCP client maps.
 
     Returns:
-        Authenticated endpoint metadata for the control-plane MCP server.
+        Authenticated endpoint metadata for the referenced MCP server.
+
+    Raises:
+        ValueError: If ``reference`` does not address an MCP server.
     """
+    normalized = _mcp_reference(reference)
     manager = jwt_manager or aion_jwt_manager
     token = await manager.get_token()
-    return AionMcpEndpoint(
-        name=name,
-        url=f"{_api_base_url(base_url)}/mcp",
-        headers=aion_mcp_authorization_headers(
-            token,
-            principal_selector=principal_selector,
-        ),
-    )
-
-
-def aion_control_plane_mcp_endpoint_sync(
-    *,
-    jwt_manager: SyncTokenManager | None = None,
-    principal_selector: str | None = None,
-    base_url: str | None = None,
-    name: str = "aion_control_plane",
-) -> AionMcpEndpoint:
-    """Create the authenticated Aion control-plane MCP endpoint synchronously.
-
-    Args:
-        jwt_manager: Optional synchronous token manager. Defaults to the SDK's
-            global refreshing JWT manager.
-        principal_selector: Optional runtime principal selector header.
-        base_url: Optional API base URL. Defaults to ``AION_API_HOST``.
-        name: Server name used in multi-server MCP client maps.
-
-    Returns:
-        Authenticated endpoint metadata for the control-plane MCP server.
-    """
-    manager = jwt_manager or aion_jwt_manager
-    token = manager.get_token_sync()
-    return AionMcpEndpoint(
-        name=name,
-        url=f"{_api_base_url(base_url)}/mcp",
-        headers=aion_mcp_authorization_headers(
-            token,
-            principal_selector=principal_selector,
-        ),
-    )
-
-
-async def aion_distribution_mcp_endpoint(
-    distribution_id: str | UUID,
-    *,
-    capability_key: str = DEFAULT_TWITTER_DISTRIBUTION_CAPABILITY_KEY,
-    jwt_manager: AsyncTokenManager | None = None,
-    principal_selector: str | None = None,
-    base_url: str | None = None,
-    name: str = "twitter_distribution",
-) -> AionMcpEndpoint:
-    """Create an authenticated endpoint for a distribution MCP capability.
-
-    Args:
-        distribution_id: Distribution identifier for the MCP capability.
-        capability_key: Capability key to address. Defaults to the Twitter
-            distribution MCP capability.
-        jwt_manager: Optional async token manager. Defaults to the SDK's
-            global refreshing JWT manager.
-        principal_selector: Optional runtime principal selector header.
-        base_url: Optional API base URL. Defaults to ``AION_API_HOST``.
-        name: Server name used in multi-server MCP client maps.
-
-    Returns:
-        Authenticated endpoint metadata for the distribution MCP server.
-    """
-    manager = jwt_manager or aion_jwt_manager
-    token = await manager.get_token()
-    return _distribution_endpoint(
-        distribution_id,
-        capability_key=capability_key,
+    return _reference_endpoint(
+        normalized,
         token=token,
         principal_selector=principal_selector,
         base_url=base_url,
@@ -206,35 +146,36 @@ async def aion_distribution_mcp_endpoint(
     )
 
 
-def aion_distribution_mcp_endpoint_sync(
-    distribution_id: str | UUID,
+def aion_mcp_endpoint_sync(
+    reference: CapabilityReference | None = None,
     *,
-    capability_key: str = DEFAULT_TWITTER_DISTRIBUTION_CAPABILITY_KEY,
     jwt_manager: SyncTokenManager | None = None,
-    principal_selector: str | None = None,
+    principal_selector: PrincipalSelector | None = None,
     base_url: str | None = None,
-    name: str = "twitter_distribution",
+    name: str | None = None,
 ) -> AionMcpEndpoint:
-    """Create an authenticated distribution MCP endpoint synchronously.
+    """Create an authenticated Aion MCP endpoint synchronously.
 
     Args:
-        distribution_id: Distribution identifier for the MCP capability.
-        capability_key: Capability key to address. Defaults to the Twitter
-            distribution MCP capability.
+        reference: MCP capability reference to address. ``None`` selects the
+            global Aion control-plane MCP server.
         jwt_manager: Optional synchronous token manager. Defaults to the SDK's
             global refreshing JWT manager.
         principal_selector: Optional runtime principal selector header.
         base_url: Optional API base URL. Defaults to ``AION_API_HOST``.
-        name: Server name used in multi-server MCP client maps.
+        name: Optional server name used in multi-server MCP client maps.
 
     Returns:
-        Authenticated endpoint metadata for the distribution MCP server.
+        Authenticated endpoint metadata for the referenced MCP server.
+
+    Raises:
+        ValueError: If ``reference`` does not address an MCP server.
     """
+    normalized = _mcp_reference(reference)
     manager = jwt_manager or aion_jwt_manager
     token = manager.get_token_sync()
-    return _distribution_endpoint(
-        distribution_id,
-        capability_key=capability_key,
+    return _reference_endpoint(
+        normalized,
         token=token,
         principal_selector=principal_selector,
         base_url=base_url,
@@ -242,21 +183,138 @@ def aion_distribution_mcp_endpoint_sync(
     )
 
 
-def _distribution_endpoint(
-    distribution_id: str | UUID,
+async def aion_runtime_context_mcp_endpoints(
+    context: AionRuntimeContext,
     *,
-    capability_key: str,
+    capability_references: Iterable[CapabilityReference] = (),
+    runtime_capability_references: Iterable[RuntimeCapabilityReference] = (),
+    principal_selector: PrincipalSelector | None = None,
+    jwt_manager: AsyncTokenManager | None = None,
+    base_url: str | None = None,
+) -> list[AionMcpEndpoint]:
+    """Create MCP endpoints available from a runtime context.
+
+    Args:
+        context: Current Aion runtime context.
+        capability_references: Explicit MCP capability references. Use this
+            for primary subject selection, distribution-scoped MCP, or any
+            subject that should not default to the active environment. Include
+            ``CapabilityReference.global_mcp()`` here when the global
+            control-plane MCP server should be connected.
+        runtime_capability_references: Reference templates to resolve from
+            ``context`` after the runtime subject is known.
+        principal_selector: Optional explicit principal selector. When omitted,
+            the selector is derived from ``context``.
+        jwt_manager: Optional async token manager. Defaults to the SDK's
+            global refreshing JWT manager.
+        base_url: Optional API base URL. Defaults to ``AION_API_HOST``.
+
+    Returns:
+        Authenticated endpoint metadata for requested MCP servers.
+    """
+    manager = jwt_manager or aion_jwt_manager
+    token = await manager.get_token()
+    return _runtime_context_endpoints(
+        context,
+        capability_references=capability_references,
+        runtime_capability_references=runtime_capability_references,
+        principal_selector=principal_selector,
+        token=token,
+        base_url=base_url,
+    )
+
+
+def aion_runtime_context_mcp_endpoints_sync(
+    context: AionRuntimeContext,
+    *,
+    capability_references: Iterable[CapabilityReference] = (),
+    runtime_capability_references: Iterable[RuntimeCapabilityReference] = (),
+    principal_selector: PrincipalSelector | None = None,
+    jwt_manager: SyncTokenManager | None = None,
+    base_url: str | None = None,
+) -> list[AionMcpEndpoint]:
+    """Create MCP endpoints from a runtime context synchronously.
+
+    Args:
+        context: Current Aion runtime context.
+        capability_references: Explicit MCP capability references. Use this
+            for primary subject selection, distribution-scoped MCP, or any
+            subject that should not default to the active environment. Include
+            ``CapabilityReference.global_mcp()`` here when the global
+            control-plane MCP server should be connected.
+        runtime_capability_references: Reference templates to resolve from
+            ``context`` after the runtime subject is known.
+        principal_selector: Optional explicit principal selector. When omitted,
+            the selector is derived from ``context``.
+        jwt_manager: Optional synchronous token manager. Defaults to the SDK's
+            global refreshing JWT manager.
+        base_url: Optional API base URL. Defaults to ``AION_API_HOST``.
+
+    Returns:
+        Authenticated endpoint metadata for requested MCP servers.
+    """
+    manager = jwt_manager or aion_jwt_manager
+    token = manager.get_token_sync()
+    return _runtime_context_endpoints(
+        context,
+        capability_references=capability_references,
+        runtime_capability_references=runtime_capability_references,
+        principal_selector=principal_selector,
+        token=token,
+        base_url=base_url,
+    )
+
+
+def _runtime_context_endpoints(
+    context: AionRuntimeContext,
+    *,
+    capability_references: Iterable[CapabilityReference],
+    runtime_capability_references: Iterable[RuntimeCapabilityReference],
+    principal_selector: PrincipalSelector | None,
     token: str | None,
-    principal_selector: str | None,
     base_url: str | None,
-    name: str,
+) -> list[AionMcpEndpoint]:
+    principal_selector = principal_selector or _principal_selector_from_context(
+        context
+    )
+    headers = aion_mcp_authorization_headers(
+        token,
+        principal_selector=principal_selector,
+    )
+    paths = AionControlPlanePaths(base_url)
+    endpoints: list[AionMcpEndpoint] = []
+
+    references = [_mcp_reference(item) for item in capability_references]
+    runtime_references: list[CapabilityReference] = []
+    for template in runtime_capability_references:
+        resolved = template.resolve(context)
+        if resolved is not None:
+            runtime_references.append(resolved)
+    references.extend(_mcp_reference(item) for item in runtime_references)
+
+    for reference in references:
+        endpoints.append(
+            AionMcpEndpoint(
+                name=_capability_endpoint_name(reference),
+                url=paths.capability_url(reference),
+                headers=headers,
+            )
+        )
+    return endpoints
+
+
+def _reference_endpoint(
+    reference: CapabilityReference,
+    *,
+    token: str | None,
+    principal_selector: PrincipalSelector | None,
+    base_url: str | None,
+    name: str | None,
 ) -> AionMcpEndpoint:
-    base = _api_base_url(base_url)
-    distribution_path = _path_part(distribution_id)
-    capability_path = _path_part(capability_key)
+    paths = AionControlPlanePaths(base_url)
     return AionMcpEndpoint(
-        name=name,
-        url=f"{base}/distributions/{distribution_path}/mcp/{capability_path}",
+        name=name or _capability_endpoint_name(reference),
+        url=paths.capability_url(reference),
         headers=aion_mcp_authorization_headers(
             token,
             principal_selector=principal_selector,
@@ -264,20 +322,55 @@ def _distribution_endpoint(
     )
 
 
-def _api_base_url(base_url: str | None) -> str:
-    return (base_url or api_settings.http_url).rstrip("/")
+def _principal_selector_from_context(
+    context: AionRuntimeContext,
+) -> PrincipalSelector | None:
+    raw_selector = context.get_principal_selector()
+    if raw_selector:
+        return PrincipalSelector.from_header_value(raw_selector)
+    return PrincipalSelector.from_runtime_context(context)
 
 
-def _path_part(value: str | UUID) -> str:
-    return quote(str(value), safe="")
+def _mcp_reference(
+    reference: CapabilityReference | None,
+) -> CapabilityReference:
+    normalized = (
+        CapabilityReference.global_mcp() if reference is None else reference
+    )
+    if normalized.kind != CapabilityKind.MCP_SERVER:
+        raise ValueError("Aion MCP endpoints require an MCP capability reference")
+    return normalized
+
+
+def _capability_endpoint_name(reference: CapabilityReference) -> str:
+    if reference.subject is None and _is_control_plane_key(reference):
+        return "aion_control_plane"
+    if (
+        reference.kind == CapabilityKind.MCP_SERVER
+        and reference.subject is not None
+        and reference.key.is_concrete
+    ):
+        return (
+            f"aion_{reference.subject.server_name_fragment}_"
+            f"{reference.key.server_name_fragment}"
+        )
+    return f"aion_{reference.server_name_fragment}"
+
+
+def _is_control_plane_key(reference: CapabilityReference) -> bool:
+    if reference.key.is_primary:
+        return True
+    return (
+        reference.key.require_concrete()
+        == AION_CONTROL_PLANE_MCP_CAPABILITY_KEY
+    )
 
 
 __all__ = [
-    "DEFAULT_TWITTER_DISTRIBUTION_CAPABILITY_KEY",
     "AionMcpEndpoint",
-    "aion_control_plane_mcp_endpoint",
-    "aion_control_plane_mcp_endpoint_sync",
-    "aion_distribution_mcp_endpoint",
-    "aion_distribution_mcp_endpoint_sync",
+    "aion_mcp_endpoint",
+    "aion_mcp_endpoint_sync",
     "aion_mcp_authorization_headers",
+    "aion_runtime_context_mcp_endpoints",
+    "aion_runtime_context_mcp_endpoints_sync",
 ]

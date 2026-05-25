@@ -16,7 +16,13 @@ pytest.importorskip("jwt")
 pytest.importorskip("gql")
 
 import aion.api.gql.client as gql_client_module
+from aion.api.control_plane import CapabilitySubject, PrincipalSelector
 from aion.api.gql.client import AionGqlClient
+from aion.api.gql.generated.graphql_client import (
+    A2AJsonRpcRequestGQLInput,
+    CapabilitySubjectGQLInput,
+    PrincipalSelectorGQLInput,
+)
 from aion.api.http import aion_jwt_manager
 
 
@@ -201,3 +207,93 @@ async def test_successful_initialization_with_all_params(dummy_jwt_manager, monk
     result = await client.initialize()
     assert result is client
     assert client._is_initialized is True
+
+
+@pytest.mark.anyio("asyncio")
+async def test_a2a_stream_accepts_typed_target_and_principal(dummy_jwt_manager) -> None:
+    """A2A streaming should accept shared control-plane addressing models."""
+
+    class FakeGeneratedClient:
+        def __init__(self) -> None:
+            self.calls = []
+
+        async def a_2_a_stream(self, *, request, target, principal, **kwargs):
+            self.calls.append({
+                "request": request,
+                "target": target,
+                "principal": principal,
+                "kwargs": kwargs,
+            })
+            yield "chunk"
+
+    generated_client = FakeGeneratedClient()
+    client = AionGqlClient(
+        client_id="test-id",
+        client_secret="test-secret",
+        jwt_manager=dummy_jwt_manager,
+        gql_url=aion_api_settings.gql_url,
+        ws_url=aion_api_settings.ws_gql_url,
+    )
+    client.client = generated_client
+    client._is_initialized = True
+
+    chunks = [
+        chunk
+        async for chunk in client.a2a_stream(
+            A2AJsonRpcRequestGQLInput(jsonrpc="2.0", method="message/send"),
+            target=CapabilitySubject.environment("env-id"),
+            principal=PrincipalSelector.agent_environment("env-id"),
+        )
+    ]
+
+    assert chunks == ["chunk"]
+    call = generated_client.calls[0]
+    assert call["target"].agent_environment_id == "env-id"
+    assert call["principal"].agent_environment_id == "env-id"
+
+
+@pytest.mark.anyio("asyncio")
+async def test_a2a_stream_accepts_generated_graphql_transport_inputs(
+    dummy_jwt_manager,
+) -> None:
+    """A2A streaming should keep GraphQL inputs at the GraphQL boundary."""
+
+    class FakeGeneratedClient:
+        def __init__(self) -> None:
+            self.calls = []
+
+        async def a_2_a_stream(self, *, request, target, principal, **kwargs):
+            self.calls.append({
+                "request": request,
+                "target": target,
+                "principal": principal,
+                "kwargs": kwargs,
+            })
+            yield "chunk"
+
+    generated_client = FakeGeneratedClient()
+    client = AionGqlClient(
+        client_id="test-id",
+        client_secret="test-secret",
+        jwt_manager=dummy_jwt_manager,
+        gql_url=aion_api_settings.gql_url,
+        ws_url=aion_api_settings.ws_gql_url,
+    )
+    client.client = generated_client
+    client._is_initialized = True
+
+    target = CapabilitySubjectGQLInput(agent_environment_id="env-id")
+    principal = PrincipalSelectorGQLInput(agent_environment_id="env-id")
+    chunks = [
+        chunk
+        async for chunk in client.a2a_stream(
+            A2AJsonRpcRequestGQLInput(jsonrpc="2.0", method="message/send"),
+            target=target,
+            principal=principal,
+        )
+    ]
+
+    assert chunks == ["chunk"]
+    call = generated_client.calls[0]
+    assert call["target"] is target
+    assert call["principal"] is principal

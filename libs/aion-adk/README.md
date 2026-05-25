@@ -24,7 +24,7 @@ Aion's OpenAI-compatible model proxy:
 
 ```python
 from google.adk.agents import Agent
-from aion.adk import aion_lite_llm
+from aion.adk.models import aion_lite_llm
 
 agent = Agent(
     name="research_agent",

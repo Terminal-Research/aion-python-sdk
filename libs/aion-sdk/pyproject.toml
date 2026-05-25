@@ -14,17 +14,19 @@ aion-authoring-langgraph = { git = "https://github.com/Terminal-Research/aion-py
 aion-server-langgraph = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-server-langgraph", optional = true }
 aion-plugin-adk = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-plugin-adk", optional = true }
 aion-adk = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-adk", optional = true }
+aion-authoring-adk = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-authoring-adk", optional = true }
 asyncclick = "^8.0.1.2"
 
 [tool.poetry.extras]
 langgraph-authoring = ["aion-authoring-langgraph"]
 langgraph-server = ["aion-server-langgraph"]
-adk-authoring = ["aion-adk"]
-adk-server = ["aion-adk", "aion-plugin-adk"]
+adk-authoring = ["aion-adk", "aion-authoring-adk"]
+adk-server = ["aion-adk", "aion-authoring-adk", "aion-plugin-adk"]
 all = [
     "aion-authoring-langgraph",
     "aion-server-langgraph",
     "aion-adk",
+    "aion-authoring-adk",
     "aion-plugin-adk"
 ]
 

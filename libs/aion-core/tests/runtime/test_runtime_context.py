@@ -8,7 +8,6 @@ from google.protobuf.json_format import ParseDict
 from google.protobuf.struct_pb2 import Struct
 
 from aion.core.constants.a2a import (
-    CARDS_EXTENSION_URI_V1,
     DISTRIBUTION_EXTENSION_URI_V1,
     EVENT_EXTENSION_URI_V1,
     MESSAGE_EVENT_PAYLOAD_SCHEMA_V1,
@@ -67,6 +66,7 @@ def _make_distribution_ext(
     version_id: str = "v-1",
     env_id: str = "env-1",
     env_name: str = "prod",
+    daemon_agent_identity_id: str | None = None,
     config_vars: dict | None = None,
     include_principal: bool = True,
     include_service: bool = False,
@@ -107,6 +107,7 @@ def _make_distribution_ext(
             name=env_name,
             deployment_id="dep-1",
             configuration_variables=config_vars or {},
+            daemon_agent_identity_id=daemon_agent_identity_id,
         ),
     )
 
@@ -244,6 +245,29 @@ class TestAionRuntimeContextDistributionPayload:
         assert ctx.get_environment().id == "env-99"
         assert ctx.get_environment().name == "staging"
         assert ctx.get_environment().configuration_variables["DB_URL"] == "postgres://..."
+
+    def test_principal_selector_prefers_daemon_identity(self):
+        """Verify that principal selector prefers environment daemon identity."""
+        dist = _make_distribution_ext(
+            env_id="env-99",
+            daemon_agent_identity_id="daemon-1",
+        )
+        ctx = AionRuntimeContext(distributionExtensionPayload=dist)
+
+        assert ctx.get_principal_selector() == "agent-identity:daemon-1"
+
+    def test_principal_selector_uses_environment_without_daemon(self):
+        """Verify principal selector falls back to environment id."""
+        dist = _make_distribution_ext(env_id="env-99")
+        ctx = AionRuntimeContext(distributionExtensionPayload=dist)
+
+        assert ctx.get_principal_selector() == "agent-environment:env-99"
+
+    def test_principal_selector_missing_without_environment(self):
+        """Verify that principal selector is absent without distribution payload."""
+        ctx = AionRuntimeContext()
+
+        assert ctx.get_principal_selector() is None
 
     def test_no_principal_returns_none_without_losing_payload_records(self):
         """Verify that missing principal identity does not discard payload context."""

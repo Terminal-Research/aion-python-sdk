@@ -1,8 +1,10 @@
-from .control_plane import (
+"""Aion control-plane addressing utilities."""
+
+from .models import (
     AION_CONTROL_PLANE_MCP_CAPABILITY_KEY,
     AION_PRINCIPAL_SELECTOR_HEADER,
-    AionControlPlanePaths,
     CapabilityKey,
+    CapabilityKeySelector,
     CapabilityKind,
     CapabilityReference,
     CapabilitySubject,
@@ -12,17 +14,14 @@ from .control_plane import (
     PrincipalSelectorKind,
     RuntimeCapabilityReference,
 )
-from .gql import AionGqlClient, generated
-from .http import AionHttpClient
-from .model_service_client import aion_openai_config
+from .paths import AionControlPlanePaths
 
 __all__ = [
     "AION_CONTROL_PLANE_MCP_CAPABILITY_KEY",
     "AION_PRINCIPAL_SELECTOR_HEADER",
-    "AionGqlClient",
-    "AionHttpClient",
     "AionControlPlanePaths",
     "CapabilityKey",
+    "CapabilityKeySelector",
     "CapabilityKind",
     "CapabilityReference",
     "CapabilitySubject",
@@ -31,6 +30,4 @@ __all__ = [
     "PrincipalSelector",
     "PrincipalSelectorKind",
     "RuntimeCapabilityReference",
-    "aion_openai_config",
-    "generated",
 ]

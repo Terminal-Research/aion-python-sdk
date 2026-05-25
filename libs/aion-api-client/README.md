@@ -49,6 +49,44 @@ The REST helpers target these control-plane endpoints:
 | `GET /v1/models/{model}` | Retrieves one model-service catalog entry. |
 | `POST /v1/chat/completions` | Creates a model-service chat completion, including streaming responses when requested. |
 
+## Control-plane addressing
+
+Use `CapabilitySubject`, `CapabilityReference`, `PrincipalSelector`, and
+`AionControlPlanePaths` when constructing A2A or MCP control-plane requests.
+`CapabilityReference` is the SDK-level address shape for capability URLs:
+optional subject, capability kind, and capability-key selector. A missing key
+selects the primary capability for that subject and kind; it is not encoded as
+the literal string `"primary"`.
+
+```python
+from aion.api import (
+    AionControlPlanePaths,
+    CapabilityReference,
+    CapabilitySubject,
+    CapabilitySubjectSource,
+    PrincipalSelector,
+    RuntimeCapabilityReference,
+)
+
+subject = CapabilitySubject.environment("agent-environment-id")
+principal = PrincipalSelector.agent_environment("agent-environment-id")
+paths = AionControlPlanePaths()
+
+primary_mcp_url = paths.capability_url(CapabilityReference.primary_mcp(subject))
+twitter_mcp_url = paths.capability_url(
+    CapabilityReference.mcp(subject, key="mcp.twitter.distribution")
+)
+a2a_url = paths.capability_url(CapabilityReference.primary_a2a(subject))
+headers = principal.to_headers()
+
+runtime_mcp_reference = RuntimeCapabilityReference.primary_mcp(
+    CapabilitySubjectSource.INCOMING_DISTRIBUTION
+)
+```
+
+The GraphQL client accepts these SDK model objects at its boundary and converts
+them to generated GraphQL transport inputs before sending requests.
+
 ## Development
 
 Install the project using Poetry and run the tests with `pytest`:

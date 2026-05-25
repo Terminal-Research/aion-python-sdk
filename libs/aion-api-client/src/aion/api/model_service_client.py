@@ -9,6 +9,7 @@ from typing import Mapping
 
 from aion.core.settings import api_settings
 
+from aion.api.control_plane import AION_PRINCIPAL_SELECTOR_HEADER
 from aion.api.exceptions import AionAuthenticationError
 from aion.api.http.jwt_manager import (
     AionJWTManager,
@@ -16,7 +17,6 @@ from aion.api.http.jwt_manager import (
     aion_jwt_manager,
 )
 
-AION_PRINCIPAL_SELECTOR_HEADER = "Aion-Principal-Selector"
 PrincipalSelectorProvider = Callable[[], str | None]
 ModelApiKeyProvider = Callable[[], str]
 

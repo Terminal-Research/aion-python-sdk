@@ -37,6 +37,45 @@ Aion control plane model catalog.
 
 ---
 
+## MCP tools
+
+Use `load_aion_mcp_tools` after an `AionRuntimeContext` is available to load
+explicit MCP references and runtime-resolved capability MCP tools:
+
+```python
+from aion.api import (
+    CapabilityReference,
+    CapabilitySubjectSource,
+    RuntimeCapabilityReference,
+)
+from aion.langgraph.authoring import load_aion_mcp_tools
+
+tools = await load_aion_mcp_tools(
+    context,
+    capability_references=[
+        CapabilityReference.global_mcp(),
+    ],
+    runtime_capability_references=[
+        RuntimeCapabilityReference.mcp(key="mcp.twitter.distribution"),
+        RuntimeCapabilityReference.primary_mcp(
+            CapabilitySubjectSource.INCOMING_DISTRIBUTION
+        ),
+    ],
+)
+```
+
+The helper builds LangChain `MultiServerMCPClient` configuration with Aion
+bearer auth and an `Aion-Principal-Selector` derived from the runtime context.
+Use `capability_references` for the SDK-level subject + kind + key shape, such
+as the subjectless global control-plane MCP server. Use
+`runtime_capability_references` when the subject must be resolved from the
+runtime request, such as a concrete MCP key on the active environment or the
+primary MCP server for the incoming distribution.
+Use `AionLangGraphMcpResolver` when you want to reuse the same MCP resolution
+settings across invocations.
+
+---
+
 ## Event Routing — `add_event_handlers`
 
 `add_event_handlers` registers a single dispatcher node in the graph that routes inbound A2A events to the appropriate handler based on event kind.

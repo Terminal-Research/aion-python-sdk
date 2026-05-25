@@ -3,6 +3,7 @@ from typing import Optional, List, Any, AsyncIterator
 
 from aion.core.logging import get_logger
 
+from aion.api.control_plane import CapabilitySubject, PrincipalSelector
 from aion.api.http import AionJWTManager
 from .generated.graphql_client import (
     MessageInput,
@@ -193,7 +194,7 @@ class AionGqlClient:
         model: str,
         messages: List[MessageInput],
         stream: bool,
-        principal: Optional[PrincipalSelectorGQLInput] = None,
+        principal: PrincipalSelector | PrincipalSelectorGQLInput | None = None,
         **kwargs: Any
     ) -> AsyncIterator[ChatCompletionStream]:
         """Stream chat completion responses from the Aion API.
@@ -205,7 +206,7 @@ class AionGqlClient:
             model (str): The AI model to use for completion
             messages (List[MessageInput]): List of input messages for the conversation
             stream (bool): Whether to enable streaming mode
-            principal (Optional[PrincipalSelectorGQLInput]): Optional principal selector.
+            principal: Optional principal selector.
             **kwargs (Any): Additional parameters to pass to the completion request
         """
         self._validate_client_before_execute()
@@ -214,7 +215,7 @@ class AionGqlClient:
             request=ChatCompletionRequestInput(
                 model=model, messages=messages, stream=stream
             ),
-            principal=principal,
+            principal=_to_principal_selector_gql_input(principal),
             **kwargs
         ):
             yield chunk
@@ -222,8 +223,10 @@ class AionGqlClient:
     async def a2a_stream(
         self,
         request: A2AJsonRpcRequestGQLInput,
-        distribution_id: str,
-        principal: Optional[PrincipalSelectorGQLInput] = None,
+        distribution_id: str | None = None,
+        principal: PrincipalSelector | PrincipalSelectorGQLInput | None = None,
+        *,
+        target: CapabilitySubject | CapabilitySubjectGQLInput | None = None,
         **kwargs: Any
     ) -> AsyncIterator[A2AStream]:
         """Stream agent-to-agent JSON-RPC responses.
@@ -234,16 +237,19 @@ class AionGqlClient:
 
         Args:
             request (A2AJsonRpcRequestGQLInput): JSON-RPC request payload.
-            distribution_id (str): Identifier of the distribution to handle the request.
-            principal (Optional[PrincipalSelectorGQLInput]): Optional principal selector.
+            distribution_id: Legacy distribution identifier used when ``target``
+                is not supplied.
+            principal: Optional principal selector.
+            target: Capability subject addressed by the request.
             **kwargs (Any): Additional parameters forwarded to the underlying client.
         """
         self._validate_client_before_execute()
+        gql_target = _resolve_a2a_target(distribution_id, target)
 
         async for chunk in self.client.a_2_a_stream(
             request=request,
-            target=CapabilitySubjectGQLInput(distribution_id=distribution_id),
-            principal=principal,
+            target=gql_target,
+            principal=_to_principal_selector_gql_input(principal),
             **kwargs
         ):
             yield chunk
@@ -322,3 +328,41 @@ class AionGqlClient:
             version_id_field, operation_name="GetVersionIdByClientId"
         )
         return result.get("versionIdByClientId")
+
+
+def _resolve_a2a_target(
+    distribution_id: str | None,
+    target: CapabilitySubject | CapabilitySubjectGQLInput | None,
+) -> CapabilitySubjectGQLInput:
+    """Return a GraphQL A2A target from legacy or typed inputs."""
+    if target is not None and distribution_id is not None:
+        raise ValueError("provide either distribution_id or target, not both")
+    if target is None:
+        if distribution_id is None:
+            raise ValueError("distribution_id or target is required")
+        target = CapabilitySubject.distribution(distribution_id)
+    return _to_capability_subject_gql_input(target)
+
+
+def _to_principal_selector_gql_input(
+    principal: PrincipalSelector | PrincipalSelectorGQLInput | None,
+) -> PrincipalSelectorGQLInput | None:
+    """Return the generated GraphQL input for a principal selector."""
+    if principal is None:
+        return None
+    if isinstance(principal, PrincipalSelectorGQLInput):
+        return principal
+    if isinstance(principal, PrincipalSelector):
+        return principal.to_gql_input()
+    raise TypeError(f"unsupported principal selector type: {type(principal)!r}")
+
+
+def _to_capability_subject_gql_input(
+    subject: CapabilitySubject | CapabilitySubjectGQLInput,
+) -> CapabilitySubjectGQLInput:
+    """Return the generated GraphQL input for a capability subject."""
+    if isinstance(subject, CapabilitySubjectGQLInput):
+        return subject
+    if isinstance(subject, CapabilitySubject):
+        return subject.to_gql_input()
+    raise TypeError(f"unsupported capability subject type: {type(subject)!r}")

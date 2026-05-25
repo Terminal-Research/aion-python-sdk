@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "aion-mcp"
 version = "0.1.0"
-description = "Helper for mounting an MCP proxy from configuration"
+description = "Aion MCP proxy and remote endpoint utilities"
 authors = ["Terminal Research Team <support@terminal.exchange>"]
 readme = "README.md"
 packages = [{include = "aion", from = "src"}]

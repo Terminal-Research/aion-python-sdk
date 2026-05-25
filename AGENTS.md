@@ -17,10 +17,15 @@ This repository is a monorepo containing multiple projects located primarily und
 - **aion-server** – Google A2A server running a LangGraph agent. Provides task store, agent/plugin lifecycle, and FastAPI application. DB management is delegated to `aion-db`. Graphs and HTTP apps are configured via `aion.yaml` and can be dynamically mounted onto the server.
 - **aion-api-client** – provides a low level GraphQL client and a high level
   `ApiClient` interface for the Aion API. Also owns low-level HTTP/OpenAI-
-  compatible model-service connection helpers used by framework packages.
-- **aion-adk** – Google ADK authoring toolkit for Aion. Provides direct
-  authoring helpers such as Aion-backed ADK model configuration without
-  pulling in server plugin machinery.
+  compatible model-service connection helpers and typed control-plane
+  addressing utilities used by framework packages.
+- **aion-adk** – Google ADK helper package for Aion-backed model
+  configuration. Provides direct authoring helpers such as `aion_lite_llm`.
+- **aion-authoring-adk** – Google ADK authoring toolkit for Aion MCP access.
+  Provides MCP toolset bindings without pulling in server plugin machinery.
+- **aion-authoring-langgraph** – LangGraph authoring toolkit for Aion.
+  Provides model helpers, event-routing utilities, streaming helpers, and MCP
+  tool-loading bindings for runtime Aion contexts.
 - **aion-shared** – shared configuration, settings, logging, A2A types, file handling, and utility modules used across Aion Python SDK packages.
 - **aion-mcp** – creates an ASGI proxy for an MCP server defined in
   `aion.yaml` and provides authenticated remote Aion MCP endpoint helpers for
@@ -28,7 +33,8 @@ This repository is a monorepo containing multiple projects located primarily und
 - **aion-db** – centralized DB management layer (postgres driver, migrations, repositories, models). Exposes the full `aion.db.postgres` namespace: `DbManager`, `DbFactory`, `TaskRecord`, `TaskRecordModel`, `TasksRepository`, Alembic migrations, and utilities (`convert_pg_url`, `verify_connection`, `validate_permissions`). Supports future `aion.db.redis` and similar sub-namespaces. Used by `aion-server` and plugins such as `aion-plugin-adk`.
 - **aion-plugin-adk** – Google ADK control-plane plugin for Aion Server. Adapts
   inbound A2A requests into ADK execution and maps ADK events back into A2A
-  responses. Framework authoring helpers belong in `aion-adk`.
+  responses. Model helpers belong in `aion-adk`; MCP authoring helpers belong
+  in `aion-authoring-adk`.
 
 ## Additional guidelines
 
