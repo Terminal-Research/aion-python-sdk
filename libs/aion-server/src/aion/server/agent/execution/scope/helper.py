@@ -21,8 +21,6 @@ __all__ = [
     "set_agent_framework_baggage",
     "set_task_manager",
     "get_task_manager",
-    "set_aion_runtime_context",
-    "get_aion_runtime_context",
 ]
 
 _execution_scope_var: ContextVar[Optional[AgentExecutionScope]] = ContextVar(
@@ -252,39 +250,4 @@ def get_task_manager() -> Optional['AionTaskManagerProtocol']:
     return scope.runtime.task_manager
 
 
-def set_aion_runtime_context(context) -> AgentExecutionScope:
-    """Store the Aion runtime context for use throughout execution.
 
-    Makes the context (containing the parsed distribution extension payload)
-    accessible from anywhere within the execution scope, enabling proper API
-    attribution and agent identity tracking.
-
-    Args:
-        context: The AionRuntimeContext instance from aion-core.
-
-    Returns:
-        The current AgentExecutionScope.
-
-    Raises:
-        RuntimeError: If no scope is currently set. Use set_execution_scope() first.
-    """
-    scope = get_execution_scope()
-    if scope is None:
-        raise RuntimeError("No scope is currently set. Use set_execution_scope() first.")
-    scope.runtime.aion_runtime_context = context
-    return scope
-
-
-def get_aion_runtime_context():
-    """Get the Aion runtime context from execution runtime.
-
-    Returns:
-        The AionRuntimeContext instance if set, otherwise None.
-
-    Raises:
-        RuntimeError: If no scope is currently set.
-    """
-    scope = get_execution_scope()
-    if scope is None:
-        raise RuntimeError("No scope is currently set. Use set_execution_scope() first.")
-    return scope.runtime.aion_runtime_context

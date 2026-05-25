@@ -6,7 +6,7 @@ from a2a.types import TaskState
 from a2a.utils.errors import TaskNotCancelableError, TaskNotFoundError, UnsupportedOperationError
 
 from aion.server.agent.execution import AionAgentRequestExecutor
-from aion.server.agent.execution.scope import init_execution_scope, get_aion_runtime_context
+from aion.server.agent.execution.scope import init_execution_scope
 
 
 def _make_task(state: TaskState = TaskState.TASK_STATE_WORKING):
@@ -75,7 +75,8 @@ class TestExecuteRuntimeContext:
             mock_context = MagicMock()
             MockBuilder.from_request_context.return_value = mock_context
 
-            with patch("aion.server.agent.execution.request_executor.set_aion_runtime_context") as mock_set:
+            with patch("aion.server.agent.execution.request_executor.AionRuntimeContextRegistry") as MockRegistry:
+                MockRegistry.aset_current_context = AsyncMock()
                 with patch("aion.server.agent.execution.request_executor.AionEventPipeline"):
                     # Mock _get_task_for_execution to return our task
                     with patch.object(executor, "_get_task_for_execution", new=AsyncMock(return_value=(task, True))):
@@ -89,8 +90,8 @@ class TestExecuteRuntimeContext:
                         # Verify context was built from request context
                         MockBuilder.from_request_context.assert_called_once_with(ctx)
 
-                        # Verify context was set in scope
-                        mock_set.assert_called_once_with(mock_context)
+                        # Verify context was set via registry
+                        MockRegistry.aset_current_context.assert_awaited_once_with(mock_context)
 
     @pytest.mark.anyio
     async def test_execute_handles_missing_runtime_context(self):
@@ -106,7 +107,8 @@ class TestExecuteRuntimeContext:
             # Simulate no context available (e.g., graph without a2a_inbox)
             MockBuilder.from_request_context.return_value = None
 
-            with patch("aion.server.agent.execution.request_executor.set_aion_runtime_context") as mock_set:
+            with patch("aion.server.agent.execution.request_executor.AionRuntimeContextRegistry") as MockRegistry:
+                MockRegistry.aset_current_context = AsyncMock()
                 with patch("aion.server.agent.execution.request_executor.AionEventPipeline"):
                     with patch.object(executor, "_get_task_for_execution", new=AsyncMock(return_value=(task, True))):
                         async def empty_stream(*args, **kwargs):
@@ -119,8 +121,8 @@ class TestExecuteRuntimeContext:
                         # Verify builder was called
                         MockBuilder.from_request_context.assert_called_once_with(ctx)
 
-                        # Verify set_aion_runtime_context was NOT called when context is None
-                        mock_set.assert_not_called()
+                        # Verify set_current_context was NOT called when context is None
+                        MockRegistry.aset_current_context.assert_not_awaited()
 
 
 class TestCancel:

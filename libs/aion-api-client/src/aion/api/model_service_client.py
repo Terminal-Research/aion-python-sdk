@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
-import logging
 from typing import Mapping
-
-from aion.core.settings import api_settings
 
 from aion.api.control_plane import AION_PRINCIPAL_SELECTOR_HEADER
 from aion.api.exceptions import AionAuthenticationError
@@ -16,6 +14,8 @@ from aion.api.http.jwt_manager import (
     AionRefreshingJWTManager,
     aion_jwt_manager,
 )
+from aion.core.runtime.context import get_aion_runtime_context
+from aion.core.settings import api_settings
 
 PrincipalSelectorProvider = Callable[[], str | None]
 ModelApiKeyProvider = Callable[[], str]
@@ -32,10 +32,10 @@ class AionModelClientConfig:
     default_headers: Mapping[str, str] = field(default_factory=dict)
 
     def request_headers(
-        self,
-        existing: Mapping[str, str] | None = None,
-        *,
-        warn_on_missing: bool = True,
+            self,
+            existing: Mapping[str, str] | None = None,
+            *,
+            warn_on_missing: bool = True,
     ) -> dict[str, str]:
         """Return fresh headers for one model-service request."""
         headers = dict(self.default_headers)
@@ -74,7 +74,7 @@ def aion_model_base_url() -> str:
 
 
 def aion_model_api_key(
-    jwt_manager: AionRefreshingJWTManager | None = None,
+        jwt_manager: AionRefreshingJWTManager | None = None,
 ) -> str:
     """Return a current Aion JWT for OpenAI-compatible model clients."""
     manager = jwt_manager or aion_jwt_manager
@@ -85,14 +85,14 @@ def aion_model_api_key(
 
 
 def aion_model_api_key_provider(
-    jwt_manager: AionRefreshingJWTManager | None = None,
+        jwt_manager: AionRefreshingJWTManager | None = None,
 ) -> ModelApiKeyProvider:
     """Return a per-request API-key provider backed by the JWT manager."""
     return lambda: aion_model_api_key(jwt_manager)
 
 
 async def aion_jwt_api_key(
-    jwt_manager: AionJWTManager | None = None,
+        jwt_manager: AionJWTManager | None = None,
 ) -> str:
     """Return a short-lived JWT for OpenAI-compatible clients."""
     manager = jwt_manager or aion_jwt_manager
@@ -105,8 +105,9 @@ async def aion_jwt_api_key(
 def aion_principal_selector() -> str | None:
     """Return the current model-service principal selector, if available.
 
-    This is intentionally a placeholder until runtime-context propagation can
-    read the active Aion invocation from a ContextVar.
+    Reads the active AionRuntimeContext via AionRuntimeContextRegistry, which is
+    populated by aion-server at request entry. Returns None when called outside
+    a server context (e.g. during local development or direct script use).
 
     The returned value is used as the ``Aion-Principal-Selector`` header.
     Expected forms:
@@ -114,17 +115,17 @@ def aion_principal_selector() -> str | None:
     - Agent environment selector: ``agent-environment:<agent-environment-id>``
     - Agent identity selector: ``agent-identity:<agent-identity-id>``
     """
-    # TODO: Resolve from AionRuntimeContext once invocation context propagation
-    # is available here. The context exposes distribution/environment/identity
-    # records through distribution_extension_payload helpers.
-    return None
+    context = get_aion_runtime_context()
+    if context is None:
+        return None
+    return context.get_principal_selector()
 
 
 def aion_model_request_headers(
-    existing: Mapping[str, str] | None = None,
-    *,
-    principal_selector_provider: PrincipalSelectorProvider | None = None,
-    warn_on_missing: bool = True,
+        existing: Mapping[str, str] | None = None,
+        *,
+        principal_selector_provider: PrincipalSelectorProvider | None = None,
+        warn_on_missing: bool = True,
 ) -> dict[str, str]:
     """Return per-request headers for an Aion model-service call."""
     headers = dict(existing or {})

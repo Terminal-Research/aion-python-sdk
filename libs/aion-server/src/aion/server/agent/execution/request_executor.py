@@ -14,10 +14,11 @@ from a2a.utils.errors import (
 from a2a.utils.telemetry import trace_function
 from aion.core.logging import get_logger
 from aion.core.runtime import AionRuntimeContextBuilder
+from aion.core.runtime.context.registry import AionRuntimeContextRegistry
 from aion.server.a2a.constants import TERMINAL_TASK_STATES
 from aion.server.a2a.utils import is_task_interrupted
 from aion.server.agent.aion_agent import AionAgent
-from aion.server.agent.execution.scope import set_task_id, set_aion_runtime_context
+from aion.server.agent.execution.scope import set_task_id
 from aion.server.files.a2a import A2AFileTransformer
 from typing import Optional, Tuple
 
@@ -66,7 +67,7 @@ class AionAgentRequestExecutor(AgentExecutor):
         else:
             logger.info("Resuming task")
 
-        self._setup_runtime_context(context)
+        await self._setup_runtime_context(context)
 
         try:
             event_stream = (
@@ -127,11 +128,11 @@ class AionAgentRequestExecutor(AgentExecutor):
         await task_updater.cancel()
 
     @staticmethod
-    def _setup_runtime_context(context: RequestContext) -> None:
+    async def _setup_runtime_context(context: RequestContext) -> None:
         """Build and set Aion runtime context at server level for all executors."""
         runtime_context = AionRuntimeContextBuilder.from_request_context(context)
         if runtime_context:
-            set_aion_runtime_context(runtime_context)
+            await AionRuntimeContextRegistry.aset_current_context(runtime_context)
 
     @staticmethod
     async def _get_task_for_execution(context: RequestContext) -> Tuple[Task, bool]:

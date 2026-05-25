@@ -6,6 +6,12 @@ from .models import (
     EventKind,
     NormalizedPayload,
 )
+from .registry import (
+    AionRuntimeContextProvider,
+    AionRuntimeContextRegistry,
+    get_aion_runtime_context,
+    aget_aion_runtime_context,
+)
 
 __all__ = [
     "AionExtensions",
@@ -14,4 +20,8 @@ __all__ = [
     "Event",
     "EventKind",
     "NormalizedPayload",
+    "AionRuntimeContextProvider",
+    "AionRuntimeContextRegistry",
+    "get_aion_runtime_context",
+    "aget_aion_runtime_context",
 ]

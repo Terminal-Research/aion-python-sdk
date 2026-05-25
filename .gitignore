@@ -29,8 +29,9 @@ env/
 ENV/
 .env
 
-# Poetry
+# Dev Packages
 .venv/
+uv.lock
 poetry.lock
 
 # IDE specific files

@@ -177,3 +177,40 @@ def test_principal_selector_headers_are_optional(caplog):
 
     assert model_service_client.aion_principal_selector_headers() == {}
     assert "without principal attribution" in caplog.text
+
+
+def test_principal_selector_returns_none_when_no_provider(monkeypatch):
+    """Verify selector returns None when no runtime context provider is registered."""
+    from aion.core.runtime.context.registry import AionRuntimeContextRegistry
+    monkeypatch.setattr(AionRuntimeContextRegistry, "_provider", None)
+
+    assert model_service_client.aion_principal_selector() is None
+
+
+def test_principal_selector_returns_none_when_provider_returns_none(monkeypatch):
+    """Verify selector returns None when provider returns None (out of scope)."""
+    from aion.core.runtime.context.registry import AionRuntimeContextRegistry
+    provider = SimpleNamespace(get_current_context=lambda: None)
+    monkeypatch.setattr(AionRuntimeContextRegistry, "_provider", provider)
+
+    assert model_service_client.aion_principal_selector() is None
+
+
+def test_principal_selector_reads_environment_from_context(monkeypatch):
+    """Verify selector returns agent-environment selector from context."""
+    from aion.core.runtime.context.registry import AionRuntimeContextRegistry
+    ctx = SimpleNamespace(get_principal_selector=lambda: "agent-environment:env-42")
+    provider = SimpleNamespace(get_current_context=lambda: ctx)
+    monkeypatch.setattr(AionRuntimeContextRegistry, "_provider", provider)
+
+    assert model_service_client.aion_principal_selector() == "agent-environment:env-42"
+
+
+def test_principal_selector_reads_daemon_identity_from_context(monkeypatch):
+    """Verify selector prefers agent-identity when daemon identity is present."""
+    from aion.core.runtime.context.registry import AionRuntimeContextRegistry
+    ctx = SimpleNamespace(get_principal_selector=lambda: "agent-identity:daemon-99")
+    provider = SimpleNamespace(get_current_context=lambda: ctx)
+    monkeypatch.setattr(AionRuntimeContextRegistry, "_provider", provider)
+
+    assert model_service_client.aion_principal_selector() == "agent-identity:daemon-99"
