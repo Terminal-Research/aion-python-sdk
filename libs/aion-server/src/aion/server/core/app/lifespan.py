@@ -8,7 +8,7 @@ from aion.api.http import aion_jwt_manager
 from aion.core.runtime.context.registry import AionRuntimeContextRegistry
 from aion.core.settings import api_settings
 from aion.server import services as aion_services
-from aion.server.agent.execution.context import ExecutionScopeRuntimeContextProvider
+from aion.server.agent.execution.context import RequestScopeRuntimeContextProvider
 from aion.server.core.platform import AionWebSocketManager, WebsocketTransportFactory
 from aion.server.opentelemetry import init_tracing
 from fastapi import FastAPI
@@ -54,7 +54,7 @@ class AppLifespan:
         """Handle application startup events."""
         # Register runtime context provider so aion-api-client can resolve
         # the active principal selector without depending on aion-server.
-        AionRuntimeContextRegistry.set_provider(ExecutionScopeRuntimeContextProvider())
+        AionRuntimeContextRegistry.set_provider(RequestScopeRuntimeContextProvider())
 
         # SETUP OPEN-TELEMETRY
         init_tracing()
