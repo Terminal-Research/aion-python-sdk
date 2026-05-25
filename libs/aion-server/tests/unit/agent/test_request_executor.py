@@ -6,6 +6,7 @@ from a2a.types import TaskState
 from a2a.utils.errors import TaskNotCancelableError, TaskNotFoundError, UnsupportedOperationError
 
 from aion.server.agent.execution import AionAgentRequestExecutor
+from aion.server.agent.execution.scope import init_execution_scope, get_aion_runtime_context
 
 
 def _make_task(state: TaskState = TaskState.TASK_STATE_WORKING):
@@ -53,6 +54,73 @@ def event_queue():
 @pytest.fixture
 def anyio_backend():
     return "asyncio"
+
+
+class TestExecuteRuntimeContext:
+    @pytest.mark.anyio
+    async def test_execute_builds_and_sets_runtime_context(self):
+        """Verify that execute() builds AionRuntimeContext and stores in scope."""
+        executor = AionAgentRequestExecutor(aion_agent=_make_agent())
+        task = _make_task(state=TaskState.TASK_STATE_WORKING)
+        ctx = _make_context(task=task)
+        event_queue = AsyncMock(spec=EventQueue)
+
+        # Mock agent stream and AionRuntimeContextBuilder
+        executor.agent.stream = AsyncMock(return_value=AsyncMock(__aenter__=AsyncMock(), __aexit__=AsyncMock()))
+
+        # Initialize execution scope for the test
+        init_execution_scope()
+
+        with patch("aion.server.agent.execution.request_executor.AionRuntimeContextBuilder") as MockBuilder:
+            mock_context = MagicMock()
+            MockBuilder.from_request_context.return_value = mock_context
+
+            with patch("aion.server.agent.execution.request_executor.set_aion_runtime_context") as mock_set:
+                with patch("aion.server.agent.execution.request_executor.AionEventPipeline"):
+                    # Mock _get_task_for_execution to return our task
+                    with patch.object(executor, "_get_task_for_execution", new=AsyncMock(return_value=(task, True))):
+                        async def empty_stream(*args, **kwargs):
+                            return
+                            yield
+                        executor.agent.stream = empty_stream
+
+                        await executor.execute(ctx, event_queue)
+
+                        # Verify context was built from request context
+                        MockBuilder.from_request_context.assert_called_once_with(ctx)
+
+                        # Verify context was set in scope
+                        mock_set.assert_called_once_with(mock_context)
+
+    @pytest.mark.anyio
+    async def test_execute_handles_missing_runtime_context(self):
+        """Verify that execute() handles case when context is unavailable."""
+        executor = AionAgentRequestExecutor(aion_agent=_make_agent())
+        task = _make_task(state=TaskState.TASK_STATE_WORKING)
+        ctx = _make_context(task=task)
+        event_queue = AsyncMock(spec=EventQueue)
+
+        init_execution_scope()
+
+        with patch("aion.server.agent.execution.request_executor.AionRuntimeContextBuilder") as MockBuilder:
+            # Simulate no context available (e.g., graph without a2a_inbox)
+            MockBuilder.from_request_context.return_value = None
+
+            with patch("aion.server.agent.execution.request_executor.set_aion_runtime_context") as mock_set:
+                with patch("aion.server.agent.execution.request_executor.AionEventPipeline"):
+                    with patch.object(executor, "_get_task_for_execution", new=AsyncMock(return_value=(task, True))):
+                        async def empty_stream(*args, **kwargs):
+                            return
+                            yield
+                        executor.agent.stream = empty_stream
+
+                        await executor.execute(ctx, event_queue)
+
+                        # Verify builder was called
+                        MockBuilder.from_request_context.assert_called_once_with(ctx)
+
+                        # Verify set_aion_runtime_context was NOT called when context is None
+                        mock_set.assert_not_called()
 
 
 class TestCancel:

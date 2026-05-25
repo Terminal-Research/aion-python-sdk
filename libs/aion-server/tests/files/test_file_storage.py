@@ -417,21 +417,21 @@ class TestA2AFileTransformer:
 class TestFileUploadManagerFromSettings:
     def test_returns_none_when_no_backend_configured(self):
         """from_settings returns None when file_storage_backend is not configured."""
-        with patch("aion.shared.settings.app_settings") as mock:
+        with patch("aion.server.settings.app_settings") as mock:
             mock.file_storage_backend = None
             result = FileUploadManager.from_settings()
             assert result is None
 
     def test_returns_manager_for_stub_backend(self):
         """from_settings returns a FileUploadManager when backend is 'stub'."""
-        with patch("aion.shared.settings.app_settings") as mock:
+        with patch("aion.server.settings.app_settings") as mock:
             mock.file_storage_backend = "stub"
             result = FileUploadManager.from_settings()
             assert isinstance(result, FileUploadManager)
 
     def test_raises_for_unknown_backend(self):
         """from_settings raises ValueError for unknown storage backend names."""
-        with patch("aion.shared.settings.app_settings") as mock:
+        with patch("aion.server.settings.app_settings") as mock:
             mock.file_storage_backend = "s3"
             with pytest.raises(ValueError, match="Unknown storage backend"):
                 FileUploadManager.from_settings()

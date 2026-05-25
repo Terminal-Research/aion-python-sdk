@@ -4,7 +4,6 @@ from __future__ import annotations
 from a2a.types import Message, Task, TaskArtifactUpdateEvent, TaskStatusUpdateEvent
 from aion.core.config.models import AgentConfig
 from aion.core.logging import get_logger
-from aion.core.runtime import AionRuntimeContextBuilder
 from collections.abc import AsyncIterator
 from typing import Any, Optional, TYPE_CHECKING
 
@@ -14,7 +13,7 @@ from aion.server.agent.adapters import (
     ExecutorAdapter,
 )
 from aion.server.agent.exceptions import ExecutionError, StateRetrievalError
-from aion.server.agent.execution.scope import set_aion_runtime_context as exec_scope_set_aion_runtime_context
+from aion.server.agent.execution.scope import get_aion_runtime_context
 from .event_converter import LangGraphA2AConverter
 from .event_preprocessor import LangGraphEventPreprocessor
 from .result_handler import ExecutionResultHandler
@@ -67,10 +66,11 @@ class LangGraphExecutor(ExecutorAdapter):
             lg_inputs = LangGraphTransformer.generate_langgraph_inputs(context)
             lg_config = LangGraphTransformer.generate_langgraph_config(config)
 
+            runtime_context = get_aion_runtime_context()
             stream_exec = StreamExecutor(self.compiled_graph, converter, self._preprocessor)
             events_generator = stream_exec.execute(
                 lg_inputs, lg_config,
-                runtime_context=self._build_aion_runtime_context(context)
+                runtime_context=runtime_context
             )
             async for a2a_event in events_generator:
                 yield a2a_event
@@ -120,10 +120,11 @@ class LangGraphExecutor(ExecutorAdapter):
 
             logger.debug(f"Resuming task")
 
+            runtime_context = get_aion_runtime_context()
             stream_exec = StreamExecutor(self.compiled_graph, converter, self._preprocessor)
             events_generator = stream_exec.execute(
                 resume_command, lg_config,
-                runtime_context=self._build_aion_runtime_context(context)
+                runtime_context=runtime_context
             )
             async for a2a_event in events_generator:
                 yield a2a_event
@@ -173,16 +174,3 @@ class LangGraphExecutor(ExecutorAdapter):
         else:
             yield converter.convert_complete()
 
-    @staticmethod
-    def _build_aion_runtime_context(request_context: "RequestContext") -> AionRuntimeContext:
-        """Build and set the Aion runtime context from the request context.
-
-        Args:
-            request_context: Request context containing execution metadata.
-
-        Returns:
-            AionRuntimeContext: Configured runtime context for the execution.
-        """
-        runtime_context = AionRuntimeContextBuilder.from_request_context(request_context)
-        exec_scope_set_aion_runtime_context(runtime_context)
-        return runtime_context

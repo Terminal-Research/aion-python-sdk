@@ -25,7 +25,7 @@ class TestReplaceUvicornLoggers:
         get_logger is imported lazily inside the function body, so we patch
         the factory module directly rather than the utils.logging namespace.
         """
-        return patch("aion.shared.logging.factory.get_logger", autospec=True)
+        return patch("aion.server.logging.factory.get_logger", autospec=True)
 
     @pytest.mark.parametrize("logger_name", [
         "uvicorn.access", "uvicorn", "uvicorn.error", "starlette", "fastapi",
@@ -69,7 +69,7 @@ class TestReplaceUvicornLoggers:
                 return mock_uvicorn_error
             return MagicMock()
 
-        with patch("aion.shared.logging.factory.get_logger", side_effect=fake_get_logger):
+        with patch("aion.server.logging.factory.get_logger", side_effect=fake_get_logger):
             replace_uvicorn_loggers(suppress_startup_logs=True)
 
         mock_uvicorn.setLevel.assert_called_once_with(logging.WARNING)
@@ -88,7 +88,7 @@ class TestReplaceUvicornLoggers:
                 return mock_uvicorn_error
             return MagicMock()
 
-        with patch("aion.shared.logging.factory.get_logger", side_effect=fake_get_logger):
+        with patch("aion.server.logging.factory.get_logger", side_effect=fake_get_logger):
             if explicit_arg is None:
                 replace_uvicorn_loggers()
             else:
@@ -99,7 +99,7 @@ class TestReplaceUvicornLoggers:
 
 class TestReplaceLogstashLoggers:
     def _patch_get_logger(self):
-        return patch("aion.shared.logging.factory.get_logger", autospec=True)
+        return patch("aion.server.logging.factory.get_logger", autospec=True)
 
     @pytest.mark.parametrize("logger_name", [
         "LogProcessingWorker",

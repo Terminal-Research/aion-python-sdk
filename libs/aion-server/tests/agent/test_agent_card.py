@@ -12,7 +12,7 @@ DOCS_URL = "https://docs.example.com"
 
 @pytest.fixture(autouse=True)
 def mock_docs_url():
-    with patch("aion.shared.agent.card.app_settings") as mock_settings:
+    with patch("aion.server.agent.card.app_settings") as mock_settings:
         mock_settings.docs_url = DOCS_URL
         yield mock_settings
 

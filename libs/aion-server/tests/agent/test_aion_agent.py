@@ -186,7 +186,7 @@ class TestAionAgentFromAdapter:
         adapter = _make_mock_adapter()
         cfg = _make_config()
 
-        with patch("aion.shared.agent.aion_agent.agent._get_logger", return_value=MagicMock()):
+        with patch("aion.server.agent.aion_agent.agent._get_logger", return_value=MagicMock()):
             agent = await AionAgent.from_adapter("my-id", cfg, adapter, native_agent=object())
 
         assert agent.id == "my-id"
@@ -196,7 +196,7 @@ class TestAionAgentFromAdapter:
         adapter = _make_mock_adapter()
         cfg = _make_config()
 
-        with patch("aion.shared.agent.aion_agent.agent._get_logger", return_value=MagicMock()):
+        with patch("aion.server.agent.aion_agent.agent._get_logger", return_value=MagicMock()):
             await AionAgent.from_adapter("a", cfg, adapter, native_agent=object())
 
         adapter.validate_config.assert_called_once_with(cfg)
@@ -206,7 +206,7 @@ class TestAionAgentFromAdapter:
         adapter = _make_mock_adapter(framework="langgraph")
         cfg = _make_config()
 
-        with patch("aion.shared.agent.aion_agent.agent._get_logger", return_value=MagicMock()):
+        with patch("aion.server.agent.aion_agent.agent._get_logger", return_value=MagicMock()):
             agent = await AionAgent.from_adapter("a", cfg, adapter, native_agent=object())
 
         assert agent.framework == "langgraph"
@@ -216,7 +216,7 @@ class TestAionAgentFromAdapter:
         adapter = _make_mock_adapter()
         cfg = _make_config()
 
-        with patch("aion.shared.agent.aion_agent.agent._get_logger", return_value=MagicMock()):
+        with patch("aion.server.agent.aion_agent.agent._get_logger", return_value=MagicMock()):
             agent = await AionAgent.from_adapter("a", cfg, adapter, native_agent=object())
 
         assert agent.get_executor() is not None
@@ -240,33 +240,33 @@ class TestAionAgentBuild:
         cfg.path = ""  # force empty after construction
         agent = AionAgent(agent_id="a", config=cfg)
 
-        with patch("aion.shared.agent.aion_agent.agent._get_logger", return_value=MagicMock()):
+        with patch("aion.server.agent.aion_agent.agent._get_logger", return_value=MagicMock()):
             with pytest.raises((ValueError, FileNotFoundError)):
                 await agent.build()
 
     async def test_build_raises_when_no_adapter_matches(self):
         """build raises ValueError with 'No adapter found' when no adapter handles the loaded object."""
-        cfg = _make_config(path="aion.shared.config.models")
+        cfg = _make_config(path="aion.core.config.models")
         agent = AionAgent(agent_id="a", config=cfg)
         mock_logger = MagicMock()
 
-        with patch("aion.shared.agent.aion_agent.agent._get_logger", return_value=mock_logger):
-            with patch("aion.shared.agent.adapters.registry.adapter_registry") as mock_registry:
+        with patch("aion.server.agent.aion_agent.agent._get_logger", return_value=mock_logger):
+            with patch("aion.server.agent.adapters.registry.adapter_registry") as mock_registry:
                 mock_registry.list_adapters.return_value = []
                 with pytest.raises(ValueError, match="No adapter found"):
                     await agent.build()
 
     async def test_build_succeeds_with_matching_adapter(self):
         """build marks the agent as built and assigns adapter when a matching adapter is found."""
-        cfg = _make_config(path="aion.shared.config.models")
+        cfg = _make_config(path="aion.core.config.models")
         agent = AionAgent(agent_id="a", config=cfg)
         mock_logger = MagicMock()
         adapter = _make_mock_adapter()
 
-        with patch("aion.shared.agent.aion_agent.agent._get_logger", return_value=mock_logger):
-            with patch("aion.shared.agent.adapters.registry.adapter_registry") as mock_registry:
+        with patch("aion.server.agent.aion_agent.agent._get_logger", return_value=mock_logger):
+            with patch("aion.server.agent.adapters.registry.adapter_registry") as mock_registry:
                 mock_registry.list_adapters.return_value = [adapter]
-                with patch("aion.shared.agent.aion_agent.module_loader.ModuleLoader") as MockLoader:
+                with patch("aion.server.agent.aion_agent.module_loader.ModuleLoader") as MockLoader:
                     loader_instance = MagicMock()
                     native = object()
                     loader_instance.load_from_config_path.return_value = (MagicMock(), None)
@@ -285,10 +285,10 @@ class TestAionAgentBuild:
         agent = AionAgent(agent_id="a", config=cfg)
         mock_logger = MagicMock()
 
-        with patch("aion.shared.agent.aion_agent.agent._get_logger", return_value=mock_logger):
-            with patch("aion.shared.agent.adapters.registry.adapter_registry") as mock_registry:
+        with patch("aion.server.agent.aion_agent.agent._get_logger", return_value=mock_logger):
+            with patch("aion.server.agent.adapters.registry.adapter_registry") as mock_registry:
                 mock_registry.list_adapters.return_value = []
-                with patch("aion.shared.agent.aion_agent.module_loader.ModuleLoader") as MockLoader:
+                with patch("aion.server.agent.aion_agent.module_loader.ModuleLoader") as MockLoader:
                     loader_instance = MagicMock()
                     loader_instance.load_from_config_path.side_effect = ImportError("no module")
                     MockLoader.return_value = loader_instance
@@ -298,15 +298,15 @@ class TestAionAgentBuild:
 
     async def test_build_returns_self(self):
         """build returns the same AionAgent instance (self)."""
-        cfg = _make_config(path="aion.shared.config.models")
+        cfg = _make_config(path="aion.core.config.models")
         agent = AionAgent(agent_id="a", config=cfg)
         mock_logger = MagicMock()
         adapter = _make_mock_adapter()
 
-        with patch("aion.shared.agent.aion_agent.agent._get_logger", return_value=mock_logger):
-            with patch("aion.shared.agent.adapters.registry.adapter_registry") as mock_reg:
+        with patch("aion.server.agent.aion_agent.agent._get_logger", return_value=mock_logger):
+            with patch("aion.server.agent.adapters.registry.adapter_registry") as mock_reg:
                 mock_reg.list_adapters.return_value = [adapter]
-                with patch("aion.shared.agent.aion_agent.module_loader.ModuleLoader") as MockLoader:
+                with patch("aion.server.agent.aion_agent.module_loader.ModuleLoader") as MockLoader:
                     loader_instance = MagicMock()
                     loader_instance.load_from_config_path.return_value = (MagicMock(), None)
                     loader_instance.discover_object.return_value = object()
@@ -370,7 +370,7 @@ class TestAionAgentCard:
     def test_card_lazy_loaded(self):
         """card property calls AionAgentCard.from_config on first access."""
         agent = _make_agent(port=8080)
-        with patch("aion.shared.agent.aion_agent.agent.AionAgentCard") as MockCard:
+        with patch("aion.server.agent.aion_agent.agent.AionAgentCard") as MockCard:
             MockCard.from_config.return_value = MagicMock()
             _ = agent.card
             MockCard.from_config.assert_called_once()
@@ -378,7 +378,7 @@ class TestAionAgentCard:
     def test_card_cached_on_second_access(self):
         """card property returns the cached card object on subsequent accesses."""
         agent = _make_agent(port=8080)
-        with patch("aion.shared.agent.aion_agent.agent.AionAgentCard") as MockCard:
+        with patch("aion.server.agent.aion_agent.agent.AionAgentCard") as MockCard:
             MockCard.from_config.return_value = MagicMock()
             c1 = agent.card
             c2 = agent.card

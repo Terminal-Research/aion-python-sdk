@@ -7,9 +7,8 @@ from unittest.mock import patch
 import pytest
 from aion.server.utils.asyncio import has_event_loop
 from aion.core.utils.path import get_base_dir, get_config_path
-from aion.server.utils.templates import substitute_vars
-from aion.server.utils.text import colorize_text
-from aion.server.utils.url import parse_host_port
+from aion.core.utils.text import colorize_text
+from aion.core.utils.url import parse_host_port
 
 
 class TestParseHostPort:
@@ -46,43 +45,6 @@ class TestParseHostPort:
     def test_leading_trailing_whitespace_is_stripped(self):
         """Verify that leading trailing whitespace is stripped."""
         assert parse_host_port("  localhost:8080  ") == ("localhost", 8080)
-
-
-class TestSubstituteVars:
-    def test_single_variable(self):
-        """Verify that single variable."""
-        assert substitute_vars("Hello, {name}!", {"name": "World"}) == "Hello, World!"
-
-    def test_multiple_variables(self):
-        """Verify that multiple variables."""
-        result = substitute_vars("{host}:{port}", {"host": "localhost", "port": 8080})
-        assert result == "localhost:8080"
-
-    def test_missing_variable_keeps_placeholder(self):
-        """Verify that missing variable keeps placeholder."""
-        result = substitute_vars("value={missing}", {})
-        assert result == "value={missing}"
-
-    def test_type_annotated_placeholder(self):
-        """Verify that type annotated placeholder."""
-        # {var:type} — the :type part is ignored, only var_name matters
-        result = substitute_vars("{count:int}", {"count": 42})
-        assert result == "42"
-
-    def test_non_string_value_is_coerced(self):
-        """Verify that non string value is coerced."""
-        result = substitute_vars("flag={active}", {"active": True})
-        assert result == "flag=True"
-
-    def test_no_placeholders_returns_template_unchanged(self):
-        """Verify that no placeholders returns template unchanged."""
-        template = "no variables here"
-        assert substitute_vars(template, {"x": 1}) == template
-
-    def test_partial_substitution(self):
-        """Verify that partial substitution."""
-        result = substitute_vars("{a} + {b} = {c}", {"a": 1, "b": 2})
-        assert result == "1 + 2 = {c}"
 
 
 class TestColorizeText:
