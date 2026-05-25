@@ -68,7 +68,8 @@ class TestDbManager:
             max_lifetime=3600,
             timeout=30,
             max_waiting=20,
-            open=False
+            open=False,
+            kwargs={"options": "-csearch_path=aion"}
         )
         mock_pool.open.assert_called_once()
         mock_pool.wait.assert_called_once()
@@ -77,6 +78,7 @@ class TestDbManager:
         expected_sqlalchemy_dsn = sample_dsn.replace('postgresql://', 'postgresql+psycopg://')
         mock_engine.assert_called_once_with(
             expected_sqlalchemy_dsn,
+            connect_args={"options": "-csearch_path=aion"},
             pool_pre_ping=True,
             echo=False
         )
@@ -226,6 +228,7 @@ class TestDbManager:
         expected_dsn = "postgresql+psycopg://user:pass@localhost:5432/testdb"
         mock_engine.assert_called_once_with(
             expected_dsn,
+            connect_args={"options": "-csearch_path=aion"},
             pool_pre_ping=True,
             echo=False
         )

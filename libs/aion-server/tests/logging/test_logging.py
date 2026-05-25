@@ -4,7 +4,6 @@ Focus areas:
   AionLogRecord:
     - Created with standard LogRecord args
     - All context fields are None when no scope is active
-    - aion_version_id falls back to app_settings.version_id
 
   AionLogger:
     - makeRecord returns AionLogRecord
@@ -38,6 +37,12 @@ Focus areas:
   LogStreamFormatter:
     - format returns non-empty string
     - colorize errors are suppressed (returns plain message)
+
+  ServerAionContextFilter:
+    - Enriches record with OpenTelemetry tracing info
+    - Enriches record with execution scope context
+    - Populates aion_version_id from scope or falls back to app_settings
+    - Handles exceptions gracefully
 """
 
 import json
@@ -59,17 +64,15 @@ def _make_log_record(
     msg: str = "test message",
 ) -> AionLogRecord:
     """Create a minimal AionLogRecord with no execution scope."""
-    with patch("aion.shared.agent.execution.scope.AgentExecutionScopeHelper.get_scope", return_value=None):
-        with patch("aion.shared.opentelemetry.tracing.get_span_info", return_value=None):
-            record = AionLogRecord(
-                name=name,
-                level=level,
-                pathname="test.py",
-                lineno=1,
-                msg=msg,
-                args=(),
-                exc_info=None,
-            )
+    record = AionLogRecord(
+        name=name,
+        level=level,
+        pathname="test.py",
+        lineno=1,
+        msg=msg,
+        args=(),
+        exc_info=None,
+    )
     return record
 
 
@@ -93,37 +96,12 @@ class TestAionLogRecord:
             "trace_id", "trace_span_id", "trace_span_name", "trace_parent_span_id",
             "trace_baggage", "agent_trace_baggage",
             "transaction_id", "transaction_name",
-            "aion_distribution_id", "aion_agent_environment_id",
+            "aion_distribution_id", "aion_version_id", "aion_agent_environment_id",
             "http_request_method", "http_request_target",
             "task_id", "a2a_rpc_method", "a2a_task_status",
         ]
         for field in context_fields:
             assert getattr(rec, field) is None, f"{field} should be None"
-
-    def test_version_id_falls_back_to_app_settings(self):
-        """aion_version_id falls back to app_settings.version_id when scope is unavailable."""
-        with patch("aion.shared.agent.execution.scope.AgentExecutionScopeHelper.get_scope", return_value=None):
-            with patch("aion.shared.opentelemetry.tracing.get_span_info", return_value=None):
-                with patch("aion.shared.settings.app_settings") as mock_settings:
-                    mock_settings.version_id = "v9.9.9"
-                    rec = AionLogRecord(
-                        name="test", level=logging.INFO, pathname="x.py",
-                        lineno=1, msg="hi", args=(), exc_info=None,
-                    )
-        assert rec.aion_version_id == "v9.9.9"
-
-    def test_exception_gracefully_handled_in_scope_fetch(self):
-        """Exceptions during scope fetch are handled gracefully without propagating."""
-        with patch(
-            "aion.shared.agent.execution.scope.AgentExecutionScopeHelper.get_scope",
-            side_effect=Exception("scope broken"),
-        ):
-            with patch("aion.shared.opentelemetry.tracing.get_span_info", return_value=None):
-                rec = AionLogRecord(
-                    name="test", level=logging.INFO, pathname="x.py",
-                    lineno=1, msg="hi", args=(), exc_info=None,
-                )
-        assert rec.trace_id is None
 
 class TestAionLogger:
     def _logger(self, name: str = "test_logger") -> AionLogger:
@@ -133,8 +111,8 @@ class TestAionLogger:
     def test_make_record_returns_aion_log_record(self):
         """makeRecord returns an AionLogRecord instance."""
         logger = self._logger("make_record_test")
-        with patch("aion.shared.agent.execution.scope.AgentExecutionScopeHelper.get_scope", return_value=None):
-            with patch("aion.shared.opentelemetry.tracing.get_span_info", return_value=None):
+        with patch("aion.server.agent.execution.scope.get_execution_scope", return_value=None):
+            with patch("aion.server.opentelemetry.tracing.get_span_info", return_value=None):
                 rec = logger.makeRecord(
                     name="test", level=logging.INFO, fn="f.py",
                     lno=1, msg="hello", args=(), exc_info=None,
@@ -144,8 +122,8 @@ class TestAionLogger:
     def test_make_record_extra_fields_added(self):
         """makeRecord merges extra dict fields into the log record."""
         logger = self._logger("make_record_extra_test")
-        with patch("aion.shared.agent.execution.scope.AgentExecutionScopeHelper.get_scope", return_value=None):
-            with patch("aion.shared.opentelemetry.tracing.get_span_info", return_value=None):
+        with patch("aion.server.agent.execution.scope.get_execution_scope", return_value=None):
+            with patch("aion.server.opentelemetry.tracing.get_span_info", return_value=None):
                 rec = logger.makeRecord(
                     name="test", level=logging.INFO, fn="f.py",
                     lno=1, msg="hello", args=(), exc_info=None,
@@ -156,8 +134,8 @@ class TestAionLogger:
     def test_make_record_raises_on_protected_key(self):
         """makeRecord raises KeyError when extra dict contains protected keys."""
         logger = self._logger("protected_key_test")
-        with patch("aion.shared.agent.execution.scope.AgentExecutionScopeHelper.get_scope", return_value=None):
-            with patch("aion.shared.opentelemetry.tracing.get_span_info", return_value=None):
+        with patch("aion.server.agent.execution.scope.get_execution_scope", return_value=None):
+            with patch("aion.server.opentelemetry.tracing.get_span_info", return_value=None):
                 with pytest.raises(KeyError):
                     logger.makeRecord(
                         name="test", level=logging.INFO, fn="f.py",
@@ -169,8 +147,8 @@ class TestGetLogger:
     def test_returns_aion_logger_instance(self):
         """get_logger returns an AionLogger instance."""
         from aion.server.logging.factory import get_logger
-        with patch("aion.shared.settings.app_settings") as mock_settings:
-            with patch("aion.shared.settings.api_settings") as mock_api:
+        with patch("aion.server.settings.app_settings") as mock_settings:
+            with patch("aion.core.settings.api_settings") as mock_api:
                 mock_settings.log_level = logging.DEBUG
                 mock_settings.logstash_host = "localhost"
                 mock_settings.logstash_port = 5000
@@ -184,8 +162,8 @@ class TestGetLogger:
     def test_same_logger_returned_for_same_name(self):
         """get_logger returns the same logger instance for the same name (caching)."""
         from aion.server.logging.factory import get_logger
-        with patch("aion.shared.settings.app_settings") as mock_settings:
-            with patch("aion.shared.settings.api_settings") as mock_api:
+        with patch("aion.server.settings.app_settings") as mock_settings:
+            with patch("aion.core.settings.api_settings") as mock_api:
                 mock_settings.log_level = logging.INFO
                 mock_settings.logstash_host = "localhost"
                 mock_settings.logstash_port = 5000
@@ -361,7 +339,7 @@ class TestLogStreamFormatter:
         """format returns a non-empty string."""
         formatter = self._formatter()
         rec = self._record()
-        with patch("aion.shared.agent.aion_agent.agent_manager") as mock_mgr:
+        with patch("aion.server.agent.aion_agent.agent_manager") as mock_mgr:
             mock_mgr.agent_id = None
             result = formatter.format(rec)
         assert isinstance(result, str)
@@ -372,7 +350,7 @@ class TestLogStreamFormatter:
         formatter = self._formatter()
         rec = self._record(level=logging.ERROR)
         rec.levelname = "ERROR"
-        with patch("aion.shared.agent.aion_agent.agent_manager") as mock_mgr:
+        with patch("aion.server.agent.aion_agent.agent_manager") as mock_mgr:
             mock_mgr.agent_id = None
             result = formatter.format(rec)
         assert "ERROR" in result
@@ -381,7 +359,7 @@ class TestLogStreamFormatter:
         """format includes the message text in the output."""
         formatter = self._formatter()
         rec = self._record(msg="unique-msg-xyz")
-        with patch("aion.shared.agent.aion_agent.agent_manager") as mock_mgr:
+        with patch("aion.server.agent.aion_agent.agent_manager") as mock_mgr:
             mock_mgr.agent_id = None
             result = formatter.format(rec)
         assert "unique-msg-xyz" in result
@@ -390,7 +368,7 @@ class TestLogStreamFormatter:
         """format includes agent_id when agent_manager.agent_id is set."""
         formatter = self._formatter()
         rec = self._record()
-        with patch("aion.shared.agent.aion_agent.agent_manager") as mock_mgr:
+        with patch("aion.server.agent.aion_agent.agent_manager") as mock_mgr:
             mock_mgr.agent_id = "test-agent"
             result = formatter.format(rec)
         assert "test-agent" in result
@@ -400,7 +378,7 @@ class TestLogStreamFormatter:
         formatter = self._formatter()
         rec = self._record()
         rec.task_id = "task-abc"
-        with patch("aion.shared.agent.aion_agent.agent_manager") as mock_mgr:
+        with patch("aion.server.agent.aion_agent.agent_manager") as mock_mgr:
             mock_mgr.agent_id = None
             result = formatter.format(rec)
         assert "task-abc" in result
@@ -408,6 +386,72 @@ class TestLogStreamFormatter:
     def test_colorize_exception_suppressed(self):
         """_colorize falls back to plain text when colorize_text raises exceptions."""
         formatter = self._formatter()
-        with patch("aion.shared.logging.handlers.stream.colorize_text", side_effect=RuntimeError("color broken")):
+        with patch("aion.server.logging.handlers.stream.colorize_text", side_effect=RuntimeError("color broken")):
             result = formatter._colorize("INFO", "plain message")
         assert result == "plain message"
+
+
+class TestServerAionContextFilter:
+    """Tests for ServerAionContextFilter context enrichment."""
+
+    def _filter(self):
+        from aion.server.logging.filters import ServerAionContextFilter
+        return ServerAionContextFilter()
+
+    def test_filter_returns_true_for_aion_log_record(self):
+        """filter returns True and enriches AionLogRecord."""
+        filter_obj = self._filter()
+        rec = _make_log_record()
+        result = filter_obj.filter(rec)
+        assert result is True
+
+    def test_filter_returns_true_for_regular_log_record(self):
+        """filter returns True for non-AionLogRecord (pass through)."""
+        filter_obj = self._filter()
+        rec = logging.LogRecord(
+            name="test", level=logging.INFO, pathname="x.py",
+            lineno=1, msg="hi", args=(), exc_info=None
+        )
+        result = filter_obj.filter(rec)
+        assert result is True
+
+    def test_version_id_from_scope_when_available(self):
+        """aion_version_id is set from execution scope when available."""
+        filter_obj = self._filter()
+        rec = _make_log_record()
+
+        mock_scope = MagicMock()
+        mock_scope.inbound.aion.version_id = "v1.2.3"
+
+        with patch("aion.server.agent.execution.scope.get_execution_scope", return_value=mock_scope):
+            filter_obj.filter(rec)
+
+        assert rec.aion_version_id == "v1.2.3"
+
+    def test_version_id_falls_back_to_app_settings(self):
+        """aion_version_id falls back to app_settings when scope version is None."""
+        filter_obj = self._filter()
+        rec = _make_log_record()
+
+        mock_scope = MagicMock()
+        mock_scope.inbound.aion.version_id = None  # scope has no version
+
+        with patch("aion.server.agent.execution.scope.get_execution_scope", return_value=mock_scope):
+            with patch("aion.server.settings.app_settings") as mock_settings:
+                mock_settings.version_id = "v9.9.9"
+                filter_obj.filter(rec)
+
+        assert rec.aion_version_id == "v9.9.9"
+
+    def test_exception_in_scope_enrichment_handled_gracefully(self):
+        """Exceptions during scope enrichment are caught and ignored."""
+        filter_obj = self._filter()
+        rec = _make_log_record()
+
+        with patch("aion.server.agent.execution.scope.get_execution_scope", side_effect=Exception("broken scope")):
+            result = filter_obj.filter(rec)
+
+        # Should still return True and not propagate exception
+        assert result is True
+        # Record should have None values (not enriched)
+        assert rec.trace_id is None

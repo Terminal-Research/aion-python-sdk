@@ -1,4 +1,4 @@
-"""Tests for aion.shared.opentelemetry.tracing.
+"""Tests for aion.server.opentelemetry.tracing.
 
 Focus areas:
   SpanInfo:
@@ -121,7 +121,7 @@ class TestGetSpanInfo:
         mock_span.get_span_context.return_value = ctx
         mock_span.name = "test-span"
 
-        with patch("aion.shared.opentelemetry.tracing.trace") as mock_trace:
+        with patch("aion.server.opentelemetry.tracing.trace") as mock_trace:
             mock_trace.get_current_span.return_value = mock_span
             info = get_span_info()
 
@@ -196,7 +196,7 @@ class TestGenerateRequestSpanContext:
         # get_logger is imported lazily inside the function body, so we patch
         # where it lives, not where it's referenced from.
         return patch(
-            "aion.shared.logging.factory.get_logger",
+            "aion.server.logging.factory.get_logger",
             return_value=MagicMock()
         )
 
@@ -222,7 +222,7 @@ class TestGenerateRequestSpanContext:
     def test_returns_none_for_invalid_hex_trace_id(self):
         """Verify that returns none for invalid hex trace ID."""
         mock_logger = MagicMock()
-        with patch("aion.shared.logging.factory.get_logger", return_value=mock_logger):
+        with patch("aion.server.logging.factory.get_logger", return_value=mock_logger):
             ctx = generate_request_span_context(trace_id="not-valid-hex!!")
         assert ctx is None
         mock_logger.warning.assert_called_once()
@@ -244,7 +244,7 @@ class TestGenerateRequestSpanContext:
     def test_invalid_hex_span_id_falls_back_to_invalid(self):
         """Verify that invalid hex span ID falls back to invalid."""
         mock_logger = MagicMock()
-        with patch("aion.shared.logging.factory.get_logger", return_value=mock_logger):
+        with patch("aion.server.logging.factory.get_logger", return_value=mock_logger):
             ctx = generate_request_span_context(trace_id=1, span_id="not-hex!!")
         # Falls back to INVALID_SPAN_ID; context still created (not None)
         assert ctx is not None
@@ -259,9 +259,9 @@ class TestGenerateRequestSpanContext:
     def test_exception_in_span_context_returns_none(self):
         """Verify that exception in span context returns none."""
         mock_logger = MagicMock()
-        with patch("aion.shared.logging.factory.get_logger", return_value=mock_logger):
+        with patch("aion.server.logging.factory.get_logger", return_value=mock_logger):
             with patch(
-                "aion.shared.opentelemetry.tracing.SpanContext",
+                "aion.server.opentelemetry.tracing.SpanContext",
                 side_effect=RuntimeError("unexpected"),
             ):
                 ctx = generate_request_span_context(trace_id=1)
@@ -284,7 +284,7 @@ class TestGenerateRequestSpanContext:
 class TestInitTracing:
     def test_sets_tracer_provider(self):
         """Verify that sets tracer provider."""
-        with patch("aion.shared.opentelemetry.tracing.trace") as mock_trace:
+        with patch("aion.server.opentelemetry.tracing.trace") as mock_trace:
             init_tracing()
             mock_trace.set_tracer_provider.assert_called_once()
             # Argument should be a TracerProvider instance
