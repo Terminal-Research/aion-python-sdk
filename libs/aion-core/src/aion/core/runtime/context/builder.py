@@ -74,7 +74,7 @@ class AionRuntimeContextBuilder:
         return AionRuntimeContext(
             inbox=inbox,
             event=event,
-            distributionExtensionPayload=dist_ext,
+            distribution_extension_payload=dist_ext,
         )
 
     @staticmethod

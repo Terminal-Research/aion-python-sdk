@@ -39,6 +39,6 @@ This repository is a monorepo containing multiple projects located primarily und
 ## Additional guidelines
 
 1. Libraries in packages whose names start with an underscore are provided only for context and are **not** intended to be distributed.
-2. Always use idiomatic Python and best practices.
+2. Always use idiomatic Python and best practices. Use `snake_case` for Python module names, variables, attributes, dataclass fields, function parameters, and keyword arguments; reserve camelCase only for explicit wire-format aliases or protocol field names.
 3. Document all code with detailed Python docstrings in Google's style, especially at the class and method level; avoid overly terse summaries.
 4. Create thourough unit tests for all code using pytest.

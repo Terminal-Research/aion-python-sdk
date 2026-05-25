@@ -116,7 +116,7 @@ def aion_principal_selector() -> str | None:
     """
     # TODO: Resolve from AionRuntimeContext once invocation context propagation
     # is available here. The context exposes distribution/environment/identity
-    # records through distributionExtensionPayload helpers.
+    # records through distribution_extension_payload helpers.
     return None
 
 

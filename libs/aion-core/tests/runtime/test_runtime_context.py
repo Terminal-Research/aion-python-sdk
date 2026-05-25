@@ -199,15 +199,22 @@ class TestAionRuntimeContextDistributionPayload:
     def test_distribution_extension_payload_stored(self):
         """Verify that the raw distribution extension payload is stored."""
         dist = _make_distribution_ext(agent_id="agent-abc", behavior_key="main", version_id="v-3")
-        ctx = AionRuntimeContext(distributionExtensionPayload=dist)
+        ctx = AionRuntimeContext(distribution_extension_payload=dist)
 
-        assert ctx.distributionExtensionPayload is dist
+        assert ctx.distribution_extension_payload is dist
         assert ctx.get_distribution().id == "dist-1"
+
+    def test_camel_case_distribution_payload_keyword_rejected(self):
+        """Verify that the old camelCase keyword is not silently captured."""
+        dist = _make_distribution_ext(agent_id="agent-abc", behavior_key="main", version_id="v-3")
+
+        with pytest.raises(TypeError, match="distribution_extension_payload"):
+            AionRuntimeContext(distributionExtensionPayload=dist)
 
     def test_principal_identity_extracted(self):
         """Verify that principal identity is read from the distribution payload."""
         dist = _make_distribution_ext(agent_id="agent-abc", behavior_key="main", version_id="v-3")
-        ctx = AionRuntimeContext(distributionExtensionPayload=dist)
+        ctx = AionRuntimeContext(distribution_extension_payload=dist)
         identity = ctx.get_principal_identity()
 
         assert identity.id == "agent-abc"
@@ -218,7 +225,7 @@ class TestAionRuntimeContextDistributionPayload:
     def test_service_identity_extracted(self):
         """Verify that service identity is read from the distribution payload."""
         dist = _make_distribution_ext(include_service=True)
-        ctx = AionRuntimeContext(distributionExtensionPayload=dist)
+        ctx = AionRuntimeContext(distribution_extension_payload=dist)
 
         service_identity = ctx.get_service_identity()
 
@@ -228,7 +235,7 @@ class TestAionRuntimeContextDistributionPayload:
     def test_behavior_returned(self):
         """Verify that behavior is returned from the distribution payload."""
         dist = _make_distribution_ext(behavior_key="my-behavior", version_id="2.0.0")
-        ctx = AionRuntimeContext(distributionExtensionPayload=dist)
+        ctx = AionRuntimeContext(distribution_extension_payload=dist)
 
         assert ctx.get_behavior().behavior_key == "my-behavior"
         assert ctx.get_behavior().version_id == "2.0.0"
@@ -240,7 +247,7 @@ class TestAionRuntimeContextDistributionPayload:
             env_name="staging",
             config_vars={"DB_URL": "postgres://..."},
         )
-        ctx = AionRuntimeContext(distributionExtensionPayload=dist)
+        ctx = AionRuntimeContext(distribution_extension_payload=dist)
 
         assert ctx.get_environment().id == "env-99"
         assert ctx.get_environment().name == "staging"
@@ -252,14 +259,14 @@ class TestAionRuntimeContextDistributionPayload:
             env_id="env-99",
             daemon_agent_identity_id="daemon-1",
         )
-        ctx = AionRuntimeContext(distributionExtensionPayload=dist)
+        ctx = AionRuntimeContext(distribution_extension_payload=dist)
 
         assert ctx.get_principal_selector() == "agent-identity:daemon-1"
 
     def test_principal_selector_uses_environment_without_daemon(self):
         """Verify principal selector falls back to environment id."""
         dist = _make_distribution_ext(env_id="env-99")
-        ctx = AionRuntimeContext(distributionExtensionPayload=dist)
+        ctx = AionRuntimeContext(distribution_extension_payload=dist)
 
         assert ctx.get_principal_selector() == "agent-environment:env-99"
 
@@ -272,7 +279,7 @@ class TestAionRuntimeContextDistributionPayload:
     def test_no_principal_returns_none_without_losing_payload_records(self):
         """Verify that missing principal identity does not discard payload context."""
         dist = _make_distribution_ext(include_principal=False, include_service=True)
-        ctx = AionRuntimeContext(distributionExtensionPayload=dist)
+        ctx = AionRuntimeContext(distribution_extension_payload=dist)
 
         assert ctx.get_principal_identity() is None
         assert ctx.get_service_identity().id == "svc-1"
@@ -416,7 +423,7 @@ class TestAionRuntimeContextBuilder:
         result = AionRuntimeContextBuilder.from_request_context(rc)
         assert isinstance(result, AionRuntimeContext)
         assert result.event is None
-        assert result.distributionExtensionPayload is None
+        assert result.distribution_extension_payload is None
 
     def test_with_distribution_no_event_returns_context_with_distribution_payload(self):
         """Verify that with distribution no event returns context with payload."""
@@ -426,7 +433,7 @@ class TestAionRuntimeContextBuilder:
             result = AionRuntimeContextBuilder.from_request_context(rc)
         assert isinstance(result, AionRuntimeContext)
         assert result.event is None
-        assert result.distributionExtensionPayload is not None
+        assert result.distribution_extension_payload is not None
         assert result.get_principal_identity().id == "agent-1"
         assert result.get_behavior().behavior_key == "main"
 
@@ -438,7 +445,7 @@ class TestAionRuntimeContextBuilder:
         assert isinstance(result, AionRuntimeContext)
         assert result.event is not None
         assert result.event.kind == EventKind.MESSAGE
-        assert result.distributionExtensionPayload is not None
+        assert result.distribution_extension_payload is not None
 
     def test_key_error_in_build_returns_none(self):
         """Verify that key error in build returns none."""
@@ -478,7 +485,7 @@ class TestBuildFromDistribution:
         result = AionRuntimeContextBuilder._build_from_distribution(inbox)
         assert isinstance(result, AionRuntimeContext)
         assert result.event is None
-        assert result.distributionExtensionPayload is not None
+        assert result.distribution_extension_payload is not None
 
     def test_with_event_populates_event(self):
         """Verify that with event populates event."""
@@ -494,7 +501,7 @@ class TestBuildFromDistribution:
         with patch("aion.core.runtime.context.builder.extract_event", side_effect=ValueError("parse error")):
             result = AionRuntimeContextBuilder._build_from_distribution(inbox)
         assert result.event is None
-        assert result.distributionExtensionPayload is not None
+        assert result.distribution_extension_payload is not None
 
     def test_missing_principal_keeps_distribution_payload(self):
         """Verify that missing principal identity does not discard payload records."""
@@ -511,7 +518,7 @@ class TestBuildFromDistribution:
         inbox = _make_inbox_with_dist(include_event=False)
         result = AionRuntimeContextBuilder._build_from_distribution(inbox)
 
-        assert result.distributionExtensionPayload.distribution.id == "dist-1"
+        assert result.distribution_extension_payload.distribution.id == "dist-1"
         assert result.get_principal_identity().id == "agent-1"
         assert result.get_behavior().behavior_key == "main"
         assert result.get_environment().name == "prod"
@@ -524,5 +531,5 @@ class TestBuildWithoutDistribution:
         result = AionRuntimeContextBuilder._build_without_distribution(inbox)
         assert isinstance(result, AionRuntimeContext)
         assert result.event is None
-        assert result.distributionExtensionPayload is None
+        assert result.distribution_extension_payload is None
         assert result.inbox is inbox

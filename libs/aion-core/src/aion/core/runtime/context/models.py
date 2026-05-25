@@ -85,7 +85,7 @@ class AionRuntimeContext:
     """Raw A2A inbox - escape hatch for direct access to underlying A2A structures."""
     event: Optional[Event]
     """Typed inbound event with kind and normalized payload. None for direct A2A requests."""
-    distributionExtensionPayload: Optional[DistributionExtensionV1]
+    distribution_extension_payload: Optional[DistributionExtensionV1]
     """Parsed Aion distribution extension payload, if the invocation carries one."""
     graph_kwargs: Dict[str, Any]
     """Extra kwargs passed by the graph framework, such as LangGraph config."""
@@ -94,7 +94,7 @@ class AionRuntimeContext:
             self,
             inbox: Optional[A2AInbox] = None,
             event: Optional[Event] = None,
-            distributionExtensionPayload: Optional[DistributionExtensionV1] = None,
+            distribution_extension_payload: Optional[DistributionExtensionV1] = None,
             **graph_kwargs: Any,
     ) -> None:
         """Create an Aion runtime context.
@@ -102,15 +102,21 @@ class AionRuntimeContext:
         Args:
             inbox: Raw A2A request envelope for the current invocation.
             event: Typed Aion event extracted from the inbox, when present.
-            distributionExtensionPayload: Parsed Aion distribution extension
+            distribution_extension_payload: Parsed Aion distribution extension
                 payload. This mirrors the extension payload shape sent by the
                 control plane.
             **graph_kwargs: Extra framework-specific values passed by the graph
                 runtime.
         """
+        if "distributionExtensionPayload" in graph_kwargs:
+            raise TypeError(
+                "Use distribution_extension_payload instead of "
+                "distributionExtensionPayload."
+            )
+
         object.__setattr__(self, "inbox", inbox)
         object.__setattr__(self, "event", event)
-        object.__setattr__(self, "distributionExtensionPayload", distributionExtensionPayload)
+        object.__setattr__(self, "distribution_extension_payload", distribution_extension_payload)
         object.__setattr__(self, "graph_kwargs", graph_kwargs)
 
     def is_active(self, *extensions: AionExtensions) -> bool:
@@ -139,9 +145,9 @@ class AionRuntimeContext:
             The distribution model for this invocation, or ``None`` when the
             request did not include an Aion distribution extension.
         """
-        if self.distributionExtensionPayload is None:
+        if self.distribution_extension_payload is None:
             return None
-        return self.distributionExtensionPayload.distribution
+        return self.distribution_extension_payload.distribution
 
     def get_behavior(self) -> Optional[Behavior]:
         """Return the behavior model from the Aion distribution payload.
@@ -150,9 +156,9 @@ class AionRuntimeContext:
             The active behavior model for this invocation, or ``None`` when no
             distribution extension is present.
         """
-        if self.distributionExtensionPayload is None:
+        if self.distribution_extension_payload is None:
             return None
-        return self.distributionExtensionPayload.behavior
+        return self.distribution_extension_payload.behavior
 
     def get_environment(self) -> Optional[Environment]:
         """Return the environment model from the Aion distribution payload.
@@ -161,9 +167,9 @@ class AionRuntimeContext:
             The active environment model for this invocation, or ``None`` when
             no distribution extension is present.
         """
-        if self.distributionExtensionPayload is None:
+        if self.distribution_extension_payload is None:
             return None
-        return self.distributionExtensionPayload.environment
+        return self.distribution_extension_payload.environment
 
     def get_principal_selector(self) -> Optional[str]:
         """Return the control-plane principal selector for this invocation.

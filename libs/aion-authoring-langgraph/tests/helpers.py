@@ -67,7 +67,7 @@ def make_mock_context(event=None, inbox=None, distribution_extension_payload=Non
     return AionRuntimeContext(
         event=event,
         inbox=inbox if inbox is not None else make_mock_inbox(),
-        distributionExtensionPayload=distribution_extension_payload,
+        distribution_extension_payload=distribution_extension_payload,
     )
 
 

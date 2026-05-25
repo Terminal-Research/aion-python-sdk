@@ -38,7 +38,7 @@ class State(TypedDict):
 
 ### Runtime context — A2A envelope
 
-The full A2A context is passed to the graph via LangGraph's native runtime context and is accessible through `AionRuntimeContext`. This includes the raw inbox, optional typed event, and parsed `distributionExtensionPayload` with distribution, behavior, environment, principal identity, and service identity accessors. The recommended way to consume it is via `add_event_handlers` from `aion-authoring-langgraph`, which handles injection automatically:
+The full A2A context is passed to the graph via LangGraph's native runtime context and is accessible through `AionRuntimeContext`. This includes the raw inbox, optional typed event, and parsed `distribution_extension_payload` with distribution, behavior, environment, principal identity, and service identity accessors. The recommended way to consume it is via `add_event_handlers` from `aion-authoring-langgraph`, which handles injection automatically:
 
 ```python
 from aion.langgraph.authoring import add_event_handlers, Thread, Message
