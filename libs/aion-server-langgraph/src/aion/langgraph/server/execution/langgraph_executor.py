@@ -13,7 +13,7 @@ from aion.server.agent.adapters import (
     ExecutorAdapter,
 )
 from aion.server.agent.exceptions import ExecutionError, StateRetrievalError
-from aion.server.agent.execution.scope import get_aion_runtime_context
+from aion.core.runtime.context.registry import AionRuntimeContextRegistry
 from .event_converter import LangGraphA2AConverter
 from .event_preprocessor import LangGraphEventPreprocessor
 from .result_handler import ExecutionResultHandler
@@ -66,7 +66,7 @@ class LangGraphExecutor(ExecutorAdapter):
             lg_inputs = LangGraphTransformer.generate_langgraph_inputs(context)
             lg_config = LangGraphTransformer.generate_langgraph_config(config)
 
-            runtime_context = get_aion_runtime_context()
+            runtime_context = await AionRuntimeContextRegistry.aget_current_context()
             stream_exec = StreamExecutor(self.compiled_graph, converter, self._preprocessor)
             events_generator = stream_exec.execute(
                 lg_inputs, lg_config,
@@ -120,7 +120,7 @@ class LangGraphExecutor(ExecutorAdapter):
 
             logger.debug(f"Resuming task")
 
-            runtime_context = get_aion_runtime_context()
+            runtime_context = await AionRuntimeContextRegistry.aget_current_context()
             stream_exec = StreamExecutor(self.compiled_graph, converter, self._preprocessor)
             events_generator = stream_exec.execute(
                 resume_command, lg_config,

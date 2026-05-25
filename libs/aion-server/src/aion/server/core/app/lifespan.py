@@ -5,12 +5,13 @@ from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, AsyncGenerator, Optional
 
 from aion.api.http import aion_jwt_manager
-from aion.server.opentelemetry import init_tracing
+from aion.core.runtime.context.registry import AionRuntimeContextRegistry
 from aion.core.settings import api_settings
-from fastapi import FastAPI
-
 from aion.server import services as aion_services
+from aion.server.agent.execution.context import ExecutionScopeRuntimeContextProvider
 from aion.server.core.platform import AionWebSocketManager, WebsocketTransportFactory
+from aion.server.opentelemetry import init_tracing
+from fastapi import FastAPI
 
 if TYPE_CHECKING:
     from aion.server.core.app import AppFactory
@@ -51,6 +52,10 @@ class AppLifespan:
 
     async def startup(self):
         """Handle application startup events."""
+        # Register runtime context provider so aion-api-client can resolve
+        # the active principal selector without depending on aion-server.
+        AionRuntimeContextRegistry.set_provider(ExecutionScopeRuntimeContextProvider())
+
         # SETUP OPEN-TELEMETRY
         init_tracing()
         asyncio.create_task(self._start_ws_connection())
