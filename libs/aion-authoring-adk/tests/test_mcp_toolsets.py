@@ -14,7 +14,7 @@ from aion.api.control_plane import (
     CapabilitySubjectSource,
     RuntimeCapabilityReference,
 )
-from aion.adk.mcp import (
+from aion.adk.authoring.mcp import (
     aion_adk_mcp_toolset,
     aion_adk_mcp_toolsets_sync,
     default_adk_runtime_context,

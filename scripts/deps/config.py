@@ -1,5 +1,6 @@
 from collections import deque
 from pathlib import Path
+
 from typing import List
 
 ROOT_DIR = Path(__file__).parent.parent.parent
@@ -13,19 +14,42 @@ PACKAGES = {
         "aion-server",
         "aion-authoring-langgraph",
         "aion-server-langgraph",
-        "aion-adk",
         "aion-authoring-adk",
-        "aion-plugin-adk",
+        "aion-server-adk",
     ],
-    "aion-server": ["aion-core", "aion-api-client", "aion-db"],
-    "aion-server-langgraph": ["aion-core", "aion-server", "aion-authoring-langgraph", "aion-db"],
-    "aion-adk": ["aion-api-client"],
-    "aion-authoring-adk": ["aion-adk", "aion-api-client", "aion-mcp"],
-    "aion-authoring-langgraph": ["aion-core", "aion-api-client", "aion-mcp"],
-    "aion-plugin-adk": ["aion-core", "aion-server", "aion-db"],
-    "aion-api-client": ["aion-core"],
-    "aion-mcp": ["aion-api-client"],
-    "aion-db": ["aion-core"],
+    "aion-server": [
+        "aion-core",
+        "aion-api-client",
+        "aion-db",
+    ],
+    "aion-server-langgraph": [
+        "aion-core",
+        "aion-server",
+        "aion-authoring-langgraph",
+        "aion-db",
+    ],
+    "aion-server-adk": [
+        "aion-authoring-adk",
+        "aion-server",
+    ],
+    "aion-authoring-langgraph": [
+        "aion-core",
+        "aion-api-client",
+        "aion-mcp",
+    ],
+    "aion-authoring-adk": [
+        "aion-api-client",
+        "aion-mcp",
+    ],
+    "aion-api-client": [
+        "aion-core",
+    ],
+    "aion-mcp": [
+        "aion-api-client",
+    ],
+    "aion-db": [
+        "aion-core",
+    ],
     "aion-core": [],
 }
 
