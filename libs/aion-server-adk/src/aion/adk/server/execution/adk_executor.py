@@ -23,7 +23,7 @@ from aion.adk.server.state.converter import StateConverter
 from aion.adk.server.transformers.a2a_to_adk import ADKTransformer
 from .event_converter import ADKToA2AEventConverter
 from .result_handler import ADKExecutionResultHandler
-from .stream_executor import ADKStreamExecutor, StreamResult
+from .stream_executor import ADKStreamExecutor, ADKStreamResult
 
 if TYPE_CHECKING:
     from a2a.server.agent_execution import RequestContext
@@ -92,7 +92,6 @@ class ADKExecutor(ExecutorAdapter):
             invocation_context = self._invocation_context_factory.create(
                 session=session,
                 user_content=user_content,
-                request_context=context,
             )
 
             converter._ctx = invocation_context
@@ -114,7 +113,7 @@ class ADKExecutor(ExecutorAdapter):
 
     async def _finalize(
             self,
-            stream_result: StreamResult,
+            stream_result: ADKStreamResult,
             converter: ADKToA2AEventConverter,
             session: Any,
             context: "RequestContext",

@@ -5,7 +5,9 @@ from .adapter import ADKAdapter
 from .execution import (
     ADKExecutor,
     ADKStreamExecutor,
-    StreamResult,
+    ADKStreamResult,
+    ADKEventQueue,
+    ADKEventConsumer,
     ADKTransformer,
     ADKExecutionResultHandler,
 )
@@ -19,7 +21,9 @@ __all__ = [
     "ADKAdapter",
     "ADKExecutor",
     "ADKStreamExecutor",
-    "StreamResult",
+    "ADKStreamResult",
+    "ADKEventQueue",
+    "ADKEventConsumer",
     "ADKTransformer",
     "ADKExecutionResultHandler",
     "SessionServiceFactory",

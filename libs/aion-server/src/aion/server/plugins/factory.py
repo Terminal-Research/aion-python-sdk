@@ -202,7 +202,7 @@ class PluginFactory:
         """Discover available plugins by attempting imports."""
         plugin_configs = [
             ("aion.langgraph.server", "LangGraphPlugin", "LangGraph"),
-            ("aion.adk.plugin", "ADKPlugin", "ADK"),
+            ("aion.adk.server", "ADKPlugin", "ADK"),
         ]
 
         plugins = []

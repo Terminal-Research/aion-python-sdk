@@ -16,7 +16,7 @@ from a2a.types import (
 
 from aion.core.types import A2AOutbox
 from .event_converter import ADKToA2AEventConverter
-from .stream_executor import StreamResult
+from .stream_executor import ADKStreamResult
 
 if TYPE_CHECKING:
     from a2a.server.agent_execution import RequestContext
@@ -39,7 +39,7 @@ class ADKExecutionResultHandler:
 
     def handle(
             self,
-            stream_result: StreamResult,
+            stream_result: ADKStreamResult,
             converter: ADKToA2AEventConverter,
             session: Any = None,
             context: "RequestContext | None" = None,
