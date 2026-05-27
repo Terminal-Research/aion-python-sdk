@@ -1,15 +1,13 @@
 from __future__ import annotations
 
 import inspect
-from aion.langgraph.authoring.runtime.context.thread import Thread
-from langgraph.constants import START
-from langgraph.graph import StateGraph
-from langgraph.runtime import Runtime
 from typing import Any, Callable, Dict, List, Optional, Set
 
 from aion.core.logging import get_logger
 from aion.core.runtime.context import AionRuntimeContext
 from aion.core.runtime.context.models import EventKind
+from aion.langgraph.authoring.runtime.context.thread import Thread
+from langgraph.runtime import Runtime
 
 logger = get_logger()
 
@@ -31,8 +29,6 @@ _CONTEXT_PARAM_NAMES = frozenset({
     "thread",
     "message",
 })
-
-AION_ROUTER_NODE_NAME = "__aion_event_router__"
 
 
 def _build_context_dependencies(
@@ -107,12 +103,13 @@ class _HandlerInvoker:
         return self._handler(**handler_kwargs)
 
 
-class AionEventHandlers:
-    """Event dispatcher node for LangGraph graphs driven by Aion runtime context.
+class AionEventRouter:
+    """Event router node for LangGraph graphs driven by Aion runtime context.
 
-    Receives an inbound A2A invocation, reads the event kind from runtime context,
-    and routes to the matching handler. Acts as a single LangGraph node — routing
-    is an internal implementation detail, not visible in the graph structure.
+    Receives an inbound A2A invocation, reads the event kind from runtime
+    context, and calls the matching handler. It is a normal LangGraph node:
+    graph authors add it with ``builder.add_node(...)`` and own every incoming
+    and outgoing edge.
 
     Handlers may declare any subset of the following parameters; only the declared
     ones are injected:
@@ -120,10 +117,10 @@ class AionEventHandlers:
         state              — LangGraph graph state.
         runtime            — Full LangGraph `Runtime[AionRuntimeContext]`.
         context            — `AionRuntimeContext` extracted from runtime.
-        event              — Typed inbound event (kind + payload), or None when no event exists.
-        distribution       — Distribution model from the Aion distribution extension.
-        behavior           — Behavior model from the Aion distribution extension.
-        environment        — Environment model from the Aion distribution extension.
+        event              — Typed inbound event, or None when no event exists.
+        distribution       — Distribution model from the Aion Distribution extension.
+        behavior           — Behavior model from the Aion Distribution extension.
+        environment        — Environment model from the Aion Distribution extension.
         principal_identity — Principal identity, or None when absent.
         service_identity   — Service identity, or None when absent.
         inbox              — Raw A2A inbox escape hatch.
@@ -131,23 +128,38 @@ class AionEventHandlers:
         message            — Normalized inbound Message, or None if no message exists.
 
     Any other declared parameter (e.g. config, store) is forwarded to LangGraph
-    for native injection, making the dispatcher forward-compatible with new
+    for native injection, making the router forward-compatible with new
     LangGraph-injectable params without code changes.
 
     Routing priority:
-        1. on_message / on_reaction / on_command / on_card_action — matched by event kind
-        2. on_event   — event is present but its kind has no registered handler
-        3. on_invoke  — no event at all (direct A2A invocation without Aion Events envelope)
+        1. ``on_message``, ``on_reaction``, ``on_command``, or
+           ``on_card_action`` matched by event kind.
+        2. ``on_event`` when an event is present but its kind has no registered
+           specific handler.
+        3. ``on_invoke`` when there is no Aion event.
 
     Usage:
         builder = StateGraph(State, context_schema=AionRuntimeContext)
-        add_event_handlers(
-            builder,
-            on_message=handle_message,   # async def handle_message(thread, message): ...
-            on_reaction=handle_reaction, # async def handle_reaction(event): ...
-            on_event=handle_event,       # async def handle_event(state, context): ...
-            on_invoke=handle_invoke,     # async def handle_invoke(state, context): ...
+        builder.add_node(
+            "aion_events",
+            create_event_router(
+                on_message=handle_message,   # async def handle_message(thread, message): ...
+                on_reaction=handle_reaction, # async def handle_reaction(event): ...
+                on_event=handle_event,       # async def handle_event(state, context): ...
+                on_invoke=handle_invoke,     # async def handle_invoke(state, context): ...
+            ),
         )
+        builder.add_edge(START, "aion_events")
+        builder.add_edge("aion_events", END)
+
+    Args:
+        on_message: Called when the inbound event kind is MESSAGE.
+        on_reaction: Called when the inbound event kind is REACTION.
+        on_command: Called when the inbound event kind is COMMAND.
+        on_card_action: Called when the inbound event kind is CARD_ACTION.
+        on_event: Fallback when an event is present but its kind has no
+            specific handler.
+        on_invoke: Called when there is no Aion event.
     """
 
     def __init__(
@@ -188,11 +200,11 @@ class AionEventHandlers:
 
     @staticmethod
     def _build_signature(handlers: List[Callable]) -> inspect.Signature:
-        """Compute the __signature__ to expose to LangGraph for this dispatcher node.
+        """Compute the signature exposed to LangGraph for this router node.
 
         Always includes state. Adds runtime if any handler needs context-derived
         dependencies. Adds any other params declared by handlers that are not in
-        _CONTEXT_PARAM_NAMES — those are forwarded to LangGraph for native injection.
+        ``_CONTEXT_PARAM_NAMES`` so LangGraph can inject them natively.
         """
         needs_runtime = any(
             bool(set(inspect.signature(handler).parameters) & (_CONTEXT_PARAM_NAMES | {"runtime"}))
@@ -226,7 +238,7 @@ class AionEventHandlers:
         return self._kind_map.get(event.kind) or self._on_event
 
     async def __call__(self, state: Any, **langgraph_kwargs: Any) -> Any:
-        """LangGraph node entry point. Routes the invocation to the matching handler."""
+        """Invoke the matching event handler as a normal LangGraph node."""
         runtime = langgraph_kwargs.get("runtime")
         context = runtime.context if runtime else None
 
@@ -237,14 +249,8 @@ class AionEventHandlers:
 
         return await self._invokers[handler.__name__].invoke(state, **langgraph_kwargs)
 
-    def attach(self, builder: StateGraph) -> None:
-        """Register this dispatcher as a node in the graph and connect it from START."""
-        builder.add_node(AION_ROUTER_NODE_NAME, self)
-        builder.add_edge(START, AION_ROUTER_NODE_NAME)
 
-
-def add_event_handlers(
-        builder: StateGraph,
+def create_event_router(
         *,
         on_message: Optional[Callable] = None,
         on_reaction: Optional[Callable] = None,
@@ -252,29 +258,29 @@ def add_event_handlers(
         on_card_action: Optional[Callable] = None,
         on_event: Optional[Callable] = None,
         on_invoke: Optional[Callable] = None,
-) -> None:
-    """Register an event dispatcher node into a StateGraph.
+) -> AionEventRouter:
+    """Create an Aion event router for explicit LangGraph node registration.
 
-    Creates an AionEventHandlers dispatcher and attaches it to the builder.
-
-    Handlers may declare any subset of these parameters — only declared ones are injected:
-        state, runtime, context, event, distribution, behavior, environment,
-        principal_identity, service_identity, inbox, thread, message.
+    The returned object is a callable LangGraph node. Add it to a graph with
+    ``builder.add_node(...)`` and connect it with ordinary LangGraph edges.
 
     Args:
-        builder: StateGraph to attach the dispatcher to.
         on_message: Called when the inbound event kind is MESSAGE.
         on_reaction: Called when the inbound event kind is REACTION.
         on_command: Called when the inbound event kind is COMMAND.
         on_card_action: Called when the inbound event kind is CARD_ACTION.
-        on_event: Fallback when an event is present but its kind has no specific handler.
-        on_invoke: Called when there is no Aion event (direct A2A invocation).
+        on_event: Fallback when an event is present but its kind has no
+            specific handler.
+        on_invoke: Called when there is no Aion event.
+
+    Returns:
+        A callable event router node.
     """
-    AionEventHandlers(
+    return AionEventRouter(
         on_message=on_message,
         on_reaction=on_reaction,
         on_command=on_command,
         on_card_action=on_card_action,
         on_event=on_event,
         on_invoke=on_invoke,
-    ).attach(builder)
+    )

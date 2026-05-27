@@ -38,15 +38,23 @@ class State(TypedDict):
 
 ### Runtime context — A2A envelope
 
-The full A2A context is passed to the graph via LangGraph's native runtime context and is accessible through `AionRuntimeContext`. This includes the raw inbox, optional typed event, and parsed `distribution_extension_payload` with distribution, behavior, environment, principal identity, and service identity accessors. The recommended way to consume it is via `add_event_handlers` from `aion-authoring-langgraph`, which handles injection automatically:
+The full A2A context is passed to the graph via LangGraph's native runtime context and is
+accessible through `AionRuntimeContext`. This includes the raw inbox, optional typed event, and
+parsed `distribution_extension_payload` with distribution, behavior, environment, principal identity,
+and service identity accessors. The recommended way to consume Aion events is to add a
+`create_event_router` node from `aion-authoring-langgraph`, which handles injection automatically
+while leaving graph edges explicit:
 
 ```python
-from aion.langgraph.authoring import add_event_handlers, Thread, Message
+from langgraph.graph import END, START
+from aion.langgraph.authoring import create_event_router, Thread, Message
 
 async def handle_message(thread: Thread, message: Message):
     await thread.reply(f"Got: {message.text}")
 
-add_event_handlers(builder, on_message=handle_message)
+builder.add_node("aion_events", create_event_router(on_message=handle_message))
+builder.add_edge(START, "aion_events")
+builder.add_edge("aion_events", END)
 ```
 
 For lower-level access, declare `runtime` or `context` in a handler signature — see [aion-authoring-langgraph](../aion-authoring-langgraph/README.md) for the full list of injectable parameters.

@@ -1,8 +1,6 @@
-import pytest
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 from aion.langgraph.authoring.runtime.context.message import Message, User
-from aion.langgraph.authoring.events.custom_events import ReactionCustomEvent
 from aion.core.constants import EVENT_EXTENSION_URI_V1
 
 from tests.helpers import make_mock_context, make_mock_event, make_mock_inbox

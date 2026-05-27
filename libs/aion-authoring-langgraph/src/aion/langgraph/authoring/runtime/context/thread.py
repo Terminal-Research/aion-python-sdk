@@ -11,14 +11,11 @@ from aion.core.runtime import AionRuntimeContext
 from aion.core.types.a2a.extensions.messaging import MessageActionPayload
 from langchain_core.messages import AIMessage, AIMessageChunk
 from langgraph.config import get_stream_writer
-from typing import TYPE_CHECKING, Any, List, Optional, Union
+from typing import Any, List, Optional, Union
 from uuid import uuid4
 
 from aion.langgraph.authoring.events.custom_events import ArtifactCustomEvent
 from aion.langgraph.authoring.stream import emit_message
-
-if TYPE_CHECKING:
-    from .message import Message
 
 logger = get_logger()
 

@@ -4,7 +4,6 @@ This module provides helper functions to emit custom events during graph executi
 All events are emitted via LangGraph's custom stream mode.
 """
 
-import base64 as _base64
 from typing import Any, Optional
 from uuid import uuid4
 
