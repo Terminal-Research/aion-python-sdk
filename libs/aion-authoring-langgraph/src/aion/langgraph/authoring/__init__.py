@@ -1,4 +1,4 @@
-from .handlers import add_event_handlers, AionEventHandlers, AION_ROUTER_NODE_NAME
+from .handlers import AionEventRouter, create_event_router
 from .mcp import (
     AionLangGraphMcpResolver,
     aion_langgraph_mcp_client,
@@ -9,9 +9,8 @@ from .runtime.context import Message, Thread
 from .stream import emit_data_artifact, emit_file_artifact, emit_message, emit_task_update
 
 __all__ = [
-    "add_event_handlers",
-    "AionEventHandlers",
-    "AION_ROUTER_NODE_NAME",
+    "AionEventRouter",
+    "create_event_router",
     "AionLangGraphMcpResolver",
     "aion_langgraph_mcp_client",
     "aion_chat_model",

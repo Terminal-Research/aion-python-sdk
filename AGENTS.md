@@ -42,3 +42,6 @@ This repository is a monorepo containing multiple projects located primarily und
 2. Always use idiomatic Python and best practices. Use `snake_case` for Python module names, variables, attributes, dataclass fields, function parameters, and keyword arguments; reserve camelCase only for explicit wire-format aliases or protocol field names.
 3. Document all code with detailed Python docstrings in Google's style, especially at the class and method level; avoid overly terse summaries.
 4. Create thourough unit tests for all code using pytest.
+5. For docstring sections that define a group of injected or projected fields,
+   use a hanging-indent aligned definition list: left-align the field names in a
+   fixed-width first column and align descriptions after an em dash.

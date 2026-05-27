@@ -1,13 +1,13 @@
-import pytest
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock, patch
 
-from langgraph.constants import START
+from langgraph.constants import END, START
+from langgraph.graph import StateGraph
+from langgraph.graph.state import CompiledStateGraph
 
 from aion.langgraph.authoring.handlers import (
     _HandlerInvoker,
-    AionEventHandlers,
-    AION_ROUTER_NODE_NAME,
-    add_event_handlers,
+    AionEventRouter,
+    create_event_router,
 )
 from aion.core.runtime.context.models import EventKind
 
@@ -146,19 +146,19 @@ class TestSelectHandler:
         # no context means a direct invocation, so on_invoke is returned.
         def on_invoke(state): pass
 
-        dispatcher = AionEventHandlers(on_invoke=on_invoke)
+        dispatcher = AionEventRouter(on_invoke=on_invoke)
         assert dispatcher._select_handler(None) is on_invoke
 
     def test_context_none_no_fallback_returns_none(self):
         # no context and no fallback handler → None
-        dispatcher = AionEventHandlers()
+        dispatcher = AionEventRouter()
         assert dispatcher._select_handler(None) is None
 
     def test_routes_message_kind(self):
         # EventKind.MESSAGE routes to on_message
         def on_message(state): pass
 
-        dispatcher = AionEventHandlers(on_message=on_message)
+        dispatcher = AionEventRouter(on_message=on_message)
         ctx = make_mock_context(event=make_mock_event(kind=EventKind.MESSAGE))
         assert dispatcher._select_handler(ctx) is on_message
 
@@ -166,7 +166,7 @@ class TestSelectHandler:
         # EventKind.REACTION routes to on_reaction
         def on_reaction(state): pass
 
-        dispatcher = AionEventHandlers(on_reaction=on_reaction)
+        dispatcher = AionEventRouter(on_reaction=on_reaction)
         ctx = make_mock_context(event=make_mock_event(kind=EventKind.REACTION))
         assert dispatcher._select_handler(ctx) is on_reaction
 
@@ -174,7 +174,7 @@ class TestSelectHandler:
         # EventKind.COMMAND routes to on_command
         def on_command(state): pass
 
-        dispatcher = AionEventHandlers(on_command=on_command)
+        dispatcher = AionEventRouter(on_command=on_command)
         ctx = make_mock_context(event=make_mock_event(kind=EventKind.COMMAND))
         assert dispatcher._select_handler(ctx) is on_command
 
@@ -182,7 +182,7 @@ class TestSelectHandler:
         # EventKind.CARD_ACTION routes to on_card_action
         def on_card_action(state): pass
 
-        dispatcher = AionEventHandlers(on_card_action=on_card_action)
+        dispatcher = AionEventRouter(on_card_action=on_card_action)
         ctx = make_mock_context(event=make_mock_event(kind=EventKind.CARD_ACTION))
         assert dispatcher._select_handler(ctx) is on_card_action
 
@@ -190,7 +190,7 @@ class TestSelectHandler:
         # event kind with no specific handler falls back to on_event
         def on_event(state): pass
 
-        dispatcher = AionEventHandlers(on_event=on_event)
+        dispatcher = AionEventRouter(on_event=on_event)
         ctx = make_mock_context(event=make_mock_event(kind=EventKind.REACTION))
         assert dispatcher._select_handler(ctx) is on_event
 
@@ -200,7 +200,7 @@ class TestSelectHandler:
 
         inbox = make_mock_inbox(message=Mock())
         ctx = make_mock_context(event=None, inbox=inbox)
-        dispatcher = AionEventHandlers(on_invoke=on_invoke)
+        dispatcher = AionEventRouter(on_invoke=on_invoke)
         assert dispatcher._select_handler(ctx) is on_invoke
 
     def test_no_event_no_inbox_message_routes_to_invoke(self):
@@ -208,23 +208,23 @@ class TestSelectHandler:
         def on_invoke(state): pass
 
         ctx = make_mock_context(event=None, inbox=make_mock_inbox(message=None))
-        dispatcher = AionEventHandlers(on_invoke=on_invoke)
+        dispatcher = AionEventRouter(on_invoke=on_invoke)
         assert dispatcher._select_handler(ctx) is on_invoke
 
     def test_no_handlers_and_unknown_kind_returns_none(self):
         # dispatcher with no handlers registered → None for any kind
         ctx = make_mock_context(event=make_mock_event(kind=EventKind.MESSAGE))
-        dispatcher = AionEventHandlers()
+        dispatcher = AionEventRouter()
         assert dispatcher._select_handler(ctx) is None
 
 
-class TestAionEventHandlersCall:
+class TestAionEventRouterCall:
     async def test_routes_and_returns_handler_result(self):
         # __call__ dispatches to the right handler and returns its result
         async def on_message(state):
             return {"routed": True}
 
-        dispatcher = AionEventHandlers(on_message=on_message)
+        dispatcher = AionEventRouter(on_message=on_message)
         ctx = make_mock_context(event=make_mock_event(kind=EventKind.MESSAGE, payload=None))
         runtime = make_mock_runtime(ctx)
 
@@ -233,7 +233,7 @@ class TestAionEventHandlersCall:
 
     async def test_returns_none_and_warns_when_no_handler(self):
         # no matching handler → warning logged, None returned
-        dispatcher = AionEventHandlers()
+        dispatcher = AionEventRouter()
         ctx = make_mock_context(event=make_mock_event(kind=EventKind.MESSAGE, payload=None))
         runtime = make_mock_runtime(ctx)
 
@@ -248,7 +248,7 @@ class TestAionEventHandlersCall:
         def on_invoke(state):
             return "invoke_result"
 
-        dispatcher = AionEventHandlers(on_invoke=on_invoke)
+        dispatcher = AionEventRouter(on_invoke=on_invoke)
         result = await dispatcher({})
         assert result == "invoke_result"
 
@@ -262,7 +262,7 @@ class TestAionEventHandlersCall:
         async def on_message(state):
             results.append("on_message")
 
-        dispatcher = AionEventHandlers(on_message=on_message, on_event=on_event)
+        dispatcher = AionEventRouter(on_message=on_message, on_event=on_event)
         ctx = make_mock_context(event=make_mock_event(kind=EventKind.REACTION, payload=None))
         runtime = make_mock_runtime(ctx)
 
@@ -273,28 +273,28 @@ class TestAionEventHandlersCall:
 class TestBuildSignature:
     def test_always_includes_state(self):
         # state is always the first param regardless of handlers
-        sig = AionEventHandlers._build_signature([])
+        sig = AionEventRouter._build_signature([])
         assert "state" in sig.parameters
 
     def test_adds_runtime_when_handler_needs_context(self):
         # handler requesting 'thread' triggers runtime injection
         def handler(thread): pass
 
-        sig = AionEventHandlers._build_signature([handler])
+        sig = AionEventRouter._build_signature([handler])
         assert "runtime" in sig.parameters
 
     def test_no_runtime_when_handler_only_needs_state(self):
         # pure state handler doesn't require runtime in signature
         def handler(state): pass
 
-        sig = AionEventHandlers._build_signature([handler])
+        sig = AionEventRouter._build_signature([handler])
         assert "runtime" not in sig.parameters
 
     def test_forwards_langgraph_native_params(self):
         # unknown params (e.g. config) are forwarded to LangGraph for native injection
         def handler(state, config): pass
 
-        sig = AionEventHandlers._build_signature([handler])
+        sig = AionEventRouter._build_signature([handler])
         assert "config" in sig.parameters
 
     def test_deduplicates_params_across_handlers(self):
@@ -302,7 +302,7 @@ class TestBuildSignature:
         def h1(state, config): pass
         def h2(state, config, store): pass
 
-        sig = AionEventHandlers._build_signature([h1, h2])
+        sig = AionEventRouter._build_signature([h1, h2])
         params = list(sig.parameters.keys())
         assert params.count("config") == 1
         assert "store" in params
@@ -311,7 +311,7 @@ class TestBuildSignature:
         # context-derived params are resolved internally, not forwarded to LangGraph
         def handler(thread, message, principal_identity, service_identity): pass
 
-        sig = AionEventHandlers._build_signature([handler])
+        sig = AionEventRouter._build_signature([handler])
         assert "thread" not in sig.parameters
         assert "message" not in sig.parameters
         assert "principal_identity" not in sig.parameters
@@ -323,35 +323,29 @@ class TestBuildSignature:
         def h1(thread): pass
         def h2(context): pass
 
-        sig = AionEventHandlers._build_signature([h1, h2])
+        sig = AionEventRouter._build_signature([h1, h2])
         params = list(sig.parameters.keys())
         assert params.count("runtime") == 1
 
 
-class TestAttach:
-    def test_attach_registers_node_and_edge(self):
-        # attach() wires the dispatcher into the graph as a node connected from START
+class TestCreateEventRouter:
+    def test_returns_event_router_node(self):
+        # Factory returns a callable router without mutating a graph.
         def on_message(state): pass
 
-        dispatcher = AionEventHandlers(on_message=on_message)
-        mock_builder = Mock()
-        dispatcher.attach(mock_builder)
+        router = create_event_router(on_message=on_message)
 
-        mock_builder.add_node.assert_called_once_with(AION_ROUTER_NODE_NAME, dispatcher)
-        mock_builder.add_edge.assert_called_once_with(START, AION_ROUTER_NODE_NAME)
+        assert isinstance(router, AionEventRouter)
+        assert router._select_handler(make_mock_context(event=make_mock_event(kind=EventKind.MESSAGE))) is on_message
 
+    def test_router_compiles_with_explicit_edges(self):
+        # Event routers are ordinary LangGraph nodes; callers own the topology.
+        def on_invoke(state):
+            return {"handled": True}
 
-class TestAddEventHandlers:
-    def test_creates_and_attaches_dispatcher(self):
-        # convenience function creates AionEventHandlers and calls attach()
-        def on_message(state): pass
+        builder = StateGraph(dict)
+        builder.add_node("aion_events", create_event_router(on_invoke=on_invoke))
+        builder.add_edge(START, "aion_events")
+        builder.add_edge("aion_events", END)
 
-        mock_builder = Mock()
-        add_event_handlers(mock_builder, on_message=on_message)
-
-        mock_builder.add_node.assert_called_once()
-        node_name, node_obj = mock_builder.add_node.call_args[0]
-        assert node_name == AION_ROUTER_NODE_NAME
-        assert isinstance(node_obj, AionEventHandlers)
-        mock_builder.add_edge.assert_called_once_with(START, AION_ROUTER_NODE_NAME)
-
+        assert isinstance(builder.compile(), CompiledStateGraph)

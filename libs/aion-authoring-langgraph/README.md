@@ -76,23 +76,27 @@ settings across invocations.
 
 ---
 
-## Event Routing — `add_event_handlers`
+## Event Routing
 
-`add_event_handlers` registers a single dispatcher node in the graph that routes inbound A2A events to the appropriate handler based on event kind.
+Use `create_event_router` to create a normal LangGraph node that routes inbound A2A events to
+handler functions based on event kind. Add the returned router with `builder.add_node(...)` and
+connect it with ordinary LangGraph edges.
 
 ```python
-from langgraph.graph import StateGraph
-from aion.langgraph.authoring import add_event_handlers
+from langgraph.graph import END, START, StateGraph
+from aion.langgraph.authoring import create_event_router
 
 builder = StateGraph(State)
-builder.add_node("process", process_node)
-
-add_event_handlers(
-    builder,
-    on_message=handle_message,
-    on_reaction=handle_reaction,
-    on_command=handle_command,
+builder.add_node(
+    "aion_events",
+    create_event_router(
+        on_message=handle_message,
+        on_reaction=handle_reaction,
+        on_command=handle_command,
+    ),
 )
+builder.add_edge(START, "aion_events")
+builder.add_edge("aion_events", END)
 ```
 
 Handlers receive only the parameters they declare — any subset is valid:
@@ -105,13 +109,38 @@ async def handle_reaction(context: AionRuntimeContext, event):
     ...
 ```
 
-Available injectable parameters: `state`, `runtime`, `context`, `event`, `distribution`, `behavior`, `environment`, `principal_identity`, `service_identity`, `inbox`, `thread`, `message`. Any other declared parameter is forwarded to LangGraph for native injection (e.g. `config`, `store`).
+Available injectable parameters: `state`, `runtime`, `context`, `event`, `distribution`,
+`behavior`, `environment`, `principal_identity`, `service_identity`, `inbox`, `thread`,
+`message`. Any other declared parameter is forwarded to LangGraph for native injection
+(e.g. `config`, `store`).
+
+Because the event router is just a node, applications can route into it from their own
+entry nodes:
+
+```python
+builder.add_node("request_router", request_router)
+builder.add_node("daemon", daemon_node)
+builder.add_node("aion_events", create_event_router(on_message=handle_message))
+
+builder.add_edge(START, "request_router")
+builder.add_conditional_edges(
+    "request_router",
+    route_request,
+    {
+        "events": "aion_events",
+        "daemon": "daemon",
+    },
+)
+builder.add_edge("aion_events", END)
+builder.add_edge("daemon", END)
+```
 
 ---
 
 ## State Helpers — `Thread` and `Message`
 
-`Thread` and `Message` are high-level wrappers over the raw A2A inbox. They are injected automatically when declared in a handler registered via `add_event_handlers`.
+`Thread` and `Message` are high-level wrappers over the raw A2A inbox. They are injected
+automatically when declared in a handler registered via `create_event_router`.
 
 ### Thread
 
