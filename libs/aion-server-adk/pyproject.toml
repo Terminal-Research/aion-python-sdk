@@ -1,16 +1,15 @@
 [tool.poetry]
-name = "aion-server-langgraph"
+name = "aion-server-adk"
 version = "0.1.0"
-description = "Aion server-side LangGraph integration"
+description = "Aion server-side Google ADK integration"
 authors = ["Terminal Research Team <support@terminal.exchange>"]
 readme = "README.md"
 packages = [{ include = "aion", from = "src" }]
 
 [tool.poetry.dependencies]
 python = "^3.12.0"
-langgraph = ">=0.6.0,<=1.0.5"
-langgraph-checkpoint-postgres = ">=2.0.0,<=3.0.2"
-aion-authoring-langgraph = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-authoring-langgraph" }
+google-adk = "^1.20.0"
+aion-authoring-adk = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-authoring-adk" }
 aion-server = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-server" }
 
 [tool.poetry.group.dev.dependencies]
@@ -19,6 +18,7 @@ pytest-asyncio = "^0.24"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+testpaths = ["tests"]
 
 [build-system]
 requires = ["poetry-core"]
