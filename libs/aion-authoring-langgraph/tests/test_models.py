@@ -3,6 +3,8 @@ from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 from types import ModuleType
 
+import pytest
+
 
 _MODELS_PATH = Path(__file__).parents[1] / "src/aion/langgraph/authoring/models.py"
 _SPEC = spec_from_file_location("aion_langgraph_models", _MODELS_PATH)
@@ -80,3 +82,25 @@ def test_aion_chat_openai_configures_chat_openai(monkeypatch):
         "http_client": "sync-client",
         "http_async_client": "async-client",
     }
+
+
+@pytest.mark.parametrize(
+    "helper",
+    [aion_chat_model, aion_chat_openai],
+)
+@pytest.mark.parametrize(
+    "reserved_kwarg",
+    [
+        "api_key",
+        "base_url",
+        "default_headers",
+        "http_async_client",
+        "http_client",
+    ],
+)
+def test_aion_chat_helpers_reject_reserved_connection_kwargs(
+    helper,
+    reserved_kwarg,
+):
+    with pytest.raises(ValueError, match=reserved_kwarg):
+        helper("model-id-from-control-plane", **{reserved_kwarg: "custom"})
