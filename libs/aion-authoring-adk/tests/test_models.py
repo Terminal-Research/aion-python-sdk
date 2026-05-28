@@ -40,6 +40,14 @@ def test_aion_lite_llm_configures_google_adk_litellm(monkeypatch):
     monkeypatch.setitem(sys.modules, "google.adk.models.lite_llm", lite_llm)
     monkeypatch.setattr(models, "aion_openai_config", lambda: FakeConfig())
     monkeypatch.setattr(models, "aion_model_api_key", lambda: "fresh-jwt")
+    monkeypatch.setattr(
+        models,
+        "aion_model_request_headers",
+        lambda existing=None: {
+            **(existing or {}),
+            "Aion-Principal-Selector": "agent-environment:fresh-env",
+        },
+    )
 
     result = aion_lite_llm(
         "model-id-from-control-plane",
@@ -90,3 +98,9 @@ def test_aion_lite_llm_configures_google_adk_litellm(monkeypatch):
     assert async_result == "acompletion"
     assert completion_calls[0]["api_key"] == "fresh-jwt"
     assert acompletion_calls[0]["api_key"] == "fresh-jwt"
+    assert completion_calls[0]["extra_headers"] == {
+        "Aion-Principal-Selector": "agent-environment:fresh-env",
+    }
+    assert acompletion_calls[0]["extra_headers"] == {
+        "Aion-Principal-Selector": "agent-environment:fresh-env",
+    }

@@ -18,10 +18,12 @@ class FakeConfig:
     def __init__(self):
         self.api_key = lambda: "jwt-token"
 
-    def openai_kwargs(self):
+    def langchain_openai_kwargs(self):
         return {
             "base_url": "https://api.example.test/v1",
-            "api_key": self.api_key,
+            "api_key": "aion-runtime-token",
+            "http_client": "sync-client",
+            "http_async_client": "async-client",
         }
 
 
@@ -49,10 +51,11 @@ def test_aion_chat_model_configures_langchain_init(monkeypatch):
         "model": "model-id-from-control-plane",
         "model_provider": "openai",
         "base_url": "https://api.example.test/v1",
-        "api_key": captured["api_key"],
+        "api_key": "aion-runtime-token",
+        "http_client": "sync-client",
+        "http_async_client": "async-client",
         "temperature": 0,
     }
-    assert captured["api_key"]() == "jwt-token"
 
 
 def test_aion_chat_openai_configures_chat_openai(monkeypatch):
@@ -73,6 +76,7 @@ def test_aion_chat_openai_configures_chat_openai(monkeypatch):
     assert captured == {
         "model": "model-id-from-control-plane",
         "base_url": "https://api.example.test/v1",
-        "api_key": captured["api_key"],
+        "api_key": "aion-runtime-token",
+        "http_client": "sync-client",
+        "http_async_client": "async-client",
     }
-    assert captured["api_key"]() == "jwt-token"

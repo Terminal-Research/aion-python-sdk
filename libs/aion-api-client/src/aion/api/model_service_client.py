@@ -5,8 +5,9 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Mapping
+from typing import Any, Mapping
 
+import httpx
 from aion.api.control_plane import AION_PRINCIPAL_SELECTOR_HEADER
 from aion.api.exceptions import AionAuthenticationError
 from aion.api.http.jwt_manager import (
@@ -22,6 +23,8 @@ ModelApiKeyProvider = Callable[[], str]
 
 logger = logging.getLogger(__name__)
 
+_AION_OPENAI_API_KEY_PLACEHOLDER = "aion-runtime-token"
+
 
 @dataclass(frozen=True)
 class AionModelClientConfig:
@@ -31,26 +34,13 @@ class AionModelClientConfig:
     api_key: str | ModelApiKeyProvider
     default_headers: Mapping[str, str] = field(default_factory=dict)
 
-    def request_headers(
-            self,
-            existing: Mapping[str, str] | None = None,
-            *,
-            warn_on_missing: bool = True,
-    ) -> dict[str, str]:
-        """Return fresh headers for one model-service request."""
-        headers = dict(self.default_headers)
-        headers.update(existing or {})
-        return aion_model_request_headers(
-            headers, warn_on_missing=warn_on_missing
-        )
-
     def openai_kwargs(self) -> dict[str, object]:
         """Return keyword arguments accepted by OpenAI-compatible clients."""
         kwargs: dict[str, object] = {
             "base_url": self.base_url,
             "api_key": self.api_key,
         }
-        headers = self.request_headers()
+        headers = dict(self.default_headers)
         headers.setdefault("Accept", "application/json, text/event-stream")
         if headers:
             kwargs["default_headers"] = headers
@@ -62,9 +52,26 @@ class AionModelClientConfig:
             "api_base": self.base_url,
             "api_key": self.api_key,
         }
-        headers = self.request_headers()
+        headers = dict(self.default_headers)
         if headers:
             kwargs["extra_headers"] = headers
+        return kwargs
+
+    def langchain_openai_kwargs(self) -> dict[str, object]:
+        """Return LangChain OpenAI kwargs with request-scoped headers."""
+        kwargs = self.openai_kwargs()
+        api_key_provider: ModelApiKeyProvider | None = None
+        if callable(self.api_key):
+            api_key_provider = self.api_key
+            # LangChain/OpenAI validates api_key as a concrete string during
+            # model construction. Aion resolves JWTs per request, so this
+            # placeholder only satisfies construction; the request hook below
+            # replaces Authorization with a fresh bearer token before send.
+            kwargs["api_key"] = _AION_OPENAI_API_KEY_PLACEHOLDER
+        kwargs["http_client"] = _aion_model_http_client(api_key_provider)
+        kwargs["http_async_client"] = _aion_model_async_http_client(
+            api_key_provider
+        )
         return kwargs
 
 
@@ -146,9 +153,11 @@ def aion_model_request_headers(
     return headers
 
 
-def aion_principal_selector_headers() -> dict[str, str]:
-    """Return principal selector headers for the current invocation."""
-    return aion_model_request_headers()
+def aion_model_request_hook(request: httpx.Request) -> None:
+    """Inject the current principal selector into an outgoing model request."""
+    if AION_PRINCIPAL_SELECTOR_HEADER in request.headers:
+        return
+    request.headers.update(aion_model_request_headers(request.headers))
 
 
 def aion_openai_config() -> AionModelClientConfig:
@@ -159,6 +168,48 @@ def aion_openai_config() -> AionModelClientConfig:
     )
 
 
+def _aion_model_http_client(
+        api_key_provider: ModelApiKeyProvider | None,
+) -> httpx.Client:
+    """Create an HTTPX client with runtime model headers."""
+    return httpx.Client(
+        event_hooks={"request": [_model_request_hook(api_key_provider)]}
+    )
+
+
+def _aion_model_async_http_client(
+        api_key_provider: ModelApiKeyProvider | None,
+) -> httpx.AsyncClient:
+    """Create an async HTTPX client with runtime model headers."""
+    return httpx.AsyncClient(
+        event_hooks={"request": [_async_model_request_hook(api_key_provider)]}
+    )
+
+
+def _model_request_hook(
+        api_key_provider: ModelApiKeyProvider | None,
+) -> Callable[[httpx.Request], None]:
+    """Return a sync request hook for dynamic auth and principal headers."""
+    def hook(request: httpx.Request) -> None:
+        if api_key_provider is not None:
+            request.headers["Authorization"] = f"Bearer {api_key_provider()}"
+        aion_model_request_hook(request)
+
+    return hook
+
+
+def _async_model_request_hook(
+        api_key_provider: ModelApiKeyProvider | None,
+) -> Callable[[httpx.Request], Any]:
+    """Return an async request hook for dynamic auth and principal headers."""
+    async def hook(request: httpx.Request) -> None:
+        if api_key_provider is not None:
+            request.headers["Authorization"] = f"Bearer {api_key_provider()}"
+        aion_model_request_hook(request)
+
+    return hook
+
+
 __all__ = [
     "AION_PRINCIPAL_SELECTOR_HEADER",
     "AionModelClientConfig",
@@ -167,9 +218,9 @@ __all__ = [
     "aion_jwt_api_key",
     "aion_model_api_key",
     "aion_model_api_key_provider",
+    "aion_model_request_hook",
     "aion_model_request_headers",
     "aion_model_base_url",
     "aion_openai_config",
     "aion_principal_selector",
-    "aion_principal_selector_headers",
 ]

@@ -5,7 +5,10 @@ from __future__ import annotations
 from typing import Any
 
 from aion.api import aion_openai_config
-from aion.api.model_service_client import aion_model_api_key
+from aion.api.model_service_client import (
+    aion_model_api_key,
+    aion_model_request_headers,
+)
 
 
 def _aion_lite_llm_client(base_client_type: type[Any]) -> Any:
@@ -23,7 +26,13 @@ def _aion_lite_llm_client(base_client_type: type[Any]) -> Any:
             import litellm
 
             request_kwargs = dict(kwargs)
+            # Resolve runtime values at call time: the bearer token may refresh
+            # between completions, and principal headers depend on the active
+            # Aion runtime context for this request.
             request_kwargs["api_key"] = aion_model_api_key()
+            request_kwargs["extra_headers"] = aion_model_request_headers(
+                request_kwargs.get("extra_headers")
+            )
             return litellm.completion(
                 model=model,
                 messages=messages,
@@ -42,7 +51,13 @@ def _aion_lite_llm_client(base_client_type: type[Any]) -> Any:
             import litellm
 
             request_kwargs = dict(kwargs)
+            # Resolve runtime values at call time: the bearer token may refresh
+            # between completions, and principal headers depend on the active
+            # Aion runtime context for this request.
             request_kwargs["api_key"] = aion_model_api_key()
+            request_kwargs["extra_headers"] = aion_model_request_headers(
+                request_kwargs.get("extra_headers")
+            )
             return await litellm.acompletion(
                 model=model,
                 messages=messages,

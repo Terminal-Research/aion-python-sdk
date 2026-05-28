@@ -17,15 +17,18 @@ This repository is a monorepo containing multiple projects located primarily und
 - **aion-server** – Google A2A server running a LangGraph agent. Provides task store, agent/plugin lifecycle, and FastAPI application. DB management is delegated to `aion-db`. Graphs and HTTP apps are configured via `aion.yaml` and can be dynamically mounted onto the server.
 - **aion-api-client** – provides a low level GraphQL client and a high level
   `ApiClient` interface for the Aion API. Also owns low-level HTTP/OpenAI-
-  compatible model-service connection helpers and typed control-plane
-  addressing utilities used by framework packages.
+  compatible model-service connection helpers, request-scoped model-service
+  principal header injection, and typed control-plane addressing utilities
+  used by framework packages.
 - **aion-adk** – Google ADK helper package for Aion-backed model
   configuration. Provides direct authoring helpers such as `aion_lite_llm`.
 - **aion-authoring-adk** – Google ADK authoring toolkit for Aion MCP access.
-  Provides MCP toolset bindings without pulling in server plugin machinery.
+  Provides MCP toolset bindings and request-scoped Aion model helpers without
+  pulling in server plugin machinery.
 - **aion-authoring-langgraph** – LangGraph authoring toolkit for Aion.
   Provides model helpers, event-routing utilities, streaming helpers, and MCP
-  tool-loading bindings for runtime Aion contexts.
+  tool-loading bindings for runtime Aion contexts, including model clients that
+  resolve principal headers at request time.
 - **aion-shared** – shared configuration, settings, logging, A2A types, file handling, and utility modules used across Aion Python SDK packages.
 - **aion-mcp** – creates an ASGI proxy for an MCP server defined in
   `aion.yaml` and provides authenticated remote Aion MCP endpoint helpers for

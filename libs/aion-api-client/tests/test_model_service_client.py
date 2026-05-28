@@ -1,6 +1,7 @@
 import logging
 from types import SimpleNamespace
 
+import httpx
 import pytest
 
 from aion.api import aion_openai_config
@@ -96,12 +97,74 @@ def test_builds_openai_compatible_kwargs(monkeypatch, caplog):
     assert config.openai_kwargs() == {
         "base_url": "https://api.example.test/v1",
         "api_key": api_key,
+        "default_headers": {
+            "Accept": "application/json, text/event-stream",
+        },
     }
     assert config.litellm_kwargs() == {
         "api_base": "https://api.example.test/v1",
         "api_key": api_key,
     }
-    assert "without principal attribution" in caplog.text
+    assert "without principal attribution" not in caplog.text
+
+
+def test_static_kwargs_do_not_resolve_principal(monkeypatch):
+    config = model_service_client.AionModelClientConfig(
+        base_url="https://api.example.test/v1",
+        api_key="jwt-token",
+    )
+
+    def fail_if_called():
+        pytest.fail("principal selector should not be resolved for static kwargs")
+
+    monkeypatch.setattr(
+        model_service_client, "aion_principal_selector", fail_if_called
+    )
+
+    openai_kwargs = config.openai_kwargs()
+    litellm_kwargs = config.litellm_kwargs()
+
+    assert openai_kwargs["default_headers"] == {
+        "Accept": "application/json, text/event-stream",
+    }
+    assert "extra_headers" not in litellm_kwargs
+
+
+def test_langchain_kwargs_add_request_scoped_clients(monkeypatch):
+    api_key_provider = lambda: "fresh-jwt"
+    config = model_service_client.AionModelClientConfig(
+        base_url="https://api.example.test/v1",
+        api_key=api_key_provider,
+    )
+    captured_providers = []
+
+    def sync_client(**kwargs):
+        captured_providers.append(kwargs["api_key_provider"])
+        return "sync-client"
+
+    def async_client(**kwargs):
+        captured_providers.append(kwargs["api_key_provider"])
+        return "async-client"
+
+    monkeypatch.setattr(
+        model_service_client,
+        "_aion_model_http_client",
+        lambda api_key_provider: sync_client(api_key_provider=api_key_provider),
+    )
+    monkeypatch.setattr(
+        model_service_client,
+        "_aion_model_async_http_client",
+        lambda api_key_provider: async_client(
+            api_key_provider=api_key_provider
+        ),
+    )
+
+    kwargs = config.langchain_openai_kwargs()
+
+    assert kwargs["api_key"] == "aion-runtime-token"
+    assert kwargs["http_client"] == "sync-client"
+    assert kwargs["http_async_client"] == "async-client"
+    assert captured_providers == [api_key_provider, api_key_provider]
 
 
 def test_model_request_headers_adds_principal_from_provider():
@@ -151,32 +214,84 @@ def test_model_request_headers_preserves_existing_principal(caplog):
     assert "without principal attribution" not in caplog.text
 
 
-def test_client_config_returns_fresh_request_headers(monkeypatch):
+def test_model_request_hook_resolves_principal_at_request_time(monkeypatch):
+    selectors = iter([
+        "agent-environment:first-env",
+        "agent-environment:second-env",
+    ])
+    monkeypatch.setattr(
+        model_service_client, "aion_principal_selector", lambda: next(selectors)
+    )
+    first_request = httpx.Request(
+        "POST", "https://api.example.test/v1/chat/completions"
+    )
+    second_request = httpx.Request(
+        "POST", "https://api.example.test/v1/chat/completions"
+    )
+
+    model_service_client.aion_model_request_hook(first_request)
+    model_service_client.aion_model_request_hook(second_request)
+
+    assert (
+        first_request.headers[model_service_client.AION_PRINCIPAL_SELECTOR_HEADER]
+        == "agent-environment:first-env"
+    )
+    assert (
+        second_request.headers[model_service_client.AION_PRINCIPAL_SELECTOR_HEADER]
+        == "agent-environment:second-env"
+    )
+
+
+def test_model_request_hook_preserves_explicit_principal(monkeypatch):
     monkeypatch.setattr(
         model_service_client,
-        "api_settings",
-        SimpleNamespace(
-            client_id="client-id",
-            client_secret="secret",
-            http_url="https://api.example.test",
-        ),
+        "aion_principal_selector",
+        lambda: "agent-environment:fresh-env",
     )
-    config = model_service_client.aion_openai_config()
-
-    headers = config.request_headers(
-        {"X-Request-ID": "request-1"},
-        warn_on_missing=False,
+    request = httpx.Request(
+        "POST",
+        "https://api.example.test/v1/chat/completions",
+        headers={
+            model_service_client.AION_PRINCIPAL_SELECTOR_HEADER: (
+                "agent-environment:explicit-env"
+            )
+        },
     )
 
-    assert headers == {"X-Request-ID": "request-1"}
-    assert headers is not config.default_headers
+    model_service_client.aion_model_request_hook(request)
+
+    assert (
+        request.headers[model_service_client.AION_PRINCIPAL_SELECTOR_HEADER]
+        == "agent-environment:explicit-env"
+    )
 
 
-def test_principal_selector_headers_are_optional(caplog):
-    caplog.set_level(logging.WARNING, logger="aion.api.model_service_client")
+def test_model_http_client_refreshes_api_key_per_request(monkeypatch):
+    tokens = iter(["jwt-1", "jwt-2"])
+    monkeypatch.setattr(
+        model_service_client,
+        "aion_principal_selector",
+        lambda: "agent-environment:fresh-env",
+    )
+    client = model_service_client._aion_model_http_client(
+        lambda: next(tokens)
+    )
+    first_request = client.build_request(
+        "POST", "https://api.example.test/v1/chat/completions"
+    )
+    second_request = client.build_request(
+        "POST", "https://api.example.test/v1/chat/completions"
+    )
+    try:
+        for hook in client.event_hooks["request"]:
+            hook(first_request)
+        for hook in client.event_hooks["request"]:
+            hook(second_request)
+    finally:
+        client.close()
 
-    assert model_service_client.aion_principal_selector_headers() == {}
-    assert "without principal attribution" in caplog.text
+    assert first_request.headers["Authorization"] == "Bearer jwt-1"
+    assert second_request.headers["Authorization"] == "Bearer jwt-2"
 
 
 def test_principal_selector_returns_none_when_no_provider(monkeypatch):

@@ -32,7 +32,7 @@ def aion_chat_model(
         ) from exc
 
     config = aion_openai_config()
-    model_kwargs = config.openai_kwargs()
+    model_kwargs = config.langchain_openai_kwargs()
     model_kwargs.update(kwargs)
     return init_chat_model(
         model=model,
@@ -65,7 +65,7 @@ def aion_chat_openai(
         ) from exc
 
     config = aion_openai_config()
-    model_kwargs = config.openai_kwargs()
+    model_kwargs = config.langchain_openai_kwargs()
     model_kwargs.update(kwargs)
     return ChatOpenAI(model=model, **model_kwargs)
 
