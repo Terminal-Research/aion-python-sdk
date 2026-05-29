@@ -1,13 +1,15 @@
 from __future__ import annotations
 
-from aion.core.constants import EVENT_EXTENSION_URI_V1
-from aion.core.logging import get_logger
-from aion.core.runtime import AionRuntimeContext
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, Optional
 
+from aion.core.constants import EVENT_EXTENSION_URI_V1
+from aion.core.logging import get_logger
+from aion.core.runtime.context import AionRuntimeContext
+
 if TYPE_CHECKING:
-    from .thread import Thread
+    from .thread import BaseThread
 
 logger = get_logger()
 
@@ -20,10 +22,15 @@ class User:
     """Unique identifier of the user who sent the message on the source network."""
 
 
-class Message:
-    """Normalized inbound message bound to its thread."""
+class BaseMessage(ABC):
+    """Normalized inbound message bound to its thread.
 
-    def __init__(self, context: AionRuntimeContext, thread: "Thread") -> None:
+    Provides parsed access to the inbound message fields (id, text, user)
+    and convenience methods (reply, react). Concrete implementations supply
+    the framework-specific react() transport.
+    """
+
+    def __init__(self, context: AionRuntimeContext, thread: "BaseThread") -> None:
         self.context = context
         self.thread = thread
 
@@ -61,19 +68,16 @@ class Message:
         """Convenience wrapper: delegates to thread.reply()."""
         await self.thread.reply(content, metadata=metadata)
 
+    @abstractmethod
     async def react(
-            self,
-            key: str,
-            *,
-            operation: Literal["add", "remove"] = "add",
-            display_value: Optional[str] = None,
+        self,
+        key: str,
+        *,
+        operation: Literal["add", "remove"] = "add",
+        display_value: Optional[str] = None,
     ) -> None:
         """Express a reaction against the current message.
 
-        Not yet implemented in the ADK authoring runtime.
-        Reaction support will be added together with the ADK emit_reaction helper.
+        Concrete implementations handle framework-specific transport.
         """
-        logger.warning(
-            "Message.react() is not yet supported in the ADK authoring runtime. "
-            "No reaction was sent."
-        )
+        ...

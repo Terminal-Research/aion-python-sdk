@@ -5,6 +5,8 @@ and replaces them with Part(url=...) using a presigned URL.
 The actual upload is scheduled in the background via FileUploadManager.
 
 If no upload_manager is provided or resolved, all transform methods are no-ops.
+
+Parts that match skip rules (e.g., JSX Cards) are never uploaded to storage.
 """
 
 import copy
@@ -18,6 +20,7 @@ from a2a.types import (
 )
 from aion.server.files.storage.manager import FileUploadManager
 from aion.core.logging import get_logger
+from .rules import PartSkipRule, create_default_skip_rules
 
 logger = get_logger()
 
@@ -31,23 +34,30 @@ class A2AFileTransformer:
     unconditionally.
 
     For each inline file part found:
-    1. Prepares a URL synchronously via FileUploadManager.schedule()
-    2. Schedules the actual upload as a background task
-    3. Returns a new part with url pointing at that URL
+    1. Checks if it matches any skip rules (e.g., JSX Cards)
+    2. If not skipped: prepares a URL and schedules background upload
+    3. Returns the transformed part (uploaded with url) or original part (if skipped)
 
     context_id is extracted from the event and forwarded to the backend for
     organizing files by conversation/session.
     """
 
-    def __init__(self, upload_manager: FileUploadManager | None = None) -> None:
-        """Initialize the transformer with an optional upload manager.
+    def __init__(
+        self,
+        upload_manager: FileUploadManager | None = None,
+        skip_rules: PartSkipRule | None = None,
+    ) -> None:
+        """Initialize the transformer with an optional upload manager and skip rules.
 
         Args:
             upload_manager: Upload manager to use. If None, one is created from
                             settings. If no backend is configured, the transformer
                             becomes a no-op.
+            skip_rules: Rules determining which parts to skip. If None, default
+                       rules are used (e.g., skip JSX Cards).
         """
         self._upload_manager = upload_manager or FileUploadManager.from_settings()
+        self._skip_rules = skip_rules or create_default_skip_rules()
 
     @property
     def is_active(self) -> bool:
@@ -178,8 +188,16 @@ class A2AFileTransformer:
             part: Part,
             context_id: str | None,
     ) -> tuple[Part, str | None]:
-        """Transform a single Part if it contains inline bytes; returns the part and upload URL."""
+        """Transform a single Part if it contains inline bytes; returns the part and upload URL.
+
+        If a part matches any skip rule, it is returned unchanged (not uploaded).
+        Otherwise, prepares a URL for the inline bytes and schedules background upload.
+        """
         if not part.raw:
+            return part, None
+
+        # Check skip rules — if matched, return part unchanged
+        if self._skip_rules.should_skip(part):
             return part, None
 
         data: bytes = part.raw

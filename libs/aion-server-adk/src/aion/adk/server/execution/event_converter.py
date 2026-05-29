@@ -11,8 +11,10 @@ from a2a.types import (
     TaskStatus,
     TaskStatusUpdateEvent,
 )
+from aion.adk.authoring.output import AionOutput
 from aion.core.logging import get_logger
 from aion.core.types import ArtifactId, ArtifactName
+from aion.core.utils.card import build_card_artifact
 from google.adk.events import Event
 
 from aion.adk.server.agents.invocation_context import AionInvocationContext
@@ -108,6 +110,9 @@ class ADKToA2AEventConverter:
     async def _convert_non_partial(self, adk_event: Event) -> list[AgentEvent]:
         """Convert a complete (non-partial) ADK event to A2A events.
 
+        If the event carries an aion:output hint, routes to the specified
+        artifact type instead of the default durable message path.
+
         If streaming was active, the STREAM_DELTA is closed first with an
         empty last_chunk=True event. Each file part is then emitted as a
         standalone TaskArtifactUpdateEvent with a unique artifact id. All
@@ -117,6 +122,38 @@ class ADKToA2AEventConverter:
         loaded and emitted as TaskArtifactUpdateEvents.
         """
         results: list[AgentEvent] = []
+
+        output = AionOutput.from_custom_metadata(adk_event.custom_metadata)
+
+        if output and output.card is not None:
+            card_jsx = adk_event.content and adk_event.content.parts[0].text
+            if card_jsx:
+                card_artifact = build_card_artifact(card_jsx)
+                results.append(TaskArtifactUpdateEvent(
+                    task_id=self._task_id,
+                    context_id=self._context_id,
+                    artifact=card_artifact,
+                    append=False,
+                    last_chunk=True,
+                ))
+            return results
+
+        if output and output.artifact is not None:
+            if adk_event.content:
+                content_parts = A2ATransformer.transform_content(adk_event.content)
+                if content_parts:
+                    results.append(TaskArtifactUpdateEvent(
+                        task_id=self._task_id,
+                        context_id=self._context_id,
+                        artifact=Artifact(
+                            artifact_id=output.artifact.artifact_id,
+                            name=output.artifact.artifact_name or output.artifact.artifact_id,
+                            parts=content_parts,
+                        ),
+                        append=False,
+                        last_chunk=True,
+                    ))
+            return results
 
         if close_event := self._close_stream_delta():
             results.append(close_event)
@@ -233,5 +270,6 @@ class ADKToA2AEventConverter:
             context_id=self._context_id,
             status=TaskStatus(state=TaskState.TASK_STATE_FAILED),
         )
+
 
 __all__ = ["ADKToA2AEventConverter"]
