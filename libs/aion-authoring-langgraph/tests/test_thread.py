@@ -2,8 +2,8 @@ from unittest.mock import MagicMock, Mock, patch
 from langchain_core.messages import AIMessage, AIMessageChunk
 from a2a.types import Artifact
 
-from aion.langgraph.authoring.runtime.context.thread import Thread
-from aion.langgraph.authoring.runtime.context.message import Message
+from aion.langgraph.authoring.invocation.thread import Thread
+from aion.langgraph.authoring.invocation.message import Message
 from aion.langgraph.authoring.events.custom_events import ArtifactCustomEvent, MessageCustomEvent
 
 from tests.helpers import (
@@ -13,8 +13,10 @@ from tests.helpers import (
     make_mock_distribution_extension,
 )
 
+_GET_STREAM_WRITER = "aion.langgraph.authoring.invocation.thread.get_stream_writer"
 
-def make_thread(context=None, writer=None, **kwargs):
+
+def make_thread(context=None, **kwargs):
     ctx = context or make_mock_context()
     return Thread(
         context=ctx,
@@ -22,7 +24,6 @@ def make_thread(context=None, writer=None, **kwargs):
         parent_id=kwargs.get("parent_id", None),
         network=kwargs.get("network", "Slack"),
         default_reply_target=kwargs.get("default_reply_target", "C123"),
-        writer=writer if writer is not None else MagicMock(),
     )
 
 
@@ -127,8 +128,9 @@ class TestThreadPost:
     async def test_post_string_emits_aimessage(self):
         # plain string is wrapped in AIMessage and emitted via writer
         writer = MagicMock()
-        thread = make_thread(writer=writer)
-        result = await thread.post("Hello world")
+        thread = make_thread()
+        with patch(_GET_STREAM_WRITER, return_value=writer):
+            result = await thread.post("Hello world")
 
         writer.assert_called_once()
         event = writer.call_args[0][0]
@@ -139,8 +141,9 @@ class TestThreadPost:
     async def test_post_jsx_card_emits_artifact(self):
         # JSX card string is converted to an Artifact and emitted
         writer = MagicMock()
-        thread = make_thread(writer=writer)
-        result = await thread.post("<Card><Title>Hello</Title></Card>")
+        thread = make_thread()
+        with patch(_GET_STREAM_WRITER, return_value=writer):
+            result = await thread.post("<Card><Title>Hello</Title></Card>")
 
         writer.assert_called_once()
         event = writer.call_args[0][0]
@@ -150,9 +153,10 @@ class TestThreadPost:
     async def test_post_aimessage_emits_message_event(self):
         # pre-built AIMessage is emitted as-is without modification
         writer = MagicMock()
-        thread = make_thread(writer=writer)
+        thread = make_thread()
         msg = AIMessage(content="Pre-built message")
-        result = await thread.post(msg)
+        with patch(_GET_STREAM_WRITER, return_value=writer):
+            result = await thread.post(msg)
 
         event = writer.call_args[0][0]
         assert isinstance(event, MessageCustomEvent)
@@ -162,9 +166,10 @@ class TestThreadPost:
     async def test_post_chunk_emits_message_event(self):
         # AIMessageChunk takes its own branch (not collapsed into AIMessage despite inheritance)
         writer = MagicMock()
-        thread = make_thread(writer=writer)
+        thread = make_thread()
         chunk = AIMessageChunk(content="chunk")
-        result = await thread.post(chunk)
+        with patch(_GET_STREAM_WRITER, return_value=writer):
+            result = await thread.post(chunk)
 
         event = writer.call_args[0][0]
         assert isinstance(event, MessageCustomEvent)
@@ -175,13 +180,14 @@ class TestThreadPost:
     async def test_post_async_iterator_of_strings(self):
         # async iterator of strings emits each chunk then a final AIMessage
         writer = MagicMock()
-        thread = make_thread(writer=writer)
+        thread = make_thread()
 
         async def gen():
             yield "hello"
             yield " world"
 
-        result = await thread.post(gen())
+        with patch(_GET_STREAM_WRITER, return_value=writer):
+            result = await thread.post(gen())
 
         # 2 chunk emissions + 1 final AIMessage emission
         assert writer.call_count == 3
@@ -191,13 +197,15 @@ class TestThreadPost:
     async def test_post_async_iterator_of_chunks(self):
         # async iterator of AIMessageChunk accumulates content into final AIMessage
         writer = MagicMock()
-        thread = make_thread(writer=writer)
+        thread = make_thread()
 
         async def gen():
             yield AIMessageChunk(content="part1")
             yield AIMessageChunk(content="part2")
 
-        result = await thread.post(gen())
+        with patch(_GET_STREAM_WRITER, return_value=writer):
+            result = await thread.post(gen())
+
         assert writer.call_count == 3
         assert isinstance(result, AIMessage)
         assert result.content == "part1part2"
@@ -205,13 +213,14 @@ class TestThreadPost:
     async def test_post_async_iterator_exception_returns_accumulated(self):
         # if the iterator raises mid-stream, content accumulated so far is still returned
         writer = MagicMock()
-        thread = make_thread(writer=writer)
+        thread = make_thread()
 
         async def gen():
             yield "partial"
             raise RuntimeError("stream broke")
 
-        result = await thread.post(gen())
+        with patch(_GET_STREAM_WRITER, return_value=writer):
+            result = await thread.post(gen())
 
         assert isinstance(result, AIMessage)
         assert result.content == "partial"
@@ -219,33 +228,38 @@ class TestThreadPost:
     async def test_post_async_iterator_empty_returns_none(self):
         # iterator that yields nothing returns None (nothing to accumulate)
         writer = MagicMock()
-        thread = make_thread(writer=writer)
+        thread = make_thread()
 
         async def gen():
             return
             yield  # make it an async generator
 
-        result = await thread.post(gen())
+        with patch(_GET_STREAM_WRITER, return_value=writer):
+            result = await thread.post(gen())
+
         assert result is None
 
     async def test_post_async_iterator_unsupported_type_skipped(self):
         # unsupported types yielded from iterator are skipped with a warning
         writer = MagicMock()
-        thread = make_thread(writer=writer)
+        thread = make_thread()
 
         async def gen():
             yield "valid"
             yield 42  # unsupported — should be skipped
             yield " text"
 
-        result = await thread.post(gen())
+        with patch(_GET_STREAM_WRITER, return_value=writer):
+            result = await thread.post(gen())
+
         assert result.content == "valid text"
 
     async def test_post_jsx_card_with_metadata(self):
         # metadata is merged into card artifact metadata when provided
         writer = MagicMock()
-        thread = make_thread(writer=writer)
-        result = await thread.post("<Card/>", metadata={"custom": "value"})
+        thread = make_thread()
+        with patch(_GET_STREAM_WRITER, return_value=writer):
+            result = await thread.post("<Card/>", metadata={"custom": "value"})
 
         event = writer.call_args[0][0]
         assert isinstance(event, ArtifactCustomEvent)
@@ -254,21 +268,17 @@ class TestThreadPost:
     async def test_post_unsupported_type_returns_none(self):
         # unsupported content type logs a warning and returns None without writing
         writer = MagicMock()
-        thread = make_thread(writer=writer)
-        result = await thread.post(12345)
+        thread = make_thread()
+        with patch(_GET_STREAM_WRITER, return_value=writer):
+            result = await thread.post(12345)
 
         assert result is None
         writer.assert_not_called()
 
     async def test_post_returns_none_when_no_writer(self):
         # no stream writer available → post silently returns None
-        ctx = make_mock_context()
-        thread = Thread(
-            context=ctx, id="C1", parent_id=None,
-            network="A2A", default_reply_target="C1", writer=None,
-        )
-
-        with patch("aion.langgraph.authoring.runtime.context.thread.get_stream_writer", side_effect=RuntimeError("no writer")):
+        thread = make_thread()
+        with patch(_GET_STREAM_WRITER, side_effect=RuntimeError("no writer")):
             result = await thread.post("Hello")
 
         assert result is None
@@ -285,8 +295,9 @@ class TestThreadReply:
         ctx = make_mock_context(event=make_mock_event(payload=payload))
 
         writer = MagicMock()
-        thread = Thread.from_context(ctx, writer=writer)
-        await thread.reply("Hello")
+        thread = Thread.from_context(ctx)
+        with patch(_GET_STREAM_WRITER, return_value=writer):
+            await thread.reply("Hello")
 
         event_emitted = writer.call_args[0][0]
         assert isinstance(event_emitted, MessageCustomEvent)
@@ -297,8 +308,9 @@ class TestThreadReply:
         # reply() without an event falls back to default distribution routing (None)
         ctx = make_mock_context(event=None)
         writer = MagicMock()
-        thread = Thread.from_context(ctx, writer=writer)
-        await thread.reply("Hello")
+        thread = Thread.from_context(ctx)
+        with patch(_GET_STREAM_WRITER, return_value=writer):
+            await thread.reply("Hello")
 
         event_emitted = writer.call_args[0][0]
         assert event_emitted.routing is None
@@ -347,8 +359,9 @@ class TestThreadTyping:
     async def test_typing_string_emits_ephemeral(self):
         # string content is emitted as an ephemeral (stream-only) message
         writer = MagicMock()
-        thread = make_thread(writer=writer)
-        await thread.typing("Processing...")
+        thread = make_thread()
+        with patch(_GET_STREAM_WRITER, return_value=writer):
+            await thread.typing("Processing...")
 
         event = writer.call_args[0][0]
         assert isinstance(event, MessageCustomEvent)
@@ -358,25 +371,22 @@ class TestThreadTyping:
         # AIMessage and AIMessageChunk are both forwarded as ephemeral
         for content in [AIMessage(content="Working..."), AIMessageChunk(content="chunk")]:
             writer = MagicMock()
-            thread = make_thread(writer=writer)
-            await thread.typing(content)
+            thread = make_thread()
+            with patch(_GET_STREAM_WRITER, return_value=writer):
+                await thread.typing(content)
             assert writer.call_args[0][0].ephemeral is True
 
     async def test_typing_unsupported_type_does_nothing(self):
         # unsupported type logs a warning and produces no emission
         writer = MagicMock()
-        thread = make_thread(writer=writer)
-        await thread.typing({"not": "supported"})
+        thread = make_thread()
+        with patch(_GET_STREAM_WRITER, return_value=writer):
+            await thread.typing({"not": "supported"})
 
         writer.assert_not_called()
 
     async def test_typing_returns_early_when_no_writer(self):
         # typing silently does nothing when no stream writer is available
-        ctx = make_mock_context()
-        thread = Thread(
-            context=ctx, id="C1", parent_id=None,
-            network="A2A", default_reply_target="C1", writer=None,
-        )
-
-        with patch("aion.langgraph.authoring.runtime.context.thread.get_stream_writer", side_effect=RuntimeError("no writer")):
+        thread = make_thread()
+        with patch(_GET_STREAM_WRITER, side_effect=RuntimeError("no writer")):
             await thread.typing("Processing...")  # must not raise

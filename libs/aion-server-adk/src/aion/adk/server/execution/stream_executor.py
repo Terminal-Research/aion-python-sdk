@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from a2a.types import TaskArtifactUpdateEvent, TaskStatusUpdateEvent
-from aion.adk.authoring.runtime.emitter import reset_adk_emitter, set_adk_emitter
+from aion.adk.authoring.invocation.emitter import reset_adk_emitter, set_adk_emitter
 from aion.core.logging import get_logger
 from aion.core.types import ArtifactId, A2AOutbox
 from google.adk.events import Event
@@ -68,10 +68,6 @@ class ADKStreamExecutor:
         """Accumulated state. Valid after execute() iteration is complete."""
         return ADKStreamResult(delta_text=self._delta_text)
 
-    # ------------------------------------------------------------------
-    # Public entry point
-    # ------------------------------------------------------------------
-
     async def execute(
         self,
         invocation_context: Any,
@@ -90,10 +86,6 @@ class ADKStreamExecutor:
             async for event in consumer.consume_all():
                 async for a2a_event in self._process_event(event, invocation_context, session):
                     yield a2a_event
-
-    # ------------------------------------------------------------------
-    # Invocation lifecycle
-    # ------------------------------------------------------------------
 
     @asynccontextmanager
     async def _managed_invocation(
@@ -142,10 +134,6 @@ class ADKStreamExecutor:
             queue.enqueue_error(exc)
         finally:
             queue.close()
-
-    # ------------------------------------------------------------------
-    # Per-event processing pipeline
-    # ------------------------------------------------------------------
 
     async def _process_event(
         self,

@@ -1,6 +1,6 @@
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
-from aion.langgraph.authoring.runtime.context.message import Message, User
+from aion.langgraph.authoring.invocation.message import Message, User
 from aion.core.constants import EVENT_EXTENSION_URI_V1
 
 from tests.helpers import make_mock_context, make_mock_event, make_mock_inbox
@@ -225,7 +225,7 @@ class TestMessageReact:
         ctx = make_mock_context(event=None)
         msg = make_message(context=ctx)
 
-        with patch("aion.langgraph.authoring.runtime.context.message.logger") as mock_logger:
+        with patch("aion.langgraph.authoring.invocation.message.logger") as mock_logger:
             with patch("aion.langgraph.authoring.stream.emit_reaction") as mock_emit:
                 await msg.react("thumbsup")
                 mock_emit.assert_not_called()
@@ -240,7 +240,7 @@ class TestMessageReact:
         ctx = make_mock_context(event=make_mock_event(payload=payload))
         msg = make_message(context=ctx)
 
-        with patch("aion.langgraph.authoring.runtime.context.message.logger") as mock_logger:
+        with patch("aion.langgraph.authoring.invocation.message.logger") as mock_logger:
             with patch("aion.langgraph.authoring.stream.emit_reaction") as mock_emit:
                 await msg.react("thumbsup")
                 mock_emit.assert_not_called()
@@ -255,7 +255,7 @@ class TestMessageReact:
         ctx = make_mock_context(event=make_mock_event(payload=payload))
         msg = make_message(context=ctx)
 
-        with patch("aion.langgraph.authoring.runtime.context.message.logger") as mock_logger:
+        with patch("aion.langgraph.authoring.invocation.message.logger") as mock_logger:
             with patch("aion.langgraph.authoring.stream.emit_reaction") as mock_emit:
                 await msg.react("thumbsup")
                 mock_emit.assert_not_called()

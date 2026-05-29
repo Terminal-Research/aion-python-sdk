@@ -48,10 +48,6 @@ class ADKEventQueue:
         self._queue: asyncio.Queue[Any] = asyncio.Queue()
         self._is_closed: bool = False
 
-    # ------------------------------------------------------------------
-    # Write interface
-    # ------------------------------------------------------------------
-
     def enqueue_event(self, event: Event) -> None:
         """Non-blocking enqueue for ADK Events.
 
@@ -75,10 +71,6 @@ class ADKEventQueue:
             return
         self._queue.put_nowait(_ErrorItem(exc))
 
-    # ------------------------------------------------------------------
-    # Read interface
-    # ------------------------------------------------------------------
-
     async def dequeue_event(self) -> Any:
         """Blocking dequeue. Returns an Event, _ErrorItem, or _CLOSED."""
         return await self._queue.get()
@@ -86,10 +78,6 @@ class ADKEventQueue:
     def task_done(self) -> None:
         """Signal that the last dequeued item has been processed."""
         self._queue.task_done()
-
-    # ------------------------------------------------------------------
-    # Lifecycle
-    # ------------------------------------------------------------------
 
     def close(self) -> None:
         """Signal that no more events will be enqueued.

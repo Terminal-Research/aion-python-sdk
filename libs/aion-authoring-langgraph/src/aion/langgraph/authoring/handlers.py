@@ -6,7 +6,7 @@ from typing import Any, Callable, Dict, List, Optional, Set
 from aion.core.logging import get_logger
 from aion.core.runtime.context import AionRuntimeContext
 from aion.core.runtime.context.models import EventKind
-from aion.langgraph.authoring.runtime.context.thread import Thread
+from aion.langgraph.authoring.invocation.thread import Thread
 from langgraph.runtime import Runtime
 
 logger = get_logger()

@@ -95,7 +95,7 @@ class TestHandlerInvoker:
 
     async def test_thread_param_injected(self):
         # handler declaring 'thread' receives a Thread instance built from context
-        from aion.langgraph.authoring.runtime.context.thread import Thread
+        from aion.langgraph.authoring.invocation.thread import Thread
 
         received = {}
 

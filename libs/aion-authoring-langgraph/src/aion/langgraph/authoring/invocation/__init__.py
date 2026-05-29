@@ -3,6 +3,6 @@ from .thread import Thread
 
 __all__ = [
     "Message",
-    "User",
     "Thread",
+    "User",
 ]
