@@ -97,7 +97,7 @@ def build_card_artifact(card_jsx: str, name: str | None = None, metadata: dict |
         card_metadata.update(metadata)
 
     card_part = Part(
-        raw=card_jsx.encode("utf-8"),
+        text=card_jsx,
         media_type=CARDS_MEDIA_TYPE,
         metadata=card_metadata,
     )

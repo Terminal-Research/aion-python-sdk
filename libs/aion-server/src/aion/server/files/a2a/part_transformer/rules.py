@@ -3,6 +3,8 @@
 from a2a.types import Part
 from abc import ABC, abstractmethod
 
+from aion.core.constants import CARDS_MEDIA_TYPE
+
 
 class PartSkipRule(ABC):
     """Base interface for part skip rules."""
@@ -42,11 +44,9 @@ class CompositePartSkipRule(PartSkipRule):
 class CardPartSkipRule(PartSkipRule):
     """Skip JSX Card parts — they are UI documents, not files to persist."""
 
-    _CARD_MIME_TYPE = "application/vnd.aion.card+jsx"
-
     def should_skip(self, part: Part) -> bool:
         """Skip parts with card MIME type."""
-        return part.media_type == self._CARD_MIME_TYPE
+        return part.media_type == CARDS_MEDIA_TYPE
 
 
 def create_default_skip_rules() -> CompositePartSkipRule:
