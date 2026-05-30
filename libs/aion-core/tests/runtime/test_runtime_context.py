@@ -261,14 +261,14 @@ class TestAionRuntimeContextDistributionPayload:
         )
         ctx = AionRuntimeContext(distribution_extension_payload=dist)
 
-        assert ctx.get_principal_selector() == "agent-identity:daemon-1"
+        assert ctx.get_principal_selector() == "aion://agent/identity/daemon-1"
 
     def test_principal_selector_uses_environment_without_daemon(self):
         """Verify principal selector falls back to environment id."""
         dist = _make_distribution_ext(env_id="env-99")
         ctx = AionRuntimeContext(distribution_extension_payload=dist)
 
-        assert ctx.get_principal_selector() == "agent-environment:env-99"
+        assert ctx.get_principal_selector() == "aion://agent/environment/env-99"
 
     def test_principal_selector_missing_without_environment(self):
         """Verify that principal selector is absent without distribution payload."""

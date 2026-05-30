@@ -63,7 +63,7 @@ class FakeRuntimeContext:
 
     def get_principal_selector(self) -> str:
         """Return the derived principal selector."""
-        return "agent-environment:env-id"
+        return "aion://agent/environment/env-id"
 
 
 def test_endpoint_returns_langchain_multi_server_config() -> None:
@@ -96,7 +96,7 @@ def test_authorization_headers_include_principal_selector() -> None:
 
     assert headers == {
         "Authorization": "Bearer jwt-token",
-        AION_PRINCIPAL_SELECTOR_HEADER: "agent-environment:env-id",
+        AION_PRINCIPAL_SELECTOR_HEADER: "aion://agent/environment/env-id",
     }
 
 
@@ -106,7 +106,7 @@ def test_authorization_headers_accept_typed_principal_selector() -> None:
         principal_selector=PrincipalSelector.agent_environment("env-id"),
     )
 
-    assert headers[AION_PRINCIPAL_SELECTOR_HEADER] == "agent-environment:env-id"
+    assert headers[AION_PRINCIPAL_SELECTOR_HEADER] == "aion://agent/environment/env-id"
 
 
 def test_metatools_endpoint_uses_async_token_manager() -> None:
@@ -126,7 +126,7 @@ def test_metatools_endpoint_uses_async_token_manager() -> None:
     assert endpoint.headers["Authorization"] == "Bearer jwt-token"
     assert (
         endpoint.headers[AION_PRINCIPAL_SELECTOR_HEADER]
-        == "agent-environment:env-id"
+        == "aion://agent/environment/env-id"
     )
 
 
@@ -247,7 +247,7 @@ def test_generic_mcp_sync_endpoint_addresses_environment_capability() -> None:
     )
     assert endpoint.headers == {
         "Authorization": "Bearer jwt-token",
-        AION_PRINCIPAL_SELECTOR_HEADER: "agent-environment:env-id",
+        AION_PRINCIPAL_SELECTOR_HEADER: "aion://agent/environment/env-id",
     }
 
 
@@ -273,7 +273,7 @@ def test_runtime_context_sync_endpoints_use_global_reference_and_capability() ->
     ]
     assert all(
         endpoint.headers[AION_PRINCIPAL_SELECTOR_HEADER]
-        == "agent-environment:env-id"
+        == "aion://agent/environment/env-id"
         for endpoint in endpoints
     )
 

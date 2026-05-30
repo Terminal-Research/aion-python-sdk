@@ -18,7 +18,6 @@ from aion.api.control_plane import (
 )
 from aion.api.gql.generated.graphql_client import (
     CapabilitySubjectGQLInput,
-    PrincipalSelectorGQLInput,
 )
 
 
@@ -45,7 +44,7 @@ class FakeRuntimeContext:
 
     def get_principal_selector(self) -> str:
         """Return the fake environment selector."""
-        return "agent-environment:env-123"
+        return "aion://agent/environment/env-123"
 
     def get_environment(self) -> FakeEnvironment:
         """Return the fake environment."""
@@ -65,34 +64,41 @@ class FakeDaemonRuntimeContext(FakeRuntimeContext):
 
     def get_principal_selector(self) -> str:
         """Return the fake daemon identity selector."""
-        return "agent-identity:daemon-123"
+        return "aion://agent/identity/daemon-123"
 
 
-def test_principal_selector_builds_header_and_gql_input() -> None:
+def test_principal_selector_builds_header_and_gql_value() -> None:
     """Verify principal selectors serialize for HTTP and GraphQL."""
     selector = PrincipalSelector.agent_environment("env-123")
 
-    assert selector.to_header_value() == "agent-environment:env-123"
+    assert selector.to_header_value() == "aion://agent/environment/env-123"
+    assert str(selector) == "aion://agent/environment/env-123"
     assert selector.to_headers() == {
-        AION_PRINCIPAL_SELECTOR_HEADER: "agent-environment:env-123"
+        AION_PRINCIPAL_SELECTOR_HEADER: "aion://agent/environment/env-123"
     }
-    assert selector.to_gql_input() == PrincipalSelectorGQLInput(
-        agent_environment_id="env-123"
-    )
+    assert selector.to_gql_value() == "aion://agent/environment/env-123"
 
 
 def test_principal_selector_normalizes_at_name() -> None:
     """Verify at-name selectors accept the leading @ sigil."""
-    selector = PrincipalSelector.from_header_value("agent-at-name:@daemon")
+    selector = PrincipalSelector.from_header_value(
+        "aion://agent/identity/name/@daemon"
+    )
 
     assert selector == PrincipalSelector.agent_at_name("daemon")
-    assert selector.to_header_value() == "agent-at-name:daemon"
+    assert selector.to_header_value() == "aion://agent/identity/name/daemon"
 
 
-def test_principal_selector_rejects_unknown_header_kind() -> None:
-    """Verify unknown selector kinds fail before a request is sent."""
-    with pytest.raises(ValueError, match="Unknown Aion-Principal-Selector"):
+def test_principal_selector_rejects_previous_header_form() -> None:
+    """Verify the previous selector syntax is no longer accepted."""
+    with pytest.raises(ValueError, match="must use an abstract Aion resource URI"):
         PrincipalSelector.from_header_value("project:abc")
+
+
+def test_principal_selector_rejects_non_principal_resource_uri() -> None:
+    """Verify resource URIs must address supported principal resources."""
+    with pytest.raises(ValueError, match="cannot select project resources"):
+        PrincipalSelector.from_header_value("aion://project/project-1")
 
 
 class FakeMissingSelectorRuntimeContext(FakeRuntimeContext):
@@ -117,7 +123,7 @@ def test_principal_selector_from_runtime_context_uses_runtime_selector() -> None
     assert selector == PrincipalSelector.agent_environment("env-123")
 
 
-def test_principal_selector_from_runtime_context_returns_none_without_selector() -> None:
+def test_principal_selector_from_runtime_context_returns_none() -> None:
     """Verify missing runtime selector metadata remains absent."""
     selector = PrincipalSelector.from_runtime_context(
         FakeMissingSelectorRuntimeContext()

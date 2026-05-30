@@ -48,7 +48,7 @@ class FakeRuntimeContext:
 
     def get_principal_selector(self) -> str:
         """Return the derived principal selector."""
-        return "agent-environment:env-id"
+        return "aion://agent/environment/env-id"
 
 
 def test_langgraph_mcp_server_config_sync_uses_runtime_context() -> None:
@@ -78,7 +78,7 @@ def test_langgraph_mcp_server_config_sync_uses_runtime_context() -> None:
     )
     assert (
         capability["headers"][AION_PRINCIPAL_SELECTOR_HEADER]
-        == "agent-environment:env-id"
+        == "aion://agent/environment/env-id"
     )
 
 

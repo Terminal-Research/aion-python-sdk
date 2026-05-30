@@ -45,7 +45,7 @@ def test_aion_lite_llm_configures_google_adk_litellm(monkeypatch):
         "aion_model_request_headers",
         lambda existing=None: {
             **(existing or {}),
-            "Aion-Principal-Selector": "agent-environment:fresh-env",
+            "Aion-Principal-Selector": "aion://agent/environment/fresh-env",
         },
     )
 
@@ -99,8 +99,8 @@ def test_aion_lite_llm_configures_google_adk_litellm(monkeypatch):
     assert completion_calls[0]["api_key"] == "fresh-jwt"
     assert acompletion_calls[0]["api_key"] == "fresh-jwt"
     assert completion_calls[0]["extra_headers"] == {
-        "Aion-Principal-Selector": "agent-environment:fresh-env",
+        "Aion-Principal-Selector": "aion://agent/environment/fresh-env",
     }
     assert acompletion_calls[0]["extra_headers"] == {
-        "Aion-Principal-Selector": "agent-environment:fresh-env",
+        "Aion-Principal-Selector": "aion://agent/environment/fresh-env",
     }

@@ -93,16 +93,6 @@ input MessageInput {
   content: String!
 }
 
-"Select exactly one effective principal. Supplying zero or multiple selectors causes the request to be rejected."
-input PrincipalSelectorGQLInput {
-  "Agent environment identifier. This acts as the environment itself and is limited to that environment's own capabilities."
-  agentEnvironmentId: ID
-  "Agent identity identifier to act as for this request."
-  agentIdentityId: ID
-  "Agent @name handle to act as for this request. Values may be provided with or without the leading @ symbol."
-  agentAtName: String
-}
-
 type A2AJsonRpcError {
   code: Int!
   message: String!
@@ -224,9 +214,9 @@ type Queries {
 
 type Subscriptions {
   "Executes an agent-to-agent JSON-RPC request and streams the responses."
-  a2aRpc("JSON-RPC request body" request: A2AJsonRpcRequestGQLInput!, "A2A capability subject" target: CapabilitySubjectGQLInput!, "Service parameters associated with the request" serviceParameters: A2AServiceParametersGQLInput, "Optional effective principal selector for this request. When omitted, the authenticated subject is used as the principal." principal: PrincipalSelectorGQLInput): A2AJsonRpcResponseGQL
+  a2aRpc("JSON-RPC request body" request: A2AJsonRpcRequestGQLInput!, "A2A capability subject" target: CapabilitySubjectGQLInput!, "Service parameters associated with the request" serviceParameters: A2AServiceParametersGQLInput, "Optional Aion resource URI selecting the effective principal. Supported forms include aion://agent/environment/{id}, aion://agent/identity/{id}, and aion://agent/identity/name/{name}. When omitted, the authenticated subject is used." principal: String): A2AJsonRpcResponseGQL
   "Streams delta chunks for an LLM chat-completion request. When `stream=true` is set, the underlying model returns partial responses; this subscription forwards those chunks to the client as they become available, enabling token-level streaming UIs."
-  chatCompletionStream("Chat completion request payload." request: ChatCompletionRequestInput!, "Optional effective principal selector. When omitted, the authenticated subject is used as the principal." principal: PrincipalSelectorGQLInput): ChatCompletionStreamChunk @auth(subjectType: "Version")
+  chatCompletionStream("Chat completion request payload." request: ChatCompletionRequestInput!, "Optional Aion resource URI selecting the effective principal. Supported forms include aion://agent/environment/{id}, aion://agent/identity/{id}, and aion://agent/identity/name/{name}. When omitted, the authenticated subject is used." principal: String): ChatCompletionStreamChunk @auth(subjectType: "Version")
   "Streams raw log events for the authenticated version."
   versionLogs("Lower bound for log retrieval serialized as RFC 3339 (ISO-8601) with offset, in UTC." startTime: OffsetDateTime!): LogEvent @auth(subjectType: "Version")
 }

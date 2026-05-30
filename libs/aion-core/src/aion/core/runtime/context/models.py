@@ -186,17 +186,17 @@ class AionRuntimeContext:
         Typed selector objects live in ``aion-api-client``.
 
         Returns:
-            A header-ready ``agent-identity:<id>`` selector when the active
+            A header-ready ``aion://agent/identity/<id>`` selector when the active
             environment has a daemon identity, otherwise
-            ``agent-environment:<id>``. Returns ``None`` when no distribution
-            environment is available.
+            ``aion://agent/environment/<id>``. Returns ``None`` when no
+            distribution environment is available.
         """
         environment = self.get_environment()
         if environment is None:
             return None
         if environment.daemon_agent_identity_id:
-            return f"agent-identity:{environment.daemon_agent_identity_id}"
-        return f"agent-environment:{environment.id}"
+            return f"aion://agent/identity/{environment.daemon_agent_identity_id}"
+        return f"aion://agent/environment/{environment.id}"
 
     def get_principal_identity(self) -> Optional[PrincipalIdentity]:
         """Return the principal identity from the distribution.

@@ -4,7 +4,7 @@
 __all__ = ["A_2_A_STREAM_GQL", "CHAT_COMPLETION_STREAM_GQL", "VERSION_LOGS_GQL"]
 
 CHAT_COMPLETION_STREAM_GQL = """
-subscription ChatCompletionStream($request: ChatCompletionRequestInput!, $principal: PrincipalSelectorGQLInput) {
+subscription ChatCompletionStream($request: ChatCompletionRequestInput!, $principal: String) {
   chatCompletionStream(request: $request, principal: $principal) {
     __typename
     ... on ChatCompletionStreamResponseChunk {
@@ -30,7 +30,7 @@ subscription ChatCompletionStream($request: ChatCompletionRequestInput!, $princi
 """
 
 A_2_A_STREAM_GQL = """
-subscription A2AStream($request: A2AJsonRpcRequestGQLInput!, $target: CapabilitySubjectGQLInput!, $principal: PrincipalSelectorGQLInput) {
+subscription A2AStream($request: A2AJsonRpcRequestGQLInput!, $target: CapabilitySubjectGQLInput!, $principal: String) {
   a2aRpc(request: $request, target: $target, principal: $principal) {
     __typename
     ... on A2AJsonRpcSuccessResponseGQL {

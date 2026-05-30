@@ -22,7 +22,6 @@ from aion.api.gql.generated.graphql_client import (
     A2AJsonRpcRequestGQLInput,
     CapabilitySubjectGQLInput,
     ChatCompletionRequestInput,
-    PrincipalSelectorGQLInput,
 )
 from aion.api.gql.generated.graphql_client.custom_fields import AgentBehaviorFields
 from aion.api.gql.generated.graphql_client.custom_mutations import Mutation
@@ -52,16 +51,9 @@ def test_settings_loaded() -> None:
     assert aion_api_settings.api_keep_alive == 60
 
 
-def test_chat_completion_request_uses_principal_for_agent_environment() -> None:
-    """Chat completion requests should no longer carry agent environment selectors."""
+def test_chat_completion_request_keeps_principal_separate() -> None:
+    """Chat completion requests should not carry principal selector fields."""
     assert "agent_environment_id" not in ChatCompletionRequestInput.model_fields
-    assert "agent_environment_id" in PrincipalSelectorGQLInput.model_fields
-
-    principal = PrincipalSelectorGQLInput(agent_environment_id="agent-env-1")
-
-    assert principal.model_dump(by_alias=True, exclude_none=True) == {
-        "agentEnvironmentId": "agent-env-1"
-    }
 
 
 # Use ``anyio``'s pytest plugin to execute async tests using the ``asyncio`` backend
@@ -71,7 +63,7 @@ def test_chat_completion_request_uses_principal_for_agent_environment() -> None:
 @pytest.mark.anyio("asyncio")
 async def test_chat_completion_stream_calls_gql(monkeypatch) -> None:
     """Test that chat_completion_stream properly calls the underlying GraphQL client."""
-    expected_principal = PrincipalSelectorGQLInput(agent_environment_id="agent-env-1")
+    expected_principal = "aion://agent/environment/agent-env-1"
 
     async def mock_chat_completion_stream(
         *, request: ChatCompletionRequestInput, principal=None

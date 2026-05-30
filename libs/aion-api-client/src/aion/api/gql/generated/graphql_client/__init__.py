@@ -32,7 +32,6 @@ from .input_types import (
     CapabilitySubjectGQLInput,
     ChatCompletionRequestInput,
     MessageInput,
-    PrincipalSelectorGQLInput,
 )
 from .operations import A_2_A_STREAM_GQL, CHAT_COMPLETION_STREAM_GQL, VERSION_LOGS_GQL
 from .version_logs import (
@@ -69,7 +68,6 @@ __all__ = [
     "GraphQLClientHttpError",
     "GraphQLClientInvalidResponseError",
     "MessageInput",
-    "PrincipalSelectorGQLInput",
     "Upload",
     "VERSION_LOGS_GQL",
     "VersionLogs",

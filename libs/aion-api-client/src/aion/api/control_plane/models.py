@@ -5,12 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Self
+from urllib.parse import quote, unquote, urlsplit
 
 if TYPE_CHECKING:
     from aion.core.runtime.context.models import AionRuntimeContext
     from aion.api.gql.generated.graphql_client.input_types import (
         CapabilitySubjectGQLInput,
-        PrincipalSelectorGQLInput,
     )
 
 AION_PRINCIPAL_SELECTOR_HEADER = "Aion-Principal-Selector"
@@ -19,13 +19,16 @@ AION_PRINCIPAL_SELECTOR_HEADER = "Aion-Principal-Selector"
 AION_METATOOLS_MCP_CAPABILITY_KEY = "mcp.aion.metatools"
 """Concrete key for the built-in subjectless Aion metatools MCP server."""
 
+AION_RESOURCE_URI_SCHEME = "aion"
+"""URI scheme used for abstract Aion resource references."""
+
 
 class PrincipalSelectorKind(str, Enum):
     """Supported effective-principal selector kinds."""
 
-    AGENT_ENVIRONMENT = "agent-environment"
-    AGENT_IDENTITY = "agent-identity"
-    AGENT_AT_NAME = "agent-at-name"
+    AGENT_ENVIRONMENT = "agent/environment"
+    AGENT_IDENTITY = "agent/identity"
+    AGENT_AT_NAME = "agent/identity/name"
 
 
 class CapabilitySubjectKind(str, Enum):
@@ -144,7 +147,7 @@ class PrincipalSelector:
         """Parse an ``Aion-Principal-Selector`` header value.
 
         Args:
-            raw: Header value using ``<kind>:<value>`` syntax.
+            raw: Header value using an abstract Aion resource URI.
 
         Returns:
             The parsed principal selector.
@@ -152,23 +155,30 @@ class PrincipalSelector:
         Raises:
             ValueError: If the header value is not valid.
         """
-        kind, separator, value = raw.strip().partition(":")
-        if not separator:
-            raise ValueError(
-                f"{AION_PRINCIPAL_SELECTOR_HEADER} must use "
-                "'<kind>:<value>' syntax"
-            )
+        return cls.from_resource_uri(raw.strip())
 
-        normalized_kind = kind.strip().lower()
-        if normalized_kind == PrincipalSelectorKind.AGENT_ENVIRONMENT.value:
+    @classmethod
+    def from_resource_uri(cls, raw: str) -> Self:
+        """Parse an abstract Aion principal resource URI.
+
+        Args:
+            raw: URI using an ``aion://agent/...`` principal resource shape.
+
+        Returns:
+            The parsed principal selector.
+
+        Raises:
+            ValueError: If the URI is not a valid principal selector.
+        """
+        kind, value = _parse_principal_selector_resource_uri(raw)
+        if kind == PrincipalSelectorKind.AGENT_ENVIRONMENT.value:
             return cls.agent_environment(value)
-        if normalized_kind == PrincipalSelectorKind.AGENT_IDENTITY.value:
+        if kind == PrincipalSelectorKind.AGENT_IDENTITY.value:
             return cls.agent_identity(value)
-        if normalized_kind == PrincipalSelectorKind.AGENT_AT_NAME.value:
+        if kind == PrincipalSelectorKind.AGENT_AT_NAME.value:
             return cls.agent_at_name(value)
         raise ValueError(
-            f"Unknown {AION_PRINCIPAL_SELECTOR_HEADER} selector kind "
-            f"'{normalized_kind}'"
+            f"{AION_PRINCIPAL_SELECTOR_HEADER} cannot select {kind} resources"
         )
 
     @classmethod
@@ -201,9 +211,17 @@ class PrincipalSelector:
         """Return the HTTP header value for this selector.
 
         Returns:
-            A string using the backend-supported ``<kind>:<value>`` format.
+            A canonical abstract Aion resource URI.
         """
-        return f"{self.kind.value}:{self.value}"
+        return _aion_resource_uri(self.kind.value, self.value)
+
+    def __str__(self) -> str:
+        """Return the materialized selector resource URI.
+
+        Returns:
+            A canonical abstract Aion resource URI.
+        """
+        return self.to_header_value()
 
     def to_headers(self) -> dict[str, str]:
         """Return HTTP headers for this principal selector.
@@ -213,18 +231,14 @@ class PrincipalSelector:
         """
         return {AION_PRINCIPAL_SELECTOR_HEADER: self.to_header_value()}
 
-    def to_gql_input(self) -> PrincipalSelectorGQLInput:
-        """Return the generated GraphQL input for this selector.
+    def to_gql_value(self) -> str:
+        """Return the GraphQL value for this selector.
 
         Returns:
-            A ``PrincipalSelectorGQLInput`` selecting exactly one principal.
+            The canonical resource URI accepted by GraphQL principal
+            arguments.
         """
-        PrincipalSelectorGQLInput = _principal_selector_gql_input_type()
-        if self.kind == PrincipalSelectorKind.AGENT_ENVIRONMENT:
-            return PrincipalSelectorGQLInput(agent_environment_id=self.value)
-        if self.kind == PrincipalSelectorKind.AGENT_IDENTITY:
-            return PrincipalSelectorGQLInput(agent_identity_id=self.value)
-        return PrincipalSelectorGQLInput(agent_at_name=self.value)
+        return self.to_header_value()
 
 
 @dataclass(frozen=True)
@@ -678,14 +692,6 @@ def _capability_key(key: CapabilityKey | str | None) -> CapabilityKey:
     return CapabilityKey.concrete(key)
 
 
-def _principal_selector_gql_input_type() -> type[PrincipalSelectorGQLInput]:
-    from aion.api.gql.generated.graphql_client.input_types import (
-        PrincipalSelectorGQLInput,
-    )
-
-    return PrincipalSelectorGQLInput
-
-
 def _capability_subject_gql_input_type() -> type[CapabilitySubjectGQLInput]:
     from aion.api.gql.generated.graphql_client.input_types import (
         CapabilitySubjectGQLInput,
@@ -699,6 +705,60 @@ def _require_value(field_name: str, value: Any) -> str:
     if not normalized:
         raise ValueError(f"{field_name} must not be empty")
     return normalized
+
+
+def _aion_resource_uri(kind: str, value: str) -> str:
+    return f"{AION_RESOURCE_URI_SCHEME}://{kind}/{quote(value, safe='')}"
+
+
+def _parse_principal_selector_resource_uri(raw: str) -> tuple[str, str]:
+    parsed = urlsplit(raw.strip())
+    if (
+        parsed.scheme != AION_RESOURCE_URI_SCHEME
+        or not parsed.netloc
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError(
+            f"{AION_PRINCIPAL_SELECTOR_HEADER} must use "
+            "an abstract Aion resource URI"
+        )
+
+    segments = [segment for segment in parsed.path.split("/") if segment]
+    if parsed.netloc != "agent":
+        raise ValueError(
+            f"{AION_PRINCIPAL_SELECTOR_HEADER} cannot select "
+            f"{parsed.netloc} resources"
+        )
+    if len(segments) == 2 and segments[0] == "environment":
+        return (
+            PrincipalSelectorKind.AGENT_ENVIRONMENT.value,
+            _require_value("resource_uri", unquote(segments[1])),
+        )
+    if len(segments) == 2 and segments[0] == "identity":
+        if segments[1] == "name":
+            raise ValueError(
+                f"{AION_PRINCIPAL_SELECTOR_HEADER} resource URI must include "
+                "an agent identity name"
+            )
+        return (
+            PrincipalSelectorKind.AGENT_IDENTITY.value,
+            _require_value("resource_uri", unquote(segments[1])),
+        )
+    if (
+        len(segments) == 3
+        and segments[0] == "identity"
+        and segments[1] == "name"
+    ):
+        return (
+            PrincipalSelectorKind.AGENT_AT_NAME.value,
+            _require_value("resource_uri", unquote(segments[2])),
+        )
+
+    raise ValueError(
+        f"{AION_PRINCIPAL_SELECTOR_HEADER} must use a supported "
+        "agent principal resource URI"
+    )
 
 
 def _normalize_at_name(value: str) -> str:
@@ -722,6 +782,7 @@ def _name_fragment(value: str) -> str:
 __all__ = [
     "AION_METATOOLS_MCP_CAPABILITY_KEY",
     "AION_PRINCIPAL_SELECTOR_HEADER",
+    "AION_RESOURCE_URI_SCHEME",
     "CapabilityKey",
     "CapabilityKeySelector",
     "CapabilityKind",

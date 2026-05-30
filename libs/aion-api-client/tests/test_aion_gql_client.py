@@ -21,7 +21,6 @@ from aion.api.gql.client import AionGqlClient
 from aion.api.gql.generated.graphql_client import (
     A2AJsonRpcRequestGQLInput,
     CapabilitySubjectGQLInput,
-    PrincipalSelectorGQLInput,
 )
 from aion.api.http import aion_jwt_manager
 
@@ -249,7 +248,7 @@ async def test_a2a_stream_accepts_typed_target_and_principal(dummy_jwt_manager) 
     assert chunks == ["chunk"]
     call = generated_client.calls[0]
     assert call["target"].agent_environment_id == "env-id"
-    assert call["principal"].agent_environment_id == "env-id"
+    assert call["principal"] == "aion://agent/environment/env-id"
 
 
 @pytest.mark.anyio("asyncio")
@@ -283,7 +282,7 @@ async def test_a2a_stream_accepts_generated_graphql_transport_inputs(
     client._is_initialized = True
 
     target = CapabilitySubjectGQLInput(agent_environment_id="env-id")
-    principal = PrincipalSelectorGQLInput(agent_environment_id="env-id")
+    principal = "aion://agent/environment/env-id"
     chunks = [
         chunk
         async for chunk in client.a2a_stream(
@@ -296,4 +295,4 @@ async def test_a2a_stream_accepts_generated_graphql_transport_inputs(
     assert chunks == ["chunk"]
     call = generated_client.calls[0]
     assert call["target"] is target
-    assert call["principal"] is principal
+    assert call["principal"] == principal

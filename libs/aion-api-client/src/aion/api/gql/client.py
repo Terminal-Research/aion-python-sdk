@@ -11,7 +11,6 @@ from .generated.graphql_client import (
     ChatCompletionRequestInput,
     A2AJsonRpcRequestGQLInput,
     CapabilitySubjectGQLInput,
-    PrincipalSelectorGQLInput,
     A2AStream,
     VersionLogs,
 )
@@ -194,7 +193,7 @@ class AionGqlClient:
         model: str,
         messages: List[MessageInput],
         stream: bool,
-        principal: PrincipalSelector | PrincipalSelectorGQLInput | None = None,
+        principal: PrincipalSelector | str | None = None,
         **kwargs: Any
     ) -> AsyncIterator[ChatCompletionStream]:
         """Stream chat completion responses from the Aion API.
@@ -215,7 +214,7 @@ class AionGqlClient:
             request=ChatCompletionRequestInput(
                 model=model, messages=messages, stream=stream
             ),
-            principal=_to_principal_selector_gql_input(principal),
+            principal=_to_principal_selector_gql_value(principal),
             **kwargs
         ):
             yield chunk
@@ -224,7 +223,7 @@ class AionGqlClient:
         self,
         request: A2AJsonRpcRequestGQLInput,
         distribution_id: str | None = None,
-        principal: PrincipalSelector | PrincipalSelectorGQLInput | None = None,
+        principal: PrincipalSelector | str | None = None,
         *,
         target: CapabilitySubject | CapabilitySubjectGQLInput | None = None,
         **kwargs: Any
@@ -249,7 +248,7 @@ class AionGqlClient:
         async for chunk in self.client.a_2_a_stream(
             request=request,
             target=gql_target,
-            principal=_to_principal_selector_gql_input(principal),
+            principal=_to_principal_selector_gql_value(principal),
             **kwargs
         ):
             yield chunk
@@ -344,16 +343,16 @@ def _resolve_a2a_target(
     return _to_capability_subject_gql_input(target)
 
 
-def _to_principal_selector_gql_input(
-    principal: PrincipalSelector | PrincipalSelectorGQLInput | None,
-) -> PrincipalSelectorGQLInput | None:
-    """Return the generated GraphQL input for a principal selector."""
+def _to_principal_selector_gql_value(
+    principal: PrincipalSelector | str | None,
+) -> str | None:
+    """Return the generated GraphQL value for a principal selector."""
     if principal is None:
         return None
-    if isinstance(principal, PrincipalSelectorGQLInput):
-        return principal
     if isinstance(principal, PrincipalSelector):
-        return principal.to_gql_input()
+        return principal.to_gql_value()
+    if isinstance(principal, str):
+        return PrincipalSelector.from_resource_uri(principal).to_gql_value()
     raise TypeError(f"unsupported principal selector type: {type(principal)!r}")
 
 

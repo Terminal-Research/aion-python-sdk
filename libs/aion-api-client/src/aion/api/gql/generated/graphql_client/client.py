@@ -26,7 +26,6 @@ from .input_types import (
     A2AJsonRpcRequestGQLInput,
     CapabilitySubjectGQLInput,
     ChatCompletionRequestInput,
-    PrincipalSelectorGQLInput,
 )
 from .operations import A_2_A_STREAM_GQL, CHAT_COMPLETION_STREAM_GQL, VERSION_LOGS_GQL
 from .version_logs import VersionLogs
@@ -40,7 +39,7 @@ class GqlClient(AsyncBaseClientOpenTelemetry):
     async def chat_completion_stream(
         self,
         request: ChatCompletionRequestInput,
-        principal: Union[Optional[PrincipalSelectorGQLInput], UnsetType] = UNSET,
+        principal: Union[Optional[str], UnsetType] = UNSET,
         **kwargs: Any,
     ) -> AsyncIterator[ChatCompletionStream]:
         variables: dict[str, object] = {"request": request, "principal": principal}
@@ -56,7 +55,7 @@ class GqlClient(AsyncBaseClientOpenTelemetry):
         self,
         request: A2AJsonRpcRequestGQLInput,
         target: CapabilitySubjectGQLInput,
-        principal: Union[Optional[PrincipalSelectorGQLInput], UnsetType] = UNSET,
+        principal: Union[Optional[str], UnsetType] = UNSET,
         **kwargs: Any,
     ) -> AsyncIterator[A2AStream]:
         variables: dict[str, object] = {

@@ -67,18 +67,5 @@ class MessageInput(BaseModel):
     content: str
 
 
-class PrincipalSelectorGQLInput(BaseModel):
-    """Select exactly one effective principal. Supplying zero or multiple selectors causes the request to be rejected."""
-
-    agent_environment_id: Optional[str] = Field(
-        alias="agentEnvironmentId", default=None
-    )
-    "Agent environment identifier. This acts as the environment itself and is limited to that environment's own capabilities."
-    agent_identity_id: Optional[str] = Field(alias="agentIdentityId", default=None)
-    "Agent identity identifier to act as for this request."
-    agent_at_name: Optional[str] = Field(alias="agentAtName", default=None)
-    "Agent @name handle to act as for this request. Values may be provided with or without the leading @ symbol."
-
-
 A2AServiceParametersGQLInput.model_rebuild()
 ChatCompletionRequestInput.model_rebuild()

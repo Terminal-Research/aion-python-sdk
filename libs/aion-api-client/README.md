@@ -86,8 +86,11 @@ runtime_mcp_reference = RuntimeCapabilityReference.primary_mcp(
 )
 ```
 
+Principal selectors serialize as abstract Aion resource URIs, such as
+`aion://agent/environment/{id}`.
+
 The GraphQL client accepts these SDK model objects at its boundary and converts
-them to generated GraphQL transport inputs before sending requests.
+them to their canonical resource URI strings before sending requests.
 
 ## Development
 

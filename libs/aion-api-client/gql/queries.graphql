@@ -1,6 +1,6 @@
 subscription ChatCompletionStream(
   $request: ChatCompletionRequestInput!
-  $principal: PrincipalSelectorGQLInput
+  $principal: String
 ) {
   chatCompletionStream(request: $request, principal: $principal) {
     __typename
@@ -28,7 +28,7 @@ subscription ChatCompletionStream(
 subscription A2AStream(
   $request: A2AJsonRpcRequestGQLInput!
   $target: CapabilitySubjectGQLInput!
-  $principal: PrincipalSelectorGQLInput
+  $principal: String
 ) {
   a2aRpc(request: $request, target: $target, principal: $principal) {
     __typename

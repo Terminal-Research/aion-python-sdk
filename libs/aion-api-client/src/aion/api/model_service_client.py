@@ -120,8 +120,8 @@ def aion_principal_selector() -> str | None:
     The returned value is used as the ``Aion-Principal-Selector`` header.
     Expected forms:
 
-    - Agent environment selector: ``agent-environment:<agent-environment-id>``
-    - Agent identity selector: ``agent-identity:<agent-identity-id>``
+    - Agent environment selector: ``aion://agent/environment/<id>``
+    - Agent identity selector: ``aion://agent/identity/<id>``
     """
     context = get_aion_runtime_context()
     if context is None:
