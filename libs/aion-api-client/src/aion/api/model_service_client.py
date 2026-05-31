@@ -8,7 +8,11 @@ from dataclasses import dataclass, field
 from typing import Any, Mapping
 
 import httpx
-from aion.api.control_plane import AION_PRINCIPAL_SELECTOR_HEADER
+from aion.api.control_plane import (
+    AION_PRINCIPAL_SELECTOR_HEADER,
+    PrincipalSelector,
+    PrincipalSelectorKind,
+)
 from aion.api.exceptions import AionAuthenticationError
 from aion.api.http.jwt_manager import (
     AionJWTManager,
@@ -138,12 +142,21 @@ def aion_model_request_headers(
     """Return per-request headers for an Aion model-service call."""
     headers = dict(existing or {})
     if AION_PRINCIPAL_SELECTOR_HEADER in headers:
+        selector = aion_model_principal_selector_value(
+            headers[AION_PRINCIPAL_SELECTOR_HEADER]
+        )
+        if selector:
+            headers[AION_PRINCIPAL_SELECTOR_HEADER] = selector
+        else:
+            headers.pop(AION_PRINCIPAL_SELECTOR_HEADER, None)
         return headers
 
     provider = principal_selector_provider or aion_principal_selector
     selector = provider()
     if selector:
-        headers[AION_PRINCIPAL_SELECTOR_HEADER] = selector
+        model_selector = aion_model_principal_selector_value(selector)
+        if model_selector:
+            headers[AION_PRINCIPAL_SELECTOR_HEADER] = model_selector
     elif warn_on_missing:
         logger.warning(
             "Aion model service was called without principal attribution; "
@@ -153,9 +166,55 @@ def aion_model_request_headers(
     return headers
 
 
+def aion_model_principal_selector_value(selector: str) -> str | None:
+    """Return a model-service-safe principal selector value.
+
+    Model invocation may run as the authenticated user or as an agent identity.
+    The Python SDK intentionally does not send agent-environment selectors to
+    the model service. When a runtime context falls back to an environment
+    selector, the request proceeds without the selector so the JWT can still be
+    evaluated by the server.
+
+    Args:
+        selector: Candidate Aion principal selector URI.
+
+    Returns:
+        A canonical selector URI when it is valid for model-service requests,
+        otherwise ``None``.
+    """
+    try:
+        principal = PrincipalSelector.from_header_value(selector)
+    except ValueError as exc:
+        logger.error(
+            "Aion model service principal selector %r is invalid and will not "
+            "be sent: %s",
+            selector,
+            exc,
+        )
+        return None
+
+    if principal.kind == PrincipalSelectorKind.AGENT_ENVIRONMENT:
+        logger.error(
+            "Aion model service resolved agent environment principal selector "
+            "%r. Model-service requests require user credentials or an agent "
+            "identity selector; the environment selector will not be sent.",
+            selector,
+        )
+        return None
+
+    return principal.to_header_value()
+
+
 def aion_model_request_hook(request: httpx.Request) -> None:
     """Inject the current principal selector into an outgoing model request."""
     if AION_PRINCIPAL_SELECTOR_HEADER in request.headers:
+        selector = aion_model_principal_selector_value(
+            request.headers[AION_PRINCIPAL_SELECTOR_HEADER]
+        )
+        if selector:
+            request.headers[AION_PRINCIPAL_SELECTOR_HEADER] = selector
+        else:
+            del request.headers[AION_PRINCIPAL_SELECTOR_HEADER]
         return
     request.headers.update(aion_model_request_headers(request.headers))
 
@@ -218,6 +277,7 @@ __all__ = [
     "aion_jwt_api_key",
     "aion_model_api_key",
     "aion_model_api_key_provider",
+    "aion_model_principal_selector_value",
     "aion_model_request_hook",
     "aion_model_request_headers",
     "aion_model_base_url",

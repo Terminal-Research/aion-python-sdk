@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import sys
 
@@ -63,7 +64,7 @@ def test_chat_completion_request_keeps_principal_separate() -> None:
 @pytest.mark.anyio("asyncio")
 async def test_chat_completion_stream_calls_gql(monkeypatch) -> None:
     """Test that chat_completion_stream properly calls the underlying GraphQL client."""
-    expected_principal = "aion://agent/environment/agent-env-1"
+    expected_principal = "aion://agent/identity/agent-identity-1"
 
     async def mock_chat_completion_stream(
         *, request: ChatCompletionRequestInput, principal=None
@@ -89,6 +90,43 @@ async def test_chat_completion_stream_calls_gql(monkeypatch) -> None:
         results.append(chunk)
 
     assert results == [{"done": True}]
+
+
+@pytest.mark.anyio("asyncio")
+async def test_chat_completion_stream_omits_environment_principal(
+    monkeypatch, caplog
+) -> None:
+    """Environment selectors should not be sent to model-service calls."""
+    caplog.set_level(logging.ERROR, logger="aion.api.model_service_client")
+
+    async def mock_chat_completion_stream(
+        *, request: ChatCompletionRequestInput, principal=None
+    ):
+        assert request == ChatCompletionRequestInput(
+            model="test-model", messages=[], stream=True
+        )
+        assert principal is None
+        yield {"done": True}
+
+    from types import SimpleNamespace
+
+    client = AionGqlClient()
+    mock_client = SimpleNamespace()
+    mock_client.chat_completion_stream = mock_chat_completion_stream
+    client.client = mock_client
+    client._is_initialized = True
+
+    results = []
+    async for chunk in client.chat_completion_stream(
+        "test-model",
+        [],
+        True,
+        principal="aion://agent/environment/agent-env-1",
+    ):
+        results.append(chunk)
+
+    assert results == [{"done": True}]
+    assert "environment selector will not be sent" in caplog.text
 
 
 @pytest.mark.anyio("asyncio")

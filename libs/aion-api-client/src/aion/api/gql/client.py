@@ -5,6 +5,7 @@ from aion.core.logging import get_logger
 
 from aion.api.control_plane import CapabilitySubject, PrincipalSelector
 from aion.api.http import AionJWTManager
+from aion.api.model_service_client import aion_model_principal_selector_value
 from .generated.graphql_client import (
     MessageInput,
     ChatCompletionStream,
@@ -214,7 +215,7 @@ class AionGqlClient:
             request=ChatCompletionRequestInput(
                 model=model, messages=messages, stream=stream
             ),
-            principal=_to_principal_selector_gql_value(principal),
+            principal=_to_model_principal_selector_gql_value(principal),
             **kwargs
         ):
             yield chunk
@@ -354,6 +355,16 @@ def _to_principal_selector_gql_value(
     if isinstance(principal, str):
         return PrincipalSelector.from_resource_uri(principal).to_gql_value()
     raise TypeError(f"unsupported principal selector type: {type(principal)!r}")
+
+
+def _to_model_principal_selector_gql_value(
+    principal: PrincipalSelector | str | None,
+) -> str | None:
+    """Return a model-service-safe GraphQL principal selector."""
+    value = _to_principal_selector_gql_value(principal)
+    if value is None:
+        return None
+    return aion_model_principal_selector_value(value)
 
 
 def _to_capability_subject_gql_input(

@@ -169,14 +169,25 @@ def test_langchain_kwargs_add_request_scoped_clients(monkeypatch):
 
 def test_model_request_headers_adds_principal_from_provider():
     headers = model_service_client.aion_model_request_headers(
-        principal_selector_provider=lambda: "aion://agent/environment/env-id"
+        principal_selector_provider=lambda: "aion://agent/identity/identity-id"
     )
 
     assert headers == {
         model_service_client.AION_PRINCIPAL_SELECTOR_HEADER: (
-            "aion://agent/environment/env-id"
+            "aion://agent/identity/identity-id"
         )
     }
+
+
+def test_model_request_headers_omits_environment_principal(caplog):
+    caplog.set_level(logging.ERROR, logger="aion.api.model_service_client")
+
+    headers = model_service_client.aion_model_request_headers(
+        principal_selector_provider=lambda: "aion://agent/environment/env-id"
+    )
+
+    assert model_service_client.AION_PRINCIPAL_SELECTOR_HEADER not in headers
+    assert "environment selector will not be sent" in caplog.text
 
 
 def test_model_request_headers_does_not_mutate_existing_headers():
@@ -200,7 +211,7 @@ def test_model_request_headers_preserves_existing_principal(caplog):
     caplog.set_level(logging.WARNING, logger="aion.api.model_service_client")
     existing = {
         model_service_client.AION_PRINCIPAL_SELECTOR_HEADER: (
-            "aion://agent/environment/env-id"
+            "aion://agent/identity/identity-id"
         )
     }
 
@@ -208,16 +219,35 @@ def test_model_request_headers_preserves_existing_principal(caplog):
 
     assert headers == {
         model_service_client.AION_PRINCIPAL_SELECTOR_HEADER: (
-            "aion://agent/environment/env-id"
+            "aion://agent/identity/identity-id"
         )
     }
     assert "without principal attribution" not in caplog.text
 
 
+def test_model_request_headers_omits_existing_environment_principal(caplog):
+    caplog.set_level(logging.ERROR, logger="aion.api.model_service_client")
+    existing = {
+        model_service_client.AION_PRINCIPAL_SELECTOR_HEADER: (
+            "aion://agent/environment/env-id"
+        )
+    }
+
+    headers = model_service_client.aion_model_request_headers(existing)
+
+    assert existing == {
+        model_service_client.AION_PRINCIPAL_SELECTOR_HEADER: (
+            "aion://agent/environment/env-id"
+        )
+    }
+    assert model_service_client.AION_PRINCIPAL_SELECTOR_HEADER not in headers
+    assert "environment selector will not be sent" in caplog.text
+
+
 def test_model_request_hook_resolves_principal_at_request_time(monkeypatch):
     selectors = iter([
-        "aion://agent/environment/first-env",
-        "aion://agent/environment/second-env",
+        "aion://agent/identity/first-identity",
+        "aion://agent/identity/second-identity",
     ])
     monkeypatch.setattr(
         model_service_client, "aion_principal_selector", lambda: next(selectors)
@@ -234,11 +264,11 @@ def test_model_request_hook_resolves_principal_at_request_time(monkeypatch):
 
     assert (
         first_request.headers[model_service_client.AION_PRINCIPAL_SELECTOR_HEADER]
-        == "aion://agent/environment/first-env"
+        == "aion://agent/identity/first-identity"
     )
     assert (
         second_request.headers[model_service_client.AION_PRINCIPAL_SELECTOR_HEADER]
-        == "aion://agent/environment/second-env"
+        == "aion://agent/identity/second-identity"
     )
 
 
@@ -253,7 +283,7 @@ def test_model_request_hook_preserves_explicit_principal(monkeypatch):
         "https://api.example.test/v1/chat/completions",
         headers={
             model_service_client.AION_PRINCIPAL_SELECTOR_HEADER: (
-                "aion://agent/environment/explicit-env"
+                "aion://agent/identity/explicit-identity"
             )
         },
     )
@@ -262,8 +292,26 @@ def test_model_request_hook_preserves_explicit_principal(monkeypatch):
 
     assert (
         request.headers[model_service_client.AION_PRINCIPAL_SELECTOR_HEADER]
-        == "aion://agent/environment/explicit-env"
+        == "aion://agent/identity/explicit-identity"
     )
+
+
+def test_model_request_hook_omits_explicit_environment_principal(caplog):
+    caplog.set_level(logging.ERROR, logger="aion.api.model_service_client")
+    request = httpx.Request(
+        "POST",
+        "https://api.example.test/v1/chat/completions",
+        headers={
+            model_service_client.AION_PRINCIPAL_SELECTOR_HEADER: (
+                "aion://agent/environment/explicit-env"
+            )
+        },
+    )
+
+    model_service_client.aion_model_request_hook(request)
+
+    assert model_service_client.AION_PRINCIPAL_SELECTOR_HEADER not in request.headers
+    assert "environment selector will not be sent" in caplog.text
 
 
 def test_model_http_client_refreshes_api_key_per_request(monkeypatch):
@@ -271,7 +319,7 @@ def test_model_http_client_refreshes_api_key_per_request(monkeypatch):
     monkeypatch.setattr(
         model_service_client,
         "aion_principal_selector",
-        lambda: "aion://agent/environment/fresh-env",
+        lambda: "aion://agent/identity/fresh-identity",
     )
     client = model_service_client._aion_model_http_client(
         lambda: next(tokens)
