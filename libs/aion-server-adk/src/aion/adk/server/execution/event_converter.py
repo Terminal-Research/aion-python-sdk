@@ -11,11 +11,13 @@ from a2a.types import (
     TaskStatus,
     TaskStatusUpdateEvent,
 )
-from aion.adk.authoring.output import AionOutput
+from aion.adk.authoring.output import AionOutput, ReactionOutput
+from aion.core.constants import MESSAGING_EXTENSION_URI_V1, REACTION_ACTION_PAYLOAD_SCHEMA_V1
 from aion.core.logging import get_logger
 from aion.core.types import ArtifactId, ArtifactName
 from aion.core.utils.card import build_card_artifact
 from google.adk.events import Event
+from google.protobuf import json_format, struct_pb2
 
 from aion.adk.authoring.invocation import AionInvocationContext
 from aion.adk.server.transformers import A2ATransformer
@@ -107,6 +109,31 @@ class ADKToA2AEventConverter:
             last_chunk=True,
         )
 
+    @staticmethod
+    def _build_extension_part(data: dict, schema_uri: str) -> Part:
+        proto_value = struct_pb2.Value()
+        json_format.ParseDict(data, proto_value)
+        return Part(
+            data=proto_value,
+            metadata={MESSAGING_EXTENSION_URI_V1: {"schema": schema_uri}},
+        )
+
+    def _build_reaction_event(self, reaction: ReactionOutput) -> AgentEvent:
+        proto_value = struct_pb2.Value()
+        json_format.ParseDict(reaction.model_dump(by_alias=True, exclude_none=True), proto_value)
+        return TaskArtifactUpdateEvent(
+            task_id=self._task_id,
+            context_id=self._context_id,
+            metadata={MESSAGING_EXTENSION_URI_V1: {"schema": REACTION_ACTION_PAYLOAD_SCHEMA_V1}},
+            artifact=Artifact(
+                artifact_id=ArtifactId.REACTION.value,
+                name=ArtifactName.REACTION.value,
+                parts=[Part(data=proto_value)],
+            ),
+            append=False,
+            last_chunk=True,
+        )
+
     async def _convert_non_partial(self, adk_event: Event) -> list[AgentEvent]:
         """Convert a complete (non-partial) ADK event to A2A events.
 
@@ -124,6 +151,9 @@ class ADKToA2AEventConverter:
         results: list[AgentEvent] = []
 
         output = AionOutput.from_custom_metadata(adk_event.custom_metadata)
+
+        if output and output.reaction is not None:
+            return [self._build_reaction_event(output.reaction)]
 
         if output and output.card is not None:
             card_jsx = adk_event.content and adk_event.content.parts[0].text

@@ -222,26 +222,23 @@ class LangGraphA2AConverter:
     def _convert_reaction(self, event: ReactionCustomEvent) -> list[A2AAgentEvent]:
         """Convert a ReactionCustomEvent to an A2A event.
 
-        Produces a TaskStatusUpdateEvent whose message contains a single
-        DataPart carrying the ReactionActionPayload so the distribution
-        can add or remove the reaction on the provider message.
+        Produces a TaskArtifactUpdateEvent with a reserved artifact_id so the
+        distribution receives the ReactionActionPayload without it being saved
+        to task history or artifacts.
         """
-        data_part = self._build_extension_part(
-            event.payload.model_dump(by_alias=True, exclude_none=True),
-            REACTION_ACTION_PAYLOAD_SCHEMA_V1,
-        )
-        msg = Message(
-            context_id=self._context_id,
-            task_id=self._task_id,
-            message_id=str(uuid.uuid4()),
-            role=Role.ROLE_AGENT,
-            parts=[data_part],
-            extensions=[MESSAGING_EXTENSION_URI_V1],
-        )
-        return [TaskStatusUpdateEvent(
+        proto_value = struct_pb2.Value()
+        json_format.ParseDict(event.payload.model_dump(by_alias=True, exclude_none=True), proto_value)
+        return [TaskArtifactUpdateEvent(
             task_id=self._task_id,
             context_id=self._context_id,
-            status=TaskStatus(state=TaskState.TASK_STATE_WORKING, message=msg),
+            metadata={MESSAGING_EXTENSION_URI_V1: {"schema": REACTION_ACTION_PAYLOAD_SCHEMA_V1}},
+            artifact=Artifact(
+                artifact_id=ArtifactId.REACTION.value,
+                name=ArtifactName.REACTION.value,
+                parts=[Part(data=proto_value)],
+            ),
+            append=False,
+            last_chunk=True,
         )]
 
     def _convert_task_update(self, event: TaskUpdateCustomEvent) -> list[A2AAgentEvent]:
