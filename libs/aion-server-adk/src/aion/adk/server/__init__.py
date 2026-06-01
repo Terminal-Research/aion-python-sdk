@@ -14,7 +14,7 @@ from .execution import (
 from .session import SessionServiceFactory
 from .artifacts import ArtifactServiceFactory
 from .state import StateConverter
-from .agents import AionInvocationContext
+from aion.adk.authoring.invocation import AionInvocationContext
 
 __all__ = [
     "ADKPlugin",

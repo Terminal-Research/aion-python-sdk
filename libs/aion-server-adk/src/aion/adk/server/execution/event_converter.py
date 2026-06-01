@@ -17,7 +17,7 @@ from aion.core.types import ArtifactId, ArtifactName
 from aion.core.utils.card import build_card_artifact
 from google.adk.events import Event
 
-from aion.adk.server.agents.invocation_context import AionInvocationContext
+from aion.adk.authoring.invocation import AionInvocationContext
 from aion.adk.server.transformers import A2ATransformer
 
 AgentEvent = TaskStatusUpdateEvent | TaskArtifactUpdateEvent

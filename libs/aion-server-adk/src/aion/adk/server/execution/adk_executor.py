@@ -15,7 +15,7 @@ from google.adk.artifacts import BaseArtifactService
 from google.adk.events import Event
 from google.adk.sessions import Session, BaseSessionService
 
-from aion.adk.server.agents.invocation_context import AionInvocationContextFactory
+from aion.adk.server.invocation import AionInvocationContextFactory
 from aion.adk.server.artifacts import ArtifactServiceFactory
 from aion.adk.server.constants import DEFAULT_USER_ID
 from aion.adk.server.session import SessionServiceFactory
