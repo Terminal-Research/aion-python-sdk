@@ -1,6 +1,5 @@
 from unittest.mock import MagicMock, Mock, patch
 from langchain_core.messages import AIMessage, AIMessageChunk
-from a2a.types import Artifact
 
 from aion.langgraph.authoring.invocation.thread import Thread
 from aion.langgraph.authoring.invocation.message import Message
@@ -112,17 +111,6 @@ class TestThreadFromContext:
         assert isinstance(thread.message, Message)
 
 
-class TestDetectJsxCard:
-    def test_detects_card_markup(self):
-        # string starting with <Card is recognized as JSX card markup
-        assert Thread._detect_jsx_card_markup("<Card>hello</Card>") is True
-
-    def test_rejects_non_card_content(self):
-        # plain text and other tags are not treated as cards
-        assert Thread._detect_jsx_card_markup("Hello world") is False
-        assert Thread._detect_jsx_card_markup("<div>not a card</div>") is False
-        assert Thread._detect_jsx_card_markup("") is False
-
 
 class TestThreadPost:
     async def test_post_string_emits_aimessage(self):
@@ -138,8 +126,9 @@ class TestThreadPost:
         assert event.message.content == "Hello world"
         assert isinstance(result, AIMessage)
 
-    async def test_post_jsx_card_emits_artifact(self):
-        # JSX card string is converted to an Artifact and emitted
+    async def test_post_jsx_card_emits_message_event(self):
+        # JSX card string is emitted as a regular MessageCustomEvent; card detection
+        # happens in the server-side event converter
         writer = MagicMock()
         thread = make_thread()
         with patch(_GET_STREAM_WRITER, return_value=writer):
@@ -147,8 +136,9 @@ class TestThreadPost:
 
         writer.assert_called_once()
         event = writer.call_args[0][0]
-        assert isinstance(event, ArtifactCustomEvent)
-        assert isinstance(result, Artifact)
+        assert isinstance(event, MessageCustomEvent)
+        assert event.message.content == "<Card><Title>Hello</Title></Card>"
+        assert isinstance(result, AIMessage)
 
     async def test_post_aimessage_emits_message_event(self):
         # pre-built AIMessage is emitted as-is without modification
@@ -255,15 +245,15 @@ class TestThreadPost:
         assert result.content == "valid text"
 
     async def test_post_jsx_card_with_metadata(self):
-        # metadata is merged into card artifact metadata when provided
+        # metadata is passed through in the AIMessage; card detection is server-side
         writer = MagicMock()
         thread = make_thread()
         with patch(_GET_STREAM_WRITER, return_value=writer):
             result = await thread.post("<Card/>", metadata={"custom": "value"})
 
         event = writer.call_args[0][0]
-        assert isinstance(event, ArtifactCustomEvent)
-        assert isinstance(result, Artifact)
+        assert isinstance(event, MessageCustomEvent)
+        assert isinstance(result, AIMessage)
 
     async def test_post_unsupported_type_returns_none(self):
         # unsupported content type logs a warning and returns None without writing

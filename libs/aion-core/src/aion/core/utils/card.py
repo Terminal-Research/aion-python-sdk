@@ -8,10 +8,9 @@ See: https://docs.aion.to/a2a/extensions/aion/distribution/cards/1.0.0
 """
 
 import re
-from a2a.types import Artifact, Part
+from a2a.types import Part
 from aion.core.constants import CARDS_EXTENSION_URI_V1, CARDS_MEDIA_TYPE, CARDS_PAYLOAD_SCHEMA_V1
 from typing import Any
-from uuid import uuid4
 
 # Precompiled regex patterns (much faster than compiling on each call)
 _CARD_OPEN_PATTERN = re.compile(r"<Card\b")
@@ -81,30 +80,27 @@ def extract_card_name(card_jsx: str) -> str | None:
     return None
 
 
-def build_card_artifact(card_jsx: str, name: str | None = None, metadata: dict | None = None) -> Artifact:
-    """Build an A2A Artifact from a JSX Card document.
+def build_card_part(card_jsx: str, metadata: dict | None = None) -> Part:
+    """Build an A2A Part from a JSX Card document.
+
+    The part uses the text field so the JSX document remains human-readable
+    when serialized to JSON (raw would produce base64).
 
     Args:
         card_jsx: The JSX Card document string.
-        name: Optional artifact name. Defaults to "card".
-        metadata: Optional extra metadata to merge into the card part metadata.
+        metadata: Optional extra metadata to merge into the part metadata.
 
     Returns:
-        An A2A Artifact with the card document as a file part.
+        An A2A Part carrying the card document as a text/file part.
     """
     card_metadata = {CARDS_EXTENSION_URI_V1: {"schema": CARDS_PAYLOAD_SCHEMA_V1}}
     if metadata:
         card_metadata.update(metadata)
 
-    card_part = Part(
+    card_name = (extract_card_name(card_jsx) or "card").strip().lower().replace(" ", "-")
+    return Part(
         text=card_jsx,
+        filename=f"{card_name}.card.jsx",
         media_type=CARDS_MEDIA_TYPE,
         metadata=card_metadata,
-    )
-
-    card_name = name or extract_card_name(card_jsx) or "Card"
-    return Artifact(
-        artifact_id=str(uuid4()),
-        name=card_name,
-        parts=[card_part],
     )

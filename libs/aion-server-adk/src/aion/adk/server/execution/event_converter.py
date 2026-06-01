@@ -12,10 +12,10 @@ from a2a.types import (
     TaskStatusUpdateEvent,
 )
 from aion.adk.authoring.output import AionOutput, ReactionOutput
-from aion.core.constants import MESSAGING_EXTENSION_URI_V1, REACTION_ACTION_PAYLOAD_SCHEMA_V1
+from aion.core.constants import CARDS_EXTENSION_URI_V1, MESSAGING_EXTENSION_URI_V1, REACTION_ACTION_PAYLOAD_SCHEMA_V1
 from aion.core.logging import get_logger
 from aion.core.types import ArtifactId, ArtifactName
-from aion.core.utils.card import build_card_artifact
+from aion.core.utils.card import build_card_part
 from google.adk.events import Event
 from google.protobuf import json_format, struct_pb2
 
@@ -158,13 +158,18 @@ class ADKToA2AEventConverter:
         if output and output.card is not None:
             card_jsx = adk_event.content and adk_event.content.parts[0].text
             if card_jsx:
-                card_artifact = build_card_artifact(card_jsx)
-                results.append(TaskArtifactUpdateEvent(
+                msg = Message(
+                    context_id=self._context_id,
+                    task_id=self._task_id,
+                    message_id=str(uuid.uuid4()),
+                    role=Role.ROLE_AGENT,
+                    parts=[build_card_part(card_jsx)],
+                    extensions=[CARDS_EXTENSION_URI_V1],
+                )
+                results.append(TaskStatusUpdateEvent(
                     task_id=self._task_id,
                     context_id=self._context_id,
-                    artifact=card_artifact,
-                    append=False,
-                    last_chunk=True,
+                    status=TaskStatus(state=TaskState.TASK_STATE_WORKING, message=msg),
                 ))
             return results
 

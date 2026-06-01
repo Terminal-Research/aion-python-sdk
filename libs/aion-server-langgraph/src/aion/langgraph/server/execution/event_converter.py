@@ -15,11 +15,13 @@ from a2a.types import (
 )
 from aion.server.agent.adapters import InterruptInfo
 from aion.core.constants import (
+    CARDS_EXTENSION_URI_V1,
     MESSAGE_ACTION_PAYLOAD_SCHEMA_V1,
     MESSAGING_EXTENSION_URI_V1,
     REACTION_ACTION_PAYLOAD_SCHEMA_V1,
     STREAM_DELTA_PAYLOAD_SCHEMA_V1,
 )
+from aion.core.utils.card import build_card_part, is_jsx_card
 from aion.core.logging import get_logger
 from aion.core.types import ArtifactId, ArtifactName
 from aion.core.types.a2a.extensions.messaging import MessageActionPayload
@@ -121,13 +123,18 @@ class LangGraphA2AConverter:
         TaskStatusUpdateEvent (state=working). Artifacts must be emitted
         explicitly via ArtifactCustomEvent — no automatic promotion of
         FilePart to TaskArtifactUpdateEvent.
+
+        JSX Card content is detected and routed to the card path, which
+        produces a message with a card file part and CardsURI extension.
         """
+        if isinstance(message.content, str) and is_jsx_card(message.content):
+            return self._convert_card_message(message)
+
         a2a_parts = LcToA2AConverter.from_message(message)
         if not a2a_parts:
             return []
 
         role = self._detect_role(message)
-        # Use message.id if set (e.g. from reply), otherwise generate a new one
         message_id = message.id or str(uuid.uuid4())
         msg = Message(
             context_id=self._context_id,
@@ -135,6 +142,22 @@ class LangGraphA2AConverter:
             message_id=message_id,
             role=role,
             parts=a2a_parts,
+        )
+        return [TaskStatusUpdateEvent(
+            task_id=self._task_id,
+            context_id=self._context_id,
+            status=TaskStatus(state=TaskState.TASK_STATE_WORKING, message=msg),
+        )]
+
+    def _convert_card_message(self, message: AIMessage) -> list[A2AAgentEvent]:
+        message_id = message.id or str(uuid.uuid4())
+        msg = Message(
+            context_id=self._context_id,
+            task_id=self._task_id,
+            message_id=message_id,
+            role=Role.ROLE_AGENT,
+            parts=[build_card_part(message.content)],
+            extensions=[CARDS_EXTENSION_URI_V1],
         )
         return [TaskStatusUpdateEvent(
             task_id=self._task_id,

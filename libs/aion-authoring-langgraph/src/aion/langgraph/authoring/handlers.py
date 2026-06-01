@@ -136,7 +136,9 @@ class AionEventRouter:
            ``on_card_action`` matched by event kind.
         2. ``on_event`` when an event is present but its kind has no registered
            specific handler.
-        3. ``on_invoke`` when there is no Aion event.
+        3. ``on_invoke`` when there is no Aion event, or when an event is
+           present but neither a kind-specific handler nor ``on_event`` is
+           registered.
 
     Usage:
         builder = StateGraph(State, context_schema=AionRuntimeContext)
@@ -235,7 +237,7 @@ class AionEventRouter:
         if event is None:
             return self._on_invoke
 
-        return self._kind_map.get(event.kind) or self._on_event
+        return self._kind_map.get(event.kind) or self._on_event or self._on_invoke
 
     async def __call__(self, state: Any, **langgraph_kwargs: Any) -> Any:
         """Invoke the matching event handler as a normal LangGraph node."""
