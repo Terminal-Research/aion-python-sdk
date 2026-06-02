@@ -95,6 +95,7 @@ import {
 import {
 	clearLeadingSlashDraft,
 	filterSlashCommands,
+	formatAgentSourcesList,
 	getLeadingSlashQuery,
 	getRequestModeLabel,
 	getResponseModeLabel,
@@ -984,24 +985,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			return;
 		}
 
-		appendSystem(
-			[
-				"Agent sources",
-				"",
-				...sources.map((source) =>
-					[
-						source.sourceKey,
-						`Type: ${source.type}`,
-						`Description: ${source.description}`,
-						`URL: ${source.url}`,
-						`Status: ${source.status ?? "unchecked"}`,
-						source.lastError && !source.isDefault ? `Last error: ${source.lastError}` : undefined
-					]
-						.filter(Boolean)
-						.join("\n")
-				)
-			].join("\n\n")
-		);
+		appendSystem(formatAgentSourcesList(sources));
 	};
 
 	const runExactSlashCommand = (): boolean => {

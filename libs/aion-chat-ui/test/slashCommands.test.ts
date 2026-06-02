@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 
+import type { AgentSourceRecord } from "../src/lib/agents/model.js";
 import {
 	clearLeadingSlashDraft,
 	filterSlashCommands,
+	formatAgentSourcesList,
 	getLeadingSlashQuery,
 	getRequestModeLabel,
 	getResponseModeLabel
@@ -51,6 +53,46 @@ describe("slashCommands", () => {
 		expect(clearLeadingSlashDraft("/request")).toBe("");
 		expect(clearLeadingSlashDraft("  /request")).toBe("  ");
 		expect(clearLeadingSlashDraft("hello")).toBe("hello");
+	});
+
+	it("formats the sources command output without a spacer after the heading", () => {
+		const sources: AgentSourceRecord[] = [
+			{
+				sourceKey: "aion-registry-development",
+				type: "registry",
+				description: "Aion development registry",
+				url: "http://localhost:8080",
+				enabled: true,
+				isDefault: true,
+				status: "unavailable"
+			},
+			{
+				sourceKey: "default-localhost-8000",
+				type: "manifest",
+				description: "Local Aion SDK server",
+				url: "http://localhost:8000",
+				enabled: true,
+				isDefault: true,
+				status: "available"
+			}
+		];
+
+		expect(formatAgentSourcesList(sources)).toBe(
+			[
+				"Agent sources",
+				"aion-registry-development",
+				"Type: registry",
+				"Description: Aion development registry",
+				"URL: http://localhost:8080",
+				"Status: unavailable",
+				"",
+				"default-localhost-8000",
+				"Type: manifest",
+				"Description: Local Aion SDK server",
+				"URL: http://localhost:8000",
+				"Status: available"
+			].join("\n")
+		);
 	});
 
 	it("renders stable labels for persisted modes", () => {

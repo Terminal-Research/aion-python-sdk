@@ -1,3 +1,5 @@
+import type { AgentSourceRecord } from "./agents/model.js";
+
 export type RequestMode = "send-message" | "streaming-message";
 export type ResponseMode = "message-output" | "a2a-protocol";
 
@@ -112,6 +114,26 @@ export const SLASH_COMMANDS = [
 ] as const satisfies readonly SlashCommandDefinition<string>[];
 
 export type SlashCommandId = (typeof SLASH_COMMANDS)[number]["id"];
+
+
+function formatAgentSource(source: AgentSourceRecord): string {
+	return [
+		source.sourceKey,
+		`Type: ${source.type}`,
+		`Description: ${source.description}`,
+		`URL: ${source.url}`,
+		`Status: ${source.status ?? "unchecked"}`,
+		source.lastError && !source.isDefault ? `Last error: ${source.lastError}` : undefined
+	]
+		.filter(Boolean)
+		.join("\n");
+}
+
+export function formatAgentSourcesList(
+	sources: readonly AgentSourceRecord[]
+): string {
+	return ["Agent sources", sources.map(formatAgentSource).join("\n\n")].join("\n");
+}
 
 export function getRequestModeLabel(mode: RequestMode): string {
 	return REQUEST_MODE_OPTIONS.find((option) => option.value === mode)?.label ?? "Send message";

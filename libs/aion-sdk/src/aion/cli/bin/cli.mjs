@@ -45891,6 +45891,19 @@ var SLASH_COMMANDS = [
     options: []
   }
 ];
+function formatAgentSource(source) {
+  return [
+    source.sourceKey,
+    `Type: ${source.type}`,
+    `Description: ${source.description}`,
+    `URL: ${source.url}`,
+    `Status: ${source.status ?? "unchecked"}`,
+    source.lastError && !source.isDefault ? `Last error: ${source.lastError}` : void 0
+  ].filter(Boolean).join("\n");
+}
+function formatAgentSourcesList(sources) {
+  return ["Agent sources", sources.map(formatAgentSource).join("\n\n")].join("\n");
+}
 function getRequestModeLabel(mode) {
   return REQUEST_MODE_OPTIONS.find((option) => option.value === mode)?.label ?? "Send message";
 }
@@ -51911,22 +51924,7 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
       appendSystem("No agent sources configured.");
       return;
     }
-    appendSystem(
-      [
-        "Agent sources",
-        "",
-        ...sources.map(
-          (source) => [
-            source.sourceKey,
-            `Type: ${source.type}`,
-            `Description: ${source.description}`,
-            `URL: ${source.url}`,
-            `Status: ${source.status ?? "unchecked"}`,
-            source.lastError && !source.isDefault ? `Last error: ${source.lastError}` : void 0
-          ].filter(Boolean).join("\n")
-        )
-      ].join("\n\n")
-    );
+    appendSystem(formatAgentSourcesList(sources));
   };
   const runExactSlashCommand = () => {
     const command = parseExactSlashCommand(draft);
