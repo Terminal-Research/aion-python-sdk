@@ -301,6 +301,142 @@ describe("discoverAgentSources", () => {
 		expect(appAuthenticatedFetch).not.toHaveBeenCalled();
 	});
 
+
+	it("marks registry sources as login-required when no token is available", async () => {
+		const source = createDefaultRegistryAgentSource("development");
+		const result = await discoverAgentSources([source], vi.fn() as unknown as typeof fetch, {
+			environmentId: "development",
+			controlPlaneAccessTokenProvider: async () => undefined
+		});
+
+		expect(result.agents).toEqual([]);
+		expect(result.sources[0]).toMatchObject({
+			type: "registry",
+			status: "unavailable",
+			lastError: "/login to authenticate."
+		});
+	});
+
+	it("marks registry sources with auth failure when token refresh fails", async () => {
+		const source = createDefaultRegistryAgentSource("development");
+		const result = await discoverAgentSources([source], vi.fn() as unknown as typeof fetch, {
+			environmentId: "development",
+			controlPlaneAccessTokenProvider: async () => {
+				throw new Error("WorkOS token refresh failed: invalid_grant");
+			}
+		});
+
+		expect(result.agents).toEqual([]);
+		expect(result.sources[0]).toMatchObject({
+			type: "registry",
+			status: "unavailable",
+			lastError: "Auth failed."
+		});
+	});
+
+	it("marks registry sources with control-plane failure when GraphQL fails", async () => {
+		const source = createDefaultRegistryAgentSource("development");
+		const graphQLFetchImpl = vi.fn(
+			async () => new Response("", { status: 503, statusText: "Unavailable" })
+		) as unknown as typeof fetch;
+
+		const result = await discoverAgentSources([source], vi.fn() as unknown as typeof fetch, {
+			environmentId: "development",
+			controlPlaneAccessTokenProvider: async () => "access-token",
+			graphQLFetchImpl
+		});
+
+		expect(result.agents).toEqual([]);
+		expect(result.sources[0]).toMatchObject({
+			type: "registry",
+			status: "unavailable",
+			lastError: "Aion Control Plane did not respond."
+		});
+	});
+
+	it("marks registry sources with unexpected failure for uncategorized errors", async () => {
+		const source = createDefaultRegistryAgentSource("development");
+		const graphQLFetchImpl = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+			const body = JSON.parse(String(init?.body)) as { query: string };
+			if (body.query.includes("query LoginBootstrap")) {
+				return new Response(
+					JSON.stringify({ data: { login: { nextRoute: null, email: null, name: null } } }),
+					{ status: 200 }
+				);
+			}
+			if (body.query.includes("query CurrentUser")) {
+				return new Response(
+					JSON.stringify({
+						data: {
+							user: {
+								id: "user-1",
+								homeOrganization: { id: "org-1", name: "Org" },
+								agentIdentity: {
+									id: "identity-personal",
+									name: "Personal Agent",
+									atName: "@me",
+									a2aUrl: null,
+									agentType: "Personal",
+									organizationId: "org-1",
+									updatedAt: "2026-05-01T00:00:00Z"
+								}
+							}
+						}
+					}),
+					{ status: 200 }
+				);
+			}
+			return new Response(
+				JSON.stringify({
+					data: {
+						agentIdentityDetails: [
+							{
+								identity: {
+									id: "identity-team",
+									name: "Team Agent",
+									atName: "@team-agent",
+									a2aUrl: "http://registry.example/agents/team-agent",
+									agentType: "Principal",
+									userId: null,
+									organizationId: "org-1",
+									systemKey: null,
+									website: null,
+									email: null,
+									biography: null,
+									avatarImageUrl: null,
+									backgroundImageUrl: null,
+									updatedAt: "2026-05-01T00:00:00Z",
+									notes: null
+								},
+								distributionUsages: []
+							}
+						]
+					}
+				}),
+				{ status: 200 }
+			);
+		}) as unknown as typeof fetch;
+		const sourceFetchImpl = vi.fn(
+			() => async () => {
+				throw new Error("opaque failure");
+			}
+		);
+
+		const result = await discoverAgentSources([source], vi.fn() as unknown as typeof fetch, {
+			environmentId: "development",
+			controlPlaneAccessTokenProvider: async () => "access-token",
+			graphQLFetchImpl,
+			sourceFetchImpl
+		});
+
+		expect(result.agents).toEqual([]);
+		expect(result.sources[0]).toMatchObject({
+			type: "registry",
+			status: "unavailable",
+			lastError: "Unexpected error."
+		});
+	});
+
 	it("prefers an explicit source when selecting a requested agent id", () => {
 		const selected = selectDiscoveredAgent(
 			[

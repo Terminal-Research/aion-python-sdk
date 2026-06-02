@@ -64,7 +64,8 @@ describe("slashCommands", () => {
 				url: "http://localhost:8080",
 				enabled: true,
 				isDefault: true,
-				status: "unavailable"
+				status: "unavailable",
+				lastError: "/login to authenticate."
 			},
 			{
 				sourceKey: "default-localhost-8000",
@@ -86,6 +87,7 @@ describe("slashCommands", () => {
 				"Description: Aion development registry",
 				"URL: http://localhost:8080",
 				"Status: unavailable",
+				"Reason: /login to authenticate.",
 				"",
 				"default-localhost-8000",
 				"Type: manifest",

@@ -123,7 +123,7 @@ function formatAgentSource(source: AgentSourceRecord): string {
 		`Description: ${source.description}`,
 		`URL: ${source.url}`,
 		`Status: ${source.status ?? "unchecked"}`,
-		source.lastError && !source.isDefault ? `Last error: ${source.lastError}` : undefined
+		source.lastError ? `Reason: ${source.lastError}` : undefined
 	]
 		.filter(Boolean)
 		.join("\n");

@@ -17,6 +17,10 @@ import {
 const MANIFEST_PATH = "/.well-known/manifest.json";
 const AGENT_CARD_PATH = "/.well-known/agent-card.json";
 const AGENT_PROXY_PREFIX = "/agents/";
+const REGISTRY_LOGIN_REQUIRED_MESSAGE = "/login to authenticate.";
+const REGISTRY_AUTH_FAILED_MESSAGE = "Auth failed.";
+const REGISTRY_CONTROL_PLANE_UNAVAILABLE_MESSAGE = "Aion Control Plane did not respond.";
+const REGISTRY_UNEXPECTED_ERROR_MESSAGE = "Unexpected error.";
 
 interface DiscoveryManifest {
 	api_version?: string;
@@ -247,32 +251,72 @@ function identityDisplayId(identity: {
 	return identity.id;
 }
 
+function registryUnavailableResult(
+	source: RuntimeAgentSource,
+	now: string,
+	lastError: string
+): SourceDiscoveryResult {
+	return {
+		source: {
+			...source,
+			type: "registry",
+			status: "unavailable",
+			lastCheckedAt: now,
+			lastError
+		},
+		agents: []
+	};
+}
+
+function registryDiscoveryErrorMessage(error: unknown): string {
+	const message = error instanceof Error ? error.message : String(error);
+	if (/workos|token|auth|login|credential/iu.test(message)) {
+		return REGISTRY_AUTH_FAILED_MESSAGE;
+	}
+	if (
+		error instanceof TypeError ||
+		error instanceof SyntaxError ||
+		/graphql|current user|fetch|network|http request|failed to fetch|response|json/iu.test(
+			message
+		)
+	) {
+		return REGISTRY_CONTROL_PLANE_UNAVAILABLE_MESSAGE;
+	}
+	return REGISTRY_UNEXPECTED_ERROR_MESSAGE;
+}
+
 async function discoverRegistrySource(
 	source: RuntimeAgentSource,
 	fetchImpl: typeof fetch,
 	now: string,
 	options: AgentDiscoveryOptions | undefined
 ): Promise<SourceDiscoveryResult> {
-	const accessToken = await options?.controlPlaneAccessTokenProvider?.();
-	if (!accessToken || !options) {
-		return {
-			source: {
-				...source,
-				type: "registry",
-				status: "unavailable",
-				lastCheckedAt: now,
-				lastError: "Login required to load Aion registry agent sources."
-			},
-			agents: []
-		};
+	let accessToken: string | undefined;
+	try {
+		accessToken = await options?.controlPlaneAccessTokenProvider?.();
+	} catch {
+		return registryUnavailableResult(source, now, REGISTRY_AUTH_FAILED_MESSAGE);
 	}
 
-	const identities = await fetchRegistryAgentIdentities({
-		environmentId: options.environmentId,
-		accessToken,
-		graphQLUrl: getGraphQLHttpUrlForBaseUrl(source.url),
-		fetchImpl: options.graphQLFetchImpl ?? fetch
-	});
+	if (!accessToken || !options) {
+		return registryUnavailableResult(source, now, REGISTRY_LOGIN_REQUIRED_MESSAGE);
+	}
+
+	let identities;
+	try {
+		identities = await fetchRegistryAgentIdentities({
+			environmentId: options.environmentId,
+			accessToken,
+			graphQLUrl: getGraphQLHttpUrlForBaseUrl(source.url),
+			fetchImpl: options.graphQLFetchImpl ?? fetch
+		});
+	} catch (error) {
+		return registryUnavailableResult(
+			source,
+			now,
+			registryDiscoveryErrorMessage(error)
+		);
+	}
 	const resolvedSource: AgentSourceRecord = {
 		...source,
 		type: "registry",
@@ -359,7 +403,12 @@ export async function discoverAgentSources(
 			resolvedSources.push(result.source);
 			agents.push(...result.agents);
 		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
+			const message =
+				source.type === "registry"
+					? registryDiscoveryErrorMessage(error)
+					: error instanceof Error
+						? error.message
+						: String(error);
 			const failedSource: AgentSourceRecord = {
 				...source,
 				status: "unavailable",
