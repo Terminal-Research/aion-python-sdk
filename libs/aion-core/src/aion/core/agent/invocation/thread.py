@@ -122,7 +122,7 @@ class BaseThread(ABC):
         ...
 
     @staticmethod
-    async def history(limit: int = 20, before=None) -> List:
+    async def history(limit: int = 20, offset=None) -> List:
         """Request recent conversation history through the control plane."""
         logger.warning(
             "Thread.history() is not yet implemented. "

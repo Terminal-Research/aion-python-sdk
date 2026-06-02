@@ -1,24 +1,13 @@
 import uuid
 from typing import Optional
 
-from aion.core.runtime.context.models import AionRuntimeContext
+from aion.adk.authoring.invocation import AionInvocationContext
 from aion.core.runtime.context.registry import AionRuntimeContextRegistry
-from google.adk.agents import InvocationContext, BaseAgent
+from google.adk.agents import BaseAgent
 from google.adk.agents.run_config import RunConfig, StreamingMode
 from google.adk.artifacts import BaseArtifactService
 from google.adk.sessions import BaseSessionService, Session
 from google.genai import types
-
-
-class AionInvocationContext(InvocationContext):
-    """Extended InvocationContext that carries an Aion runtime context.
-
-    Adds `aion_runtime_context` so that ADK agents can introspect the inbound
-    Aion event, distribution, behavior, environment and identity data without
-    touching server state directly.
-    """
-
-    aion_runtime_context: Optional[AionRuntimeContext] = None
 
 
 class AionInvocationContextFactory:

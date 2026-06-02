@@ -6,10 +6,11 @@ These classes provide type-safe, validated event models for LangGraph streaming.
 from typing import Any, ClassVar, Optional
 
 from a2a.types import Artifact
+from aion.core.agent.invocation.card import Card
 from aion.core.types.a2a.extensions.messaging import MessageActionPayload, ReactionActionPayload
 from aion.core.utils.pydantic import Protobuf
 from langchain_core.messages import AIMessage, AIMessageChunk
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class AionCustomEvent(BaseModel):
@@ -62,6 +63,25 @@ class ReactionCustomEvent(AionCustomEvent):
     event_type: ClassVar[str] = "reaction"
 
     payload: ReactionActionPayload = Field(description="Reaction action to perform")
+
+
+class CardCustomEvent(AionCustomEvent):
+    """Card emission event.
+
+    Emitted from nodes when Thread.post() receives a Card object.
+    Produces a TaskStatusUpdateEvent(working, message=...) where the message
+    contains a card file part and extensions=[CardsURI].
+
+    Used for explicit Card objects (jsx or url). JSX strings auto-detected
+    via is_jsx_card() go through the regular AIMessage path instead.
+    """
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    event_type: ClassVar[str] = "card"
+
+    card: Card = Field(description="Card to emit")
+    routing: Optional[MessageActionPayload] = Field(default=None, description="Outbound routing target; attached as DataPart by the distribution layer")
 
 
 class TaskUpdateCustomEvent(AionCustomEvent):

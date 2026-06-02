@@ -15,11 +15,14 @@ from a2a.types import (
 )
 from aion.server.agent.adapters import InterruptInfo
 from aion.core.constants import (
+    CARDS_EXTENSION_URI_V1,
     MESSAGE_ACTION_PAYLOAD_SCHEMA_V1,
     MESSAGING_EXTENSION_URI_V1,
     REACTION_ACTION_PAYLOAD_SCHEMA_V1,
     STREAM_DELTA_PAYLOAD_SCHEMA_V1,
 )
+from aion.core.agent.invocation.card import Card
+from aion.core.utils.card import build_card_a2a_part
 from aion.core.logging import get_logger
 from aion.core.types import ArtifactId, ArtifactName
 from aion.core.types.a2a.extensions.messaging import MessageActionPayload
@@ -29,13 +32,14 @@ from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
 from ..converters.lc_to_a2a import LcToA2AConverter
 from aion.langgraph.authoring.events.custom_events import (
     ArtifactCustomEvent,
+    CardCustomEvent,
     MessageCustomEvent,
     ReactionCustomEvent,
     TaskUpdateCustomEvent,
 )
 
 LangChainAgentMessage = AIMessage | AIMessageChunk
-SupportedCustomEvents = ArtifactCustomEvent | MessageCustomEvent | ReactionCustomEvent | TaskUpdateCustomEvent
+SupportedCustomEvents = ArtifactCustomEvent | CardCustomEvent | MessageCustomEvent | ReactionCustomEvent | TaskUpdateCustomEvent
 
 A2AAgentEvent = TaskStatusUpdateEvent | TaskArtifactUpdateEvent
 
@@ -121,13 +125,15 @@ class LangGraphA2AConverter:
         TaskStatusUpdateEvent (state=working). Artifacts must be emitted
         explicitly via ArtifactCustomEvent — no automatic promotion of
         FilePart to TaskArtifactUpdateEvent.
+
+        To send a card, pass a Card instance to Thread.post() instead of a
+        plain JSX string — plain strings are always treated as regular text.
         """
         a2a_parts = LcToA2AConverter.from_message(message)
         if not a2a_parts:
             return []
 
         role = self._detect_role(message)
-        # Use message.id if set (e.g. from reply), otherwise generate a new one
         message_id = message.id or str(uuid.uuid4())
         msg = Message(
             context_id=self._context_id,
@@ -135,6 +141,34 @@ class LangGraphA2AConverter:
             message_id=message_id,
             role=role,
             parts=a2a_parts,
+        )
+        return [TaskStatusUpdateEvent(
+            task_id=self._task_id,
+            context_id=self._context_id,
+            status=TaskStatus(state=TaskState.TASK_STATE_WORKING, message=msg),
+        )]
+
+    def _convert_card(
+            self,
+            card: Card,
+            message_id: str | None = None,
+            routing: MessageActionPayload | None = None,
+    ) -> list[A2AAgentEvent]:
+        parts = [build_card_a2a_part(card)]
+        extensions = [CARDS_EXTENSION_URI_V1]
+        if routing is not None:
+            parts.append(self._build_extension_part(
+                routing.model_dump(by_alias=True, exclude_none=True),
+                MESSAGE_ACTION_PAYLOAD_SCHEMA_V1,
+            ))
+            extensions.append(MESSAGING_EXTENSION_URI_V1)
+        msg = Message(
+            context_id=self._context_id,
+            task_id=self._task_id,
+            message_id=message_id or str(uuid.uuid4()),
+            role=Role.ROLE_AGENT,
+            parts=parts,
+            extensions=extensions,
         )
         return [TaskStatusUpdateEvent(
             task_id=self._task_id,
@@ -158,6 +192,9 @@ class LangGraphA2AConverter:
                 append=event_data.append,
                 last_chunk=event_data.is_last_chunk,
             )]
+
+        if isinstance(event_data, CardCustomEvent):
+            return self._convert_card(event_data.card, routing=event_data.routing)
 
         if isinstance(event_data, MessageCustomEvent):
             if event_data.ephemeral:
@@ -191,9 +228,12 @@ class LangGraphA2AConverter:
     ) -> list[A2AAgentEvent]:
         """Convert a message with explicit routing target to an A2A event.
 
-        Produces a TaskStatusUpdateEvent whose message contains both the text
+        Produces a TaskStatusUpdateEvent whose message contains both the content
         parts from the AIMessage and a DataPart carrying the MessageActionPayload
         so the distribution knows where to deliver the message.
+
+        To send a routed card, pass a Card instance to Thread.reply() instead
+        of a plain JSX string — plain strings are always treated as regular text.
         """
         a2a_parts = LcToA2AConverter.from_message(message)
         if not a2a_parts:
@@ -204,6 +244,8 @@ class LangGraphA2AConverter:
             MESSAGE_ACTION_PAYLOAD_SCHEMA_V1,
         ))
 
+        extensions = [MESSAGING_EXTENSION_URI_V1]
+
         message_id = message.id or str(uuid.uuid4())
         msg = Message(
             context_id=self._context_id,
@@ -211,7 +253,7 @@ class LangGraphA2AConverter:
             message_id=message_id,
             role=Role.ROLE_AGENT,
             parts=a2a_parts,
-            extensions=[MESSAGING_EXTENSION_URI_V1],
+            extensions=extensions,
         )
         return [TaskStatusUpdateEvent(
             task_id=self._task_id,
@@ -222,26 +264,23 @@ class LangGraphA2AConverter:
     def _convert_reaction(self, event: ReactionCustomEvent) -> list[A2AAgentEvent]:
         """Convert a ReactionCustomEvent to an A2A event.
 
-        Produces a TaskStatusUpdateEvent whose message contains a single
-        DataPart carrying the ReactionActionPayload so the distribution
-        can add or remove the reaction on the provider message.
+        Produces a TaskArtifactUpdateEvent with a reserved artifact_id so the
+        distribution receives the ReactionActionPayload without it being saved
+        to task history or artifacts.
         """
-        data_part = self._build_extension_part(
-            event.payload.model_dump(by_alias=True, exclude_none=True),
-            REACTION_ACTION_PAYLOAD_SCHEMA_V1,
-        )
-        msg = Message(
-            context_id=self._context_id,
-            task_id=self._task_id,
-            message_id=str(uuid.uuid4()),
-            role=Role.ROLE_AGENT,
-            parts=[data_part],
-            extensions=[MESSAGING_EXTENSION_URI_V1],
-        )
-        return [TaskStatusUpdateEvent(
+        proto_value = struct_pb2.Value()
+        json_format.ParseDict(event.payload.model_dump(by_alias=True, exclude_none=True), proto_value)
+        return [TaskArtifactUpdateEvent(
             task_id=self._task_id,
             context_id=self._context_id,
-            status=TaskStatus(state=TaskState.TASK_STATE_WORKING, message=msg),
+            metadata={MESSAGING_EXTENSION_URI_V1: {"schema": REACTION_ACTION_PAYLOAD_SCHEMA_V1}},
+            artifact=Artifact(
+                artifact_id=ArtifactId.REACTION.value,
+                name=ArtifactName.REACTION.value,
+                parts=[Part(data=proto_value)],
+            ),
+            append=False,
+            last_chunk=True,
         )]
 
     def _convert_task_update(self, event: TaskUpdateCustomEvent) -> list[A2AAgentEvent]:

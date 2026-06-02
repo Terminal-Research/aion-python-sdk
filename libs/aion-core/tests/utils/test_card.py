@@ -1,8 +1,9 @@
 """Tests for JSX Card utilities."""
 
 import pytest
-from a2a.types import Artifact, Part
-from aion.core.utils.card import is_jsx_card, build_card_artifact, extract_card_name
+from a2a.types import Part
+from aion.core.agent.invocation.card import Card
+from aion.core.utils.card import is_jsx_card, build_card_a2a_part, extract_card_name
 from aion.core.constants import CARDS_MEDIA_TYPE, CARDS_EXTENSION_URI_V1, CARDS_PAYLOAD_SCHEMA_V1
 
 
@@ -26,7 +27,7 @@ class TestIsJsxCard:
 
     def test_card_with_multiple_attributes(self):
         """Detect card with multiple attributes."""
-        assert is_jsx_card('<Card title="Test" name="card1"></Card>') is True
+        assert is_jsx_card('<Card title="Test" id="card1"></Card>') is True
 
     def test_card_with_nested_content(self):
         """Detect card with nested JSX content."""
@@ -95,17 +96,7 @@ class TestExtractCardName:
         card = "<Card title='My Card'></Card>"
         assert extract_card_name(card) == "My Card"
 
-    def test_extract_name_attribute_fallback(self):
-        """Fall back to name attribute when title is missing."""
-        card = '<Card name="Named Card"></Card>'
-        assert extract_card_name(card) == "Named Card"
-
-    def test_title_takes_precedence_over_name(self):
-        """Title attribute takes precedence over name."""
-        card = '<Card title="Title" name="Name"></Card>'
-        assert extract_card_name(card) == "Title"
-
-    def test_no_name_returns_none(self):
+    def test_no_title_returns_none(self):
         """Return None when neither title nor name present."""
         card = '<Card></Card>'
         assert extract_card_name(card) is None
@@ -126,127 +117,91 @@ class TestExtractCardName:
         assert extract_card_name(card) == ""
 
 
-class TestBuildCardArtifact:
-    """Test A2A Artifact building from JSX Cards."""
+class TestBuildCardPart:
+    """Test A2A Part building from JSX Cards."""
 
     def test_build_simple_card(self):
-        """Build artifact from simple card."""
+        """Build part from simple card."""
         card_jsx = '<Card title="Test"></Card>'
-        artifact = build_card_artifact(card_jsx)
-
-        assert isinstance(artifact, Artifact)
-        assert artifact.name == "Test"
-        assert len(artifact.parts) == 1
-
-    def test_card_part_has_text(self):
-        """Card part should use text field, not raw."""
-        card_jsx = '<Card></Card>'
-        artifact = build_card_artifact(card_jsx)
-        part = artifact.parts[0]
+        part = build_card_a2a_part(Card(jsx=card_jsx))
 
         assert isinstance(part, Part)
-        assert part.text == card_jsx
-        # Protobuf sets raw to empty bytes when not provided
-        assert part.raw == b'' or part.raw is None
+        assert part.raw == card_jsx.encode("utf-8")
+
+    def test_card_part_uses_raw_not_text(self):
+        """Card part uses raw bytes field, not text."""
+        card_jsx = '<Card></Card>'
+        part = build_card_a2a_part(Card(jsx=card_jsx))
+
+        assert part.raw == card_jsx.encode("utf-8")
+        assert part.text == "" or part.text is None
 
     def test_card_part_media_type(self):
         """Card part has correct MIME type."""
-        card_jsx = '<Card></Card>'
-        artifact = build_card_artifact(card_jsx)
-        part = artifact.parts[0]
+        part = build_card_a2a_part(Card(jsx='<Card></Card>'))
 
         assert part.media_type == CARDS_MEDIA_TYPE
         assert part.media_type == "application/vnd.aion.card+jsx"
 
+    def test_card_part_filename_uses_card_name(self):
+        """Filename uses the card title with spaces replaced by hyphens."""
+        part = build_card_a2a_part(Card(jsx='<Card title="My Report"></Card>'))
+
+        assert part.filename == "my-report.card.jsx"
+
+    def test_card_part_filename_fallback(self):
+        """Filename falls back to card.jsx when no title present."""
+        part = build_card_a2a_part(Card(jsx='<Card></Card>'))
+
+        assert part.filename == "card.jsx"
+
     def test_card_part_metadata_includes_extension(self):
-        """Card part metadata includes Cards extension."""
-        card_jsx = '<Card></Card>'
-        artifact = build_card_artifact(card_jsx)
-        part = artifact.parts[0]
+        """Card part metadata includes Cards extension with schema."""
+        part = build_card_a2a_part(Card(jsx='<Card></Card>'))
 
         assert part.metadata is not None
         assert CARDS_EXTENSION_URI_V1 in part.metadata
         assert part.metadata[CARDS_EXTENSION_URI_V1]["schema"] == CARDS_PAYLOAD_SCHEMA_V1
 
-    def test_artifact_has_unique_id(self):
-        """Artifact has a unique ID."""
-        card_jsx = '<Card></Card>'
-        artifact1 = build_card_artifact(card_jsx)
-        artifact2 = build_card_artifact(card_jsx)
-
-        assert artifact1.artifact_id != artifact2.artifact_id
-
-    def test_custom_name_parameter(self):
-        """Use custom name when provided."""
-        card_jsx = '<Card title="Original"></Card>'
-        artifact = build_card_artifact(card_jsx, name="Custom Name")
-
-        assert artifact.name == "Custom Name"
-
-    def test_extracted_name_when_custom_not_provided(self):
-        """Extract name from card when custom name not provided."""
-        card_jsx = '<Card title="Extracted"></Card>'
-        artifact = build_card_artifact(card_jsx)
-
-        assert artifact.name == "Extracted"
-
-    def test_fallback_name_when_card_has_no_name(self):
-        """Use 'Card' as default name."""
-        card_jsx = '<Card></Card>'
-        artifact = build_card_artifact(card_jsx)
-
-        assert artifact.name == "Card"
-
     def test_custom_metadata_merged(self):
         """Custom metadata is merged into part metadata."""
-        card_jsx = '<Card></Card>'
-        custom_meta = {"custom_key": "custom_value"}
-        artifact = build_card_artifact(card_jsx, metadata=custom_meta)
-        part = artifact.parts[0]
+        part = build_card_a2a_part(Card(jsx='<Card></Card>'), metadata={"custom_key": "custom_value"})
 
         assert "custom_key" in part.metadata
         assert part.metadata["custom_key"] == "custom_value"
-        # Original extension metadata should still be there
         assert CARDS_EXTENSION_URI_V1 in part.metadata
 
     def test_custom_metadata_doesnt_overwrite_extension(self):
         """Custom metadata doesn't overwrite cards extension."""
-        card_jsx = '<Card></Card>'
-        custom_meta = {CARDS_EXTENSION_URI_V1: {"extra": "data"}}
-        artifact = build_card_artifact(card_jsx, metadata=custom_meta)
-        part = artifact.parts[0]
+        part = build_card_a2a_part(Card(jsx='<Card></Card>'), metadata={CARDS_EXTENSION_URI_V1: {"extra": "data"}})
 
-        # Custom metadata should update, not replace
         assert CARDS_EXTENSION_URI_V1 in part.metadata
 
     def test_complex_card_with_content(self):
-        """Build artifact from complex card with nested JSX."""
+        """Build part from complex card with nested JSX."""
         card_jsx = '''<Card title="Complex">
             <Text>Hello</Text>
             <Button onClick="handleClick">Click me</Button>
         </Card>'''
-        artifact = build_card_artifact(card_jsx)
+        part = build_card_a2a_part(Card(jsx=card_jsx))
 
-        assert artifact.name == "Complex"
-        assert artifact.parts[0].text == card_jsx
-        assert artifact.parts[0].media_type == CARDS_MEDIA_TYPE
+        assert part.raw == card_jsx.encode("utf-8")
+        assert part.media_type == CARDS_MEDIA_TYPE
+        assert part.filename == "complex.card.jsx"
 
     def test_utf8_card_with_special_characters(self):
         """Handle card with special Unicode characters."""
         card_jsx = '<Card title="Карточка 🎨"></Card>'
-        artifact = build_card_artifact(card_jsx)
+        part = build_card_a2a_part(Card(jsx=card_jsx))
 
-        assert artifact.name == "Карточка 🎨"
-        assert artifact.parts[0].text == card_jsx
+        assert part.raw == card_jsx.encode("utf-8")
+        assert part.filename == "карточка-🎨.card.jsx"
 
-    def test_artifact_structure(self):
-        """Verify complete artifact structure."""
-        card_jsx = '<Card title="Full Test"></Card>'
-        artifact = build_card_artifact(card_jsx)
+    def test_url_card_uses_url_field(self):
+        """URL card produces Part with url field, no raw."""
+        part = build_card_a2a_part(Card(url="https://cdn.example.com/card.jsx"))
 
-        assert artifact.artifact_id is not None
-        assert isinstance(artifact.artifact_id, str)
-        assert artifact.name == "Full Test"
-        assert hasattr(artifact.parts, '__len__')
-        assert len(artifact.parts) == 1
-        assert artifact.parts[0].media_type == CARDS_MEDIA_TYPE
+        assert part.url == "https://cdn.example.com/card.jsx"
+        assert part.raw == b"" or part.raw is None
+        assert part.media_type == CARDS_MEDIA_TYPE
+        assert CARDS_EXTENSION_URI_V1 in part.metadata

@@ -11,13 +11,16 @@ from a2a.types import (
     TaskStatus,
     TaskStatusUpdateEvent,
 )
-from aion.adk.authoring.output import AionOutput
+from aion.adk.authoring.output import AionOutput, ReactionOutput
+from aion.core.agent.invocation.card import Card
+from aion.core.constants import CARDS_EXTENSION_URI_V1, MESSAGING_EXTENSION_URI_V1, REACTION_ACTION_PAYLOAD_SCHEMA_V1
 from aion.core.logging import get_logger
 from aion.core.types import ArtifactId, ArtifactName
-from aion.core.utils.card import build_card_artifact
+from aion.core.utils.card import build_card_a2a_part
 from google.adk.events import Event
+from google.protobuf import json_format, struct_pb2
 
-from aion.adk.server.agents.invocation_context import AionInvocationContext
+from aion.adk.authoring.invocation import AionInvocationContext
 from aion.adk.server.transformers import A2ATransformer
 
 AgentEvent = TaskStatusUpdateEvent | TaskArtifactUpdateEvent
@@ -107,6 +110,31 @@ class ADKToA2AEventConverter:
             last_chunk=True,
         )
 
+    @staticmethod
+    def _build_extension_part(data: dict, schema_uri: str) -> Part:
+        proto_value = struct_pb2.Value()
+        json_format.ParseDict(data, proto_value)
+        return Part(
+            data=proto_value,
+            metadata={MESSAGING_EXTENSION_URI_V1: {"schema": schema_uri}},
+        )
+
+    def _build_reaction_event(self, reaction: ReactionOutput) -> AgentEvent:
+        proto_value = struct_pb2.Value()
+        json_format.ParseDict(reaction.model_dump(by_alias=True, exclude_none=True), proto_value)
+        return TaskArtifactUpdateEvent(
+            task_id=self._task_id,
+            context_id=self._context_id,
+            metadata={MESSAGING_EXTENSION_URI_V1: {"schema": REACTION_ACTION_PAYLOAD_SCHEMA_V1}},
+            artifact=Artifact(
+                artifact_id=ArtifactId.REACTION.value,
+                name=ArtifactName.REACTION.value,
+                parts=[Part(data=proto_value)],
+            ),
+            append=False,
+            last_chunk=True,
+        )
+
     async def _convert_non_partial(self, adk_event: Event) -> list[AgentEvent]:
         """Convert a complete (non-partial) ADK event to A2A events.
 
@@ -125,16 +153,28 @@ class ADKToA2AEventConverter:
 
         output = AionOutput.from_custom_metadata(adk_event.custom_metadata)
 
+        if output and output.reaction is not None:
+            return [self._build_reaction_event(output.reaction)]
+
         if output and output.card is not None:
-            card_jsx = adk_event.content and adk_event.content.parts[0].text
-            if card_jsx:
-                card_artifact = build_card_artifact(card_jsx)
-                results.append(TaskArtifactUpdateEvent(
+            if output.card.url:
+                card = Card(url=output.card.url)
+            else:
+                card_jsx = adk_event.content and adk_event.content.parts and adk_event.content.parts[0].text
+                card = Card(jsx=card_jsx) if card_jsx else None
+            if card:
+                msg = Message(
+                    context_id=self._context_id,
+                    task_id=self._task_id,
+                    message_id=str(uuid.uuid4()),
+                    role=Role.ROLE_AGENT,
+                    parts=[build_card_a2a_part(card)],
+                    extensions=[CARDS_EXTENSION_URI_V1],
+                )
+                results.append(TaskStatusUpdateEvent(
                     task_id=self._task_id,
                     context_id=self._context_id,
-                    artifact=card_artifact,
-                    append=False,
-                    last_chunk=True,
+                    status=TaskStatus(state=TaskState.TASK_STATE_WORKING, message=msg),
                 ))
             return results
 

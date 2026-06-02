@@ -22,4 +22,5 @@ NON_ACTIVE_TASK_STATES = frozenset(TERMINAL_TASK_STATES) | frozenset(INTERRUPT_T
 TRANSIENT_ARTIFACT_IDS = frozenset({
     ArtifactId.STREAM_DELTA.value,
     ArtifactId.EPHEMERAL_MESSAGE.value,
+    ArtifactId.REACTION.value,
 })
