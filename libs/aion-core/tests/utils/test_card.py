@@ -2,7 +2,8 @@
 
 import pytest
 from a2a.types import Part
-from aion.core.utils.card import is_jsx_card, build_card_part, extract_card_name
+from aion.core.agent.invocation.card import Card
+from aion.core.utils.card import is_jsx_card, build_card_a2a_part, extract_card_name
 from aion.core.constants import CARDS_MEDIA_TYPE, CARDS_EXTENSION_URI_V1, CARDS_PAYLOAD_SCHEMA_V1
 
 
@@ -26,7 +27,7 @@ class TestIsJsxCard:
 
     def test_card_with_multiple_attributes(self):
         """Detect card with multiple attributes."""
-        assert is_jsx_card('<Card title="Test" name="card1"></Card>') is True
+        assert is_jsx_card('<Card title="Test" id="card1"></Card>') is True
 
     def test_card_with_nested_content(self):
         """Detect card with nested JSX content."""
@@ -95,17 +96,7 @@ class TestExtractCardName:
         card = "<Card title='My Card'></Card>"
         assert extract_card_name(card) == "My Card"
 
-    def test_extract_name_attribute_fallback(self):
-        """Fall back to name attribute when title is missing."""
-        card = '<Card name="Named Card"></Card>'
-        assert extract_card_name(card) == "Named Card"
-
-    def test_title_takes_precedence_over_name(self):
-        """Title attribute takes precedence over name."""
-        card = '<Card title="Title" name="Name"></Card>'
-        assert extract_card_name(card) == "Title"
-
-    def test_no_name_returns_none(self):
+    def test_no_title_returns_none(self):
         """Return None when neither title nor name present."""
         card = '<Card></Card>'
         assert extract_card_name(card) is None
@@ -132,41 +123,41 @@ class TestBuildCardPart:
     def test_build_simple_card(self):
         """Build part from simple card."""
         card_jsx = '<Card title="Test"></Card>'
-        part = build_card_part(card_jsx)
+        part = build_card_a2a_part(Card(jsx=card_jsx))
 
         assert isinstance(part, Part)
-        assert part.text == card_jsx
+        assert part.raw == card_jsx.encode("utf-8")
 
-    def test_card_part_has_text_not_raw(self):
-        """Card part uses text field so JSX stays human-readable in JSON."""
+    def test_card_part_uses_raw_not_text(self):
+        """Card part uses raw bytes field, not text."""
         card_jsx = '<Card></Card>'
-        part = build_card_part(card_jsx)
+        part = build_card_a2a_part(Card(jsx=card_jsx))
 
-        assert part.text == card_jsx
-        assert part.raw == b'' or part.raw is None
+        assert part.raw == card_jsx.encode("utf-8")
+        assert part.text == "" or part.text is None
 
     def test_card_part_media_type(self):
         """Card part has correct MIME type."""
-        part = build_card_part('<Card></Card>')
+        part = build_card_a2a_part(Card(jsx='<Card></Card>'))
 
         assert part.media_type == CARDS_MEDIA_TYPE
         assert part.media_type == "application/vnd.aion.card+jsx"
 
     def test_card_part_filename_uses_card_name(self):
         """Filename uses the card title with spaces replaced by hyphens."""
-        part = build_card_part('<Card title="My Report"></Card>')
+        part = build_card_a2a_part(Card(jsx='<Card title="My Report"></Card>'))
 
         assert part.filename == "my-report.card.jsx"
 
     def test_card_part_filename_fallback(self):
-        """Filename falls back to 'card' when no title present."""
-        part = build_card_part('<Card></Card>')
+        """Filename falls back to card.jsx when no title present."""
+        part = build_card_a2a_part(Card(jsx='<Card></Card>'))
 
-        assert part.filename == "card.card.jsx"
+        assert part.filename == "card.jsx"
 
     def test_card_part_metadata_includes_extension(self):
         """Card part metadata includes Cards extension with schema."""
-        part = build_card_part('<Card></Card>')
+        part = build_card_a2a_part(Card(jsx='<Card></Card>'))
 
         assert part.metadata is not None
         assert CARDS_EXTENSION_URI_V1 in part.metadata
@@ -174,7 +165,7 @@ class TestBuildCardPart:
 
     def test_custom_metadata_merged(self):
         """Custom metadata is merged into part metadata."""
-        part = build_card_part('<Card></Card>', metadata={"custom_key": "custom_value"})
+        part = build_card_a2a_part(Card(jsx='<Card></Card>'), metadata={"custom_key": "custom_value"})
 
         assert "custom_key" in part.metadata
         assert part.metadata["custom_key"] == "custom_value"
@@ -182,7 +173,7 @@ class TestBuildCardPart:
 
     def test_custom_metadata_doesnt_overwrite_extension(self):
         """Custom metadata doesn't overwrite cards extension."""
-        part = build_card_part('<Card></Card>', metadata={CARDS_EXTENSION_URI_V1: {"extra": "data"}})
+        part = build_card_a2a_part(Card(jsx='<Card></Card>'), metadata={CARDS_EXTENSION_URI_V1: {"extra": "data"}})
 
         assert CARDS_EXTENSION_URI_V1 in part.metadata
 
@@ -192,16 +183,25 @@ class TestBuildCardPart:
             <Text>Hello</Text>
             <Button onClick="handleClick">Click me</Button>
         </Card>'''
-        part = build_card_part(card_jsx)
+        part = build_card_a2a_part(Card(jsx=card_jsx))
 
-        assert part.text == card_jsx
+        assert part.raw == card_jsx.encode("utf-8")
         assert part.media_type == CARDS_MEDIA_TYPE
         assert part.filename == "complex.card.jsx"
 
     def test_utf8_card_with_special_characters(self):
         """Handle card with special Unicode characters."""
         card_jsx = '<Card title="Карточка 🎨"></Card>'
-        part = build_card_part(card_jsx)
+        part = build_card_a2a_part(Card(jsx=card_jsx))
 
-        assert part.text == card_jsx
+        assert part.raw == card_jsx.encode("utf-8")
         assert part.filename == "карточка-🎨.card.jsx"
+
+    def test_url_card_uses_url_field(self):
+        """URL card produces Part with url field, no raw."""
+        part = build_card_a2a_part(Card(url="https://cdn.example.com/card.jsx"))
+
+        assert part.url == "https://cdn.example.com/card.jsx"
+        assert part.raw == b"" or part.raw is None
+        assert part.media_type == CARDS_MEDIA_TYPE
+        assert CARDS_EXTENSION_URI_V1 in part.metadata

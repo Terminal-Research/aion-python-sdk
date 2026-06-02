@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from aion.adk.authoring.output import AionOutput, ArtifactOutput, CardOutput
 from aion.core.agent import BaseThread
+from aion.core.agent.invocation.card import Card
 from aion.core.logging import get_logger
 from aion.core.types.a2a.enums import ArtifactId
 from aion.core.types.a2a.extensions.messaging import MessageActionPayload
-from aion.core.utils.card import is_jsx_card
 from google.adk.events import Event
 from google.genai import types
 from typing import Any, Optional
@@ -55,17 +55,24 @@ class Thread(BaseThread):
         )
 
     @staticmethod
-    def _build_card_event(card_jsx: str) -> Any:
-        """Build a google.adk.events.Event carrying a JSX card.
+    def _build_card_event(card: Card) -> Any:
+        """Build a google.adk.events.Event carrying a Card.
 
-        JSX content is placed in Event.content (as a text part) so the data
-        travels in its natural place. The aion:output hint signals the converter
-        to treat this event as a card artifact rather than a plain message.
+        For jsx cards, JSX content is placed in Event.content as a text part.
+        For url cards, Event.content is empty and the url is carried in CardOutput.
+        The aion:output hint signals the converter to emit a card message.
         """
+        if card.url:
+            return Event(
+                author="agent",
+                content=types.Content(parts=[], role="model"),
+                partial=False,
+                custom_metadata=AionOutput(card=CardOutput(url=card.url)).to_custom_metadata(),
+            )
         return Event(
             author="agent",
             content=types.Content(
-                parts=[types.Part(text=card_jsx)],
+                parts=[types.Part(text=card.jsx)],
                 role="model",
             ),
             partial=False,
@@ -81,12 +88,12 @@ class Thread(BaseThread):
     ) -> Event:
         """Post a message via the ADK event emitter.
 
-        Supports str (or JSX Card), google.adk.events.Event, or an async iterator
+        Supports str, Card, google.adk.events.Event, or an async iterator
         yielding str chunks. Returns the emitted event, or None when
         the emitter is not available or the content type is unsupported.
 
-        JSX Cards are automatically detected using is_jsx_card() utility, which
-        validates proper JSX Card syntax and structure.
+        To send a card, pass an explicit Card instance — plain JSX strings
+        are treated as regular text.
 
         target is accepted for API parity with LangGraph Thread but is not
         yet wired to outbound routing in the ADK execution layer.
@@ -95,11 +102,13 @@ class Thread(BaseThread):
         if emitter is None:
             return None
 
+        if isinstance(content, Card):
+            event = self._build_card_event(content)
+            emitter(event)
+            return event
+
         if isinstance(content, str):
-            if is_jsx_card(content):
-                event = self._build_card_event(content)
-            else:
-                event = self._build_text_event(content, partial=False, custom_metadata=metadata)
+            event = self._build_text_event(content, partial=False, custom_metadata=metadata)
             emitter(event)
             return event
 

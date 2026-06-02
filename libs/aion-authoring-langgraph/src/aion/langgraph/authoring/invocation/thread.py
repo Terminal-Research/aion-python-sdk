@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from aion.core.agent import BaseThread
+from aion.core.agent.invocation.card import Card
 from aion.core.logging import get_logger
 from aion.core.types.a2a.extensions.messaging import MessageActionPayload
 from langchain_core.messages import AIMessage, AIMessageChunk
@@ -8,6 +9,7 @@ from langgraph.config import get_stream_writer
 from typing import Any, Optional, Union
 from uuid import uuid4
 
+from aion.langgraph.authoring.events.custom_events import CardCustomEvent
 from aion.langgraph.authoring.invocation.message import Message
 from aion.langgraph.authoring.stream import emit_message
 
@@ -63,6 +65,10 @@ class Thread(BaseThread):
         """
         writer = self.get_writer()
         if writer is None:
+            return None
+
+        if isinstance(content, Card):
+            writer(CardCustomEvent(card=content, routing=target))
             return None
 
         if isinstance(content, str):

@@ -9,6 +9,7 @@ See: https://docs.aion.to/a2a/extensions/aion/distribution/cards/1.0.0
 
 import re
 from a2a.types import Part
+from aion.core.agent.invocation.card import Card
 from aion.core.constants import CARDS_EXTENSION_URI_V1, CARDS_MEDIA_TYPE, CARDS_PAYLOAD_SCHEMA_V1
 from typing import Any
 
@@ -17,7 +18,6 @@ _CARD_OPEN_PATTERN = re.compile(r"<Card\b")
 _CARD_CLOSE_PATTERN = re.compile(r"</Card\s*>")
 _CARD_OPEN_TAG_PATTERN = re.compile(r"<Card\b(.*?)(?:/?>)", re.DOTALL)
 _CARD_TITLE_ATTR = re.compile(r'\btitle=(?:"([^"]*)"|\'([^\']*)\')')
-_CARD_NAME_ATTR = re.compile(r'\bname=(?:"([^"]*)"|\'([^\']*)\')')
 
 
 def is_jsx_card(content: Any) -> bool:
@@ -64,43 +64,46 @@ def is_jsx_card(content: Any) -> bool:
 def extract_card_name(card_jsx: str) -> str | None:
     """Extract a display name from a JSX Card document.
 
-    Reads the title attribute first, falls back to name.
-    Returns None if neither is present on the <Card> tag.
+    Reads the ``title`` attribute from the ``<Card>`` tag.
+    Returns ``None`` if the attribute is absent.
     """
     tag_match = _CARD_OPEN_TAG_PATTERN.search(card_jsx.lstrip())
     if not tag_match:
         return None
 
-    attrs = tag_match.group(1)
-    for pattern in (_CARD_TITLE_ATTR, _CARD_NAME_ATTR):
-        m = pattern.search(attrs)
-        if m:
-            return m.group(1) if m.group(1) is not None else m.group(2)
+    m = _CARD_TITLE_ATTR.search(tag_match.group(1))
+    if m:
+        return m.group(1) if m.group(1) is not None else m.group(2)
 
     return None
 
 
-def build_card_part(card_jsx: str, metadata: dict | None = None) -> Part:
-    """Build an A2A Part from a JSX Card document.
-
-    The part uses the text field so the JSX document remains human-readable
-    when serialized to JSON (raw would produce base64).
+def build_card_a2a_part(card: Card, metadata: dict | None = None) -> Part:
+    """Build an A2A Part from a Card.
 
     Args:
-        card_jsx: The JSX Card document string.
+        card: Card instance with either jsx or url set.
         metadata: Optional extra metadata to merge into the part metadata.
 
     Returns:
-        An A2A Part carrying the card document as a text/file part.
+        An A2A Part carrying the card document as a file part.
     """
     card_metadata = {CARDS_EXTENSION_URI_V1: {"schema": CARDS_PAYLOAD_SCHEMA_V1}}
     if metadata:
         card_metadata.update(metadata)
 
-    card_name = (extract_card_name(card_jsx) or "card").strip().lower().replace(" ", "-")
+    if card.url:
+        return Part(
+            url=card.url,
+            media_type=CARDS_MEDIA_TYPE,
+            metadata=card_metadata,
+        )
+
+    card_title = extract_card_name(card.jsx)
+    filename = f"{card_title.strip().lower().replace(' ', '-')}.card.jsx" if card_title else "card.jsx"
     return Part(
-        text=card_jsx,
-        filename=f"{card_name}.card.jsx",
+        raw=card.jsx.encode("utf-8"),
+        filename=filename,
         media_type=CARDS_MEDIA_TYPE,
         metadata=card_metadata,
     )

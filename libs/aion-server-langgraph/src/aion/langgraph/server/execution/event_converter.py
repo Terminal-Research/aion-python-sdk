@@ -21,7 +21,8 @@ from aion.core.constants import (
     REACTION_ACTION_PAYLOAD_SCHEMA_V1,
     STREAM_DELTA_PAYLOAD_SCHEMA_V1,
 )
-from aion.core.utils.card import build_card_part, is_jsx_card
+from aion.core.agent.invocation.card import Card
+from aion.core.utils.card import build_card_a2a_part
 from aion.core.logging import get_logger
 from aion.core.types import ArtifactId, ArtifactName
 from aion.core.types.a2a.extensions.messaging import MessageActionPayload
@@ -31,13 +32,14 @@ from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
 from ..converters.lc_to_a2a import LcToA2AConverter
 from aion.langgraph.authoring.events.custom_events import (
     ArtifactCustomEvent,
+    CardCustomEvent,
     MessageCustomEvent,
     ReactionCustomEvent,
     TaskUpdateCustomEvent,
 )
 
 LangChainAgentMessage = AIMessage | AIMessageChunk
-SupportedCustomEvents = ArtifactCustomEvent | MessageCustomEvent | ReactionCustomEvent | TaskUpdateCustomEvent
+SupportedCustomEvents = ArtifactCustomEvent | CardCustomEvent | MessageCustomEvent | ReactionCustomEvent | TaskUpdateCustomEvent
 
 A2AAgentEvent = TaskStatusUpdateEvent | TaskArtifactUpdateEvent
 
@@ -124,12 +126,9 @@ class LangGraphA2AConverter:
         explicitly via ArtifactCustomEvent — no automatic promotion of
         FilePart to TaskArtifactUpdateEvent.
 
-        JSX Card content is detected and routed to the card path, which
-        produces a message with a card file part and CardsURI extension.
+        To send a card, pass a Card instance to Thread.post() instead of a
+        plain JSX string — plain strings are always treated as regular text.
         """
-        if isinstance(message.content, str) and is_jsx_card(message.content):
-            return self._convert_card_message(message)
-
         a2a_parts = LcToA2AConverter.from_message(message)
         if not a2a_parts:
             return []
@@ -149,15 +148,27 @@ class LangGraphA2AConverter:
             status=TaskStatus(state=TaskState.TASK_STATE_WORKING, message=msg),
         )]
 
-    def _convert_card_message(self, message: AIMessage) -> list[A2AAgentEvent]:
-        message_id = message.id or str(uuid.uuid4())
+    def _convert_card(
+            self,
+            card: Card,
+            message_id: str | None = None,
+            routing: MessageActionPayload | None = None,
+    ) -> list[A2AAgentEvent]:
+        parts = [build_card_a2a_part(card)]
+        extensions = [CARDS_EXTENSION_URI_V1]
+        if routing is not None:
+            parts.append(self._build_extension_part(
+                routing.model_dump(by_alias=True, exclude_none=True),
+                MESSAGE_ACTION_PAYLOAD_SCHEMA_V1,
+            ))
+            extensions.append(MESSAGING_EXTENSION_URI_V1)
         msg = Message(
             context_id=self._context_id,
             task_id=self._task_id,
-            message_id=message_id,
+            message_id=message_id or str(uuid.uuid4()),
             role=Role.ROLE_AGENT,
-            parts=[build_card_part(message.content)],
-            extensions=[CARDS_EXTENSION_URI_V1],
+            parts=parts,
+            extensions=extensions,
         )
         return [TaskStatusUpdateEvent(
             task_id=self._task_id,
@@ -181,6 +192,9 @@ class LangGraphA2AConverter:
                 append=event_data.append,
                 last_chunk=event_data.is_last_chunk,
             )]
+
+        if isinstance(event_data, CardCustomEvent):
+            return self._convert_card(event_data.card, routing=event_data.routing)
 
         if isinstance(event_data, MessageCustomEvent):
             if event_data.ephemeral:
@@ -214,9 +228,12 @@ class LangGraphA2AConverter:
     ) -> list[A2AAgentEvent]:
         """Convert a message with explicit routing target to an A2A event.
 
-        Produces a TaskStatusUpdateEvent whose message contains both the text
+        Produces a TaskStatusUpdateEvent whose message contains both the content
         parts from the AIMessage and a DataPart carrying the MessageActionPayload
         so the distribution knows where to deliver the message.
+
+        To send a routed card, pass a Card instance to Thread.reply() instead
+        of a plain JSX string — plain strings are always treated as regular text.
         """
         a2a_parts = LcToA2AConverter.from_message(message)
         if not a2a_parts:
@@ -227,6 +244,8 @@ class LangGraphA2AConverter:
             MESSAGE_ACTION_PAYLOAD_SCHEMA_V1,
         ))
 
+        extensions = [MESSAGING_EXTENSION_URI_V1]
+
         message_id = message.id or str(uuid.uuid4())
         msg = Message(
             context_id=self._context_id,
@@ -234,7 +253,7 @@ class LangGraphA2AConverter:
             message_id=message_id,
             role=Role.ROLE_AGENT,
             parts=a2a_parts,
-            extensions=[MESSAGING_EXTENSION_URI_V1],
+            extensions=extensions,
         )
         return [TaskStatusUpdateEvent(
             task_id=self._task_id,

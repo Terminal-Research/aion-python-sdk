@@ -30,12 +30,19 @@ class ArtifactOutput(BaseModel):
 
 
 class CardOutput(BaseModel):
-    """Route event content as a JSX Card artifact.
+    """Route event content as a card message.
 
-    When set on an ADK Event, the converter treats the event's text content as
-    JSX and emits it as a TaskArtifactUpdateEvent with the card media type.
-    The card is identified by the name extracted from the JSX root element.
+    When set on an ADK Event, the converter emits the card as a
+    TaskStatusUpdateEvent with a card file part and CardsURI extension.
+    Set url for remote cards; leave it unset when the JSX is inline in
+    the event content.
     """
+
+    url: str | None = Field(
+        default=None,
+        description="Remote URL of the card document. When set, the converter "
+                    "uses url instead of reading JSX from event content.",
+    )
 
 
 class ReactionOutput(BaseModel):
