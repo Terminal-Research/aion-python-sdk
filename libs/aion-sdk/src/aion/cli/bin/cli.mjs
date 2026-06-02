@@ -45902,7 +45902,7 @@ function formatAgentSource(source) {
   ].filter(Boolean).join("\n");
 }
 function formatAgentSourcesList(sources) {
-  return ["Agent sources", sources.map(formatAgentSource).join("\n\n")].join("\n");
+  return ["Agent sources", sources.map(formatAgentSource).join("\n\n")].join("\n\n");
 }
 function getRequestModeLabel(mode) {
   return REQUEST_MODE_OPTIONS.find((option) => option.value === mode)?.label ?? "Send message";

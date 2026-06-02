@@ -132,7 +132,7 @@ function formatAgentSource(source: AgentSourceRecord): string {
 export function formatAgentSourcesList(
 	sources: readonly AgentSourceRecord[]
 ): string {
-	return ["Agent sources", sources.map(formatAgentSource).join("\n\n")].join("\n");
+	return ["Agent sources", sources.map(formatAgentSource).join("\n\n")].join("\n\n");
 }
 
 export function getRequestModeLabel(mode: RequestMode): string {

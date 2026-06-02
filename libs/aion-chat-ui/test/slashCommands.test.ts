@@ -55,7 +55,7 @@ describe("slashCommands", () => {
 		expect(clearLeadingSlashDraft("hello")).toBe("hello");
 	});
 
-	it("formats the sources command output without a spacer after the heading", () => {
+	it("formats the sources command output with a spacer after the heading", () => {
 		const sources: AgentSourceRecord[] = [
 			{
 				sourceKey: "aion-registry-development",
@@ -80,6 +80,7 @@ describe("slashCommands", () => {
 		expect(formatAgentSourcesList(sources)).toBe(
 			[
 				"Agent sources",
+				"",
 				"aion-registry-development",
 				"Type: registry",
 				"Description: Aion development registry",
