@@ -420,66 +420,70 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		});
 	}, [slashSubmenuId]);
 
-	useEffect(() => {
-		let closed = false;
-
-		const discover = async (): Promise<void> => {
-			try {
-				const runtimeSources = mergeAgentSources(
-					activeEnvironmentSettings.agentSources,
-					selectedEnvironment,
-					agentEndpointUrl
-				);
-				const explicitSourceKey = agentEndpointUrl
-					? createExplicitAgentSource(agentEndpointUrl).sourceKey
-					: undefined;
-				const explicitSourceFetch = buildAuthenticatedFetch({
-					headers: options.headers,
-					token: options.token
-				});
-				const discovery = await discoverAgentSources(
-					runtimeSources,
-					fetch,
-					{
-						environmentId: selectedEnvironment,
-						controlPlaneAccessTokenProvider: () =>
-							getStoredAccessToken(selectedEnvironment),
-						graphQLFetchImpl: fetch,
-						sourceFetchImpl: (source) =>
-							source.sourceKey === explicitSourceKey ? explicitSourceFetch : fetch
-					}
-				);
-				if (closed) {
-					return;
+	const refreshAgentDiscovery = async ({
+		announceExplicitSourceErrors = true,
+		isClosed = () => false
+	}: {
+		announceExplicitSourceErrors?: boolean;
+		isClosed?: () => boolean;
+	} = {}): Promise<AgentSourceRecord[] | undefined> => {
+		try {
+			const runtimeSources = mergeAgentSources(
+				activeEnvironmentSettings.agentSources,
+				selectedEnvironment,
+				agentEndpointUrl
+			);
+			const explicitSourceKey = agentEndpointUrl
+				? createExplicitAgentSource(agentEndpointUrl).sourceKey
+				: undefined;
+			const explicitSourceFetch = buildAuthenticatedFetch({
+				headers: options.headers,
+				token: options.token
+			});
+			const discovery = await discoverAgentSources(
+				runtimeSources,
+				fetch,
+				{
+					environmentId: selectedEnvironment,
+					controlPlaneAccessTokenProvider: () =>
+						getStoredAccessToken(selectedEnvironment),
+					graphQLFetchImpl: fetch,
+					sourceFetchImpl: (source) =>
+						source.sourceKey === explicitSourceKey ? explicitSourceFetch : fetch
 				}
+			);
+			if (isClosed()) {
+				return undefined;
+			}
 
-				const nextSources = Object.fromEntries(
-					discovery.sources.map((source) => [source.sourceKey, source])
-				);
-				const persistentSources = Object.fromEntries(
-					discovery.sources
-						.filter(
-							(source) =>
-								!isTransientAgentSource(source) &&
-								source.sourceKey !== explicitSourceKey
-						)
-						.map((source) => [source.sourceKey, source])
-				);
-				const nextAgents = toPersistedAgents(
-					discovery.agents.filter(
-						(agent) =>
-							!isTransientAgentSource(agent.source) &&
-							agent.sourceKey !== explicitSourceKey
-					),
-					activeEnvironmentSettings.agents
-				);
-				setAgentSources(nextSources);
-				setDiscoveredAgents(discovery.agents);
-				persistEnvironmentSettings(selectedEnvironment, {
-					agents: nextAgents,
-					agentSources: persistentSources
-				});
+			const nextSources = Object.fromEntries(
+				discovery.sources.map((source) => [source.sourceKey, source])
+			);
+			const persistentSources = Object.fromEntries(
+				discovery.sources
+					.filter(
+						(source) =>
+							!isTransientAgentSource(source) &&
+							source.sourceKey !== explicitSourceKey
+					)
+					.map((source) => [source.sourceKey, source])
+			);
+			const nextAgents = toPersistedAgents(
+				discovery.agents.filter(
+					(agent) =>
+						!isTransientAgentSource(agent.source) &&
+						agent.sourceKey !== explicitSourceKey
+				),
+				activeEnvironmentSettings.agents
+			);
+			setAgentSources(nextSources);
+			setDiscoveredAgents(discovery.agents);
+			persistEnvironmentSettings(selectedEnvironment, {
+				agents: nextAgents,
+				agentSources: persistentSources
+			});
 
+			if (announceExplicitSourceErrors) {
 				for (const error of discovery.errors) {
 					if (!error.source.isDefault && error.error) {
 						appendSystem(
@@ -487,54 +491,61 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 						);
 					}
 				}
-
-				const nextSelected = selectDiscoveredAgent(discovery.agents, {
-					requestedAgentId: options.agentId,
-					selectedAgentKey,
-					selectedAgentId: options.agentId ? undefined : selectedAgentId,
-					explicitSourceKey,
-					autoSelectExplicit: Boolean(agentEndpointUrl)
-				});
-
-				if (nextSelected) {
-					const shouldPersistSelection = !isTransientAgentSource(nextSelected.source);
-					setSelectedAgentKey(nextSelected.agentKey);
-					setSelectedAgentId(nextSelected.id);
-					persistEnvironmentSettings(selectedEnvironment, {
-						...(shouldPersistSelection
-							? {
-									selectedAgentKey: nextSelected.agentKey,
-									selectedAgentId: nextSelected.id
-								}
-							: {}),
-						agents: nextAgents,
-						agentSources: persistentSources
-					});
-				} else if (selectedAgentKey || (!options.agentId && selectedAgentId)) {
-					setSelectedAgentKey(undefined);
-					setSelectedAgentId(undefined);
-					persistEnvironmentSettings(selectedEnvironment, {
-						selectedAgentKey: undefined,
-						selectedAgentId: undefined,
-						agents: nextAgents,
-						agentSources: persistentSources
-					});
-					appendSystem("The selected agent is no longer available.");
-				}
-			} catch (error) {
-				if (closed) {
-					return;
-				}
-				setDiscoveredAgents([]);
-				const message = error instanceof Error ? error.message : String(error);
-				if (agentEndpointUrl) {
-					appendSystem(`No agents were found from the provided URL: ${agentEndpointUrl}\n${message}`);
-				}
 			}
-		};
 
-		void discover();
+			const nextSelected = selectDiscoveredAgent(discovery.agents, {
+				requestedAgentId: options.agentId,
+				selectedAgentKey,
+				selectedAgentId: options.agentId ? undefined : selectedAgentId,
+				explicitSourceKey,
+				autoSelectExplicit: Boolean(agentEndpointUrl)
+			});
 
+			if (nextSelected) {
+				const shouldPersistSelection = !isTransientAgentSource(nextSelected.source);
+				setSelectedAgentKey(nextSelected.agentKey);
+				setSelectedAgentId(nextSelected.id);
+				persistEnvironmentSettings(selectedEnvironment, {
+					...(shouldPersistSelection
+						? {
+								selectedAgentKey: nextSelected.agentKey,
+								selectedAgentId: nextSelected.id
+							}
+						: {}),
+					agents: nextAgents,
+					agentSources: persistentSources
+				});
+			} else if (selectedAgentKey || (!options.agentId && selectedAgentId)) {
+				setSelectedAgentKey(undefined);
+				setSelectedAgentId(undefined);
+				persistEnvironmentSettings(selectedEnvironment, {
+					selectedAgentKey: undefined,
+					selectedAgentId: undefined,
+					agents: nextAgents,
+					agentSources: persistentSources
+				});
+				appendSystem("The selected agent is no longer available.");
+			}
+
+			return discovery.sources;
+		} catch (error) {
+			if (isClosed()) {
+				return undefined;
+			}
+			setDiscoveredAgents([]);
+			const message = error instanceof Error ? error.message : String(error);
+			if (agentEndpointUrl && announceExplicitSourceErrors) {
+				appendSystem(
+					`No agents were found from the provided URL: ${agentEndpointUrl}\n${message}`
+				);
+			}
+			return undefined;
+		}
+	};
+
+	useEffect(() => {
+		let closed = false;
+		void refreshAgentDiscovery({ isClosed: () => closed });
 		return () => {
 			closed = true;
 		};
@@ -884,7 +895,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		}
 		if (command.id === "sources") {
 			resetSlashSelection();
-			runSourcesSlashCommand();
+			void runSourcesSlashCommand();
 			return;
 		}
 
@@ -976,8 +987,12 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		}
 	};
 
-	const runSourcesSlashCommand = (): void => {
-		const sources = Object.values(agentSources).sort((left, right) =>
+	const runSourcesSlashCommand = async (): Promise<void> => {
+		const refreshedSources = await refreshAgentDiscovery({
+			announceExplicitSourceErrors: false
+		});
+		const sourceRecords = refreshedSources ?? Object.values(agentSources);
+		const sources = [...sourceRecords].sort((left, right) =>
 			left.sourceKey.localeCompare(right.sourceKey)
 		);
 		if (sources.length === 0) {

@@ -6,6 +6,8 @@ import { wrapToWidth } from "./messageLayout.js";
 
 export type SystemMessageKind = "system" | "status" | "protocol";
 
+const SYSTEM_COMMAND_HIGHLIGHT = "/sources";
+
 function labelForKind(kind: SystemMessageKind): string {
 	switch (kind) {
 		case "status":
@@ -16,6 +18,26 @@ function labelForKind(kind: SystemMessageKind): string {
 		default:
 			return "System";
 	}
+}
+
+function renderSystemLine(line: string): React.JSX.Element {
+	if (!line.includes(SYSTEM_COMMAND_HIGHLIGHT)) {
+		return <Text color={MESSAGE_THEME.foreground}>{line}</Text>;
+	}
+
+	const parts = line.split(SYSTEM_COMMAND_HIGHLIGHT);
+	return (
+		<>
+			{parts.map((part, index) => (
+				<React.Fragment key={`${part}-${index}`}>
+					{index > 0 ? (
+						<Text color={MESSAGE_THEME.primary}>{SYSTEM_COMMAND_HIGHLIGHT}</Text>
+					) : null}
+					{part ? <Text color={MESSAGE_THEME.foreground}>{part}</Text> : null}
+				</React.Fragment>
+			))}
+		</>
+	);
 }
 
 export function SystemMessageBubble({
@@ -41,7 +63,7 @@ export function SystemMessageBubble({
 					) : (
 						<Text>{" ".repeat(markerWidth)}</Text>
 					)}
-					<Text color={MESSAGE_THEME.foreground}>{line}</Text>
+					{renderSystemLine(line)}
 				</Box>
 			))}
 		</Box>

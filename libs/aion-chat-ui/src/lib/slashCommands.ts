@@ -115,6 +115,8 @@ export const SLASH_COMMANDS = [
 
 export type SlashCommandId = (typeof SLASH_COMMANDS)[number]["id"];
 
+const AGENT_SOURCES_REFRESH_NOTE =
+	"Registry sources update when Aion Chat starts and whenever /sources is run.";
 
 function formatAgentSource(source: AgentSourceRecord): string {
 	return [
@@ -132,7 +134,11 @@ function formatAgentSource(source: AgentSourceRecord): string {
 export function formatAgentSourcesList(
 	sources: readonly AgentSourceRecord[]
 ): string {
-	return ["Agent sources", sources.map(formatAgentSource).join("\n\n")].join("\n\n");
+	return [
+		"Agent sources",
+		sources.map(formatAgentSource).join("\n\n"),
+		AGENT_SOURCES_REFRESH_NOTE
+	].join("\n\n");
 }
 
 export function getRequestModeLabel(mode: RequestMode): string {

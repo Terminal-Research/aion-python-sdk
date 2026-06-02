@@ -93,7 +93,9 @@ describe("slashCommands", () => {
 				"Type: manifest",
 				"Description: Local Aion SDK server",
 				"URL: http://localhost:8000",
-				"Status: available"
+				"Status: available",
+				"",
+				"Registry sources update when Aion Chat starts and whenever /sources is run."
 			].join("\n")
 		);
 	});

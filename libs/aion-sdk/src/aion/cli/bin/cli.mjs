@@ -9632,14 +9632,14 @@ var require_react_reconciler_production = __commonJS({
       }
       var exports2 = {};
       "use strict";
-      var React15 = require_react(), Scheduler2 = require_scheduler(), assign = Object.assign, REACT_LEGACY_ELEMENT_TYPE = /* @__PURE__ */ Symbol.for("react.element"), REACT_ELEMENT_TYPE = /* @__PURE__ */ Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = /* @__PURE__ */ Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = /* @__PURE__ */ Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = /* @__PURE__ */ Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = /* @__PURE__ */ Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = /* @__PURE__ */ Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = /* @__PURE__ */ Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = /* @__PURE__ */ Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = /* @__PURE__ */ Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = /* @__PURE__ */ Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = /* @__PURE__ */ Symbol.for("react.memo"), REACT_LAZY_TYPE = /* @__PURE__ */ Symbol.for("react.lazy");
+      var React16 = require_react(), Scheduler2 = require_scheduler(), assign = Object.assign, REACT_LEGACY_ELEMENT_TYPE = /* @__PURE__ */ Symbol.for("react.element"), REACT_ELEMENT_TYPE = /* @__PURE__ */ Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = /* @__PURE__ */ Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = /* @__PURE__ */ Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = /* @__PURE__ */ Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = /* @__PURE__ */ Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = /* @__PURE__ */ Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = /* @__PURE__ */ Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = /* @__PURE__ */ Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = /* @__PURE__ */ Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = /* @__PURE__ */ Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = /* @__PURE__ */ Symbol.for("react.memo"), REACT_LAZY_TYPE = /* @__PURE__ */ Symbol.for("react.lazy");
       /* @__PURE__ */ Symbol.for("react.scope");
       var REACT_ACTIVITY_TYPE = /* @__PURE__ */ Symbol.for("react.activity");
       /* @__PURE__ */ Symbol.for("react.legacy_hidden");
       /* @__PURE__ */ Symbol.for("react.tracing_marker");
       var REACT_MEMO_CACHE_SENTINEL = /* @__PURE__ */ Symbol.for("react.memo_cache_sentinel");
       /* @__PURE__ */ Symbol.for("react.view_transition");
-      var MAYBE_ITERATOR_SYMBOL = Symbol.iterator, REACT_CLIENT_REFERENCE = /* @__PURE__ */ Symbol.for("react.client.reference"), isArrayImpl = Array.isArray, ReactSharedInternals = React15.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, rendererVersion = $$$config.rendererVersion, rendererPackageName = $$$config.rendererPackageName, extraDevToolsConfig = $$$config.extraDevToolsConfig, getPublicInstance = $$$config.getPublicInstance, getRootHostContext = $$$config.getRootHostContext, getChildHostContext = $$$config.getChildHostContext, prepareForCommit = $$$config.prepareForCommit, resetAfterCommit = $$$config.resetAfterCommit, createInstance = $$$config.createInstance;
+      var MAYBE_ITERATOR_SYMBOL = Symbol.iterator, REACT_CLIENT_REFERENCE = /* @__PURE__ */ Symbol.for("react.client.reference"), isArrayImpl = Array.isArray, ReactSharedInternals = React16.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, rendererVersion = $$$config.rendererVersion, rendererPackageName = $$$config.rendererPackageName, extraDevToolsConfig = $$$config.extraDevToolsConfig, getPublicInstance = $$$config.getPublicInstance, getRootHostContext = $$$config.getRootHostContext, getChildHostContext = $$$config.getChildHostContext, prepareForCommit = $$$config.prepareForCommit, resetAfterCommit = $$$config.resetAfterCommit, createInstance = $$$config.createInstance;
       $$$config.cloneMutableInstance;
       var appendInitialChild = $$$config.appendInitialChild, finalizeInitialChildren = $$$config.finalizeInitialChildren, shouldSetTextContent = $$$config.shouldSetTextContent, createTextInstance = $$$config.createTextInstance;
       $$$config.cloneMutableTextInstance;
@@ -22232,14 +22232,14 @@ var require_react_reconciler_development = __commonJS({
       }
       var exports2 = {};
       "use strict";
-      var React15 = require_react(), Scheduler2 = require_scheduler(), assign = Object.assign, REACT_LEGACY_ELEMENT_TYPE = /* @__PURE__ */ Symbol.for("react.element"), REACT_ELEMENT_TYPE = /* @__PURE__ */ Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = /* @__PURE__ */ Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = /* @__PURE__ */ Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = /* @__PURE__ */ Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = /* @__PURE__ */ Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = /* @__PURE__ */ Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = /* @__PURE__ */ Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = /* @__PURE__ */ Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = /* @__PURE__ */ Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = /* @__PURE__ */ Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = /* @__PURE__ */ Symbol.for("react.memo"), REACT_LAZY_TYPE = /* @__PURE__ */ Symbol.for("react.lazy");
+      var React16 = require_react(), Scheduler2 = require_scheduler(), assign = Object.assign, REACT_LEGACY_ELEMENT_TYPE = /* @__PURE__ */ Symbol.for("react.element"), REACT_ELEMENT_TYPE = /* @__PURE__ */ Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = /* @__PURE__ */ Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = /* @__PURE__ */ Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = /* @__PURE__ */ Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = /* @__PURE__ */ Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = /* @__PURE__ */ Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = /* @__PURE__ */ Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = /* @__PURE__ */ Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = /* @__PURE__ */ Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = /* @__PURE__ */ Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = /* @__PURE__ */ Symbol.for("react.memo"), REACT_LAZY_TYPE = /* @__PURE__ */ Symbol.for("react.lazy");
       /* @__PURE__ */ Symbol.for("react.scope");
       var REACT_ACTIVITY_TYPE = /* @__PURE__ */ Symbol.for("react.activity");
       /* @__PURE__ */ Symbol.for("react.legacy_hidden");
       /* @__PURE__ */ Symbol.for("react.tracing_marker");
       var REACT_MEMO_CACHE_SENTINEL = /* @__PURE__ */ Symbol.for("react.memo_cache_sentinel");
       /* @__PURE__ */ Symbol.for("react.view_transition");
-      var MAYBE_ITERATOR_SYMBOL = Symbol.iterator, REACT_CLIENT_REFERENCE = /* @__PURE__ */ Symbol.for("react.client.reference"), isArrayImpl = Array.isArray, ReactSharedInternals = React15.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, rendererVersion = $$$config.rendererVersion, rendererPackageName = $$$config.rendererPackageName, extraDevToolsConfig = $$$config.extraDevToolsConfig, getPublicInstance = $$$config.getPublicInstance, getRootHostContext = $$$config.getRootHostContext, getChildHostContext = $$$config.getChildHostContext, prepareForCommit = $$$config.prepareForCommit, resetAfterCommit = $$$config.resetAfterCommit, createInstance = $$$config.createInstance;
+      var MAYBE_ITERATOR_SYMBOL = Symbol.iterator, REACT_CLIENT_REFERENCE = /* @__PURE__ */ Symbol.for("react.client.reference"), isArrayImpl = Array.isArray, ReactSharedInternals = React16.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, rendererVersion = $$$config.rendererVersion, rendererPackageName = $$$config.rendererPackageName, extraDevToolsConfig = $$$config.extraDevToolsConfig, getPublicInstance = $$$config.getPublicInstance, getRootHostContext = $$$config.getRootHostContext, getChildHostContext = $$$config.getChildHostContext, prepareForCommit = $$$config.prepareForCommit, resetAfterCommit = $$$config.resetAfterCommit, createInstance = $$$config.createInstance;
       $$$config.cloneMutableInstance;
       var appendInitialChild = $$$config.appendInitialChild, finalizeInitialChildren = $$$config.finalizeInitialChildren, shouldSetTextContent = $$$config.shouldSetTextContent, createTextInstance = $$$config.createTextInstance;
       $$$config.cloneMutableTextInstance;
@@ -28590,18 +28590,18 @@ var require_react_jsx_runtime_development = __commonJS({
       function isValidElement(object) {
         return "object" === typeof object && null !== object && object.$$typeof === REACT_ELEMENT_TYPE;
       }
-      var React15 = require_react(), REACT_ELEMENT_TYPE = /* @__PURE__ */ Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = /* @__PURE__ */ Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = /* @__PURE__ */ Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = /* @__PURE__ */ Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = /* @__PURE__ */ Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = /* @__PURE__ */ Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = /* @__PURE__ */ Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = /* @__PURE__ */ Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = /* @__PURE__ */ Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = /* @__PURE__ */ Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = /* @__PURE__ */ Symbol.for("react.memo"), REACT_LAZY_TYPE = /* @__PURE__ */ Symbol.for("react.lazy"), REACT_ACTIVITY_TYPE = /* @__PURE__ */ Symbol.for("react.activity"), REACT_CLIENT_REFERENCE = /* @__PURE__ */ Symbol.for("react.client.reference"), ReactSharedInternals = React15.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, hasOwnProperty = Object.prototype.hasOwnProperty, isArrayImpl = Array.isArray, createTask = console.createTask ? console.createTask : function() {
+      var React16 = require_react(), REACT_ELEMENT_TYPE = /* @__PURE__ */ Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = /* @__PURE__ */ Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = /* @__PURE__ */ Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = /* @__PURE__ */ Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = /* @__PURE__ */ Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = /* @__PURE__ */ Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = /* @__PURE__ */ Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = /* @__PURE__ */ Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = /* @__PURE__ */ Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = /* @__PURE__ */ Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = /* @__PURE__ */ Symbol.for("react.memo"), REACT_LAZY_TYPE = /* @__PURE__ */ Symbol.for("react.lazy"), REACT_ACTIVITY_TYPE = /* @__PURE__ */ Symbol.for("react.activity"), REACT_CLIENT_REFERENCE = /* @__PURE__ */ Symbol.for("react.client.reference"), ReactSharedInternals = React16.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, hasOwnProperty = Object.prototype.hasOwnProperty, isArrayImpl = Array.isArray, createTask = console.createTask ? console.createTask : function() {
         return null;
       };
-      React15 = {
+      React16 = {
         react_stack_bottom_frame: function(callStackForError) {
           return callStackForError();
         }
       };
       var specialPropKeyWarningShown;
       var didWarnAboutElementRef = {};
-      var unknownOwnerDebugStack = React15.react_stack_bottom_frame.bind(
-        React15,
+      var unknownOwnerDebugStack = React16.react_stack_bottom_frame.bind(
+        React16,
         UnknownOwner
       )();
       var unknownOwnerDebugTask = createTask(getTaskName(UnknownOwner));
@@ -44931,7 +44931,7 @@ function parseCliArgs(argv) {
 }
 
 // src/app.tsx
-var import_react33 = __toESM(require_react(), 1);
+var import_react34 = __toESM(require_react(), 1);
 import { randomUUID as randomUUID2 } from "crypto";
 
 // src/components/ChatComposer.tsx
@@ -44973,6 +44973,7 @@ var COMPOSER_THEME = {
 var MESSAGE_THEME = {
   background: AION_THEME.colors.panelBackground,
   foreground: AION_THEME.colors.textPrimary,
+  primary: AION_THEME.colors.brandPrimary,
   accent: AION_THEME.colors.textStrong,
   muted: AION_THEME.colors.textMuted,
   labelAccent: AION_THEME.colors.brandAccent
@@ -45601,7 +45602,9 @@ function AgentMessageBubble({
 }
 
 // src/components/messages/SystemMessageBubble.tsx
+var import_react32 = __toESM(require_react(), 1);
 var import_jsx_runtime4 = __toESM(require_jsx_runtime(), 1);
+var SYSTEM_COMMAND_HIGHLIGHT = "/sources";
 function labelForKind(kind) {
   switch (kind) {
     case "status":
@@ -45612,6 +45615,16 @@ function labelForKind(kind) {
     default:
       return "System";
   }
+}
+function renderSystemLine(line) {
+  if (!line.includes(SYSTEM_COMMAND_HIGHLIGHT)) {
+    return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: MESSAGE_THEME.foreground, children: line });
+  }
+  const parts = line.split(SYSTEM_COMMAND_HIGHLIGHT);
+  return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(import_jsx_runtime4.Fragment, { children: parts.map((part, index) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_react32.default.Fragment, { children: [
+    index > 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: MESSAGE_THEME.primary, children: SYSTEM_COMMAND_HIGHLIGHT }) : null,
+    part ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: MESSAGE_THEME.foreground, children: part }) : null
+  ] }, `${part}-${index}`)) });
 }
 function SystemMessageBubble({
   body,
@@ -45624,7 +45637,7 @@ function SystemMessageBubble({
   const lines = wrapToWidth2(body, contentWidth);
   return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { flexDirection: "column", width: lineWidth, children: lines.map((line, index) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { children: [
     index === 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: MESSAGE_THEME.labelAccent, children: marker }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { children: " ".repeat(markerWidth) }),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: MESSAGE_THEME.foreground, children: line })
+    renderSystemLine(line)
   ] }, `${kind}-${index}`)) });
 }
 
@@ -45653,7 +45666,7 @@ function UserMessageBubble({
 }
 
 // src/components/messages/WorkingIndicator.tsx
-var import_react32 = __toESM(require_react(), 1);
+var import_react33 = __toESM(require_react(), 1);
 var import_jsx_runtime6 = __toESM(require_jsx_runtime(), 1);
 function formatElapsed(startedAt, now) {
   const elapsedSeconds = Math.max(0, Math.floor((now - startedAt) / 1e3));
@@ -45667,11 +45680,11 @@ function formatElapsed(startedAt, now) {
 function WorkingIndicator({
   startedAt
 }) {
-  const [now, setNow] = (0, import_react32.useState)(Date.now());
-  const [frame, setFrame] = (0, import_react32.useState)(0);
+  const [now, setNow] = (0, import_react33.useState)(Date.now());
+  const [frame, setFrame] = (0, import_react33.useState)(0);
   const animatedLabel = "\xB7 Working";
-  const elapsedLabel = (0, import_react32.useMemo)(() => formatElapsed(startedAt, now), [now, startedAt]);
-  (0, import_react32.useEffect)(() => {
+  const elapsedLabel = (0, import_react33.useMemo)(() => formatElapsed(startedAt, now), [now, startedAt]);
+  (0, import_react33.useEffect)(() => {
     const timer = setInterval(() => {
       setNow(Date.now());
       setFrame((current) => current + 1);
@@ -45891,6 +45904,7 @@ var SLASH_COMMANDS = [
     options: []
   }
 ];
+var AGENT_SOURCES_REFRESH_NOTE = "Registry sources update when Aion Chat starts and whenever /sources is run.";
 function formatAgentSource(source) {
   return [
     source.sourceKey,
@@ -45902,7 +45916,11 @@ function formatAgentSource(source) {
   ].filter(Boolean).join("\n");
 }
 function formatAgentSourcesList(sources) {
-  return ["Agent sources", sources.map(formatAgentSource).join("\n\n")].join("\n\n");
+  return [
+    "Agent sources",
+    sources.map(formatAgentSource).join("\n\n"),
+    AGENT_SOURCES_REFRESH_NOTE
+  ].join("\n\n");
 }
 function getRequestModeLabel(mode) {
   return REQUEST_MODE_OPTIONS.find((option) => option.value === mode)?.label ?? "Send message";
@@ -51254,53 +51272,53 @@ function parseExactSlashCommand(value) {
 }
 function ChatApp({ options }) {
   const { exit } = use_app_default();
-  const initialSettingsResult = (0, import_react33.useMemo)(() => loadChatSettings(), []);
-  const [chatSettings, setChatSettings] = (0, import_react33.useState)(
+  const initialSettingsResult = (0, import_react34.useMemo)(() => loadChatSettings(), []);
+  const [chatSettings, setChatSettings] = (0, import_react34.useState)(
     initialSettingsResult.settings
   );
-  const [selectedEnvironment, setSelectedEnvironment] = (0, import_react33.useState)(
+  const [selectedEnvironment, setSelectedEnvironment] = (0, import_react34.useState)(
     initialSettingsResult.settings.selectedEnvironment
   );
   const activeEnvironmentSettings = chatSettings.environments[selectedEnvironment];
   const controlPlaneApiBaseUrl = getControlPlaneApiBaseUrl(selectedEnvironment);
   const agentEndpointUrl = options.url;
-  const [pushLabel, setPushLabel] = (0, import_react33.useState)(
+  const [pushLabel, setPushLabel] = (0, import_react34.useState)(
     options.pushNotifications ? "Starting..." : "Disabled"
   );
-  const [streamLabel, setStreamLabel] = (0, import_react33.useState)("Idle");
-  const [draft, setDraft] = (0, import_react33.useState)("");
-  const [entries, setEntries] = (0, import_react33.useState)([]);
-  const [contextId, setContextId] = (0, import_react33.useState)();
-  const [taskId, setTaskId] = (0, import_react33.useState)();
-  const [workingStartedAt, setWorkingStartedAt] = (0, import_react33.useState)();
-  const [clientState, setClientState] = (0, import_react33.useState)();
-  const [pushConfig, setPushConfig] = (0, import_react33.useState)();
-  const [discoveredAgents, setDiscoveredAgents] = (0, import_react33.useState)([]);
-  const [agentSources, setAgentSources] = (0, import_react33.useState)(
+  const [streamLabel, setStreamLabel] = (0, import_react34.useState)("Idle");
+  const [draft, setDraft] = (0, import_react34.useState)("");
+  const [entries, setEntries] = (0, import_react34.useState)([]);
+  const [contextId, setContextId] = (0, import_react34.useState)();
+  const [taskId, setTaskId] = (0, import_react34.useState)();
+  const [workingStartedAt, setWorkingStartedAt] = (0, import_react34.useState)();
+  const [clientState, setClientState] = (0, import_react34.useState)();
+  const [pushConfig, setPushConfig] = (0, import_react34.useState)();
+  const [discoveredAgents, setDiscoveredAgents] = (0, import_react34.useState)([]);
+  const [agentSources, setAgentSources] = (0, import_react34.useState)(
     activeEnvironmentSettings.agentSources
   );
-  const [selectedAgentKey, setSelectedAgentKey] = (0, import_react33.useState)(
+  const [selectedAgentKey, setSelectedAgentKey] = (0, import_react34.useState)(
     options.agentId ? void 0 : activeEnvironmentSettings.selectedAgentKey
   );
-  const [selectedAgentId, setSelectedAgentId] = (0, import_react33.useState)(
+  const [selectedAgentId, setSelectedAgentId] = (0, import_react34.useState)(
     options.agentId ?? activeEnvironmentSettings.selectedAgentId
   );
-  const [selectedSuggestionIndex, setSelectedSuggestionIndex] = (0, import_react33.useState)(0);
-  const [selectedFileSuggestionIndex, setSelectedFileSuggestionIndex] = (0, import_react33.useState)(0);
-  const [selectedSlashIndex, setSelectedSlashIndex] = (0, import_react33.useState)(0);
-  const [selectedSlashSubmenuIndex, setSelectedSlashSubmenuIndex] = (0, import_react33.useState)(0);
-  const [slashSubmenuId, setSlashSubmenuId] = (0, import_react33.useState)();
-  const [requestMode, setRequestMode] = (0, import_react33.useState)(
+  const [selectedSuggestionIndex, setSelectedSuggestionIndex] = (0, import_react34.useState)(0);
+  const [selectedFileSuggestionIndex, setSelectedFileSuggestionIndex] = (0, import_react34.useState)(0);
+  const [selectedSlashIndex, setSelectedSlashIndex] = (0, import_react34.useState)(0);
+  const [selectedSlashSubmenuIndex, setSelectedSlashSubmenuIndex] = (0, import_react34.useState)(0);
+  const [slashSubmenuId, setSlashSubmenuId] = (0, import_react34.useState)();
+  const [requestMode, setRequestMode] = (0, import_react34.useState)(
     activeEnvironmentSettings.requestMode
   );
-  const [responseMode, setResponseMode] = (0, import_react33.useState)(
+  const [responseMode, setResponseMode] = (0, import_react34.useState)(
     activeEnvironmentSettings.responseMode
   );
-  const [reconnectNonce, setReconnectNonce] = (0, import_react33.useState)(0);
-  const shownMessageKeysRef = (0, import_react33.useRef)(/* @__PURE__ */ new Set());
-  const streamedTaskIdsRef = (0, import_react33.useRef)(/* @__PURE__ */ new Set());
-  const lastCopyableResponseRef = (0, import_react33.useRef)(void 0);
-  const lastConnectionNoticeRef = (0, import_react33.useRef)(void 0);
+  const [reconnectNonce, setReconnectNonce] = (0, import_react34.useState)(0);
+  const shownMessageKeysRef = (0, import_react34.useRef)(/* @__PURE__ */ new Set());
+  const streamedTaskIdsRef = (0, import_react34.useRef)(/* @__PURE__ */ new Set());
+  const lastCopyableResponseRef = (0, import_react34.useRef)(void 0);
+  const lastConnectionNoticeRef = (0, import_react34.useRef)(void 0);
   const appendEntry = (role, body) => {
     setEntries((current) => [
       ...current,
@@ -51388,21 +51406,21 @@ function ChatApp({ options }) {
     setClientState(void 0);
     setReconnectNonce((current) => current + 1);
   };
-  (0, import_react33.useEffect)(() => {
+  (0, import_react34.useEffect)(() => {
     if (initialSettingsResult.warning) {
       appendSystem(initialSettingsResult.warning);
     }
   }, [initialSettingsResult.warning]);
-  const slashQuery = (0, import_react33.useMemo)(() => {
+  const slashQuery = (0, import_react34.useMemo)(() => {
     if (slashSubmenuId) {
       return void 0;
     }
     return getLeadingSlashQuery(draft);
   }, [draft, slashSubmenuId]);
-  const slashCommands = (0, import_react33.useMemo)(() => {
+  const slashCommands = (0, import_react34.useMemo)(() => {
     return filterSlashCommands(slashQuery);
   }, [slashQuery]);
-  const slashSubmenu = (0, import_react33.useMemo)(() => {
+  const slashSubmenu = (0, import_react34.useMemo)(() => {
     const command = getSlashCommandById(slashSubmenuId);
     if (!command) {
       return void 0;
@@ -51414,7 +51432,7 @@ function ChatApp({ options }) {
       selectedIndex: selectedSlashSubmenuIndex
     };
   }, [selectedSlashSubmenuIndex, slashSubmenuId]);
-  const agentSuggestions = (0, import_react33.useMemo)(() => {
+  const agentSuggestions = (0, import_react34.useMemo)(() => {
     if (slashQuery !== void 0 || slashSubmenuId) {
       return [];
     }
@@ -51424,7 +51442,7 @@ function ChatApp({ options }) {
     }
     return discoveredAgents.map((agent) => agent.id).filter((agentId) => agentId.startsWith(mentionMatch.query)).slice(0, 6);
   }, [discoveredAgents, draft, slashQuery, slashSubmenuId]);
-  const fileSuggestions = (0, import_react33.useMemo)(() => {
+  const fileSuggestions = (0, import_react34.useMemo)(() => {
     if (slashQuery !== void 0 || slashSubmenuId) {
       return [];
     }
@@ -51432,12 +51450,12 @@ function ChatApp({ options }) {
     if (!match) return [];
     return getFileSuggestions(match.query);
   }, [draft, slashQuery, slashSubmenuId]);
-  const selectedAgent = (0, import_react33.useMemo)(() => {
+  const selectedAgent = (0, import_react34.useMemo)(() => {
     return discoveredAgents.find(
       (agent) => selectedAgentKey ? agent.agentKey === selectedAgentKey : selectedAgentId ? agent.id === selectedAgentId : false
     );
   }, [discoveredAgents, selectedAgentId, selectedAgentKey]);
-  (0, import_react33.useEffect)(() => {
+  (0, import_react34.useEffect)(() => {
     setSelectedSuggestionIndex((current) => {
       if (agentSuggestions.length === 0) {
         return 0;
@@ -51445,13 +51463,13 @@ function ChatApp({ options }) {
       return Math.min(current, agentSuggestions.length - 1);
     });
   }, [agentSuggestions]);
-  (0, import_react33.useEffect)(() => {
+  (0, import_react34.useEffect)(() => {
     setSelectedFileSuggestionIndex((current) => {
       if (fileSuggestions.length === 0) return 0;
       return Math.min(current, fileSuggestions.length - 1);
     });
   }, [fileSuggestions]);
-  (0, import_react33.useEffect)(() => {
+  (0, import_react34.useEffect)(() => {
     setSelectedSlashIndex((current) => {
       if (slashCommands.length === 0) {
         return 0;
@@ -51459,7 +51477,7 @@ function ChatApp({ options }) {
       return Math.min(current, slashCommands.length - 1);
     });
   }, [slashCommands]);
-  (0, import_react33.useEffect)(() => {
+  (0, import_react34.useEffect)(() => {
     const optionCount = getSlashCommandById(slashSubmenuId)?.options.length ?? 0;
     setSelectedSlashSubmenuIndex((current) => {
       if (optionCount === 0) {
@@ -51468,53 +51486,55 @@ function ChatApp({ options }) {
       return Math.min(current, optionCount - 1);
     });
   }, [slashSubmenuId]);
-  (0, import_react33.useEffect)(() => {
-    let closed = false;
-    const discover = async () => {
-      try {
-        const runtimeSources = mergeAgentSources(
-          activeEnvironmentSettings.agentSources,
-          selectedEnvironment,
-          agentEndpointUrl
-        );
-        const explicitSourceKey = agentEndpointUrl ? createExplicitAgentSource(agentEndpointUrl).sourceKey : void 0;
-        const explicitSourceFetch = buildAuthenticatedFetch({
-          headers: options.headers,
-          token: options.token
-        });
-        const discovery = await discoverAgentSources(
-          runtimeSources,
-          fetch,
-          {
-            environmentId: selectedEnvironment,
-            controlPlaneAccessTokenProvider: () => getStoredAccessToken(selectedEnvironment),
-            graphQLFetchImpl: fetch,
-            sourceFetchImpl: (source) => source.sourceKey === explicitSourceKey ? explicitSourceFetch : fetch
-          }
-        );
-        if (closed) {
-          return;
+  const refreshAgentDiscovery = async ({
+    announceExplicitSourceErrors = true,
+    isClosed = () => false
+  } = {}) => {
+    try {
+      const runtimeSources = mergeAgentSources(
+        activeEnvironmentSettings.agentSources,
+        selectedEnvironment,
+        agentEndpointUrl
+      );
+      const explicitSourceKey = agentEndpointUrl ? createExplicitAgentSource(agentEndpointUrl).sourceKey : void 0;
+      const explicitSourceFetch = buildAuthenticatedFetch({
+        headers: options.headers,
+        token: options.token
+      });
+      const discovery = await discoverAgentSources(
+        runtimeSources,
+        fetch,
+        {
+          environmentId: selectedEnvironment,
+          controlPlaneAccessTokenProvider: () => getStoredAccessToken(selectedEnvironment),
+          graphQLFetchImpl: fetch,
+          sourceFetchImpl: (source) => source.sourceKey === explicitSourceKey ? explicitSourceFetch : fetch
         }
-        const nextSources = Object.fromEntries(
-          discovery.sources.map((source) => [source.sourceKey, source])
-        );
-        const persistentSources = Object.fromEntries(
-          discovery.sources.filter(
-            (source) => !isTransientAgentSource(source) && source.sourceKey !== explicitSourceKey
-          ).map((source) => [source.sourceKey, source])
-        );
-        const nextAgents = toPersistedAgents(
-          discovery.agents.filter(
-            (agent) => !isTransientAgentSource(agent.source) && agent.sourceKey !== explicitSourceKey
-          ),
-          activeEnvironmentSettings.agents
-        );
-        setAgentSources(nextSources);
-        setDiscoveredAgents(discovery.agents);
-        persistEnvironmentSettings(selectedEnvironment, {
-          agents: nextAgents,
-          agentSources: persistentSources
-        });
+      );
+      if (isClosed()) {
+        return void 0;
+      }
+      const nextSources = Object.fromEntries(
+        discovery.sources.map((source) => [source.sourceKey, source])
+      );
+      const persistentSources = Object.fromEntries(
+        discovery.sources.filter(
+          (source) => !isTransientAgentSource(source) && source.sourceKey !== explicitSourceKey
+        ).map((source) => [source.sourceKey, source])
+      );
+      const nextAgents = toPersistedAgents(
+        discovery.agents.filter(
+          (agent) => !isTransientAgentSource(agent.source) && agent.sourceKey !== explicitSourceKey
+        ),
+        activeEnvironmentSettings.agents
+      );
+      setAgentSources(nextSources);
+      setDiscoveredAgents(discovery.agents);
+      persistEnvironmentSettings(selectedEnvironment, {
+        agents: nextAgents,
+        agentSources: persistentSources
+      });
+      if (announceExplicitSourceErrors) {
         for (const error of discovery.errors) {
           if (!error.source.isDefault && error.error) {
             appendSystem(
@@ -51523,49 +51543,56 @@ ${error.error}`
             );
           }
         }
-        const nextSelected = selectDiscoveredAgent(discovery.agents, {
-          requestedAgentId: options.agentId,
-          selectedAgentKey,
-          selectedAgentId: options.agentId ? void 0 : selectedAgentId,
-          explicitSourceKey,
-          autoSelectExplicit: Boolean(agentEndpointUrl)
-        });
-        if (nextSelected) {
-          const shouldPersistSelection = !isTransientAgentSource(nextSelected.source);
-          setSelectedAgentKey(nextSelected.agentKey);
-          setSelectedAgentId(nextSelected.id);
-          persistEnvironmentSettings(selectedEnvironment, {
-            ...shouldPersistSelection ? {
-              selectedAgentKey: nextSelected.agentKey,
-              selectedAgentId: nextSelected.id
-            } : {},
-            agents: nextAgents,
-            agentSources: persistentSources
-          });
-        } else if (selectedAgentKey || !options.agentId && selectedAgentId) {
-          setSelectedAgentKey(void 0);
-          setSelectedAgentId(void 0);
-          persistEnvironmentSettings(selectedEnvironment, {
-            selectedAgentKey: void 0,
-            selectedAgentId: void 0,
-            agents: nextAgents,
-            agentSources: persistentSources
-          });
-          appendSystem("The selected agent is no longer available.");
-        }
-      } catch (error) {
-        if (closed) {
-          return;
-        }
-        setDiscoveredAgents([]);
-        const message = error instanceof Error ? error.message : String(error);
-        if (agentEndpointUrl) {
-          appendSystem(`No agents were found from the provided URL: ${agentEndpointUrl}
-${message}`);
-        }
       }
-    };
-    void discover();
+      const nextSelected = selectDiscoveredAgent(discovery.agents, {
+        requestedAgentId: options.agentId,
+        selectedAgentKey,
+        selectedAgentId: options.agentId ? void 0 : selectedAgentId,
+        explicitSourceKey,
+        autoSelectExplicit: Boolean(agentEndpointUrl)
+      });
+      if (nextSelected) {
+        const shouldPersistSelection = !isTransientAgentSource(nextSelected.source);
+        setSelectedAgentKey(nextSelected.agentKey);
+        setSelectedAgentId(nextSelected.id);
+        persistEnvironmentSettings(selectedEnvironment, {
+          ...shouldPersistSelection ? {
+            selectedAgentKey: nextSelected.agentKey,
+            selectedAgentId: nextSelected.id
+          } : {},
+          agents: nextAgents,
+          agentSources: persistentSources
+        });
+      } else if (selectedAgentKey || !options.agentId && selectedAgentId) {
+        setSelectedAgentKey(void 0);
+        setSelectedAgentId(void 0);
+        persistEnvironmentSettings(selectedEnvironment, {
+          selectedAgentKey: void 0,
+          selectedAgentId: void 0,
+          agents: nextAgents,
+          agentSources: persistentSources
+        });
+        appendSystem("The selected agent is no longer available.");
+      }
+      return discovery.sources;
+    } catch (error) {
+      if (isClosed()) {
+        return void 0;
+      }
+      setDiscoveredAgents([]);
+      const message = error instanceof Error ? error.message : String(error);
+      if (agentEndpointUrl && announceExplicitSourceErrors) {
+        appendSystem(
+          `No agents were found from the provided URL: ${agentEndpointUrl}
+${message}`
+        );
+      }
+      return void 0;
+    }
+  };
+  (0, import_react34.useEffect)(() => {
+    let closed = false;
+    void refreshAgentDiscovery({ isClosed: () => closed });
     return () => {
       closed = true;
     };
@@ -51578,7 +51605,7 @@ ${message}`);
     reconnectNonce,
     selectedEnvironment
   ]);
-  (0, import_react33.useEffect)(() => {
+  (0, import_react34.useEffect)(() => {
     let closed = false;
     let closePush;
     const handlePushEvent = (event) => {
@@ -51863,7 +51890,7 @@ ${JSON.stringify(
     }
     if (command.id === "sources") {
       resetSlashSelection();
-      runSourcesSlashCommand();
+      void runSourcesSlashCommand();
       return;
     }
     setSlashSubmenuId(command.id);
@@ -51949,8 +51976,12 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
       );
     }
   };
-  const runSourcesSlashCommand = () => {
-    const sources = Object.values(agentSources).sort(
+  const runSourcesSlashCommand = async () => {
+    const refreshedSources = await refreshAgentDiscovery({
+      announceExplicitSourceErrors: false
+    });
+    const sourceRecords = refreshedSources ?? Object.values(agentSources);
+    const sources = [...sourceRecords].sort(
       (left, right) => left.sourceKey.localeCompare(right.sourceKey)
     );
     if (sources.length === 0) {

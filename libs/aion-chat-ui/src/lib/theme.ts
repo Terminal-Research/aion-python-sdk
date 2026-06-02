@@ -36,6 +36,7 @@ export const COMPOSER_THEME = {
 export const MESSAGE_THEME = {
 	background: AION_THEME.colors.panelBackground,
 	foreground: AION_THEME.colors.textPrimary,
+	primary: AION_THEME.colors.brandPrimary,
 	accent: AION_THEME.colors.textStrong,
 	muted: AION_THEME.colors.textMuted,
 	labelAccent: AION_THEME.colors.brandAccent
