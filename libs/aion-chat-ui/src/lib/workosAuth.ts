@@ -1,6 +1,6 @@
 import { fetchCliAuthConfig, type CliAuthConfig } from "./authConfig.js";
 import {
-	keyringCredentialStore,
+	defaultCredentialStore,
 	type CredentialStore
 } from "./credentialStore.js";
 import type { AionEnvironmentId } from "./environment.js";
@@ -254,7 +254,7 @@ export async function loginWithWorkOS(
 	options: AuthOptions = {}
 ): Promise<AuthSession> {
 	const fetchImpl = options.fetchImpl ?? fetch;
-	const credentialStore = options.credentialStore ?? keyringCredentialStore;
+	const credentialStore = options.credentialStore ?? defaultCredentialStore;
 	const config = await fetchCliAuthConfig(environmentId, fetchImpl);
 	const deviceAuthorization = await requestDeviceAuthorization(config, fetchImpl);
 	await callbacks.onDeviceAuthorization?.({
@@ -289,7 +289,7 @@ export async function getStoredAccessToken(
 	}
 
 	const fetchImpl = options.fetchImpl ?? fetch;
-	const credentialStore = options.credentialStore ?? keyringCredentialStore;
+	const credentialStore = options.credentialStore ?? defaultCredentialStore;
 	const refreshToken = await credentialStore.getRefreshToken(environmentId);
 	if (!refreshToken) {
 		return undefined;

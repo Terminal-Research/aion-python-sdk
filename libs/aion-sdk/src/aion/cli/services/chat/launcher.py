@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import importlib.resources
+import json
 import os
 from pathlib import Path
 import platform
 import shutil
 import subprocess
+import sys
 from typing import Callable, Optional
 
 
@@ -17,6 +19,7 @@ class BinaryResolutionError(RuntimeError):
 
 
 AION_CHAT_SKIP_UPDATE_CHECK_ENV = "AION_CHAT_SKIP_UPDATE_CHECK"
+AION_CHAT_CREDENTIAL_HELPER_ENV = "AION_CHAT_CREDENTIAL_HELPER"
 
 
 @dataclass(frozen=True)
@@ -192,14 +195,29 @@ def resolve_chat_command() -> list[str]:
     )
 
 
+def _credential_helper_command() -> list[str]:
+    """Return the Python helper command used for chat credential access."""
+    return [sys.executable, "-m", "aion.cli.services.chat.credentials"]
+
+
 def build_chat_environment() -> dict[str, str]:
     """Build the child-process environment for the standalone UI.
 
     The Python launcher owns Python package updates, so the embedded chat UI
     should not prompt for npm package updates when started through ``aion chat``.
+
+    It also owns credential storage for Python-launched chat sessions. The
+    standalone UI normally uses the npm ``@napi-rs/keyring`` dependency, which is
+    available for direct ``aio``/``npx`` installs but is not present in Poetry
+    environments. ``AION_CHAT_CREDENTIAL_HELPER`` is a JSON-encoded argv array
+    for a small Python helper process. The Node UI calls that helper for
+    refresh-token get/set/delete operations, letting the Python package depend on
+    Python keyring support instead of bundling npm-native keyring artifacts into
+    the Python wheel.
     """
     env = dict(os.environ)
     env[AION_CHAT_SKIP_UPDATE_CHECK_ENV] = "1"
+    env[AION_CHAT_CREDENTIAL_HELPER_ENV] = json.dumps(_credential_helper_command())
     return env
 
 

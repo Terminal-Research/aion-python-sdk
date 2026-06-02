@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(here, "..");
 const distDir = path.join(projectRoot, "dist");
-const targetDir = path.resolve(projectRoot, "../aion-cli/src/aion/cli/bin");
+const targetDir = path.resolve(projectRoot, "../aion-sdk/src/aion/cli/bin");
 
 const artifacts = [
   "cli.mjs",

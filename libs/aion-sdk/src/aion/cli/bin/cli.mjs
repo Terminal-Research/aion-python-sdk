@@ -50835,7 +50835,9 @@ async function fetchCliAuthConfig(environmentId, fetchImpl = fetch) {
 }
 
 // src/lib/credentialStore.ts
+import { spawn as spawn3 } from "child_process";
 var SERVICE_NAME = "aion-chat";
+var AION_CHAT_CREDENTIAL_HELPER_ENV = "AION_CHAT_CREDENTIAL_HELPER";
 function accountName(environmentId) {
   return `${environmentId}:user`;
 }
@@ -50849,6 +50851,92 @@ async function loadKeyring() {
   const packageName = "@napi-rs/keyring";
   return import(packageName);
 }
+function parseCredentialHelperCommand(value) {
+  let parsed;
+  try {
+    parsed = JSON.parse(value);
+  } catch (error) {
+    throw new Error(
+      `${AION_CHAT_CREDENTIAL_HELPER_ENV} must be a JSON-encoded argv array.`
+    );
+  }
+  if (!Array.isArray(parsed) || parsed.length === 0 || !parsed.every((item) => typeof item === "string" && item.length > 0)) {
+    throw new Error(
+      `${AION_CHAT_CREDENTIAL_HELPER_ENV} must be a non-empty JSON array of strings.`
+    );
+  }
+  return parsed;
+}
+function parseCredentialHelperResponse(value) {
+  if (!value.trim()) {
+    return {};
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    throw new Error("Credential helper returned invalid JSON.");
+  }
+  if (parsed.refreshToken !== void 0 && parsed.refreshToken !== null && typeof parsed.refreshToken !== "string") {
+    throw new Error("Credential helper returned an invalid refreshToken value.");
+  }
+  return parsed;
+}
+var HelperCredentialStore = class {
+  command;
+  constructor(commandValue) {
+    this.command = parseCredentialHelperCommand(commandValue);
+  }
+  async getRefreshToken(environmentId) {
+    const response = await this.request({ action: "get", environmentId });
+    return response.refreshToken?.trim() || void 0;
+  }
+  async setRefreshToken(environmentId, refreshToken) {
+    await this.request({ action: "set", environmentId, refreshToken });
+  }
+  async deleteRefreshToken(environmentId) {
+    await this.request({ action: "delete", environmentId });
+  }
+  request(request) {
+    const [executable, ...args] = this.command;
+    return new Promise((resolve3, reject) => {
+      const child = spawn3(executable, args, {
+        stdio: ["pipe", "pipe", "pipe"]
+      });
+      if (!child.stdin || !child.stdout || !child.stderr) {
+        reject(new Error("Credential helper did not expose standard streams."));
+        return;
+      }
+      let stdout = "";
+      let stderr = "";
+      child.stdout.setEncoding("utf8");
+      child.stdout.on("data", (chunk) => {
+        stdout += chunk;
+      });
+      child.stderr.setEncoding("utf8");
+      child.stderr.on("data", (chunk) => {
+        stderr += chunk;
+      });
+      child.on("error", reject);
+      child.on("close", (code) => {
+        if (code !== 0) {
+          reject(
+            new Error(
+              stderr.trim() || `Credential helper exited with status ${code ?? "unknown"}.`
+            )
+          );
+          return;
+        }
+        try {
+          resolve3(parseCredentialHelperResponse(stdout));
+        } catch (error) {
+          reject(error);
+        }
+      });
+      child.stdin.end(JSON.stringify(request));
+    });
+  }
+};
 var KeyringCredentialStore = class {
   async getRefreshToken(environmentId) {
     try {
@@ -50885,6 +50973,14 @@ var KeyringCredentialStore = class {
   }
 };
 var keyringCredentialStore = new KeyringCredentialStore();
+function createDefaultCredentialStore(env3 = process.env) {
+  const helperCommand = env3[AION_CHAT_CREDENTIAL_HELPER_ENV];
+  if (helperCommand) {
+    return new HelperCredentialStore(helperCommand);
+  }
+  return keyringCredentialStore;
+}
+var defaultCredentialStore = createDefaultCredentialStore();
 
 // src/lib/workosAuth.ts
 var DEVICE_CODE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code";
@@ -51030,7 +51126,7 @@ async function refreshSession(environmentId, config, refreshToken, fetchImpl, cr
 }
 async function loginWithWorkOS(environmentId, callbacks = {}, options = {}) {
   const fetchImpl = options.fetchImpl ?? fetch;
-  const credentialStore = options.credentialStore ?? keyringCredentialStore;
+  const credentialStore = options.credentialStore ?? defaultCredentialStore;
   const config = await fetchCliAuthConfig(environmentId, fetchImpl);
   const deviceAuthorization = await requestDeviceAuthorization(config, fetchImpl);
   await callbacks.onDeviceAuthorization?.({
@@ -51057,7 +51153,7 @@ async function getStoredAccessToken(environmentId, options = {}) {
     return cached.accessToken;
   }
   const fetchImpl = options.fetchImpl ?? fetch;
-  const credentialStore = options.credentialStore ?? keyringCredentialStore;
+  const credentialStore = options.credentialStore ?? defaultCredentialStore;
   const refreshToken = await credentialStore.getRefreshToken(environmentId);
   if (!refreshToken) {
     return void 0;
@@ -52174,7 +52270,7 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
 }
 
 // src/lib/updateCheck.ts
-import { spawn as spawn3 } from "child_process";
+import { spawn as spawn4 } from "child_process";
 import { createInterface } from "readline/promises";
 var DEFAULT_TIMEOUT_MS = 1500;
 function buildNpmLatestVersionUrl(packageName) {
@@ -52355,7 +52451,7 @@ async function promptForUpdate(options) {
 }
 async function runUpdateInstall(command, cwd2 = process.cwd()) {
   return new Promise((resolve3) => {
-    const child = spawn3(command.command, command.args, {
+    const child = spawn4(command.command, command.args, {
       cwd: cwd2,
       stdio: "inherit"
     });

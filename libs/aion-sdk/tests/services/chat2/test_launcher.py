@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -176,6 +177,9 @@ def test_launch_chat_returns_process_exit_code(monkeypatch) -> None:
     assert recorded["check"] is False
     assert isinstance(recorded["env"], dict)
     assert recorded["env"]["AION_CHAT_SKIP_UPDATE_CHECK"] == "1"
+    helper = json.loads(recorded["env"]["AION_CHAT_CREDENTIAL_HELPER"])
+    assert helper[:2] == [launcher.sys.executable, "-m"]
+    assert helper[2] == "aion.cli.services.chat.credentials"
 
 
 def test_launch_chat_run_returns_process_exit_code(monkeypatch) -> None:
@@ -220,3 +224,6 @@ def test_launch_chat_run_returns_process_exit_code(monkeypatch) -> None:
     assert recorded["check"] is False
     assert isinstance(recorded["env"], dict)
     assert recorded["env"]["AION_CHAT_SKIP_UPDATE_CHECK"] == "1"
+    helper = json.loads(recorded["env"]["AION_CHAT_CREDENTIAL_HELPER"])
+    assert helper[:2] == [launcher.sys.executable, "-m"]
+    assert helper[2] == "aion.cli.services.chat.credentials"

@@ -15,6 +15,7 @@ aion-server-langgraph = { git = "https://github.com/Terminal-Research/aion-pytho
 aion-authoring-adk = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-authoring-adk", optional = true }
 aion-server-adk = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-server-adk", optional = true }
 asyncclick = "^8.0.1.2"
+keyring = ">=25.0.0"
 
 [tool.poetry.extras]
 langgraph-authoring = ["aion-authoring-langgraph"]
