@@ -213,7 +213,9 @@ def build_chat_environment() -> dict[str, str]:
     for a small Python helper process. The Node UI calls that helper for
     refresh-token get/set/delete operations, letting the Python package depend on
     Python keyring support instead of bundling npm-native keyring artifacts into
-    the Python wheel.
+    the Python wheel. The helper intentionally uses a Python-specific keyring
+    service name, so Python-launched chat does not reuse or modify credentials
+    created by the npm ``aio``/``aion-chat`` launch path.
     """
     env = dict(os.environ)
     env[AION_CHAT_SKIP_UPDATE_CHECK_ENV] = "1"

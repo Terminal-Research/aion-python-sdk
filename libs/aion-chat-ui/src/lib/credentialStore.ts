@@ -10,7 +10,9 @@ const SERVICE_NAME = "aion-chat";
  * Direct npm/npx chat launches leave this unset and use the installed Node
  * keyring package. The Python launcher sets it so the bundled Node UI can
  * delegate WorkOS refresh-token reads and writes to Python `keyring`, avoiding
- * npm-native keyring artifacts inside the Python package.
+ * npm-native keyring artifacts inside the Python package. The helper owns a
+ * separate Python keyring service, so it does not reuse or mutate credentials
+ * created by direct npm/npx launches.
  */
 export const AION_CHAT_CREDENTIAL_HELPER_ENV = "AION_CHAT_CREDENTIAL_HELPER";
 

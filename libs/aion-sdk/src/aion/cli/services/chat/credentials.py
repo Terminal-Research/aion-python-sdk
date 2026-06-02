@@ -9,7 +9,9 @@ The launcher advertises this module to the Node process through
 The helper protocol is intentionally small: the Node process sends one JSON
 request on stdin and receives one JSON response on stdout. Supported actions are
 ``get``, ``set``, and ``delete`` for the Aion WorkOS refresh token associated
-with an environment.
+with an environment. Python-launched chat stores credentials under a separate
+service name from the npm ``aio``/``aion-chat`` keyring implementation, so the
+two launch paths do not compete for ownership of the same keychain item.
 """
 
 from __future__ import annotations
@@ -18,7 +20,7 @@ import json
 import sys
 from typing import Any, TextIO
 
-SERVICE_NAME = "aion-chat"
+SERVICE_NAME = "aion-chat-python"
 
 
 class CredentialHelperError(RuntimeError):
@@ -26,13 +28,13 @@ class CredentialHelperError(RuntimeError):
 
 
 def _account_name(environment_id: str) -> str:
-    """Return the shared Aion chat account key for an environment.
+    """Return the Python helper account key for an environment.
 
     Args:
         environment_id: Aion environment identifier, such as ``development``.
 
     Returns:
-        Account key used by both the Node and Python credential stores.
+        Account key used within the Python credential helper service namespace.
     """
     return f"{environment_id}:user"
 
@@ -54,6 +56,24 @@ def _load_keyring() -> Any:
             "The Python keyring package is required for aion chat credentials."
         ) from exc
     return keyring
+
+
+def _get_password(account_name: str) -> str | None:
+    """Read a refresh token from the Python-launched chat credential namespace."""
+    keyring = _load_keyring()
+    return keyring.get_password(SERVICE_NAME, account_name)
+
+
+def _set_password(account_name: str, password: str) -> None:
+    """Store a refresh token in the Python-launched chat credential namespace."""
+    keyring = _load_keyring()
+    keyring.set_password(SERVICE_NAME, account_name, password)
+
+
+def _delete_password(account_name: str) -> None:
+    """Delete a refresh token from the Python-launched chat credential namespace."""
+    keyring = _load_keyring()
+    keyring.delete_password(SERVICE_NAME, account_name)
 
 
 def _read_request(stdin: TextIO) -> dict[str, Any]:
@@ -90,7 +110,7 @@ def _read_request(stdin: TextIO) -> dict[str, Any]:
 
 
 def _handle_request(request: dict[str, Any]) -> dict[str, str | None]:
-    """Execute a credential request against the operating-system keychain.
+    """Execute a credential request against the Python keyring namespace.
 
     Args:
         request: Validated helper request from ``_read_request``.
@@ -101,22 +121,21 @@ def _handle_request(request: dict[str, Any]) -> dict[str, str | None]:
 
     Raises:
         CredentialHelperError: If the Python keyring dependency is unavailable.
-        Exception: If the configured operating-system keychain backend fails.
+        Exception: If the configured Python keyring backend fails.
     """
-    keyring = _load_keyring()
     action = request["action"]
     environment_id = request["environmentId"]
     account_name = _account_name(environment_id)
 
     if action == "get":
-        token = keyring.get_password(SERVICE_NAME, account_name)
+        token = _get_password(account_name)
         return {"refreshToken": token} if token else {}
 
     if action == "set":
-        keyring.set_password(SERVICE_NAME, account_name, request["refreshToken"])
+        _set_password(account_name, request["refreshToken"])
         return {}
 
-    keyring.delete_password(SERVICE_NAME, account_name)
+    _delete_password(account_name)
     return {}
 
 
