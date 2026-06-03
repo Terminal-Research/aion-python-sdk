@@ -22,10 +22,10 @@ from aion.core.constants import (
     STREAM_DELTA_PAYLOAD_SCHEMA_V1,
 )
 from aion.core.agent.invocation.card import Card
-from aion.core.utils.card import build_card_a2a_part
+from aion.core.agent.invocation.card.utils import build_card_a2a_part
 from aion.core.logging import get_logger
-from aion.core.types import ArtifactId, ArtifactName
-from aion.core.types.a2a.extensions.messaging import MessageActionPayload
+from aion.core.a2a import ArtifactId, ArtifactName
+from aion.core.a2a.extensions.messaging import MessageActionPayload
 from google.protobuf import json_format, struct_pb2
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
 
@@ -185,12 +185,18 @@ class LangGraphA2AConverter:
         logged and silently dropped.
         """
         if isinstance(event_data, ArtifactCustomEvent):
+            metadata = None
+            if event_data.routing is not None:
+                metadata = {
+                    MESSAGING_EXTENSION_URI_V1: event_data.routing.model_dump(by_alias=True, exclude_none=True),
+                }
             return [TaskArtifactUpdateEvent(
                 task_id=self._task_id,
                 context_id=self._context_id,
                 artifact=event_data.artifact,
                 append=event_data.append,
                 last_chunk=event_data.is_last_chunk,
+                metadata=metadata,
             )]
 
         if isinstance(event_data, CardCustomEvent):

@@ -3,7 +3,7 @@
 import pytest
 from a2a.types import Part
 from aion.core.agent.invocation.card import Card
-from aion.core.utils.card import is_jsx_card, build_card_a2a_part, extract_card_name
+from aion.core.agent.invocation.card.utils import is_jsx_card, build_card_a2a_part, extract_card_name
 from aion.core.constants import CARDS_MEDIA_TYPE, CARDS_EXTENSION_URI_V1, CARDS_PAYLOAD_SCHEMA_V1
 
 

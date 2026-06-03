@@ -10,7 +10,7 @@ from aion.adk.authoring.constants import AION_ROUTING_KEY
 from aion.adk.authoring.output import AionOutput, CardOutput
 from aion.core.constants import MESSAGING_EXTENSION_URI_V1, CARDS_EXTENSION_URI_V1
 from aion.core.agent.invocation.card import Card
-from aion.core.types.a2a.extensions.messaging import MessageActionPayload
+from aion.core.a2a.extensions.messaging import MessageActionPayload
 
 from aion.adk.server.execution.event_converter import ADKToA2AEventConverter
 

@@ -6,7 +6,7 @@ from typing import Optional, Dict, TYPE_CHECKING
 from .types import AgentExecutionScope
 
 if TYPE_CHECKING:
-    from aion.core.types.a2a.extensions import DistributionExtensionV1, TraceabilityExtensionV1
+    from aion.core.a2a.extensions import DistributionExtensionV1, TraceabilityExtensionV1
     from aion.server.tasks.protocols import AionTaskManagerProtocol
 
 __all__ = [

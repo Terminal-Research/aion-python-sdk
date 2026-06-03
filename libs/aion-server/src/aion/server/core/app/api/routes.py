@@ -1,6 +1,6 @@
 from aion.server.agent.aion_agent import AionAgent
 from aion.core.config import AgentConfigurationCollector
-from aion.core.types import HealthResponse
+from aion.core.http import HealthResponse
 from aion.server.utils.deployment import get_protocol_version
 from fastapi import FastAPI
 from starlette.responses import JSONResponse

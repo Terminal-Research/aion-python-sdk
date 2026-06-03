@@ -1,9 +1,10 @@
 from unittest.mock import MagicMock, Mock, patch
 from langchain_core.messages import AIMessage, AIMessageChunk
 
+from aion.core.a2a.artifacts import file_artifact, data_artifact
 from aion.langgraph.authoring.invocation.thread import Thread
 from aion.langgraph.authoring.invocation.message import Message
-from aion.langgraph.authoring.events.custom_events import ArtifactCustomEvent, MessageCustomEvent
+from aion.langgraph.authoring.events.custom_events import ArtifactCustomEvent, CardCustomEvent, MessageCustomEvent
 
 from tests.helpers import (
     make_mock_context,
@@ -139,6 +140,46 @@ class TestThreadPost:
         assert isinstance(event, MessageCustomEvent)
         assert event.message.content == "<Card><Title>Hello</Title></Card>"
         assert isinstance(result, AIMessage)
+
+    async def test_post_file_artifact_emits_artifact_event(self):
+        # a2a Artifact is dispatched to emit_artifact → ArtifactCustomEvent
+        writer = MagicMock()
+        thread = make_thread()
+        artifact = file_artifact(url="https://example.com/r.pdf", mime_type="application/pdf")
+        with patch(_GET_STREAM_WRITER, return_value=writer):
+            result = await thread.post(artifact)
+
+        writer.assert_called_once()
+        event = writer.call_args[0][0]
+        assert isinstance(event, ArtifactCustomEvent)
+        assert event.artifact is artifact
+        assert result is None
+
+    async def test_post_data_artifact_emits_artifact_event(self):
+        # data Artifact is also dispatched to ArtifactCustomEvent
+        writer = MagicMock()
+        thread = make_thread()
+        artifact = data_artifact({"score": 42})
+        with patch(_GET_STREAM_WRITER, return_value=writer):
+            result = await thread.post(artifact)
+
+        event = writer.call_args[0][0]
+        assert isinstance(event, ArtifactCustomEvent)
+        assert event.routing is None
+
+    async def test_post_artifact_with_target_sets_routing(self):
+        # Artifact dispatch passes target as routing to ArtifactCustomEvent
+        from aion.core.a2a.extensions.messaging import MessageActionPayload
+        writer = MagicMock()
+        thread = make_thread()
+        artifact = file_artifact(url="https://example.com/f.pdf", mime_type="application/pdf")
+        routing = MessageActionPayload(trajectory="direct-message", context_id="D123")
+        with patch(_GET_STREAM_WRITER, return_value=writer):
+            await thread.post(artifact, target=routing)
+
+        event = writer.call_args[0][0]
+        assert isinstance(event, ArtifactCustomEvent)
+        assert event.routing == routing
 
     async def test_post_aimessage_emits_message_event(self):
         # pre-built AIMessage is emitted as-is without modification
@@ -327,7 +368,7 @@ class TestThreadReply:
 
     def test_build_payload_with_all_fields(self):
         # all event payload fields are mapped to MessageActionPayload correctly
-        from aion.core.types.a2a.extensions.messaging import MessageActionPayload
+        from aion.core.a2a.extensions.messaging import MessageActionPayload
 
         payload = Mock()
         payload.context_id = "C123"
@@ -357,14 +398,13 @@ class TestThreadTyping:
         assert isinstance(event, MessageCustomEvent)
         assert event.ephemeral is True
 
-    async def test_typing_message_types_emit_ephemeral(self):
-        # AIMessage and AIMessageChunk are both forwarded as ephemeral
-        for content in [AIMessage(content="Working..."), AIMessageChunk(content="chunk")]:
-            writer = MagicMock()
-            thread = make_thread()
-            with patch(_GET_STREAM_WRITER, return_value=writer):
-                await thread.typing(content)
-            assert writer.call_args[0][0].ephemeral is True
+    async def test_typing_aimessage_is_rejected(self):
+        # typing() only accepts str; AIMessage is rejected with a warning, no emission
+        writer = MagicMock()
+        thread = make_thread()
+        with patch(_GET_STREAM_WRITER, return_value=writer):
+            await thread.typing(AIMessage(content="Working..."))
+        writer.assert_not_called()
 
     async def test_typing_unsupported_type_does_nothing(self):
         # unsupported type logs a warning and produces no emission

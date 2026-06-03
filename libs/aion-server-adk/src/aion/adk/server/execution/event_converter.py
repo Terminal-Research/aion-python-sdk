@@ -16,9 +16,9 @@ from aion.adk.authoring.output import AionOutput, ReactionOutput
 from aion.core.agent.invocation.card import Card
 from aion.core.constants import CARDS_EXTENSION_URI_V1, MESSAGE_ACTION_PAYLOAD_SCHEMA_V1, MESSAGING_EXTENSION_URI_V1, REACTION_ACTION_PAYLOAD_SCHEMA_V1
 from aion.core.logging import get_logger
-from aion.core.types import ArtifactId, ArtifactName
-from aion.core.types.a2a.extensions.messaging import MessageActionPayload
-from aion.core.utils.card import build_card_a2a_part
+from aion.core.a2a import ArtifactId, ArtifactName
+from aion.core.a2a.extensions.messaging import MessageActionPayload
+from aion.core.agent.invocation.card.utils import build_card_a2a_part
 from google.adk.events import Event
 from google.protobuf import json_format, struct_pb2
 

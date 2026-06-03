@@ -10,8 +10,8 @@ from aion.langgraph.authoring.events.custom_events import (
 )
 from aion.server.agent.adapters import InterruptInfo
 from aion.core.constants import MESSAGING_EXTENSION_URI_V1
-from aion.core.types import ArtifactId
-from aion.core.types.a2a.extensions.messaging import MessageActionPayload, ReactionActionPayload
+from aion.core.a2a import ArtifactId
+from aion.core.a2a.extensions.messaging import MessageActionPayload, ReactionActionPayload
 from langchain_core.messages import AIMessage, HumanMessage
 
 from aion.langgraph.server.execution.event_converter import LangGraphA2AConverter
@@ -186,18 +186,19 @@ class TestConvertCustom:
         assert isinstance(events[0], TaskStatusUpdateEvent)
         assert events[0].status.state == TaskState.TASK_STATE_WORKING
 
-    def test_reaction_event_produces_message_with_extension_part(self, converter):
-        """ReactionCustomEvent produces a TaskStatusUpdateEvent with a single DataPart."""
+    def test_reaction_event_produces_artifact_with_reaction_id(self, converter):
+        """ReactionCustomEvent produces a TaskArtifactUpdateEvent with REACTION artifact_id."""
         payload = ReactionActionPayload(
             context_id="ctx-1", message_id="msg-1", reaction_key="thumbsup", operation="add"
         )
         event = ReactionCustomEvent(payload=payload)
         events = converter._convert_custom(event)
         assert len(events) == 1
-        result_msg = events[0].status.message
-        assert len(result_msg.parts) == 1
-        assert MESSAGING_EXTENSION_URI_V1 in result_msg.extensions
-        assert result_msg.role == Role.ROLE_AGENT
+        assert isinstance(events[0], TaskArtifactUpdateEvent)
+        artifact = events[0].artifact
+        assert artifact.artifact_id == ArtifactId.REACTION.value
+        assert len(artifact.parts) == 1
+        assert artifact.parts[0].data is not None
 
     def test_task_update_event_delegates_to_convert_task_update(self, converter):
         """TaskUpdateCustomEvent routes to _convert_task_update."""

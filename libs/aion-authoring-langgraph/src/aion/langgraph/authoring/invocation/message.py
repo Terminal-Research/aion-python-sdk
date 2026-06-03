@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Literal, Optional
 
 from aion.core.logging import get_logger
 from aion.core.agent import BaseMessage, User  # noqa: F401 — re-export User
-from aion.core.types.a2a.extensions.messaging import ReactionActionPayload
+from aion.core.a2a.extensions.messaging import ReactionActionPayload
 
 if TYPE_CHECKING:
     pass

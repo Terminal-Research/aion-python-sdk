@@ -8,7 +8,7 @@ from aion.server.utils.deployment import (
     get_protocol_version,
     get_service_name,
 )
-from aion.core.types import A2AManifest
+from aion.core.a2a import A2AManifest
 
 
 class TestConstantAccessors:

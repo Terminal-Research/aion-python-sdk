@@ -1,7 +1,7 @@
 from a2a.server.request_handlers.default_request_handler import TERMINAL_TASK_STATES
 from a2a.types import TaskState
 
-from aion.core.types.a2a.enums import ArtifactId
+from aion.core.a2a.enums import ArtifactId
 
 __all__ = [
     "INTERRUPT_TASK_STATES",

@@ -8,7 +8,7 @@ from a2a.types import (
 
 from aion.core.config import AgentConfig
 from aion.server.settings import app_settings
-from aion.core.types import GetContextParams, GetContextsListParams
+from aion.core.a2a import GetContextParams, GetContextsListParams
 
 
 class AionAgentCard:

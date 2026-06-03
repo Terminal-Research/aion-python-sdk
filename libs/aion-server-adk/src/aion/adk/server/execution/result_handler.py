@@ -14,7 +14,7 @@ from a2a.types import (
     TaskStatusUpdateEvent,
 )
 
-from aion.core.types import A2AOutbox
+from aion.core.a2a import A2AOutbox
 from .event_converter import ADKToA2AEventConverter
 from .stream_executor import ADKStreamResult
 

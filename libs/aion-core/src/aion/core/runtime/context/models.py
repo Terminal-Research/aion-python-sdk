@@ -15,8 +15,8 @@ from aion.core.constants.a2a import (
     REACTION_EVENT_TYPE_V1,
     TRACEABILITY_EXTENSION_URI_V1,
 )
-from aion.core.types.a2a import A2AInbox
-from aion.core.types.a2a.extensions import (
+from aion.core.a2a import A2AInbox
+from aion.core.a2a.extensions import (
     Behavior,
     CardActionEventPayload,
     CommandEventPayload,

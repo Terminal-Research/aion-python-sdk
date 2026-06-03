@@ -4,7 +4,7 @@ from a2a.server.context import ServerCallContext
 from a2a.types import TaskState
 
 from aion.server.core.app.handlers.request_handler import AionRequestHandler
-from aion.core.types import (
+from aion.core.a2a import (
     ContextsList,
     Conversation,
     GetContextParams,

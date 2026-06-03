@@ -10,7 +10,7 @@ from typing import Any
 from a2a.types import TaskArtifactUpdateEvent, TaskStatusUpdateEvent
 from aion.adk.authoring.invocation.emitter import reset_adk_emitter, set_adk_emitter
 from aion.core.logging import get_logger
-from aion.core.types import ArtifactId, A2AOutbox
+from aion.core.a2a import ArtifactId, A2AOutbox
 from google.adk.events import Event
 
 from .event_converter import ADKToA2AEventConverter

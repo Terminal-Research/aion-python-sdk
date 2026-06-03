@@ -24,7 +24,7 @@ from google.protobuf.struct_pb2 import Struct
 
 from aion.server.tasks import deduplicator as deduplicator_module
 from aion.server.tasks.deduplicator import A2ATaskDeduplicator
-from aion.core.types.a2a.enums import ArtifactId
+from aion.core.a2a.enums import ArtifactId
 
 
 PLATFORM_KEY = "https://docs.aion.to/some-platform-key"

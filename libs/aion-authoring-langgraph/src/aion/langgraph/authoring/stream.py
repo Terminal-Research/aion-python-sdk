@@ -2,154 +2,89 @@
 
 This module provides helper functions to emit custom events during graph execution.
 All events are emitted via LangGraph's custom stream mode.
+
+Architecture (see thread_message_concept.md):
+  Builders (aion-core)  →  emit_* (here, explicit params)  →  Thread (magic wrapper)
 """
 
 from typing import Any, Optional
-from uuid import uuid4
 
-from a2a.types import (
-    Artifact,
-    Part,
-)
-from google.protobuf import json_format, struct_pb2
+from a2a.types import Artifact
+from aion.core.agent.invocation.card import Card
 from langchain_core.messages import AIMessage, AIMessageChunk
 from langgraph.types import StreamWriter
 
-from aion.core.types.a2a.extensions.messaging import MessageActionPayload, ReactionActionPayload
+from aion.core.a2a.extensions.messaging import MessageActionPayload, ReactionActionPayload
 
 from .events.custom_events import (
     ArtifactCustomEvent,
+    CardCustomEvent,
     MessageCustomEvent,
     ReactionCustomEvent,
     TaskUpdateCustomEvent,
 )
 
 
-def emit_file_artifact(
+def emit_artifact(
     writer: StreamWriter,
+    artifact: Artifact,
     *,
-    url: str | None = None,
-    data: bytes | None = None,
-    mime_type: str,
-    name: str | None = None,
-    artifact_id: str | None = None,
+    routing: MessageActionPayload | None = None,
     append: bool = False,
     is_last_chunk: bool = True,
 ) -> None:
-    """Emit a file artifact during graph execution.
+    """Emit a pre-built artifact during graph execution.
 
-    Accepts file parameters compatible with LangChain FileContentBlock and
-    converts them to an a2a Artifact with FilePart.
+    The artifact content is determined by the caller — use the framework-agnostic
+    builders (file_artifact, data_artifact from aion.core.a2a) to construct it.
 
     Args:
         writer: LangGraph StreamWriter from node signature
-        url: File URL (for FileWithUri)
-        data: File content as bytes (for FileWithBytes)
-        mime_type: MIME type of the file (e.g., "application/pdf", "image/png")
-        name: Artifact name (defaults to "file")
-        artifact_id: Explicit artifact ID; auto-generated if not provided
+        artifact: Pre-built a2a.types.Artifact to emit
+        routing: Optional delivery routing target (MessageActionPayload)
         append: If True, append to previously sent artifact
         is_last_chunk: If True, this is the final chunk
 
-    Raises:
-        ValueError: If neither url nor data is provided, or if both are provided
-        TypeError: If data is not bytes
-
     Example:
+        from aion.core.a2a import file_artifact, data_artifact
+
         def my_node(state: dict, writer: StreamWriter):
-            # Emit file by URL
-            emit_file_artifact(
-                writer,
-                url="https://example.com/report.pdf",
-                mime_type="application/pdf",
-                name="analysis_report"
-            )
-
-            # Emit file by bytes
-            emit_file_artifact(
-                writer,
-                data=file_bytes,
-                mime_type="application/pdf",
-                name="generated_document"
-            )
-
-            # Streaming file chunks with a stable artifact_id
-            artifact_id = str(uuid4())
-            for i, chunk_bytes in enumerate(file_chunks):
-                is_last = (i == len(file_chunks) - 1)
-                emit_file_artifact(
-                    writer,
-                    data=chunk_bytes,
-                    mime_type="text/plain",
-                    artifact_id=artifact_id,
-                    append=True,
-                    is_last_chunk=is_last
-                )
-
-            return state
+            emit_artifact(writer, file_artifact(url="https://example.com/r.pdf", mime_type="application/pdf"))
+            emit_artifact(writer, data_artifact({"score": 42}, name="result"))
     """
-    if not url and data is None:
-        raise ValueError("Either 'url' or 'data' must be provided")
-    if url and data is not None:
-        raise ValueError("Provide either 'url' or 'data', not both")
-
-    if url:
-        file_part = Part(url=url, media_type=mime_type)
-    else:
-        if not isinstance(data, bytes):
-            raise TypeError(f"'data' must be bytes, got {type(data).__name__}")
-        file_part = Part(raw=data, media_type=mime_type)
-
-    artifact = Artifact(
-        artifact_id=artifact_id or str(uuid4()),
-        name=name or "file",
-        parts=[file_part]
-    )
-
     writer(ArtifactCustomEvent(
         artifact=artifact,
         append=append,
         is_last_chunk=is_last_chunk,
+        routing=routing,
     ))
 
 
-def emit_data_artifact(
+def emit_card(
     writer: StreamWriter,
-    data: dict | Any,
-    name: str | None = None,
-    artifact_id: str | None = None,
-    append: bool = False,
-    is_last_chunk: bool = True,
+    card: Card,
+    *,
+    routing: MessageActionPayload | None = None,
 ) -> None:
-    """Emit a data artifact during graph execution.
+    """Emit a card message during graph execution.
 
-    Creates an artifact with structured data (JSON-serializable).
+    Produces a TaskStatusUpdateEvent whose message contains a card file part
+    and extensions=[CardsURI]. When routing is provided, a DataPart with
+    MessageActionPayload is also attached so the distribution delivers the
+    card to the correct channel.
 
     Args:
         writer: LangGraph StreamWriter from node signature
-        data: Data to emit (dict or any JSON-serializable value)
-        name: Artifact name (defaults to "data")
-        artifact_id: Explicit artifact ID; auto-generated if not provided
-        append: If True, append to previously sent artifact
-        is_last_chunk: If True, this is the final chunk
+        card: Card instance (jsx or url)
+        routing: Optional delivery routing target (MessageActionPayload)
 
     Example:
-        def my_node(state: dict, writer: StreamWriter):
-            emit_data(writer, {"status": "success", "results": [...]}, name="analysis_results")
-    """
-    proto_value = struct_pb2.Value()
-    json_format.ParseDict(data, proto_value)
-    artifact = Artifact(
-        artifact_id=artifact_id or str(uuid4()),
-        name=name or "data",
-        parts=[Part(data=proto_value)]
-    )
+        from aion.core.agent.invocation.card import Card
 
-    writer(ArtifactCustomEvent(
-        artifact=artifact,
-        append=append,
-        is_last_chunk=is_last_chunk,
-    ))
+        def my_node(state: dict, writer: StreamWriter):
+            emit_card(writer, Card(jsx="<Card><Text>Hello</Text></Card>"))
+    """
+    writer(CardCustomEvent(card=card, routing=routing))
 
 
 def emit_message(

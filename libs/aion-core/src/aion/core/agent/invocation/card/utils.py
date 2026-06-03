@@ -9,7 +9,7 @@ See: https://docs.aion.to/a2a/extensions/aion/distribution/cards/1.0.0
 
 import re
 from a2a.types import Part
-from aion.core.agent.invocation.card import Card
+from aion.core.agent.invocation.card.card import Card
 from aion.core.constants import CARDS_EXTENSION_URI_V1, CARDS_MEDIA_TYPE, CARDS_PAYLOAD_SCHEMA_V1
 from typing import Any
 

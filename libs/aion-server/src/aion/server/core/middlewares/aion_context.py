@@ -14,8 +14,8 @@ from aion.server.agent.execution.scope import (
     set_request,
 )
 from aion.core.logging import get_logger
-from aion.core.types.a2a.extensions.distribution import DistributionExtensionV1
-from aion.core.types.a2a.extensions.traceability import TraceabilityExtensionV1
+from aion.core.a2a.extensions.distribution import DistributionExtensionV1
+from aion.core.a2a.extensions.traceability import TraceabilityExtensionV1
 from fastapi import Request, Response
 from pydantic import ValidationError
 from starlette.middleware.base import BaseHTTPMiddleware

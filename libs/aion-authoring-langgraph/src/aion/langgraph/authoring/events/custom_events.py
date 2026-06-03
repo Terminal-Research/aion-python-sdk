@@ -7,7 +7,7 @@ from typing import Any, ClassVar, Optional
 
 from a2a.types import Artifact
 from aion.core.agent.invocation.card import Card
-from aion.core.types.a2a.extensions.messaging import MessageActionPayload, ReactionActionPayload
+from aion.core.a2a.extensions.messaging import MessageActionPayload, ReactionActionPayload
 from aion.core.utils.pydantic import Protobuf
 from langchain_core.messages import AIMessage, AIMessageChunk
 from pydantic import BaseModel, ConfigDict, Field
@@ -26,13 +26,14 @@ class AionCustomEvent(BaseModel):
 class ArtifactCustomEvent(AionCustomEvent):
     """Artifact emission event.
 
-    Emitted from nodes via emit_file() or emit_data().
+    Emitted from nodes via emit_artifact().
     """
     event_type: ClassVar[str] = "artifact"
 
     artifact: Protobuf[Artifact] = Field(description="Artifact to emit")
     append: bool = Field(default=False, description="Append to previous artifact")
     is_last_chunk: bool = Field(default=True, description="Final chunk indicator")
+    routing: Optional[MessageActionPayload] = Field(default=None, description="Outbound routing target; forwarded to the distribution layer")
 
 
 class MessageCustomEvent(AionCustomEvent):

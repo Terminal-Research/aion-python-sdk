@@ -1,7 +1,7 @@
 from unittest.mock import Mock
 
 from aion.core.runtime import AionRuntimeContext
-from aion.core.types.a2a.extensions.distribution import (
+from aion.core.a2a.extensions.distribution import (
     PrincipalIdentity,
     Behavior,
     DistributionExtensionV1,

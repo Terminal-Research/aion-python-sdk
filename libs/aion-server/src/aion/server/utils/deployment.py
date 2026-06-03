@@ -1,4 +1,4 @@
-from aion.core.types import A2AManifest
+from aion.core.a2a import A2AManifest
 
 __all__ = [
     "get_service_name",

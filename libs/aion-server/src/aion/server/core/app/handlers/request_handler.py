@@ -5,7 +5,7 @@ from a2a.server.events import Event
 from a2a.server.request_handlers import DefaultRequestHandlerV2
 from a2a.types import SendMessageRequest
 from aion.server.a2a.constants import NON_ACTIVE_TASK_STATES
-from aion.core.types import ContextsList, Conversation, GetContextParams, GetContextsListParams
+from aion.core.a2a import ContextsList, Conversation, GetContextParams, GetContextsListParams
 from collections.abc import AsyncGenerator
 from functools import wraps
 from typing import override

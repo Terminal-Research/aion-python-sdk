@@ -10,6 +10,7 @@ See: https://docs.aion.to/a2a/extensions/aion/distribution/cards/1.0.0
 
 from .card import Card
 from .components import Actions, Button, Component, Divider, Field, Fields, Text
+from .utils import build_card_a2a_part, extract_card_name, is_jsx_card
 
 __all__ = [
     "Card",
@@ -20,4 +21,7 @@ __all__ = [
     "Divider",
     "Button",
     "Actions",
+    "is_jsx_card",
+    "extract_card_name",
+    "build_card_a2a_part",
 ]

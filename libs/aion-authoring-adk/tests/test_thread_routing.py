@@ -4,7 +4,7 @@ import asyncio
 from unittest.mock import MagicMock, patch
 
 from aion.adk.authoring.constants import AION_ROUTING_KEY
-from aion.core.types.a2a.extensions.messaging import MessageActionPayload
+from aion.core.a2a.extensions.messaging import MessageActionPayload
 
 EMITTER_PATH = "aion.adk.authoring.invocation.thread.get_adk_emitter"
 

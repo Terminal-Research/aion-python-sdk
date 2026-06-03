@@ -5,7 +5,7 @@ from typing import Any, ClassVar, List, Optional, Type
 
 from aion.core.logging import get_logger
 from aion.core.runtime.context import AionRuntimeContext
-from aion.core.types.a2a.extensions.messaging import MessageActionPayload
+from aion.core.a2a.extensions.messaging import MessageActionPayload
 
 logger = get_logger()
 
