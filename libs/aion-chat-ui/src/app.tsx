@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 
 import type {
-	FilePart,
 	Message,
 	Part,
 	Task,
@@ -87,6 +86,15 @@ import {
 	STREAM_DELTA_ARTIFACT_ID
 } from "./lib/a2aMetadata.js";
 import {
+	isMessage,
+	isTask,
+	isTaskArtifactUpdateEvent,
+	isTaskStatusUpdateEvent,
+	taskStateLabel,
+	unwrapStreamResponse,
+	type StreamEvent
+} from "./lib/a2aProtocol.js";
+import {
 	formatMessageParts,
 	getTaskMessages
 } from "./lib/messageDisplay.js";
@@ -133,20 +141,17 @@ function summarizeOptionsForLog(options: ChatCliOptions): Record<string, unknown
 }
 
 function summarizePartForLog(part: Part): Record<string, unknown> {
-	const value = part as unknown as Record<string, unknown>;
-	const file = value.file as Record<string, unknown> | undefined;
 	return {
-		kind: value.kind,
-		text: typeof value.text === "string" ? value.text : undefined,
-		fileName: typeof file?.name === "string" ? file.name : undefined,
-		fileMimeType: typeof file?.mimeType === "string" ? file.mimeType : undefined,
-		fileUri: typeof file?.uri === "string" ? file.uri : undefined
+		kind: part.content?.$case,
+		text: part.content?.$case === "text" ? part.content.value : undefined,
+		fileName: part.filename || undefined,
+		fileMimeType: part.mediaType || undefined
 	};
 }
 
 function summarizeMessageForLog(message: Message): Record<string, unknown> {
 	return {
-		kind: message.kind,
+		kind: "message",
 		messageId: message.messageId,
 		role: message.role,
 		contextId: message.contextId,
@@ -159,46 +164,44 @@ function summarizeMessageForLog(message: Message): Record<string, unknown> {
 function summarizeTaskForLog(task: Task): Record<string, unknown> {
 	const messages = getTaskMessages(task);
 	return {
-		kind: task.kind,
+		kind: "task",
 		taskId: task.id,
 		contextId: task.contextId,
-		status: task.status.state,
+		status: taskStateLabel(task.status?.state),
 		artifactCount: task.artifacts?.length ?? 0,
 		messageCount: messages.length,
 		messages: messages.map(summarizeMessageForLog)
 	};
 }
 
-function summarizeProtocolEventForLog(
-	event: Message | Task | TaskStatusUpdateEvent | TaskArtifactUpdateEvent
-): Record<string, unknown> {
-	switch (event.kind) {
-		case "message":
-			return summarizeMessageForLog(event);
-		case "task":
-			return summarizeTaskForLog(event);
-		case "status-update":
-			return {
-				kind: event.kind,
-				taskId: event.taskId,
-				contextId: event.contextId,
-				status: event.status.state,
-				final: isFinalStatusEvent(event),
-				message: event.status.message
-					? summarizeMessageForLog(event.status.message as Message)
-					: undefined
-			};
-		case "artifact-update":
-			return {
-				kind: event.kind,
-				taskId: event.taskId,
-				contextId: event.contextId,
-				artifactId: event.artifact.artifactId,
-				append: event.append,
-				partCount: event.artifact.parts.length,
-				parts: event.artifact.parts.map(summarizePartForLog)
-			};
+function summarizeProtocolEventForLog(event: StreamEvent): Record<string, unknown> {
+	if (isMessage(event)) {
+		return summarizeMessageForLog(event);
 	}
+	if (isTask(event)) {
+		return summarizeTaskForLog(event);
+	}
+	if (isTaskStatusUpdateEvent(event)) {
+		return {
+			kind: "status-update",
+			taskId: event.taskId,
+			contextId: event.contextId,
+			status: taskStateLabel(event.status?.state),
+			final: isFinalStatusEvent(event),
+			message: event.status?.message
+				? summarizeMessageForLog(event.status.message)
+				: undefined
+		};
+	}
+	return {
+		kind: "artifact-update",
+		taskId: event.taskId,
+		contextId: event.contextId,
+		artifactId: event.artifact?.artifactId,
+		append: event.append,
+		partCount: event.artifact?.parts.length ?? 0,
+		parts: event.artifact?.parts.map(summarizePartForLog) ?? []
+	};
 }
 
 function isAionControlPlaneRegistryAgent(
@@ -917,7 +920,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 
 	const handleTaskSnapshot = (task: Task): boolean => {
 		setContextId(task.contextId);
-		const isTerminalTask = isTerminalTaskState(task.status.state);
+		const isTerminalTask = isTerminalTaskState(task.status?.state);
 		setTaskId(isTerminalTask ? undefined : task.id);
 
 		if (responseMode === "a2a-protocol") {
@@ -942,8 +945,8 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 
 	const handleStatusUpdate = (event: TaskStatusUpdateEvent): boolean => {
 		setContextId(event.contextId);
-		setTaskId(isTerminalTaskState(event.status.state) ? undefined : event.taskId);
-		setStreamLabel(event.status.state);
+		setTaskId(isTerminalTaskState(event.status?.state) ? undefined : event.taskId);
+		setStreamLabel(taskStateLabel(event.status?.state));
 
 		if (responseMode === "a2a-protocol") {
 			appendProtocol(event);
@@ -952,12 +955,12 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 
 		if (
 			shouldRenderLiveStatusMessage({
-				message: event.status.message as Message | undefined,
+				message: event.status?.message,
 				taskId: event.taskId,
 				streamedTaskIds: streamedTaskIdsRef.current
 			})
 		) {
-			return renderAgentResponseBubble(event.status.message as Message, event.taskId);
+			return event.status?.message ? renderAgentResponseBubble(event.status.message, event.taskId) : false;
 		}
 		return false;
 	};
@@ -966,7 +969,12 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		setContextId(event.contextId);
 		setTaskId(event.taskId);
 
-		if (event.artifact.artifactId === STREAM_DELTA_ARTIFACT_ID) {
+		const artifact = event.artifact;
+		if (!artifact) {
+			return false;
+		}
+
+		if (artifact.artifactId === STREAM_DELTA_ARTIFACT_ID) {
 			setStreamLabel("Streaming");
 		}
 
@@ -975,17 +983,17 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			return true;
 		}
 
-		if (event.artifact.artifactId !== STREAM_DELTA_ARTIFACT_ID) {
+		if (artifact.artifactId !== STREAM_DELTA_ARTIFACT_ID) {
 			return false;
 		}
 
-		const artifactText = formatMessageParts(event.artifact.parts);
+		const artifactText = formatMessageParts(artifact.parts);
 		if (!artifactText) {
 			return false;
 		}
 
 		streamedTaskIdsRef.current.add(event.taskId);
-		const entryId = `artifact:${event.taskId}:${event.artifact.artifactId}`;
+		const entryId = `artifact:${event.taskId}:${artifact.artifactId}`;
 
 		setEntries((current) => {
 			const existing = current.find((item) => item.id === entryId);
@@ -1331,8 +1339,8 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 
 		const parts = await buildMessageParts(trimmed);
 		const attachedFiles = parts
-			.filter((p): p is FilePart => p.kind === "file")
-			.map((p) => p.file.name ?? "unnamed");
+			.filter((part) => part.content?.$case === "raw" || part.content?.$case === "url")
+			.map((part) => part.filename || "unnamed");
 		const displayBody =
 			attachedFiles.length > 0
 				? `${trimmed}\n\n*Attached: ${attachedFiles.join(", ")}*`
@@ -1348,13 +1356,18 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		]);
 
 		const params = buildMessageParams(parts, contextId, taskId, pushConfig);
+		const outboundMessage = params.message;
+		if (!outboundMessage) {
+			appendStatus("Unable to build outbound A2A message.");
+			return;
+		}
 		chatSessionLogger.debug("chat.user_message.submitted", {
 			body: displayBody,
 			attachedFiles,
 			selectedAgent: summarizeAgentForLog(selectedAgent),
-			message: summarizeMessageForLog(params.message)
+			message: summarizeMessageForLog(outboundMessage)
 		});
-		const canStream = Boolean(clientState.agentCard.capabilities.streaming);
+		const canStream = Boolean(clientState.agentCard.capabilities?.streaming);
 		const useStreaming = requestMode === "streaming-message" && canStream;
 		let requestStartedAt: number | undefined;
 
@@ -1367,7 +1380,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				useStreaming,
 				canStream,
 				selectedAgent: summarizeAgentForLog(selectedAgent),
-				message: summarizeMessageForLog(params.message),
+				message: summarizeMessageForLog(outboundMessage),
 				hasPushNotificationConfig: Boolean(pushConfig)
 			});
 
@@ -1384,35 +1397,32 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				let finalStatusUpdate: TaskStatusUpdateEvent | undefined;
 				let reachedTerminal = false;
 				let renderedAgentOutput = false;
-				for await (const event of clientState.client.sendMessageStream(params)) {
+				for await (const streamResponse of clientState.client.sendMessageStream(params)) {
+					const event = unwrapStreamResponse(streamResponse);
+					if (!event) {
+						continue;
+					}
 					chatSessionLogger.debug("a2a.stream.event", {
 						event: summarizeProtocolEventForLog(event)
 					});
-					switch (event.kind) {
-						case "message":
-							renderedAgentOutput = handleMessage(event) || renderedAgentOutput;
-							break;
-						case "task":
-							if (isTerminalTaskState(event.status.state)) {
-								completedTask = event;
-								reachedTerminal = true;
-							}
-							renderedAgentOutput = handleTaskSnapshot(event) || renderedAgentOutput;
-							break;
-						case "status-update":
-							if (isTerminalTaskState(event.status.state)) {
-								reachedTerminal = true;
-							}
-							if (isFinalStatusEvent(event)) {
-								finalStatusUpdate = event;
-							}
-							renderedAgentOutput = handleStatusUpdate(event) || renderedAgentOutput;
-							break;
-						case "artifact-update":
-							renderedAgentOutput = handleArtifactUpdate(event) || renderedAgentOutput;
-							break;
-						default:
-							break;
+					if (isMessage(event)) {
+						renderedAgentOutput = handleMessage(event) || renderedAgentOutput;
+					} else if (isTask(event)) {
+						if (isTerminalTaskState(event.status?.state)) {
+							completedTask = event;
+							reachedTerminal = true;
+						}
+						renderedAgentOutput = handleTaskSnapshot(event) || renderedAgentOutput;
+					} else if (isTaskStatusUpdateEvent(event)) {
+						if (isTerminalTaskState(event.status?.state)) {
+							reachedTerminal = true;
+						}
+						if (isFinalStatusEvent(event)) {
+							finalStatusUpdate = event;
+						}
+						renderedAgentOutput = handleStatusUpdate(event) || renderedAgentOutput;
+					} else {
+						renderedAgentOutput = handleArtifactUpdate(event) || renderedAgentOutput;
 					}
 				}
 				if (
@@ -1434,10 +1444,10 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 						getTaskMessages(completedTask),
 						completedTask.id
 					);
-				} else if (finalStatusUpdate?.status.message) {
+				} else if (finalStatusUpdate?.status?.message) {
 					persistCompletedExchange(
 						finalStatusUpdate.contextId,
-						[params.message, finalStatusUpdate.status.message as Message],
+						[outboundMessage, finalStatusUpdate.status.message],
 						finalStatusUpdate.taskId
 					);
 				}
@@ -1457,17 +1467,17 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 					durationMs: Date.now() - requestStartedAt,
 					response: summarizeProtocolEventForLog(response)
 				});
-				let reachedTerminal = response.kind === "message";
+				let reachedTerminal = isMessage(response);
 				let renderedAgentOutput = false;
-				if (response.kind === "message") {
+				if (isMessage(response)) {
 					renderedAgentOutput = handleMessage(response);
 					persistCompletedExchange(
-						response.contextId ?? params.message.contextId,
-						[params.message, response],
+						response.contextId || outboundMessage.contextId,
+						[outboundMessage, response],
 						response.taskId
 					);
 				} else {
-					reachedTerminal = isTerminalTaskState(response.status.state);
+					reachedTerminal = isTerminalTaskState(response.status?.state);
 					renderedAgentOutput = handleTaskSnapshot(response);
 					if (reachedTerminal) {
 						persistCompletedExchange(
@@ -1495,7 +1505,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 					durationMs: Date.now() - requestStartedAt,
 					reachedTerminal,
 					renderedAgentOutput,
-					responseKind: response.kind
+					responseKind: isMessage(response) ? "message" : "task"
 				});
 				setStreamLabel("Idle");
 			}

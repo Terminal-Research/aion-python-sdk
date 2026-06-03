@@ -2,15 +2,15 @@ import { randomUUID } from "node:crypto";
 
 import type {
 	AgentCard,
-	AgentInterface,
 	Message,
-	MessageSendParams,
 	Part,
-	PushNotificationConfig,
+	SendMessageRequest,
 	Task,
 	TaskArtifactUpdateEvent,
+	TaskPushNotificationConfig,
 	TaskStatusUpdateEvent
 } from "@a2a-js/sdk";
+import { Role } from "@a2a-js/sdk";
 import {
 	ClientFactory,
 	ClientFactoryOptions,
@@ -53,17 +53,6 @@ export interface ChatConnectionOptions extends ChatCliOptions {
 const AGENT_CARD_PATH = "/.well-known/agent-card.json";
 const CLIENT_TRANSPORT_PREFERENCES = ["JSONRPC", "HTTP+JSON"] as const;
 const ACCEPTED_OUTPUT_MODES = ["text", "text/plain", "application/json"] as const;
-
-interface AgentCardSupportedInterface {
-	url?: unknown;
-	protocolBinding?: unknown;
-	protocolVersion?: unknown;
-	tenant?: unknown;
-}
-
-interface AgentCardWithSupportedInterfaces extends AgentCard {
-	supportedInterfaces?: AgentCardSupportedInterface[];
-}
 
 function normalizeEndpoint(url: string): string {
 	return url.endsWith("/") ? url.slice(0, -1) : url;
@@ -214,52 +203,13 @@ function buildFetch(options: ChatConnectionOptions, endpoints: EndpointConfig): 
 	};
 }
 
-export function normalizeAgentCardTransports(agentCard: AgentCard): AgentCard {
-	const supportedInterfaces =
-		(agentCard as AgentCardWithSupportedInterfaces).supportedInterfaces ?? [];
-	const additionalInterfacesFromSupported = supportedInterfaces
-		.map((item): AgentInterface | undefined => {
-			if (typeof item.url !== "string" || typeof item.protocolBinding !== "string") {
-				return undefined;
-			}
-			return {
-				url: item.url,
-				transport: item.protocolBinding
-			};
-		})
-		.filter((item): item is AgentInterface => Boolean(item));
-
-	if (additionalInterfacesFromSupported.length === 0) {
-		return agentCard;
-	}
-
-	const preferredInterface =
-		additionalInterfacesFromSupported.find((item) =>
-			CLIENT_TRANSPORT_PREFERENCES.includes(
-				item.transport as (typeof CLIENT_TRANSPORT_PREFERENCES)[number]
-			)
-		) ?? additionalInterfacesFromSupported[0];
-
-	return {
-		...agentCard,
-		url: agentCard.url ?? preferredInterface.url,
-		preferredTransport: agentCard.preferredTransport ?? preferredInterface.transport,
-		additionalInterfaces: [
-			...(agentCard.additionalInterfaces ?? []),
-			...additionalInterfacesFromSupported
-		]
-	};
-}
-
 function rewriteAgentCard(agentCard: AgentCard, endpoints: EndpointConfig): AgentCard {
 	return {
 		...agentCard,
-		url: endpoints.rpcUrl,
-		additionalInterfaces:
-			agentCard.additionalInterfaces?.map((item) => ({
-				...item,
-				url: endpoints.rpcUrl
-			})) ?? agentCard.additionalInterfaces
+		supportedInterfaces: agentCard.supportedInterfaces.map((item) => ({
+			...item,
+			url: endpoints.rpcUrl
+		}))
 	};
 }
 
@@ -268,9 +218,9 @@ export async function connectClient(options: ChatConnectionOptions): Promise<Con
 	const fetchImpl = buildFetch(options, endpoints);
 	const resolver = new DefaultAgentCardResolver({ fetchImpl });
 	const resolvedCard = await resolver.resolve(endpoints.baseUrl, endpoints.cardPath);
-	const agentCard = normalizeAgentCardTransports(
-		options.agentId ? rewriteAgentCard(resolvedCard, endpoints) : resolvedCard
-	);
+	const agentCard = options.agentId
+		? rewriteAgentCard(resolvedCard, endpoints)
+		: resolvedCard;
 
 	const factoryOptions = ClientFactoryOptions.createFrom(ClientFactoryOptions.default, {
 		transports: [
@@ -292,40 +242,49 @@ export async function connectClient(options: ChatConnectionOptions): Promise<Con
 	};
 }
 
-export function createPushNotificationConfig(receiverUrl: string): PushNotificationConfig {
+export function createPushNotificationConfig(receiverUrl: string): TaskPushNotificationConfig {
 	const parsed = new URL(receiverUrl);
 	return {
+		tenant: "",
 		id: randomUUID(),
+		taskId: "",
 		url: `${parsed.origin}/notify`,
+		token: randomUUID(),
 		authentication: {
-			schemes: ["bearer"]
+			scheme: "bearer",
+			credentials: ""
 		}
 	};
 }
 
 /**
- * Builds an A2A `MessageSendParams` from pre-parsed parts.
+ * Builds an A2A `SendMessageRequest` from pre-parsed parts.
  * Parts are produced by `buildMessageParts` and may include text, files, or other A2A part types.
  */
 export function buildMessageParams(
 	parts: Part[],
 	contextId: string | undefined,
 	taskId: string | undefined,
-	pushNotificationConfig?: PushNotificationConfig
-): MessageSendParams {
+	pushNotificationConfig?: TaskPushNotificationConfig
+): SendMessageRequest {
 	return {
+		tenant: "",
 		message: {
-			kind: "message",
 			messageId: randomUUID(),
-			role: "user",
-			taskId,
-			contextId,
-			parts
+			role: Role.ROLE_USER,
+			taskId: taskId ?? "",
+			contextId: contextId ?? "",
+			parts,
+			metadata: undefined,
+			extensions: [],
+			referenceTaskIds: []
 		},
 		metadata: generateTaskMetadata(),
 		configuration: {
 			acceptedOutputModes: [...ACCEPTED_OUTPUT_MODES],
-			...(pushNotificationConfig ? { pushNotificationConfig } : {})
+			taskPushNotificationConfig: pushNotificationConfig,
+			historyLength: undefined,
+			returnImmediately: false
 		}
 	};
 }

@@ -1,4 +1,5 @@
 import type { Message, Task } from "@a2a-js/sdk";
+import { Role, TaskState } from "@a2a-js/sdk";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -9,6 +10,7 @@ import {
 	shouldRenderLiveStatusMessage,
 	shouldRenderLiveResponseMessage
 } from "../src/lib/chatSession.js";
+import { makeTextPart } from "../src/lib/a2aProtocol.js";
 
 function buildMessage(
 	messageId: string,
@@ -17,11 +19,14 @@ function buildMessage(
 	taskId?: string
 ): Message {
 	return {
-		kind: "message",
 		messageId,
-		role,
-		...(taskId ? { taskId } : {}),
-		parts: [{ kind: "text", text }]
+		role: role === "agent" ? Role.ROLE_AGENT : Role.ROLE_USER,
+		contextId: "",
+		taskId: taskId ?? "",
+		parts: [makeTextPart(text)],
+		metadata: undefined,
+		extensions: [],
+		referenceTaskIds: []
 	};
 }
 
@@ -35,17 +40,18 @@ describe("chat session message tracking", () => {
 
 	it("returns unseen agent messages from task history in history order", () => {
 		const shown = new Set<string>();
-		const task = {
-			kind: "task",
+		const task: Task = {
 			id: "task-1",
 			contextId: "context-1",
-			status: { state: "completed" },
+			status: { state: TaskState.TASK_STATE_COMPLETED, message: undefined, timestamp: undefined },
+			artifacts: [],
+			metadata: undefined,
 			history: [
 				buildMessage("user-1", "user", "question"),
 				buildMessage("agent-1", "agent", "first"),
 				buildMessage("agent-2", "agent", "second")
 			]
-		} as Task;
+		};
 
 		markShownMessage(shown, buildMessage("agent-1", "agent", "first"), "task-1");
 
@@ -57,13 +63,14 @@ describe("chat session message tracking", () => {
 	it("uses message task id before fallback task id", () => {
 		const shown = new Set<string>();
 		const message = buildMessage("agent-1", "agent", "first", "message-task");
-		const task = {
-			kind: "task",
+		const task: Task = {
 			id: "fallback-task",
 			contextId: "context-1",
-			status: { state: "completed" },
+			status: { state: TaskState.TASK_STATE_COMPLETED, message: undefined, timestamp: undefined },
+			artifacts: [],
+			metadata: undefined,
 			history: [message]
-		} as Task;
+		};
 
 		markShownMessage(shown, message, "fallback-task");
 

@@ -1,9 +1,11 @@
-import type { AgentCard, Message, Part, Task } from "@a2a-js/sdk";
+import type { AgentCard, Message, Part, StreamResponse, Task } from "@a2a-js/sdk";
+import { Role, TaskState } from "@a2a-js/sdk";
 import { describe, expect, it, vi } from "vitest";
 
 import type { HeadlessRunOptions } from "../src/args.js";
 import type { ChatSettings } from "../src/lib/chatSettings.js";
-import type { ConnectedClient, StreamEvent } from "../src/lib/connection.js";
+import type { ConnectedClient } from "../src/lib/connection.js";
+import { makeTextPart } from "../src/lib/a2aProtocol.js";
 import { runHeadless } from "../src/lib/headlessRun.js";
 import type {
 	AgentDiscoveryResult,
@@ -19,13 +21,25 @@ import {
 const agentCard: AgentCard = {
 	name: "Team Agent",
 	description: "Answers team questions.",
-	url: "http://localhost:8000/agents/team-agent/",
+	supportedInterfaces: [
+		{
+			url: "http://localhost:8000/agents/team-agent/",
+			protocolBinding: "JSONRPC",
+			protocolVersion: "1.0",
+			tenant: ""
+		}
+	],
+	provider: undefined,
 	version: "1.0.0",
-	protocolVersion: "0.3.0",
-	capabilities: {},
-	defaultInputModes: ["text"],
-	defaultOutputModes: ["text"],
-	skills: []
+	documentationUrl: undefined,
+	capabilities: { extensions: [] },
+	securitySchemes: {},
+	securityRequirements: [],
+	defaultInputModes: ["text/plain"],
+	defaultOutputModes: ["text/plain"],
+	skills: [],
+	signatures: [],
+	iconUrl: undefined
 };
 
 function createStream(): { stream: { write(chunk: string): void }; output: () => string } {
@@ -47,20 +61,29 @@ function message(
 	taskId?: string
 ): Message {
 	return {
-		kind: "message",
 		messageId,
-		role,
-		...(taskId ? { taskId } : {}),
-		parts: [{ kind: "text", text }]
+		contextId: "context-1",
+		taskId: taskId ?? "",
+		role: role === "agent" ? Role.ROLE_AGENT : Role.ROLE_USER,
+		parts: [makeTextPart(text)],
+		metadata: undefined,
+		extensions: [],
+		referenceTaskIds: []
 	};
 }
 
 function task(overrides: Partial<Task> = {}): Task {
 	return {
-		kind: "task",
 		id: "task-1",
 		contextId: "context-1",
-		status: { state: "completed" },
+		status: {
+			state: TaskState.TASK_STATE_COMPLETED,
+			message: undefined,
+			timestamp: undefined
+		},
+		artifacts: [],
+		history: [],
+		metadata: undefined,
 		...overrides
 	};
 }
@@ -156,7 +179,7 @@ function discoveryResult(agent = discoveredAgent()): AgentDiscoveryResult {
 }
 
 function buildParts(text: string): Part[] {
-	return [{ kind: "text", text }];
+	return [makeTextPart(text)];
 }
 
 function connectedClient({
@@ -166,7 +189,7 @@ function connectedClient({
 }: {
 	card?: AgentCard;
 	sendMessage?: ConnectedClient["client"]["sendMessage"];
-	streamEvents?: StreamEvent[];
+	streamEvents?: StreamResponse[];
 }): ConnectedClient {
 	const client = {
 		sendMessage:
@@ -187,6 +210,47 @@ function connectedClient({
 			cardUrl: "http://localhost:8000/.well-known/agent-card.json",
 			cardPath: "/.well-known/agent-card.json",
 			rpcUrl: "http://localhost:8000/"
+		}
+	};
+}
+
+function streamArtifactUpdate(text: string): StreamResponse {
+	return {
+		payload: {
+			$case: "artifactUpdate",
+			value: {
+				taskId: "task-1",
+				contextId: "context-1",
+				append: true,
+				lastChunk: false,
+				metadata: undefined,
+				artifact: {
+					artifactId: "aion:stream-delta",
+					name: "",
+					description: "",
+					parts: [makeTextPart(text)],
+					metadata: undefined,
+					extensions: []
+				}
+			}
+		}
+	};
+}
+
+function streamStatusUpdate(text: string): StreamResponse {
+	return {
+		payload: {
+			$case: "statusUpdate",
+			value: {
+				taskId: "task-1",
+				contextId: "context-1",
+				status: {
+					state: TaskState.TASK_STATE_COMPLETED,
+					message: message("agent-1", "agent", text, "task-1"),
+					timestamp: undefined
+				},
+				metadata: undefined
+			}
 		}
 	};
 }
@@ -225,7 +289,7 @@ describe("runHeadless", () => {
 			expect.objectContaining({
 				message: expect.objectContaining({
 					contextId: "context-saved",
-					parts: [{ kind: "text", text: "hello" }]
+					parts: [makeTextPart("hello")]
 				})
 			})
 		);
@@ -288,9 +352,8 @@ describe("runHeadless", () => {
 		});
 
 		expect(JSON.parse(stdout.output())).toMatchObject({
-			kind: "message",
-			role: "agent",
-			parts: [{ kind: "text", text: "answer" }]
+			role: Role.ROLE_AGENT,
+			parts: [{ content: { $case: "text", value: "answer" } }]
 		});
 		expect(stderr.output()).toBe("");
 	});
@@ -310,8 +373,9 @@ describe("runHeadless", () => {
 						task({
 							history: [message("user-1", "user", "question", "task-1")],
 							status: {
-								state: "completed",
-								message: message("agent-1", "agent", "answer", "task-1")
+								state: TaskState.TASK_STATE_COMPLETED,
+								message: message("agent-1", "agent", "answer", "task-1"),
+								timestamp: undefined
 							}
 						})
 					)
@@ -329,7 +393,7 @@ describe("runHeadless", () => {
 		const stderr = createStream();
 		const streamingCard = {
 			...agentCard,
-			capabilities: { streaming: true }
+			capabilities: { extensions: [], streaming: true }
 		};
 
 		await runHeadless(options({ requestMode: "streaming-message" }), {
@@ -341,36 +405,9 @@ describe("runHeadless", () => {
 				connectedClient({
 					card: streamingCard,
 					streamEvents: [
-						{
-							kind: "artifact-update",
-							taskId: "task-1",
-							contextId: "context-1",
-							append: true,
-							artifact: {
-								artifactId: "aion:stream-delta",
-								parts: [{ kind: "text", text: "hel" }]
-							}
-						},
-						{
-							kind: "artifact-update",
-							taskId: "task-1",
-							contextId: "context-1",
-							append: true,
-							artifact: {
-								artifactId: "aion:stream-delta",
-								parts: [{ kind: "text", text: "lo" }]
-							}
-						},
-						{
-							kind: "status-update",
-							taskId: "task-1",
-							contextId: "context-1",
-							final: true,
-							status: {
-								state: "completed",
-								message: message("agent-1", "agent", "hello", "task-1")
-							}
-						}
+						streamArtifactUpdate("hel"),
+						streamArtifactUpdate("lo"),
+						streamStatusUpdate("hello")
 					]
 				}),
 			buildMessagePartsImpl: async (text) => buildParts(text),
@@ -386,7 +423,7 @@ describe("runHeadless", () => {
 		const stderr = createStream();
 		const streamingCard = {
 			...agentCard,
-			capabilities: { streaming: true }
+			capabilities: { extensions: [], streaming: true }
 		};
 
 		await runHeadless(options({ requestMode: "streaming-message" }), {
@@ -398,26 +435,8 @@ describe("runHeadless", () => {
 				connectedClient({
 					card: streamingCard,
 					streamEvents: [
-						{
-							kind: "artifact-update",
-							taskId: "task-1",
-							contextId: "context-1",
-							append: true,
-							artifact: {
-								artifactId: "aion:stream-delta",
-								parts: [{ kind: "text", text: "" }]
-							}
-						},
-						{
-							kind: "status-update",
-							taskId: "task-1",
-							contextId: "context-1",
-							final: true,
-							status: {
-								state: "completed",
-								message: message("agent-1", "agent", "answer", "task-1")
-							}
-						}
+						streamArtifactUpdate(""),
+						streamStatusUpdate("answer")
 					]
 				}),
 			buildMessagePartsImpl: async (text) => buildParts(text),

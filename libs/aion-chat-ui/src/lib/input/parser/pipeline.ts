@@ -1,10 +1,8 @@
-import type { Part, TextPart } from "@a2a-js/sdk";
+import type { Part } from "@a2a-js/sdk";
+
+import { makeTextPart } from "../../a2aProtocol.js";
 
 import type { DetectedSpan, PartExtractor } from "./types";
-
-function makeTextPart(text: string): TextPart {
-	return { kind: "text", text };
-}
 
 export async function buildMessageParts(text: string, extractors: PartExtractor[]): Promise<Part[]> {
 	const allSpans: Array<{ span: DetectedSpan; extractor: PartExtractor }> = [];
