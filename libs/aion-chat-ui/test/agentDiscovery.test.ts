@@ -12,6 +12,46 @@ import {
 	createExplicitAgentSource,
 	isTransientAgentSource
 } from "../src/lib/agents/model.js";
+import type {
+	ChatSessionLogger,
+	ChatSessionLogLevel
+} from "../src/lib/sessionLogger.js";
+
+interface LoggedEvent {
+	level: ChatSessionLogLevel;
+	event: string;
+	data?: Record<string, unknown>;
+}
+
+function createMockSessionLogger(): ChatSessionLogger & { events: LoggedEvent[] } {
+	const events: LoggedEvent[] = [];
+	const log =
+		(level: ChatSessionLogLevel) =>
+		(event: string, data?: Record<string, unknown>): void => {
+			events.push({ level, event, data });
+		};
+	return {
+		chatSessionId: "test-session",
+		logFilePath: "memory",
+		level: "debug",
+		debug: log("debug"),
+		info: log("info"),
+		warn: log("warn"),
+		error: log("error"),
+		flush: () => undefined,
+		events
+	};
+}
+
+function findLoggedEvent(
+	logger: { events: LoggedEvent[] },
+	event: string,
+	predicate: (data: Record<string, unknown>) => boolean = () => true
+): LoggedEvent | undefined {
+	return logger.events.find(
+		(entry) => entry.event === event && predicate(entry.data ?? {})
+	);
+}
 
 const agentCard = {
 	name: "Command Agent",
@@ -168,7 +208,9 @@ describe("discoverAgentSources", () => {
 	});
 
 	it("records explicit source errors without throwing", async () => {
-		const fetchImpl = vi.fn(async () => new Response("", { status: 404 })) as unknown as typeof fetch;
+		const fetchImpl = vi.fn(
+			async () => new Response("", { status: 404 })
+		) as unknown as typeof fetch;
 
 		const result = await discoverAgentSources(
 			[createExplicitAgentSource("http://localhost:9000")],
@@ -278,12 +320,14 @@ describe("discoverAgentSources", () => {
 				return agentCardFetchImpl(url, { ...init, headers });
 			}
 		) as unknown as typeof fetch;
+		const logger = createMockSessionLogger();
 
 		const result = await discoverAgentSources([source], appAuthenticatedFetch, {
 			environmentId: "development",
 			controlPlaneAccessTokenProvider: async () => "access-token",
 			graphQLFetchImpl,
-			sourceFetchImpl: () => agentCardFetchImpl
+			sourceFetchImpl: () => agentCardFetchImpl,
+			logger
 		});
 
 		expect(result.errors).toEqual([]);
@@ -299,14 +343,44 @@ describe("discoverAgentSources", () => {
 				"http://registry.example/agents/team-agent/.well-known/agent-card.json"
 		});
 		expect(appAuthenticatedFetch).not.toHaveBeenCalled();
+		expect(findLoggedEvent(logger, "source.discovery.started")).toBeDefined();
+		expect(
+			findLoggedEvent(
+				logger,
+				"graphql.request",
+				(data) => data.operationName === "LoginBootstrap"
+			)
+		).toMatchObject({
+			level: "debug",
+			data: { variables: { token: "[REDACTED]" } }
+		});
+		expect(
+			findLoggedEvent(logger, "registry.agent_identities.loaded")?.data
+		).toMatchObject({
+			organizationId: "org-1",
+			resolvedIdentityCount: 1
+		});
+		expect(
+			findLoggedEvent(logger, "agent_card.request")?.data
+		).toMatchObject({
+			sourceKey: "aion-registry-development",
+			identityId: "identity-team"
+		});
+		expect(
+			findLoggedEvent(logger, "source.discovery.completed")?.data
+		).toMatchObject({
+			sourceKey: "aion-registry-development",
+			agentCount: 1
+		});
 	});
-
 
 	it("marks registry sources as login-required when no token is available", async () => {
 		const source = createDefaultRegistryAgentSource("development");
+		const logger = createMockSessionLogger();
 		const result = await discoverAgentSources([source], vi.fn() as unknown as typeof fetch, {
 			environmentId: "development",
-			controlPlaneAccessTokenProvider: async () => undefined
+			controlPlaneAccessTokenProvider: async () => undefined,
+			logger
 		});
 
 		expect(result.agents).toEqual([]);
@@ -315,6 +389,13 @@ describe("discoverAgentSources", () => {
 			type: "registry",
 			status: "unavailable",
 			lastError: "/login to authenticate."
+		});
+		expect(findLoggedEvent(logger, "registry.auth.token_missing")).toMatchObject({
+			level: "warn"
+		});
+		expect(findLoggedEvent(logger, "source.discovery.failed")).toMatchObject({
+			level: "warn",
+			data: { error: "/login to authenticate." }
 		});
 	});
 
@@ -431,6 +512,7 @@ describe("discoverAgentSources", () => {
 
 	it("marks registry sources with control-plane failure when GraphQL fails", async () => {
 		const source = createDefaultRegistryAgentSource("development");
+		const logger = createMockSessionLogger();
 		const graphQLFetchImpl = vi.fn(
 			async () => new Response("", { status: 503, statusText: "Unavailable" })
 		) as unknown as typeof fetch;
@@ -438,7 +520,8 @@ describe("discoverAgentSources", () => {
 		const result = await discoverAgentSources([source], vi.fn() as unknown as typeof fetch, {
 			environmentId: "development",
 			controlPlaneAccessTokenProvider: async () => "access-token",
-			graphQLFetchImpl
+			graphQLFetchImpl,
+			logger
 		});
 
 		expect(result.agents).toEqual([]);
@@ -447,6 +530,16 @@ describe("discoverAgentSources", () => {
 			type: "registry",
 			status: "unavailable",
 			lastError: "Aion Control Plane did not respond."
+		});
+		expect(
+			findLoggedEvent(logger, "graphql.response.http_error")?.data
+		).toMatchObject({
+			operationName: "LoginBootstrap",
+			status: 503,
+			statusText: "Unavailable"
+		});
+		expect(findLoggedEvent(logger, "registry.identities.failed")).toMatchObject({
+			level: "warn"
 		});
 	});
 

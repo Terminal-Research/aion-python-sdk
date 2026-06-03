@@ -6,6 +6,7 @@ import {
 	getWebAppBaseUrl,
 	type AionEnvironmentId
 } from "../environment.js";
+import type { ChatSessionLogger } from "../sessionLogger.js";
 import { executeGraphQL } from "./client.js";
 
 export interface AuthBootstrapResult {
@@ -62,17 +63,20 @@ export async function runLoginBootstrap(options: {
 	accessToken: string;
 	fetchImpl?: typeof fetch;
 	graphQLUrl?: string;
+	logger?: ChatSessionLogger;
 }): Promise<AuthBootstrapResult> {
 	const response = await executeGraphQL<
 		LoginBootstrapQuery,
 		LoginBootstrapQueryVariables
 	>({
 		environmentId: options.environmentId,
+		operationName: "LoginBootstrap",
 		query: LOGIN_BOOTSTRAP_QUERY,
 		variables: { token: options.accessToken },
 		accessToken: options.accessToken,
 		fetchImpl: options.fetchImpl,
-		url: options.graphQLUrl
+		url: options.graphQLUrl,
+		logger: options.logger
 	});
 
 	const login = response.data?.login ?? null;

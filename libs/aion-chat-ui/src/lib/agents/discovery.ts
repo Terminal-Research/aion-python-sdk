@@ -5,6 +5,7 @@ import {
 	getGraphQLHttpUrlForBaseUrl
 } from "../environment.js";
 import { fetchRegistryAgentIdentities } from "../graphql/registry.js";
+import type { ChatSessionLogger } from "../sessionLogger.js";
 import {
 	createAgentKey,
 	slugKey,
@@ -59,6 +60,7 @@ export interface AgentDiscoveryOptions {
 	) => Promise<string | undefined>;
 	graphQLFetchImpl?: typeof fetch;
 	sourceFetchImpl?: (source: RuntimeAgentSource) => typeof fetch;
+	logger?: ChatSessionLogger;
 }
 
 function trimTrailingSlash(value: string): string {
@@ -117,15 +119,97 @@ function cardUrlForEndpoint(endpointUrl: string): string {
 		: `${trimTrailingSlash(endpointUrl)}${AGENT_CARD_PATH}`;
 }
 
+interface FetchJsonLogOptions {
+	logger?: ChatSessionLogger;
+	eventPrefix: string;
+	context?: Record<string, unknown>;
+}
+
+function summarizeSourceForLog(
+	source: RuntimeAgentSource | AgentSourceRecord
+): Record<string, unknown> {
+	return {
+		sourceKey: source.sourceKey,
+		type: source.type,
+		url: source.url,
+		description: source.description,
+		enabled: source.enabled,
+		status: source.status,
+		lastError: source.lastError,
+		isDefault: source.isDefault,
+		resolveMode: "resolveMode" in source ? source.resolveMode : undefined,
+		transient: "transient" in source ? source.transient : undefined
+	};
+}
+
+function summarizeAgentForLog(agent: DiscoveredAgentRecord): Record<string, unknown> {
+	return {
+		agentKey: agent.agentKey,
+		agentId: agent.agentId,
+		id: agent.id,
+		sourceKey: agent.sourceKey,
+		agentCardUrl: agent.agentCardUrl,
+		agentCardName: agent.agentCardName,
+		agentHandle: agent.agentHandle,
+		status: agent.status,
+		connectionUrl: agent.connectionUrl
+	};
+}
+
 async function fetchJson<T>(
 	url: string,
-	fetchImpl: typeof fetch
+	fetchImpl: typeof fetch,
+	logOptions?: FetchJsonLogOptions
 ): Promise<T | undefined> {
-	const response = await fetchImpl(url);
+	const startedAt = Date.now();
+	logOptions?.logger?.debug(`${logOptions.eventPrefix}.request`, {
+		url,
+		...logOptions.context
+	});
+
+	let response: Response;
+	try {
+		response = await fetchImpl(url);
+	} catch (error) {
+		logOptions?.logger?.warn(`${logOptions.eventPrefix}.failed`, {
+			url,
+			durationMs: Date.now() - startedAt,
+			error,
+			...logOptions.context
+		});
+		throw error;
+	}
+
 	if (!response.ok) {
+		logOptions?.logger?.warn(`${logOptions.eventPrefix}.http_error`, {
+			url,
+			status: response.status,
+			statusText: response.statusText,
+			durationMs: Date.now() - startedAt,
+			...logOptions.context
+		});
 		return undefined;
 	}
-	return (await response.json()) as T;
+
+	try {
+		const payload = (await response.json()) as T;
+		logOptions?.logger?.debug(`${logOptions.eventPrefix}.response`, {
+			url,
+			status: response.status,
+			durationMs: Date.now() - startedAt,
+			...logOptions.context
+		});
+		return payload;
+	} catch (error) {
+		logOptions?.logger?.warn(`${logOptions.eventPrefix}.invalid_json`, {
+			url,
+			status: response.status,
+			durationMs: Date.now() - startedAt,
+			error,
+			...logOptions.context
+		});
+		throw error;
+	}
 }
 
 function createDiscoveredAgent(
@@ -161,10 +245,15 @@ function createDiscoveredAgent(
 async function discoverManifestSource(
 	source: RuntimeAgentSource,
 	fetchImpl: typeof fetch,
-	now: string
+	now: string,
+	logger?: ChatSessionLogger
 ): Promise<SourceDiscoveryResult> {
 	const manifestUrl = getManifestUrl(source.url);
-	const manifest = await fetchJson<DiscoveryManifest>(manifestUrl, fetchImpl);
+	const manifest = await fetchJson<DiscoveryManifest>(manifestUrl, fetchImpl, {
+		logger,
+		eventPrefix: "manifest",
+		context: { sourceKey: source.sourceKey }
+	});
 	if (!manifest) {
 		throw new Error(`Failed to fetch manifest from ${manifestUrl}`);
 	}
@@ -183,7 +272,15 @@ async function discoverManifestSource(
 	for (const [agentId, endpoint] of Object.entries(manifest.endpoints ?? {})) {
 		const endpointUrl = resolveEndpoint(rootUrl, endpoint);
 		const agentCardUrl = cardUrlForEndpoint(endpointUrl);
-		const agentCard = await fetchJson<AgentCard>(agentCardUrl, fetchImpl);
+		const agentCard = await fetchJson<AgentCard>(agentCardUrl, fetchImpl, {
+			logger,
+			eventPrefix: "agent_card",
+			context: {
+				sourceKey: source.sourceKey,
+				agentId,
+				endpointUrl
+			}
+		});
 		agents.push(
 			createDiscoveredAgent(
 				resolvedSource,
@@ -204,10 +301,15 @@ async function discoverManifestSource(
 async function discoverAgentCardSource(
 	source: RuntimeAgentSource,
 	fetchImpl: typeof fetch,
-	now: string
+	now: string,
+	logger?: ChatSessionLogger
 ): Promise<SourceDiscoveryResult> {
 	const agentCardUrl = getAgentCardUrl(source.url);
-	const agentCard = await fetchJson<AgentCard>(agentCardUrl, fetchImpl);
+	const agentCard = await fetchJson<AgentCard>(agentCardUrl, fetchImpl, {
+		logger,
+		eventPrefix: "agent_card",
+		context: { sourceKey: source.sourceKey }
+	});
 	if (!agentCard) {
 		throw new Error(`Failed to fetch agent card from ${agentCardUrl}`);
 	}
@@ -308,7 +410,8 @@ async function fetchRegistryIdentitiesWithToken(
 		environmentId: options.environmentId,
 		accessToken,
 		graphQLUrl: getGraphQLHttpUrlForBaseUrl(source.url),
-		fetchImpl: options.graphQLFetchImpl ?? fetch
+		fetchImpl: options.graphQLFetchImpl ?? fetch,
+		logger: options.logger
 	});
 }
 
@@ -321,16 +424,27 @@ async function discoverRegistrySource(
 	let accessToken: string | undefined;
 	try {
 		accessToken = await options?.controlPlaneAccessTokenProvider?.();
-	} catch {
+	} catch (error) {
+		options?.logger?.warn("registry.auth.token_failed", {
+			sourceKey: source.sourceKey,
+			error
+		});
 		return registryUnavailableResult(source, now, REGISTRY_AUTH_FAILED_MESSAGE);
 	}
 
 	if (!accessToken || !options) {
+		options?.logger?.warn("registry.auth.token_missing", {
+			sourceKey: source.sourceKey
+		});
 		return registryUnavailableResult(source, now, REGISTRY_LOGIN_REQUIRED_MESSAGE);
 	}
 
 	let identities;
 	try {
+		options.logger?.debug("registry.identities.requested", {
+			sourceKey: source.sourceKey,
+			graphQLUrl: getGraphQLHttpUrlForBaseUrl(source.url)
+		});
 		identities = await fetchRegistryIdentitiesWithToken(
 			source,
 			accessToken,
@@ -338,7 +452,14 @@ async function discoverRegistrySource(
 		);
 	} catch (error) {
 		if (isRegistryAuthenticationError(error)) {
+			options.logger?.warn("registry.auth.failed", {
+				sourceKey: source.sourceKey,
+				error
+			});
 			try {
+				options.logger?.debug("registry.auth.refresh_requested", {
+					sourceKey: source.sourceKey
+				});
 				const refreshedAccessToken =
 					await options.controlPlaneAccessTokenProvider?.({ forceRefresh: true });
 				if (refreshedAccessToken && refreshedAccessToken !== accessToken) {
@@ -349,6 +470,10 @@ async function discoverRegistrySource(
 					);
 				}
 			} catch (refreshError) {
+				options.logger?.warn("registry.auth.refresh_failed", {
+					sourceKey: source.sourceKey,
+					error: refreshError
+				});
 				return registryUnavailableResult(
 					source,
 					now,
@@ -358,6 +483,10 @@ async function discoverRegistrySource(
 		}
 
 		if (!identities) {
+			options.logger?.warn("registry.identities.failed", {
+				sourceKey: source.sourceKey,
+				error
+			});
 			return registryUnavailableResult(
 				source,
 				now,
@@ -365,6 +494,16 @@ async function discoverRegistrySource(
 			);
 		}
 	}
+	options.logger?.debug("registry.identities.resolved", {
+		sourceKey: source.sourceKey,
+		identityCount: identities.length,
+		identities: identities.map((identity) => ({
+			id: identity.id,
+			name: identity.name,
+			atName: identity.atName,
+			a2aUrl: identity.a2aUrl
+		}))
+	});
 	const resolvedSource: AgentSourceRecord = {
 		...source,
 		type: "registry",
@@ -376,7 +515,16 @@ async function discoverRegistrySource(
 
 	for (const identity of identities) {
 		const agentCardUrl = cardUrlForEndpoint(identity.a2aUrl);
-		const agentCard = await fetchJson<AgentCard>(agentCardUrl, fetchImpl);
+		const agentCard = await fetchJson<AgentCard>(agentCardUrl, fetchImpl, {
+			logger: options.logger,
+			eventPrefix: "agent_card",
+			context: {
+				sourceKey: source.sourceKey,
+				identityId: identity.id,
+				identityName: identity.name,
+				identityAtName: identity.atName
+			}
+		});
 		if (!agentCard) {
 			continue;
 		}
@@ -415,17 +563,27 @@ async function discoverSource(
 
 	if (source.resolveMode === "auto") {
 		try {
-			return await discoverManifestSource(source, fetchImpl, now);
+			return await discoverManifestSource(
+				source,
+				fetchImpl,
+				now,
+				options?.logger
+			);
 		} catch {
-			return discoverAgentCardSource(source, fetchImpl, now);
+			return discoverAgentCardSource(
+				source,
+				fetchImpl,
+				now,
+				options?.logger
+			);
 		}
 	}
 
 	if (source.type === "manifest") {
-		return discoverManifestSource(source, fetchImpl, now);
+		return discoverManifestSource(source, fetchImpl, now, options?.logger);
 	}
 	if (source.type === "agentCard") {
-		return discoverAgentCardSource(source, fetchImpl, now);
+		return discoverAgentCardSource(source, fetchImpl, now, options?.logger);
 	}
 	if (source.type === "registry") {
 		return discoverRegistrySource(source, fetchImpl, now, options);
@@ -445,13 +603,24 @@ export async function discoverAgentSources(
 	const errors: SourceDiscoveryResult[] = [];
 
 	for (const source of sources) {
+		options?.logger?.debug("source.discovery.started", summarizeSourceForLog(source));
 		try {
 			const sourceFetchImpl = options?.sourceFetchImpl?.(source) ?? fetchImpl;
 			const result = await discoverSource(source, sourceFetchImpl, now, options);
 			resolvedSources.push(result.source);
 			agents.push(...result.agents);
 			if (result.error) {
+				options?.logger?.warn("source.discovery.failed", {
+					...summarizeSourceForLog(result.source),
+					error: result.error
+				});
 				errors.push(result);
+			} else {
+				options?.logger?.debug("source.discovery.completed", {
+					...summarizeSourceForLog(result.source),
+					agentCount: result.agents.length,
+					agents: result.agents.map(summarizeAgentForLog)
+				});
 			}
 		} catch (error) {
 			const message =
@@ -466,6 +635,11 @@ export async function discoverAgentSources(
 				lastCheckedAt: now,
 				lastError: message
 			};
+			options?.logger?.warn("source.discovery.failed", {
+				...summarizeSourceForLog(failedSource),
+				error,
+				message
+			});
 			resolvedSources.push(failedSource);
 			errors.push({
 				source: failedSource,

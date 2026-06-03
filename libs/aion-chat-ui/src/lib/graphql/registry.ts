@@ -8,6 +8,7 @@ import {
 	type AionEnvironmentId,
 	getGraphQLHttpUrl
 } from "../environment.js";
+import type { ChatSessionLogger } from "../sessionLogger.js";
 import { runLoginBootstrap } from "./authBootstrap.js";
 import { executeGraphQL } from "./client.js";
 
@@ -94,18 +95,52 @@ function normalizeIdentity(
 	};
 }
 
+function summarizeRegistryIdentity(
+	identity: RegistryAgentIdentity
+): Record<string, unknown> {
+	return {
+		id: identity.id,
+		name: identity.name,
+		atName: identity.atName,
+		a2aUrl: identity.a2aUrl,
+		updatedAt: identity.updatedAt
+	};
+}
+
+function summarizeCurrentUser(
+	user: NonNullable<CurrentUserQuery["user"]>
+): Record<string, unknown> {
+	return {
+		userId: user.id,
+		homeOrganizationId: user.homeOrganization?.id,
+		organizationId: user.agentIdentity.organizationId,
+		agentIdentityId: user.agentIdentity.id,
+		agentIdentityName: user.agentIdentity.name,
+		agentIdentityAtName: user.agentIdentity.atName,
+		agentIdentityType: user.agentIdentity.agentType,
+		agentIdentityHasA2aUrl: Boolean(user.agentIdentity.a2aUrl)
+	};
+}
+
 export async function fetchRegistryAgentIdentities(options: {
 	environmentId: AionEnvironmentId;
 	accessToken: string;
 	fetchImpl?: typeof fetch;
 	graphQLUrl?: string;
+	logger?: ChatSessionLogger;
 }): Promise<RegistryAgentIdentity[]> {
 	const graphQLUrl = options.graphQLUrl ?? getGraphQLHttpUrl(options.environmentId);
-	await runLoginBootstrap({
+	const bootstrap = await runLoginBootstrap({
 		environmentId: options.environmentId,
 		accessToken: options.accessToken,
 		fetchImpl: options.fetchImpl,
-		graphQLUrl
+		graphQLUrl,
+		logger: options.logger
+	});
+	options.logger?.debug("registry.login_bootstrap.loaded", {
+		nextRoutePath: bootstrap.nextRoutePath,
+		hasLoginEmail: Boolean(bootstrap.loginEmail),
+		hasLoginName: Boolean(bootstrap.loginName)
 	});
 
 	const currentUser = await executeGraphQL<
@@ -114,16 +149,20 @@ export async function fetchRegistryAgentIdentities(options: {
 	>({
 		environmentId: options.environmentId,
 		url: graphQLUrl,
+		operationName: "CurrentUser",
 		query: CURRENT_USER_QUERY,
 		variables: {} as CurrentUserQueryVariables,
 		accessToken: options.accessToken,
-		fetchImpl: options.fetchImpl
+		fetchImpl: options.fetchImpl,
+		logger: options.logger
 	});
 
 	const user = currentUser.data?.user;
 	if (!user) {
 		throw new Error("Aion registry did not return the current user.");
 	}
+
+	options.logger?.debug("registry.current_user.loaded", summarizeCurrentUser(user));
 
 	const organizationId = user.homeOrganization?.id ?? user.agentIdentity.organizationId;
 	const catalog = await executeGraphQL<
@@ -132,13 +171,15 @@ export async function fetchRegistryAgentIdentities(options: {
 	>({
 		environmentId: options.environmentId,
 		url: graphQLUrl,
+		operationName: "AgentCatalogIdentities",
 		query: AGENT_CATALOG_IDENTITIES_QUERY,
 		variables: {
 			organizationId,
 			networkTypes: ["A2A"]
 		},
 		accessToken: options.accessToken,
-		fetchImpl: options.fetchImpl
+		fetchImpl: options.fetchImpl,
+		logger: options.logger
 	});
 
 	const identities = new Map<string, RegistryAgentIdentity>();
@@ -154,9 +195,17 @@ export async function fetchRegistryAgentIdentities(options: {
 		}
 	}
 
-	return [...identities.values()].sort((left, right) =>
+	const resolvedIdentities = [...identities.values()].sort((left, right) =>
 		(left.atName ?? left.name ?? left.id).localeCompare(
 			right.atName ?? right.name ?? right.id
 		)
 	);
+	options.logger?.debug("registry.agent_identities.loaded", {
+		organizationId,
+		catalogIdentityCount: catalog.data?.agentIdentityDetails?.length ?? 0,
+		resolvedIdentityCount: resolvedIdentities.length,
+		identities: resolvedIdentities.map(summarizeRegistryIdentity)
+	});
+
+	return resolvedIdentities;
 }
