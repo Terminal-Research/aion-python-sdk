@@ -4,6 +4,7 @@ import { render } from "ink-testing-library";
 
 import { ChatComposer } from "../src/components/ChatComposer.js";
 import { ChatSession } from "../src/components/ChatSession.js";
+import { SystemNotificationStack } from "../src/components/SystemNotificationStack.js";
 import { HomeScreen } from "../src/components/HomeScreen.js";
 import {
 	MessageBubble,
@@ -298,6 +299,25 @@ describe("Ink components", () => {
 
 		expect(app.lastFrame()).toContain("· System connected");
 		expect(app.lastFrame()).not.toContain("╭");
+		app.unmount();
+	});
+
+	it("renders transient system notifications outside chat session entries", () => {
+		const app = render(
+			<SystemNotificationStack
+				notifications={[
+					{
+						id: "notification-1",
+						role: "system",
+						body: "Aion development registry: Auth failed."
+					}
+				]}
+			/>
+		);
+
+		expect(app.lastFrame()).toContain(
+			"· System Aion development registry: Auth failed."
+		);
 		app.unmount();
 	});
 

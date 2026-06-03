@@ -58,6 +58,7 @@ export interface AuthSession {
 interface AuthOptions {
 	fetchImpl?: typeof fetch;
 	credentialStore?: CredentialStore;
+	forceRefresh?: boolean;
 }
 
 const accessTokenCache = new Map<AionEnvironmentId, AuthSession>();
@@ -75,16 +76,47 @@ function requireString(value: string | undefined, name: string): string {
 	return value;
 }
 
+function decodeJwtPayload(token: string): Record<string, unknown> | undefined {
+	const [, payload] = token.split(".");
+	if (!payload) {
+		return undefined;
+	}
+
+	try {
+		const decoded = Buffer.from(payload, "base64url").toString("utf8");
+		const value = JSON.parse(decoded) as unknown;
+		return value && typeof value === "object" && !Array.isArray(value)
+			? (value as Record<string, unknown>)
+			: undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+function getAccessTokenExpiresAt(
+	accessToken: string,
+	expiresIn: number | undefined
+): number | undefined {
+	if (typeof expiresIn === "number") {
+		return Date.now() + expiresIn * 1000;
+	}
+
+	const exp = decodeJwtPayload(accessToken)?.exp;
+	return typeof exp === "number" ? exp * 1000 : undefined;
+}
+
 function normalizeTokenResponse(response: WorkOSTokenResponse): AuthSession {
-	const accessToken = response.access_token ?? response.accessToken;
+	const accessToken = requireString(
+		response.access_token ?? response.accessToken,
+		"access token"
+	);
 	const refreshToken = response.refresh_token ?? response.refreshToken;
 	const expiresIn = response.expires_in ?? response.expiresIn;
+	const expiresAt = getAccessTokenExpiresAt(accessToken, expiresIn);
 	return {
-		accessToken: requireString(accessToken, "access token"),
+		accessToken,
 		refreshToken: requireString(refreshToken, "refresh token"),
-		...(typeof expiresIn === "number"
-			? { expiresAt: Date.now() + expiresIn * 1000 }
-			: {})
+		...(typeof expiresAt === "number" ? { expiresAt } : {})
 	};
 }
 
@@ -284,7 +316,7 @@ export async function getStoredAccessToken(
 	options: AuthOptions = {}
 ): Promise<string | undefined> {
 	const cached = accessTokenCache.get(environmentId);
-	if (cached && !tokenNeedsRefresh(cached)) {
+	if (!options.forceRefresh && cached && !tokenNeedsRefresh(cached)) {
 		return cached.accessToken;
 	}
 

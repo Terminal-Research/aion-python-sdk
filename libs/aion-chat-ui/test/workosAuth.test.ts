@@ -1,7 +1,20 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { CredentialStore } from "../src/lib/credentialStore.js";
 import { getStoredAccessToken } from "../src/lib/workosAuth.js";
+
+
+function createJwt(payload: Record<string, unknown>): string {
+	const header = Buffer.from(JSON.stringify({ alg: "none", typ: "JWT" })).toString(
+		"base64url"
+	);
+	const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
+	return `${header}.${body}.signature`;
+}
+
+afterEach(() => {
+	vi.useRealTimers();
+});
 
 const configResponse = {
 	apiBaseUrl: "http://localhost:8080",
@@ -60,4 +73,106 @@ describe("getStoredAccessToken", () => {
 		);
 		expect(storedTokens).toEqual(["new-refresh-token"]);
 	});
+	it("uses the access token JWT exp claim when WorkOS omits expires_in", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date("2026-06-03T00:00:00.000Z"));
+		let storedRefreshToken = "old-refresh-token";
+		const credentialStore: CredentialStore = {
+			getRefreshToken: async () => storedRefreshToken,
+			setRefreshToken: async (_environmentId, refreshToken) => {
+				storedRefreshToken = refreshToken;
+			},
+			deleteRefreshToken: async () => undefined
+		};
+		const firstAccessToken = createJwt({ exp: 1_780_444_980 });
+		const secondAccessToken = createJwt({ exp: 1_780_448_400 });
+		const fetchImpl = vi
+			.fn()
+			.mockResolvedValueOnce({
+				ok: true,
+				json: async () => configResponse
+			})
+			.mockResolvedValueOnce({
+				ok: true,
+				json: async () => ({
+					access_token: firstAccessToken,
+					refresh_token: "new-refresh-token"
+				})
+			})
+			.mockResolvedValueOnce({
+				ok: true,
+				json: async () => configResponse
+			})
+			.mockResolvedValueOnce({
+				ok: true,
+				json: async () => ({
+					access_token: secondAccessToken,
+					refresh_token: "rotated-refresh-token"
+				})
+			}) as unknown as typeof fetch;
+
+		await expect(
+			getStoredAccessToken("staging", { credentialStore, fetchImpl })
+		).resolves.toBe(firstAccessToken);
+
+		vi.setSystemTime(new Date("2026-06-03T00:02:01.000Z"));
+
+		await expect(
+			getStoredAccessToken("staging", { credentialStore, fetchImpl })
+		).resolves.toBe(secondAccessToken);
+
+		const [, secondRefreshInit] = vi.mocked(fetchImpl).mock.calls[3] ?? [];
+		expect(String((secondRefreshInit as RequestInit).body)).toContain(
+			"refresh_token=new-refresh-token"
+		);
+		expect(storedRefreshToken).toBe("rotated-refresh-token");
+	});
+
+	it("force refreshes a cached access token", async () => {
+		const credentialStore: CredentialStore = {
+			getRefreshToken: async () => "stored-refresh-token",
+			setRefreshToken: async () => undefined,
+			deleteRefreshToken: async () => undefined
+		};
+		const firstAccessToken = createJwt({ exp: 4_102_444_800 });
+		const secondAccessToken = createJwt({ exp: 4_102_444_800 });
+		const fetchImpl = vi
+			.fn()
+			.mockResolvedValueOnce({
+				ok: true,
+				json: async () => configResponse
+			})
+			.mockResolvedValueOnce({
+				ok: true,
+				json: async () => ({
+					access_token: firstAccessToken,
+					refresh_token: "first-refresh-token"
+				})
+			})
+			.mockResolvedValueOnce({
+				ok: true,
+				json: async () => configResponse
+			})
+			.mockResolvedValueOnce({
+				ok: true,
+				json: async () => ({
+					access_token: secondAccessToken,
+					refresh_token: "second-refresh-token"
+				})
+			}) as unknown as typeof fetch;
+
+		await expect(
+			getStoredAccessToken("production", { credentialStore, fetchImpl })
+		).resolves.toBe(firstAccessToken);
+		await expect(
+			getStoredAccessToken("production", {
+				credentialStore,
+				fetchImpl,
+				forceRefresh: true
+			})
+		).resolves.toBe(secondAccessToken);
+
+		expect(vi.mocked(fetchImpl)).toHaveBeenCalledTimes(4);
+	});
+
 });

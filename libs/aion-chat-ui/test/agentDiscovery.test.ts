@@ -310,10 +310,104 @@ describe("discoverAgentSources", () => {
 		});
 
 		expect(result.agents).toEqual([]);
+		expect(result.errors[0]?.error).toBe("/login to authenticate.");
 		expect(result.sources[0]).toMatchObject({
 			type: "registry",
 			status: "unavailable",
 			lastError: "/login to authenticate."
+		});
+	});
+
+	it("force refreshes the control-plane token and retries registry auth failures", async () => {
+		const source = createDefaultRegistryAgentSource("development");
+		const accessTokenProvider = vi.fn(async (request?: { forceRefresh?: boolean }) =>
+			request?.forceRefresh ? "fresh-token" : "stale-token"
+		);
+		const graphQLFetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+			const headers = init?.headers as Headers;
+			if (headers.get("Authorization") === "Bearer stale-token") {
+				return new Response("", { status: 401, statusText: "Unauthorized" });
+			}
+
+			const body = JSON.parse(String(init?.body)) as { query: string };
+			if (body.query.includes("query LoginBootstrap")) {
+				return new Response(
+					JSON.stringify({ data: { login: { nextRoute: null, email: null, name: null } } }),
+					{ status: 200 }
+				);
+			}
+			if (body.query.includes("query CurrentUser")) {
+				return new Response(
+					JSON.stringify({
+						data: {
+							user: {
+								id: "user-1",
+								homeOrganization: { id: "org-1", name: "Org" },
+								agentIdentity: {
+									id: "identity-personal",
+									name: "Personal Agent",
+									atName: "@me",
+									a2aUrl: null,
+									agentType: "Personal",
+									organizationId: "org-1",
+									updatedAt: "2026-01-01T00:00:00Z"
+								}
+							}
+						}
+					}),
+					{ status: 200 }
+				);
+			}
+			return new Response(
+				JSON.stringify({
+					data: {
+						agentIdentityDetails: [
+							{
+								identity: {
+									id: "identity-team",
+									agentType: "Principal",
+									userId: null,
+									organizationId: "org-1",
+									systemKey: null,
+									name: "Team Agent",
+									a2aUrl: "http://registry.example/agents/team-agent",
+									website: null,
+									email: null,
+									atName: "@team-agent",
+									biography: null,
+									avatarImageUrl: null,
+									backgroundImageUrl: null,
+									updatedAt: "2026-01-01T00:00:00Z",
+									notes: null
+								},
+								distributionUsages: []
+							}
+						]
+					}
+				}),
+				{ status: 200 }
+			);
+		}) as unknown as typeof fetch;
+		const agentCardFetchImpl = vi.fn(async () =>
+			new Response(JSON.stringify(agentCard), { status: 200 })
+		) as unknown as typeof fetch;
+
+		const result = await discoverAgentSources([source], vi.fn() as unknown as typeof fetch, {
+			environmentId: "development",
+			controlPlaneAccessTokenProvider: accessTokenProvider,
+			graphQLFetchImpl,
+			sourceFetchImpl: () => agentCardFetchImpl
+		});
+
+		expect(result.errors).toEqual([]);
+		expect(result.sources[0]).toMatchObject({
+			type: "registry",
+			status: "available"
+		});
+		expect(result.agents[0]).toMatchObject({ id: "team-agent" });
+		expect(accessTokenProvider.mock.calls[0]).toEqual([]);
+		expect(accessTokenProvider).toHaveBeenNthCalledWith(2, {
+			forceRefresh: true
 		});
 	});
 
@@ -327,6 +421,7 @@ describe("discoverAgentSources", () => {
 		});
 
 		expect(result.agents).toEqual([]);
+		expect(result.errors[0]?.error).toBe("Auth failed.");
 		expect(result.sources[0]).toMatchObject({
 			type: "registry",
 			status: "unavailable",
@@ -347,6 +442,7 @@ describe("discoverAgentSources", () => {
 		});
 
 		expect(result.agents).toEqual([]);
+		expect(result.errors[0]?.error).toBe("Aion Control Plane did not respond.");
 		expect(result.sources[0]).toMatchObject({
 			type: "registry",
 			status: "unavailable",

@@ -45819,6 +45819,17 @@ function ChatSession({
   ] });
 }
 
+// src/components/SystemNotificationStack.tsx
+var import_jsx_runtime9 = __toESM(require_jsx_runtime(), 1);
+function SystemNotificationStack({
+  notifications
+}) {
+  if (notifications.length === 0) {
+    return null;
+  }
+  return /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Box_default, { flexDirection: "column", marginBottom: 1, children: notifications.map((notification) => /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(MessageBubble, { entry: notification }, notification.id)) });
+}
+
 // src/lib/agentSelection.ts
 var AGENT_MENTION_PATTERN = /(?:^|\s)@([a-zA-Z0-9._-]*)$/;
 function getAgentMentionMatch(draft) {
@@ -50446,12 +50457,13 @@ function registryUnavailableResult(source, now, lastError) {
       lastCheckedAt: now,
       lastError
     },
-    agents: []
+    agents: [],
+    error: lastError
   };
 }
 function registryDiscoveryErrorMessage(error) {
   const message = error instanceof Error ? error.message : String(error);
-  if (/workos|token|auth|login|credential/iu.test(message)) {
+  if (/workos|token|auth|login|credential|jwt|expired|unauthorized|forbidden/iu.test(message)) {
     return REGISTRY_AUTH_FAILED_MESSAGE;
   }
   if (error instanceof TypeError || error instanceof SyntaxError || /graphql|current user|fetch|network|http request|failed to fetch|response|json/iu.test(
@@ -50460,6 +50472,20 @@ function registryDiscoveryErrorMessage(error) {
     return REGISTRY_CONTROL_PLANE_UNAVAILABLE_MESSAGE;
   }
   return REGISTRY_UNEXPECTED_ERROR_MESSAGE;
+}
+function isRegistryAuthenticationError(error) {
+  const message = error instanceof Error ? error.message : String(error);
+  return /workos|token|auth|login|credential|jwt|expired|unauthorized|forbidden|401|403/iu.test(
+    message
+  );
+}
+async function fetchRegistryIdentitiesWithToken(source, accessToken, options) {
+  return fetchRegistryAgentIdentities({
+    environmentId: options.environmentId,
+    accessToken,
+    graphQLUrl: getGraphQLHttpUrlForBaseUrl(source.url),
+    fetchImpl: options.graphQLFetchImpl ?? fetch
+  });
 }
 async function discoverRegistrySource(source, fetchImpl, now, options) {
   let accessToken;
@@ -50473,18 +50499,37 @@ async function discoverRegistrySource(source, fetchImpl, now, options) {
   }
   let identities;
   try {
-    identities = await fetchRegistryAgentIdentities({
-      environmentId: options.environmentId,
-      accessToken,
-      graphQLUrl: getGraphQLHttpUrlForBaseUrl(source.url),
-      fetchImpl: options.graphQLFetchImpl ?? fetch
-    });
-  } catch (error) {
-    return registryUnavailableResult(
+    identities = await fetchRegistryIdentitiesWithToken(
       source,
-      now,
-      registryDiscoveryErrorMessage(error)
+      accessToken,
+      options
     );
+  } catch (error) {
+    if (isRegistryAuthenticationError(error)) {
+      try {
+        const refreshedAccessToken = await options.controlPlaneAccessTokenProvider?.({ forceRefresh: true });
+        if (refreshedAccessToken && refreshedAccessToken !== accessToken) {
+          identities = await fetchRegistryIdentitiesWithToken(
+            source,
+            refreshedAccessToken,
+            options
+          );
+        }
+      } catch (refreshError) {
+        return registryUnavailableResult(
+          source,
+          now,
+          registryDiscoveryErrorMessage(refreshError)
+        );
+      }
+    }
+    if (!identities) {
+      return registryUnavailableResult(
+        source,
+        now,
+        registryDiscoveryErrorMessage(error)
+      );
+    }
   }
   const resolvedSource = {
     ...source,
@@ -50553,6 +50598,9 @@ async function discoverAgentSources(sources, fetchImpl = fetch, options) {
       const result = await discoverSource(source, sourceFetchImpl, now, options);
       resolvedSources.push(result.source);
       agents.push(...result.agents);
+      if (result.error) {
+        errors.push(result);
+      }
     } catch (error) {
       const message = source.type === "registry" ? registryDiscoveryErrorMessage(error) : error instanceof Error ? error.message : String(error);
       const failedSource = {
@@ -51113,14 +51161,38 @@ function requireString(value, name) {
   }
   return value;
 }
+function decodeJwtPayload(token) {
+  const [, payload] = token.split(".");
+  if (!payload) {
+    return void 0;
+  }
+  try {
+    const decoded = Buffer.from(payload, "base64url").toString("utf8");
+    const value = JSON.parse(decoded);
+    return value && typeof value === "object" && !Array.isArray(value) ? value : void 0;
+  } catch {
+    return void 0;
+  }
+}
+function getAccessTokenExpiresAt(accessToken, expiresIn) {
+  if (typeof expiresIn === "number") {
+    return Date.now() + expiresIn * 1e3;
+  }
+  const exp = decodeJwtPayload(accessToken)?.exp;
+  return typeof exp === "number" ? exp * 1e3 : void 0;
+}
 function normalizeTokenResponse(response) {
-  const accessToken = response.access_token ?? response.accessToken;
+  const accessToken = requireString(
+    response.access_token ?? response.accessToken,
+    "access token"
+  );
   const refreshToken = response.refresh_token ?? response.refreshToken;
   const expiresIn = response.expires_in ?? response.expiresIn;
+  const expiresAt = getAccessTokenExpiresAt(accessToken, expiresIn);
   return {
-    accessToken: requireString(accessToken, "access token"),
+    accessToken,
     refreshToken: requireString(refreshToken, "refresh token"),
-    ...typeof expiresIn === "number" ? { expiresAt: Date.now() + expiresIn * 1e3 } : {}
+    ...typeof expiresAt === "number" ? { expiresAt } : {}
   };
 }
 function tokenNeedsRefresh(session) {
@@ -51262,7 +51334,7 @@ async function loginWithWorkOS(environmentId, callbacks = {}, options = {}) {
 }
 async function getStoredAccessToken(environmentId, options = {}) {
   const cached = accessTokenCache.get(environmentId);
-  if (cached && !tokenNeedsRefresh(cached)) {
+  if (!options.forceRefresh && cached && !tokenNeedsRefresh(cached)) {
     return cached.accessToken;
   }
   const fetchImpl = options.fetchImpl ?? fetch;
@@ -51283,8 +51355,9 @@ async function getStoredAccessToken(environmentId, options = {}) {
 }
 
 // src/app.tsx
-var import_jsx_runtime9 = __toESM(require_jsx_runtime(), 1);
+var import_jsx_runtime10 = __toESM(require_jsx_runtime(), 1);
 var NO_AGENT_MESSAGE_NOTICE = "Task completed with no agent message.";
+var NOTIFICATION_TTL_MS = 12e3;
 function upsertEntry(entries, entryId, role, body) {
   const existingIndex = entries.findIndex((item) => item.id === entryId);
   if (existingIndex === -1) {
@@ -51337,6 +51410,7 @@ function ChatApp({ options }) {
   const [streamLabel, setStreamLabel] = (0, import_react34.useState)("Idle");
   const [draft, setDraft] = (0, import_react34.useState)("");
   const [entries, setEntries] = (0, import_react34.useState)([]);
+  const [notifications, setNotifications] = (0, import_react34.useState)([]);
   const [contextId, setContextId] = (0, import_react34.useState)();
   const [taskId, setTaskId] = (0, import_react34.useState)();
   const [workingStartedAt, setWorkingStartedAt] = (0, import_react34.useState)();
@@ -51368,6 +51442,7 @@ function ChatApp({ options }) {
   const streamedTaskIdsRef = (0, import_react34.useRef)(/* @__PURE__ */ new Set());
   const lastCopyableResponseRef = (0, import_react34.useRef)(void 0);
   const lastConnectionNoticeRef = (0, import_react34.useRef)(void 0);
+  const notificationTimersRef = (0, import_react34.useRef)([]);
   const appendEntry = (role, body) => {
     setEntries((current) => [
       ...current,
@@ -51381,6 +51456,21 @@ function ChatApp({ options }) {
   const appendSystem = (body) => {
     appendEntry("system", body);
   };
+  const appendNotification = (body) => {
+    const id = randomUUID2();
+    setNotifications((current) => [
+      ...current.slice(-2),
+      {
+        id,
+        role: "system",
+        body
+      }
+    ]);
+    const timer = setTimeout(() => {
+      setNotifications((current) => current.filter((item) => item.id !== id));
+    }, NOTIFICATION_TTL_MS);
+    notificationTimersRef.current.push(timer);
+  };
   const appendStatus = (body) => {
     appendEntry("status", body);
   };
@@ -51391,6 +51481,13 @@ function ChatApp({ options }) {
     };
     appendEntry("protocol", formatProtocolPayload(payload));
   };
+  (0, import_react34.useEffect)(() => {
+    return () => {
+      for (const timer of notificationTimersRef.current) {
+        clearTimeout(timer);
+      }
+    };
+  }, []);
   const persistSettings = (nextSettings) => {
     setChatSettings(nextSettings);
     const warning = saveChatSettings(nextSettings);
@@ -51560,7 +51657,9 @@ function ChatApp({ options }) {
         fetch,
         {
           environmentId: selectedEnvironment,
-          controlPlaneAccessTokenProvider: () => getStoredAccessToken(selectedEnvironment),
+          controlPlaneAccessTokenProvider: (request) => getStoredAccessToken(selectedEnvironment, {
+            forceRefresh: request?.forceRefresh
+          }),
           graphQLFetchImpl: fetch,
           sourceFetchImpl: (source) => source.sourceKey === explicitSourceKey ? explicitSourceFetch : fetch
         }
@@ -51590,10 +51689,10 @@ function ChatApp({ options }) {
       });
       if (announceExplicitSourceErrors) {
         for (const error of discovery.errors) {
-          if (!error.source.isDefault && error.error) {
-            appendSystem(
-              `No agents were found from the provided URL: ${error.source.url}
-${error.error}`
+          const shouldNotify = error.source.type === "registry" || !error.source.isDefault;
+          if (shouldNotify && error.error) {
+            appendNotification(
+              `${error.source.description}: ${error.error}`
             );
           }
         }
@@ -51635,10 +51734,10 @@ ${error.error}`
       }
       setDiscoveredAgents([]);
       const message = error instanceof Error ? error.message : String(error);
-      if (agentEndpointUrl && announceExplicitSourceErrors) {
-        appendSystem(
-          `No agents were found from the provided URL: ${agentEndpointUrl}
-${message}`
+      if (announceExplicitSourceErrors) {
+        appendNotification(
+          agentEndpointUrl ? `No agents were found from the provided URL: ${agentEndpointUrl}
+${message}` : `Agent source discovery failed: ${message}`
         );
       }
       return void 0;
@@ -52352,8 +52451,8 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
       setDraft((current) => `${current}${input}`);
     }
   });
-  return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Box_default, { flexDirection: "column", height: "100%", children: [
-    /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Box_default, { flexDirection: "column", flexGrow: 1, marginY: 1, children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
+  return /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(Box_default, { flexDirection: "column", height: "100%", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Box_default, { flexDirection: "column", flexGrow: 1, marginY: 1, children: /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(
       ChatSession,
       {
         entries,
@@ -52364,8 +52463,9 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
         responseMode
       }
     ) }),
-    workingStartedAt ? /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Box_default, { marginBottom: 1, children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(WorkingIndicator, { startedAt: workingStartedAt }) }) : null,
-    /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
+    /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(SystemNotificationStack, { notifications }),
+    workingStartedAt ? /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Box_default, { marginBottom: 1, children: /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(WorkingIndicator, { startedAt: workingStartedAt }) }) : null,
+    /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(
       ChatComposer,
       {
         draft,
@@ -52944,7 +53044,7 @@ async function runHeadless(options, dependencies = {}) {
 }
 
 // src/cli.tsx
-var import_jsx_runtime10 = __toESM(require_jsx_runtime(), 1);
+var import_jsx_runtime11 = __toESM(require_jsx_runtime(), 1);
 async function runLoginCommand() {
   const { settings } = loadChatSettings();
   const environmentId = settings.selectedEnvironment;
@@ -53074,7 +53174,7 @@ async function main() {
     if (!await continueAfterUpdateCheck()) {
       return;
     }
-    render_default(/* @__PURE__ */ (0, import_jsx_runtime10.jsx)(ChatApp, { options: command.options }), {
+    render_default(/* @__PURE__ */ (0, import_jsx_runtime11.jsx)(ChatApp, { options: command.options }), {
       exitOnCtrlC: false
     });
   } catch (error) {

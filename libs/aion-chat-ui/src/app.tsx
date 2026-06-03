@@ -16,6 +16,7 @@ import {
 	type AgentSuggestionView
 } from "./components/ChatComposer.js";
 import { ChatSession } from "./components/ChatSession.js";
+import { SystemNotificationStack } from "./components/SystemNotificationStack.js";
 import {
 	type TranscriptEntry,
 	WorkingIndicator
@@ -111,6 +112,7 @@ import { isTerminalTaskState } from "./lib/taskState.js";
 import { getStoredAccessToken, loginWithWorkOS } from "./lib/workosAuth.js";
 
 const NO_AGENT_MESSAGE_NOTICE = "Task completed with no agent message.";
+const NOTIFICATION_TTL_MS = 12_000;
 
 function upsertEntry(
 	entries: TranscriptEntry[],
@@ -184,6 +186,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 	const [streamLabel, setStreamLabel] = useState("Idle");
 	const [draft, setDraft] = useState("");
 	const [entries, setEntries] = useState<TranscriptEntry[]>([]);
+	const [notifications, setNotifications] = useState<TranscriptEntry[]>([]);
 	const [contextId, setContextId] = useState<string>();
 	const [taskId, setTaskId] = useState<string>();
 	const [workingStartedAt, setWorkingStartedAt] = useState<number>();
@@ -217,6 +220,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 	const streamedTaskIdsRef = useRef<Set<string>>(new Set());
 	const lastCopyableResponseRef = useRef<CopyableResponse | undefined>(undefined);
 	const lastConnectionNoticeRef = useRef<string | undefined>(undefined);
+	const notificationTimersRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
 
 	const appendEntry = (role: TranscriptEntry["role"], body: string): void => {
 		setEntries((current) => [
@@ -233,6 +237,22 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		appendEntry("system", body);
 	};
 
+	const appendNotification = (body: string): void => {
+		const id = randomUUID();
+		setNotifications((current) => [
+			...current.slice(-2),
+			{
+				id,
+				role: "system",
+				body
+			}
+		]);
+		const timer = setTimeout(() => {
+			setNotifications((current) => current.filter((item) => item.id !== id));
+		}, NOTIFICATION_TTL_MS);
+		notificationTimersRef.current.push(timer);
+	};
+
 	const appendStatus = (body: string): void => {
 		appendEntry("status", body);
 	};
@@ -244,6 +264,14 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		};
 		appendEntry("protocol", formatProtocolPayload(payload));
 	};
+
+	useEffect(() => {
+		return () => {
+			for (const timer of notificationTimersRef.current) {
+				clearTimeout(timer);
+			}
+		};
+	}, []);
 
 	const persistSettings = (nextSettings: ChatSettings): void => {
 		setChatSettings(nextSettings);
@@ -453,8 +481,10 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				fetch,
 				{
 					environmentId: selectedEnvironment,
-					controlPlaneAccessTokenProvider: () =>
-						getStoredAccessToken(selectedEnvironment),
+					controlPlaneAccessTokenProvider: (request) =>
+						getStoredAccessToken(selectedEnvironment, {
+							forceRefresh: request?.forceRefresh
+						}),
 					graphQLFetchImpl: fetch,
 					sourceFetchImpl: (source) =>
 						source.sourceKey === explicitSourceKey ? explicitSourceFetch : fetch
@@ -493,9 +523,11 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 
 			if (announceExplicitSourceErrors) {
 				for (const error of discovery.errors) {
-					if (!error.source.isDefault && error.error) {
-						appendSystem(
-							`No agents were found from the provided URL: ${error.source.url}\n${error.error}`
+					const shouldNotify =
+						error.source.type === "registry" || !error.source.isDefault;
+					if (shouldNotify && error.error) {
+						appendNotification(
+							`${error.source.description}: ${error.error}`
 						);
 					}
 				}
@@ -542,9 +574,11 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			}
 			setDiscoveredAgents([]);
 			const message = error instanceof Error ? error.message : String(error);
-			if (agentEndpointUrl && announceExplicitSourceErrors) {
-				appendSystem(
-					`No agents were found from the provided URL: ${agentEndpointUrl}\n${message}`
+			if (announceExplicitSourceErrors) {
+				appendNotification(
+					agentEndpointUrl
+						? `No agents were found from the provided URL: ${agentEndpointUrl}\n${message}`
+						: `Agent source discovery failed: ${message}`
 				);
 			}
 			return undefined;
@@ -1378,6 +1412,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 					responseMode={responseMode}
 				/>
 			</Box>
+			<SystemNotificationStack notifications={notifications} />
 			{workingStartedAt ? (
 				<Box marginBottom={1}>
 					<WorkingIndicator startedAt={workingStartedAt} />

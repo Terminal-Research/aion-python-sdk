@@ -48,9 +48,15 @@ export interface DiscoveredAgentSelectionOptions {
 	autoSelectExplicit?: boolean;
 }
 
+export interface ControlPlaneAccessTokenRequest {
+	forceRefresh?: boolean;
+}
+
 export interface AgentDiscoveryOptions {
 	environmentId: AionEnvironmentId;
-	controlPlaneAccessTokenProvider?: () => Promise<string | undefined>;
+	controlPlaneAccessTokenProvider?: (
+		request?: ControlPlaneAccessTokenRequest
+	) => Promise<string | undefined>;
 	graphQLFetchImpl?: typeof fetch;
 	sourceFetchImpl?: (source: RuntimeAgentSource) => typeof fetch;
 }
@@ -264,13 +270,14 @@ function registryUnavailableResult(
 			lastCheckedAt: now,
 			lastError
 		},
-		agents: []
+		agents: [],
+		error: lastError
 	};
 }
 
 function registryDiscoveryErrorMessage(error: unknown): string {
 	const message = error instanceof Error ? error.message : String(error);
-	if (/workos|token|auth|login|credential/iu.test(message)) {
+	if (/workos|token|auth|login|credential|jwt|expired|unauthorized|forbidden/iu.test(message)) {
 		return REGISTRY_AUTH_FAILED_MESSAGE;
 	}
 	if (
@@ -283,6 +290,26 @@ function registryDiscoveryErrorMessage(error: unknown): string {
 		return REGISTRY_CONTROL_PLANE_UNAVAILABLE_MESSAGE;
 	}
 	return REGISTRY_UNEXPECTED_ERROR_MESSAGE;
+}
+
+function isRegistryAuthenticationError(error: unknown): boolean {
+	const message = error instanceof Error ? error.message : String(error);
+	return /workos|token|auth|login|credential|jwt|expired|unauthorized|forbidden|401|403/iu.test(
+		message
+	);
+}
+
+async function fetchRegistryIdentitiesWithToken(
+	source: RuntimeAgentSource,
+	accessToken: string,
+	options: AgentDiscoveryOptions
+): Promise<Awaited<ReturnType<typeof fetchRegistryAgentIdentities>>> {
+	return fetchRegistryAgentIdentities({
+		environmentId: options.environmentId,
+		accessToken,
+		graphQLUrl: getGraphQLHttpUrlForBaseUrl(source.url),
+		fetchImpl: options.graphQLFetchImpl ?? fetch
+	});
 }
 
 async function discoverRegistrySource(
@@ -304,18 +331,39 @@ async function discoverRegistrySource(
 
 	let identities;
 	try {
-		identities = await fetchRegistryAgentIdentities({
-			environmentId: options.environmentId,
-			accessToken,
-			graphQLUrl: getGraphQLHttpUrlForBaseUrl(source.url),
-			fetchImpl: options.graphQLFetchImpl ?? fetch
-		});
-	} catch (error) {
-		return registryUnavailableResult(
+		identities = await fetchRegistryIdentitiesWithToken(
 			source,
-			now,
-			registryDiscoveryErrorMessage(error)
+			accessToken,
+			options
 		);
+	} catch (error) {
+		if (isRegistryAuthenticationError(error)) {
+			try {
+				const refreshedAccessToken =
+					await options.controlPlaneAccessTokenProvider?.({ forceRefresh: true });
+				if (refreshedAccessToken && refreshedAccessToken !== accessToken) {
+					identities = await fetchRegistryIdentitiesWithToken(
+						source,
+						refreshedAccessToken,
+						options
+					);
+				}
+			} catch (refreshError) {
+				return registryUnavailableResult(
+					source,
+					now,
+					registryDiscoveryErrorMessage(refreshError)
+				);
+			}
+		}
+
+		if (!identities) {
+			return registryUnavailableResult(
+				source,
+				now,
+				registryDiscoveryErrorMessage(error)
+			);
+		}
 	}
 	const resolvedSource: AgentSourceRecord = {
 		...source,
@@ -402,6 +450,9 @@ export async function discoverAgentSources(
 			const result = await discoverSource(source, sourceFetchImpl, now, options);
 			resolvedSources.push(result.source);
 			agents.push(...result.agents);
+			if (result.error) {
+				errors.push(result);
+			}
 		} catch (error) {
 			const message =
 				source.type === "registry"
