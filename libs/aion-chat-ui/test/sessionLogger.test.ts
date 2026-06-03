@@ -69,9 +69,9 @@ describe("sessionLogger", () => {
 		expect([second, first].sort()).toEqual([first, second]);
 	});
 
-	it("uses debug logging in development and warn logging elsewhere", () => {
+	it("uses debug logging before production and warn logging in production", () => {
 		expect(logLevelForEnvironment("development")).toBe("debug");
-		expect(logLevelForEnvironment("staging")).toBe("warn");
+		expect(logLevelForEnvironment("staging")).toBe("debug");
 		expect(logLevelForEnvironment("production")).toBe("warn");
 	});
 
@@ -137,7 +137,7 @@ describe("sessionLogger", () => {
 		});
 	});
 
-	it("filters debug and info events outside development", () => {
+	it("filters debug and info events in production", () => {
 		const homeDirectory = makeTempDirectory();
 		const { logger } = createChatSessionLogger({
 			environmentId: "production",

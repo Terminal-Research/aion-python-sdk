@@ -80,7 +80,7 @@ export function resolveChatSessionLogFilePath({
 export function logLevelForEnvironment(
 	environmentId: AionEnvironmentId
 ): ChatSessionLogLevel {
-	return environmentId === "development" ? "debug" : "warn";
+	return environmentId === "production" ? "warn" : "debug";
 }
 
 function isSensitiveKey(key: string): boolean {

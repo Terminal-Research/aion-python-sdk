@@ -54576,7 +54576,7 @@ function resolveChatSessionLogFilePath({
   );
 }
 function logLevelForEnvironment(environmentId) {
-  return environmentId === "development" ? "debug" : "warn";
+  return environmentId === "production" ? "warn" : "debug";
 }
 function isSensitiveKey(key) {
   return /authorization|cookie|token|secret|password|keyring/iu.test(key);
