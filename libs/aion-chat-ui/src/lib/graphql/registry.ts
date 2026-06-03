@@ -122,6 +122,52 @@ function summarizeCurrentUser(
 	};
 }
 
+function summarizeIdentityForSkipLog(
+	identity:
+		| NonNullable<CurrentUserQuery["user"]>["agentIdentity"]
+		| NonNullable<
+				NonNullable<AgentCatalogIdentitiesQuery["agentIdentityDetails"]>[number]
+		  >["identity"]
+): Record<string, unknown> {
+	return {
+		id: identity.id,
+		name: identity.name,
+		atName: identity.atName,
+		agentType: identity.agentType,
+		organizationId: identity.organizationId
+	};
+}
+
+function summarizeDistributionUsagesForLog(
+	distributionUsages:
+		| NonNullable<
+				NonNullable<AgentCatalogIdentitiesQuery["agentIdentityDetails"]>[number]
+		  >["distributionUsages"]
+		| undefined
+): Array<Record<string, unknown>> {
+	return (distributionUsages ?? []).map((usage) => ({
+		distributionId: usage.distributionId,
+		networkType: usage.networkType
+	}));
+}
+
+function logSkippedIdentity(
+	logger: ChatSessionLogger | undefined,
+	identity:
+		| NonNullable<CurrentUserQuery["user"]>["agentIdentity"]
+		| NonNullable<
+				NonNullable<AgentCatalogIdentitiesQuery["agentIdentityDetails"]>[number]
+		  >["identity"],
+	reason: string,
+	extra: Record<string, unknown> = {}
+): void {
+	logger?.debug("registry.agent_identity.skipped", {
+		reason,
+		identity: summarizeIdentityForSkipLog(identity),
+		...extra
+	});
+}
+
 export async function fetchRegistryAgentIdentities(options: {
 	environmentId: AionEnvironmentId;
 	accessToken: string;
@@ -186,12 +232,23 @@ export async function fetchRegistryAgentIdentities(options: {
 	const personalIdentity = normalizeIdentity(user.agentIdentity);
 	if (personalIdentity) {
 		identities.set(personalIdentity.id, personalIdentity);
+	} else {
+		logSkippedIdentity(options.logger, user.agentIdentity, "missing_a2a_url", {
+			source: "current_user"
+		});
 	}
 
 	for (const detail of catalog.data?.agentIdentityDetails ?? []) {
 		const identity = normalizeIdentity(detail.identity);
 		if (identity) {
 			identities.set(identity.id, identity);
+		} else {
+			logSkippedIdentity(options.logger, detail.identity, "missing_a2a_url", {
+				source: "agent_catalog",
+				distributionUsages: summarizeDistributionUsagesForLog(
+					detail.distributionUsages
+				)
+			});
 		}
 	}
 

@@ -11,6 +11,43 @@ import {
 	runLoginBootstrap
 } from "../src/lib/graphql/authBootstrap.js";
 import { fetchRegistryAgentIdentities } from "../src/lib/graphql/registry.js";
+import type {
+	ChatSessionLogger,
+	ChatSessionLogLevel
+} from "../src/lib/sessionLogger.js";
+
+interface LoggedEvent {
+	level: ChatSessionLogLevel;
+	event: string;
+	data?: Record<string, unknown>;
+}
+
+function createMockSessionLogger(): ChatSessionLogger & { events: LoggedEvent[] } {
+	const events: LoggedEvent[] = [];
+	const log =
+		(level: ChatSessionLogLevel) =>
+		(event: string, data?: Record<string, unknown>): void => {
+			events.push({ level, event, data });
+		};
+	return {
+		chatSessionId: "test-session",
+		logFilePath: "memory",
+		level: "debug",
+		debug: log("debug"),
+		info: log("info"),
+		warn: log("warn"),
+		error: log("error"),
+		flush: () => undefined,
+		events
+	};
+}
+
+function findLoggedEvent(
+	logger: { events: LoggedEvent[] },
+	event: string
+): LoggedEvent | undefined {
+	return logger.events.find((entry) => entry.event === event);
+}
 
 describe("GraphQL client", () => {
 	it("posts authenticated GraphQL queries to the environment API", async () => {
@@ -265,4 +302,114 @@ describe("registry GraphQL", () => {
 			}
 		]);
 	});
+	it("debug logs skipped catalog identities without raw profile fields", async () => {
+		const logger = createMockSessionLogger();
+		const fetchImpl = vi
+			.fn()
+			.mockResolvedValueOnce(
+				new Response(
+					JSON.stringify({
+						data: {
+							login: { nextRoute: null, email: null, name: null }
+						}
+					}),
+					{ status: 200 }
+				)
+			)
+			.mockResolvedValueOnce(
+				new Response(
+					JSON.stringify({
+						data: {
+							user: {
+								id: "user-1",
+								homeOrganization: { id: "org-1", name: "Org" },
+								agentIdentity: {
+									id: "personal-1",
+									name: "Personal Agent",
+									atName: "@me",
+									a2aUrl: null,
+									agentType: "Personal",
+									organizationId: "org-1",
+									updatedAt: "2026-05-01T00:00:00Z"
+								}
+							}
+						}
+					}),
+					{ status: 200 }
+				)
+			)
+			.mockResolvedValueOnce(
+				new Response(
+					JSON.stringify({
+						data: {
+							agentIdentityDetails: [
+								{
+									identity: {
+										id: "principal-1",
+										agentType: "Principal",
+										userId: null,
+										organizationId: "org-1",
+										systemKey: null,
+										name: "Team Agent",
+										a2aUrl: null,
+										website: null,
+										email: "team@example.com",
+										atName: "@team",
+										biography: null,
+										avatarImageUrl: null,
+										backgroundImageUrl: null,
+										updatedAt: "2026-05-01T00:00:00Z",
+										notes: null
+									},
+									distributionUsages: [
+										{ distributionId: "dist-1", networkType: "A2A" }
+									]
+								}
+							]
+						}
+					}),
+					{ status: 200 }
+				)
+			) as unknown as typeof fetch;
+
+		await expect(
+			fetchRegistryAgentIdentities({
+				environmentId: "development",
+				accessToken: "access-token",
+				fetchImpl,
+				logger
+			})
+		).resolves.toEqual([]);
+
+		expect(
+			findLoggedEvent(logger, "registry.agent_catalog.response")
+		).toBeUndefined();
+		const skippedEvents = logger.events.filter(
+			(event) => event.event === "registry.agent_identity.skipped"
+		);
+		expect(skippedEvents).toHaveLength(2);
+		expect(skippedEvents[1]).toMatchObject({
+			level: "debug",
+			data: {
+				reason: "missing_a2a_url",
+				source: "agent_catalog",
+				identity: {
+					id: "principal-1",
+					name: "Team Agent",
+					atName: "@team",
+					agentType: "Principal",
+					organizationId: "org-1"
+				},
+				distributionUsages: [
+					{ distributionId: "dist-1", networkType: "A2A" }
+				]
+			}
+		});
+		const loggedJson = JSON.stringify(skippedEvents);
+		expect(loggedJson).not.toContain("team@example.com");
+		expect(loggedJson).not.toContain("biography");
+		expect(loggedJson).not.toContain("notes");
+		expect(loggedJson).not.toContain("website");
+	});
+
 });

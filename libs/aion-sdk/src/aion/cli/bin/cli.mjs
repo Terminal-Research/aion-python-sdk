@@ -54991,6 +54991,28 @@ function summarizeCurrentUser(user) {
     agentIdentityHasA2aUrl: Boolean(user.agentIdentity.a2aUrl)
   };
 }
+function summarizeIdentityForSkipLog(identity) {
+  return {
+    id: identity.id,
+    name: identity.name,
+    atName: identity.atName,
+    agentType: identity.agentType,
+    organizationId: identity.organizationId
+  };
+}
+function summarizeDistributionUsagesForLog(distributionUsages) {
+  return (distributionUsages ?? []).map((usage) => ({
+    distributionId: usage.distributionId,
+    networkType: usage.networkType
+  }));
+}
+function logSkippedIdentity(logger, identity, reason, extra = {}) {
+  logger?.debug("registry.agent_identity.skipped", {
+    reason,
+    identity: summarizeIdentityForSkipLog(identity),
+    ...extra
+  });
+}
 async function fetchRegistryAgentIdentities(options) {
   const graphQLUrl = options.graphQLUrl ?? getGraphQLHttpUrl(options.environmentId);
   const bootstrap = await runLoginBootstrap({
@@ -55038,11 +55060,22 @@ async function fetchRegistryAgentIdentities(options) {
   const personalIdentity = normalizeIdentity(user.agentIdentity);
   if (personalIdentity) {
     identities.set(personalIdentity.id, personalIdentity);
+  } else {
+    logSkippedIdentity(options.logger, user.agentIdentity, "missing_a2a_url", {
+      source: "current_user"
+    });
   }
   for (const detail of catalog.data?.agentIdentityDetails ?? []) {
     const identity = normalizeIdentity(detail.identity);
     if (identity) {
       identities.set(identity.id, identity);
+    } else {
+      logSkippedIdentity(options.logger, detail.identity, "missing_a2a_url", {
+        source: "agent_catalog",
+        distributionUsages: summarizeDistributionUsagesForLog(
+          detail.distributionUsages
+        )
+      });
     }
   }
   const resolvedIdentities = [...identities.values()].sort(
