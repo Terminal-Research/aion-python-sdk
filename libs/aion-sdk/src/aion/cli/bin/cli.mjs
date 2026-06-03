@@ -10429,10 +10429,10 @@ var require_react_reconciler_development = __commonJS({
           fiber = fiber.next, id--;
         return fiber;
       }
-      function copyWithSetImpl(obj, path3, index, value) {
-        if (index >= path3.length) return value;
-        var key = path3[index], updated = isArrayImpl(obj) ? obj.slice() : assign({}, obj);
-        updated[key] = copyWithSetImpl(obj[key], path3, index + 1, value);
+      function copyWithSetImpl(obj, path4, index, value) {
+        if (index >= path4.length) return value;
+        var key = path4[index], updated = isArrayImpl(obj) ? obj.slice() : assign({}, obj);
+        updated[key] = copyWithSetImpl(obj[key], path4, index + 1, value);
         return updated;
       }
       function copyWithRename(obj, oldPath, newPath) {
@@ -10459,11 +10459,11 @@ var require_react_reconciler_development = __commonJS({
         );
         return updated;
       }
-      function copyWithDeleteImpl(obj, path3, index) {
-        var key = path3[index], updated = isArrayImpl(obj) ? obj.slice() : assign({}, obj);
-        if (index + 1 === path3.length)
+      function copyWithDeleteImpl(obj, path4, index) {
+        var key = path4[index], updated = isArrayImpl(obj) ? obj.slice() : assign({}, obj);
+        if (index + 1 === path4.length)
           return isArrayImpl(updated) ? updated.splice(key, 1) : delete updated[key], updated;
-        updated[key] = copyWithDeleteImpl(obj[key], path3, index + 1);
+        updated[key] = copyWithDeleteImpl(obj[key], path4, index + 1);
         return updated;
       }
       function shouldSuspendImpl() {
@@ -23740,29 +23740,29 @@ var require_react_reconciler_development = __commonJS({
       var didWarnAboutNestedUpdates = false;
       var didWarnAboutFindNodeInStrictMode = {};
       var overrideHookState = null, overrideHookStateDeletePath = null, overrideHookStateRenamePath = null, overrideProps = null, overridePropsDeletePath = null, overridePropsRenamePath = null, scheduleUpdate = null, scheduleRetry = null, setErrorHandler = null, setSuspenseHandler = null;
-      overrideHookState = function(fiber, id, path3, value) {
+      overrideHookState = function(fiber, id, path4, value) {
         id = findHook(fiber, id);
-        null !== id && (path3 = copyWithSetImpl(id.memoizedState, path3, 0, value), id.memoizedState = path3, id.baseState = path3, fiber.memoizedProps = assign({}, fiber.memoizedProps), path3 = enqueueConcurrentRenderForLane(fiber, 2), null !== path3 && scheduleUpdateOnFiber(path3, fiber, 2));
+        null !== id && (path4 = copyWithSetImpl(id.memoizedState, path4, 0, value), id.memoizedState = path4, id.baseState = path4, fiber.memoizedProps = assign({}, fiber.memoizedProps), path4 = enqueueConcurrentRenderForLane(fiber, 2), null !== path4 && scheduleUpdateOnFiber(path4, fiber, 2));
       };
-      overrideHookStateDeletePath = function(fiber, id, path3) {
+      overrideHookStateDeletePath = function(fiber, id, path4) {
         id = findHook(fiber, id);
-        null !== id && (path3 = copyWithDeleteImpl(id.memoizedState, path3, 0), id.memoizedState = path3, id.baseState = path3, fiber.memoizedProps = assign({}, fiber.memoizedProps), path3 = enqueueConcurrentRenderForLane(fiber, 2), null !== path3 && scheduleUpdateOnFiber(path3, fiber, 2));
+        null !== id && (path4 = copyWithDeleteImpl(id.memoizedState, path4, 0), id.memoizedState = path4, id.baseState = path4, fiber.memoizedProps = assign({}, fiber.memoizedProps), path4 = enqueueConcurrentRenderForLane(fiber, 2), null !== path4 && scheduleUpdateOnFiber(path4, fiber, 2));
       };
       overrideHookStateRenamePath = function(fiber, id, oldPath, newPath) {
         id = findHook(fiber, id);
         null !== id && (oldPath = copyWithRename(id.memoizedState, oldPath, newPath), id.memoizedState = oldPath, id.baseState = oldPath, fiber.memoizedProps = assign({}, fiber.memoizedProps), oldPath = enqueueConcurrentRenderForLane(fiber, 2), null !== oldPath && scheduleUpdateOnFiber(oldPath, fiber, 2));
       };
-      overrideProps = function(fiber, path3, value) {
-        fiber.pendingProps = copyWithSetImpl(fiber.memoizedProps, path3, 0, value);
+      overrideProps = function(fiber, path4, value) {
+        fiber.pendingProps = copyWithSetImpl(fiber.memoizedProps, path4, 0, value);
         fiber.alternate && (fiber.alternate.pendingProps = fiber.pendingProps);
-        path3 = enqueueConcurrentRenderForLane(fiber, 2);
-        null !== path3 && scheduleUpdateOnFiber(path3, fiber, 2);
+        path4 = enqueueConcurrentRenderForLane(fiber, 2);
+        null !== path4 && scheduleUpdateOnFiber(path4, fiber, 2);
       };
-      overridePropsDeletePath = function(fiber, path3) {
-        fiber.pendingProps = copyWithDeleteImpl(fiber.memoizedProps, path3, 0);
+      overridePropsDeletePath = function(fiber, path4) {
+        fiber.pendingProps = copyWithDeleteImpl(fiber.memoizedProps, path4, 0);
         fiber.alternate && (fiber.alternate.pendingProps = fiber.pendingProps);
-        path3 = enqueueConcurrentRenderForLane(fiber, 2);
-        null !== path3 && scheduleUpdateOnFiber(path3, fiber, 2);
+        path4 = enqueueConcurrentRenderForLane(fiber, 2);
+        null !== path4 && scheduleUpdateOnFiber(path4, fiber, 2);
       };
       overridePropsRenamePath = function(fiber, oldPath, newPath) {
         fiber.pendingProps = copyWithRename(
@@ -28645,6 +28645,4487 @@ var require_jsx_runtime = __commonJS({
   }
 });
 
+// node_modules/pino-std-serializers/lib/err-helpers.js
+var require_err_helpers = __commonJS({
+  "node_modules/pino-std-serializers/lib/err-helpers.js"(exports, module) {
+    "use strict";
+    var isErrorLike = (err) => {
+      return err && typeof err.message === "string";
+    };
+    var getErrorCause = (err) => {
+      if (!err) return;
+      const cause = err.cause;
+      if (typeof cause === "function") {
+        const causeResult = err.cause();
+        return isErrorLike(causeResult) ? causeResult : void 0;
+      } else {
+        return isErrorLike(cause) ? cause : void 0;
+      }
+    };
+    var _stackWithCauses = (err, seen) => {
+      if (!isErrorLike(err)) return "";
+      const stack = err.stack || "";
+      if (seen.has(err)) {
+        return stack + "\ncauses have become circular...";
+      }
+      const cause = getErrorCause(err);
+      if (cause) {
+        seen.add(err);
+        return stack + "\ncaused by: " + _stackWithCauses(cause, seen);
+      } else {
+        return stack;
+      }
+    };
+    var stackWithCauses = (err) => _stackWithCauses(err, /* @__PURE__ */ new Set());
+    var _messageWithCauses = (err, seen, skip) => {
+      if (!isErrorLike(err)) return "";
+      const message = skip ? "" : err.message || "";
+      if (seen.has(err)) {
+        return message + ": ...";
+      }
+      const cause = getErrorCause(err);
+      if (cause) {
+        seen.add(err);
+        const skipIfVErrorStyleCause = typeof err.cause === "function";
+        return message + (skipIfVErrorStyleCause ? "" : ": ") + _messageWithCauses(cause, seen, skipIfVErrorStyleCause);
+      } else {
+        return message;
+      }
+    };
+    var messageWithCauses = (err) => _messageWithCauses(err, /* @__PURE__ */ new Set());
+    module.exports = {
+      isErrorLike,
+      getErrorCause,
+      stackWithCauses,
+      messageWithCauses
+    };
+  }
+});
+
+// node_modules/pino-std-serializers/lib/err-proto.js
+var require_err_proto = __commonJS({
+  "node_modules/pino-std-serializers/lib/err-proto.js"(exports, module) {
+    "use strict";
+    var seen = /* @__PURE__ */ Symbol("circular-ref-tag");
+    var rawSymbol = /* @__PURE__ */ Symbol("pino-raw-err-ref");
+    var pinoErrProto = Object.create({}, {
+      type: {
+        enumerable: true,
+        writable: true,
+        value: void 0
+      },
+      message: {
+        enumerable: true,
+        writable: true,
+        value: void 0
+      },
+      stack: {
+        enumerable: true,
+        writable: true,
+        value: void 0
+      },
+      aggregateErrors: {
+        enumerable: true,
+        writable: true,
+        value: void 0
+      },
+      raw: {
+        enumerable: false,
+        get: function() {
+          return this[rawSymbol];
+        },
+        set: function(val) {
+          this[rawSymbol] = val;
+        }
+      }
+    });
+    Object.defineProperty(pinoErrProto, rawSymbol, {
+      writable: true,
+      value: {}
+    });
+    module.exports = {
+      pinoErrProto,
+      pinoErrorSymbols: {
+        seen,
+        rawSymbol
+      }
+    };
+  }
+});
+
+// node_modules/pino-std-serializers/lib/err.js
+var require_err = __commonJS({
+  "node_modules/pino-std-serializers/lib/err.js"(exports, module) {
+    "use strict";
+    module.exports = errSerializer;
+    var { messageWithCauses, stackWithCauses, isErrorLike } = require_err_helpers();
+    var { pinoErrProto, pinoErrorSymbols } = require_err_proto();
+    var { seen } = pinoErrorSymbols;
+    var { toString } = Object.prototype;
+    function errSerializer(err) {
+      if (!isErrorLike(err)) {
+        return err;
+      }
+      err[seen] = void 0;
+      const _err = Object.create(pinoErrProto);
+      _err.type = toString.call(err.constructor) === "[object Function]" ? err.constructor.name : err.name;
+      _err.message = messageWithCauses(err);
+      _err.stack = stackWithCauses(err);
+      if (Array.isArray(err.errors)) {
+        _err.aggregateErrors = err.errors.map((err2) => errSerializer(err2));
+      }
+      for (const key in err) {
+        if (_err[key] === void 0) {
+          const val = err[key];
+          if (isErrorLike(val)) {
+            if (key !== "cause" && !Object.prototype.hasOwnProperty.call(val, seen)) {
+              _err[key] = errSerializer(val);
+            }
+          } else {
+            _err[key] = val;
+          }
+        }
+      }
+      delete err[seen];
+      _err.raw = err;
+      return _err;
+    }
+  }
+});
+
+// node_modules/pino-std-serializers/lib/err-with-cause.js
+var require_err_with_cause = __commonJS({
+  "node_modules/pino-std-serializers/lib/err-with-cause.js"(exports, module) {
+    "use strict";
+    module.exports = errWithCauseSerializer;
+    var { isErrorLike } = require_err_helpers();
+    var { pinoErrProto, pinoErrorSymbols } = require_err_proto();
+    var { seen } = pinoErrorSymbols;
+    var { toString } = Object.prototype;
+    function errWithCauseSerializer(err) {
+      if (!isErrorLike(err)) {
+        return err;
+      }
+      err[seen] = void 0;
+      const _err = Object.create(pinoErrProto);
+      _err.type = toString.call(err.constructor) === "[object Function]" ? err.constructor.name : err.name;
+      _err.message = err.message;
+      _err.stack = err.stack;
+      if (Array.isArray(err.errors)) {
+        _err.aggregateErrors = err.errors.map((err2) => errWithCauseSerializer(err2));
+      }
+      if (isErrorLike(err.cause) && !Object.prototype.hasOwnProperty.call(err.cause, seen)) {
+        _err.cause = errWithCauseSerializer(err.cause);
+      }
+      for (const key in err) {
+        if (_err[key] === void 0) {
+          const val = err[key];
+          if (isErrorLike(val)) {
+            if (!Object.prototype.hasOwnProperty.call(val, seen)) {
+              _err[key] = errWithCauseSerializer(val);
+            }
+          } else {
+            _err[key] = val;
+          }
+        }
+      }
+      delete err[seen];
+      _err.raw = err;
+      return _err;
+    }
+  }
+});
+
+// node_modules/pino-std-serializers/lib/req.js
+var require_req = __commonJS({
+  "node_modules/pino-std-serializers/lib/req.js"(exports, module) {
+    "use strict";
+    module.exports = {
+      mapHttpRequest,
+      reqSerializer
+    };
+    var rawSymbol = /* @__PURE__ */ Symbol("pino-raw-req-ref");
+    var pinoReqProto = Object.create({}, {
+      id: {
+        enumerable: true,
+        writable: true,
+        value: ""
+      },
+      method: {
+        enumerable: true,
+        writable: true,
+        value: ""
+      },
+      url: {
+        enumerable: true,
+        writable: true,
+        value: ""
+      },
+      query: {
+        enumerable: true,
+        writable: true,
+        value: ""
+      },
+      params: {
+        enumerable: true,
+        writable: true,
+        value: ""
+      },
+      headers: {
+        enumerable: true,
+        writable: true,
+        value: {}
+      },
+      remoteAddress: {
+        enumerable: true,
+        writable: true,
+        value: ""
+      },
+      remotePort: {
+        enumerable: true,
+        writable: true,
+        value: ""
+      },
+      raw: {
+        enumerable: false,
+        get: function() {
+          return this[rawSymbol];
+        },
+        set: function(val) {
+          this[rawSymbol] = val;
+        }
+      }
+    });
+    Object.defineProperty(pinoReqProto, rawSymbol, {
+      writable: true,
+      value: {}
+    });
+    function reqSerializer(req) {
+      const connection = req.info || req.socket;
+      const _req = Object.create(pinoReqProto);
+      _req.id = typeof req.id === "function" ? req.id() : req.id || (req.info ? req.info.id : void 0);
+      _req.method = req.method;
+      if (req.originalUrl) {
+        _req.url = req.originalUrl;
+      } else {
+        const path4 = req.path;
+        _req.url = typeof path4 === "string" ? path4 : req.url ? req.url.path || req.url : void 0;
+      }
+      if (req.query) {
+        _req.query = req.query;
+      }
+      if (req.params) {
+        _req.params = req.params;
+      }
+      _req.headers = req.headers;
+      _req.remoteAddress = connection && connection.remoteAddress;
+      _req.remotePort = connection && connection.remotePort;
+      _req.raw = req.raw || req;
+      return _req;
+    }
+    function mapHttpRequest(req) {
+      return {
+        req: reqSerializer(req)
+      };
+    }
+  }
+});
+
+// node_modules/pino-std-serializers/lib/res.js
+var require_res = __commonJS({
+  "node_modules/pino-std-serializers/lib/res.js"(exports, module) {
+    "use strict";
+    module.exports = {
+      mapHttpResponse,
+      resSerializer
+    };
+    var rawSymbol = /* @__PURE__ */ Symbol("pino-raw-res-ref");
+    var pinoResProto = Object.create({}, {
+      statusCode: {
+        enumerable: true,
+        writable: true,
+        value: 0
+      },
+      headers: {
+        enumerable: true,
+        writable: true,
+        value: ""
+      },
+      raw: {
+        enumerable: false,
+        get: function() {
+          return this[rawSymbol];
+        },
+        set: function(val) {
+          this[rawSymbol] = val;
+        }
+      }
+    });
+    Object.defineProperty(pinoResProto, rawSymbol, {
+      writable: true,
+      value: {}
+    });
+    function resSerializer(res) {
+      const _res = Object.create(pinoResProto);
+      _res.statusCode = res.headersSent ? res.statusCode : null;
+      _res.headers = res.getHeaders ? res.getHeaders() : res._headers;
+      _res.raw = res;
+      return _res;
+    }
+    function mapHttpResponse(res) {
+      return {
+        res: resSerializer(res)
+      };
+    }
+  }
+});
+
+// node_modules/pino-std-serializers/index.js
+var require_pino_std_serializers = __commonJS({
+  "node_modules/pino-std-serializers/index.js"(exports, module) {
+    "use strict";
+    var errSerializer = require_err();
+    var errWithCauseSerializer = require_err_with_cause();
+    var reqSerializers = require_req();
+    var resSerializers = require_res();
+    module.exports = {
+      err: errSerializer,
+      errWithCause: errWithCauseSerializer,
+      mapHttpRequest: reqSerializers.mapHttpRequest,
+      mapHttpResponse: resSerializers.mapHttpResponse,
+      req: reqSerializers.reqSerializer,
+      res: resSerializers.resSerializer,
+      wrapErrorSerializer: function wrapErrorSerializer(customSerializer) {
+        if (customSerializer === errSerializer) return customSerializer;
+        return function wrapErrSerializer(err) {
+          return customSerializer(errSerializer(err));
+        };
+      },
+      wrapRequestSerializer: function wrapRequestSerializer(customSerializer) {
+        if (customSerializer === reqSerializers.reqSerializer) return customSerializer;
+        return function wrappedReqSerializer(req) {
+          return customSerializer(reqSerializers.reqSerializer(req));
+        };
+      },
+      wrapResponseSerializer: function wrapResponseSerializer(customSerializer) {
+        if (customSerializer === resSerializers.resSerializer) return customSerializer;
+        return function wrappedResSerializer(res) {
+          return customSerializer(resSerializers.resSerializer(res));
+        };
+      }
+    };
+  }
+});
+
+// node_modules/pino/lib/caller.js
+var require_caller = __commonJS({
+  "node_modules/pino/lib/caller.js"(exports, module) {
+    "use strict";
+    function noOpPrepareStackTrace(_, stack) {
+      return stack;
+    }
+    module.exports = function getCallers() {
+      const originalPrepare = Error.prepareStackTrace;
+      Error.prepareStackTrace = noOpPrepareStackTrace;
+      const stack = new Error().stack;
+      Error.prepareStackTrace = originalPrepare;
+      if (!Array.isArray(stack)) {
+        return void 0;
+      }
+      const entries = stack.slice(2);
+      const fileNames = [];
+      for (const entry of entries) {
+        if (!entry) {
+          continue;
+        }
+        fileNames.push(entry.getFileName());
+      }
+      return fileNames;
+    };
+  }
+});
+
+// node_modules/@pinojs/redact/index.js
+var require_redact = __commonJS({
+  "node_modules/@pinojs/redact/index.js"(exports, module) {
+    "use strict";
+    function deepClone(obj) {
+      if (obj === null || typeof obj !== "object") {
+        return obj;
+      }
+      if (obj instanceof Date) {
+        return new Date(obj.getTime());
+      }
+      if (obj instanceof Array) {
+        const cloned = [];
+        for (let i = 0; i < obj.length; i++) {
+          cloned[i] = deepClone(obj[i]);
+        }
+        return cloned;
+      }
+      if (typeof obj === "object") {
+        const cloned = Object.create(Object.getPrototypeOf(obj));
+        for (const key in obj) {
+          if (Object.prototype.hasOwnProperty.call(obj, key)) {
+            cloned[key] = deepClone(obj[key]);
+          }
+        }
+        return cloned;
+      }
+      return obj;
+    }
+    function parsePath(path4) {
+      const parts = [];
+      let current = "";
+      let inBrackets = false;
+      let inQuotes = false;
+      let quoteChar = "";
+      for (let i = 0; i < path4.length; i++) {
+        const char = path4[i];
+        if (!inBrackets && char === ".") {
+          if (current) {
+            parts.push(current);
+            current = "";
+          }
+        } else if (char === "[") {
+          if (current) {
+            parts.push(current);
+            current = "";
+          }
+          inBrackets = true;
+        } else if (char === "]" && inBrackets) {
+          parts.push(current);
+          current = "";
+          inBrackets = false;
+          inQuotes = false;
+        } else if ((char === '"' || char === "'") && inBrackets) {
+          if (!inQuotes) {
+            inQuotes = true;
+            quoteChar = char;
+          } else if (char === quoteChar) {
+            inQuotes = false;
+            quoteChar = "";
+          } else {
+            current += char;
+          }
+        } else {
+          current += char;
+        }
+      }
+      if (current) {
+        parts.push(current);
+      }
+      return parts;
+    }
+    function setValue(obj, parts, value) {
+      let current = obj;
+      for (let i = 0; i < parts.length - 1; i++) {
+        const key = parts[i];
+        if (typeof current !== "object" || current === null || !(key in current)) {
+          return false;
+        }
+        if (typeof current[key] !== "object" || current[key] === null) {
+          return false;
+        }
+        current = current[key];
+      }
+      const lastKey = parts[parts.length - 1];
+      if (lastKey === "*") {
+        if (Array.isArray(current)) {
+          for (let i = 0; i < current.length; i++) {
+            current[i] = value;
+          }
+        } else if (typeof current === "object" && current !== null) {
+          for (const key in current) {
+            if (Object.prototype.hasOwnProperty.call(current, key)) {
+              current[key] = value;
+            }
+          }
+        }
+      } else {
+        if (typeof current === "object" && current !== null && lastKey in current && Object.prototype.hasOwnProperty.call(current, lastKey)) {
+          current[lastKey] = value;
+        }
+      }
+      return true;
+    }
+    function removeKey(obj, parts) {
+      let current = obj;
+      for (let i = 0; i < parts.length - 1; i++) {
+        const key = parts[i];
+        if (typeof current !== "object" || current === null || !(key in current)) {
+          return false;
+        }
+        if (typeof current[key] !== "object" || current[key] === null) {
+          return false;
+        }
+        current = current[key];
+      }
+      const lastKey = parts[parts.length - 1];
+      if (lastKey === "*") {
+        if (Array.isArray(current)) {
+          for (let i = 0; i < current.length; i++) {
+            current[i] = void 0;
+          }
+        } else if (typeof current === "object" && current !== null) {
+          for (const key in current) {
+            if (Object.prototype.hasOwnProperty.call(current, key)) {
+              delete current[key];
+            }
+          }
+        }
+      } else {
+        if (typeof current === "object" && current !== null && lastKey in current && Object.prototype.hasOwnProperty.call(current, lastKey)) {
+          delete current[lastKey];
+        }
+      }
+      return true;
+    }
+    var PATH_NOT_FOUND = /* @__PURE__ */ Symbol("PATH_NOT_FOUND");
+    function getValueIfExists(obj, parts) {
+      let current = obj;
+      for (const part of parts) {
+        if (current === null || current === void 0) {
+          return PATH_NOT_FOUND;
+        }
+        if (typeof current !== "object" || current === null) {
+          return PATH_NOT_FOUND;
+        }
+        if (!(part in current)) {
+          return PATH_NOT_FOUND;
+        }
+        current = current[part];
+      }
+      return current;
+    }
+    function getValue(obj, parts) {
+      let current = obj;
+      for (const part of parts) {
+        if (current === null || current === void 0) {
+          return void 0;
+        }
+        if (typeof current !== "object" || current === null) {
+          return void 0;
+        }
+        current = current[part];
+      }
+      return current;
+    }
+    function redactPaths(obj, paths, censor, remove = false) {
+      for (const path4 of paths) {
+        const parts = parsePath(path4);
+        if (parts.includes("*")) {
+          redactWildcardPath(obj, parts, censor, path4, remove);
+        } else {
+          if (remove) {
+            removeKey(obj, parts);
+          } else {
+            const value = getValueIfExists(obj, parts);
+            if (value === PATH_NOT_FOUND) {
+              continue;
+            }
+            const actualCensor = typeof censor === "function" ? censor(value, parts) : censor;
+            setValue(obj, parts, actualCensor);
+          }
+        }
+      }
+    }
+    function redactWildcardPath(obj, parts, censor, originalPath, remove = false) {
+      const wildcardIndex = parts.indexOf("*");
+      if (wildcardIndex === parts.length - 1) {
+        const parentParts = parts.slice(0, -1);
+        let current = obj;
+        for (const part of parentParts) {
+          if (current === null || current === void 0) return;
+          if (typeof current !== "object" || current === null) return;
+          current = current[part];
+        }
+        if (Array.isArray(current)) {
+          if (remove) {
+            for (let i = 0; i < current.length; i++) {
+              current[i] = void 0;
+            }
+          } else {
+            for (let i = 0; i < current.length; i++) {
+              const indexPath = [...parentParts, i.toString()];
+              const actualCensor = typeof censor === "function" ? censor(current[i], indexPath) : censor;
+              current[i] = actualCensor;
+            }
+          }
+        } else if (typeof current === "object" && current !== null) {
+          if (remove) {
+            const keysToDelete = [];
+            for (const key in current) {
+              if (Object.prototype.hasOwnProperty.call(current, key)) {
+                keysToDelete.push(key);
+              }
+            }
+            for (const key of keysToDelete) {
+              delete current[key];
+            }
+          } else {
+            for (const key in current) {
+              const keyPath = [...parentParts, key];
+              const actualCensor = typeof censor === "function" ? censor(current[key], keyPath) : censor;
+              current[key] = actualCensor;
+            }
+          }
+        }
+      } else {
+        redactIntermediateWildcard(obj, parts, censor, wildcardIndex, originalPath, remove);
+      }
+    }
+    function redactIntermediateWildcard(obj, parts, censor, wildcardIndex, originalPath, remove = false) {
+      const beforeWildcard = parts.slice(0, wildcardIndex);
+      const afterWildcard = parts.slice(wildcardIndex + 1);
+      const pathArray = [];
+      function traverse(current, pathLength) {
+        if (pathLength === beforeWildcard.length) {
+          if (Array.isArray(current)) {
+            for (let i = 0; i < current.length; i++) {
+              pathArray[pathLength] = i.toString();
+              traverse(current[i], pathLength + 1);
+            }
+          } else if (typeof current === "object" && current !== null) {
+            for (const key in current) {
+              pathArray[pathLength] = key;
+              traverse(current[key], pathLength + 1);
+            }
+          }
+        } else if (pathLength < beforeWildcard.length) {
+          const nextKey = beforeWildcard[pathLength];
+          if (current && typeof current === "object" && current !== null && nextKey in current) {
+            pathArray[pathLength] = nextKey;
+            traverse(current[nextKey], pathLength + 1);
+          }
+        } else {
+          if (afterWildcard.includes("*")) {
+            const wrappedCensor = typeof censor === "function" ? (value, path4) => {
+              const fullPath = [...pathArray.slice(0, pathLength), ...path4];
+              return censor(value, fullPath);
+            } : censor;
+            redactWildcardPath(current, afterWildcard, wrappedCensor, originalPath, remove);
+          } else {
+            if (remove) {
+              removeKey(current, afterWildcard);
+            } else {
+              const actualCensor = typeof censor === "function" ? censor(getValue(current, afterWildcard), [...pathArray.slice(0, pathLength), ...afterWildcard]) : censor;
+              setValue(current, afterWildcard, actualCensor);
+            }
+          }
+        }
+      }
+      if (beforeWildcard.length === 0) {
+        traverse(obj, 0);
+      } else {
+        let current = obj;
+        for (let i = 0; i < beforeWildcard.length; i++) {
+          const part = beforeWildcard[i];
+          if (current === null || current === void 0) return;
+          if (typeof current !== "object" || current === null) return;
+          current = current[part];
+          pathArray[i] = part;
+        }
+        if (current !== null && current !== void 0) {
+          traverse(current, beforeWildcard.length);
+        }
+      }
+    }
+    function buildPathStructure(pathsToClone) {
+      if (pathsToClone.length === 0) {
+        return null;
+      }
+      const pathStructure = /* @__PURE__ */ new Map();
+      for (const path4 of pathsToClone) {
+        const parts = parsePath(path4);
+        let current = pathStructure;
+        for (let i = 0; i < parts.length; i++) {
+          const part = parts[i];
+          if (!current.has(part)) {
+            current.set(part, /* @__PURE__ */ new Map());
+          }
+          current = current.get(part);
+        }
+      }
+      return pathStructure;
+    }
+    function selectiveClone(obj, pathStructure) {
+      if (!pathStructure) {
+        return obj;
+      }
+      function cloneSelectively(source, pathMap, depth = 0) {
+        if (!pathMap || pathMap.size === 0) {
+          return source;
+        }
+        if (source === null || typeof source !== "object") {
+          return source;
+        }
+        if (source instanceof Date) {
+          return new Date(source.getTime());
+        }
+        if (Array.isArray(source)) {
+          const cloned2 = [];
+          for (let i = 0; i < source.length; i++) {
+            const indexStr = i.toString();
+            if (pathMap.has(indexStr) || pathMap.has("*")) {
+              cloned2[i] = cloneSelectively(source[i], pathMap.get(indexStr) || pathMap.get("*"));
+            } else {
+              cloned2[i] = source[i];
+            }
+          }
+          return cloned2;
+        }
+        const cloned = Object.create(Object.getPrototypeOf(source));
+        for (const key in source) {
+          if (Object.prototype.hasOwnProperty.call(source, key)) {
+            if (pathMap.has(key) || pathMap.has("*")) {
+              cloned[key] = cloneSelectively(source[key], pathMap.get(key) || pathMap.get("*"));
+            } else {
+              cloned[key] = source[key];
+            }
+          }
+        }
+        return cloned;
+      }
+      return cloneSelectively(obj, pathStructure);
+    }
+    function validatePath(path4) {
+      if (typeof path4 !== "string") {
+        throw new Error("Paths must be (non-empty) strings");
+      }
+      if (path4 === "") {
+        throw new Error("Invalid redaction path ()");
+      }
+      if (path4.includes("..")) {
+        throw new Error(`Invalid redaction path (${path4})`);
+      }
+      if (path4.includes(",")) {
+        throw new Error(`Invalid redaction path (${path4})`);
+      }
+      let bracketCount = 0;
+      let inQuotes = false;
+      let quoteChar = "";
+      for (let i = 0; i < path4.length; i++) {
+        const char = path4[i];
+        if ((char === '"' || char === "'") && bracketCount > 0) {
+          if (!inQuotes) {
+            inQuotes = true;
+            quoteChar = char;
+          } else if (char === quoteChar) {
+            inQuotes = false;
+            quoteChar = "";
+          }
+        } else if (char === "[" && !inQuotes) {
+          bracketCount++;
+        } else if (char === "]" && !inQuotes) {
+          bracketCount--;
+          if (bracketCount < 0) {
+            throw new Error(`Invalid redaction path (${path4})`);
+          }
+        }
+      }
+      if (bracketCount !== 0) {
+        throw new Error(`Invalid redaction path (${path4})`);
+      }
+    }
+    function validatePaths(paths) {
+      if (!Array.isArray(paths)) {
+        throw new TypeError("paths must be an array");
+      }
+      for (const path4 of paths) {
+        validatePath(path4);
+      }
+    }
+    function slowRedact(options = {}) {
+      const {
+        paths = [],
+        censor = "[REDACTED]",
+        serialize = JSON.stringify,
+        strict = true,
+        remove = false
+      } = options;
+      validatePaths(paths);
+      const pathStructure = buildPathStructure(paths);
+      return function redact(obj) {
+        if (strict && (obj === null || typeof obj !== "object")) {
+          if (obj === null || obj === void 0) {
+            return serialize ? serialize(obj) : obj;
+          }
+          if (typeof obj !== "object") {
+            return serialize ? serialize(obj) : obj;
+          }
+        }
+        const cloned = selectiveClone(obj, pathStructure);
+        const original = obj;
+        let actualCensor = censor;
+        if (typeof censor === "function") {
+          actualCensor = censor;
+        }
+        redactPaths(cloned, paths, actualCensor, remove);
+        if (serialize === false) {
+          cloned.restore = function() {
+            return deepClone(original);
+          };
+          return cloned;
+        }
+        if (typeof serialize === "function") {
+          return serialize(cloned);
+        }
+        return JSON.stringify(cloned);
+      };
+    }
+    module.exports = slowRedact;
+  }
+});
+
+// node_modules/pino/lib/symbols.js
+var require_symbols = __commonJS({
+  "node_modules/pino/lib/symbols.js"(exports, module) {
+    "use strict";
+    var setLevelSym = /* @__PURE__ */ Symbol("pino.setLevel");
+    var getLevelSym = /* @__PURE__ */ Symbol("pino.getLevel");
+    var levelValSym = /* @__PURE__ */ Symbol("pino.levelVal");
+    var levelCompSym = /* @__PURE__ */ Symbol("pino.levelComp");
+    var useLevelLabelsSym = /* @__PURE__ */ Symbol("pino.useLevelLabels");
+    var useOnlyCustomLevelsSym = /* @__PURE__ */ Symbol("pino.useOnlyCustomLevels");
+    var mixinSym = /* @__PURE__ */ Symbol("pino.mixin");
+    var lsCacheSym = /* @__PURE__ */ Symbol("pino.lsCache");
+    var chindingsSym = /* @__PURE__ */ Symbol("pino.chindings");
+    var asJsonSym = /* @__PURE__ */ Symbol("pino.asJson");
+    var writeSym = /* @__PURE__ */ Symbol("pino.write");
+    var redactFmtSym = /* @__PURE__ */ Symbol("pino.redactFmt");
+    var timeSym = /* @__PURE__ */ Symbol("pino.time");
+    var timeSliceIndexSym = /* @__PURE__ */ Symbol("pino.timeSliceIndex");
+    var streamSym = /* @__PURE__ */ Symbol("pino.stream");
+    var stringifySym = /* @__PURE__ */ Symbol("pino.stringify");
+    var stringifySafeSym = /* @__PURE__ */ Symbol("pino.stringifySafe");
+    var stringifiersSym = /* @__PURE__ */ Symbol("pino.stringifiers");
+    var endSym = /* @__PURE__ */ Symbol("pino.end");
+    var formatOptsSym = /* @__PURE__ */ Symbol("pino.formatOpts");
+    var messageKeySym = /* @__PURE__ */ Symbol("pino.messageKey");
+    var errorKeySym = /* @__PURE__ */ Symbol("pino.errorKey");
+    var nestedKeySym = /* @__PURE__ */ Symbol("pino.nestedKey");
+    var nestedKeyStrSym = /* @__PURE__ */ Symbol("pino.nestedKeyStr");
+    var mixinMergeStrategySym = /* @__PURE__ */ Symbol("pino.mixinMergeStrategy");
+    var msgPrefixSym = /* @__PURE__ */ Symbol("pino.msgPrefix");
+    var wildcardFirstSym = /* @__PURE__ */ Symbol("pino.wildcardFirst");
+    var serializersSym = /* @__PURE__ */ Symbol.for("pino.serializers");
+    var formattersSym = /* @__PURE__ */ Symbol.for("pino.formatters");
+    var hooksSym = /* @__PURE__ */ Symbol.for("pino.hooks");
+    var needsMetadataGsym = /* @__PURE__ */ Symbol.for("pino.metadata");
+    module.exports = {
+      setLevelSym,
+      getLevelSym,
+      levelValSym,
+      levelCompSym,
+      useLevelLabelsSym,
+      mixinSym,
+      lsCacheSym,
+      chindingsSym,
+      asJsonSym,
+      writeSym,
+      serializersSym,
+      redactFmtSym,
+      timeSym,
+      timeSliceIndexSym,
+      streamSym,
+      stringifySym,
+      stringifySafeSym,
+      stringifiersSym,
+      endSym,
+      formatOptsSym,
+      messageKeySym,
+      errorKeySym,
+      nestedKeySym,
+      wildcardFirstSym,
+      needsMetadataGsym,
+      useOnlyCustomLevelsSym,
+      formattersSym,
+      hooksSym,
+      nestedKeyStrSym,
+      mixinMergeStrategySym,
+      msgPrefixSym
+    };
+  }
+});
+
+// node_modules/pino/lib/redaction.js
+var require_redaction = __commonJS({
+  "node_modules/pino/lib/redaction.js"(exports, module) {
+    "use strict";
+    var Redact = require_redact();
+    var { redactFmtSym, wildcardFirstSym } = require_symbols();
+    var rx = /[^.[\]]+|\[([^[\]]*?)\]/g;
+    var CENSOR = "[Redacted]";
+    var strict = false;
+    function redaction(opts, serialize) {
+      const { paths, censor, remove } = handle(opts);
+      const shape = paths.reduce((o, str) => {
+        rx.lastIndex = 0;
+        const first = rx.exec(str);
+        const next = rx.exec(str);
+        let ns = first[1] !== void 0 ? first[1].replace(/^(?:"|'|`)(.*)(?:"|'|`)$/, "$1") : first[0];
+        if (ns === "*") {
+          ns = wildcardFirstSym;
+        }
+        if (next === null) {
+          o[ns] = null;
+          return o;
+        }
+        if (o[ns] === null) {
+          return o;
+        }
+        const { index } = next;
+        const nextPath = `${str.substr(index, str.length - 1)}`;
+        o[ns] = o[ns] || [];
+        if (ns !== wildcardFirstSym && o[ns].length === 0) {
+          o[ns].push(...o[wildcardFirstSym] || []);
+        }
+        if (ns === wildcardFirstSym) {
+          Object.keys(o).forEach(function(k) {
+            if (o[k]) {
+              o[k].push(nextPath);
+            }
+          });
+        }
+        o[ns].push(nextPath);
+        return o;
+      }, {});
+      const result = {
+        [redactFmtSym]: Redact({ paths, censor, serialize, strict, remove })
+      };
+      const topCensor = (...args) => {
+        return typeof censor === "function" ? serialize(censor(...args)) : serialize(censor);
+      };
+      return [...Object.keys(shape), ...Object.getOwnPropertySymbols(shape)].reduce((o, k) => {
+        if (shape[k] === null) {
+          o[k] = (value) => topCensor(value, [k]);
+        } else {
+          const wrappedCensor = typeof censor === "function" ? (value, path4) => {
+            return censor(value, [k, ...path4]);
+          } : censor;
+          o[k] = Redact({
+            paths: shape[k],
+            censor: wrappedCensor,
+            serialize,
+            strict,
+            remove
+          });
+        }
+        return o;
+      }, result);
+    }
+    function handle(opts) {
+      if (Array.isArray(opts)) {
+        opts = { paths: opts, censor: CENSOR };
+        return opts;
+      }
+      let { paths, censor = CENSOR, remove } = opts;
+      if (Array.isArray(paths) === false) {
+        throw Error("pino \u2013 redact must contain an array of strings");
+      }
+      if (remove === true) censor = void 0;
+      return { paths, censor, remove };
+    }
+    module.exports = redaction;
+  }
+});
+
+// node_modules/pino/lib/time.js
+var require_time = __commonJS({
+  "node_modules/pino/lib/time.js"(exports, module) {
+    "use strict";
+    var nullTime = () => "";
+    var epochTime = () => `,"time":${Date.now()}`;
+    var unixTime = () => `,"time":${Math.round(Date.now() / 1e3)}`;
+    var isoTime = () => `,"time":"${new Date(Date.now()).toISOString()}"`;
+    var NS_PER_MS = 1000000n;
+    var NS_PER_SEC = 1000000000n;
+    var startWallTimeNs = BigInt(Date.now()) * NS_PER_MS;
+    var startHrTime = process.hrtime.bigint();
+    var isoTimeNano = () => {
+      const elapsedNs = process.hrtime.bigint() - startHrTime;
+      const currentTimeNs = startWallTimeNs + elapsedNs;
+      const secondsSinceEpoch = currentTimeNs / NS_PER_SEC;
+      const nanosWithinSecond = currentTimeNs % NS_PER_SEC;
+      const msSinceEpoch = Number(secondsSinceEpoch * 1000n + nanosWithinSecond / 1000000n);
+      const date = new Date(msSinceEpoch);
+      const year = date.getUTCFullYear();
+      const month = (date.getUTCMonth() + 1).toString().padStart(2, "0");
+      const day = date.getUTCDate().toString().padStart(2, "0");
+      const hours = date.getUTCHours().toString().padStart(2, "0");
+      const minutes = date.getUTCMinutes().toString().padStart(2, "0");
+      const seconds = date.getUTCSeconds().toString().padStart(2, "0");
+      return `,"time":"${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${nanosWithinSecond.toString().padStart(9, "0")}Z"`;
+    };
+    module.exports = { nullTime, epochTime, unixTime, isoTime, isoTimeNano };
+  }
+});
+
+// node_modules/quick-format-unescaped/index.js
+var require_quick_format_unescaped = __commonJS({
+  "node_modules/quick-format-unescaped/index.js"(exports, module) {
+    "use strict";
+    function tryStringify(o) {
+      try {
+        return JSON.stringify(o);
+      } catch (e) {
+        return '"[Circular]"';
+      }
+    }
+    module.exports = format;
+    function format(f, args, opts) {
+      var ss = opts && opts.stringify || tryStringify;
+      var offset = 1;
+      if (typeof f === "object" && f !== null) {
+        var len = args.length + offset;
+        if (len === 1) return f;
+        var objects = new Array(len);
+        objects[0] = ss(f);
+        for (var index = 1; index < len; index++) {
+          objects[index] = ss(args[index]);
+        }
+        return objects.join(" ");
+      }
+      if (typeof f !== "string") {
+        return f;
+      }
+      var argLen = args.length;
+      if (argLen === 0) return f;
+      var str = "";
+      var a = 1 - offset;
+      var lastPos = -1;
+      var flen = f && f.length || 0;
+      for (var i = 0; i < flen; ) {
+        if (f.charCodeAt(i) === 37 && i + 1 < flen) {
+          lastPos = lastPos > -1 ? lastPos : 0;
+          switch (f.charCodeAt(i + 1)) {
+            case 100:
+            // 'd'
+            case 102:
+              if (a >= argLen)
+                break;
+              if (args[a] == null) break;
+              if (lastPos < i)
+                str += f.slice(lastPos, i);
+              str += Number(args[a]);
+              lastPos = i + 2;
+              i++;
+              break;
+            case 105:
+              if (a >= argLen)
+                break;
+              if (args[a] == null) break;
+              if (lastPos < i)
+                str += f.slice(lastPos, i);
+              str += Math.floor(Number(args[a]));
+              lastPos = i + 2;
+              i++;
+              break;
+            case 79:
+            // 'O'
+            case 111:
+            // 'o'
+            case 106:
+              if (a >= argLen)
+                break;
+              if (args[a] === void 0) break;
+              if (lastPos < i)
+                str += f.slice(lastPos, i);
+              var type = typeof args[a];
+              if (type === "string") {
+                str += "'" + args[a] + "'";
+                lastPos = i + 2;
+                i++;
+                break;
+              }
+              if (type === "function") {
+                str += args[a].name || "<anonymous>";
+                lastPos = i + 2;
+                i++;
+                break;
+              }
+              str += ss(args[a]);
+              lastPos = i + 2;
+              i++;
+              break;
+            case 115:
+              if (a >= argLen)
+                break;
+              if (lastPos < i)
+                str += f.slice(lastPos, i);
+              str += String(args[a]);
+              lastPos = i + 2;
+              i++;
+              break;
+            case 37:
+              if (lastPos < i)
+                str += f.slice(lastPos, i);
+              str += "%";
+              lastPos = i + 2;
+              i++;
+              a--;
+              break;
+          }
+          ++a;
+        }
+        ++i;
+      }
+      if (lastPos === -1)
+        return f;
+      else if (lastPos < flen) {
+        str += f.slice(lastPos);
+      }
+      return str;
+    }
+  }
+});
+
+// node_modules/atomic-sleep/index.js
+var require_atomic_sleep = __commonJS({
+  "node_modules/atomic-sleep/index.js"(exports, module) {
+    "use strict";
+    if (typeof SharedArrayBuffer !== "undefined" && typeof Atomics !== "undefined") {
+      let sleep = function(ms) {
+        const valid = ms > 0 && ms < Infinity;
+        if (valid === false) {
+          if (typeof ms !== "number" && typeof ms !== "bigint") {
+            throw TypeError("sleep: ms must be a number");
+          }
+          throw RangeError("sleep: ms must be a number that is greater than 0 but less than Infinity");
+        }
+        Atomics.wait(nil, 0, 0, Number(ms));
+      };
+      const nil = new Int32Array(new SharedArrayBuffer(4));
+      module.exports = sleep;
+    } else {
+      let sleep = function(ms) {
+        const valid = ms > 0 && ms < Infinity;
+        if (valid === false) {
+          if (typeof ms !== "number" && typeof ms !== "bigint") {
+            throw TypeError("sleep: ms must be a number");
+          }
+          throw RangeError("sleep: ms must be a number that is greater than 0 but less than Infinity");
+        }
+        const target = Date.now() + Number(ms);
+        while (target > Date.now()) {
+        }
+      };
+      module.exports = sleep;
+    }
+  }
+});
+
+// node_modules/sonic-boom/index.js
+var require_sonic_boom = __commonJS({
+  "node_modules/sonic-boom/index.js"(exports, module) {
+    "use strict";
+    var fs3 = __require("fs");
+    var EventEmitter3 = __require("events");
+    var inherits = __require("util").inherits;
+    var path4 = __require("path");
+    var sleep = require_atomic_sleep();
+    var assert = __require("assert");
+    var BUSY_WRITE_TIMEOUT = 100;
+    var kEmptyBuffer = Buffer.allocUnsafe(0);
+    var MAX_WRITE = 16 * 1024;
+    var kContentModeBuffer = "buffer";
+    var kContentModeUtf8 = "utf8";
+    var [major, minor] = (process.versions.node || "0.0").split(".").map(Number);
+    var kCopyBuffer = major >= 22 && minor >= 7;
+    function openFile(file, sonic) {
+      sonic._opening = true;
+      sonic._writing = true;
+      sonic._asyncDrainScheduled = false;
+      function fileOpened(err, fd) {
+        if (err) {
+          sonic._reopening = false;
+          sonic._writing = false;
+          sonic._opening = false;
+          if (sonic.sync) {
+            process.nextTick(() => {
+              if (sonic.listenerCount("error") > 0) {
+                sonic.emit("error", err);
+              }
+            });
+          } else {
+            sonic.emit("error", err);
+          }
+          return;
+        }
+        const reopening = sonic._reopening;
+        sonic.fd = fd;
+        sonic.file = file;
+        sonic._reopening = false;
+        sonic._opening = false;
+        sonic._writing = false;
+        if (sonic.sync) {
+          process.nextTick(() => sonic.emit("ready"));
+        } else {
+          sonic.emit("ready");
+        }
+        if (sonic.destroyed) {
+          return;
+        }
+        if (!sonic._writing && sonic._len > sonic.minLength || sonic._flushPending) {
+          sonic._actualWrite();
+        } else if (reopening) {
+          process.nextTick(() => sonic.emit("drain"));
+        }
+      }
+      const flags = sonic.append ? "a" : "w";
+      const mode = sonic.mode;
+      if (sonic.sync) {
+        try {
+          if (sonic.mkdir) fs3.mkdirSync(path4.dirname(file), { recursive: true });
+          const fd = fs3.openSync(file, flags, mode);
+          fileOpened(null, fd);
+        } catch (err) {
+          fileOpened(err);
+          throw err;
+        }
+      } else if (sonic.mkdir) {
+        fs3.mkdir(path4.dirname(file), { recursive: true }, (err) => {
+          if (err) return fileOpened(err);
+          fs3.open(file, flags, mode, fileOpened);
+        });
+      } else {
+        fs3.open(file, flags, mode, fileOpened);
+      }
+    }
+    function SonicBoom(opts) {
+      if (!(this instanceof SonicBoom)) {
+        return new SonicBoom(opts);
+      }
+      let { fd, dest, minLength, maxLength, maxWrite, periodicFlush, sync, append = true, mkdir, retryEAGAIN, fsync, contentMode, mode } = opts || {};
+      fd = fd || dest;
+      this._len = 0;
+      this.fd = -1;
+      this._bufs = [];
+      this._lens = [];
+      this._writing = false;
+      this._ending = false;
+      this._reopening = false;
+      this._asyncDrainScheduled = false;
+      this._flushPending = false;
+      this._hwm = Math.max(minLength || 0, 16387);
+      this.file = null;
+      this.destroyed = false;
+      this.minLength = minLength || 0;
+      this.maxLength = maxLength || 0;
+      this.maxWrite = maxWrite || MAX_WRITE;
+      this._periodicFlush = periodicFlush || 0;
+      this._periodicFlushTimer = void 0;
+      this.sync = sync || false;
+      this.writable = true;
+      this._fsync = fsync || false;
+      this.append = append || false;
+      this.mode = mode;
+      this.retryEAGAIN = retryEAGAIN || (() => true);
+      this.mkdir = mkdir || false;
+      let fsWriteSync;
+      let fsWrite;
+      if (contentMode === kContentModeBuffer) {
+        this._writingBuf = kEmptyBuffer;
+        this.write = writeBuffer;
+        this.flush = flushBuffer;
+        this.flushSync = flushBufferSync;
+        this._actualWrite = actualWriteBuffer;
+        fsWriteSync = () => fs3.writeSync(this.fd, this._writingBuf);
+        fsWrite = () => fs3.write(this.fd, this._writingBuf, this.release);
+      } else if (contentMode === void 0 || contentMode === kContentModeUtf8) {
+        this._writingBuf = "";
+        this.write = write;
+        this.flush = flush;
+        this.flushSync = flushSync;
+        this._actualWrite = actualWrite;
+        fsWriteSync = () => {
+          if (Buffer.isBuffer(this._writingBuf)) {
+            return fs3.writeSync(this.fd, this._writingBuf);
+          }
+          return fs3.writeSync(this.fd, this._writingBuf, "utf8");
+        };
+        fsWrite = () => {
+          if (Buffer.isBuffer(this._writingBuf)) {
+            return fs3.write(this.fd, this._writingBuf, this.release);
+          }
+          return fs3.write(this.fd, this._writingBuf, "utf8", this.release);
+        };
+      } else {
+        throw new Error(`SonicBoom supports "${kContentModeUtf8}" and "${kContentModeBuffer}", but passed ${contentMode}`);
+      }
+      if (typeof fd === "number") {
+        this.fd = fd;
+        process.nextTick(() => this.emit("ready"));
+      } else if (typeof fd === "string") {
+        openFile(fd, this);
+      } else {
+        throw new Error("SonicBoom supports only file descriptors and files");
+      }
+      if (this.minLength >= this.maxWrite) {
+        throw new Error(`minLength should be smaller than maxWrite (${this.maxWrite})`);
+      }
+      this.release = (err, n) => {
+        if (err) {
+          if ((err.code === "EAGAIN" || err.code === "EBUSY") && this.retryEAGAIN(err, this._writingBuf.length, this._len - this._writingBuf.length)) {
+            if (this.sync) {
+              try {
+                sleep(BUSY_WRITE_TIMEOUT);
+                this.release(void 0, 0);
+              } catch (err2) {
+                this.release(err2);
+              }
+            } else {
+              setTimeout(fsWrite, BUSY_WRITE_TIMEOUT);
+            }
+          } else {
+            this._writing = false;
+            this.emit("error", err);
+          }
+          return;
+        }
+        this.emit("write", n);
+        const releasedBufObj = releaseWritingBuf(this._writingBuf, this._len, n);
+        this._len = releasedBufObj.len;
+        this._writingBuf = releasedBufObj.writingBuf;
+        if (this._writingBuf.length) {
+          if (!this.sync) {
+            fsWrite();
+            return;
+          }
+          try {
+            do {
+              const n2 = fsWriteSync();
+              const releasedBufObj2 = releaseWritingBuf(this._writingBuf, this._len, n2);
+              this._len = releasedBufObj2.len;
+              this._writingBuf = releasedBufObj2.writingBuf;
+            } while (this._writingBuf.length);
+          } catch (err2) {
+            this.release(err2);
+            return;
+          }
+        }
+        if (this._fsync) {
+          fs3.fsyncSync(this.fd);
+        }
+        const len = this._len;
+        if (this._reopening) {
+          this._writing = false;
+          this._reopening = false;
+          this.reopen();
+        } else if (len > this.minLength) {
+          this._actualWrite();
+        } else if (this._ending) {
+          if (len > 0) {
+            this._actualWrite();
+          } else {
+            this._writing = false;
+            actualClose(this);
+          }
+        } else {
+          this._writing = false;
+          if (this.sync) {
+            if (!this._asyncDrainScheduled) {
+              this._asyncDrainScheduled = true;
+              process.nextTick(emitDrain, this);
+            }
+          } else {
+            this.emit("drain");
+          }
+        }
+      };
+      this.on("newListener", function(name) {
+        if (name === "drain") {
+          this._asyncDrainScheduled = false;
+        }
+      });
+      if (this._periodicFlush !== 0) {
+        this._periodicFlushTimer = setInterval(() => this.flush(null), this._periodicFlush);
+        this._periodicFlushTimer.unref();
+      }
+    }
+    function releaseWritingBuf(writingBuf, len, n) {
+      if (typeof writingBuf === "string") {
+        writingBuf = Buffer.from(writingBuf);
+      }
+      len = Math.max(len - n, 0);
+      writingBuf = writingBuf.subarray(n);
+      return { writingBuf, len };
+    }
+    function emitDrain(sonic) {
+      const hasListeners = sonic.listenerCount("drain") > 0;
+      if (!hasListeners) return;
+      sonic._asyncDrainScheduled = false;
+      sonic.emit("drain");
+    }
+    inherits(SonicBoom, EventEmitter3);
+    function mergeBuf(bufs, len) {
+      if (bufs.length === 0) {
+        return kEmptyBuffer;
+      }
+      if (bufs.length === 1) {
+        return bufs[0];
+      }
+      return Buffer.concat(bufs, len);
+    }
+    function write(data) {
+      if (this.destroyed) {
+        throw new Error("SonicBoom destroyed");
+      }
+      data = "" + data;
+      const dataLen = Buffer.byteLength(data);
+      const len = this._len + dataLen;
+      const bufs = this._bufs;
+      if (this.maxLength && len > this.maxLength) {
+        this.emit("drop", data);
+        return this._len < this._hwm;
+      }
+      if (bufs.length === 0 || Buffer.byteLength(bufs[bufs.length - 1]) + dataLen > this.maxWrite) {
+        bufs.push(data);
+      } else {
+        bufs[bufs.length - 1] += data;
+      }
+      this._len = len;
+      if (!this._writing && this._len >= this.minLength) {
+        this._actualWrite();
+      }
+      return this._len < this._hwm;
+    }
+    function writeBuffer(data) {
+      if (this.destroyed) {
+        throw new Error("SonicBoom destroyed");
+      }
+      const len = this._len + data.length;
+      const bufs = this._bufs;
+      const lens = this._lens;
+      if (this.maxLength && len > this.maxLength) {
+        this.emit("drop", data);
+        return this._len < this._hwm;
+      }
+      if (bufs.length === 0 || lens[lens.length - 1] + data.length > this.maxWrite) {
+        bufs.push([data]);
+        lens.push(data.length);
+      } else {
+        bufs[bufs.length - 1].push(data);
+        lens[lens.length - 1] += data.length;
+      }
+      this._len = len;
+      if (!this._writing && this._len >= this.minLength) {
+        this._actualWrite();
+      }
+      return this._len < this._hwm;
+    }
+    function callFlushCallbackOnDrain(cb) {
+      this._flushPending = true;
+      const onDrain = () => {
+        if (!this._fsync) {
+          try {
+            fs3.fsync(this.fd, (err) => {
+              this._flushPending = false;
+              cb(err);
+            });
+          } catch (err) {
+            cb(err);
+          }
+        } else {
+          this._flushPending = false;
+          cb();
+        }
+        this.off("error", onError);
+      };
+      const onError = (err) => {
+        this._flushPending = false;
+        cb(err);
+        this.off("drain", onDrain);
+      };
+      this.once("drain", onDrain);
+      this.once("error", onError);
+    }
+    function flush(cb) {
+      if (cb != null && typeof cb !== "function") {
+        throw new Error("flush cb must be a function");
+      }
+      if (this.destroyed) {
+        const error = new Error("SonicBoom destroyed");
+        if (cb) {
+          cb(error);
+          return;
+        }
+        throw error;
+      }
+      if (this.minLength <= 0) {
+        cb?.();
+        return;
+      }
+      if (cb) {
+        callFlushCallbackOnDrain.call(this, cb);
+      }
+      if (this._writing) {
+        return;
+      }
+      if (this._bufs.length === 0) {
+        this._bufs.push("");
+      }
+      this._actualWrite();
+    }
+    function flushBuffer(cb) {
+      if (cb != null && typeof cb !== "function") {
+        throw new Error("flush cb must be a function");
+      }
+      if (this.destroyed) {
+        const error = new Error("SonicBoom destroyed");
+        if (cb) {
+          cb(error);
+          return;
+        }
+        throw error;
+      }
+      if (this.minLength <= 0) {
+        cb?.();
+        return;
+      }
+      if (cb) {
+        callFlushCallbackOnDrain.call(this, cb);
+      }
+      if (this._writing) {
+        return;
+      }
+      if (this._bufs.length === 0) {
+        this._bufs.push([]);
+        this._lens.push(0);
+      }
+      this._actualWrite();
+    }
+    SonicBoom.prototype.reopen = function(file) {
+      if (this.destroyed) {
+        throw new Error("SonicBoom destroyed");
+      }
+      if (this._opening) {
+        this.once("ready", () => {
+          this.reopen(file);
+        });
+        return;
+      }
+      if (this._ending) {
+        return;
+      }
+      if (!this.file) {
+        throw new Error("Unable to reopen a file descriptor, you must pass a file to SonicBoom");
+      }
+      if (file) {
+        this.file = file;
+      }
+      this._reopening = true;
+      if (this._writing) {
+        return;
+      }
+      const fd = this.fd;
+      this.once("ready", () => {
+        if (fd !== this.fd) {
+          fs3.close(fd, (err) => {
+            if (err) {
+              return this.emit("error", err);
+            }
+          });
+        }
+      });
+      openFile(this.file, this);
+    };
+    SonicBoom.prototype.end = function() {
+      if (this.destroyed) {
+        throw new Error("SonicBoom destroyed");
+      }
+      if (this._opening) {
+        this.once("ready", () => {
+          this.end();
+        });
+        return;
+      }
+      if (this._ending) {
+        return;
+      }
+      this._ending = true;
+      if (this._writing) {
+        return;
+      }
+      if (this._len > 0 && this.fd >= 0) {
+        this._actualWrite();
+      } else {
+        actualClose(this);
+      }
+    };
+    function flushSync() {
+      if (this.destroyed) {
+        throw new Error("SonicBoom destroyed");
+      }
+      if (this.fd < 0) {
+        throw new Error("sonic boom is not ready yet");
+      }
+      if (!this._writing && this._writingBuf.length > 0) {
+        this._bufs.unshift(this._writingBuf);
+        this._writingBuf = "";
+      }
+      let buf = "";
+      while (this._bufs.length || buf.length) {
+        if (buf.length <= 0) {
+          buf = this._bufs[0];
+        }
+        try {
+          const n = Buffer.isBuffer(buf) ? fs3.writeSync(this.fd, buf) : fs3.writeSync(this.fd, buf, "utf8");
+          const releasedBufObj = releaseWritingBuf(buf, this._len, n);
+          buf = releasedBufObj.writingBuf;
+          this._len = releasedBufObj.len;
+          if (buf.length <= 0) {
+            this._bufs.shift();
+          }
+        } catch (err) {
+          const shouldRetry = err.code === "EAGAIN" || err.code === "EBUSY";
+          if (shouldRetry && !this.retryEAGAIN(err, buf.length, this._len - buf.length)) {
+            throw err;
+          }
+          sleep(BUSY_WRITE_TIMEOUT);
+        }
+      }
+      try {
+        fs3.fsyncSync(this.fd);
+      } catch {
+      }
+    }
+    function flushBufferSync() {
+      if (this.destroyed) {
+        throw new Error("SonicBoom destroyed");
+      }
+      if (this.fd < 0) {
+        throw new Error("sonic boom is not ready yet");
+      }
+      if (!this._writing && this._writingBuf.length > 0) {
+        this._bufs.unshift([this._writingBuf]);
+        this._writingBuf = kEmptyBuffer;
+      }
+      let buf = kEmptyBuffer;
+      while (this._bufs.length || buf.length) {
+        if (buf.length <= 0) {
+          buf = mergeBuf(this._bufs[0], this._lens[0]);
+        }
+        try {
+          const n = fs3.writeSync(this.fd, buf);
+          buf = buf.subarray(n);
+          this._len = Math.max(this._len - n, 0);
+          if (buf.length <= 0) {
+            this._bufs.shift();
+            this._lens.shift();
+          }
+        } catch (err) {
+          const shouldRetry = err.code === "EAGAIN" || err.code === "EBUSY";
+          if (shouldRetry && !this.retryEAGAIN(err, buf.length, this._len - buf.length)) {
+            throw err;
+          }
+          sleep(BUSY_WRITE_TIMEOUT);
+        }
+      }
+    }
+    SonicBoom.prototype.destroy = function() {
+      if (this.destroyed) {
+        return;
+      }
+      actualClose(this);
+    };
+    function actualWrite() {
+      const release = this.release;
+      this._writing = true;
+      this._writingBuf = this._writingBuf.length ? this._writingBuf : this._bufs.shift() || "";
+      if (this.sync) {
+        try {
+          const written = Buffer.isBuffer(this._writingBuf) ? fs3.writeSync(this.fd, this._writingBuf) : fs3.writeSync(this.fd, this._writingBuf, "utf8");
+          release(null, written);
+        } catch (err) {
+          release(err);
+        }
+      } else {
+        fs3.write(this.fd, this._writingBuf, release);
+      }
+    }
+    function actualWriteBuffer() {
+      const release = this.release;
+      this._writing = true;
+      this._writingBuf = this._writingBuf.length ? this._writingBuf : mergeBuf(this._bufs.shift(), this._lens.shift());
+      if (this.sync) {
+        try {
+          const written = fs3.writeSync(this.fd, this._writingBuf);
+          release(null, written);
+        } catch (err) {
+          release(err);
+        }
+      } else {
+        if (kCopyBuffer) {
+          this._writingBuf = Buffer.from(this._writingBuf);
+        }
+        fs3.write(this.fd, this._writingBuf, release);
+      }
+    }
+    function actualClose(sonic) {
+      if (sonic.fd === -1) {
+        sonic.once("ready", actualClose.bind(null, sonic));
+        return;
+      }
+      if (sonic._periodicFlushTimer !== void 0) {
+        clearInterval(sonic._periodicFlushTimer);
+      }
+      sonic.destroyed = true;
+      sonic._bufs = [];
+      sonic._lens = [];
+      assert(typeof sonic.fd === "number", `sonic.fd must be a number, got ${typeof sonic.fd}`);
+      try {
+        fs3.fsync(sonic.fd, closeWrapped);
+      } catch {
+      }
+      function closeWrapped() {
+        if (sonic.fd !== 1 && sonic.fd !== 2) {
+          fs3.close(sonic.fd, done);
+        } else {
+          done();
+        }
+      }
+      function done(err) {
+        if (err) {
+          sonic.emit("error", err);
+          return;
+        }
+        if (sonic._ending && !sonic._writing) {
+          sonic.emit("finish");
+        }
+        sonic.emit("close");
+      }
+    }
+    SonicBoom.SonicBoom = SonicBoom;
+    SonicBoom.default = SonicBoom;
+    module.exports = SonicBoom;
+  }
+});
+
+// node_modules/on-exit-leak-free/index.js
+var require_on_exit_leak_free = __commonJS({
+  "node_modules/on-exit-leak-free/index.js"(exports, module) {
+    "use strict";
+    var refs = {
+      exit: [],
+      beforeExit: []
+    };
+    var functions = {
+      exit: onExit,
+      beforeExit: onBeforeExit
+    };
+    var registry;
+    function ensureRegistry() {
+      if (registry === void 0) {
+        registry = new FinalizationRegistry(clear);
+      }
+    }
+    function install(event) {
+      if (refs[event].length > 0) {
+        return;
+      }
+      process.on(event, functions[event]);
+    }
+    function uninstall(event) {
+      if (refs[event].length > 0) {
+        return;
+      }
+      process.removeListener(event, functions[event]);
+      if (refs.exit.length === 0 && refs.beforeExit.length === 0) {
+        registry = void 0;
+      }
+    }
+    function onExit() {
+      callRefs("exit");
+    }
+    function onBeforeExit() {
+      callRefs("beforeExit");
+    }
+    function callRefs(event) {
+      for (const ref of refs[event]) {
+        const obj = ref.deref();
+        const fn = ref.fn;
+        if (obj !== void 0) {
+          fn(obj, event);
+        }
+      }
+      refs[event] = [];
+    }
+    function clear(ref) {
+      for (const event of ["exit", "beforeExit"]) {
+        const index = refs[event].indexOf(ref);
+        refs[event].splice(index, index + 1);
+        uninstall(event);
+      }
+    }
+    function _register(event, obj, fn) {
+      if (obj === void 0) {
+        throw new Error("the object can't be undefined");
+      }
+      install(event);
+      const ref = new WeakRef(obj);
+      ref.fn = fn;
+      ensureRegistry();
+      registry.register(obj, ref);
+      refs[event].push(ref);
+    }
+    function register(obj, fn) {
+      _register("exit", obj, fn);
+    }
+    function registerBeforeExit(obj, fn) {
+      _register("beforeExit", obj, fn);
+    }
+    function unregister(obj) {
+      if (registry === void 0) {
+        return;
+      }
+      registry.unregister(obj);
+      for (const event of ["exit", "beforeExit"]) {
+        refs[event] = refs[event].filter((ref) => {
+          const _obj = ref.deref();
+          return _obj && _obj !== obj;
+        });
+        uninstall(event);
+      }
+    }
+    module.exports = {
+      register,
+      registerBeforeExit,
+      unregister
+    };
+  }
+});
+
+// node_modules/thread-stream/package.json
+var require_package = __commonJS({
+  "node_modules/thread-stream/package.json"(exports, module) {
+    module.exports = {
+      name: "thread-stream",
+      version: "4.2.0",
+      description: "A streaming way to send data to a Node.js Worker Thread",
+      main: "index.js",
+      types: "index.d.ts",
+      engines: {
+        node: ">=20"
+      },
+      dependencies: {
+        "real-require": "^1.0.0"
+      },
+      devDependencies: {
+        "@types/node": "^25.0.2",
+        "@yao-pkg/pkg": "^6.0.0",
+        borp: "^1.0.0",
+        desm: "^1.3.0",
+        eslint: "^9.39.1",
+        fastbench: "^1.0.1",
+        neostandard: "^0.13.0",
+        "pino-elasticsearch": "^9.0.0",
+        "sonic-boom": "^5.0.0",
+        "ts-node": "^10.8.0",
+        typescript: "~5.7.3"
+      },
+      scripts: {
+        build: "tsc --noEmit",
+        lint: "eslint",
+        test: 'npm run lint && npm run build && npm run transpile && borp --pattern "test/*.test.{js,mjs}"',
+        "test:ci": 'npm run lint && npm run transpile && borp --pattern "test/*.test.{js,mjs}"',
+        "test:yarn": 'npm run transpile && borp --pattern "test/*.test.js"',
+        transpile: "sh ./test/ts/transpile.sh"
+      },
+      repository: {
+        type: "git",
+        url: "git+https://github.com/mcollina/thread-stream.git"
+      },
+      keywords: [
+        "worker",
+        "thread",
+        "threads",
+        "stream"
+      ],
+      author: "Matteo Collina <hello@matteocollina.com>",
+      license: "MIT",
+      bugs: {
+        url: "https://github.com/mcollina/thread-stream/issues"
+      },
+      homepage: "https://github.com/mcollina/thread-stream#readme"
+    };
+  }
+});
+
+// node_modules/thread-stream/lib/wait.js
+var require_wait = __commonJS({
+  "node_modules/thread-stream/lib/wait.js"(exports, module) {
+    "use strict";
+    var WAIT_MS = 1e4;
+    function wait2(state, index, expected, timeout, done) {
+      const max = timeout === Infinity ? Infinity : Date.now() + timeout;
+      const check2 = () => {
+        const current = Atomics.load(state, index);
+        if (current === expected) {
+          done(null, "ok");
+          return;
+        }
+        if (max !== Infinity && Date.now() > max) {
+          done(null, "timed-out");
+          return;
+        }
+        const remaining = max === Infinity ? WAIT_MS : Math.min(WAIT_MS, Math.max(1, max - Date.now()));
+        const result = Atomics.waitAsync(state, index, current, remaining);
+        if (result.async) {
+          result.value.then(check2);
+        } else {
+          setImmediate(check2);
+        }
+      };
+      check2();
+    }
+    function waitDiff(state, index, expected, timeout, done) {
+      const max = timeout === Infinity ? Infinity : Date.now() + timeout;
+      const check2 = () => {
+        const current = Atomics.load(state, index);
+        if (current !== expected) {
+          done(null, "ok");
+          return;
+        }
+        if (max !== Infinity && Date.now() > max) {
+          done(null, "timed-out");
+          return;
+        }
+        const remaining = max === Infinity ? WAIT_MS : Math.min(WAIT_MS, Math.max(1, max - Date.now()));
+        const result = Atomics.waitAsync(state, index, expected, remaining);
+        if (result.async) {
+          result.value.then((res) => {
+            if (res === "ok") {
+              done(null, "ok");
+              return;
+            }
+            check2();
+          });
+        } else {
+          setImmediate(check2);
+        }
+      };
+      check2();
+    }
+    module.exports = { wait: wait2, waitDiff };
+  }
+});
+
+// node_modules/thread-stream/lib/indexes.js
+var require_indexes = __commonJS({
+  "node_modules/thread-stream/lib/indexes.js"(exports, module) {
+    "use strict";
+    var SEQ_INDEX = 2;
+    var WRITE_INDEX = 4;
+    var READ_INDEX = 8;
+    module.exports = {
+      WRITE_INDEX,
+      READ_INDEX,
+      SEQ_INDEX
+    };
+  }
+});
+
+// node_modules/thread-stream/index.js
+var require_thread_stream = __commonJS({
+  "node_modules/thread-stream/index.js"(exports, module) {
+    "use strict";
+    var { version } = require_package();
+    var { EventEmitter: EventEmitter3 } = __require("events");
+    var { Worker } = __require("worker_threads");
+    var { join: join2 } = __require("path");
+    var { pathToFileURL } = __require("url");
+    var { wait: wait2 } = require_wait();
+    var {
+      WRITE_INDEX,
+      READ_INDEX,
+      SEQ_INDEX
+    } = require_indexes();
+    var buffer = __require("buffer");
+    var assert = __require("assert");
+    var kImpl = /* @__PURE__ */ Symbol("kImpl");
+    var MAX_STRING = buffer.constants.MAX_STRING_LENGTH;
+    function noop2() {
+    }
+    function updateState(stream, fn) {
+      Atomics.add(stream[kImpl].state, SEQ_INDEX, 1);
+      fn();
+      Atomics.add(stream[kImpl].state, SEQ_INDEX, 1);
+      Atomics.notify(stream[kImpl].state, SEQ_INDEX);
+    }
+    function resetIndexes(stream) {
+      updateState(stream, () => {
+        Atomics.store(stream[kImpl].state, READ_INDEX, 0);
+        Atomics.store(stream[kImpl].state, WRITE_INDEX, 0);
+      });
+    }
+    var FakeWeakRef = class {
+      constructor(value) {
+        this._value = value;
+      }
+      deref() {
+        return this._value;
+      }
+    };
+    var FakeFinalizationRegistry = class {
+      register() {
+      }
+      unregister() {
+      }
+    };
+    var FinalizationRegistry2 = process.env.NODE_V8_COVERAGE ? FakeFinalizationRegistry : global.FinalizationRegistry || FakeFinalizationRegistry;
+    var WeakRef2 = process.env.NODE_V8_COVERAGE ? FakeWeakRef : global.WeakRef || FakeWeakRef;
+    var registry = new FinalizationRegistry2((worker) => {
+      if (worker.exited) {
+        return;
+      }
+      worker.terminate();
+    });
+    function createWorker(stream, opts) {
+      const { filename, workerData } = opts;
+      const bundlerOverrides = "__bundlerPathsOverrides" in globalThis ? globalThis.__bundlerPathsOverrides : {};
+      const toExecute = bundlerOverrides["thread-stream-worker"] || join2(__dirname, "lib", "worker.js");
+      const worker = new Worker(toExecute, {
+        ...opts.workerOpts,
+        name: opts.workerOpts?.name || "thread-stream",
+        trackUnmanagedFds: false,
+        workerData: {
+          filename: filename.indexOf("file://") === 0 ? filename : pathToFileURL(filename).href,
+          dataBuf: stream[kImpl].dataBuf,
+          stateBuf: stream[kImpl].stateBuf,
+          workerData: {
+            $context: {
+              threadStreamVersion: version
+            },
+            ...workerData
+          }
+        }
+      });
+      worker.stream = new FakeWeakRef(stream);
+      worker.on("message", onWorkerMessage);
+      worker.on("exit", onWorkerExit);
+      registry.register(stream, worker);
+      return worker;
+    }
+    function drain(stream) {
+      assert(!stream[kImpl].sync);
+      if (stream[kImpl].needDrain) {
+        stream[kImpl].needDrain = false;
+        stream.emit("drain");
+      }
+    }
+    function nextFlush(stream) {
+      while (true) {
+        const writeIndex = Atomics.load(stream[kImpl].state, WRITE_INDEX);
+        const leftover = stream[kImpl].data.length - writeIndex;
+        if (leftover > 0) {
+          if (stream[kImpl].bufLen === 0) {
+            stream[kImpl].flushing = false;
+            if (stream[kImpl].ending) {
+              end(stream);
+            } else if (stream[kImpl].needDrain) {
+              process.nextTick(drain, stream);
+            }
+            return;
+          }
+          write(stream, leftover, noop2);
+          continue;
+        }
+        if (leftover === 0) {
+          if (writeIndex === 0 && stream[kImpl].bufLen === 0) {
+            return;
+          }
+          waitForRead(stream, () => {
+            if (stream.destroyed) {
+              return;
+            }
+            resetIndexes(stream);
+            nextFlush(stream);
+          });
+          return;
+        }
+        destroy(stream, new Error("overwritten"));
+        return;
+      }
+    }
+    function onWorkerMessage(msg) {
+      const stream = this.stream.deref();
+      if (stream === void 0) {
+        this.exited = true;
+        this.terminate();
+        return;
+      }
+      if (msg?.code == null) {
+        return;
+      }
+      switch (msg.code) {
+        case "READY":
+          this.stream = new WeakRef2(stream);
+          waitForRead(stream, () => {
+            stream[kImpl].ready = true;
+            stream.emit("ready");
+          });
+          break;
+        case "ERROR":
+          destroy(stream, msg.err);
+          break;
+        case "EVENT":
+          if (Array.isArray(msg.args)) {
+            stream.emit(msg.name, ...msg.args);
+          } else {
+            stream.emit(msg.name, msg.args);
+          }
+          break;
+        case "FLUSHED": {
+          if (msg.context !== "thread-stream") {
+            destroy(stream, new Error("this should not happen: " + msg.code));
+            break;
+          }
+          const cb = stream[kImpl].flushCallbacks.get(msg.id);
+          if (cb) {
+            stream[kImpl].flushCallbacks.delete(msg.id);
+            process.nextTick(cb);
+          }
+          break;
+        }
+        case "WARNING":
+          process.emitWarning(msg.err);
+          break;
+        default:
+          destroy(stream, new Error("this should not happen: " + msg.code));
+      }
+    }
+    function onWorkerExit(code) {
+      const stream = this.stream.deref();
+      if (stream === void 0) {
+        return;
+      }
+      registry.unregister(stream);
+      stream.worker.exited = true;
+      stream.worker.off("exit", onWorkerExit);
+      destroy(stream, code !== 0 ? new Error("the worker thread exited") : null);
+    }
+    var ThreadStream = class extends EventEmitter3 {
+      constructor(opts = {}) {
+        super();
+        if (opts.bufferSize < 4) {
+          throw new Error("bufferSize must at least fit a 4-byte utf-8 char");
+        }
+        this[kImpl] = {};
+        this[kImpl].stateBuf = new SharedArrayBuffer(128);
+        this[kImpl].state = new Int32Array(this[kImpl].stateBuf);
+        this[kImpl].dataBuf = new SharedArrayBuffer(opts.bufferSize || 4 * 1024 * 1024);
+        this[kImpl].data = Buffer.from(this[kImpl].dataBuf);
+        this[kImpl].sync = opts.sync || false;
+        this[kImpl].ending = false;
+        this[kImpl].ended = false;
+        this[kImpl].needDrain = false;
+        this[kImpl].destroyed = false;
+        this[kImpl].flushing = false;
+        this[kImpl].ready = false;
+        this[kImpl].finished = false;
+        this[kImpl].errored = null;
+        this[kImpl].closed = false;
+        this[kImpl].buf = [];
+        this[kImpl].bufHead = 0;
+        this[kImpl].bufLen = 0;
+        this[kImpl].flushCallbacks = /* @__PURE__ */ new Map();
+        this[kImpl].nextFlushId = 0;
+        this.worker = createWorker(this, opts);
+        this.on("message", (message, transferList) => {
+          this.worker.postMessage(message, transferList);
+        });
+      }
+      write(data) {
+        const dataBuf = Buffer.isBuffer(data) ? data : Buffer.from(data);
+        if (this[kImpl].destroyed) {
+          error(this, new Error("the worker has exited"));
+          return false;
+        }
+        if (this[kImpl].ending) {
+          error(this, new Error("the worker is ending"));
+          return false;
+        }
+        if (this[kImpl].flushing && this[kImpl].bufLen + dataBuf.length >= MAX_STRING) {
+          try {
+            writeSync(this);
+            this[kImpl].flushing = true;
+          } catch (err) {
+            destroy(this, err);
+            return false;
+          }
+        }
+        this[kImpl].buf.push(dataBuf);
+        this[kImpl].bufLen += dataBuf.length;
+        if (this[kImpl].sync) {
+          try {
+            writeSync(this);
+            return true;
+          } catch (err) {
+            destroy(this, err);
+            return false;
+          }
+        }
+        if (!this[kImpl].flushing) {
+          this[kImpl].flushing = true;
+          setImmediate(nextFlush, this);
+        }
+        this[kImpl].needDrain = this[kImpl].data.length - this[kImpl].bufLen - Atomics.load(this[kImpl].state, WRITE_INDEX) <= 0;
+        return !this[kImpl].needDrain;
+      }
+      end() {
+        if (this[kImpl].destroyed) {
+          return;
+        }
+        this[kImpl].ending = true;
+        end(this);
+      }
+      flush(cb) {
+        cb = typeof cb === "function" ? cb : noop2;
+        flushBuffer(this, (err) => {
+          if (err) {
+            process.nextTick(cb, err);
+            return;
+          }
+          requestWorkerFlush(this, cb);
+        });
+      }
+      flushSync() {
+        if (this[kImpl].destroyed) {
+          return;
+        }
+        writeSync(this);
+        flushSync(this);
+      }
+      unref() {
+        this.worker.unref();
+      }
+      ref() {
+        this.worker.ref();
+      }
+      get ready() {
+        return this[kImpl].ready;
+      }
+      get destroyed() {
+        return this[kImpl].destroyed;
+      }
+      get closed() {
+        return this[kImpl].closed;
+      }
+      get writable() {
+        return !this[kImpl].destroyed && !this[kImpl].ending;
+      }
+      get writableEnded() {
+        return this[kImpl].ending;
+      }
+      get writableFinished() {
+        return this[kImpl].finished;
+      }
+      get writableNeedDrain() {
+        return this[kImpl].needDrain;
+      }
+      get writableObjectMode() {
+        return false;
+      }
+      get writableErrored() {
+        return this[kImpl].errored;
+      }
+    };
+    function flushBuffer(stream, cb) {
+      if (stream[kImpl].destroyed) {
+        process.nextTick(cb, new Error("the worker has exited"));
+        return;
+      }
+      if (!stream[kImpl].sync && (stream[kImpl].flushing || stream[kImpl].bufLen > 0)) {
+        setImmediate(flushBuffer, stream, cb);
+        return;
+      }
+      waitForRead(stream, cb);
+    }
+    function waitForRead(stream, cb) {
+      const writeIndex = Atomics.load(stream[kImpl].state, WRITE_INDEX);
+      wait2(stream[kImpl].state, READ_INDEX, writeIndex, Infinity, (err, res) => {
+        if (err) {
+          destroy(stream, err);
+          cb(err);
+          return;
+        }
+        if (res !== "ok") {
+          waitForRead(stream, cb);
+          return;
+        }
+        cb();
+      });
+    }
+    function requestWorkerFlush(stream, cb) {
+      if (stream[kImpl].destroyed) {
+        process.nextTick(cb, new Error("the worker has exited"));
+        return;
+      }
+      if (!stream[kImpl].ready) {
+        const onReady = () => {
+          cleanup();
+          requestWorkerFlush(stream, cb);
+        };
+        const onClose = () => {
+          cleanup();
+          process.nextTick(cb, new Error("the worker has exited"));
+        };
+        const cleanup = () => {
+          stream.off("ready", onReady);
+          stream.off("close", onClose);
+        };
+        stream.once("ready", onReady);
+        stream.once("close", onClose);
+        return;
+      }
+      const id = ++stream[kImpl].nextFlushId;
+      stream[kImpl].flushCallbacks.set(id, cb);
+      try {
+        stream.worker.postMessage({
+          code: "FLUSH",
+          context: "thread-stream",
+          id
+        });
+      } catch (err) {
+        stream[kImpl].flushCallbacks.delete(id);
+        destroy(stream, err);
+        process.nextTick(cb, err);
+      }
+    }
+    function failPendingFlushCallbacks(stream, err) {
+      const callbacks = stream[kImpl].flushCallbacks;
+      if (callbacks.size === 0) {
+        return;
+      }
+      const flushErr = err || new Error("the worker has exited");
+      for (const cb of callbacks.values()) {
+        process.nextTick(cb, flushErr);
+      }
+      callbacks.clear();
+    }
+    function error(stream, err) {
+      setImmediate(() => {
+        stream.emit("error", err);
+      });
+    }
+    function destroy(stream, err) {
+      if (stream[kImpl].destroyed) {
+        return;
+      }
+      stream[kImpl].destroyed = true;
+      failPendingFlushCallbacks(stream, err);
+      if (err) {
+        stream[kImpl].errored = err;
+        error(stream, err);
+      }
+      if (!stream.worker.exited) {
+        stream.worker.terminate().catch(() => {
+        }).then(() => {
+          stream[kImpl].closed = true;
+          stream.emit("close");
+        });
+      } else {
+        setImmediate(() => {
+          stream[kImpl].closed = true;
+          stream.emit("close");
+        });
+      }
+    }
+    function write(stream, maxBytes, cb) {
+      const current = Atomics.load(stream[kImpl].state, WRITE_INDEX);
+      let offset = current;
+      let remaining = maxBytes;
+      while (remaining > 0 && stream[kImpl].bufLen !== 0) {
+        const head = stream[kImpl].bufHead;
+        const buf = stream[kImpl].buf[head];
+        if (buf.length <= remaining) {
+          buf.copy(stream[kImpl].data, offset);
+          offset += buf.length;
+          remaining -= buf.length;
+          stream[kImpl].bufLen -= buf.length;
+          stream[kImpl].bufHead = head + 1;
+          if (stream[kImpl].bufHead === stream[kImpl].buf.length) {
+            stream[kImpl].buf.length = 0;
+            stream[kImpl].bufHead = 0;
+          } else if (stream[kImpl].bufHead >= 1024 && stream[kImpl].bufHead * 2 >= stream[kImpl].buf.length) {
+            stream[kImpl].buf.splice(0, stream[kImpl].bufHead);
+            stream[kImpl].bufHead = 0;
+          }
+          continue;
+        }
+        buf.copy(stream[kImpl].data, offset, 0, remaining);
+        stream[kImpl].buf[head] = buf.subarray(remaining);
+        stream[kImpl].bufLen -= remaining;
+        offset += remaining;
+        remaining = 0;
+      }
+      updateState(stream, () => {
+        Atomics.store(stream[kImpl].state, WRITE_INDEX, offset);
+      });
+      cb();
+      return true;
+    }
+    function end(stream) {
+      if (stream[kImpl].ended || !stream[kImpl].ending || stream[kImpl].flushing) {
+        return;
+      }
+      stream[kImpl].ended = true;
+      try {
+        stream.flushSync();
+        let readIndex = Atomics.load(stream[kImpl].state, READ_INDEX);
+        updateState(stream, () => {
+          Atomics.store(stream[kImpl].state, WRITE_INDEX, -1);
+        });
+        let spins = 0;
+        while (readIndex !== -1) {
+          Atomics.wait(stream[kImpl].state, READ_INDEX, readIndex, 1e3);
+          readIndex = Atomics.load(stream[kImpl].state, READ_INDEX);
+          if (readIndex === -2) {
+            destroy(stream, new Error("end() failed"));
+            return;
+          }
+          if (++spins === 10) {
+            destroy(stream, new Error("end() took too long (10s)"));
+            return;
+          }
+        }
+        process.nextTick(() => {
+          stream[kImpl].finished = true;
+          stream.emit("finish");
+        });
+      } catch (err) {
+        destroy(stream, err);
+      }
+    }
+    function writeSync(stream) {
+      const cb = () => {
+        if (stream[kImpl].ending) {
+          end(stream);
+        } else if (stream[kImpl].needDrain) {
+          process.nextTick(drain, stream);
+        }
+      };
+      stream[kImpl].flushing = false;
+      while (stream[kImpl].bufLen !== 0) {
+        const writeIndex = Atomics.load(stream[kImpl].state, WRITE_INDEX);
+        const leftover = stream[kImpl].data.length - writeIndex;
+        if (leftover === 0) {
+          flushSync(stream);
+          resetIndexes(stream);
+          continue;
+        } else if (leftover < 0) {
+          throw new Error("overwritten");
+        }
+        write(stream, leftover, cb);
+      }
+    }
+    function flushSync(stream) {
+      if (stream[kImpl].flushing) {
+        throw new Error("unable to flush while flushing");
+      }
+      const writeIndex = Atomics.load(stream[kImpl].state, WRITE_INDEX);
+      let spins = 0;
+      while (true) {
+        const readIndex = Atomics.load(stream[kImpl].state, READ_INDEX);
+        if (readIndex === -2) {
+          throw Error("_flushSync failed");
+        }
+        if (readIndex !== writeIndex) {
+          Atomics.wait(stream[kImpl].state, READ_INDEX, readIndex, 1e3);
+        } else {
+          break;
+        }
+        if (++spins === 10) {
+          throw new Error("_flushSync took too long (10s)");
+        }
+      }
+    }
+    module.exports = ThreadStream;
+  }
+});
+
+// node_modules/pino/lib/transport.js
+var require_transport = __commonJS({
+  "node_modules/pino/lib/transport.js"(exports, module) {
+    "use strict";
+    var { createRequire } = __require("module");
+    var { existsSync: existsSync3 } = __require("fs");
+    var getCallers = require_caller();
+    var { join: join2, isAbsolute: isAbsolute2, sep } = __require("path");
+    var { fileURLToPath } = __require("url");
+    var sleep = require_atomic_sleep();
+    var onExit = require_on_exit_leak_free();
+    var ThreadStream = require_thread_stream();
+    function setupOnExit(stream) {
+      onExit.register(stream, autoEnd);
+      onExit.registerBeforeExit(stream, flush);
+      stream.on("close", function() {
+        onExit.unregister(stream);
+      });
+    }
+    function hasPreloadFlags() {
+      const execArgv = process.execArgv;
+      for (let i = 0; i < execArgv.length; i++) {
+        const arg = execArgv[i];
+        if (arg === "--import" || arg === "--require" || arg === "-r") {
+          return true;
+        }
+        if (arg.startsWith("--import=") || arg.startsWith("--require=") || arg.startsWith("-r=")) {
+          return true;
+        }
+      }
+      return false;
+    }
+    function sanitizeNodeOptions(nodeOptions) {
+      const tokens = nodeOptions.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g);
+      if (!tokens) {
+        return nodeOptions;
+      }
+      const sanitized = [];
+      let changed = false;
+      for (let i = 0; i < tokens.length; i++) {
+        const token = tokens[i];
+        if (token === "--require" || token === "-r" || token === "--import") {
+          const next = tokens[i + 1];
+          if (next && shouldDropPreload(next)) {
+            changed = true;
+            i++;
+            continue;
+          }
+          sanitized.push(token);
+          if (next) {
+            sanitized.push(next);
+            i++;
+          }
+          continue;
+        }
+        if (token.startsWith("--require=") || token.startsWith("-r=") || token.startsWith("--import=")) {
+          const value = token.slice(token.indexOf("=") + 1);
+          if (shouldDropPreload(value)) {
+            changed = true;
+            continue;
+          }
+        }
+        sanitized.push(token);
+      }
+      return changed ? sanitized.join(" ") : nodeOptions;
+    }
+    function shouldDropPreload(value) {
+      const unquoted = stripQuotes(value);
+      if (!unquoted) {
+        return false;
+      }
+      let path4 = unquoted;
+      if (path4.startsWith("file://")) {
+        try {
+          path4 = fileURLToPath(path4);
+        } catch {
+          return false;
+        }
+      }
+      return isAbsolute2(path4) && !existsSync3(path4);
+    }
+    function stripQuotes(value) {
+      const first = value[0];
+      const last = value[value.length - 1];
+      if (first === '"' && last === '"' || first === "'" && last === "'") {
+        return value.slice(1, -1);
+      }
+      return value;
+    }
+    function buildStream(filename, workerData, workerOpts, sync, name) {
+      if (!workerOpts.execArgv && hasPreloadFlags() && __require.main === void 0) {
+        workerOpts = {
+          ...workerOpts,
+          execArgv: []
+        };
+      }
+      if (!workerOpts.env && process.env.NODE_OPTIONS) {
+        const nodeOptions = sanitizeNodeOptions(process.env.NODE_OPTIONS);
+        if (nodeOptions !== process.env.NODE_OPTIONS) {
+          workerOpts = {
+            ...workerOpts,
+            env: {
+              ...process.env,
+              NODE_OPTIONS: nodeOptions
+            }
+          };
+        }
+      }
+      workerOpts = { ...workerOpts, name };
+      const stream = new ThreadStream({
+        filename,
+        workerData,
+        workerOpts,
+        sync
+      });
+      stream.on("ready", onReady);
+      stream.on("close", function() {
+        process.removeListener("exit", onExit2);
+      });
+      process.on("exit", onExit2);
+      function onReady() {
+        process.removeListener("exit", onExit2);
+        stream.unref();
+        if (workerOpts.autoEnd !== false) {
+          setupOnExit(stream);
+        }
+      }
+      function onExit2() {
+        if (stream.closed) {
+          return;
+        }
+        stream.flushSync();
+        sleep(100);
+        stream.end();
+      }
+      return stream;
+    }
+    function autoEnd(stream) {
+      stream.ref();
+      stream.flushSync();
+      stream.end();
+      stream.once("close", function() {
+        stream.unref();
+      });
+    }
+    function flush(stream) {
+      stream.flushSync();
+    }
+    function transport(fullOptions) {
+      const { pipeline, targets, levels, dedupe, worker = {}, caller = getCallers(), sync = false } = fullOptions;
+      const options = {
+        ...fullOptions.options
+      };
+      const callers = typeof caller === "string" ? [caller] : caller;
+      const bundlerOverrides = typeof globalThis === "object" && Object.prototype.hasOwnProperty.call(globalThis, "__bundlerPathsOverrides") && globalThis.__bundlerPathsOverrides && typeof globalThis.__bundlerPathsOverrides === "object" ? globalThis.__bundlerPathsOverrides : /* @__PURE__ */ Object.create(null);
+      let target = fullOptions.target;
+      if (target && targets) {
+        throw new Error("only one of target or targets can be specified");
+      }
+      if (targets) {
+        target = bundlerOverrides["pino-worker"] || join2(__dirname, "worker.js");
+        options.targets = targets.filter((dest) => dest.target).map((dest) => {
+          return {
+            ...dest,
+            target: fixTarget(dest.target)
+          };
+        });
+        options.pipelines = targets.filter((dest) => dest.pipeline).map((dest) => {
+          return dest.pipeline.map((t) => {
+            return {
+              ...t,
+              level: dest.level,
+              // duplicate the pipeline `level` property defined in the upper level
+              target: fixTarget(t.target)
+            };
+          });
+        });
+      } else if (pipeline) {
+        target = bundlerOverrides["pino-worker"] || join2(__dirname, "worker.js");
+        options.pipelines = [pipeline.map((dest) => {
+          return {
+            ...dest,
+            target: fixTarget(dest.target)
+          };
+        })];
+      }
+      if (levels) {
+        options.levels = levels;
+      }
+      if (dedupe) {
+        options.dedupe = dedupe;
+      }
+      options.pinoWillSendConfig = true;
+      const name = targets || pipeline ? "pino.transport" : target;
+      return buildStream(fixTarget(target), options, worker, sync, name);
+      function fixTarget(origin) {
+        origin = bundlerOverrides[origin] || origin;
+        if (isAbsolute2(origin) || origin.indexOf("file://") === 0) {
+          return origin;
+        }
+        if (origin === "pino/file") {
+          return join2(__dirname, "..", "file.js");
+        }
+        let fixTarget2;
+        for (const filePath of callers) {
+          try {
+            const context = filePath === "node:repl" ? process.cwd() + sep : filePath;
+            fixTarget2 = createRequire(context).resolve(origin);
+            break;
+          } catch (err) {
+            continue;
+          }
+        }
+        if (!fixTarget2) {
+          throw new Error(`unable to determine transport target for "${origin}"`);
+        }
+        return fixTarget2;
+      }
+    }
+    module.exports = transport;
+  }
+});
+
+// node_modules/pino/lib/tools.js
+var require_tools = __commonJS({
+  "node_modules/pino/lib/tools.js"(exports, module) {
+    "use strict";
+    var diagChan = __require("diagnostics_channel");
+    var format = require_quick_format_unescaped();
+    var { mapHttpRequest, mapHttpResponse } = require_pino_std_serializers();
+    var SonicBoom = require_sonic_boom();
+    var onExit = require_on_exit_leak_free();
+    var {
+      lsCacheSym,
+      chindingsSym,
+      writeSym,
+      serializersSym,
+      formatOptsSym,
+      endSym,
+      stringifiersSym,
+      stringifySym,
+      stringifySafeSym,
+      wildcardFirstSym,
+      nestedKeySym,
+      formattersSym,
+      messageKeySym,
+      errorKeySym,
+      nestedKeyStrSym,
+      msgPrefixSym
+    } = require_symbols();
+    var { isMainThread } = __require("worker_threads");
+    var transport = require_transport();
+    var [nodeMajor] = process.versions.node.split(".").map((v) => Number(v));
+    var asJsonChan = diagChan.tracingChannel("pino_asJson");
+    var asString = nodeMajor >= 25 ? (str) => JSON.stringify(str) : _asString;
+    function noop2() {
+    }
+    function genLog(level, hook) {
+      if (!hook) return LOG;
+      return function hookWrappedLog(...args) {
+        hook.call(this, args, LOG, level);
+      };
+      function LOG(o, ...n) {
+        if (typeof o === "object") {
+          let msg = o;
+          if (o !== null) {
+            if (o.method && o.headers && o.socket) {
+              o = mapHttpRequest(o);
+            } else if (typeof o.setHeader === "function") {
+              o = mapHttpResponse(o);
+            }
+          }
+          let formatParams;
+          if (msg === null && n.length === 0) {
+            formatParams = [null];
+          } else {
+            msg = n.shift();
+            formatParams = n;
+          }
+          if (typeof this[msgPrefixSym] === "string" && msg !== void 0 && msg !== null) {
+            msg = this[msgPrefixSym] + msg;
+          }
+          this[writeSym](o, format(msg, formatParams, this[formatOptsSym]), level);
+        } else {
+          let msg = o === void 0 ? n.shift() : o;
+          if (typeof this[msgPrefixSym] === "string" && msg !== void 0 && msg !== null) {
+            msg = this[msgPrefixSym] + msg;
+          }
+          this[writeSym](null, format(msg, n, this[formatOptsSym]), level);
+        }
+      }
+    }
+    function _asString(str) {
+      let result = "";
+      let last = 0;
+      let found = false;
+      let point = 255;
+      const l = str.length;
+      if (l > 100) {
+        return JSON.stringify(str);
+      }
+      for (var i = 0; i < l && point >= 32; i++) {
+        point = str.charCodeAt(i);
+        if (point === 34 || point === 92) {
+          result += str.slice(last, i) + "\\";
+          last = i;
+          found = true;
+        }
+      }
+      if (!found) {
+        result = str;
+      } else {
+        result += str.slice(last);
+      }
+      return point < 32 ? JSON.stringify(str) : '"' + result + '"';
+    }
+    function asJson(obj, msg, num, time) {
+      if (asJsonChan.hasSubscribers === false) {
+        return _asJson.call(this, obj, msg, num, time);
+      }
+      const store = { instance: this, arguments };
+      return asJsonChan.traceSync(_asJson, store, this, obj, msg, num, time);
+    }
+    function _asJson(obj, msg, num, time) {
+      const stringify2 = this[stringifySym];
+      const stringifySafe = this[stringifySafeSym];
+      const stringifiers = this[stringifiersSym];
+      const end = this[endSym];
+      const chindings = this[chindingsSym];
+      const serializers = this[serializersSym];
+      const formatters = this[formattersSym];
+      const messageKey = this[messageKeySym];
+      const errorKey = this[errorKeySym];
+      let data = this[lsCacheSym][num] + time;
+      data = data + chindings;
+      let value;
+      if (formatters.log) {
+        obj = formatters.log(obj);
+      }
+      const wildcardStringifier = stringifiers[wildcardFirstSym];
+      let propStr = "";
+      for (const key in obj) {
+        value = obj[key];
+        if (Object.prototype.hasOwnProperty.call(obj, key) && value !== void 0) {
+          if (serializers[key]) {
+            value = serializers[key](value);
+          } else if (key === errorKey && serializers.err) {
+            value = serializers.err(value);
+          }
+          const stringifier = stringifiers[key] || wildcardStringifier;
+          switch (typeof value) {
+            case "undefined":
+            case "function":
+              continue;
+            case "number":
+              if (Number.isFinite(value) === false) {
+                value = null;
+              }
+            // this case explicitly falls through to the next one
+            case "boolean":
+              if (stringifier) value = stringifier(value);
+              break;
+            case "string":
+              value = (stringifier || asString)(value);
+              break;
+            default:
+              value = (stringifier || stringify2)(value, stringifySafe);
+          }
+          if (value === void 0) continue;
+          const strKey = asString(key);
+          propStr += "," + strKey + ":" + value;
+        }
+      }
+      let msgStr = "";
+      if (msg !== void 0) {
+        value = serializers[messageKey] ? serializers[messageKey](msg) : msg;
+        const stringifier = stringifiers[messageKey] || wildcardStringifier;
+        switch (typeof value) {
+          case "function":
+            break;
+          case "number":
+            if (Number.isFinite(value) === false) {
+              value = null;
+            }
+          // this case explicitly falls through to the next one
+          case "boolean":
+            if (stringifier) value = stringifier(value);
+            msgStr = ',"' + messageKey + '":' + value;
+            break;
+          case "string":
+            value = (stringifier || asString)(value);
+            msgStr = ',"' + messageKey + '":' + value;
+            break;
+          default:
+            value = (stringifier || stringify2)(value, stringifySafe);
+            msgStr = ',"' + messageKey + '":' + value;
+        }
+      }
+      if (this[nestedKeySym] && propStr) {
+        return data + this[nestedKeyStrSym] + propStr.slice(1) + "}" + msgStr + end;
+      } else {
+        return data + propStr + msgStr + end;
+      }
+    }
+    function asChindings(instance, bindings) {
+      let value;
+      let data = instance[chindingsSym];
+      const stringify2 = instance[stringifySym];
+      const stringifySafe = instance[stringifySafeSym];
+      const stringifiers = instance[stringifiersSym];
+      const wildcardStringifier = stringifiers[wildcardFirstSym];
+      const serializers = instance[serializersSym];
+      const formatter = instance[formattersSym].bindings;
+      bindings = formatter(bindings);
+      for (const key in bindings) {
+        value = bindings[key];
+        const valid = (key.length < 5 || key !== "level" && key !== "serializers" && key !== "formatters" && key !== "customLevels") && bindings.hasOwnProperty(key) && value !== void 0;
+        if (valid === true) {
+          value = serializers[key] ? serializers[key](value) : value;
+          value = (stringifiers[key] || wildcardStringifier || stringify2)(value, stringifySafe);
+          if (value === void 0) continue;
+          data += ',"' + key + '":' + value;
+        }
+      }
+      return data;
+    }
+    function hasBeenTampered(stream) {
+      return stream.write !== stream.constructor.prototype.write;
+    }
+    function buildSafeSonicBoom(opts) {
+      const stream = new SonicBoom(opts);
+      stream.on("error", filterBrokenPipe);
+      if (!opts.sync && isMainThread) {
+        onExit.register(stream, autoEnd);
+        stream.on("close", function() {
+          onExit.unregister(stream);
+        });
+      }
+      return stream;
+      function filterBrokenPipe(err) {
+        if (err.code === "EPIPE") {
+          stream.write = noop2;
+          stream.end = noop2;
+          stream.flushSync = noop2;
+          stream.destroy = noop2;
+          return;
+        }
+        stream.removeListener("error", filterBrokenPipe);
+        stream.emit("error", err);
+      }
+    }
+    function autoEnd(stream, eventName) {
+      if (stream.destroyed) {
+        return;
+      }
+      if (eventName === "beforeExit") {
+        stream.flush();
+        stream.on("drain", function() {
+          stream.end();
+        });
+      } else {
+        stream.flushSync();
+      }
+    }
+    function createArgsNormalizer(defaultOptions) {
+      return function normalizeArgs(instance, caller, opts = {}, stream) {
+        if (typeof opts === "string") {
+          stream = buildSafeSonicBoom({ dest: opts });
+          opts = {};
+        } else if (typeof stream === "string") {
+          if (opts && opts.transport) {
+            throw Error("only one of option.transport or stream can be specified");
+          }
+          stream = buildSafeSonicBoom({ dest: stream });
+        } else if (opts instanceof SonicBoom || opts.writable || opts._writableState) {
+          stream = opts;
+          opts = {};
+        } else if (opts.transport) {
+          if (opts.transport instanceof SonicBoom || opts.transport.writable || opts.transport._writableState) {
+            throw Error("option.transport do not allow stream, please pass to option directly. e.g. pino(transport)");
+          }
+          if (opts.transport.targets && opts.transport.targets.length && opts.formatters && typeof opts.formatters.level === "function") {
+            throw Error("option.transport.targets do not allow custom level formatters");
+          }
+          let customLevels;
+          if (opts.customLevels) {
+            customLevels = opts.useOnlyCustomLevels ? opts.customLevels : Object.assign({}, opts.levels, opts.customLevels);
+          }
+          stream = transport({ caller, ...opts.transport, levels: customLevels });
+        }
+        opts = Object.assign({}, defaultOptions, opts);
+        opts.serializers = Object.assign({}, defaultOptions.serializers, opts.serializers);
+        opts.formatters = Object.assign({}, defaultOptions.formatters, opts.formatters);
+        if (opts.prettyPrint) {
+          throw new Error("prettyPrint option is no longer supported, see the pino-pretty package (https://github.com/pinojs/pino-pretty)");
+        }
+        const { enabled, onChild } = opts;
+        if (enabled === false) opts.level = "silent";
+        if (!onChild) opts.onChild = noop2;
+        if (!stream) {
+          if (!hasBeenTampered(process.stdout)) {
+            stream = buildSafeSonicBoom({ fd: process.stdout.fd || 1 });
+          } else {
+            stream = process.stdout;
+          }
+        }
+        return { opts, stream };
+      };
+    }
+    function stringify(obj, stringifySafeFn) {
+      try {
+        return JSON.stringify(obj);
+      } catch (_) {
+        try {
+          const stringify2 = stringifySafeFn || this[stringifySafeSym];
+          return stringify2(obj);
+        } catch (_2) {
+          return '"[unable to serialize, circular reference is too complex to analyze]"';
+        }
+      }
+    }
+    function buildFormatters(level, bindings, log) {
+      return {
+        level,
+        bindings,
+        log
+      };
+    }
+    function normalizeDestFileDescriptor(destination) {
+      const fd = Number(destination);
+      if (typeof destination === "string" && Number.isFinite(fd)) {
+        return fd;
+      }
+      if (destination === void 0) {
+        return 1;
+      }
+      return destination;
+    }
+    module.exports = {
+      noop: noop2,
+      buildSafeSonicBoom,
+      asChindings,
+      asJson,
+      genLog,
+      createArgsNormalizer,
+      stringify,
+      buildFormatters,
+      normalizeDestFileDescriptor
+    };
+  }
+});
+
+// node_modules/pino/lib/constants.js
+var require_constants3 = __commonJS({
+  "node_modules/pino/lib/constants.js"(exports, module) {
+    "use strict";
+    var DEFAULT_LEVELS = {
+      trace: 10,
+      debug: 20,
+      info: 30,
+      warn: 40,
+      error: 50,
+      fatal: 60
+    };
+    var SORTING_ORDER = {
+      ASC: "ASC",
+      DESC: "DESC"
+    };
+    module.exports = {
+      DEFAULT_LEVELS,
+      SORTING_ORDER
+    };
+  }
+});
+
+// node_modules/pino/lib/levels.js
+var require_levels = __commonJS({
+  "node_modules/pino/lib/levels.js"(exports, module) {
+    "use strict";
+    var {
+      lsCacheSym,
+      levelValSym,
+      useOnlyCustomLevelsSym,
+      streamSym,
+      formattersSym,
+      hooksSym,
+      levelCompSym
+    } = require_symbols();
+    var { noop: noop2, genLog } = require_tools();
+    var { DEFAULT_LEVELS, SORTING_ORDER } = require_constants3();
+    var levelMethods = {
+      fatal: (hook) => {
+        const logFatal = genLog(DEFAULT_LEVELS.fatal, hook);
+        return function(...args) {
+          const stream = this[streamSym];
+          logFatal.call(this, ...args);
+          if (typeof stream.flushSync === "function") {
+            try {
+              stream.flushSync();
+            } catch (e) {
+            }
+          }
+        };
+      },
+      error: (hook) => genLog(DEFAULT_LEVELS.error, hook),
+      warn: (hook) => genLog(DEFAULT_LEVELS.warn, hook),
+      info: (hook) => genLog(DEFAULT_LEVELS.info, hook),
+      debug: (hook) => genLog(DEFAULT_LEVELS.debug, hook),
+      trace: (hook) => genLog(DEFAULT_LEVELS.trace, hook)
+    };
+    var nums = Object.keys(DEFAULT_LEVELS).reduce((o, k) => {
+      o[DEFAULT_LEVELS[k]] = k;
+      return o;
+    }, {});
+    var initialLsCache = Object.keys(nums).reduce((o, k) => {
+      o[k] = '{"level":' + Number(k);
+      return o;
+    }, {});
+    function genLsCache(instance) {
+      const formatter = instance[formattersSym].level;
+      const { labels } = instance.levels;
+      const cache3 = {};
+      for (const label in labels) {
+        const level = formatter(labels[label], Number(label));
+        cache3[label] = JSON.stringify(level).slice(0, -1);
+      }
+      instance[lsCacheSym] = cache3;
+      return instance;
+    }
+    function isStandardLevel(level, useOnlyCustomLevels) {
+      if (useOnlyCustomLevels) {
+        return false;
+      }
+      switch (level) {
+        case "fatal":
+        case "error":
+        case "warn":
+        case "info":
+        case "debug":
+        case "trace":
+          return true;
+        default:
+          return false;
+      }
+    }
+    function setLevel(level) {
+      const { labels, values } = this.levels;
+      if (typeof level === "number") {
+        if (labels[level] === void 0) throw Error("unknown level value" + level);
+        level = labels[level];
+      }
+      if (values[level] === void 0) throw Error("unknown level " + level);
+      const preLevelVal = this[levelValSym];
+      const levelVal = this[levelValSym] = values[level];
+      const useOnlyCustomLevelsVal = this[useOnlyCustomLevelsSym];
+      const levelComparison = this[levelCompSym];
+      const hook = this[hooksSym].logMethod;
+      for (const key in values) {
+        if (levelComparison(values[key], levelVal) === false) {
+          this[key] = noop2;
+          continue;
+        }
+        this[key] = isStandardLevel(key, useOnlyCustomLevelsVal) ? levelMethods[key](hook) : genLog(values[key], hook);
+      }
+      this.emit(
+        "level-change",
+        level,
+        levelVal,
+        labels[preLevelVal],
+        preLevelVal,
+        this
+      );
+    }
+    function getLevel(level) {
+      const { levels, levelVal } = this;
+      return levels && levels.labels ? levels.labels[levelVal] : "";
+    }
+    function isLevelEnabled(logLevel) {
+      const { values } = this.levels;
+      const logLevelVal = values[logLevel];
+      return logLevelVal !== void 0 && this[levelCompSym](logLevelVal, this[levelValSym]);
+    }
+    function compareLevel(direction, current, expected) {
+      if (direction === SORTING_ORDER.DESC) {
+        return current <= expected;
+      }
+      return current >= expected;
+    }
+    function genLevelComparison(levelComparison) {
+      if (typeof levelComparison === "string") {
+        return compareLevel.bind(null, levelComparison);
+      }
+      return levelComparison;
+    }
+    function mappings(customLevels = null, useOnlyCustomLevels = false) {
+      const customNums = customLevels ? Object.keys(customLevels).reduce((o, k) => {
+        o[customLevels[k]] = k;
+        return o;
+      }, {}) : null;
+      const labels = Object.assign(
+        Object.create(Object.prototype, { Infinity: { value: "silent" } }),
+        useOnlyCustomLevels ? null : nums,
+        customNums
+      );
+      const values = Object.assign(
+        Object.create(Object.prototype, { silent: { value: Infinity } }),
+        useOnlyCustomLevels ? null : DEFAULT_LEVELS,
+        customLevels
+      );
+      return { labels, values };
+    }
+    function assertDefaultLevelFound(defaultLevel, customLevels, useOnlyCustomLevels) {
+      if (typeof defaultLevel === "number") {
+        const values = [].concat(
+          Object.keys(customLevels || {}).map((key) => customLevels[key]),
+          useOnlyCustomLevels ? [] : Object.keys(nums).map((level) => +level),
+          Infinity
+        );
+        if (!values.includes(defaultLevel)) {
+          throw Error(`default level:${defaultLevel} must be included in custom levels`);
+        }
+        return;
+      }
+      const labels = Object.assign(
+        Object.create(Object.prototype, { silent: { value: Infinity } }),
+        useOnlyCustomLevels ? null : DEFAULT_LEVELS,
+        customLevels
+      );
+      if (!(defaultLevel in labels)) {
+        throw Error(`default level:${defaultLevel} must be included in custom levels`);
+      }
+    }
+    function assertNoLevelCollisions(levels, customLevels) {
+      const { labels, values } = levels;
+      for (const k in customLevels) {
+        if (k in values) {
+          throw Error("levels cannot be overridden");
+        }
+        if (customLevels[k] in labels) {
+          throw Error("pre-existing level values cannot be used for new levels");
+        }
+      }
+    }
+    function assertLevelComparison(levelComparison) {
+      if (typeof levelComparison === "function") {
+        return;
+      }
+      if (typeof levelComparison === "string" && Object.values(SORTING_ORDER).includes(levelComparison)) {
+        return;
+      }
+      throw new Error('Levels comparison should be one of "ASC", "DESC" or "function" type');
+    }
+    module.exports = {
+      initialLsCache,
+      genLsCache,
+      levelMethods,
+      getLevel,
+      setLevel,
+      isLevelEnabled,
+      mappings,
+      assertNoLevelCollisions,
+      assertDefaultLevelFound,
+      genLevelComparison,
+      assertLevelComparison
+    };
+  }
+});
+
+// node_modules/pino/lib/meta.js
+var require_meta = __commonJS({
+  "node_modules/pino/lib/meta.js"(exports, module) {
+    "use strict";
+    module.exports = { version: "10.3.1" };
+  }
+});
+
+// node_modules/pino/lib/proto.js
+var require_proto = __commonJS({
+  "node_modules/pino/lib/proto.js"(exports, module) {
+    "use strict";
+    var { EventEmitter: EventEmitter3 } = __require("events");
+    var {
+      lsCacheSym,
+      levelValSym,
+      setLevelSym,
+      getLevelSym,
+      chindingsSym,
+      mixinSym,
+      asJsonSym,
+      writeSym,
+      mixinMergeStrategySym,
+      timeSym,
+      timeSliceIndexSym,
+      streamSym,
+      serializersSym,
+      formattersSym,
+      errorKeySym,
+      messageKeySym,
+      useOnlyCustomLevelsSym,
+      needsMetadataGsym,
+      redactFmtSym,
+      stringifySym,
+      formatOptsSym,
+      stringifiersSym,
+      msgPrefixSym,
+      hooksSym
+    } = require_symbols();
+    var {
+      getLevel,
+      setLevel,
+      isLevelEnabled,
+      mappings,
+      initialLsCache,
+      genLsCache,
+      assertNoLevelCollisions
+    } = require_levels();
+    var {
+      asChindings,
+      asJson,
+      buildFormatters,
+      stringify,
+      noop: noop2
+    } = require_tools();
+    var {
+      version
+    } = require_meta();
+    var redaction = require_redaction();
+    var constructor = class Pino {
+    };
+    var prototype = {
+      constructor,
+      child,
+      bindings,
+      setBindings,
+      flush,
+      isLevelEnabled,
+      version,
+      get level() {
+        return this[getLevelSym]();
+      },
+      set level(lvl) {
+        this[setLevelSym](lvl);
+      },
+      get levelVal() {
+        return this[levelValSym];
+      },
+      set levelVal(n) {
+        throw Error("levelVal is read-only");
+      },
+      get msgPrefix() {
+        return this[msgPrefixSym];
+      },
+      get [Symbol.toStringTag]() {
+        return "Pino";
+      },
+      [lsCacheSym]: initialLsCache,
+      [writeSym]: write,
+      [asJsonSym]: asJson,
+      [getLevelSym]: getLevel,
+      [setLevelSym]: setLevel
+    };
+    Object.setPrototypeOf(prototype, EventEmitter3.prototype);
+    module.exports = function() {
+      return Object.create(prototype);
+    };
+    var resetChildingsFormatter = (bindings2) => bindings2;
+    function child(bindings2, options) {
+      if (!bindings2) {
+        throw Error("missing bindings for child Pino");
+      }
+      const serializers = this[serializersSym];
+      const formatters = this[formattersSym];
+      const instance = Object.create(this);
+      if (options == null) {
+        if (instance[formattersSym].bindings !== resetChildingsFormatter) {
+          instance[formattersSym] = buildFormatters(
+            formatters.level,
+            resetChildingsFormatter,
+            formatters.log
+          );
+        }
+        instance[chindingsSym] = asChindings(instance, bindings2);
+        if (this.onChild !== noop2) {
+          this.onChild(instance);
+        }
+        return instance;
+      }
+      if (options.hasOwnProperty("serializers") === true) {
+        instance[serializersSym] = /* @__PURE__ */ Object.create(null);
+        for (const k in serializers) {
+          instance[serializersSym][k] = serializers[k];
+        }
+        const parentSymbols = Object.getOwnPropertySymbols(serializers);
+        for (var i = 0; i < parentSymbols.length; i++) {
+          const ks = parentSymbols[i];
+          instance[serializersSym][ks] = serializers[ks];
+        }
+        for (const bk in options.serializers) {
+          instance[serializersSym][bk] = options.serializers[bk];
+        }
+        const bindingsSymbols = Object.getOwnPropertySymbols(options.serializers);
+        for (var bi = 0; bi < bindingsSymbols.length; bi++) {
+          const bks = bindingsSymbols[bi];
+          instance[serializersSym][bks] = options.serializers[bks];
+        }
+      } else instance[serializersSym] = serializers;
+      if (options.hasOwnProperty("formatters")) {
+        const { level, bindings: chindings, log } = options.formatters;
+        instance[formattersSym] = buildFormatters(
+          level || formatters.level,
+          chindings || resetChildingsFormatter,
+          log || formatters.log
+        );
+      } else {
+        instance[formattersSym] = buildFormatters(
+          formatters.level,
+          resetChildingsFormatter,
+          formatters.log
+        );
+      }
+      if (options.hasOwnProperty("customLevels") === true) {
+        assertNoLevelCollisions(this.levels, options.customLevels);
+        instance.levels = mappings(options.customLevels, instance[useOnlyCustomLevelsSym]);
+        genLsCache(instance);
+      }
+      if (typeof options.redact === "object" && options.redact !== null || Array.isArray(options.redact)) {
+        instance.redact = options.redact;
+        const stringifiers = redaction(instance.redact, stringify);
+        const formatOpts = { stringify: stringifiers[redactFmtSym] };
+        instance[stringifySym] = stringify;
+        instance[stringifiersSym] = stringifiers;
+        instance[formatOptsSym] = formatOpts;
+      }
+      if (typeof options.msgPrefix === "string") {
+        instance[msgPrefixSym] = (this[msgPrefixSym] || "") + options.msgPrefix;
+      }
+      instance[chindingsSym] = asChindings(instance, bindings2);
+      if (options.level !== void 0 && options.level !== this.level || options.hasOwnProperty("customLevels")) {
+        const childLevel = options.level || this.level;
+        instance[setLevelSym](childLevel);
+      }
+      this.onChild(instance);
+      return instance;
+    }
+    function bindings() {
+      const chindings = this[chindingsSym];
+      const chindingsJson = `{${chindings.substr(1)}}`;
+      const bindingsFromJson = JSON.parse(chindingsJson);
+      delete bindingsFromJson.pid;
+      delete bindingsFromJson.hostname;
+      return bindingsFromJson;
+    }
+    function setBindings(newBindings) {
+      const chindings = asChindings(this, newBindings);
+      this[chindingsSym] = chindings;
+    }
+    function defaultMixinMergeStrategy(mergeObject, mixinObject) {
+      return Object.assign(mixinObject, mergeObject);
+    }
+    function write(_obj, msg, num) {
+      const t = this[timeSym]();
+      const mixin = this[mixinSym];
+      const errorKey = this[errorKeySym];
+      const messageKey = this[messageKeySym];
+      const mixinMergeStrategy = this[mixinMergeStrategySym] || defaultMixinMergeStrategy;
+      let obj;
+      const streamWriteHook = this[hooksSym].streamWrite;
+      if (_obj === void 0 || _obj === null) {
+        obj = {};
+      } else if (_obj instanceof Error) {
+        obj = { [errorKey]: _obj };
+        if (msg === void 0) {
+          msg = _obj.message;
+        }
+      } else {
+        obj = _obj;
+        if (msg === void 0 && _obj[messageKey] === void 0 && _obj[errorKey]) {
+          msg = _obj[errorKey].message;
+        }
+      }
+      if (mixin) {
+        obj = mixinMergeStrategy(obj, mixin(obj, num, this));
+      }
+      const s = this[asJsonSym](obj, msg, num, t);
+      const stream = this[streamSym];
+      if (stream[needsMetadataGsym] === true) {
+        stream.lastLevel = num;
+        stream.lastObj = obj;
+        stream.lastMsg = msg;
+        stream.lastTime = t.slice(this[timeSliceIndexSym]);
+        stream.lastLogger = this;
+      }
+      stream.write(streamWriteHook ? streamWriteHook(s) : s);
+    }
+    function flush(cb) {
+      if (cb != null && typeof cb !== "function") {
+        throw Error("callback must be a function");
+      }
+      const stream = this[streamSym];
+      if (typeof stream.flush === "function") {
+        stream.flush(cb || noop2);
+      } else if (cb) cb();
+    }
+  }
+});
+
+// node_modules/safe-stable-stringify/index.js
+var require_safe_stable_stringify = __commonJS({
+  "node_modules/safe-stable-stringify/index.js"(exports, module) {
+    "use strict";
+    var { hasOwnProperty } = Object.prototype;
+    var stringify = configure();
+    stringify.configure = configure;
+    stringify.stringify = stringify;
+    stringify.default = stringify;
+    exports.stringify = stringify;
+    exports.configure = configure;
+    module.exports = stringify;
+    var strEscapeSequencesRegExp = /[\u0000-\u001f\u0022\u005c\ud800-\udfff]/;
+    function strEscape(str) {
+      if (str.length < 5e3 && !strEscapeSequencesRegExp.test(str)) {
+        return `"${str}"`;
+      }
+      return JSON.stringify(str);
+    }
+    function sort(array, comparator) {
+      if (array.length > 200 || comparator) {
+        return array.sort(comparator);
+      }
+      for (let i = 1; i < array.length; i++) {
+        const currentValue = array[i];
+        let position = i;
+        while (position !== 0 && array[position - 1] > currentValue) {
+          array[position] = array[position - 1];
+          position--;
+        }
+        array[position] = currentValue;
+      }
+      return array;
+    }
+    var typedArrayPrototypeGetSymbolToStringTag = Object.getOwnPropertyDescriptor(
+      Object.getPrototypeOf(
+        Object.getPrototypeOf(
+          new Int8Array()
+        )
+      ),
+      Symbol.toStringTag
+    ).get;
+    function isTypedArrayWithEntries(value) {
+      return typedArrayPrototypeGetSymbolToStringTag.call(value) !== void 0 && value.length !== 0;
+    }
+    function stringifyTypedArray(array, separator, maximumBreadth) {
+      if (array.length < maximumBreadth) {
+        maximumBreadth = array.length;
+      }
+      const whitespace = separator === "," ? "" : " ";
+      let res = `"0":${whitespace}${array[0]}`;
+      for (let i = 1; i < maximumBreadth; i++) {
+        res += `${separator}"${i}":${whitespace}${array[i]}`;
+      }
+      return res;
+    }
+    function getCircularValueOption(options) {
+      if (hasOwnProperty.call(options, "circularValue")) {
+        const circularValue = options.circularValue;
+        if (typeof circularValue === "string") {
+          return `"${circularValue}"`;
+        }
+        if (circularValue == null) {
+          return circularValue;
+        }
+        if (circularValue === Error || circularValue === TypeError) {
+          return {
+            toString() {
+              throw new TypeError("Converting circular structure to JSON");
+            }
+          };
+        }
+        throw new TypeError('The "circularValue" argument must be of type string or the value null or undefined');
+      }
+      return '"[Circular]"';
+    }
+    function getDeterministicOption(options) {
+      let value;
+      if (hasOwnProperty.call(options, "deterministic")) {
+        value = options.deterministic;
+        if (typeof value !== "boolean" && typeof value !== "function") {
+          throw new TypeError('The "deterministic" argument must be of type boolean or comparator function');
+        }
+      }
+      return value === void 0 ? true : value;
+    }
+    function getBooleanOption(options, key) {
+      let value;
+      if (hasOwnProperty.call(options, key)) {
+        value = options[key];
+        if (typeof value !== "boolean") {
+          throw new TypeError(`The "${key}" argument must be of type boolean`);
+        }
+      }
+      return value === void 0 ? true : value;
+    }
+    function getPositiveIntegerOption(options, key) {
+      let value;
+      if (hasOwnProperty.call(options, key)) {
+        value = options[key];
+        if (typeof value !== "number") {
+          throw new TypeError(`The "${key}" argument must be of type number`);
+        }
+        if (!Number.isInteger(value)) {
+          throw new TypeError(`The "${key}" argument must be an integer`);
+        }
+        if (value < 1) {
+          throw new RangeError(`The "${key}" argument must be >= 1`);
+        }
+      }
+      return value === void 0 ? Infinity : value;
+    }
+    function getItemCount(number) {
+      if (number === 1) {
+        return "1 item";
+      }
+      return `${number} items`;
+    }
+    function getUniqueReplacerSet(replacerArray) {
+      const replacerSet = /* @__PURE__ */ new Set();
+      for (const value of replacerArray) {
+        if (typeof value === "string" || typeof value === "number") {
+          replacerSet.add(String(value));
+        }
+      }
+      return replacerSet;
+    }
+    function getStrictOption(options) {
+      if (hasOwnProperty.call(options, "strict")) {
+        const value = options.strict;
+        if (typeof value !== "boolean") {
+          throw new TypeError('The "strict" argument must be of type boolean');
+        }
+        if (value) {
+          return (value2) => {
+            let message = `Object can not safely be stringified. Received type ${typeof value2}`;
+            if (typeof value2 !== "function") message += ` (${value2.toString()})`;
+            throw new Error(message);
+          };
+        }
+      }
+    }
+    function configure(options) {
+      options = { ...options };
+      const fail = getStrictOption(options);
+      if (fail) {
+        if (options.bigint === void 0) {
+          options.bigint = false;
+        }
+        if (!("circularValue" in options)) {
+          options.circularValue = Error;
+        }
+      }
+      const circularValue = getCircularValueOption(options);
+      const bigint = getBooleanOption(options, "bigint");
+      const deterministic = getDeterministicOption(options);
+      const comparator = typeof deterministic === "function" ? deterministic : void 0;
+      const maximumDepth = getPositiveIntegerOption(options, "maximumDepth");
+      const maximumBreadth = getPositiveIntegerOption(options, "maximumBreadth");
+      function stringifyFnReplacer(key, parent, stack, replacer, spacer, indentation) {
+        let value = parent[key];
+        if (typeof value === "object" && value !== null && typeof value.toJSON === "function") {
+          value = value.toJSON(key);
+        }
+        value = replacer.call(parent, key, value);
+        switch (typeof value) {
+          case "string":
+            return strEscape(value);
+          case "object": {
+            if (value === null) {
+              return "null";
+            }
+            if (stack.indexOf(value) !== -1) {
+              return circularValue;
+            }
+            let res = "";
+            let join2 = ",";
+            const originalIndentation = indentation;
+            if (Array.isArray(value)) {
+              if (value.length === 0) {
+                return "[]";
+              }
+              if (maximumDepth < stack.length + 1) {
+                return '"[Array]"';
+              }
+              stack.push(value);
+              if (spacer !== "") {
+                indentation += spacer;
+                res += `
+${indentation}`;
+                join2 = `,
+${indentation}`;
+              }
+              const maximumValuesToStringify = Math.min(value.length, maximumBreadth);
+              let i = 0;
+              for (; i < maximumValuesToStringify - 1; i++) {
+                const tmp2 = stringifyFnReplacer(String(i), value, stack, replacer, spacer, indentation);
+                res += tmp2 !== void 0 ? tmp2 : "null";
+                res += join2;
+              }
+              const tmp = stringifyFnReplacer(String(i), value, stack, replacer, spacer, indentation);
+              res += tmp !== void 0 ? tmp : "null";
+              if (value.length - 1 > maximumBreadth) {
+                const removedKeys = value.length - maximumBreadth - 1;
+                res += `${join2}"... ${getItemCount(removedKeys)} not stringified"`;
+              }
+              if (spacer !== "") {
+                res += `
+${originalIndentation}`;
+              }
+              stack.pop();
+              return `[${res}]`;
+            }
+            let keys = Object.keys(value);
+            const keyLength = keys.length;
+            if (keyLength === 0) {
+              return "{}";
+            }
+            if (maximumDepth < stack.length + 1) {
+              return '"[Object]"';
+            }
+            let whitespace = "";
+            let separator = "";
+            if (spacer !== "") {
+              indentation += spacer;
+              join2 = `,
+${indentation}`;
+              whitespace = " ";
+            }
+            const maximumPropertiesToStringify = Math.min(keyLength, maximumBreadth);
+            if (deterministic && !isTypedArrayWithEntries(value)) {
+              keys = sort(keys, comparator);
+            }
+            stack.push(value);
+            for (let i = 0; i < maximumPropertiesToStringify; i++) {
+              const key2 = keys[i];
+              const tmp = stringifyFnReplacer(key2, value, stack, replacer, spacer, indentation);
+              if (tmp !== void 0) {
+                res += `${separator}${strEscape(key2)}:${whitespace}${tmp}`;
+                separator = join2;
+              }
+            }
+            if (keyLength > maximumBreadth) {
+              const removedKeys = keyLength - maximumBreadth;
+              res += `${separator}"...":${whitespace}"${getItemCount(removedKeys)} not stringified"`;
+              separator = join2;
+            }
+            if (spacer !== "" && separator.length > 1) {
+              res = `
+${indentation}${res}
+${originalIndentation}`;
+            }
+            stack.pop();
+            return `{${res}}`;
+          }
+          case "number":
+            return isFinite(value) ? String(value) : fail ? fail(value) : "null";
+          case "boolean":
+            return value === true ? "true" : "false";
+          case "undefined":
+            return void 0;
+          case "bigint":
+            if (bigint) {
+              return String(value);
+            }
+          // fallthrough
+          default:
+            return fail ? fail(value) : void 0;
+        }
+      }
+      function stringifyArrayReplacer(key, value, stack, replacer, spacer, indentation) {
+        if (typeof value === "object" && value !== null && typeof value.toJSON === "function") {
+          value = value.toJSON(key);
+        }
+        switch (typeof value) {
+          case "string":
+            return strEscape(value);
+          case "object": {
+            if (value === null) {
+              return "null";
+            }
+            if (stack.indexOf(value) !== -1) {
+              return circularValue;
+            }
+            const originalIndentation = indentation;
+            let res = "";
+            let join2 = ",";
+            if (Array.isArray(value)) {
+              if (value.length === 0) {
+                return "[]";
+              }
+              if (maximumDepth < stack.length + 1) {
+                return '"[Array]"';
+              }
+              stack.push(value);
+              if (spacer !== "") {
+                indentation += spacer;
+                res += `
+${indentation}`;
+                join2 = `,
+${indentation}`;
+              }
+              const maximumValuesToStringify = Math.min(value.length, maximumBreadth);
+              let i = 0;
+              for (; i < maximumValuesToStringify - 1; i++) {
+                const tmp2 = stringifyArrayReplacer(String(i), value[i], stack, replacer, spacer, indentation);
+                res += tmp2 !== void 0 ? tmp2 : "null";
+                res += join2;
+              }
+              const tmp = stringifyArrayReplacer(String(i), value[i], stack, replacer, spacer, indentation);
+              res += tmp !== void 0 ? tmp : "null";
+              if (value.length - 1 > maximumBreadth) {
+                const removedKeys = value.length - maximumBreadth - 1;
+                res += `${join2}"... ${getItemCount(removedKeys)} not stringified"`;
+              }
+              if (spacer !== "") {
+                res += `
+${originalIndentation}`;
+              }
+              stack.pop();
+              return `[${res}]`;
+            }
+            stack.push(value);
+            let whitespace = "";
+            if (spacer !== "") {
+              indentation += spacer;
+              join2 = `,
+${indentation}`;
+              whitespace = " ";
+            }
+            let separator = "";
+            for (const key2 of replacer) {
+              const tmp = stringifyArrayReplacer(key2, value[key2], stack, replacer, spacer, indentation);
+              if (tmp !== void 0) {
+                res += `${separator}${strEscape(key2)}:${whitespace}${tmp}`;
+                separator = join2;
+              }
+            }
+            if (spacer !== "" && separator.length > 1) {
+              res = `
+${indentation}${res}
+${originalIndentation}`;
+            }
+            stack.pop();
+            return `{${res}}`;
+          }
+          case "number":
+            return isFinite(value) ? String(value) : fail ? fail(value) : "null";
+          case "boolean":
+            return value === true ? "true" : "false";
+          case "undefined":
+            return void 0;
+          case "bigint":
+            if (bigint) {
+              return String(value);
+            }
+          // fallthrough
+          default:
+            return fail ? fail(value) : void 0;
+        }
+      }
+      function stringifyIndent(key, value, stack, spacer, indentation) {
+        switch (typeof value) {
+          case "string":
+            return strEscape(value);
+          case "object": {
+            if (value === null) {
+              return "null";
+            }
+            if (typeof value.toJSON === "function") {
+              value = value.toJSON(key);
+              if (typeof value !== "object") {
+                return stringifyIndent(key, value, stack, spacer, indentation);
+              }
+              if (value === null) {
+                return "null";
+              }
+            }
+            if (stack.indexOf(value) !== -1) {
+              return circularValue;
+            }
+            const originalIndentation = indentation;
+            if (Array.isArray(value)) {
+              if (value.length === 0) {
+                return "[]";
+              }
+              if (maximumDepth < stack.length + 1) {
+                return '"[Array]"';
+              }
+              stack.push(value);
+              indentation += spacer;
+              let res2 = `
+${indentation}`;
+              const join3 = `,
+${indentation}`;
+              const maximumValuesToStringify = Math.min(value.length, maximumBreadth);
+              let i = 0;
+              for (; i < maximumValuesToStringify - 1; i++) {
+                const tmp2 = stringifyIndent(String(i), value[i], stack, spacer, indentation);
+                res2 += tmp2 !== void 0 ? tmp2 : "null";
+                res2 += join3;
+              }
+              const tmp = stringifyIndent(String(i), value[i], stack, spacer, indentation);
+              res2 += tmp !== void 0 ? tmp : "null";
+              if (value.length - 1 > maximumBreadth) {
+                const removedKeys = value.length - maximumBreadth - 1;
+                res2 += `${join3}"... ${getItemCount(removedKeys)} not stringified"`;
+              }
+              res2 += `
+${originalIndentation}`;
+              stack.pop();
+              return `[${res2}]`;
+            }
+            let keys = Object.keys(value);
+            const keyLength = keys.length;
+            if (keyLength === 0) {
+              return "{}";
+            }
+            if (maximumDepth < stack.length + 1) {
+              return '"[Object]"';
+            }
+            indentation += spacer;
+            const join2 = `,
+${indentation}`;
+            let res = "";
+            let separator = "";
+            let maximumPropertiesToStringify = Math.min(keyLength, maximumBreadth);
+            if (isTypedArrayWithEntries(value)) {
+              res += stringifyTypedArray(value, join2, maximumBreadth);
+              keys = keys.slice(value.length);
+              maximumPropertiesToStringify -= value.length;
+              separator = join2;
+            }
+            if (deterministic) {
+              keys = sort(keys, comparator);
+            }
+            stack.push(value);
+            for (let i = 0; i < maximumPropertiesToStringify; i++) {
+              const key2 = keys[i];
+              const tmp = stringifyIndent(key2, value[key2], stack, spacer, indentation);
+              if (tmp !== void 0) {
+                res += `${separator}${strEscape(key2)}: ${tmp}`;
+                separator = join2;
+              }
+            }
+            if (keyLength > maximumBreadth) {
+              const removedKeys = keyLength - maximumBreadth;
+              res += `${separator}"...": "${getItemCount(removedKeys)} not stringified"`;
+              separator = join2;
+            }
+            if (separator !== "") {
+              res = `
+${indentation}${res}
+${originalIndentation}`;
+            }
+            stack.pop();
+            return `{${res}}`;
+          }
+          case "number":
+            return isFinite(value) ? String(value) : fail ? fail(value) : "null";
+          case "boolean":
+            return value === true ? "true" : "false";
+          case "undefined":
+            return void 0;
+          case "bigint":
+            if (bigint) {
+              return String(value);
+            }
+          // fallthrough
+          default:
+            return fail ? fail(value) : void 0;
+        }
+      }
+      function stringifySimple(key, value, stack) {
+        switch (typeof value) {
+          case "string":
+            return strEscape(value);
+          case "object": {
+            if (value === null) {
+              return "null";
+            }
+            if (typeof value.toJSON === "function") {
+              value = value.toJSON(key);
+              if (typeof value !== "object") {
+                return stringifySimple(key, value, stack);
+              }
+              if (value === null) {
+                return "null";
+              }
+            }
+            if (stack.indexOf(value) !== -1) {
+              return circularValue;
+            }
+            let res = "";
+            const hasLength = value.length !== void 0;
+            if (hasLength && Array.isArray(value)) {
+              if (value.length === 0) {
+                return "[]";
+              }
+              if (maximumDepth < stack.length + 1) {
+                return '"[Array]"';
+              }
+              stack.push(value);
+              const maximumValuesToStringify = Math.min(value.length, maximumBreadth);
+              let i = 0;
+              for (; i < maximumValuesToStringify - 1; i++) {
+                const tmp2 = stringifySimple(String(i), value[i], stack);
+                res += tmp2 !== void 0 ? tmp2 : "null";
+                res += ",";
+              }
+              const tmp = stringifySimple(String(i), value[i], stack);
+              res += tmp !== void 0 ? tmp : "null";
+              if (value.length - 1 > maximumBreadth) {
+                const removedKeys = value.length - maximumBreadth - 1;
+                res += `,"... ${getItemCount(removedKeys)} not stringified"`;
+              }
+              stack.pop();
+              return `[${res}]`;
+            }
+            let keys = Object.keys(value);
+            const keyLength = keys.length;
+            if (keyLength === 0) {
+              return "{}";
+            }
+            if (maximumDepth < stack.length + 1) {
+              return '"[Object]"';
+            }
+            let separator = "";
+            let maximumPropertiesToStringify = Math.min(keyLength, maximumBreadth);
+            if (hasLength && isTypedArrayWithEntries(value)) {
+              res += stringifyTypedArray(value, ",", maximumBreadth);
+              keys = keys.slice(value.length);
+              maximumPropertiesToStringify -= value.length;
+              separator = ",";
+            }
+            if (deterministic) {
+              keys = sort(keys, comparator);
+            }
+            stack.push(value);
+            for (let i = 0; i < maximumPropertiesToStringify; i++) {
+              const key2 = keys[i];
+              const tmp = stringifySimple(key2, value[key2], stack);
+              if (tmp !== void 0) {
+                res += `${separator}${strEscape(key2)}:${tmp}`;
+                separator = ",";
+              }
+            }
+            if (keyLength > maximumBreadth) {
+              const removedKeys = keyLength - maximumBreadth;
+              res += `${separator}"...":"${getItemCount(removedKeys)} not stringified"`;
+            }
+            stack.pop();
+            return `{${res}}`;
+          }
+          case "number":
+            return isFinite(value) ? String(value) : fail ? fail(value) : "null";
+          case "boolean":
+            return value === true ? "true" : "false";
+          case "undefined":
+            return void 0;
+          case "bigint":
+            if (bigint) {
+              return String(value);
+            }
+          // fallthrough
+          default:
+            return fail ? fail(value) : void 0;
+        }
+      }
+      function stringify2(value, replacer, space) {
+        if (arguments.length > 1) {
+          let spacer = "";
+          if (typeof space === "number") {
+            spacer = " ".repeat(Math.min(space, 10));
+          } else if (typeof space === "string") {
+            spacer = space.slice(0, 10);
+          }
+          if (replacer != null) {
+            if (typeof replacer === "function") {
+              return stringifyFnReplacer("", { "": value }, [], replacer, spacer, "");
+            }
+            if (Array.isArray(replacer)) {
+              return stringifyArrayReplacer("", value, [], getUniqueReplacerSet(replacer), spacer, "");
+            }
+          }
+          if (spacer.length !== 0) {
+            return stringifyIndent("", value, [], spacer, "");
+          }
+        }
+        return stringifySimple("", value, []);
+      }
+      return stringify2;
+    }
+  }
+});
+
+// node_modules/pino/lib/multistream.js
+var require_multistream = __commonJS({
+  "node_modules/pino/lib/multistream.js"(exports, module) {
+    "use strict";
+    var metadata = /* @__PURE__ */ Symbol.for("pino.metadata");
+    var { DEFAULT_LEVELS } = require_constants3();
+    var DEFAULT_INFO_LEVEL = DEFAULT_LEVELS.info;
+    function multistream(streamsArray, opts) {
+      streamsArray = streamsArray || [];
+      opts = opts || { dedupe: false };
+      const streamLevels = Object.create(DEFAULT_LEVELS);
+      streamLevels.silent = Infinity;
+      if (opts.levels && typeof opts.levels === "object") {
+        Object.keys(opts.levels).forEach((i) => {
+          streamLevels[i] = opts.levels[i];
+        });
+      }
+      const res = {
+        write,
+        add,
+        remove,
+        emit,
+        flushSync,
+        end,
+        minLevel: 0,
+        lastId: 0,
+        streams: [],
+        clone,
+        [metadata]: true,
+        streamLevels
+      };
+      if (Array.isArray(streamsArray)) {
+        streamsArray.forEach(add, res);
+      } else {
+        add.call(res, streamsArray);
+      }
+      streamsArray = null;
+      return res;
+      function write(data) {
+        let dest;
+        const level = this.lastLevel;
+        const { streams } = this;
+        let recordedLevel = 0;
+        let stream;
+        for (let i = initLoopVar(streams.length, opts.dedupe); checkLoopVar(i, streams.length, opts.dedupe); i = adjustLoopVar(i, opts.dedupe)) {
+          dest = streams[i];
+          if (dest.level <= level) {
+            if (recordedLevel !== 0 && recordedLevel !== dest.level) {
+              break;
+            }
+            stream = dest.stream;
+            if (stream[metadata]) {
+              const { lastTime, lastMsg, lastObj, lastLogger } = this;
+              stream.lastLevel = level;
+              stream.lastTime = lastTime;
+              stream.lastMsg = lastMsg;
+              stream.lastObj = lastObj;
+              stream.lastLogger = lastLogger;
+            }
+            stream.write(data);
+            if (opts.dedupe) {
+              recordedLevel = dest.level;
+            }
+          } else if (!opts.dedupe) {
+            break;
+          }
+        }
+      }
+      function emit(...args) {
+        for (const { stream } of this.streams) {
+          if (typeof stream.emit === "function") {
+            stream.emit(...args);
+          }
+        }
+      }
+      function flushSync() {
+        for (const { stream } of this.streams) {
+          if (typeof stream.flushSync === "function") {
+            stream.flushSync();
+          }
+        }
+      }
+      function add(dest) {
+        if (!dest) {
+          return res;
+        }
+        const isStream = typeof dest.write === "function" || dest.stream;
+        const stream_ = dest.write ? dest : dest.stream;
+        if (!isStream) {
+          throw Error("stream object needs to implement either StreamEntry or DestinationStream interface");
+        }
+        const { streams, streamLevels: streamLevels2 } = this;
+        let level;
+        if (typeof dest.levelVal === "number") {
+          level = dest.levelVal;
+        } else if (typeof dest.level === "string") {
+          level = streamLevels2[dest.level];
+        } else if (typeof dest.level === "number") {
+          level = dest.level;
+        } else {
+          level = DEFAULT_INFO_LEVEL;
+        }
+        const dest_ = {
+          stream: stream_,
+          level,
+          levelVal: void 0,
+          id: ++res.lastId
+        };
+        streams.unshift(dest_);
+        streams.sort(compareByLevel);
+        this.minLevel = streams[0].level;
+        return res;
+      }
+      function remove(id) {
+        const { streams } = this;
+        const index = streams.findIndex((s) => s.id === id);
+        if (index >= 0) {
+          streams.splice(index, 1);
+          streams.sort(compareByLevel);
+          this.minLevel = streams.length > 0 ? streams[0].level : -1;
+        }
+        return res;
+      }
+      function end() {
+        for (const { stream } of this.streams) {
+          if (typeof stream.flushSync === "function") {
+            stream.flushSync();
+          }
+          stream.end();
+        }
+      }
+      function clone(level) {
+        const streams = new Array(this.streams.length);
+        for (let i = 0; i < streams.length; i++) {
+          streams[i] = {
+            level,
+            stream: this.streams[i].stream
+          };
+        }
+        return {
+          write,
+          add,
+          remove,
+          minLevel: level,
+          streams,
+          clone,
+          emit,
+          flushSync,
+          [metadata]: true
+        };
+      }
+    }
+    function compareByLevel(a, b) {
+      return a.level - b.level;
+    }
+    function initLoopVar(length, dedupe) {
+      return dedupe ? length - 1 : 0;
+    }
+    function adjustLoopVar(i, dedupe) {
+      return dedupe ? i - 1 : i + 1;
+    }
+    function checkLoopVar(i, length, dedupe) {
+      return dedupe ? i >= 0 : i < length;
+    }
+    module.exports = multistream;
+  }
+});
+
+// node_modules/pino/pino.js
+var require_pino = __commonJS({
+  "node_modules/pino/pino.js"(exports, module) {
+    "use strict";
+    var os4 = __require("os");
+    var stdSerializers = require_pino_std_serializers();
+    var caller = require_caller();
+    var redaction = require_redaction();
+    var time = require_time();
+    var proto2 = require_proto();
+    var symbols = require_symbols();
+    var { configure } = require_safe_stable_stringify();
+    var { assertDefaultLevelFound, mappings, genLsCache, genLevelComparison, assertLevelComparison } = require_levels();
+    var { DEFAULT_LEVELS, SORTING_ORDER } = require_constants3();
+    var {
+      createArgsNormalizer,
+      asChindings,
+      buildSafeSonicBoom,
+      buildFormatters,
+      stringify,
+      normalizeDestFileDescriptor,
+      noop: noop2
+    } = require_tools();
+    var { version } = require_meta();
+    var {
+      chindingsSym,
+      redactFmtSym,
+      serializersSym,
+      timeSym,
+      timeSliceIndexSym,
+      streamSym,
+      stringifySym,
+      stringifySafeSym,
+      stringifiersSym,
+      setLevelSym,
+      endSym,
+      formatOptsSym,
+      messageKeySym,
+      errorKeySym,
+      nestedKeySym,
+      mixinSym,
+      levelCompSym,
+      useOnlyCustomLevelsSym,
+      formattersSym,
+      hooksSym,
+      nestedKeyStrSym,
+      mixinMergeStrategySym,
+      msgPrefixSym
+    } = symbols;
+    var { epochTime, nullTime } = time;
+    var { pid } = process;
+    var hostname = os4.hostname();
+    var defaultErrorSerializer = stdSerializers.err;
+    var defaultOptions = {
+      level: "info",
+      levelComparison: SORTING_ORDER.ASC,
+      levels: DEFAULT_LEVELS,
+      messageKey: "msg",
+      errorKey: "err",
+      nestedKey: null,
+      enabled: true,
+      base: { pid, hostname },
+      serializers: Object.assign(/* @__PURE__ */ Object.create(null), {
+        err: defaultErrorSerializer
+      }),
+      formatters: Object.assign(/* @__PURE__ */ Object.create(null), {
+        bindings(bindings) {
+          return bindings;
+        },
+        level(label, number) {
+          return { level: number };
+        }
+      }),
+      hooks: {
+        logMethod: void 0,
+        streamWrite: void 0
+      },
+      timestamp: epochTime,
+      name: void 0,
+      redact: null,
+      customLevels: null,
+      useOnlyCustomLevels: false,
+      depthLimit: 5,
+      edgeLimit: 100
+    };
+    var normalize = createArgsNormalizer(defaultOptions);
+    var serializers = Object.assign(/* @__PURE__ */ Object.create(null), stdSerializers);
+    function pino2(...args) {
+      const instance = {};
+      const { opts, stream } = normalize(instance, caller(), ...args);
+      if (opts.level && typeof opts.level === "string" && DEFAULT_LEVELS[opts.level.toLowerCase()] !== void 0) opts.level = opts.level.toLowerCase();
+      const {
+        redact,
+        crlf,
+        serializers: serializers2,
+        timestamp,
+        messageKey,
+        errorKey,
+        nestedKey,
+        base,
+        name,
+        level,
+        customLevels,
+        levelComparison,
+        mixin,
+        mixinMergeStrategy,
+        useOnlyCustomLevels,
+        formatters,
+        hooks,
+        depthLimit,
+        edgeLimit,
+        onChild,
+        msgPrefix
+      } = opts;
+      const stringifySafe = configure({
+        maximumDepth: depthLimit,
+        maximumBreadth: edgeLimit
+      });
+      const allFormatters = buildFormatters(
+        formatters.level,
+        formatters.bindings,
+        formatters.log
+      );
+      const stringifyFn = stringify.bind({
+        [stringifySafeSym]: stringifySafe
+      });
+      const stringifiers = redact ? redaction(redact, stringifyFn) : {};
+      const formatOpts = redact ? { stringify: stringifiers[redactFmtSym] } : { stringify: stringifyFn };
+      const end = "}" + (crlf ? "\r\n" : "\n");
+      const coreChindings = asChindings.bind(null, {
+        [chindingsSym]: "",
+        [serializersSym]: serializers2,
+        [stringifiersSym]: stringifiers,
+        [stringifySym]: stringify,
+        [stringifySafeSym]: stringifySafe,
+        [formattersSym]: allFormatters
+      });
+      let chindings = "";
+      if (base !== null) {
+        if (name === void 0) {
+          chindings = coreChindings(base);
+        } else {
+          chindings = coreChindings(Object.assign({}, base, { name }));
+        }
+      }
+      const time2 = timestamp instanceof Function ? timestamp : timestamp ? epochTime : nullTime;
+      const timeSliceIndex = time2().indexOf(":") + 1;
+      if (useOnlyCustomLevels && !customLevels) throw Error("customLevels is required if useOnlyCustomLevels is set true");
+      if (mixin && typeof mixin !== "function") throw Error(`Unknown mixin type "${typeof mixin}" - expected "function"`);
+      if (msgPrefix && typeof msgPrefix !== "string") throw Error(`Unknown msgPrefix type "${typeof msgPrefix}" - expected "string"`);
+      assertDefaultLevelFound(level, customLevels, useOnlyCustomLevels);
+      const levels = mappings(customLevels, useOnlyCustomLevels);
+      if (typeof stream.emit === "function") {
+        stream.emit("message", { code: "PINO_CONFIG", config: { levels, messageKey, errorKey } });
+      }
+      assertLevelComparison(levelComparison);
+      const levelCompFunc = genLevelComparison(levelComparison);
+      Object.assign(instance, {
+        levels,
+        [levelCompSym]: levelCompFunc,
+        [useOnlyCustomLevelsSym]: useOnlyCustomLevels,
+        [streamSym]: stream,
+        [timeSym]: time2,
+        [timeSliceIndexSym]: timeSliceIndex,
+        [stringifySym]: stringify,
+        [stringifySafeSym]: stringifySafe,
+        [stringifiersSym]: stringifiers,
+        [endSym]: end,
+        [formatOptsSym]: formatOpts,
+        [messageKeySym]: messageKey,
+        [errorKeySym]: errorKey,
+        [nestedKeySym]: nestedKey,
+        // protect against injection
+        [nestedKeyStrSym]: nestedKey ? `,${JSON.stringify(nestedKey)}:{` : "",
+        [serializersSym]: serializers2,
+        [mixinSym]: mixin,
+        [mixinMergeStrategySym]: mixinMergeStrategy,
+        [chindingsSym]: chindings,
+        [formattersSym]: allFormatters,
+        [hooksSym]: hooks,
+        silent: noop2,
+        onChild,
+        [msgPrefixSym]: msgPrefix
+      });
+      Object.setPrototypeOf(instance, proto2());
+      genLsCache(instance);
+      instance[setLevelSym](level);
+      return instance;
+    }
+    module.exports = pino2;
+    module.exports.destination = (dest = process.stdout.fd) => {
+      if (typeof dest === "object") {
+        dest.dest = normalizeDestFileDescriptor(dest.dest || process.stdout.fd);
+        return buildSafeSonicBoom(dest);
+      } else {
+        return buildSafeSonicBoom({ dest: normalizeDestFileDescriptor(dest), minLength: 0 });
+      }
+    };
+    module.exports.transport = require_transport();
+    module.exports.multistream = require_multistream();
+    module.exports.levels = mappings();
+    module.exports.stdSerializers = serializers;
+    module.exports.stdTimeFunctions = Object.assign({}, time);
+    module.exports.symbols = symbols;
+    module.exports.version = version;
+    module.exports.default = pino2;
+    module.exports.pino = pino2;
+  }
+});
+
 // node_modules/yaml/dist/nodes/identity.js
 var require_identity = __commonJS({
   "node_modules/yaml/dist/nodes/identity.js"(exports) {
@@ -28722,17 +33203,17 @@ var require_visit = __commonJS({
     visit.BREAK = BREAK;
     visit.SKIP = SKIP;
     visit.REMOVE = REMOVE;
-    function visit_(key, node, visitor, path3) {
-      const ctrl = callVisitor(key, node, visitor, path3);
+    function visit_(key, node, visitor, path4) {
+      const ctrl = callVisitor(key, node, visitor, path4);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path3, ctrl);
-        return visit_(key, ctrl, visitor, path3);
+        replaceNode(key, path4, ctrl);
+        return visit_(key, ctrl, visitor, path4);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node)) {
-          path3 = Object.freeze(path3.concat(node));
+          path4 = Object.freeze(path4.concat(node));
           for (let i = 0; i < node.items.length; ++i) {
-            const ci = visit_(i, node.items[i], visitor, path3);
+            const ci = visit_(i, node.items[i], visitor, path4);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -28743,13 +33224,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node)) {
-          path3 = Object.freeze(path3.concat(node));
-          const ck = visit_("key", node.key, visitor, path3);
+          path4 = Object.freeze(path4.concat(node));
+          const ck = visit_("key", node.key, visitor, path4);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node.key = null;
-          const cv = visit_("value", node.value, visitor, path3);
+          const cv = visit_("value", node.value, visitor, path4);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -28770,17 +33251,17 @@ var require_visit = __commonJS({
     visitAsync.BREAK = BREAK;
     visitAsync.SKIP = SKIP;
     visitAsync.REMOVE = REMOVE;
-    async function visitAsync_(key, node, visitor, path3) {
-      const ctrl = await callVisitor(key, node, visitor, path3);
+    async function visitAsync_(key, node, visitor, path4) {
+      const ctrl = await callVisitor(key, node, visitor, path4);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path3, ctrl);
-        return visitAsync_(key, ctrl, visitor, path3);
+        replaceNode(key, path4, ctrl);
+        return visitAsync_(key, ctrl, visitor, path4);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node)) {
-          path3 = Object.freeze(path3.concat(node));
+          path4 = Object.freeze(path4.concat(node));
           for (let i = 0; i < node.items.length; ++i) {
-            const ci = await visitAsync_(i, node.items[i], visitor, path3);
+            const ci = await visitAsync_(i, node.items[i], visitor, path4);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -28791,13 +33272,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node)) {
-          path3 = Object.freeze(path3.concat(node));
-          const ck = await visitAsync_("key", node.key, visitor, path3);
+          path4 = Object.freeze(path4.concat(node));
+          const ck = await visitAsync_("key", node.key, visitor, path4);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node.key = null;
-          const cv = await visitAsync_("value", node.value, visitor, path3);
+          const cv = await visitAsync_("value", node.value, visitor, path4);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -28824,23 +33305,23 @@ var require_visit = __commonJS({
       }
       return visitor;
     }
-    function callVisitor(key, node, visitor, path3) {
+    function callVisitor(key, node, visitor, path4) {
       if (typeof visitor === "function")
-        return visitor(key, node, path3);
+        return visitor(key, node, path4);
       if (identity.isMap(node))
-        return visitor.Map?.(key, node, path3);
+        return visitor.Map?.(key, node, path4);
       if (identity.isSeq(node))
-        return visitor.Seq?.(key, node, path3);
+        return visitor.Seq?.(key, node, path4);
       if (identity.isPair(node))
-        return visitor.Pair?.(key, node, path3);
+        return visitor.Pair?.(key, node, path4);
       if (identity.isScalar(node))
-        return visitor.Scalar?.(key, node, path3);
+        return visitor.Scalar?.(key, node, path4);
       if (identity.isAlias(node))
-        return visitor.Alias?.(key, node, path3);
+        return visitor.Alias?.(key, node, path4);
       return void 0;
     }
-    function replaceNode(key, path3, node) {
-      const parent = path3[path3.length - 1];
+    function replaceNode(key, path4, node) {
+      const parent = path4[path4.length - 1];
       if (identity.isCollection(parent)) {
         parent.items[key] = node;
       } else if (identity.isPair(parent)) {
@@ -29448,10 +33929,10 @@ var require_Collection = __commonJS({
     var createNode2 = require_createNode();
     var identity = require_identity();
     var Node = require_Node();
-    function collectionFromPath(schema, path3, value) {
+    function collectionFromPath(schema, path4, value) {
       let v = value;
-      for (let i = path3.length - 1; i >= 0; --i) {
-        const k = path3[i];
+      for (let i = path4.length - 1; i >= 0; --i) {
+        const k = path4[i];
         if (typeof k === "number" && Number.isInteger(k) && k >= 0) {
           const a = [];
           a[k] = v;
@@ -29470,7 +33951,7 @@ var require_Collection = __commonJS({
         sourceObjects: /* @__PURE__ */ new Map()
       });
     }
-    var isEmptyPath = (path3) => path3 == null || typeof path3 === "object" && !!path3[Symbol.iterator]().next().done;
+    var isEmptyPath = (path4) => path4 == null || typeof path4 === "object" && !!path4[Symbol.iterator]().next().done;
     var Collection = class extends Node.NodeBase {
       constructor(type, schema) {
         super(type);
@@ -29500,11 +33981,11 @@ var require_Collection = __commonJS({
        * be a Pair instance or a `{ key, value }` object, which may not have a key
        * that already exists in the map.
        */
-      addIn(path3, value) {
-        if (isEmptyPath(path3))
+      addIn(path4, value) {
+        if (isEmptyPath(path4))
           this.add(value);
         else {
-          const [key, ...rest] = path3;
+          const [key, ...rest] = path4;
           const node = this.get(key, true);
           if (identity.isCollection(node))
             node.addIn(rest, value);
@@ -29518,8 +33999,8 @@ var require_Collection = __commonJS({
        * Removes a value from the collection.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path3) {
-        const [key, ...rest] = path3;
+      deleteIn(path4) {
+        const [key, ...rest] = path4;
         if (rest.length === 0)
           return this.delete(key);
         const node = this.get(key, true);
@@ -29533,8 +34014,8 @@ var require_Collection = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path3, keepScalar) {
-        const [key, ...rest] = path3;
+      getIn(path4, keepScalar) {
+        const [key, ...rest] = path4;
         const node = this.get(key, true);
         if (rest.length === 0)
           return !keepScalar && identity.isScalar(node) ? node.value : node;
@@ -29552,8 +34033,8 @@ var require_Collection = __commonJS({
       /**
        * Checks if the collection includes a value with the key `key`.
        */
-      hasIn(path3) {
-        const [key, ...rest] = path3;
+      hasIn(path4) {
+        const [key, ...rest] = path4;
         if (rest.length === 0)
           return this.has(key);
         const node = this.get(key, true);
@@ -29563,8 +34044,8 @@ var require_Collection = __commonJS({
        * Sets a value in this collection. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path3, value) {
-        const [key, ...rest] = path3;
+      setIn(path4, value) {
+        const [key, ...rest] = path4;
         if (rest.length === 0) {
           this.set(key, value);
         } else {
@@ -32076,9 +36557,9 @@ var require_Document = __commonJS({
           this.contents.add(value);
       }
       /** Adds a value to the document. */
-      addIn(path3, value) {
+      addIn(path4, value) {
         if (assertCollection(this.contents))
-          this.contents.addIn(path3, value);
+          this.contents.addIn(path4, value);
       }
       /**
        * Create a new `Alias` node, ensuring that the target `node` has the required anchor.
@@ -32153,14 +36634,14 @@ var require_Document = __commonJS({
        * Removes a value from the document.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path3) {
-        if (Collection.isEmptyPath(path3)) {
+      deleteIn(path4) {
+        if (Collection.isEmptyPath(path4)) {
           if (this.contents == null)
             return false;
           this.contents = null;
           return true;
         }
-        return assertCollection(this.contents) ? this.contents.deleteIn(path3) : false;
+        return assertCollection(this.contents) ? this.contents.deleteIn(path4) : false;
       }
       /**
        * Returns item at `key`, or `undefined` if not found. By default unwraps
@@ -32175,10 +36656,10 @@ var require_Document = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path3, keepScalar) {
-        if (Collection.isEmptyPath(path3))
+      getIn(path4, keepScalar) {
+        if (Collection.isEmptyPath(path4))
           return !keepScalar && identity.isScalar(this.contents) ? this.contents.value : this.contents;
-        return identity.isCollection(this.contents) ? this.contents.getIn(path3, keepScalar) : void 0;
+        return identity.isCollection(this.contents) ? this.contents.getIn(path4, keepScalar) : void 0;
       }
       /**
        * Checks if the document includes a value with the key `key`.
@@ -32189,10 +36670,10 @@ var require_Document = __commonJS({
       /**
        * Checks if the document includes a value at `path`.
        */
-      hasIn(path3) {
-        if (Collection.isEmptyPath(path3))
+      hasIn(path4) {
+        if (Collection.isEmptyPath(path4))
           return this.contents !== void 0;
-        return identity.isCollection(this.contents) ? this.contents.hasIn(path3) : false;
+        return identity.isCollection(this.contents) ? this.contents.hasIn(path4) : false;
       }
       /**
        * Sets a value in this document. For `!!set`, `value` needs to be a
@@ -32209,13 +36690,13 @@ var require_Document = __commonJS({
        * Sets a value in this document. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path3, value) {
-        if (Collection.isEmptyPath(path3)) {
+      setIn(path4, value) {
+        if (Collection.isEmptyPath(path4)) {
           this.contents = value;
         } else if (this.contents == null) {
-          this.contents = Collection.collectionFromPath(this.schema, Array.from(path3), value);
+          this.contents = Collection.collectionFromPath(this.schema, Array.from(path4), value);
         } else if (assertCollection(this.contents)) {
-          this.contents.setIn(path3, value);
+          this.contents.setIn(path4, value);
         }
       }
       /**
@@ -34172,9 +38653,9 @@ var require_cst_visit = __commonJS({
     visit.BREAK = BREAK;
     visit.SKIP = SKIP;
     visit.REMOVE = REMOVE;
-    visit.itemAtPath = (cst, path3) => {
+    visit.itemAtPath = (cst, path4) => {
       let item = cst;
-      for (const [field, index] of path3) {
+      for (const [field, index] of path4) {
         const tok = item?.[field];
         if (tok && "items" in tok) {
           item = tok.items[index];
@@ -34183,23 +38664,23 @@ var require_cst_visit = __commonJS({
       }
       return item;
     };
-    visit.parentCollection = (cst, path3) => {
-      const parent = visit.itemAtPath(cst, path3.slice(0, -1));
-      const field = path3[path3.length - 1][0];
+    visit.parentCollection = (cst, path4) => {
+      const parent = visit.itemAtPath(cst, path4.slice(0, -1));
+      const field = path4[path4.length - 1][0];
       const coll = parent?.[field];
       if (coll && "items" in coll)
         return coll;
       throw new Error("Parent collection not found");
     };
-    function _visit(path3, item, visitor) {
-      let ctrl = visitor(item, path3);
+    function _visit(path4, item, visitor) {
+      let ctrl = visitor(item, path4);
       if (typeof ctrl === "symbol")
         return ctrl;
       for (const field of ["key", "value"]) {
         const token = item[field];
         if (token && "items" in token) {
           for (let i = 0; i < token.items.length; ++i) {
-            const ci = _visit(Object.freeze(path3.concat([[field, i]])), token.items[i], visitor);
+            const ci = _visit(Object.freeze(path4.concat([[field, i]])), token.items[i], visitor);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -34210,10 +38691,10 @@ var require_cst_visit = __commonJS({
             }
           }
           if (typeof ctrl === "function" && field === "key")
-            ctrl = ctrl(item, path3);
+            ctrl = ctrl(item, path4);
         }
       }
-      return typeof ctrl === "function" ? ctrl(item, path3) : ctrl;
+      return typeof ctrl === "function" ? ctrl(item, path4) : ctrl;
     }
     exports.visit = visit;
   }
@@ -42845,8 +47326,8 @@ function Text({ color, backgroundColor, dimColor = false, bold = false, italic =
 }
 
 // node_modules/ink/build/components/ErrorOverview.js
-var cleanupPath = (path3) => {
-  return path3?.replace(`file://${cwd()}/`, "");
+var cleanupPath = (path4) => {
+  return path4?.replace(`file://${cwd()}/`, "");
 };
 var stackUtils = new import_stack_utils.default({
   cwd: cwd(),
@@ -44565,6 +49046,7 @@ var package_default = {
     "cli-highlight": "^2.1.11",
     ink: "^6.2.3",
     marked: "^15.0.12",
+    pino: "^10.3.1",
     react: "^19.0.0",
     uuid: "^11.1.0",
     yaml: "^2.8.3"
@@ -44932,7 +49414,7 @@ function parseCliArgs(argv) {
 
 // src/app.tsx
 var import_react34 = __toESM(require_react(), 1);
-import { randomUUID as randomUUID2 } from "crypto";
+import { randomUUID as randomUUID3 } from "crypto";
 
 // src/components/ChatComposer.tsx
 var import_react29 = __toESM(require_react(), 1);
@@ -49072,8 +53554,8 @@ var DefaultAgentCardResolver = class {
    * 2) path from options
    * 3) .well-known/agent-card.json
    */
-  async resolve(baseUrl, path3) {
-    const agentCardUrl = new URL(path3 ?? this.options?.path ?? AGENT_CARD_PATH, baseUrl);
+  async resolve(baseUrl, path4) {
+    const agentCardUrl = new URL(path4 ?? this.options?.path ?? AGENT_CARD_PATH, baseUrl);
     const response = await this.fetchImpl(agentCardUrl);
     if (!response.ok) {
       throw new Error(`Failed to fetch Agent Card from ${agentCardUrl}: ${response.status}`);
@@ -49495,10 +53977,10 @@ var RestTransport = class _RestTransport {
       queryParams.set("historyLength", String(params.historyLength));
     }
     const queryString = queryParams.toString();
-    const path3 = `/v1/tasks/${encodeURIComponent(params.id)}${queryString ? `?${queryString}` : ""}`;
+    const path4 = `/v1/tasks/${encodeURIComponent(params.id)}${queryString ? `?${queryString}` : ""}`;
     const response = await this._sendRequest(
       "GET",
-      path3,
+      path4,
       void 0,
       options,
       void 0,
@@ -49542,8 +54024,8 @@ var RestTransport = class _RestTransport {
       Accept: acceptHeader
     };
   }
-  async _sendRequest(method, path3, body, options, requestType, responseType) {
-    const url = `${this.endpoint}${path3}`;
+  async _sendRequest(method, path4, body, options, requestType, responseType) {
+    const url = `${this.endpoint}${path4}`;
     const requestInit = {
       method,
       headers: this._buildHeaders(options),
@@ -49552,14 +54034,14 @@ var RestTransport = class _RestTransport {
     if (body !== void 0 && method !== "GET") {
       if (!requestType) {
         throw new Error(
-          `Bug: Request body provided for ${method} ${path3} but no toJson serializer provided.`
+          `Bug: Request body provided for ${method} ${path4} but no toJson serializer provided.`
         );
       }
       requestInit.body = JSON.stringify(requestType.toJSON(body));
     }
     const response = await this._fetch(url, requestInit);
     if (!response.ok) {
-      await this._handleErrorResponse(response, path3);
+      await this._handleErrorResponse(response, path4);
     }
     if (response.status === 204 || !responseType) {
       return void 0;
@@ -49567,7 +54049,7 @@ var RestTransport = class _RestTransport {
     const result = await response.json();
     return responseType.fromJSON(result);
   }
-  async _handleErrorResponse(response, path3) {
+  async _handleErrorResponse(response, path4) {
     let errorBodyText = "(empty or non-JSON response)";
     let errorBody;
     try {
@@ -49577,7 +54059,7 @@ var RestTransport = class _RestTransport {
       }
     } catch (e) {
       throw new Error(
-        `HTTP error for ${path3}! Status: ${response.status} ${response.statusText}. Response: ${errorBodyText}`,
+        `HTTP error for ${path4}! Status: ${response.status} ${response.statusText}. Response: ${errorBodyText}`,
         { cause: e }
       );
     }
@@ -49585,11 +54067,11 @@ var RestTransport = class _RestTransport {
       throw _RestTransport.mapToError(errorBody);
     }
     throw new Error(
-      `HTTP error for ${path3}! Status: ${response.status} ${response.statusText}. Response: ${errorBodyText}`
+      `HTTP error for ${path4}! Status: ${response.status} ${response.statusText}. Response: ${errorBodyText}`
     );
   }
-  async *_sendStreamingRequest(path3, body, options) {
-    const url = `${this.endpoint}${path3}`;
+  async *_sendStreamingRequest(path4, body, options) {
+    const url = `${this.endpoint}${path4}`;
     const requestInit = {
       method: "POST",
       headers: this._buildHeaders(options, "text/event-stream"),
@@ -49600,7 +54082,7 @@ var RestTransport = class _RestTransport {
     }
     const response = await this._fetch(url, requestInit);
     if (!response.ok) {
-      await this._handleErrorResponse(response, path3);
+      await this._handleErrorResponse(response, path4);
     }
     const contentType = response.headers.get("Content-Type");
     if (!contentType?.startsWith("text/event-stream")) {
@@ -49767,8 +54249,8 @@ var ClientFactory = class {
    * const client3 = await factory.createFromUrl('https://example.com/my-agent-card.json', ''); // specify full URL and set path to empty
    * ```
    */
-  async createFromUrl(baseUrl, path3) {
-    const agentCard = await this.agentCardResolver.resolve(baseUrl, path3);
+  async createFromUrl(baseUrl, path4) {
+    const agentCard = await this.agentCardResolver.resolve(baseUrl, path4);
     return this.createFromAgentCard(agentCard);
   }
 };
@@ -49912,8 +54394,8 @@ function buildDirectEndpoints(url) {
     rpcUrl: `${normalized}/`
   };
 }
-function formatProxyPath(agentId, path3 = "") {
-  const cleanPath = path3.replace(/^\/+/, "");
+function formatProxyPath(agentId, path4 = "") {
+  const cleanPath = path4.replace(/^\/+/, "");
   return `/agents/${agentId}/${cleanPath}`;
 }
 function buildEndpointConfig(options) {
@@ -50063,6 +54545,177 @@ function buildMessageParams(parts, contextId, taskId, pushNotificationConfig) {
   };
 }
 
+// src/lib/sessionLogger.ts
+var import_pino = __toESM(require_pino(), 1);
+import { randomUUID as randomUUID2 } from "crypto";
+import { mkdirSync as mkdirSync2 } from "fs";
+import path2 from "path";
+var LOG_DIRECTORY_NAME = "chat-session-logs";
+var REDACTED = "[REDACTED]";
+var MAX_STRING_LENGTH = 4e3;
+var MAX_ARRAY_LENGTH = 50;
+var MAX_OBJECT_DEPTH = 8;
+function isRecord(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+function resolveChatSessionLogsDirectory(env3 = process.env, homeDirectory) {
+  return path2.join(resolveAionConfigDirectory(env3, homeDirectory), LOG_DIRECTORY_NAME);
+}
+function formatLogTimestamp(value) {
+  return value.toISOString().replace(/[:.]/gu, "-");
+}
+function resolveChatSessionLogFilePath({
+  env: env3 = process.env,
+  homeDirectory,
+  now = /* @__PURE__ */ new Date(),
+  chatSessionId = randomUUID2()
+}) {
+  return path2.join(
+    resolveChatSessionLogsDirectory(env3, homeDirectory),
+    `${formatLogTimestamp(now)}_${chatSessionId}.jsonl`
+  );
+}
+function logLevelForEnvironment(environmentId) {
+  return environmentId === "development" ? "debug" : "warn";
+}
+function isSensitiveKey(key) {
+  return /authorization|cookie|token|secret|password|keyring/iu.test(key);
+}
+function redactString(value) {
+  const redacted = value.replace(/Bearer\s+[A-Za-z0-9._~+/-]+=*/giu, `Bearer ${REDACTED}`).replace(/([?&](?:access|refresh)?_?token=)[^&\s]+/giu, `$1${REDACTED}`).replace(/((?:access|refresh)_token=)[^&\s]+/giu, `$1${REDACTED}`);
+  if (redacted.length <= MAX_STRING_LENGTH) {
+    return redacted;
+  }
+  return `${redacted.slice(0, MAX_STRING_LENGTH)}...`;
+}
+function sanitizeValue(value, seen, depth) {
+  if (value === null || value === void 0) {
+    return value;
+  }
+  if (typeof value === "string") {
+    return redactString(value);
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "bigint") {
+    return value.toString();
+  }
+  if (typeof value === "function" || typeof value === "symbol") {
+    return `[${typeof value}]`;
+  }
+  if (value instanceof Error) {
+    return {
+      name: value.name,
+      message: redactString(value.message)
+    };
+  }
+  if (value instanceof URL) {
+    return redactString(value.toString());
+  }
+  if (value instanceof Headers) {
+    return sanitizeValue(Object.fromEntries(value.entries()), seen, depth + 1);
+  }
+  if (depth >= MAX_OBJECT_DEPTH) {
+    return "[MaxDepth]";
+  }
+  if (seen.has(value)) {
+    return "[Circular]";
+  }
+  seen.add(value);
+  if (Array.isArray(value)) {
+    const items = value.slice(0, MAX_ARRAY_LENGTH).map((item) => sanitizeValue(item, seen, depth + 1));
+    if (value.length > MAX_ARRAY_LENGTH) {
+      items.push(`... ${value.length - MAX_ARRAY_LENGTH} more items`);
+    }
+    return items;
+  }
+  if (isRecord(value)) {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [
+        key,
+        isSensitiveKey(key) ? REDACTED : sanitizeValue(entry, seen, depth + 1)
+      ])
+    );
+  }
+  return String(value);
+}
+function sanitizeLogPayload(payload = {}) {
+  return sanitizeValue(payload, /* @__PURE__ */ new WeakSet(), 0);
+}
+function createDisabledLogger(chatSessionId, logFilePath, level) {
+  const noop2 = () => void 0;
+  return {
+    chatSessionId,
+    logFilePath,
+    level,
+    debug: noop2,
+    info: noop2,
+    warn: noop2,
+    error: noop2,
+    flush: noop2
+  };
+}
+function writeEvent(logger, level, event, data) {
+  logger[level]({
+    event,
+    ...data ? { data: sanitizeLogPayload(data) } : {}
+  });
+}
+function createChatSessionLogger(options) {
+  const chatSessionId = options.chatSessionId ?? randomUUID2();
+  const logFilePath = resolveChatSessionLogFilePath({
+    env: options.env,
+    homeDirectory: options.homeDirectory,
+    now: options.now,
+    chatSessionId
+  });
+  const level = logLevelForEnvironment(options.environmentId);
+  try {
+    mkdirSync2(path2.dirname(logFilePath), { recursive: true });
+    const destination = import_pino.default.destination({
+      dest: logFilePath,
+      sync: options.sync ?? false
+    });
+    const logger = (0, import_pino.default)(
+      {
+        level,
+        base: {
+          chatSessionId,
+          environmentId: options.environmentId
+        },
+        timestamp: import_pino.default.stdTimeFunctions.isoTime,
+        formatters: {
+          level(label) {
+            return { level: label };
+          }
+        }
+      },
+      destination
+    );
+    return {
+      logger: {
+        chatSessionId,
+        logFilePath,
+        level,
+        debug: (event, data) => writeEvent(logger, "debug", event, data),
+        info: (event, data) => writeEvent(logger, "info", event, data),
+        warn: (event, data) => writeEvent(logger, "warn", event, data),
+        error: (event, data) => writeEvent(logger, "error", event, data),
+        flush: () => {
+          destination.flushSync?.();
+        }
+      }
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      logger: createDisabledLogger(chatSessionId, logFilePath, level),
+      warning: `Aion Chat could not create run-session log: ${message}`
+    };
+  }
+}
+
 // src/lib/graphql/client.ts
 var GraphQLRequestError = class extends Error {
   status;
@@ -50078,34 +54731,107 @@ function formatGraphQLErrors(errors) {
   const messages = errors.map((error) => error.message?.trim()).filter((message) => Boolean(message));
   return messages.length > 0 ? messages.join("; ") : "GraphQL request failed";
 }
+function inferGraphQLOperationName(query) {
+  return /\b(?:query|mutation|subscription)\s+([A-Za-z_][A-Za-z0-9_]*)/u.exec(
+    query
+  )?.[1] ?? "GraphQL";
+}
+function summarizeGraphQLData(data) {
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    return { hasData: data !== null && data !== void 0 };
+  }
+  return {
+    hasData: true,
+    dataKeys: Object.keys(data)
+  };
+}
+function sanitizeGraphQLVariables(variables) {
+  if (!variables || typeof variables !== "object" || Array.isArray(variables)) {
+    return {};
+  }
+  return sanitizeLogPayload(variables);
+}
 async function executeGraphQL(options) {
   const fetchImpl = options.fetchImpl ?? fetch;
+  const url = options.url ?? getGraphQLHttpUrl(options.environmentId);
+  const operationName = options.operationName ?? inferGraphQLOperationName(options.query);
+  const startedAt = Date.now();
   const headers = new Headers({
     "Content-Type": "application/json"
   });
   if (options.accessToken) {
     headers.set("Authorization", `Bearer ${options.accessToken}`);
   }
-  const response = await fetchImpl(options.url ?? getGraphQLHttpUrl(options.environmentId), {
-    method: "POST",
-    headers,
-    body: JSON.stringify({
-      query: options.query,
-      variables: options.variables ?? {}
-    })
+  options.logger?.debug("graphql.request", {
+    operationName,
+    url,
+    variables: sanitizeGraphQLVariables(options.variables)
   });
+  let response;
+  try {
+    response = await fetchImpl(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        query: options.query,
+        variables: options.variables ?? {}
+      })
+    });
+  } catch (error) {
+    options.logger?.warn("graphql.request.failed", {
+      operationName,
+      url,
+      durationMs: Date.now() - startedAt,
+      error
+    });
+    throw error;
+  }
   if (!response.ok) {
+    options.logger?.warn("graphql.response.http_error", {
+      operationName,
+      url,
+      status: response.status,
+      statusText: response.statusText,
+      durationMs: Date.now() - startedAt
+    });
     throw new GraphQLRequestError(
       `GraphQL HTTP request failed: ${response.status} ${response.statusText}`,
       { status: response.status }
     );
   }
-  const payload = await response.json();
+  let payload;
+  try {
+    payload = await response.json();
+  } catch (error) {
+    options.logger?.warn("graphql.response.invalid_json", {
+      operationName,
+      url,
+      status: response.status,
+      durationMs: Date.now() - startedAt,
+      error
+    });
+    throw error;
+  }
   if (payload.errors && payload.errors.length > 0) {
+    options.logger?.warn("graphql.response.errors", {
+      operationName,
+      url,
+      status: response.status,
+      durationMs: Date.now() - startedAt,
+      errors: payload.errors,
+      ...summarizeGraphQLData(payload.data)
+    });
     throw new GraphQLRequestError(formatGraphQLErrors(payload.errors), {
       errors: payload.errors
     });
   }
+  options.logger?.debug("graphql.response", {
+    operationName,
+    url,
+    status: response.status,
+    durationMs: Date.now() - startedAt,
+    ...summarizeGraphQLData(payload.data)
+  });
   return payload;
 }
 
@@ -50144,11 +54870,13 @@ function normalizeOptionalString(value) {
 async function runLoginBootstrap(options) {
   const response = await executeGraphQL({
     environmentId: options.environmentId,
+    operationName: "LoginBootstrap",
     query: LOGIN_BOOTSTRAP_QUERY,
     variables: { token: options.accessToken },
     accessToken: options.accessToken,
     fetchImpl: options.fetchImpl,
-    url: options.graphQLUrl
+    url: options.graphQLUrl,
+    logger: options.logger
   });
   const login = response.data?.login ?? null;
   const route = normalizeNextRoutePath(login?.nextRoute);
@@ -50242,37 +54970,69 @@ function normalizeIdentity(identity) {
     updatedAt: identity.updatedAt
   };
 }
+function summarizeRegistryIdentity(identity) {
+  return {
+    id: identity.id,
+    name: identity.name,
+    atName: identity.atName,
+    a2aUrl: identity.a2aUrl,
+    updatedAt: identity.updatedAt
+  };
+}
+function summarizeCurrentUser(user) {
+  return {
+    userId: user.id,
+    homeOrganizationId: user.homeOrganization?.id,
+    organizationId: user.agentIdentity.organizationId,
+    agentIdentityId: user.agentIdentity.id,
+    agentIdentityName: user.agentIdentity.name,
+    agentIdentityAtName: user.agentIdentity.atName,
+    agentIdentityType: user.agentIdentity.agentType,
+    agentIdentityHasA2aUrl: Boolean(user.agentIdentity.a2aUrl)
+  };
+}
 async function fetchRegistryAgentIdentities(options) {
   const graphQLUrl = options.graphQLUrl ?? getGraphQLHttpUrl(options.environmentId);
-  await runLoginBootstrap({
+  const bootstrap = await runLoginBootstrap({
     environmentId: options.environmentId,
     accessToken: options.accessToken,
     fetchImpl: options.fetchImpl,
-    graphQLUrl
+    graphQLUrl,
+    logger: options.logger
+  });
+  options.logger?.debug("registry.login_bootstrap.loaded", {
+    nextRoutePath: bootstrap.nextRoutePath,
+    hasLoginEmail: Boolean(bootstrap.loginEmail),
+    hasLoginName: Boolean(bootstrap.loginName)
   });
   const currentUser = await executeGraphQL({
     environmentId: options.environmentId,
     url: graphQLUrl,
+    operationName: "CurrentUser",
     query: CURRENT_USER_QUERY,
     variables: {},
     accessToken: options.accessToken,
-    fetchImpl: options.fetchImpl
+    fetchImpl: options.fetchImpl,
+    logger: options.logger
   });
   const user = currentUser.data?.user;
   if (!user) {
     throw new Error("Aion registry did not return the current user.");
   }
+  options.logger?.debug("registry.current_user.loaded", summarizeCurrentUser(user));
   const organizationId = user.homeOrganization?.id ?? user.agentIdentity.organizationId;
   const catalog = await executeGraphQL({
     environmentId: options.environmentId,
     url: graphQLUrl,
+    operationName: "AgentCatalogIdentities",
     query: AGENT_CATALOG_IDENTITIES_QUERY,
     variables: {
       organizationId,
       networkTypes: ["A2A"]
     },
     accessToken: options.accessToken,
-    fetchImpl: options.fetchImpl
+    fetchImpl: options.fetchImpl,
+    logger: options.logger
   });
   const identities = /* @__PURE__ */ new Map();
   const personalIdentity = normalizeIdentity(user.agentIdentity);
@@ -50285,11 +55045,18 @@ async function fetchRegistryAgentIdentities(options) {
       identities.set(identity.id, identity);
     }
   }
-  return [...identities.values()].sort(
+  const resolvedIdentities = [...identities.values()].sort(
     (left, right) => (left.atName ?? left.name ?? left.id).localeCompare(
       right.atName ?? right.name ?? right.id
     )
   );
+  options.logger?.debug("registry.agent_identities.loaded", {
+    organizationId,
+    catalogIdentityCount: catalog.data?.agentIdentityDetails?.length ?? 0,
+    resolvedIdentityCount: resolvedIdentities.length,
+    identities: resolvedIdentities.map(summarizeRegistryIdentity)
+  });
+  return resolvedIdentities;
 }
 
 // src/lib/agents/discovery.ts
@@ -50342,21 +55109,89 @@ function resolveEndpoint(rootUrl, endpoint) {
 function cardUrlForEndpoint(endpointUrl) {
   return endpointUrl.endsWith(AGENT_CARD_PATH3) ? endpointUrl : `${trimTrailingSlash(endpointUrl)}${AGENT_CARD_PATH3}`;
 }
-async function fetchJson(url, fetchImpl) {
-  const response = await fetchImpl(url);
+function summarizeSourceForLog(source) {
+  return {
+    sourceKey: source.sourceKey,
+    type: source.type,
+    url: source.url,
+    description: source.description,
+    enabled: source.enabled,
+    status: source.status,
+    lastError: source.lastError,
+    isDefault: source.isDefault,
+    resolveMode: "resolveMode" in source ? source.resolveMode : void 0,
+    transient: "transient" in source ? source.transient : void 0
+  };
+}
+function summarizeAgentForLog(agent) {
+  return {
+    agentKey: agent.agentKey,
+    agentId: agent.agentId,
+    id: agent.id,
+    sourceKey: agent.sourceKey,
+    agentCardUrl: agent.agentCardUrl,
+    agentCardName: agent.agentCardName,
+    agentHandle: agent.agentHandle,
+    status: agent.status,
+    connectionUrl: agent.connectionUrl
+  };
+}
+async function fetchJson(url, fetchImpl, logOptions) {
+  const startedAt = Date.now();
+  logOptions?.logger?.debug(`${logOptions.eventPrefix}.request`, {
+    url,
+    ...logOptions.context
+  });
+  let response;
+  try {
+    response = await fetchImpl(url);
+  } catch (error) {
+    logOptions?.logger?.warn(`${logOptions.eventPrefix}.failed`, {
+      url,
+      durationMs: Date.now() - startedAt,
+      error,
+      ...logOptions.context
+    });
+    throw error;
+  }
   if (!response.ok) {
+    logOptions?.logger?.warn(`${logOptions.eventPrefix}.http_error`, {
+      url,
+      status: response.status,
+      statusText: response.statusText,
+      durationMs: Date.now() - startedAt,
+      ...logOptions.context
+    });
     return void 0;
   }
-  return await response.json();
+  try {
+    const payload = await response.json();
+    logOptions?.logger?.debug(`${logOptions.eventPrefix}.response`, {
+      url,
+      status: response.status,
+      durationMs: Date.now() - startedAt,
+      ...logOptions.context
+    });
+    return payload;
+  } catch (error) {
+    logOptions?.logger?.warn(`${logOptions.eventPrefix}.invalid_json`, {
+      url,
+      status: response.status,
+      durationMs: Date.now() - startedAt,
+      error,
+      ...logOptions.context
+    });
+    throw error;
+  }
 }
-function createDiscoveredAgent(source, agentId, path3, agentCardUrl, connectionUrl, connectionAgentId, now, agentCard) {
+function createDiscoveredAgent(source, agentId, path4, agentCardUrl, connectionUrl, connectionAgentId, now, agentCard) {
   const identifier = agentId ?? agentCard?.name ?? agentCardUrl;
   const agentKey = createAgentKey(source.sourceKey, identifier);
   return {
     agentKey,
     ...agentId ? { agentId } : {},
     id: agentId ?? agentCard?.name ?? agentKey,
-    path: path3,
+    path: path4,
     sourceKey: source.sourceKey,
     source,
     agentCardUrl,
@@ -50369,9 +55204,13 @@ function createDiscoveredAgent(source, agentId, path3, agentCardUrl, connectionU
     ...agentCard ? { agentCard } : {}
   };
 }
-async function discoverManifestSource(source, fetchImpl, now) {
+async function discoverManifestSource(source, fetchImpl, now, logger) {
   const manifestUrl = getManifestUrl(source.url);
-  const manifest = await fetchJson(manifestUrl, fetchImpl);
+  const manifest = await fetchJson(manifestUrl, fetchImpl, {
+    logger,
+    eventPrefix: "manifest",
+    context: { sourceKey: source.sourceKey }
+  });
   if (!manifest) {
     throw new Error(`Failed to fetch manifest from ${manifestUrl}`);
   }
@@ -50388,7 +55227,15 @@ async function discoverManifestSource(source, fetchImpl, now) {
   for (const [agentId, endpoint] of Object.entries(manifest.endpoints ?? {})) {
     const endpointUrl = resolveEndpoint(rootUrl, endpoint);
     const agentCardUrl = cardUrlForEndpoint(endpointUrl);
-    const agentCard = await fetchJson(agentCardUrl, fetchImpl);
+    const agentCard = await fetchJson(agentCardUrl, fetchImpl, {
+      logger,
+      eventPrefix: "agent_card",
+      context: {
+        sourceKey: source.sourceKey,
+        agentId,
+        endpointUrl
+      }
+    });
     agents.push(
       createDiscoveredAgent(
         resolvedSource,
@@ -50404,9 +55251,13 @@ async function discoverManifestSource(source, fetchImpl, now) {
   }
   return { source: resolvedSource, agents };
 }
-async function discoverAgentCardSource(source, fetchImpl, now) {
+async function discoverAgentCardSource(source, fetchImpl, now, logger) {
   const agentCardUrl = getAgentCardUrl(source.url);
-  const agentCard = await fetchJson(agentCardUrl, fetchImpl);
+  const agentCard = await fetchJson(agentCardUrl, fetchImpl, {
+    logger,
+    eventPrefix: "agent_card",
+    context: { sourceKey: source.sourceKey }
+  });
   if (!agentCard) {
     throw new Error(`Failed to fetch agent card from ${agentCardUrl}`);
   }
@@ -50484,21 +55335,33 @@ async function fetchRegistryIdentitiesWithToken(source, accessToken, options) {
     environmentId: options.environmentId,
     accessToken,
     graphQLUrl: getGraphQLHttpUrlForBaseUrl(source.url),
-    fetchImpl: options.graphQLFetchImpl ?? fetch
+    fetchImpl: options.graphQLFetchImpl ?? fetch,
+    logger: options.logger
   });
 }
 async function discoverRegistrySource(source, fetchImpl, now, options) {
   let accessToken;
   try {
     accessToken = await options?.controlPlaneAccessTokenProvider?.();
-  } catch {
+  } catch (error) {
+    options?.logger?.warn("registry.auth.token_failed", {
+      sourceKey: source.sourceKey,
+      error
+    });
     return registryUnavailableResult(source, now, REGISTRY_AUTH_FAILED_MESSAGE);
   }
   if (!accessToken || !options) {
+    options?.logger?.warn("registry.auth.token_missing", {
+      sourceKey: source.sourceKey
+    });
     return registryUnavailableResult(source, now, REGISTRY_LOGIN_REQUIRED_MESSAGE);
   }
   let identities;
   try {
+    options.logger?.debug("registry.identities.requested", {
+      sourceKey: source.sourceKey,
+      graphQLUrl: getGraphQLHttpUrlForBaseUrl(source.url)
+    });
     identities = await fetchRegistryIdentitiesWithToken(
       source,
       accessToken,
@@ -50506,7 +55369,14 @@ async function discoverRegistrySource(source, fetchImpl, now, options) {
     );
   } catch (error) {
     if (isRegistryAuthenticationError(error)) {
+      options.logger?.warn("registry.auth.failed", {
+        sourceKey: source.sourceKey,
+        error
+      });
       try {
+        options.logger?.debug("registry.auth.refresh_requested", {
+          sourceKey: source.sourceKey
+        });
         const refreshedAccessToken = await options.controlPlaneAccessTokenProvider?.({ forceRefresh: true });
         if (refreshedAccessToken && refreshedAccessToken !== accessToken) {
           identities = await fetchRegistryIdentitiesWithToken(
@@ -50516,6 +55386,10 @@ async function discoverRegistrySource(source, fetchImpl, now, options) {
           );
         }
       } catch (refreshError) {
+        options.logger?.warn("registry.auth.refresh_failed", {
+          sourceKey: source.sourceKey,
+          error: refreshError
+        });
         return registryUnavailableResult(
           source,
           now,
@@ -50524,6 +55398,10 @@ async function discoverRegistrySource(source, fetchImpl, now, options) {
       }
     }
     if (!identities) {
+      options.logger?.warn("registry.identities.failed", {
+        sourceKey: source.sourceKey,
+        error
+      });
       return registryUnavailableResult(
         source,
         now,
@@ -50531,6 +55409,16 @@ async function discoverRegistrySource(source, fetchImpl, now, options) {
       );
     }
   }
+  options.logger?.debug("registry.identities.resolved", {
+    sourceKey: source.sourceKey,
+    identityCount: identities.length,
+    identities: identities.map((identity) => ({
+      id: identity.id,
+      name: identity.name,
+      atName: identity.atName,
+      a2aUrl: identity.a2aUrl
+    }))
+  });
   const resolvedSource = {
     ...source,
     type: "registry",
@@ -50541,7 +55429,16 @@ async function discoverRegistrySource(source, fetchImpl, now, options) {
   const agents = [];
   for (const identity of identities) {
     const agentCardUrl = cardUrlForEndpoint(identity.a2aUrl);
-    const agentCard = await fetchJson(agentCardUrl, fetchImpl);
+    const agentCard = await fetchJson(agentCardUrl, fetchImpl, {
+      logger: options.logger,
+      eventPrefix: "agent_card",
+      context: {
+        sourceKey: source.sourceKey,
+        identityId: identity.id,
+        identityName: identity.name,
+        identityAtName: identity.atName
+      }
+    });
     if (!agentCard) {
       continue;
     }
@@ -50571,16 +55468,26 @@ async function discoverSource(source, fetchImpl, now, options) {
   }
   if (source.resolveMode === "auto") {
     try {
-      return await discoverManifestSource(source, fetchImpl, now);
+      return await discoverManifestSource(
+        source,
+        fetchImpl,
+        now,
+        options?.logger
+      );
     } catch {
-      return discoverAgentCardSource(source, fetchImpl, now);
+      return discoverAgentCardSource(
+        source,
+        fetchImpl,
+        now,
+        options?.logger
+      );
     }
   }
   if (source.type === "manifest") {
-    return discoverManifestSource(source, fetchImpl, now);
+    return discoverManifestSource(source, fetchImpl, now, options?.logger);
   }
   if (source.type === "agentCard") {
-    return discoverAgentCardSource(source, fetchImpl, now);
+    return discoverAgentCardSource(source, fetchImpl, now, options?.logger);
   }
   if (source.type === "registry") {
     return discoverRegistrySource(source, fetchImpl, now, options);
@@ -50593,13 +55500,24 @@ async function discoverAgentSources(sources, fetchImpl = fetch, options) {
   const agents = [];
   const errors = [];
   for (const source of sources) {
+    options?.logger?.debug("source.discovery.started", summarizeSourceForLog(source));
     try {
       const sourceFetchImpl = options?.sourceFetchImpl?.(source) ?? fetchImpl;
       const result = await discoverSource(source, sourceFetchImpl, now, options);
       resolvedSources.push(result.source);
       agents.push(...result.agents);
       if (result.error) {
+        options?.logger?.warn("source.discovery.failed", {
+          ...summarizeSourceForLog(result.source),
+          error: result.error
+        });
         errors.push(result);
+      } else {
+        options?.logger?.debug("source.discovery.completed", {
+          ...summarizeSourceForLog(result.source),
+          agentCount: result.agents.length,
+          agents: result.agents.map(summarizeAgentForLog)
+        });
       }
     } catch (error) {
       const message = source.type === "registry" ? registryDiscoveryErrorMessage(error) : error instanceof Error ? error.message : String(error);
@@ -50609,6 +55527,11 @@ async function discoverAgentSources(sources, fetchImpl = fetch, options) {
         lastCheckedAt: now,
         lastError: message
       };
+      options?.logger?.warn("source.discovery.failed", {
+        ...summarizeSourceForLog(failedSource),
+        error,
+        message
+      });
       resolvedSources.push(failedSource);
       errors.push({
         source: failedSource,
@@ -50673,23 +55596,23 @@ function selectDiscoveredAgent(agents, options) {
 }
 
 // src/lib/agents/sessionStore.ts
-import { mkdirSync as mkdirSync2, readFileSync as readFileSync4, readdirSync as readdirSync2, writeFileSync as writeFileSync2 } from "fs";
-import path2 from "path";
+import { mkdirSync as mkdirSync3, readFileSync as readFileSync4, readdirSync as readdirSync2, writeFileSync as writeFileSync2 } from "fs";
+import path3 from "path";
 function resolveSessionsDirectory(env3 = process.env, homeDirectory) {
-  return path2.join(resolveAionConfigDirectory(env3, homeDirectory), "sessions");
+  return path3.join(resolveAionConfigDirectory(env3, homeDirectory), "sessions");
 }
 function safeSessionPathSegment(value) {
   return `${slugKey(value)}-${hashValue(value).slice(0, 8)}`;
 }
 function resolveAgentSessionsDirectory(environment, agentKey, sessionsDirectory = resolveSessionsDirectory()) {
-  return path2.join(
+  return path3.join(
     sessionsDirectory,
     safeSessionPathSegment(environment),
     safeSessionPathSegment(agentKey)
   );
 }
 function resolveSessionFilePath(environment, agentKey, contextId, sessionsDirectory = resolveSessionsDirectory()) {
-  return path2.join(
+  return path3.join(
     resolveAgentSessionsDirectory(environment, agentKey, sessionsDirectory),
     `${safeSessionPathSegment(contextId)}.json`
   );
@@ -50711,11 +55634,15 @@ function saveCompletedExchange(snapshot, sessionsDirectory = resolveSessionsDire
     );
     const existing = readSessionFile(filePath);
     const now = (/* @__PURE__ */ new Date()).toISOString();
+    const chatSessionId = snapshot.chatSessionId ?? existing?.chatSessionId;
+    const chatSessionLogPath = snapshot.chatSessionLogPath ?? existing?.chatSessionLogPath;
     const nextSession = {
       schemaVersion: 1,
       environment: snapshot.environment,
       agentKey: snapshot.agentKey,
       contextId: snapshot.contextId,
+      ...chatSessionId ? { chatSessionId } : {},
+      ...chatSessionLogPath ? { chatSessionLogPath } : {},
       createdAt: existing?.createdAt ?? now,
       lastUpdatedAt: now,
       localTurnCount: (existing?.localTurnCount ?? 0) + 1,
@@ -50723,7 +55650,7 @@ function saveCompletedExchange(snapshot, sessionsDirectory = resolveSessionsDire
       ...existing?.summary ? { summary: existing.summary } : {},
       messages: snapshot.messages
     };
-    mkdirSync2(path2.dirname(filePath), { recursive: true });
+    mkdirSync3(path3.dirname(filePath), { recursive: true });
     writeFileSync2(filePath, `${JSON.stringify(nextSession, null, 2)}
 `, "utf8");
     return void 0;
@@ -50930,17 +55857,17 @@ function isTerminalTaskState(state) {
 function isObject3(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
-function readString(value, key, path3) {
+function readString(value, key, path4) {
   const next = value[key];
   if (typeof next !== "string" || !next.trim()) {
-    throw new Error(`Invalid CLI auth config: missing ${path3}`);
+    throw new Error(`Invalid CLI auth config: missing ${path4}`);
   }
   return next;
 }
-function readBoolean(value, key, path3) {
+function readBoolean(value, key, path4) {
   const next = value[key];
   if (typeof next !== "boolean") {
-    throw new Error(`Invalid CLI auth config: missing ${path3}`);
+    throw new Error(`Invalid CLI auth config: missing ${path4}`);
   }
   return next;
 }
@@ -51358,6 +56285,93 @@ async function getStoredAccessToken(environmentId, options = {}) {
 var import_jsx_runtime10 = __toESM(require_jsx_runtime(), 1);
 var NO_AGENT_MESSAGE_NOTICE = "Task completed with no agent message.";
 var NOTIFICATION_TTL_MS = 12e3;
+function summarizeOptionsForLog(options) {
+  return {
+    hasAgentEndpointUrl: Boolean(options.url),
+    agentEndpointUrl: options.url,
+    agentId: options.agentId,
+    pushNotifications: options.pushNotifications,
+    pushReceiverConfigured: Boolean(options.pushReceiver),
+    headers: Object.keys(options.headers ?? {}),
+    hasToken: Boolean(options.token)
+  };
+}
+function summarizePartForLog(part) {
+  const value = part;
+  const file = value.file;
+  return {
+    kind: value.kind,
+    text: typeof value.text === "string" ? value.text : void 0,
+    fileName: typeof file?.name === "string" ? file.name : void 0,
+    fileMimeType: typeof file?.mimeType === "string" ? file.mimeType : void 0,
+    fileUri: typeof file?.uri === "string" ? file.uri : void 0
+  };
+}
+function summarizeMessageForLog(message) {
+  return {
+    kind: message.kind,
+    messageId: message.messageId,
+    role: message.role,
+    contextId: message.contextId,
+    taskId: message.taskId,
+    partCount: message.parts.length,
+    parts: message.parts.map(summarizePartForLog)
+  };
+}
+function summarizeTaskForLog(task) {
+  const messages = getTaskMessages(task);
+  return {
+    kind: task.kind,
+    taskId: task.id,
+    contextId: task.contextId,
+    status: task.status.state,
+    artifactCount: task.artifacts?.length ?? 0,
+    messageCount: messages.length,
+    messages: messages.map(summarizeMessageForLog)
+  };
+}
+function summarizeProtocolEventForLog(event) {
+  switch (event.kind) {
+    case "message":
+      return summarizeMessageForLog(event);
+    case "task":
+      return summarizeTaskForLog(event);
+    case "status-update":
+      return {
+        kind: event.kind,
+        taskId: event.taskId,
+        contextId: event.contextId,
+        status: event.status.state,
+        final: isFinalStatusEvent(event),
+        message: event.status.message ? summarizeMessageForLog(event.status.message) : void 0
+      };
+    case "artifact-update":
+      return {
+        kind: event.kind,
+        taskId: event.taskId,
+        contextId: event.contextId,
+        artifactId: event.artifact.artifactId,
+        append: event.append,
+        partCount: event.artifact.parts.length,
+        parts: event.artifact.parts.map(summarizePartForLog)
+      };
+  }
+}
+function summarizeAgentForLog2(agent) {
+  if (!agent) {
+    return void 0;
+  }
+  return {
+    agentKey: agent.agentKey,
+    agentId: agent.agentId,
+    id: agent.id,
+    sourceKey: agent.sourceKey,
+    agentCardName: agent.agentCardName,
+    agentHandle: agent.agentHandle,
+    connectionUrl: agent.connectionUrl,
+    connectionAgentId: agent.connectionAgentId
+  };
+}
 function upsertEntry(entries, entryId, role, body) {
   const existingIndex = entries.findIndex((item) => item.id === entryId);
   if (existingIndex === -1) {
@@ -51395,6 +56409,13 @@ function parseExactSlashCommand(value) {
 function ChatApp({ options }) {
   const { exit } = use_app_default();
   const initialSettingsResult = (0, import_react34.useMemo)(() => loadChatSettings(), []);
+  const chatSessionLoggerResult = (0, import_react34.useMemo)(
+    () => createChatSessionLogger({
+      environmentId: initialSettingsResult.settings.selectedEnvironment
+    }),
+    [initialSettingsResult.settings.selectedEnvironment]
+  );
+  const chatSessionLogger = chatSessionLoggerResult.logger;
   const [chatSettings, setChatSettings] = (0, import_react34.useState)(
     initialSettingsResult.settings
   );
@@ -51447,7 +56468,7 @@ function ChatApp({ options }) {
     setEntries((current) => [
       ...current,
       {
-        id: randomUUID2(),
+        id: randomUUID3(),
         role,
         body
       }
@@ -51457,7 +56478,11 @@ function ChatApp({ options }) {
     appendEntry("system", body);
   };
   const appendNotification = (body) => {
-    const id = randomUUID2();
+    const id = randomUUID3();
+    chatSessionLogger.info("system.notification.shown", {
+      notificationId: id,
+      body
+    });
     setNotifications((current) => [
       ...current.slice(-2),
       {
@@ -51467,6 +56492,9 @@ function ChatApp({ options }) {
       }
     ]);
     const timer = setTimeout(() => {
+      chatSessionLogger.debug("system.notification.dismissed", {
+        notificationId: id
+      });
       setNotifications((current) => current.filter((item) => item.id !== id));
     }, NOTIFICATION_TTL_MS);
     notificationTimersRef.current.push(timer);
@@ -51475,17 +56503,38 @@ function ChatApp({ options }) {
     appendEntry("status", body);
   };
   const appendProtocol = (payload) => {
+    const json = formatProtocolPayloadAsJson(payload);
     lastCopyableResponseRef.current = {
       kind: "protocol",
-      content: formatProtocolPayloadAsJson(payload)
+      content: json
     };
+    chatSessionLogger.debug("a2a.protocol_payload.rendered", {
+      payload: json
+    });
     appendEntry("protocol", formatProtocolPayload(payload));
   };
   (0, import_react34.useEffect)(() => {
+    const environmentAtStart = selectedEnvironment;
+    chatSessionLogger.info("chat.session.started", {
+      mode: "interactive",
+      environmentId: environmentAtStart,
+      logFilePath: chatSessionLogger.logFilePath,
+      requestMode,
+      responseMode,
+      options: summarizeOptionsForLog(options)
+    });
+    if (chatSessionLoggerResult.warning) {
+      appendNotification(chatSessionLoggerResult.warning);
+    }
     return () => {
+      chatSessionLogger.info("chat.session.ended", {
+        mode: "interactive",
+        environmentId: environmentAtStart
+      });
       for (const timer of notificationTimersRef.current) {
         clearTimeout(timer);
       }
+      chatSessionLogger.flush();
     };
   }, []);
   const persistSettings = (nextSettings) => {
@@ -51652,6 +56701,11 @@ function ChatApp({ options }) {
         headers: options.headers,
         token: options.token
       });
+      chatSessionLogger.debug("agent.discovery.refresh.started", {
+        environmentId: selectedEnvironment,
+        sourceCount: runtimeSources.length,
+        explicitSourceKey
+      });
       const discovery = await discoverAgentSources(
         runtimeSources,
         fetch,
@@ -51661,9 +56715,16 @@ function ChatApp({ options }) {
             forceRefresh: request?.forceRefresh
           }),
           graphQLFetchImpl: fetch,
-          sourceFetchImpl: (source) => source.sourceKey === explicitSourceKey ? explicitSourceFetch : fetch
+          sourceFetchImpl: (source) => source.sourceKey === explicitSourceKey ? explicitSourceFetch : fetch,
+          logger: chatSessionLogger
         }
       );
+      chatSessionLogger.debug("agent.discovery.refresh.completed", {
+        environmentId: selectedEnvironment,
+        sourceCount: discovery.sources.length,
+        agentCount: discovery.agents.length,
+        errorCount: discovery.errors.length
+      });
       if (isClosed()) {
         return void 0;
       }
@@ -51862,6 +56923,11 @@ ${JSON.stringify(
       fallbackTaskId
     );
     lastCopyableResponseRef.current = { kind: "message", content: body };
+    chatSessionLogger.debug("chat.agent_message.rendered", {
+      fallbackTaskId,
+      body,
+      message: summarizeMessageForLog(message)
+    });
     setEntries(
       (current) => upsertEntry(current, `message:${shownMessageKey}`, "agent", body)
     );
@@ -51955,15 +57021,39 @@ ${JSON.stringify(
     if (!selectedAgentKey || !nextContextId || messages.length === 0) {
       return;
     }
+    const sessionFilePath = resolveSessionFilePath(
+      selectedEnvironment,
+      selectedAgentKey,
+      nextContextId
+    );
     const warning = saveCompletedExchange({
       environment: selectedEnvironment,
       agentKey: selectedAgentKey,
       contextId: nextContextId,
+      chatSessionId: chatSessionLogger.chatSessionId,
+      chatSessionLogPath: chatSessionLogger.logFilePath,
       ...nextTaskId ? { lastTaskId: nextTaskId } : {},
       messages
     });
     if (warning) {
+      chatSessionLogger.warn("conversation.session.save_failed", {
+        environmentId: selectedEnvironment,
+        agentKey: selectedAgentKey,
+        contextId: nextContextId,
+        lastTaskId: nextTaskId,
+        warning
+      });
       appendSystem(warning);
+    } else {
+      chatSessionLogger.debug("conversation.session.saved", {
+        environmentId: selectedEnvironment,
+        agentKey: selectedAgentKey,
+        contextId: nextContextId,
+        lastTaskId: nextTaskId,
+        sessionFilePath,
+        chatSessionId: chatSessionLogger.chatSessionId,
+        chatSessionLogPath: chatSessionLogger.logFilePath
+      });
     }
     const currentAgent = chatSettings.environments[selectedEnvironment].agents[selectedAgentKey] ?? selectedAgent;
     const shouldPersistAgentContext = !selectedAgent || selectedAgent.agentKey !== selectedAgentKey || !isTransientAgentSource(selectedAgent.source);
@@ -52056,6 +57146,9 @@ ${JSON.stringify(
   };
   const runLoginSlashCommand = async () => {
     appendSystem(`Starting Aion login for ${selectedEnvironment}.`);
+    chatSessionLogger.info("auth.login.started", {
+      environmentId: selectedEnvironment
+    });
     try {
       const session = await loginWithWorkOS(selectedEnvironment, {
         onDeviceAuthorization: async (prompt) => {
@@ -52081,7 +57174,8 @@ Code: ${prompt.userCode}`
       });
       const bootstrap = await runLoginBootstrap({
         environmentId: selectedEnvironment,
-        accessToken: session.accessToken
+        accessToken: session.accessToken,
+        logger: chatSessionLogger
       });
       const postAuthPath = resolvePostAuthPath(bootstrap);
       if (postAuthPath) {
@@ -52094,8 +57188,16 @@ ${postAuthUrl}`);
         }
       }
       appendSystem(`Logged in to Aion ${selectedEnvironment}.`);
+      chatSessionLogger.info("auth.login.completed", {
+        environmentId: selectedEnvironment,
+        postAuthPath
+      });
       setReconnectNonce((current) => current + 1);
     } catch (error) {
+      chatSessionLogger.warn("auth.login.failed", {
+        environmentId: selectedEnvironment,
+        error
+      });
       appendSystem(
         `Login failed: ${error instanceof Error ? error.message : String(error)}`
       );
@@ -52212,17 +57314,37 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
     setEntries((current) => [
       ...current,
       {
-        id: randomUUID2(),
+        id: randomUUID3(),
         role: "user",
         body: displayBody
       }
     ]);
     const params = buildMessageParams(parts, contextId, taskId, pushConfig);
+    chatSessionLogger.debug("chat.user_message.submitted", {
+      body: displayBody,
+      attachedFiles,
+      selectedAgent: summarizeAgentForLog2(selectedAgent),
+      message: summarizeMessageForLog(params.message)
+    });
     const canStream2 = Boolean(clientState.agentCard.capabilities.streaming);
     const useStreaming = requestMode === "streaming-message" && canStream2;
+    let requestStartedAt;
     try {
-      setWorkingStartedAt(Date.now());
+      requestStartedAt = Date.now();
+      setWorkingStartedAt(requestStartedAt);
+      chatSessionLogger.debug("a2a.request.started", {
+        requestMode,
+        responseMode,
+        useStreaming,
+        canStream: canStream2,
+        selectedAgent: summarizeAgentForLog2(selectedAgent),
+        message: summarizeMessageForLog(params.message),
+        hasPushNotificationConfig: Boolean(pushConfig)
+      });
       if (requestMode === "streaming-message" && !canStream2) {
+        chatSessionLogger.debug("a2a.request.streaming_fallback", {
+          selectedAgent: summarizeAgentForLog2(selectedAgent)
+        });
         appendSystem("Request mode fallback: agent does not support streaming, using Send message.");
       }
       if (useStreaming) {
@@ -52232,6 +57354,9 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
         let reachedTerminal = false;
         let renderedAgentOutput = false;
         for await (const event of clientState.client.sendMessageStream(params)) {
+          chatSessionLogger.debug("a2a.stream.event", {
+            event: summarizeProtocolEventForLog(event)
+          });
           switch (event.kind) {
             case "message":
               renderedAgentOutput = handleMessage(event) || renderedAgentOutput;
@@ -52264,6 +57389,10 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
           reachedTerminal,
           renderedAgentOutput
         })) {
+          chatSessionLogger.debug("a2a.no_agent_message", {
+            responseMode,
+            reachedTerminal
+          });
           appendSystem(NO_AGENT_MESSAGE_NOTICE);
         }
         if (completedTask) {
@@ -52279,10 +57408,22 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
             finalStatusUpdate.taskId
           );
         }
+        chatSessionLogger.debug("a2a.request.completed", {
+          transport: "stream",
+          durationMs: Date.now() - requestStartedAt,
+          reachedTerminal,
+          renderedAgentOutput,
+          completedTaskId: completedTask?.id,
+          finalStatusTaskId: finalStatusUpdate?.taskId
+        });
         setStreamLabel("Idle");
       } else {
         setStreamLabel("Waiting");
         const response = await clientState.client.sendMessage(params);
+        chatSessionLogger.debug("a2a.response.received", {
+          durationMs: Date.now() - requestStartedAt,
+          response: summarizeProtocolEventForLog(response)
+        });
         let reachedTerminal = response.kind === "message";
         let renderedAgentOutput = false;
         if (response.kind === "message") {
@@ -52308,12 +57449,28 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
           reachedTerminal,
           renderedAgentOutput
         })) {
+          chatSessionLogger.debug("a2a.no_agent_message", {
+            responseMode,
+            reachedTerminal
+          });
           appendSystem(NO_AGENT_MESSAGE_NOTICE);
         }
+        chatSessionLogger.debug("a2a.request.completed", {
+          transport: "send",
+          durationMs: Date.now() - requestStartedAt,
+          reachedTerminal,
+          renderedAgentOutput,
+          responseKind: response.kind
+        });
         setStreamLabel("Idle");
       }
     } catch (error) {
       setStreamLabel("Error");
+      chatSessionLogger.warn("a2a.request.failed", {
+        durationMs: requestStartedAt ? Date.now() - requestStartedAt : void 0,
+        selectedAgent: summarizeAgentForLog2(selectedAgent),
+        error
+      });
       appendStatus(`Request failed: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setWorkingStartedAt(void 0);
