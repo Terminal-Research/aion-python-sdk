@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type {
 	FilePart,
 	Message,
+	Part,
 	Task,
 	TaskArtifactUpdateEvent,
 	TaskStatusUpdateEvent
@@ -124,6 +125,93 @@ function summarizeOptionsForLog(options: ChatCliOptions): Record<string, unknown
 		pushReceiverConfigured: Boolean(options.pushReceiver),
 		headers: Object.keys(options.headers ?? {}),
 		hasToken: Boolean(options.token)
+	};
+}
+
+function summarizePartForLog(part: Part): Record<string, unknown> {
+	const value = part as unknown as Record<string, unknown>;
+	const file = value.file as Record<string, unknown> | undefined;
+	return {
+		kind: value.kind,
+		text: typeof value.text === "string" ? value.text : undefined,
+		fileName: typeof file?.name === "string" ? file.name : undefined,
+		fileMimeType: typeof file?.mimeType === "string" ? file.mimeType : undefined,
+		fileUri: typeof file?.uri === "string" ? file.uri : undefined
+	};
+}
+
+function summarizeMessageForLog(message: Message): Record<string, unknown> {
+	return {
+		kind: message.kind,
+		messageId: message.messageId,
+		role: message.role,
+		contextId: message.contextId,
+		taskId: message.taskId,
+		partCount: message.parts.length,
+		parts: message.parts.map(summarizePartForLog)
+	};
+}
+
+function summarizeTaskForLog(task: Task): Record<string, unknown> {
+	const messages = getTaskMessages(task);
+	return {
+		kind: task.kind,
+		taskId: task.id,
+		contextId: task.contextId,
+		status: task.status.state,
+		artifactCount: task.artifacts?.length ?? 0,
+		messageCount: messages.length,
+		messages: messages.map(summarizeMessageForLog)
+	};
+}
+
+function summarizeProtocolEventForLog(
+	event: Message | Task | TaskStatusUpdateEvent | TaskArtifactUpdateEvent
+): Record<string, unknown> {
+	switch (event.kind) {
+		case "message":
+			return summarizeMessageForLog(event);
+		case "task":
+			return summarizeTaskForLog(event);
+		case "status-update":
+			return {
+				kind: event.kind,
+				taskId: event.taskId,
+				contextId: event.contextId,
+				status: event.status.state,
+				final: isFinalStatusEvent(event),
+				message: event.status.message
+					? summarizeMessageForLog(event.status.message as Message)
+					: undefined
+			};
+		case "artifact-update":
+			return {
+				kind: event.kind,
+				taskId: event.taskId,
+				contextId: event.contextId,
+				artifactId: event.artifact.artifactId,
+				append: event.append,
+				partCount: event.artifact.parts.length,
+				parts: event.artifact.parts.map(summarizePartForLog)
+			};
+	}
+}
+
+function summarizeAgentForLog(
+	agent: DiscoveredAgentRecord | undefined
+): Record<string, unknown> | undefined {
+	if (!agent) {
+		return undefined;
+	}
+	return {
+		agentKey: agent.agentKey,
+		agentId: agent.agentId,
+		id: agent.id,
+		sourceKey: agent.sourceKey,
+		agentCardName: agent.agentCardName,
+		agentHandle: agent.agentHandle,
+		connectionUrl: agent.connectionUrl,
+		connectionAgentId: agent.connectionAgentId
 	};
 }
 
@@ -286,10 +374,14 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 	};
 
 	const appendProtocol = (payload: unknown): void => {
+		const json = formatProtocolPayloadAsJson(payload);
 		lastCopyableResponseRef.current = {
 			kind: "protocol",
-			content: formatProtocolPayloadAsJson(payload)
+			content: json
 		};
+		chatSessionLogger.debug("a2a.protocol_payload.rendered", {
+			payload: json
+		});
 		appendEntry("protocol", formatProtocolPayload(payload));
 	};
 
@@ -774,6 +866,11 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			fallbackTaskId
 		);
 		lastCopyableResponseRef.current = { kind: "message", content: body };
+		chatSessionLogger.debug("chat.agent_message.rendered", {
+			fallbackTaskId,
+			body,
+			message: summarizeMessageForLog(message)
+		});
 		setEntries((current) =>
 			upsertEntry(current, `message:${shownMessageKey}`, "agent", body)
 		);
@@ -1205,13 +1302,33 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		]);
 
 		const params = buildMessageParams(parts, contextId, taskId, pushConfig);
+		chatSessionLogger.debug("chat.user_message.submitted", {
+			body: displayBody,
+			attachedFiles,
+			selectedAgent: summarizeAgentForLog(selectedAgent),
+			message: summarizeMessageForLog(params.message)
+		});
 		const canStream = Boolean(clientState.agentCard.capabilities.streaming);
 		const useStreaming = requestMode === "streaming-message" && canStream;
+		let requestStartedAt: number | undefined;
 
 		try {
-			setWorkingStartedAt(Date.now());
+			requestStartedAt = Date.now();
+			setWorkingStartedAt(requestStartedAt);
+			chatSessionLogger.debug("a2a.request.started", {
+				requestMode,
+				responseMode,
+				useStreaming,
+				canStream,
+				selectedAgent: summarizeAgentForLog(selectedAgent),
+				message: summarizeMessageForLog(params.message),
+				hasPushNotificationConfig: Boolean(pushConfig)
+			});
 
 			if (requestMode === "streaming-message" && !canStream) {
+				chatSessionLogger.debug("a2a.request.streaming_fallback", {
+					selectedAgent: summarizeAgentForLog(selectedAgent)
+				});
 				appendSystem("Request mode fallback: agent does not support streaming, using Send message.");
 			}
 
@@ -1222,6 +1339,9 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				let reachedTerminal = false;
 				let renderedAgentOutput = false;
 				for await (const event of clientState.client.sendMessageStream(params)) {
+					chatSessionLogger.debug("a2a.stream.event", {
+						event: summarizeProtocolEventForLog(event)
+					});
 					switch (event.kind) {
 						case "message":
 							renderedAgentOutput = handleMessage(event) || renderedAgentOutput;
@@ -1256,6 +1376,10 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 						renderedAgentOutput
 					})
 				) {
+					chatSessionLogger.debug("a2a.no_agent_message", {
+						responseMode,
+						reachedTerminal
+					});
 					appendSystem(NO_AGENT_MESSAGE_NOTICE);
 				}
 				if (completedTask) {
@@ -1271,10 +1395,22 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 						finalStatusUpdate.taskId
 					);
 				}
+				chatSessionLogger.debug("a2a.request.completed", {
+					transport: "stream",
+					durationMs: Date.now() - requestStartedAt,
+					reachedTerminal,
+					renderedAgentOutput,
+					completedTaskId: completedTask?.id,
+					finalStatusTaskId: finalStatusUpdate?.taskId
+				});
 				setStreamLabel("Idle");
 			} else {
 				setStreamLabel("Waiting");
 				const response = await clientState.client.sendMessage(params);
+				chatSessionLogger.debug("a2a.response.received", {
+					durationMs: Date.now() - requestStartedAt,
+					response: summarizeProtocolEventForLog(response)
+				});
 				let reachedTerminal = response.kind === "message";
 				let renderedAgentOutput = false;
 				if (response.kind === "message") {
@@ -1302,12 +1438,28 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 						renderedAgentOutput
 					})
 				) {
+					chatSessionLogger.debug("a2a.no_agent_message", {
+						responseMode,
+						reachedTerminal
+					});
 					appendSystem(NO_AGENT_MESSAGE_NOTICE);
 				}
+				chatSessionLogger.debug("a2a.request.completed", {
+					transport: "send",
+					durationMs: Date.now() - requestStartedAt,
+					reachedTerminal,
+					renderedAgentOutput,
+					responseKind: response.kind
+				});
 				setStreamLabel("Idle");
 			}
 		} catch (error) {
 			setStreamLabel("Error");
+			chatSessionLogger.warn("a2a.request.failed", {
+				durationMs: requestStartedAt ? Date.now() - requestStartedAt : undefined,
+				selectedAgent: summarizeAgentForLog(selectedAgent),
+				error
+			});
 			appendStatus(`Request failed: ${error instanceof Error ? error.message : String(error)}`);
 		} finally {
 			setWorkingStartedAt(undefined);
