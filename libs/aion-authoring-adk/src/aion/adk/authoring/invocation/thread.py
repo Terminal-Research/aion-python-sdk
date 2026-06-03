@@ -10,6 +10,8 @@ from google.adk.events import Event
 from google.genai import types
 from typing import Any, Optional
 
+from aion.adk.authoring.constants import AION_ROUTING_KEY
+
 from .emitter import get_adk_emitter
 from .message import Message
 
@@ -40,10 +42,19 @@ class Thread(BaseThread):
         return AionOutput(artifact=ArtifactOutput(artifact_id=artifact_id)).to_custom_metadata()
 
     @staticmethod
-    def _build_text_event(text: str, *, partial: bool, custom_metadata: dict | None = None) -> Any:
+    def _build_text_event(
+            text: str,
+            *,
+            partial: bool,
+            custom_metadata: dict | None = None,
+            routing: Optional[MessageActionPayload] = None,
+    ) -> Any:
         """Build a google.adk.events.Event carrying a text Content."""
         from google.adk.events import Event
         from google.genai import types
+        meta = dict(custom_metadata or {})
+        if routing is not None:
+            meta[AION_ROUTING_KEY] = routing.model_dump(by_alias=True, exclude_none=True)
         return Event(
             author="agent",
             content=types.Content(
@@ -51,11 +62,11 @@ class Thread(BaseThread):
                 role="model",
             ),
             partial=partial,
-            custom_metadata=custom_metadata,
+            custom_metadata=meta or None,
         )
 
     @staticmethod
-    def _build_card_event(card: Card) -> Any:
+    def _build_card_event(card: Card, routing: Optional[MessageActionPayload] = None) -> Any:
         """Build a google.adk.events.Event carrying a Card.
 
         For jsx cards, JSX content is placed in Event.content as a text part.
@@ -63,11 +74,17 @@ class Thread(BaseThread):
         The aion:output hint signals the converter to emit a card message.
         """
         if card.url:
+            meta = AionOutput(card=CardOutput(url=card.url)).to_custom_metadata()
+        else:
+            meta = AionOutput(card=CardOutput()).to_custom_metadata()
+        if routing is not None:
+            meta[AION_ROUTING_KEY] = routing.model_dump(by_alias=True, exclude_none=True)
+        if card.url:
             return Event(
                 author="agent",
                 content=types.Content(parts=[], role="model"),
                 partial=False,
-                custom_metadata=AionOutput(card=CardOutput(url=card.url)).to_custom_metadata(),
+                custom_metadata=meta,
             )
         return Event(
             author="agent",
@@ -76,7 +93,7 @@ class Thread(BaseThread):
                 role="model",
             ),
             partial=False,
-            custom_metadata=AionOutput(card=CardOutput()).to_custom_metadata(),
+            custom_metadata=meta,
         )
 
     async def post(
@@ -95,20 +112,21 @@ class Thread(BaseThread):
         To send a card, pass an explicit Card instance — plain JSX strings
         are treated as regular text.
 
-        target is accepted for API parity with LangGraph Thread but is not
-        yet wired to outbound routing in the ADK execution layer.
+        When target is provided, the MessageActionPayload is embedded in
+        Event.custom_metadata under the aion:routing key so the server-side
+        converter can attach it as an extension DataPart on the outbound A2A message.
         """
         emitter = self._get_emitter()
         if emitter is None:
             return None
 
         if isinstance(content, Card):
-            event = self._build_card_event(content)
+            event = self._build_card_event(content, routing=target)
             emitter(event)
             return event
 
         if isinstance(content, str):
-            event = self._build_text_event(content, partial=False, custom_metadata=metadata)
+            event = self._build_text_event(content, partial=False, custom_metadata=metadata, routing=target)
             emitter(event)
             return event
 
@@ -117,7 +135,7 @@ class Thread(BaseThread):
             return content
 
         if hasattr(content, "__aiter__"):
-            return await self._stream_from_async_iterator(emitter, content)
+            return await self._stream_from_async_iterator(emitter, content, routing=target)
 
         logger.warning(
             "Thread.post() received unsupported content type: %s. "
@@ -126,7 +144,12 @@ class Thread(BaseThread):
         )
         return None
 
-    async def _stream_from_async_iterator(self, emitter: Any, iterator: Any) -> Any:
+    async def _stream_from_async_iterator(
+            self,
+            emitter: Any,
+            iterator: Any,
+            routing: Optional[MessageActionPayload] = None,
+    ) -> Any:
         """Stream chunks as partial ADK Events, then emit a durable final event."""
         accumulated = ""
         try:
@@ -148,7 +171,7 @@ class Thread(BaseThread):
             )
 
         if accumulated:
-            final_event = self._build_text_event(accumulated, partial=False)
+            final_event = self._build_text_event(accumulated, partial=False, routing=routing)
             emitter(final_event)
             return final_event
 

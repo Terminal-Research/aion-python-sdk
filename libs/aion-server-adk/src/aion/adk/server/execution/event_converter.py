@@ -11,11 +11,13 @@ from a2a.types import (
     TaskStatus,
     TaskStatusUpdateEvent,
 )
+from aion.adk.authoring.constants import AION_ROUTING_KEY
 from aion.adk.authoring.output import AionOutput, ReactionOutput
 from aion.core.agent.invocation.card import Card
-from aion.core.constants import CARDS_EXTENSION_URI_V1, MESSAGING_EXTENSION_URI_V1, REACTION_ACTION_PAYLOAD_SCHEMA_V1
+from aion.core.constants import CARDS_EXTENSION_URI_V1, MESSAGE_ACTION_PAYLOAD_SCHEMA_V1, MESSAGING_EXTENSION_URI_V1, REACTION_ACTION_PAYLOAD_SCHEMA_V1
 from aion.core.logging import get_logger
 from aion.core.types import ArtifactId, ArtifactName
+from aion.core.types.a2a.extensions.messaging import MessageActionPayload
 from aion.core.utils.card import build_card_a2a_part
 from google.adk.events import Event
 from google.protobuf import json_format, struct_pb2
@@ -111,6 +113,13 @@ class ADKToA2AEventConverter:
         )
 
     @staticmethod
+    def _extract_routing(custom_metadata: dict | None) -> MessageActionPayload | None:
+        raw = (custom_metadata or {}).get(AION_ROUTING_KEY)
+        if raw is None:
+            return None
+        return MessageActionPayload.model_validate(raw)
+
+    @staticmethod
     def _build_extension_part(data: dict, schema_uri: str) -> Part:
         proto_value = struct_pb2.Value()
         json_format.ParseDict(data, proto_value)
@@ -163,13 +172,22 @@ class ADKToA2AEventConverter:
                 card_jsx = adk_event.content and adk_event.content.parts and adk_event.content.parts[0].text
                 card = Card(jsx=card_jsx) if card_jsx else None
             if card:
+                routing = self._extract_routing(adk_event.custom_metadata)
+                parts = [build_card_a2a_part(card)]
+                extensions = [CARDS_EXTENSION_URI_V1]
+                if routing is not None:
+                    parts.append(self._build_extension_part(
+                        routing.model_dump(by_alias=True, exclude_none=True),
+                        MESSAGE_ACTION_PAYLOAD_SCHEMA_V1,
+                    ))
+                    extensions.append(MESSAGING_EXTENSION_URI_V1)
                 msg = Message(
                     context_id=self._context_id,
                     task_id=self._task_id,
                     message_id=str(uuid.uuid4()),
                     role=Role.ROLE_AGENT,
-                    parts=[build_card_a2a_part(card)],
-                    extensions=[CARDS_EXTENSION_URI_V1],
+                    parts=parts,
+                    extensions=extensions,
                 )
                 results.append(TaskStatusUpdateEvent(
                     task_id=self._task_id,
@@ -202,6 +220,14 @@ class ADKToA2AEventConverter:
             content_parts = A2ATransformer.transform_content(adk_event.content)
 
             if content_parts:
+                routing = self._extract_routing(adk_event.custom_metadata)
+                extensions = []
+                if routing is not None:
+                    content_parts.append(self._build_extension_part(
+                        routing.model_dump(by_alias=True, exclude_none=True),
+                        MESSAGE_ACTION_PAYLOAD_SCHEMA_V1,
+                    ))
+                    extensions = [MESSAGING_EXTENSION_URI_V1]
                 role = Role.ROLE_USER if adk_event.author == "user" else Role.ROLE_AGENT
                 msg = Message(
                     context_id=self._context_id,
@@ -209,6 +235,7 @@ class ADKToA2AEventConverter:
                     message_id=str(uuid.uuid4()),
                     role=role,
                     parts=content_parts,
+                    extensions=extensions or None,
                 )
                 results.append(TaskStatusUpdateEvent(
                     task_id=self._task_id,
