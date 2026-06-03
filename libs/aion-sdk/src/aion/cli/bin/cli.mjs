@@ -45012,11 +45012,39 @@ function wrapToWidth(value, width) {
 function padLabel(label, width) {
   return `${label}${" ".repeat(Math.max(0, width - label.length))}`;
 }
+function truncateText(value, width) {
+  const inlineValue = value.replace(/\s+/gu, " ").trim();
+  if (width <= 0) {
+    return "";
+  }
+  if (inlineValue.length <= width) {
+    return inlineValue;
+  }
+  if (width <= 3) {
+    return inlineValue.slice(0, width);
+  }
+  return `${inlineValue.slice(0, width - 3)}...`;
+}
+function formatColumn(value, width) {
+  return padLabel(truncateText(value, width), width);
+}
 function getTableLabelWidth(items, withNumbers = false) {
   return items.reduce((maxWidth, item, index) => {
     const label = withNumbers ? `${index + 1}. ${item.label}` : item.label;
     return Math.max(maxWidth, label.length);
   }, 0);
+}
+function getAgentSuggestionLabelWidth(items) {
+  return items.reduce(
+    (maxWidth, item) => Math.max(maxWidth, `@${item.id}`.length),
+    0
+  );
+}
+function getAgentSuggestionSourceWidth(items) {
+  return items.reduce(
+    (maxWidth, item) => Math.max(maxWidth, item.sourceName.length),
+    0
+  );
 }
 function ChatComposer({
   draft,
@@ -45049,6 +45077,17 @@ function ChatComposer({
   const showFooter = !showAgentSuggestions && !showFileSuggestions && !slashMenuVisible && !slashSubmenu;
   const slashLabelWidth = getTableLabelWidth(slashCommands);
   const slashSubmenuLabelWidth = getTableLabelWidth(slashSubmenu?.options ?? [], true);
+  const agentColumnBudget = Math.max(0, lineWidth - MENU_INDENT.length);
+  const agentLabelWidth = getAgentSuggestionLabelWidth(agentSuggestions);
+  const agentSourceWidth = getAgentSuggestionSourceWidth(agentSuggestions);
+  const agentLabelColumnWidth = Math.min(
+    agentLabelWidth + 2,
+    Math.max(8, Math.floor(agentColumnBudget * 0.45))
+  );
+  const agentSourceColumnWidth = Math.min(
+    agentSourceWidth + 2,
+    Math.max(0, agentColumnBudget - agentLabelColumnWidth)
+  );
   (0, import_react29.useEffect)(() => {
     const handleResize = () => {
       setViewportWidth(stdout?.columns ?? process.stdout.columns ?? 80);
@@ -45116,18 +45155,28 @@ function ChatComposer({
         "Discovered: ",
         discoveredCount
       ] }),
-      agentSuggestions.map((suggestion, index) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
-        Text,
-        {
-          color: index === selectedSuggestionIndex ? SELECTION_HIGHLIGHT : PRIMARY_TEXT,
-          children: [
-            index === selectedSuggestionIndex ? "\u203A " : "  ",
-            "@",
-            suggestion
-          ]
-        },
-        suggestion
-      ))
+      agentSuggestions.map((suggestion, index) => {
+        const isSelected = index === selectedSuggestionIndex;
+        const label = formatColumn(`@${suggestion.id}`, agentLabelColumnWidth);
+        const sourceName = formatColumn(
+          suggestion.sourceName,
+          agentSourceColumnWidth
+        );
+        const descriptionWidth = Math.max(
+          0,
+          agentColumnBudget - label.length - sourceName.length
+        );
+        const description = truncateText(
+          suggestion.description,
+          descriptionWidth
+        );
+        return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { color: isSelected ? SELECTION_HIGHLIGHT : PRIMARY_TEXT, children: isSelected ? "\u203A " : MENU_INDENT }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { color: isSelected ? SELECTION_HIGHLIGHT : PRIMARY_TEXT, children: label }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { color: SECONDARY_TEXT, children: sourceName }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { color: SECONDARY_TEXT, children: description })
+        ] }, suggestion.agentKey);
+      })
     ] }) : null,
     showFileSuggestions ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { flexDirection: "column", children: [
       /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { color: SECONDARY_TEXT, children: "Files" }),
@@ -51440,7 +51489,12 @@ function ChatApp({ options }) {
     if (!mentionMatch) {
       return [];
     }
-    return discoveredAgents.map((agent) => agent.id).filter((agentId) => agentId.startsWith(mentionMatch.query)).slice(0, 6);
+    return discoveredAgents.filter((agent) => agent.id.startsWith(mentionMatch.query)).map((agent) => ({
+      agentKey: agent.agentKey,
+      id: agent.id,
+      sourceName: agent.source.sourceKey,
+      description: agent.agentCard?.description?.trim() ?? ""
+    })).slice(0, 6);
   }, [discoveredAgents, draft, slashQuery, slashSubmenuId]);
   const fileSuggestions = (0, import_react34.useMemo)(() => {
     if (slashQuery !== void 0 || slashSubmenuId) {
@@ -51839,15 +51893,19 @@ ${JSON.stringify(
     if (!suggestion) {
       return;
     }
+    const agent = discoveredAgents.find(
+      (item) => item.agentKey === suggestion.agentKey
+    );
+    const selectedId = agent?.id ?? suggestion.id;
+    const selectedKey = agent?.agentKey ?? suggestion.agentKey;
     setDraft((current) => clearAgentMention(current));
-    if (selectedAgentId !== suggestion) {
-      const agent = discoveredAgents.find((item) => item.id === suggestion);
-      setSelectedAgentId(suggestion);
-      setSelectedAgentKey(agent?.agentKey);
+    if (selectedAgentId !== selectedId || selectedAgentKey !== selectedKey) {
+      setSelectedAgentId(selectedId);
+      setSelectedAgentKey(selectedKey);
       if (!agent || !isTransientAgentSource(agent.source)) {
         persistEnvironmentSettings(selectedEnvironment, {
-          selectedAgentId: suggestion,
-          selectedAgentKey: agent?.agentKey
+          selectedAgentId: selectedId,
+          selectedAgentKey: selectedKey
         });
       }
     }

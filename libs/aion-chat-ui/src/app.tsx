@@ -11,7 +11,10 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Box, useApp, useInput } from "ink";
 
 import type { ChatCliOptions } from "./args.js";
-import { ChatComposer } from "./components/ChatComposer.js";
+import {
+	ChatComposer,
+	type AgentSuggestionView
+} from "./components/ChatComposer.js";
 import { ChatSession } from "./components/ChatSession.js";
 import {
 	type TranscriptEntry,
@@ -348,7 +351,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		};
 	}, [selectedSlashSubmenuIndex, slashSubmenuId]);
 
-	const agentSuggestions = useMemo(() => {
+	const agentSuggestions = useMemo<AgentSuggestionView[]>(() => {
 		if (slashQuery !== undefined || slashSubmenuId) {
 			return [];
 		}
@@ -359,8 +362,13 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		}
 
 		return discoveredAgents
-			.map((agent) => agent.id)
-			.filter((agentId) => agentId.startsWith(mentionMatch.query))
+			.filter((agent) => agent.id.startsWith(mentionMatch.query))
+			.map((agent) => ({
+				agentKey: agent.agentKey,
+				id: agent.id,
+				sourceName: agent.source.sourceKey,
+				description: agent.agentCard?.description?.trim() ?? ""
+			}))
 			.slice(0, 6);
 	}, [discoveredAgents, draft, slashQuery, slashSubmenuId]);
 
@@ -839,15 +847,20 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			return;
 		}
 
+		const agent = discoveredAgents.find(
+			(item) => item.agentKey === suggestion.agentKey
+		);
+		const selectedId = agent?.id ?? suggestion.id;
+		const selectedKey = agent?.agentKey ?? suggestion.agentKey;
+
 		setDraft((current) => clearAgentMention(current));
-		if (selectedAgentId !== suggestion) {
-			const agent = discoveredAgents.find((item) => item.id === suggestion);
-			setSelectedAgentId(suggestion);
-			setSelectedAgentKey(agent?.agentKey);
+		if (selectedAgentId !== selectedId || selectedAgentKey !== selectedKey) {
+			setSelectedAgentId(selectedId);
+			setSelectedAgentKey(selectedKey);
 			if (!agent || !isTransientAgentSource(agent.source)) {
 				persistEnvironmentSettings(selectedEnvironment, {
-					selectedAgentId: suggestion,
-					selectedAgentKey: agent?.agentKey
+					selectedAgentId: selectedId,
+					selectedAgentKey: selectedKey
 				});
 			}
 		}

@@ -17,6 +17,13 @@ export interface ComposerMenuItem {
 	description: string;
 }
 
+export interface AgentSuggestionView {
+	agentKey: string;
+	id: string;
+	sourceName: string;
+	description: string;
+}
+
 export interface SlashSubmenuView {
 	title: string;
 	subtitle: string;
@@ -30,7 +37,7 @@ export interface ChatComposerProps {
 	discoveredCount: number;
 	pushState: string;
 	streamState: string;
-	agentSuggestions: string[];
+	agentSuggestions: readonly AgentSuggestionView[];
 	selectedSuggestionIndex: number;
 	fileSuggestions: string[];
 	selectedFileSuggestionIndex: number;
@@ -69,6 +76,24 @@ function padLabel(label: string, width: number): string {
 	return `${label}${" ".repeat(Math.max(0, width - label.length))}`;
 }
 
+function truncateText(value: string, width: number): string {
+	const inlineValue = value.replace(/\s+/gu, " ").trim();
+	if (width <= 0) {
+		return "";
+	}
+	if (inlineValue.length <= width) {
+		return inlineValue;
+	}
+	if (width <= 3) {
+		return inlineValue.slice(0, width);
+	}
+	return `${inlineValue.slice(0, width - 3)}...`;
+}
+
+function formatColumn(value: string, width: number): string {
+	return padLabel(truncateText(value, width), width);
+}
+
 function getTableLabelWidth(
 	items: readonly ComposerMenuItem[],
 	withNumbers = false
@@ -77,6 +102,24 @@ function getTableLabelWidth(
 		const label = withNumbers ? `${index + 1}. ${item.label}` : item.label;
 		return Math.max(maxWidth, label.length);
 	}, 0);
+}
+
+function getAgentSuggestionLabelWidth(
+	items: readonly AgentSuggestionView[]
+): number {
+	return items.reduce(
+		(maxWidth, item) => Math.max(maxWidth, `@${item.id}`.length),
+		0
+	);
+}
+
+function getAgentSuggestionSourceWidth(
+	items: readonly AgentSuggestionView[]
+): number {
+	return items.reduce(
+		(maxWidth, item) => Math.max(maxWidth, item.sourceName.length),
+		0
+	);
 }
 
 export function ChatComposer({
@@ -112,6 +155,17 @@ export function ChatComposer({
 	const showFooter = !showAgentSuggestions && !showFileSuggestions && !slashMenuVisible && !slashSubmenu;
 	const slashLabelWidth = getTableLabelWidth(slashCommands);
 	const slashSubmenuLabelWidth = getTableLabelWidth(slashSubmenu?.options ?? [], true);
+	const agentColumnBudget = Math.max(0, lineWidth - MENU_INDENT.length);
+	const agentLabelWidth = getAgentSuggestionLabelWidth(agentSuggestions);
+	const agentSourceWidth = getAgentSuggestionSourceWidth(agentSuggestions);
+	const agentLabelColumnWidth = Math.min(
+		agentLabelWidth + 2,
+		Math.max(8, Math.floor(agentColumnBudget * 0.45))
+	);
+	const agentSourceColumnWidth = Math.min(
+		agentSourceWidth + 2,
+		Math.max(0, agentColumnBudget - agentLabelColumnWidth)
+	);
 
 	useEffect(() => {
 		const handleResize = (): void => {
@@ -224,14 +278,35 @@ export function ChatComposer({
 			{showAgentSuggestions ? (
 				<Box flexDirection="column">
 					<Text color={SECONDARY_TEXT}>Discovered: {discoveredCount}</Text>
-					{agentSuggestions.map((suggestion, index) => (
-						<Text
-							key={suggestion}
-							color={index === selectedSuggestionIndex ? SELECTION_HIGHLIGHT : PRIMARY_TEXT}
-						>
-							{index === selectedSuggestionIndex ? "› " : "  "}@{suggestion}
-						</Text>
-					))}
+					{agentSuggestions.map((suggestion, index) => {
+						const isSelected = index === selectedSuggestionIndex;
+						const label = formatColumn(`@${suggestion.id}`, agentLabelColumnWidth);
+						const sourceName = formatColumn(
+							suggestion.sourceName,
+							agentSourceColumnWidth
+						);
+						const descriptionWidth = Math.max(
+							0,
+							agentColumnBudget - label.length - sourceName.length
+						);
+						const description = truncateText(
+							suggestion.description,
+							descriptionWidth
+						);
+
+						return (
+							<Box key={suggestion.agentKey}>
+								<Text color={isSelected ? SELECTION_HIGHLIGHT : PRIMARY_TEXT}>
+									{isSelected ? "› " : MENU_INDENT}
+								</Text>
+								<Text color={isSelected ? SELECTION_HIGHLIGHT : PRIMARY_TEXT}>
+									{label}
+								</Text>
+								<Text color={SECONDARY_TEXT}>{sourceName}</Text>
+								<Text color={SECONDARY_TEXT}>{description}</Text>
+							</Box>
+						);
+					})}
 				</Box>
 			) : null}
 			{showFileSuggestions ? (

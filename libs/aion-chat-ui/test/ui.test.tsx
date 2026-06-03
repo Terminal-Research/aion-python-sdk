@@ -19,7 +19,20 @@ describe("Ink components", () => {
 				discoveredCount={2}
 				pushState="Disabled"
 				streamState="Idle"
-				agentSuggestions={["command-agent", "research-chat"]}
+				agentSuggestions={[
+					{
+						agentKey: "default-localhost-8000:command-agent",
+						id: "command-agent",
+						sourceName: "default-localhost-8000",
+						description: "Runs command workflows."
+					},
+					{
+						agentKey: "aion-registry-development:research-chat",
+						id: "research-chat",
+						sourceName: "aion-registry-development",
+						description: "Answers research questions."
+					}
+				]}
 				selectedSuggestionIndex={0}
 				slashCommands={[]}
 				selectedSlashCommandIndex={0}
@@ -30,9 +43,45 @@ describe("Ink components", () => {
 		expect(app.lastFrame()).toContain("Send message");
 		expect(app.lastFrame()).toContain("Discovered: 2");
 		expect(app.lastFrame()).toContain("@command-agent");
+		expect(app.lastFrame()).toContain("default-localhost-8000");
+		expect(app.lastFrame()).toContain("Runs command workflows.");
+		expect(app.lastFrame()).toContain("aion-registry-development");
+		expect(app.lastFrame()).toContain("Answers research questions.");
 		expect(app.lastFrame()).not.toContain("Stream: Idle");
 		expect(app.lastFrame()).not.toContain("Push:");
 		expect(app.lastFrame()).not.toContain("Ctrl+C");
+		app.unmount();
+	});
+
+	it("truncates long agent descriptions in the picker", () => {
+		const description =
+			"This description is intentionally long enough to exceed the picker row width and must not wrap onto another terminal line.";
+		const app = render(
+			<ChatComposer
+				draft=""
+				activeAgentId={undefined}
+				discoveredCount={1}
+				pushState="Disabled"
+				streamState="Idle"
+				agentSuggestions={[
+					{
+						agentKey: "aion-registry-development:command-agent",
+						id: "command-agent",
+						sourceName: "aion-registry-development",
+						description
+					}
+				]}
+				selectedSuggestionIndex={0}
+				slashCommands={[]}
+				selectedSlashCommandIndex={0}
+				fileSuggestions={[]} selectedFileSuggestionIndex={0} slashMenuVisible={false}
+			/>
+		);
+
+		expect(app.lastFrame()).toContain("@command-agent");
+		expect(app.lastFrame()).toContain("aion-registry-development");
+		expect(app.lastFrame()).not.toContain(description);
+		expect(app.lastFrame()).toContain("...");
 		app.unmount();
 	});
 
