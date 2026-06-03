@@ -54,6 +54,8 @@ export interface AgentContextSessionFile {
 	environment: AionEnvironmentId;
 	agentKey: string;
 	contextId: string;
+	chatSessionId?: string;
+	chatSessionLogPath?: string;
 	createdAt: string;
 	lastUpdatedAt: string;
 	localTurnCount: number;

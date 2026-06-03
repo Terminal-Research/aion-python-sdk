@@ -15,6 +15,8 @@ export interface CompletedExchangeSnapshot {
 	environment: AionEnvironmentId;
 	agentKey: string;
 	contextId: string;
+	chatSessionId?: string;
+	chatSessionLogPath?: string;
 	lastTaskId?: string;
 	messages: Message[];
 }
@@ -75,11 +77,16 @@ export function saveCompletedExchange(
 		);
 		const existing = readSessionFile(filePath);
 		const now = new Date().toISOString();
+		const chatSessionId = snapshot.chatSessionId ?? existing?.chatSessionId;
+		const chatSessionLogPath =
+			snapshot.chatSessionLogPath ?? existing?.chatSessionLogPath;
 		const nextSession: AgentContextSessionFile = {
 			schemaVersion: 1,
 			environment: snapshot.environment,
 			agentKey: snapshot.agentKey,
 			contextId: snapshot.contextId,
+			...(chatSessionId ? { chatSessionId } : {}),
+			...(chatSessionLogPath ? { chatSessionLogPath } : {}),
 			createdAt: existing?.createdAt ?? now,
 			lastUpdatedAt: now,
 			localTurnCount: (existing?.localTurnCount ?? 0) + 1,

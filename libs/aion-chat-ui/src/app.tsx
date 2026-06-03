@@ -72,7 +72,10 @@ import {
 	isTransientAgentSource,
 	mergeAgentSources
 } from "./lib/agents/model.js";
-import { saveCompletedExchange } from "./lib/agents/sessionStore.js";
+import {
+	resolveSessionFilePath,
+	saveCompletedExchange
+} from "./lib/agents/sessionStore.js";
 import { createChatSessionLogger } from "./lib/sessionLogger.js";
 import {
 	formatProtocolPayload,
@@ -991,27 +994,51 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			return;
 		}
 
+		const sessionFilePath = resolveSessionFilePath(
+			selectedEnvironment,
+			selectedAgentKey,
+			nextContextId
+		);
 		const warning = saveCompletedExchange({
 			environment: selectedEnvironment,
 			agentKey: selectedAgentKey,
 			contextId: nextContextId,
+			chatSessionId: chatSessionLogger.chatSessionId,
+			chatSessionLogPath: chatSessionLogger.logFilePath,
 			...(nextTaskId ? { lastTaskId: nextTaskId } : {}),
 			messages
 		});
 		if (warning) {
+			chatSessionLogger.warn("conversation.session.save_failed", {
+				environmentId: selectedEnvironment,
+				agentKey: selectedAgentKey,
+				contextId: nextContextId,
+				lastTaskId: nextTaskId,
+				warning
+			});
 			appendSystem(warning);
+		} else {
+			chatSessionLogger.debug("conversation.session.saved", {
+				environmentId: selectedEnvironment,
+				agentKey: selectedAgentKey,
+				contextId: nextContextId,
+				lastTaskId: nextTaskId,
+				sessionFilePath,
+				chatSessionId: chatSessionLogger.chatSessionId,
+				chatSessionLogPath: chatSessionLogger.logFilePath
+			});
 		}
 
-			const currentAgent =
-				chatSettings.environments[selectedEnvironment].agents[selectedAgentKey] ??
-				selectedAgent;
-			const shouldPersistAgentContext =
-				!selectedAgent ||
-				selectedAgent.agentKey !== selectedAgentKey ||
-				!isTransientAgentSource(selectedAgent.source);
-			if (currentAgent && shouldPersistAgentContext) {
-				persistEnvironmentSettings(selectedEnvironment, {
-					agents: {
+		const currentAgent =
+			chatSettings.environments[selectedEnvironment].agents[selectedAgentKey] ??
+			selectedAgent;
+		const shouldPersistAgentContext =
+			!selectedAgent ||
+			selectedAgent.agentKey !== selectedAgentKey ||
+			!isTransientAgentSource(selectedAgent.source);
+		if (currentAgent && shouldPersistAgentContext) {
+			persistEnvironmentSettings(selectedEnvironment, {
+				agents: {
 					...chatSettings.environments[selectedEnvironment].agents,
 					[selectedAgentKey]: {
 						agentKey: currentAgent.agentKey,

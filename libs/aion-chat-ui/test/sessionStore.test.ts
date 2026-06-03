@@ -40,6 +40,8 @@ describe("sessionStore", () => {
 					environment: "development",
 					agentKey: "default-localhost-8000:command-agent",
 					contextId: "ctx_123",
+					chatSessionId: "chat-session-1",
+					chatSessionLogPath: "/tmp/aion/chat-session-logs/run.jsonl",
 					lastTaskId: "task_1",
 					messages: [buildMessage("user-1", "user"), buildMessage("agent-1", "agent")]
 				},
@@ -59,6 +61,8 @@ describe("sessionStore", () => {
 			environment: "development",
 			agentKey: "default-localhost-8000:command-agent",
 			contextId: "ctx_123",
+			chatSessionId: "chat-session-1",
+			chatSessionLogPath: "/tmp/aion/chat-session-logs/run.jsonl",
 			localTurnCount: 1,
 			lastTaskId: "task_1"
 		});
@@ -89,8 +93,9 @@ describe("sessionStore", () => {
 			sessionsDirectory
 		);
 
-		expect(
-			loadMostRecentSession("production", "agent", sessionsDirectory)?.contextId
-		).toBe("ctx_new");
+		const loaded = loadMostRecentSession("production", "agent", sessionsDirectory);
+		expect(loaded?.contextId).toBe("ctx_new");
+		expect(loaded?.chatSessionId).toBeUndefined();
+		expect(loaded?.chatSessionLogPath).toBeUndefined();
 	});
 });
