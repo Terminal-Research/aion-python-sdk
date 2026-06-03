@@ -72,6 +72,7 @@ import {
 	mergeAgentSources
 } from "./lib/agents/model.js";
 import { saveCompletedExchange } from "./lib/agents/sessionStore.js";
+import { createChatSessionLogger } from "./lib/sessionLogger.js";
 import {
 	formatProtocolPayload,
 	formatProtocolPayloadAsJson
@@ -113,6 +114,18 @@ import { getStoredAccessToken, loginWithWorkOS } from "./lib/workosAuth.js";
 
 const NO_AGENT_MESSAGE_NOTICE = "Task completed with no agent message.";
 const NOTIFICATION_TTL_MS = 12_000;
+
+function summarizeOptionsForLog(options: ChatCliOptions): Record<string, unknown> {
+	return {
+		hasAgentEndpointUrl: Boolean(options.url),
+		agentEndpointUrl: options.url,
+		agentId: options.agentId,
+		pushNotifications: options.pushNotifications,
+		pushReceiverConfigured: Boolean(options.pushReceiver),
+		headers: Object.keys(options.headers ?? {}),
+		hasToken: Boolean(options.token)
+	};
+}
 
 function upsertEntry(
 	entries: TranscriptEntry[],
@@ -170,6 +183,14 @@ function parseExactSlashCommand(value: string): ExactSlashCommand | undefined {
 export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Element {
 	const { exit } = useApp();
 	const initialSettingsResult = useMemo(() => loadChatSettings(), []);
+	const chatSessionLoggerResult = useMemo(
+		() =>
+			createChatSessionLogger({
+				environmentId: initialSettingsResult.settings.selectedEnvironment
+			}),
+		[initialSettingsResult.settings.selectedEnvironment]
+	);
+	const chatSessionLogger = chatSessionLoggerResult.logger;
 	const [chatSettings, setChatSettings] = useState<ChatSettings>(
 		initialSettingsResult.settings
 	);
@@ -239,6 +260,10 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 
 	const appendNotification = (body: string): void => {
 		const id = randomUUID();
+		chatSessionLogger.info("system.notification.shown", {
+			notificationId: id,
+			body
+		});
 		setNotifications((current) => [
 			...current.slice(-2),
 			{
@@ -248,6 +273,9 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			}
 		]);
 		const timer = setTimeout(() => {
+			chatSessionLogger.debug("system.notification.dismissed", {
+				notificationId: id
+			});
 			setNotifications((current) => current.filter((item) => item.id !== id));
 		}, NOTIFICATION_TTL_MS);
 		notificationTimersRef.current.push(timer);
@@ -266,10 +294,28 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 	};
 
 	useEffect(() => {
+		const environmentAtStart = selectedEnvironment;
+		chatSessionLogger.info("chat.session.started", {
+			mode: "interactive",
+			environmentId: environmentAtStart,
+			logFilePath: chatSessionLogger.logFilePath,
+			requestMode,
+			responseMode,
+			options: summarizeOptionsForLog(options)
+		});
+		if (chatSessionLoggerResult.warning) {
+			appendNotification(chatSessionLoggerResult.warning);
+		}
+
 		return () => {
+			chatSessionLogger.info("chat.session.ended", {
+				mode: "interactive",
+				environmentId: environmentAtStart
+			});
 			for (const timer of notificationTimersRef.current) {
 				clearTimeout(timer);
 			}
+			chatSessionLogger.flush();
 		};
 	}, []);
 
@@ -476,6 +522,11 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				headers: options.headers,
 				token: options.token
 			});
+			chatSessionLogger.debug("agent.discovery.refresh.started", {
+				environmentId: selectedEnvironment,
+				sourceCount: runtimeSources.length,
+				explicitSourceKey
+			});
 			const discovery = await discoverAgentSources(
 				runtimeSources,
 				fetch,
@@ -487,9 +538,16 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 						}),
 					graphQLFetchImpl: fetch,
 					sourceFetchImpl: (source) =>
-						source.sourceKey === explicitSourceKey ? explicitSourceFetch : fetch
+						source.sourceKey === explicitSourceKey ? explicitSourceFetch : fetch,
+					logger: chatSessionLogger
 				}
 			);
+			chatSessionLogger.debug("agent.discovery.refresh.completed", {
+				environmentId: selectedEnvironment,
+				sourceCount: discovery.sources.length,
+				agentCount: discovery.agents.length,
+				errorCount: discovery.errors.length
+			});
 			if (isClosed()) {
 				return undefined;
 			}
@@ -953,6 +1011,9 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 
 	const runLoginSlashCommand = async (): Promise<void> => {
 		appendSystem(`Starting Aion login for ${selectedEnvironment}.`);
+		chatSessionLogger.info("auth.login.started", {
+			environmentId: selectedEnvironment
+		});
 		try {
 			const session = await loginWithWorkOS(selectedEnvironment, {
 				onDeviceAuthorization: async (prompt) => {
@@ -974,7 +1035,8 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			});
 			const bootstrap = await runLoginBootstrap({
 				environmentId: selectedEnvironment,
-				accessToken: session.accessToken
+				accessToken: session.accessToken,
+				logger: chatSessionLogger
 			});
 			const postAuthPath = resolvePostAuthPath(bootstrap);
 			if (postAuthPath) {
@@ -986,8 +1048,16 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				}
 			}
 			appendSystem(`Logged in to Aion ${selectedEnvironment}.`);
+			chatSessionLogger.info("auth.login.completed", {
+				environmentId: selectedEnvironment,
+				postAuthPath
+			});
 			setReconnectNonce((current) => current + 1);
 		} catch (error) {
+			chatSessionLogger.warn("auth.login.failed", {
+				environmentId: selectedEnvironment,
+				error
+			});
 			appendSystem(
 				`Login failed: ${error instanceof Error ? error.message : String(error)}`
 			);
