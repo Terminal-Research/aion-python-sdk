@@ -24,7 +24,8 @@ import {
 	connectClient,
 	createPushNotificationConfig,
 	type ConnectedClient,
-	type StreamEvent
+	type StreamEvent,
+	type TokenProvider
 } from "./connection.js";
 import {
 	discoverAgentSources,
@@ -35,9 +36,14 @@ import {
 	createExplicitAgentSource,
 	isTransientAgentSource,
 	mergeAgentSources,
+	normalizeSourceUrl,
 	type DiscoveredAgentRecord
 } from "./agents/model.js";
 import { buildMessageParts } from "./input/index.js";
+import {
+	type AionEnvironmentId,
+	getControlPlaneApiBaseUrl
+} from "./environment.js";
 import { formatMessageParts } from "./messageDisplay.js";
 import type { ResponseMode } from "./slashCommands.js";
 import { isTerminalTaskState } from "./taskState.js";
@@ -442,16 +448,34 @@ function canStream(agentCard: AgentCard): boolean {
 	return Boolean(agentCard.capabilities.streaming);
 }
 
+function isAionControlPlaneRegistryAgent(
+	selectedAgent: DiscoveredAgentRecord,
+	environmentId: AionEnvironmentId
+): boolean {
+	return (
+		selectedAgent.source.type === "registry" &&
+		normalizeSourceUrl(selectedAgent.source.url) ===
+			normalizeSourceUrl(getControlPlaneApiBaseUrl(environmentId))
+	);
+}
+
 function getConnectionOptions(
 	options: HeadlessRunOptions,
-	selectedAgent: DiscoveredAgentRecord
-): HeadlessRunOptions & { url: string } {
+	selectedAgent: DiscoveredAgentRecord,
+	environmentId: AionEnvironmentId,
+	registryTokenProvider: TokenProvider
+): HeadlessRunOptions & { url: string; tokenProvider?: TokenProvider } {
 	const useCliEndpointAuth = isTransientAgentSource(selectedAgent.source);
+	const useAionRegistryAuth = isAionControlPlaneRegistryAgent(
+		selectedAgent,
+		environmentId
+	);
 	return {
 		...options,
 		url: selectedAgent.connectionUrl,
 		agentId: selectedAgent.connectionAgentId,
 		token: useCliEndpointAuth ? options.token : undefined,
+		tokenProvider: useAionRegistryAuth ? registryTokenProvider : undefined,
 		headers: useCliEndpointAuth ? options.headers : {},
 		pushNotifications: options.pushNotifications,
 		pushReceiver: options.pushReceiver
@@ -525,7 +549,12 @@ export async function runHeadless(
 		explicitSourceKey
 	);
 	const clientState = await connectClientImpl(
-		getConnectionOptions(options, selectedAgent)
+		getConnectionOptions(
+			options,
+			selectedAgent,
+			selectedEnvironment,
+			() => getStoredAccessTokenImpl(selectedEnvironment)
+		)
 	);
 	const parts = await buildMessagePartsImpl(options.message ?? "");
 	const pushConfig = options.pushNotifications

@@ -12,7 +12,8 @@ import type {
 import {
 	type DiscoveredAgentRecord,
 	createExplicitAgentSource,
-	createDefaultLocalAgentSource
+	createDefaultLocalAgentSource,
+	createDefaultRegistryAgentSource
 } from "../src/lib/agents/model.js";
 
 const agentCard: AgentCard = {
@@ -471,6 +472,89 @@ describe("runHeadless", () => {
 
 		expect(stdout.output()).toBe("");
 		expect(stderr.output()).toBe("Task completed with no agent message.\n");
+	});
+
+	it("passes Aion registry auth only to built-in control-plane registry agents", async () => {
+		const registrySource = createDefaultRegistryAgentSource("development");
+		const registryAgent = discoveredAgent({
+			agentKey: `${registrySource.sourceKey}:prompt-agent`,
+			agentId: "identity-1",
+			id: "prompt-agent",
+			sourceKey: registrySource.sourceKey,
+			source: registrySource,
+			agentCardUrl:
+				"http://localhost:8080/distributions/demo/a2a/.well-known/agent-card.json",
+			connectionUrl:
+				"http://localhost:8080/distributions/demo/a2a/.well-known/agent-card.json",
+			connectionAgentId: undefined
+		});
+		const stdout = createStream();
+		const stderr = createStream();
+		const getStoredAccessTokenImpl = vi.fn(async () => "registry-token");
+		const connectClientImpl = vi.fn(async (connectionOptions) => {
+			expect(await connectionOptions.tokenProvider?.()).toBe("registry-token");
+			return connectedClient({});
+		});
+
+		await expect(
+			runHeadless(options({ agentSelector: "@prompt-agent" }), {
+				stdout: stdout.stream,
+				stderr: stderr.stream,
+				loadChatSettingsImpl: () => ({ settings: settings(registryAgent) }),
+				discoverAgentSourcesImpl: async () => discoveryResult(registryAgent),
+				connectClientImpl,
+				buildMessagePartsImpl: async (text) => buildParts(text),
+				getStoredAccessTokenImpl
+			})
+		).resolves.toBe(0);
+
+		expect(getStoredAccessTokenImpl).toHaveBeenCalledWith("development");
+		expect(connectClientImpl).toHaveBeenCalledWith(
+			expect.objectContaining({
+				token: undefined,
+				headers: {},
+				tokenProvider: expect.any(Function)
+			})
+		);
+	});
+
+	it("does not pass Aion registry auth to arbitrary registry sources", async () => {
+		const customRegistrySource = {
+			...createDefaultRegistryAgentSource("development"),
+			sourceKey: "custom-registry",
+			url: "http://example.com"
+		};
+		const registryAgent = discoveredAgent({
+			agentKey: `${customRegistrySource.sourceKey}:prompt-agent`,
+			agentId: "identity-1",
+			id: "prompt-agent",
+			sourceKey: customRegistrySource.sourceKey,
+			source: customRegistrySource,
+			agentCardUrl: "http://example.com/agents/prompt/.well-known/agent-card.json",
+			connectionUrl: "http://example.com/agents/prompt/.well-known/agent-card.json",
+			connectionAgentId: undefined
+		});
+		const stdout = createStream();
+		const stderr = createStream();
+		const getStoredAccessTokenImpl = vi.fn(async () => "registry-token");
+		const connectClientImpl = vi.fn(async () => connectedClient({}));
+
+		await expect(
+			runHeadless(options({ agentSelector: "@prompt-agent" }), {
+				stdout: stdout.stream,
+				stderr: stderr.stream,
+				loadChatSettingsImpl: () => ({ settings: settings(registryAgent) }),
+				discoverAgentSourcesImpl: async () => discoveryResult(registryAgent),
+				connectClientImpl,
+				buildMessagePartsImpl: async (text) => buildParts(text),
+				getStoredAccessTokenImpl
+			})
+		).resolves.toBe(0);
+
+		expect(connectClientImpl).toHaveBeenCalledWith(
+			expect.objectContaining({ tokenProvider: undefined })
+		);
+		expect(getStoredAccessTokenImpl).not.toHaveBeenCalled();
 	});
 
 	it("passes CLI auth only to explicit source fetches during discovery", async () => {

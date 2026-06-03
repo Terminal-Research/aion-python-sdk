@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type {
 	AgentCard,
+	AgentInterface,
 	Message,
 	MessageSendParams,
 	Part,
@@ -15,6 +16,7 @@ import {
 	ClientFactoryOptions,
 	DefaultAgentCardResolver,
 	JsonRpcTransportFactory,
+	RestTransportFactory,
 	type Client
 } from "@a2a-js/sdk/client";
 
@@ -49,6 +51,19 @@ export interface ChatConnectionOptions extends ChatCliOptions {
 }
 
 const AGENT_CARD_PATH = "/.well-known/agent-card.json";
+const CLIENT_TRANSPORT_PREFERENCES = ["JSONRPC", "HTTP+JSON"] as const;
+const ACCEPTED_OUTPUT_MODES = ["text", "text/plain", "application/json"] as const;
+
+interface AgentCardSupportedInterface {
+	url?: unknown;
+	protocolBinding?: unknown;
+	protocolVersion?: unknown;
+	tenant?: unknown;
+}
+
+interface AgentCardWithSupportedInterfaces extends AgentCard {
+	supportedInterfaces?: AgentCardSupportedInterface[];
+}
 
 function normalizeEndpoint(url: string): string {
 	return url.endsWith("/") ? url.slice(0, -1) : url;
@@ -199,6 +214,43 @@ function buildFetch(options: ChatConnectionOptions, endpoints: EndpointConfig): 
 	};
 }
 
+export function normalizeAgentCardTransports(agentCard: AgentCard): AgentCard {
+	const supportedInterfaces =
+		(agentCard as AgentCardWithSupportedInterfaces).supportedInterfaces ?? [];
+	const additionalInterfacesFromSupported = supportedInterfaces
+		.map((item): AgentInterface | undefined => {
+			if (typeof item.url !== "string" || typeof item.protocolBinding !== "string") {
+				return undefined;
+			}
+			return {
+				url: item.url,
+				transport: item.protocolBinding
+			};
+		})
+		.filter((item): item is AgentInterface => Boolean(item));
+
+	if (additionalInterfacesFromSupported.length === 0) {
+		return agentCard;
+	}
+
+	const preferredInterface =
+		additionalInterfacesFromSupported.find((item) =>
+			CLIENT_TRANSPORT_PREFERENCES.includes(
+				item.transport as (typeof CLIENT_TRANSPORT_PREFERENCES)[number]
+			)
+		) ?? additionalInterfacesFromSupported[0];
+
+	return {
+		...agentCard,
+		url: agentCard.url ?? preferredInterface.url,
+		preferredTransport: agentCard.preferredTransport ?? preferredInterface.transport,
+		additionalInterfaces: [
+			...(agentCard.additionalInterfaces ?? []),
+			...additionalInterfacesFromSupported
+		]
+	};
+}
+
 function rewriteAgentCard(agentCard: AgentCard, endpoints: EndpointConfig): AgentCard {
 	return {
 		...agentCard,
@@ -216,15 +268,18 @@ export async function connectClient(options: ChatConnectionOptions): Promise<Con
 	const fetchImpl = buildFetch(options, endpoints);
 	const resolver = new DefaultAgentCardResolver({ fetchImpl });
 	const resolvedCard = await resolver.resolve(endpoints.baseUrl, endpoints.cardPath);
-	const agentCard = options.agentId
-		? rewriteAgentCard(resolvedCard, endpoints)
-		: resolvedCard;
+	const agentCard = normalizeAgentCardTransports(
+		options.agentId ? rewriteAgentCard(resolvedCard, endpoints) : resolvedCard
+	);
 
 	const factoryOptions = ClientFactoryOptions.createFrom(ClientFactoryOptions.default, {
-		transports: [new JsonRpcTransportFactory({ fetchImpl })],
-		preferredTransports: ["JSONRPC"],
+		transports: [
+			new JsonRpcTransportFactory({ fetchImpl }),
+			new RestTransportFactory({ fetchImpl })
+		],
+		preferredTransports: [...CLIENT_TRANSPORT_PREFERENCES],
 		clientConfig: {
-			acceptedOutputModes: ["text"]
+			acceptedOutputModes: [...ACCEPTED_OUTPUT_MODES]
 		}
 	});
 	const factory = new ClientFactory(factoryOptions);
@@ -269,7 +324,7 @@ export function buildMessageParams(
 		},
 		metadata: generateTaskMetadata(),
 		configuration: {
-			acceptedOutputModes: ["text"],
+			acceptedOutputModes: [...ACCEPTED_OUTPUT_MODES],
 			...(pushNotificationConfig ? { pushNotificationConfig } : {})
 		}
 	};

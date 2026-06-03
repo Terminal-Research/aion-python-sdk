@@ -70,7 +70,8 @@ import {
 	type DiscoveredAgentRecord,
 	createExplicitAgentSource,
 	isTransientAgentSource,
-	mergeAgentSources
+	mergeAgentSources,
+	normalizeSourceUrl
 } from "./lib/agents/model.js";
 import {
 	resolveSessionFilePath,
@@ -198,6 +199,17 @@ function summarizeProtocolEventForLog(
 				parts: event.artifact.parts.map(summarizePartForLog)
 			};
 	}
+}
+
+function isAionControlPlaneRegistryAgent(
+	agent: DiscoveredAgentRecord,
+	environmentId: AionEnvironmentId
+): boolean {
+	return (
+		agent.source.type === "registry" &&
+		normalizeSourceUrl(agent.source.url) ===
+			normalizeSourceUrl(getControlPlaneApiBaseUrl(environmentId))
+	);
 }
 
 function summarizeAgentForLog(
@@ -800,10 +812,17 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				setTaskId(undefined);
 
 				const useCliEndpointAuth = isTransientAgentSource(selectedAgent.source);
+				const useAionRegistryAuth = isAionControlPlaneRegistryAgent(
+					selectedAgent,
+					selectedEnvironment
+				);
 				const connected = await connectClient({
 					...options,
 					headers: useCliEndpointAuth ? options.headers : {},
 					token: useCliEndpointAuth ? options.token : undefined,
+					tokenProvider: useAionRegistryAuth
+						? () => getStoredAccessToken(selectedEnvironment)
+						: undefined,
 					url: selectedAgent.connectionUrl,
 					agentId: selectedAgent.connectionAgentId
 				});

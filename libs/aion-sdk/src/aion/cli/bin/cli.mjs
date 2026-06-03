@@ -54373,6 +54373,8 @@ function generateTaskMetadata(options = {}) {
 
 // src/lib/connection.ts
 var AGENT_CARD_PATH2 = "/.well-known/agent-card.json";
+var CLIENT_TRANSPORT_PREFERENCES = ["JSONRPC", "HTTP+JSON"];
+var ACCEPTED_OUTPUT_MODES = ["text", "text/plain", "application/json"];
 function normalizeEndpoint(url) {
   return url.endsWith("/") ? url.slice(0, -1) : url;
 }
@@ -54486,6 +54488,35 @@ function buildFetch(options, endpoints) {
     });
   };
 }
+function normalizeAgentCardTransports(agentCard) {
+  const supportedInterfaces = agentCard.supportedInterfaces ?? [];
+  const additionalInterfacesFromSupported = supportedInterfaces.map((item) => {
+    if (typeof item.url !== "string" || typeof item.protocolBinding !== "string") {
+      return void 0;
+    }
+    return {
+      url: item.url,
+      transport: item.protocolBinding
+    };
+  }).filter((item) => Boolean(item));
+  if (additionalInterfacesFromSupported.length === 0) {
+    return agentCard;
+  }
+  const preferredInterface = additionalInterfacesFromSupported.find(
+    (item) => CLIENT_TRANSPORT_PREFERENCES.includes(
+      item.transport
+    )
+  ) ?? additionalInterfacesFromSupported[0];
+  return {
+    ...agentCard,
+    url: agentCard.url ?? preferredInterface.url,
+    preferredTransport: agentCard.preferredTransport ?? preferredInterface.transport,
+    additionalInterfaces: [
+      ...agentCard.additionalInterfaces ?? [],
+      ...additionalInterfacesFromSupported
+    ]
+  };
+}
 function rewriteAgentCard(agentCard, endpoints) {
   return {
     ...agentCard,
@@ -54501,12 +54532,17 @@ async function connectClient(options) {
   const fetchImpl = buildFetch(options, endpoints);
   const resolver = new DefaultAgentCardResolver({ fetchImpl });
   const resolvedCard = await resolver.resolve(endpoints.baseUrl, endpoints.cardPath);
-  const agentCard = options.agentId ? rewriteAgentCard(resolvedCard, endpoints) : resolvedCard;
+  const agentCard = normalizeAgentCardTransports(
+    options.agentId ? rewriteAgentCard(resolvedCard, endpoints) : resolvedCard
+  );
   const factoryOptions = ClientFactoryOptions.createFrom(ClientFactoryOptions.default, {
-    transports: [new JsonRpcTransportFactory({ fetchImpl })],
-    preferredTransports: ["JSONRPC"],
+    transports: [
+      new JsonRpcTransportFactory({ fetchImpl }),
+      new RestTransportFactory({ fetchImpl })
+    ],
+    preferredTransports: [...CLIENT_TRANSPORT_PREFERENCES],
     clientConfig: {
-      acceptedOutputModes: ["text"]
+      acceptedOutputModes: [...ACCEPTED_OUTPUT_MODES]
     }
   });
   const factory = new ClientFactory(factoryOptions);
@@ -54539,7 +54575,7 @@ function buildMessageParams(parts, contextId, taskId, pushNotificationConfig) {
     },
     metadata: generateTaskMetadata(),
     configuration: {
-      acceptedOutputModes: ["text"],
+      acceptedOutputModes: [...ACCEPTED_OUTPUT_MODES],
       ...pushNotificationConfig ? { pushNotificationConfig } : {}
     }
   };
@@ -56390,6 +56426,9 @@ function summarizeProtocolEventForLog(event) {
       };
   }
 }
+function isAionControlPlaneRegistryAgent(agent, environmentId) {
+  return agent.source.type === "registry" && normalizeSourceUrl(agent.source.url) === normalizeSourceUrl(getControlPlaneApiBaseUrl(environmentId));
+}
 function summarizeAgentForLog2(agent) {
   if (!agent) {
     return void 0;
@@ -56896,10 +56935,15 @@ ${JSON.stringify(
         );
         setTaskId(void 0);
         const useCliEndpointAuth = isTransientAgentSource(selectedAgent.source);
+        const useAionRegistryAuth = isAionControlPlaneRegistryAgent(
+          selectedAgent,
+          selectedEnvironment
+        );
         const connected = await connectClient({
           ...options,
           headers: useCliEndpointAuth ? options.headers : {},
           token: useCliEndpointAuth ? options.token : void 0,
+          tokenProvider: useAionRegistryAuth ? () => getStoredAccessToken(selectedEnvironment) : void 0,
           url: selectedAgent.connectionUrl,
           agentId: selectedAgent.connectionAgentId
         });
@@ -58139,13 +58183,21 @@ async function sendStreamingMessage({
 function canStream(agentCard) {
   return Boolean(agentCard.capabilities.streaming);
 }
-function getConnectionOptions(options, selectedAgent) {
+function isAionControlPlaneRegistryAgent2(selectedAgent, environmentId) {
+  return selectedAgent.source.type === "registry" && normalizeSourceUrl(selectedAgent.source.url) === normalizeSourceUrl(getControlPlaneApiBaseUrl(environmentId));
+}
+function getConnectionOptions(options, selectedAgent, environmentId, registryTokenProvider) {
   const useCliEndpointAuth = isTransientAgentSource(selectedAgent.source);
+  const useAionRegistryAuth = isAionControlPlaneRegistryAgent2(
+    selectedAgent,
+    environmentId
+  );
   return {
     ...options,
     url: selectedAgent.connectionUrl,
     agentId: selectedAgent.connectionAgentId,
     token: useCliEndpointAuth ? options.token : void 0,
+    tokenProvider: useAionRegistryAuth ? registryTokenProvider : void 0,
     headers: useCliEndpointAuth ? options.headers : {},
     pushNotifications: options.pushNotifications,
     pushReceiver: options.pushReceiver
@@ -58197,7 +58249,12 @@ async function runHeadless(options, dependencies = {}) {
     explicitSourceKey
   );
   const clientState = await connectClientImpl(
-    getConnectionOptions(options, selectedAgent)
+    getConnectionOptions(
+      options,
+      selectedAgent,
+      selectedEnvironment,
+      () => getStoredAccessTokenImpl(selectedEnvironment)
+    )
   );
   const parts = await buildMessagePartsImpl(options.message ?? "");
   const pushConfig = options.pushNotifications ? createPushNotificationConfig(options.pushReceiver) : void 0;
