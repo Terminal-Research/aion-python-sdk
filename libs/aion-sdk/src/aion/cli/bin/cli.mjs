@@ -52293,11 +52293,21 @@ var TERMINAL_TASK_STATES = /* @__PURE__ */ new Set([
   TaskState.TASK_STATE_FAILED,
   TaskState.TASK_STATE_REJECTED
 ]);
+var CONTINUATION_TASK_STATES = /* @__PURE__ */ new Set([
+  TaskState.TASK_STATE_INPUT_REQUIRED,
+  TaskState.TASK_STATE_AUTH_REQUIRED
+]);
 var LEGACY_TERMINAL_TASK_STATES = /* @__PURE__ */ new Set([
   "completed",
   "canceled",
   "failed",
   "rejected"
+]);
+var LEGACY_CONTINUATION_TASK_STATES = /* @__PURE__ */ new Set([
+  "input-required",
+  "input_required",
+  "auth-required",
+  "auth_required"
 ]);
 function makeTextPart(text) {
   return {
@@ -52356,6 +52366,15 @@ function isTerminalTaskState(state) {
     return LEGACY_TERMINAL_TASK_STATES.has(state);
   }
   return TERMINAL_TASK_STATES.has(state);
+}
+function isTaskContinuationState(state) {
+  if (state === void 0) {
+    return false;
+  }
+  if (typeof state === "string") {
+    return LEGACY_CONTINUATION_TASK_STATES.has(state);
+  }
+  return CONTINUATION_TASK_STATES.has(state);
 }
 function taskStateLabel(state) {
   if (state === void 0) {
@@ -56662,9 +56681,7 @@ ${JSON.stringify(
     if (message.contextId) {
       setContextId(message.contextId);
     }
-    if (message.taskId) {
-      setTaskId(message.taskId);
-    }
+    setTaskId(void 0);
     if (responseMode === "a2a-protocol") {
       appendProtocol(message);
       return true;
@@ -56674,7 +56691,7 @@ ${JSON.stringify(
   const handleTaskSnapshot = (task) => {
     setContextId(task.contextId);
     const isTerminalTask = isTerminalTaskState(task.status?.state);
-    setTaskId(isTerminalTask ? void 0 : task.id);
+    setTaskId(isTaskContinuationState(task.status?.state) ? task.id : void 0);
     if (responseMode === "a2a-protocol") {
       appendProtocol(task);
       return true;
@@ -56694,7 +56711,7 @@ ${JSON.stringify(
   };
   const handleStatusUpdate = (event) => {
     setContextId(event.contextId);
-    setTaskId(isTerminalTaskState(event.status?.state) ? void 0 : event.taskId);
+    setTaskId(isTaskContinuationState(event.status?.state) ? event.taskId : void 0);
     setStreamLabel(taskStateLabel(event.status?.state));
     if (responseMode === "a2a-protocol") {
       appendProtocol(event);
@@ -56711,7 +56728,7 @@ ${JSON.stringify(
   };
   const handleArtifactUpdate = (event) => {
     setContextId(event.contextId);
-    setTaskId(event.taskId);
+    setTaskId(void 0);
     const artifact = event.artifact;
     if (!artifact) {
       return false;

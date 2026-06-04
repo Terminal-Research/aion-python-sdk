@@ -1,1 +1,1 @@
-export { isTerminalTaskState } from "./a2aProtocol.js";
+export { isTaskContinuationState, isTerminalTaskState } from "./a2aProtocol.js";

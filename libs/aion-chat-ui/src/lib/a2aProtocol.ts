@@ -17,11 +17,23 @@ const TERMINAL_TASK_STATES = new Set<TaskState>([
 	TaskState.TASK_STATE_REJECTED
 ]);
 
+const CONTINUATION_TASK_STATES = new Set<TaskState>([
+	TaskState.TASK_STATE_INPUT_REQUIRED,
+	TaskState.TASK_STATE_AUTH_REQUIRED
+]);
+
 const LEGACY_TERMINAL_TASK_STATES = new Set([
 	"completed",
 	"canceled",
 	"failed",
 	"rejected"
+]);
+
+const LEGACY_CONTINUATION_TASK_STATES = new Set([
+	"input-required",
+	"input_required",
+	"auth-required",
+	"auth_required"
 ]);
 
 export function makeTextPart(text: string): Part {
@@ -110,6 +122,16 @@ export function isTerminalTaskState(state: TaskState | string | undefined): bool
 		return LEGACY_TERMINAL_TASK_STATES.has(state);
 	}
 	return TERMINAL_TASK_STATES.has(state);
+}
+
+export function isTaskContinuationState(state: TaskState | string | undefined): boolean {
+	if (state === undefined) {
+		return false;
+	}
+	if (typeof state === "string") {
+		return LEGACY_CONTINUATION_TASK_STATES.has(state);
+	}
+	return CONTINUATION_TASK_STATES.has(state);
 }
 
 export function taskStateLabel(state: TaskState | string | undefined): string {

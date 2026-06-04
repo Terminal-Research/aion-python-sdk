@@ -122,7 +122,10 @@ import {
 	type ResponseMode,
 	type SlashCommandId
 } from "./lib/slashCommands.js";
-import { isTerminalTaskState } from "./lib/taskState.js";
+import {
+	isTaskContinuationState,
+	isTerminalTaskState
+} from "./lib/taskState.js";
 import { getStoredAccessToken, loginWithWorkOS } from "./lib/workosAuth.js";
 
 const NO_AGENT_MESSAGE_NOTICE = "Task completed with no agent message.";
@@ -906,9 +909,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		if (message.contextId) {
 			setContextId(message.contextId);
 		}
-		if (message.taskId) {
-			setTaskId(message.taskId);
-		}
+		setTaskId(undefined);
 
 		if (responseMode === "a2a-protocol") {
 			appendProtocol(message);
@@ -921,7 +922,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 	const handleTaskSnapshot = (task: Task): boolean => {
 		setContextId(task.contextId);
 		const isTerminalTask = isTerminalTaskState(task.status?.state);
-		setTaskId(isTerminalTask ? undefined : task.id);
+		setTaskId(isTaskContinuationState(task.status?.state) ? task.id : undefined);
 
 		if (responseMode === "a2a-protocol") {
 			appendProtocol(task);
@@ -945,7 +946,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 
 	const handleStatusUpdate = (event: TaskStatusUpdateEvent): boolean => {
 		setContextId(event.contextId);
-		setTaskId(isTerminalTaskState(event.status?.state) ? undefined : event.taskId);
+		setTaskId(isTaskContinuationState(event.status?.state) ? event.taskId : undefined);
 		setStreamLabel(taskStateLabel(event.status?.state));
 
 		if (responseMode === "a2a-protocol") {
@@ -967,7 +968,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 
 	const handleArtifactUpdate = (event: TaskArtifactUpdateEvent): boolean => {
 		setContextId(event.contextId);
-		setTaskId(event.taskId);
+		setTaskId(undefined);
 
 		const artifact = event.artifact;
 		if (!artifact) {
