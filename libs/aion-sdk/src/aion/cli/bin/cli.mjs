@@ -49041,7 +49041,7 @@ var package_default = {
     prepublishOnly: "npm run build"
   },
   dependencies: {
-    "@a2a-js/sdk": "^0.3.13",
+    "@a2a-js/sdk": "^1.0.0-alpha.0",
     "@napi-rs/keyring": "^1.2.0",
     "cli-highlight": "^2.1.11",
     ink: "^6.2.3",
@@ -50948,349 +50948,21 @@ async function writeClipboard(content, options = {}) {
 // src/lib/input/parser/extractors/filePathExtractor.ts
 import { existsSync as existsSync2, readFileSync as readFileSync3, statSync } from "fs";
 import { basename, extname, resolve } from "path";
-var MAX_FILE_SIZE = 512 * 1024;
-var PATH_PATTERN = /(?:^|\s)(\.{0,2}\/[^\s"'`)\]]+)/gm;
-var MIME_TYPES = {
-  ".txt": "text/plain",
-  ".log": "text/plain",
-  ".md": "text/markdown",
-  ".json": "application/json",
-  ".yaml": "text/yaml",
-  ".yml": "text/yaml",
-  ".toml": "text/toml",
-  ".csv": "text/csv",
-  ".ts": "text/x-typescript",
-  ".js": "text/javascript",
-  ".py": "text/x-python",
-  ".sh": "text/x-sh",
-  ".html": "text/html",
-  ".xml": "text/xml",
-  ".css": "text/css",
-  ".env": "text/plain",
-  ".conf": "text/plain",
-  ".ini": "text/plain"
-};
-function isBinary(buffer) {
-  const limit = Math.min(buffer.length, 512);
-  for (let i = 0; i < limit; i++) {
-    if (buffer[i] === 0) return true;
-  }
-  return false;
-}
-function getMimeType(filePath) {
-  return MIME_TYPES[extname(filePath).toLowerCase()] ?? "application/octet-stream";
-}
-var filePathExtractor = {
-  detect(text) {
-    const spans = [];
-    const regex2 = new RegExp(PATH_PATTERN.source, PATH_PATTERN.flags);
-    let match;
-    while ((match = regex2.exec(text)) !== null) {
-      const raw = match[1].replace(/[,;:.!?]+$/, "");
-      if (!raw) continue;
-      const absolute = resolve(raw);
-      if (!existsSync2(absolute)) continue;
-      try {
-        if (!statSync(absolute).isFile()) continue;
-      } catch {
-        continue;
-      }
-      const start = match.index + match[0].indexOf(raw);
-      spans.push({ start, end: start + raw.length, raw: absolute });
-    }
-    return spans;
-  },
-  async parse(span) {
-    try {
-      const stat = statSync(span.raw);
-      if (stat.size > MAX_FILE_SIZE) return null;
-      const buffer = readFileSync3(span.raw);
-      if (isBinary(buffer)) return null;
-      return {
-        kind: "file",
-        file: {
-          name: basename(span.raw),
-          mimeType: getMimeType(span.raw),
-          bytes: buffer.toString("base64")
-        }
-      };
-    } catch {
-      return null;
-    }
-  }
-};
 
-// src/lib/input/parser/extractors/index.ts
-var EXTRACTORS = [filePathExtractor];
-
-// src/lib/input/parser/pipeline.ts
-function makeTextPart(text) {
-  return { kind: "text", text };
-}
-async function buildMessageParts(text, extractors) {
-  const allSpans = [];
-  for (const extractor of extractors) {
-    for (const span of extractor.detect(text)) {
-      allSpans.push({ span, extractor });
-    }
-  }
-  allSpans.sort((a, b) => a.span.start - b.span.start);
-  const resolved = [];
-  let cursor = 0;
-  for (const item of allSpans) {
-    if (item.span.start >= cursor) {
-      resolved.push(item);
-      cursor = item.span.end;
-    }
-  }
-  const parts = [];
-  let pos = 0;
-  for (const { span, extractor } of resolved) {
-    const before = text.slice(pos, span.start).trim();
-    if (before) parts.push(makeTextPart(before));
-    const part = await extractor.parse(span);
-    if (part) parts.push(part);
-    pos = span.end;
-  }
-  const remainder = text.slice(pos).trim();
-  if (remainder) parts.push(makeTextPart(remainder));
-  if (parts.length === 0) parts.push(makeTextPart(text));
-  return parts;
-}
-
-// src/lib/input/parser/index.ts
-var buildMessageParts2 = (text) => buildMessageParts(text, EXTRACTORS);
-
-// src/lib/input/mentions/fileMention.ts
-import { readdirSync, statSync as statSync2 } from "fs";
-import { homedir } from "os";
-import { basename as basename2, dirname, isAbsolute, join, resolve as resolve2 } from "path";
-var FILE_MENTION_PATTERN = /(?:^|\s)#(\S*)$/;
-function getFileMentionMatch(draft) {
-  const match = FILE_MENTION_PATTERN.exec(draft);
-  if (!match) return void 0;
-  return {
-    query: match[1] ?? "",
-    start: match.index + match[0].lastIndexOf("#"),
-    end: draft.length
-  };
-}
-function clearFileMention(draft) {
-  const match = getFileMentionMatch(draft);
-  if (!match) return draft;
-  return draft.slice(0, match.start).trimEnd();
-}
-function getFileSuggestions(query, limit = 8) {
-  try {
-    const expanded = query.startsWith("~/") ? `${homedir()}/${query.slice(2)}` : query;
-    let dirPart;
-    let filePart;
-    if (expanded.endsWith("/")) {
-      dirPart = expanded;
-      filePart = "";
-    } else if (expanded.includes("/")) {
-      dirPart = dirname(expanded);
-      filePart = basename2(expanded);
-    } else {
-      dirPart = ".";
-      filePart = expanded;
-    }
-    const absDir = isAbsolute(dirPart) ? dirPart : resolve2(dirPart);
-    return readdirSync(absDir).filter((name) => name.startsWith(filePart) && !name.startsWith(".")).flatMap((name) => {
-      const abs = join(absDir, name);
-      try {
-        const isDirectory = statSync2(abs).isDirectory();
-        return [{ label: isDirectory ? `${name}/` : name, absolutePath: abs, isDirectory }];
-      } catch {
-        return [];
-      }
-    }).slice(0, limit);
-  } catch {
-    return [];
-  }
-}
-function applyFileSuggestion(draft, suggestion) {
-  const match = getFileMentionMatch(draft);
-  if (!match) return draft;
-  const before = draft.slice(0, match.start).trimEnd();
-  if (suggestion.isDirectory) {
-    const mention = `#${suggestion.absolutePath}/`;
-    return before ? `${before} ${mention}` : mention;
-  }
-  return before ? `${before} ${suggestion.absolutePath}` : suggestion.absolutePath;
-}
-
-// src/lib/connection.ts
-import { randomUUID } from "crypto";
-
-// node_modules/@a2a-js/sdk/dist/chunk-WMQQYH7W.js
-async function* parseSseStream(response) {
-  if (!response.body) {
-    throw new Error("SSE response body is undefined. Cannot read stream.");
-  }
-  let buffer = "";
-  let eventType = "message";
-  let eventData = "";
-  const stream = response.body.pipeThrough(new TextDecoderStream());
-  for await (const value of readFrom(stream)) {
-    buffer += value;
-    let lineEndIndex;
-    while ((lineEndIndex = buffer.indexOf("\n")) >= 0) {
-      const line = buffer.substring(0, lineEndIndex).trim();
-      buffer = buffer.substring(lineEndIndex + 1);
-      if (line === "") {
-        if (eventData) {
-          yield { type: eventType, data: eventData };
-          eventData = "";
-          eventType = "message";
-        }
-      } else if (line.startsWith("event:")) {
-        eventType = line.substring("event:".length).trim();
-      } else if (line.startsWith("data:")) {
-        eventData = line.substring("data:".length).trim();
-      }
-    }
-  }
-  if (eventData) {
-    yield { type: eventType, data: eventData };
-  }
-}
-async function* readFrom(stream) {
-  const reader = stream.getReader();
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
-        break;
-      }
-      yield value;
-    }
-  } finally {
-    reader.releaseLock();
-  }
-}
-
-// node_modules/@a2a-js/sdk/dist/chunk-3QDLXHKS.js
-var AGENT_CARD_PATH = ".well-known/agent-card.json";
-
-// node_modules/@a2a-js/sdk/dist/chunk-EGOOH5HP.js
-var A2A_ERROR_CODE = {
-  PARSE_ERROR: -32700,
-  INVALID_REQUEST: -32600,
-  METHOD_NOT_FOUND: -32601,
-  INVALID_PARAMS: -32602,
-  INTERNAL_ERROR: -32603,
-  TASK_NOT_FOUND: -32001,
-  TASK_NOT_CANCELABLE: -32002,
-  PUSH_NOTIFICATION_NOT_SUPPORTED: -32003,
-  UNSUPPORTED_OPERATION: -32004,
-  CONTENT_TYPE_NOT_SUPPORTED: -32005,
-  INVALID_AGENT_RESPONSE: -32006,
-  AUTHENTICATED_EXTENDED_CARD_NOT_CONFIGURED: -32007
-};
-var TaskNotFoundError = class extends Error {
-  constructor(message) {
-    super(message ?? "Task not found");
-    this.name = "TaskNotFoundError";
-  }
-};
-var TaskNotCancelableError = class extends Error {
-  constructor(message) {
-    super(message ?? "Task cannot be canceled");
-    this.name = "TaskNotCancelableError";
-  }
-};
-var PushNotificationNotSupportedError = class extends Error {
-  constructor(message) {
-    super(message ?? "Push Notification is not supported");
-    this.name = "PushNotificationNotSupportedError";
-  }
-};
-var UnsupportedOperationError = class extends Error {
-  constructor(message) {
-    super(message ?? "This operation is not supported");
-    this.name = "UnsupportedOperationError";
-  }
-};
-var ContentTypeNotSupportedError = class extends Error {
-  constructor(message) {
-    super(message ?? "Incompatible content types");
-    this.name = "ContentTypeNotSupportedError";
-  }
-};
-var InvalidAgentResponseError = class extends Error {
-  constructor(message) {
-    super(message ?? "Invalid agent response type");
-    this.name = "InvalidAgentResponseError";
-  }
-};
-var AuthenticatedExtendedCardNotConfiguredError = class extends Error {
-  constructor(message) {
-    super(message ?? "Authenticated Extended Card not configured");
-    this.name = "AuthenticatedExtendedCardNotConfiguredError";
-  }
-};
-
-// node_modules/@a2a-js/sdk/dist/chunk-UHZEIZLS.js
-var A2AError = class _A2AError extends Error {
-  code;
-  data;
-  taskId;
-  // Optional task ID context
-  constructor(code, message, data, taskId) {
-    super(message);
-    this.name = "A2AError";
-    this.code = code;
-    this.data = data;
-    this.taskId = taskId;
-  }
-  /**
-   * Formats the error into a standard JSON-RPC error object structure.
-   */
-  toJSONRPCError() {
-    const errorObject = {
-      code: this.code,
-      message: this.message
-    };
-    if (this.data !== void 0) {
-      errorObject.data = this.data;
-    }
-    return errorObject;
-  }
-  // Static factory methods for common errors
-  static parseError(message, data) {
-    return new _A2AError(-32700, message, data);
-  }
-  static invalidRequest(message, data) {
-    return new _A2AError(-32600, message, data);
-  }
-  static methodNotFound(method) {
-    return new _A2AError(-32601, `Method not found: ${method}`);
-  }
-  static invalidParams(message, data) {
-    return new _A2AError(-32602, message, data);
-  }
-  static internalError(message, data) {
-    return new _A2AError(-32603, message, data);
-  }
-  static taskNotFound(taskId) {
-    return new _A2AError(-32001, `Task not found: ${taskId}`, void 0, taskId);
-  }
-  static taskNotCancelable(taskId) {
-    return new _A2AError(-32002, `Task not cancelable: ${taskId}`, void 0, taskId);
-  }
-  static pushNotificationNotSupported() {
-    return new _A2AError(-32003, "Push Notification is not supported");
-  }
-  static unsupportedOperation(operation) {
-    return new _A2AError(-32004, `Unsupported operation: ${operation}`);
-  }
-  static authenticatedExtendedCardNotConfigured() {
-    return new _A2AError(-32007, `Extended card not configured.`);
-  }
-};
-
-// node_modules/@a2a-js/sdk/dist/chunk-5ONEQMOQ.js
+// node_modules/@a2a-js/sdk/dist/chunk-IFX37PQI.js
+var TaskState = /* @__PURE__ */ ((TaskState2) => {
+  TaskState2[TaskState2["TASK_STATE_UNSPECIFIED"] = 0] = "TASK_STATE_UNSPECIFIED";
+  TaskState2[TaskState2["TASK_STATE_SUBMITTED"] = 1] = "TASK_STATE_SUBMITTED";
+  TaskState2[TaskState2["TASK_STATE_WORKING"] = 2] = "TASK_STATE_WORKING";
+  TaskState2[TaskState2["TASK_STATE_COMPLETED"] = 3] = "TASK_STATE_COMPLETED";
+  TaskState2[TaskState2["TASK_STATE_FAILED"] = 4] = "TASK_STATE_FAILED";
+  TaskState2[TaskState2["TASK_STATE_CANCELED"] = 5] = "TASK_STATE_CANCELED";
+  TaskState2[TaskState2["TASK_STATE_INPUT_REQUIRED"] = 6] = "TASK_STATE_INPUT_REQUIRED";
+  TaskState2[TaskState2["TASK_STATE_REJECTED"] = 7] = "TASK_STATE_REJECTED";
+  TaskState2[TaskState2["TASK_STATE_AUTH_REQUIRED"] = 8] = "TASK_STATE_AUTH_REQUIRED";
+  TaskState2[TaskState2["UNRECOGNIZED"] = -1] = "UNRECOGNIZED";
+  return TaskState2;
+})(TaskState || {});
 function taskStateFromJSON(object) {
   switch (object) {
     case 0:
@@ -51309,7 +50981,7 @@ function taskStateFromJSON(object) {
     case "TASK_STATE_FAILED":
       return 4;
     case 5:
-    case "TASK_STATE_CANCELLED":
+    case "TASK_STATE_CANCELED":
       return 5;
     case 6:
     case "TASK_STATE_INPUT_REQUIRED":
@@ -51339,7 +51011,7 @@ function taskStateToJSON(object) {
     case 4:
       return "TASK_STATE_FAILED";
     case 5:
-      return "TASK_STATE_CANCELLED";
+      return "TASK_STATE_CANCELED";
     case 6:
       return "TASK_STATE_INPUT_REQUIRED";
     case 7:
@@ -51351,6 +51023,13 @@ function taskStateToJSON(object) {
       return "UNRECOGNIZED";
   }
 }
+var Role = /* @__PURE__ */ ((Role2) => {
+  Role2[Role2["ROLE_UNSPECIFIED"] = 0] = "ROLE_UNSPECIFIED";
+  Role2[Role2["ROLE_USER"] = 1] = "ROLE_USER";
+  Role2[Role2["ROLE_AGENT"] = 2] = "ROLE_AGENT";
+  Role2[Role2["UNRECOGNIZED"] = -1] = "UNRECOGNIZED";
+  return Role2;
+})(Role || {});
 function roleFromJSON(object) {
   switch (object) {
     case 0:
@@ -51387,9 +51066,9 @@ var SendMessageConfiguration = {
       acceptedOutputModes: globalThis.Array.isArray(object?.acceptedOutputModes) ? object.acceptedOutputModes.map((e) => globalThis.String(e)) : globalThis.Array.isArray(object?.accepted_output_modes) ? object.accepted_output_modes.map(
         (e) => globalThis.String(e)
       ) : [],
-      pushNotification: isSet(object.pushNotification) ? PushNotificationConfig.fromJSON(object.pushNotification) : isSet(object.push_notification) ? PushNotificationConfig.fromJSON(object.push_notification) : void 0,
-      historyLength: isSet(object.historyLength) ? globalThis.Number(object.historyLength) : isSet(object.history_length) ? globalThis.Number(object.history_length) : 0,
-      blocking: isSet(object.blocking) ? globalThis.Boolean(object.blocking) : false
+      taskPushNotificationConfig: isSet(object.taskPushNotificationConfig) ? TaskPushNotificationConfig.fromJSON(object.taskPushNotificationConfig) : isSet(object.task_push_notification_config) ? TaskPushNotificationConfig.fromJSON(object.task_push_notification_config) : void 0,
+      historyLength: isSet(object.historyLength) ? globalThis.Number(object.historyLength) : isSet(object.history_length) ? globalThis.Number(object.history_length) : void 0,
+      returnImmediately: isSet(object.returnImmediately) ? globalThis.Boolean(object.returnImmediately) : isSet(object.return_immediately) ? globalThis.Boolean(object.return_immediately) : false
     };
   },
   toJSON(message) {
@@ -51397,14 +51076,14 @@ var SendMessageConfiguration = {
     if (message.acceptedOutputModes?.length) {
       obj.acceptedOutputModes = message.acceptedOutputModes;
     }
-    if (message.pushNotification !== void 0) {
-      obj.pushNotification = PushNotificationConfig.toJSON(message.pushNotification);
+    if (message.taskPushNotificationConfig !== void 0) {
+      obj.taskPushNotificationConfig = TaskPushNotificationConfig.toJSON(message.taskPushNotificationConfig);
     }
-    if (message.historyLength !== 0) {
+    if (message.historyLength !== void 0) {
       obj.historyLength = Math.round(message.historyLength);
     }
-    if (message.blocking !== false) {
-      obj.blocking = message.blocking;
+    if (message.returnImmediately !== false) {
+      obj.returnImmediately = message.returnImmediately;
     }
     return obj;
   }
@@ -51447,7 +51126,7 @@ var TaskStatus = {
   fromJSON(object) {
     return {
       state: isSet(object.state) ? taskStateFromJSON(object.state) : 0,
-      update: isSet(object.message) ? Message.fromJSON(object.message) : isSet(object.update) ? Message.fromJSON(object.update) : void 0,
+      message: isSet(object.message) ? Message.fromJSON(object.message) : void 0,
       timestamp: isSet(object.timestamp) ? globalThis.String(object.timestamp) : void 0
     };
   },
@@ -51456,8 +51135,8 @@ var TaskStatus = {
     if (message.state !== 0) {
       obj.state = taskStateToJSON(message.state);
     }
-    if (message.update !== void 0) {
-      obj.message = Message.toJSON(message.update);
+    if (message.message !== void 0) {
+      obj.message = Message.toJSON(message.message);
     }
     if (message.timestamp !== void 0) {
       obj.timestamp = message.timestamp;
@@ -51468,49 +51147,31 @@ var TaskStatus = {
 var Part = {
   fromJSON(object) {
     return {
-      part: isSet(object.text) ? { $case: "text", value: globalThis.String(object.text) } : isSet(object.file) ? { $case: "file", value: FilePart.fromJSON(object.file) } : isSet(object.data) ? { $case: "data", value: DataPart.fromJSON(object.data) } : void 0
+      content: isSet(object.text) ? { $case: "text", value: globalThis.String(object.text) } : isSet(object.raw) ? { $case: "raw", value: Buffer.from(bytesFromBase64(object.raw)) } : isSet(object.url) ? { $case: "url", value: globalThis.String(object.url) } : isSet(object.data) ? { $case: "data", value: object.data } : void 0,
+      metadata: isObject2(object.metadata) ? object.metadata : void 0,
+      filename: isSet(object.filename) ? globalThis.String(object.filename) : "",
+      mediaType: isSet(object.mediaType) ? globalThis.String(object.mediaType) : isSet(object.media_type) ? globalThis.String(object.media_type) : ""
     };
   },
   toJSON(message) {
     const obj = {};
-    if (message.part?.$case === "text") {
-      obj.text = message.part.value;
-    } else if (message.part?.$case === "file") {
-      obj.file = FilePart.toJSON(message.part.value);
-    } else if (message.part?.$case === "data") {
-      obj.data = DataPart.toJSON(message.part.value);
+    if (message.content?.$case === "text") {
+      obj.text = message.content.value;
+    } else if (message.content?.$case === "raw") {
+      obj.raw = base64FromBytes(message.content.value);
+    } else if (message.content?.$case === "url") {
+      obj.url = message.content.value;
+    } else if (message.content?.$case === "data") {
+      obj.data = message.content.value;
     }
-    return obj;
-  }
-};
-var FilePart = {
-  fromJSON(object) {
-    return {
-      file: isSet(object.fileWithUri) ? { $case: "fileWithUri", value: globalThis.String(object.fileWithUri) } : isSet(object.file_with_uri) ? { $case: "fileWithUri", value: globalThis.String(object.file_with_uri) } : isSet(object.fileWithBytes) ? { $case: "fileWithBytes", value: Buffer.from(bytesFromBase64(object.fileWithBytes)) } : isSet(object.file_with_bytes) ? { $case: "fileWithBytes", value: Buffer.from(bytesFromBase64(object.file_with_bytes)) } : void 0,
-      mimeType: isSet(object.mimeType) ? globalThis.String(object.mimeType) : isSet(object.mime_type) ? globalThis.String(object.mime_type) : ""
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.file?.$case === "fileWithUri") {
-      obj.fileWithUri = message.file.value;
-    } else if (message.file?.$case === "fileWithBytes") {
-      obj.fileWithBytes = base64FromBytes(message.file.value);
+    if (message.metadata !== void 0) {
+      obj.metadata = message.metadata;
     }
-    if (message.mimeType !== "") {
-      obj.mimeType = message.mimeType;
+    if (message.filename !== "") {
+      obj.filename = message.filename;
     }
-    return obj;
-  }
-};
-var DataPart = {
-  fromJSON(object) {
-    return { data: isObject2(object.data) ? object.data : void 0 };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.data !== void 0) {
-      obj.data = message.data;
+    if (message.mediaType !== "") {
+      obj.mediaType = message.mediaType;
     }
     return obj;
   }
@@ -51522,9 +51183,10 @@ var Message = {
       contextId: isSet(object.contextId) ? globalThis.String(object.contextId) : isSet(object.context_id) ? globalThis.String(object.context_id) : "",
       taskId: isSet(object.taskId) ? globalThis.String(object.taskId) : isSet(object.task_id) ? globalThis.String(object.task_id) : "",
       role: isSet(object.role) ? roleFromJSON(object.role) : 0,
-      content: globalThis.Array.isArray(object?.content) ? object.content.map((e) => Part.fromJSON(e)) : [],
+      parts: globalThis.Array.isArray(object?.parts) ? object.parts.map((e) => Part.fromJSON(e)) : [],
       metadata: isObject2(object.metadata) ? object.metadata : void 0,
-      extensions: globalThis.Array.isArray(object?.extensions) ? object.extensions.map((e) => globalThis.String(e)) : []
+      extensions: globalThis.Array.isArray(object?.extensions) ? object.extensions.map((e) => globalThis.String(e)) : [],
+      referenceTaskIds: globalThis.Array.isArray(object?.referenceTaskIds) ? object.referenceTaskIds.map((e) => globalThis.String(e)) : globalThis.Array.isArray(object?.reference_task_ids) ? object.reference_task_ids.map((e) => globalThis.String(e)) : []
     };
   },
   toJSON(message) {
@@ -51541,14 +51203,17 @@ var Message = {
     if (message.role !== 0) {
       obj.role = roleToJSON(message.role);
     }
-    if (message.content?.length) {
-      obj.content = message.content.map((e) => Part.toJSON(e));
+    if (message.parts?.length) {
+      obj.parts = message.parts.map((e) => Part.toJSON(e));
     }
     if (message.metadata !== void 0) {
       obj.metadata = message.metadata;
     }
     if (message.extensions?.length) {
       obj.extensions = message.extensions;
+    }
+    if (message.referenceTaskIds?.length) {
+      obj.referenceTaskIds = message.referenceTaskIds;
     }
     return obj;
   }
@@ -51593,7 +51258,6 @@ var TaskStatusUpdateEvent = {
       taskId: isSet(object.taskId) ? globalThis.String(object.taskId) : isSet(object.task_id) ? globalThis.String(object.task_id) : "",
       contextId: isSet(object.contextId) ? globalThis.String(object.contextId) : isSet(object.context_id) ? globalThis.String(object.context_id) : "",
       status: isSet(object.status) ? TaskStatus.fromJSON(object.status) : void 0,
-      final: isSet(object.final) ? globalThis.Boolean(object.final) : false,
       metadata: isObject2(object.metadata) ? object.metadata : void 0
     };
   },
@@ -51607,9 +51271,6 @@ var TaskStatusUpdateEvent = {
     }
     if (message.status !== void 0) {
       obj.status = TaskStatus.toJSON(message.status);
-    }
-    if (message.final !== false) {
-      obj.final = message.final;
     }
     if (message.metadata !== void 0) {
       obj.metadata = message.metadata;
@@ -51651,43 +51312,17 @@ var TaskArtifactUpdateEvent = {
     return obj;
   }
 };
-var PushNotificationConfig = {
-  fromJSON(object) {
-    return {
-      id: isSet(object.id) ? globalThis.String(object.id) : "",
-      url: isSet(object.url) ? globalThis.String(object.url) : "",
-      token: isSet(object.token) ? globalThis.String(object.token) : "",
-      authentication: isSet(object.authentication) ? AuthenticationInfo.fromJSON(object.authentication) : void 0
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.id !== "") {
-      obj.id = message.id;
-    }
-    if (message.url !== "") {
-      obj.url = message.url;
-    }
-    if (message.token !== "") {
-      obj.token = message.token;
-    }
-    if (message.authentication !== void 0) {
-      obj.authentication = AuthenticationInfo.toJSON(message.authentication);
-    }
-    return obj;
-  }
-};
 var AuthenticationInfo = {
   fromJSON(object) {
     return {
-      schemes: globalThis.Array.isArray(object?.schemes) ? object.schemes.map((e) => globalThis.String(e)) : [],
+      scheme: isSet(object.scheme) ? globalThis.String(object.scheme) : "",
       credentials: isSet(object.credentials) ? globalThis.String(object.credentials) : ""
     };
   },
   toJSON(message) {
     const obj = {};
-    if (message.schemes?.length) {
-      obj.schemes = message.schemes;
+    if (message.scheme !== "") {
+      obj.scheme = message.scheme;
     }
     if (message.credentials !== "") {
       obj.credentials = message.credentials;
@@ -51699,7 +51334,9 @@ var AgentInterface = {
   fromJSON(object) {
     return {
       url: isSet(object.url) ? globalThis.String(object.url) : "",
-      transport: isSet(object.transport) ? globalThis.String(object.transport) : ""
+      protocolBinding: isSet(object.protocolBinding) ? globalThis.String(object.protocolBinding) : isSet(object.protocol_binding) ? globalThis.String(object.protocol_binding) : "",
+      tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "",
+      protocolVersion: isSet(object.protocolVersion) ? globalThis.String(object.protocolVersion) : isSet(object.protocol_version) ? globalThis.String(object.protocol_version) : ""
     };
   },
   toJSON(message) {
@@ -51707,8 +51344,14 @@ var AgentInterface = {
     if (message.url !== "") {
       obj.url = message.url;
     }
-    if (message.transport !== "") {
-      obj.transport = message.transport;
+    if (message.protocolBinding !== "") {
+      obj.protocolBinding = message.protocolBinding;
+    }
+    if (message.tenant !== "") {
+      obj.tenant = message.tenant;
+    }
+    if (message.protocolVersion !== "") {
+      obj.protocolVersion = message.protocolVersion;
     }
     return obj;
   }
@@ -51716,15 +51359,12 @@ var AgentInterface = {
 var AgentCard = {
   fromJSON(object) {
     return {
-      protocolVersion: isSet(object.protocolVersion) ? globalThis.String(object.protocolVersion) : isSet(object.protocol_version) ? globalThis.String(object.protocol_version) : "",
       name: isSet(object.name) ? globalThis.String(object.name) : "",
       description: isSet(object.description) ? globalThis.String(object.description) : "",
-      url: isSet(object.url) ? globalThis.String(object.url) : "",
-      preferredTransport: isSet(object.preferredTransport) ? globalThis.String(object.preferredTransport) : isSet(object.preferred_transport) ? globalThis.String(object.preferred_transport) : "",
-      additionalInterfaces: globalThis.Array.isArray(object?.additionalInterfaces) ? object.additionalInterfaces.map((e) => AgentInterface.fromJSON(e)) : globalThis.Array.isArray(object?.additional_interfaces) ? object.additional_interfaces.map((e) => AgentInterface.fromJSON(e)) : [],
+      supportedInterfaces: globalThis.Array.isArray(object?.supportedInterfaces) ? object.supportedInterfaces.map((e) => AgentInterface.fromJSON(e)) : globalThis.Array.isArray(object?.supported_interfaces) ? object.supported_interfaces.map((e) => AgentInterface.fromJSON(e)) : [],
       provider: isSet(object.provider) ? AgentProvider.fromJSON(object.provider) : void 0,
       version: isSet(object.version) ? globalThis.String(object.version) : "",
-      documentationUrl: isSet(object.documentationUrl) ? globalThis.String(object.documentationUrl) : isSet(object.documentation_url) ? globalThis.String(object.documentation_url) : "",
+      documentationUrl: isSet(object.documentationUrl) ? globalThis.String(object.documentationUrl) : isSet(object.documentation_url) ? globalThis.String(object.documentation_url) : void 0,
       capabilities: isSet(object.capabilities) ? AgentCapabilities.fromJSON(object.capabilities) : void 0,
       securitySchemes: isObject2(object.securitySchemes) ? globalThis.Object.entries(object.securitySchemes).reduce(
         (acc, [key, value]) => {
@@ -51739,33 +51379,24 @@ var AgentCard = {
         },
         {}
       ) : {},
-      security: globalThis.Array.isArray(object?.security) ? object.security.map((e) => Security.fromJSON(e)) : [],
+      securityRequirements: globalThis.Array.isArray(object?.securityRequirements) ? object.securityRequirements.map((e) => SecurityRequirement.fromJSON(e)) : globalThis.Array.isArray(object?.security_requirements) ? object.security_requirements.map((e) => SecurityRequirement.fromJSON(e)) : [],
       defaultInputModes: globalThis.Array.isArray(object?.defaultInputModes) ? object.defaultInputModes.map((e) => globalThis.String(e)) : globalThis.Array.isArray(object?.default_input_modes) ? object.default_input_modes.map((e) => globalThis.String(e)) : [],
       defaultOutputModes: globalThis.Array.isArray(object?.defaultOutputModes) ? object.defaultOutputModes.map((e) => globalThis.String(e)) : globalThis.Array.isArray(object?.default_output_modes) ? object.default_output_modes.map((e) => globalThis.String(e)) : [],
       skills: globalThis.Array.isArray(object?.skills) ? object.skills.map((e) => AgentSkill.fromJSON(e)) : [],
-      supportsAuthenticatedExtendedCard: isSet(object.supportsAuthenticatedExtendedCard) ? globalThis.Boolean(object.supportsAuthenticatedExtendedCard) : isSet(object.supports_authenticated_extended_card) ? globalThis.Boolean(object.supports_authenticated_extended_card) : false,
-      signatures: globalThis.Array.isArray(object?.signatures) ? object.signatures.map((e) => AgentCardSignature.fromJSON(e)) : []
+      signatures: globalThis.Array.isArray(object?.signatures) ? object.signatures.map((e) => AgentCardSignature.fromJSON(e)) : [],
+      iconUrl: isSet(object.iconUrl) ? globalThis.String(object.iconUrl) : isSet(object.icon_url) ? globalThis.String(object.icon_url) : void 0
     };
   },
   toJSON(message) {
     const obj = {};
-    if (message.protocolVersion !== "") {
-      obj.protocolVersion = message.protocolVersion;
-    }
     if (message.name !== "") {
       obj.name = message.name;
     }
     if (message.description !== "") {
       obj.description = message.description;
     }
-    if (message.url !== "") {
-      obj.url = message.url;
-    }
-    if (message.preferredTransport !== "") {
-      obj.preferredTransport = message.preferredTransport;
-    }
-    if (message.additionalInterfaces?.length) {
-      obj.additionalInterfaces = message.additionalInterfaces.map((e) => AgentInterface.toJSON(e));
+    if (message.supportedInterfaces?.length) {
+      obj.supportedInterfaces = message.supportedInterfaces.map((e) => AgentInterface.toJSON(e));
     }
     if (message.provider !== void 0) {
       obj.provider = AgentProvider.toJSON(message.provider);
@@ -51773,7 +51404,7 @@ var AgentCard = {
     if (message.version !== "") {
       obj.version = message.version;
     }
-    if (message.documentationUrl !== "") {
+    if (message.documentationUrl !== void 0) {
       obj.documentationUrl = message.documentationUrl;
     }
     if (message.capabilities !== void 0) {
@@ -51788,8 +51419,8 @@ var AgentCard = {
         });
       }
     }
-    if (message.security?.length) {
-      obj.security = message.security.map((e) => Security.toJSON(e));
+    if (message.securityRequirements?.length) {
+      obj.securityRequirements = message.securityRequirements.map((e) => SecurityRequirement.toJSON(e));
     }
     if (message.defaultInputModes?.length) {
       obj.defaultInputModes = message.defaultInputModes;
@@ -51800,11 +51431,11 @@ var AgentCard = {
     if (message.skills?.length) {
       obj.skills = message.skills.map((e) => AgentSkill.toJSON(e));
     }
-    if (message.supportsAuthenticatedExtendedCard !== false) {
-      obj.supportsAuthenticatedExtendedCard = message.supportsAuthenticatedExtendedCard;
-    }
     if (message.signatures?.length) {
       obj.signatures = message.signatures.map((e) => AgentCardSignature.toJSON(e));
+    }
+    if (message.iconUrl !== void 0) {
+      obj.iconUrl = message.iconUrl;
     }
     return obj;
   }
@@ -51830,21 +51461,25 @@ var AgentProvider = {
 var AgentCapabilities = {
   fromJSON(object) {
     return {
-      streaming: isSet(object.streaming) ? globalThis.Boolean(object.streaming) : false,
-      pushNotifications: isSet(object.pushNotifications) ? globalThis.Boolean(object.pushNotifications) : isSet(object.push_notifications) ? globalThis.Boolean(object.push_notifications) : false,
-      extensions: globalThis.Array.isArray(object?.extensions) ? object.extensions.map((e) => AgentExtension.fromJSON(e)) : []
+      streaming: isSet(object.streaming) ? globalThis.Boolean(object.streaming) : void 0,
+      pushNotifications: isSet(object.pushNotifications) ? globalThis.Boolean(object.pushNotifications) : isSet(object.push_notifications) ? globalThis.Boolean(object.push_notifications) : void 0,
+      extensions: globalThis.Array.isArray(object?.extensions) ? object.extensions.map((e) => AgentExtension.fromJSON(e)) : [],
+      extendedAgentCard: isSet(object.extendedAgentCard) ? globalThis.Boolean(object.extendedAgentCard) : isSet(object.extended_agent_card) ? globalThis.Boolean(object.extended_agent_card) : void 0
     };
   },
   toJSON(message) {
     const obj = {};
-    if (message.streaming !== false) {
+    if (message.streaming !== void 0) {
       obj.streaming = message.streaming;
     }
-    if (message.pushNotifications !== false) {
+    if (message.pushNotifications !== void 0) {
       obj.pushNotifications = message.pushNotifications;
     }
     if (message.extensions?.length) {
       obj.extensions = message.extensions.map((e) => AgentExtension.toJSON(e));
+    }
+    if (message.extendedAgentCard !== void 0) {
+      obj.extendedAgentCard = message.extendedAgentCard;
     }
     return obj;
   }
@@ -51885,7 +51520,7 @@ var AgentSkill = {
       examples: globalThis.Array.isArray(object?.examples) ? object.examples.map((e) => globalThis.String(e)) : [],
       inputModes: globalThis.Array.isArray(object?.inputModes) ? object.inputModes.map((e) => globalThis.String(e)) : globalThis.Array.isArray(object?.input_modes) ? object.input_modes.map((e) => globalThis.String(e)) : [],
       outputModes: globalThis.Array.isArray(object?.outputModes) ? object.outputModes.map((e) => globalThis.String(e)) : globalThis.Array.isArray(object?.output_modes) ? object.output_modes.map((e) => globalThis.String(e)) : [],
-      security: globalThis.Array.isArray(object?.security) ? object.security.map((e) => Security.fromJSON(e)) : []
+      securityRequirements: globalThis.Array.isArray(object?.securityRequirements) ? object.securityRequirements.map((e) => SecurityRequirement.fromJSON(e)) : globalThis.Array.isArray(object?.security_requirements) ? object.security_requirements.map((e) => SecurityRequirement.fromJSON(e)) : []
     };
   },
   toJSON(message) {
@@ -51911,8 +51546,8 @@ var AgentSkill = {
     if (message.outputModes?.length) {
       obj.outputModes = message.outputModes;
     }
-    if (message.security?.length) {
-      obj.security = message.security.map((e) => Security.toJSON(e));
+    if (message.securityRequirements?.length) {
+      obj.securityRequirements = message.securityRequirements.map((e) => SecurityRequirement.toJSON(e));
     }
     return obj;
   }
@@ -51942,17 +51577,33 @@ var AgentCardSignature = {
 var TaskPushNotificationConfig = {
   fromJSON(object) {
     return {
-      name: isSet(object.name) ? globalThis.String(object.name) : "",
-      pushNotificationConfig: isSet(object.pushNotificationConfig) ? PushNotificationConfig.fromJSON(object.pushNotificationConfig) : isSet(object.push_notification_config) ? PushNotificationConfig.fromJSON(object.push_notification_config) : void 0
+      tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "",
+      id: isSet(object.id) ? globalThis.String(object.id) : "",
+      taskId: isSet(object.taskId) ? globalThis.String(object.taskId) : isSet(object.task_id) ? globalThis.String(object.task_id) : "",
+      url: isSet(object.url) ? globalThis.String(object.url) : "",
+      token: isSet(object.token) ? globalThis.String(object.token) : "",
+      authentication: isSet(object.authentication) ? AuthenticationInfo.fromJSON(object.authentication) : void 0
     };
   },
   toJSON(message) {
     const obj = {};
-    if (message.name !== "") {
-      obj.name = message.name;
+    if (message.tenant !== "") {
+      obj.tenant = message.tenant;
     }
-    if (message.pushNotificationConfig !== void 0) {
-      obj.pushNotificationConfig = PushNotificationConfig.toJSON(message.pushNotificationConfig);
+    if (message.id !== "") {
+      obj.id = message.id;
+    }
+    if (message.taskId !== "") {
+      obj.taskId = message.taskId;
+    }
+    if (message.url !== "") {
+      obj.url = message.url;
+    }
+    if (message.token !== "") {
+      obj.token = message.token;
+    }
+    if (message.authentication !== void 0) {
+      obj.authentication = AuthenticationInfo.toJSON(message.authentication);
     }
     return obj;
   }
@@ -51969,7 +51620,7 @@ var StringList = {
     return obj;
   }
 };
-var Security = {
+var SecurityRequirement = {
   fromJSON(object) {
     return {
       schemes: isObject2(object.schemes) ? globalThis.Object.entries(object.schemes).reduce(
@@ -52122,7 +51773,7 @@ var MutualTlsSecurityScheme = {
 var OAuthFlows = {
   fromJSON(object) {
     return {
-      flow: isSet(object.authorizationCode) ? { $case: "authorizationCode", value: AuthorizationCodeOAuthFlow.fromJSON(object.authorizationCode) } : isSet(object.authorization_code) ? { $case: "authorizationCode", value: AuthorizationCodeOAuthFlow.fromJSON(object.authorization_code) } : isSet(object.clientCredentials) ? { $case: "clientCredentials", value: ClientCredentialsOAuthFlow.fromJSON(object.clientCredentials) } : isSet(object.client_credentials) ? { $case: "clientCredentials", value: ClientCredentialsOAuthFlow.fromJSON(object.client_credentials) } : isSet(object.implicit) ? { $case: "implicit", value: ImplicitOAuthFlow.fromJSON(object.implicit) } : isSet(object.password) ? { $case: "password", value: PasswordOAuthFlow.fromJSON(object.password) } : void 0
+      flow: isSet(object.authorizationCode) ? { $case: "authorizationCode", value: AuthorizationCodeOAuthFlow.fromJSON(object.authorizationCode) } : isSet(object.authorization_code) ? { $case: "authorizationCode", value: AuthorizationCodeOAuthFlow.fromJSON(object.authorization_code) } : isSet(object.clientCredentials) ? { $case: "clientCredentials", value: ClientCredentialsOAuthFlow.fromJSON(object.clientCredentials) } : isSet(object.client_credentials) ? { $case: "clientCredentials", value: ClientCredentialsOAuthFlow.fromJSON(object.client_credentials) } : isSet(object.implicit) ? { $case: "implicit", value: ImplicitOAuthFlow.fromJSON(object.implicit) } : isSet(object.password) ? { $case: "password", value: PasswordOAuthFlow.fromJSON(object.password) } : isSet(object.deviceCode) ? { $case: "deviceCode", value: DeviceCodeOAuthFlow.fromJSON(object.deviceCode) } : isSet(object.device_code) ? { $case: "deviceCode", value: DeviceCodeOAuthFlow.fromJSON(object.device_code) } : void 0
     };
   },
   toJSON(message) {
@@ -52135,6 +51786,8 @@ var OAuthFlows = {
       obj.implicit = ImplicitOAuthFlow.toJSON(message.flow.value);
     } else if (message.flow?.$case === "password") {
       obj.password = PasswordOAuthFlow.toJSON(message.flow.value);
+    } else if (message.flow?.$case === "deviceCode") {
+      obj.deviceCode = DeviceCodeOAuthFlow.toJSON(message.flow.value);
     }
     return obj;
   }
@@ -52151,7 +51804,8 @@ var AuthorizationCodeOAuthFlow = {
           return acc;
         },
         {}
-      ) : {}
+      ) : {},
+      pkceRequired: isSet(object.pkceRequired) ? globalThis.Boolean(object.pkceRequired) : isSet(object.pkce_required) ? globalThis.Boolean(object.pkce_required) : false
     };
   },
   toJSON(message) {
@@ -52173,6 +51827,9 @@ var AuthorizationCodeOAuthFlow = {
           obj.scopes[k] = v;
         });
       }
+    }
+    if (message.pkceRequired !== false) {
+      obj.pkceRequired = message.pkceRequired;
     }
     return obj;
   }
@@ -52279,18 +51936,60 @@ var PasswordOAuthFlow = {
     return obj;
   }
 };
+var DeviceCodeOAuthFlow = {
+  fromJSON(object) {
+    return {
+      deviceAuthorizationUrl: isSet(object.deviceAuthorizationUrl) ? globalThis.String(object.deviceAuthorizationUrl) : isSet(object.device_authorization_url) ? globalThis.String(object.device_authorization_url) : "",
+      tokenUrl: isSet(object.tokenUrl) ? globalThis.String(object.tokenUrl) : isSet(object.token_url) ? globalThis.String(object.token_url) : "",
+      refreshUrl: isSet(object.refreshUrl) ? globalThis.String(object.refreshUrl) : isSet(object.refresh_url) ? globalThis.String(object.refresh_url) : "",
+      scopes: isObject2(object.scopes) ? globalThis.Object.entries(object.scopes).reduce(
+        (acc, [key, value]) => {
+          acc[key] = globalThis.String(value);
+          return acc;
+        },
+        {}
+      ) : {}
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.deviceAuthorizationUrl !== "") {
+      obj.deviceAuthorizationUrl = message.deviceAuthorizationUrl;
+    }
+    if (message.tokenUrl !== "") {
+      obj.tokenUrl = message.tokenUrl;
+    }
+    if (message.refreshUrl !== "") {
+      obj.refreshUrl = message.refreshUrl;
+    }
+    if (message.scopes) {
+      const entries = globalThis.Object.entries(message.scopes);
+      if (entries.length > 0) {
+        obj.scopes = {};
+        entries.forEach(([k, v]) => {
+          obj.scopes[k] = v;
+        });
+      }
+    }
+    return obj;
+  }
+};
 var SendMessageRequest = {
   fromJSON(object) {
     return {
-      request: isSet(object.message) ? Message.fromJSON(object.message) : isSet(object.request) ? Message.fromJSON(object.request) : void 0,
+      tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "",
+      message: isSet(object.message) ? Message.fromJSON(object.message) : void 0,
       configuration: isSet(object.configuration) ? SendMessageConfiguration.fromJSON(object.configuration) : void 0,
       metadata: isObject2(object.metadata) ? object.metadata : void 0
     };
   },
   toJSON(message) {
     const obj = {};
-    if (message.request !== void 0) {
-      obj.message = Message.toJSON(message.request);
+    if (message.tenant !== "") {
+      obj.tenant = message.tenant;
+    }
+    if (message.message !== void 0) {
+      obj.message = Message.toJSON(message.message);
     }
     if (message.configuration !== void 0) {
       obj.configuration = SendMessageConfiguration.toJSON(message.configuration);
@@ -52301,17 +52000,229 @@ var SendMessageRequest = {
     return obj;
   }
 };
+var GetTaskRequest = {
+  fromJSON(object) {
+    return {
+      tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "",
+      id: isSet(object.id) ? globalThis.String(object.id) : "",
+      historyLength: isSet(object.historyLength) ? globalThis.Number(object.historyLength) : isSet(object.history_length) ? globalThis.Number(object.history_length) : void 0
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.tenant !== "") {
+      obj.tenant = message.tenant;
+    }
+    if (message.id !== "") {
+      obj.id = message.id;
+    }
+    if (message.historyLength !== void 0) {
+      obj.historyLength = Math.round(message.historyLength);
+    }
+    return obj;
+  }
+};
+var ListTasksRequest = {
+  fromJSON(object) {
+    return {
+      tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "",
+      contextId: isSet(object.contextId) ? globalThis.String(object.contextId) : isSet(object.context_id) ? globalThis.String(object.context_id) : "",
+      status: isSet(object.status) ? taskStateFromJSON(object.status) : 0,
+      pageSize: isSet(object.pageSize) ? globalThis.Number(object.pageSize) : isSet(object.page_size) ? globalThis.Number(object.page_size) : void 0,
+      pageToken: isSet(object.pageToken) ? globalThis.String(object.pageToken) : isSet(object.page_token) ? globalThis.String(object.page_token) : "",
+      historyLength: isSet(object.historyLength) ? globalThis.Number(object.historyLength) : isSet(object.history_length) ? globalThis.Number(object.history_length) : void 0,
+      statusTimestampAfter: isSet(object.statusTimestampAfter) ? globalThis.String(object.statusTimestampAfter) : isSet(object.status_timestamp_after) ? globalThis.String(object.status_timestamp_after) : void 0,
+      includeArtifacts: isSet(object.includeArtifacts) ? globalThis.Boolean(object.includeArtifacts) : isSet(object.include_artifacts) ? globalThis.Boolean(object.include_artifacts) : void 0
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.tenant !== "") {
+      obj.tenant = message.tenant;
+    }
+    if (message.contextId !== "") {
+      obj.contextId = message.contextId;
+    }
+    if (message.status !== 0) {
+      obj.status = taskStateToJSON(message.status);
+    }
+    if (message.pageSize !== void 0) {
+      obj.pageSize = Math.round(message.pageSize);
+    }
+    if (message.pageToken !== "") {
+      obj.pageToken = message.pageToken;
+    }
+    if (message.historyLength !== void 0) {
+      obj.historyLength = Math.round(message.historyLength);
+    }
+    if (message.statusTimestampAfter !== void 0) {
+      obj.statusTimestampAfter = message.statusTimestampAfter;
+    }
+    if (message.includeArtifacts !== void 0) {
+      obj.includeArtifacts = message.includeArtifacts;
+    }
+    return obj;
+  }
+};
+var ListTasksResponse = {
+  fromJSON(object) {
+    return {
+      tasks: globalThis.Array.isArray(object?.tasks) ? object.tasks.map((e) => Task.fromJSON(e)) : [],
+      nextPageToken: isSet(object.nextPageToken) ? globalThis.String(object.nextPageToken) : isSet(object.next_page_token) ? globalThis.String(object.next_page_token) : "",
+      pageSize: isSet(object.pageSize) ? globalThis.Number(object.pageSize) : isSet(object.page_size) ? globalThis.Number(object.page_size) : 0,
+      totalSize: isSet(object.totalSize) ? globalThis.Number(object.totalSize) : isSet(object.total_size) ? globalThis.Number(object.total_size) : 0
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.tasks?.length) {
+      obj.tasks = message.tasks.map((e) => Task.toJSON(e));
+    }
+    if (message.nextPageToken !== "") {
+      obj.nextPageToken = message.nextPageToken;
+    }
+    if (message.pageSize !== 0) {
+      obj.pageSize = Math.round(message.pageSize);
+    }
+    if (message.totalSize !== 0) {
+      obj.totalSize = Math.round(message.totalSize);
+    }
+    return obj;
+  }
+};
+var CancelTaskRequest = {
+  fromJSON(object) {
+    return {
+      tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "",
+      id: isSet(object.id) ? globalThis.String(object.id) : "",
+      metadata: isObject2(object.metadata) ? object.metadata : void 0
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.tenant !== "") {
+      obj.tenant = message.tenant;
+    }
+    if (message.id !== "") {
+      obj.id = message.id;
+    }
+    if (message.metadata !== void 0) {
+      obj.metadata = message.metadata;
+    }
+    return obj;
+  }
+};
+var GetTaskPushNotificationConfigRequest = {
+  fromJSON(object) {
+    return {
+      tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "",
+      taskId: isSet(object.taskId) ? globalThis.String(object.taskId) : isSet(object.task_id) ? globalThis.String(object.task_id) : "",
+      id: isSet(object.id) ? globalThis.String(object.id) : ""
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.tenant !== "") {
+      obj.tenant = message.tenant;
+    }
+    if (message.taskId !== "") {
+      obj.taskId = message.taskId;
+    }
+    if (message.id !== "") {
+      obj.id = message.id;
+    }
+    return obj;
+  }
+};
+var DeleteTaskPushNotificationConfigRequest = {
+  fromJSON(object) {
+    return {
+      tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "",
+      taskId: isSet(object.taskId) ? globalThis.String(object.taskId) : isSet(object.task_id) ? globalThis.String(object.task_id) : "",
+      id: isSet(object.id) ? globalThis.String(object.id) : ""
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.tenant !== "") {
+      obj.tenant = message.tenant;
+    }
+    if (message.taskId !== "") {
+      obj.taskId = message.taskId;
+    }
+    if (message.id !== "") {
+      obj.id = message.id;
+    }
+    return obj;
+  }
+};
+var SubscribeToTaskRequest = {
+  fromJSON(object) {
+    return {
+      tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "",
+      id: isSet(object.id) ? globalThis.String(object.id) : ""
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.tenant !== "") {
+      obj.tenant = message.tenant;
+    }
+    if (message.id !== "") {
+      obj.id = message.id;
+    }
+    return obj;
+  }
+};
+var ListTaskPushNotificationConfigsRequest = {
+  fromJSON(object) {
+    return {
+      tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "",
+      taskId: isSet(object.taskId) ? globalThis.String(object.taskId) : isSet(object.task_id) ? globalThis.String(object.task_id) : "",
+      pageSize: isSet(object.pageSize) ? globalThis.Number(object.pageSize) : isSet(object.page_size) ? globalThis.Number(object.page_size) : 0,
+      pageToken: isSet(object.pageToken) ? globalThis.String(object.pageToken) : isSet(object.page_token) ? globalThis.String(object.page_token) : ""
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.tenant !== "") {
+      obj.tenant = message.tenant;
+    }
+    if (message.taskId !== "") {
+      obj.taskId = message.taskId;
+    }
+    if (message.pageSize !== 0) {
+      obj.pageSize = Math.round(message.pageSize);
+    }
+    if (message.pageToken !== "") {
+      obj.pageToken = message.pageToken;
+    }
+    return obj;
+  }
+};
+var GetExtendedAgentCardRequest = {
+  fromJSON(object) {
+    return { tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "" };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.tenant !== "") {
+      obj.tenant = message.tenant;
+    }
+    return obj;
+  }
+};
 var SendMessageResponse = {
   fromJSON(object) {
     return {
-      payload: isSet(object.task) ? { $case: "task", value: Task.fromJSON(object.task) } : isSet(object.message) ? { $case: "msg", value: Message.fromJSON(object.message) } : isSet(object.msg) ? { $case: "msg", value: Message.fromJSON(object.msg) } : void 0
+      payload: isSet(object.task) ? { $case: "task", value: Task.fromJSON(object.task) } : isSet(object.message) ? { $case: "message", value: Message.fromJSON(object.message) } : void 0
     };
   },
   toJSON(message) {
     const obj = {};
     if (message.payload?.$case === "task") {
       obj.task = Task.toJSON(message.payload.value);
-    } else if (message.payload?.$case === "msg") {
+    } else if (message.payload?.$case === "message") {
       obj.message = Message.toJSON(message.payload.value);
     }
     return obj;
@@ -52320,14 +52231,14 @@ var SendMessageResponse = {
 var StreamResponse = {
   fromJSON(object) {
     return {
-      payload: isSet(object.task) ? { $case: "task", value: Task.fromJSON(object.task) } : isSet(object.message) ? { $case: "msg", value: Message.fromJSON(object.message) } : isSet(object.msg) ? { $case: "msg", value: Message.fromJSON(object.msg) } : isSet(object.statusUpdate) ? { $case: "statusUpdate", value: TaskStatusUpdateEvent.fromJSON(object.statusUpdate) } : isSet(object.status_update) ? { $case: "statusUpdate", value: TaskStatusUpdateEvent.fromJSON(object.status_update) } : isSet(object.artifactUpdate) ? { $case: "artifactUpdate", value: TaskArtifactUpdateEvent.fromJSON(object.artifactUpdate) } : isSet(object.artifact_update) ? { $case: "artifactUpdate", value: TaskArtifactUpdateEvent.fromJSON(object.artifact_update) } : void 0
+      payload: isSet(object.task) ? { $case: "task", value: Task.fromJSON(object.task) } : isSet(object.message) ? { $case: "message", value: Message.fromJSON(object.message) } : isSet(object.statusUpdate) ? { $case: "statusUpdate", value: TaskStatusUpdateEvent.fromJSON(object.statusUpdate) } : isSet(object.status_update) ? { $case: "statusUpdate", value: TaskStatusUpdateEvent.fromJSON(object.status_update) } : isSet(object.artifactUpdate) ? { $case: "artifactUpdate", value: TaskArtifactUpdateEvent.fromJSON(object.artifactUpdate) } : isSet(object.artifact_update) ? { $case: "artifactUpdate", value: TaskArtifactUpdateEvent.fromJSON(object.artifact_update) } : void 0
     };
   },
   toJSON(message) {
     const obj = {};
     if (message.payload?.$case === "task") {
       obj.task = Task.toJSON(message.payload.value);
-    } else if (message.payload?.$case === "msg") {
+    } else if (message.payload?.$case === "message") {
       obj.message = Message.toJSON(message.payload.value);
     } else if (message.payload?.$case === "statusUpdate") {
       obj.statusUpdate = TaskStatusUpdateEvent.toJSON(message.payload.value);
@@ -52337,7 +52248,7 @@ var StreamResponse = {
     return obj;
   }
 };
-var ListTaskPushNotificationConfigResponse = {
+var ListTaskPushNotificationConfigsResponse = {
   fromJSON(object) {
     return {
       configs: globalThis.Array.isArray(object?.configs) ? object.configs.map((e) => TaskPushNotificationConfig.fromJSON(e)) : [],
@@ -52367,1182 +52278,494 @@ function isObject2(value) {
 function isSet(value) {
   return value !== null && value !== void 0;
 }
-var CONFIG_REGEX = /^tasks\/([^/]+)\/pushNotificationConfigs\/([^/]+)$/;
-var TASK_ONLY_REGEX = /^tasks\/([^/]+)(?:\/|$)/;
-var extractTaskId = (name) => {
-  const match = name.match(TASK_ONLY_REGEX);
-  if (!match) {
-    throw A2AError.invalidParams(`Invalid or missing task ID in: "${name}"`);
+
+// node_modules/@a2a-js/sdk/dist/chunk-CZ7TTPKW.js
+var AGENT_CARD_PATH = ".well-known/agent-card.json";
+var A2A_VERSION_HEADER = "A2A-Version";
+var A2A_PROTOCOL_VERSION = "1.0";
+var JSON_CONTENT_TYPE = "application/json";
+var A2A_CONTENT_TYPE = "application/a2a+json";
+
+// src/lib/a2aProtocol.ts
+var TERMINAL_TASK_STATES = /* @__PURE__ */ new Set([
+  TaskState.TASK_STATE_COMPLETED,
+  TaskState.TASK_STATE_CANCELED,
+  TaskState.TASK_STATE_FAILED,
+  TaskState.TASK_STATE_REJECTED
+]);
+var CONTINUATION_TASK_STATES = /* @__PURE__ */ new Set([
+  TaskState.TASK_STATE_INPUT_REQUIRED,
+  TaskState.TASK_STATE_AUTH_REQUIRED
+]);
+var LEGACY_TERMINAL_TASK_STATES = /* @__PURE__ */ new Set([
+  "completed",
+  "canceled",
+  "failed",
+  "rejected"
+]);
+var LEGACY_CONTINUATION_TASK_STATES = /* @__PURE__ */ new Set([
+  "input-required",
+  "input_required",
+  "auth-required",
+  "auth_required"
+]);
+function makeTextPart(text) {
+  return {
+    content: { $case: "text", value: text },
+    metadata: void 0,
+    filename: "",
+    mediaType: "text/plain"
+  };
+}
+function makeRawFilePart({
+  filename,
+  mediaType,
+  bytes
+}) {
+  return {
+    content: { $case: "raw", value: bytes },
+    metadata: void 0,
+    filename,
+    mediaType
+  };
+}
+function isMessage(value) {
+  return Boolean(
+    value && typeof value === "object" && "messageId" in value && "role" in value && "parts" in value
+  );
+}
+function isTask(value) {
+  return Boolean(
+    value && typeof value === "object" && "id" in value && "status" in value && "history" in value
+  );
+}
+function isTaskStatusUpdateEvent(value) {
+  return Boolean(
+    value && typeof value === "object" && "taskId" in value && "contextId" in value && "status" in value && !("artifact" in value)
+  );
+}
+function isTaskArtifactUpdateEvent(value) {
+  return Boolean(
+    value && typeof value === "object" && "taskId" in value && "contextId" in value && "artifact" in value
+  );
+}
+function unwrapStreamResponse(response) {
+  if (isMessage(response) || isTask(response) || isTaskStatusUpdateEvent(response) || isTaskArtifactUpdateEvent(response)) {
+    return response;
   }
-  return match[1];
+  return response.payload?.value;
+}
+function isAgentMessage(message) {
+  return message.role === Role.ROLE_AGENT || message.role === "agent";
+}
+function isTerminalTaskState(state) {
+  if (state === void 0) {
+    return false;
+  }
+  if (typeof state === "string") {
+    return LEGACY_TERMINAL_TASK_STATES.has(state);
+  }
+  return TERMINAL_TASK_STATES.has(state);
+}
+function isTaskContinuationState(state) {
+  if (state === void 0) {
+    return false;
+  }
+  if (typeof state === "string") {
+    return LEGACY_CONTINUATION_TASK_STATES.has(state);
+  }
+  return CONTINUATION_TASK_STATES.has(state);
+}
+function taskStateLabel(state) {
+  if (state === void 0) {
+    return "unknown";
+  }
+  if (typeof state === "string") {
+    return state;
+  }
+  switch (state) {
+    case TaskState.TASK_STATE_SUBMITTED:
+      return "submitted";
+    case TaskState.TASK_STATE_WORKING:
+      return "working";
+    case TaskState.TASK_STATE_COMPLETED:
+      return "completed";
+    case TaskState.TASK_STATE_FAILED:
+      return "failed";
+    case TaskState.TASK_STATE_CANCELED:
+      return "canceled";
+    case TaskState.TASK_STATE_INPUT_REQUIRED:
+      return "input-required";
+    case TaskState.TASK_STATE_REJECTED:
+      return "rejected";
+    case TaskState.TASK_STATE_AUTH_REQUIRED:
+      return "auth-required";
+    default:
+      return "unknown";
+  }
+}
+
+// src/lib/input/parser/extractors/filePathExtractor.ts
+var MAX_FILE_SIZE = 512 * 1024;
+var PATH_PATTERN = /(?:^|\s)(\.{0,2}\/[^\s"'`)\]]+)/gm;
+var MIME_TYPES = {
+  ".txt": "text/plain",
+  ".log": "text/plain",
+  ".md": "text/markdown",
+  ".json": "application/json",
+  ".yaml": "text/yaml",
+  ".yml": "text/yaml",
+  ".toml": "text/toml",
+  ".csv": "text/csv",
+  ".ts": "text/x-typescript",
+  ".js": "text/javascript",
+  ".py": "text/x-python",
+  ".sh": "text/x-sh",
+  ".html": "text/html",
+  ".xml": "text/xml",
+  ".css": "text/css",
+  ".env": "text/plain",
+  ".conf": "text/plain",
+  ".ini": "text/plain"
 };
-var generateTaskName = (taskId) => {
-  return `tasks/${taskId}`;
-};
-var extractTaskAndPushNotificationConfigId = (name) => {
-  const match = name.match(CONFIG_REGEX);
-  if (!match) {
-    throw A2AError.invalidParams(`Invalid or missing config ID in: "${name}"`);
+function isBinary(buffer) {
+  const limit = Math.min(buffer.length, 512);
+  for (let i = 0; i < limit; i++) {
+    if (buffer[i] === 0) return true;
   }
-  return { taskId: match[1], configId: match[2] };
-};
-var generatePushNotificationConfigName = (taskId, configId) => {
-  return `tasks/${taskId}/pushNotificationConfigs/${configId}`;
-};
-var FromProto = class _FromProto {
-  static taskQueryParams(request) {
-    return {
-      id: extractTaskId(request.name),
-      historyLength: request.historyLength
-    };
-  }
-  static taskIdParams(request) {
-    return {
-      id: extractTaskId(request.name)
-    };
-  }
-  static getTaskPushNotificationConfigParams(request) {
-    const { taskId, configId } = extractTaskAndPushNotificationConfigId(request.name);
-    return {
-      id: taskId,
-      pushNotificationConfigId: configId
-    };
-  }
-  static listTaskPushNotificationConfigParams(request) {
-    return {
-      id: extractTaskId(request.parent)
-    };
-  }
-  static createTaskPushNotificationConfig(request) {
-    if (!request.config?.pushNotificationConfig) {
-      throw A2AError.invalidParams(
-        "Request must include a `config` object with a `pushNotificationConfig`"
-      );
-    }
-    return {
-      taskId: extractTaskId(request.parent),
-      pushNotificationConfig: _FromProto.pushNotificationConfig(
-        request.config.pushNotificationConfig
-      )
-    };
-  }
-  static deleteTaskPushNotificationConfigParams(request) {
-    const { taskId, configId } = extractTaskAndPushNotificationConfigId(request.name);
-    return {
-      id: taskId,
-      pushNotificationConfigId: configId
-    };
-  }
-  static message(message) {
-    if (!message) {
-      return void 0;
-    }
-    return {
-      kind: "message",
-      messageId: message.messageId,
-      parts: message.content.map((p) => _FromProto.part(p)),
-      contextId: message.contextId || void 0,
-      taskId: message.taskId || void 0,
-      role: _FromProto.role(message.role),
-      metadata: message.metadata,
-      extensions: message.extensions
-    };
-  }
-  static role(role) {
-    switch (role) {
-      case 2:
-        return "agent";
-      case 1:
-        return "user";
-      default:
-        throw A2AError.invalidParams(`Invalid role: ${role}`);
-    }
-  }
-  static messageSendConfiguration(configuration) {
-    if (!configuration) {
-      return void 0;
-    }
-    return {
-      blocking: configuration.blocking,
-      acceptedOutputModes: configuration.acceptedOutputModes,
-      pushNotificationConfig: _FromProto.pushNotificationConfig(configuration.pushNotification)
-    };
-  }
-  static pushNotificationConfig(config) {
-    if (!config) {
-      return void 0;
-    }
-    return {
-      id: config.id,
-      url: config.url,
-      token: config.token || void 0,
-      authentication: _FromProto.pushNotificationAuthenticationInfo(config.authentication)
-    };
-  }
-  static pushNotificationAuthenticationInfo(authInfo) {
-    if (!authInfo) {
-      return void 0;
-    }
-    return {
-      schemes: authInfo.schemes,
-      credentials: authInfo.credentials
-    };
-  }
-  static part(part) {
-    if (part.part?.$case === "text") {
-      return {
-        kind: "text",
-        text: part.part.value
-      };
-    }
-    if (part.part?.$case === "file") {
-      const filePart = part.part.value;
-      if (filePart.file?.$case === "fileWithUri") {
-        return {
-          kind: "file",
-          file: {
-            uri: filePart.file.value,
-            mimeType: filePart.mimeType
-          }
-        };
-      } else if (filePart.file?.$case === "fileWithBytes") {
-        return {
-          kind: "file",
-          file: {
-            bytes: filePart.file.value.toString("base64"),
-            mimeType: filePart.mimeType
-          }
-        };
+  return false;
+}
+function getMimeType(filePath) {
+  return MIME_TYPES[extname(filePath).toLowerCase()] ?? "application/octet-stream";
+}
+var filePathExtractor = {
+  detect(text) {
+    const spans = [];
+    const regex2 = new RegExp(PATH_PATTERN.source, PATH_PATTERN.flags);
+    let match;
+    while ((match = regex2.exec(text)) !== null) {
+      const raw = match[1].replace(/[,;:.!?]+$/, "");
+      if (!raw) continue;
+      const absolute = resolve(raw);
+      if (!existsSync2(absolute)) continue;
+      try {
+        if (!statSync(absolute).isFile()) continue;
+      } catch {
+        continue;
       }
-      throw A2AError.invalidParams("Invalid file part type");
+      const start = match.index + match[0].indexOf(raw);
+      spans.push({ start, end: start + raw.length, raw: absolute });
     }
-    if (part.part?.$case === "data") {
-      return {
-        kind: "data",
-        data: part.part.value.data
-      };
+    return spans;
+  },
+  async parse(span) {
+    try {
+      const stat = statSync(span.raw);
+      if (stat.size > MAX_FILE_SIZE) return null;
+      const buffer = readFileSync3(span.raw);
+      if (isBinary(buffer)) return null;
+      return makeRawFilePart({
+        filename: basename(span.raw),
+        mediaType: getMimeType(span.raw),
+        bytes: buffer
+      });
+    } catch {
+      return null;
     }
-    throw A2AError.invalidParams("Invalid part type");
   }
-  static messageSendParams(request) {
-    return {
-      message: _FromProto.message(request.request),
-      configuration: _FromProto.messageSendConfiguration(request.configuration),
-      metadata: request.metadata
-    };
+};
+
+// src/lib/input/parser/extractors/index.ts
+var EXTRACTORS = [filePathExtractor];
+
+// src/lib/input/parser/pipeline.ts
+async function buildMessageParts(text, extractors) {
+  const allSpans = [];
+  for (const extractor of extractors) {
+    for (const span of extractor.detect(text)) {
+      allSpans.push({ span, extractor });
+    }
   }
+  allSpans.sort((a, b) => a.span.start - b.span.start);
+  const resolved = [];
+  let cursor = 0;
+  for (const item of allSpans) {
+    if (item.span.start >= cursor) {
+      resolved.push(item);
+      cursor = item.span.end;
+    }
+  }
+  const parts = [];
+  let pos = 0;
+  for (const { span, extractor } of resolved) {
+    const before = text.slice(pos, span.start).trim();
+    if (before) parts.push(makeTextPart(before));
+    const part = await extractor.parse(span);
+    if (part) parts.push(part);
+    pos = span.end;
+  }
+  const remainder = text.slice(pos).trim();
+  if (remainder) parts.push(makeTextPart(remainder));
+  if (parts.length === 0) parts.push(makeTextPart(text));
+  return parts;
+}
+
+// src/lib/input/parser/index.ts
+var buildMessageParts2 = (text) => buildMessageParts(text, EXTRACTORS);
+
+// src/lib/input/mentions/fileMention.ts
+import { readdirSync, statSync as statSync2 } from "fs";
+import { homedir } from "os";
+import { basename as basename2, dirname, isAbsolute, join, resolve as resolve2 } from "path";
+var FILE_MENTION_PATTERN = /(?:^|\s)#(\S*)$/;
+function getFileMentionMatch(draft) {
+  const match = FILE_MENTION_PATTERN.exec(draft);
+  if (!match) return void 0;
+  return {
+    query: match[1] ?? "",
+    start: match.index + match[0].lastIndexOf("#"),
+    end: draft.length
+  };
+}
+function clearFileMention(draft) {
+  const match = getFileMentionMatch(draft);
+  if (!match) return draft;
+  return draft.slice(0, match.start).trimEnd();
+}
+function getFileSuggestions(query, limit = 8) {
+  try {
+    const expanded = query.startsWith("~/") ? `${homedir()}/${query.slice(2)}` : query;
+    let dirPart;
+    let filePart;
+    if (expanded.endsWith("/")) {
+      dirPart = expanded;
+      filePart = "";
+    } else if (expanded.includes("/")) {
+      dirPart = dirname(expanded);
+      filePart = basename2(expanded);
+    } else {
+      dirPart = ".";
+      filePart = expanded;
+    }
+    const absDir = isAbsolute(dirPart) ? dirPart : resolve2(dirPart);
+    return readdirSync(absDir).filter((name) => name.startsWith(filePart) && !name.startsWith(".")).flatMap((name) => {
+      const abs = join(absDir, name);
+      try {
+        const isDirectory = statSync2(abs).isDirectory();
+        return [{ label: isDirectory ? `${name}/` : name, absolutePath: abs, isDirectory }];
+      } catch {
+        return [];
+      }
+    }).slice(0, limit);
+  } catch {
+    return [];
+  }
+}
+function applyFileSuggestion(draft, suggestion) {
+  const match = getFileMentionMatch(draft);
+  if (!match) return draft;
+  const before = draft.slice(0, match.start).trimEnd();
+  if (suggestion.isDirectory) {
+    const mention = `#${suggestion.absolutePath}/`;
+    return before ? `${before} ${mention}` : mention;
+  }
+  return before ? `${before} ${suggestion.absolutePath}` : suggestion.absolutePath;
+}
+
+// src/lib/connection.ts
+import { randomUUID } from "crypto";
+
+// node_modules/@a2a-js/sdk/dist/chunk-WMQQYH7W.js
+async function* parseSseStream(response) {
+  if (!response.body) {
+    throw new Error("SSE response body is undefined. Cannot read stream.");
+  }
+  let buffer = "";
+  let eventType = "message";
+  let eventData = "";
+  const stream = response.body.pipeThrough(new TextDecoderStream());
+  for await (const value of readFrom(stream)) {
+    buffer += value;
+    let lineEndIndex;
+    while ((lineEndIndex = buffer.indexOf("\n")) >= 0) {
+      const line = buffer.substring(0, lineEndIndex).trim();
+      buffer = buffer.substring(lineEndIndex + 1);
+      if (line === "") {
+        if (eventData) {
+          yield { type: eventType, data: eventData };
+          eventData = "";
+          eventType = "message";
+        }
+      } else if (line.startsWith("event:")) {
+        eventType = line.substring("event:".length).trim();
+      } else if (line.startsWith("data:")) {
+        eventData = line.substring("data:".length).trim();
+      }
+    }
+  }
+  if (eventData) {
+    yield { type: eventType, data: eventData };
+  }
+}
+async function* readFrom(stream) {
+  const reader = stream.getReader();
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      yield value;
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+// node_modules/@a2a-js/sdk/dist/chunk-TNVTFICZ.js
+var A2A_ERROR_CODE = {
+  PARSE_ERROR: -32700,
+  INVALID_REQUEST: -32600,
+  METHOD_NOT_FOUND: -32601,
+  INVALID_PARAMS: -32602,
+  INTERNAL_ERROR: -32603,
+  TASK_NOT_FOUND: -32001,
+  TASK_NOT_CANCELABLE: -32002,
+  PUSH_NOTIFICATION_NOT_SUPPORTED: -32003,
+  UNSUPPORTED_OPERATION: -32004,
+  CONTENT_TYPE_NOT_SUPPORTED: -32005,
+  INVALID_AGENT_RESPONSE: -32006,
+  EXTENDED_CARD_NOT_CONFIGURED: -32007,
+  EXTENSION_SUPPORT_REQUIRED: -32008,
+  VERSION_NOT_SUPPORTED: -32009
+};
+var ERROR_INFO_TYPE = "type.googleapis.com/google.rpc.ErrorInfo";
+var A2A_ERROR_REASON = {
+  TaskNotFoundError: "TASK_NOT_FOUND",
+  TaskNotCancelableError: "TASK_NOT_CANCELABLE",
+  PushNotificationNotSupportedError: "PUSH_NOTIFICATION_NOT_SUPPORTED",
+  UnsupportedOperationError: "UNSUPPORTED_OPERATION",
+  ContentTypeNotSupportedError: "CONTENT_TYPE_NOT_SUPPORTED",
+  InvalidAgentResponseError: "INVALID_AGENT_RESPONSE",
+  ExtendedAgentCardNotConfiguredError: "EXTENDED_AGENT_CARD_NOT_CONFIGURED",
+  ExtensionSupportRequiredError: "EXTENSION_SUPPORT_REQUIRED",
+  VersionNotSupportedError: "VERSION_NOT_SUPPORTED",
+  RequestMalformedError: "INVALID_PARAMS",
+  GenericError: "INTERNAL_ERROR"
+};
+var A2A_REASON_TO_ERROR = Object.fromEntries(
+  Object.entries(A2A_ERROR_REASON).map(([cls, reason]) => [reason, cls])
+);
+var A2A_ERROR_CODE_TO_CLASS = {
+  [A2A_ERROR_CODE.TASK_NOT_FOUND]: "TaskNotFoundError",
+  [A2A_ERROR_CODE.TASK_NOT_CANCELABLE]: "TaskNotCancelableError",
+  [A2A_ERROR_CODE.PUSH_NOTIFICATION_NOT_SUPPORTED]: "PushNotificationNotSupportedError",
+  [A2A_ERROR_CODE.UNSUPPORTED_OPERATION]: "UnsupportedOperationError",
+  [A2A_ERROR_CODE.CONTENT_TYPE_NOT_SUPPORTED]: "ContentTypeNotSupportedError",
+  [A2A_ERROR_CODE.INVALID_AGENT_RESPONSE]: "InvalidAgentResponseError",
+  [A2A_ERROR_CODE.EXTENDED_CARD_NOT_CONFIGURED]: "ExtendedAgentCardNotConfiguredError",
+  [A2A_ERROR_CODE.EXTENSION_SUPPORT_REQUIRED]: "ExtensionSupportRequiredError",
+  [A2A_ERROR_CODE.VERSION_NOT_SUPPORTED]: "VersionNotSupportedError",
+  [A2A_ERROR_CODE.INVALID_PARAMS]: "RequestMalformedError",
+  [A2A_ERROR_CODE.INTERNAL_ERROR]: "GenericError"
+};
+var RequestMalformedError = class extends Error {
+  constructor(message) {
+    super(message ?? "Request malformed");
+    this.name = "RequestMalformedError";
+  }
+};
+var GenericError = class extends Error {
+  constructor(message) {
+    super(message ?? "An unexpected error occurred.");
+    this.name = "GenericError";
+  }
+};
+var TaskNotFoundError = class extends Error {
+  constructor(message) {
+    super(message ?? "Task not found");
+    this.name = "TaskNotFoundError";
+  }
+};
+var TaskNotCancelableError = class extends Error {
+  constructor(message) {
+    super(message ?? "Task cannot be canceled");
+    this.name = "TaskNotCancelableError";
+  }
+};
+var PushNotificationNotSupportedError = class extends Error {
+  constructor(message) {
+    super(message ?? "Push Notification is not supported");
+    this.name = "PushNotificationNotSupportedError";
+  }
+};
+var UnsupportedOperationError = class extends Error {
+  constructor(message) {
+    super(message ?? "This operation is not supported");
+    this.name = "UnsupportedOperationError";
+  }
+};
+var ContentTypeNotSupportedError = class extends Error {
+  constructor(message) {
+    super(message ?? "Incompatible content types");
+    this.name = "ContentTypeNotSupportedError";
+  }
+};
+var InvalidAgentResponseError = class extends Error {
+  constructor(message) {
+    super(message ?? "Invalid agent response type");
+    this.name = "InvalidAgentResponseError";
+  }
+};
+var ExtendedAgentCardNotConfiguredError = class extends Error {
+  constructor(message) {
+    super(message ?? "Extended Agent Card not configured");
+    this.name = "ExtendedAgentCardNotConfiguredError";
+  }
+};
+var ExtensionSupportRequiredError = class extends Error {
+  constructor(message) {
+    super(message ?? "Extension support required");
+    this.name = "ExtensionSupportRequiredError";
+  }
+};
+var VersionNotSupportedError = class extends Error {
+  constructor(message) {
+    super(message ?? "Version not supported");
+    this.name = "VersionNotSupportedError";
+  }
+};
+var A2A_REASON_TO_ERROR_CLASS = {
+  TASK_NOT_FOUND: TaskNotFoundError,
+  TASK_NOT_CANCELABLE: TaskNotCancelableError,
+  PUSH_NOTIFICATION_NOT_SUPPORTED: PushNotificationNotSupportedError,
+  UNSUPPORTED_OPERATION: UnsupportedOperationError,
+  CONTENT_TYPE_NOT_SUPPORTED: ContentTypeNotSupportedError,
+  INVALID_AGENT_RESPONSE: InvalidAgentResponseError,
+  EXTENDED_AGENT_CARD_NOT_CONFIGURED: ExtendedAgentCardNotConfiguredError,
+  EXTENSION_SUPPORT_REQUIRED: ExtensionSupportRequiredError,
+  VERSION_NOT_SUPPORTED: VersionNotSupportedError,
+  INVALID_PARAMS: RequestMalformedError,
+  INTERNAL_ERROR: GenericError
+};
+var A2A_NAME_TO_ERROR_CLASS = Object.fromEntries(
+  Object.entries(A2A_ERROR_REASON).map(([name, reason]) => [
+    name,
+    A2A_REASON_TO_ERROR_CLASS[reason]
+  ])
+);
+
+// node_modules/@a2a-js/sdk/dist/chunk-BVQ77WJF.js
+var FromProto = class {
   static sendMessageResult(response) {
-    if (response.payload?.$case === "task") {
-      return _FromProto.task(response.payload.value);
-    } else if (response.payload?.$case === "msg") {
-      return _FromProto.message(response.payload.value);
+    if (response.payload?.$case === "task" || response.payload?.$case === "message") {
+      return response.payload.value;
     }
-    throw A2AError.invalidParams("Invalid SendMessageResponse: missing result");
-  }
-  static task(task) {
-    return {
-      kind: "task",
-      id: task.id,
-      status: _FromProto.taskStatus(task.status),
-      contextId: task.contextId,
-      artifacts: task.artifacts?.map((a) => _FromProto.artifact(a)),
-      history: task.history?.map((h) => _FromProto.message(h)),
-      metadata: task.metadata
-    };
-  }
-  static taskStatus(status) {
-    return {
-      message: _FromProto.message(status.update),
-      state: _FromProto.taskState(status.state),
-      timestamp: status.timestamp
-    };
-  }
-  static taskState(state) {
-    switch (state) {
-      case 1:
-        return "submitted";
-      case 2:
-        return "working";
-      case 6:
-        return "input-required";
-      case 3:
-        return "completed";
-      case 5:
-        return "canceled";
-      case 4:
-        return "failed";
-      case 7:
-        return "rejected";
-      case 8:
-        return "auth-required";
-      case 0:
-        return "unknown";
-      default:
-        throw A2AError.invalidParams(`Invalid task state: ${state}`);
-    }
-  }
-  static artifact(artifact) {
-    return {
-      artifactId: artifact.artifactId,
-      name: artifact.name || void 0,
-      description: artifact.description || void 0,
-      parts: artifact.parts.map((p) => _FromProto.part(p)),
-      metadata: artifact.metadata
-    };
-  }
-  static taskPushNotificationConfig(request) {
-    return {
-      taskId: extractTaskId(request.name),
-      pushNotificationConfig: _FromProto.pushNotificationConfig(request.pushNotificationConfig)
-    };
-  }
-  static listTaskPushNotificationConfig(request) {
-    return request.configs.map((c) => _FromProto.taskPushNotificationConfig(c));
-  }
-  static agentCard(agentCard) {
-    return {
-      additionalInterfaces: agentCard.additionalInterfaces?.map((i) => _FromProto.agentInterface(i)),
-      capabilities: agentCard.capabilities ? _FromProto.agentCapabilities(agentCard.capabilities) : {},
-      defaultInputModes: agentCard.defaultInputModes,
-      defaultOutputModes: agentCard.defaultOutputModes,
-      description: agentCard.description,
-      documentationUrl: agentCard.documentationUrl || void 0,
-      name: agentCard.name,
-      preferredTransport: agentCard.preferredTransport,
-      provider: agentCard.provider ? _FromProto.agentProvider(agentCard.provider) : void 0,
-      protocolVersion: agentCard.protocolVersion,
-      security: agentCard.security?.map((s) => _FromProto.security(s)),
-      securitySchemes: agentCard.securitySchemes ? Object.fromEntries(
-        Object.entries(agentCard.securitySchemes).map(([key, value]) => [
-          key,
-          _FromProto.securityScheme(value)
-        ])
-      ) : {},
-      skills: agentCard.skills.map((s) => _FromProto.skills(s)),
-      signatures: agentCard.signatures?.map((s) => _FromProto.agentCardSignature(s)),
-      supportsAuthenticatedExtendedCard: agentCard.supportsAuthenticatedExtendedCard,
-      url: agentCard.url,
-      version: agentCard.version
-    };
-  }
-  static agentCapabilities(capabilities) {
-    return {
-      extensions: capabilities.extensions?.map((e) => _FromProto.agentExtension(e)),
-      pushNotifications: capabilities.pushNotifications,
-      streaming: capabilities.streaming
-    };
-  }
-  static agentExtension(extension2) {
-    return {
-      uri: extension2.uri,
-      description: extension2.description || void 0,
-      required: extension2.required,
-      params: extension2.params
-    };
-  }
-  static agentInterface(intf) {
-    return {
-      transport: intf.transport,
-      url: intf.url
-    };
-  }
-  static agentProvider(provider) {
-    return {
-      organization: provider.organization,
-      url: provider.url
-    };
-  }
-  static security(security) {
-    return Object.fromEntries(
-      Object.entries(security.schemes)?.map(([key, value]) => [key, value.list])
-    );
-  }
-  static securityScheme(securitySchemes) {
-    switch (securitySchemes.scheme?.$case) {
-      case "apiKeySecurityScheme":
-        return {
-          type: "apiKey",
-          name: securitySchemes.scheme.value.name,
-          in: securitySchemes.scheme.value.location,
-          description: securitySchemes.scheme.value.description || void 0
-        };
-      case "httpAuthSecurityScheme":
-        return {
-          type: "http",
-          scheme: securitySchemes.scheme.value.scheme,
-          bearerFormat: securitySchemes.scheme.value.bearerFormat || void 0,
-          description: securitySchemes.scheme.value.description || void 0
-        };
-      case "mtlsSecurityScheme":
-        return {
-          type: "mutualTLS",
-          description: securitySchemes.scheme.value.description || void 0
-        };
-      case "oauth2SecurityScheme":
-        return {
-          type: "oauth2",
-          description: securitySchemes.scheme.value.description || void 0,
-          flows: _FromProto.oauthFlows(securitySchemes.scheme.value.flows),
-          oauth2MetadataUrl: securitySchemes.scheme.value.oauth2MetadataUrl || void 0
-        };
-      case "openIdConnectSecurityScheme":
-        return {
-          type: "openIdConnect",
-          description: securitySchemes.scheme.value.description || void 0,
-          openIdConnectUrl: securitySchemes.scheme.value.openIdConnectUrl
-        };
-      default:
-        throw A2AError.internalError(`Unsupported security scheme type`);
-    }
-  }
-  static oauthFlows(flows) {
-    switch (flows.flow?.$case) {
-      case "implicit":
-        return {
-          implicit: {
-            authorizationUrl: flows.flow.value.authorizationUrl,
-            scopes: flows.flow.value.scopes,
-            refreshUrl: flows.flow.value.refreshUrl || void 0
-          }
-        };
-      case "password":
-        return {
-          password: {
-            refreshUrl: flows.flow.value.refreshUrl || void 0,
-            scopes: flows.flow.value.scopes,
-            tokenUrl: flows.flow.value.tokenUrl
-          }
-        };
-      case "authorizationCode":
-        return {
-          authorizationCode: {
-            refreshUrl: flows.flow.value.refreshUrl || void 0,
-            authorizationUrl: flows.flow.value.authorizationUrl,
-            scopes: flows.flow.value.scopes,
-            tokenUrl: flows.flow.value.tokenUrl
-          }
-        };
-      case "clientCredentials":
-        return {
-          clientCredentials: {
-            refreshUrl: flows.flow.value.refreshUrl || void 0,
-            scopes: flows.flow.value.scopes,
-            tokenUrl: flows.flow.value.tokenUrl
-          }
-        };
-      default:
-        throw A2AError.internalError(`Unsupported OAuth flows`);
-    }
-  }
-  static skills(skill) {
-    return {
-      id: skill.id,
-      name: skill.name,
-      description: skill.description,
-      tags: skill.tags,
-      examples: skill.examples,
-      inputModes: skill.inputModes,
-      outputModes: skill.outputModes,
-      security: skill.security?.map((s) => _FromProto.security(s))
-    };
-  }
-  static agentCardSignature(signatures) {
-    return {
-      protected: signatures.protected,
-      signature: signatures.signature,
-      header: signatures.header
-    };
-  }
-  static taskStatusUpdateEvent(event) {
-    return {
-      kind: "status-update",
-      taskId: event.taskId,
-      status: _FromProto.taskStatus(event.status),
-      contextId: event.contextId,
-      metadata: event.metadata,
-      final: event.final
-    };
-  }
-  static taskArtifactUpdateEvent(event) {
-    return {
-      kind: "artifact-update",
-      taskId: event.taskId,
-      artifact: _FromProto.artifact(event.artifact),
-      contextId: event.contextId,
-      metadata: event.metadata,
-      lastChunk: event.lastChunk
-    };
-  }
-  static messageStreamResult(event) {
-    switch (event.payload?.$case) {
-      case "msg":
-        return _FromProto.message(event.payload.value);
-      case "task":
-        return _FromProto.task(event.payload.value);
-      case "statusUpdate":
-        return _FromProto.taskStatusUpdateEvent(event.payload.value);
-      case "artifactUpdate":
-        return _FromProto.taskArtifactUpdateEvent(event.payload.value);
-      default:
-        throw A2AError.internalError("Invalid event type in StreamResponse");
-    }
-  }
-};
-var ToProto = class _ToProto {
-  static agentCard(agentCard) {
-    return {
-      protocolVersion: agentCard.protocolVersion,
-      name: agentCard.name,
-      description: agentCard.description,
-      url: agentCard.url,
-      preferredTransport: agentCard.preferredTransport ?? "",
-      additionalInterfaces: agentCard.additionalInterfaces?.map((i) => _ToProto.agentInterface(i)) ?? [],
-      provider: _ToProto.agentProvider(agentCard.provider),
-      version: agentCard.version,
-      documentationUrl: agentCard.documentationUrl ?? "",
-      capabilities: _ToProto.agentCapabilities(agentCard.capabilities),
-      securitySchemes: agentCard.securitySchemes ? Object.fromEntries(
-        Object.entries(agentCard.securitySchemes).map(([key, value]) => [
-          key,
-          _ToProto.securityScheme(value)
-        ])
-      ) : {},
-      security: agentCard.security?.map((s) => _ToProto.security(s)) ?? [],
-      defaultInputModes: agentCard.defaultInputModes,
-      defaultOutputModes: agentCard.defaultOutputModes,
-      skills: agentCard.skills.map((s) => _ToProto.agentSkill(s)),
-      supportsAuthenticatedExtendedCard: agentCard.supportsAuthenticatedExtendedCard,
-      signatures: agentCard.signatures?.map((s) => _ToProto.agentCardSignature(s)) ?? []
-    };
-  }
-  static agentCardSignature(signatures) {
-    return {
-      protected: signatures.protected,
-      signature: signatures.signature,
-      header: signatures.header
-    };
-  }
-  static agentSkill(skill) {
-    return {
-      id: skill.id,
-      name: skill.name,
-      description: skill.description,
-      tags: skill.tags ?? [],
-      examples: skill.examples ?? [],
-      inputModes: skill.inputModes ?? [],
-      outputModes: skill.outputModes ?? [],
-      security: skill.security ? skill.security.map((s) => _ToProto.security(s)) : []
-    };
-  }
-  static security(security) {
-    return {
-      schemes: Object.fromEntries(
-        Object.entries(security).map(([key, value]) => {
-          return [key, { list: value }];
-        })
-      )
-    };
-  }
-  static securityScheme(scheme) {
-    switch (scheme.type) {
-      case "apiKey":
-        return {
-          scheme: {
-            $case: "apiKeySecurityScheme",
-            value: {
-              name: scheme.name,
-              location: scheme.in,
-              description: scheme.description ?? ""
-            }
-          }
-        };
-      case "http":
-        return {
-          scheme: {
-            $case: "httpAuthSecurityScheme",
-            value: {
-              description: scheme.description ?? "",
-              scheme: scheme.scheme,
-              bearerFormat: scheme.bearerFormat ?? ""
-            }
-          }
-        };
-      case "mutualTLS":
-        return {
-          scheme: {
-            $case: "mtlsSecurityScheme",
-            value: {
-              description: scheme.description ?? ""
-            }
-          }
-        };
-      case "oauth2":
-        return {
-          scheme: {
-            $case: "oauth2SecurityScheme",
-            value: {
-              description: scheme.description ?? "",
-              flows: _ToProto.oauthFlows(scheme.flows),
-              oauth2MetadataUrl: scheme.oauth2MetadataUrl ?? ""
-            }
-          }
-        };
-      case "openIdConnect":
-        return {
-          scheme: {
-            $case: "openIdConnectSecurityScheme",
-            value: {
-              description: scheme.description ?? "",
-              openIdConnectUrl: scheme.openIdConnectUrl
-            }
-          }
-        };
-      default:
-        throw A2AError.internalError(`Unsupported security scheme type`);
-    }
-  }
-  static oauthFlows(flows) {
-    if (flows.implicit) {
-      return {
-        flow: {
-          $case: "implicit",
-          value: {
-            authorizationUrl: flows.implicit.authorizationUrl,
-            scopes: flows.implicit.scopes,
-            refreshUrl: flows.implicit.refreshUrl ?? ""
-          }
-        }
-      };
-    } else if (flows.password) {
-      return {
-        flow: {
-          $case: "password",
-          value: {
-            tokenUrl: flows.password.tokenUrl,
-            scopes: flows.password.scopes,
-            refreshUrl: flows.password.refreshUrl ?? ""
-          }
-        }
-      };
-    } else if (flows.clientCredentials) {
-      return {
-        flow: {
-          $case: "clientCredentials",
-          value: {
-            tokenUrl: flows.clientCredentials.tokenUrl,
-            scopes: flows.clientCredentials.scopes,
-            refreshUrl: flows.clientCredentials.refreshUrl ?? ""
-          }
-        }
-      };
-    } else if (flows.authorizationCode) {
-      return {
-        flow: {
-          $case: "authorizationCode",
-          value: {
-            authorizationUrl: flows.authorizationCode.authorizationUrl,
-            tokenUrl: flows.authorizationCode.tokenUrl,
-            scopes: flows.authorizationCode.scopes,
-            refreshUrl: flows.authorizationCode.refreshUrl ?? ""
-          }
-        }
-      };
-    } else {
-      throw A2AError.internalError(`Unsupported OAuth flows`);
-    }
-  }
-  static agentInterface(agentInterface) {
-    return {
-      transport: agentInterface.transport,
-      url: agentInterface.url
-    };
-  }
-  static agentProvider(agentProvider) {
-    if (!agentProvider) {
-      return void 0;
-    }
-    return {
-      url: agentProvider.url,
-      organization: agentProvider.organization
-    };
-  }
-  static agentCapabilities(capabilities) {
-    return {
-      streaming: capabilities.streaming,
-      pushNotifications: capabilities.pushNotifications,
-      extensions: capabilities.extensions ? capabilities.extensions.map((e) => _ToProto.agentExtension(e)) : []
-    };
-  }
-  static agentExtension(extension2) {
-    return {
-      uri: extension2.uri,
-      description: extension2.description ?? "",
-      required: extension2.required ?? false,
-      params: extension2.params
-    };
-  }
-  static listTaskPushNotificationConfig(config) {
-    return {
-      configs: config.map((c) => _ToProto.taskPushNotificationConfig(c)),
-      nextPageToken: ""
-    };
-  }
-  static getTaskPushNotificationConfigParams(config) {
-    return {
-      name: generatePushNotificationConfigName(config.id, config.pushNotificationConfigId)
-    };
-  }
-  static listTaskPushNotificationConfigParams(config) {
-    return {
-      parent: generateTaskName(config.id),
-      pageToken: "",
-      pageSize: 0
-    };
-  }
-  static deleteTaskPushNotificationConfigParams(config) {
-    return {
-      name: generatePushNotificationConfigName(config.id, config.pushNotificationConfigId)
-    };
-  }
-  static taskPushNotificationConfig(config) {
-    return {
-      name: generatePushNotificationConfigName(
-        config.taskId,
-        config.pushNotificationConfig.id ?? ""
-      ),
-      pushNotificationConfig: _ToProto.pushNotificationConfig(config.pushNotificationConfig)
-    };
-  }
-  static taskPushNotificationConfigCreate(config) {
-    return {
-      parent: generateTaskName(config.taskId),
-      config: _ToProto.taskPushNotificationConfig(config),
-      configId: config.pushNotificationConfig.id
-    };
-  }
-  static pushNotificationConfig(config) {
-    if (!config) {
-      return void 0;
-    }
-    return {
-      id: config.id ?? "",
-      url: config.url,
-      token: config.token ?? "",
-      authentication: _ToProto.pushNotificationAuthenticationInfo(config.authentication)
-    };
-  }
-  static pushNotificationAuthenticationInfo(authInfo) {
-    if (!authInfo) {
-      return void 0;
-    }
-    return {
-      schemes: authInfo.schemes,
-      credentials: authInfo.credentials ?? ""
-    };
-  }
-  static messageStreamResult(event) {
-    if (event.kind === "message") {
-      return {
-        payload: {
-          $case: "msg",
-          value: _ToProto.message(event)
-        }
-      };
-    } else if (event.kind === "task") {
-      return {
-        payload: {
-          $case: "task",
-          value: _ToProto.task(event)
-        }
-      };
-    } else if (event.kind === "status-update") {
-      return {
-        payload: {
-          $case: "statusUpdate",
-          value: _ToProto.taskStatusUpdateEvent(event)
-        }
-      };
-    } else if (event.kind === "artifact-update") {
-      return {
-        payload: {
-          $case: "artifactUpdate",
-          value: _ToProto.taskArtifactUpdateEvent(event)
-        }
-      };
-    } else {
-      throw A2AError.internalError("Invalid event type");
-    }
-  }
-  static taskStatusUpdateEvent(event) {
-    return {
-      taskId: event.taskId,
-      status: _ToProto.taskStatus(event.status),
-      contextId: event.contextId,
-      metadata: event.metadata,
-      final: event.final
-    };
-  }
-  static taskArtifactUpdateEvent(event) {
-    return {
-      taskId: event.taskId,
-      artifact: _ToProto.artifact(event.artifact),
-      contextId: event.contextId,
-      metadata: event.metadata,
-      append: event.append,
-      lastChunk: event.lastChunk
-    };
-  }
-  static messageSendResult(params) {
-    if (params.kind === "message") {
-      return {
-        payload: {
-          $case: "msg",
-          value: _ToProto.message(params)
-        }
-      };
-    } else if (params.kind === "task") {
-      return {
-        payload: {
-          $case: "task",
-          value: _ToProto.task(params)
-        }
-      };
-    }
-  }
-  static message(message) {
-    if (!message) {
-      return void 0;
-    }
-    return {
-      messageId: message.messageId,
-      content: message.parts.map((p) => _ToProto.part(p)),
-      contextId: message.contextId ?? "",
-      taskId: message.taskId ?? "",
-      role: _ToProto.role(message.role),
-      metadata: message.metadata,
-      extensions: message.extensions ?? []
-    };
-  }
-  static role(role) {
-    switch (role) {
-      case "agent":
-        return 2;
-      case "user":
-        return 1;
-      default:
-        throw A2AError.internalError(`Invalid role`);
-    }
-  }
-  static task(task) {
-    return {
-      id: task.id,
-      contextId: task.contextId,
-      status: _ToProto.taskStatus(task.status),
-      artifacts: task.artifacts?.map((a) => _ToProto.artifact(a)) ?? [],
-      history: task.history?.map((m) => _ToProto.message(m)) ?? [],
-      metadata: task.metadata
-    };
-  }
-  static taskStatus(status) {
-    return {
-      state: _ToProto.taskState(status.state),
-      update: _ToProto.message(status.message),
-      timestamp: status.timestamp
-    };
-  }
-  static artifact(artifact) {
-    return {
-      artifactId: artifact.artifactId,
-      name: artifact.name ?? "",
-      description: artifact.description ?? "",
-      parts: artifact.parts.map((p) => _ToProto.part(p)),
-      metadata: artifact.metadata,
-      extensions: artifact.extensions ? artifact.extensions : []
-    };
-  }
-  static taskState(state) {
-    switch (state) {
-      case "submitted":
-        return 1;
-      case "working":
-        return 2;
-      case "input-required":
-        return 6;
-      case "rejected":
-        return 7;
-      case "auth-required":
-        return 8;
-      case "completed":
-        return 3;
-      case "failed":
-        return 4;
-      case "canceled":
-        return 5;
-      case "unknown":
-        return 0;
-      default:
-        return -1;
-    }
-  }
-  static part(part) {
-    if (part.kind === "text") {
-      return {
-        part: { $case: "text", value: part.text }
-      };
-    }
-    if (part.kind === "file") {
-      let filePart;
-      if ("uri" in part.file) {
-        filePart = {
-          file: { $case: "fileWithUri", value: part.file.uri },
-          mimeType: part.file.mimeType
-        };
-      } else if ("bytes" in part.file) {
-        filePart = {
-          file: { $case: "fileWithBytes", value: Buffer.from(part.file.bytes, "base64") },
-          mimeType: part.file.mimeType
-        };
-      } else {
-        throw A2AError.internalError("Invalid file part");
-      }
-      return {
-        part: { $case: "file", value: filePart }
-      };
-    }
-    if (part.kind === "data") {
-      return {
-        part: { $case: "data", value: { data: part.data } }
-      };
-    }
-    throw A2AError.internalError("Invalid part type");
-  }
-  static messageSendParams(params) {
-    return {
-      request: _ToProto.message(params.message),
-      configuration: _ToProto.configuration(params.configuration),
-      metadata: params.metadata
-    };
-  }
-  static configuration(configuration) {
-    if (!configuration) {
-      return void 0;
-    }
-    return {
-      blocking: configuration.blocking,
-      acceptedOutputModes: configuration.acceptedOutputModes ?? [],
-      pushNotification: _ToProto.pushNotificationConfig(configuration.pushNotificationConfig),
-      historyLength: configuration.historyLength ?? 0
-    };
-  }
-  static taskQueryParams(params) {
-    return {
-      name: generateTaskName(params.id),
-      historyLength: params.historyLength ?? 0
-    };
-  }
-  static cancelTaskRequest(params) {
-    return {
-      name: generateTaskName(params.id)
-    };
-  }
-  static taskIdParams(params) {
-    return {
-      name: generateTaskName(params.id)
-    };
-  }
-  static getAgentCardRequest() {
-    return {};
+    throw new GenericError("Invalid SendMessageResponse: missing result");
   }
 };
 
 // node_modules/@a2a-js/sdk/dist/client/index.js
-var JsonRpcTransport = class _JsonRpcTransport {
-  customFetchImpl;
-  endpoint;
-  requestIdCounter = 1;
-  constructor(options) {
-    this.endpoint = options.endpoint;
-    this.customFetchImpl = options.fetchImpl;
-  }
-  async getExtendedAgentCard(options, idOverride) {
-    const rpcResponse = await this._sendRpcRequest("agent/getAuthenticatedExtendedCard", void 0, idOverride, options);
-    return rpcResponse.result;
-  }
-  async sendMessage(params, options, idOverride) {
-    const rpcResponse = await this._sendRpcRequest(
-      "message/send",
-      params,
-      idOverride,
-      options
-    );
-    return rpcResponse.result;
-  }
-  async *sendMessageStream(params, options) {
-    yield* this._sendStreamingRequest("message/stream", params, options);
-  }
-  async setTaskPushNotificationConfig(params, options, idOverride) {
-    const rpcResponse = await this._sendRpcRequest("tasks/pushNotificationConfig/set", params, idOverride, options);
-    return rpcResponse.result;
-  }
-  async getTaskPushNotificationConfig(params, options, idOverride) {
-    const rpcResponse = await this._sendRpcRequest("tasks/pushNotificationConfig/get", params, idOverride, options);
-    return rpcResponse.result;
-  }
-  async listTaskPushNotificationConfig(params, options, idOverride) {
-    const rpcResponse = await this._sendRpcRequest("tasks/pushNotificationConfig/list", params, idOverride, options);
-    return rpcResponse.result;
-  }
-  async deleteTaskPushNotificationConfig(params, options, idOverride) {
-    await this._sendRpcRequest("tasks/pushNotificationConfig/delete", params, idOverride, options);
-  }
-  async getTask(params, options, idOverride) {
-    const rpcResponse = await this._sendRpcRequest(
-      "tasks/get",
-      params,
-      idOverride,
-      options
-    );
-    return rpcResponse.result;
-  }
-  async cancelTask(params, options, idOverride) {
-    const rpcResponse = await this._sendRpcRequest(
-      "tasks/cancel",
-      params,
-      idOverride,
-      options
-    );
-    return rpcResponse.result;
-  }
-  async *resubscribeTask(params, options) {
-    yield* this._sendStreamingRequest("tasks/resubscribe", params, options);
-  }
-  async callExtensionMethod(method, params, idOverride, options) {
-    return await this._sendRpcRequest(
-      method,
-      params,
-      idOverride,
-      options
-    );
-  }
-  _fetch(...args) {
-    if (this.customFetchImpl) {
-      return this.customFetchImpl(...args);
-    }
-    if (typeof fetch === "function") {
-      return fetch(...args);
-    }
-    throw new Error(
-      "A `fetch` implementation was not provided and is not available in the global scope. Please provide a `fetchImpl` in the A2ATransportOptions. "
-    );
-  }
-  async _sendRpcRequest(method, params, idOverride, options) {
-    const requestId = idOverride ?? this.requestIdCounter++;
-    const rpcRequest = {
-      jsonrpc: "2.0",
-      method,
-      params,
-      id: requestId
-    };
-    const httpResponse = await this._fetchRpc(rpcRequest, "application/json", options);
-    if (!httpResponse.ok) {
-      let errorBodyText = "(empty or non-JSON response)";
-      let errorJson;
-      try {
-        errorBodyText = await httpResponse.text();
-        errorJson = JSON.parse(errorBodyText);
-      } catch (e) {
-        throw new Error(
-          `HTTP error for ${method}! Status: ${httpResponse.status} ${httpResponse.statusText}. Response: ${errorBodyText}`,
-          { cause: e }
-        );
-      }
-      if (errorJson.jsonrpc && errorJson.error) {
-        throw _JsonRpcTransport.mapToError(errorJson);
-      } else {
-        throw new Error(
-          `HTTP error for ${method}! Status: ${httpResponse.status} ${httpResponse.statusText}. Response: ${errorBodyText}`
-        );
-      }
-    }
-    const rpcResponse = await httpResponse.json();
-    if (rpcResponse.id !== requestId) {
-      throw new Error(
-        `JSON-RPC response ID mismatch for method ${method}. Expected ${requestId}, got ${rpcResponse.id}.`
-      );
-    }
-    if ("error" in rpcResponse) {
-      throw _JsonRpcTransport.mapToError(rpcResponse);
-    }
-    return rpcResponse;
-  }
-  async _fetchRpc(rpcRequest, acceptHeader = "application/json", options) {
-    const requestInit = {
-      method: "POST",
-      headers: {
-        ...options?.serviceParameters,
-        "Content-Type": "application/json",
-        Accept: acceptHeader
-      },
-      body: JSON.stringify(rpcRequest),
-      signal: options?.signal
-    };
-    return this._fetch(this.endpoint, requestInit);
-  }
-  async *_sendStreamingRequest(method, params, options) {
-    const clientRequestId = this.requestIdCounter++;
-    const rpcRequest = {
-      jsonrpc: "2.0",
-      method,
-      params,
-      id: clientRequestId
-    };
-    const response = await this._fetchRpc(rpcRequest, "text/event-stream", options);
-    if (!response.ok) {
-      let errorBody = "";
-      let errorJson;
-      try {
-        errorBody = await response.text();
-        errorJson = JSON.parse(errorBody);
-      } catch (e) {
-        throw new Error(
-          `HTTP error establishing stream for ${method}: ${response.status} ${response.statusText}. Response: ${errorBody || "(empty)"}`,
-          { cause: e }
-        );
-      }
-      if (errorJson.error) {
-        throw new Error(
-          `HTTP error establishing stream for ${method}: ${response.status} ${response.statusText}. RPC Error: ${errorJson.error.message} (Code: ${errorJson.error.code})`
-        );
-      }
-      throw new Error(
-        `HTTP error establishing stream for ${method}: ${response.status} ${response.statusText}`
-      );
-    }
-    if (!response.headers.get("Content-Type")?.startsWith("text/event-stream")) {
-      throw new Error(
-        `Invalid response Content-Type for SSE stream for ${method}. Expected 'text/event-stream'.`
-      );
-    }
-    for await (const event of parseSseStream(response)) {
-      yield this._processSseEventData(event.data, clientRequestId);
-    }
-  }
-  _processSseEventData(jsonData, originalRequestId) {
-    if (!jsonData.trim()) {
-      throw new Error("Attempted to process empty SSE event data.");
-    }
-    let a2aStreamResponse;
-    try {
-      a2aStreamResponse = JSON.parse(jsonData);
-    } catch (e) {
-      throw new Error(
-        `Failed to parse SSE event data: "${jsonData.substring(0, 100)}...". Original error: ${e instanceof Error && e.message || "Unknown error"}`,
-        { cause: e }
-      );
-    }
-    if (a2aStreamResponse.id !== originalRequestId) {
-      throw new Error(
-        `JSON-RPC response ID mismatch in SSE event. Expected ${originalRequestId}, got ${a2aStreamResponse.id}.`
-      );
-    }
-    if ("error" in a2aStreamResponse) {
-      const err = a2aStreamResponse.error;
-      throw new Error(
-        `SSE event contained an error: ${err.message} (Code: ${err.code}) Data: ${JSON.stringify(err.data || {})}`,
-        { cause: _JsonRpcTransport.mapToError(a2aStreamResponse) }
-      );
-    }
-    if (!("result" in a2aStreamResponse) || typeof a2aStreamResponse.result === "undefined") {
-      throw new Error(`SSE event JSON-RPC response is missing 'result' field. Data: ${jsonData}`);
-    }
-    return a2aStreamResponse.result;
-  }
-  static mapToError(response) {
-    switch (response.error.code) {
-      case -32001:
-        return new TaskNotFoundJSONRPCError(response);
-      case -32002:
-        return new TaskNotCancelableJSONRPCError(response);
-      case -32003:
-        return new PushNotificationNotSupportedJSONRPCError(response);
-      case -32004:
-        return new UnsupportedOperationJSONRPCError(response);
-      case -32005:
-        return new ContentTypeNotSupportedJSONRPCError(response);
-      case -32006:
-        return new InvalidAgentResponseJSONRPCError(response);
-      case -32007:
-        return new AuthenticatedExtendedCardNotConfiguredJSONRPCError(response);
-      default:
-        return new JSONRPCTransportError(response);
-    }
-  }
-};
-var JsonRpcTransportFactory = class _JsonRpcTransportFactory {
-  constructor(options) {
-    this.options = options;
-  }
-  static name = "JSONRPC";
-  get protocolName() {
-    return _JsonRpcTransportFactory.name;
-  }
-  async create(url, _agentCard) {
-    return new JsonRpcTransport({
-      endpoint: url,
-      fetchImpl: this.options?.fetchImpl
-    });
-  }
-};
-var JSONRPCTransportError = class extends Error {
-  constructor(errorResponse) {
-    super(
-      `JSON-RPC error: ${errorResponse.error.message} (Code: ${errorResponse.error.code}) Data: ${JSON.stringify(errorResponse.error.data || {})}`
-    );
-    this.errorResponse = errorResponse;
-  }
-};
-var TaskNotFoundJSONRPCError = class extends TaskNotFoundError {
-  constructor(errorResponse) {
-    super();
-    this.errorResponse = errorResponse;
-  }
-};
-var TaskNotCancelableJSONRPCError = class extends TaskNotCancelableError {
-  constructor(errorResponse) {
-    super();
-    this.errorResponse = errorResponse;
-  }
-};
-var PushNotificationNotSupportedJSONRPCError = class extends PushNotificationNotSupportedError {
-  constructor(errorResponse) {
-    super();
-    this.errorResponse = errorResponse;
-  }
-};
-var UnsupportedOperationJSONRPCError = class extends UnsupportedOperationError {
-  constructor(errorResponse) {
-    super();
-    this.errorResponse = errorResponse;
-  }
-};
-var ContentTypeNotSupportedJSONRPCError = class extends ContentTypeNotSupportedError {
-  constructor(errorResponse) {
-    super();
-    this.errorResponse = errorResponse;
-  }
-};
-var InvalidAgentResponseJSONRPCError = class extends InvalidAgentResponseError {
-  constructor(errorResponse) {
-    super();
-    this.errorResponse = errorResponse;
-  }
-};
-var AuthenticatedExtendedCardNotConfiguredJSONRPCError = class extends AuthenticatedExtendedCardNotConfiguredError {
-  constructor(errorResponse) {
-    super();
-    this.errorResponse = errorResponse;
-  }
-};
 var DefaultAgentCardResolver = class {
   constructor(options) {
     this.options = options;
@@ -53584,7 +52807,7 @@ var DefaultAgentCardResolver = class {
   normalizeAgentCard(card) {
     if (this.isProtoAgentCard(card)) {
       const parsedProto = AgentCard.fromJSON(card);
-      return FromProto.agentCard(parsedProto);
+      return parsedProto;
     }
     return card;
   }
@@ -53621,6 +52844,23 @@ var DefaultAgentCardResolver = class {
 var AgentCardResolver = {
   default: new DefaultAgentCardResolver()
 };
+var ServiceParameters = {
+  create(...updates) {
+    return ServiceParameters.createFrom(void 0, ...updates);
+  },
+  createFrom: (serviceParameters, ...updates) => {
+    const result = serviceParameters ? { ...serviceParameters } : {};
+    for (const update of updates) {
+      update(result);
+    }
+    return result;
+  }
+};
+function withA2AVersion(version) {
+  return (parameters) => {
+    parameters[A2A_VERSION_HEADER] = version;
+  };
+}
 var Client = class {
   constructor(transport, agentCard, config) {
     this.transport = transport;
@@ -53628,16 +52868,31 @@ var Client = class {
     this.config = config;
   }
   /**
+   * The A2A protocol version sent with every request via the A2A-Version header.
+   * Determined by the transport, which receives the version from the matched
+   * AgentInterface during factory creation. Clients MUST send this header per §3.6.1.
+   */
+  get protocolVersion() {
+    return this.transport.protocolVersion;
+  }
+  /**
    * If the current agent card supports the extended feature, it will try to fetch the extended agent card from the server,
    * Otherwise it will return the current agent card value.
+   *
+   * When a default tenant is configured (via `TenantTransportDecorator`, wired
+   * automatically by `ClientFactory` from `AgentInterface.tenant`), the tenant
+   * is applied to the request transparently.
    */
-  async getAgentCard(options) {
-    if (this.agentCard.supportsAuthenticatedExtendedCard) {
+  async getAgentCard(options, verifySignature) {
+    if (this.agentCard.capabilities?.extendedAgentCard) {
       this.agentCard = await this.executeWithInterceptors(
         { method: "getAgentCard" },
         options,
-        (_, options2) => this.transport.getExtendedAgentCard(options2)
+        (_, options2) => this.transport.getExtendedAgentCard({ tenant: "" }, options2)
       );
+    }
+    if (verifySignature) {
+      await verifySignature(this.agentCard);
     }
     return this.agentCard;
   }
@@ -53648,7 +52903,7 @@ var Client = class {
   sendMessage(params, options) {
     params = this.applyClientConfig({
       params,
-      blocking: !(this.config?.polling ?? false)
+      returnImmediately: this.config?.polling ?? false
     });
     return this.executeWithInterceptors(
       { method: "sendMessage", value: params },
@@ -53662,11 +52917,11 @@ var Client = class {
    */
   async *sendMessageStream(params, options) {
     const method = "sendMessageStream";
-    params = this.applyClientConfig({ params, blocking: true });
+    params = this.applyClientConfig({ params, returnImmediately: false });
     const beforeArgs = {
       input: { method, value: params },
       agentCard: this.agentCard,
-      options
+      options: this.withVersionHeader(options)
     };
     const beforeResult = await this.interceptBefore(beforeArgs);
     if (beforeResult) {
@@ -53680,10 +52935,16 @@ var Client = class {
       yield afterArgs.result.value;
       return;
     }
-    if (!this.agentCard.capabilities.streaming) {
+    if (!this.agentCard.capabilities?.streaming) {
       const result = await this.transport.sendMessage(beforeArgs.input.value, beforeArgs.options);
+      let streamValue;
+      if ("messageId" in result) {
+        streamValue = { payload: { $case: "message", value: result } };
+      } else {
+        streamValue = { payload: { $case: "task", value: result } };
+      }
       const afterArgs = {
-        result: { method, value: result },
+        result: { method, value: streamValue },
         agentCard: this.agentCard,
         options: beforeArgs.options
       };
@@ -53708,17 +52969,17 @@ var Client = class {
     }
   }
   /**
-   * Sets or updates the push notification configuration for a specified task.
+   * Creates a push notification configuration for a specified task.
    * Requires the server to have AgentCard.capabilities.pushNotifications: true.
    */
-  setTaskPushNotificationConfig(params, options) {
-    if (!this.agentCard.capabilities.pushNotifications) {
+  createTaskPushNotificationConfig(params, options) {
+    if (!this.agentCard.capabilities?.pushNotifications) {
       throw new PushNotificationNotSupportedError();
     }
     return this.executeWithInterceptors(
-      { method: "setTaskPushNotificationConfig", value: params },
+      { method: "createTaskPushNotificationConfig", value: params },
       options,
-      this.transport.setTaskPushNotificationConfig.bind(this.transport)
+      this.transport.createTaskPushNotificationConfig.bind(this.transport)
     );
   }
   /**
@@ -53726,7 +52987,7 @@ var Client = class {
    * Requires the server to have AgentCard.capabilities.pushNotifications: true.
    */
   getTaskPushNotificationConfig(params, options) {
-    if (!this.agentCard.capabilities.pushNotifications) {
+    if (!this.agentCard.capabilities?.pushNotifications) {
       throw new PushNotificationNotSupportedError();
     }
     return this.executeWithInterceptors(
@@ -53740,7 +53001,7 @@ var Client = class {
    * Requires the server to have AgentCard.capabilities.pushNotifications: true.
    */
   listTaskPushNotificationConfig(params, options) {
-    if (!this.agentCard.capabilities.pushNotifications) {
+    if (!this.agentCard.capabilities?.pushNotifications) {
       throw new PushNotificationNotSupportedError();
     }
     return this.executeWithInterceptors(
@@ -53781,6 +53042,16 @@ var Client = class {
     );
   }
   /**
+   * Retrieves a list of tasks with optional filtering and pagination.
+   */
+  listTasks(params, options) {
+    return this.executeWithInterceptors(
+      { method: "listTasks", value: params },
+      options,
+      this.transport.listTasks.bind(this.transport)
+    );
+  }
+  /**
    * Allows a client to reconnect to an updates stream for an ongoing task after a previous connection was interrupted.
    */
   async *resubscribeTask(params, options) {
@@ -53788,7 +53059,7 @@ var Client = class {
     const beforeArgs = {
       input: { method, value: params },
       agentCard: this.agentCard,
-      options
+      options: this.withVersionHeader(options)
     };
     const beforeResult = await this.interceptBefore(beforeArgs);
     if (beforeResult) {
@@ -53820,23 +53091,39 @@ var Client = class {
   }
   applyClientConfig({
     params,
-    blocking
+    returnImmediately
   }) {
-    const result = { ...params, configuration: params.configuration ?? {} };
-    if (!result.configuration.acceptedOutputModes && this.config?.acceptedOutputModes) {
-      result.configuration.acceptedOutputModes = this.config.acceptedOutputModes;
+    const result = {
+      ...params,
+      configuration: params.configuration ?? {}
+    };
+    result.configuration.acceptedOutputModes = result.configuration.acceptedOutputModes ?? this.config?.acceptedOutputModes ?? [];
+    if (!result.configuration.taskPushNotificationConfig && this.config?.pushNotificationConfig) {
+      if (params.message?.taskId !== void 0) {
+        result.configuration.taskPushNotificationConfig = this.config.pushNotificationConfig;
+      }
     }
-    if (!result.configuration.pushNotificationConfig && this.config?.pushNotificationConfig) {
-      result.configuration.pushNotificationConfig = this.config.pushNotificationConfig;
-    }
-    result.configuration.blocking ??= blocking;
+    result.configuration.returnImmediately ??= returnImmediately;
     return result;
+  }
+  /**
+   * Ensures the A2A-Version header is present in the request's service parameters.
+   * Per §3.6.1: "Clients MUST send the A2A-Version header with each request."
+   */
+  withVersionHeader(options) {
+    return {
+      ...options,
+      serviceParameters: ServiceParameters.createFrom(
+        options?.serviceParameters,
+        withA2AVersion(this.protocolVersion)
+      )
+    };
   }
   async executeWithInterceptors(input, options, transportCall) {
     const beforeArgs = {
       input,
       agentCard: this.agentCard,
-      options
+      options: this.withVersionHeader(options)
     };
     const beforeResult = await this.interceptBefore(beforeArgs);
     if (beforeResult) {
@@ -53886,6 +53173,385 @@ var Client = class {
     }
   }
 };
+var TenantTransportDecorator = class {
+  constructor(base, defaultTenant) {
+    this.base = base;
+    this.defaultTenant = defaultTenant;
+  }
+  get protocolName() {
+    return this.base.protocolName;
+  }
+  get protocolVersion() {
+    return this.base.protocolVersion;
+  }
+  /**
+   * Returns the request tenant if non-empty, otherwise falls back to the default.
+   */
+  _resolveTenant(tenant) {
+    return tenant || this.defaultTenant;
+  }
+  async getExtendedAgentCard(params, options) {
+    return this.base.getExtendedAgentCard(
+      { ...params, tenant: this._resolveTenant(params.tenant) },
+      options
+    );
+  }
+  async sendMessage(params, options) {
+    return this.base.sendMessage(
+      { ...params, tenant: this._resolveTenant(params.tenant) },
+      options
+    );
+  }
+  async *sendMessageStream(params, options) {
+    yield* this.base.sendMessageStream(
+      { ...params, tenant: this._resolveTenant(params.tenant) },
+      options
+    );
+  }
+  async getTask(params, options) {
+    return this.base.getTask({ ...params, tenant: this._resolveTenant(params.tenant) }, options);
+  }
+  async cancelTask(params, options) {
+    return this.base.cancelTask({ ...params, tenant: this._resolveTenant(params.tenant) }, options);
+  }
+  async listTasks(params, options) {
+    return this.base.listTasks({ ...params, tenant: this._resolveTenant(params.tenant) }, options);
+  }
+  async createTaskPushNotificationConfig(params, options) {
+    return this.base.createTaskPushNotificationConfig(
+      { ...params, tenant: this._resolveTenant(params.tenant) },
+      options
+    );
+  }
+  async getTaskPushNotificationConfig(params, options) {
+    return this.base.getTaskPushNotificationConfig(
+      { ...params, tenant: this._resolveTenant(params.tenant) },
+      options
+    );
+  }
+  async listTaskPushNotificationConfig(params, options) {
+    return this.base.listTaskPushNotificationConfig(
+      { ...params, tenant: this._resolveTenant(params.tenant) },
+      options
+    );
+  }
+  async deleteTaskPushNotificationConfig(params, options) {
+    return this.base.deleteTaskPushNotificationConfig(
+      { ...params, tenant: this._resolveTenant(params.tenant) },
+      options
+    );
+  }
+  async *resubscribeTask(params, options) {
+    yield* this.base.resubscribeTask(
+      { ...params, tenant: this._resolveTenant(params.tenant) },
+      options
+    );
+  }
+};
+var PROTOCOL_NAME = "JSONRPC";
+var JsonRpcTransport = class _JsonRpcTransport {
+  customFetchImpl;
+  endpoint;
+  requestIdCounter = 1;
+  constructor(options) {
+    this.endpoint = options.endpoint;
+    this.customFetchImpl = options.fetchImpl;
+  }
+  get protocolName() {
+    return PROTOCOL_NAME;
+  }
+  get protocolVersion() {
+    return A2A_PROTOCOL_VERSION;
+  }
+  async getExtendedAgentCard(params, options) {
+    const rpcResponse = await this._sendRpcRequest(
+      "GetExtendedAgentCard",
+      params,
+      options,
+      GetExtendedAgentCardRequest
+    );
+    return AgentCard.fromJSON(rpcResponse.result);
+  }
+  async sendMessage(params, options) {
+    const rpcResponse = await this._sendRpcRequest(
+      "SendMessage",
+      params,
+      options,
+      SendMessageRequest
+    );
+    const response = SendMessageResponse.fromJSON(rpcResponse.result);
+    if (!response.payload) {
+      throw new Error("Invalid response: missing payload");
+    }
+    return response.payload.value;
+  }
+  async *sendMessageStream(params, options) {
+    yield* this._sendStreamingRequest(
+      "SendStreamingMessage",
+      params,
+      options,
+      SendMessageRequest
+    );
+  }
+  async createTaskPushNotificationConfig(params, options) {
+    const rpcResponse = await this._sendRpcRequest("CreateTaskPushNotificationConfig", params, options, TaskPushNotificationConfig);
+    return TaskPushNotificationConfig.fromJSON(rpcResponse.result);
+  }
+  async getTaskPushNotificationConfig(params, options) {
+    const rpcResponse = await this._sendRpcRequest("GetTaskPushNotificationConfig", params, options, GetTaskPushNotificationConfigRequest);
+    return TaskPushNotificationConfig.fromJSON(rpcResponse.result);
+  }
+  async listTaskPushNotificationConfig(params, options) {
+    const rpcResponse = await this._sendRpcRequest("ListTaskPushNotificationConfigs", params, options, ListTaskPushNotificationConfigsRequest);
+    return ListTaskPushNotificationConfigsResponse.fromJSON(rpcResponse.result);
+  }
+  async deleteTaskPushNotificationConfig(params, options) {
+    await this._sendRpcRequest(
+      "DeleteTaskPushNotificationConfig",
+      params,
+      options,
+      DeleteTaskPushNotificationConfigRequest
+    );
+  }
+  async getTask(params, options) {
+    const rpcResponse = await this._sendRpcRequest(
+      "GetTask",
+      params,
+      options,
+      GetTaskRequest
+    );
+    return Task.fromJSON(rpcResponse.result);
+  }
+  async cancelTask(params, options) {
+    const rpcResponse = await this._sendRpcRequest(
+      "CancelTask",
+      params,
+      options,
+      CancelTaskRequest
+    );
+    return Task.fromJSON(rpcResponse.result);
+  }
+  async listTasks(params, options) {
+    const rpcResponse = await this._sendRpcRequest(
+      "ListTasks",
+      params,
+      options,
+      ListTasksRequest
+    );
+    return ListTasksResponse.fromJSON(rpcResponse.result);
+  }
+  async *resubscribeTask(params, options) {
+    yield* this._sendStreamingRequest(
+      "SubscribeToTask",
+      params,
+      options,
+      SubscribeToTaskRequest
+    );
+  }
+  async callExtensionMethod(method, params, options) {
+    return await this._sendRpcRequest(
+      method,
+      params,
+      options,
+      void 0
+    );
+  }
+  _fetch(...args) {
+    if (this.customFetchImpl) {
+      return this.customFetchImpl(...args);
+    }
+    if (typeof fetch === "function") {
+      return fetch(...args);
+    }
+    throw new Error(
+      "A `fetch` implementation was not provided and is not available in the global scope. Please provide a `fetchImpl` in the A2ATransportOptions. "
+    );
+  }
+  async _sendRpcRequest(method, params, options, requestType) {
+    const requestId = this.requestIdCounter++;
+    const rpcRequest = {
+      jsonrpc: "2.0",
+      method,
+      params: requestType?.toJSON(params) ?? params,
+      id: requestId
+    };
+    const httpResponse = await this._fetchRpc(rpcRequest, JSON_CONTENT_TYPE, options);
+    if (!httpResponse.ok) {
+      let errorBodyText = "(empty or non-JSON response)";
+      let errorJson;
+      try {
+        errorBodyText = await httpResponse.text();
+        errorJson = JSON.parse(errorBodyText);
+      } catch (e) {
+        throw new Error(
+          `HTTP error for ${method}! Status: ${httpResponse.status} ${httpResponse.statusText}. Response: ${errorBodyText}`,
+          { cause: e }
+        );
+      }
+      if (errorJson.jsonrpc && errorJson.error) {
+        throw _JsonRpcTransport.mapToError(errorJson);
+      } else {
+        throw new Error(
+          `HTTP error for ${method}! Status: ${httpResponse.status} ${httpResponse.statusText}. Response: ${errorBodyText}`
+        );
+      }
+    }
+    const json = await httpResponse.json();
+    if ("error" in json) {
+      throw _JsonRpcTransport.mapToError(json);
+    }
+    const rpcResponse = json;
+    if (rpcResponse.id !== requestId) {
+      throw new Error(
+        `JSON-RPC response ID mismatch for method ${method}. Expected ${requestId}, got ${rpcResponse.id}.`
+      );
+    }
+    return rpcResponse;
+  }
+  async _fetchRpc(rpcRequest, acceptHeader = JSON_CONTENT_TYPE, options) {
+    const requestInit = {
+      method: "POST",
+      headers: {
+        ...options?.serviceParameters,
+        "Content-Type": JSON_CONTENT_TYPE,
+        Accept: acceptHeader
+      },
+      body: JSON.stringify(rpcRequest),
+      signal: options?.signal
+    };
+    return this._fetch(this.endpoint, requestInit);
+  }
+  async *_sendStreamingRequest(method, params, options, requestType) {
+    const clientRequestId = this.requestIdCounter++;
+    const rpcRequest = {
+      jsonrpc: "2.0",
+      method,
+      params: requestType?.toJSON(params) ?? params,
+      id: clientRequestId
+    };
+    const response = await this._fetchRpc(rpcRequest, "text/event-stream", options);
+    if (!response.ok) {
+      let errorBody = "";
+      try {
+        errorBody = await response.text();
+        const errorJson = JSON.parse(errorBody);
+        if (errorJson.error) {
+          throw _JsonRpcTransport.mapToError(errorJson);
+        }
+      } catch (e) {
+        if (e instanceof Error && e.name !== "SyntaxError") {
+          throw e;
+        }
+      }
+      throw new Error(
+        `HTTP error establishing stream for ${method}: ${response.status} ${response.statusText}. Response: ${errorBody || "(empty)"}`
+      );
+    }
+    if (!response.headers.get("Content-Type")?.startsWith("text/event-stream")) {
+      try {
+        const body = await response.text();
+        const errorJson = JSON.parse(body);
+        if (errorJson.error) {
+          throw _JsonRpcTransport.mapToError(errorJson);
+        }
+      } catch (e) {
+        if (e instanceof Error && e.name !== "SyntaxError") {
+          throw e;
+        }
+      }
+      throw new Error(
+        `Invalid response Content-Type for SSE stream for ${method}. Expected 'text/event-stream'.`
+      );
+    }
+    for await (const event of parseSseStream(response)) {
+      yield this._processSseEventData(event.data, clientRequestId);
+    }
+  }
+  _processSseEventData(jsonData, originalRequestId) {
+    if (!jsonData.trim()) {
+      throw new Error("Attempted to process empty SSE event data.");
+    }
+    let a2aStreamResponse;
+    try {
+      a2aStreamResponse = JSON.parse(jsonData);
+    } catch (e) {
+      throw new Error(
+        `Failed to parse SSE event data: "${jsonData.substring(0, 100)}...". Original error: ${e instanceof Error && e.message || "Unknown error"}`,
+        { cause: e }
+      );
+    }
+    if (a2aStreamResponse.id !== originalRequestId) {
+      throw new Error(
+        `JSON-RPC response ID mismatch in SSE event. Expected ${originalRequestId}, got ${a2aStreamResponse.id}.`
+      );
+    }
+    if ("error" in a2aStreamResponse) {
+      const err = a2aStreamResponse.error;
+      throw new Error(
+        `SSE event contained an error: ${err.message} (Code: ${err.code}) Data: ${JSON.stringify(err.data || {})}`,
+        { cause: _JsonRpcTransport.mapToError(a2aStreamResponse) }
+      );
+    }
+    if (!("result" in a2aStreamResponse) || typeof a2aStreamResponse.result === "undefined") {
+      throw new Error(`SSE event JSON-RPC response is missing 'result' field. Data: ${jsonData}`);
+    }
+    return StreamResponse.fromJSON(a2aStreamResponse.result);
+  }
+  static mapToError(response) {
+    const errorMessage = response.error.message;
+    switch (response.error.code) {
+      case A2A_ERROR_CODE.PARSE_ERROR:
+      case A2A_ERROR_CODE.INVALID_REQUEST:
+      case A2A_ERROR_CODE.METHOD_NOT_FOUND:
+      case A2A_ERROR_CODE.INVALID_PARAMS:
+      case A2A_ERROR_CODE.INTERNAL_ERROR:
+        return new RequestMalformedError(errorMessage);
+      case A2A_ERROR_CODE.TASK_NOT_FOUND:
+        return new TaskNotFoundError(errorMessage);
+      case A2A_ERROR_CODE.TASK_NOT_CANCELABLE:
+        return new TaskNotCancelableError(errorMessage);
+      case A2A_ERROR_CODE.PUSH_NOTIFICATION_NOT_SUPPORTED:
+        return new PushNotificationNotSupportedError(errorMessage);
+      case A2A_ERROR_CODE.UNSUPPORTED_OPERATION:
+        return new UnsupportedOperationError(errorMessage);
+      case A2A_ERROR_CODE.CONTENT_TYPE_NOT_SUPPORTED:
+        return new ContentTypeNotSupportedError(errorMessage);
+      case A2A_ERROR_CODE.INVALID_AGENT_RESPONSE:
+        return new InvalidAgentResponseError(errorMessage);
+      case A2A_ERROR_CODE.EXTENDED_CARD_NOT_CONFIGURED:
+        return new ExtendedAgentCardNotConfiguredError(errorMessage);
+      case A2A_ERROR_CODE.EXTENSION_SUPPORT_REQUIRED:
+        return new ExtensionSupportRequiredError(errorMessage);
+      case A2A_ERROR_CODE.VERSION_NOT_SUPPORTED:
+        return new VersionNotSupportedError(errorMessage);
+      default:
+        return new JSONRPCTransportError(response);
+    }
+  }
+};
+var JsonRpcTransportFactory = class {
+  constructor(options) {
+    this.options = options;
+  }
+  get protocolName() {
+    return PROTOCOL_NAME;
+  }
+  async create(url, _agentCard) {
+    return new JsonRpcTransport({
+      endpoint: url,
+      fetchImpl: this.options?.fetchImpl
+    });
+  }
+};
+var JSONRPCTransportError = class extends Error {
+  constructor(errorResponse) {
+    super(
+      `JSON-RPC error: ${errorResponse.error.message} (Code: ${errorResponse.error.code}) Data: ${JSON.stringify(errorResponse.error.data || {})}`
+    );
+    this.errorResponse = errorResponse;
+  }
+};
+var PROTOCOL_NAME2 = "HTTP+JSON";
 var RestTransport = class _RestTransport {
   customFetchImpl;
   endpoint;
@@ -53893,22 +53559,33 @@ var RestTransport = class _RestTransport {
     this.endpoint = options.endpoint.replace(/\/+$/, "");
     this.customFetchImpl = options.fetchImpl;
   }
-  async getExtendedAgentCard(options) {
+  _buildPath(path4, tenant) {
+    return tenant ? "/" + encodeURIComponent(tenant) + path4 : path4;
+  }
+  get protocolName() {
+    return PROTOCOL_NAME2;
+  }
+  get protocolVersion() {
+    return A2A_PROTOCOL_VERSION;
+  }
+  async getExtendedAgentCard(params, options) {
+    const path4 = this._buildPath("/extendedAgentCard", params.tenant);
     const response = await this._sendRequest(
       "GET",
-      "/v1/card",
+      path4,
       void 0,
       options,
       void 0,
       AgentCard
     );
-    return FromProto.agentCard(response);
+    return response;
   }
   async sendMessage(params, options) {
-    const requestBody = ToProto.messageSendParams(params);
+    const requestBody = params;
+    const path4 = this._buildPath("/message:send", params.tenant);
     const response = await this._sendRequest(
       "POST",
-      "/v1/message:send",
+      path4,
       requestBody,
       options,
       SendMessageRequest,
@@ -53917,67 +53594,69 @@ var RestTransport = class _RestTransport {
     return FromProto.sendMessageResult(response);
   }
   async *sendMessageStream(params, options) {
-    const protoParams = ToProto.messageSendParams(params);
-    const requestBody = SendMessageRequest.toJSON(protoParams);
-    yield* this._sendStreamingRequest("/v1/message:stream", requestBody, options);
+    const requestBody = SendMessageRequest.toJSON(params);
+    const path4 = this._buildPath("/message:stream", params.tenant);
+    yield* this._sendStreamingRequest(path4, requestBody, options);
   }
-  async setTaskPushNotificationConfig(params, options) {
-    const requestBody = ToProto.taskPushNotificationConfig(params);
-    const response = await this._sendRequest(
-      "POST",
-      `/v1/tasks/${encodeURIComponent(params.taskId)}/pushNotificationConfigs`,
-      requestBody,
-      options,
-      TaskPushNotificationConfig,
-      TaskPushNotificationConfig
+  async createTaskPushNotificationConfig(params, options) {
+    const path4 = this._buildPath(
+      `/tasks/${encodeURIComponent(params.taskId)}/pushNotificationConfigs`,
+      params.tenant
     );
-    return FromProto.taskPushNotificationConfig(response);
+    const response = await this._sendRequest("POST", path4, params, options, TaskPushNotificationConfig, TaskPushNotificationConfig);
+    return response;
   }
   async getTaskPushNotificationConfig(params, options) {
-    const { pushNotificationConfigId } = params;
-    if (!pushNotificationConfigId) {
-      throw new Error(
-        "pushNotificationConfigId is required for getTaskPushNotificationConfig with REST transport."
-      );
-    }
+    const path4 = this._buildPath(
+      `/tasks/${encodeURIComponent(params.taskId)}/pushNotificationConfigs/${encodeURIComponent(
+        params.id
+      )}`,
+      params.tenant
+    );
     const response = await this._sendRequest(
       "GET",
-      `/v1/tasks/${encodeURIComponent(params.id)}/pushNotificationConfigs/${encodeURIComponent(pushNotificationConfigId)}`,
+      path4,
       void 0,
       options,
       void 0,
       TaskPushNotificationConfig
     );
-    return FromProto.taskPushNotificationConfig(response);
+    return response;
   }
   async listTaskPushNotificationConfig(params, options) {
+    const path4 = this._buildPath(
+      `/tasks/${encodeURIComponent(params.taskId)}/pushNotificationConfigs`,
+      params.tenant
+    );
     const response = await this._sendRequest(
       "GET",
-      `/v1/tasks/${encodeURIComponent(params.id)}/pushNotificationConfigs`,
+      path4,
       void 0,
       options,
       void 0,
-      ListTaskPushNotificationConfigResponse
+      ListTaskPushNotificationConfigsResponse
     );
-    return FromProto.listTaskPushNotificationConfig(response);
+    return response;
   }
   async deleteTaskPushNotificationConfig(params, options) {
-    await this._sendRequest(
-      "DELETE",
-      `/v1/tasks/${encodeURIComponent(params.id)}/pushNotificationConfigs/${encodeURIComponent(params.pushNotificationConfigId)}`,
-      void 0,
-      options,
-      void 0,
-      void 0
+    const path4 = this._buildPath(
+      `/tasks/${encodeURIComponent(params.taskId)}/pushNotificationConfigs/${encodeURIComponent(
+        params.id
+      )}`,
+      params.tenant
     );
+    await this._sendRequest("DELETE", path4, void 0, options, void 0, void 0);
   }
   async getTask(params, options) {
     const queryParams = new URLSearchParams();
     if (params.historyLength !== void 0) {
-      queryParams.set("historyLength", String(params.historyLength));
+      queryParams.set("historyLength", params.historyLength.toString());
     }
     const queryString = queryParams.toString();
-    const path4 = `/v1/tasks/${encodeURIComponent(params.id)}${queryString ? `?${queryString}` : ""}`;
+    const path4 = this._buildPath(
+      `/tasks/${encodeURIComponent(params.id)}${queryString ? `?${queryString}` : ""}`,
+      params.tenant
+    );
     const response = await this._sendRequest(
       "GET",
       path4,
@@ -53986,25 +53665,52 @@ var RestTransport = class _RestTransport {
       void 0,
       Task
     );
-    return FromProto.task(response);
+    return response;
   }
   async cancelTask(params, options) {
+    const path4 = this._buildPath(`/tasks/${encodeURIComponent(params.id)}:cancel`, params.tenant);
     const response = await this._sendRequest(
       "POST",
-      `/v1/tasks/${encodeURIComponent(params.id)}:cancel`,
+      path4,
       void 0,
       options,
       void 0,
       Task
     );
-    return FromProto.task(response);
+    return response;
+  }
+  async listTasks(params, options) {
+    const queryParams = new URLSearchParams();
+    if (params.contextId) queryParams.set("contextId", params.contextId);
+    if (params.status !== void 0 && params.status !== 0) {
+      queryParams.set("status", taskStateToJSON(params.status));
+    }
+    if (params.pageSize !== void 0) queryParams.set("pageSize", String(params.pageSize));
+    if (params.pageToken) queryParams.set("pageToken", params.pageToken);
+    if (params.historyLength !== void 0)
+      queryParams.set("historyLength", String(params.historyLength));
+    if (params.statusTimestampAfter)
+      queryParams.set("statusTimestampAfter", params.statusTimestampAfter);
+    if (params.includeArtifacts !== void 0)
+      queryParams.set("includeArtifacts", String(params.includeArtifacts));
+    const queryString = queryParams.toString();
+    const path4 = this._buildPath(`/tasks${queryString ? `?${queryString}` : ""}`, params.tenant);
+    const response = await this._sendRequest(
+      "GET",
+      path4,
+      void 0,
+      options,
+      void 0,
+      ListTasksResponse
+    );
+    return response;
   }
   async *resubscribeTask(params, options) {
-    yield* this._sendStreamingRequest(
-      `/v1/tasks/${encodeURIComponent(params.id)}:subscribe`,
-      void 0,
-      options
+    const path4 = this._buildPath(
+      `/tasks/${encodeURIComponent(params.id)}:subscribe`,
+      params.tenant
     );
+    yield* this._sendStreamingRequest(path4, void 0, options);
   }
   _fetch(...args) {
     if (this.customFetchImpl) {
@@ -54017,10 +53723,10 @@ var RestTransport = class _RestTransport {
       "A `fetch` implementation was not provided and is not available in the global scope. Please provide a `fetchImpl` in the RestTransportOptions."
     );
   }
-  _buildHeaders(options, acceptHeader = "application/json") {
+  _buildHeaders(options, acceptHeader = A2A_CONTENT_TYPE) {
     return {
       ...options?.serviceParameters,
-      "Content-Type": "application/json",
+      "Content-Type": A2A_CONTENT_TYPE,
       Accept: acceptHeader
     };
   }
@@ -54051,20 +53757,19 @@ var RestTransport = class _RestTransport {
   }
   async _handleErrorResponse(response, path4) {
     let errorBodyText = "(empty or non-JSON response)";
-    let errorBody;
+    let errorStatus;
     try {
       errorBodyText = await response.text();
       if (errorBodyText) {
-        errorBody = JSON.parse(errorBodyText);
+        const parsed = JSON.parse(errorBodyText);
+        if (parsed?.error && typeof parsed.error === "object") {
+          errorStatus = parsed.error;
+        }
       }
-    } catch (e) {
-      throw new Error(
-        `HTTP error for ${path4}! Status: ${response.status} ${response.statusText}. Response: ${errorBodyText}`,
-        { cause: e }
-      );
+    } catch {
     }
-    if (errorBody && typeof errorBody.code === "number") {
-      throw _RestTransport.mapToError(errorBody);
+    if (errorStatus) {
+      throw _RestTransport.mapToError(errorStatus);
     }
     throw new Error(
       `HTTP error for ${path4}! Status: ${response.status} ${response.statusText}. Response: ${errorBodyText}`
@@ -54093,7 +53798,10 @@ var RestTransport = class _RestTransport {
     for await (const event of parseSseStream(response)) {
       if (event.type === "error") {
         const errorData = JSON.parse(event.data);
-        throw _RestTransport.mapToError(errorData);
+        if (errorData.error && typeof errorData.error === "object") {
+          throw _RestTransport.mapToError(errorData.error);
+        }
+        throw new Error(`SSE error event: ${JSON.stringify(errorData)}`);
       }
       yield this._processSseEventData(event.data);
     }
@@ -54104,8 +53812,7 @@ var RestTransport = class _RestTransport {
     }
     try {
       const response = JSON.parse(jsonData);
-      const protoResponse = StreamResponse.fromJSON(response);
-      return FromProto.messageStreamResult(protoResponse);
+      return StreamResponse.fromJSON(response);
     } catch (e) {
       console.error("Failed to parse SSE event data:", jsonData, e);
       throw new Error(
@@ -54114,35 +53821,25 @@ var RestTransport = class _RestTransport {
     }
   }
   static mapToError(error) {
-    switch (error.code) {
-      case A2A_ERROR_CODE.TASK_NOT_FOUND:
-        return new TaskNotFoundError(error.message);
-      case A2A_ERROR_CODE.TASK_NOT_CANCELABLE:
-        return new TaskNotCancelableError(error.message);
-      case A2A_ERROR_CODE.PUSH_NOTIFICATION_NOT_SUPPORTED:
-        return new PushNotificationNotSupportedError(error.message);
-      case A2A_ERROR_CODE.UNSUPPORTED_OPERATION:
-        return new UnsupportedOperationError(error.message);
-      case A2A_ERROR_CODE.CONTENT_TYPE_NOT_SUPPORTED:
-        return new ContentTypeNotSupportedError(error.message);
-      case A2A_ERROR_CODE.INVALID_AGENT_RESPONSE:
-        return new InvalidAgentResponseError(error.message);
-      case A2A_ERROR_CODE.AUTHENTICATED_EXTENDED_CARD_NOT_CONFIGURED:
-        return new AuthenticatedExtendedCardNotConfiguredError(error.message);
-      default:
-        return new Error(
-          `REST error: ${error.message} (Code: ${error.code})${error.data ? ` Data: ${JSON.stringify(error.data)}` : ""}`
-        );
+    const message = error.message || "Unknown error";
+    if (Array.isArray(error.details)) {
+      const errorInfo = error.details.find((d) => d["@type"] === ERROR_INFO_TYPE);
+      if (errorInfo && typeof errorInfo["reason"] === "string") {
+        const ErrorClass = A2A_REASON_TO_ERROR_CLASS[errorInfo["reason"]];
+        if (ErrorClass) return new ErrorClass(message);
+      }
     }
+    return new Error(
+      `REST error: ${error.status || "UNKNOWN"} (${error.code || "unknown code"}) - ${message}`
+    );
   }
 };
-var RestTransportFactory = class _RestTransportFactory {
+var RestTransportFactory = class {
   constructor(options) {
     this.options = options;
   }
-  static name = "HTTP+JSON";
   get protocolName() {
-    return _RestTransportFactory.name;
+    return PROTOCOL_NAME2;
   }
   async create(url, _agentCard) {
     return new RestTransport({
@@ -54209,28 +53906,34 @@ var ClientFactory = class {
   agentCardResolver;
   /**
    * Creates a new client from the provided agent card.
+   *
+   * When the selected `AgentInterface` declares a non-empty `tenant` value
+   * (per spec Section 4.4.6), the transport is automatically wrapped with a
+   * {@link TenantTransportDecorator} so the default tenant is applied to every
+   * request without requiring callers to set it manually.
    */
   async createFromAgentCard(agentCard) {
-    const agentCardPreferred = agentCard.preferredTransport ?? JsonRpcTransportFactory.name;
-    const additionalInterfaces = agentCard.additionalInterfaces ?? [];
-    const urlsPerAgentTransports = new CaseInsensitiveMap([
-      [agentCardPreferred, agentCard.url],
-      ...additionalInterfaces.map((i) => [i.transport, i.url])
-    ]);
+    const interfaces = agentCard.supportedInterfaces ?? [];
+    const bestInterfacePerProtocol = new CaseInsensitiveMap();
+    for (const agentInterface of interfaces) {
+      const existing = bestInterfacePerProtocol.get(agentInterface.protocolBinding);
+      if (!existing || agentInterface.protocolVersion === "1.0") {
+        bestInterfacePerProtocol.set(agentInterface.protocolBinding, agentInterface);
+      }
+    }
     const transportsByPreference = [
       ...this.options.preferredTransports ?? [],
-      agentCardPreferred,
-      ...additionalInterfaces.map((i) => i.transport)
+      ...interfaces.map((i) => i.protocolBinding)
     ];
-    for (const transport of transportsByPreference) {
-      const url = urlsPerAgentTransports.get(transport);
-      const factory = this.transportsByName.get(transport);
-      if (factory && url) {
-        return new Client(
-          await factory.create(url, agentCard),
-          agentCard,
-          this.options.clientConfig
-        );
+    for (const transportName of transportsByPreference) {
+      const selectedInterface = bestInterfacePerProtocol.get(transportName);
+      const factory = this.transportsByName.get(transportName);
+      if (factory && selectedInterface) {
+        let transport = await factory.create(selectedInterface.url, agentCard);
+        if (selectedInterface.tenant) {
+          transport = new TenantTransportDecorator(transport, selectedInterface.tenant);
+        }
+        return new Client(transport, agentCard, this.options.clientConfig);
       }
     }
     throw new Error(
@@ -54373,6 +54076,8 @@ function generateTaskMetadata(options = {}) {
 
 // src/lib/connection.ts
 var AGENT_CARD_PATH2 = "/.well-known/agent-card.json";
+var CLIENT_TRANSPORT_PREFERENCES = ["JSONRPC", "HTTP+JSON"];
+var ACCEPTED_OUTPUT_MODES = ["text", "text/plain", "application/json"];
 function normalizeEndpoint(url) {
   return url.endsWith("/") ? url.slice(0, -1) : url;
 }
@@ -54489,11 +54194,10 @@ function buildFetch(options, endpoints) {
 function rewriteAgentCard(agentCard, endpoints) {
   return {
     ...agentCard,
-    url: endpoints.rpcUrl,
-    additionalInterfaces: agentCard.additionalInterfaces?.map((item) => ({
+    supportedInterfaces: agentCard.supportedInterfaces.map((item) => ({
       ...item,
       url: endpoints.rpcUrl
-    })) ?? agentCard.additionalInterfaces
+    }))
   };
 }
 async function connectClient(options) {
@@ -54503,10 +54207,13 @@ async function connectClient(options) {
   const resolvedCard = await resolver.resolve(endpoints.baseUrl, endpoints.cardPath);
   const agentCard = options.agentId ? rewriteAgentCard(resolvedCard, endpoints) : resolvedCard;
   const factoryOptions = ClientFactoryOptions.createFrom(ClientFactoryOptions.default, {
-    transports: [new JsonRpcTransportFactory({ fetchImpl })],
-    preferredTransports: ["JSONRPC"],
+    transports: [
+      new JsonRpcTransportFactory({ fetchImpl }),
+      new RestTransportFactory({ fetchImpl })
+    ],
+    preferredTransports: [...CLIENT_TRANSPORT_PREFERENCES],
     clientConfig: {
-      acceptedOutputModes: ["text"]
+      acceptedOutputModes: [...ACCEPTED_OUTPUT_MODES]
     }
   });
   const factory = new ClientFactory(factoryOptions);
@@ -54520,27 +54227,36 @@ async function connectClient(options) {
 function createPushNotificationConfig(receiverUrl) {
   const parsed = new URL(receiverUrl);
   return {
+    tenant: "",
     id: randomUUID(),
+    taskId: "",
     url: `${parsed.origin}/notify`,
+    token: randomUUID(),
     authentication: {
-      schemes: ["bearer"]
+      scheme: "bearer",
+      credentials: ""
     }
   };
 }
 function buildMessageParams(parts, contextId, taskId, pushNotificationConfig) {
   return {
+    tenant: "",
     message: {
-      kind: "message",
       messageId: randomUUID(),
-      role: "user",
-      taskId,
-      contextId,
-      parts
+      role: Role.ROLE_USER,
+      taskId: taskId ?? "",
+      contextId: contextId ?? "",
+      parts,
+      metadata: void 0,
+      extensions: [],
+      referenceTaskIds: []
     },
     metadata: generateTaskMetadata(),
     configuration: {
-      acceptedOutputModes: ["text"],
-      ...pushNotificationConfig ? { pushNotificationConfig } : {}
+      acceptedOutputModes: [...ACCEPTED_OUTPUT_MODES],
+      taskPushNotificationConfig: pushNotificationConfig,
+      historyLength: void 0,
+      returnImmediately: false
     }
   };
 }
@@ -55712,20 +55428,19 @@ ${yaml}
 }
 
 // src/lib/messageDisplay.ts
-function formatFilePart(part) {
-  const file = part.file;
+function formatRawPart(part) {
   const metadata = {};
-  if (file.name) {
-    metadata.name = file.name;
+  if (part.filename) {
+    metadata.name = part.filename;
   }
-  if (file.mimeType) {
-    metadata.mimeType = file.mimeType;
+  if (part.mediaType) {
+    metadata.mimeType = part.mediaType;
   }
-  if ("uri" in file) {
-    metadata.uri = file.uri;
+  if (part.content?.$case === "raw") {
+    metadata.bytesLength = part.content.value.length;
   }
-  if ("bytes" in file) {
-    metadata.bytesBase64Length = file.bytes.length;
+  if (part.content?.$case === "url") {
+    metadata.uri = part.content.value;
   }
   if (part.metadata) {
     metadata.metadata = part.metadata;
@@ -55735,20 +55450,21 @@ ${JSON.stringify(metadata, null, 2)}`;
 }
 function formatMessageParts(parts) {
   return parts.map((part) => {
-    if (part.kind === "text") {
-      return part.text;
+    switch (part.content?.$case) {
+      case "text":
+        return part.content.value;
+      case "raw":
+      case "url":
+        return formatRawPart(part);
+      case "data":
+        return JSON.stringify(part.content.value, null, 2);
+      default:
+        return "";
     }
-    if (part.kind === "file") {
-      return formatFilePart(part);
-    }
-    if (part.kind === "data") {
-      return JSON.stringify(part.data, null, 2);
-    }
-    return "";
   }).filter(Boolean).join("\n");
 }
 function getTaskMessages(task) {
-  const statusMessage = task.status.message;
+  const statusMessage = task.status?.message;
   if (task.history && task.history.length > 0) {
     const history = task.history;
     if (statusMessage && !history.some((message) => message.messageId === statusMessage.messageId)) {
@@ -55762,7 +55478,8 @@ function getTaskMessages(task) {
 // src/lib/chatSession.ts
 var NO_TASK_ID = "no-task";
 function getMessageTaskId(message, fallbackTaskId) {
-  return message.taskId ?? fallbackTaskId;
+  const messageTaskId = message.taskId?.trim() ? message.taskId : void 0;
+  return messageTaskId ?? fallbackTaskId;
 }
 function createShownMessageKey(reference) {
   return `${reference.taskId ?? NO_TASK_ID}:${reference.messageId}`;
@@ -55783,11 +55500,11 @@ function markShownMessage(shownMessageKeys, message, fallbackTaskId) {
 }
 function getUnshownTaskAgentMessages(task, shownMessageKeys) {
   return getTaskMessages(task).filter(
-    (message) => message.role === "agent" && !hasShownMessage(shownMessageKeys, message, task.id)
+    (message) => isAgentMessage(message) && !hasShownMessage(shownMessageKeys, message, task.id)
   );
 }
 function shouldRenderLiveResponseMessage(message) {
-  return message.role === "agent";
+  return isAgentMessage(message);
 }
 function shouldRenderLiveStatusMessage({
   message,
@@ -55873,17 +55590,6 @@ async function startPushNotificationServer(receiverUrl, onEvent) {
       });
     }
   };
-}
-
-// src/lib/taskState.ts
-var TERMINAL_TASK_STATES = [
-  "completed",
-  "canceled",
-  "failed",
-  "rejected"
-];
-function isTerminalTaskState(state) {
-  return TERMINAL_TASK_STATES.includes(state);
 }
 
 // src/lib/authConfig.ts
@@ -56330,19 +56036,16 @@ function summarizeOptionsForLog(options) {
   };
 }
 function summarizePartForLog(part) {
-  const value = part;
-  const file = value.file;
   return {
-    kind: value.kind,
-    text: typeof value.text === "string" ? value.text : void 0,
-    fileName: typeof file?.name === "string" ? file.name : void 0,
-    fileMimeType: typeof file?.mimeType === "string" ? file.mimeType : void 0,
-    fileUri: typeof file?.uri === "string" ? file.uri : void 0
+    kind: part.content?.$case,
+    text: part.content?.$case === "text" ? part.content.value : void 0,
+    fileName: part.filename || void 0,
+    fileMimeType: part.mediaType || void 0
   };
 }
 function summarizeMessageForLog(message) {
   return {
-    kind: message.kind,
+    kind: "message",
     messageId: message.messageId,
     role: message.role,
     contextId: message.contextId,
@@ -56354,41 +56057,44 @@ function summarizeMessageForLog(message) {
 function summarizeTaskForLog(task) {
   const messages = getTaskMessages(task);
   return {
-    kind: task.kind,
+    kind: "task",
     taskId: task.id,
     contextId: task.contextId,
-    status: task.status.state,
+    status: taskStateLabel(task.status?.state),
     artifactCount: task.artifacts?.length ?? 0,
     messageCount: messages.length,
     messages: messages.map(summarizeMessageForLog)
   };
 }
 function summarizeProtocolEventForLog(event) {
-  switch (event.kind) {
-    case "message":
-      return summarizeMessageForLog(event);
-    case "task":
-      return summarizeTaskForLog(event);
-    case "status-update":
-      return {
-        kind: event.kind,
-        taskId: event.taskId,
-        contextId: event.contextId,
-        status: event.status.state,
-        final: isFinalStatusEvent(event),
-        message: event.status.message ? summarizeMessageForLog(event.status.message) : void 0
-      };
-    case "artifact-update":
-      return {
-        kind: event.kind,
-        taskId: event.taskId,
-        contextId: event.contextId,
-        artifactId: event.artifact.artifactId,
-        append: event.append,
-        partCount: event.artifact.parts.length,
-        parts: event.artifact.parts.map(summarizePartForLog)
-      };
+  if (isMessage(event)) {
+    return summarizeMessageForLog(event);
   }
+  if (isTask(event)) {
+    return summarizeTaskForLog(event);
+  }
+  if (isTaskStatusUpdateEvent(event)) {
+    return {
+      kind: "status-update",
+      taskId: event.taskId,
+      contextId: event.contextId,
+      status: taskStateLabel(event.status?.state),
+      final: isFinalStatusEvent(event),
+      message: event.status?.message ? summarizeMessageForLog(event.status.message) : void 0
+    };
+  }
+  return {
+    kind: "artifact-update",
+    taskId: event.taskId,
+    contextId: event.contextId,
+    artifactId: event.artifact?.artifactId,
+    append: event.append,
+    partCount: event.artifact?.parts.length ?? 0,
+    parts: event.artifact?.parts.map(summarizePartForLog) ?? []
+  };
+}
+function isAionControlPlaneRegistryAgent(agent, environmentId) {
+  return agent.source.type === "registry" && normalizeSourceUrl(agent.source.url) === normalizeSourceUrl(getControlPlaneApiBaseUrl(environmentId));
 }
 function summarizeAgentForLog2(agent) {
   if (!agent) {
@@ -56896,10 +56602,15 @@ ${JSON.stringify(
         );
         setTaskId(void 0);
         const useCliEndpointAuth = isTransientAgentSource(selectedAgent.source);
+        const useAionRegistryAuth = isAionControlPlaneRegistryAgent(
+          selectedAgent,
+          selectedEnvironment
+        );
         const connected = await connectClient({
           ...options,
           headers: useCliEndpointAuth ? options.headers : {},
           token: useCliEndpointAuth ? options.token : void 0,
+          tokenProvider: useAionRegistryAuth ? () => getStoredAccessToken(selectedEnvironment) : void 0,
           url: selectedAgent.connectionUrl,
           agentId: selectedAgent.connectionAgentId
         });
@@ -56970,9 +56681,7 @@ ${JSON.stringify(
     if (message.contextId) {
       setContextId(message.contextId);
     }
-    if (message.taskId) {
-      setTaskId(message.taskId);
-    }
+    setTaskId(void 0);
     if (responseMode === "a2a-protocol") {
       appendProtocol(message);
       return true;
@@ -56981,8 +56690,8 @@ ${JSON.stringify(
   };
   const handleTaskSnapshot = (task) => {
     setContextId(task.contextId);
-    const isTerminalTask = isTerminalTaskState(task.status.state);
-    setTaskId(isTerminalTask ? void 0 : task.id);
+    const isTerminalTask = isTerminalTaskState(task.status?.state);
+    setTaskId(isTaskContinuationState(task.status?.state) ? task.id : void 0);
     if (responseMode === "a2a-protocol") {
       appendProtocol(task);
       return true;
@@ -57002,40 +56711,44 @@ ${JSON.stringify(
   };
   const handleStatusUpdate = (event) => {
     setContextId(event.contextId);
-    setTaskId(isTerminalTaskState(event.status.state) ? void 0 : event.taskId);
-    setStreamLabel(event.status.state);
+    setTaskId(isTaskContinuationState(event.status?.state) ? event.taskId : void 0);
+    setStreamLabel(taskStateLabel(event.status?.state));
     if (responseMode === "a2a-protocol") {
       appendProtocol(event);
       return true;
     }
     if (shouldRenderLiveStatusMessage({
-      message: event.status.message,
+      message: event.status?.message,
       taskId: event.taskId,
       streamedTaskIds: streamedTaskIdsRef.current
     })) {
-      return renderAgentResponseBubble(event.status.message, event.taskId);
+      return event.status?.message ? renderAgentResponseBubble(event.status.message, event.taskId) : false;
     }
     return false;
   };
   const handleArtifactUpdate = (event) => {
     setContextId(event.contextId);
-    setTaskId(event.taskId);
-    if (event.artifact.artifactId === STREAM_DELTA_ARTIFACT_ID) {
+    setTaskId(void 0);
+    const artifact = event.artifact;
+    if (!artifact) {
+      return false;
+    }
+    if (artifact.artifactId === STREAM_DELTA_ARTIFACT_ID) {
       setStreamLabel("Streaming");
     }
     if (responseMode === "a2a-protocol") {
       appendProtocol(event);
       return true;
     }
-    if (event.artifact.artifactId !== STREAM_DELTA_ARTIFACT_ID) {
+    if (artifact.artifactId !== STREAM_DELTA_ARTIFACT_ID) {
       return false;
     }
-    const artifactText = formatMessageParts(event.artifact.parts);
+    const artifactText = formatMessageParts(artifact.parts);
     if (!artifactText) {
       return false;
     }
     streamedTaskIdsRef.current.add(event.taskId);
-    const entryId = `artifact:${event.taskId}:${event.artifact.artifactId}`;
+    const entryId = `artifact:${event.taskId}:${artifact.artifactId}`;
     setEntries((current) => {
       const existing = current.find((item) => item.id === entryId);
       const nextBody = event.append && existing ? `${existing.body}${artifactText}` : artifactText;
@@ -57340,7 +57053,7 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
     }
     setDraft("");
     const parts = await buildMessageParts2(trimmed);
-    const attachedFiles = parts.filter((p) => p.kind === "file").map((p) => p.file.name ?? "unnamed");
+    const attachedFiles = parts.filter((part) => part.content?.$case === "raw" || part.content?.$case === "url").map((part) => part.filename || "unnamed");
     const displayBody = attachedFiles.length > 0 ? `${trimmed}
 
 *Attached: ${attachedFiles.join(", ")}*` : trimmed;
@@ -57353,13 +57066,18 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
       }
     ]);
     const params = buildMessageParams(parts, contextId, taskId, pushConfig);
+    const outboundMessage = params.message;
+    if (!outboundMessage) {
+      appendStatus("Unable to build outbound A2A message.");
+      return;
+    }
     chatSessionLogger.debug("chat.user_message.submitted", {
       body: displayBody,
       attachedFiles,
       selectedAgent: summarizeAgentForLog2(selectedAgent),
-      message: summarizeMessageForLog(params.message)
+      message: summarizeMessageForLog(outboundMessage)
     });
-    const canStream2 = Boolean(clientState.agentCard.capabilities.streaming);
+    const canStream2 = Boolean(clientState.agentCard.capabilities?.streaming);
     const useStreaming = requestMode === "streaming-message" && canStream2;
     let requestStartedAt;
     try {
@@ -57371,7 +57089,7 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
         useStreaming,
         canStream: canStream2,
         selectedAgent: summarizeAgentForLog2(selectedAgent),
-        message: summarizeMessageForLog(params.message),
+        message: summarizeMessageForLog(outboundMessage),
         hasPushNotificationConfig: Boolean(pushConfig)
       });
       if (requestMode === "streaming-message" && !canStream2) {
@@ -57386,35 +57104,32 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
         let finalStatusUpdate;
         let reachedTerminal = false;
         let renderedAgentOutput = false;
-        for await (const event of clientState.client.sendMessageStream(params)) {
+        for await (const streamResponse of clientState.client.sendMessageStream(params)) {
+          const event = unwrapStreamResponse(streamResponse);
+          if (!event) {
+            continue;
+          }
           chatSessionLogger.debug("a2a.stream.event", {
             event: summarizeProtocolEventForLog(event)
           });
-          switch (event.kind) {
-            case "message":
-              renderedAgentOutput = handleMessage(event) || renderedAgentOutput;
-              break;
-            case "task":
-              if (isTerminalTaskState(event.status.state)) {
-                completedTask = event;
-                reachedTerminal = true;
-              }
-              renderedAgentOutput = handleTaskSnapshot(event) || renderedAgentOutput;
-              break;
-            case "status-update":
-              if (isTerminalTaskState(event.status.state)) {
-                reachedTerminal = true;
-              }
-              if (isFinalStatusEvent(event)) {
-                finalStatusUpdate = event;
-              }
-              renderedAgentOutput = handleStatusUpdate(event) || renderedAgentOutput;
-              break;
-            case "artifact-update":
-              renderedAgentOutput = handleArtifactUpdate(event) || renderedAgentOutput;
-              break;
-            default:
-              break;
+          if (isMessage(event)) {
+            renderedAgentOutput = handleMessage(event) || renderedAgentOutput;
+          } else if (isTask(event)) {
+            if (isTerminalTaskState(event.status?.state)) {
+              completedTask = event;
+              reachedTerminal = true;
+            }
+            renderedAgentOutput = handleTaskSnapshot(event) || renderedAgentOutput;
+          } else if (isTaskStatusUpdateEvent(event)) {
+            if (isTerminalTaskState(event.status?.state)) {
+              reachedTerminal = true;
+            }
+            if (isFinalStatusEvent(event)) {
+              finalStatusUpdate = event;
+            }
+            renderedAgentOutput = handleStatusUpdate(event) || renderedAgentOutput;
+          } else {
+            renderedAgentOutput = handleArtifactUpdate(event) || renderedAgentOutput;
           }
         }
         if (shouldShowNoAgentMessageNotice({
@@ -57434,10 +57149,10 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
             getTaskMessages(completedTask),
             completedTask.id
           );
-        } else if (finalStatusUpdate?.status.message) {
+        } else if (finalStatusUpdate?.status?.message) {
           persistCompletedExchange(
             finalStatusUpdate.contextId,
-            [params.message, finalStatusUpdate.status.message],
+            [outboundMessage, finalStatusUpdate.status.message],
             finalStatusUpdate.taskId
           );
         }
@@ -57457,17 +57172,17 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
           durationMs: Date.now() - requestStartedAt,
           response: summarizeProtocolEventForLog(response)
         });
-        let reachedTerminal = response.kind === "message";
+        let reachedTerminal = isMessage(response);
         let renderedAgentOutput = false;
-        if (response.kind === "message") {
+        if (isMessage(response)) {
           renderedAgentOutput = handleMessage(response);
           persistCompletedExchange(
-            response.contextId ?? params.message.contextId,
-            [params.message, response],
+            response.contextId || outboundMessage.contextId,
+            [outboundMessage, response],
             response.taskId
           );
         } else {
-          reachedTerminal = isTerminalTaskState(response.status.state);
+          reachedTerminal = isTerminalTaskState(response.status?.state);
           renderedAgentOutput = handleTaskSnapshot(response);
           if (reachedTerminal) {
             persistCompletedExchange(
@@ -57493,7 +57208,7 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
           durationMs: Date.now() - requestStartedAt,
           reachedTerminal,
           renderedAgentOutput,
-          responseKind: response.kind
+          responseKind: isMessage(response) ? "message" : "task"
         });
         setStreamLabel("Idle");
       }
@@ -58018,7 +57733,7 @@ function handleMessageOutputMessage(state, message, reachedTerminal = false) {
   return renderAgentMessage(state, message);
 }
 function handleMessageOutputTask(state, task) {
-  const isTerminalTask = isTerminalTaskState(task.status.state);
+  const isTerminalTask = isTerminalTaskState(task.status?.state);
   if (isTerminalTask) {
     state.reachedTerminal = true;
   }
@@ -58033,23 +57748,22 @@ function handleMessageOutputTask(state, task) {
   return rendered;
 }
 function handleMessageOutputStatusUpdate(state, event) {
-  if (isTerminalTaskState(event.status.state)) {
+  if (isTerminalTaskState(event.status?.state)) {
     state.reachedTerminal = true;
   }
   if (shouldRenderLiveStatusMessage({
-    message: event.status.message,
+    message: event.status?.message,
     taskId: event.taskId,
     streamedTaskIds: state.streamedTaskIds
   })) {
-    return renderAgentMessage(
-      state,
-      event.status.message,
-      event.taskId
-    );
+    return event.status?.message ? renderAgentMessage(state, event.status.message, event.taskId) : false;
   }
   return false;
 }
 function handleMessageOutputArtifactUpdate(state, event) {
+  if (!event.artifact) {
+    return false;
+  }
   const rendered = renderArtifact(state, event.artifact, event.taskId, event.append);
   if (rendered && event.artifact.artifactId === STREAM_DELTA_ARTIFACT_ID) {
     state.streamedTaskIds.add(event.taskId);
@@ -58095,7 +57809,7 @@ async function sendSingleMessage({
     return;
   }
   const state = createMessageOutputState();
-  if (response.kind === "message") {
+  if (isMessage(response)) {
     handleMessageOutputMessage(state, response, true);
   } else {
     handleMessageOutputTask(state, response);
@@ -58110,26 +57824,23 @@ async function sendStreamingMessage({
   stderr
 }) {
   const state = createMessageOutputState();
-  for await (const event of clientState.client.sendMessageStream(params)) {
+  for await (const streamResponse of clientState.client.sendMessageStream(params)) {
     if (responseMode === "a2a-protocol") {
-      writeRawPayload(stdout, event);
+      writeRawPayload(stdout, streamResponse);
       continue;
     }
-    switch (event.kind) {
-      case "message":
-        handleMessageOutputMessage(state, event);
-        break;
-      case "task":
-        handleMessageOutputTask(state, event);
-        break;
-      case "status-update":
-        handleMessageOutputStatusUpdate(state, event);
-        break;
-      case "artifact-update":
-        handleMessageOutputArtifactUpdate(state, event);
-        break;
-      default:
-        break;
+    const event = unwrapStreamResponse(streamResponse);
+    if (!event) {
+      continue;
+    }
+    if (isMessage(event)) {
+      handleMessageOutputMessage(state, event);
+    } else if (isTask(event)) {
+      handleMessageOutputTask(state, event);
+    } else if (isTaskStatusUpdateEvent(event)) {
+      handleMessageOutputStatusUpdate(state, event);
+    } else if (isTaskArtifactUpdateEvent(event)) {
+      handleMessageOutputArtifactUpdate(state, event);
     }
   }
   if (responseMode !== "a2a-protocol") {
@@ -58137,15 +57848,23 @@ async function sendStreamingMessage({
   }
 }
 function canStream(agentCard) {
-  return Boolean(agentCard.capabilities.streaming);
+  return Boolean(agentCard.capabilities?.streaming);
 }
-function getConnectionOptions(options, selectedAgent) {
+function isAionControlPlaneRegistryAgent2(selectedAgent, environmentId) {
+  return selectedAgent.source.type === "registry" && normalizeSourceUrl(selectedAgent.source.url) === normalizeSourceUrl(getControlPlaneApiBaseUrl(environmentId));
+}
+function getConnectionOptions(options, selectedAgent, environmentId, registryTokenProvider) {
   const useCliEndpointAuth = isTransientAgentSource(selectedAgent.source);
+  const useAionRegistryAuth = isAionControlPlaneRegistryAgent2(
+    selectedAgent,
+    environmentId
+  );
   return {
     ...options,
     url: selectedAgent.connectionUrl,
     agentId: selectedAgent.connectionAgentId,
     token: useCliEndpointAuth ? options.token : void 0,
+    tokenProvider: useAionRegistryAuth ? registryTokenProvider : void 0,
     headers: useCliEndpointAuth ? options.headers : {},
     pushNotifications: options.pushNotifications,
     pushReceiver: options.pushReceiver
@@ -58197,7 +57916,12 @@ async function runHeadless(options, dependencies = {}) {
     explicitSourceKey
   );
   const clientState = await connectClientImpl(
-    getConnectionOptions(options, selectedAgent)
+    getConnectionOptions(
+      options,
+      selectedAgent,
+      selectedEnvironment,
+      () => getStoredAccessTokenImpl(selectedEnvironment)
+    )
   );
   const parts = await buildMessagePartsImpl(options.message ?? "");
   const pushConfig = options.pushNotifications ? createPushNotificationConfig(options.pushReceiver) : void 0;

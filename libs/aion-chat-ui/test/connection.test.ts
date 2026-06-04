@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { makeTextPart } from "../src/lib/a2aProtocol.js";
 import {
 	buildAuthenticatedFetch,
 	buildEndpointConfig,
@@ -112,21 +113,26 @@ describe("buildAuthenticatedFetch", () => {
 
 describe("buildMessageParams", () => {
 	it("includes push configuration only when requested", () => {
-		const withoutPush = buildMessageParams([{ kind: "text", text: "hello" }], "context-1", "task-1");
+		const withoutPush = buildMessageParams([makeTextPart("hello")], "context-1", "task-1");
 		expect(withoutPush.configuration).toEqual({
-			acceptedOutputModes: ["text"]
+			acceptedOutputModes: ["text", "text/plain", "application/json"],
+			taskPushNotificationConfig: undefined,
+			historyLength: undefined,
+			returnImmediately: false
 		});
 
 		const pushConfig = createPushNotificationConfig("http://127.0.0.1:5000");
 		const withPush = buildMessageParams(
-			[{ kind: "text", text: "hello" }],
+			[makeTextPart("hello")],
 			"context-1",
 			"task-1",
 			pushConfig
 		);
 		expect(withPush.configuration).toEqual({
-			acceptedOutputModes: ["text"],
-			pushNotificationConfig: pushConfig
+			acceptedOutputModes: ["text", "text/plain", "application/json"],
+			taskPushNotificationConfig: pushConfig,
+			historyLength: undefined,
+			returnImmediately: false
 		});
 	});
 });

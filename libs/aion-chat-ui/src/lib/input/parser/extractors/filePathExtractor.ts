@@ -1,7 +1,9 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename, extname, resolve } from "node:path";
 
-import type { FilePart } from "@a2a-js/sdk";
+import type { Part } from "@a2a-js/sdk";
+
+import { makeRawFilePart } from "../../../a2aProtocol.js";
 
 import type { DetectedSpan, PartExtractor } from "../types";
 
@@ -55,12 +57,12 @@ function getMimeType(filePath: string): string {
 }
 
 /**
- * Detects file paths in user input and converts them to A2A `FilePart`s with base64 content.
+ * Detects file paths in user input and converts them to A2A raw file parts.
  *
  * Silently skips paths that don't exist, are directories, exceed {@link MAX_FILE_SIZE},
  * or appear to be binary files.
  */
-export const filePathExtractor: PartExtractor<FilePart> = {
+export const filePathExtractor: PartExtractor<Part> = {
 	detect(text: string): DetectedSpan[] {
 		const spans: DetectedSpan[] = [];
 		const regex = new RegExp(PATH_PATTERN.source, PATH_PATTERN.flags);
@@ -86,7 +88,7 @@ export const filePathExtractor: PartExtractor<FilePart> = {
 		return spans;
 	},
 
-	async parse(span: DetectedSpan): Promise<FilePart | null> {
+	async parse(span: DetectedSpan): Promise<Part | null> {
 		try {
 			const stat = statSync(span.raw);  // span.raw is already absolute after detect()
 			if (stat.size > MAX_FILE_SIZE) return null;
@@ -94,14 +96,11 @@ export const filePathExtractor: PartExtractor<FilePart> = {
 			const buffer = readFileSync(span.raw);
 			if (isBinary(buffer)) return null;
 
-			return {
-				kind: "file",
-				file: {
-					name: basename(span.raw),
-					mimeType: getMimeType(span.raw),
-					bytes: buffer.toString("base64"),
-				},
-			};
+			return makeRawFilePart({
+				filename: basename(span.raw),
+				mediaType: getMimeType(span.raw),
+				bytes: buffer
+			});
 		} catch {
 			return null;
 		}

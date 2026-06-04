@@ -1,6 +1,8 @@
-import type { Message, Task } from "@a2a-js/sdk";
+import type { Message, Part, Task } from "@a2a-js/sdk";
+import { Role, TaskState } from "@a2a-js/sdk";
 import { describe, expect, it } from "vitest";
 
+import { makeTextPart } from "../src/lib/a2aProtocol.js";
 import {
 	formatMessageParts,
 	getTaskMessages
@@ -12,26 +14,49 @@ function buildMessage(
 	text: string
 ): Message {
 	return {
-		kind: "message",
 		messageId,
-		role,
-		parts: [{ kind: "text", text }]
+		contextId: "",
+		taskId: "",
+		role: role === "agent" ? Role.ROLE_AGENT : Role.ROLE_USER,
+		parts: [makeTextPart(text)],
+		metadata: undefined,
+		extensions: [],
+		referenceTaskIds: []
+	};
+}
+
+function buildTask(overrides: Partial<Task> = {}): Task {
+	return {
+		id: "task-1",
+		contextId: "context-1",
+		status: {
+			state: TaskState.TASK_STATE_COMPLETED,
+			message: undefined,
+			timestamp: undefined
+		},
+		artifacts: [],
+		history: [],
+		metadata: undefined,
+		...overrides
 	};
 }
 
 describe("message display helpers", () => {
 	it("formats text, data, and file parts for display", () => {
 		const output = formatMessageParts([
-			{ kind: "text", text: "hello" },
-			{ kind: "data", data: { answer: 42 } },
+			makeTextPart("hello"),
 			{
-				kind: "file",
-				file: {
-					name: "report.pdf",
-					mimeType: "application/pdf",
-					uri: "https://example.test/report.pdf"
-				}
-			}
+				content: { $case: "data", value: { answer: 42 } },
+				metadata: undefined,
+				filename: "",
+				mediaType: "application/json"
+			} satisfies Part,
+			{
+				content: { $case: "url", value: "https://example.test/report.pdf" },
+				metadata: undefined,
+				filename: "report.pdf",
+				mediaType: "application/pdf"
+			} satisfies Part
 		]);
 
 		expect(output).toContain("hello");
@@ -42,16 +67,12 @@ describe("message display helpers", () => {
 	});
 
 	it("uses task history for task output", () => {
-		const task = {
-			kind: "task",
-			id: "task-1",
-			contextId: "context-1",
-			status: { state: "completed" },
+		const task = buildTask({
 			history: [
 				buildMessage("user-1", "user", "question"),
 				buildMessage("agent-1", "agent", "answer")
 			]
-		} as Task;
+		});
 
 		expect(getTaskMessages(task).map((message) => message.messageId)).toEqual([
 			"user-1",
@@ -60,16 +81,14 @@ describe("message display helpers", () => {
 	});
 
 	it("appends status message when history is present and does not already include it", () => {
-		const task = {
-			kind: "task",
-			id: "task-1",
-			contextId: "context-1",
+		const task = buildTask({
 			status: {
-				state: "completed",
-				message: buildMessage("agent-1", "agent", "answer")
+				state: TaskState.TASK_STATE_COMPLETED,
+				message: buildMessage("agent-1", "agent", "answer"),
+				timestamp: undefined
 			},
 			history: [buildMessage("user-1", "user", "question")]
-		} as Task;
+		});
 
 		expect(getTaskMessages(task).map((message) => message.messageId)).toEqual([
 			"user-1",
@@ -79,16 +98,14 @@ describe("message display helpers", () => {
 
 	it("does not duplicate status message when history already includes it", () => {
 		const statusMessage = buildMessage("agent-1", "agent", "answer");
-		const task = {
-			kind: "task",
-			id: "task-1",
-			contextId: "context-1",
+		const task = buildTask({
 			status: {
-				state: "completed",
-				message: statusMessage
+				state: TaskState.TASK_STATE_COMPLETED,
+				message: statusMessage,
+				timestamp: undefined
 			},
 			history: [buildMessage("user-1", "user", "question"), statusMessage]
-		} as Task;
+		});
 
 		expect(getTaskMessages(task).map((message) => message.messageId)).toEqual([
 			"user-1",

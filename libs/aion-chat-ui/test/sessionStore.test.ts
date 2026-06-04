@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 
 import type { Message } from "@a2a-js/sdk";
+import { Role } from "@a2a-js/sdk";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
@@ -10,6 +11,7 @@ import {
 	resolveSessionFilePath,
 	saveCompletedExchange
 } from "../src/lib/agents/sessionStore.js";
+import { makeTextPart } from "../src/lib/a2aProtocol.js";
 
 const tempDirectories: string[] = [];
 
@@ -21,10 +23,14 @@ afterEach(() => {
 
 function buildMessage(messageId: string, role: "user" | "agent"): Message {
 	return {
-		kind: "message",
 		messageId,
-		role,
-		parts: [{ kind: "text", text: `${role} text` }]
+		contextId: "",
+		taskId: "",
+		role: role === "agent" ? Role.ROLE_AGENT : Role.ROLE_USER,
+		parts: [makeTextPart(`${role} text`)],
+		metadata: undefined,
+		extensions: [],
+		referenceTaskIds: []
 	};
 }
 

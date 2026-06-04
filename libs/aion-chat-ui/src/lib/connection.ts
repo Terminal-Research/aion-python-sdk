@@ -3,18 +3,20 @@ import { randomUUID } from "node:crypto";
 import type {
 	AgentCard,
 	Message,
-	MessageSendParams,
 	Part,
-	PushNotificationConfig,
+	SendMessageRequest,
 	Task,
 	TaskArtifactUpdateEvent,
+	TaskPushNotificationConfig,
 	TaskStatusUpdateEvent
 } from "@a2a-js/sdk";
+import { Role } from "@a2a-js/sdk";
 import {
 	ClientFactory,
 	ClientFactoryOptions,
 	DefaultAgentCardResolver,
 	JsonRpcTransportFactory,
+	RestTransportFactory,
 	type Client
 } from "@a2a-js/sdk/client";
 
@@ -49,6 +51,8 @@ export interface ChatConnectionOptions extends ChatCliOptions {
 }
 
 const AGENT_CARD_PATH = "/.well-known/agent-card.json";
+const CLIENT_TRANSPORT_PREFERENCES = ["JSONRPC", "HTTP+JSON"] as const;
+const ACCEPTED_OUTPUT_MODES = ["text", "text/plain", "application/json"] as const;
 
 function normalizeEndpoint(url: string): string {
 	return url.endsWith("/") ? url.slice(0, -1) : url;
@@ -202,12 +206,10 @@ function buildFetch(options: ChatConnectionOptions, endpoints: EndpointConfig): 
 function rewriteAgentCard(agentCard: AgentCard, endpoints: EndpointConfig): AgentCard {
 	return {
 		...agentCard,
-		url: endpoints.rpcUrl,
-		additionalInterfaces:
-			agentCard.additionalInterfaces?.map((item) => ({
-				...item,
-				url: endpoints.rpcUrl
-			})) ?? agentCard.additionalInterfaces
+		supportedInterfaces: agentCard.supportedInterfaces.map((item) => ({
+			...item,
+			url: endpoints.rpcUrl
+		}))
 	};
 }
 
@@ -221,10 +223,13 @@ export async function connectClient(options: ChatConnectionOptions): Promise<Con
 		: resolvedCard;
 
 	const factoryOptions = ClientFactoryOptions.createFrom(ClientFactoryOptions.default, {
-		transports: [new JsonRpcTransportFactory({ fetchImpl })],
-		preferredTransports: ["JSONRPC"],
+		transports: [
+			new JsonRpcTransportFactory({ fetchImpl }),
+			new RestTransportFactory({ fetchImpl })
+		],
+		preferredTransports: [...CLIENT_TRANSPORT_PREFERENCES],
 		clientConfig: {
-			acceptedOutputModes: ["text"]
+			acceptedOutputModes: [...ACCEPTED_OUTPUT_MODES]
 		}
 	});
 	const factory = new ClientFactory(factoryOptions);
@@ -237,40 +242,49 @@ export async function connectClient(options: ChatConnectionOptions): Promise<Con
 	};
 }
 
-export function createPushNotificationConfig(receiverUrl: string): PushNotificationConfig {
+export function createPushNotificationConfig(receiverUrl: string): TaskPushNotificationConfig {
 	const parsed = new URL(receiverUrl);
 	return {
+		tenant: "",
 		id: randomUUID(),
+		taskId: "",
 		url: `${parsed.origin}/notify`,
+		token: randomUUID(),
 		authentication: {
-			schemes: ["bearer"]
+			scheme: "bearer",
+			credentials: ""
 		}
 	};
 }
 
 /**
- * Builds an A2A `MessageSendParams` from pre-parsed parts.
+ * Builds an A2A `SendMessageRequest` from pre-parsed parts.
  * Parts are produced by `buildMessageParts` and may include text, files, or other A2A part types.
  */
 export function buildMessageParams(
 	parts: Part[],
 	contextId: string | undefined,
 	taskId: string | undefined,
-	pushNotificationConfig?: PushNotificationConfig
-): MessageSendParams {
+	pushNotificationConfig?: TaskPushNotificationConfig
+): SendMessageRequest {
 	return {
+		tenant: "",
 		message: {
-			kind: "message",
 			messageId: randomUUID(),
-			role: "user",
-			taskId,
-			contextId,
-			parts
+			role: Role.ROLE_USER,
+			taskId: taskId ?? "",
+			contextId: contextId ?? "",
+			parts,
+			metadata: undefined,
+			extensions: [],
+			referenceTaskIds: []
 		},
 		metadata: generateTaskMetadata(),
 		configuration: {
-			acceptedOutputModes: ["text"],
-			...(pushNotificationConfig ? { pushNotificationConfig } : {})
+			acceptedOutputModes: [...ACCEPTED_OUTPUT_MODES],
+			taskPushNotificationConfig: pushNotificationConfig,
+			historyLength: undefined,
+			returnImmediately: false
 		}
 	};
 }

@@ -1,5 +1,6 @@
 import type { Message, Task } from "@a2a-js/sdk";
 
+import { isAgentMessage } from "./a2aProtocol.js";
 import { getTaskMessages } from "./messageDisplay.js";
 import type { ResponseMode } from "./slashCommands.js";
 
@@ -14,7 +15,8 @@ export function getMessageTaskId(
 	message: Message,
 	fallbackTaskId?: string
 ): string | undefined {
-	return message.taskId ?? fallbackTaskId;
+	const messageTaskId = message.taskId?.trim() ? message.taskId : undefined;
+	return messageTaskId ?? fallbackTaskId;
 }
 
 export function createShownMessageKey(reference: ShownMessageReference): string {
@@ -55,12 +57,12 @@ export function getUnshownTaskAgentMessages(
 ): Message[] {
 	return getTaskMessages(task).filter(
 		(message) =>
-			message.role === "agent" && !hasShownMessage(shownMessageKeys, message, task.id)
+			isAgentMessage(message) && !hasShownMessage(shownMessageKeys, message, task.id)
 	);
 }
 
 export function shouldRenderLiveResponseMessage(message: Message): boolean {
-	return message.role === "agent";
+	return isAgentMessage(message);
 }
 
 export function shouldRenderLiveStatusMessage({

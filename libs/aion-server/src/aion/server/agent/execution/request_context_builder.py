@@ -76,7 +76,9 @@ class AionRequestContextBuilder(RequestContextBuilder):
             return None
 
         last_task = await self._task_store.get_context_last_task(context_id=context_id)
-        if not is_task_interrupted(last_task):
+        if last_task is None:
             return None
 
+        if not is_task_interrupted(last_task):
+            return None
         return last_task

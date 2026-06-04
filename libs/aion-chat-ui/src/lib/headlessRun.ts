@@ -2,7 +2,7 @@ import type {
 	Artifact,
 	AgentCard,
 	Message,
-	MessageSendParams,
+	SendMessageRequest,
 	Task,
 	TaskArtifactUpdateEvent,
 	TaskStatusUpdateEvent
@@ -10,6 +10,14 @@ import type {
 
 import type { HeadlessRunOptions } from "../args.js";
 import { STREAM_DELTA_ARTIFACT_ID } from "./a2aMetadata.js";
+import {
+	isMessage,
+	isTask,
+	isTaskArtifactUpdateEvent,
+	isTaskStatusUpdateEvent,
+	unwrapStreamResponse,
+	type StreamEvent
+} from "./a2aProtocol.js";
 import {
 	getUnshownTaskAgentMessages,
 	markShownMessage,
@@ -24,7 +32,7 @@ import {
 	connectClient,
 	createPushNotificationConfig,
 	type ConnectedClient,
-	type StreamEvent
+	type TokenProvider
 } from "./connection.js";
 import {
 	discoverAgentSources,
@@ -35,9 +43,14 @@ import {
 	createExplicitAgentSource,
 	isTransientAgentSource,
 	mergeAgentSources,
+	normalizeSourceUrl,
 	type DiscoveredAgentRecord
 } from "./agents/model.js";
 import { buildMessageParts } from "./input/index.js";
+import {
+	type AionEnvironmentId,
+	getControlPlaneApiBaseUrl
+} from "./environment.js";
 import { formatMessageParts } from "./messageDisplay.js";
 import type { ResponseMode } from "./slashCommands.js";
 import { isTerminalTaskState } from "./taskState.js";
@@ -275,7 +288,7 @@ function handleMessageOutputTask(
 	state: MessageOutputState,
 	task: Task
 ): boolean {
-	const isTerminalTask = isTerminalTaskState(task.status.state);
+	const isTerminalTask = isTerminalTaskState(task.status?.state);
 	if (isTerminalTask) {
 		state.reachedTerminal = true;
 	}
@@ -295,22 +308,20 @@ function handleMessageOutputStatusUpdate(
 	state: MessageOutputState,
 	event: TaskStatusUpdateEvent
 ): boolean {
-	if (isTerminalTaskState(event.status.state)) {
+	if (isTerminalTaskState(event.status?.state)) {
 		state.reachedTerminal = true;
 	}
 
 	if (
 		shouldRenderLiveStatusMessage({
-			message: event.status.message as Message | undefined,
+			message: event.status?.message,
 			taskId: event.taskId,
 			streamedTaskIds: state.streamedTaskIds
 		})
 	) {
-		return renderAgentMessage(
-			state,
-			event.status.message as Message,
-			event.taskId
-		);
+		return event.status?.message
+			? renderAgentMessage(state, event.status.message, event.taskId)
+			: false;
 	}
 	return false;
 }
@@ -319,6 +330,9 @@ function handleMessageOutputArtifactUpdate(
 	state: MessageOutputState,
 	event: TaskArtifactUpdateEvent
 ): boolean {
+	if (!event.artifact) {
+		return false;
+	}
 	const rendered = renderArtifact(state, event.artifact, event.taskId, event.append);
 	if (rendered && event.artifact.artifactId === STREAM_DELTA_ARTIFACT_ID) {
 		state.streamedTaskIds.add(event.taskId);
@@ -374,7 +388,7 @@ async function sendSingleMessage({
 	stderr
 }: {
 	clientState: ConnectedClient;
-	params: MessageSendParams;
+	params: SendMessageRequest;
 	responseMode: ResponseMode;
 	stdout: WritableStreamLike;
 	stderr: WritableStreamLike;
@@ -386,7 +400,7 @@ async function sendSingleMessage({
 	}
 
 	const state = createMessageOutputState();
-	if (response.kind === "message") {
+	if (isMessage(response)) {
 		handleMessageOutputMessage(state, response, true);
 	} else {
 		handleMessageOutputTask(state, response);
@@ -402,34 +416,31 @@ async function sendStreamingMessage({
 	stderr
 }: {
 	clientState: ConnectedClient;
-	params: MessageSendParams;
+	params: SendMessageRequest;
 	responseMode: ResponseMode;
 	stdout: WritableStreamLike;
 	stderr: WritableStreamLike;
 }): Promise<void> {
 	const state = createMessageOutputState();
 
-	for await (const event of clientState.client.sendMessageStream(params)) {
+	for await (const streamResponse of clientState.client.sendMessageStream(params)) {
 		if (responseMode === "a2a-protocol") {
-			writeRawPayload(stdout, event);
+			writeRawPayload(stdout, streamResponse);
 			continue;
 		}
 
-		switch ((event as StreamEvent).kind) {
-			case "message":
-				handleMessageOutputMessage(state, event as Message);
-				break;
-			case "task":
-				handleMessageOutputTask(state, event as Task);
-				break;
-			case "status-update":
-				handleMessageOutputStatusUpdate(state, event as TaskStatusUpdateEvent);
-				break;
-			case "artifact-update":
-				handleMessageOutputArtifactUpdate(state, event as TaskArtifactUpdateEvent);
-				break;
-			default:
-				break;
+		const event = unwrapStreamResponse(streamResponse);
+		if (!event) {
+			continue;
+		}
+		if (isMessage(event)) {
+			handleMessageOutputMessage(state, event);
+		} else if (isTask(event)) {
+			handleMessageOutputTask(state, event);
+		} else if (isTaskStatusUpdateEvent(event)) {
+			handleMessageOutputStatusUpdate(state, event);
+		} else if (isTaskArtifactUpdateEvent(event)) {
+			handleMessageOutputArtifactUpdate(state, event);
 		}
 	}
 
@@ -439,19 +450,37 @@ async function sendStreamingMessage({
 }
 
 function canStream(agentCard: AgentCard): boolean {
-	return Boolean(agentCard.capabilities.streaming);
+	return Boolean(agentCard.capabilities?.streaming);
+}
+
+function isAionControlPlaneRegistryAgent(
+	selectedAgent: DiscoveredAgentRecord,
+	environmentId: AionEnvironmentId
+): boolean {
+	return (
+		selectedAgent.source.type === "registry" &&
+		normalizeSourceUrl(selectedAgent.source.url) ===
+			normalizeSourceUrl(getControlPlaneApiBaseUrl(environmentId))
+	);
 }
 
 function getConnectionOptions(
 	options: HeadlessRunOptions,
-	selectedAgent: DiscoveredAgentRecord
-): HeadlessRunOptions & { url: string } {
+	selectedAgent: DiscoveredAgentRecord,
+	environmentId: AionEnvironmentId,
+	registryTokenProvider: TokenProvider
+): HeadlessRunOptions & { url: string; tokenProvider?: TokenProvider } {
 	const useCliEndpointAuth = isTransientAgentSource(selectedAgent.source);
+	const useAionRegistryAuth = isAionControlPlaneRegistryAgent(
+		selectedAgent,
+		environmentId
+	);
 	return {
 		...options,
 		url: selectedAgent.connectionUrl,
 		agentId: selectedAgent.connectionAgentId,
 		token: useCliEndpointAuth ? options.token : undefined,
+		tokenProvider: useAionRegistryAuth ? registryTokenProvider : undefined,
 		headers: useCliEndpointAuth ? options.headers : {},
 		pushNotifications: options.pushNotifications,
 		pushReceiver: options.pushReceiver
@@ -525,7 +554,12 @@ export async function runHeadless(
 		explicitSourceKey
 	);
 	const clientState = await connectClientImpl(
-		getConnectionOptions(options, selectedAgent)
+		getConnectionOptions(
+			options,
+			selectedAgent,
+			selectedEnvironment,
+			() => getStoredAccessTokenImpl(selectedEnvironment)
+		)
 	);
 	const parts = await buildMessagePartsImpl(options.message ?? "");
 	const pushConfig = options.pushNotifications
