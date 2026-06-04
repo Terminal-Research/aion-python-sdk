@@ -49413,8 +49413,1347 @@ function parseCliArgs(argv) {
 }
 
 // src/app.tsx
-var import_react34 = __toESM(require_react(), 1);
 import { randomUUID as randomUUID3 } from "crypto";
+
+// node_modules/@a2a-js/sdk/dist/chunk-IFX37PQI.js
+var TaskState = /* @__PURE__ */ ((TaskState2) => {
+  TaskState2[TaskState2["TASK_STATE_UNSPECIFIED"] = 0] = "TASK_STATE_UNSPECIFIED";
+  TaskState2[TaskState2["TASK_STATE_SUBMITTED"] = 1] = "TASK_STATE_SUBMITTED";
+  TaskState2[TaskState2["TASK_STATE_WORKING"] = 2] = "TASK_STATE_WORKING";
+  TaskState2[TaskState2["TASK_STATE_COMPLETED"] = 3] = "TASK_STATE_COMPLETED";
+  TaskState2[TaskState2["TASK_STATE_FAILED"] = 4] = "TASK_STATE_FAILED";
+  TaskState2[TaskState2["TASK_STATE_CANCELED"] = 5] = "TASK_STATE_CANCELED";
+  TaskState2[TaskState2["TASK_STATE_INPUT_REQUIRED"] = 6] = "TASK_STATE_INPUT_REQUIRED";
+  TaskState2[TaskState2["TASK_STATE_REJECTED"] = 7] = "TASK_STATE_REJECTED";
+  TaskState2[TaskState2["TASK_STATE_AUTH_REQUIRED"] = 8] = "TASK_STATE_AUTH_REQUIRED";
+  TaskState2[TaskState2["UNRECOGNIZED"] = -1] = "UNRECOGNIZED";
+  return TaskState2;
+})(TaskState || {});
+function taskStateFromJSON(object) {
+  switch (object) {
+    case 0:
+    case "TASK_STATE_UNSPECIFIED":
+      return 0;
+    case 1:
+    case "TASK_STATE_SUBMITTED":
+      return 1;
+    case 2:
+    case "TASK_STATE_WORKING":
+      return 2;
+    case 3:
+    case "TASK_STATE_COMPLETED":
+      return 3;
+    case 4:
+    case "TASK_STATE_FAILED":
+      return 4;
+    case 5:
+    case "TASK_STATE_CANCELED":
+      return 5;
+    case 6:
+    case "TASK_STATE_INPUT_REQUIRED":
+      return 6;
+    case 7:
+    case "TASK_STATE_REJECTED":
+      return 7;
+    case 8:
+    case "TASK_STATE_AUTH_REQUIRED":
+      return 8;
+    case -1:
+    case "UNRECOGNIZED":
+    default:
+      return -1;
+  }
+}
+function taskStateToJSON(object) {
+  switch (object) {
+    case 0:
+      return "TASK_STATE_UNSPECIFIED";
+    case 1:
+      return "TASK_STATE_SUBMITTED";
+    case 2:
+      return "TASK_STATE_WORKING";
+    case 3:
+      return "TASK_STATE_COMPLETED";
+    case 4:
+      return "TASK_STATE_FAILED";
+    case 5:
+      return "TASK_STATE_CANCELED";
+    case 6:
+      return "TASK_STATE_INPUT_REQUIRED";
+    case 7:
+      return "TASK_STATE_REJECTED";
+    case 8:
+      return "TASK_STATE_AUTH_REQUIRED";
+    case -1:
+    default:
+      return "UNRECOGNIZED";
+  }
+}
+var Role = /* @__PURE__ */ ((Role2) => {
+  Role2[Role2["ROLE_UNSPECIFIED"] = 0] = "ROLE_UNSPECIFIED";
+  Role2[Role2["ROLE_USER"] = 1] = "ROLE_USER";
+  Role2[Role2["ROLE_AGENT"] = 2] = "ROLE_AGENT";
+  Role2[Role2["UNRECOGNIZED"] = -1] = "UNRECOGNIZED";
+  return Role2;
+})(Role || {});
+function roleFromJSON(object) {
+  switch (object) {
+    case 0:
+    case "ROLE_UNSPECIFIED":
+      return 0;
+    case 1:
+    case "ROLE_USER":
+      return 1;
+    case 2:
+    case "ROLE_AGENT":
+      return 2;
+    case -1:
+    case "UNRECOGNIZED":
+    default:
+      return -1;
+  }
+}
+function roleToJSON(object) {
+  switch (object) {
+    case 0:
+      return "ROLE_UNSPECIFIED";
+    case 1:
+      return "ROLE_USER";
+    case 2:
+      return "ROLE_AGENT";
+    case -1:
+    default:
+      return "UNRECOGNIZED";
+  }
+}
+var SendMessageConfiguration = {
+  fromJSON(object) {
+    return {
+      acceptedOutputModes: globalThis.Array.isArray(object?.acceptedOutputModes) ? object.acceptedOutputModes.map((e) => globalThis.String(e)) : globalThis.Array.isArray(object?.accepted_output_modes) ? object.accepted_output_modes.map(
+        (e) => globalThis.String(e)
+      ) : [],
+      taskPushNotificationConfig: isSet(object.taskPushNotificationConfig) ? TaskPushNotificationConfig.fromJSON(object.taskPushNotificationConfig) : isSet(object.task_push_notification_config) ? TaskPushNotificationConfig.fromJSON(object.task_push_notification_config) : void 0,
+      historyLength: isSet(object.historyLength) ? globalThis.Number(object.historyLength) : isSet(object.history_length) ? globalThis.Number(object.history_length) : void 0,
+      returnImmediately: isSet(object.returnImmediately) ? globalThis.Boolean(object.returnImmediately) : isSet(object.return_immediately) ? globalThis.Boolean(object.return_immediately) : false
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.acceptedOutputModes?.length) {
+      obj.acceptedOutputModes = message.acceptedOutputModes;
+    }
+    if (message.taskPushNotificationConfig !== void 0) {
+      obj.taskPushNotificationConfig = TaskPushNotificationConfig.toJSON(message.taskPushNotificationConfig);
+    }
+    if (message.historyLength !== void 0) {
+      obj.historyLength = Math.round(message.historyLength);
+    }
+    if (message.returnImmediately !== false) {
+      obj.returnImmediately = message.returnImmediately;
+    }
+    return obj;
+  }
+};
+var Task = {
+  fromJSON(object) {
+    return {
+      id: isSet(object.id) ? globalThis.String(object.id) : "",
+      contextId: isSet(object.contextId) ? globalThis.String(object.contextId) : isSet(object.context_id) ? globalThis.String(object.context_id) : "",
+      status: isSet(object.status) ? TaskStatus.fromJSON(object.status) : void 0,
+      artifacts: globalThis.Array.isArray(object?.artifacts) ? object.artifacts.map((e) => Artifact.fromJSON(e)) : [],
+      history: globalThis.Array.isArray(object?.history) ? object.history.map((e) => Message.fromJSON(e)) : [],
+      metadata: isObject(object.metadata) ? object.metadata : void 0
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.id !== "") {
+      obj.id = message.id;
+    }
+    if (message.contextId !== "") {
+      obj.contextId = message.contextId;
+    }
+    if (message.status !== void 0) {
+      obj.status = TaskStatus.toJSON(message.status);
+    }
+    if (message.artifacts?.length) {
+      obj.artifacts = message.artifacts.map((e) => Artifact.toJSON(e));
+    }
+    if (message.history?.length) {
+      obj.history = message.history.map((e) => Message.toJSON(e));
+    }
+    if (message.metadata !== void 0) {
+      obj.metadata = message.metadata;
+    }
+    return obj;
+  }
+};
+var TaskStatus = {
+  fromJSON(object) {
+    return {
+      state: isSet(object.state) ? taskStateFromJSON(object.state) : 0,
+      message: isSet(object.message) ? Message.fromJSON(object.message) : void 0,
+      timestamp: isSet(object.timestamp) ? globalThis.String(object.timestamp) : void 0
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.state !== 0) {
+      obj.state = taskStateToJSON(message.state);
+    }
+    if (message.message !== void 0) {
+      obj.message = Message.toJSON(message.message);
+    }
+    if (message.timestamp !== void 0) {
+      obj.timestamp = message.timestamp;
+    }
+    return obj;
+  }
+};
+var Part = {
+  fromJSON(object) {
+    return {
+      content: isSet(object.text) ? { $case: "text", value: globalThis.String(object.text) } : isSet(object.raw) ? { $case: "raw", value: Buffer.from(bytesFromBase64(object.raw)) } : isSet(object.url) ? { $case: "url", value: globalThis.String(object.url) } : isSet(object.data) ? { $case: "data", value: object.data } : void 0,
+      metadata: isObject(object.metadata) ? object.metadata : void 0,
+      filename: isSet(object.filename) ? globalThis.String(object.filename) : "",
+      mediaType: isSet(object.mediaType) ? globalThis.String(object.mediaType) : isSet(object.media_type) ? globalThis.String(object.media_type) : ""
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.content?.$case === "text") {
+      obj.text = message.content.value;
+    } else if (message.content?.$case === "raw") {
+      obj.raw = base64FromBytes(message.content.value);
+    } else if (message.content?.$case === "url") {
+      obj.url = message.content.value;
+    } else if (message.content?.$case === "data") {
+      obj.data = message.content.value;
+    }
+    if (message.metadata !== void 0) {
+      obj.metadata = message.metadata;
+    }
+    if (message.filename !== "") {
+      obj.filename = message.filename;
+    }
+    if (message.mediaType !== "") {
+      obj.mediaType = message.mediaType;
+    }
+    return obj;
+  }
+};
+var Message = {
+  fromJSON(object) {
+    return {
+      messageId: isSet(object.messageId) ? globalThis.String(object.messageId) : isSet(object.message_id) ? globalThis.String(object.message_id) : "",
+      contextId: isSet(object.contextId) ? globalThis.String(object.contextId) : isSet(object.context_id) ? globalThis.String(object.context_id) : "",
+      taskId: isSet(object.taskId) ? globalThis.String(object.taskId) : isSet(object.task_id) ? globalThis.String(object.task_id) : "",
+      role: isSet(object.role) ? roleFromJSON(object.role) : 0,
+      parts: globalThis.Array.isArray(object?.parts) ? object.parts.map((e) => Part.fromJSON(e)) : [],
+      metadata: isObject(object.metadata) ? object.metadata : void 0,
+      extensions: globalThis.Array.isArray(object?.extensions) ? object.extensions.map((e) => globalThis.String(e)) : [],
+      referenceTaskIds: globalThis.Array.isArray(object?.referenceTaskIds) ? object.referenceTaskIds.map((e) => globalThis.String(e)) : globalThis.Array.isArray(object?.reference_task_ids) ? object.reference_task_ids.map((e) => globalThis.String(e)) : []
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.messageId !== "") {
+      obj.messageId = message.messageId;
+    }
+    if (message.contextId !== "") {
+      obj.contextId = message.contextId;
+    }
+    if (message.taskId !== "") {
+      obj.taskId = message.taskId;
+    }
+    if (message.role !== 0) {
+      obj.role = roleToJSON(message.role);
+    }
+    if (message.parts?.length) {
+      obj.parts = message.parts.map((e) => Part.toJSON(e));
+    }
+    if (message.metadata !== void 0) {
+      obj.metadata = message.metadata;
+    }
+    if (message.extensions?.length) {
+      obj.extensions = message.extensions;
+    }
+    if (message.referenceTaskIds?.length) {
+      obj.referenceTaskIds = message.referenceTaskIds;
+    }
+    return obj;
+  }
+};
+var Artifact = {
+  fromJSON(object) {
+    return {
+      artifactId: isSet(object.artifactId) ? globalThis.String(object.artifactId) : isSet(object.artifact_id) ? globalThis.String(object.artifact_id) : "",
+      name: isSet(object.name) ? globalThis.String(object.name) : "",
+      description: isSet(object.description) ? globalThis.String(object.description) : "",
+      parts: globalThis.Array.isArray(object?.parts) ? object.parts.map((e) => Part.fromJSON(e)) : [],
+      metadata: isObject(object.metadata) ? object.metadata : void 0,
+      extensions: globalThis.Array.isArray(object?.extensions) ? object.extensions.map((e) => globalThis.String(e)) : []
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.artifactId !== "") {
+      obj.artifactId = message.artifactId;
+    }
+    if (message.name !== "") {
+      obj.name = message.name;
+    }
+    if (message.description !== "") {
+      obj.description = message.description;
+    }
+    if (message.parts?.length) {
+      obj.parts = message.parts.map((e) => Part.toJSON(e));
+    }
+    if (message.metadata !== void 0) {
+      obj.metadata = message.metadata;
+    }
+    if (message.extensions?.length) {
+      obj.extensions = message.extensions;
+    }
+    return obj;
+  }
+};
+var TaskStatusUpdateEvent = {
+  fromJSON(object) {
+    return {
+      taskId: isSet(object.taskId) ? globalThis.String(object.taskId) : isSet(object.task_id) ? globalThis.String(object.task_id) : "",
+      contextId: isSet(object.contextId) ? globalThis.String(object.contextId) : isSet(object.context_id) ? globalThis.String(object.context_id) : "",
+      status: isSet(object.status) ? TaskStatus.fromJSON(object.status) : void 0,
+      metadata: isObject(object.metadata) ? object.metadata : void 0
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.taskId !== "") {
+      obj.taskId = message.taskId;
+    }
+    if (message.contextId !== "") {
+      obj.contextId = message.contextId;
+    }
+    if (message.status !== void 0) {
+      obj.status = TaskStatus.toJSON(message.status);
+    }
+    if (message.metadata !== void 0) {
+      obj.metadata = message.metadata;
+    }
+    return obj;
+  }
+};
+var TaskArtifactUpdateEvent = {
+  fromJSON(object) {
+    return {
+      taskId: isSet(object.taskId) ? globalThis.String(object.taskId) : isSet(object.task_id) ? globalThis.String(object.task_id) : "",
+      contextId: isSet(object.contextId) ? globalThis.String(object.contextId) : isSet(object.context_id) ? globalThis.String(object.context_id) : "",
+      artifact: isSet(object.artifact) ? Artifact.fromJSON(object.artifact) : void 0,
+      append: isSet(object.append) ? globalThis.Boolean(object.append) : false,
+      lastChunk: isSet(object.lastChunk) ? globalThis.Boolean(object.lastChunk) : isSet(object.last_chunk) ? globalThis.Boolean(object.last_chunk) : false,
+      metadata: isObject(object.metadata) ? object.metadata : void 0
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.taskId !== "") {
+      obj.taskId = message.taskId;
+    }
+    if (message.contextId !== "") {
+      obj.contextId = message.contextId;
+    }
+    if (message.artifact !== void 0) {
+      obj.artifact = Artifact.toJSON(message.artifact);
+    }
+    if (message.append !== false) {
+      obj.append = message.append;
+    }
+    if (message.lastChunk !== false) {
+      obj.lastChunk = message.lastChunk;
+    }
+    if (message.metadata !== void 0) {
+      obj.metadata = message.metadata;
+    }
+    return obj;
+  }
+};
+var AuthenticationInfo = {
+  fromJSON(object) {
+    return {
+      scheme: isSet(object.scheme) ? globalThis.String(object.scheme) : "",
+      credentials: isSet(object.credentials) ? globalThis.String(object.credentials) : ""
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.scheme !== "") {
+      obj.scheme = message.scheme;
+    }
+    if (message.credentials !== "") {
+      obj.credentials = message.credentials;
+    }
+    return obj;
+  }
+};
+var AgentInterface = {
+  fromJSON(object) {
+    return {
+      url: isSet(object.url) ? globalThis.String(object.url) : "",
+      protocolBinding: isSet(object.protocolBinding) ? globalThis.String(object.protocolBinding) : isSet(object.protocol_binding) ? globalThis.String(object.protocol_binding) : "",
+      tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "",
+      protocolVersion: isSet(object.protocolVersion) ? globalThis.String(object.protocolVersion) : isSet(object.protocol_version) ? globalThis.String(object.protocol_version) : ""
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.url !== "") {
+      obj.url = message.url;
+    }
+    if (message.protocolBinding !== "") {
+      obj.protocolBinding = message.protocolBinding;
+    }
+    if (message.tenant !== "") {
+      obj.tenant = message.tenant;
+    }
+    if (message.protocolVersion !== "") {
+      obj.protocolVersion = message.protocolVersion;
+    }
+    return obj;
+  }
+};
+var AgentCard = {
+  fromJSON(object) {
+    return {
+      name: isSet(object.name) ? globalThis.String(object.name) : "",
+      description: isSet(object.description) ? globalThis.String(object.description) : "",
+      supportedInterfaces: globalThis.Array.isArray(object?.supportedInterfaces) ? object.supportedInterfaces.map((e) => AgentInterface.fromJSON(e)) : globalThis.Array.isArray(object?.supported_interfaces) ? object.supported_interfaces.map((e) => AgentInterface.fromJSON(e)) : [],
+      provider: isSet(object.provider) ? AgentProvider.fromJSON(object.provider) : void 0,
+      version: isSet(object.version) ? globalThis.String(object.version) : "",
+      documentationUrl: isSet(object.documentationUrl) ? globalThis.String(object.documentationUrl) : isSet(object.documentation_url) ? globalThis.String(object.documentation_url) : void 0,
+      capabilities: isSet(object.capabilities) ? AgentCapabilities.fromJSON(object.capabilities) : void 0,
+      securitySchemes: isObject(object.securitySchemes) ? globalThis.Object.entries(object.securitySchemes).reduce(
+        (acc, [key, value]) => {
+          acc[key] = SecurityScheme.fromJSON(value);
+          return acc;
+        },
+        {}
+      ) : isObject(object.security_schemes) ? globalThis.Object.entries(object.security_schemes).reduce(
+        (acc, [key, value]) => {
+          acc[key] = SecurityScheme.fromJSON(value);
+          return acc;
+        },
+        {}
+      ) : {},
+      securityRequirements: globalThis.Array.isArray(object?.securityRequirements) ? object.securityRequirements.map((e) => SecurityRequirement.fromJSON(e)) : globalThis.Array.isArray(object?.security_requirements) ? object.security_requirements.map((e) => SecurityRequirement.fromJSON(e)) : [],
+      defaultInputModes: globalThis.Array.isArray(object?.defaultInputModes) ? object.defaultInputModes.map((e) => globalThis.String(e)) : globalThis.Array.isArray(object?.default_input_modes) ? object.default_input_modes.map((e) => globalThis.String(e)) : [],
+      defaultOutputModes: globalThis.Array.isArray(object?.defaultOutputModes) ? object.defaultOutputModes.map((e) => globalThis.String(e)) : globalThis.Array.isArray(object?.default_output_modes) ? object.default_output_modes.map((e) => globalThis.String(e)) : [],
+      skills: globalThis.Array.isArray(object?.skills) ? object.skills.map((e) => AgentSkill.fromJSON(e)) : [],
+      signatures: globalThis.Array.isArray(object?.signatures) ? object.signatures.map((e) => AgentCardSignature.fromJSON(e)) : [],
+      iconUrl: isSet(object.iconUrl) ? globalThis.String(object.iconUrl) : isSet(object.icon_url) ? globalThis.String(object.icon_url) : void 0
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.name !== "") {
+      obj.name = message.name;
+    }
+    if (message.description !== "") {
+      obj.description = message.description;
+    }
+    if (message.supportedInterfaces?.length) {
+      obj.supportedInterfaces = message.supportedInterfaces.map((e) => AgentInterface.toJSON(e));
+    }
+    if (message.provider !== void 0) {
+      obj.provider = AgentProvider.toJSON(message.provider);
+    }
+    if (message.version !== "") {
+      obj.version = message.version;
+    }
+    if (message.documentationUrl !== void 0) {
+      obj.documentationUrl = message.documentationUrl;
+    }
+    if (message.capabilities !== void 0) {
+      obj.capabilities = AgentCapabilities.toJSON(message.capabilities);
+    }
+    if (message.securitySchemes) {
+      const entries = globalThis.Object.entries(message.securitySchemes);
+      if (entries.length > 0) {
+        obj.securitySchemes = {};
+        entries.forEach(([k, v]) => {
+          obj.securitySchemes[k] = SecurityScheme.toJSON(v);
+        });
+      }
+    }
+    if (message.securityRequirements?.length) {
+      obj.securityRequirements = message.securityRequirements.map((e) => SecurityRequirement.toJSON(e));
+    }
+    if (message.defaultInputModes?.length) {
+      obj.defaultInputModes = message.defaultInputModes;
+    }
+    if (message.defaultOutputModes?.length) {
+      obj.defaultOutputModes = message.defaultOutputModes;
+    }
+    if (message.skills?.length) {
+      obj.skills = message.skills.map((e) => AgentSkill.toJSON(e));
+    }
+    if (message.signatures?.length) {
+      obj.signatures = message.signatures.map((e) => AgentCardSignature.toJSON(e));
+    }
+    if (message.iconUrl !== void 0) {
+      obj.iconUrl = message.iconUrl;
+    }
+    return obj;
+  }
+};
+var AgentProvider = {
+  fromJSON(object) {
+    return {
+      url: isSet(object.url) ? globalThis.String(object.url) : "",
+      organization: isSet(object.organization) ? globalThis.String(object.organization) : ""
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.url !== "") {
+      obj.url = message.url;
+    }
+    if (message.organization !== "") {
+      obj.organization = message.organization;
+    }
+    return obj;
+  }
+};
+var AgentCapabilities = {
+  fromJSON(object) {
+    return {
+      streaming: isSet(object.streaming) ? globalThis.Boolean(object.streaming) : void 0,
+      pushNotifications: isSet(object.pushNotifications) ? globalThis.Boolean(object.pushNotifications) : isSet(object.push_notifications) ? globalThis.Boolean(object.push_notifications) : void 0,
+      extensions: globalThis.Array.isArray(object?.extensions) ? object.extensions.map((e) => AgentExtension.fromJSON(e)) : [],
+      extendedAgentCard: isSet(object.extendedAgentCard) ? globalThis.Boolean(object.extendedAgentCard) : isSet(object.extended_agent_card) ? globalThis.Boolean(object.extended_agent_card) : void 0
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.streaming !== void 0) {
+      obj.streaming = message.streaming;
+    }
+    if (message.pushNotifications !== void 0) {
+      obj.pushNotifications = message.pushNotifications;
+    }
+    if (message.extensions?.length) {
+      obj.extensions = message.extensions.map((e) => AgentExtension.toJSON(e));
+    }
+    if (message.extendedAgentCard !== void 0) {
+      obj.extendedAgentCard = message.extendedAgentCard;
+    }
+    return obj;
+  }
+};
+var AgentExtension = {
+  fromJSON(object) {
+    return {
+      uri: isSet(object.uri) ? globalThis.String(object.uri) : "",
+      description: isSet(object.description) ? globalThis.String(object.description) : "",
+      required: isSet(object.required) ? globalThis.Boolean(object.required) : false,
+      params: isObject(object.params) ? object.params : void 0
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.uri !== "") {
+      obj.uri = message.uri;
+    }
+    if (message.description !== "") {
+      obj.description = message.description;
+    }
+    if (message.required !== false) {
+      obj.required = message.required;
+    }
+    if (message.params !== void 0) {
+      obj.params = message.params;
+    }
+    return obj;
+  }
+};
+var AgentSkill = {
+  fromJSON(object) {
+    return {
+      id: isSet(object.id) ? globalThis.String(object.id) : "",
+      name: isSet(object.name) ? globalThis.String(object.name) : "",
+      description: isSet(object.description) ? globalThis.String(object.description) : "",
+      tags: globalThis.Array.isArray(object?.tags) ? object.tags.map((e) => globalThis.String(e)) : [],
+      examples: globalThis.Array.isArray(object?.examples) ? object.examples.map((e) => globalThis.String(e)) : [],
+      inputModes: globalThis.Array.isArray(object?.inputModes) ? object.inputModes.map((e) => globalThis.String(e)) : globalThis.Array.isArray(object?.input_modes) ? object.input_modes.map((e) => globalThis.String(e)) : [],
+      outputModes: globalThis.Array.isArray(object?.outputModes) ? object.outputModes.map((e) => globalThis.String(e)) : globalThis.Array.isArray(object?.output_modes) ? object.output_modes.map((e) => globalThis.String(e)) : [],
+      securityRequirements: globalThis.Array.isArray(object?.securityRequirements) ? object.securityRequirements.map((e) => SecurityRequirement.fromJSON(e)) : globalThis.Array.isArray(object?.security_requirements) ? object.security_requirements.map((e) => SecurityRequirement.fromJSON(e)) : []
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.id !== "") {
+      obj.id = message.id;
+    }
+    if (message.name !== "") {
+      obj.name = message.name;
+    }
+    if (message.description !== "") {
+      obj.description = message.description;
+    }
+    if (message.tags?.length) {
+      obj.tags = message.tags;
+    }
+    if (message.examples?.length) {
+      obj.examples = message.examples;
+    }
+    if (message.inputModes?.length) {
+      obj.inputModes = message.inputModes;
+    }
+    if (message.outputModes?.length) {
+      obj.outputModes = message.outputModes;
+    }
+    if (message.securityRequirements?.length) {
+      obj.securityRequirements = message.securityRequirements.map((e) => SecurityRequirement.toJSON(e));
+    }
+    return obj;
+  }
+};
+var AgentCardSignature = {
+  fromJSON(object) {
+    return {
+      protected: isSet(object.protected) ? globalThis.String(object.protected) : "",
+      signature: isSet(object.signature) ? globalThis.String(object.signature) : "",
+      header: isObject(object.header) ? object.header : void 0
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.protected !== "") {
+      obj.protected = message.protected;
+    }
+    if (message.signature !== "") {
+      obj.signature = message.signature;
+    }
+    if (message.header !== void 0) {
+      obj.header = message.header;
+    }
+    return obj;
+  }
+};
+var TaskPushNotificationConfig = {
+  fromJSON(object) {
+    return {
+      tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "",
+      id: isSet(object.id) ? globalThis.String(object.id) : "",
+      taskId: isSet(object.taskId) ? globalThis.String(object.taskId) : isSet(object.task_id) ? globalThis.String(object.task_id) : "",
+      url: isSet(object.url) ? globalThis.String(object.url) : "",
+      token: isSet(object.token) ? globalThis.String(object.token) : "",
+      authentication: isSet(object.authentication) ? AuthenticationInfo.fromJSON(object.authentication) : void 0
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.tenant !== "") {
+      obj.tenant = message.tenant;
+    }
+    if (message.id !== "") {
+      obj.id = message.id;
+    }
+    if (message.taskId !== "") {
+      obj.taskId = message.taskId;
+    }
+    if (message.url !== "") {
+      obj.url = message.url;
+    }
+    if (message.token !== "") {
+      obj.token = message.token;
+    }
+    if (message.authentication !== void 0) {
+      obj.authentication = AuthenticationInfo.toJSON(message.authentication);
+    }
+    return obj;
+  }
+};
+var StringList = {
+  fromJSON(object) {
+    return { list: globalThis.Array.isArray(object?.list) ? object.list.map((e) => globalThis.String(e)) : [] };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.list?.length) {
+      obj.list = message.list;
+    }
+    return obj;
+  }
+};
+var SecurityRequirement = {
+  fromJSON(object) {
+    return {
+      schemes: isObject(object.schemes) ? globalThis.Object.entries(object.schemes).reduce(
+        (acc, [key, value]) => {
+          acc[key] = StringList.fromJSON(value);
+          return acc;
+        },
+        {}
+      ) : {}
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.schemes) {
+      const entries = globalThis.Object.entries(message.schemes);
+      if (entries.length > 0) {
+        obj.schemes = {};
+        entries.forEach(([k, v]) => {
+          obj.schemes[k] = StringList.toJSON(v);
+        });
+      }
+    }
+    return obj;
+  }
+};
+var SecurityScheme = {
+  fromJSON(object) {
+    return {
+      scheme: isSet(object.apiKeySecurityScheme) ? { $case: "apiKeySecurityScheme", value: APIKeySecurityScheme.fromJSON(object.apiKeySecurityScheme) } : isSet(object.api_key_security_scheme) ? { $case: "apiKeySecurityScheme", value: APIKeySecurityScheme.fromJSON(object.api_key_security_scheme) } : isSet(object.httpAuthSecurityScheme) ? { $case: "httpAuthSecurityScheme", value: HTTPAuthSecurityScheme.fromJSON(object.httpAuthSecurityScheme) } : isSet(object.http_auth_security_scheme) ? { $case: "httpAuthSecurityScheme", value: HTTPAuthSecurityScheme.fromJSON(object.http_auth_security_scheme) } : isSet(object.oauth2SecurityScheme) ? { $case: "oauth2SecurityScheme", value: OAuth2SecurityScheme.fromJSON(object.oauth2SecurityScheme) } : isSet(object.oauth2_security_scheme) ? { $case: "oauth2SecurityScheme", value: OAuth2SecurityScheme.fromJSON(object.oauth2_security_scheme) } : isSet(object.openIdConnectSecurityScheme) ? {
+        $case: "openIdConnectSecurityScheme",
+        value: OpenIdConnectSecurityScheme.fromJSON(object.openIdConnectSecurityScheme)
+      } : isSet(object.open_id_connect_security_scheme) ? {
+        $case: "openIdConnectSecurityScheme",
+        value: OpenIdConnectSecurityScheme.fromJSON(object.open_id_connect_security_scheme)
+      } : isSet(object.mtlsSecurityScheme) ? { $case: "mtlsSecurityScheme", value: MutualTlsSecurityScheme.fromJSON(object.mtlsSecurityScheme) } : isSet(object.mtls_security_scheme) ? { $case: "mtlsSecurityScheme", value: MutualTlsSecurityScheme.fromJSON(object.mtls_security_scheme) } : void 0
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.scheme?.$case === "apiKeySecurityScheme") {
+      obj.apiKeySecurityScheme = APIKeySecurityScheme.toJSON(message.scheme.value);
+    } else if (message.scheme?.$case === "httpAuthSecurityScheme") {
+      obj.httpAuthSecurityScheme = HTTPAuthSecurityScheme.toJSON(message.scheme.value);
+    } else if (message.scheme?.$case === "oauth2SecurityScheme") {
+      obj.oauth2SecurityScheme = OAuth2SecurityScheme.toJSON(message.scheme.value);
+    } else if (message.scheme?.$case === "openIdConnectSecurityScheme") {
+      obj.openIdConnectSecurityScheme = OpenIdConnectSecurityScheme.toJSON(message.scheme.value);
+    } else if (message.scheme?.$case === "mtlsSecurityScheme") {
+      obj.mtlsSecurityScheme = MutualTlsSecurityScheme.toJSON(message.scheme.value);
+    }
+    return obj;
+  }
+};
+var APIKeySecurityScheme = {
+  fromJSON(object) {
+    return {
+      description: isSet(object.description) ? globalThis.String(object.description) : "",
+      location: isSet(object.location) ? globalThis.String(object.location) : "",
+      name: isSet(object.name) ? globalThis.String(object.name) : ""
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.description !== "") {
+      obj.description = message.description;
+    }
+    if (message.location !== "") {
+      obj.location = message.location;
+    }
+    if (message.name !== "") {
+      obj.name = message.name;
+    }
+    return obj;
+  }
+};
+var HTTPAuthSecurityScheme = {
+  fromJSON(object) {
+    return {
+      description: isSet(object.description) ? globalThis.String(object.description) : "",
+      scheme: isSet(object.scheme) ? globalThis.String(object.scheme) : "",
+      bearerFormat: isSet(object.bearerFormat) ? globalThis.String(object.bearerFormat) : isSet(object.bearer_format) ? globalThis.String(object.bearer_format) : ""
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.description !== "") {
+      obj.description = message.description;
+    }
+    if (message.scheme !== "") {
+      obj.scheme = message.scheme;
+    }
+    if (message.bearerFormat !== "") {
+      obj.bearerFormat = message.bearerFormat;
+    }
+    return obj;
+  }
+};
+var OAuth2SecurityScheme = {
+  fromJSON(object) {
+    return {
+      description: isSet(object.description) ? globalThis.String(object.description) : "",
+      flows: isSet(object.flows) ? OAuthFlows.fromJSON(object.flows) : void 0,
+      oauth2MetadataUrl: isSet(object.oauth2MetadataUrl) ? globalThis.String(object.oauth2MetadataUrl) : isSet(object.oauth2_metadata_url) ? globalThis.String(object.oauth2_metadata_url) : ""
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.description !== "") {
+      obj.description = message.description;
+    }
+    if (message.flows !== void 0) {
+      obj.flows = OAuthFlows.toJSON(message.flows);
+    }
+    if (message.oauth2MetadataUrl !== "") {
+      obj.oauth2MetadataUrl = message.oauth2MetadataUrl;
+    }
+    return obj;
+  }
+};
+var OpenIdConnectSecurityScheme = {
+  fromJSON(object) {
+    return {
+      description: isSet(object.description) ? globalThis.String(object.description) : "",
+      openIdConnectUrl: isSet(object.openIdConnectUrl) ? globalThis.String(object.openIdConnectUrl) : isSet(object.open_id_connect_url) ? globalThis.String(object.open_id_connect_url) : ""
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.description !== "") {
+      obj.description = message.description;
+    }
+    if (message.openIdConnectUrl !== "") {
+      obj.openIdConnectUrl = message.openIdConnectUrl;
+    }
+    return obj;
+  }
+};
+var MutualTlsSecurityScheme = {
+  fromJSON(object) {
+    return { description: isSet(object.description) ? globalThis.String(object.description) : "" };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.description !== "") {
+      obj.description = message.description;
+    }
+    return obj;
+  }
+};
+var OAuthFlows = {
+  fromJSON(object) {
+    return {
+      flow: isSet(object.authorizationCode) ? { $case: "authorizationCode", value: AuthorizationCodeOAuthFlow.fromJSON(object.authorizationCode) } : isSet(object.authorization_code) ? { $case: "authorizationCode", value: AuthorizationCodeOAuthFlow.fromJSON(object.authorization_code) } : isSet(object.clientCredentials) ? { $case: "clientCredentials", value: ClientCredentialsOAuthFlow.fromJSON(object.clientCredentials) } : isSet(object.client_credentials) ? { $case: "clientCredentials", value: ClientCredentialsOAuthFlow.fromJSON(object.client_credentials) } : isSet(object.implicit) ? { $case: "implicit", value: ImplicitOAuthFlow.fromJSON(object.implicit) } : isSet(object.password) ? { $case: "password", value: PasswordOAuthFlow.fromJSON(object.password) } : isSet(object.deviceCode) ? { $case: "deviceCode", value: DeviceCodeOAuthFlow.fromJSON(object.deviceCode) } : isSet(object.device_code) ? { $case: "deviceCode", value: DeviceCodeOAuthFlow.fromJSON(object.device_code) } : void 0
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.flow?.$case === "authorizationCode") {
+      obj.authorizationCode = AuthorizationCodeOAuthFlow.toJSON(message.flow.value);
+    } else if (message.flow?.$case === "clientCredentials") {
+      obj.clientCredentials = ClientCredentialsOAuthFlow.toJSON(message.flow.value);
+    } else if (message.flow?.$case === "implicit") {
+      obj.implicit = ImplicitOAuthFlow.toJSON(message.flow.value);
+    } else if (message.flow?.$case === "password") {
+      obj.password = PasswordOAuthFlow.toJSON(message.flow.value);
+    } else if (message.flow?.$case === "deviceCode") {
+      obj.deviceCode = DeviceCodeOAuthFlow.toJSON(message.flow.value);
+    }
+    return obj;
+  }
+};
+var AuthorizationCodeOAuthFlow = {
+  fromJSON(object) {
+    return {
+      authorizationUrl: isSet(object.authorizationUrl) ? globalThis.String(object.authorizationUrl) : isSet(object.authorization_url) ? globalThis.String(object.authorization_url) : "",
+      tokenUrl: isSet(object.tokenUrl) ? globalThis.String(object.tokenUrl) : isSet(object.token_url) ? globalThis.String(object.token_url) : "",
+      refreshUrl: isSet(object.refreshUrl) ? globalThis.String(object.refreshUrl) : isSet(object.refresh_url) ? globalThis.String(object.refresh_url) : "",
+      scopes: isObject(object.scopes) ? globalThis.Object.entries(object.scopes).reduce(
+        (acc, [key, value]) => {
+          acc[key] = globalThis.String(value);
+          return acc;
+        },
+        {}
+      ) : {},
+      pkceRequired: isSet(object.pkceRequired) ? globalThis.Boolean(object.pkceRequired) : isSet(object.pkce_required) ? globalThis.Boolean(object.pkce_required) : false
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.authorizationUrl !== "") {
+      obj.authorizationUrl = message.authorizationUrl;
+    }
+    if (message.tokenUrl !== "") {
+      obj.tokenUrl = message.tokenUrl;
+    }
+    if (message.refreshUrl !== "") {
+      obj.refreshUrl = message.refreshUrl;
+    }
+    if (message.scopes) {
+      const entries = globalThis.Object.entries(message.scopes);
+      if (entries.length > 0) {
+        obj.scopes = {};
+        entries.forEach(([k, v]) => {
+          obj.scopes[k] = v;
+        });
+      }
+    }
+    if (message.pkceRequired !== false) {
+      obj.pkceRequired = message.pkceRequired;
+    }
+    return obj;
+  }
+};
+var ClientCredentialsOAuthFlow = {
+  fromJSON(object) {
+    return {
+      tokenUrl: isSet(object.tokenUrl) ? globalThis.String(object.tokenUrl) : isSet(object.token_url) ? globalThis.String(object.token_url) : "",
+      refreshUrl: isSet(object.refreshUrl) ? globalThis.String(object.refreshUrl) : isSet(object.refresh_url) ? globalThis.String(object.refresh_url) : "",
+      scopes: isObject(object.scopes) ? globalThis.Object.entries(object.scopes).reduce(
+        (acc, [key, value]) => {
+          acc[key] = globalThis.String(value);
+          return acc;
+        },
+        {}
+      ) : {}
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.tokenUrl !== "") {
+      obj.tokenUrl = message.tokenUrl;
+    }
+    if (message.refreshUrl !== "") {
+      obj.refreshUrl = message.refreshUrl;
+    }
+    if (message.scopes) {
+      const entries = globalThis.Object.entries(message.scopes);
+      if (entries.length > 0) {
+        obj.scopes = {};
+        entries.forEach(([k, v]) => {
+          obj.scopes[k] = v;
+        });
+      }
+    }
+    return obj;
+  }
+};
+var ImplicitOAuthFlow = {
+  fromJSON(object) {
+    return {
+      authorizationUrl: isSet(object.authorizationUrl) ? globalThis.String(object.authorizationUrl) : isSet(object.authorization_url) ? globalThis.String(object.authorization_url) : "",
+      refreshUrl: isSet(object.refreshUrl) ? globalThis.String(object.refreshUrl) : isSet(object.refresh_url) ? globalThis.String(object.refresh_url) : "",
+      scopes: isObject(object.scopes) ? globalThis.Object.entries(object.scopes).reduce(
+        (acc, [key, value]) => {
+          acc[key] = globalThis.String(value);
+          return acc;
+        },
+        {}
+      ) : {}
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.authorizationUrl !== "") {
+      obj.authorizationUrl = message.authorizationUrl;
+    }
+    if (message.refreshUrl !== "") {
+      obj.refreshUrl = message.refreshUrl;
+    }
+    if (message.scopes) {
+      const entries = globalThis.Object.entries(message.scopes);
+      if (entries.length > 0) {
+        obj.scopes = {};
+        entries.forEach(([k, v]) => {
+          obj.scopes[k] = v;
+        });
+      }
+    }
+    return obj;
+  }
+};
+var PasswordOAuthFlow = {
+  fromJSON(object) {
+    return {
+      tokenUrl: isSet(object.tokenUrl) ? globalThis.String(object.tokenUrl) : isSet(object.token_url) ? globalThis.String(object.token_url) : "",
+      refreshUrl: isSet(object.refreshUrl) ? globalThis.String(object.refreshUrl) : isSet(object.refresh_url) ? globalThis.String(object.refresh_url) : "",
+      scopes: isObject(object.scopes) ? globalThis.Object.entries(object.scopes).reduce(
+        (acc, [key, value]) => {
+          acc[key] = globalThis.String(value);
+          return acc;
+        },
+        {}
+      ) : {}
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.tokenUrl !== "") {
+      obj.tokenUrl = message.tokenUrl;
+    }
+    if (message.refreshUrl !== "") {
+      obj.refreshUrl = message.refreshUrl;
+    }
+    if (message.scopes) {
+      const entries = globalThis.Object.entries(message.scopes);
+      if (entries.length > 0) {
+        obj.scopes = {};
+        entries.forEach(([k, v]) => {
+          obj.scopes[k] = v;
+        });
+      }
+    }
+    return obj;
+  }
+};
+var DeviceCodeOAuthFlow = {
+  fromJSON(object) {
+    return {
+      deviceAuthorizationUrl: isSet(object.deviceAuthorizationUrl) ? globalThis.String(object.deviceAuthorizationUrl) : isSet(object.device_authorization_url) ? globalThis.String(object.device_authorization_url) : "",
+      tokenUrl: isSet(object.tokenUrl) ? globalThis.String(object.tokenUrl) : isSet(object.token_url) ? globalThis.String(object.token_url) : "",
+      refreshUrl: isSet(object.refreshUrl) ? globalThis.String(object.refreshUrl) : isSet(object.refresh_url) ? globalThis.String(object.refresh_url) : "",
+      scopes: isObject(object.scopes) ? globalThis.Object.entries(object.scopes).reduce(
+        (acc, [key, value]) => {
+          acc[key] = globalThis.String(value);
+          return acc;
+        },
+        {}
+      ) : {}
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.deviceAuthorizationUrl !== "") {
+      obj.deviceAuthorizationUrl = message.deviceAuthorizationUrl;
+    }
+    if (message.tokenUrl !== "") {
+      obj.tokenUrl = message.tokenUrl;
+    }
+    if (message.refreshUrl !== "") {
+      obj.refreshUrl = message.refreshUrl;
+    }
+    if (message.scopes) {
+      const entries = globalThis.Object.entries(message.scopes);
+      if (entries.length > 0) {
+        obj.scopes = {};
+        entries.forEach(([k, v]) => {
+          obj.scopes[k] = v;
+        });
+      }
+    }
+    return obj;
+  }
+};
+var SendMessageRequest = {
+  fromJSON(object) {
+    return {
+      tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "",
+      message: isSet(object.message) ? Message.fromJSON(object.message) : void 0,
+      configuration: isSet(object.configuration) ? SendMessageConfiguration.fromJSON(object.configuration) : void 0,
+      metadata: isObject(object.metadata) ? object.metadata : void 0
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.tenant !== "") {
+      obj.tenant = message.tenant;
+    }
+    if (message.message !== void 0) {
+      obj.message = Message.toJSON(message.message);
+    }
+    if (message.configuration !== void 0) {
+      obj.configuration = SendMessageConfiguration.toJSON(message.configuration);
+    }
+    if (message.metadata !== void 0) {
+      obj.metadata = message.metadata;
+    }
+    return obj;
+  }
+};
+var GetTaskRequest = {
+  fromJSON(object) {
+    return {
+      tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "",
+      id: isSet(object.id) ? globalThis.String(object.id) : "",
+      historyLength: isSet(object.historyLength) ? globalThis.Number(object.historyLength) : isSet(object.history_length) ? globalThis.Number(object.history_length) : void 0
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.tenant !== "") {
+      obj.tenant = message.tenant;
+    }
+    if (message.id !== "") {
+      obj.id = message.id;
+    }
+    if (message.historyLength !== void 0) {
+      obj.historyLength = Math.round(message.historyLength);
+    }
+    return obj;
+  }
+};
+var ListTasksRequest = {
+  fromJSON(object) {
+    return {
+      tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "",
+      contextId: isSet(object.contextId) ? globalThis.String(object.contextId) : isSet(object.context_id) ? globalThis.String(object.context_id) : "",
+      status: isSet(object.status) ? taskStateFromJSON(object.status) : 0,
+      pageSize: isSet(object.pageSize) ? globalThis.Number(object.pageSize) : isSet(object.page_size) ? globalThis.Number(object.page_size) : void 0,
+      pageToken: isSet(object.pageToken) ? globalThis.String(object.pageToken) : isSet(object.page_token) ? globalThis.String(object.page_token) : "",
+      historyLength: isSet(object.historyLength) ? globalThis.Number(object.historyLength) : isSet(object.history_length) ? globalThis.Number(object.history_length) : void 0,
+      statusTimestampAfter: isSet(object.statusTimestampAfter) ? globalThis.String(object.statusTimestampAfter) : isSet(object.status_timestamp_after) ? globalThis.String(object.status_timestamp_after) : void 0,
+      includeArtifacts: isSet(object.includeArtifacts) ? globalThis.Boolean(object.includeArtifacts) : isSet(object.include_artifacts) ? globalThis.Boolean(object.include_artifacts) : void 0
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.tenant !== "") {
+      obj.tenant = message.tenant;
+    }
+    if (message.contextId !== "") {
+      obj.contextId = message.contextId;
+    }
+    if (message.status !== 0) {
+      obj.status = taskStateToJSON(message.status);
+    }
+    if (message.pageSize !== void 0) {
+      obj.pageSize = Math.round(message.pageSize);
+    }
+    if (message.pageToken !== "") {
+      obj.pageToken = message.pageToken;
+    }
+    if (message.historyLength !== void 0) {
+      obj.historyLength = Math.round(message.historyLength);
+    }
+    if (message.statusTimestampAfter !== void 0) {
+      obj.statusTimestampAfter = message.statusTimestampAfter;
+    }
+    if (message.includeArtifacts !== void 0) {
+      obj.includeArtifacts = message.includeArtifacts;
+    }
+    return obj;
+  }
+};
+var ListTasksResponse = {
+  fromJSON(object) {
+    return {
+      tasks: globalThis.Array.isArray(object?.tasks) ? object.tasks.map((e) => Task.fromJSON(e)) : [],
+      nextPageToken: isSet(object.nextPageToken) ? globalThis.String(object.nextPageToken) : isSet(object.next_page_token) ? globalThis.String(object.next_page_token) : "",
+      pageSize: isSet(object.pageSize) ? globalThis.Number(object.pageSize) : isSet(object.page_size) ? globalThis.Number(object.page_size) : 0,
+      totalSize: isSet(object.totalSize) ? globalThis.Number(object.totalSize) : isSet(object.total_size) ? globalThis.Number(object.total_size) : 0
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.tasks?.length) {
+      obj.tasks = message.tasks.map((e) => Task.toJSON(e));
+    }
+    if (message.nextPageToken !== "") {
+      obj.nextPageToken = message.nextPageToken;
+    }
+    if (message.pageSize !== 0) {
+      obj.pageSize = Math.round(message.pageSize);
+    }
+    if (message.totalSize !== 0) {
+      obj.totalSize = Math.round(message.totalSize);
+    }
+    return obj;
+  }
+};
+var CancelTaskRequest = {
+  fromJSON(object) {
+    return {
+      tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "",
+      id: isSet(object.id) ? globalThis.String(object.id) : "",
+      metadata: isObject(object.metadata) ? object.metadata : void 0
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.tenant !== "") {
+      obj.tenant = message.tenant;
+    }
+    if (message.id !== "") {
+      obj.id = message.id;
+    }
+    if (message.metadata !== void 0) {
+      obj.metadata = message.metadata;
+    }
+    return obj;
+  }
+};
+var GetTaskPushNotificationConfigRequest = {
+  fromJSON(object) {
+    return {
+      tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "",
+      taskId: isSet(object.taskId) ? globalThis.String(object.taskId) : isSet(object.task_id) ? globalThis.String(object.task_id) : "",
+      id: isSet(object.id) ? globalThis.String(object.id) : ""
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.tenant !== "") {
+      obj.tenant = message.tenant;
+    }
+    if (message.taskId !== "") {
+      obj.taskId = message.taskId;
+    }
+    if (message.id !== "") {
+      obj.id = message.id;
+    }
+    return obj;
+  }
+};
+var DeleteTaskPushNotificationConfigRequest = {
+  fromJSON(object) {
+    return {
+      tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "",
+      taskId: isSet(object.taskId) ? globalThis.String(object.taskId) : isSet(object.task_id) ? globalThis.String(object.task_id) : "",
+      id: isSet(object.id) ? globalThis.String(object.id) : ""
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.tenant !== "") {
+      obj.tenant = message.tenant;
+    }
+    if (message.taskId !== "") {
+      obj.taskId = message.taskId;
+    }
+    if (message.id !== "") {
+      obj.id = message.id;
+    }
+    return obj;
+  }
+};
+var SubscribeToTaskRequest = {
+  fromJSON(object) {
+    return {
+      tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "",
+      id: isSet(object.id) ? globalThis.String(object.id) : ""
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.tenant !== "") {
+      obj.tenant = message.tenant;
+    }
+    if (message.id !== "") {
+      obj.id = message.id;
+    }
+    return obj;
+  }
+};
+var ListTaskPushNotificationConfigsRequest = {
+  fromJSON(object) {
+    return {
+      tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "",
+      taskId: isSet(object.taskId) ? globalThis.String(object.taskId) : isSet(object.task_id) ? globalThis.String(object.task_id) : "",
+      pageSize: isSet(object.pageSize) ? globalThis.Number(object.pageSize) : isSet(object.page_size) ? globalThis.Number(object.page_size) : 0,
+      pageToken: isSet(object.pageToken) ? globalThis.String(object.pageToken) : isSet(object.page_token) ? globalThis.String(object.page_token) : ""
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.tenant !== "") {
+      obj.tenant = message.tenant;
+    }
+    if (message.taskId !== "") {
+      obj.taskId = message.taskId;
+    }
+    if (message.pageSize !== 0) {
+      obj.pageSize = Math.round(message.pageSize);
+    }
+    if (message.pageToken !== "") {
+      obj.pageToken = message.pageToken;
+    }
+    return obj;
+  }
+};
+var GetExtendedAgentCardRequest = {
+  fromJSON(object) {
+    return { tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "" };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.tenant !== "") {
+      obj.tenant = message.tenant;
+    }
+    return obj;
+  }
+};
+var SendMessageResponse = {
+  fromJSON(object) {
+    return {
+      payload: isSet(object.task) ? { $case: "task", value: Task.fromJSON(object.task) } : isSet(object.message) ? { $case: "message", value: Message.fromJSON(object.message) } : void 0
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.payload?.$case === "task") {
+      obj.task = Task.toJSON(message.payload.value);
+    } else if (message.payload?.$case === "message") {
+      obj.message = Message.toJSON(message.payload.value);
+    }
+    return obj;
+  }
+};
+var StreamResponse = {
+  fromJSON(object) {
+    return {
+      payload: isSet(object.task) ? { $case: "task", value: Task.fromJSON(object.task) } : isSet(object.message) ? { $case: "message", value: Message.fromJSON(object.message) } : isSet(object.statusUpdate) ? { $case: "statusUpdate", value: TaskStatusUpdateEvent.fromJSON(object.statusUpdate) } : isSet(object.status_update) ? { $case: "statusUpdate", value: TaskStatusUpdateEvent.fromJSON(object.status_update) } : isSet(object.artifactUpdate) ? { $case: "artifactUpdate", value: TaskArtifactUpdateEvent.fromJSON(object.artifactUpdate) } : isSet(object.artifact_update) ? { $case: "artifactUpdate", value: TaskArtifactUpdateEvent.fromJSON(object.artifact_update) } : void 0
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.payload?.$case === "task") {
+      obj.task = Task.toJSON(message.payload.value);
+    } else if (message.payload?.$case === "message") {
+      obj.message = Message.toJSON(message.payload.value);
+    } else if (message.payload?.$case === "statusUpdate") {
+      obj.statusUpdate = TaskStatusUpdateEvent.toJSON(message.payload.value);
+    } else if (message.payload?.$case === "artifactUpdate") {
+      obj.artifactUpdate = TaskArtifactUpdateEvent.toJSON(message.payload.value);
+    }
+    return obj;
+  }
+};
+var ListTaskPushNotificationConfigsResponse = {
+  fromJSON(object) {
+    return {
+      configs: globalThis.Array.isArray(object?.configs) ? object.configs.map((e) => TaskPushNotificationConfig.fromJSON(e)) : [],
+      nextPageToken: isSet(object.nextPageToken) ? globalThis.String(object.nextPageToken) : isSet(object.next_page_token) ? globalThis.String(object.next_page_token) : ""
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.configs?.length) {
+      obj.configs = message.configs.map((e) => TaskPushNotificationConfig.toJSON(e));
+    }
+    if (message.nextPageToken !== "") {
+      obj.nextPageToken = message.nextPageToken;
+    }
+    return obj;
+  }
+};
+function bytesFromBase64(b64) {
+  return Uint8Array.from(globalThis.Buffer.from(b64, "base64"));
+}
+function base64FromBytes(arr) {
+  return globalThis.Buffer.from(arr).toString("base64");
+}
+function isObject(value) {
+  return typeof value === "object" && value !== null;
+}
+function isSet(value) {
+  return value !== null && value !== void 0;
+}
+
+// node_modules/@a2a-js/sdk/dist/chunk-CZ7TTPKW.js
+var AGENT_CARD_PATH = ".well-known/agent-card.json";
+var A2A_VERSION_HEADER = "A2A-Version";
+var A2A_PROTOCOL_VERSION = "1.0";
+var JSON_CONTENT_TYPE = "application/json";
+var A2A_CONTENT_TYPE = "application/a2a+json";
+
+// src/app.tsx
+var import_react34 = __toESM(require_react(), 1);
 
 // src/components/ChatComposer.tsx
 var import_react29 = __toESM(require_react(), 1);
@@ -50603,7 +51942,7 @@ function defaultEnvironmentSettings(environmentId) {
     agents: {}
   };
 }
-function isObject(value) {
+function isObject2(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 function normalizeAgentSourceRecord(key, value, fallback) {
@@ -50800,7 +52139,7 @@ function saveSkippedUpdateVersion(version, settingsPath = resolveChatSettingsPat
     const { settings } = loadChatSettings(settingsPath);
     const serialized = serializeSettings(settings, rawSettings);
     serialized.updateCheck = {
-      ...isObject(rawSettings?.updateCheck) ? rawSettings.updateCheck : {},
+      ...isObject2(rawSettings?.updateCheck) ? rawSettings.updateCheck : {},
       skippedVersion: version
     };
     mkdirSync(path.dirname(settingsPath), { recursive: true });
@@ -50948,1343 +52287,6 @@ async function writeClipboard(content, options = {}) {
 // src/lib/input/parser/extractors/filePathExtractor.ts
 import { existsSync as existsSync2, readFileSync as readFileSync3, statSync } from "fs";
 import { basename, extname, resolve } from "path";
-
-// node_modules/@a2a-js/sdk/dist/chunk-IFX37PQI.js
-var TaskState = /* @__PURE__ */ ((TaskState2) => {
-  TaskState2[TaskState2["TASK_STATE_UNSPECIFIED"] = 0] = "TASK_STATE_UNSPECIFIED";
-  TaskState2[TaskState2["TASK_STATE_SUBMITTED"] = 1] = "TASK_STATE_SUBMITTED";
-  TaskState2[TaskState2["TASK_STATE_WORKING"] = 2] = "TASK_STATE_WORKING";
-  TaskState2[TaskState2["TASK_STATE_COMPLETED"] = 3] = "TASK_STATE_COMPLETED";
-  TaskState2[TaskState2["TASK_STATE_FAILED"] = 4] = "TASK_STATE_FAILED";
-  TaskState2[TaskState2["TASK_STATE_CANCELED"] = 5] = "TASK_STATE_CANCELED";
-  TaskState2[TaskState2["TASK_STATE_INPUT_REQUIRED"] = 6] = "TASK_STATE_INPUT_REQUIRED";
-  TaskState2[TaskState2["TASK_STATE_REJECTED"] = 7] = "TASK_STATE_REJECTED";
-  TaskState2[TaskState2["TASK_STATE_AUTH_REQUIRED"] = 8] = "TASK_STATE_AUTH_REQUIRED";
-  TaskState2[TaskState2["UNRECOGNIZED"] = -1] = "UNRECOGNIZED";
-  return TaskState2;
-})(TaskState || {});
-function taskStateFromJSON(object) {
-  switch (object) {
-    case 0:
-    case "TASK_STATE_UNSPECIFIED":
-      return 0;
-    case 1:
-    case "TASK_STATE_SUBMITTED":
-      return 1;
-    case 2:
-    case "TASK_STATE_WORKING":
-      return 2;
-    case 3:
-    case "TASK_STATE_COMPLETED":
-      return 3;
-    case 4:
-    case "TASK_STATE_FAILED":
-      return 4;
-    case 5:
-    case "TASK_STATE_CANCELED":
-      return 5;
-    case 6:
-    case "TASK_STATE_INPUT_REQUIRED":
-      return 6;
-    case 7:
-    case "TASK_STATE_REJECTED":
-      return 7;
-    case 8:
-    case "TASK_STATE_AUTH_REQUIRED":
-      return 8;
-    case -1:
-    case "UNRECOGNIZED":
-    default:
-      return -1;
-  }
-}
-function taskStateToJSON(object) {
-  switch (object) {
-    case 0:
-      return "TASK_STATE_UNSPECIFIED";
-    case 1:
-      return "TASK_STATE_SUBMITTED";
-    case 2:
-      return "TASK_STATE_WORKING";
-    case 3:
-      return "TASK_STATE_COMPLETED";
-    case 4:
-      return "TASK_STATE_FAILED";
-    case 5:
-      return "TASK_STATE_CANCELED";
-    case 6:
-      return "TASK_STATE_INPUT_REQUIRED";
-    case 7:
-      return "TASK_STATE_REJECTED";
-    case 8:
-      return "TASK_STATE_AUTH_REQUIRED";
-    case -1:
-    default:
-      return "UNRECOGNIZED";
-  }
-}
-var Role = /* @__PURE__ */ ((Role2) => {
-  Role2[Role2["ROLE_UNSPECIFIED"] = 0] = "ROLE_UNSPECIFIED";
-  Role2[Role2["ROLE_USER"] = 1] = "ROLE_USER";
-  Role2[Role2["ROLE_AGENT"] = 2] = "ROLE_AGENT";
-  Role2[Role2["UNRECOGNIZED"] = -1] = "UNRECOGNIZED";
-  return Role2;
-})(Role || {});
-function roleFromJSON(object) {
-  switch (object) {
-    case 0:
-    case "ROLE_UNSPECIFIED":
-      return 0;
-    case 1:
-    case "ROLE_USER":
-      return 1;
-    case 2:
-    case "ROLE_AGENT":
-      return 2;
-    case -1:
-    case "UNRECOGNIZED":
-    default:
-      return -1;
-  }
-}
-function roleToJSON(object) {
-  switch (object) {
-    case 0:
-      return "ROLE_UNSPECIFIED";
-    case 1:
-      return "ROLE_USER";
-    case 2:
-      return "ROLE_AGENT";
-    case -1:
-    default:
-      return "UNRECOGNIZED";
-  }
-}
-var SendMessageConfiguration = {
-  fromJSON(object) {
-    return {
-      acceptedOutputModes: globalThis.Array.isArray(object?.acceptedOutputModes) ? object.acceptedOutputModes.map((e) => globalThis.String(e)) : globalThis.Array.isArray(object?.accepted_output_modes) ? object.accepted_output_modes.map(
-        (e) => globalThis.String(e)
-      ) : [],
-      taskPushNotificationConfig: isSet(object.taskPushNotificationConfig) ? TaskPushNotificationConfig.fromJSON(object.taskPushNotificationConfig) : isSet(object.task_push_notification_config) ? TaskPushNotificationConfig.fromJSON(object.task_push_notification_config) : void 0,
-      historyLength: isSet(object.historyLength) ? globalThis.Number(object.historyLength) : isSet(object.history_length) ? globalThis.Number(object.history_length) : void 0,
-      returnImmediately: isSet(object.returnImmediately) ? globalThis.Boolean(object.returnImmediately) : isSet(object.return_immediately) ? globalThis.Boolean(object.return_immediately) : false
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.acceptedOutputModes?.length) {
-      obj.acceptedOutputModes = message.acceptedOutputModes;
-    }
-    if (message.taskPushNotificationConfig !== void 0) {
-      obj.taskPushNotificationConfig = TaskPushNotificationConfig.toJSON(message.taskPushNotificationConfig);
-    }
-    if (message.historyLength !== void 0) {
-      obj.historyLength = Math.round(message.historyLength);
-    }
-    if (message.returnImmediately !== false) {
-      obj.returnImmediately = message.returnImmediately;
-    }
-    return obj;
-  }
-};
-var Task = {
-  fromJSON(object) {
-    return {
-      id: isSet(object.id) ? globalThis.String(object.id) : "",
-      contextId: isSet(object.contextId) ? globalThis.String(object.contextId) : isSet(object.context_id) ? globalThis.String(object.context_id) : "",
-      status: isSet(object.status) ? TaskStatus.fromJSON(object.status) : void 0,
-      artifacts: globalThis.Array.isArray(object?.artifacts) ? object.artifacts.map((e) => Artifact.fromJSON(e)) : [],
-      history: globalThis.Array.isArray(object?.history) ? object.history.map((e) => Message.fromJSON(e)) : [],
-      metadata: isObject2(object.metadata) ? object.metadata : void 0
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.id !== "") {
-      obj.id = message.id;
-    }
-    if (message.contextId !== "") {
-      obj.contextId = message.contextId;
-    }
-    if (message.status !== void 0) {
-      obj.status = TaskStatus.toJSON(message.status);
-    }
-    if (message.artifacts?.length) {
-      obj.artifacts = message.artifacts.map((e) => Artifact.toJSON(e));
-    }
-    if (message.history?.length) {
-      obj.history = message.history.map((e) => Message.toJSON(e));
-    }
-    if (message.metadata !== void 0) {
-      obj.metadata = message.metadata;
-    }
-    return obj;
-  }
-};
-var TaskStatus = {
-  fromJSON(object) {
-    return {
-      state: isSet(object.state) ? taskStateFromJSON(object.state) : 0,
-      message: isSet(object.message) ? Message.fromJSON(object.message) : void 0,
-      timestamp: isSet(object.timestamp) ? globalThis.String(object.timestamp) : void 0
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.state !== 0) {
-      obj.state = taskStateToJSON(message.state);
-    }
-    if (message.message !== void 0) {
-      obj.message = Message.toJSON(message.message);
-    }
-    if (message.timestamp !== void 0) {
-      obj.timestamp = message.timestamp;
-    }
-    return obj;
-  }
-};
-var Part = {
-  fromJSON(object) {
-    return {
-      content: isSet(object.text) ? { $case: "text", value: globalThis.String(object.text) } : isSet(object.raw) ? { $case: "raw", value: Buffer.from(bytesFromBase64(object.raw)) } : isSet(object.url) ? { $case: "url", value: globalThis.String(object.url) } : isSet(object.data) ? { $case: "data", value: object.data } : void 0,
-      metadata: isObject2(object.metadata) ? object.metadata : void 0,
-      filename: isSet(object.filename) ? globalThis.String(object.filename) : "",
-      mediaType: isSet(object.mediaType) ? globalThis.String(object.mediaType) : isSet(object.media_type) ? globalThis.String(object.media_type) : ""
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.content?.$case === "text") {
-      obj.text = message.content.value;
-    } else if (message.content?.$case === "raw") {
-      obj.raw = base64FromBytes(message.content.value);
-    } else if (message.content?.$case === "url") {
-      obj.url = message.content.value;
-    } else if (message.content?.$case === "data") {
-      obj.data = message.content.value;
-    }
-    if (message.metadata !== void 0) {
-      obj.metadata = message.metadata;
-    }
-    if (message.filename !== "") {
-      obj.filename = message.filename;
-    }
-    if (message.mediaType !== "") {
-      obj.mediaType = message.mediaType;
-    }
-    return obj;
-  }
-};
-var Message = {
-  fromJSON(object) {
-    return {
-      messageId: isSet(object.messageId) ? globalThis.String(object.messageId) : isSet(object.message_id) ? globalThis.String(object.message_id) : "",
-      contextId: isSet(object.contextId) ? globalThis.String(object.contextId) : isSet(object.context_id) ? globalThis.String(object.context_id) : "",
-      taskId: isSet(object.taskId) ? globalThis.String(object.taskId) : isSet(object.task_id) ? globalThis.String(object.task_id) : "",
-      role: isSet(object.role) ? roleFromJSON(object.role) : 0,
-      parts: globalThis.Array.isArray(object?.parts) ? object.parts.map((e) => Part.fromJSON(e)) : [],
-      metadata: isObject2(object.metadata) ? object.metadata : void 0,
-      extensions: globalThis.Array.isArray(object?.extensions) ? object.extensions.map((e) => globalThis.String(e)) : [],
-      referenceTaskIds: globalThis.Array.isArray(object?.referenceTaskIds) ? object.referenceTaskIds.map((e) => globalThis.String(e)) : globalThis.Array.isArray(object?.reference_task_ids) ? object.reference_task_ids.map((e) => globalThis.String(e)) : []
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.messageId !== "") {
-      obj.messageId = message.messageId;
-    }
-    if (message.contextId !== "") {
-      obj.contextId = message.contextId;
-    }
-    if (message.taskId !== "") {
-      obj.taskId = message.taskId;
-    }
-    if (message.role !== 0) {
-      obj.role = roleToJSON(message.role);
-    }
-    if (message.parts?.length) {
-      obj.parts = message.parts.map((e) => Part.toJSON(e));
-    }
-    if (message.metadata !== void 0) {
-      obj.metadata = message.metadata;
-    }
-    if (message.extensions?.length) {
-      obj.extensions = message.extensions;
-    }
-    if (message.referenceTaskIds?.length) {
-      obj.referenceTaskIds = message.referenceTaskIds;
-    }
-    return obj;
-  }
-};
-var Artifact = {
-  fromJSON(object) {
-    return {
-      artifactId: isSet(object.artifactId) ? globalThis.String(object.artifactId) : isSet(object.artifact_id) ? globalThis.String(object.artifact_id) : "",
-      name: isSet(object.name) ? globalThis.String(object.name) : "",
-      description: isSet(object.description) ? globalThis.String(object.description) : "",
-      parts: globalThis.Array.isArray(object?.parts) ? object.parts.map((e) => Part.fromJSON(e)) : [],
-      metadata: isObject2(object.metadata) ? object.metadata : void 0,
-      extensions: globalThis.Array.isArray(object?.extensions) ? object.extensions.map((e) => globalThis.String(e)) : []
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.artifactId !== "") {
-      obj.artifactId = message.artifactId;
-    }
-    if (message.name !== "") {
-      obj.name = message.name;
-    }
-    if (message.description !== "") {
-      obj.description = message.description;
-    }
-    if (message.parts?.length) {
-      obj.parts = message.parts.map((e) => Part.toJSON(e));
-    }
-    if (message.metadata !== void 0) {
-      obj.metadata = message.metadata;
-    }
-    if (message.extensions?.length) {
-      obj.extensions = message.extensions;
-    }
-    return obj;
-  }
-};
-var TaskStatusUpdateEvent = {
-  fromJSON(object) {
-    return {
-      taskId: isSet(object.taskId) ? globalThis.String(object.taskId) : isSet(object.task_id) ? globalThis.String(object.task_id) : "",
-      contextId: isSet(object.contextId) ? globalThis.String(object.contextId) : isSet(object.context_id) ? globalThis.String(object.context_id) : "",
-      status: isSet(object.status) ? TaskStatus.fromJSON(object.status) : void 0,
-      metadata: isObject2(object.metadata) ? object.metadata : void 0
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.taskId !== "") {
-      obj.taskId = message.taskId;
-    }
-    if (message.contextId !== "") {
-      obj.contextId = message.contextId;
-    }
-    if (message.status !== void 0) {
-      obj.status = TaskStatus.toJSON(message.status);
-    }
-    if (message.metadata !== void 0) {
-      obj.metadata = message.metadata;
-    }
-    return obj;
-  }
-};
-var TaskArtifactUpdateEvent = {
-  fromJSON(object) {
-    return {
-      taskId: isSet(object.taskId) ? globalThis.String(object.taskId) : isSet(object.task_id) ? globalThis.String(object.task_id) : "",
-      contextId: isSet(object.contextId) ? globalThis.String(object.contextId) : isSet(object.context_id) ? globalThis.String(object.context_id) : "",
-      artifact: isSet(object.artifact) ? Artifact.fromJSON(object.artifact) : void 0,
-      append: isSet(object.append) ? globalThis.Boolean(object.append) : false,
-      lastChunk: isSet(object.lastChunk) ? globalThis.Boolean(object.lastChunk) : isSet(object.last_chunk) ? globalThis.Boolean(object.last_chunk) : false,
-      metadata: isObject2(object.metadata) ? object.metadata : void 0
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.taskId !== "") {
-      obj.taskId = message.taskId;
-    }
-    if (message.contextId !== "") {
-      obj.contextId = message.contextId;
-    }
-    if (message.artifact !== void 0) {
-      obj.artifact = Artifact.toJSON(message.artifact);
-    }
-    if (message.append !== false) {
-      obj.append = message.append;
-    }
-    if (message.lastChunk !== false) {
-      obj.lastChunk = message.lastChunk;
-    }
-    if (message.metadata !== void 0) {
-      obj.metadata = message.metadata;
-    }
-    return obj;
-  }
-};
-var AuthenticationInfo = {
-  fromJSON(object) {
-    return {
-      scheme: isSet(object.scheme) ? globalThis.String(object.scheme) : "",
-      credentials: isSet(object.credentials) ? globalThis.String(object.credentials) : ""
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.scheme !== "") {
-      obj.scheme = message.scheme;
-    }
-    if (message.credentials !== "") {
-      obj.credentials = message.credentials;
-    }
-    return obj;
-  }
-};
-var AgentInterface = {
-  fromJSON(object) {
-    return {
-      url: isSet(object.url) ? globalThis.String(object.url) : "",
-      protocolBinding: isSet(object.protocolBinding) ? globalThis.String(object.protocolBinding) : isSet(object.protocol_binding) ? globalThis.String(object.protocol_binding) : "",
-      tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "",
-      protocolVersion: isSet(object.protocolVersion) ? globalThis.String(object.protocolVersion) : isSet(object.protocol_version) ? globalThis.String(object.protocol_version) : ""
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.url !== "") {
-      obj.url = message.url;
-    }
-    if (message.protocolBinding !== "") {
-      obj.protocolBinding = message.protocolBinding;
-    }
-    if (message.tenant !== "") {
-      obj.tenant = message.tenant;
-    }
-    if (message.protocolVersion !== "") {
-      obj.protocolVersion = message.protocolVersion;
-    }
-    return obj;
-  }
-};
-var AgentCard = {
-  fromJSON(object) {
-    return {
-      name: isSet(object.name) ? globalThis.String(object.name) : "",
-      description: isSet(object.description) ? globalThis.String(object.description) : "",
-      supportedInterfaces: globalThis.Array.isArray(object?.supportedInterfaces) ? object.supportedInterfaces.map((e) => AgentInterface.fromJSON(e)) : globalThis.Array.isArray(object?.supported_interfaces) ? object.supported_interfaces.map((e) => AgentInterface.fromJSON(e)) : [],
-      provider: isSet(object.provider) ? AgentProvider.fromJSON(object.provider) : void 0,
-      version: isSet(object.version) ? globalThis.String(object.version) : "",
-      documentationUrl: isSet(object.documentationUrl) ? globalThis.String(object.documentationUrl) : isSet(object.documentation_url) ? globalThis.String(object.documentation_url) : void 0,
-      capabilities: isSet(object.capabilities) ? AgentCapabilities.fromJSON(object.capabilities) : void 0,
-      securitySchemes: isObject2(object.securitySchemes) ? globalThis.Object.entries(object.securitySchemes).reduce(
-        (acc, [key, value]) => {
-          acc[key] = SecurityScheme.fromJSON(value);
-          return acc;
-        },
-        {}
-      ) : isObject2(object.security_schemes) ? globalThis.Object.entries(object.security_schemes).reduce(
-        (acc, [key, value]) => {
-          acc[key] = SecurityScheme.fromJSON(value);
-          return acc;
-        },
-        {}
-      ) : {},
-      securityRequirements: globalThis.Array.isArray(object?.securityRequirements) ? object.securityRequirements.map((e) => SecurityRequirement.fromJSON(e)) : globalThis.Array.isArray(object?.security_requirements) ? object.security_requirements.map((e) => SecurityRequirement.fromJSON(e)) : [],
-      defaultInputModes: globalThis.Array.isArray(object?.defaultInputModes) ? object.defaultInputModes.map((e) => globalThis.String(e)) : globalThis.Array.isArray(object?.default_input_modes) ? object.default_input_modes.map((e) => globalThis.String(e)) : [],
-      defaultOutputModes: globalThis.Array.isArray(object?.defaultOutputModes) ? object.defaultOutputModes.map((e) => globalThis.String(e)) : globalThis.Array.isArray(object?.default_output_modes) ? object.default_output_modes.map((e) => globalThis.String(e)) : [],
-      skills: globalThis.Array.isArray(object?.skills) ? object.skills.map((e) => AgentSkill.fromJSON(e)) : [],
-      signatures: globalThis.Array.isArray(object?.signatures) ? object.signatures.map((e) => AgentCardSignature.fromJSON(e)) : [],
-      iconUrl: isSet(object.iconUrl) ? globalThis.String(object.iconUrl) : isSet(object.icon_url) ? globalThis.String(object.icon_url) : void 0
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.name !== "") {
-      obj.name = message.name;
-    }
-    if (message.description !== "") {
-      obj.description = message.description;
-    }
-    if (message.supportedInterfaces?.length) {
-      obj.supportedInterfaces = message.supportedInterfaces.map((e) => AgentInterface.toJSON(e));
-    }
-    if (message.provider !== void 0) {
-      obj.provider = AgentProvider.toJSON(message.provider);
-    }
-    if (message.version !== "") {
-      obj.version = message.version;
-    }
-    if (message.documentationUrl !== void 0) {
-      obj.documentationUrl = message.documentationUrl;
-    }
-    if (message.capabilities !== void 0) {
-      obj.capabilities = AgentCapabilities.toJSON(message.capabilities);
-    }
-    if (message.securitySchemes) {
-      const entries = globalThis.Object.entries(message.securitySchemes);
-      if (entries.length > 0) {
-        obj.securitySchemes = {};
-        entries.forEach(([k, v]) => {
-          obj.securitySchemes[k] = SecurityScheme.toJSON(v);
-        });
-      }
-    }
-    if (message.securityRequirements?.length) {
-      obj.securityRequirements = message.securityRequirements.map((e) => SecurityRequirement.toJSON(e));
-    }
-    if (message.defaultInputModes?.length) {
-      obj.defaultInputModes = message.defaultInputModes;
-    }
-    if (message.defaultOutputModes?.length) {
-      obj.defaultOutputModes = message.defaultOutputModes;
-    }
-    if (message.skills?.length) {
-      obj.skills = message.skills.map((e) => AgentSkill.toJSON(e));
-    }
-    if (message.signatures?.length) {
-      obj.signatures = message.signatures.map((e) => AgentCardSignature.toJSON(e));
-    }
-    if (message.iconUrl !== void 0) {
-      obj.iconUrl = message.iconUrl;
-    }
-    return obj;
-  }
-};
-var AgentProvider = {
-  fromJSON(object) {
-    return {
-      url: isSet(object.url) ? globalThis.String(object.url) : "",
-      organization: isSet(object.organization) ? globalThis.String(object.organization) : ""
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.url !== "") {
-      obj.url = message.url;
-    }
-    if (message.organization !== "") {
-      obj.organization = message.organization;
-    }
-    return obj;
-  }
-};
-var AgentCapabilities = {
-  fromJSON(object) {
-    return {
-      streaming: isSet(object.streaming) ? globalThis.Boolean(object.streaming) : void 0,
-      pushNotifications: isSet(object.pushNotifications) ? globalThis.Boolean(object.pushNotifications) : isSet(object.push_notifications) ? globalThis.Boolean(object.push_notifications) : void 0,
-      extensions: globalThis.Array.isArray(object?.extensions) ? object.extensions.map((e) => AgentExtension.fromJSON(e)) : [],
-      extendedAgentCard: isSet(object.extendedAgentCard) ? globalThis.Boolean(object.extendedAgentCard) : isSet(object.extended_agent_card) ? globalThis.Boolean(object.extended_agent_card) : void 0
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.streaming !== void 0) {
-      obj.streaming = message.streaming;
-    }
-    if (message.pushNotifications !== void 0) {
-      obj.pushNotifications = message.pushNotifications;
-    }
-    if (message.extensions?.length) {
-      obj.extensions = message.extensions.map((e) => AgentExtension.toJSON(e));
-    }
-    if (message.extendedAgentCard !== void 0) {
-      obj.extendedAgentCard = message.extendedAgentCard;
-    }
-    return obj;
-  }
-};
-var AgentExtension = {
-  fromJSON(object) {
-    return {
-      uri: isSet(object.uri) ? globalThis.String(object.uri) : "",
-      description: isSet(object.description) ? globalThis.String(object.description) : "",
-      required: isSet(object.required) ? globalThis.Boolean(object.required) : false,
-      params: isObject2(object.params) ? object.params : void 0
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.uri !== "") {
-      obj.uri = message.uri;
-    }
-    if (message.description !== "") {
-      obj.description = message.description;
-    }
-    if (message.required !== false) {
-      obj.required = message.required;
-    }
-    if (message.params !== void 0) {
-      obj.params = message.params;
-    }
-    return obj;
-  }
-};
-var AgentSkill = {
-  fromJSON(object) {
-    return {
-      id: isSet(object.id) ? globalThis.String(object.id) : "",
-      name: isSet(object.name) ? globalThis.String(object.name) : "",
-      description: isSet(object.description) ? globalThis.String(object.description) : "",
-      tags: globalThis.Array.isArray(object?.tags) ? object.tags.map((e) => globalThis.String(e)) : [],
-      examples: globalThis.Array.isArray(object?.examples) ? object.examples.map((e) => globalThis.String(e)) : [],
-      inputModes: globalThis.Array.isArray(object?.inputModes) ? object.inputModes.map((e) => globalThis.String(e)) : globalThis.Array.isArray(object?.input_modes) ? object.input_modes.map((e) => globalThis.String(e)) : [],
-      outputModes: globalThis.Array.isArray(object?.outputModes) ? object.outputModes.map((e) => globalThis.String(e)) : globalThis.Array.isArray(object?.output_modes) ? object.output_modes.map((e) => globalThis.String(e)) : [],
-      securityRequirements: globalThis.Array.isArray(object?.securityRequirements) ? object.securityRequirements.map((e) => SecurityRequirement.fromJSON(e)) : globalThis.Array.isArray(object?.security_requirements) ? object.security_requirements.map((e) => SecurityRequirement.fromJSON(e)) : []
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.id !== "") {
-      obj.id = message.id;
-    }
-    if (message.name !== "") {
-      obj.name = message.name;
-    }
-    if (message.description !== "") {
-      obj.description = message.description;
-    }
-    if (message.tags?.length) {
-      obj.tags = message.tags;
-    }
-    if (message.examples?.length) {
-      obj.examples = message.examples;
-    }
-    if (message.inputModes?.length) {
-      obj.inputModes = message.inputModes;
-    }
-    if (message.outputModes?.length) {
-      obj.outputModes = message.outputModes;
-    }
-    if (message.securityRequirements?.length) {
-      obj.securityRequirements = message.securityRequirements.map((e) => SecurityRequirement.toJSON(e));
-    }
-    return obj;
-  }
-};
-var AgentCardSignature = {
-  fromJSON(object) {
-    return {
-      protected: isSet(object.protected) ? globalThis.String(object.protected) : "",
-      signature: isSet(object.signature) ? globalThis.String(object.signature) : "",
-      header: isObject2(object.header) ? object.header : void 0
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.protected !== "") {
-      obj.protected = message.protected;
-    }
-    if (message.signature !== "") {
-      obj.signature = message.signature;
-    }
-    if (message.header !== void 0) {
-      obj.header = message.header;
-    }
-    return obj;
-  }
-};
-var TaskPushNotificationConfig = {
-  fromJSON(object) {
-    return {
-      tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "",
-      id: isSet(object.id) ? globalThis.String(object.id) : "",
-      taskId: isSet(object.taskId) ? globalThis.String(object.taskId) : isSet(object.task_id) ? globalThis.String(object.task_id) : "",
-      url: isSet(object.url) ? globalThis.String(object.url) : "",
-      token: isSet(object.token) ? globalThis.String(object.token) : "",
-      authentication: isSet(object.authentication) ? AuthenticationInfo.fromJSON(object.authentication) : void 0
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.tenant !== "") {
-      obj.tenant = message.tenant;
-    }
-    if (message.id !== "") {
-      obj.id = message.id;
-    }
-    if (message.taskId !== "") {
-      obj.taskId = message.taskId;
-    }
-    if (message.url !== "") {
-      obj.url = message.url;
-    }
-    if (message.token !== "") {
-      obj.token = message.token;
-    }
-    if (message.authentication !== void 0) {
-      obj.authentication = AuthenticationInfo.toJSON(message.authentication);
-    }
-    return obj;
-  }
-};
-var StringList = {
-  fromJSON(object) {
-    return { list: globalThis.Array.isArray(object?.list) ? object.list.map((e) => globalThis.String(e)) : [] };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.list?.length) {
-      obj.list = message.list;
-    }
-    return obj;
-  }
-};
-var SecurityRequirement = {
-  fromJSON(object) {
-    return {
-      schemes: isObject2(object.schemes) ? globalThis.Object.entries(object.schemes).reduce(
-        (acc, [key, value]) => {
-          acc[key] = StringList.fromJSON(value);
-          return acc;
-        },
-        {}
-      ) : {}
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.schemes) {
-      const entries = globalThis.Object.entries(message.schemes);
-      if (entries.length > 0) {
-        obj.schemes = {};
-        entries.forEach(([k, v]) => {
-          obj.schemes[k] = StringList.toJSON(v);
-        });
-      }
-    }
-    return obj;
-  }
-};
-var SecurityScheme = {
-  fromJSON(object) {
-    return {
-      scheme: isSet(object.apiKeySecurityScheme) ? { $case: "apiKeySecurityScheme", value: APIKeySecurityScheme.fromJSON(object.apiKeySecurityScheme) } : isSet(object.api_key_security_scheme) ? { $case: "apiKeySecurityScheme", value: APIKeySecurityScheme.fromJSON(object.api_key_security_scheme) } : isSet(object.httpAuthSecurityScheme) ? { $case: "httpAuthSecurityScheme", value: HTTPAuthSecurityScheme.fromJSON(object.httpAuthSecurityScheme) } : isSet(object.http_auth_security_scheme) ? { $case: "httpAuthSecurityScheme", value: HTTPAuthSecurityScheme.fromJSON(object.http_auth_security_scheme) } : isSet(object.oauth2SecurityScheme) ? { $case: "oauth2SecurityScheme", value: OAuth2SecurityScheme.fromJSON(object.oauth2SecurityScheme) } : isSet(object.oauth2_security_scheme) ? { $case: "oauth2SecurityScheme", value: OAuth2SecurityScheme.fromJSON(object.oauth2_security_scheme) } : isSet(object.openIdConnectSecurityScheme) ? {
-        $case: "openIdConnectSecurityScheme",
-        value: OpenIdConnectSecurityScheme.fromJSON(object.openIdConnectSecurityScheme)
-      } : isSet(object.open_id_connect_security_scheme) ? {
-        $case: "openIdConnectSecurityScheme",
-        value: OpenIdConnectSecurityScheme.fromJSON(object.open_id_connect_security_scheme)
-      } : isSet(object.mtlsSecurityScheme) ? { $case: "mtlsSecurityScheme", value: MutualTlsSecurityScheme.fromJSON(object.mtlsSecurityScheme) } : isSet(object.mtls_security_scheme) ? { $case: "mtlsSecurityScheme", value: MutualTlsSecurityScheme.fromJSON(object.mtls_security_scheme) } : void 0
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.scheme?.$case === "apiKeySecurityScheme") {
-      obj.apiKeySecurityScheme = APIKeySecurityScheme.toJSON(message.scheme.value);
-    } else if (message.scheme?.$case === "httpAuthSecurityScheme") {
-      obj.httpAuthSecurityScheme = HTTPAuthSecurityScheme.toJSON(message.scheme.value);
-    } else if (message.scheme?.$case === "oauth2SecurityScheme") {
-      obj.oauth2SecurityScheme = OAuth2SecurityScheme.toJSON(message.scheme.value);
-    } else if (message.scheme?.$case === "openIdConnectSecurityScheme") {
-      obj.openIdConnectSecurityScheme = OpenIdConnectSecurityScheme.toJSON(message.scheme.value);
-    } else if (message.scheme?.$case === "mtlsSecurityScheme") {
-      obj.mtlsSecurityScheme = MutualTlsSecurityScheme.toJSON(message.scheme.value);
-    }
-    return obj;
-  }
-};
-var APIKeySecurityScheme = {
-  fromJSON(object) {
-    return {
-      description: isSet(object.description) ? globalThis.String(object.description) : "",
-      location: isSet(object.location) ? globalThis.String(object.location) : "",
-      name: isSet(object.name) ? globalThis.String(object.name) : ""
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.description !== "") {
-      obj.description = message.description;
-    }
-    if (message.location !== "") {
-      obj.location = message.location;
-    }
-    if (message.name !== "") {
-      obj.name = message.name;
-    }
-    return obj;
-  }
-};
-var HTTPAuthSecurityScheme = {
-  fromJSON(object) {
-    return {
-      description: isSet(object.description) ? globalThis.String(object.description) : "",
-      scheme: isSet(object.scheme) ? globalThis.String(object.scheme) : "",
-      bearerFormat: isSet(object.bearerFormat) ? globalThis.String(object.bearerFormat) : isSet(object.bearer_format) ? globalThis.String(object.bearer_format) : ""
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.description !== "") {
-      obj.description = message.description;
-    }
-    if (message.scheme !== "") {
-      obj.scheme = message.scheme;
-    }
-    if (message.bearerFormat !== "") {
-      obj.bearerFormat = message.bearerFormat;
-    }
-    return obj;
-  }
-};
-var OAuth2SecurityScheme = {
-  fromJSON(object) {
-    return {
-      description: isSet(object.description) ? globalThis.String(object.description) : "",
-      flows: isSet(object.flows) ? OAuthFlows.fromJSON(object.flows) : void 0,
-      oauth2MetadataUrl: isSet(object.oauth2MetadataUrl) ? globalThis.String(object.oauth2MetadataUrl) : isSet(object.oauth2_metadata_url) ? globalThis.String(object.oauth2_metadata_url) : ""
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.description !== "") {
-      obj.description = message.description;
-    }
-    if (message.flows !== void 0) {
-      obj.flows = OAuthFlows.toJSON(message.flows);
-    }
-    if (message.oauth2MetadataUrl !== "") {
-      obj.oauth2MetadataUrl = message.oauth2MetadataUrl;
-    }
-    return obj;
-  }
-};
-var OpenIdConnectSecurityScheme = {
-  fromJSON(object) {
-    return {
-      description: isSet(object.description) ? globalThis.String(object.description) : "",
-      openIdConnectUrl: isSet(object.openIdConnectUrl) ? globalThis.String(object.openIdConnectUrl) : isSet(object.open_id_connect_url) ? globalThis.String(object.open_id_connect_url) : ""
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.description !== "") {
-      obj.description = message.description;
-    }
-    if (message.openIdConnectUrl !== "") {
-      obj.openIdConnectUrl = message.openIdConnectUrl;
-    }
-    return obj;
-  }
-};
-var MutualTlsSecurityScheme = {
-  fromJSON(object) {
-    return { description: isSet(object.description) ? globalThis.String(object.description) : "" };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.description !== "") {
-      obj.description = message.description;
-    }
-    return obj;
-  }
-};
-var OAuthFlows = {
-  fromJSON(object) {
-    return {
-      flow: isSet(object.authorizationCode) ? { $case: "authorizationCode", value: AuthorizationCodeOAuthFlow.fromJSON(object.authorizationCode) } : isSet(object.authorization_code) ? { $case: "authorizationCode", value: AuthorizationCodeOAuthFlow.fromJSON(object.authorization_code) } : isSet(object.clientCredentials) ? { $case: "clientCredentials", value: ClientCredentialsOAuthFlow.fromJSON(object.clientCredentials) } : isSet(object.client_credentials) ? { $case: "clientCredentials", value: ClientCredentialsOAuthFlow.fromJSON(object.client_credentials) } : isSet(object.implicit) ? { $case: "implicit", value: ImplicitOAuthFlow.fromJSON(object.implicit) } : isSet(object.password) ? { $case: "password", value: PasswordOAuthFlow.fromJSON(object.password) } : isSet(object.deviceCode) ? { $case: "deviceCode", value: DeviceCodeOAuthFlow.fromJSON(object.deviceCode) } : isSet(object.device_code) ? { $case: "deviceCode", value: DeviceCodeOAuthFlow.fromJSON(object.device_code) } : void 0
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.flow?.$case === "authorizationCode") {
-      obj.authorizationCode = AuthorizationCodeOAuthFlow.toJSON(message.flow.value);
-    } else if (message.flow?.$case === "clientCredentials") {
-      obj.clientCredentials = ClientCredentialsOAuthFlow.toJSON(message.flow.value);
-    } else if (message.flow?.$case === "implicit") {
-      obj.implicit = ImplicitOAuthFlow.toJSON(message.flow.value);
-    } else if (message.flow?.$case === "password") {
-      obj.password = PasswordOAuthFlow.toJSON(message.flow.value);
-    } else if (message.flow?.$case === "deviceCode") {
-      obj.deviceCode = DeviceCodeOAuthFlow.toJSON(message.flow.value);
-    }
-    return obj;
-  }
-};
-var AuthorizationCodeOAuthFlow = {
-  fromJSON(object) {
-    return {
-      authorizationUrl: isSet(object.authorizationUrl) ? globalThis.String(object.authorizationUrl) : isSet(object.authorization_url) ? globalThis.String(object.authorization_url) : "",
-      tokenUrl: isSet(object.tokenUrl) ? globalThis.String(object.tokenUrl) : isSet(object.token_url) ? globalThis.String(object.token_url) : "",
-      refreshUrl: isSet(object.refreshUrl) ? globalThis.String(object.refreshUrl) : isSet(object.refresh_url) ? globalThis.String(object.refresh_url) : "",
-      scopes: isObject2(object.scopes) ? globalThis.Object.entries(object.scopes).reduce(
-        (acc, [key, value]) => {
-          acc[key] = globalThis.String(value);
-          return acc;
-        },
-        {}
-      ) : {},
-      pkceRequired: isSet(object.pkceRequired) ? globalThis.Boolean(object.pkceRequired) : isSet(object.pkce_required) ? globalThis.Boolean(object.pkce_required) : false
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.authorizationUrl !== "") {
-      obj.authorizationUrl = message.authorizationUrl;
-    }
-    if (message.tokenUrl !== "") {
-      obj.tokenUrl = message.tokenUrl;
-    }
-    if (message.refreshUrl !== "") {
-      obj.refreshUrl = message.refreshUrl;
-    }
-    if (message.scopes) {
-      const entries = globalThis.Object.entries(message.scopes);
-      if (entries.length > 0) {
-        obj.scopes = {};
-        entries.forEach(([k, v]) => {
-          obj.scopes[k] = v;
-        });
-      }
-    }
-    if (message.pkceRequired !== false) {
-      obj.pkceRequired = message.pkceRequired;
-    }
-    return obj;
-  }
-};
-var ClientCredentialsOAuthFlow = {
-  fromJSON(object) {
-    return {
-      tokenUrl: isSet(object.tokenUrl) ? globalThis.String(object.tokenUrl) : isSet(object.token_url) ? globalThis.String(object.token_url) : "",
-      refreshUrl: isSet(object.refreshUrl) ? globalThis.String(object.refreshUrl) : isSet(object.refresh_url) ? globalThis.String(object.refresh_url) : "",
-      scopes: isObject2(object.scopes) ? globalThis.Object.entries(object.scopes).reduce(
-        (acc, [key, value]) => {
-          acc[key] = globalThis.String(value);
-          return acc;
-        },
-        {}
-      ) : {}
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.tokenUrl !== "") {
-      obj.tokenUrl = message.tokenUrl;
-    }
-    if (message.refreshUrl !== "") {
-      obj.refreshUrl = message.refreshUrl;
-    }
-    if (message.scopes) {
-      const entries = globalThis.Object.entries(message.scopes);
-      if (entries.length > 0) {
-        obj.scopes = {};
-        entries.forEach(([k, v]) => {
-          obj.scopes[k] = v;
-        });
-      }
-    }
-    return obj;
-  }
-};
-var ImplicitOAuthFlow = {
-  fromJSON(object) {
-    return {
-      authorizationUrl: isSet(object.authorizationUrl) ? globalThis.String(object.authorizationUrl) : isSet(object.authorization_url) ? globalThis.String(object.authorization_url) : "",
-      refreshUrl: isSet(object.refreshUrl) ? globalThis.String(object.refreshUrl) : isSet(object.refresh_url) ? globalThis.String(object.refresh_url) : "",
-      scopes: isObject2(object.scopes) ? globalThis.Object.entries(object.scopes).reduce(
-        (acc, [key, value]) => {
-          acc[key] = globalThis.String(value);
-          return acc;
-        },
-        {}
-      ) : {}
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.authorizationUrl !== "") {
-      obj.authorizationUrl = message.authorizationUrl;
-    }
-    if (message.refreshUrl !== "") {
-      obj.refreshUrl = message.refreshUrl;
-    }
-    if (message.scopes) {
-      const entries = globalThis.Object.entries(message.scopes);
-      if (entries.length > 0) {
-        obj.scopes = {};
-        entries.forEach(([k, v]) => {
-          obj.scopes[k] = v;
-        });
-      }
-    }
-    return obj;
-  }
-};
-var PasswordOAuthFlow = {
-  fromJSON(object) {
-    return {
-      tokenUrl: isSet(object.tokenUrl) ? globalThis.String(object.tokenUrl) : isSet(object.token_url) ? globalThis.String(object.token_url) : "",
-      refreshUrl: isSet(object.refreshUrl) ? globalThis.String(object.refreshUrl) : isSet(object.refresh_url) ? globalThis.String(object.refresh_url) : "",
-      scopes: isObject2(object.scopes) ? globalThis.Object.entries(object.scopes).reduce(
-        (acc, [key, value]) => {
-          acc[key] = globalThis.String(value);
-          return acc;
-        },
-        {}
-      ) : {}
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.tokenUrl !== "") {
-      obj.tokenUrl = message.tokenUrl;
-    }
-    if (message.refreshUrl !== "") {
-      obj.refreshUrl = message.refreshUrl;
-    }
-    if (message.scopes) {
-      const entries = globalThis.Object.entries(message.scopes);
-      if (entries.length > 0) {
-        obj.scopes = {};
-        entries.forEach(([k, v]) => {
-          obj.scopes[k] = v;
-        });
-      }
-    }
-    return obj;
-  }
-};
-var DeviceCodeOAuthFlow = {
-  fromJSON(object) {
-    return {
-      deviceAuthorizationUrl: isSet(object.deviceAuthorizationUrl) ? globalThis.String(object.deviceAuthorizationUrl) : isSet(object.device_authorization_url) ? globalThis.String(object.device_authorization_url) : "",
-      tokenUrl: isSet(object.tokenUrl) ? globalThis.String(object.tokenUrl) : isSet(object.token_url) ? globalThis.String(object.token_url) : "",
-      refreshUrl: isSet(object.refreshUrl) ? globalThis.String(object.refreshUrl) : isSet(object.refresh_url) ? globalThis.String(object.refresh_url) : "",
-      scopes: isObject2(object.scopes) ? globalThis.Object.entries(object.scopes).reduce(
-        (acc, [key, value]) => {
-          acc[key] = globalThis.String(value);
-          return acc;
-        },
-        {}
-      ) : {}
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.deviceAuthorizationUrl !== "") {
-      obj.deviceAuthorizationUrl = message.deviceAuthorizationUrl;
-    }
-    if (message.tokenUrl !== "") {
-      obj.tokenUrl = message.tokenUrl;
-    }
-    if (message.refreshUrl !== "") {
-      obj.refreshUrl = message.refreshUrl;
-    }
-    if (message.scopes) {
-      const entries = globalThis.Object.entries(message.scopes);
-      if (entries.length > 0) {
-        obj.scopes = {};
-        entries.forEach(([k, v]) => {
-          obj.scopes[k] = v;
-        });
-      }
-    }
-    return obj;
-  }
-};
-var SendMessageRequest = {
-  fromJSON(object) {
-    return {
-      tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "",
-      message: isSet(object.message) ? Message.fromJSON(object.message) : void 0,
-      configuration: isSet(object.configuration) ? SendMessageConfiguration.fromJSON(object.configuration) : void 0,
-      metadata: isObject2(object.metadata) ? object.metadata : void 0
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.tenant !== "") {
-      obj.tenant = message.tenant;
-    }
-    if (message.message !== void 0) {
-      obj.message = Message.toJSON(message.message);
-    }
-    if (message.configuration !== void 0) {
-      obj.configuration = SendMessageConfiguration.toJSON(message.configuration);
-    }
-    if (message.metadata !== void 0) {
-      obj.metadata = message.metadata;
-    }
-    return obj;
-  }
-};
-var GetTaskRequest = {
-  fromJSON(object) {
-    return {
-      tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "",
-      id: isSet(object.id) ? globalThis.String(object.id) : "",
-      historyLength: isSet(object.historyLength) ? globalThis.Number(object.historyLength) : isSet(object.history_length) ? globalThis.Number(object.history_length) : void 0
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.tenant !== "") {
-      obj.tenant = message.tenant;
-    }
-    if (message.id !== "") {
-      obj.id = message.id;
-    }
-    if (message.historyLength !== void 0) {
-      obj.historyLength = Math.round(message.historyLength);
-    }
-    return obj;
-  }
-};
-var ListTasksRequest = {
-  fromJSON(object) {
-    return {
-      tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "",
-      contextId: isSet(object.contextId) ? globalThis.String(object.contextId) : isSet(object.context_id) ? globalThis.String(object.context_id) : "",
-      status: isSet(object.status) ? taskStateFromJSON(object.status) : 0,
-      pageSize: isSet(object.pageSize) ? globalThis.Number(object.pageSize) : isSet(object.page_size) ? globalThis.Number(object.page_size) : void 0,
-      pageToken: isSet(object.pageToken) ? globalThis.String(object.pageToken) : isSet(object.page_token) ? globalThis.String(object.page_token) : "",
-      historyLength: isSet(object.historyLength) ? globalThis.Number(object.historyLength) : isSet(object.history_length) ? globalThis.Number(object.history_length) : void 0,
-      statusTimestampAfter: isSet(object.statusTimestampAfter) ? globalThis.String(object.statusTimestampAfter) : isSet(object.status_timestamp_after) ? globalThis.String(object.status_timestamp_after) : void 0,
-      includeArtifacts: isSet(object.includeArtifacts) ? globalThis.Boolean(object.includeArtifacts) : isSet(object.include_artifacts) ? globalThis.Boolean(object.include_artifacts) : void 0
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.tenant !== "") {
-      obj.tenant = message.tenant;
-    }
-    if (message.contextId !== "") {
-      obj.contextId = message.contextId;
-    }
-    if (message.status !== 0) {
-      obj.status = taskStateToJSON(message.status);
-    }
-    if (message.pageSize !== void 0) {
-      obj.pageSize = Math.round(message.pageSize);
-    }
-    if (message.pageToken !== "") {
-      obj.pageToken = message.pageToken;
-    }
-    if (message.historyLength !== void 0) {
-      obj.historyLength = Math.round(message.historyLength);
-    }
-    if (message.statusTimestampAfter !== void 0) {
-      obj.statusTimestampAfter = message.statusTimestampAfter;
-    }
-    if (message.includeArtifacts !== void 0) {
-      obj.includeArtifacts = message.includeArtifacts;
-    }
-    return obj;
-  }
-};
-var ListTasksResponse = {
-  fromJSON(object) {
-    return {
-      tasks: globalThis.Array.isArray(object?.tasks) ? object.tasks.map((e) => Task.fromJSON(e)) : [],
-      nextPageToken: isSet(object.nextPageToken) ? globalThis.String(object.nextPageToken) : isSet(object.next_page_token) ? globalThis.String(object.next_page_token) : "",
-      pageSize: isSet(object.pageSize) ? globalThis.Number(object.pageSize) : isSet(object.page_size) ? globalThis.Number(object.page_size) : 0,
-      totalSize: isSet(object.totalSize) ? globalThis.Number(object.totalSize) : isSet(object.total_size) ? globalThis.Number(object.total_size) : 0
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.tasks?.length) {
-      obj.tasks = message.tasks.map((e) => Task.toJSON(e));
-    }
-    if (message.nextPageToken !== "") {
-      obj.nextPageToken = message.nextPageToken;
-    }
-    if (message.pageSize !== 0) {
-      obj.pageSize = Math.round(message.pageSize);
-    }
-    if (message.totalSize !== 0) {
-      obj.totalSize = Math.round(message.totalSize);
-    }
-    return obj;
-  }
-};
-var CancelTaskRequest = {
-  fromJSON(object) {
-    return {
-      tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "",
-      id: isSet(object.id) ? globalThis.String(object.id) : "",
-      metadata: isObject2(object.metadata) ? object.metadata : void 0
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.tenant !== "") {
-      obj.tenant = message.tenant;
-    }
-    if (message.id !== "") {
-      obj.id = message.id;
-    }
-    if (message.metadata !== void 0) {
-      obj.metadata = message.metadata;
-    }
-    return obj;
-  }
-};
-var GetTaskPushNotificationConfigRequest = {
-  fromJSON(object) {
-    return {
-      tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "",
-      taskId: isSet(object.taskId) ? globalThis.String(object.taskId) : isSet(object.task_id) ? globalThis.String(object.task_id) : "",
-      id: isSet(object.id) ? globalThis.String(object.id) : ""
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.tenant !== "") {
-      obj.tenant = message.tenant;
-    }
-    if (message.taskId !== "") {
-      obj.taskId = message.taskId;
-    }
-    if (message.id !== "") {
-      obj.id = message.id;
-    }
-    return obj;
-  }
-};
-var DeleteTaskPushNotificationConfigRequest = {
-  fromJSON(object) {
-    return {
-      tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "",
-      taskId: isSet(object.taskId) ? globalThis.String(object.taskId) : isSet(object.task_id) ? globalThis.String(object.task_id) : "",
-      id: isSet(object.id) ? globalThis.String(object.id) : ""
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.tenant !== "") {
-      obj.tenant = message.tenant;
-    }
-    if (message.taskId !== "") {
-      obj.taskId = message.taskId;
-    }
-    if (message.id !== "") {
-      obj.id = message.id;
-    }
-    return obj;
-  }
-};
-var SubscribeToTaskRequest = {
-  fromJSON(object) {
-    return {
-      tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "",
-      id: isSet(object.id) ? globalThis.String(object.id) : ""
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.tenant !== "") {
-      obj.tenant = message.tenant;
-    }
-    if (message.id !== "") {
-      obj.id = message.id;
-    }
-    return obj;
-  }
-};
-var ListTaskPushNotificationConfigsRequest = {
-  fromJSON(object) {
-    return {
-      tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "",
-      taskId: isSet(object.taskId) ? globalThis.String(object.taskId) : isSet(object.task_id) ? globalThis.String(object.task_id) : "",
-      pageSize: isSet(object.pageSize) ? globalThis.Number(object.pageSize) : isSet(object.page_size) ? globalThis.Number(object.page_size) : 0,
-      pageToken: isSet(object.pageToken) ? globalThis.String(object.pageToken) : isSet(object.page_token) ? globalThis.String(object.page_token) : ""
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.tenant !== "") {
-      obj.tenant = message.tenant;
-    }
-    if (message.taskId !== "") {
-      obj.taskId = message.taskId;
-    }
-    if (message.pageSize !== 0) {
-      obj.pageSize = Math.round(message.pageSize);
-    }
-    if (message.pageToken !== "") {
-      obj.pageToken = message.pageToken;
-    }
-    return obj;
-  }
-};
-var GetExtendedAgentCardRequest = {
-  fromJSON(object) {
-    return { tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "" };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.tenant !== "") {
-      obj.tenant = message.tenant;
-    }
-    return obj;
-  }
-};
-var SendMessageResponse = {
-  fromJSON(object) {
-    return {
-      payload: isSet(object.task) ? { $case: "task", value: Task.fromJSON(object.task) } : isSet(object.message) ? { $case: "message", value: Message.fromJSON(object.message) } : void 0
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.payload?.$case === "task") {
-      obj.task = Task.toJSON(message.payload.value);
-    } else if (message.payload?.$case === "message") {
-      obj.message = Message.toJSON(message.payload.value);
-    }
-    return obj;
-  }
-};
-var StreamResponse = {
-  fromJSON(object) {
-    return {
-      payload: isSet(object.task) ? { $case: "task", value: Task.fromJSON(object.task) } : isSet(object.message) ? { $case: "message", value: Message.fromJSON(object.message) } : isSet(object.statusUpdate) ? { $case: "statusUpdate", value: TaskStatusUpdateEvent.fromJSON(object.statusUpdate) } : isSet(object.status_update) ? { $case: "statusUpdate", value: TaskStatusUpdateEvent.fromJSON(object.status_update) } : isSet(object.artifactUpdate) ? { $case: "artifactUpdate", value: TaskArtifactUpdateEvent.fromJSON(object.artifactUpdate) } : isSet(object.artifact_update) ? { $case: "artifactUpdate", value: TaskArtifactUpdateEvent.fromJSON(object.artifact_update) } : void 0
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.payload?.$case === "task") {
-      obj.task = Task.toJSON(message.payload.value);
-    } else if (message.payload?.$case === "message") {
-      obj.message = Message.toJSON(message.payload.value);
-    } else if (message.payload?.$case === "statusUpdate") {
-      obj.statusUpdate = TaskStatusUpdateEvent.toJSON(message.payload.value);
-    } else if (message.payload?.$case === "artifactUpdate") {
-      obj.artifactUpdate = TaskArtifactUpdateEvent.toJSON(message.payload.value);
-    }
-    return obj;
-  }
-};
-var ListTaskPushNotificationConfigsResponse = {
-  fromJSON(object) {
-    return {
-      configs: globalThis.Array.isArray(object?.configs) ? object.configs.map((e) => TaskPushNotificationConfig.fromJSON(e)) : [],
-      nextPageToken: isSet(object.nextPageToken) ? globalThis.String(object.nextPageToken) : isSet(object.next_page_token) ? globalThis.String(object.next_page_token) : ""
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.configs?.length) {
-      obj.configs = message.configs.map((e) => TaskPushNotificationConfig.toJSON(e));
-    }
-    if (message.nextPageToken !== "") {
-      obj.nextPageToken = message.nextPageToken;
-    }
-    return obj;
-  }
-};
-function bytesFromBase64(b64) {
-  return Uint8Array.from(globalThis.Buffer.from(b64, "base64"));
-}
-function base64FromBytes(arr) {
-  return globalThis.Buffer.from(arr).toString("base64");
-}
-function isObject2(value) {
-  return typeof value === "object" && value !== null;
-}
-function isSet(value) {
-  return value !== null && value !== void 0;
-}
-
-// node_modules/@a2a-js/sdk/dist/chunk-CZ7TTPKW.js
-var AGENT_CARD_PATH = ".well-known/agent-card.json";
-var A2A_VERSION_HEADER = "A2A-Version";
-var A2A_PROTOCOL_VERSION = "1.0";
-var JSON_CONTENT_TYPE = "application/json";
-var A2A_CONTENT_TYPE = "application/a2a+json";
 
 // src/lib/a2aProtocol.ts
 var TERMINAL_TASK_STATES = /* @__PURE__ */ new Set([
@@ -55410,7 +55412,43 @@ function saveCompletedExchange(snapshot, sessionsDirectory = resolveSessionsDire
 
 // src/lib/protocolOutput.ts
 var import_yaml = __toESM(require_dist(), 1);
+function isRecord2(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+function isStreamResponse(value) {
+  if (!isRecord2(value) || !isRecord2(value.payload)) {
+    return false;
+  }
+  if (!("value" in value.payload)) {
+    return false;
+  }
+  return ["task", "message", "statusUpdate", "artifactUpdate"].includes(
+    String(value.payload.$case)
+  );
+}
+function toProtocolJsonValue(value) {
+  if (isStreamResponse(value)) {
+    return StreamResponse.toJSON(value);
+  }
+  if (isMessage(value)) {
+    return Message.toJSON(value);
+  }
+  if (isTask(value)) {
+    return Task.toJSON(value);
+  }
+  if (isTaskStatusUpdateEvent(value)) {
+    return TaskStatusUpdateEvent.toJSON(value);
+  }
+  if (isTaskArtifactUpdateEvent(value)) {
+    return TaskArtifactUpdateEvent.toJSON(value);
+  }
+  return void 0;
+}
 function toPlainValue(value) {
+  const protocolJson = toProtocolJsonValue(value);
+  if (protocolJson !== void 0) {
+    return protocolJson;
+  }
   try {
     return JSON.parse(JSON.stringify(value));
   } catch {
@@ -56043,11 +56081,20 @@ function summarizePartForLog(part) {
     fileMimeType: part.mediaType || void 0
   };
 }
+function roleLabel(role) {
+  if (role === void 0) {
+    return "ROLE_UNSPECIFIED";
+  }
+  if (typeof role === "string") {
+    return role;
+  }
+  return roleToJSON(role);
+}
 function summarizeMessageForLog(message) {
   return {
     kind: "message",
     messageId: message.messageId,
-    role: message.role,
+    role: roleLabel(message.role),
     contextId: message.contextId,
     taskId: message.taskId,
     partCount: message.parts.length,

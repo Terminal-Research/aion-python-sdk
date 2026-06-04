@@ -7,6 +7,7 @@ import type {
 	TaskArtifactUpdateEvent,
 	TaskStatusUpdateEvent
 } from "@a2a-js/sdk";
+import { roleToJSON } from "@a2a-js/sdk";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Box, useApp, useInput } from "ink";
 
@@ -152,11 +153,21 @@ function summarizePartForLog(part: Part): Record<string, unknown> {
 	};
 }
 
+function roleLabel(role: Message["role"] | string | undefined): string {
+	if (role === undefined) {
+		return "ROLE_UNSPECIFIED";
+	}
+	if (typeof role === "string") {
+		return role;
+	}
+	return roleToJSON(role);
+}
+
 function summarizeMessageForLog(message: Message): Record<string, unknown> {
 	return {
 		kind: "message",
 		messageId: message.messageId,
-		role: message.role,
+		role: roleLabel(message.role),
 		contextId: message.contextId,
 		taskId: message.taskId,
 		partCount: message.parts.length,
