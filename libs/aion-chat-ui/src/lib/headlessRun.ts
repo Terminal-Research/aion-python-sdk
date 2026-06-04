@@ -52,6 +52,10 @@ import {
 	getControlPlaneApiBaseUrl
 } from "./environment.js";
 import { formatMessageParts } from "./messageDisplay.js";
+import {
+	createChatSessionLogger,
+	type CreateChatSessionLoggerResult
+} from "./sessionLogger.js";
 import type { ResponseMode } from "./slashCommands.js";
 import { isTerminalTaskState } from "./taskState.js";
 import { getStoredAccessToken } from "./workosAuth.js";
@@ -71,6 +75,7 @@ export interface HeadlessRunDependencies {
 	connectClientImpl?: typeof connectClient;
 	buildMessagePartsImpl?: typeof buildMessageParts;
 	getStoredAccessTokenImpl?: typeof getStoredAccessToken;
+	createChatSessionLoggerImpl?: typeof createChatSessionLogger;
 }
 
 interface OutputEntry {
@@ -96,7 +101,7 @@ function writeDiscoveryErrors(
 	stderr: WritableStreamLike
 ): void {
 	for (const error of discovery.errors) {
-		if (error.source.isDefault) {
+		if (!shouldWriteDiscoveryError(error, discovery)) {
 			continue;
 		}
 		writeLine(
@@ -104,6 +109,19 @@ function writeDiscoveryErrors(
 			`Failed to discover agents from ${error.source.description}: ${error.error ?? error.source.lastError ?? "unknown error"}`
 		);
 	}
+}
+
+function shouldWriteDiscoveryError(
+	error: AgentDiscoveryResult["errors"][number],
+	discovery: AgentDiscoveryResult
+): boolean {
+	if (error.source.type === "registry") {
+		return true;
+	}
+	if (!error.source.isDefault) {
+		return true;
+	}
+	return discovery.agents.length === 0;
 }
 
 function normalizeSelector(value: string): string {
@@ -139,10 +157,48 @@ function formatAgentCandidates(agents: DiscoveredAgentRecord[]): string {
 	return agents.slice(0, 10).map(formatAgentCandidate).join(", ");
 }
 
+function pluralizeAgents(count: number): string {
+	return count === 1 ? "1 agent" : `${count} agents`;
+}
+
+function formatSourceStatuses(discovery: AgentDiscoveryResult): string {
+	if (discovery.sources.length === 0) {
+		return "none";
+	}
+
+	const errorsBySourceKey = new Map(
+		discovery.errors.map((error) => [error.source.sourceKey, error])
+	);
+	const agentCountsBySourceKey = new Map<string, number>();
+	for (const agent of discovery.agents) {
+		agentCountsBySourceKey.set(
+			agent.sourceKey,
+			(agentCountsBySourceKey.get(agent.sourceKey) ?? 0) + 1
+		);
+	}
+
+	return discovery.sources
+		.map((source) => {
+			const error = errorsBySourceKey.get(source.sourceKey);
+			if (error) {
+				return `${source.description}: unavailable (${error.error ?? source.lastError ?? "unknown error"})`;
+			}
+			const agentCount = agentCountsBySourceKey.get(source.sourceKey) ?? 0;
+			const status =
+				source.status === "unchecked" && agentCount > 0
+					? "available"
+					: source.status ?? "unknown";
+			return `${source.description}: ${status} (${pluralizeAgents(agentCount)})`;
+		})
+		.join("; ");
+}
+
 function selectAgentBySelector(
 	agents: DiscoveredAgentRecord[],
 	selector: string,
-	explicitSourceKey: string | undefined
+	explicitSourceKey: string | undefined,
+	discovery: AgentDiscoveryResult,
+	environmentId: AionEnvironmentId
 ): DiscoveredAgentRecord {
 	const normalizedSelector = normalizeSelector(selector);
 	const normalizedWithoutAt = withoutAtPrefix(normalizedSelector);
@@ -165,7 +221,7 @@ function selectAgentBySelector(
 
 	if (matches.length === 0) {
 		throw new Error(
-			`No discovered agent matched '${selector}'. Available agents: ${formatAgentCandidates(agents)}`
+			`No discovered agent matched '${selector}' in ${environmentId}. Available agents: ${formatAgentCandidates(agents)}. Sources checked: ${formatSourceStatuses(discovery)}`
 		);
 	}
 	if (matches.length > 1) {
@@ -177,14 +233,22 @@ function selectAgentBySelector(
 }
 
 function selectHeadlessAgent(
-	agents: DiscoveredAgentRecord[],
+	discovery: AgentDiscoveryResult,
 	options: HeadlessRunOptions,
 	selectedAgentKey: string | undefined,
 	selectedAgentId: string | undefined,
-	explicitSourceKey: string | undefined
+	explicitSourceKey: string | undefined,
+	environmentId: AionEnvironmentId
 ): DiscoveredAgentRecord {
+	const agents = discovery.agents;
 	if (options.agentSelector) {
-		return selectAgentBySelector(agents, options.agentSelector, explicitSourceKey);
+		return selectAgentBySelector(
+			agents,
+			options.agentSelector,
+			explicitSourceKey,
+			discovery,
+			environmentId
+		);
 	}
 
 	const shouldIgnoreSavedSelection = Boolean(explicitSourceKey && !options.agentId);
@@ -197,10 +261,22 @@ function selectHeadlessAgent(
 	});
 	if (!selected) {
 		throw new Error(
-			`No agent selected. Use --agent with one of: ${formatAgentCandidates(agents)}`
+			`No agent selected in ${environmentId}. Use --agent with one of: ${formatAgentCandidates(agents)}. Sources checked: ${formatSourceStatuses(discovery)}`
 		);
 	}
 	return selected;
+}
+
+function createHeadlessRunLogger(
+	createLogger: typeof createChatSessionLogger,
+	environmentId: AionEnvironmentId,
+	stderr: WritableStreamLike
+): CreateChatSessionLoggerResult {
+	const result = createLogger({ environmentId });
+	if (result.warning) {
+		writeLine(stderr, result.warning);
+	}
+	return result;
 }
 
 function appendOutput(
@@ -513,12 +589,19 @@ export async function runHeadless(
 		dependencies.buildMessagePartsImpl ?? buildMessageParts;
 	const getStoredAccessTokenImpl =
 		dependencies.getStoredAccessTokenImpl ?? getStoredAccessToken;
+	const createChatSessionLoggerImpl =
+		dependencies.createChatSessionLoggerImpl ?? createChatSessionLogger;
 
 	const { settings, warning } = loadChatSettingsImpl();
 	if (warning) {
 		writeLine(stderr, warning);
 	}
 	const selectedEnvironment = settings.selectedEnvironment;
+	const { logger } = createHeadlessRunLogger(
+		createChatSessionLoggerImpl,
+		selectedEnvironment,
+		stderr
+	);
 	const environmentSettings = settings.environments[selectedEnvironment];
 	const explicitSourceKey = options.url
 		? createExplicitAgentSource(options.url).sourceKey
@@ -532,70 +615,111 @@ export async function runHeadless(
 		token: options.token,
 		headers: options.headers
 	});
-	const discovery = await discoverAgentSourcesImpl(runtimeSources, fetchImpl, {
+
+	logger.info("headless.run.started", {
 		environmentId: selectedEnvironment,
-		controlPlaneAccessTokenProvider: () =>
-			getStoredAccessTokenImpl(selectedEnvironment),
-		graphQLFetchImpl: fetchImpl,
-		sourceFetchImpl: (source) =>
-			source.sourceKey === explicitSourceKey ? explicitSourceFetch : fetchImpl
+		requestMode: options.requestMode,
+		responseMode: options.responseMode,
+		agentSelector: options.agentSelector,
+		agentId: options.agentId,
+		hasExplicitUrl: Boolean(options.url),
+		sourceCount: runtimeSources.length
 	});
-	writeDiscoveryErrors(discovery, stderr);
 
-	if (discovery.agents.length === 0) {
-		throw new Error("No agents discovered for the selected environment.");
-	}
+	try {
+		const discovery = await discoverAgentSourcesImpl(runtimeSources, fetchImpl, {
+			environmentId: selectedEnvironment,
+			controlPlaneAccessTokenProvider: () =>
+				getStoredAccessTokenImpl(selectedEnvironment),
+			graphQLFetchImpl: fetchImpl,
+			sourceFetchImpl: (source) =>
+				source.sourceKey === explicitSourceKey ? explicitSourceFetch : fetchImpl,
+			logger
+		});
+		writeDiscoveryErrors(discovery, stderr);
 
-	const selectedAgent = selectHeadlessAgent(
-		discovery.agents,
-		options,
-		environmentSettings.selectedAgentKey,
-		environmentSettings.selectedAgentId,
-		explicitSourceKey
-	);
-	const clientState = await connectClientImpl(
-		getConnectionOptions(
+		if (discovery.agents.length === 0) {
+			throw new Error(
+				`No agents discovered for ${selectedEnvironment}. Sources checked: ${formatSourceStatuses(discovery)}`
+			);
+		}
+
+		const selectedAgent = selectHeadlessAgent(
+			discovery,
 			options,
-			selectedAgent,
-			selectedEnvironment,
-			() => getStoredAccessTokenImpl(selectedEnvironment)
-		)
-	);
-	const parts = await buildMessagePartsImpl(options.message ?? "");
-	const pushConfig = options.pushNotifications
-		? createPushNotificationConfig(options.pushReceiver)
-		: undefined;
-	const params = buildMessageParams(
-		parts,
-		getContextId(selectedAgent, environmentSettings.agents),
-		undefined,
-		pushConfig
-	);
+			environmentSettings.selectedAgentKey,
+			environmentSettings.selectedAgentId,
+			explicitSourceKey,
+			selectedEnvironment
+		);
+		const clientState = await connectClientImpl(
+			getConnectionOptions(
+				options,
+				selectedAgent,
+				selectedEnvironment,
+				() => getStoredAccessTokenImpl(selectedEnvironment)
+			)
+		);
+		const parts = await buildMessagePartsImpl(options.message ?? "");
+		const pushConfig = options.pushNotifications
+			? createPushNotificationConfig(options.pushReceiver)
+			: undefined;
+		const params = buildMessageParams(
+			parts,
+			getContextId(selectedAgent, environmentSettings.agents),
+			undefined,
+			pushConfig
+		);
 
-	if (options.requestMode === "streaming-message" && canStream(clientState.agentCard)) {
-		await sendStreamingMessage({
+		if (
+			options.requestMode === "streaming-message" &&
+			canStream(clientState.agentCard)
+		) {
+			await sendStreamingMessage({
+				clientState,
+				params,
+				responseMode: options.responseMode,
+				stdout,
+				stderr
+			});
+			logger.info("headless.run.completed", {
+				environmentId: selectedEnvironment,
+				selectedAgentKey: selectedAgent.agentKey,
+				selectedAgentId: selectedAgent.agentId,
+				selectedAgentHandle: selectedAgent.agentHandle,
+				requestMode: options.requestMode,
+				responseMode: options.responseMode
+			});
+			return 0;
+		}
+
+		if (options.requestMode === "streaming-message") {
+			writeLine(
+				stderr,
+				"Request mode fallback: agent does not support streaming, using Send message."
+			);
+		}
+
+		await sendSingleMessage({
 			clientState,
 			params,
 			responseMode: options.responseMode,
 			stdout,
 			stderr
 		});
+		logger.info("headless.run.completed", {
+			environmentId: selectedEnvironment,
+			selectedAgentKey: selectedAgent.agentKey,
+			selectedAgentId: selectedAgent.agentId,
+			selectedAgentHandle: selectedAgent.agentHandle,
+			requestMode: options.requestMode,
+			responseMode: options.responseMode
+		});
 		return 0;
+	} catch (error) {
+		logger.error("headless.run.failed", { error });
+		throw error;
+	} finally {
+		logger.flush();
 	}
-
-	if (options.requestMode === "streaming-message") {
-		writeLine(
-			stderr,
-			"Request mode fallback: agent does not support streaming, using Send message."
-		);
-	}
-
-	await sendSingleMessage({
-		clientState,
-		params,
-		responseMode: options.responseMode,
-		stdout,
-		stderr
-	});
-	return 0;
 }
