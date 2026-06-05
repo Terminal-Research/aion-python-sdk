@@ -6,22 +6,21 @@ a non-partial Event into the appropriate A2A output type.
 
 from __future__ import annotations
 
+from aion.adk.authoring.constants import AION_OUTPUT_KEY
 from typing import Literal, Optional
 
-from aion.adk.authoring.constants import AION_OUTPUT_KEY
 from pydantic import BaseModel, Field, model_validator
 
 
 class ArtifactOutput(BaseModel):
-    """Route event content to a named A2A artifact.
+    """Routing hint: instruct the converter to wrap event.content in a TaskArtifactUpdateEvent.
 
-    When set on an ADK Event, the converter emits a TaskArtifactUpdateEvent
-    using the specified artifact_id instead of the default durable-message path.
+    The converter reads the actual data from adk_event.content via A2ATransformer,
+    then emits TaskArtifactUpdateEvent(artifact=Artifact(artifact_id=..., parts=content_parts)).
     """
 
     artifact_id: str = Field(
-        description="Target artifact ID. The converter emits a TaskArtifactUpdateEvent "
-                    "with this ID, replacing or creating the artifact in task state."
+        description="Target artifact ID. The converter emits a TaskArtifactUpdateEvent with this ID.",
     )
     artifact_name: str | None = Field(
         default=None,
@@ -79,11 +78,16 @@ class AionOutput(BaseModel):
     Placed in ADK Event.custom_metadata to signal how the server-side converter
     should route and transform the event. At most one field may be set per event.
     When all fields are None the converter falls through to the default path.
+
+    ``artifact`` carries a fully-built a2a.types.Artifact serialized via
+    MessageToDict(preserving_proto_field_name=True). The converter deserializes
+    it and emits a TaskArtifactUpdateEvent directly, ignoring event content.
     """
 
     artifact: ArtifactOutput | None = Field(
         default=None,
-        description="Route event content to a specific named artifact.",
+        description="Routing hint: emit event content as a TaskArtifactUpdateEvent "
+                    "with this artifact_id and name. The actual data comes from event.content.",
     )
     card: CardOutput | None = Field(
         default=None,
@@ -100,9 +104,6 @@ class AionOutput(BaseModel):
         if filled > 1:
             raise ValueError("At most one of AionOutput fields may be set, got multiple.")
         return self
-
-    def to_custom_metadata(self) -> dict:
-        return {AION_OUTPUT_KEY: self.model_dump(exclude_none=True)}
 
     @classmethod
     def from_custom_metadata(cls, custom_metadata: dict | None) -> AionOutput | None:

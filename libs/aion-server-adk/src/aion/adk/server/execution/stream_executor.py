@@ -8,7 +8,12 @@ from dataclasses import dataclass
 from typing import Any
 
 from a2a.types import TaskArtifactUpdateEvent, TaskStatusUpdateEvent
-from aion.adk.authoring.invocation.emitter import reset_adk_emitter, set_adk_emitter
+from aion.adk.authoring.invocation.emitter import (
+    reset_adk_ctx,
+    reset_adk_emitter,
+    set_adk_ctx,
+    set_adk_emitter,
+)
 from aion.core.logging import get_logger
 from aion.core.a2a import ArtifactId, A2AOutbox
 from google.adk.events import Event
@@ -101,9 +106,10 @@ class ADKStreamExecutor:
         queue = ADKEventQueue()
         consumer = ADKEventConsumer(queue)
 
-        # Emitter must be set BEFORE create_task so the task inherits the
-        # ContextVar snapshot that includes the emitter reference.
+        # Emitter and ctx must be set BEFORE create_task so the task inherits
+        # the ContextVar snapshot that includes both references.
         emitter_token = set_adk_emitter(queue.enqueue_event)
+        ctx_token = set_adk_ctx(invocation_context)
 
         agent_task = asyncio.create_task(
             self._run_agent(queue, invocation_context)
@@ -115,7 +121,9 @@ class ADKStreamExecutor:
         finally:
             if not queue.is_closed():
                 queue.close()
+
             reset_adk_emitter(emitter_token)
+            reset_adk_ctx(ctx_token)
             if not agent_task.done():
                 agent_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):

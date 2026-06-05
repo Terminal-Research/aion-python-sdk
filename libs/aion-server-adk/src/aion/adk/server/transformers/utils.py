@@ -6,23 +6,22 @@ from a2a import types as a2a_types
 from google.genai import types as genai_types
 from google.protobuf import json_format, struct_pb2
 
+from aion.adk.authoring.transformers import (
+    a2a_part_to_genai_part,  # noqa: F401 — re-exported for callers that import from here
+    MIME_TYPE_DATA_PART as _MIME_TYPE_DATA_PART,
+    DATA_PART_START_TAG as _DATA_PART_START_TAG,
+    DATA_PART_END_TAG as _DATA_PART_END_TAG,
+    META_TYPE_KEY as _META_TYPE_KEY,
+    META_TYPE_FUNCTION_CALL as _META_TYPE_FUNCTION_CALL,
+    META_TYPE_FUNCTION_RESPONSE as _META_TYPE_FUNCTION_RESPONSE,
+    META_TYPE_CODE_EXECUTION_RESULT as _META_TYPE_CODE_EXECUTION_RESULT,
+    META_TYPE_EXECUTABLE_CODE as _META_TYPE_EXECUTABLE_CODE,
+    META_THOUGHT_KEY as _META_THOUGHT_KEY,
+    META_VIDEO_METADATA_KEY as _META_VIDEO_METADATA_KEY,
+)
 from aion.core.logging import get_logger
 
 logger = get_logger()
-
-_ADK_METADATA_PREFIX = "adk_"
-
-_MIME_TYPE_DATA_PART = "text/plain"
-_DATA_PART_START_TAG = b"<a2a_datapart_json>"
-_DATA_PART_END_TAG = b"</a2a_datapart_json>"
-
-_META_TYPE_KEY = f"{_ADK_METADATA_PREFIX}type"
-_META_TYPE_FUNCTION_CALL = "function_call"
-_META_TYPE_FUNCTION_RESPONSE = "function_response"
-_META_TYPE_CODE_EXECUTION_RESULT = "code_execution_result"
-_META_TYPE_EXECUTABLE_CODE = "executable_code"
-_META_THOUGHT_KEY = f"{_ADK_METADATA_PREFIX}thought"
-_META_VIDEO_METADATA_KEY = f"{_ADK_METADATA_PREFIX}video_metadata"
 
 
 def _dict_to_value(value: dict) -> struct_pb2.Value:
@@ -110,82 +109,6 @@ def genai_part_to_a2a_part(part: genai_types.Part) -> Optional[a2a_types.Part]:
     logger.warning("Cannot convert unsupported GenAI part: %s", part)
     return None
 
-
-def a2a_part_to_genai_part(a2a_part: a2a_types.Part) -> Optional[genai_types.Part]:
-    """Convert an A2A Part to a Google GenAI Part.
-
-    Equivalent to ADK's convert_a2a_part_to_genai_part but without the
-    @a2a_experimental decorator. For url parts, the filename is mapped back
-    to FileData.display_name.
-    """
-    if a2a_part.text:
-        return genai_types.Part(text=a2a_part.text)
-
-    if a2a_part.url:
-        return genai_types.Part(
-            file_data=genai_types.FileData(
-                file_uri=a2a_part.url,
-                mime_type=a2a_part.media_type,
-                display_name=a2a_part.filename,
-            )
-        )
-
-    if a2a_part.raw:
-        return genai_types.Part(
-            inline_data=genai_types.Blob(
-                data=a2a_part.raw,  # already bytes in v1.0
-                mime_type=a2a_part.media_type,
-            )
-        )
-
-    if a2a_part.HasField("data"):
-        meta_type = (
-            a2a_part.metadata[_META_TYPE_KEY]
-            if a2a_part.HasField("metadata") and _META_TYPE_KEY in a2a_part.metadata
-            else None
-        )
-        data_dict = json_format.MessageToDict(a2a_part.data)
-
-        if meta_type == _META_TYPE_FUNCTION_CALL:
-            return genai_types.Part(
-                function_call=genai_types.FunctionCall.model_validate(
-                    data_dict, by_alias=True
-                )
-            )
-        if meta_type == _META_TYPE_FUNCTION_RESPONSE:
-            return genai_types.Part(
-                function_response=genai_types.FunctionResponse.model_validate(
-                    data_dict, by_alias=True
-                )
-            )
-        if meta_type == _META_TYPE_CODE_EXECUTION_RESULT:
-            return genai_types.Part(
-                code_execution_result=genai_types.CodeExecutionResult.model_validate(
-                    data_dict, by_alias=True
-                )
-            )
-        if meta_type == _META_TYPE_EXECUTABLE_CODE:
-            return genai_types.Part(
-                executable_code=genai_types.ExecutableCode.model_validate(
-                    data_dict, by_alias=True
-                )
-            )
-
-        # Generic data part — encode as inline_data with tags for round-trip
-        part_json = json_format.MessageToJson(
-            a2a_part, including_default_value_fields=False
-        )
-        return genai_types.Part(
-            inline_data=genai_types.Blob(
-                data=_DATA_PART_START_TAG
-                + part_json.encode("utf-8")
-                + _DATA_PART_END_TAG,
-                mime_type=_MIME_TYPE_DATA_PART,
-            )
-        )
-
-    logger.warning("Cannot convert unsupported A2A part type: %s", a2a_part)
-    return None
 
 
 __all__ = ["genai_part_to_a2a_part", "a2a_part_to_genai_part"]

@@ -18,6 +18,7 @@ from google.adk.sessions import Session, BaseSessionService
 from aion.adk.server.invocation import AionInvocationContextFactory
 from aion.adk.server.artifacts import ArtifactServiceFactory
 from aion.adk.server.constants import DEFAULT_USER_ID
+from aion.server.files.storage import FileUploadManager
 from aion.adk.server.session import SessionServiceFactory
 from aion.adk.server.state.converter import StateConverter
 from aion.adk.server.transformers.a2a_to_adk import ADKTransformer
@@ -41,13 +42,15 @@ class ADKExecutor(ExecutorAdapter):
             config: AgentConfig,
             session_service: Optional[BaseSessionService] = None,
             artifact_service: Optional[BaseArtifactService] = None,
-            result_handler: Optional[ADKExecutionResultHandler] = None
+            result_handler: Optional[ADKExecutionResultHandler] = None,
+            file_uploader: Optional[FileUploadManager] = None,
     ):
         self.agent = agent
         self.config = config
         self._session_service = session_service or SessionServiceFactory().create()
         self._artifact_service = artifact_service or ArtifactServiceFactory.create()
         self._result_handler = result_handler or ADKExecutionResultHandler()
+        self._file_uploader = file_uploader
         self._state_converter = StateConverter()
         self._invocation_context_factory = AionInvocationContextFactory(
             agent=agent,
@@ -71,7 +74,7 @@ class ADKExecutor(ExecutorAdapter):
         """
         task_id = context.task_id or str(uuid.uuid4())
         context_id = ADKTransformer.to_session_id(config) or str(uuid.uuid4())
-        converter = ADKToA2AEventConverter(task_id=task_id, context_id=context_id)
+        converter = ADKToA2AEventConverter(task_id=task_id, context_id=context_id, file_uploader=self._file_uploader)
 
         try:
             logger.info(f"Starting ADK stream: context_id={context_id}")

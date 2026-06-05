@@ -88,8 +88,8 @@ class ADKAdapter(AgentAdapter):
             )
 
         session_service = await SessionServiceFactory.create(db_manager=self.db_manager)
-        artifact_service = ArtifactServiceFactory.create(db_manager=self.db_manager, file_uploader=self.file_uploader)
-        return ADKExecutor(agent, config, session_service=session_service, artifact_service=artifact_service)
+        artifact_service = ArtifactServiceFactory.create(db_manager=self.db_manager)
+        return ADKExecutor(agent, config, session_service=session_service, artifact_service=artifact_service, file_uploader=self.file_uploader)
 
     def validate_config(self, config: AgentConfig) -> None:
         if not config.path:

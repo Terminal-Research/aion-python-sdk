@@ -4,8 +4,9 @@ from typing import TYPE_CHECKING, Literal, Optional
 
 from aion.core.logging import get_logger
 from aion.core.agent import BaseMessage, User  # noqa: F401 — re-export User
-from aion.adk.authoring.output import AionOutput, ReactionOutput
+from aion.core.a2a.extensions.messaging import ReactionActionPayload
 from aion.adk.authoring.invocation.emitter import get_adk_emitter
+from aion.adk.authoring.stream import emit_reaction
 
 if TYPE_CHECKING:
     pass
@@ -28,8 +29,6 @@ class Message(BaseMessage):
         Requires an inbound event with context_id and message_id in its payload.
         Logs a warning and does nothing if event context is unavailable.
         """
-        from google.adk.events import Event
-
         event = self.context.event
         if event is None or event.payload is None:
             logger.warning(
@@ -59,18 +58,11 @@ class Message(BaseMessage):
             )
             return
 
-        adk_event = Event(
-            author="agent",
-            content=None,
-            partial=False,
-            custom_metadata=AionOutput(
-                reaction=ReactionOutput(
-                    context_id=context_id,
-                    message_id=message_id,
-                    reaction_key=key,
-                    operation=operation,
-                    display_value=display_value,
-                )
-            ).to_custom_metadata(),
+        payload = ReactionActionPayload(
+            context_id=context_id,
+            message_id=message_id,
+            reaction_key=key,
+            operation=operation,
+            display_value=display_value,
         )
-        emitter(adk_event)
+        emit_reaction(emitter, payload)

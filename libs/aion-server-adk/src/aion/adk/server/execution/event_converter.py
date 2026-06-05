@@ -24,6 +24,7 @@ from google.protobuf import json_format, struct_pb2
 
 from aion.adk.authoring.invocation import AionInvocationContext
 from aion.adk.server.transformers import A2ATransformer
+from aion.server.files.storage import FileUploadManager
 
 AgentEvent = TaskStatusUpdateEvent | TaskArtifactUpdateEvent
 
@@ -40,10 +41,17 @@ class ADKToA2AEventConverter:
     TaskStatusUpdateEvent with state=working.
     """
 
-    def __init__(self, task_id: str, context_id: str, ctx: AionInvocationContext | None = None):
+    def __init__(
+        self,
+        task_id: str,
+        context_id: str,
+        ctx: AionInvocationContext | None = None,
+        file_uploader: FileUploadManager | None = None,
+    ):
         self._task_id = task_id
         self._context_id = context_id
         self._ctx = ctx
+        self._file_uploader = file_uploader
         self._streaming_started = False
 
     async def convert(self, adk_event: Event) -> list[AgentEvent]:
@@ -196,23 +204,6 @@ class ADKToA2AEventConverter:
                 ))
             return results
 
-        if output and output.artifact is not None:
-            if adk_event.content:
-                content_parts = A2ATransformer.transform_content(adk_event.content)
-                if content_parts:
-                    results.append(TaskArtifactUpdateEvent(
-                        task_id=self._task_id,
-                        context_id=self._context_id,
-                        artifact=Artifact(
-                            artifact_id=output.artifact.artifact_id,
-                            name=output.artifact.artifact_name or output.artifact.artifact_id,
-                            parts=content_parts,
-                        ),
-                        append=False,
-                        last_chunk=True,
-                    ))
-            return results
-
         if close_event := self._close_stream_delta():
             results.append(close_event)
 
@@ -247,11 +238,19 @@ class ADKToA2AEventConverter:
         return results
 
     async def _convert_artifact_delta(self, adk_event: Event) -> list[AgentEvent]:
-        """Load artifacts from artifact_delta and emit TaskArtifactUpdateEvents."""
+        """Load artifacts from artifact_delta and emit TaskArtifactUpdateEvents.
+
+        When aion:output.artifact hint is present (set by emit_artifact()), uses
+        the provided artifact_id and name instead of generating a random UUID.
+        This preserves the identity of explicitly emitted artifacts.
+        """
         if not adk_event.actions or not adk_event.actions.artifact_delta:
             return []
         if self._ctx.artifact_service is None:
             return []
+
+        output = AionOutput.from_custom_metadata(adk_event.custom_metadata)
+        hint = output.artifact if output else None
 
         results: list[AgentEvent] = []
         for filename, version in adk_event.actions.artifact_delta.items():
@@ -271,12 +270,23 @@ class ADKToA2AEventConverter:
                 logger.warning("Could not transform artifact part: %s", filename)
                 continue
 
+            if self._file_uploader is not None and a2a_part.raw:
+                url = self._file_uploader.schedule(
+                    data=a2a_part.raw,
+                    mime_type=a2a_part.media_type or "application/octet-stream",
+                    context_id=self._context_id,
+                )
+                a2a_part = Part(url=url, media_type=a2a_part.media_type, filename=a2a_part.filename)
+
+            artifact_id = hint.artifact_id if hint else str(uuid.uuid4())
+            name = (hint.artifact_name if hint else None) or filename
+
             results.append(TaskArtifactUpdateEvent(
                 task_id=self._task_id,
                 context_id=self._context_id,
                 artifact=Artifact(
-                    artifact_id=str(uuid.uuid4()),
-                    name=filename,
+                    artifact_id=artifact_id,
+                    name=name,
                     parts=[a2a_part],
                     metadata={"version": str(version)},
                 ),
