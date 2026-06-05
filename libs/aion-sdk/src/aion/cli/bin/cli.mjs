@@ -51422,6 +51422,34 @@ function HomeScreen({
 
 // src/components/messages/messageLayout.ts
 var import_react31 = __toESM(require_react(), 1);
+function findSoftBreakIndex(value, width) {
+  const searchEnd = Math.min(value.length - 1, width);
+  for (let index = searchEnd; index > 0; index -= 1) {
+    if (/\s/u.test(value[index])) {
+      return index;
+    }
+  }
+  return void 0;
+}
+function wrapLineToWidth(value, width) {
+  if (value.length <= width) {
+    return [value];
+  }
+  const rows = [];
+  let remaining = value;
+  while (remaining.length > width) {
+    const softBreakIndex = findSoftBreakIndex(remaining, width);
+    if (softBreakIndex === void 0) {
+      rows.push(remaining.slice(0, width));
+      remaining = remaining.slice(width);
+      continue;
+    }
+    rows.push(remaining.slice(0, softBreakIndex).replace(/\s+$/u, ""));
+    remaining = remaining.slice(softBreakIndex).replace(/^\s+/u, "");
+  }
+  rows.push(remaining);
+  return rows;
+}
 function wrapToWidth2(value, width) {
   const safeWidth = Math.max(1, width);
   const sourceLines = value.split("\n");
@@ -51431,9 +51459,7 @@ function wrapToWidth2(value, width) {
       rows.push("");
       continue;
     }
-    for (let index = 0; index < line.length; index += safeWidth) {
-      rows.push(line.slice(index, index + safeWidth));
-    }
+    rows.push(...wrapLineToWidth(line, safeWidth));
   }
   return rows;
 }
