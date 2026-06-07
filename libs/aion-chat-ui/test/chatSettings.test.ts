@@ -11,6 +11,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+	clearAgentActiveContext,
 	loadChatSettings,
 	loadChatModeSettings,
 	loadSkippedUpdateVersion,
@@ -163,6 +164,51 @@ describe("chatSettings", () => {
 				responseMode: "message-output"
 			}
 		});
+	});
+
+	it("clears an agent active context without changing the selected agent", () => {
+		const directory = mkdtempSync(path.join(os.tmpdir(), "chat2-settings-"));
+		tempDirectories.push(directory);
+		const source = createDefaultLocalAgentSource();
+		const settings = loadChatSettings(path.join(directory, "missing.json")).settings;
+		const agent = {
+			agentKey: "default-localhost-8000:team-agent",
+			agentId: "team-agent",
+			sourceKey: source.sourceKey,
+			agentCardUrl:
+				"http://localhost:8000/agents/team-agent/.well-known/agent-card.json",
+			agentCardName: "Team Agent",
+			lastSeenAt: "2026-06-07T00:00:00.000Z",
+			status: "available" as const,
+			activeContextId: "context-saved"
+		};
+		const withAgent = {
+			...settings,
+			selectedEnvironment: "development" as const,
+			environments: {
+				...settings.environments,
+				development: {
+					...settings.environments.development,
+					selectedAgentKey: agent.agentKey,
+					selectedAgentId: "team-agent",
+					agents: {
+						[agent.agentKey]: agent
+					}
+				}
+			}
+		};
+
+		const cleared = clearAgentActiveContext(
+			withAgent,
+			"development",
+			agent.agentKey
+		);
+
+		expect(
+			cleared.environments.development.agents[agent.agentKey].activeContextId
+		).toBeUndefined();
+		expect(cleared.environments.development.selectedAgentKey).toBe(agent.agentKey);
+		expect(cleared.environments.development.selectedAgentId).toBe("team-agent");
 	});
 
 	it("saves and reloads skipped update versions", () => {

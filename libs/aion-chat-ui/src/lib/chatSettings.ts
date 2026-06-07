@@ -384,6 +384,37 @@ export function saveChatSettings(
 	}
 }
 
+export function clearAgentActiveContext(
+	settings: ChatSettings,
+	environmentId: AionEnvironmentId,
+	agentKey: string | undefined
+): ChatSettings {
+	if (!agentKey) {
+		return settings;
+	}
+
+	const environmentSettings = settings.environments[environmentId];
+	const agent = environmentSettings.agents[agentKey];
+	if (!agent?.activeContextId) {
+		return settings;
+	}
+
+	const { activeContextId: _activeContextId, ...agentWithoutContext } = agent;
+	return {
+		...settings,
+		environments: {
+			...settings.environments,
+			[environmentId]: {
+				...environmentSettings,
+				agents: {
+					...environmentSettings.agents,
+					[agentKey]: agentWithoutContext
+				}
+			}
+		}
+	};
+}
+
 export function loadSkippedUpdateVersion(
 	settingsPath = resolveChatSettingsPath()
 ): string | undefined {

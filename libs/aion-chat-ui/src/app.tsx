@@ -28,6 +28,7 @@ import {
 	parseAgentSelection
 } from "./lib/agentSelection.js";
 import {
+	clearAgentActiveContext,
 	loadChatSettings,
 	saveChatSettings,
 	type ChatSettings
@@ -1151,7 +1152,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 
 		if (command.id === "clear") {
 			resetSlashSelection();
-			void runClearSlashCommand();
+			runClearSlashCommand();
 			return;
 		}
 		if (command.id === "copy") {
@@ -1254,12 +1255,23 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		appendSystem(`Aion environment set to ${environmentId}.`);
 	};
 
-	const runClearSlashCommand = async (): Promise<void> => {
+	const runClearSlashCommand = (): void => {
+		const selectedContextAgentKey = selectedAgent?.agentKey ?? selectedAgentKey;
 		clearTranscript();
+		if (selectedContextAgentKey) {
+			persistSettings(
+				clearAgentActiveContext(
+					chatSettings,
+					selectedEnvironment,
+					selectedContextAgentKey
+				)
+			);
+		}
 		chatSessionLogger.info("chat.clear", {
-			environmentId: selectedEnvironment
+			environmentId: selectedEnvironment,
+			agentKey: selectedContextAgentKey
 		});
-		await refreshAgentDiscovery();
+		setReconnectNonce((current) => current + 1);
 	};
 
 	const runCopySlashCommand = async (): Promise<void> => {
@@ -1315,7 +1327,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			return true;
 		}
 		if (command.kind === "clear") {
-			void runClearSlashCommand();
+			runClearSlashCommand();
 			return true;
 		}
 

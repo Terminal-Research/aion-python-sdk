@@ -52161,6 +52161,30 @@ function saveChatSettings(settings, settingsPath = resolveChatSettingsPath()) {
     return `chat2 could not save settings: ${error instanceof Error ? error.message : String(error)}`;
   }
 }
+function clearAgentActiveContext(settings, environmentId, agentKey) {
+  if (!agentKey) {
+    return settings;
+  }
+  const environmentSettings = settings.environments[environmentId];
+  const agent = environmentSettings.agents[agentKey];
+  if (!agent?.activeContextId) {
+    return settings;
+  }
+  const { activeContextId: _activeContextId, ...agentWithoutContext } = agent;
+  return {
+    ...settings,
+    environments: {
+      ...settings.environments,
+      [environmentId]: {
+        ...environmentSettings,
+        agents: {
+          ...environmentSettings.agents,
+          [agentKey]: agentWithoutContext
+        }
+      }
+    }
+  };
+}
 function loadSkippedUpdateVersion(settingsPath = resolveChatSettingsPath()) {
   const rawSettings = readRawSettings(settingsPath);
   const skippedVersion = rawSettings?.updateCheck?.skippedVersion;
@@ -56951,7 +56975,7 @@ ${JSON.stringify(
     }
     if (command.id === "clear") {
       resetSlashSelection();
-      void runClearSlashCommand();
+      runClearSlashCommand();
       return;
     }
     if (command.id === "copy") {
@@ -57051,12 +57075,23 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
     reloadEnvironmentState(environmentId);
     appendSystem(`Aion environment set to ${environmentId}.`);
   };
-  const runClearSlashCommand = async () => {
+  const runClearSlashCommand = () => {
+    const selectedContextAgentKey = selectedAgent?.agentKey ?? selectedAgentKey;
     clearTranscript();
+    if (selectedContextAgentKey) {
+      persistSettings(
+        clearAgentActiveContext(
+          chatSettings,
+          selectedEnvironment,
+          selectedContextAgentKey
+        )
+      );
+    }
     chatSessionLogger.info("chat.clear", {
-      environmentId: selectedEnvironment
+      environmentId: selectedEnvironment,
+      agentKey: selectedContextAgentKey
     });
-    await refreshAgentDiscovery();
+    setReconnectNonce((current) => current + 1);
   };
   const runCopySlashCommand = async () => {
     const response = lastCopyableResponseRef.current;
@@ -57104,7 +57139,7 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
       return true;
     }
     if (command.kind === "clear") {
-      void runClearSlashCommand();
+      runClearSlashCommand();
       return true;
     }
     runEnvironmentSlashCommand(command.environmentId);
