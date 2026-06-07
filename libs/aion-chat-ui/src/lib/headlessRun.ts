@@ -563,16 +563,6 @@ function getConnectionOptions(
 	};
 }
 
-function getContextId(
-	selectedAgent: DiscoveredAgentRecord,
-	environmentAgents: Record<string, { activeContextId?: string }>
-): string | undefined {
-	return (
-		environmentAgents[selectedAgent.agentKey]?.activeContextId ??
-		selectedAgent.activeContextId
-	);
-}
-
 export async function runHeadless(
 	options: HeadlessRunOptions,
 	dependencies: HeadlessRunDependencies = {}
@@ -623,7 +613,8 @@ export async function runHeadless(
 		agentSelector: options.agentSelector,
 		agentId: options.agentId,
 		hasExplicitUrl: Boolean(options.url),
-		sourceCount: runtimeSources.length
+		sourceCount: runtimeSources.length,
+		usesPersistedContext: false
 	});
 
 	try {
@@ -666,7 +657,7 @@ export async function runHeadless(
 			: undefined;
 		const params = buildMessageParams(
 			parts,
-			getContextId(selectedAgent, environmentSettings.agents),
+			undefined,
 			undefined,
 			pushConfig
 		);

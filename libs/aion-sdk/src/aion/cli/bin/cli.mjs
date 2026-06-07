@@ -58018,9 +58018,6 @@ function getConnectionOptions(options, selectedAgent, environmentId, registryTok
     pushReceiver: options.pushReceiver
   };
 }
-function getContextId(selectedAgent, environmentAgents) {
-  return environmentAgents[selectedAgent.agentKey]?.activeContextId ?? selectedAgent.activeContextId;
-}
 async function runHeadless(options, dependencies = {}) {
   const stdout = dependencies.stdout ?? process.stdout;
   const stderr = dependencies.stderr ?? process.stderr;
@@ -58059,7 +58056,8 @@ async function runHeadless(options, dependencies = {}) {
     agentSelector: options.agentSelector,
     agentId: options.agentId,
     hasExplicitUrl: Boolean(options.url),
-    sourceCount: runtimeSources.length
+    sourceCount: runtimeSources.length,
+    usesPersistedContext: false
   });
   try {
     const discovery = await discoverAgentSourcesImpl(runtimeSources, fetchImpl, {
@@ -58095,7 +58093,7 @@ async function runHeadless(options, dependencies = {}) {
     const pushConfig = options.pushNotifications ? createPushNotificationConfig(options.pushReceiver) : void 0;
     const params = buildMessageParams(
       parts,
-      getContextId(selectedAgent, environmentSettings.agents),
+      void 0,
       void 0,
       pushConfig
     );

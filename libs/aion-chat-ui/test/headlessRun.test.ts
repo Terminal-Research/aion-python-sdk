@@ -335,7 +335,7 @@ describe("runHeadless", () => {
 		expect(sendMessage).toHaveBeenCalledWith(
 			expect.objectContaining({
 				message: expect.objectContaining({
-					contextId: "context-saved",
+					contextId: "",
 					parts: [makeTextPart("hello")]
 				})
 			})
@@ -381,7 +381,8 @@ describe("runHeadless", () => {
 			expect.objectContaining({
 				environmentId: "development",
 				requestMode: "send-message",
-				responseMode: "message-output"
+				responseMode: "message-output",
+				usesPersistedContext: false
 			})
 		);
 		expect(logger.info).toHaveBeenCalledWith(
