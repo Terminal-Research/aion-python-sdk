@@ -279,6 +279,7 @@ interface CopyableResponse {
 type ExactSlashCommand =
 	| { kind: "login" }
 	| { kind: "copy" }
+	| { kind: "clear" }
 	| { kind: "environment"; environmentId?: AionEnvironmentId };
 
 function parseExactSlashCommand(value: string): ExactSlashCommand | undefined {
@@ -288,6 +289,9 @@ function parseExactSlashCommand(value: string): ExactSlashCommand | undefined {
 	}
 	if (command === "/copy" && !environmentId) {
 		return { kind: "copy" };
+	}
+	if (command === "/clear" && !environmentId) {
+		return { kind: "clear" };
 	}
 	if ((command === "/environment" || command === "/env") && !extra) {
 		if (!environmentId) {
@@ -740,6 +744,10 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			} else if (selectedAgentKey || (!options.agentId && selectedAgentId)) {
 				setSelectedAgentKey(undefined);
 				setSelectedAgentId(undefined);
+				setClientState(undefined);
+				setContextId(undefined);
+				setTaskId(undefined);
+				setStreamLabel("Idle");
 				persistEnvironmentSettings(selectedEnvironment, {
 					selectedAgentKey: undefined,
 					selectedAgentId: undefined,
@@ -1142,8 +1150,8 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		}
 
 		if (command.id === "clear") {
-			clearTranscript();
 			resetSlashSelection();
+			void runClearSlashCommand();
 			return;
 		}
 		if (command.id === "copy") {
@@ -1246,6 +1254,14 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		appendSystem(`Aion environment set to ${environmentId}.`);
 	};
 
+	const runClearSlashCommand = async (): Promise<void> => {
+		clearTranscript();
+		chatSessionLogger.info("chat.clear", {
+			environmentId: selectedEnvironment
+		});
+		await refreshAgentDiscovery();
+	};
+
 	const runCopySlashCommand = async (): Promise<void> => {
 		const response = lastCopyableResponseRef.current;
 		if (!response) {
@@ -1296,6 +1312,10 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		}
 		if (command.kind === "copy") {
 			void runCopySlashCommand();
+			return true;
+		}
+		if (command.kind === "clear") {
+			void runClearSlashCommand();
 			return true;
 		}
 

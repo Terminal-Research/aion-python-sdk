@@ -6,7 +6,7 @@ import { wrapToWidth } from "./messageLayout.js";
 
 export type SystemMessageKind = "system" | "status" | "protocol";
 
-const SYSTEM_COMMAND_HIGHLIGHT = "/sources";
+const SYSTEM_COMMAND_HIGHLIGHTS = ["/sources", "/clear"];
 
 function labelForKind(kind: SystemMessageKind): string {
 	switch (kind) {
@@ -21,20 +21,29 @@ function labelForKind(kind: SystemMessageKind): string {
 }
 
 function renderSystemLine(line: string): React.JSX.Element {
-	if (!line.includes(SYSTEM_COMMAND_HIGHLIGHT)) {
+	const pattern = new RegExp(
+		`(${SYSTEM_COMMAND_HIGHLIGHTS.map((command) => command.replace("/", "\\/"))
+			.join("|")})`,
+		"gu"
+	);
+	const parts = line.split(pattern).filter((part) => part.length > 0);
+	if (parts.length === 1 && parts[0] === line) {
 		return <Text color={MESSAGE_THEME.foreground}>{line}</Text>;
 	}
 
-	const parts = line.split(SYSTEM_COMMAND_HIGHLIGHT);
 	return (
 		<>
 			{parts.map((part, index) => (
-				<React.Fragment key={`${part}-${index}`}>
-					{index > 0 ? (
-						<Text color={MESSAGE_THEME.primary}>{SYSTEM_COMMAND_HIGHLIGHT}</Text>
-					) : null}
-					{part ? <Text color={MESSAGE_THEME.foreground}>{part}</Text> : null}
-				</React.Fragment>
+				<Text
+					key={`${part}-${index}`}
+					color={
+						SYSTEM_COMMAND_HIGHLIGHTS.includes(part)
+							? MESSAGE_THEME.primary
+							: MESSAGE_THEME.foreground
+					}
+				>
+					{part}
+				</Text>
 			))}
 		</>
 	);

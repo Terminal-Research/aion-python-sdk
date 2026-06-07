@@ -116,7 +116,7 @@ export const SLASH_COMMANDS = [
 export type SlashCommandId = (typeof SLASH_COMMANDS)[number]["id"];
 
 const AGENT_SOURCES_REFRESH_NOTE =
-	"Registry sources update when Aion Chat starts and whenever /sources is run.";
+	"Registry sources update when Aion Chat starts and whenever /sources or /clear is run.";
 
 function formatAgentSource(source: AgentSourceRecord): string {
 	return [
