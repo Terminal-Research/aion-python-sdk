@@ -1,17 +1,21 @@
 from __future__ import annotations
 
 from a2a.types import Artifact as A2AArtifact
+from aion.core.a2a.extensions.messaging import MessageActionPayload
 from aion.core.agent import BaseThread
 from aion.core.agent.invocation.card import Card
 from aion.core.logging import get_logger
-from aion.core.a2a.extensions.messaging import MessageActionPayload
 from langchain_core.messages import AIMessage, AIMessageChunk
 from langgraph.config import get_stream_writer
-from typing import Any, Optional, Union
+from typing import Any, Optional
 from uuid import uuid4
 
-from aion.langgraph.authoring.invocation.message import Message
-from aion.langgraph.authoring.stream import emit_artifact, emit_card, emit_message
+from aion.langgraph.authoring.invocation import (
+    Message,
+    emit_artifact,
+    emit_card,
+    emit_message,
+)
 
 logger = get_logger()
 
@@ -35,7 +39,6 @@ class Thread(BaseThread):
             )
             return None
 
-
     @staticmethod
     async def _emit_string_as_text_or_card_document(
             writer,
@@ -43,8 +46,8 @@ class Thread(BaseThread):
             metadata: dict | None = None,
             routing: Optional[MessageActionPayload] = None,
     ) -> ReplyResult:
-        msg = AIMessage(content=content, id=str(uuid4()), metadata=metadata)
-        emit_message(writer, msg, routing=routing)
+        msg = AIMessage(content=content, id=str(uuid4()))
+        emit_message(writer, msg, routing=routing, metadata=metadata)
         return msg
 
     async def post(
@@ -104,10 +107,10 @@ class Thread(BaseThread):
         try:
             async for chunk in iterator:
                 if isinstance(chunk, str):
-                    emit_message(writer, AIMessageChunk(content=chunk))
+                    emit_message(writer, AIMessageChunk(content=chunk), metadata=metadata)
                     accumulated += chunk
                 elif isinstance(chunk, AIMessageChunk):
-                    emit_message(writer, chunk)
+                    emit_message(writer, chunk, metadata=metadata)
                     if chunk.content:
                         accumulated += chunk.content
                 else:
@@ -124,8 +127,8 @@ class Thread(BaseThread):
             )
 
         if accumulated:
-            msg = AIMessage(content=accumulated, id=str(uuid4()), metadata=metadata)
-            emit_message(writer, msg, routing=routing)
+            msg = AIMessage(content=accumulated, id=str(uuid4()))
+            emit_message(writer, msg, routing=routing, metadata=metadata)
             return msg
 
         return None

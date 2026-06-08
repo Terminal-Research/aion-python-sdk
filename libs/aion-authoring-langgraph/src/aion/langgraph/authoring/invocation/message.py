@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal, Optional
+from typing import Literal, Optional
 
 from aion.core.logging import get_logger
-from aion.core.agent import BaseMessage, User  # noqa: F401 — re-export User
+from aion.core.agent import BaseMessage, User
 from aion.core.a2a.extensions.messaging import ReactionActionPayload
+from aion.langgraph.authoring.invocation import emit_reaction
 
-if TYPE_CHECKING:
-    pass
+__all__ = ["Message", "User"]
 
 logger = get_logger()
 
@@ -27,12 +27,13 @@ class Message(BaseMessage):
         Requires an inbound event with context_id and message_id in its payload.
         Logs a warning and does nothing if event context is unavailable.
         """
-        from aion.langgraph.authoring.stream import emit_reaction
-
         event = self.context.event
         if event is None or event.payload is None:
             logger.warning(
-                "Message.react() requires an inbound event with a payload. No reaction was sent."
+                "Message.react() requires an inbound event with a payload. "
+                "No reaction was sent (key=%r, operation=%r).",
+                key,
+                operation,
             )
             return
 

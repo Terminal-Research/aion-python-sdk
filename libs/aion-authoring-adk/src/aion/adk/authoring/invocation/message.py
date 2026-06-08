@@ -1,15 +1,12 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal, Optional
-
-from aion.core.logging import get_logger
-from aion.core.agent import BaseMessage, User  # noqa: F401 — re-export User
+from aion.adk.authoring.invocation import emit_reaction, get_adk_emitter
 from aion.core.a2a.extensions.messaging import ReactionActionPayload
-from aion.adk.authoring.invocation.emitter import get_adk_emitter
-from aion.adk.authoring.stream import emit_reaction
+from aion.core.agent import BaseMessage, User
+from aion.core.logging import get_logger
+from typing import Literal, Optional
 
-if TYPE_CHECKING:
-    pass
+__all__ = ["Message", "User"]
 
 logger = get_logger()
 
@@ -32,7 +29,10 @@ class Message(BaseMessage):
         event = self.context.event
         if event is None or event.payload is None:
             logger.warning(
-                "Message.react() requires an inbound event with a payload. No reaction was sent."
+                "Message.react() requires an inbound event with a payload. "
+                "No reaction was sent (key=%r, operation=%r).",
+                key,
+                operation,
             )
             return
 

@@ -52,6 +52,7 @@ class MessageCustomEvent(AionCustomEvent):
     message: AIMessage | AIMessageChunk = Field(description="LangChain message to emit")
     ephemeral: bool = Field(default=False, description="Emit as ephemeral artifact (not persisted in task history)")
     routing: Optional[MessageActionPayload] = Field(default=None, description="Outbound routing target; attached as DataPart by the distribution layer")
+    metadata: Optional[dict[str, Any]] = Field(default=None, description="User-defined metadata forwarded to A2A Message.metadata")
 
 
 class ReactionCustomEvent(AionCustomEvent):

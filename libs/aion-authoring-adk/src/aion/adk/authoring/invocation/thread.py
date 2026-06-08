@@ -1,17 +1,16 @@
 from __future__ import annotations
 
 from a2a.types import Artifact as A2AArtifact
-from aion.adk.authoring.constants import AION_ROUTING_KEY
-from aion.adk.authoring.stream import emit_artifact, emit_card, emit_text
+from aion.adk.authoring.invocation import emit_artifact, emit_card, emit_message
+from aion.core.a2a.extensions.messaging import MessageActionPayload
 from aion.core.agent import BaseThread
 from aion.core.agent.invocation.card import Card
 from aion.core.logging import get_logger
-from aion.core.a2a.extensions.messaging import MessageActionPayload
 from google.adk.events import Event
 from google.genai import types
 from typing import Any, Optional
 
-from .emitter import get_adk_ctx, get_adk_emitter
+from .context_vars import get_adk_ctx, get_adk_emitter
 from .message import Message
 
 logger = get_logger()
@@ -45,6 +44,7 @@ class Thread(BaseThread):
             content: Any,
             *,
             target: Optional[MessageActionPayload] = None,
+            metadata: dict | None = None,
     ) -> Event | None:
         """Post a message via the ADK event emitter.
 
@@ -69,7 +69,7 @@ class Thread(BaseThread):
             return None
 
         if isinstance(content, str):
-            emit_text(emitter, content, routing=target)
+            emit_message(emitter, content, routing=target, metadata=metadata)
             return None
 
         if isinstance(content, Event):
@@ -77,7 +77,7 @@ class Thread(BaseThread):
             return content
 
         if hasattr(content, "__aiter__"):
-            return await self._stream_from_async_iterator(emitter, content, routing=target)
+            return await self._stream_from_async_iterator(emitter, content, routing=target, metadata=metadata)
 
         logger.warning(
             "Thread.post() received unsupported content type: %s. "
@@ -88,13 +88,13 @@ class Thread(BaseThread):
         return None
 
     @staticmethod
-    def _build_partial_text_event(text: str) -> Event:
+    def _build_partial_text_event(text: str, metadata: dict | None = None) -> Event:
         """Build a partial (streaming) ADK Event for a text chunk."""
         return Event(
             author="agent",
             content=types.Content(parts=[types.Part(text=text)], role="model"),
             partial=True,
-            custom_metadata=None,
+            custom_metadata=metadata or None,
         )
 
     async def _stream_from_async_iterator(
@@ -102,13 +102,14 @@ class Thread(BaseThread):
             emitter: Any,
             iterator: Any,
             routing: Optional[MessageActionPayload] = None,
+            metadata: dict | None = None,
     ) -> Event | None:
         """Stream chunks as partial ADK Events, then emit a durable final event."""
         accumulated = ""
         try:
             async for chunk in iterator:
                 if isinstance(chunk, str):
-                    emitter(self._build_partial_text_event(chunk))
+                    emitter(self._build_partial_text_event(chunk, metadata=metadata))
                     accumulated += chunk
                 else:
                     logger.warning(
@@ -124,17 +125,8 @@ class Thread(BaseThread):
             )
 
         if accumulated:
-            meta: dict = {}
-            if routing is not None:
-                meta[AION_ROUTING_KEY] = routing.model_dump(by_alias=True, exclude_none=True)
-            final_event = Event(
-                author="agent",
-                content=types.Content(parts=[types.Part(text=accumulated)], role="model"),
-                partial=False,
-                custom_metadata=meta or None,
-            )
-            emitter(final_event)
-            return final_event
+            emit_message(emitter, accumulated, routing=routing, metadata=metadata)
+            return None
 
         return None
 
@@ -156,4 +148,4 @@ class Thread(BaseThread):
         if emitter is None:
             return
 
-        emit_text(emitter, content, ephemeral=True)
+        emit_message(emitter, content, ephemeral=True)

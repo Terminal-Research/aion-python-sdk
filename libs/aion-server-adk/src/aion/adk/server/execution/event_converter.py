@@ -11,7 +11,7 @@ from a2a.types import (
     TaskStatus,
     TaskStatusUpdateEvent,
 )
-from aion.adk.authoring.constants import AION_ROUTING_KEY
+from aion.adk.authoring.constants import AION_ROUTING_KEY, AION_SERVICE_KEYS
 from aion.adk.authoring.output import AionOutput, ReactionOutput
 from aion.core.agent.invocation.card import Card
 from aion.core.constants import CARDS_EXTENSION_URI_V1, MESSAGE_ACTION_PAYLOAD_SCHEMA_V1, MESSAGING_EXTENSION_URI_V1, REACTION_ACTION_PAYLOAD_SCHEMA_V1
@@ -53,6 +53,7 @@ class ADKToA2AEventConverter:
         self._ctx = ctx
         self._file_uploader = file_uploader
         self._streaming_started = False
+        self._stream_user_metadata: dict | None = None
 
     async def convert(self, adk_event: Event) -> list[AgentEvent]:
         """Convert an ADK event to zero or more A2A events.
@@ -79,6 +80,8 @@ class ADKToA2AEventConverter:
         The first chunk opens the artifact (append=False); subsequent chunks
         use append=True. All partial events carry last_chunk=False because the
         stream is only closed when the final non-partial event arrives.
+        User metadata from custom_metadata is merged into the artifact metadata
+        so the UI can filter or route individual chunks.
         """
         parts = A2ATransformer.transform_content(adk_event.content)
         if not parts:
@@ -88,6 +91,15 @@ class ADKToA2AEventConverter:
         if not self._streaming_started:
             self._streaming_started = True
 
+        user_meta = self._extract_user_metadata(adk_event.custom_metadata)
+        if user_meta:
+            self._stream_user_metadata = user_meta
+
+        artifact_metadata = {"status": "active", "status_reason": "chunk_streaming"}
+        user_meta = self._extract_user_metadata(adk_event.custom_metadata)
+        if user_meta:
+            artifact_metadata.update(user_meta)
+
         return [TaskArtifactUpdateEvent(
             task_id=self._task_id,
             context_id=self._context_id,
@@ -95,18 +107,27 @@ class ADKToA2AEventConverter:
                 artifact_id=ArtifactId.STREAM_DELTA.value,
                 name=ArtifactName.STREAM_DELTA.value,
                 parts=parts,
-                metadata={"status": "active", "status_reason": "chunk_streaming"},
+                metadata=artifact_metadata,
             ),
             append=append,
             last_chunk=False,
         )]
 
     def _close_stream_delta(self) -> TaskArtifactUpdateEvent | None:
-        """Close the open STREAM_DELTA artifact if streaming was active."""
+        """Close the open STREAM_DELTA artifact if streaming was active.
+
+        User metadata captured from the first chunk is forwarded to the
+        close event so consumers can correlate it with the stream they opened.
+        """
         if not self._streaming_started:
             return None
 
         self._streaming_started = False
+        close_metadata: dict = {"status": "completed"}
+        if self._stream_user_metadata:
+            close_metadata.update(self._stream_user_metadata)
+        self._stream_user_metadata = None
+
         return TaskArtifactUpdateEvent(
             task_id=self._task_id,
             context_id=self._context_id,
@@ -114,7 +135,7 @@ class ADKToA2AEventConverter:
                 artifact_id=ArtifactId.STREAM_DELTA.value,
                 name=ArtifactName.STREAM_DELTA.value,
                 parts=[],
-                metadata={"status": "completed"},
+                metadata=close_metadata,
             ),
             append=True,
             last_chunk=True,
@@ -126,6 +147,18 @@ class ADKToA2AEventConverter:
         if raw is None:
             return None
         return MessageActionPayload.model_validate(raw)
+
+    @staticmethod
+    def _extract_user_metadata(custom_metadata: dict | None) -> dict | None:
+        """Extract user-defined metadata from custom_metadata, excluding service keys.
+
+        Service keys (prefixed aion:) control server behavior and are never
+        forwarded to A2A Message.metadata. Everything else passes through.
+        """
+        if not custom_metadata:
+            return None
+        user_meta = {k: v for k, v in custom_metadata.items() if k not in AION_SERVICE_KEYS}
+        return user_meta or None
 
     @staticmethod
     def _build_extension_part(data: dict, schema_uri: str) -> Part:
@@ -227,6 +260,7 @@ class ADKToA2AEventConverter:
                     role=role,
                     parts=content_parts,
                     extensions=extensions or None,
+                    metadata=self._extract_user_metadata(adk_event.custom_metadata),
                 )
                 results.append(TaskStatusUpdateEvent(
                     task_id=self._task_id,

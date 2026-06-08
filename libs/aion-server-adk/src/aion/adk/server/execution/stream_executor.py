@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from a2a.types import TaskArtifactUpdateEvent, TaskStatusUpdateEvent
-from aion.adk.authoring.invocation.emitter import (
+from aion.adk.authoring.invocation.context_vars import (
     reset_adk_ctx,
     reset_adk_emitter,
     set_adk_ctx,

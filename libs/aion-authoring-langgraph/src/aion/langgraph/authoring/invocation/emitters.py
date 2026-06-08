@@ -1,4 +1,4 @@
-"""Streaming helpers for emitting events from LangGraph nodes.
+"""Helpers for emitting events from LangGraph nodes during invocation.
 
 This module provides helper functions to emit custom events during graph execution.
 All events are emitted via LangGraph's custom stream mode.
@@ -16,7 +16,7 @@ from langgraph.types import StreamWriter
 
 from aion.core.a2a.extensions.messaging import MessageActionPayload, ReactionActionPayload
 
-from .events.custom_events import (
+from ..events.custom_events import (
     ArtifactCustomEvent,
     CardCustomEvent,
     MessageCustomEvent,
@@ -92,6 +92,7 @@ def emit_message(
     message: AIMessage | AIMessageChunk,
     ephemeral: bool = False,
     routing: MessageActionPayload | None = None,
+    metadata: dict | None = None,
 ) -> None:
     """Emit a message event during graph execution.
 
@@ -116,7 +117,7 @@ def emit_message(
             # Full message (saved in history)
             emit_message(writer, AIMessage(content="Done"))
     """
-    writer(MessageCustomEvent(message=message, ephemeral=ephemeral, routing=routing))
+    writer(MessageCustomEvent(message=message, ephemeral=ephemeral, routing=routing, metadata=metadata))
 
 
 def emit_task_update(

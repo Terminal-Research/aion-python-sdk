@@ -1,7 +1,7 @@
 """Streaming helpers for emitting events from ADK agents.
 
 This module provides helper functions to emit events during ADK agent execution.
-All events are emitted via the ContextVar-based ADK event emitter.
+All events are emitted via the ContextVar-based ADK event emitter set up by ADKStreamExecutor.
 
 Architecture (see thread_message_concept.md):
   Builders (aion-core)  →  emit_* (here, explicit params)  →  Thread (magic wrapper)
@@ -10,8 +10,6 @@ All emit_* functions follow the same pattern:
   - actual data goes in event.content (native ADK)
   - aion:output carries only routing metadata (what to wrap into)
 """
-
-from typing import Any, Callable
 
 from a2a.types import Artifact
 from aion.adk.authoring.constants import AION_OUTPUT_KEY, AION_ROUTING_KEY
@@ -23,16 +21,18 @@ from aion.core.agent.invocation.card import Card
 from aion.core.logging import get_logger
 from google.adk.events import Event, EventActions
 from google.genai import types
+from typing import Any, Callable
 
 logger = get_logger()
 
 
-def emit_text(
-    emitter: Callable,
-    text: str,
-    *,
-    routing: MessageActionPayload | None = None,
-    ephemeral: bool = False,
+def emit_message(
+        emitter: Callable,
+        text: str,
+        *,
+        routing: MessageActionPayload | None = None,
+        ephemeral: bool = False,
+        metadata: dict | None = None,
 ) -> None:
     """Emit a text message during ADK agent execution.
 
@@ -42,13 +42,18 @@ def emit_text(
         routing: Optional delivery routing target (MessageActionPayload)
         ephemeral: If True, routes event to EPHEMERAL_MESSAGE artifact —
                    shown in real time, never persisted in task history
+        metadata: Optional user-defined metadata forwarded to A2A Message.metadata.
+                  Keys must not start with "aion:" (reserved for service use).
 
     Example:
         def my_agent(ctx, emitter):
-            emit_text(emitter, "Processing your request...")
-            emit_text(emitter, "Searching...", ephemeral=True)
+            emit_message(emitter, "Processing your request...")
+            emit_message(emitter, "Searching...", ephemeral=True)
+            emit_message(emitter, "Done", metadata={"trace_id": "abc"})
     """
     meta: dict = {}
+    if metadata:
+        meta.update(metadata)
     if routing is not None:
         meta[AION_ROUTING_KEY] = routing.model_dump(by_alias=True, exclude_none=True)
 
@@ -69,10 +74,10 @@ def emit_text(
 
 
 def emit_card(
-    emitter: Callable,
-    card: Card,
-    *,
-    routing: MessageActionPayload | None = None,
+        emitter: Callable,
+        card: Card,
+        *,
+        routing: MessageActionPayload | None = None,
 ) -> None:
     """Emit a card message during ADK agent execution.
 
@@ -110,11 +115,11 @@ def emit_card(
 
 
 async def emit_artifact(
-    emitter: Callable,
-    ctx: Any,
-    artifact: Artifact,
-    *,
-    routing: MessageActionPayload | None = None,
+        emitter: Callable,
+        ctx: Any,
+        artifact: Artifact,
+        *,
+        routing: MessageActionPayload | None = None,
 ) -> None:
     """Emit a pre-built artifact during ADK agent execution.
 
@@ -191,8 +196,8 @@ async def emit_artifact(
 
 
 def emit_reaction(
-    emitter: Callable,
-    payload: ReactionActionPayload,
+        emitter: Callable,
+        payload: ReactionActionPayload,
 ) -> None:
     """Emit a reaction action event during ADK agent execution.
 

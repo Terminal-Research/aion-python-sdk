@@ -6,7 +6,7 @@ from .mcp import (
     default_adk_runtime_context,
 )
 from .models import aion_lite_llm
-from .stream import emit_artifact, emit_card, emit_reaction, emit_text
+from .invocation.emitters import emit_artifact, emit_card, emit_reaction, emit_message
 
 __all__ = [
     "aion_adk_mcp_toolset",
@@ -16,5 +16,5 @@ __all__ = [
     "emit_artifact",
     "emit_card",
     "emit_reaction",
-    "emit_text",
+    "emit_message",
 ]
