@@ -51619,6 +51619,9 @@ function WorkingIndicator({
 var import_jsx_runtime7 = __toESM(require_jsx_runtime(), 1);
 function MessageBubble({ entry }) {
   const lineWidth = useTerminalWidth();
+  if (entry.role === "divider") {
+    return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Text, { color: MESSAGE_THEME.muted, children: "-".repeat(lineWidth) });
+  }
   if (entry.role === "user") {
     return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(UserMessageBubble, { body: entry.body, lineWidth });
   }
@@ -54069,6 +54072,7 @@ import crypto from "crypto";
 var DISTRIBUTION_EXTENSION_URI_V1 = "https://docs.aion.to/a2a/extensions/aion/distribution/1.0.0";
 var TRACEABILITY_EXTENSION_URI_V1 = "https://docs.aion.to/a2a/extensions/aion/traceability/1.0.0";
 var STREAM_DELTA_ARTIFACT_ID = "aion:stream-delta";
+var THINKING_DELTA_ARTIFACT_ID = "aion:thinking-delta";
 function tokenHex(bytes) {
   return crypto.randomBytes(bytes).toString("hex");
 }
@@ -55570,6 +55574,188 @@ function getTaskMessages(task) {
   return statusMessage ? [statusMessage] : [];
 }
 
+// src/lib/transcript.ts
+function createStreamTranscriptState() {
+  return {
+    activeSectionsByTaskAndArtifactId: /* @__PURE__ */ new Map(),
+    lastSectionByTaskId: /* @__PURE__ */ new Map(),
+    nextSectionIndexByTaskId: /* @__PURE__ */ new Map(),
+    bodyByEntryId: /* @__PURE__ */ new Map()
+  };
+}
+function clearStreamTranscriptState(state) {
+  state.activeSectionsByTaskAndArtifactId.clear();
+  state.lastSectionByTaskId.clear();
+  state.nextSectionIndexByTaskId.clear();
+  state.bodyByEntryId.clear();
+}
+function streamTranscriptSectionKey(taskId, artifactId) {
+  return `${taskId}::${artifactId}`;
+}
+function getActiveStreamTranscriptSection(state, taskId, artifactId) {
+  return state.activeSectionsByTaskAndArtifactId.get(
+    streamTranscriptSectionKey(taskId, artifactId)
+  );
+}
+function getLastStreamTranscriptSection(state, taskId) {
+  return state.lastSectionByTaskId.get(taskId);
+}
+function clearActiveStreamTranscriptSection(state, taskId, artifactId) {
+  const activeSection = getActiveStreamTranscriptSection(
+    state,
+    taskId,
+    artifactId
+  );
+  state.activeSectionsByTaskAndArtifactId.delete(
+    streamTranscriptSectionKey(taskId, artifactId)
+  );
+  if (activeSection) {
+    state.bodyByEntryId.delete(activeSection.entryId);
+  }
+  if (activeSection && state.lastSectionByTaskId.get(taskId)?.entryId === activeSection.entryId) {
+    state.lastSectionByTaskId.delete(taskId);
+  }
+}
+function upsertTranscriptEntry(entries, entryId, role, body) {
+  const existingIndex = entries.findIndex((item) => item.id === entryId);
+  if (existingIndex === -1) {
+    return [...entries, { id: entryId, role, body }];
+  }
+  const next = [...entries];
+  next[existingIndex] = {
+    ...next[existingIndex],
+    role,
+    body
+  };
+  return next;
+}
+function replaceTranscriptEntryBody(entries, entryId, role, body) {
+  const existingIndex = entries.findIndex((item) => item.id === entryId);
+  if (existingIndex === -1) {
+    return { entries, replaced: false };
+  }
+  const next = [...entries];
+  next[existingIndex] = {
+    ...next[existingIndex],
+    role,
+    body
+  };
+  return { entries: next, replaced: true };
+}
+function createStreamTranscriptSection({
+  state,
+  taskId,
+  artifactId,
+  kind
+}) {
+  const sectionIndex = (state.nextSectionIndexByTaskId.get(taskId) ?? 0) + 1;
+  state.nextSectionIndexByTaskId.set(taskId, sectionIndex);
+  const section = {
+    taskId,
+    artifactId,
+    kind,
+    entryId: `artifact:${taskId}:${artifactId}:${sectionIndex}`,
+    sectionIndex
+  };
+  const previousLastSection = state.lastSectionByTaskId.get(taskId);
+  state.activeSectionsByTaskAndArtifactId.set(
+    streamTranscriptSectionKey(taskId, artifactId),
+    section
+  );
+  state.lastSectionByTaskId.set(taskId, section);
+  return {
+    section,
+    insertDivider: previousLastSection !== void 0 || sectionIndex > 1
+  };
+}
+function prepareStreamTranscriptDelta({
+  state,
+  taskId,
+  artifactId,
+  kind,
+  body,
+  append,
+  replaceCurrentSection = false
+}) {
+  const sectionKey = streamTranscriptSectionKey(taskId, artifactId);
+  const activeSection = state.activeSectionsByTaskAndArtifactId.get(sectionKey);
+  if (append && activeSection !== void 0) {
+    const nextBody = `${state.bodyByEntryId.get(activeSection.entryId) ?? ""}${body}`;
+    state.bodyByEntryId.set(activeSection.entryId, nextBody);
+    return {
+      section: activeSection,
+      body: nextBody,
+      appendToExistingSection: true,
+      replaceExistingSection: false,
+      insertDivider: false
+    };
+  }
+  if (replaceCurrentSection && activeSection !== void 0) {
+    state.bodyByEntryId.set(activeSection.entryId, body);
+    return {
+      section: activeSection,
+      body,
+      appendToExistingSection: false,
+      replaceExistingSection: true,
+      insertDivider: false
+    };
+  }
+  const { section, insertDivider } = createStreamTranscriptSection({
+    state,
+    taskId,
+    artifactId,
+    kind
+  });
+  state.bodyByEntryId.set(section.entryId, body);
+  return {
+    section,
+    body,
+    appendToExistingSection: false,
+    replaceExistingSection: false,
+    insertDivider
+  };
+}
+function applyPreparedStreamTranscriptDelta({
+  entries,
+  prepared
+}) {
+  if (prepared.appendToExistingSection || prepared.replaceExistingSection) {
+    return {
+      entries: upsertTranscriptEntry(
+        entries,
+        prepared.section.entryId,
+        "agent",
+        prepared.body
+      ),
+      section: prepared.section,
+      body: prepared.body,
+      startedNewSection: false
+    };
+  }
+  let nextEntries = entries;
+  if (prepared.insertDivider) {
+    nextEntries = [
+      ...nextEntries,
+      {
+        id: `artifact-divider:${prepared.section.taskId}:${prepared.section.sectionIndex}`,
+        role: "divider",
+        body: ""
+      }
+    ];
+  }
+  return {
+    entries: upsertTranscriptEntry(
+      nextEntries,
+      prepared.section.entryId,
+      "agent",
+      prepared.body
+    ),
+    section: prepared.section,
+    body: prepared.body,
+    startedNewSection: true
+  };
+}
+
 // src/lib/chatSession.ts
 var NO_TASK_ID = "no-task";
 function getMessageTaskId(message, fallbackTaskId) {
@@ -55604,10 +55790,12 @@ function shouldRenderLiveResponseMessage(message) {
 function shouldRenderLiveStatusMessage({
   message,
   taskId,
-  streamedTaskIds
+  streamedTaskIds,
+  activeStreamSectionKind
 }) {
+  const suppressForStreamedResponse = streamedTaskIds.has(taskId) && activeStreamSectionKind !== "thinking";
   return Boolean(
-    message && shouldRenderLiveResponseMessage(message) && !streamedTaskIds.has(taskId)
+    message && shouldRenderLiveResponseMessage(message) && !suppressForStreamedResponse
   );
 }
 function shouldShowNoAgentMessageNotice({
@@ -56187,12 +56375,14 @@ function summarizeProtocolEventForLog(event) {
       message: event.status?.message ? summarizeMessageForLog(event.status.message) : void 0
     };
   }
+  const artifactEvent = event;
   return {
     kind: "artifact-update",
     taskId: event.taskId,
     contextId: event.contextId,
     artifactId: event.artifact?.artifactId,
     append: event.append,
+    lastChunk: artifactEvent.lastChunk ?? artifactEvent.last_chunk,
     partCount: event.artifact?.parts.length ?? 0,
     parts: event.artifact?.parts.map(summarizePartForLog) ?? []
   };
@@ -56215,21 +56405,34 @@ function summarizeAgentForLog2(agent) {
     connectionAgentId: agent.connectionAgentId
   };
 }
-function upsertEntry(entries, entryId, role, body) {
-  const existingIndex = entries.findIndex((item) => item.id === entryId);
-  if (existingIndex === -1) {
-    return [...entries, { id: entryId, role, body }];
-  }
-  const next = [...entries];
-  next[existingIndex] = {
-    ...next[existingIndex],
-    role,
-    body
-  };
-  return next;
-}
 function isFinalStatusEvent(event) {
   return Boolean(event.final);
+}
+function getStreamArtifactKind(artifactId) {
+  if (artifactId === STREAM_DELTA_ARTIFACT_ID) {
+    return "response";
+  }
+  if (artifactId === THINKING_DELTA_ARTIFACT_ID) {
+    return "thinking";
+  }
+  return void 0;
+}
+function getMetadataString(metadata, key) {
+  const value = metadata?.[key];
+  return typeof value === "string" ? value : void 0;
+}
+function shouldReplaceCurrentStreamSection(event, kind) {
+  if (kind !== "response" || event.append === true) {
+    return false;
+  }
+  const artifactEvent = event;
+  if (artifactEvent.lastChunk === true || artifactEvent.last_chunk === true) {
+    return true;
+  }
+  const metadata = event.artifact?.metadata;
+  const status = getMetadataString(metadata, "status");
+  const statusReason = getMetadataString(metadata, "status_reason") ?? getMetadataString(metadata, "statusReason");
+  return status === "finalized" || statusReason === "complete_message" || statusReason === "complete_task";
 }
 function parseExactSlashCommand(value) {
   const [command, environmentId, extra] = value.trim().split(/\s+/);
@@ -56307,6 +56510,7 @@ function ChatApp({ options }) {
   const [reconnectNonce, setReconnectNonce] = (0, import_react33.useState)(0);
   const shownMessageKeysRef = (0, import_react33.useRef)(/* @__PURE__ */ new Set());
   const streamedTaskIdsRef = (0, import_react33.useRef)(/* @__PURE__ */ new Set());
+  const streamTranscriptStateRef = (0, import_react33.useRef)(createStreamTranscriptState());
   const lastCopyableResponseRef = (0, import_react33.useRef)(void 0);
   const lastConnectionNoticeRef = (0, import_react33.useRef)(void 0);
   const notificationTimersRef = (0, import_react33.useRef)([]);
@@ -56423,6 +56627,7 @@ function ChatApp({ options }) {
     setEntries([]);
     shownMessageKeysRef.current.clear();
     streamedTaskIdsRef.current.clear();
+    clearStreamTranscriptState(streamTranscriptStateRef.current);
     lastCopyableResponseRef.current = void 0;
     setContextId(void 0);
     setTaskId(void 0);
@@ -56761,6 +56966,58 @@ ${JSON.stringify(
     selectedAgent,
     selectedEnvironment
   ]);
+  const replaceLastResponseStreamSection = (message, fallbackTaskId) => {
+    if (!shouldRenderLiveResponseMessage(message)) {
+      return false;
+    }
+    const streamTaskId = getMessageTaskId(message, fallbackTaskId);
+    if (!streamTaskId) {
+      return false;
+    }
+    const activeSection = getActiveStreamTranscriptSection(
+      streamTranscriptStateRef.current,
+      streamTaskId,
+      STREAM_DELTA_ARTIFACT_ID
+    );
+    if (activeSection?.kind !== "response") {
+      return false;
+    }
+    if (shownMessageKeysRef.current.has(getShownMessageKey(message, fallbackTaskId))) {
+      return false;
+    }
+    const body = formatMessageParts(message.parts);
+    if (!body) {
+      return false;
+    }
+    const shownMessageKey = markShownMessage(
+      shownMessageKeysRef.current,
+      message,
+      fallbackTaskId
+    );
+    lastCopyableResponseRef.current = { kind: "message", content: body };
+    chatSessionLogger.debug("chat.agent_message.stream_replaced", {
+      fallbackTaskId,
+      streamTaskId,
+      streamEntryId: activeSection.entryId,
+      body,
+      message: summarizeMessageForLog(message)
+    });
+    setEntries((current) => {
+      lastCopyableResponseRef.current = { kind: "message", content: body };
+      return replaceTranscriptEntryBody(
+        current,
+        activeSection.entryId,
+        "agent",
+        body
+      ).entries;
+    });
+    clearActiveStreamTranscriptSection(
+      streamTranscriptStateRef.current,
+      streamTaskId,
+      STREAM_DELTA_ARTIFACT_ID
+    );
+    return true;
+  };
   const renderAgentResponseBubble = (message, fallbackTaskId) => {
     if (!shouldRenderLiveResponseMessage(message)) {
       return false;
@@ -56784,7 +57041,7 @@ ${JSON.stringify(
       message: summarizeMessageForLog(message)
     });
     setEntries(
-      (current) => upsertEntry(current, `message:${shownMessageKey}`, "agent", body)
+      (current) => upsertTranscriptEntry(current, `message:${shownMessageKey}`, "agent", body)
     );
     return true;
   };
@@ -56797,7 +57054,7 @@ ${JSON.stringify(
       appendProtocol(message);
       return true;
     }
-    return renderAgentResponseBubble(message);
+    return replaceLastResponseStreamSection(message) || renderAgentResponseBubble(message);
   };
   const handleTaskSnapshot = (task) => {
     setContextId(task.contextId);
@@ -56810,13 +57067,10 @@ ${JSON.stringify(
     if (!isTerminalTask) {
       return false;
     }
-    if (streamedTaskIdsRef.current.has(task.id)) {
-      return false;
-    }
     const messages = getUnshownTaskAgentMessages(task, shownMessageKeysRef.current);
     let renderedAgentOutput = false;
     for (const message of messages) {
-      renderedAgentOutput = renderAgentResponseBubble(message, task.id) || renderedAgentOutput;
+      renderedAgentOutput = replaceLastResponseStreamSection(message, task.id) || renderAgentResponseBubble(message, task.id) || renderedAgentOutput;
     }
     return renderedAgentOutput;
   };
@@ -56828,10 +57082,18 @@ ${JSON.stringify(
       appendProtocol(event);
       return true;
     }
+    if (event.status?.message && (isTerminalTaskState(event.status.state) || isFinalStatusEvent(event)) && replaceLastResponseStreamSection(event.status.message, event.taskId)) {
+      return true;
+    }
+    const activeStreamSection = getLastStreamTranscriptSection(
+      streamTranscriptStateRef.current,
+      event.taskId
+    );
     if (shouldRenderLiveStatusMessage({
       message: event.status?.message,
       taskId: event.taskId,
-      streamedTaskIds: streamedTaskIdsRef.current
+      streamedTaskIds: streamedTaskIdsRef.current,
+      activeStreamSectionKind: activeStreamSection?.kind
     })) {
       return event.status?.message ? renderAgentResponseBubble(event.status.message, event.taskId) : false;
     }
@@ -56844,27 +57106,64 @@ ${JSON.stringify(
     if (!artifact) {
       return false;
     }
-    if (artifact.artifactId === STREAM_DELTA_ARTIFACT_ID) {
+    const streamArtifactKind = getStreamArtifactKind(artifact.artifactId);
+    if (streamArtifactKind === "response") {
       setStreamLabel("Streaming");
+    } else if (streamArtifactKind === "thinking") {
+      setStreamLabel("Thinking");
     }
     if (responseMode === "a2a-protocol") {
       appendProtocol(event);
       return true;
     }
-    if (artifact.artifactId !== STREAM_DELTA_ARTIFACT_ID) {
+    if (!streamArtifactKind) {
       return false;
     }
     const artifactText = formatMessageParts(artifact.parts);
     if (!artifactText) {
       return false;
     }
-    streamedTaskIdsRef.current.add(event.taskId);
-    const entryId = `artifact:${event.taskId}:${artifact.artifactId}`;
+    if (streamArtifactKind === "response") {
+      streamedTaskIdsRef.current.add(event.taskId);
+    }
+    const replaceCurrentSection = shouldReplaceCurrentStreamSection(
+      event,
+      streamArtifactKind
+    );
+    const preparedDelta = prepareStreamTranscriptDelta({
+      state: streamTranscriptStateRef.current,
+      taskId: event.taskId,
+      artifactId: artifact.artifactId,
+      kind: streamArtifactKind,
+      body: artifactText,
+      append: event.append === true,
+      replaceCurrentSection
+    });
+    chatSessionLogger.debug("chat.stream_delta.prepared", {
+      taskId: event.taskId,
+      contextId: event.contextId,
+      artifactId: artifact.artifactId,
+      kind: streamArtifactKind,
+      append: event.append,
+      replaceCurrentSection,
+      entryId: preparedDelta.section.entryId,
+      sectionIndex: preparedDelta.section.sectionIndex,
+      appendToExistingSection: preparedDelta.appendToExistingSection,
+      replaceExistingSection: preparedDelta.replaceExistingSection,
+      insertDivider: preparedDelta.insertDivider
+    });
     setEntries((current) => {
-      const existing = current.find((item) => item.id === entryId);
-      const nextBody = event.append && existing ? `${existing.body}${artifactText}` : artifactText;
-      lastCopyableResponseRef.current = { kind: "message", content: nextBody };
-      return upsertEntry(current, entryId, "agent", nextBody);
+      const result = applyPreparedStreamTranscriptDelta({
+        entries: current,
+        prepared: preparedDelta
+      });
+      if (streamArtifactKind === "response") {
+        lastCopyableResponseRef.current = {
+          kind: "message",
+          content: result.body
+        };
+      }
+      return result.entries;
     });
     return true;
   };

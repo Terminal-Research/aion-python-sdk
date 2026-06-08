@@ -18,8 +18,12 @@ updates:
 
 LangGraph and ADK adapters emit stream deltas from partial model output. For
 LangGraph, `AIMessageChunk` values become stream-delta artifact updates. The
-first emitted chunk opens or replaces the artifact with `append: false`; later
-chunks normally use `append: true`.
+first emitted chunk opens a section with `append: false`; later chunks normally
+use `append: true`. A later update with `append: false` or a missing `append`
+flag starts a new section for that artifact unless the producer explicitly marks
+the update as a finalized response reconstruction. This allows multiple thinking
+or response sections to be displayed in order while still permitting final
+response de-duplication.
 
 ## TaskArtifactUpdateEvent Shape
 
@@ -58,9 +62,10 @@ A streaming chunk is delivered as a `TaskArtifactUpdateEvent`:
 ## Key Fields
 
 - **`append`**:
-  - `false` - Replace previous stream-delta content. This is used for the first
-    chunk of a stream and for any full reconstruction of the artifact.
-  - `true` - Append this chunk to the existing stream-delta content.
+  - `false` or absent - Open a new stream-delta section for this task and
+    artifact. If another section has already been displayed for the task, insert
+    a visual break before the new section.
+  - `true` - Append this chunk to the current section for this task and artifact.
 
 - **`lastChunk`**:
   - `false` while more stream events may follow.
@@ -156,11 +161,19 @@ message or terminal task state:
 }
 ```
 
-## Artifact Reconstruction
+## Section Resets
 
-A producer may replace the stream-delta content by sending a new update with
-`append: false`. Clients should treat this as a reset for the `aion:stream-delta`
-artifact and rebuild displayed content from the new parts.
+A producer may start a new displayed section by sending an update with
+`append: false` or by omitting `append`. This applies even when the new section
+uses the same artifact ID as the previous section. Clients should preserve the
+previous section, insert a visual break, and stream the new section from the new
+parts.
+
+A producer may replace an existing response stream-delta section when it sends a
+finalized full-response reconstruction for the same task and artifact. This is
+useful when the producer sends a full final stream-delta value after incremental
+chunks. Clients should replace the prior response text instead of rendering a
+duplicate response section.
 
 This can happen when:
 
@@ -169,7 +182,7 @@ This can happen when:
 - The producer needs to replace partial output with corrected or reconstructed
   content.
 
-Example reconstruction update:
+Example new-section update:
 
 ```json
 {
@@ -186,7 +199,7 @@ Example reconstruction update:
       {
         "content": {
           "$case": "text",
-          "value": "Completely new response based on resumed input..."
+          "value": "A new streamed section starts here..."
         },
         "mediaType": "text/plain"
       }
@@ -198,7 +211,17 @@ Example reconstruction update:
 ## Client Guidance
 
 Clients should special-case `artifact.artifactId === "aion:stream-delta"` for
-live text rendering. Other artifact IDs may represent files, structured data,
-reactions, ephemeral messages, cards, or extension-specific payloads and should
-not be merged into the main streamed text unless the client explicitly supports
-that artifact type.
+live response text rendering. Aion Chat also recognizes
+`artifact.artifactId === "aion:thinking-delta"` as live thinking text; it follows
+the same append and section-reset behavior, but it is not treated as the final
+copyable response.
+
+When a final agent message is received after streaming, clients may replace the
+current `aion:stream-delta` response section for that task with the final
+message. If the task only produced `aion:thinking-delta` output and no response
+stream-delta section, the final response should be rendered as a separate
+response section.
+
+Other artifact IDs may represent files, structured data, reactions, ephemeral
+messages, cards, or extension-specific payloads and should not be merged into
+the main streamed text unless the client explicitly supports that artifact type.

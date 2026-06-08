@@ -292,6 +292,16 @@ describe("Ink components", () => {
 		app.unmount();
 	});
 
+	it("renders muted transcript dividers", () => {
+		const app = render(
+			<MessageBubble entry={{ id: "divider-1", role: "divider", body: "" }} />
+		);
+
+		expect(app.lastFrame()).toContain("--------");
+		expect(app.lastFrame()).not.toContain("·");
+		app.unmount();
+	});
+
 	it("renders system messages with a title-case label", () => {
 		const app = render(
 			<MessageBubble entry={{ id: "system-1", role: "system", body: "connected" }} />

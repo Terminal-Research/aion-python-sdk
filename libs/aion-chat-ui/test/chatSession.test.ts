@@ -82,7 +82,7 @@ describe("chat session message tracking", () => {
 		expect(shouldRenderLiveResponseMessage(buildMessage("user-1", "user", "echo"))).toBe(false);
 	});
 
-	it("does not render live status messages after stream output for that task", () => {
+	it("does not render live status messages after response stream output for that task", () => {
 		expect(
 			shouldRenderLiveStatusMessage({
 				message: buildMessage("agent-1", "agent", "answer"),
@@ -90,6 +90,22 @@ describe("chat session message tracking", () => {
 				streamedTaskIds: new Set(["task-1"])
 			})
 		).toBe(false);
+		expect(
+			shouldRenderLiveStatusMessage({
+				message: buildMessage("agent-1", "agent", "answer"),
+				taskId: "task-1",
+				streamedTaskIds: new Set(),
+				activeStreamSectionKind: "thinking"
+			})
+		).toBe(true);
+		expect(
+			shouldRenderLiveStatusMessage({
+				message: buildMessage("agent-1", "agent", "answer"),
+				taskId: "task-1",
+				streamedTaskIds: new Set(["task-1"]),
+				activeStreamSectionKind: "thinking"
+			})
+		).toBe(true);
 		expect(
 			shouldRenderLiveStatusMessage({
 				message: buildMessage("agent-1", "agent", "answer"),
