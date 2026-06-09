@@ -8,10 +8,13 @@ from aion.core.agent.invocation.card import Card
 from aion.core.logging import get_logger
 from google.adk.events import Event
 from google.genai import types
-from typing import Any, Optional
+from typing import Any, Optional, TYPE_CHECKING
 
 from .context_vars import get_adk_ctx, get_adk_emitter
 from .message import Message
+
+if TYPE_CHECKING:
+    from aion.adk.authoring.invocation import AionInvocationContext
 
 logger = get_logger()
 
@@ -27,6 +30,7 @@ class Thread(BaseThread):
 
     @staticmethod
     def _get_emitter():
+        """Return the ADK event emitter from the current invocation context, or None."""
         emitter = get_adk_emitter()
         if emitter is None:
             logger.debug(
@@ -36,7 +40,8 @@ class Thread(BaseThread):
         return emitter
 
     @staticmethod
-    def _get_ctx():
+    def _get_ctx() -> AionInvocationContext:
+        """Return the ADK invocation context from the current ContextVar."""
         return get_adk_ctx()
 
     async def post(

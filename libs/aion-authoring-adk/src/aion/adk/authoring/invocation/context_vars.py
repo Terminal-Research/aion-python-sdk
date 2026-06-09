@@ -6,19 +6,27 @@ aion-server-adk's ADKStreamExecutor before agent.run_async() begins and
 reset on exit.
 """
 
+from __future__ import annotations
+
 from contextvars import ContextVar, Token
-from typing import Any, Callable, Optional
+from google.adk.events import Event
+from typing import TYPE_CHECKING, Callable, Optional
 
-_ADK_EMITTER: ContextVar[Optional[Callable]] = ContextVar("_adk_emitter", default=None)
-_ADK_CTX: ContextVar[Optional[Any]] = ContextVar("_adk_ctx", default=None)
+if TYPE_CHECKING:
+    from .invocation_context import AionInvocationContext
+
+EventEmitter = Callable[[Event], None]
+
+_ADK_EMITTER: ContextVar[Optional[EventEmitter]] = ContextVar("_adk_emitter", default=None)
+_ADK_CTX: ContextVar[Optional[AionInvocationContext]] = ContextVar("_adk_ctx", default=None)
 
 
-def get_adk_emitter() -> Optional[Callable]:
+def get_adk_emitter() -> Optional[EventEmitter]:
     """Return the active ADK event emitter, or None if outside an invocation."""
     return _ADK_EMITTER.get()
 
 
-def set_adk_emitter(emitter: Callable) -> Token[Optional[Callable]]:
+def set_adk_emitter(emitter: EventEmitter) -> Token[Optional[EventEmitter]]:
     """Set the ADK event emitter for the current async context.
 
     Returns a token that must be passed to reset_adk_emitter() on exit.
@@ -26,17 +34,17 @@ def set_adk_emitter(emitter: Callable) -> Token[Optional[Callable]]:
     return _ADK_EMITTER.set(emitter)
 
 
-def reset_adk_emitter(token: Token[Optional[Callable]]) -> None:
+def reset_adk_emitter(token: Token[Optional[EventEmitter]]) -> None:
     """Reset the ADK event emitter to its previous value."""
     _ADK_EMITTER.reset(token)
 
 
-def get_adk_ctx() -> Optional[Any]:
+def get_adk_ctx() -> Optional[AionInvocationContext]:
     """Return the active ADK InvocationContext, or None if outside an invocation."""
     return _ADK_CTX.get()
 
 
-def set_adk_ctx(ctx: Any) -> Token[Optional[Any]]:
+def set_adk_ctx(ctx: AionInvocationContext) -> Token[Optional[AionInvocationContext]]:
     """Set the ADK InvocationContext for the current async context.
 
     Returns a token that must be passed to reset_adk_ctx() on exit.
@@ -44,6 +52,6 @@ def set_adk_ctx(ctx: Any) -> Token[Optional[Any]]:
     return _ADK_CTX.set(ctx)
 
 
-def reset_adk_ctx(token: Token[Optional[Any]]) -> None:
+def reset_adk_ctx(token: Token[Optional[AionInvocationContext]]) -> None:
     """Reset the ADK InvocationContext to its previous value."""
     _ADK_CTX.reset(token)

@@ -1,7 +1,6 @@
-from typing import Optional
-
 from aion.core.runtime.context.models import AionRuntimeContext
 from google.adk.agents import InvocationContext
+from typing import Optional
 
 
 class AionInvocationContext(InvocationContext):

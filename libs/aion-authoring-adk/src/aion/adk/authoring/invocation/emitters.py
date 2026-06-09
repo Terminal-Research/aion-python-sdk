@@ -11,9 +11,10 @@ All emit_* functions follow the same pattern:
   - aion:output carries only routing metadata (what to wrap into)
 """
 
+from __future__ import annotations
+
 from a2a.types import Artifact
 from aion.adk.authoring.constants import AION_OUTPUT_KEY, AION_ROUTING_KEY
-from aion.adk.authoring.invocation.output import AionOutput, ArtifactOutput, CardOutput, ReactionOutput
 from aion.adk.authoring.transformers import convert_a2a_part_to_genai_part
 from aion.core.a2a.enums import ArtifactId, ArtifactName
 from aion.core.a2a.extensions.messaging import MessageActionPayload, ReactionActionPayload
@@ -21,13 +22,16 @@ from aion.core.agent.invocation.card import Card
 from aion.core.logging import get_logger
 from google.adk.events import Event, EventActions
 from google.genai import types
-from typing import Any, Callable
+from .context_vars import EventEmitter
+from .output import AionOutput, ArtifactOutput, CardOutput, ReactionOutput
+
+from .invocation_context import AionInvocationContext
 
 logger = get_logger()
 
 
 def emit_message(
-        emitter: Callable,
+        emitter: EventEmitter,
         text: str,
         *,
         routing: MessageActionPayload | None = None,
@@ -74,7 +78,7 @@ def emit_message(
 
 
 def emit_card(
-        emitter: Callable,
+        emitter: EventEmitter,
         card: Card,
         *,
         routing: MessageActionPayload | None = None,
@@ -100,15 +104,15 @@ def emit_card(
             emit_card(emitter, Card(jsx="<Card><Text>Hello</Text></Card>"))
             emit_card(emitter, Card(jsx="<Card/>"), metadata={"template": "summary"})
     """
+    meta = dict(metadata) if metadata else {}
+
     if card.url:
-        meta = {AION_OUTPUT_KEY: AionOutput(card=CardOutput(url=card.url)).model_dump(exclude_none=True)}
+        meta[AION_OUTPUT_KEY] = AionOutput(card=CardOutput(url=card.url)).model_dump(exclude_none=True)
         content = types.Content(parts=[], role="model")
     else:
-        meta = {AION_OUTPUT_KEY: AionOutput(card=CardOutput()).model_dump(exclude_none=True)}
+        meta[AION_OUTPUT_KEY] = AionOutput(card=CardOutput()).model_dump(exclude_none=True)
         content = types.Content(parts=[types.Part(text=card.jsx)], role="model")
 
-    if metadata:
-        meta.update(metadata)
     if routing is not None:
         meta[AION_ROUTING_KEY] = routing.model_dump(by_alias=True, exclude_none=True)
 
@@ -121,8 +125,8 @@ def emit_card(
 
 
 async def emit_artifact(
-        emitter: Callable,
-        ctx: Any,
+        emitter: EventEmitter,
+        ctx: AionInvocationContext,
         artifact: Artifact,
         *,
         routing: MessageActionPayload | None = None,
@@ -151,10 +155,18 @@ async def emit_artifact(
             await emit_artifact(emitter, ctx, file_artifact(url="https://example.com/r.pdf", mime_type="application/pdf"))
             await emit_artifact(emitter, ctx, data_artifact({"score": 42}, name="result"), metadata={"owner": "agent-x"})
     """
-    if ctx is None or ctx.artifact_service is None:
+    if not isinstance(ctx, AionInvocationContext) or ctx.artifact_service is None:
         logger.warning(
             "emit_artifact: artifact_service not available — event not emitted for '%s'.",
             artifact.artifact_id,
+        )
+        return
+
+    if len(artifact.parts) > 1:
+        logger.warning(
+            "emit_artifact: multi-part artifacts are not supported — event not emitted for '%s' (%d parts).",
+            artifact.artifact_id,
+            len(artifact.parts),
         )
         return
 
@@ -184,16 +196,13 @@ async def emit_artifact(
         )
         return
 
-    meta = {
-        AION_OUTPUT_KEY: AionOutput(
-            artifact=ArtifactOutput(
-                artifact_id=artifact.artifact_id,
-                artifact_name=artifact.name or None,
-            )
-        ).model_dump(exclude_none=True)
-    }
-    if metadata:
-        meta.update(metadata)
+    meta = dict(metadata) if metadata else {}
+    meta[AION_OUTPUT_KEY] = AionOutput(
+        artifact=ArtifactOutput(
+            artifact_id=artifact.artifact_id,
+            artifact_name=artifact.name,
+        )
+    ).model_dump(exclude_none=True)
     if routing is not None:
         meta[AION_ROUTING_KEY] = routing.model_dump(by_alias=True, exclude_none=True)
 
@@ -207,7 +216,7 @@ async def emit_artifact(
 
 
 def emit_reaction(
-        emitter: Callable,
+        emitter: EventEmitter,
         payload: ReactionActionPayload,
 ) -> None:
     """Emit a reaction action event during ADK agent execution.

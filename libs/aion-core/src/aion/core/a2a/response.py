@@ -10,6 +10,8 @@ __all__ = [
 
 
 class GetContextSuccessResponse(A2ABaseModel):
+    """JSON-RPC 2.0 success response for the GetContext method."""
+
     id: str | int | None = None
     """
     An identifier established by the Client that MUST contain a String, Number.
@@ -20,9 +22,14 @@ class GetContextSuccessResponse(A2ABaseModel):
     Specifies the version of the JSON-RPC protocol. MUST be exactly "2.0".
     """
     result: Conversation
+    """
+    The retrieved conversation payload including history, artifacts, and task status.
+    """
 
 
 class GetContextsListSuccessResponse(A2ABaseModel):
+    """JSON-RPC 2.0 success response for the GetContexts (list) method."""
+
     id: str | int | None = None
     """
     An identifier established by the Client that MUST contain a String, Number.

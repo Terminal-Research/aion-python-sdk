@@ -7,14 +7,12 @@ Architecture (see thread_message_concept.md):
   Builders (aion-core)  →  emit_* (here, explicit params)  →  Thread (magic wrapper)
 """
 
-from typing import Any, Optional
-
 from a2a.types import Artifact
+from aion.core.a2a.extensions.messaging import MessageActionPayload, ReactionActionPayload
 from aion.core.agent.invocation.card import Card
 from langchain_core.messages import AIMessage, AIMessageChunk
 from langgraph.types import StreamWriter
-
-from aion.core.a2a.extensions.messaging import MessageActionPayload, ReactionActionPayload
+from typing import Any, Optional
 
 from ..events.custom_events import (
     ArtifactCustomEvent,
@@ -26,13 +24,13 @@ from ..events.custom_events import (
 
 
 def emit_artifact(
-    writer: StreamWriter,
-    artifact: Artifact,
-    *,
-    routing: MessageActionPayload | None = None,
-    append: bool = False,
-    is_last_chunk: bool = True,
-    metadata: dict | None = None,
+        writer: StreamWriter,
+        artifact: Artifact,
+        *,
+        routing: MessageActionPayload | None = None,
+        append: bool = False,
+        is_last_chunk: bool = True,
+        metadata: dict | None = None,
 ) -> None:
     """Emit a pre-built artifact during graph execution.
 
@@ -65,11 +63,11 @@ def emit_artifact(
 
 
 def emit_card(
-    writer: StreamWriter,
-    card: Card,
-    *,
-    routing: MessageActionPayload | None = None,
-    metadata: dict | None = None,
+        writer: StreamWriter,
+        card: Card,
+        *,
+        routing: MessageActionPayload | None = None,
+        metadata: dict | None = None,
 ) -> None:
     """Emit a card message during graph execution.
 
@@ -96,11 +94,11 @@ def emit_card(
 
 
 def emit_message(
-    writer: StreamWriter,
-    message: AIMessage | AIMessageChunk,
-    ephemeral: bool = False,
-    routing: MessageActionPayload | None = None,
-    metadata: dict | None = None,
+        writer: StreamWriter,
+        message: AIMessage | AIMessageChunk,
+        ephemeral: bool = False,
+        routing: MessageActionPayload | None = None,
+        metadata: dict | None = None,
 ) -> None:
     """Emit a message event during graph execution.
 
@@ -129,9 +127,9 @@ def emit_message(
 
 
 def emit_task_update(
-    writer: StreamWriter,
-    message: Optional[AIMessage] = None,
-    metadata: Optional[dict[str, Any]] = None,
+        writer: StreamWriter,
+        message: Optional[AIMessage] = None,
+        metadata: Optional[dict[str, Any]] = None,
 ) -> None:
     """Emit a combined task update with message and/or metadata in a single event.
 
@@ -169,8 +167,8 @@ def emit_task_update(
 
 
 def emit_reaction(
-    writer: StreamWriter,
-    payload: ReactionActionPayload,
+        writer: StreamWriter,
+        payload: ReactionActionPayload,
 ) -> None:
     """Emit a reaction action event during graph execution.
 

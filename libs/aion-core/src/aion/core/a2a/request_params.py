@@ -11,16 +11,20 @@ __all__ = [
 
 
 class GetContextParams(A2ABaseModel):
-    context_id: str = Field(..., description="Context identifier")
-    history_length: Optional[int] = Field(default=None, description="Number of recent tasks to be retrieved")
-    history_offset: Optional[int] = Field(default=None, description="The offset starting with the most recent message")
+    """Parameters for the GetContext JSON-RPC method."""
+
+    context_id: str = Field(..., description="Unique identifier of the conversation context to retrieve.")
+    history_length: Optional[int] = Field(default=None, description="Maximum number of recent tasks to return. Defaults to server-defined limit.")
+    history_offset: Optional[int] = Field(default=None, description="Number of most-recent messages to skip before returning results. Defaults to 0.")
     metadata: Optional[Dict[str, Any]] = Field(default=None, description="Additional metadata")
 
 
 class GetContextsListParams(A2ABaseModel):
-    history_length: Optional[int] = Field(default=None, description="Number of recent contexts to be retrieved")
+    """Parameters for the GetContexts (list) JSON-RPC method."""
+
+    history_length: Optional[int] = Field(default=None, description="Maximum number of contexts to return. Defaults to server-defined limit.")
     history_offset: Optional[int] = Field(
         default=None,
-        description="The offset starting with the most recent context from which the server should start returning history"
+        description="Number of most-recent contexts to skip before returning results. Defaults to 0.",
     )
     metadata: Optional[Dict[str, Any]] = Field(default=None, description="Additional metadata")
