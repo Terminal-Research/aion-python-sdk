@@ -5,7 +5,7 @@ from typing import Literal, Optional
 from aion.core.logging import get_logger
 from aion.core.agent import BaseMessage, User
 from aion.core.a2a.extensions.messaging import ReactionActionPayload
-from aion.langgraph.authoring.invocation import emit_reaction
+from aion.langgraph.authoring.invocation.emitters import emit_reaction
 
 __all__ = ["Message", "User"]
 

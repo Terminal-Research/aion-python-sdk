@@ -61,11 +61,11 @@ class Thread(BaseThread):
             return None
 
         if isinstance(content, Card):
-            emit_card(emitter, content, routing=target)
+            emit_card(emitter, content, routing=target, metadata=metadata)
             return None
 
         if isinstance(content, A2AArtifact):
-            await emit_artifact(emitter, self._get_ctx(), content, routing=target)
+            await emit_artifact(emitter, self._get_ctx(), content, routing=target, metadata=metadata)
             return None
 
         if isinstance(content, str):
@@ -130,7 +130,7 @@ class Thread(BaseThread):
 
         return None
 
-    async def typing(self, content: str) -> None:
+    async def typing(self, content: str, *, metadata: dict | None = None) -> None:
         """Emit an ephemeral typing/progress indicator.
 
         Produces a complete event with aion:output hint that routes it to
@@ -148,4 +148,4 @@ class Thread(BaseThread):
         if emitter is None:
             return
 
-        emit_message(emitter, content, ephemeral=True)
+        emit_message(emitter, content, ephemeral=True, metadata=metadata)

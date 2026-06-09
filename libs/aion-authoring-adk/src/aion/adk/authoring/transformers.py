@@ -1,14 +1,9 @@
-"""A2A ↔ GenAI part conversion utilities for ADK authoring.
-
-Constants and a2a_part_to_genai_part live here so both aion-authoring-adk
-(emit_artifact) and aion-server-adk (artifact service, transformer utils)
-can share them without a circular dependency.
-"""
+"""A2A ↔ GenAI part conversion utilities shared across aion-authoring-adk and aion-server-adk."""
 
 from a2a import types as a2a_types
 from aion.core.logging import get_logger
 from google.genai import types as genai_types
-from google.protobuf import json_format
+from google.protobuf import json_format, struct_pb2
 from typing import Optional
 
 logger = get_logger()
@@ -27,7 +22,7 @@ META_THOUGHT_KEY = "adk_thought"
 META_VIDEO_METADATA_KEY = "adk_video_metadata"
 
 
-def a2a_part_to_genai_part(a2a_part: a2a_types.Part) -> Optional[genai_types.Part]:
+def convert_a2a_part_to_genai_part(a2a_part: a2a_types.Part) -> Optional[genai_types.Part]:
     """Convert an A2A Part to a Google GenAI Part.
 
     Equivalent to ADK's convert_a2a_part_to_genai_part but without the
@@ -100,8 +95,81 @@ def a2a_part_to_genai_part(a2a_part: a2a_types.Part) -> Optional[genai_types.Par
     return None
 
 
+def _dict_to_value(value: dict) -> struct_pb2.Value:
+    _val = struct_pb2.Value()
+    json_format.ParseDict(value, _val)
+    return _val
+
+
+def convert_genai_part_to_a2a_part(part: genai_types.Part) -> Optional[a2a_types.Part]:
+    """Convert a Google GenAI Part to an A2A Part."""
+    if part.text:
+        kwargs: dict = {"text": part.text}
+        if part.thought is not None:
+            kwargs["metadata"] = {META_THOUGHT_KEY: part.thought}
+        return a2a_types.Part(**kwargs)
+
+    if part.file_data:
+        return a2a_types.Part(
+            url=part.file_data.file_uri,
+            media_type=part.file_data.mime_type,
+            filename=part.file_data.display_name,
+        )
+
+    if part.inline_data:
+        data = part.inline_data.data
+        if (
+                part.inline_data.mime_type == MIME_TYPE_DATA_PART
+                and data is not None
+                and data.startswith(DATA_PART_START_TAG)
+                and data.endswith(DATA_PART_END_TAG)
+        ):
+            json_str = data[len(DATA_PART_START_TAG):-len(DATA_PART_END_TAG)].decode()
+            return json_format.Parse(json_str, a2a_types.Part())
+
+        kwargs = {
+            "raw": data,
+            "media_type": part.inline_data.mime_type,
+        }
+        if part.video_metadata:
+            kwargs["metadata"] = {
+                META_VIDEO_METADATA_KEY: part.video_metadata.model_dump(
+                    by_alias=True, exclude_none=True
+                )
+            }
+        return a2a_types.Part(**kwargs)
+
+    if part.function_call:
+        return a2a_types.Part(
+            data=_dict_to_value(part.function_call.model_dump(by_alias=True, exclude_none=True)),
+            metadata={META_TYPE_KEY: META_TYPE_FUNCTION_CALL},
+        )
+
+    if part.function_response:
+        return a2a_types.Part(
+            data=_dict_to_value(part.function_response.model_dump(by_alias=True, exclude_none=True)),
+            metadata={META_TYPE_KEY: META_TYPE_FUNCTION_RESPONSE},
+        )
+
+    if part.code_execution_result:
+        return a2a_types.Part(
+            data=_dict_to_value(part.code_execution_result.model_dump(by_alias=True, exclude_none=True)),
+            metadata={META_TYPE_KEY: META_TYPE_CODE_EXECUTION_RESULT},
+        )
+
+    if part.executable_code:
+        return a2a_types.Part(
+            data=_dict_to_value(part.executable_code.model_dump(by_alias=True, exclude_none=True)),
+            metadata={META_TYPE_KEY: META_TYPE_EXECUTABLE_CODE},
+        )
+
+    logger.warning("Cannot convert unsupported GenAI part: %s", part)
+    return None
+
+
 __all__ = [
-    "a2a_part_to_genai_part",
+    "convert_a2a_part_to_genai_part",
+    "convert_genai_part_to_a2a_part",
     "MIME_TYPE_DATA_PART",
     "DATA_PART_START_TAG",
     "DATA_PART_END_TAG",

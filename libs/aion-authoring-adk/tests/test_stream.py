@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from a2a.types import Artifact, Part
 from aion.adk.authoring.constants import AION_OUTPUT_KEY, AION_ROUTING_KEY
-from aion.adk.authoring.output import AionOutput, ArtifactOutput
+from aion.adk.authoring.invocation.output import AionOutput, ArtifactOutput
 from aion.adk.authoring.stream import emit_artifact, emit_card, emit_reaction, emit_text
 from aion.core.a2a import data_artifact, file_artifact
 from aion.core.a2a.enums import ArtifactId, ArtifactName

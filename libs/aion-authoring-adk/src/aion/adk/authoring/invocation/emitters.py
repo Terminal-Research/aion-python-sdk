@@ -13,8 +13,8 @@ All emit_* functions follow the same pattern:
 
 from a2a.types import Artifact
 from aion.adk.authoring.constants import AION_OUTPUT_KEY, AION_ROUTING_KEY
-from aion.adk.authoring.output import AionOutput, ArtifactOutput, CardOutput, ReactionOutput
-from aion.adk.authoring.transformers import a2a_part_to_genai_part
+from aion.adk.authoring.invocation.output import AionOutput, ArtifactOutput, CardOutput, ReactionOutput
+from aion.adk.authoring.transformers import convert_a2a_part_to_genai_part
 from aion.core.a2a.enums import ArtifactId, ArtifactName
 from aion.core.a2a.extensions.messaging import MessageActionPayload, ReactionActionPayload
 from aion.core.agent.invocation.card import Card
@@ -78,6 +78,7 @@ def emit_card(
         card: Card,
         *,
         routing: MessageActionPayload | None = None,
+        metadata: dict | None = None,
 ) -> None:
     """Emit a card message during ADK agent execution.
 
@@ -89,12 +90,15 @@ def emit_card(
         emitter: ADK event emitter callable from the invocation ContextVar
         card: Card instance (jsx or url)
         routing: Optional delivery routing target (MessageActionPayload)
+        metadata: Optional user-defined metadata forwarded to A2A Message.metadata.
+                  Keys must not start with "aion:" (reserved for service use).
 
     Example:
         from aion.core.agent.invocation.card import Card
 
         def my_agent(ctx, emitter):
             emit_card(emitter, Card(jsx="<Card><Text>Hello</Text></Card>"))
+            emit_card(emitter, Card(jsx="<Card/>"), metadata={"template": "summary"})
     """
     if card.url:
         meta = {AION_OUTPUT_KEY: AionOutput(card=CardOutput(url=card.url)).model_dump(exclude_none=True)}
@@ -103,6 +107,8 @@ def emit_card(
         meta = {AION_OUTPUT_KEY: AionOutput(card=CardOutput()).model_dump(exclude_none=True)}
         content = types.Content(parts=[types.Part(text=card.jsx)], role="model")
 
+    if metadata:
+        meta.update(metadata)
     if routing is not None:
         meta[AION_ROUTING_KEY] = routing.model_dump(by_alias=True, exclude_none=True)
 
@@ -120,6 +126,7 @@ async def emit_artifact(
         artifact: Artifact,
         *,
         routing: MessageActionPayload | None = None,
+        metadata: dict | None = None,
 ) -> None:
     """Emit a pre-built artifact during ADK agent execution.
 
@@ -134,13 +141,15 @@ async def emit_artifact(
         ctx: ADK InvocationContext from the invocation ContextVar
         artifact: Pre-built a2a.types.Artifact to emit
         routing: Optional delivery routing target (MessageActionPayload)
+        metadata: Optional user-defined metadata merged into A2A Artifact.metadata.
+                  Keys must not start with "aion:" (reserved for service use).
 
     Example:
         from aion.core.a2a import file_artifact, data_artifact
 
         async def my_agent(ctx, emitter):
             await emit_artifact(emitter, ctx, file_artifact(url="https://example.com/r.pdf", mime_type="application/pdf"))
-            await emit_artifact(emitter, ctx, data_artifact({"score": 42}, name="result"))
+            await emit_artifact(emitter, ctx, data_artifact({"score": 42}, name="result"), metadata={"owner": "agent-x"})
     """
     if ctx is None or ctx.artifact_service is None:
         logger.warning(
@@ -153,7 +162,7 @@ async def emit_artifact(
     version = None
 
     for part in artifact.parts:
-        genai_part = a2a_part_to_genai_part(part)
+        genai_part = convert_a2a_part_to_genai_part(part)
         if genai_part is None:
             logger.warning(
                 "emit_artifact: could not convert part in artifact '%s' — skipped.",
@@ -183,6 +192,8 @@ async def emit_artifact(
             )
         ).model_dump(exclude_none=True)
     }
+    if metadata:
+        meta.update(metadata)
     if routing is not None:
         meta[AION_ROUTING_KEY] = routing.model_dump(by_alias=True, exclude_none=True)
 

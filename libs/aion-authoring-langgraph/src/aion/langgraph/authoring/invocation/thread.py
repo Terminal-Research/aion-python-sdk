@@ -10,8 +10,8 @@ from langgraph.config import get_stream_writer
 from typing import Any, Optional
 from uuid import uuid4
 
-from aion.langgraph.authoring.invocation import (
-    Message,
+from aion.langgraph.authoring.invocation.message import Message
+from aion.langgraph.authoring.invocation.emitters import (
     emit_artifact,
     emit_card,
     emit_message,
@@ -71,11 +71,11 @@ class Thread(BaseThread):
             return None
 
         if isinstance(content, Card):
-            emit_card(writer, content, routing=target)
+            emit_card(writer, content, routing=target, metadata=metadata)
             return None
 
         if isinstance(content, A2AArtifact):
-            emit_artifact(writer, content, routing=target)
+            emit_artifact(writer, content, routing=target, metadata=metadata)
             return None
 
         if isinstance(content, str):
@@ -133,7 +133,7 @@ class Thread(BaseThread):
 
         return None
 
-    async def typing(self, content: str) -> None:
+    async def typing(self, content: str, *, metadata: dict | None = None) -> None:
         """Emit a stream-only ephemeral typing/progress indicator.
 
         For full control over message parameters, use post() with an AIMessage instead.
@@ -151,4 +151,4 @@ class Thread(BaseThread):
             return
 
         msg = AIMessage(content=content)
-        emit_message(writer, msg, ephemeral=True)
+        emit_message(writer, msg, ephemeral=True, metadata=metadata)

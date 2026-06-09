@@ -117,7 +117,7 @@ class BaseThread(ABC):
         ...
 
     @abstractmethod
-    async def typing(self, content: str) -> None:
+    async def typing(self, content: str, *, metadata: dict | None = None) -> None:
         """Emit an ephemeral typing/progress indicator via the framework-specific transport."""
         ...
 

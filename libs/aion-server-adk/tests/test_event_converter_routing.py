@@ -7,7 +7,7 @@ from google.genai import types
 from a2a.types import TaskArtifactUpdateEvent, TaskStatusUpdateEvent
 
 from aion.adk.authoring.constants import AION_OUTPUT_KEY, AION_ROUTING_KEY
-from aion.adk.authoring.output import AionOutput, ArtifactOutput, CardOutput
+from aion.adk.authoring.invocation.output import AionOutput, ArtifactOutput, CardOutput
 from aion.core.a2a import data_artifact, file_artifact
 from aion.core.constants import MESSAGING_EXTENSION_URI_V1, CARDS_EXTENSION_URI_V1
 from aion.core.agent.invocation.card import Card
@@ -189,11 +189,11 @@ class TestArtifactOutput:
         assert results[0].artifact.parts[0].url == "https://example.com/r.pdf"
 
     async def test_data_artifact_uses_hint_name(self):
-        from aion.adk.authoring.transformers import a2a_part_to_genai_part
+        from aion.adk.authoring.transformers import convert_a2a_part_to_genai_part
 
         artifact = data_artifact({"score": 42}, name="result")
         # Use the actual transformer to produce the correct encoded genai part
-        loaded_part = a2a_part_to_genai_part(artifact.parts[0])
+        loaded_part = convert_a2a_part_to_genai_part(artifact.parts[0])
         event, svc = make_artifact_delta_event(artifact, loaded_part)
         converter = make_converter_with_ctx(artifact_service=svc)
 

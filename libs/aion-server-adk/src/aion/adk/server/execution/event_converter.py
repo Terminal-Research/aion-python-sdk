@@ -12,7 +12,7 @@ from a2a.types import (
     TaskStatusUpdateEvent,
 )
 from aion.adk.authoring.constants import AION_ROUTING_KEY, AION_SERVICE_KEYS
-from aion.adk.authoring.output import AionOutput, ReactionOutput
+from aion.adk.authoring.invocation.output import AionOutput, ReactionOutput
 from aion.core.agent.invocation.card import Card
 from aion.core.constants import CARDS_EXTENSION_URI_V1, MESSAGE_ACTION_PAYLOAD_SCHEMA_V1, MESSAGING_EXTENSION_URI_V1, REACTION_ACTION_PAYLOAD_SCHEMA_V1
 from aion.core.logging import get_logger
@@ -229,6 +229,7 @@ class ADKToA2AEventConverter:
                     role=Role.ROLE_AGENT,
                     parts=parts,
                     extensions=extensions,
+                    metadata=self._extract_user_metadata(adk_event.custom_metadata),
                 )
                 results.append(TaskStatusUpdateEvent(
                     task_id=self._task_id,
@@ -315,6 +316,11 @@ class ADKToA2AEventConverter:
             artifact_id = hint.artifact_id if hint else str(uuid.uuid4())
             name = (hint.artifact_name if hint else None) or filename
 
+            artifact_metadata: dict = {"version": str(version)}
+            user_meta = self._extract_user_metadata(adk_event.custom_metadata)
+            if user_meta:
+                artifact_metadata.update(user_meta)
+
             results.append(TaskArtifactUpdateEvent(
                 task_id=self._task_id,
                 context_id=self._context_id,
@@ -322,7 +328,7 @@ class ADKToA2AEventConverter:
                     artifact_id=artifact_id,
                     name=name,
                     parts=[a2a_part],
-                    metadata={"version": str(version)},
+                    metadata=artifact_metadata,
                 ),
                 append=False,
                 last_chunk=True,

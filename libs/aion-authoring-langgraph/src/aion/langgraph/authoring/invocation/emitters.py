@@ -32,6 +32,7 @@ def emit_artifact(
     routing: MessageActionPayload | None = None,
     append: bool = False,
     is_last_chunk: bool = True,
+    metadata: dict | None = None,
 ) -> None:
     """Emit a pre-built artifact during graph execution.
 
@@ -44,19 +45,22 @@ def emit_artifact(
         routing: Optional delivery routing target (MessageActionPayload)
         append: If True, append to previously sent artifact
         is_last_chunk: If True, this is the final chunk
+        metadata: Optional user-defined metadata merged into A2A Artifact.metadata.
+                  Keys must not start with "aion:" (reserved for service use).
 
     Example:
         from aion.core.a2a import file_artifact, data_artifact
 
         def my_node(state: dict, writer: StreamWriter):
             emit_artifact(writer, file_artifact(url="https://example.com/r.pdf", mime_type="application/pdf"))
-            emit_artifact(writer, data_artifact({"score": 42}, name="result"))
+            emit_artifact(writer, data_artifact({"score": 42}, name="result"), metadata={"owner": "agent-x"})
     """
     writer(ArtifactCustomEvent(
         artifact=artifact,
         append=append,
         is_last_chunk=is_last_chunk,
         routing=routing,
+        metadata=metadata,
     ))
 
 
@@ -65,6 +69,7 @@ def emit_card(
     card: Card,
     *,
     routing: MessageActionPayload | None = None,
+    metadata: dict | None = None,
 ) -> None:
     """Emit a card message during graph execution.
 
@@ -77,14 +82,17 @@ def emit_card(
         writer: LangGraph StreamWriter from node signature
         card: Card instance (jsx or url)
         routing: Optional delivery routing target (MessageActionPayload)
+        metadata: Optional user-defined metadata forwarded to A2A Message.metadata.
+                  Keys must not start with "aion:" (reserved for service use).
 
     Example:
         from aion.core.agent.invocation.card import Card
 
         def my_node(state: dict, writer: StreamWriter):
             emit_card(writer, Card(jsx="<Card><Text>Hello</Text></Card>"))
+            emit_card(writer, Card(jsx="<Card/>"), metadata={"template": "summary"})
     """
-    writer(CardCustomEvent(card=card, routing=routing))
+    writer(CardCustomEvent(card=card, routing=routing, metadata=metadata))
 
 
 def emit_message(

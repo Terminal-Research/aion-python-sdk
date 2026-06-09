@@ -34,6 +34,7 @@ class ArtifactCustomEvent(AionCustomEvent):
     append: bool = Field(default=False, description="Append to previous artifact")
     is_last_chunk: bool = Field(default=True, description="Final chunk indicator")
     routing: Optional[MessageActionPayload] = Field(default=None, description="Outbound routing target; forwarded to the distribution layer")
+    metadata: Optional[dict[str, Any]] = Field(default=None, description="User-defined metadata merged into A2A Artifact.metadata")
 
 
 class MessageCustomEvent(AionCustomEvent):
@@ -84,6 +85,7 @@ class CardCustomEvent(AionCustomEvent):
 
     card: Card = Field(description="Card to emit")
     routing: Optional[MessageActionPayload] = Field(default=None, description="Outbound routing target; attached as DataPart by the distribution layer")
+    metadata: Optional[dict[str, Any]] = Field(default=None, description="User-defined metadata forwarded to A2A Message.metadata")
 
 
 class TaskUpdateCustomEvent(AionCustomEvent):

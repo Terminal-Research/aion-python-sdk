@@ -8,7 +8,7 @@ import asyncio
 import dataclasses
 import time
 from a2a.types import Artifact
-from aion.adk.server.transformers.utils import a2a_part_to_genai_part
+from aion.adk.authoring.transformers import convert_a2a_part_to_genai_part
 from aion.core.db import DbManagerProtocol
 from aion.core.logging import get_logger
 from aion.db.postgres.repositories.tasks.repository import TasksRepository
@@ -473,7 +473,7 @@ class A2AArtifactService(BaseArtifactService):
         artifact = artifacts[0]
         if not artifact.parts:
             return None
-        return a2a_part_to_genai_part(artifact.parts[0])
+        return convert_a2a_part_to_genai_part(artifact.parts[0])
 
     def _ensure_cleanup_task(self) -> None:
         """Starts the background eviction loop if it's not already running."""

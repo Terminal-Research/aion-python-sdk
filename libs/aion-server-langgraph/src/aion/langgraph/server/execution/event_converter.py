@@ -160,6 +160,7 @@ class LangGraphA2AConverter:
             card: Card,
             message_id: str | None = None,
             routing: MessageActionPayload | None = None,
+            metadata: dict | None = None,
     ) -> list[A2AAgentEvent]:
         parts = [build_card_a2a_part(card)]
         extensions = [CARDS_EXTENSION_URI_V1]
@@ -169,6 +170,7 @@ class LangGraphA2AConverter:
                 MESSAGE_ACTION_PAYLOAD_SCHEMA_V1,
             ))
             extensions.append(MESSAGING_EXTENSION_URI_V1)
+        user_meta = {k: v for k, v in (metadata or {}).items() if not k.startswith("aion:")} or None
         msg = Message(
             context_id=self._context_id,
             task_id=self._task_id,
@@ -176,6 +178,7 @@ class LangGraphA2AConverter:
             role=Role.ROLE_AGENT,
             parts=parts,
             extensions=extensions,
+            metadata=user_meta,
         )
         return [TaskStatusUpdateEvent(
             task_id=self._task_id,
@@ -192,22 +195,23 @@ class LangGraphA2AConverter:
         logged and silently dropped.
         """
         if isinstance(event_data, ArtifactCustomEvent):
-            metadata = None
+            event_metadata: dict = {}
             if event_data.routing is not None:
-                metadata = {
-                    MESSAGING_EXTENSION_URI_V1: event_data.routing.model_dump(by_alias=True, exclude_none=True),
-                }
+                event_metadata[MESSAGING_EXTENSION_URI_V1] = event_data.routing.model_dump(by_alias=True, exclude_none=True)
+            if event_data.metadata:
+                user_meta = {k: v for k, v in event_data.metadata.items() if not k.startswith("aion:")}
+                event_metadata.update(user_meta)
             return [TaskArtifactUpdateEvent(
                 task_id=self._task_id,
                 context_id=self._context_id,
                 artifact=event_data.artifact,
                 append=event_data.append,
                 last_chunk=event_data.is_last_chunk,
-                metadata=metadata,
+                metadata=event_metadata or None,
             )]
 
         if isinstance(event_data, CardCustomEvent):
-            return self._convert_card(event_data.card, routing=event_data.routing)
+            return self._convert_card(event_data.card, routing=event_data.routing, metadata=event_data.metadata)
 
         if isinstance(event_data, MessageCustomEvent):
             if event_data.ephemeral:
