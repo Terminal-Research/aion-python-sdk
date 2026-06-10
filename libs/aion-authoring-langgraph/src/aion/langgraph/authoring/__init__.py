@@ -20,7 +20,6 @@ from .invocation.emitters import (
     emit_artifact,
     emit_card,
     emit_message,
-    emit_task_update,
 )
 
 __all__ = [
@@ -35,6 +34,5 @@ __all__ = [
     "emit_artifact",
     "emit_card",
     "emit_message",
-    "emit_task_update",
     "load_aion_mcp_tools",
 ]

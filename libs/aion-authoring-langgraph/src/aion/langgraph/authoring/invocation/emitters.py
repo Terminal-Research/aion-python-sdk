@@ -19,7 +19,6 @@ from ..events.custom_events import (
     CardCustomEvent,
     MessageCustomEvent,
     ReactionCustomEvent,
-    TaskUpdateCustomEvent,
 )
 
 
@@ -47,10 +46,10 @@ def emit_artifact(
                   Keys must not start with "aion:" (reserved for service use).
 
     Example:
-        from aion.core.a2a import file_artifact, data_artifact
+        from aion.core.a2a import data_artifact, url_artifact
 
         def my_node(state: dict, writer: StreamWriter):
-            emit_artifact(writer, file_artifact(url="https://example.com/r.pdf", mime_type="application/pdf"))
+            emit_artifact(writer, url_artifact("https://example.com/r.pdf", mime_type="application/pdf"))
             emit_artifact(writer, data_artifact({"score": 42}, name="result"), metadata={"owner": "agent-x"})
     """
     writer(ArtifactCustomEvent(
@@ -124,46 +123,6 @@ def emit_message(
             emit_message(writer, AIMessage(content="Done"))
     """
     writer(MessageCustomEvent(message=message, ephemeral=ephemeral, routing=routing, metadata=metadata))
-
-
-def emit_task_update(
-        writer: StreamWriter,
-        message: Optional[AIMessage] = None,
-        metadata: Optional[dict[str, Any]] = None,
-) -> None:
-    """Emit a combined task update with message and/or metadata in a single event.
-
-    Produces exactly one TaskStatusUpdateEvent(working, message=..., metadata=...).
-    Use this when you need to emit both a message and metadata simultaneously.
-    For streaming chunks, use emit_message() with AIMessageChunk instead.
-
-    Args:
-        writer: LangGraph StreamWriter from node signature
-        message: Full message to emit (AIMessage only, not chunks)
-        metadata: Metadata dict to merge into the task
-
-    Raises:
-        ValueError: If neither message nor metadata is provided
-
-    Example:
-        def my_node(state: dict, writer: StreamWriter):
-            # Message + metadata together as one event
-            emit_task_update(
-                writer,
-                message=AIMessage(content="Analysis complete"),
-                metadata={"progress": 100, "step": "done"},
-            )
-
-            # Metadata only
-            emit_task_update(writer, metadata={"progress": 50})
-
-            # Message only (equivalent to emit_message with AIMessage)
-            emit_task_update(writer, message=AIMessage(content="Done"))
-    """
-    if message is None and metadata is None:
-        raise ValueError("At least one of 'message' or 'metadata' must be provided")
-
-    writer(TaskUpdateCustomEvent(message=message, metadata=metadata))
 
 
 def emit_reaction(

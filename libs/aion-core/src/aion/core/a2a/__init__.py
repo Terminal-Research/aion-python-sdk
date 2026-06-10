@@ -5,7 +5,7 @@ Re-exports all A2A types used across the SDK from a single stable import path.
 
 from a2a._base import A2ABaseModel
 
-from .artifacts import data_artifact, file_artifact
+from .artifacts import data_artifact, file_artifact, url_artifact
 
 from .enums import (
     A2AEventType,

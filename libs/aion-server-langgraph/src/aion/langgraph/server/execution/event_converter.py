@@ -28,7 +28,6 @@ from aion.langgraph.authoring.events.custom_events import (
     CardCustomEvent,
     MessageCustomEvent,
     ReactionCustomEvent,
-    TaskUpdateCustomEvent,
 )
 from aion.server.agent.adapters import InterruptInfo
 from google.protobuf import json_format, struct_pb2
@@ -38,7 +37,7 @@ from typing import Any, Optional
 from ..converters.lc_to_a2a import LcToA2AConverter
 
 LangChainAgentMessage = AIMessage | AIMessageChunk
-SupportedCustomEvents = ArtifactCustomEvent | CardCustomEvent | MessageCustomEvent | ReactionCustomEvent | TaskUpdateCustomEvent
+SupportedCustomEvents = ArtifactCustomEvent | CardCustomEvent | MessageCustomEvent | ReactionCustomEvent
 
 A2AAgentEvent = TaskStatusUpdateEvent | TaskArtifactUpdateEvent
 
@@ -191,9 +190,9 @@ class LangGraphA2AConverter:
         """Dispatch a typed custom event to the appropriate handler.
 
         Supports ArtifactCustomEvent (raw artifact passthrough),
-        MessageCustomEvent (ephemeral or regular message), and
-        TaskUpdateCustomEvent (status/metadata update). Unknown types are
-        logged and silently dropped.
+        CardCustomEvent (card message), MessageCustomEvent (ephemeral or
+        regular message), and ReactionCustomEvent (reaction action). Unknown
+        types are logged and silently dropped.
         """
         if isinstance(event_data, ArtifactCustomEvent):
             event_metadata: dict = {}
@@ -224,9 +223,6 @@ class LangGraphA2AConverter:
 
         if isinstance(event_data, ReactionCustomEvent):
             return self._convert_reaction(event_data)
-
-        if isinstance(event_data, TaskUpdateCustomEvent):
-            return self._convert_task_update(event_data)
 
         logger.warning(f"Ignoring unknown custom event type: {type(event_data)}")
         return []
@@ -303,40 +299,6 @@ class LangGraphA2AConverter:
             ),
             append=False,
             last_chunk=True,
-        )]
-
-    def _convert_task_update(self, event: TaskUpdateCustomEvent) -> list[A2AAgentEvent]:
-        """Convert a TaskUpdateCustomEvent to a working-status update.
-
-        Builds an optional text message from event.message and strips internal
-        aion:-prefixed keys from event.metadata before forwarding. Returns an
-        empty list when neither a message nor public metadata is present.
-        """
-        msg: Optional[Message] = None
-        if event.message is not None:
-            parts = LcToA2AConverter.from_message(event.message)
-            if parts:
-                message_id = event.message.id or str(uuid.uuid4())
-                msg = Message(
-                    context_id=self._context_id,
-                    task_id=self._task_id,
-                    message_id=message_id,
-                    role=Role.ROLE_AGENT,
-                    parts=parts,
-                )
-
-        filtered: Optional[dict] = None
-        if event.metadata:
-            filtered = {k: v for k, v in event.metadata.items() if not k.startswith("aion:")} or None
-
-        if not msg and not filtered:
-            return []
-
-        return [TaskStatusUpdateEvent(
-            task_id=self._task_id,
-            context_id=self._context_id,
-            metadata=filtered,
-            status=TaskStatus(state=TaskState.TASK_STATE_WORKING, message=msg),
         )]
 
     def _convert_ephemeral(self, message: LangChainAgentMessage) -> list[A2AAgentEvent]:

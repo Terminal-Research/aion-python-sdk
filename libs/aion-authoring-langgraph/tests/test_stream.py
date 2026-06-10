@@ -7,7 +7,6 @@ from aion.langgraph.authoring.invocation.emitters import (
     emit_artifact,
     emit_card,
     emit_message,
-    emit_task_update,
     emit_reaction,
 )
 from aion.langgraph.authoring.events.custom_events import (
@@ -15,10 +14,9 @@ from aion.langgraph.authoring.events.custom_events import (
     CardCustomEvent,
     MessageCustomEvent,
     ReactionCustomEvent,
-    TaskUpdateCustomEvent,
 )
 from aion.core.agent.invocation.card import Card
-from aion.core.a2a.artifacts import file_artifact, data_artifact
+from aion.core.a2a.artifacts import file_artifact, url_artifact, data_artifact
 from aion.core.a2a.extensions.messaging import MessageActionPayload, ReactionActionPayload
 
 
@@ -30,7 +28,7 @@ def writer():
 class TestEmitArtifact:
     def test_emits_artifact_custom_event(self, writer):
         # pre-built artifact is wrapped in ArtifactCustomEvent and passed to writer
-        artifact = file_artifact(url="https://example.com/r.pdf", mime_type="application/pdf")
+        artifact = url_artifact("https://example.com/r.pdf", mime_type="application/pdf")
         emit_artifact(writer, artifact)
         writer.assert_called_once()
         event = writer.call_args[0][0]
@@ -125,40 +123,6 @@ class TestEmitMessage:
         # routing is None when not specified (uses distribution default)
         emit_message(writer, AIMessage(content="Hi"))
         assert writer.call_args[0][0].routing is None
-
-
-class TestEmitTaskUpdate:
-    def test_raises_when_neither_message_nor_metadata(self, writer):
-        # at least one of message or metadata must be provided
-        with pytest.raises(ValueError):
-            emit_task_update(writer)
-
-    def test_emits_with_message_only(self, writer):
-        # message-only update: metadata is None in the event
-        msg = AIMessage(content="Done")
-        emit_task_update(writer, message=msg)
-        writer.assert_called_once()
-        event = writer.call_args[0][0]
-        assert isinstance(event, TaskUpdateCustomEvent)
-        assert event.message is msg
-        assert event.metadata is None
-
-    def test_emits_with_metadata_only(self, writer):
-        # metadata-only update: message is None in the event
-        emit_task_update(writer, metadata={"progress": 50})
-        event = writer.call_args[0][0]
-        assert isinstance(event, TaskUpdateCustomEvent)
-        assert event.message is None
-        assert event.metadata == {"progress": 50}
-
-    def test_emits_with_both(self, writer):
-        # message and metadata together produce a single combined event
-        msg = AIMessage(content="Done")
-        emit_task_update(writer, message=msg, metadata={"step": "done"})
-        writer.assert_called_once()
-        event = writer.call_args[0][0]
-        assert event.message is msg
-        assert event.metadata == {"step": "done"}
 
 
 class TestEmitReaction:

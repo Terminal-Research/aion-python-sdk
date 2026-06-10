@@ -8,7 +8,7 @@ from a2a.types import TaskArtifactUpdateEvent, TaskStatusUpdateEvent
 
 from aion.adk.authoring.constants import AION_OUTPUT_KEY, AION_ROUTING_KEY
 from aion.adk.authoring.invocation.event_metadata import AionOutput, ArtifactOutput, CardOutput
-from aion.core.a2a import data_artifact, file_artifact
+from aion.core.a2a import data_artifact, file_artifact, url_artifact
 from aion.core.constants import MESSAGING_EXTENSION_URI_V1, CARDS_EXTENSION_URI_V1
 from aion.core.agent.invocation.card import Card
 from aion.core.a2a.extensions.messaging import MessageActionPayload
@@ -178,7 +178,7 @@ def make_artifact_delta_event(
 
 class TestArtifactOutput:
     async def test_url_file_artifact_produces_task_artifact_update_event(self):
-        artifact = file_artifact(url="https://example.com/r.pdf", mime_type="application/pdf", name="report")
+        artifact = url_artifact("https://example.com/r.pdf", mime_type="application/pdf", name="report")
         loaded_part = types.Part(file_data=types.FileData(file_uri="https://example.com/r.pdf", mime_type="application/pdf"))
         event, svc = make_artifact_delta_event(artifact, loaded_part)
         converter = make_converter_with_ctx(artifact_service=svc)
@@ -208,7 +208,7 @@ class TestArtifactOutput:
         assert results[0].artifact.artifact_id == artifact.artifact_id
 
     async def test_bytes_file_artifact_roundtrips(self):
-        artifact = file_artifact(data=b"hello bytes", mime_type="text/plain", name="bytes_file")
+        artifact = file_artifact(b"hello bytes", mime_type="text/plain", name="bytes_file")
         loaded_part = types.Part(inline_data=types.Blob(data=b"hello bytes", mime_type="text/plain"))
         event, svc = make_artifact_delta_event(artifact, loaded_part)
         converter = make_converter_with_ctx(artifact_service=svc)
@@ -221,7 +221,7 @@ class TestArtifactOutput:
         assert results[0].artifact.parts[0].raw == b"hello bytes"
 
     async def test_artifact_event_is_last_chunk(self):
-        artifact = file_artifact(url="https://example.com/f.pdf", mime_type="application/pdf", name="doc")
+        artifact = url_artifact("https://example.com/f.pdf", mime_type="application/pdf", name="doc")
         loaded_part = types.Part(file_data=types.FileData(file_uri="https://example.com/f.pdf", mime_type="application/pdf"))
         event, svc = make_artifact_delta_event(artifact, loaded_part)
         converter = make_converter_with_ctx(artifact_service=svc)
@@ -233,7 +233,7 @@ class TestArtifactOutput:
 
     async def test_artifact_event_closes_open_stream_delta(self):
         """If streaming was active, STREAM_DELTA is closed before emitting artifact."""
-        artifact = file_artifact(url="https://example.com/f.pdf", mime_type="application/pdf", name="doc")
+        artifact = url_artifact("https://example.com/f.pdf", mime_type="application/pdf", name="doc")
         loaded_part = types.Part(file_data=types.FileData(file_uri="https://example.com/f.pdf", mime_type="application/pdf"))
         event, svc = make_artifact_delta_event(artifact, loaded_part)
         converter = make_converter_with_ctx(artifact_service=svc)

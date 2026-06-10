@@ -13,7 +13,6 @@ from .emitters import (
     emit_card,
     emit_reaction,
     emit_artifact,
-    emit_task_update,
 )
 
 __all__ = [
@@ -24,5 +23,4 @@ __all__ = [
     "emit_card",
     "emit_reaction",
     "emit_artifact",
-    "emit_task_update",
 ]

@@ -6,7 +6,6 @@ from aion.langgraph.authoring.events.custom_events import (
     ArtifactCustomEvent,
     MessageCustomEvent,
     ReactionCustomEvent,
-    TaskUpdateCustomEvent,
 )
 from aion.server.agent.adapters import InterruptInfo
 from aion.core.constants import MESSAGING_EXTENSION_URI_V1
@@ -200,52 +199,9 @@ class TestConvertCustom:
         assert len(artifact.parts) == 1
         assert artifact.parts[0].data is not None
 
-    def test_task_update_event_delegates_to_convert_task_update(self, converter):
-        """TaskUpdateCustomEvent routes to _convert_task_update."""
-        event = TaskUpdateCustomEvent(metadata={"key": "val"})
-        with patch.object(converter, "_convert_task_update", return_value=[Mock()]) as mock_tu:
-            converter._convert_custom(event)
-            mock_tu.assert_called_once_with(event)
-
     def test_unknown_custom_type_returns_empty(self, converter):
         """Unknown custom event type produces no events."""
         assert converter._convert_custom(object()) == []
-
-
-class TestConvertTaskUpdate:
-    """_convert_task_update filtering and combination logic."""
-
-    def test_message_only_produces_status_update_with_message(self, converter):
-        """TaskUpdateCustomEvent with only a message produces event with status.message set."""
-        msg = make_ai_message("Update")
-        event = TaskUpdateCustomEvent(message=msg)
-        with patch(LC_CONVERTER_PATH, return_value=[Part(text="Update")]):
-            events = converter._convert_task_update(event)
-        assert len(events) == 1
-        assert events[0].status.message is not None
-
-    def test_metadata_only_produces_status_update_with_metadata(self, converter):
-        """TaskUpdateCustomEvent with public metadata produces event with metadata set."""
-        event = TaskUpdateCustomEvent(metadata={"progress": "50%"})
-        events = converter._convert_task_update(event)
-        assert len(events) == 1
-        assert events[0].metadata == {"progress": "50%"}
-
-    def test_aion_prefixed_keys_are_filtered_out(self, converter):
-        """Keys starting with 'aion:' are stripped before forwarding metadata."""
-        event = TaskUpdateCustomEvent(metadata={"aion:internal": "x", "public": "y"})
-        events = converter._convert_task_update(event)
-        assert "aion:internal" not in events[0].metadata
-        assert events[0].metadata["public"] == "y"
-
-    def test_all_aion_keys_with_no_message_returns_empty(self, converter):
-        """When all metadata keys are aion:-prefixed and there's no message, returns []."""
-        event = TaskUpdateCustomEvent(metadata={"aion:a": "1", "aion:b": "2"})
-        assert converter._convert_task_update(event) == []
-
-    def test_neither_message_nor_public_metadata_returns_empty(self, converter):
-        """No message and no public metadata yields an empty list."""
-        assert converter._convert_task_update(TaskUpdateCustomEvent()) == []
 
 
 class TestTerminalEvents:

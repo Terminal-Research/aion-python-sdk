@@ -88,15 +88,3 @@ class CardCustomEvent(AionCustomEvent):
     metadata: Optional[dict[str, Any]] = Field(default=None, description="User-defined metadata forwarded to A2A Message.metadata")
 
 
-class TaskUpdateCustomEvent(AionCustomEvent):
-    """Combined task update event: message and/or metadata in a single emission.
-
-    Emitted from nodes via emit_task_update().
-    Always produces a single TaskStatusUpdateEvent(working, message=..., metadata=...).
-    Only accepts AIMessage (not chunks) — use emit_message() for streaming chunks.
-    """
-
-    event_type: ClassVar[str] = "task_update"
-
-    message: Optional[AIMessage] = Field(default=None, description="Message to emit")
-    metadata: Optional[dict[str, Any]] = Field(default=None, description="Metadata to merge into task")

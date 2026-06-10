@@ -149,10 +149,10 @@ async def emit_artifact(
                   Keys must not start with "aion:" (reserved for service use).
 
     Example:
-        from aion.core.a2a import file_artifact, data_artifact
+        from aion.core.a2a import data_artifact, url_artifact
 
         async def my_agent(ctx, emitter):
-            await emit_artifact(emitter, ctx, file_artifact(url="https://example.com/r.pdf", mime_type="application/pdf"))
+            await emit_artifact(emitter, ctx, url_artifact("https://example.com/r.pdf", mime_type="application/pdf"))
             await emit_artifact(emitter, ctx, data_artifact({"score": 42}, name="result"), metadata={"owner": "agent-x"})
     """
     if not isinstance(ctx, AionInvocationContext) or ctx.artifact_service is None:

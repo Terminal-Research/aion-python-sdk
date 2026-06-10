@@ -5,7 +5,7 @@ from aion.adk.authoring.constants import AION_OUTPUT_KEY, AION_ROUTING_KEY
 from aion.adk.authoring.invocation.emitters import emit_artifact, emit_card, emit_reaction, emit_message
 from aion.adk.authoring.invocation.event_metadata import get_aion_output
 from aion.adk.authoring.invocation.invocation_context import AionInvocationContext
-from aion.core.a2a import data_artifact, file_artifact
+from aion.core.a2a import data_artifact, file_artifact, url_artifact
 from aion.core.a2a.enums import ArtifactId
 from aion.core.a2a.extensions.messaging import MessageActionPayload, ReactionActionPayload
 from aion.core.agent.invocation.card import Card
@@ -140,7 +140,7 @@ class TestEmitArtifact:
     def test_url_artifact_routing_hint_in_metadata(self):
         emitter = MagicMock()
         ctx = make_mock_ctx()
-        artifact = file_artifact(url="https://example.com/r.pdf", mime_type="application/pdf", name="report")
+        artifact = url_artifact("https://example.com/r.pdf", mime_type="application/pdf", name="report")
         asyncio.run(emit_artifact(emitter, ctx, artifact))
 
         event: Event = emitter.call_args[0][0]
@@ -152,7 +152,7 @@ class TestEmitArtifact:
     def test_url_artifact_saved_to_artifact_service(self):
         emitter = MagicMock()
         ctx = make_mock_ctx()
-        artifact = file_artifact(url="https://example.com/r.pdf", mime_type="application/pdf", name="report")
+        artifact = url_artifact("https://example.com/r.pdf", mime_type="application/pdf", name="report")
         asyncio.run(emit_artifact(emitter, ctx, artifact))
 
         ctx.artifact_service.save_artifact.assert_called_once()
@@ -163,7 +163,7 @@ class TestEmitArtifact:
     def test_bytes_artifact_saved_to_artifact_service(self):
         emitter = MagicMock()
         ctx = make_mock_ctx()
-        artifact = file_artifact(data=b"hello", mime_type="text/plain", name="file.txt")
+        artifact = file_artifact(b"hello", mime_type="text/plain", name="file.txt")
         asyncio.run(emit_artifact(emitter, ctx, artifact))
 
         ctx.artifact_service.save_artifact.assert_called_once()
@@ -185,7 +185,7 @@ class TestEmitArtifact:
         emitter = MagicMock()
         ctx = make_mock_ctx()
         ctx.artifact_service.save_artifact = AsyncMock(return_value=3)
-        artifact = file_artifact(url="https://example.com/r.pdf", mime_type="application/pdf", name="report")
+        artifact = url_artifact("https://example.com/r.pdf", mime_type="application/pdf", name="report")
         asyncio.run(emit_artifact(emitter, ctx, artifact))
 
         event: Event = emitter.call_args[0][0]
@@ -195,7 +195,7 @@ class TestEmitArtifact:
     def test_routing_embedded_in_metadata(self):
         emitter = MagicMock()
         ctx = make_mock_ctx()
-        artifact = file_artifact(url="https://example.com/f.pdf", mime_type="application/pdf")
+        artifact = url_artifact("https://example.com/f.pdf", mime_type="application/pdf")
         asyncio.run(emit_artifact(emitter, ctx, artifact, routing=make_routing()))
 
         event: Event = emitter.call_args[0][0]
@@ -206,7 +206,7 @@ class TestEmitArtifact:
         emitter = MagicMock()
         ctx = MagicMock()
         ctx.artifact_service = None
-        artifact = file_artifact(url="https://example.com/r.pdf", mime_type="application/pdf")
+        artifact = url_artifact("https://example.com/r.pdf", mime_type="application/pdf")
         asyncio.run(emit_artifact(emitter, ctx, artifact))
 
         emitter.assert_not_called()
@@ -215,7 +215,7 @@ class TestEmitArtifact:
         """aion:output.artifact carries only artifact_id/name — no data."""
         emitter = MagicMock()
         ctx = make_mock_ctx()
-        artifact = file_artifact(url="https://example.com/r.pdf", mime_type="application/pdf", name="doc")
+        artifact = url_artifact("https://example.com/r.pdf", mime_type="application/pdf", name="doc")
         asyncio.run(emit_artifact(emitter, ctx, artifact))
 
         event: Event = emitter.call_args[0][0]

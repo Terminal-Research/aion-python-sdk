@@ -12,48 +12,58 @@ from a2a.types import Artifact, Part
 from google.protobuf import json_format, struct_pb2
 
 
-def file_artifact(
+def url_artifact(
+    url: str,
     *,
-    url: str | None = None,
-    data: bytes | None = None,
     mime_type: str,
     name: str | None = None,
     artifact_id: str | None = None,
 ) -> Artifact:
-    """Build an Artifact carrying a single file part.
-
-    Exactly one of url or data must be provided.
+    """Build an Artifact referencing a remote file by URL.
 
     Args:
-        url: File URL (FileWithUri). Mutually exclusive with data.
-        data: File content as bytes (FileWithBytes). Mutually exclusive with url.
-        mime_type: MIME type of the file (e.g. "image/png", "application/pdf").
+        url: Remote file URL (e.g. "https://cdn.example.com/report.pdf").
+        mime_type: MIME type of the file (e.g. "application/pdf", "image/png").
         name: Human-readable artifact name. Defaults to "file".
         artifact_id: Explicit artifact ID. Auto-generated if not provided.
 
     Returns:
-        a2a.types.Artifact with a single FilePart.
-
-    Raises:
-        ValueError: If neither or both of url/data are provided.
-        TypeError: If data is not bytes.
+        a2a.types.Artifact with a single FilePart (FileWithUri).
     """
-    if url is None and data is None:
-        raise ValueError("Exactly one of 'url' or 'data' must be provided")
-    if url is not None and data is not None:
-        raise ValueError("Provide either 'url' or 'data', not both")
-    if data is not None and not isinstance(data, bytes):
-        raise TypeError(f"'data' must be bytes, got {type(data).__name__}")
-
-    if url is not None:
-        file_part = Part(url=url, media_type=mime_type)
-    else:
-        file_part = Part(raw=data, media_type=mime_type)
-
     return Artifact(
         artifact_id=artifact_id or str(uuid4()),
         name=name or "file",
-        parts=[file_part],
+        parts=[Part(url=url, media_type=mime_type)],
+    )
+
+
+def file_artifact(
+    data: bytes,
+    *,
+    mime_type: str,
+    name: str | None = None,
+    artifact_id: str | None = None,
+) -> Artifact:
+    """Build an Artifact carrying inline file content as bytes.
+
+    Args:
+        data: File content as bytes.
+        mime_type: MIME type of the file (e.g. "text/plain", "image/png").
+        name: Human-readable artifact name. Defaults to "file".
+        artifact_id: Explicit artifact ID. Auto-generated if not provided.
+
+    Returns:
+        a2a.types.Artifact with a single FilePart (FileWithBytes).
+
+    Raises:
+        TypeError: If data is not bytes.
+    """
+    if not isinstance(data, bytes):
+        raise TypeError(f"'data' must be bytes, got {type(data).__name__}")
+    return Artifact(
+        artifact_id=artifact_id or str(uuid4()),
+        name=name or "file",
+        parts=[Part(raw=data, media_type=mime_type)],
     )
 
 
@@ -82,4 +92,4 @@ def data_artifact(
     )
 
 
-__all__ = ["file_artifact", "data_artifact"]
+__all__ = ["url_artifact", "file_artifact", "data_artifact"]

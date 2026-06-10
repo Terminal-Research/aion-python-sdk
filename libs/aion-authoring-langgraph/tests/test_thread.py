@@ -1,7 +1,7 @@
 from unittest.mock import MagicMock, Mock, patch
 from langchain_core.messages import AIMessage, AIMessageChunk
 
-from aion.core.a2a.artifacts import file_artifact, data_artifact
+from aion.core.a2a.artifacts import file_artifact, url_artifact, data_artifact
 from aion.langgraph.authoring.invocation.thread import Thread
 from aion.langgraph.authoring.invocation.message import Message
 from aion.langgraph.authoring.events.custom_events import ArtifactCustomEvent, CardCustomEvent, MessageCustomEvent
@@ -145,7 +145,7 @@ class TestThreadPost:
         # a2a Artifact is dispatched to emit_artifact → ArtifactCustomEvent
         writer = MagicMock()
         thread = make_thread()
-        artifact = file_artifact(url="https://example.com/r.pdf", mime_type="application/pdf")
+        artifact = url_artifact("https://example.com/r.pdf", mime_type="application/pdf")
         with patch(_GET_STREAM_WRITER, return_value=writer):
             result = await thread.post(artifact)
 
@@ -172,7 +172,7 @@ class TestThreadPost:
         from aion.core.a2a.extensions.messaging import MessageActionPayload
         writer = MagicMock()
         thread = make_thread()
-        artifact = file_artifact(url="https://example.com/f.pdf", mime_type="application/pdf")
+        artifact = url_artifact("https://example.com/f.pdf", mime_type="application/pdf")
         routing = MessageActionPayload(trajectory="direct-message", context_id="D123")
         with patch(_GET_STREAM_WRITER, return_value=writer):
             await thread.post(artifact, target=routing)
