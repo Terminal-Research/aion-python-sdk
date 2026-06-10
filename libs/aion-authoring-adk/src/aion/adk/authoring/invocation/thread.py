@@ -15,9 +15,9 @@ from aion.core.agent.invocation.card import Card
 from aion.core.logging import get_logger
 from google.adk.events import Event
 from google.genai import types
-from typing import Any, Optional, TYPE_CHECKING
+from typing import AsyncIterator, Optional, Union, TYPE_CHECKING
 
-from .context_vars import get_adk_ctx, get_adk_emitter
+from .context_vars import EventEmitter, get_adk_ctx, get_adk_emitter
 from .message import Message
 
 if TYPE_CHECKING:
@@ -53,7 +53,7 @@ class Thread(BaseThread):
 
     async def post(
             self,
-            content: Any,
+            content: Union[str, Card, A2AArtifact, Event, AsyncIterator[str]],
             *,
             target: Optional[MessageActionPayload] = None,
             metadata: dict | None = None,
@@ -111,8 +111,8 @@ class Thread(BaseThread):
 
     async def _stream_from_async_iterator(
             self,
-            emitter: Any,
-            iterator: Any,
+            emitter: EventEmitter,
+            iterator: AsyncIterator[str],
             routing: Optional[MessageActionPayload] = None,
             metadata: dict | None = None,
     ) -> Event | None:

@@ -23,7 +23,7 @@ from aion.core.logging import get_logger
 from google.adk.events import Event, EventActions
 from google.genai import types
 from .context_vars import EventEmitter
-from .event_metadata import AionOutput, ArtifactOutput, CardOutput, ReactionOutput
+from .event_metadata import AionOutput, ArtifactOutput, CardOutput
 
 from .invocation_context import AionInvocationContext
 
@@ -244,14 +244,6 @@ def emit_reaction(
         content=None,
         partial=False,
         custom_metadata={
-            AION_OUTPUT_KEY: AionOutput(
-                reaction=ReactionOutput(
-                    context_id=payload.context_id,
-                    message_id=payload.message_id,
-                    reaction_key=payload.reaction_key,
-                    operation=payload.operation,
-                    display_value=payload.display_value,
-                )
-            ).model_dump(exclude_none=True)
+            AION_OUTPUT_KEY: AionOutput(reaction=payload).model_dump(exclude_none=True)
         },
     ))

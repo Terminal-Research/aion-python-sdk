@@ -11,10 +11,9 @@ custom_metadata is treated as user-defined metadata forwarded to A2A.
 from __future__ import annotations
 
 from aion.adk.authoring.constants import AION_OUTPUT_KEY, AION_ROUTING_KEY, AION_SERVICE_KEYS
-from aion.core.a2a.extensions.messaging import MessageActionPayload
+from aion.core.a2a.extensions.messaging import MessageActionPayload, ReactionActionPayload
 from google.adk.events import Event
 from pydantic import BaseModel, Field, model_validator
-from typing import Literal, Optional
 
 
 class ArtifactOutput(BaseModel):
@@ -49,34 +48,6 @@ class CardOutput(BaseModel):
     )
 
 
-class ReactionOutput(BaseModel):
-    """Instruct the distribution to add or remove a reaction on a provider message.
-
-    When set on an ADK Event, the converter emits a TaskArtifactUpdateEvent with
-    artifact_id ``aion:reaction``. The event is streamed to the distribution and
-    discarded by the task store — it does not appear in task history or artifacts.
-    """
-
-    context_id: str = Field(
-        description="Source-network conversation, room, or thread ID where the target message lives."
-    )
-    message_id: str = Field(
-        description="Provider message ID to react to."
-    )
-    reaction_key: str = Field(
-        description="Provider-stable reaction identifier, e.g. ``thumbsup`` or ``heart``."
-    )
-    operation: Literal["add", "remove"] = Field(
-        default="add",
-        description="Whether to add or remove the reaction.",
-    )
-    display_value: Optional[str] = Field(
-        default=None,
-        description="Human-readable emoji or provider label, e.g. ``:thumbsup:``. "
-                    "Optional; used by the distribution for display purposes only.",
-    )
-
-
 class AionOutput(BaseModel):
     """Top-level model for the aion:output custom_metadata key.
 
@@ -98,7 +69,7 @@ class AionOutput(BaseModel):
         default=None,
         description="Route event content as a JSX Card artifact.",
     )
-    reaction: ReactionOutput | None = Field(
+    reaction: ReactionActionPayload | None = Field(
         default=None,
         description="Emit a transient reaction action to the distribution without persisting to task state.",
     )
@@ -143,7 +114,6 @@ __all__ = [
     "AionOutput",
     "ArtifactOutput",
     "CardOutput",
-    "ReactionOutput",
     "get_aion_output",
     "get_aion_routing",
     "get_aion_user_metadata",

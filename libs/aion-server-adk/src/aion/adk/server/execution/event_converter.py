@@ -11,24 +11,23 @@ from a2a.types import (
     TaskStatus,
     TaskStatusUpdateEvent,
 )
+from aion.adk.authoring.invocation import AionInvocationContext
 from aion.adk.authoring.invocation.event_metadata import (
-    AionOutput,
-    ReactionOutput,
     get_aion_output,
     get_aion_routing,
     get_aion_user_metadata,
 )
-from aion.core.agent.invocation.card import Card
-from aion.core.constants import CARDS_EXTENSION_URI_V1, MESSAGE_ACTION_PAYLOAD_SCHEMA_V1, MESSAGING_EXTENSION_URI_V1, REACTION_ACTION_PAYLOAD_SCHEMA_V1
-from aion.core.logging import get_logger
+from aion.adk.server.transformers import A2ATransformer
 from aion.core.a2a import ArtifactId, ArtifactName
+from aion.core.a2a.extensions.messaging import ReactionActionPayload
+from aion.core.agent.invocation.card import Card
 from aion.core.agent.invocation.card.utils import build_card_a2a_part
+from aion.core.constants import CARDS_EXTENSION_URI_V1, MESSAGE_ACTION_PAYLOAD_SCHEMA_V1, MESSAGING_EXTENSION_URI_V1, \
+    REACTION_ACTION_PAYLOAD_SCHEMA_V1
+from aion.core.logging import get_logger
+from aion.server.files.storage import FileUploadManager
 from google.adk.events import Event
 from google.protobuf import json_format, struct_pb2
-
-from aion.adk.authoring.invocation import AionInvocationContext
-from aion.adk.server.transformers import A2ATransformer
-from aion.server.files.storage import FileUploadManager
 
 AgentEvent = TaskStatusUpdateEvent | TaskArtifactUpdateEvent
 
@@ -46,11 +45,11 @@ class ADKToA2AEventConverter:
     """
 
     def __init__(
-        self,
-        task_id: str,
-        context_id: str,
-        ctx: AionInvocationContext | None = None,
-        file_uploader: FileUploadManager | None = None,
+            self,
+            task_id: str,
+            context_id: str,
+            ctx: AionInvocationContext | None = None,
+            file_uploader: FileUploadManager | None = None,
     ):
         self._task_id = task_id
         self._context_id = context_id
@@ -154,7 +153,7 @@ class ADKToA2AEventConverter:
             metadata={MESSAGING_EXTENSION_URI_V1: {"schema": schema_uri}},
         )
 
-    def _build_reaction_event(self, reaction: ReactionOutput) -> AgentEvent:
+    def _build_reaction_event(self, reaction: ReactionActionPayload) -> AgentEvent:
         proto_value = struct_pb2.Value()
         json_format.ParseDict(reaction.model_dump(by_alias=True, exclude_none=True), proto_value)
         return TaskArtifactUpdateEvent(
