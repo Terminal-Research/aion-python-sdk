@@ -1,3 +1,9 @@
+"""Runtime context data models.
+
+Defines AionRuntimeContext and related types that carry inbound A2A event
+data, distribution metadata, identities, and typed event payloads to agents.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

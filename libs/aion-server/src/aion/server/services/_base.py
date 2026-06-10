@@ -1,3 +1,5 @@
+"""Abstract base classes for Aion server services."""
+
 import logging
 from abc import ABC, abstractmethod
 from typing import Optional, Any
@@ -34,6 +36,7 @@ class BaseService(ABC):
 
 
 class BaseExecuteService(BaseService):
+    """Base class for services that expose a single async execute() entry point."""
 
     @abstractmethod
     async def execute(self, *args, **kwargs) -> Any:

@@ -1,3 +1,5 @@
+"""Port availability checking and scanning utilities for the Aion server."""
+
 import socket
 from typing import Optional, Set, Callable, Tuple
 

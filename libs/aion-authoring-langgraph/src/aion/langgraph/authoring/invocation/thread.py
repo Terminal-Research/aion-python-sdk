@@ -1,3 +1,9 @@
+"""LangGraph thread abstraction for streaming agent responses.
+
+Provides a context-aware Thread class that emits messages, cards, artifacts,
+and ephemeral typing indicators via LangGraph's streaming mechanism.
+"""
+
 from __future__ import annotations
 
 from a2a.types import Artifact as A2AArtifact
@@ -20,7 +26,7 @@ from .message import Message
 logger = get_logger()
 
 ReplyResult = Optional[AIMessage]
-"""Return type of Thread.post(): the object that was sent, or None if nothing was sent."""
+"""Return type of Thread.post(): the emitted message or message chunk, or None if nothing was sent."""
 
 
 class Thread(BaseThread):

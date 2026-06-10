@@ -1,3 +1,9 @@
+"""JSON-RPC 2.0 response envelopes for A2A RPC calls.
+
+Defines response structures for successful control-plane method invocations
+(GetContext, GetContextsList).
+"""
+
 from typing import Literal
 
 from aion.core.a2a import A2ABaseModel

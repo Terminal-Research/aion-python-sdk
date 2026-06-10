@@ -1,3 +1,9 @@
+"""A2A extension models for event type and source metadata.
+
+Defines payload models for event-sourced message metadata including event type,
+source, and idempotency identifiers.
+"""
+
 from pydantic import Field
 
 from aion.core.a2a import A2ABaseModel

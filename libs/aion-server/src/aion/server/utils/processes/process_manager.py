@@ -1,3 +1,5 @@
+"""Multiprocessing manager with pipe-based IPC for coordinated agent/proxy startup."""
+
 from __future__ import annotations
 
 import multiprocessing

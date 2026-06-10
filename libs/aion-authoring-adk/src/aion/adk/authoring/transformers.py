@@ -11,15 +11,34 @@ logger = get_logger()
 # Wire-format constants shared with genai_part_to_a2a_part in aion-server-adk.
 # Changing these values is a breaking protocol change.
 MIME_TYPE_DATA_PART = "text/plain"
+"""MIME type for generic data parts encoded with JSON wrapper tags."""
+
 DATA_PART_START_TAG = b"<a2a_datapart_json>"
+"""Start marker for generic data part JSON encoding in inline_data."""
+
 DATA_PART_END_TAG = b"</a2a_datapart_json>"
+"""End marker for generic data part JSON encoding in inline_data."""
+
 META_TYPE_KEY = "adk_type"
+"""Metadata key identifying the semantic type of a data part."""
+
 META_TYPE_FUNCTION_CALL = "function_call"
+"""Metadata value indicating a function_call Part."""
+
 META_TYPE_FUNCTION_RESPONSE = "function_response"
+"""Metadata value indicating a function_response Part."""
+
 META_TYPE_CODE_EXECUTION_RESULT = "code_execution_result"
+"""Metadata value indicating a code_execution_result Part."""
+
 META_TYPE_EXECUTABLE_CODE = "executable_code"
+"""Metadata value indicating an executable_code Part."""
+
 META_THOUGHT_KEY = "adk_thought"
+"""Metadata key carrying model reasoning/thought content."""
+
 META_VIDEO_METADATA_KEY = "adk_video_metadata"
+"""Metadata key carrying video file metadata (resolution, duration, etc)."""
 
 
 def convert_a2a_part_to_genai_part(a2a_part: a2a_types.Part) -> Optional[genai_types.Part]:
@@ -96,6 +115,14 @@ def convert_a2a_part_to_genai_part(a2a_part: a2a_types.Part) -> Optional[genai_t
 
 
 def _dict_to_value(value: dict) -> struct_pb2.Value:
+    """Convert a Python dict to a protobuf Struct Value.
+
+    Args:
+        value: Dictionary to convert.
+
+    Returns:
+        A protobuf Struct Value containing the dictionary data.
+    """
     _val = struct_pb2.Value()
     json_format.ParseDict(value, _val)
     return _val

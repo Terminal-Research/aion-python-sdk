@@ -1,3 +1,9 @@
+"""Custom logging record class for Aion agents.
+
+Extends Python's LogRecord with Aion-specific context attributes for
+tracing, authentication, and request correlation.
+"""
+
 from __future__ import annotations
 
 import logging

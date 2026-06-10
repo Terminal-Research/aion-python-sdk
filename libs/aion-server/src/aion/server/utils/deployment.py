@@ -1,3 +1,5 @@
+"""Helpers for generating A2A manifests and reading deployment metadata."""
+
 from aion.core.a2a import A2AManifest
 
 __all__ = [

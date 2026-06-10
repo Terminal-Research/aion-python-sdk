@@ -1,3 +1,10 @@
+"""LangGraph message abstraction for thread message handling and reactions.
+
+Extends BaseMessage to provide reaction support for provider messages,
+enabling agents to respond to inbound messages with normalized reactions
+(e.g., emoji reactions on Slack/Teams) via LangGraph's streaming.
+"""
+
 from __future__ import annotations
 
 from aion.core.a2a.extensions.messaging import ReactionActionPayload

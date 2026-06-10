@@ -1,3 +1,5 @@
+"""Abstract interfaces for WebSocket manager and transport factory implementations."""
+
 from abc import ABC, abstractmethod
 
 from gql.transport.websockets import WebsocketsTransport
@@ -48,4 +50,5 @@ class IWebsocketTransportFactory(ABC):
 
     @abstractmethod
     async def create_transport(self) -> WebsocketsTransport:
+        """Create and return a configured WebsocketsTransport instance."""
         ...

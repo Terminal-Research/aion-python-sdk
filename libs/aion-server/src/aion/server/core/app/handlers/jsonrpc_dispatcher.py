@@ -1,3 +1,5 @@
+"""JSON-RPC dispatcher extended with Aion-specific method handling."""
+
 from typing import override
 
 from a2a.server.jsonrpc_models import (
@@ -48,6 +50,7 @@ class AionJsonRpcDispatcher(JsonRpcDispatcher):
         return await super().handle_requests(request)
 
     async def _handle_aion_method(self, body: dict, request: Request) -> Response:
+        """Validate, parse, and dispatch an Aion-specific JSON-RPC method call."""
         request_id = body.get('id')
         method = body.get('method')
         model_class = self.AION_METHOD_TO_MODEL[method]

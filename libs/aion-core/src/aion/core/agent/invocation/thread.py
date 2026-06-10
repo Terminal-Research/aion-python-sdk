@@ -1,3 +1,9 @@
+"""Base thread abstraction for agent invocation.
+
+Defines the core thread model used during agent execution to represent
+conversation state and provide message/artifact emission interfaces.
+"""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod

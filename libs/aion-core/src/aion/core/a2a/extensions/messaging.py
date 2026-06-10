@@ -1,3 +1,9 @@
+"""A2A extension models for message events and actions.
+
+Defines payload models for message-based events (messages, reactions, commands),
+and action payloads for routing message responses through distribution channels.
+"""
+
 from typing import Any, Dict, Literal, Optional
 
 from pydantic import Field

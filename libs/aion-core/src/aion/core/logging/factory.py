@@ -1,3 +1,12 @@
+"""Logger factory with optional server-side enhancement.
+
+Provides get_logger() with auto-discovery of the aion-server logger factory.
+Falls back to stdlib logging when aion-server is not installed.
+Note: setLoggerClass() is intentionally NOT called here — that is the
+responsibility of the consuming layer (aion-server) to avoid polluting
+global logging state in serverless contexts.
+"""
+
 import inspect
 import logging
 from typing import Any, Callable, Optional
@@ -5,7 +14,10 @@ from typing import Any, Callable, Optional
 from .base import AionLogger
 
 _logger_factory: Optional[Callable[[Optional[str]], Any]] = None
+"""Active logger factory, resolved lazily on first get_logger() call."""
+
 _resolved: bool = False
+"""True once auto-discovery of the server factory has been attempted."""
 
 # Note: We do NOT set logging.setLoggerClass() here. That's the responsibility
 # of the consuming layer (e.g., aion-server.logging.factory). This keeps aion-core

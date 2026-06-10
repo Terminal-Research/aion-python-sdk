@@ -162,6 +162,7 @@ class LangGraphA2AConverter:
             routing: MessageActionPayload | None = None,
             metadata: dict | None = None,
     ) -> list[A2AAgentEvent]:
+        """Emit a card as a TaskStatusUpdateEvent with the CARDS_EXTENSION_URI_V1 extension."""
         parts = [build_card_a2a_part(card)]
         extensions = [CARDS_EXTENSION_URI_V1]
         if routing is not None:

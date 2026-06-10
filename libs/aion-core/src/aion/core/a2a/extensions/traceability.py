@@ -1,3 +1,9 @@
+"""A2A extension models for distributed traceability.
+
+Defines payload models for OpenTelemetry-based tracestate and trace metadata
+propagation across A2A message boundaries.
+"""
+
 from typing import Dict, List, Literal, Optional
 
 from pydantic import Field

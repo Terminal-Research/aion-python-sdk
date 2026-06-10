@@ -1,3 +1,5 @@
+"""In-memory task store implementation for development and testing."""
+
 import asyncio
 from a2a.server.context import ServerCallContext
 from a2a.server.owner_resolver import OwnerResolver, resolve_user_scope

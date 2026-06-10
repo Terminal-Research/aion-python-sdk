@@ -9,14 +9,24 @@ from aion.db.postgres.types import Sorting, Pagination
 from sqlalchemy import Select, select, delete, exists, asc, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
-ModelT = TypeVar('ModelT')
-EntityT = TypeVar('EntityT')
+ModelT = TypeVar('ModelT')  # SQLAlchemy declarative model
+EntityT = TypeVar('EntityT')  # Pydantic domain entity
 
 
 class BaseRepository(ABC, Generic[ModelT, EntityT]):
-    """Base repository with entity-model separation."""
+    """Base repository with entity-model separation.
+
+    Subclasses must declare :attr:`model_class` (SQLAlchemy ORM model) and
+    :attr:`entity_class` (Pydantic domain entity). Query helpers convert ORM
+    rows to entities automatically via ``model_validate(..., from_attributes=True)``.
+    """
 
     def __init__(self, session: AsyncSession):
+        """Initialize the repository with an active SQLAlchemy session.
+
+        Args:
+            session: Async SQLAlchemy session used for all database operations.
+        """
         self._session = session
 
     @property
@@ -50,6 +60,7 @@ class BaseRepository(ABC, Generic[ModelT, EntityT]):
 
     @staticmethod
     def _apply_pagination(stmt: Select, pagination: Pagination) -> Select:
+        """Apply offset and limit clauses to ``stmt`` and return the updated statement."""
         if pagination.offset:
             stmt = stmt.offset(pagination.offset)
         if pagination.limit:
@@ -57,6 +68,7 @@ class BaseRepository(ABC, Generic[ModelT, EntityT]):
         return stmt
 
     def _apply_sorting(self, stmt: Select, sorting: Sorting) -> Select:
+        """Apply ORDER BY clauses from ``sorting`` to ``stmt`` and return the updated statement."""
         for key in sorting.keys:
             col = getattr(self.model_class, key.column)
             stmt = stmt.order_by(desc(col) if key.descending else asc(col))

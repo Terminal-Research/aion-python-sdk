@@ -1,3 +1,8 @@
+"""A2A extension models for card interactions.
+
+Defines payload models for card action events (user interactions with rendered cards).
+"""
+
 from typing import Optional
 
 from pydantic import Field

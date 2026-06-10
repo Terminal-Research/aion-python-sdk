@@ -1,3 +1,5 @@
+"""Abstract base class for configuration data collectors."""
+
 from abc import ABC, abstractmethod
 
 

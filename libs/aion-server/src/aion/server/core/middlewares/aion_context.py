@@ -1,3 +1,5 @@
+"""Middleware that extracts A2A request metadata and populates the execution scope."""
+
 from typing import Any
 
 from a2a.server.jsonrpc_models import InternalError, InvalidRequestError

@@ -1,3 +1,5 @@
+"""Logging filter that injects OpenTelemetry and execution-scope context into log records."""
+
 import logging
 
 from aion.core.logging.base import AionLogRecord
@@ -21,6 +23,7 @@ class ServerAionContextFilter(logging.Filter):
 
     @staticmethod
     def _enrich_otel(record: AionLogRecord) -> None:
+        """Populate trace_id, span_id, span_name, and parent_span_id from the active OTel span."""
         try:
             from aion.server.opentelemetry.tracing import get_span_info
 
@@ -34,6 +37,7 @@ class ServerAionContextFilter(logging.Filter):
 
     @classmethod
     def _enrich_server_context(cls, record: AionLogRecord) -> None:
+        """Populate Aion deployment, task, and request fields from the current execution scope."""
         try:
             from aion.server.agent.execution.scope import get_execution_scope
 
@@ -65,5 +69,6 @@ class ServerAionContextFilter(logging.Filter):
 
     @staticmethod
     def _get_app_version_id() -> str:
+        """Return the running agent's version_id from app settings as a fallback."""
         from aion.server.settings import app_settings
         return app_settings.version_id

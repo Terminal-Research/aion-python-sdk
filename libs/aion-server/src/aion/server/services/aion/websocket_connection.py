@@ -1,3 +1,5 @@
+"""Service for managing the persistent WebSocket connection lifecycle."""
+
 from aion.server.services._base import BaseService
 from aion.server.interfaces import IWebSocketManager
 

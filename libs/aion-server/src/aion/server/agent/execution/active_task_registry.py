@@ -1,3 +1,5 @@
+"""Registry that creates ActiveTask instances wired with AionTaskManager."""
+
 from typing import override
 
 from a2a.server.agent_execution.active_task import ActiveTask
@@ -9,6 +11,7 @@ from aion.server.agent.execution.scope import set_task_manager
 
 
 class AionActiveTaskRegistry(ActiveTaskRegistry):
+    """Extends the base registry to inject AionTaskManager and populate the execution scope."""
 
     @override
     async def get_or_create(

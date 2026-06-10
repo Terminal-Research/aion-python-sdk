@@ -1,3 +1,8 @@
+"""Parameter models for A2A RPC method calls.
+
+Defines request parameter structures for GetContext and GetContextsList methods.
+"""
+
 from typing import Optional, Dict, Any
 
 from pydantic import Field

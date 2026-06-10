@@ -1,3 +1,5 @@
+"""Factory for creating server loggers with context-injecting filters and custom handlers."""
+
 import logging
 from typing import Optional
 
@@ -46,9 +48,7 @@ def get_logger(
 
 
 def _is_logger_configured(logger: logging.Logger) -> bool:
-    """
-    Check if logger already has our custom handlers configured
-    """
+    """Return True if the logger already has Aion-specific handlers attached."""
     custom_handler_types = (AionLogstashHandler, LogStreamHandler)
 
     for handler in logger.handlers:
@@ -63,9 +63,7 @@ def _configure_logger(
         use_logstash: bool,
         level: Optional[int | str] = None
 ) -> None:
-    """
-    Configure logger with custom context-aware handlers
-    """
+    """Attach context filter, stream handler, and optional Logstash handler to a logger."""
     log_level = level or app_settings.log_level
     logger.setLevel(log_level)
     logger.propagate = False

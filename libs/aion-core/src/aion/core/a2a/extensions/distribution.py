@@ -1,3 +1,9 @@
+"""A2A extension models for distribution, behavior, and environment context.
+
+Defines payload models for distribution metadata including principal/service identities,
+distribution channels, behavior configuration, and runtime environment details.
+"""
+
 from typing import Annotated, Dict, List, Literal, Optional, Union
 
 from pydantic import Field

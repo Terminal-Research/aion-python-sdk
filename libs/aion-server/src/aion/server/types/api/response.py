@@ -1,3 +1,5 @@
+"""Response models for Aion server REST API endpoints."""
+
 from typing import Dict
 
 from aion.core.config.models import ConfigurationField

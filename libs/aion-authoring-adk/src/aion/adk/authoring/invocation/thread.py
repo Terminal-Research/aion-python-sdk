@@ -1,3 +1,10 @@
+"""ADK thread abstraction for streaming agent responses.
+
+Provides a context-aware Thread class that emits messages, cards, artifacts,
+and ephemeral typing indicators via the ADK event emitter set up by the
+invocation context.
+"""
+
 from __future__ import annotations
 
 from a2a.types import Artifact as A2AArtifact

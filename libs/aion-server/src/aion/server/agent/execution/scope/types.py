@@ -1,3 +1,5 @@
+"""Data classes and models composing the per-request AgentExecutionScope."""
+
 from __future__ import annotations
 
 import uuid
@@ -52,6 +54,7 @@ class TraceData(BaseModel):
         return self._get_value_from_traceparent(3)
 
     def _get_value_from_traceparent(self, index: int) -> Optional[str]:
+        """Extract a dash-delimited segment from the W3C traceparent string by position."""
         if self.traceparent is None:
             return None
 

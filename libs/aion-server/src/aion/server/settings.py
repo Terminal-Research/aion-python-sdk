@@ -1,3 +1,5 @@
+"""Environment-based server configuration settings (log level, Logstash, storage, etc.)."""
+
 from typing import Literal, Optional
 
 from pydantic import Field
@@ -59,6 +61,7 @@ class AppSettings(BaseEnvSettings):
 
     @property
     def is_logstash_configured(self) -> bool:
+        """Return True when both LOGSTASH_HOST and LOGSTASH_PORT are set."""
         return bool(self.logstash_host and self.logstash_port)
 
 

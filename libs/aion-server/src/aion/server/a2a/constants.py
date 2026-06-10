@@ -1,3 +1,5 @@
+"""A2A task state groupings used for routing and lifecycle decisions."""
+
 from a2a.server.request_handlers.default_request_handler import TERMINAL_TASK_STATES
 from a2a.types import TaskState
 

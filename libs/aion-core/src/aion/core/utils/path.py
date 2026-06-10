@@ -1,3 +1,5 @@
+"""Filesystem path utilities for configuration file resolution."""
+
 import os
 from pathlib import Path
 

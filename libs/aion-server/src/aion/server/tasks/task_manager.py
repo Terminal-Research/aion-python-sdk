@@ -1,3 +1,5 @@
+"""Aion-specific task manager that orchestrates event routing and persistence."""
+
 from a2a.server.events import Event
 from a2a.server.tasks import TaskManager
 from a2a.types import Message, Task, TaskArtifactUpdateEvent, TaskState, TaskStatus, TaskStatusUpdateEvent

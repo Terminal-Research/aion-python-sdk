@@ -1,3 +1,5 @@
+"""Metaclasses for singleton and singleton-ABC patterns."""
+
 from abc import ABCMeta
 
 __all__ = [

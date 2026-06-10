@@ -1,3 +1,5 @@
+"""Builder for the A2A AgentCard with Aion extensions and capabilities."""
+
 from a2a.types import (
     AgentExtension,
     AgentCapabilities,
@@ -22,6 +24,7 @@ class AionAgentCard:
             config: AgentConfig,
             base_url: str,
     ) -> AgentCard:
+        """Build an AgentCard from agent config and the server's base URL."""
         capabilities = AgentCapabilities(
             streaming=True,
             push_notifications=True,

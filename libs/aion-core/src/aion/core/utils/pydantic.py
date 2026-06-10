@@ -1,3 +1,9 @@
+"""Pydantic annotations for protobuf message and enum fields.
+
+Provides Protobuf[T] and ProtobufEnum type annotations that plug into
+Pydantic's core schema system for transparent serialization/deserialization.
+"""
+
 from typing import Annotated, Any
 
 from google.protobuf.json_format import MessageToDict, ParseDict

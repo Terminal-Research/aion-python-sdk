@@ -1,3 +1,5 @@
+"""Utility helpers for building and exposing A2A manifests from the proxy."""
+
 from aion.core.a2a import A2AManifest
 from aion.server.utils.deployment import generate_a2a_manifest as generate_a2a_manifest_util
 

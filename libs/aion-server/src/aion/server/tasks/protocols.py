@@ -1,3 +1,5 @@
+"""Runtime protocols for task manager implementations used across the server."""
+
 from typing import Protocol
 
 from a2a.server.events import Event

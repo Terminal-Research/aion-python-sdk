@@ -1,3 +1,5 @@
+"""Aion request handler extending the default A2A handler with preprocessors and Aion methods."""
+
 from a2a.server.agent_execution import RequestContext
 from a2a.server.agent_execution.active_task import ActiveTask
 from a2a.server.context import ServerCallContext
@@ -17,6 +19,11 @@ from .request_preprocessors import A2ARequestPreprocessor
 
 
 def _with_preprocessors(method):
+    """Decorator that runs all registered preprocessors before a handler method.
+
+    On success the wrapped method executes normally. On any exception,
+    rolls back preprocessors in reverse order before re-raising.
+    """
     @wraps(method)
     async def wrapper(self, params, *args, **kwargs):
         for preprocessor in self._preprocessors:

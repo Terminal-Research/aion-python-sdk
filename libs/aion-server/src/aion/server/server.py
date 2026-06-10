@@ -1,3 +1,5 @@
+"""Entry points for running the Aion agent server process."""
+
 import logging
 import os
 import sys
@@ -35,6 +37,7 @@ async def async_serve(
         startup_callback=None,
         serialized_socket=None
 ):
+    """Initialize the agent, build the FastAPI app, and run uvicorn until shutdown."""
     try:
         aion_agent = await agent_manager.create_agent(
             agent_id=agent_id,
@@ -97,7 +100,7 @@ async def run_server(
         startup_callback=None,
         serialized_socket=None
 ):
-    """Starts the Currency Agent server."""
+    """Configure logging, then run the agent server until completion or interrupt."""
     try:
         # Configure custom loggers from uvicorn / logstash
         replace_uvicorn_loggers(suppress_startup_logs=True)

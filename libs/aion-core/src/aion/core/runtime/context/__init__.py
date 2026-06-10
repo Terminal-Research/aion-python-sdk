@@ -1,3 +1,9 @@
+"""Aion runtime context — models, builder, and provider registry.
+
+Provides the AionRuntimeContext that carries inbound A2A event data,
+distribution metadata, and identity information to agent execution code.
+"""
+
 from .builder import AionRuntimeContextBuilder
 from .models import (
     AionExtensions,

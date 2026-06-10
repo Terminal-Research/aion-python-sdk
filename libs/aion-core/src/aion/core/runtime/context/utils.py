@@ -1,3 +1,9 @@
+"""Utilities for extracting typed event payloads from A2A inbox messages.
+
+Parses event extension metadata from an inbound A2A message to produce
+a typed Event with the appropriate NormalizedPayload variant.
+"""
+
 from __future__ import annotations
 
 from typing import Optional

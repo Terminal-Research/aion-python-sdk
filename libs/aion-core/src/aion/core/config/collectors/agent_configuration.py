@@ -1,3 +1,8 @@
+"""Agent configuration data collector.
+
+Collects and processes agent configuration data for use in agent cards.
+"""
+
 from typing import Dict, Any, Union
 
 from aion.core.config import ConfigurationField, ConfigurationType

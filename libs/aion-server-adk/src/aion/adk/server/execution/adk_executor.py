@@ -1,3 +1,5 @@
+"""ADK ExecutorAdapter: wires session, artifact, and stream services for a single agent run."""
+
 import uuid
 from collections.abc import AsyncIterator
 from typing import Any, Optional, TYPE_CHECKING
@@ -35,6 +37,7 @@ logger = get_logger()
 
 
 class ADKExecutor(ExecutorAdapter):
+    """ExecutorAdapter that drives an ADK agent through its run_async lifecycle."""
 
     def __init__(
             self,

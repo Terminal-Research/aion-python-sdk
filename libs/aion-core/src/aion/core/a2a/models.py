@@ -1,3 +1,9 @@
+"""Core A2A data models for agent execution and task management.
+
+Defines structures for agent inboxes, outboxes, conversations, and task status
+tracking within the Agent-to-Agent (A2A) protocol layer.
+"""
+
 import copy
 from typing import Any, List, Dict, Optional, TYPE_CHECKING
 

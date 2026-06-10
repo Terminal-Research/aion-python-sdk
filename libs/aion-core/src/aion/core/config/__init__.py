@@ -1,3 +1,5 @@
+"""Configuration subsystem — models, reader, exceptions, and data collectors."""
+
 from .exceptions import ConfigurationError
 from .models import (
     ConfigurationType,

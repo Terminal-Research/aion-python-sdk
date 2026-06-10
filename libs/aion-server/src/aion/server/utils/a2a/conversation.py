@@ -1,3 +1,5 @@
+"""Builder utilities for assembling A2A Conversation objects from task history."""
+
 from typing import List
 
 from a2a.types import Task, TaskState, Artifact, Message
