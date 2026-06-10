@@ -56422,7 +56422,7 @@ function getMetadataString(metadata, key) {
   return typeof value === "string" ? value : void 0;
 }
 function shouldReplaceCurrentStreamSection(event, kind) {
-  if (kind !== "response" || event.append === true) {
+  if (event.append === true) {
     return false;
   }
   const artifactEvent = event;

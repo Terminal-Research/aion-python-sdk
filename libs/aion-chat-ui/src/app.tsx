@@ -295,7 +295,7 @@ function shouldReplaceCurrentStreamSection(
 	event: TaskArtifactUpdateEvent,
 	kind: StreamTranscriptArtifactKind
 ): boolean {
-	if (kind !== "response" || event.append === true) {
+	if (event.append === true) {
 		return false;
 	}
 

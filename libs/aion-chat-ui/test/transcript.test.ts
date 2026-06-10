@@ -20,7 +20,7 @@ describe("stream transcript sections", () => {
 			taskId: "task-1",
 			artifactId: "aion:stream-delta",
 			kind: "response",
-		body: "hel",
+			body: "hel",
 			append: false
 		});
 		entries = result.entries;
@@ -189,6 +189,50 @@ describe("stream transcript sections", () => {
 		expect(result.entries[0]?.body).toBe("partial thought");
 		expect(result.entries[2]?.body).toBe("answer");
 		expect(result.entries[4]?.body).toBe("next thought");
+	});
+
+	it("replaces a finalized thinking section after an interleaved response", () => {
+		const state = createStreamTranscriptState();
+		let entries: TranscriptEntry[] = [];
+
+		entries = applyStreamTranscriptDelta({
+			entries,
+			state,
+			taskId: "task-1",
+			artifactId: "aion:thinking-delta",
+			kind: "thinking",
+			body: "partial thought",
+			append: false
+		}).entries;
+		entries = applyStreamTranscriptDelta({
+			entries,
+			state,
+			taskId: "task-1",
+			artifactId: "aion:stream-delta",
+			kind: "response",
+			body: "answer",
+			append: true
+		}).entries;
+
+		const result = applyStreamTranscriptDelta({
+			entries,
+			state,
+			taskId: "task-1",
+			artifactId: "aion:thinking-delta",
+			kind: "thinking",
+			body: "final thought",
+			append: false,
+			replaceCurrentSection: true
+		});
+
+		expect(result.startedNewSection).toBe(false);
+		expect(result.entries.map((entry) => entry.role)).toEqual([
+			"agent",
+			"divider",
+			"agent"
+		]);
+		expect(result.entries[0]?.body).toBe("final thought");
+		expect(result.entries[2]?.body).toBe("answer");
 	});
 
 	it("replaces the response section after an interleaved thinking segment", () => {

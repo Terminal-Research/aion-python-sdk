@@ -21,9 +21,9 @@ LangGraph, `AIMessageChunk` values become stream-delta artifact updates. The
 first emitted chunk opens a section with `append: false`; later chunks normally
 use `append: true`. A later update with `append: false` or a missing `append`
 flag starts a new section for that artifact unless the producer explicitly marks
-the update as a finalized response reconstruction. This allows multiple thinking
-or response sections to be displayed in order while still permitting final
-response de-duplication.
+the update as a finalized reconstruction. This allows multiple thinking or
+response sections to be displayed in order while still permitting final
+full-value de-duplication.
 
 ## TaskArtifactUpdateEvent Shape
 
@@ -169,11 +169,11 @@ uses the same artifact ID as the previous section. Clients should preserve the
 previous section, insert a visual break, and stream the new section from the new
 parts.
 
-A producer may replace an existing response stream-delta section when it sends a
-finalized full-response reconstruction for the same task and artifact. This is
-useful when the producer sends a full final stream-delta value after incremental
-chunks. Clients should replace the prior response text instead of rendering a
-duplicate response section.
+A producer may replace an existing stream-delta or thinking-delta section when
+it sends a finalized full-value reconstruction for the same task and artifact.
+This is useful when the producer sends a full final value after incremental
+chunks. Clients should replace the prior section text instead of rendering a
+duplicate section.
 
 This can happen when:
 
