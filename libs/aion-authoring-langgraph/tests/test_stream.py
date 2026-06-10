@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 from a2a.types import Artifact
 from langchain_core.messages import AIMessage, AIMessageChunk
 
-from aion.langgraph.authoring.stream import (
+from aion.langgraph.authoring.invocation.emitters import (
     emit_artifact,
     emit_card,
     emit_message,

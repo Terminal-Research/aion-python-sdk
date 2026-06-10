@@ -1,15 +1,20 @@
-"""Pydantic models for the aion:output Event custom_metadata key.
+"""Pydantic models and typed accessors for ADK Event.custom_metadata aion:* keys.
 
-aion:output instructs the ADK event converter how to route and transform
-a non-partial Event into the appropriate A2A output type.
+aion:output  — instructs the ADK event converter how to route and transform
+               a non-partial Event into the appropriate A2A output type.
+aion:routing — carries outbound delivery routing (MessageActionPayload).
+
+All keys prefixed aion: are reserved service keys. Everything else in
+custom_metadata is treated as user-defined metadata forwarded to A2A.
 """
 
 from __future__ import annotations
 
-from aion.adk.authoring.constants import AION_OUTPUT_KEY
-from typing import Literal, Optional
-
+from aion.adk.authoring.constants import AION_OUTPUT_KEY, AION_ROUTING_KEY, AION_SERVICE_KEYS
+from aion.core.a2a.extensions.messaging import MessageActionPayload
+from google.adk.events import Event
 from pydantic import BaseModel, Field, model_validator
+from typing import Literal, Optional
 
 
 class ArtifactOutput(BaseModel):
@@ -111,3 +116,35 @@ class AionOutput(BaseModel):
         if raw is None:
             return None
         return cls.model_validate(raw)
+
+
+def get_aion_output(event: Event) -> AionOutput | None:
+    """Return the typed aion:output routing hint from an ADK Event, or None."""
+    return AionOutput.from_custom_metadata(event.custom_metadata)
+
+
+def get_aion_routing(event: Event) -> MessageActionPayload | None:
+    """Return the typed aion:routing delivery target from an ADK Event, or None."""
+    raw = (event.custom_metadata or {}).get(AION_ROUTING_KEY)
+    if raw is None:
+        return None
+    return MessageActionPayload.model_validate(raw)
+
+
+def get_aion_user_metadata(event: Event) -> dict | None:
+    """Return user-defined metadata from an ADK Event, excluding reserved aion:* service keys."""
+    if not event.custom_metadata:
+        return None
+    user_meta = {k: v for k, v in event.custom_metadata.items() if k not in AION_SERVICE_KEYS}
+    return user_meta or None
+
+
+__all__ = [
+    "AionOutput",
+    "ArtifactOutput",
+    "CardOutput",
+    "ReactionOutput",
+    "get_aion_output",
+    "get_aion_routing",
+    "get_aion_user_metadata",
+]

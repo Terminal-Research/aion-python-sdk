@@ -7,12 +7,13 @@ from google.genai import types
 from a2a.types import TaskArtifactUpdateEvent, TaskStatusUpdateEvent
 
 from aion.adk.authoring.constants import AION_OUTPUT_KEY, AION_ROUTING_KEY
-from aion.adk.authoring.invocation.output import AionOutput, ArtifactOutput, CardOutput
+from aion.adk.authoring.invocation.event_metadata import AionOutput, ArtifactOutput, CardOutput
 from aion.core.a2a import data_artifact, file_artifact
 from aion.core.constants import MESSAGING_EXTENSION_URI_V1, CARDS_EXTENSION_URI_V1
 from aion.core.agent.invocation.card import Card
 from aion.core.a2a.extensions.messaging import MessageActionPayload
 
+from aion.adk.authoring.invocation.event_metadata import get_aion_routing
 from aion.adk.server.execution.event_converter import ADKToA2AEventConverter
 
 
@@ -54,18 +55,20 @@ def make_card_event(card: Card, routing: MessageActionPayload | None = None) -> 
 
 class TestExtractRouting:
     def test_returns_none_when_no_metadata(self):
-        converter = make_converter()
-        assert converter._extract_routing(None) is None
+        event = Event(author="agent", custom_metadata=None)
+        assert get_aion_routing(event) is None
 
     def test_returns_none_when_key_absent(self):
-        converter = make_converter()
-        assert converter._extract_routing({"aion:output": {}}) is None
+        event = Event(author="agent", custom_metadata={"aion:output": {}})
+        assert get_aion_routing(event) is None
 
     def test_returns_payload_when_key_present(self):
-        converter = make_converter()
         routing = make_routing()
-        meta = {AION_ROUTING_KEY: routing.model_dump(by_alias=True, exclude_none=True)}
-        result = converter._extract_routing(meta)
+        event = Event(
+            author="agent",
+            custom_metadata={AION_ROUTING_KEY: routing.model_dump(by_alias=True, exclude_none=True)},
+        )
+        result = get_aion_routing(event)
         assert isinstance(result, MessageActionPayload)
         assert result.context_id == "D06DM456"
         assert result.reply_to_message_id == "1728162300.551219"

@@ -1,18 +1,16 @@
 """Tests for ADK emit_* streaming helpers."""
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock
-
-import pytest
-from a2a.types import Artifact, Part
 from aion.adk.authoring.constants import AION_OUTPUT_KEY, AION_ROUTING_KEY
-from aion.adk.authoring.invocation.output import AionOutput, ArtifactOutput
-from aion.adk.authoring.stream import emit_artifact, emit_card, emit_reaction, emit_text
+from aion.adk.authoring.invocation.emitters import emit_artifact, emit_card, emit_reaction, emit_message
+from aion.adk.authoring.invocation.event_metadata import get_aion_output
+from aion.adk.authoring.invocation.invocation_context import AionInvocationContext
 from aion.core.a2a import data_artifact, file_artifact
-from aion.core.a2a.enums import ArtifactId, ArtifactName
+from aion.core.a2a.enums import ArtifactId
 from aion.core.a2a.extensions.messaging import MessageActionPayload, ReactionActionPayload
 from aion.core.agent.invocation.card import Card
 from google.adk.events import Event
+from unittest.mock import AsyncMock, MagicMock
 
 
 def make_routing() -> MessageActionPayload:
@@ -26,7 +24,7 @@ def make_routing() -> MessageActionPayload:
 class TestEmitText:
     def test_emits_event_with_text_content(self):
         emitter = MagicMock()
-        emit_text(emitter, "hello")
+        emit_message(emitter, "hello")
 
         emitter.assert_called_once()
         event: Event = emitter.call_args[0][0]
@@ -36,14 +34,14 @@ class TestEmitText:
 
     def test_no_custom_metadata_without_routing_or_ephemeral(self):
         emitter = MagicMock()
-        emit_text(emitter, "hello")
+        emit_message(emitter, "hello")
 
         event: Event = emitter.call_args[0][0]
         assert event.custom_metadata is None
 
     def test_routing_embedded_in_custom_metadata(self):
         emitter = MagicMock()
-        emit_text(emitter, "hello", routing=make_routing())
+        emit_message(emitter, "hello", routing=make_routing())
 
         event: Event = emitter.call_args[0][0]
         assert event.custom_metadata is not None
@@ -52,10 +50,10 @@ class TestEmitText:
 
     def test_ephemeral_sets_aion_output_artifact(self):
         emitter = MagicMock()
-        emit_text(emitter, "typing...", ephemeral=True)
+        emit_message(emitter, "typing...", ephemeral=True)
 
         event: Event = emitter.call_args[0][0]
-        output = AionOutput.from_custom_metadata(event.custom_metadata)
+        output = get_aion_output(event)
         assert output is not None
         assert output.artifact is not None
         assert output.artifact.artifact_id == ArtifactId.EPHEMERAL_MESSAGE.value
@@ -63,18 +61,18 @@ class TestEmitText:
     def test_ephemeral_text_in_content_not_duplicated(self):
         """Text is in event.content only — aion:output carries just the routing hint."""
         emitter = MagicMock()
-        emit_text(emitter, "typing...", ephemeral=True)
+        emit_message(emitter, "typing...", ephemeral=True)
 
         event: Event = emitter.call_args[0][0]
         assert event.content is not None
         assert event.content.parts[0].text == "typing..."
         # aion:output.artifact must NOT contain parts/data — only routing metadata
-        output = AionOutput.from_custom_metadata(event.custom_metadata)
+        output = get_aion_output(event)
         assert "parts" not in output.model_dump(exclude_none=True).get("artifact", {})
 
     def test_ephemeral_with_routing_has_both_keys(self):
         emitter = MagicMock()
-        emit_text(emitter, "typing...", routing=make_routing(), ephemeral=True)
+        emit_message(emitter, "typing...", routing=make_routing(), ephemeral=True)
 
         event: Event = emitter.call_args[0][0]
         assert AION_OUTPUT_KEY in event.custom_metadata
@@ -88,7 +86,7 @@ class TestEmitCard:
         emit_card(emitter, card)
 
         event: Event = emitter.call_args[0][0]
-        output = AionOutput.from_custom_metadata(event.custom_metadata)
+        output = get_aion_output(event)
         assert output.card is not None
         assert output.card.url is None
 
@@ -106,7 +104,7 @@ class TestEmitCard:
         emit_card(emitter, card)
 
         event: Event = emitter.call_args[0][0]
-        output = AionOutput.from_custom_metadata(event.custom_metadata)
+        output = get_aion_output(event)
         assert output.card.url == "https://my-site.com/card"
 
     def test_url_card_has_empty_content_parts(self):
@@ -127,9 +125,10 @@ class TestEmitCard:
         assert event.custom_metadata[AION_ROUTING_KEY]["contextId"] == "D06DM456"
 
 
-def make_mock_ctx(mime_type: str = "application/pdf") -> MagicMock:
-    """Build a mock InvocationContext with a working artifact_service."""
+def make_mock_ctx() -> MagicMock:
+    """Build a mock that passes isinstance(ctx, AionInvocationContext) with a working artifact_service."""
     ctx = MagicMock()
+    ctx.__class__ = AionInvocationContext
     ctx.app_name = "test_app"
     ctx.user_id = "user_1"
     ctx.session.id = "session_1"
@@ -145,7 +144,7 @@ class TestEmitArtifact:
         asyncio.run(emit_artifact(emitter, ctx, artifact))
 
         event: Event = emitter.call_args[0][0]
-        output = AionOutput.from_custom_metadata(event.custom_metadata)
+        output = get_aion_output(event)
         assert output.artifact is not None
         assert output.artifact.artifact_id == artifact.artifact_id
         assert output.artifact.artifact_name == "report"
@@ -220,7 +219,7 @@ class TestEmitArtifact:
         asyncio.run(emit_artifact(emitter, ctx, artifact))
 
         event: Event = emitter.call_args[0][0]
-        output = AionOutput.from_custom_metadata(event.custom_metadata)
+        output = get_aion_output(event)
         artifact_hint = output.model_dump(exclude_none=True)["artifact"]
         assert set(artifact_hint.keys()) <= {"artifact_id", "artifact_name"}
 
@@ -238,7 +237,7 @@ class TestEmitReaction:
 
         emitter.assert_called_once()
         event: Event = emitter.call_args[0][0]
-        output = AionOutput.from_custom_metadata(event.custom_metadata)
+        output = get_aion_output(event)
         assert output.reaction is not None
         assert output.reaction.reaction_key == "thumbsup"
         assert output.reaction.context_id == "C123"
@@ -255,7 +254,7 @@ class TestEmitReaction:
         emit_reaction(emitter, payload)
 
         event: Event = emitter.call_args[0][0]
-        output = AionOutput.from_custom_metadata(event.custom_metadata)
+        output = get_aion_output(event)
         assert output.reaction.operation == "remove"
 
     def test_display_value_passed_through(self):
@@ -270,5 +269,5 @@ class TestEmitReaction:
         emit_reaction(emitter, payload)
 
         event: Event = emitter.call_args[0][0]
-        output = AionOutput.from_custom_metadata(event.custom_metadata)
+        output = get_aion_output(event)
         assert output.reaction.display_value == ":thumbsup:"

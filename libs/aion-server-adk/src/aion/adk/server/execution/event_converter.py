@@ -11,13 +11,17 @@ from a2a.types import (
     TaskStatus,
     TaskStatusUpdateEvent,
 )
-from aion.adk.authoring.constants import AION_ROUTING_KEY, AION_SERVICE_KEYS
-from aion.adk.authoring.invocation.output import AionOutput, ReactionOutput
+from aion.adk.authoring.invocation.event_metadata import (
+    AionOutput,
+    ReactionOutput,
+    get_aion_output,
+    get_aion_routing,
+    get_aion_user_metadata,
+)
 from aion.core.agent.invocation.card import Card
 from aion.core.constants import CARDS_EXTENSION_URI_V1, MESSAGE_ACTION_PAYLOAD_SCHEMA_V1, MESSAGING_EXTENSION_URI_V1, REACTION_ACTION_PAYLOAD_SCHEMA_V1
 from aion.core.logging import get_logger
 from aion.core.a2a import ArtifactId, ArtifactName
-from aion.core.a2a.extensions.messaging import MessageActionPayload
 from aion.core.agent.invocation.card.utils import build_card_a2a_part
 from google.adk.events import Event
 from google.protobuf import json_format, struct_pb2
@@ -91,12 +95,12 @@ class ADKToA2AEventConverter:
         if not self._streaming_started:
             self._streaming_started = True
 
-        user_meta = self._extract_user_metadata(adk_event.custom_metadata)
+        user_meta = get_aion_user_metadata(adk_event)
         if user_meta:
             self._stream_user_metadata = user_meta
 
         artifact_metadata = {"status": "active", "status_reason": "chunk_streaming"}
-        user_meta = self._extract_user_metadata(adk_event.custom_metadata)
+        user_meta = get_aion_user_metadata(adk_event)
         if user_meta:
             artifact_metadata.update(user_meta)
 
@@ -142,25 +146,6 @@ class ADKToA2AEventConverter:
         )
 
     @staticmethod
-    def _extract_routing(custom_metadata: dict | None) -> MessageActionPayload | None:
-        raw = (custom_metadata or {}).get(AION_ROUTING_KEY)
-        if raw is None:
-            return None
-        return MessageActionPayload.model_validate(raw)
-
-    @staticmethod
-    def _extract_user_metadata(custom_metadata: dict | None) -> dict | None:
-        """Extract user-defined metadata from custom_metadata, excluding service keys.
-
-        Service keys (prefixed aion:) control server behavior and are never
-        forwarded to A2A Message.metadata. Everything else passes through.
-        """
-        if not custom_metadata:
-            return None
-        user_meta = {k: v for k, v in custom_metadata.items() if k not in AION_SERVICE_KEYS}
-        return user_meta or None
-
-    @staticmethod
     def _build_extension_part(data: dict, schema_uri: str) -> Part:
         proto_value = struct_pb2.Value()
         json_format.ParseDict(data, proto_value)
@@ -201,7 +186,7 @@ class ADKToA2AEventConverter:
         """
         results: list[AgentEvent] = []
 
-        output = AionOutput.from_custom_metadata(adk_event.custom_metadata)
+        output = get_aion_output(adk_event)
 
         if output and output.reaction is not None:
             return [self._build_reaction_event(output.reaction)]
@@ -213,7 +198,7 @@ class ADKToA2AEventConverter:
                 card_jsx = adk_event.content and adk_event.content.parts and adk_event.content.parts[0].text
                 card = Card(jsx=card_jsx) if card_jsx else None
             if card:
-                routing = self._extract_routing(adk_event.custom_metadata)
+                routing = get_aion_routing(adk_event)
                 parts = [build_card_a2a_part(card)]
                 extensions = [CARDS_EXTENSION_URI_V1]
                 if routing is not None:
@@ -229,7 +214,7 @@ class ADKToA2AEventConverter:
                     role=Role.ROLE_AGENT,
                     parts=parts,
                     extensions=extensions,
-                    metadata=self._extract_user_metadata(adk_event.custom_metadata),
+                    metadata=get_aion_user_metadata(adk_event),
                 )
                 results.append(TaskStatusUpdateEvent(
                     task_id=self._task_id,
@@ -245,7 +230,7 @@ class ADKToA2AEventConverter:
             content_parts = A2ATransformer.transform_content(adk_event.content)
 
             if content_parts:
-                routing = self._extract_routing(adk_event.custom_metadata)
+                routing = get_aion_routing(adk_event)
                 extensions = []
                 if routing is not None:
                     content_parts.append(self._build_extension_part(
@@ -261,7 +246,7 @@ class ADKToA2AEventConverter:
                     role=role,
                     parts=content_parts,
                     extensions=extensions or None,
-                    metadata=self._extract_user_metadata(adk_event.custom_metadata),
+                    metadata=get_aion_user_metadata(adk_event),
                 )
                 results.append(TaskStatusUpdateEvent(
                     task_id=self._task_id,
@@ -284,7 +269,7 @@ class ADKToA2AEventConverter:
         if self._ctx.artifact_service is None:
             return []
 
-        output = AionOutput.from_custom_metadata(adk_event.custom_metadata)
+        output = get_aion_output(adk_event)
         hint = output.artifact if output else None
 
         results: list[AgentEvent] = []
@@ -317,7 +302,7 @@ class ADKToA2AEventConverter:
             name = (hint.artifact_name if hint else None) or filename
 
             artifact_metadata: dict = {"version": str(version)}
-            user_meta = self._extract_user_metadata(adk_event.custom_metadata)
+            user_meta = get_aion_user_metadata(adk_event)
             if user_meta:
                 artifact_metadata.update(user_meta)
 
