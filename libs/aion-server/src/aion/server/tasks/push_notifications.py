@@ -1,3 +1,5 @@
+"""Factory for constructing push notification store and sender with DB or in-memory backend."""
+
 from __future__ import annotations
 
 import httpx
@@ -35,6 +37,7 @@ class PushNotificationFactory:
 
     @staticmethod
     def _create_postgres_store(db_manager: DbManagerProtocol) -> PushNotificationConfigStore:
+        """Build a DatabasePushNotificationConfigStore bound to the shared engine."""
         from a2a.server.tasks.database_push_notification_config_store import (
             DatabasePushNotificationConfigStore,
         )
@@ -48,4 +51,5 @@ class PushNotificationFactory:
 
     @staticmethod
     def _create_memory_store() -> PushNotificationConfigStore:
+        """Return an in-memory push notification config store as a fallback."""
         return InMemoryPushNotificationConfigStore()

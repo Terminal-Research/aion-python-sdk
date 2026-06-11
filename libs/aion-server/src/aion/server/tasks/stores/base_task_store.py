@@ -1,3 +1,5 @@
+"""Abstract base class for A2A task persistence backends."""
+
 from abc import abstractmethod
 from typing import Optional, List
 

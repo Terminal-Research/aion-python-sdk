@@ -16,7 +16,7 @@ from a2a.types import (
     TaskStatusUpdateEvent,
 )
 
-from aion.core.types import A2AOutbox
+from aion.core.a2a import A2AOutbox
 from .stream_executor import StreamResult
 
 if TYPE_CHECKING:

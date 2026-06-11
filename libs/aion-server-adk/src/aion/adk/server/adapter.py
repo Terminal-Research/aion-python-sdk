@@ -1,3 +1,5 @@
+"""AgentAdapter implementation for Google ADK agents."""
+
 import inspect
 from pathlib import Path
 from typing import Any, Optional
@@ -18,6 +20,8 @@ logger = get_logger()
 
 
 class ADKAdapter(AgentAdapter):
+    """AgentAdapter implementation that bridges Aion server with Google ADK agents."""
+
     def __init__(
             self,
             base_path: Optional[Path] = None,
@@ -39,12 +43,15 @@ class ADKAdapter(AgentAdapter):
 
     @staticmethod
     def framework_name() -> str:
+        """Return the short framework identifier used for routing and logging."""
         return "adk"
 
     def get_supported_types(self) -> list[type]:
+        """Return ADK base types that this adapter can accept directly."""
         return [BaseAgent]
 
     def can_handle(self, agent_obj: Any) -> bool:
+        """Return True for ADK agent instances and zero-arg factory callables."""
         # Check direct instance
         if self._is_adk_agent_instance(agent_obj):
             return True
@@ -56,6 +63,7 @@ class ADKAdapter(AgentAdapter):
         return False
 
     async def initialize_agent(self, agent_obj: Any, config: AgentConfig) -> Any:
+        """Resolve agent_obj to a concrete ADK agent instance, invoking it if it is a factory."""
         logger.debug(f"Initializing ADK agent of type '{type(agent_obj).__name__}'")
 
         # Direct agent instance - return as-is
@@ -80,6 +88,7 @@ class ADKAdapter(AgentAdapter):
         )
 
     async def create_executor(self, agent: Any, config: AgentConfig) -> ExecutorAdapter:
+        """Build and return an ADKExecutor wired with session and artifact services."""
         logger.debug("Creating executor for ADK agent")
 
         if not self._is_adk_agent_instance(agent):
@@ -88,16 +97,18 @@ class ADKAdapter(AgentAdapter):
             )
 
         session_service = await SessionServiceFactory.create(db_manager=self.db_manager)
-        artifact_service = ArtifactServiceFactory.create(db_manager=self.db_manager, file_uploader=self.file_uploader)
-        return ADKExecutor(agent, config, session_service=session_service, artifact_service=artifact_service)
+        artifact_service = ArtifactServiceFactory.create(db_manager=self.db_manager)
+        return ADKExecutor(agent, config, session_service=session_service, artifact_service=artifact_service, file_uploader=self.file_uploader)
 
     def validate_config(self, config: AgentConfig) -> None:
+        """Raise ConfigurationError if required ADK config fields are absent."""
         if not config.path:
             raise ConfigurationError("Agent path is required for ADK adapter")
         logger.debug(f"Configuration validated for agent by ADK adapter")
 
     @staticmethod
     def _is_adk_agent_instance(obj: Any) -> bool:
+        """Return True if obj is a non-None instance of ADK BaseAgent."""
         if obj is None:
             return False
 

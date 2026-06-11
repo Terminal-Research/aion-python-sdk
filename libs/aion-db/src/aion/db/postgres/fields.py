@@ -1,3 +1,5 @@
+"""SQLAlchemy custom column types for Pydantic models and Protobuf messages."""
+
 from typing import Any, Type
 
 from google.protobuf import json_format
@@ -14,11 +16,18 @@ class PydanticType(TypeDecorator):
     cache_ok = True
 
     def __init__(self, pydantic_class: Type[BaseModel], *args: Any, many: bool = False, **kwargs: Any):
+        """Initialize the column type.
+
+        Args:
+            pydantic_class: Pydantic model class used for serialization/deserialization.
+            many: If True, the column holds a JSON array and maps to a list of models.
+        """
         super().__init__(*args, **kwargs)
         self._pydantic_class = pydantic_class
         self._many = many
 
     def process_bind_param(self, value, dialect):
+        """Serialize a Pydantic model (or list of models) to a JSON-compatible structure before writing to DB."""
         if value is None:
             return None
 
@@ -34,6 +43,7 @@ class PydanticType(TypeDecorator):
         return value.model_dump(mode="json")
 
     def process_result_value(self, value, dialect):
+        """Deserialize a JSONB value from DB into a Pydantic model instance (or list of instances)."""
         if value is None:
             return None
 
@@ -50,6 +60,12 @@ class ProtobufType(TypeDecorator):
     cache_ok = True
 
     def __init__(self, proto_class: Type[ProtoMessage], *args: Any, many: bool = False, **kwargs: Any):
+        """Initialize the column type.
+
+        Args:
+            proto_class: Protobuf message class used for serialization/deserialization.
+            many: If True, the column holds a JSON array and maps to a list of messages.
+        """
         super().__init__(*args, **kwargs)
         self._proto_class = proto_class
         self._many = many
@@ -62,6 +78,7 @@ class ProtobufType(TypeDecorator):
         return json_format.MessageToDict(value)
 
     def process_bind_param(self, value, dialect):
+        """Serialize a protobuf message (or list of messages) to a JSON-compatible structure before writing to DB."""
         if value is None:
             return None
         if self._many:
@@ -69,6 +86,7 @@ class ProtobufType(TypeDecorator):
         return self._serialize_value(value)
 
     def process_result_value(self, value, dialect):
+        """Deserialize a JSONB value from DB into a protobuf message instance (or list of instances)."""
         if value is None:
             return None
         if self._many:

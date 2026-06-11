@@ -1,7 +1,8 @@
 """
 Route definitions for AION Agent Proxy Server
 """
-from aion.core.types import HealthResponse, A2AManifest
+from aion.core.http import HealthResponse
+from aion.core.a2a import A2AManifest
 from fastapi import Request, Response
 
 from .constants import (

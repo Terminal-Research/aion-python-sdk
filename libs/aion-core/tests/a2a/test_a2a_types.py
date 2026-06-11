@@ -38,7 +38,7 @@ from unittest.mock import MagicMock
 import pytest
 from a2a.types import Artifact, Message, Role, Task, TaskState, TaskStatus
 
-from aion.core.types.a2a.enums import (
+from aion.core.a2a.enums import (
     A2AEventType,
     A2AMetadataKey,
     ArtifactId,
@@ -47,8 +47,8 @@ from aion.core.types.a2a.enums import (
     ArtifactStreamingStatusReason,
     MessageType,
 )
-from aion.core.types.a2a.extensions.cards import CardActionEventPayload
-from aion.core.types.a2a.extensions.distribution import (
+from aion.core.a2a.extensions.cards import CardActionEventPayload
+from aion.core.a2a.extensions.distribution import (
     PrincipalIdentity,
     Behavior,
     DistributionExtensionV1,
@@ -56,8 +56,8 @@ from aion.core.types.a2a.extensions.distribution import (
     Environment,
     ServiceIdentity,
 )
-from aion.core.types.a2a.extensions.event import EventMessageMetadataV1, EventPartMetadataV1
-from aion.core.types.a2a.extensions.messaging import (
+from aion.core.a2a.extensions.event import EventMessageMetadataV1, EventPartMetadataV1
+from aion.core.a2a.extensions.messaging import (
     CommandEventPayload,
     MessageActionPayload,
     MessageEventPayload,
@@ -65,8 +65,8 @@ from aion.core.types.a2a.extensions.messaging import (
     ReactionEventPayload,
     SourceSystemEventPayload,
 )
-from aion.core.types.a2a.extensions.traceability import TraceabilityExtensionV1, TraceStateEntry
-from aion.core.types.a2a.models import (
+from aion.core.a2a.extensions.traceability import TraceabilityExtensionV1, TraceStateEntry
+from aion.core.a2a.models import (
     A2AInbox,
     A2AManifest,
     A2AOutbox,
@@ -74,9 +74,9 @@ from aion.core.types.a2a.models import (
     ConversationTaskStatus,
     ContextsList,
 )
-from aion.core.types.a2a.request import GetContextRequest, GetContextsListRequest
-from aion.core.types.a2a.request_params import GetContextParams, GetContextsListParams
-from aion.core.types.a2a.response import GetContextSuccessResponse, GetContextsListSuccessResponse
+from aion.core.a2a.request import GetContextRequest, GetContextsListRequest
+from aion.core.a2a.request_params import GetContextParams, GetContextsListParams
+from aion.core.a2a.response import GetContextSuccessResponse, GetContextsListSuccessResponse
 
 
 class TestEnums:

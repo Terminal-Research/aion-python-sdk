@@ -1,3 +1,5 @@
+"""Service wrapper for JWT-based authentication with the Aion API."""
+
 from aion.api.http import AionJWTManager
 
 from aion.server.services._base import BaseService

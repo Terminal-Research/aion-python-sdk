@@ -1,3 +1,5 @@
+"""Text utilities for terminal output formatting."""
+
 from typing import Literal
 
 __all__ = [

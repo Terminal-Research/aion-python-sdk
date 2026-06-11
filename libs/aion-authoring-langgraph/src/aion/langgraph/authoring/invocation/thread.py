@@ -1,22 +1,32 @@
+"""LangGraph thread abstraction for streaming agent responses.
+
+Provides a context-aware Thread class that emits messages, cards, artifacts,
+and ephemeral typing indicators via LangGraph's streaming mechanism.
+"""
+
 from __future__ import annotations
 
+from a2a.types import Artifact as A2AArtifact
+from aion.core.a2a.extensions.messaging import MessageActionPayload
 from aion.core.agent import BaseThread
 from aion.core.agent.invocation.card import Card
 from aion.core.logging import get_logger
-from aion.core.types.a2a.extensions.messaging import MessageActionPayload
 from langchain_core.messages import AIMessage, AIMessageChunk
 from langgraph.config import get_stream_writer
-from typing import Any, Optional, Union
+from typing import Any, Optional
 from uuid import uuid4
 
-from aion.langgraph.authoring.events.custom_events import CardCustomEvent
-from aion.langgraph.authoring.invocation.message import Message
-from aion.langgraph.authoring.stream import emit_message
+from .emitters import (
+    emit_artifact,
+    emit_card,
+    emit_message,
+)
+from .message import Message
 
 logger = get_logger()
 
 ReplyResult = Optional[AIMessage]
-"""Return type of Thread.post(): the object that was sent, or None if nothing was sent."""
+"""Return type of Thread.post(): the emitted message or message chunk, or None if nothing was sent."""
 
 
 class Thread(BaseThread):
@@ -35,7 +45,6 @@ class Thread(BaseThread):
             )
             return None
 
-
     @staticmethod
     async def _emit_string_as_text_or_card_document(
             writer,
@@ -43,8 +52,8 @@ class Thread(BaseThread):
             metadata: dict | None = None,
             routing: Optional[MessageActionPayload] = None,
     ) -> ReplyResult:
-        msg = AIMessage(content=content, id=str(uuid4()), metadata=metadata)
-        emit_message(writer, msg, routing=routing)
+        msg = AIMessage(content=content, id=str(uuid4()))
+        emit_message(writer, msg, routing=routing, metadata=metadata)
         return msg
 
     async def post(
@@ -68,7 +77,11 @@ class Thread(BaseThread):
             return None
 
         if isinstance(content, Card):
-            writer(CardCustomEvent(card=content, routing=target))
+            emit_card(writer, content, routing=target, metadata=metadata)
+            return None
+
+        if isinstance(content, A2AArtifact):
+            emit_artifact(writer, content, routing=target, metadata=metadata)
             return None
 
         if isinstance(content, str):
@@ -100,10 +113,10 @@ class Thread(BaseThread):
         try:
             async for chunk in iterator:
                 if isinstance(chunk, str):
-                    emit_message(writer, AIMessageChunk(content=chunk))
+                    emit_message(writer, AIMessageChunk(content=chunk), metadata=metadata)
                     accumulated += chunk
                 elif isinstance(chunk, AIMessageChunk):
-                    emit_message(writer, chunk)
+                    emit_message(writer, chunk, metadata=metadata)
                     if chunk.content:
                         accumulated += chunk.content
                 else:
@@ -120,13 +133,13 @@ class Thread(BaseThread):
             )
 
         if accumulated:
-            msg = AIMessage(content=accumulated, id=str(uuid4()), metadata=metadata)
-            emit_message(writer, msg, routing=routing)
+            msg = AIMessage(content=accumulated, id=str(uuid4()))
+            emit_message(writer, msg, routing=routing, metadata=metadata)
             return msg
 
         return None
 
-    async def typing(self, content: str) -> None:
+    async def typing(self, content: str, *, metadata: dict | None = None) -> None:
         """Emit a stream-only ephemeral typing/progress indicator.
 
         For full control over message parameters, use post() with an AIMessage instead.
@@ -144,4 +157,4 @@ class Thread(BaseThread):
             return
 
         msg = AIMessage(content=content)
-        emit_message(writer, msg, ephemeral=True)
+        emit_message(writer, msg, ephemeral=True, metadata=metadata)

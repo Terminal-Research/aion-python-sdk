@@ -1,3 +1,9 @@
+"""Utilities for extracting typed event payloads from A2A inbox messages.
+
+Parses event extension metadata from an inbound A2A message to produce
+a typed Event with the appropriate NormalizedPayload variant.
+"""
+
 from __future__ import annotations
 
 from typing import Optional
@@ -10,13 +16,13 @@ from aion.core.constants import (
     MESSAGE_EVENT_PAYLOAD_SCHEMA_V1,
     REACTION_EVENT_PAYLOAD_SCHEMA_V1,
 )
-from aion.core.types.a2a import A2AInbox
-from aion.core.types.a2a.extensions.cards import CardActionEventPayload
-from aion.core.types.a2a.extensions.event import (
+from aion.core.a2a import A2AInbox
+from aion.core.a2a.extensions.cards import CardActionEventPayload
+from aion.core.a2a.extensions.event import (
     EventMessageMetadataV1,
     EventPartMetadataV1,
 )
-from aion.core.types.a2a.extensions.messaging import (
+from aion.core.a2a.extensions.messaging import (
     CommandEventPayload,
     MessageEventPayload,
     ReactionEventPayload,

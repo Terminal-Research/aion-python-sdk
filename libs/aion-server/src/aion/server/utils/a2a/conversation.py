@@ -1,9 +1,11 @@
+"""Builder utilities for assembling A2A Conversation objects from task history."""
+
 from typing import List
 
 from a2a.types import Task, TaskState, Artifact, Message
 
-from aion.core.types import Conversation, ConversationTaskStatus, ArtifactName
-from aion.core.types.a2a.enums import A2AMetadataKey, MessageType
+from aion.core.a2a import Conversation, ConversationTaskStatus, ArtifactName
+from aion.core.a2a.enums import A2AMetadataKey, MessageType
 
 
 class ConversationBuilder:

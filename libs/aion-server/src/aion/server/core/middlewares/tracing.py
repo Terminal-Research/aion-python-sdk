@@ -1,3 +1,5 @@
+"""OpenTelemetry tracing middleware that propagates W3C trace context from the execution scope."""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Optional

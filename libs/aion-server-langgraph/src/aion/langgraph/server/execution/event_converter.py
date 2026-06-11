@@ -1,8 +1,6 @@
 """Converts LangGraph events directly to A2A protocol events."""
 
 import uuid
-from typing import Any, Optional
-
 from a2a.types import (
     Artifact,
     Message,
@@ -13,7 +11,10 @@ from a2a.types import (
     TaskStatus,
     TaskStatusUpdateEvent,
 )
-from aion.server.agent.adapters import InterruptInfo
+from aion.core.a2a import ArtifactId, ArtifactName
+from aion.core.a2a.extensions.messaging import MessageActionPayload
+from aion.core.agent.invocation.card import Card
+from aion.core.agent.invocation.card.utils import build_card_a2a_part
 from aion.core.constants import (
     CARDS_EXTENSION_URI_V1,
     MESSAGE_ACTION_PAYLOAD_SCHEMA_V1,
@@ -21,25 +22,22 @@ from aion.core.constants import (
     REACTION_ACTION_PAYLOAD_SCHEMA_V1,
     STREAM_DELTA_PAYLOAD_SCHEMA_V1,
 )
-from aion.core.agent.invocation.card import Card
-from aion.core.utils.card import build_card_a2a_part
 from aion.core.logging import get_logger
-from aion.core.types import ArtifactId, ArtifactName
-from aion.core.types.a2a.extensions.messaging import MessageActionPayload
-from google.protobuf import json_format, struct_pb2
-from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
-
-from ..converters.lc_to_a2a import LcToA2AConverter
 from aion.langgraph.authoring.events.custom_events import (
     ArtifactCustomEvent,
     CardCustomEvent,
     MessageCustomEvent,
     ReactionCustomEvent,
-    TaskUpdateCustomEvent,
 )
+from aion.server.agent.adapters import InterruptInfo
+from google.protobuf import json_format, struct_pb2
+from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
+from typing import Any, Optional
+
+from ..converters.lc_to_a2a import LcToA2AConverter
 
 LangChainAgentMessage = AIMessage | AIMessageChunk
-SupportedCustomEvents = ArtifactCustomEvent | CardCustomEvent | MessageCustomEvent | ReactionCustomEvent | TaskUpdateCustomEvent
+SupportedCustomEvents = ArtifactCustomEvent | CardCustomEvent | MessageCustomEvent | ReactionCustomEvent
 
 A2AAgentEvent = TaskStatusUpdateEvent | TaskArtifactUpdateEvent
 
@@ -80,13 +78,14 @@ class LangGraphA2AConverter:
             logger.warning(f"Unknown LangGraph event type: {event_type}")
             return []
 
-    def _convert_message(self, message: AIMessage | AIMessageChunk) -> list[A2AAgentEvent]:
+    def _convert_message(self, message: AIMessage | AIMessageChunk, metadata: dict | None = None) -> list[
+        A2AAgentEvent]:
         """Convert an AIMessage or AIMessageChunk to A2A events."""
         if isinstance(message, AIMessageChunk):
-            return self._convert_streaming_chunk(message)
-        return self._convert_full_message(message)
+            return self._convert_streaming_chunk(message, metadata=metadata)
+        return self._convert_full_message(message, metadata=metadata)
 
-    def _convert_streaming_chunk(self, message: AIMessageChunk) -> list[A2AAgentEvent]:
+    def _convert_streaming_chunk(self, message: AIMessageChunk, metadata: dict | None = None) -> list[A2AAgentEvent]:
         """Emit a stream-delta artifact event for a single AIMessageChunk.
 
         Empty intermediate chunks are skipped. The first chunk sets append=False
@@ -101,6 +100,15 @@ class LangGraphA2AConverter:
         append = self._streaming_started
         self._streaming_started = True
 
+        artifact_metadata: dict = {
+            "status": "active",
+            "status_reason": "chunk_streaming",
+            MESSAGING_EXTENSION_URI_V1: {"schema": STREAM_DELTA_PAYLOAD_SCHEMA_V1},
+        }
+        user_meta = {k: v for k, v in (metadata or {}).items() if not k.startswith("aion:")} or None
+        if user_meta:
+            artifact_metadata.update(user_meta)
+
         return [TaskArtifactUpdateEvent(
             task_id=self._task_id,
             context_id=self._context_id,
@@ -108,17 +116,13 @@ class LangGraphA2AConverter:
                 artifact_id=ArtifactId.STREAM_DELTA.value,
                 name=ArtifactName.STREAM_DELTA.value,
                 parts=parts,
-                metadata={
-                    "status": "active",
-                    "status_reason": "chunk_streaming",
-                    MESSAGING_EXTENSION_URI_V1: {"schema": STREAM_DELTA_PAYLOAD_SCHEMA_V1},
-                },
+                metadata=artifact_metadata,
             ),
             append=append,
             last_chunk=is_last_chunk,
         )]
 
-    def _convert_full_message(self, message: AIMessage) -> list[A2AAgentEvent]:
+    def _convert_full_message(self, message: AIMessage, metadata: dict | None = None) -> list[A2AAgentEvent]:
         """Convert a complete (non-streaming) LangGraph message to A2A events.
 
         All content parts (text, file, etc.) are grouped into a single
@@ -135,12 +139,14 @@ class LangGraphA2AConverter:
 
         role = self._detect_role(message)
         message_id = message.id or str(uuid.uuid4())
+        user_meta = {k: v for k, v in (metadata or {}).items() if not k.startswith("aion:")} or None
         msg = Message(
             context_id=self._context_id,
             task_id=self._task_id,
             message_id=message_id,
             role=role,
             parts=a2a_parts,
+            metadata=user_meta,
         )
         return [TaskStatusUpdateEvent(
             task_id=self._task_id,
@@ -153,7 +159,9 @@ class LangGraphA2AConverter:
             card: Card,
             message_id: str | None = None,
             routing: MessageActionPayload | None = None,
+            metadata: dict | None = None,
     ) -> list[A2AAgentEvent]:
+        """Emit a card as a TaskStatusUpdateEvent with the CARDS_EXTENSION_URI_V1 extension."""
         parts = [build_card_a2a_part(card)]
         extensions = [CARDS_EXTENSION_URI_V1]
         if routing is not None:
@@ -162,6 +170,7 @@ class LangGraphA2AConverter:
                 MESSAGE_ACTION_PAYLOAD_SCHEMA_V1,
             ))
             extensions.append(MESSAGING_EXTENSION_URI_V1)
+        user_meta = {k: v for k, v in (metadata or {}).items() if not k.startswith("aion:")} or None
         msg = Message(
             context_id=self._context_id,
             task_id=self._task_id,
@@ -169,6 +178,7 @@ class LangGraphA2AConverter:
             role=Role.ROLE_AGENT,
             parts=parts,
             extensions=extensions,
+            metadata=user_meta,
         )
         return [TaskStatusUpdateEvent(
             task_id=self._task_id,
@@ -180,34 +190,39 @@ class LangGraphA2AConverter:
         """Dispatch a typed custom event to the appropriate handler.
 
         Supports ArtifactCustomEvent (raw artifact passthrough),
-        MessageCustomEvent (ephemeral or regular message), and
-        TaskUpdateCustomEvent (status/metadata update). Unknown types are
-        logged and silently dropped.
+        CardCustomEvent (card message), MessageCustomEvent (ephemeral or
+        regular message), and ReactionCustomEvent (reaction action). Unknown
+        types are logged and silently dropped.
         """
         if isinstance(event_data, ArtifactCustomEvent):
+            event_metadata: dict = {}
+            if event_data.routing is not None:
+                event_metadata[MESSAGING_EXTENSION_URI_V1] = event_data.routing.model_dump(by_alias=True, exclude_none=True)
+            if event_data.metadata:
+                user_meta = {k: v for k, v in event_data.metadata.items() if not k.startswith("aion:")}
+                event_metadata.update(user_meta)
             return [TaskArtifactUpdateEvent(
                 task_id=self._task_id,
                 context_id=self._context_id,
                 artifact=event_data.artifact,
                 append=event_data.append,
                 last_chunk=event_data.is_last_chunk,
+                metadata=event_metadata or None,
             )]
 
         if isinstance(event_data, CardCustomEvent):
-            return self._convert_card(event_data.card, routing=event_data.routing)
+            return self._convert_card(event_data.card, routing=event_data.routing, metadata=event_data.metadata)
 
         if isinstance(event_data, MessageCustomEvent):
             if event_data.ephemeral:
                 return self._convert_ephemeral(event_data.message)
             if event_data.routing is not None:
-                return self._convert_message_with_routing(event_data.message, event_data.routing)
-            return self._convert_message(event_data.message)
+                return self._convert_message_with_routing(event_data.message, event_data.routing,
+                                                          metadata=event_data.metadata)
+            return self._convert_message(event_data.message, metadata=event_data.metadata)
 
         if isinstance(event_data, ReactionCustomEvent):
             return self._convert_reaction(event_data)
-
-        if isinstance(event_data, TaskUpdateCustomEvent):
-            return self._convert_task_update(event_data)
 
         logger.warning(f"Ignoring unknown custom event type: {type(event_data)}")
         return []
@@ -225,6 +240,7 @@ class LangGraphA2AConverter:
             self,
             message: AIMessage,
             routing: MessageActionPayload,
+            metadata: dict | None = None,
     ) -> list[A2AAgentEvent]:
         """Convert a message with explicit routing target to an A2A event.
 
@@ -247,6 +263,7 @@ class LangGraphA2AConverter:
         extensions = [MESSAGING_EXTENSION_URI_V1]
 
         message_id = message.id or str(uuid.uuid4())
+        user_meta = {k: v for k, v in (metadata or {}).items() if not k.startswith("aion:")} or None
         msg = Message(
             context_id=self._context_id,
             task_id=self._task_id,
@@ -254,6 +271,7 @@ class LangGraphA2AConverter:
             role=Role.ROLE_AGENT,
             parts=a2a_parts,
             extensions=extensions,
+            metadata=user_meta,
         )
         return [TaskStatusUpdateEvent(
             task_id=self._task_id,
@@ -281,40 +299,6 @@ class LangGraphA2AConverter:
             ),
             append=False,
             last_chunk=True,
-        )]
-
-    def _convert_task_update(self, event: TaskUpdateCustomEvent) -> list[A2AAgentEvent]:
-        """Convert a TaskUpdateCustomEvent to a working-status update.
-
-        Builds an optional text message from event.message and strips internal
-        aion:-prefixed keys from event.metadata before forwarding. Returns an
-        empty list when neither a message nor public metadata is present.
-        """
-        msg: Optional[Message] = None
-        if event.message is not None:
-            parts = LcToA2AConverter.from_message(event.message)
-            if parts:
-                message_id = event.message.id or str(uuid.uuid4())
-                msg = Message(
-                    context_id=self._context_id,
-                    task_id=self._task_id,
-                    message_id=message_id,
-                    role=Role.ROLE_AGENT,
-                    parts=parts,
-                )
-
-        filtered: Optional[dict] = None
-        if event.metadata:
-            filtered = {k: v for k, v in event.metadata.items() if not k.startswith("aion:")} or None
-
-        if not msg and not filtered:
-            return []
-
-        return [TaskStatusUpdateEvent(
-            task_id=self._task_id,
-            context_id=self._context_id,
-            metadata=filtered,
-            status=TaskStatus(state=TaskState.TASK_STATE_WORKING, message=msg),
         )]
 
     def _convert_ephemeral(self, message: LangChainAgentMessage) -> list[A2AAgentEvent]:

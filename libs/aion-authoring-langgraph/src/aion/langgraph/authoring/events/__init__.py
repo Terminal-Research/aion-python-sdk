@@ -3,13 +3,15 @@
 from .custom_events import (
     AionCustomEvent,
     ArtifactCustomEvent,
+    CardCustomEvent,
     MessageCustomEvent,
-    TaskUpdateCustomEvent,
+    ReactionCustomEvent,
 )
 
 __all__ = [
     "AionCustomEvent",
     "ArtifactCustomEvent",
+    "CardCustomEvent",
     "MessageCustomEvent",
-    "TaskUpdateCustomEvent",
+    "ReactionCustomEvent",
 ]

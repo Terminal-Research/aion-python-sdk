@@ -11,17 +11,23 @@ from a2a.types import (
     TaskStatus,
     TaskStatusUpdateEvent,
 )
-from aion.adk.authoring.output import AionOutput, ReactionOutput
+from aion.adk.authoring.invocation import AionInvocationContext
+from aion.adk.authoring.invocation.event_metadata import (
+    get_aion_output,
+    get_aion_routing,
+    get_aion_user_metadata,
+)
+from aion.adk.server.transformers import A2ATransformer
+from aion.core.a2a import ArtifactId, ArtifactName
+from aion.core.a2a.extensions.messaging import ReactionActionPayload
 from aion.core.agent.invocation.card import Card
-from aion.core.constants import CARDS_EXTENSION_URI_V1, MESSAGING_EXTENSION_URI_V1, REACTION_ACTION_PAYLOAD_SCHEMA_V1
+from aion.core.agent.invocation.card.utils import build_card_a2a_part
+from aion.core.constants import CARDS_EXTENSION_URI_V1, MESSAGE_ACTION_PAYLOAD_SCHEMA_V1, MESSAGING_EXTENSION_URI_V1, \
+    REACTION_ACTION_PAYLOAD_SCHEMA_V1
 from aion.core.logging import get_logger
-from aion.core.types import ArtifactId, ArtifactName
-from aion.core.utils.card import build_card_a2a_part
+from aion.server.files.storage import FileUploadManager
 from google.adk.events import Event
 from google.protobuf import json_format, struct_pb2
-
-from aion.adk.authoring.invocation import AionInvocationContext
-from aion.adk.server.transformers import A2ATransformer
 
 AgentEvent = TaskStatusUpdateEvent | TaskArtifactUpdateEvent
 
@@ -38,11 +44,19 @@ class ADKToA2AEventConverter:
     TaskStatusUpdateEvent with state=working.
     """
 
-    def __init__(self, task_id: str, context_id: str, ctx: AionInvocationContext | None = None):
+    def __init__(
+            self,
+            task_id: str,
+            context_id: str,
+            ctx: AionInvocationContext | None = None,
+            file_uploader: FileUploadManager | None = None,
+    ):
         self._task_id = task_id
         self._context_id = context_id
         self._ctx = ctx
+        self._file_uploader = file_uploader
         self._streaming_started = False
+        self._stream_user_metadata: dict | None = None
 
     async def convert(self, adk_event: Event) -> list[AgentEvent]:
         """Convert an ADK event to zero or more A2A events.
@@ -69,6 +83,8 @@ class ADKToA2AEventConverter:
         The first chunk opens the artifact (append=False); subsequent chunks
         use append=True. All partial events carry last_chunk=False because the
         stream is only closed when the final non-partial event arrives.
+        User metadata from custom_metadata is merged into the artifact metadata
+        so the UI can filter or route individual chunks.
         """
         parts = A2ATransformer.transform_content(adk_event.content)
         if not parts:
@@ -78,6 +94,15 @@ class ADKToA2AEventConverter:
         if not self._streaming_started:
             self._streaming_started = True
 
+        user_meta = get_aion_user_metadata(adk_event)
+        if user_meta:
+            self._stream_user_metadata = user_meta
+
+        artifact_metadata = {"status": "active", "status_reason": "chunk_streaming"}
+        user_meta = get_aion_user_metadata(adk_event)
+        if user_meta:
+            artifact_metadata.update(user_meta)
+
         return [TaskArtifactUpdateEvent(
             task_id=self._task_id,
             context_id=self._context_id,
@@ -85,18 +110,27 @@ class ADKToA2AEventConverter:
                 artifact_id=ArtifactId.STREAM_DELTA.value,
                 name=ArtifactName.STREAM_DELTA.value,
                 parts=parts,
-                metadata={"status": "active", "status_reason": "chunk_streaming"},
+                metadata=artifact_metadata,
             ),
             append=append,
             last_chunk=False,
         )]
 
     def _close_stream_delta(self) -> TaskArtifactUpdateEvent | None:
-        """Close the open STREAM_DELTA artifact if streaming was active."""
+        """Close the open STREAM_DELTA artifact if streaming was active.
+
+        User metadata captured from the first chunk is forwarded to the
+        close event so consumers can correlate it with the stream they opened.
+        """
         if not self._streaming_started:
             return None
 
         self._streaming_started = False
+        close_metadata: dict = {"status": "completed"}
+        if self._stream_user_metadata:
+            close_metadata.update(self._stream_user_metadata)
+        self._stream_user_metadata = None
+
         return TaskArtifactUpdateEvent(
             task_id=self._task_id,
             context_id=self._context_id,
@@ -104,7 +138,7 @@ class ADKToA2AEventConverter:
                 artifact_id=ArtifactId.STREAM_DELTA.value,
                 name=ArtifactName.STREAM_DELTA.value,
                 parts=[],
-                metadata={"status": "completed"},
+                metadata=close_metadata,
             ),
             append=True,
             last_chunk=True,
@@ -119,7 +153,7 @@ class ADKToA2AEventConverter:
             metadata={MESSAGING_EXTENSION_URI_V1: {"schema": schema_uri}},
         )
 
-    def _build_reaction_event(self, reaction: ReactionOutput) -> AgentEvent:
+    def _build_reaction_event(self, reaction: ReactionActionPayload) -> AgentEvent:
         proto_value = struct_pb2.Value()
         json_format.ParseDict(reaction.model_dump(by_alias=True, exclude_none=True), proto_value)
         return TaskArtifactUpdateEvent(
@@ -151,7 +185,7 @@ class ADKToA2AEventConverter:
         """
         results: list[AgentEvent] = []
 
-        output = AionOutput.from_custom_metadata(adk_event.custom_metadata)
+        output = get_aion_output(adk_event)
 
         if output and output.reaction is not None:
             return [self._build_reaction_event(output.reaction)]
@@ -163,36 +197,29 @@ class ADKToA2AEventConverter:
                 card_jsx = adk_event.content and adk_event.content.parts and adk_event.content.parts[0].text
                 card = Card(jsx=card_jsx) if card_jsx else None
             if card:
+                routing = get_aion_routing(adk_event)
+                parts = [build_card_a2a_part(card)]
+                extensions = [CARDS_EXTENSION_URI_V1]
+                if routing is not None:
+                    parts.append(self._build_extension_part(
+                        routing.model_dump(by_alias=True, exclude_none=True),
+                        MESSAGE_ACTION_PAYLOAD_SCHEMA_V1,
+                    ))
+                    extensions.append(MESSAGING_EXTENSION_URI_V1)
                 msg = Message(
                     context_id=self._context_id,
                     task_id=self._task_id,
                     message_id=str(uuid.uuid4()),
                     role=Role.ROLE_AGENT,
-                    parts=[build_card_a2a_part(card)],
-                    extensions=[CARDS_EXTENSION_URI_V1],
+                    parts=parts,
+                    extensions=extensions,
+                    metadata=get_aion_user_metadata(adk_event),
                 )
                 results.append(TaskStatusUpdateEvent(
                     task_id=self._task_id,
                     context_id=self._context_id,
                     status=TaskStatus(state=TaskState.TASK_STATE_WORKING, message=msg),
                 ))
-            return results
-
-        if output and output.artifact is not None:
-            if adk_event.content:
-                content_parts = A2ATransformer.transform_content(adk_event.content)
-                if content_parts:
-                    results.append(TaskArtifactUpdateEvent(
-                        task_id=self._task_id,
-                        context_id=self._context_id,
-                        artifact=Artifact(
-                            artifact_id=output.artifact.artifact_id,
-                            name=output.artifact.artifact_name or output.artifact.artifact_id,
-                            parts=content_parts,
-                        ),
-                        append=False,
-                        last_chunk=True,
-                    ))
             return results
 
         if close_event := self._close_stream_delta():
@@ -202,6 +229,14 @@ class ADKToA2AEventConverter:
             content_parts = A2ATransformer.transform_content(adk_event.content)
 
             if content_parts:
+                routing = get_aion_routing(adk_event)
+                extensions = []
+                if routing is not None:
+                    content_parts.append(self._build_extension_part(
+                        routing.model_dump(by_alias=True, exclude_none=True),
+                        MESSAGE_ACTION_PAYLOAD_SCHEMA_V1,
+                    ))
+                    extensions = [MESSAGING_EXTENSION_URI_V1]
                 role = Role.ROLE_USER if adk_event.author == "user" else Role.ROLE_AGENT
                 msg = Message(
                     context_id=self._context_id,
@@ -209,6 +244,8 @@ class ADKToA2AEventConverter:
                     message_id=str(uuid.uuid4()),
                     role=role,
                     parts=content_parts,
+                    extensions=extensions or None,
+                    metadata=get_aion_user_metadata(adk_event),
                 )
                 results.append(TaskStatusUpdateEvent(
                     task_id=self._task_id,
@@ -220,11 +257,19 @@ class ADKToA2AEventConverter:
         return results
 
     async def _convert_artifact_delta(self, adk_event: Event) -> list[AgentEvent]:
-        """Load artifacts from artifact_delta and emit TaskArtifactUpdateEvents."""
+        """Load artifacts from artifact_delta and emit TaskArtifactUpdateEvents.
+
+        When aion:output.artifact hint is present (set by emit_artifact()), uses
+        the provided artifact_id and name instead of generating a random UUID.
+        This preserves the identity of explicitly emitted artifacts.
+        """
         if not adk_event.actions or not adk_event.actions.artifact_delta:
             return []
         if self._ctx.artifact_service is None:
             return []
+
+        output = get_aion_output(adk_event)
+        hint = output.artifact if output else None
 
         results: list[AgentEvent] = []
         for filename, version in adk_event.actions.artifact_delta.items():
@@ -244,14 +289,30 @@ class ADKToA2AEventConverter:
                 logger.warning("Could not transform artifact part: %s", filename)
                 continue
 
+            if self._file_uploader is not None and a2a_part.raw:
+                url = self._file_uploader.schedule(
+                    data=a2a_part.raw,
+                    mime_type=a2a_part.media_type or "application/octet-stream",
+                    context_id=self._context_id,
+                )
+                a2a_part = Part(url=url, media_type=a2a_part.media_type, filename=a2a_part.filename)
+
+            artifact_id = hint.artifact_id if hint else str(uuid.uuid4())
+            name = (hint.artifact_name if hint else None) or filename
+
+            artifact_metadata: dict = {"version": str(version)}
+            user_meta = get_aion_user_metadata(adk_event)
+            if user_meta:
+                artifact_metadata.update(user_meta)
+
             results.append(TaskArtifactUpdateEvent(
                 task_id=self._task_id,
                 context_id=self._context_id,
                 artifact=Artifact(
-                    artifact_id=str(uuid.uuid4()),
-                    name=filename,
+                    artifact_id=artifact_id,
+                    name=name,
                     parts=[a2a_part],
-                    metadata={"version": str(version)},
+                    metadata=artifact_metadata,
                 ),
                 append=False,
                 last_chunk=True,

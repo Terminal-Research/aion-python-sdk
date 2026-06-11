@@ -1,3 +1,5 @@
+"""Singleton registry mapping framework names to their AgentAdapter implementations."""
+
 from typing import Any, Optional
 
 from aion.core.metaclasses import Singleton
@@ -51,4 +53,4 @@ class AdapterRegistry(metaclass=Singleton):
         return framework_name in self._adapters
 
 
-adapter_registry = AdapterRegistry()
+adapter_registry = AdapterRegistry()  # Module-level singleton shared across the server process.

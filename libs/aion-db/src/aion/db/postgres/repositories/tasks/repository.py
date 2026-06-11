@@ -23,14 +23,21 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
     """Repository for Task operations using entities."""
 
     def __init__(self, session: AsyncSession):
+        """Initialize the repository with an active SQLAlchemy session.
+
+        Args:
+            session: Async SQLAlchemy session used for all database operations.
+        """
         super().__init__(session)
 
     @property
     def model_class(self) -> Type[TaskRecordModel]:
+        """SQLAlchemy ORM model for the tasks table."""
         return TaskRecordModel
 
     @property
     def entity_class(self) -> Type[TaskRecord]:
+        """Pydantic domain entity used as the public return type."""
         return TaskRecord
 
     def _apply_filter(

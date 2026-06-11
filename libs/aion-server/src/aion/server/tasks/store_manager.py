@@ -1,3 +1,5 @@
+"""Module-level task store manager that holds the active store instance for the server process."""
+
 from typing import Optional
 
 from aion.core.logging import get_logger

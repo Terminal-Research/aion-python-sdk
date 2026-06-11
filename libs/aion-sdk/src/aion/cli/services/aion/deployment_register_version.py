@@ -1,3 +1,5 @@
+"""Service for registering a new deployment version with the Aion platform."""
+
 from aion.api.gql import AionGqlContextClient
 from aion.api.gql.generated.graphql_client import (
     GraphQLClientHttpError,

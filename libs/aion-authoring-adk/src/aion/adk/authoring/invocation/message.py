@@ -1,14 +1,19 @@
+"""ADK message abstraction for thread message handling and reactions.
+
+Extends BaseMessage to provide reaction support for provider messages,
+enabling agents to respond to inbound messages with normalized reactions
+(e.g., emoji reactions on Slack/Teams).
+"""
+
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal, Optional
-
+from aion.adk.authoring.invocation import emit_reaction, get_adk_emitter
+from aion.core.a2a.extensions.messaging import ReactionActionPayload
+from aion.core.agent import BaseMessage, User
 from aion.core.logging import get_logger
-from aion.core.agent import BaseMessage, User  # noqa: F401 — re-export User
-from aion.adk.authoring.output import AionOutput, ReactionOutput
-from aion.adk.authoring.invocation.emitter import get_adk_emitter
+from typing import Literal, Optional
 
-if TYPE_CHECKING:
-    pass
+__all__ = ["Message", "User"]
 
 logger = get_logger()
 
@@ -28,12 +33,13 @@ class Message(BaseMessage):
         Requires an inbound event with context_id and message_id in its payload.
         Logs a warning and does nothing if event context is unavailable.
         """
-        from google.adk.events import Event
-
         event = self.context.event
         if event is None or event.payload is None:
             logger.warning(
-                "Message.react() requires an inbound event with a payload. No reaction was sent."
+                "Message.react() requires an inbound event with a payload. "
+                "No reaction was sent (key=%r, operation=%r).",
+                key,
+                operation,
             )
             return
 
@@ -59,18 +65,11 @@ class Message(BaseMessage):
             )
             return
 
-        adk_event = Event(
-            author="agent",
-            content=None,
-            partial=False,
-            custom_metadata=AionOutput(
-                reaction=ReactionOutput(
-                    context_id=context_id,
-                    message_id=message_id,
-                    reaction_key=key,
-                    operation=operation,
-                    display_value=display_value,
-                )
-            ).to_custom_metadata(),
+        payload = ReactionActionPayload(
+            context_id=context_id,
+            message_id=message_id,
+            reaction_key=key,
+            operation=operation,
+            display_value=display_value,
         )
-        emitter(adk_event)
+        emit_reaction(emitter, payload)

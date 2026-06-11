@@ -7,7 +7,6 @@ instances by selecting the appropriate storage backend.
 from typing import Optional
 
 from aion.core.db import DbManagerProtocol
-from aion.server.files.storage import FileUploadManager
 from aion.core.logging import get_logger
 from google.adk.artifacts import BaseArtifactService
 
@@ -27,22 +26,19 @@ class ArtifactServiceFactory:
     def create(
         cls,
         db_manager: Optional[DbManagerProtocol] = None,
-        file_uploader: Optional[FileUploadManager] = None,
     ) -> BaseArtifactService:
         """Create artifact service using the most appropriate backend.
 
         Args:
             db_manager: Optional database manager. When provided and initialized,
                         creates A2AArtifactService with DB fallback and TTL eviction.
-            file_uploader: Optional upload manager. When provided, inline artifact
-                           data is uploaded and stored as URI references.
 
         Returns:
             BaseArtifactService: An artifact service instance
         """
         service = None
         if db_manager:
-            backend = A2ABackend(db_manager=db_manager, file_uploader=file_uploader)
+            backend = A2ABackend(db_manager=db_manager)
             service = backend.create()
 
         if not service:

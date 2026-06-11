@@ -1,3 +1,8 @@
+"""Enumeration types for Agent-to-Agent (A2A) communication.
+
+Defines constant identifiers and types used across the A2A protocol layer.
+"""
+
 from enum import Enum
 
 __all__ = [

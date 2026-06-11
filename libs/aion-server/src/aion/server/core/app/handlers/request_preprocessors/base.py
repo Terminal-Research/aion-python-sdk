@@ -1,3 +1,5 @@
+"""Protocol defining the interface for pluggable A2A request preprocessors."""
+
 from typing import Any, Protocol, runtime_checkable
 
 

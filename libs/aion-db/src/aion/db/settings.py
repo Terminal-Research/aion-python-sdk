@@ -1,3 +1,5 @@
+"""Database configuration settings loaded from environment variables."""
+
 import re
 from typing import Optional
 from urllib.parse import urlparse
@@ -9,6 +11,13 @@ __all__ = ["DatabaseSettings", "db_settings"]
 
 
 class DatabaseSettings(BaseSettings):
+    """Pydantic settings for PostgreSQL database connectivity.
+
+    Reads configuration from environment variables or a ``.env`` file.
+    The primary variable is ``POSTGRES_URL`` which must be a valid
+    ``postgresql://`` connection string.
+    """
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -25,6 +34,7 @@ class DatabaseSettings(BaseSettings):
     @field_validator('pg_url')
     @classmethod
     def validate_postgres_url(cls, value: Optional[str]) -> Optional[str]:
+        """Validate that the URL is a well-formed ``postgresql://`` connection string."""
         if value is None or value == "":
             return None
 
@@ -41,6 +51,7 @@ class DatabaseSettings(BaseSettings):
         return value
 
     def is_valid_pg_url(self) -> bool:
+        """Return True if ``pg_url`` is set and has a parseable scheme and host."""
         if not self.pg_url:
             return False
         try:
@@ -51,6 +62,7 @@ class DatabaseSettings(BaseSettings):
 
     @property
     def pg_db_name(self) -> Optional[str]:
+        """Database name extracted from the connection URL, or None if URL is invalid."""
         if not self.is_valid_pg_url():
             return None
         try:
@@ -61,6 +73,7 @@ class DatabaseSettings(BaseSettings):
 
     @property
     def pg_user_name(self) -> Optional[str]:
+        """Username extracted from the connection URL, or None if URL is invalid."""
         if not self.is_valid_pg_url():
             return None
         try:
@@ -70,6 +83,7 @@ class DatabaseSettings(BaseSettings):
 
     @property
     def pg_user_password(self) -> Optional[str]:
+        """Password extracted from the connection URL, or None if URL is invalid."""
         if not self.is_valid_pg_url():
             return None
         try:
@@ -79,6 +93,7 @@ class DatabaseSettings(BaseSettings):
 
     @property
     def pg_host(self) -> Optional[str]:
+        """Hostname extracted from the connection URL, or None if URL is invalid."""
         if not self.is_valid_pg_url():
             return None
         try:
@@ -88,6 +103,7 @@ class DatabaseSettings(BaseSettings):
 
     @property
     def pg_port(self) -> Optional[int]:
+        """Port number extracted from the connection URL, or None if URL is invalid."""
         if not self.is_valid_pg_url():
             return None
         try:

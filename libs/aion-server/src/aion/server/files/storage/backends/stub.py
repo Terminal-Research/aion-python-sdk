@@ -61,6 +61,7 @@ class StubFileStorageBackend(FileStorageBackend):
         file_id: str,
         context_id: str | None = None,
     ) -> None:
+        """Log delete call without removing anything (no-op)."""
         logger.debug("[StubStorage] delete skipped: file_id=%s", file_id)
 
     def _build_uri(self, file_id: str, mime_type: str | None, context_id: str | None) -> str:

@@ -1,3 +1,9 @@
+"""Base message abstraction for agent invocation.
+
+Defines the core message model and user identity structures used during
+agent execution to represent inbound messages and reactions.
+"""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -31,6 +37,7 @@ class BaseMessage(ABC):
     """
 
     def __init__(self, context: AionRuntimeContext, thread: "BaseThread") -> None:
+        """Bind the message to its runtime context and owning thread, then parse fields."""
         self.context = context
         self.thread = thread
 
@@ -39,6 +46,7 @@ class BaseMessage(ABC):
         self.user: Optional[User] = self._parse_user()
 
     def _parse_id(self) -> Optional[str]:
+        """Extract message_id from event payload, falling back to inbox message."""
         payload = self.context.event.payload if self.context.event else None
         if payload is not None:
             msg_id = getattr(payload, "message_id", None)
@@ -49,6 +57,7 @@ class BaseMessage(ABC):
         return None
 
     def _parse_text(self) -> Optional[str]:
+        """Concatenate plain-text parts from inbox message, skipping aion extension parts."""
         if self.context.inbox.message is None:
             return None
         parts = [
@@ -58,6 +67,7 @@ class BaseMessage(ABC):
         return "\n".join(parts) if parts else None
 
     def _parse_user(self) -> Optional[User]:
+        """Build a User from user_id in the event payload; returns None when no event is present."""
         payload = self.context.event.payload if self.context.event else None
         if payload is not None:
             user_id = getattr(payload, "user_id", None)

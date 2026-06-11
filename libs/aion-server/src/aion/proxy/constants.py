@@ -1,3 +1,5 @@
+"""URL patterns, path constants, and route builder utilities for the proxy."""
+
 import re
 
 HEALTH_CHECK_URL = "/health/"

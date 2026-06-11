@@ -2,23 +2,21 @@
 
 from __future__ import annotations
 
+from typing_extensions import override
+
 import asyncio
 import dataclasses
 import time
-from typing import Any, Optional, List
-
 from a2a.types import Artifact
+from aion.adk.authoring.transformers import convert_a2a_part_to_genai_part
+from aion.core.db import DbManagerProtocol
+from aion.core.logging import get_logger
+from aion.db.postgres.repositories.tasks.repository import TasksRepository
 from google.adk.artifacts import BaseArtifactService
-from google.adk.artifacts.base_artifact_service import ArtifactVersion
-from aion.adk.server.transformers.utils import a2a_part_to_genai_part
+from google.adk.artifacts.base_artifact_service import ArtifactVersion, ensure_part
 from google.adk.errors.input_validation_error import InputValidationError
 from google.genai import types
-from typing_extensions import override
-
-from aion.db.postgres.repositories.tasks.repository import TasksRepository
-from aion.core.db import DbManagerProtocol
-from aion.server.files.storage import FileUploadManager
-from aion.core.logging import get_logger
+from typing import Any, Optional, List, Union
 
 from .base import ArtifactServiceBackend
 
@@ -49,25 +47,20 @@ class A2AArtifactService(BaseArtifactService):
     """
 
     def __init__(
-        self,
-        db_manager: Optional[DbManagerProtocol] = None,
-        ttl: int = 300,
-        cleanup_interval: int = 60,
-        file_uploader: Optional[FileUploadManager] = None,
+            self,
+            db_manager: Optional[DbManagerProtocol] = None,
+            ttl: int = 300,
+            cleanup_interval: int = 60,
     ):
         """
         Args:
             db_manager: Optional DB connection manager for persistence and fallback reads.
             ttl: Seconds before an artifact path is evicted from memory.
             cleanup_interval: How often (in seconds) the background eviction loop runs.
-            file_uploader: Optional uploader for converting inline_data parts to
-                file_data (URI) parts on save. When provided, raw bytes are uploaded
-                to file storage and replaced with a URL reference.
         """
         self._db_manager = db_manager
         self._ttl = ttl
         self._cleanup_interval = cleanup_interval
-        self._file_uploader = file_uploader
         self._artifacts: dict[str, list[_ArtifactEntry]] = {}
         self._timestamps: dict[str, float] = {}
         self._version_offsets: dict[str, int] = {}
@@ -79,11 +72,11 @@ class A2AArtifactService(BaseArtifactService):
         return filename.startswith("user:")
 
     def _artifact_path(
-        self,
-        app_name: str,
-        user_id: str,
-        filename: str,
-        session_id: Optional[str],
+            self,
+            app_name: str,
+            user_id: str,
+            filename: str,
+            session_id: Optional[str],
     ) -> str:
         """Builds the internal storage key for an artifact.
 
@@ -98,12 +91,12 @@ class A2AArtifactService(BaseArtifactService):
         return f"{app_name}/{user_id}/{session_id}/{filename}"
 
     def _canonical_uri_for(
-        self,
-        app_name: str,
-        user_id: str,
-        session_id: Optional[str],
-        filename: str,
-        version: int,
+            self,
+            app_name: str,
+            user_id: str,
+            session_id: Optional[str],
+            filename: str,
+            version: int,
     ) -> str:
         """Builds a canonical memory:// URI for a specific artifact version."""
         base = f"memory://apps/{app_name}/users/{user_id}"
@@ -112,7 +105,7 @@ class A2AArtifactService(BaseArtifactService):
         return f"{base}/sessions/{session_id}/artifacts/{filename}/versions/{version}"
 
     @staticmethod
-    def _mime_type_for(artifact: types.Part) -> str:
+    def _mime_type_for(artifact: Union[types.Part, dict[str, Any]]) -> str:
         """Infers MIME type from the artifact part. Raises if the type is unsupported."""
         if artifact.inline_data is not None:
             return artifact.inline_data.mime_type
@@ -134,52 +127,23 @@ class A2AArtifactService(BaseArtifactService):
                     pass
         return versions
 
-    def _upload_inline_data(
-        self,
-        artifact: types.Part,
-        context_id: Optional[str],
-    ) -> types.Part:
-        """Converts inline_data to file_data (URI) if a file uploader is configured.
-
-        Returns the original part unchanged if no uploader is set or the part
-        has no inline_data.
-        """
-        if self._file_uploader is None or artifact.inline_data is None:
-            return artifact
-
-        inline = artifact.inline_data
-        if not inline.data:
-            return artifact
-
-        url = self._file_uploader.schedule(
-            data=inline.data,
-            mime_type=inline.mime_type or "application/octet-stream",
-            context_id=context_id,
-        )
-        return types.Part(
-            file_data=types.FileData(
-                file_uri=url,
-                mime_type=inline.mime_type,
-            )
-        )
-
     @override
     async def save_artifact(
-        self,
-        *,
-        app_name: str,
-        user_id: str,
-        filename: str,
-        artifact: types.Part,
-        session_id: Optional[str] = None,
-        custom_metadata: Optional[dict[str, Any]] = None,
+            self,
+            *,
+            app_name: str,
+            user_id: str,
+            filename: str,
+            artifact: Union[types.Part, dict[str, Any]],
+            session_id: Optional[str] = None,
+            custom_metadata: Optional[dict[str, Any]] = None,
     ) -> int:
         """Appends a new version of the artifact to memory and returns its logical version number.
 
         On the first write to an empty path, queries DB for the current version count
         and uses it as an offset so logical versions stay continuous with what's in DB.
         """
-        artifact = self._upload_inline_data(artifact, context_id=session_id)
+        artifact = ensure_part(artifact)
         path = self._artifact_path(app_name, user_id, filename, session_id)
 
         if path not in self._version_offsets:
@@ -211,13 +175,13 @@ class A2AArtifactService(BaseArtifactService):
 
     @override
     async def load_artifact(
-        self,
-        *,
-        app_name: str,
-        user_id: str,
-        filename: str,
-        session_id: Optional[str] = None,
-        version: Optional[int] = None,
+            self,
+            *,
+            app_name: str,
+            user_id: str,
+            filename: str,
+            session_id: Optional[str] = None,
+            version: Optional[int] = None,
     ) -> Optional[types.Part]:
         """Returns the artifact data for the given version (or latest if version is None).
 
@@ -250,20 +214,20 @@ class A2AArtifactService(BaseArtifactService):
 
         data = entry.data
         if (
-            data == types.Part()
-            or data == types.Part(text="")
-            or (data.inline_data and not data.inline_data.data)
+                data == types.Part()
+                or data == types.Part(text="")
+                or (data.inline_data and not data.inline_data.data)
         ):
             return None
         return data
 
     @override
     async def list_artifact_keys(
-        self,
-        *,
-        app_name: str,
-        user_id: str,
-        session_id: Optional[str] = None,
+            self,
+            *,
+            app_name: str,
+            user_id: str,
+            session_id: Optional[str] = None,
     ) -> list[str]:
         """Returns sorted artifact filenames visible in this session, merging memory and DB."""
         usernamespace_prefix = f"{app_name}/{user_id}/user/"
@@ -282,12 +246,12 @@ class A2AArtifactService(BaseArtifactService):
 
     @override
     async def delete_artifact(
-        self,
-        *,
-        app_name: str,
-        user_id: str,
-        filename: str,
-        session_id: Optional[str] = None,
+            self,
+            *,
+            app_name: str,
+            user_id: str,
+            filename: str,
+            session_id: Optional[str] = None,
     ) -> None:
         """Removes all in-memory state for an artifact path (data, timestamps, and offset)."""
         path = self._artifact_path(app_name, user_id, filename, session_id)
@@ -297,12 +261,12 @@ class A2AArtifactService(BaseArtifactService):
 
     @override
     async def list_versions(
-        self,
-        *,
-        app_name: str,
-        user_id: str,
-        filename: str,
-        session_id: Optional[str] = None,
+            self,
+            *,
+            app_name: str,
+            user_id: str,
+            filename: str,
+            session_id: Optional[str] = None,
     ) -> list[int]:
         """Returns all known version numbers for an artifact, including pre-offset DB versions."""
         path = self._artifact_path(app_name, user_id, filename, session_id)
@@ -320,12 +284,12 @@ class A2AArtifactService(BaseArtifactService):
 
     @override
     async def list_artifact_versions(
-        self,
-        *,
-        app_name: str,
-        user_id: str,
-        filename: str,
-        session_id: Optional[str] = None,
+            self,
+            *,
+            app_name: str,
+            user_id: str,
+            filename: str,
+            session_id: Optional[str] = None,
     ) -> list[ArtifactVersion]:
         """Returns ArtifactVersion objects for all versions, merging DB (pre-offset) and memory."""
         path = self._artifact_path(app_name, user_id, filename, session_id)
@@ -369,13 +333,13 @@ class A2AArtifactService(BaseArtifactService):
 
     @override
     async def get_artifact_version(
-        self,
-        *,
-        app_name: str,
-        user_id: str,
-        filename: str,
-        session_id: Optional[str] = None,
-        version: Optional[int] = None,
+            self,
+            *,
+            app_name: str,
+            user_id: str,
+            filename: str,
+            session_id: Optional[str] = None,
+            version: Optional[int] = None,
     ) -> Optional[ArtifactVersion]:
         """Returns the ArtifactVersion metadata for the requested version (latest if None).
 
@@ -407,11 +371,11 @@ class A2AArtifactService(BaseArtifactService):
         return bool(self._db_manager and self._db_manager.is_initialized)
 
     async def _fetch_db_artifacts(
-        self,
-        *,
-        session_id: str,
-        filename: str,
-        version: Optional[int] = None,
+            self,
+            *,
+            session_id: str,
+            filename: str,
+            version: Optional[int] = None,
     ) -> List[Artifact]:
         """Fetches artifact records from DB. Returns empty list on any failure."""
         if not self._is_db_available():
@@ -445,13 +409,13 @@ class A2AArtifactService(BaseArtifactService):
             return []
 
     async def _build_artifact_version_from_db(
-        self,
-        *,
-        app_name: str,
-        user_id: str,
-        session_id: Optional[str],
-        filename: str,
-        version: Optional[int],
+            self,
+            *,
+            app_name: str,
+            user_id: str,
+            session_id: Optional[str],
+            filename: str,
+            version: Optional[int],
     ) -> Optional[ArtifactVersion]:
         """Constructs an ArtifactVersion from a DB record (no in-memory entry required)."""
         if not session_id:
@@ -492,11 +456,11 @@ class A2AArtifactService(BaseArtifactService):
         return max(versions) + 1 if versions else 1
 
     async def _load_from_db(
-        self,
-        *,
-        session_id: Optional[str],
-        filename: str,
-        version: Optional[int],
+            self,
+            *,
+            session_id: Optional[str],
+            filename: str,
+            version: Optional[int],
     ) -> Optional[types.Part]:
         """Loads artifact data directly from DB and converts it to a genai Part."""
         if not session_id:
@@ -509,7 +473,7 @@ class A2AArtifactService(BaseArtifactService):
         artifact = artifacts[0]
         if not artifact.parts:
             return None
-        return a2a_part_to_genai_part(artifact.parts[0])
+        return convert_a2a_part_to_genai_part(artifact.parts[0])
 
     def _ensure_cleanup_task(self) -> None:
         """Starts the background eviction loop if it's not already running."""
@@ -554,16 +518,14 @@ class A2ABackend(ArtifactServiceBackend):
     """Backend that creates A2AArtifactService with optional DB fallback and TTL eviction."""
 
     def __init__(
-        self,
-        db_manager: Optional[DbManagerProtocol] = None,
-        ttl: int = 300,
-        cleanup_interval: int = 60,
-        file_uploader: Optional[FileUploadManager] = None,
+            self,
+            db_manager: Optional[DbManagerProtocol] = None,
+            ttl: int = 300,
+            cleanup_interval: int = 60,
     ):
         self._db_manager = db_manager
         self._ttl = ttl
         self._cleanup_interval = cleanup_interval
-        self._file_uploader = file_uploader
 
     def create(self) -> A2AArtifactService:
         """Instantiates a new A2AArtifactService with the configured DB manager and TTL."""
@@ -571,7 +533,6 @@ class A2ABackend(ArtifactServiceBackend):
             db_manager=self._db_manager,
             ttl=self._ttl,
             cleanup_interval=self._cleanup_interval,
-            file_uploader=self._file_uploader,
         )
 
     def is_available(self) -> bool:

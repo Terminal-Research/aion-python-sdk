@@ -1,3 +1,5 @@
+"""Factory for creating AionInvocationContext instances populated from the runtime context."""
+
 import uuid
 from typing import Optional
 
@@ -35,6 +37,7 @@ class AionInvocationContextFactory:
             session: Session,
             user_content: types.Content,
     ) -> AionInvocationContext:
+        """Build an AionInvocationContext for a single agent invocation."""
         return AionInvocationContext(
             invocation_id=str(uuid.uuid4()),
             session_service=self._session_service,

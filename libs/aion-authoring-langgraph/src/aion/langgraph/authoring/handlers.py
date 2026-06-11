@@ -1,3 +1,9 @@
+"""Event router for LangGraph graphs driven by Aion runtime context.
+
+Provides a specialized LangGraph node that routes inbound Aion events to
+event-specific handlers with automatic dependency injection.
+"""
+
 from __future__ import annotations
 
 import inspect
@@ -11,12 +17,9 @@ from langgraph.runtime import Runtime
 
 logger = get_logger()
 
-# Shorthand used when constructing inspect.Parameter objects for __signature__ overrides.
 _POSITIONAL = inspect.Parameter.POSITIONAL_OR_KEYWORD
+"""Shorthand for inspect.Parameter.POSITIONAL_OR_KEYWORD used in __signature__ overrides."""
 
-# Parameter names that we resolve ourselves from AionRuntimeContext.
-# Any handler parameter whose name is in this set will be populated by
-# _build_context_dependencies(), not forwarded to LangGraph for injection.
 _CONTEXT_PARAM_NAMES = frozenset({
     "context",
     "event",
@@ -29,6 +32,9 @@ _CONTEXT_PARAM_NAMES = frozenset({
     "thread",
     "message",
 })
+"""Parameter names resolved from AionRuntimeContext by the router.
+Any handler parameter in this set is populated by _build_context_dependencies(),
+not forwarded to LangGraph for injection."""
 
 
 def _build_context_dependencies(

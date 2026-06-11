@@ -1,3 +1,5 @@
+"""WebSocket transport implementation for the Aion platform GraphQL subscription connection."""
+
 from typing import Optional, List
 
 from gql.transport.websockets import WebsocketsTransport

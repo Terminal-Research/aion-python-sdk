@@ -1,3 +1,9 @@
+"""Environment-based settings for Aion API connections.
+
+Provides Pydantic settings models that read connection parameters from
+environment variables and .env files.
+"""
+
 from typing import Optional
 from urllib.parse import urlparse
 

@@ -1,3 +1,5 @@
+"""Manager that maintains a persistent WebSocket connection to the Aion platform."""
+
 import asyncio
 from typing import Optional
 

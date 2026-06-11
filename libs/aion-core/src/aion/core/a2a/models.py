@@ -1,3 +1,9 @@
+"""Core A2A data models for agent execution and task management.
+
+Defines structures for agent inboxes, outboxes, conversations, and task status
+tracking within the Agent-to-Agent (A2A) protocol layer.
+"""
+
 import copy
 from typing import Any, List, Dict, Optional, TYPE_CHECKING
 
@@ -63,11 +69,19 @@ class A2AOutbox(A2ABaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    task: Optional[Protobuf[Task]] = None
-    message: Optional[Protobuf[Message]] = None
+    task: Optional[Protobuf[Task]] = Field(
+        default=None,
+        description="Outbound A2A Task to return at the end of agent execution.",
+    )
+    message: Optional[Protobuf[Message]] = Field(
+        default=None,
+        description="Outbound A2A Message to return at the end of agent execution.",
+    )
 
 
 class ConversationTaskStatus(A2ABaseModel):
+    """Serializable snapshot of an A2A task's lifecycle state."""
+
     state: ProtobufEnum[TaskState]
     """
     The current state of the task's lifecycle.
@@ -75,6 +89,7 @@ class ConversationTaskStatus(A2ABaseModel):
 
     @field_serializer('state')
     def serialize_state(self, value: int) -> str:
+        """Serialize the TaskState protobuf enum to its string name."""
         return TaskState.Name(value)
 
 
@@ -91,7 +106,7 @@ class Conversation(A2ABaseModel):
     """
     artifacts: List[Protobuf[Artifact]] = Field(default_factory=list)
     """
-    List of artifacts associated with the conversation.
+    Generated artifacts produced during the conversation (code, files, documents).
     """
     status: ConversationTaskStatus
     """
@@ -101,7 +116,7 @@ class Conversation(A2ABaseModel):
 
 class ContextsList(RootModel[List[str]]):
     """A list of context strings for LangGraph agent communication."""
-    root: List[str]
+    root: List[str] = Field(description="Ordered list of context identifiers, most recent first.")
 
 
 class A2AManifest(A2ABaseModel):

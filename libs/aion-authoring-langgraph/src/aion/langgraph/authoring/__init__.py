@@ -1,3 +1,13 @@
+"""LangGraph authoring toolkit for Aion agents.
+
+Provides abstractions for building Aion-powered LangGraph agents:
+- Event routing: Aion event dispatcher for graph nodes
+- Models: LangChain chat model factory configured for Aion
+- Threading: Thread and Message abstractions for agent-side streaming
+- Emission: Helper functions for emitting events (messages, cards, artifacts, reactions)
+- MCP tools: LangGraph-native MCP resolver and client factory
+"""
+
 from .handlers import AionEventRouter, create_event_router
 from .mcp import (
     AionLangGraphMcpResolver,
@@ -6,7 +16,11 @@ from .mcp import (
 )
 from .models import aion_chat_model, aion_chat_openai
 from .invocation import Message, Thread
-from .stream import emit_data_artifact, emit_file_artifact, emit_message, emit_task_update
+from .invocation.emitters import (
+    emit_artifact,
+    emit_card,
+    emit_message,
+)
 
 __all__ = [
     "AionEventRouter",
@@ -17,9 +31,8 @@ __all__ = [
     "aion_chat_openai",
     "Message",
     "Thread",
-    "emit_file_artifact",
-    "emit_data_artifact",
+    "emit_artifact",
+    "emit_card",
     "emit_message",
-    "emit_task_update",
     "load_aion_mcp_tools",
 ]

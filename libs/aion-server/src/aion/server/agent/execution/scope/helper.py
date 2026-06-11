@@ -1,3 +1,5 @@
+"""ContextVar-backed helpers for reading and mutating the per-request AgentExecutionScope."""
+
 from __future__ import annotations
 
 from contextvars import ContextVar
@@ -6,7 +8,7 @@ from typing import Optional, Dict, TYPE_CHECKING
 from .types import AgentExecutionScope
 
 if TYPE_CHECKING:
-    from aion.core.types.a2a.extensions import DistributionExtensionV1, TraceabilityExtensionV1
+    from aion.core.a2a.extensions import DistributionExtensionV1, TraceabilityExtensionV1
     from aion.server.tasks.protocols import AionTaskManagerProtocol
 
 __all__ = [
@@ -25,7 +27,7 @@ __all__ = [
 
 _execution_scope_var: ContextVar[Optional[AgentExecutionScope]] = ContextVar(
     'agent_execution_scope', default=None
-)
+)  # Isolated per async task; reset to None between requests.
 
 
 def get_execution_scope() -> Optional[AgentExecutionScope]:

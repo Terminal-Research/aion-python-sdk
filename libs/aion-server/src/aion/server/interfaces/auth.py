@@ -1,3 +1,5 @@
+"""Abstract interface for authentication managers used by Aion server services."""
+
 from abc import ABC, abstractmethod
 
 __all__ = [

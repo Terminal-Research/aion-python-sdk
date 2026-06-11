@@ -1,3 +1,5 @@
+"""Configuration error exceptions."""
+
 from pathlib import Path
 from typing import Optional
 

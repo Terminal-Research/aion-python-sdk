@@ -1,3 +1,5 @@
+"""FastAPI application lifespan: startup (tracing, WebSocket) and shutdown orchestration."""
+
 from __future__ import annotations
 
 import asyncio
@@ -71,6 +73,7 @@ class AppLifespan:
         await self.app_factory.shutdown()
 
     async def _start_ws_connection(self):
+        """Authenticate and open the persistent WebSocket connection to the Aion platform."""
         # fetch token before services execution to reduce number of requests to aion api
         auth_token = await aion_services.AionAuthManagerService(jwt_manager=aion_jwt_manager).get_token()
 

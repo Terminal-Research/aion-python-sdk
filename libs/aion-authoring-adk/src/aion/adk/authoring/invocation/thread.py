@@ -1,17 +1,27 @@
+"""ADK thread abstraction for streaming agent responses.
+
+Provides a context-aware Thread class that emits messages, cards, artifacts,
+and ephemeral typing indicators via the ADK event emitter set up by the
+invocation context.
+"""
+
 from __future__ import annotations
 
-from aion.adk.authoring.output import AionOutput, ArtifactOutput, CardOutput
+from a2a.types import Artifact as A2AArtifact
+from aion.adk.authoring.invocation import emit_artifact, emit_card, emit_message
+from aion.core.a2a.extensions.messaging import MessageActionPayload
 from aion.core.agent import BaseThread
 from aion.core.agent.invocation.card import Card
 from aion.core.logging import get_logger
-from aion.core.types.a2a.enums import ArtifactId
-from aion.core.types.a2a.extensions.messaging import MessageActionPayload
 from google.adk.events import Event
 from google.genai import types
-from typing import Any, Optional
+from typing import AsyncIterator, Optional, Union, TYPE_CHECKING
 
-from .emitter import get_adk_emitter
+from .context_vars import EventEmitter, get_adk_ctx, get_adk_emitter
 from .message import Message
+
+if TYPE_CHECKING:
+    from aion.adk.authoring.invocation import AionInvocationContext
 
 logger = get_logger()
 
@@ -27,6 +37,7 @@ class Thread(BaseThread):
 
     @staticmethod
     def _get_emitter():
+        """Return the ADK event emitter from the current invocation context, or None."""
         emitter = get_adk_emitter()
         if emitter is None:
             logger.debug(
@@ -36,103 +47,81 @@ class Thread(BaseThread):
         return emitter
 
     @staticmethod
-    def _output_artifact_metadata(artifact_id: str) -> dict:
-        return AionOutput(artifact=ArtifactOutput(artifact_id=artifact_id)).to_custom_metadata()
-
-    @staticmethod
-    def _build_text_event(text: str, *, partial: bool, custom_metadata: dict | None = None) -> Any:
-        """Build a google.adk.events.Event carrying a text Content."""
-        from google.adk.events import Event
-        from google.genai import types
-        return Event(
-            author="agent",
-            content=types.Content(
-                parts=[types.Part(text=text)],
-                role="model",
-            ),
-            partial=partial,
-            custom_metadata=custom_metadata,
-        )
-
-    @staticmethod
-    def _build_card_event(card: Card) -> Any:
-        """Build a google.adk.events.Event carrying a Card.
-
-        For jsx cards, JSX content is placed in Event.content as a text part.
-        For url cards, Event.content is empty and the url is carried in CardOutput.
-        The aion:output hint signals the converter to emit a card message.
-        """
-        if card.url:
-            return Event(
-                author="agent",
-                content=types.Content(parts=[], role="model"),
-                partial=False,
-                custom_metadata=AionOutput(card=CardOutput(url=card.url)).to_custom_metadata(),
-            )
-        return Event(
-            author="agent",
-            content=types.Content(
-                parts=[types.Part(text=card.jsx)],
-                role="model",
-            ),
-            partial=False,
-            custom_metadata=AionOutput(card=CardOutput()).to_custom_metadata(),
-        )
+    def _get_ctx() -> AionInvocationContext:
+        """Return the ADK invocation context from the current ContextVar."""
+        return get_adk_ctx()
 
     async def post(
             self,
-            content: Any,
+            content: Union[str, Card, A2AArtifact, Event, AsyncIterator[str]],
             *,
             target: Optional[MessageActionPayload] = None,
             metadata: dict | None = None,
-    ) -> Event:
+    ) -> Event | None:
         """Post a message via the ADK event emitter.
 
-        Supports str, Card, google.adk.events.Event, or an async iterator
-        yielding str chunks. Returns the emitted event, or None when
-        the emitter is not available or the content type is unsupported.
+        Supports str, Card, a2a.types.Artifact, google.adk.events.Event,
+        or an async iterator yielding str chunks. Returns the emitted Event,
+        or None when the emitter is not available or the content type is unsupported.
 
-        To send a card, pass an explicit Card instance — plain JSX strings
-        are treated as regular text.
-
-        target is accepted for API parity with LangGraph Thread but is not
-        yet wired to outbound routing in the ADK execution layer.
+        When target is provided, the MessageActionPayload is embedded in
+        Event.custom_metadata under the aion:routing key so the server-side
+        converter can attach it as an extension DataPart on the outbound A2A message.
         """
         emitter = self._get_emitter()
         if emitter is None:
             return None
 
         if isinstance(content, Card):
-            event = self._build_card_event(content)
-            emitter(event)
-            return event
+            emit_card(emitter, content, routing=target, metadata=metadata)
+            return None
+
+        if isinstance(content, A2AArtifact):
+            await emit_artifact(emitter, self._get_ctx(), content, routing=target, metadata=metadata)
+            return None
 
         if isinstance(content, str):
-            event = self._build_text_event(content, partial=False, custom_metadata=metadata)
-            emitter(event)
-            return event
+            emit_message(emitter, content, routing=target, metadata=metadata)
+            return None
 
         if isinstance(content, Event):
             emitter(content)
             return content
 
         if hasattr(content, "__aiter__"):
-            return await self._stream_from_async_iterator(emitter, content)
+            return await self._stream_from_async_iterator(emitter, content, routing=target, metadata=metadata)
 
         logger.warning(
             "Thread.post() received unsupported content type: %s. "
-            "Supported types: str (or JSX Card), google.adk.events.Event, async iterator of str.",
+            "Supported types: str, Card, a2a.types.Artifact, "
+            "google.adk.events.Event, async iterator of str.",
             type(content).__name__,
         )
         return None
 
-    async def _stream_from_async_iterator(self, emitter: Any, iterator: Any) -> Any:
+    @staticmethod
+    def _build_partial_text_event(text: str, metadata: dict | None = None) -> Event:
+        """Build a partial (streaming) ADK Event for a text chunk."""
+        return Event(
+            author="agent",
+            content=types.Content(parts=[types.Part(text=text)], role="model"),
+            partial=True,
+            custom_metadata=metadata or None,
+        )
+
+    async def _stream_from_async_iterator(
+            self,
+            emitter: EventEmitter,
+            iterator: AsyncIterator[str],
+            routing: Optional[MessageActionPayload] = None,
+            metadata: dict | None = None,
+    ) -> Event | None:
         """Stream chunks as partial ADK Events, then emit a durable final event."""
         accumulated = ""
         try:
             async for chunk in iterator:
                 if isinstance(chunk, str):
-                    emitter(self._build_text_event(chunk, partial=True))
+                    emitter(self._build_partial_text_event(chunk, metadata=metadata))
                     accumulated += chunk
                 else:
                     logger.warning(
@@ -148,19 +137,16 @@ class Thread(BaseThread):
             )
 
         if accumulated:
-            final_event = self._build_text_event(accumulated, partial=False)
-            emitter(final_event)
-            return final_event
+            emit_message(emitter, accumulated, routing=routing, metadata=metadata)
+            return None
 
         return None
 
-    async def typing(self, content: str) -> None:
+    async def typing(self, content: str, *, metadata: dict | None = None) -> None:
         """Emit an ephemeral typing/progress indicator.
 
         Produces a complete event with aion:output hint that routes it to
         EPHEMERAL_MESSAGE artifact — shown in real time, never persisted.
-
-        For full control over event parameters, use post() with an Event instead.
         """
         if not isinstance(content, str):
             logger.warning(
@@ -174,6 +160,4 @@ class Thread(BaseThread):
         if emitter is None:
             return
 
-        hint = self._output_artifact_metadata(artifact_id=ArtifactId.EPHEMERAL_MESSAGE.value)
-        event = self._build_text_event(content, partial=False, custom_metadata=hint)
-        emitter(event)
+        emit_message(emitter, content, ephemeral=True, metadata=metadata)

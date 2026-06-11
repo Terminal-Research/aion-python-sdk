@@ -1,3 +1,5 @@
+"""Aion server exception hierarchy for API and authentication errors."""
+
 __all__ = [
     "AionAuthenticationError",
 ]

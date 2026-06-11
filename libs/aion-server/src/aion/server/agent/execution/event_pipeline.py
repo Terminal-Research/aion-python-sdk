@@ -1,3 +1,5 @@
+"""Per-request pipeline for processing, deduplicating, and routing A2A events."""
+
 import copy
 from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
@@ -14,6 +16,7 @@ logger = get_logger()
 
 
 def _event_debug_info(event) -> str:
+    """Return a compact human-readable description of an A2A event for debug logging."""
     if isinstance(event, TaskStatusUpdateEvent):
         state = TaskState.Name(event.status.state)
         msg_id = event.status.message.message_id if event.status.HasField("message") else None

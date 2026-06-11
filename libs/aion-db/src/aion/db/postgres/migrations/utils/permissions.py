@@ -1,3 +1,5 @@
+"""Pre-migration permission checks — exits the process if DB user lacks required privileges."""
+
 from __future__ import annotations
 
 import sys

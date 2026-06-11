@@ -1,3 +1,5 @@
+"""OpenTelemetry tracing setup and span introspection utilities for the Aion server."""
+
 from dataclasses import dataclass
 from typing import Optional, Union
 

@@ -1,3 +1,5 @@
+"""AgentPluginProtocol implementation for the Google ADK framework."""
+
 from typing import Optional, Any, override
 
 from aion.core.db import DbManagerProtocol
@@ -15,18 +17,21 @@ class ADKPlugin(AgentPluginProtocol):
     NAME = "adk"
 
     def __init__(self):
+        """Set up uninitialized plugin state; call initialize() before use."""
         self._db_manager: Optional[DbManagerProtocol] = None
         self._adapter: Optional[ADKAdapter] = None
         self._logger: Optional[AionLogger] = None
 
     @property
     def logger(self) -> AionLogger:
+        """Lazily initialize and return the plugin logger."""
         if not self._logger:
             self._logger = get_logger()
         return self._logger
 
     @override
     def name(self) -> str:
+        """Return the plugin identifier used for registration."""
         return self.NAME
 
     @override
@@ -36,6 +41,7 @@ class ADKPlugin(AgentPluginProtocol):
             file_upload_manager: Optional[FileUploadManager] = None,
             **deps: Any
     ) -> None:
+        """Wire up the db_manager and create the ADKAdapter instance."""
         self._db_manager = db_manager
         self._adapter = ADKAdapter(db_manager=db_manager, file_uploader=file_upload_manager)
 
@@ -51,6 +57,7 @@ class ADKPlugin(AgentPluginProtocol):
 
     @override
     def get_adapter(self) -> ADKAdapter:
+        """Return the initialized ADKAdapter; raises RuntimeError if not yet initialized."""
         if not self._adapter:
             raise RuntimeError(
                 f"{self.name()} plugin not initialized. Call initialize() first."
@@ -59,6 +66,7 @@ class ADKPlugin(AgentPluginProtocol):
 
     @override
     async def health_check(self) -> bool:
+        """Return True if the adapter has been initialized."""
         return self._adapter is not None
 
 

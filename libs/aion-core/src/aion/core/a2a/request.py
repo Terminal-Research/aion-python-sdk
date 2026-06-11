@@ -1,3 +1,9 @@
+"""JSON-RPC 2.0 request envelopes for A2A RPC calls.
+
+Defines request structures for control-plane invocation methods
+(GetContext, GetContextsList).
+"""
+
 from __future__ import annotations
 
 from typing import Literal
@@ -12,6 +18,8 @@ __all__ = [
 
 
 class GetContextRequest(A2ABaseModel):
+    """JSON-RPC 2.0 request envelope for the GetContext method."""
+
     id: str | int
     """
     An identifier established by the Client that MUST contain a String, Number.
@@ -32,6 +40,8 @@ class GetContextRequest(A2ABaseModel):
 
 
 class GetContextsListRequest(A2ABaseModel):
+    """JSON-RPC 2.0 request envelope for the GetContexts (list) method."""
+
     id: str | int
     """
     An identifier established by the Client that MUST contain a String, Number.

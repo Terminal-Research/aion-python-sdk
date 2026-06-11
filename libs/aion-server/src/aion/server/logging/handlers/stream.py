@@ -1,3 +1,5 @@
+"""Console (stream) log handler with agent/task context and ANSI color output."""
+
 import logging
 from datetime import datetime
 
@@ -17,7 +19,8 @@ class LogStreamFormatter(logging.Formatter):
         "CRITICAL": "bright_red",
     }
 
-    def format(self, record: AionLogRecord):
+    def format(self, record: AionLogRecord) -> str:
+        """Format a log record with timestamp, level, context prefix, and ANSI color."""
         from aion.server.agent.aion_agent import agent_manager
 
         # Format timestamp
@@ -55,7 +58,8 @@ class LogStreamFormatter(logging.Formatter):
 
         return self._colorize(record.levelname, formatted_message)
 
-    def _colorize(self, level: str, message: str):
+    def _colorize(self, level: str, message: str) -> str:
+        """Wrap message with the ANSI color associated with the given log level."""
         try:
             color_alias = self.COLOR_ALIASES.get(level, self.COLOR_ALIASES["INFO"])
             return colorize_text(text=message, color=color_alias)

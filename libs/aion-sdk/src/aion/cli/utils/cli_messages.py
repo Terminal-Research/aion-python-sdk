@@ -1,3 +1,5 @@
+"""Helper functions for formatting and printing CLI status messages."""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING

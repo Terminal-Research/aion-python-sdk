@@ -1,3 +1,9 @@
+"""Runtime context data models.
+
+Defines AionRuntimeContext and related types that carry inbound A2A event
+data, distribution metadata, identities, and typed event payloads to agents.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -15,8 +21,8 @@ from aion.core.constants.a2a import (
     REACTION_EVENT_TYPE_V1,
     TRACEABILITY_EXTENSION_URI_V1,
 )
-from aion.core.types.a2a import A2AInbox
-from aion.core.types.a2a.extensions import (
+from aion.core.a2a import A2AInbox
+from aion.core.a2a.extensions import (
     Behavior,
     CardActionEventPayload,
     CommandEventPayload,

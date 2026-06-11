@@ -1,3 +1,5 @@
+"""Builder for the A2A AgentCard with Aion extensions and capabilities."""
+
 from a2a.types import (
     AgentExtension,
     AgentCapabilities,
@@ -8,7 +10,7 @@ from a2a.types import (
 
 from aion.core.config import AgentConfig
 from aion.server.settings import app_settings
-from aion.core.types import GetContextParams, GetContextsListParams
+from aion.core.a2a import GetContextParams, GetContextsListParams
 
 
 class AionAgentCard:
@@ -22,6 +24,7 @@ class AionAgentCard:
             config: AgentConfig,
             base_url: str,
     ) -> AgentCard:
+        """Build an AgentCard from agent config and the server's base URL."""
         capabilities = AgentCapabilities(
             streaming=True,
             push_notifications=True,

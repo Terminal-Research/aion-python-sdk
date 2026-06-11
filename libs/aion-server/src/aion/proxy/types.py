@@ -1,3 +1,5 @@
+"""Pydantic models for proxy configuration and agent registration payloads."""
+
 from typing import Literal, Optional, Dict
 
 from pydantic import BaseModel, Field

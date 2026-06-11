@@ -1,3 +1,5 @@
+"""Data models for the Aion agent runtime metadata."""
+
 from dataclasses import dataclass
 
 from pydantic import Field

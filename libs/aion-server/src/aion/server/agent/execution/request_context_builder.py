@@ -1,3 +1,5 @@
+"""Custom RequestContextBuilder that auto-discovers interrupted tasks by context_id."""
+
 from a2a.server.agent_execution import RequestContext, RequestContextBuilder
 from a2a.server.context import ServerCallContext
 from a2a.server.id_generator import IDGenerator

@@ -7,18 +7,18 @@ from aion.langgraph.authoring.events.custom_events import (
     ArtifactCustomEvent,
     MessageCustomEvent,
     ReactionCustomEvent,
-    TaskUpdateCustomEvent,
 )
-from aion.core.types.a2a.extensions.messaging import ReactionActionPayload
+from aion.core.a2a.extensions.messaging import MessageActionPayload, ReactionActionPayload
 
 
 class TestArtifactCustomEvent:
     def test_valid_construction_with_defaults(self):
-        # append=False and is_last_chunk=True are the safe defaults for single-shot emission
+        # append=False, is_last_chunk=True, routing=None are the safe defaults
         artifact = Artifact(artifact_id="a1", name="test", parts=[])
         event = ArtifactCustomEvent(artifact=artifact)
         assert event.append is False
         assert event.is_last_chunk is True
+        assert event.routing is None
 
     def test_streaming_flags_can_be_overridden(self):
         # append and is_last_chunk can be set for chunked streaming
@@ -26,6 +26,13 @@ class TestArtifactCustomEvent:
         event = ArtifactCustomEvent(artifact=artifact, append=True, is_last_chunk=False)
         assert event.append is True
         assert event.is_last_chunk is False
+
+    def test_routing_can_be_set(self):
+        # routing target is accepted and preserved as-is
+        artifact = Artifact(artifact_id="a1", name="test", parts=[])
+        routing = MessageActionPayload(trajectory="direct-message", context_id="D123")
+        event = ArtifactCustomEvent(artifact=artifact, routing=routing)
+        assert event.routing == routing
 
     def test_missing_artifact_raises(self):
         # artifact is a required field
@@ -76,25 +83,3 @@ class TestReactionCustomEvent:
         # payload is a required field
         with pytest.raises(ValidationError):
             ReactionCustomEvent()
-
-
-class TestTaskUpdateCustomEvent:
-    def test_with_message_only(self):
-        # message-only update leaves metadata as None
-        msg = AIMessage(content="Done")
-        event = TaskUpdateCustomEvent(message=msg)
-        assert event.message is msg
-        assert event.metadata is None
-
-    def test_with_metadata_only(self):
-        # metadata-only update leaves message as None
-        event = TaskUpdateCustomEvent(metadata={"progress": 100})
-        assert event.metadata == {"progress": 100}
-        assert event.message is None
-
-    def test_with_both(self):
-        # message and metadata can coexist in a single event
-        msg = AIMessage(content="Done")
-        event = TaskUpdateCustomEvent(message=msg, metadata={"step": "final"})
-        assert event.message is msg
-        assert event.metadata == {"step": "final"}

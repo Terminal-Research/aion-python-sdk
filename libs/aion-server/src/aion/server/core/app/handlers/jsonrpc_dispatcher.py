@@ -1,3 +1,5 @@
+"""JSON-RPC dispatcher extended with Aion-specific method handling."""
+
 from typing import override
 
 from a2a.server.jsonrpc_models import (
@@ -9,7 +11,7 @@ from a2a.server.request_handlers import prepare_response_object
 from a2a.server.routes.jsonrpc_dispatcher import JsonRpcDispatcher
 from a2a.utils.errors import UnsupportedOperationError
 from aion.core.logging import get_logger
-from aion.core.types import GetContextParams, GetContextsListParams
+from aion.core.a2a import GetContextParams, GetContextsListParams
 from jsonrpc.jsonrpc2 import JSONRPC20Request
 from pydantic import ValidationError
 from starlette.requests import Request
@@ -48,6 +50,7 @@ class AionJsonRpcDispatcher(JsonRpcDispatcher):
         return await super().handle_requests(request)
 
     async def _handle_aion_method(self, body: dict, request: Request) -> Response:
+        """Validate, parse, and dispatch an Aion-specific JSON-RPC method call."""
         request_id = body.get('id')
         method = body.get('method')
         model_class = self.AION_METHOD_TO_MODEL[method]

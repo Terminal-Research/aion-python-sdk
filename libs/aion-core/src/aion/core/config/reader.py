@@ -1,3 +1,9 @@
+"""Configuration file reader and parser for Aion agents.
+
+Handles loading, parsing, and validation of YAML configuration files
+using Pydantic models.
+"""
+
 from __future__ import annotations
 
 import logging

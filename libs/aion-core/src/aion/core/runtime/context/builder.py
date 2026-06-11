@@ -1,3 +1,9 @@
+"""Builder that constructs AionRuntimeContext from an A2A RequestContext.
+
+Parses distribution, event, and identity data from the inbound A2A
+message metadata into a typed AionRuntimeContext object.
+"""
+
 from __future__ import annotations
 
 from google.protobuf.json_format import MessageToDict
@@ -8,8 +14,8 @@ from aion.core.constants import (
     EVENT_EXTENSION_URI_V1,
 )
 from aion.core.logging import get_logger
-from aion.core.types.a2a import A2AInbox
-from aion.core.types.a2a.extensions.distribution import DistributionExtensionV1
+from aion.core.a2a import A2AInbox
+from aion.core.a2a.extensions.distribution import DistributionExtensionV1
 from .models import AionRuntimeContext
 from .utils import extract_event
 

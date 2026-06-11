@@ -1,6 +1,6 @@
 import pytest
 from a2a.types import Message, Part, Role, Task, TaskState, TaskStatusUpdateEvent
-from aion.core.types import A2AOutbox
+from aion.core.a2a import A2AOutbox
 
 from aion.langgraph.server.execution.result_handler import ExecutionResultHandler
 

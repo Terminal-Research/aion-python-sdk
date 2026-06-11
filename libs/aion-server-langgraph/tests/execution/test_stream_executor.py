@@ -2,7 +2,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from a2a.types import Artifact, Part, TaskArtifactUpdateEvent, TaskState, TaskStatus, TaskStatusUpdateEvent
-from aion.core.types import ArtifactId
+from aion.core.a2a import ArtifactId
 
 from aion.langgraph.server.execution.event_converter import LangGraphA2AConverter
 from aion.langgraph.server.execution.stream_executor import StreamExecutor

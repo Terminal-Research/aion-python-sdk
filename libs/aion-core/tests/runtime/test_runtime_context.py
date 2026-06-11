@@ -22,7 +22,7 @@ from aion.core.runtime.context.models import (
     EventKind,
 )
 from aion.core.runtime.context.utils import extract_event
-from aion.core.types.a2a.extensions.distribution import (
+from aion.core.a2a.extensions.distribution import (
     PrincipalIdentity,
     Behavior,
     DistributionExtensionV1,
@@ -30,7 +30,7 @@ from aion.core.types.a2a.extensions.distribution import (
     Environment,
     ServiceIdentity,
 )
-from aion.core.types.a2a.models import A2AInbox
+from aion.core.a2a.models import A2AInbox
 
 
 def _make_inbox_with_event(

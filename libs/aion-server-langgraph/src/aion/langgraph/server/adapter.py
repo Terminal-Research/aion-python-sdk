@@ -1,3 +1,5 @@
+"""AgentAdapter implementation for LangGraph compiled graphs."""
+
 import inspect
 from pathlib import Path
 from typing import Any, Optional
@@ -42,6 +44,7 @@ class LangGraphAdapter(AgentAdapter):
 
     @staticmethod
     def framework_name() -> str:
+        """Return the short framework identifier used for routing and logging."""
         return "langgraph"
 
     def get_supported_types(self) -> list[type]:
@@ -49,6 +52,7 @@ class LangGraphAdapter(AgentAdapter):
         return [StateGraph, Pregel]
 
     def can_handle(self, agent_obj: Any) -> bool:
+        """Return True for LangGraph graph instances and zero-arg factory callables."""
         if self._is_graph_instance(agent_obj):
             return True
 
@@ -106,6 +110,7 @@ class LangGraphAdapter(AgentAdapter):
         return LangGraphExecutor(agent, config)
 
     def validate_config(self, config: AgentConfig) -> None:
+        """Raise ConfigurationError if required LangGraph config fields are absent."""
         if not config.path:
             raise ConfigurationError("Agent path is required for LangGraph adapter")
         logger.debug(f"Configuration validated for agent by LangGraph adapter")
