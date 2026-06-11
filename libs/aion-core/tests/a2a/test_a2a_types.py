@@ -89,12 +89,14 @@ class TestEnums:
     def test_artifact_id_values(self):
         """ArtifactId enum members match the expected aion-prefixed URI strings."""
         assert ArtifactId.STREAM_DELTA == "aion:stream-delta"
+        assert ArtifactId.THINKING_DELTA == "aion:thinking-delta"
         assert ArtifactId.EPHEMERAL_MESSAGE == "aion:ephemeral-message"
 
     def test_artifact_name_values(self):
         """ArtifactName enum members hold human-readable display strings."""
         assert ArtifactName.MESSAGE_RESULT == "Message Result"
         assert ArtifactName.STREAM_DELTA == "Stream Delta"
+        assert ArtifactName.THINKING_DELTA == "Thinking Delta"
 
     def test_a2a_event_type_values(self):
         """A2AEventType enum members match their wire-format string values."""

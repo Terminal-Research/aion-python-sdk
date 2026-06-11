@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { HeadlessRunOptions } from "../src/args.js";
 import type { ChatSettings } from "../src/lib/chatSettings.js";
 import type { ConnectedClient } from "../src/lib/connection.js";
+import type { ChatSessionLogger } from "../src/lib/sessionLogger.js";
 import { makeTextPart } from "../src/lib/a2aProtocol.js";
 import { runHeadless } from "../src/lib/headlessRun.js";
 import type {
@@ -178,6 +179,52 @@ function discoveryResult(agent = discoveredAgent()): AgentDiscoveryResult {
 	};
 }
 
+function failedSourceResult(
+	source = createDefaultRegistryAgentSource("development"),
+	error = "/login to authenticate."
+): AgentDiscoveryResult["errors"][number] {
+	return {
+		source: {
+			...source,
+			status: "unavailable",
+			lastCheckedAt: "2026-05-01T00:00:00.000Z",
+			lastError: error
+		},
+		agents: [],
+		error
+	};
+}
+
+function createMockLogger(
+	overrides: Partial<ChatSessionLogger> = {}
+): ChatSessionLogger {
+	return {
+		chatSessionId: "test-session",
+		logFilePath: "/tmp/aion-chat-test.jsonl",
+		level: "debug",
+		debug: vi.fn(),
+		info: vi.fn(),
+		warn: vi.fn(),
+		error: vi.fn(),
+		flush: vi.fn(),
+		...overrides
+	};
+}
+
+type HeadlessRunTestDependencies = NonNullable<
+	Parameters<typeof runHeadless>[1]
+>;
+
+function runHeadlessForTest(
+	options: HeadlessRunOptions,
+	dependencies: HeadlessRunTestDependencies = {}
+): Promise<number> {
+	return runHeadless(options, {
+		createChatSessionLoggerImpl: () => ({ logger: createMockLogger() }),
+		...dependencies
+	});
+}
+
 function buildParts(text: string): Part[] {
 	return [makeTextPart(text)];
 }
@@ -266,7 +313,7 @@ describe("runHeadless", () => {
 		);
 
 		await expect(
-			runHeadless(options({ agentSelector: "@team-agent" }), {
+			runHeadlessForTest(options({ agentSelector: "@team-agent" }), {
 				stdout: stdout.stream,
 				stderr: stderr.stream,
 				loadChatSettingsImpl: () => ({ settings: settings(selected) }),
@@ -288,10 +335,180 @@ describe("runHeadless", () => {
 		expect(sendMessage).toHaveBeenCalledWith(
 			expect.objectContaining({
 				message: expect.objectContaining({
-					contextId: "context-saved",
+					contextId: "",
 					parts: [makeTextPart("hello")]
 				})
 			})
+		);
+	});
+
+	it("passes a headless session logger into source discovery", async () => {
+		const logger = createMockLogger();
+		const createChatSessionLoggerImpl = vi.fn(() => ({
+			logger,
+			warning: "logger warning"
+		}));
+		let discoveryLogger: ChatSessionLogger | undefined;
+		const stdout = createStream();
+		const stderr = createStream();
+
+		await expect(
+			runHeadlessForTest(options(), {
+				stdout: stdout.stream,
+				stderr: stderr.stream,
+				loadChatSettingsImpl: () => ({ settings: settings() }),
+				discoverAgentSourcesImpl: async (
+					_sources,
+					_fetchImpl,
+					discoveryOptions?: AgentDiscoveryOptions
+				) => {
+					discoveryLogger = discoveryOptions?.logger;
+					return discoveryResult();
+				},
+				connectClientImpl: async () => connectedClient({}),
+				buildMessagePartsImpl: async (text) => buildParts(text),
+				getStoredAccessTokenImpl: async () => undefined,
+				createChatSessionLoggerImpl
+			})
+		).resolves.toBe(0);
+
+		expect(createChatSessionLoggerImpl).toHaveBeenCalledWith({
+			environmentId: "development"
+		});
+		expect(discoveryLogger).toBe(logger);
+		expect(logger.info).toHaveBeenCalledWith(
+			"headless.run.started",
+			expect.objectContaining({
+				environmentId: "development",
+				requestMode: "send-message",
+				responseMode: "message-output",
+				usesPersistedContext: false
+			})
+		);
+		expect(logger.info).toHaveBeenCalledWith(
+			"headless.run.completed",
+			expect.objectContaining({
+				environmentId: "development",
+				selectedAgentKey: "default-localhost-8000:team-agent"
+			})
+		);
+		expect(logger.flush).toHaveBeenCalled();
+		expect(stderr.output()).toContain("logger warning");
+	});
+
+	it("surfaces default registry discovery errors in headless stderr", async () => {
+		const selected = discoveredAgent();
+		const registryError = failedSourceResult(
+			createDefaultRegistryAgentSource("development"),
+			"/login to authenticate."
+		);
+		const stdout = createStream();
+		const stderr = createStream();
+
+		await expect(
+			runHeadlessForTest(options({ agentSelector: "@team-agent" }), {
+				stdout: stdout.stream,
+				stderr: stderr.stream,
+				loadChatSettingsImpl: () => ({ settings: settings(selected) }),
+				discoverAgentSourcesImpl: async () => ({
+					sources: [selected.source, registryError.source],
+					agents: [selected],
+					errors: [registryError]
+				}),
+				connectClientImpl: async () => connectedClient({}),
+				buildMessagePartsImpl: async (text) => buildParts(text),
+				getStoredAccessTokenImpl: async () => undefined
+			})
+		).resolves.toBe(0);
+
+		expect(stdout.output()).toBe("answer\n");
+		expect(stderr.output()).toContain(
+			"Failed to discover agents from Aion development registry: /login to authenticate."
+		);
+	});
+
+	it("keeps noisy default local discovery failures quiet when agents exist", async () => {
+		const registrySource = createDefaultRegistryAgentSource("development");
+		const registryAgent = discoveredAgent({
+			agentKey: `${registrySource.sourceKey}:prompt-agent`,
+			agentId: "identity-1",
+			id: "prompt-agent",
+			sourceKey: registrySource.sourceKey,
+			source: registrySource,
+			agentCardUrl:
+				"http://localhost:8080/distributions/demo/a2a/.well-known/agent-card.json",
+			connectionUrl:
+				"http://localhost:8080/distributions/demo/a2a/.well-known/agent-card.json",
+			connectionAgentId: undefined,
+			agentHandle: "@prompt-agent"
+		});
+		const localError = failedSourceResult(
+			createDefaultLocalAgentSource(),
+			"Failed to fetch manifest from http://localhost:8000/.well-known/manifest.json"
+		);
+		const stdout = createStream();
+		const stderr = createStream();
+
+		await expect(
+			runHeadlessForTest(options({ agentSelector: "@prompt-agent" }), {
+				stdout: stdout.stream,
+				stderr: stderr.stream,
+				loadChatSettingsImpl: () => ({ settings: settings(registryAgent) }),
+				discoverAgentSourcesImpl: async () => ({
+					sources: [localError.source, registrySource],
+					agents: [registryAgent],
+					errors: [localError]
+				}),
+				connectClientImpl: async () => connectedClient({}),
+				buildMessagePartsImpl: async (text) => buildParts(text),
+				getStoredAccessTokenImpl: async () => undefined
+			})
+		).resolves.toBe(0);
+
+		expect(stdout.output()).toBe("answer\n");
+		expect(stderr.output()).toBe("");
+	});
+
+	it("includes environment and source status context on selector misses", async () => {
+		const selected = discoveredAgent();
+		const registryError = failedSourceResult(
+			createDefaultRegistryAgentSource("development"),
+			"/login to authenticate."
+		);
+		const stdout = createStream();
+		const stderr = createStream();
+
+		let thrown: unknown;
+		try {
+			await runHeadlessForTest(options({ agentSelector: "@david" }), {
+				stdout: stdout.stream,
+				stderr: stderr.stream,
+				loadChatSettingsImpl: () => ({ settings: settings(selected) }),
+				discoverAgentSourcesImpl: async () => ({
+					sources: [selected.source, registryError.source],
+					agents: [selected],
+					errors: [registryError]
+				}),
+				connectClientImpl: async () => connectedClient({}),
+				buildMessagePartsImpl: async (text) => buildParts(text),
+				getStoredAccessTokenImpl: async () => undefined
+			});
+		} catch (error) {
+			thrown = error;
+		}
+
+		expect(thrown).toBeInstanceOf(Error);
+		expect((thrown as Error).message).toContain(
+			"No discovered agent matched '@david' in development."
+		);
+		expect((thrown as Error).message).toContain(
+			"Available agents: @team-agent (Local Aion SDK server)."
+		);
+		expect((thrown as Error).message).toContain(
+			"Sources checked: Local Aion SDK server: available (1 agent); Aion development registry: unavailable (/login to authenticate.)"
+		);
+		expect(stderr.output()).toContain(
+			"Failed to discover agents from Aion development registry: /login to authenticate."
 		);
 	});
 
@@ -310,7 +527,7 @@ describe("runHeadless", () => {
 		const connectClientImpl = vi.fn(async () => connectedClient({}));
 
 		await expect(
-			runHeadless(options({ url: "http://localhost:9000" }), {
+			runHeadlessForTest(options({ url: "http://localhost:9000" }), {
 				stdout: stdout.stream,
 				stderr: stderr.stream,
 				loadChatSettingsImpl: () => ({ settings: settings(saved) }),
@@ -338,7 +555,7 @@ describe("runHeadless", () => {
 		const stdout = createStream();
 		const stderr = createStream();
 
-		await runHeadless(options({ responseMode: "a2a-protocol" }), {
+		await runHeadlessForTest(options({ responseMode: "a2a-protocol" }), {
 			stdout: stdout.stream,
 			stderr: stderr.stream,
 			loadChatSettingsImpl: () => ({ settings: settings() }),
@@ -362,7 +579,7 @@ describe("runHeadless", () => {
 		const stdout = createStream();
 		const stderr = createStream();
 
-		await runHeadless(options(), {
+		await runHeadlessForTest(options(), {
 			stdout: stdout.stream,
 			stderr: stderr.stream,
 			loadChatSettingsImpl: () => ({ settings: settings() }),
@@ -396,7 +613,7 @@ describe("runHeadless", () => {
 			capabilities: { extensions: [], streaming: true }
 		};
 
-		await runHeadless(options({ requestMode: "streaming-message" }), {
+		await runHeadlessForTest(options({ requestMode: "streaming-message" }), {
 			stdout: stdout.stream,
 			stderr: stderr.stream,
 			loadChatSettingsImpl: () => ({ settings: settings() }),
@@ -426,7 +643,7 @@ describe("runHeadless", () => {
 			capabilities: { extensions: [], streaming: true }
 		};
 
-		await runHeadless(options({ requestMode: "streaming-message" }), {
+		await runHeadlessForTest(options({ requestMode: "streaming-message" }), {
 			stdout: stdout.stream,
 			stderr: stderr.stream,
 			loadChatSettingsImpl: () => ({ settings: settings() }),
@@ -451,7 +668,7 @@ describe("runHeadless", () => {
 		const stdout = createStream();
 		const stderr = createStream();
 
-		await runHeadless(options({ requestMode: "streaming-message" }), {
+		await runHeadlessForTest(options({ requestMode: "streaming-message" }), {
 			stdout: stdout.stream,
 			stderr: stderr.stream,
 			loadChatSettingsImpl: () => ({ settings: settings() }),
@@ -472,7 +689,7 @@ describe("runHeadless", () => {
 		const stdout = createStream();
 		const stderr = createStream();
 
-		await runHeadless(options(), {
+		await runHeadlessForTest(options(), {
 			stdout: stdout.stream,
 			stderr: stderr.stream,
 			loadChatSettingsImpl: () => ({ settings: settings() }),
@@ -516,7 +733,7 @@ describe("runHeadless", () => {
 		});
 
 		await expect(
-			runHeadless(options({ agentSelector: "@prompt-agent" }), {
+			runHeadlessForTest(options({ agentSelector: "@prompt-agent" }), {
 				stdout: stdout.stream,
 				stderr: stderr.stream,
 				loadChatSettingsImpl: () => ({ settings: settings(registryAgent) }),
@@ -559,7 +776,7 @@ describe("runHeadless", () => {
 		const connectClientImpl = vi.fn(async () => connectedClient({}));
 
 		await expect(
-			runHeadless(options({ agentSelector: "@prompt-agent" }), {
+			runHeadlessForTest(options({ agentSelector: "@prompt-agent" }), {
 				stdout: stdout.stream,
 				stderr: stderr.stream,
 				loadChatSettingsImpl: () => ({ settings: settings(registryAgent) }),
@@ -613,7 +830,7 @@ describe("runHeadless", () => {
 
 		try {
 			const baseSettings = settings();
-			await runHeadless(
+			await runHeadlessForTest(
 				options({
 					url: "http://localhost:9000",
 					token: "explicit-token"

@@ -9632,14 +9632,14 @@ var require_react_reconciler_production = __commonJS({
       }
       var exports2 = {};
       "use strict";
-      var React16 = require_react(), Scheduler2 = require_scheduler(), assign = Object.assign, REACT_LEGACY_ELEMENT_TYPE = /* @__PURE__ */ Symbol.for("react.element"), REACT_ELEMENT_TYPE = /* @__PURE__ */ Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = /* @__PURE__ */ Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = /* @__PURE__ */ Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = /* @__PURE__ */ Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = /* @__PURE__ */ Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = /* @__PURE__ */ Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = /* @__PURE__ */ Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = /* @__PURE__ */ Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = /* @__PURE__ */ Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = /* @__PURE__ */ Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = /* @__PURE__ */ Symbol.for("react.memo"), REACT_LAZY_TYPE = /* @__PURE__ */ Symbol.for("react.lazy");
+      var React15 = require_react(), Scheduler2 = require_scheduler(), assign = Object.assign, REACT_LEGACY_ELEMENT_TYPE = /* @__PURE__ */ Symbol.for("react.element"), REACT_ELEMENT_TYPE = /* @__PURE__ */ Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = /* @__PURE__ */ Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = /* @__PURE__ */ Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = /* @__PURE__ */ Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = /* @__PURE__ */ Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = /* @__PURE__ */ Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = /* @__PURE__ */ Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = /* @__PURE__ */ Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = /* @__PURE__ */ Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = /* @__PURE__ */ Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = /* @__PURE__ */ Symbol.for("react.memo"), REACT_LAZY_TYPE = /* @__PURE__ */ Symbol.for("react.lazy");
       /* @__PURE__ */ Symbol.for("react.scope");
       var REACT_ACTIVITY_TYPE = /* @__PURE__ */ Symbol.for("react.activity");
       /* @__PURE__ */ Symbol.for("react.legacy_hidden");
       /* @__PURE__ */ Symbol.for("react.tracing_marker");
       var REACT_MEMO_CACHE_SENTINEL = /* @__PURE__ */ Symbol.for("react.memo_cache_sentinel");
       /* @__PURE__ */ Symbol.for("react.view_transition");
-      var MAYBE_ITERATOR_SYMBOL = Symbol.iterator, REACT_CLIENT_REFERENCE = /* @__PURE__ */ Symbol.for("react.client.reference"), isArrayImpl = Array.isArray, ReactSharedInternals = React16.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, rendererVersion = $$$config.rendererVersion, rendererPackageName = $$$config.rendererPackageName, extraDevToolsConfig = $$$config.extraDevToolsConfig, getPublicInstance = $$$config.getPublicInstance, getRootHostContext = $$$config.getRootHostContext, getChildHostContext = $$$config.getChildHostContext, prepareForCommit = $$$config.prepareForCommit, resetAfterCommit = $$$config.resetAfterCommit, createInstance = $$$config.createInstance;
+      var MAYBE_ITERATOR_SYMBOL = Symbol.iterator, REACT_CLIENT_REFERENCE = /* @__PURE__ */ Symbol.for("react.client.reference"), isArrayImpl = Array.isArray, ReactSharedInternals = React15.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, rendererVersion = $$$config.rendererVersion, rendererPackageName = $$$config.rendererPackageName, extraDevToolsConfig = $$$config.extraDevToolsConfig, getPublicInstance = $$$config.getPublicInstance, getRootHostContext = $$$config.getRootHostContext, getChildHostContext = $$$config.getChildHostContext, prepareForCommit = $$$config.prepareForCommit, resetAfterCommit = $$$config.resetAfterCommit, createInstance = $$$config.createInstance;
       $$$config.cloneMutableInstance;
       var appendInitialChild = $$$config.appendInitialChild, finalizeInitialChildren = $$$config.finalizeInitialChildren, shouldSetTextContent = $$$config.shouldSetTextContent, createTextInstance = $$$config.createTextInstance;
       $$$config.cloneMutableTextInstance;
@@ -22232,14 +22232,14 @@ var require_react_reconciler_development = __commonJS({
       }
       var exports2 = {};
       "use strict";
-      var React16 = require_react(), Scheduler2 = require_scheduler(), assign = Object.assign, REACT_LEGACY_ELEMENT_TYPE = /* @__PURE__ */ Symbol.for("react.element"), REACT_ELEMENT_TYPE = /* @__PURE__ */ Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = /* @__PURE__ */ Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = /* @__PURE__ */ Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = /* @__PURE__ */ Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = /* @__PURE__ */ Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = /* @__PURE__ */ Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = /* @__PURE__ */ Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = /* @__PURE__ */ Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = /* @__PURE__ */ Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = /* @__PURE__ */ Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = /* @__PURE__ */ Symbol.for("react.memo"), REACT_LAZY_TYPE = /* @__PURE__ */ Symbol.for("react.lazy");
+      var React15 = require_react(), Scheduler2 = require_scheduler(), assign = Object.assign, REACT_LEGACY_ELEMENT_TYPE = /* @__PURE__ */ Symbol.for("react.element"), REACT_ELEMENT_TYPE = /* @__PURE__ */ Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = /* @__PURE__ */ Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = /* @__PURE__ */ Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = /* @__PURE__ */ Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = /* @__PURE__ */ Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = /* @__PURE__ */ Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = /* @__PURE__ */ Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = /* @__PURE__ */ Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = /* @__PURE__ */ Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = /* @__PURE__ */ Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = /* @__PURE__ */ Symbol.for("react.memo"), REACT_LAZY_TYPE = /* @__PURE__ */ Symbol.for("react.lazy");
       /* @__PURE__ */ Symbol.for("react.scope");
       var REACT_ACTIVITY_TYPE = /* @__PURE__ */ Symbol.for("react.activity");
       /* @__PURE__ */ Symbol.for("react.legacy_hidden");
       /* @__PURE__ */ Symbol.for("react.tracing_marker");
       var REACT_MEMO_CACHE_SENTINEL = /* @__PURE__ */ Symbol.for("react.memo_cache_sentinel");
       /* @__PURE__ */ Symbol.for("react.view_transition");
-      var MAYBE_ITERATOR_SYMBOL = Symbol.iterator, REACT_CLIENT_REFERENCE = /* @__PURE__ */ Symbol.for("react.client.reference"), isArrayImpl = Array.isArray, ReactSharedInternals = React16.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, rendererVersion = $$$config.rendererVersion, rendererPackageName = $$$config.rendererPackageName, extraDevToolsConfig = $$$config.extraDevToolsConfig, getPublicInstance = $$$config.getPublicInstance, getRootHostContext = $$$config.getRootHostContext, getChildHostContext = $$$config.getChildHostContext, prepareForCommit = $$$config.prepareForCommit, resetAfterCommit = $$$config.resetAfterCommit, createInstance = $$$config.createInstance;
+      var MAYBE_ITERATOR_SYMBOL = Symbol.iterator, REACT_CLIENT_REFERENCE = /* @__PURE__ */ Symbol.for("react.client.reference"), isArrayImpl = Array.isArray, ReactSharedInternals = React15.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, rendererVersion = $$$config.rendererVersion, rendererPackageName = $$$config.rendererPackageName, extraDevToolsConfig = $$$config.extraDevToolsConfig, getPublicInstance = $$$config.getPublicInstance, getRootHostContext = $$$config.getRootHostContext, getChildHostContext = $$$config.getChildHostContext, prepareForCommit = $$$config.prepareForCommit, resetAfterCommit = $$$config.resetAfterCommit, createInstance = $$$config.createInstance;
       $$$config.cloneMutableInstance;
       var appendInitialChild = $$$config.appendInitialChild, finalizeInitialChildren = $$$config.finalizeInitialChildren, shouldSetTextContent = $$$config.shouldSetTextContent, createTextInstance = $$$config.createTextInstance;
       $$$config.cloneMutableTextInstance;
@@ -28590,18 +28590,18 @@ var require_react_jsx_runtime_development = __commonJS({
       function isValidElement(object) {
         return "object" === typeof object && null !== object && object.$$typeof === REACT_ELEMENT_TYPE;
       }
-      var React16 = require_react(), REACT_ELEMENT_TYPE = /* @__PURE__ */ Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = /* @__PURE__ */ Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = /* @__PURE__ */ Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = /* @__PURE__ */ Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = /* @__PURE__ */ Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = /* @__PURE__ */ Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = /* @__PURE__ */ Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = /* @__PURE__ */ Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = /* @__PURE__ */ Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = /* @__PURE__ */ Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = /* @__PURE__ */ Symbol.for("react.memo"), REACT_LAZY_TYPE = /* @__PURE__ */ Symbol.for("react.lazy"), REACT_ACTIVITY_TYPE = /* @__PURE__ */ Symbol.for("react.activity"), REACT_CLIENT_REFERENCE = /* @__PURE__ */ Symbol.for("react.client.reference"), ReactSharedInternals = React16.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, hasOwnProperty = Object.prototype.hasOwnProperty, isArrayImpl = Array.isArray, createTask = console.createTask ? console.createTask : function() {
+      var React15 = require_react(), REACT_ELEMENT_TYPE = /* @__PURE__ */ Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = /* @__PURE__ */ Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = /* @__PURE__ */ Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = /* @__PURE__ */ Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = /* @__PURE__ */ Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = /* @__PURE__ */ Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = /* @__PURE__ */ Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = /* @__PURE__ */ Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = /* @__PURE__ */ Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = /* @__PURE__ */ Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = /* @__PURE__ */ Symbol.for("react.memo"), REACT_LAZY_TYPE = /* @__PURE__ */ Symbol.for("react.lazy"), REACT_ACTIVITY_TYPE = /* @__PURE__ */ Symbol.for("react.activity"), REACT_CLIENT_REFERENCE = /* @__PURE__ */ Symbol.for("react.client.reference"), ReactSharedInternals = React15.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, hasOwnProperty = Object.prototype.hasOwnProperty, isArrayImpl = Array.isArray, createTask = console.createTask ? console.createTask : function() {
         return null;
       };
-      React16 = {
+      React15 = {
         react_stack_bottom_frame: function(callStackForError) {
           return callStackForError();
         }
       };
       var specialPropKeyWarningShown;
       var didWarnAboutElementRef = {};
-      var unknownOwnerDebugStack = React16.react_stack_bottom_frame.bind(
-        React16,
+      var unknownOwnerDebugStack = React15.react_stack_bottom_frame.bind(
+        React15,
         UnknownOwner
       )();
       var unknownOwnerDebugTask = createTask(getTaskName(UnknownOwner));
@@ -49413,8 +49413,1347 @@ function parseCliArgs(argv) {
 }
 
 // src/app.tsx
-var import_react34 = __toESM(require_react(), 1);
 import { randomUUID as randomUUID3 } from "crypto";
+
+// node_modules/@a2a-js/sdk/dist/chunk-IFX37PQI.js
+var TaskState = /* @__PURE__ */ ((TaskState2) => {
+  TaskState2[TaskState2["TASK_STATE_UNSPECIFIED"] = 0] = "TASK_STATE_UNSPECIFIED";
+  TaskState2[TaskState2["TASK_STATE_SUBMITTED"] = 1] = "TASK_STATE_SUBMITTED";
+  TaskState2[TaskState2["TASK_STATE_WORKING"] = 2] = "TASK_STATE_WORKING";
+  TaskState2[TaskState2["TASK_STATE_COMPLETED"] = 3] = "TASK_STATE_COMPLETED";
+  TaskState2[TaskState2["TASK_STATE_FAILED"] = 4] = "TASK_STATE_FAILED";
+  TaskState2[TaskState2["TASK_STATE_CANCELED"] = 5] = "TASK_STATE_CANCELED";
+  TaskState2[TaskState2["TASK_STATE_INPUT_REQUIRED"] = 6] = "TASK_STATE_INPUT_REQUIRED";
+  TaskState2[TaskState2["TASK_STATE_REJECTED"] = 7] = "TASK_STATE_REJECTED";
+  TaskState2[TaskState2["TASK_STATE_AUTH_REQUIRED"] = 8] = "TASK_STATE_AUTH_REQUIRED";
+  TaskState2[TaskState2["UNRECOGNIZED"] = -1] = "UNRECOGNIZED";
+  return TaskState2;
+})(TaskState || {});
+function taskStateFromJSON(object) {
+  switch (object) {
+    case 0:
+    case "TASK_STATE_UNSPECIFIED":
+      return 0;
+    case 1:
+    case "TASK_STATE_SUBMITTED":
+      return 1;
+    case 2:
+    case "TASK_STATE_WORKING":
+      return 2;
+    case 3:
+    case "TASK_STATE_COMPLETED":
+      return 3;
+    case 4:
+    case "TASK_STATE_FAILED":
+      return 4;
+    case 5:
+    case "TASK_STATE_CANCELED":
+      return 5;
+    case 6:
+    case "TASK_STATE_INPUT_REQUIRED":
+      return 6;
+    case 7:
+    case "TASK_STATE_REJECTED":
+      return 7;
+    case 8:
+    case "TASK_STATE_AUTH_REQUIRED":
+      return 8;
+    case -1:
+    case "UNRECOGNIZED":
+    default:
+      return -1;
+  }
+}
+function taskStateToJSON(object) {
+  switch (object) {
+    case 0:
+      return "TASK_STATE_UNSPECIFIED";
+    case 1:
+      return "TASK_STATE_SUBMITTED";
+    case 2:
+      return "TASK_STATE_WORKING";
+    case 3:
+      return "TASK_STATE_COMPLETED";
+    case 4:
+      return "TASK_STATE_FAILED";
+    case 5:
+      return "TASK_STATE_CANCELED";
+    case 6:
+      return "TASK_STATE_INPUT_REQUIRED";
+    case 7:
+      return "TASK_STATE_REJECTED";
+    case 8:
+      return "TASK_STATE_AUTH_REQUIRED";
+    case -1:
+    default:
+      return "UNRECOGNIZED";
+  }
+}
+var Role = /* @__PURE__ */ ((Role2) => {
+  Role2[Role2["ROLE_UNSPECIFIED"] = 0] = "ROLE_UNSPECIFIED";
+  Role2[Role2["ROLE_USER"] = 1] = "ROLE_USER";
+  Role2[Role2["ROLE_AGENT"] = 2] = "ROLE_AGENT";
+  Role2[Role2["UNRECOGNIZED"] = -1] = "UNRECOGNIZED";
+  return Role2;
+})(Role || {});
+function roleFromJSON(object) {
+  switch (object) {
+    case 0:
+    case "ROLE_UNSPECIFIED":
+      return 0;
+    case 1:
+    case "ROLE_USER":
+      return 1;
+    case 2:
+    case "ROLE_AGENT":
+      return 2;
+    case -1:
+    case "UNRECOGNIZED":
+    default:
+      return -1;
+  }
+}
+function roleToJSON(object) {
+  switch (object) {
+    case 0:
+      return "ROLE_UNSPECIFIED";
+    case 1:
+      return "ROLE_USER";
+    case 2:
+      return "ROLE_AGENT";
+    case -1:
+    default:
+      return "UNRECOGNIZED";
+  }
+}
+var SendMessageConfiguration = {
+  fromJSON(object) {
+    return {
+      acceptedOutputModes: globalThis.Array.isArray(object?.acceptedOutputModes) ? object.acceptedOutputModes.map((e) => globalThis.String(e)) : globalThis.Array.isArray(object?.accepted_output_modes) ? object.accepted_output_modes.map(
+        (e) => globalThis.String(e)
+      ) : [],
+      taskPushNotificationConfig: isSet(object.taskPushNotificationConfig) ? TaskPushNotificationConfig.fromJSON(object.taskPushNotificationConfig) : isSet(object.task_push_notification_config) ? TaskPushNotificationConfig.fromJSON(object.task_push_notification_config) : void 0,
+      historyLength: isSet(object.historyLength) ? globalThis.Number(object.historyLength) : isSet(object.history_length) ? globalThis.Number(object.history_length) : void 0,
+      returnImmediately: isSet(object.returnImmediately) ? globalThis.Boolean(object.returnImmediately) : isSet(object.return_immediately) ? globalThis.Boolean(object.return_immediately) : false
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.acceptedOutputModes?.length) {
+      obj.acceptedOutputModes = message.acceptedOutputModes;
+    }
+    if (message.taskPushNotificationConfig !== void 0) {
+      obj.taskPushNotificationConfig = TaskPushNotificationConfig.toJSON(message.taskPushNotificationConfig);
+    }
+    if (message.historyLength !== void 0) {
+      obj.historyLength = Math.round(message.historyLength);
+    }
+    if (message.returnImmediately !== false) {
+      obj.returnImmediately = message.returnImmediately;
+    }
+    return obj;
+  }
+};
+var Task = {
+  fromJSON(object) {
+    return {
+      id: isSet(object.id) ? globalThis.String(object.id) : "",
+      contextId: isSet(object.contextId) ? globalThis.String(object.contextId) : isSet(object.context_id) ? globalThis.String(object.context_id) : "",
+      status: isSet(object.status) ? TaskStatus.fromJSON(object.status) : void 0,
+      artifacts: globalThis.Array.isArray(object?.artifacts) ? object.artifacts.map((e) => Artifact.fromJSON(e)) : [],
+      history: globalThis.Array.isArray(object?.history) ? object.history.map((e) => Message.fromJSON(e)) : [],
+      metadata: isObject(object.metadata) ? object.metadata : void 0
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.id !== "") {
+      obj.id = message.id;
+    }
+    if (message.contextId !== "") {
+      obj.contextId = message.contextId;
+    }
+    if (message.status !== void 0) {
+      obj.status = TaskStatus.toJSON(message.status);
+    }
+    if (message.artifacts?.length) {
+      obj.artifacts = message.artifacts.map((e) => Artifact.toJSON(e));
+    }
+    if (message.history?.length) {
+      obj.history = message.history.map((e) => Message.toJSON(e));
+    }
+    if (message.metadata !== void 0) {
+      obj.metadata = message.metadata;
+    }
+    return obj;
+  }
+};
+var TaskStatus = {
+  fromJSON(object) {
+    return {
+      state: isSet(object.state) ? taskStateFromJSON(object.state) : 0,
+      message: isSet(object.message) ? Message.fromJSON(object.message) : void 0,
+      timestamp: isSet(object.timestamp) ? globalThis.String(object.timestamp) : void 0
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.state !== 0) {
+      obj.state = taskStateToJSON(message.state);
+    }
+    if (message.message !== void 0) {
+      obj.message = Message.toJSON(message.message);
+    }
+    if (message.timestamp !== void 0) {
+      obj.timestamp = message.timestamp;
+    }
+    return obj;
+  }
+};
+var Part = {
+  fromJSON(object) {
+    return {
+      content: isSet(object.text) ? { $case: "text", value: globalThis.String(object.text) } : isSet(object.raw) ? { $case: "raw", value: Buffer.from(bytesFromBase64(object.raw)) } : isSet(object.url) ? { $case: "url", value: globalThis.String(object.url) } : isSet(object.data) ? { $case: "data", value: object.data } : void 0,
+      metadata: isObject(object.metadata) ? object.metadata : void 0,
+      filename: isSet(object.filename) ? globalThis.String(object.filename) : "",
+      mediaType: isSet(object.mediaType) ? globalThis.String(object.mediaType) : isSet(object.media_type) ? globalThis.String(object.media_type) : ""
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.content?.$case === "text") {
+      obj.text = message.content.value;
+    } else if (message.content?.$case === "raw") {
+      obj.raw = base64FromBytes(message.content.value);
+    } else if (message.content?.$case === "url") {
+      obj.url = message.content.value;
+    } else if (message.content?.$case === "data") {
+      obj.data = message.content.value;
+    }
+    if (message.metadata !== void 0) {
+      obj.metadata = message.metadata;
+    }
+    if (message.filename !== "") {
+      obj.filename = message.filename;
+    }
+    if (message.mediaType !== "") {
+      obj.mediaType = message.mediaType;
+    }
+    return obj;
+  }
+};
+var Message = {
+  fromJSON(object) {
+    return {
+      messageId: isSet(object.messageId) ? globalThis.String(object.messageId) : isSet(object.message_id) ? globalThis.String(object.message_id) : "",
+      contextId: isSet(object.contextId) ? globalThis.String(object.contextId) : isSet(object.context_id) ? globalThis.String(object.context_id) : "",
+      taskId: isSet(object.taskId) ? globalThis.String(object.taskId) : isSet(object.task_id) ? globalThis.String(object.task_id) : "",
+      role: isSet(object.role) ? roleFromJSON(object.role) : 0,
+      parts: globalThis.Array.isArray(object?.parts) ? object.parts.map((e) => Part.fromJSON(e)) : [],
+      metadata: isObject(object.metadata) ? object.metadata : void 0,
+      extensions: globalThis.Array.isArray(object?.extensions) ? object.extensions.map((e) => globalThis.String(e)) : [],
+      referenceTaskIds: globalThis.Array.isArray(object?.referenceTaskIds) ? object.referenceTaskIds.map((e) => globalThis.String(e)) : globalThis.Array.isArray(object?.reference_task_ids) ? object.reference_task_ids.map((e) => globalThis.String(e)) : []
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.messageId !== "") {
+      obj.messageId = message.messageId;
+    }
+    if (message.contextId !== "") {
+      obj.contextId = message.contextId;
+    }
+    if (message.taskId !== "") {
+      obj.taskId = message.taskId;
+    }
+    if (message.role !== 0) {
+      obj.role = roleToJSON(message.role);
+    }
+    if (message.parts?.length) {
+      obj.parts = message.parts.map((e) => Part.toJSON(e));
+    }
+    if (message.metadata !== void 0) {
+      obj.metadata = message.metadata;
+    }
+    if (message.extensions?.length) {
+      obj.extensions = message.extensions;
+    }
+    if (message.referenceTaskIds?.length) {
+      obj.referenceTaskIds = message.referenceTaskIds;
+    }
+    return obj;
+  }
+};
+var Artifact = {
+  fromJSON(object) {
+    return {
+      artifactId: isSet(object.artifactId) ? globalThis.String(object.artifactId) : isSet(object.artifact_id) ? globalThis.String(object.artifact_id) : "",
+      name: isSet(object.name) ? globalThis.String(object.name) : "",
+      description: isSet(object.description) ? globalThis.String(object.description) : "",
+      parts: globalThis.Array.isArray(object?.parts) ? object.parts.map((e) => Part.fromJSON(e)) : [],
+      metadata: isObject(object.metadata) ? object.metadata : void 0,
+      extensions: globalThis.Array.isArray(object?.extensions) ? object.extensions.map((e) => globalThis.String(e)) : []
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.artifactId !== "") {
+      obj.artifactId = message.artifactId;
+    }
+    if (message.name !== "") {
+      obj.name = message.name;
+    }
+    if (message.description !== "") {
+      obj.description = message.description;
+    }
+    if (message.parts?.length) {
+      obj.parts = message.parts.map((e) => Part.toJSON(e));
+    }
+    if (message.metadata !== void 0) {
+      obj.metadata = message.metadata;
+    }
+    if (message.extensions?.length) {
+      obj.extensions = message.extensions;
+    }
+    return obj;
+  }
+};
+var TaskStatusUpdateEvent = {
+  fromJSON(object) {
+    return {
+      taskId: isSet(object.taskId) ? globalThis.String(object.taskId) : isSet(object.task_id) ? globalThis.String(object.task_id) : "",
+      contextId: isSet(object.contextId) ? globalThis.String(object.contextId) : isSet(object.context_id) ? globalThis.String(object.context_id) : "",
+      status: isSet(object.status) ? TaskStatus.fromJSON(object.status) : void 0,
+      metadata: isObject(object.metadata) ? object.metadata : void 0
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.taskId !== "") {
+      obj.taskId = message.taskId;
+    }
+    if (message.contextId !== "") {
+      obj.contextId = message.contextId;
+    }
+    if (message.status !== void 0) {
+      obj.status = TaskStatus.toJSON(message.status);
+    }
+    if (message.metadata !== void 0) {
+      obj.metadata = message.metadata;
+    }
+    return obj;
+  }
+};
+var TaskArtifactUpdateEvent = {
+  fromJSON(object) {
+    return {
+      taskId: isSet(object.taskId) ? globalThis.String(object.taskId) : isSet(object.task_id) ? globalThis.String(object.task_id) : "",
+      contextId: isSet(object.contextId) ? globalThis.String(object.contextId) : isSet(object.context_id) ? globalThis.String(object.context_id) : "",
+      artifact: isSet(object.artifact) ? Artifact.fromJSON(object.artifact) : void 0,
+      append: isSet(object.append) ? globalThis.Boolean(object.append) : false,
+      lastChunk: isSet(object.lastChunk) ? globalThis.Boolean(object.lastChunk) : isSet(object.last_chunk) ? globalThis.Boolean(object.last_chunk) : false,
+      metadata: isObject(object.metadata) ? object.metadata : void 0
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.taskId !== "") {
+      obj.taskId = message.taskId;
+    }
+    if (message.contextId !== "") {
+      obj.contextId = message.contextId;
+    }
+    if (message.artifact !== void 0) {
+      obj.artifact = Artifact.toJSON(message.artifact);
+    }
+    if (message.append !== false) {
+      obj.append = message.append;
+    }
+    if (message.lastChunk !== false) {
+      obj.lastChunk = message.lastChunk;
+    }
+    if (message.metadata !== void 0) {
+      obj.metadata = message.metadata;
+    }
+    return obj;
+  }
+};
+var AuthenticationInfo = {
+  fromJSON(object) {
+    return {
+      scheme: isSet(object.scheme) ? globalThis.String(object.scheme) : "",
+      credentials: isSet(object.credentials) ? globalThis.String(object.credentials) : ""
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.scheme !== "") {
+      obj.scheme = message.scheme;
+    }
+    if (message.credentials !== "") {
+      obj.credentials = message.credentials;
+    }
+    return obj;
+  }
+};
+var AgentInterface = {
+  fromJSON(object) {
+    return {
+      url: isSet(object.url) ? globalThis.String(object.url) : "",
+      protocolBinding: isSet(object.protocolBinding) ? globalThis.String(object.protocolBinding) : isSet(object.protocol_binding) ? globalThis.String(object.protocol_binding) : "",
+      tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "",
+      protocolVersion: isSet(object.protocolVersion) ? globalThis.String(object.protocolVersion) : isSet(object.protocol_version) ? globalThis.String(object.protocol_version) : ""
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.url !== "") {
+      obj.url = message.url;
+    }
+    if (message.protocolBinding !== "") {
+      obj.protocolBinding = message.protocolBinding;
+    }
+    if (message.tenant !== "") {
+      obj.tenant = message.tenant;
+    }
+    if (message.protocolVersion !== "") {
+      obj.protocolVersion = message.protocolVersion;
+    }
+    return obj;
+  }
+};
+var AgentCard = {
+  fromJSON(object) {
+    return {
+      name: isSet(object.name) ? globalThis.String(object.name) : "",
+      description: isSet(object.description) ? globalThis.String(object.description) : "",
+      supportedInterfaces: globalThis.Array.isArray(object?.supportedInterfaces) ? object.supportedInterfaces.map((e) => AgentInterface.fromJSON(e)) : globalThis.Array.isArray(object?.supported_interfaces) ? object.supported_interfaces.map((e) => AgentInterface.fromJSON(e)) : [],
+      provider: isSet(object.provider) ? AgentProvider.fromJSON(object.provider) : void 0,
+      version: isSet(object.version) ? globalThis.String(object.version) : "",
+      documentationUrl: isSet(object.documentationUrl) ? globalThis.String(object.documentationUrl) : isSet(object.documentation_url) ? globalThis.String(object.documentation_url) : void 0,
+      capabilities: isSet(object.capabilities) ? AgentCapabilities.fromJSON(object.capabilities) : void 0,
+      securitySchemes: isObject(object.securitySchemes) ? globalThis.Object.entries(object.securitySchemes).reduce(
+        (acc, [key, value]) => {
+          acc[key] = SecurityScheme.fromJSON(value);
+          return acc;
+        },
+        {}
+      ) : isObject(object.security_schemes) ? globalThis.Object.entries(object.security_schemes).reduce(
+        (acc, [key, value]) => {
+          acc[key] = SecurityScheme.fromJSON(value);
+          return acc;
+        },
+        {}
+      ) : {},
+      securityRequirements: globalThis.Array.isArray(object?.securityRequirements) ? object.securityRequirements.map((e) => SecurityRequirement.fromJSON(e)) : globalThis.Array.isArray(object?.security_requirements) ? object.security_requirements.map((e) => SecurityRequirement.fromJSON(e)) : [],
+      defaultInputModes: globalThis.Array.isArray(object?.defaultInputModes) ? object.defaultInputModes.map((e) => globalThis.String(e)) : globalThis.Array.isArray(object?.default_input_modes) ? object.default_input_modes.map((e) => globalThis.String(e)) : [],
+      defaultOutputModes: globalThis.Array.isArray(object?.defaultOutputModes) ? object.defaultOutputModes.map((e) => globalThis.String(e)) : globalThis.Array.isArray(object?.default_output_modes) ? object.default_output_modes.map((e) => globalThis.String(e)) : [],
+      skills: globalThis.Array.isArray(object?.skills) ? object.skills.map((e) => AgentSkill.fromJSON(e)) : [],
+      signatures: globalThis.Array.isArray(object?.signatures) ? object.signatures.map((e) => AgentCardSignature.fromJSON(e)) : [],
+      iconUrl: isSet(object.iconUrl) ? globalThis.String(object.iconUrl) : isSet(object.icon_url) ? globalThis.String(object.icon_url) : void 0
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.name !== "") {
+      obj.name = message.name;
+    }
+    if (message.description !== "") {
+      obj.description = message.description;
+    }
+    if (message.supportedInterfaces?.length) {
+      obj.supportedInterfaces = message.supportedInterfaces.map((e) => AgentInterface.toJSON(e));
+    }
+    if (message.provider !== void 0) {
+      obj.provider = AgentProvider.toJSON(message.provider);
+    }
+    if (message.version !== "") {
+      obj.version = message.version;
+    }
+    if (message.documentationUrl !== void 0) {
+      obj.documentationUrl = message.documentationUrl;
+    }
+    if (message.capabilities !== void 0) {
+      obj.capabilities = AgentCapabilities.toJSON(message.capabilities);
+    }
+    if (message.securitySchemes) {
+      const entries = globalThis.Object.entries(message.securitySchemes);
+      if (entries.length > 0) {
+        obj.securitySchemes = {};
+        entries.forEach(([k, v]) => {
+          obj.securitySchemes[k] = SecurityScheme.toJSON(v);
+        });
+      }
+    }
+    if (message.securityRequirements?.length) {
+      obj.securityRequirements = message.securityRequirements.map((e) => SecurityRequirement.toJSON(e));
+    }
+    if (message.defaultInputModes?.length) {
+      obj.defaultInputModes = message.defaultInputModes;
+    }
+    if (message.defaultOutputModes?.length) {
+      obj.defaultOutputModes = message.defaultOutputModes;
+    }
+    if (message.skills?.length) {
+      obj.skills = message.skills.map((e) => AgentSkill.toJSON(e));
+    }
+    if (message.signatures?.length) {
+      obj.signatures = message.signatures.map((e) => AgentCardSignature.toJSON(e));
+    }
+    if (message.iconUrl !== void 0) {
+      obj.iconUrl = message.iconUrl;
+    }
+    return obj;
+  }
+};
+var AgentProvider = {
+  fromJSON(object) {
+    return {
+      url: isSet(object.url) ? globalThis.String(object.url) : "",
+      organization: isSet(object.organization) ? globalThis.String(object.organization) : ""
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.url !== "") {
+      obj.url = message.url;
+    }
+    if (message.organization !== "") {
+      obj.organization = message.organization;
+    }
+    return obj;
+  }
+};
+var AgentCapabilities = {
+  fromJSON(object) {
+    return {
+      streaming: isSet(object.streaming) ? globalThis.Boolean(object.streaming) : void 0,
+      pushNotifications: isSet(object.pushNotifications) ? globalThis.Boolean(object.pushNotifications) : isSet(object.push_notifications) ? globalThis.Boolean(object.push_notifications) : void 0,
+      extensions: globalThis.Array.isArray(object?.extensions) ? object.extensions.map((e) => AgentExtension.fromJSON(e)) : [],
+      extendedAgentCard: isSet(object.extendedAgentCard) ? globalThis.Boolean(object.extendedAgentCard) : isSet(object.extended_agent_card) ? globalThis.Boolean(object.extended_agent_card) : void 0
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.streaming !== void 0) {
+      obj.streaming = message.streaming;
+    }
+    if (message.pushNotifications !== void 0) {
+      obj.pushNotifications = message.pushNotifications;
+    }
+    if (message.extensions?.length) {
+      obj.extensions = message.extensions.map((e) => AgentExtension.toJSON(e));
+    }
+    if (message.extendedAgentCard !== void 0) {
+      obj.extendedAgentCard = message.extendedAgentCard;
+    }
+    return obj;
+  }
+};
+var AgentExtension = {
+  fromJSON(object) {
+    return {
+      uri: isSet(object.uri) ? globalThis.String(object.uri) : "",
+      description: isSet(object.description) ? globalThis.String(object.description) : "",
+      required: isSet(object.required) ? globalThis.Boolean(object.required) : false,
+      params: isObject(object.params) ? object.params : void 0
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.uri !== "") {
+      obj.uri = message.uri;
+    }
+    if (message.description !== "") {
+      obj.description = message.description;
+    }
+    if (message.required !== false) {
+      obj.required = message.required;
+    }
+    if (message.params !== void 0) {
+      obj.params = message.params;
+    }
+    return obj;
+  }
+};
+var AgentSkill = {
+  fromJSON(object) {
+    return {
+      id: isSet(object.id) ? globalThis.String(object.id) : "",
+      name: isSet(object.name) ? globalThis.String(object.name) : "",
+      description: isSet(object.description) ? globalThis.String(object.description) : "",
+      tags: globalThis.Array.isArray(object?.tags) ? object.tags.map((e) => globalThis.String(e)) : [],
+      examples: globalThis.Array.isArray(object?.examples) ? object.examples.map((e) => globalThis.String(e)) : [],
+      inputModes: globalThis.Array.isArray(object?.inputModes) ? object.inputModes.map((e) => globalThis.String(e)) : globalThis.Array.isArray(object?.input_modes) ? object.input_modes.map((e) => globalThis.String(e)) : [],
+      outputModes: globalThis.Array.isArray(object?.outputModes) ? object.outputModes.map((e) => globalThis.String(e)) : globalThis.Array.isArray(object?.output_modes) ? object.output_modes.map((e) => globalThis.String(e)) : [],
+      securityRequirements: globalThis.Array.isArray(object?.securityRequirements) ? object.securityRequirements.map((e) => SecurityRequirement.fromJSON(e)) : globalThis.Array.isArray(object?.security_requirements) ? object.security_requirements.map((e) => SecurityRequirement.fromJSON(e)) : []
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.id !== "") {
+      obj.id = message.id;
+    }
+    if (message.name !== "") {
+      obj.name = message.name;
+    }
+    if (message.description !== "") {
+      obj.description = message.description;
+    }
+    if (message.tags?.length) {
+      obj.tags = message.tags;
+    }
+    if (message.examples?.length) {
+      obj.examples = message.examples;
+    }
+    if (message.inputModes?.length) {
+      obj.inputModes = message.inputModes;
+    }
+    if (message.outputModes?.length) {
+      obj.outputModes = message.outputModes;
+    }
+    if (message.securityRequirements?.length) {
+      obj.securityRequirements = message.securityRequirements.map((e) => SecurityRequirement.toJSON(e));
+    }
+    return obj;
+  }
+};
+var AgentCardSignature = {
+  fromJSON(object) {
+    return {
+      protected: isSet(object.protected) ? globalThis.String(object.protected) : "",
+      signature: isSet(object.signature) ? globalThis.String(object.signature) : "",
+      header: isObject(object.header) ? object.header : void 0
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.protected !== "") {
+      obj.protected = message.protected;
+    }
+    if (message.signature !== "") {
+      obj.signature = message.signature;
+    }
+    if (message.header !== void 0) {
+      obj.header = message.header;
+    }
+    return obj;
+  }
+};
+var TaskPushNotificationConfig = {
+  fromJSON(object) {
+    return {
+      tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "",
+      id: isSet(object.id) ? globalThis.String(object.id) : "",
+      taskId: isSet(object.taskId) ? globalThis.String(object.taskId) : isSet(object.task_id) ? globalThis.String(object.task_id) : "",
+      url: isSet(object.url) ? globalThis.String(object.url) : "",
+      token: isSet(object.token) ? globalThis.String(object.token) : "",
+      authentication: isSet(object.authentication) ? AuthenticationInfo.fromJSON(object.authentication) : void 0
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.tenant !== "") {
+      obj.tenant = message.tenant;
+    }
+    if (message.id !== "") {
+      obj.id = message.id;
+    }
+    if (message.taskId !== "") {
+      obj.taskId = message.taskId;
+    }
+    if (message.url !== "") {
+      obj.url = message.url;
+    }
+    if (message.token !== "") {
+      obj.token = message.token;
+    }
+    if (message.authentication !== void 0) {
+      obj.authentication = AuthenticationInfo.toJSON(message.authentication);
+    }
+    return obj;
+  }
+};
+var StringList = {
+  fromJSON(object) {
+    return { list: globalThis.Array.isArray(object?.list) ? object.list.map((e) => globalThis.String(e)) : [] };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.list?.length) {
+      obj.list = message.list;
+    }
+    return obj;
+  }
+};
+var SecurityRequirement = {
+  fromJSON(object) {
+    return {
+      schemes: isObject(object.schemes) ? globalThis.Object.entries(object.schemes).reduce(
+        (acc, [key, value]) => {
+          acc[key] = StringList.fromJSON(value);
+          return acc;
+        },
+        {}
+      ) : {}
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.schemes) {
+      const entries = globalThis.Object.entries(message.schemes);
+      if (entries.length > 0) {
+        obj.schemes = {};
+        entries.forEach(([k, v]) => {
+          obj.schemes[k] = StringList.toJSON(v);
+        });
+      }
+    }
+    return obj;
+  }
+};
+var SecurityScheme = {
+  fromJSON(object) {
+    return {
+      scheme: isSet(object.apiKeySecurityScheme) ? { $case: "apiKeySecurityScheme", value: APIKeySecurityScheme.fromJSON(object.apiKeySecurityScheme) } : isSet(object.api_key_security_scheme) ? { $case: "apiKeySecurityScheme", value: APIKeySecurityScheme.fromJSON(object.api_key_security_scheme) } : isSet(object.httpAuthSecurityScheme) ? { $case: "httpAuthSecurityScheme", value: HTTPAuthSecurityScheme.fromJSON(object.httpAuthSecurityScheme) } : isSet(object.http_auth_security_scheme) ? { $case: "httpAuthSecurityScheme", value: HTTPAuthSecurityScheme.fromJSON(object.http_auth_security_scheme) } : isSet(object.oauth2SecurityScheme) ? { $case: "oauth2SecurityScheme", value: OAuth2SecurityScheme.fromJSON(object.oauth2SecurityScheme) } : isSet(object.oauth2_security_scheme) ? { $case: "oauth2SecurityScheme", value: OAuth2SecurityScheme.fromJSON(object.oauth2_security_scheme) } : isSet(object.openIdConnectSecurityScheme) ? {
+        $case: "openIdConnectSecurityScheme",
+        value: OpenIdConnectSecurityScheme.fromJSON(object.openIdConnectSecurityScheme)
+      } : isSet(object.open_id_connect_security_scheme) ? {
+        $case: "openIdConnectSecurityScheme",
+        value: OpenIdConnectSecurityScheme.fromJSON(object.open_id_connect_security_scheme)
+      } : isSet(object.mtlsSecurityScheme) ? { $case: "mtlsSecurityScheme", value: MutualTlsSecurityScheme.fromJSON(object.mtlsSecurityScheme) } : isSet(object.mtls_security_scheme) ? { $case: "mtlsSecurityScheme", value: MutualTlsSecurityScheme.fromJSON(object.mtls_security_scheme) } : void 0
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.scheme?.$case === "apiKeySecurityScheme") {
+      obj.apiKeySecurityScheme = APIKeySecurityScheme.toJSON(message.scheme.value);
+    } else if (message.scheme?.$case === "httpAuthSecurityScheme") {
+      obj.httpAuthSecurityScheme = HTTPAuthSecurityScheme.toJSON(message.scheme.value);
+    } else if (message.scheme?.$case === "oauth2SecurityScheme") {
+      obj.oauth2SecurityScheme = OAuth2SecurityScheme.toJSON(message.scheme.value);
+    } else if (message.scheme?.$case === "openIdConnectSecurityScheme") {
+      obj.openIdConnectSecurityScheme = OpenIdConnectSecurityScheme.toJSON(message.scheme.value);
+    } else if (message.scheme?.$case === "mtlsSecurityScheme") {
+      obj.mtlsSecurityScheme = MutualTlsSecurityScheme.toJSON(message.scheme.value);
+    }
+    return obj;
+  }
+};
+var APIKeySecurityScheme = {
+  fromJSON(object) {
+    return {
+      description: isSet(object.description) ? globalThis.String(object.description) : "",
+      location: isSet(object.location) ? globalThis.String(object.location) : "",
+      name: isSet(object.name) ? globalThis.String(object.name) : ""
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.description !== "") {
+      obj.description = message.description;
+    }
+    if (message.location !== "") {
+      obj.location = message.location;
+    }
+    if (message.name !== "") {
+      obj.name = message.name;
+    }
+    return obj;
+  }
+};
+var HTTPAuthSecurityScheme = {
+  fromJSON(object) {
+    return {
+      description: isSet(object.description) ? globalThis.String(object.description) : "",
+      scheme: isSet(object.scheme) ? globalThis.String(object.scheme) : "",
+      bearerFormat: isSet(object.bearerFormat) ? globalThis.String(object.bearerFormat) : isSet(object.bearer_format) ? globalThis.String(object.bearer_format) : ""
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.description !== "") {
+      obj.description = message.description;
+    }
+    if (message.scheme !== "") {
+      obj.scheme = message.scheme;
+    }
+    if (message.bearerFormat !== "") {
+      obj.bearerFormat = message.bearerFormat;
+    }
+    return obj;
+  }
+};
+var OAuth2SecurityScheme = {
+  fromJSON(object) {
+    return {
+      description: isSet(object.description) ? globalThis.String(object.description) : "",
+      flows: isSet(object.flows) ? OAuthFlows.fromJSON(object.flows) : void 0,
+      oauth2MetadataUrl: isSet(object.oauth2MetadataUrl) ? globalThis.String(object.oauth2MetadataUrl) : isSet(object.oauth2_metadata_url) ? globalThis.String(object.oauth2_metadata_url) : ""
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.description !== "") {
+      obj.description = message.description;
+    }
+    if (message.flows !== void 0) {
+      obj.flows = OAuthFlows.toJSON(message.flows);
+    }
+    if (message.oauth2MetadataUrl !== "") {
+      obj.oauth2MetadataUrl = message.oauth2MetadataUrl;
+    }
+    return obj;
+  }
+};
+var OpenIdConnectSecurityScheme = {
+  fromJSON(object) {
+    return {
+      description: isSet(object.description) ? globalThis.String(object.description) : "",
+      openIdConnectUrl: isSet(object.openIdConnectUrl) ? globalThis.String(object.openIdConnectUrl) : isSet(object.open_id_connect_url) ? globalThis.String(object.open_id_connect_url) : ""
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.description !== "") {
+      obj.description = message.description;
+    }
+    if (message.openIdConnectUrl !== "") {
+      obj.openIdConnectUrl = message.openIdConnectUrl;
+    }
+    return obj;
+  }
+};
+var MutualTlsSecurityScheme = {
+  fromJSON(object) {
+    return { description: isSet(object.description) ? globalThis.String(object.description) : "" };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.description !== "") {
+      obj.description = message.description;
+    }
+    return obj;
+  }
+};
+var OAuthFlows = {
+  fromJSON(object) {
+    return {
+      flow: isSet(object.authorizationCode) ? { $case: "authorizationCode", value: AuthorizationCodeOAuthFlow.fromJSON(object.authorizationCode) } : isSet(object.authorization_code) ? { $case: "authorizationCode", value: AuthorizationCodeOAuthFlow.fromJSON(object.authorization_code) } : isSet(object.clientCredentials) ? { $case: "clientCredentials", value: ClientCredentialsOAuthFlow.fromJSON(object.clientCredentials) } : isSet(object.client_credentials) ? { $case: "clientCredentials", value: ClientCredentialsOAuthFlow.fromJSON(object.client_credentials) } : isSet(object.implicit) ? { $case: "implicit", value: ImplicitOAuthFlow.fromJSON(object.implicit) } : isSet(object.password) ? { $case: "password", value: PasswordOAuthFlow.fromJSON(object.password) } : isSet(object.deviceCode) ? { $case: "deviceCode", value: DeviceCodeOAuthFlow.fromJSON(object.deviceCode) } : isSet(object.device_code) ? { $case: "deviceCode", value: DeviceCodeOAuthFlow.fromJSON(object.device_code) } : void 0
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.flow?.$case === "authorizationCode") {
+      obj.authorizationCode = AuthorizationCodeOAuthFlow.toJSON(message.flow.value);
+    } else if (message.flow?.$case === "clientCredentials") {
+      obj.clientCredentials = ClientCredentialsOAuthFlow.toJSON(message.flow.value);
+    } else if (message.flow?.$case === "implicit") {
+      obj.implicit = ImplicitOAuthFlow.toJSON(message.flow.value);
+    } else if (message.flow?.$case === "password") {
+      obj.password = PasswordOAuthFlow.toJSON(message.flow.value);
+    } else if (message.flow?.$case === "deviceCode") {
+      obj.deviceCode = DeviceCodeOAuthFlow.toJSON(message.flow.value);
+    }
+    return obj;
+  }
+};
+var AuthorizationCodeOAuthFlow = {
+  fromJSON(object) {
+    return {
+      authorizationUrl: isSet(object.authorizationUrl) ? globalThis.String(object.authorizationUrl) : isSet(object.authorization_url) ? globalThis.String(object.authorization_url) : "",
+      tokenUrl: isSet(object.tokenUrl) ? globalThis.String(object.tokenUrl) : isSet(object.token_url) ? globalThis.String(object.token_url) : "",
+      refreshUrl: isSet(object.refreshUrl) ? globalThis.String(object.refreshUrl) : isSet(object.refresh_url) ? globalThis.String(object.refresh_url) : "",
+      scopes: isObject(object.scopes) ? globalThis.Object.entries(object.scopes).reduce(
+        (acc, [key, value]) => {
+          acc[key] = globalThis.String(value);
+          return acc;
+        },
+        {}
+      ) : {},
+      pkceRequired: isSet(object.pkceRequired) ? globalThis.Boolean(object.pkceRequired) : isSet(object.pkce_required) ? globalThis.Boolean(object.pkce_required) : false
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.authorizationUrl !== "") {
+      obj.authorizationUrl = message.authorizationUrl;
+    }
+    if (message.tokenUrl !== "") {
+      obj.tokenUrl = message.tokenUrl;
+    }
+    if (message.refreshUrl !== "") {
+      obj.refreshUrl = message.refreshUrl;
+    }
+    if (message.scopes) {
+      const entries = globalThis.Object.entries(message.scopes);
+      if (entries.length > 0) {
+        obj.scopes = {};
+        entries.forEach(([k, v]) => {
+          obj.scopes[k] = v;
+        });
+      }
+    }
+    if (message.pkceRequired !== false) {
+      obj.pkceRequired = message.pkceRequired;
+    }
+    return obj;
+  }
+};
+var ClientCredentialsOAuthFlow = {
+  fromJSON(object) {
+    return {
+      tokenUrl: isSet(object.tokenUrl) ? globalThis.String(object.tokenUrl) : isSet(object.token_url) ? globalThis.String(object.token_url) : "",
+      refreshUrl: isSet(object.refreshUrl) ? globalThis.String(object.refreshUrl) : isSet(object.refresh_url) ? globalThis.String(object.refresh_url) : "",
+      scopes: isObject(object.scopes) ? globalThis.Object.entries(object.scopes).reduce(
+        (acc, [key, value]) => {
+          acc[key] = globalThis.String(value);
+          return acc;
+        },
+        {}
+      ) : {}
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.tokenUrl !== "") {
+      obj.tokenUrl = message.tokenUrl;
+    }
+    if (message.refreshUrl !== "") {
+      obj.refreshUrl = message.refreshUrl;
+    }
+    if (message.scopes) {
+      const entries = globalThis.Object.entries(message.scopes);
+      if (entries.length > 0) {
+        obj.scopes = {};
+        entries.forEach(([k, v]) => {
+          obj.scopes[k] = v;
+        });
+      }
+    }
+    return obj;
+  }
+};
+var ImplicitOAuthFlow = {
+  fromJSON(object) {
+    return {
+      authorizationUrl: isSet(object.authorizationUrl) ? globalThis.String(object.authorizationUrl) : isSet(object.authorization_url) ? globalThis.String(object.authorization_url) : "",
+      refreshUrl: isSet(object.refreshUrl) ? globalThis.String(object.refreshUrl) : isSet(object.refresh_url) ? globalThis.String(object.refresh_url) : "",
+      scopes: isObject(object.scopes) ? globalThis.Object.entries(object.scopes).reduce(
+        (acc, [key, value]) => {
+          acc[key] = globalThis.String(value);
+          return acc;
+        },
+        {}
+      ) : {}
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.authorizationUrl !== "") {
+      obj.authorizationUrl = message.authorizationUrl;
+    }
+    if (message.refreshUrl !== "") {
+      obj.refreshUrl = message.refreshUrl;
+    }
+    if (message.scopes) {
+      const entries = globalThis.Object.entries(message.scopes);
+      if (entries.length > 0) {
+        obj.scopes = {};
+        entries.forEach(([k, v]) => {
+          obj.scopes[k] = v;
+        });
+      }
+    }
+    return obj;
+  }
+};
+var PasswordOAuthFlow = {
+  fromJSON(object) {
+    return {
+      tokenUrl: isSet(object.tokenUrl) ? globalThis.String(object.tokenUrl) : isSet(object.token_url) ? globalThis.String(object.token_url) : "",
+      refreshUrl: isSet(object.refreshUrl) ? globalThis.String(object.refreshUrl) : isSet(object.refresh_url) ? globalThis.String(object.refresh_url) : "",
+      scopes: isObject(object.scopes) ? globalThis.Object.entries(object.scopes).reduce(
+        (acc, [key, value]) => {
+          acc[key] = globalThis.String(value);
+          return acc;
+        },
+        {}
+      ) : {}
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.tokenUrl !== "") {
+      obj.tokenUrl = message.tokenUrl;
+    }
+    if (message.refreshUrl !== "") {
+      obj.refreshUrl = message.refreshUrl;
+    }
+    if (message.scopes) {
+      const entries = globalThis.Object.entries(message.scopes);
+      if (entries.length > 0) {
+        obj.scopes = {};
+        entries.forEach(([k, v]) => {
+          obj.scopes[k] = v;
+        });
+      }
+    }
+    return obj;
+  }
+};
+var DeviceCodeOAuthFlow = {
+  fromJSON(object) {
+    return {
+      deviceAuthorizationUrl: isSet(object.deviceAuthorizationUrl) ? globalThis.String(object.deviceAuthorizationUrl) : isSet(object.device_authorization_url) ? globalThis.String(object.device_authorization_url) : "",
+      tokenUrl: isSet(object.tokenUrl) ? globalThis.String(object.tokenUrl) : isSet(object.token_url) ? globalThis.String(object.token_url) : "",
+      refreshUrl: isSet(object.refreshUrl) ? globalThis.String(object.refreshUrl) : isSet(object.refresh_url) ? globalThis.String(object.refresh_url) : "",
+      scopes: isObject(object.scopes) ? globalThis.Object.entries(object.scopes).reduce(
+        (acc, [key, value]) => {
+          acc[key] = globalThis.String(value);
+          return acc;
+        },
+        {}
+      ) : {}
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.deviceAuthorizationUrl !== "") {
+      obj.deviceAuthorizationUrl = message.deviceAuthorizationUrl;
+    }
+    if (message.tokenUrl !== "") {
+      obj.tokenUrl = message.tokenUrl;
+    }
+    if (message.refreshUrl !== "") {
+      obj.refreshUrl = message.refreshUrl;
+    }
+    if (message.scopes) {
+      const entries = globalThis.Object.entries(message.scopes);
+      if (entries.length > 0) {
+        obj.scopes = {};
+        entries.forEach(([k, v]) => {
+          obj.scopes[k] = v;
+        });
+      }
+    }
+    return obj;
+  }
+};
+var SendMessageRequest = {
+  fromJSON(object) {
+    return {
+      tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "",
+      message: isSet(object.message) ? Message.fromJSON(object.message) : void 0,
+      configuration: isSet(object.configuration) ? SendMessageConfiguration.fromJSON(object.configuration) : void 0,
+      metadata: isObject(object.metadata) ? object.metadata : void 0
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.tenant !== "") {
+      obj.tenant = message.tenant;
+    }
+    if (message.message !== void 0) {
+      obj.message = Message.toJSON(message.message);
+    }
+    if (message.configuration !== void 0) {
+      obj.configuration = SendMessageConfiguration.toJSON(message.configuration);
+    }
+    if (message.metadata !== void 0) {
+      obj.metadata = message.metadata;
+    }
+    return obj;
+  }
+};
+var GetTaskRequest = {
+  fromJSON(object) {
+    return {
+      tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "",
+      id: isSet(object.id) ? globalThis.String(object.id) : "",
+      historyLength: isSet(object.historyLength) ? globalThis.Number(object.historyLength) : isSet(object.history_length) ? globalThis.Number(object.history_length) : void 0
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.tenant !== "") {
+      obj.tenant = message.tenant;
+    }
+    if (message.id !== "") {
+      obj.id = message.id;
+    }
+    if (message.historyLength !== void 0) {
+      obj.historyLength = Math.round(message.historyLength);
+    }
+    return obj;
+  }
+};
+var ListTasksRequest = {
+  fromJSON(object) {
+    return {
+      tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "",
+      contextId: isSet(object.contextId) ? globalThis.String(object.contextId) : isSet(object.context_id) ? globalThis.String(object.context_id) : "",
+      status: isSet(object.status) ? taskStateFromJSON(object.status) : 0,
+      pageSize: isSet(object.pageSize) ? globalThis.Number(object.pageSize) : isSet(object.page_size) ? globalThis.Number(object.page_size) : void 0,
+      pageToken: isSet(object.pageToken) ? globalThis.String(object.pageToken) : isSet(object.page_token) ? globalThis.String(object.page_token) : "",
+      historyLength: isSet(object.historyLength) ? globalThis.Number(object.historyLength) : isSet(object.history_length) ? globalThis.Number(object.history_length) : void 0,
+      statusTimestampAfter: isSet(object.statusTimestampAfter) ? globalThis.String(object.statusTimestampAfter) : isSet(object.status_timestamp_after) ? globalThis.String(object.status_timestamp_after) : void 0,
+      includeArtifacts: isSet(object.includeArtifacts) ? globalThis.Boolean(object.includeArtifacts) : isSet(object.include_artifacts) ? globalThis.Boolean(object.include_artifacts) : void 0
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.tenant !== "") {
+      obj.tenant = message.tenant;
+    }
+    if (message.contextId !== "") {
+      obj.contextId = message.contextId;
+    }
+    if (message.status !== 0) {
+      obj.status = taskStateToJSON(message.status);
+    }
+    if (message.pageSize !== void 0) {
+      obj.pageSize = Math.round(message.pageSize);
+    }
+    if (message.pageToken !== "") {
+      obj.pageToken = message.pageToken;
+    }
+    if (message.historyLength !== void 0) {
+      obj.historyLength = Math.round(message.historyLength);
+    }
+    if (message.statusTimestampAfter !== void 0) {
+      obj.statusTimestampAfter = message.statusTimestampAfter;
+    }
+    if (message.includeArtifacts !== void 0) {
+      obj.includeArtifacts = message.includeArtifacts;
+    }
+    return obj;
+  }
+};
+var ListTasksResponse = {
+  fromJSON(object) {
+    return {
+      tasks: globalThis.Array.isArray(object?.tasks) ? object.tasks.map((e) => Task.fromJSON(e)) : [],
+      nextPageToken: isSet(object.nextPageToken) ? globalThis.String(object.nextPageToken) : isSet(object.next_page_token) ? globalThis.String(object.next_page_token) : "",
+      pageSize: isSet(object.pageSize) ? globalThis.Number(object.pageSize) : isSet(object.page_size) ? globalThis.Number(object.page_size) : 0,
+      totalSize: isSet(object.totalSize) ? globalThis.Number(object.totalSize) : isSet(object.total_size) ? globalThis.Number(object.total_size) : 0
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.tasks?.length) {
+      obj.tasks = message.tasks.map((e) => Task.toJSON(e));
+    }
+    if (message.nextPageToken !== "") {
+      obj.nextPageToken = message.nextPageToken;
+    }
+    if (message.pageSize !== 0) {
+      obj.pageSize = Math.round(message.pageSize);
+    }
+    if (message.totalSize !== 0) {
+      obj.totalSize = Math.round(message.totalSize);
+    }
+    return obj;
+  }
+};
+var CancelTaskRequest = {
+  fromJSON(object) {
+    return {
+      tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "",
+      id: isSet(object.id) ? globalThis.String(object.id) : "",
+      metadata: isObject(object.metadata) ? object.metadata : void 0
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.tenant !== "") {
+      obj.tenant = message.tenant;
+    }
+    if (message.id !== "") {
+      obj.id = message.id;
+    }
+    if (message.metadata !== void 0) {
+      obj.metadata = message.metadata;
+    }
+    return obj;
+  }
+};
+var GetTaskPushNotificationConfigRequest = {
+  fromJSON(object) {
+    return {
+      tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "",
+      taskId: isSet(object.taskId) ? globalThis.String(object.taskId) : isSet(object.task_id) ? globalThis.String(object.task_id) : "",
+      id: isSet(object.id) ? globalThis.String(object.id) : ""
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.tenant !== "") {
+      obj.tenant = message.tenant;
+    }
+    if (message.taskId !== "") {
+      obj.taskId = message.taskId;
+    }
+    if (message.id !== "") {
+      obj.id = message.id;
+    }
+    return obj;
+  }
+};
+var DeleteTaskPushNotificationConfigRequest = {
+  fromJSON(object) {
+    return {
+      tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "",
+      taskId: isSet(object.taskId) ? globalThis.String(object.taskId) : isSet(object.task_id) ? globalThis.String(object.task_id) : "",
+      id: isSet(object.id) ? globalThis.String(object.id) : ""
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.tenant !== "") {
+      obj.tenant = message.tenant;
+    }
+    if (message.taskId !== "") {
+      obj.taskId = message.taskId;
+    }
+    if (message.id !== "") {
+      obj.id = message.id;
+    }
+    return obj;
+  }
+};
+var SubscribeToTaskRequest = {
+  fromJSON(object) {
+    return {
+      tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "",
+      id: isSet(object.id) ? globalThis.String(object.id) : ""
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.tenant !== "") {
+      obj.tenant = message.tenant;
+    }
+    if (message.id !== "") {
+      obj.id = message.id;
+    }
+    return obj;
+  }
+};
+var ListTaskPushNotificationConfigsRequest = {
+  fromJSON(object) {
+    return {
+      tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "",
+      taskId: isSet(object.taskId) ? globalThis.String(object.taskId) : isSet(object.task_id) ? globalThis.String(object.task_id) : "",
+      pageSize: isSet(object.pageSize) ? globalThis.Number(object.pageSize) : isSet(object.page_size) ? globalThis.Number(object.page_size) : 0,
+      pageToken: isSet(object.pageToken) ? globalThis.String(object.pageToken) : isSet(object.page_token) ? globalThis.String(object.page_token) : ""
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.tenant !== "") {
+      obj.tenant = message.tenant;
+    }
+    if (message.taskId !== "") {
+      obj.taskId = message.taskId;
+    }
+    if (message.pageSize !== 0) {
+      obj.pageSize = Math.round(message.pageSize);
+    }
+    if (message.pageToken !== "") {
+      obj.pageToken = message.pageToken;
+    }
+    return obj;
+  }
+};
+var GetExtendedAgentCardRequest = {
+  fromJSON(object) {
+    return { tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "" };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.tenant !== "") {
+      obj.tenant = message.tenant;
+    }
+    return obj;
+  }
+};
+var SendMessageResponse = {
+  fromJSON(object) {
+    return {
+      payload: isSet(object.task) ? { $case: "task", value: Task.fromJSON(object.task) } : isSet(object.message) ? { $case: "message", value: Message.fromJSON(object.message) } : void 0
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.payload?.$case === "task") {
+      obj.task = Task.toJSON(message.payload.value);
+    } else if (message.payload?.$case === "message") {
+      obj.message = Message.toJSON(message.payload.value);
+    }
+    return obj;
+  }
+};
+var StreamResponse = {
+  fromJSON(object) {
+    return {
+      payload: isSet(object.task) ? { $case: "task", value: Task.fromJSON(object.task) } : isSet(object.message) ? { $case: "message", value: Message.fromJSON(object.message) } : isSet(object.statusUpdate) ? { $case: "statusUpdate", value: TaskStatusUpdateEvent.fromJSON(object.statusUpdate) } : isSet(object.status_update) ? { $case: "statusUpdate", value: TaskStatusUpdateEvent.fromJSON(object.status_update) } : isSet(object.artifactUpdate) ? { $case: "artifactUpdate", value: TaskArtifactUpdateEvent.fromJSON(object.artifactUpdate) } : isSet(object.artifact_update) ? { $case: "artifactUpdate", value: TaskArtifactUpdateEvent.fromJSON(object.artifact_update) } : void 0
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.payload?.$case === "task") {
+      obj.task = Task.toJSON(message.payload.value);
+    } else if (message.payload?.$case === "message") {
+      obj.message = Message.toJSON(message.payload.value);
+    } else if (message.payload?.$case === "statusUpdate") {
+      obj.statusUpdate = TaskStatusUpdateEvent.toJSON(message.payload.value);
+    } else if (message.payload?.$case === "artifactUpdate") {
+      obj.artifactUpdate = TaskArtifactUpdateEvent.toJSON(message.payload.value);
+    }
+    return obj;
+  }
+};
+var ListTaskPushNotificationConfigsResponse = {
+  fromJSON(object) {
+    return {
+      configs: globalThis.Array.isArray(object?.configs) ? object.configs.map((e) => TaskPushNotificationConfig.fromJSON(e)) : [],
+      nextPageToken: isSet(object.nextPageToken) ? globalThis.String(object.nextPageToken) : isSet(object.next_page_token) ? globalThis.String(object.next_page_token) : ""
+    };
+  },
+  toJSON(message) {
+    const obj = {};
+    if (message.configs?.length) {
+      obj.configs = message.configs.map((e) => TaskPushNotificationConfig.toJSON(e));
+    }
+    if (message.nextPageToken !== "") {
+      obj.nextPageToken = message.nextPageToken;
+    }
+    return obj;
+  }
+};
+function bytesFromBase64(b64) {
+  return Uint8Array.from(globalThis.Buffer.from(b64, "base64"));
+}
+function base64FromBytes(arr) {
+  return globalThis.Buffer.from(arr).toString("base64");
+}
+function isObject(value) {
+  return typeof value === "object" && value !== null;
+}
+function isSet(value) {
+  return value !== null && value !== void 0;
+}
+
+// node_modules/@a2a-js/sdk/dist/chunk-CZ7TTPKW.js
+var AGENT_CARD_PATH = ".well-known/agent-card.json";
+var A2A_VERSION_HEADER = "A2A-Version";
+var A2A_PROTOCOL_VERSION = "1.0";
+var JSON_CONTENT_TYPE = "application/json";
+var A2A_CONTENT_TYPE = "application/a2a+json";
+
+// src/app.tsx
+var import_react33 = __toESM(require_react(), 1);
 
 // src/components/ChatComposer.tsx
 var import_react29 = __toESM(require_react(), 1);
@@ -50083,6 +51422,34 @@ function HomeScreen({
 
 // src/components/messages/messageLayout.ts
 var import_react31 = __toESM(require_react(), 1);
+function findSoftBreakIndex(value, width) {
+  const searchEnd = Math.min(value.length - 1, width);
+  for (let index = searchEnd; index > 0; index -= 1) {
+    if (/\s/u.test(value[index])) {
+      return index;
+    }
+  }
+  return void 0;
+}
+function wrapLineToWidth(value, width) {
+  if (value.length <= width) {
+    return [value];
+  }
+  const rows = [];
+  let remaining = value;
+  while (remaining.length > width) {
+    const softBreakIndex = findSoftBreakIndex(remaining, width);
+    if (softBreakIndex === void 0) {
+      rows.push(remaining.slice(0, width));
+      remaining = remaining.slice(width);
+      continue;
+    }
+    rows.push(remaining.slice(0, softBreakIndex).replace(/\s+$/u, ""));
+    remaining = remaining.slice(softBreakIndex).replace(/^\s+/u, "");
+  }
+  rows.push(remaining);
+  return rows;
+}
 function wrapToWidth2(value, width) {
   const safeWidth = Math.max(1, width);
   const sourceLines = value.split("\n");
@@ -50092,9 +51459,7 @@ function wrapToWidth2(value, width) {
       rows.push("");
       continue;
     }
-    for (let index = 0; index < line.length; index += safeWidth) {
-      rows.push(line.slice(index, index + safeWidth));
-    }
+    rows.push(...wrapLineToWidth(line, safeWidth));
   }
   return rows;
 }
@@ -50133,9 +51498,8 @@ function AgentMessageBubble({
 }
 
 // src/components/messages/SystemMessageBubble.tsx
-var import_react32 = __toESM(require_react(), 1);
 var import_jsx_runtime4 = __toESM(require_jsx_runtime(), 1);
-var SYSTEM_COMMAND_HIGHLIGHT = "/sources";
+var SYSTEM_COMMAND_HIGHLIGHTS = ["/sources", "/clear"];
 function labelForKind(kind) {
   switch (kind) {
     case "status":
@@ -50148,14 +51512,22 @@ function labelForKind(kind) {
   }
 }
 function renderSystemLine(line) {
-  if (!line.includes(SYSTEM_COMMAND_HIGHLIGHT)) {
+  const pattern = new RegExp(
+    `(${SYSTEM_COMMAND_HIGHLIGHTS.map((command) => command.replace("/", "\\/")).join("|")})`,
+    "gu"
+  );
+  const parts = line.split(pattern).filter((part) => part.length > 0);
+  if (parts.length === 1 && parts[0] === line) {
     return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: MESSAGE_THEME.foreground, children: line });
   }
-  const parts = line.split(SYSTEM_COMMAND_HIGHLIGHT);
-  return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(import_jsx_runtime4.Fragment, { children: parts.map((part, index) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_react32.default.Fragment, { children: [
-    index > 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: MESSAGE_THEME.primary, children: SYSTEM_COMMAND_HIGHLIGHT }) : null,
-    part ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: MESSAGE_THEME.foreground, children: part }) : null
-  ] }, `${part}-${index}`)) });
+  return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(import_jsx_runtime4.Fragment, { children: parts.map((part, index) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+    Text,
+    {
+      color: SYSTEM_COMMAND_HIGHLIGHTS.includes(part) ? MESSAGE_THEME.primary : MESSAGE_THEME.foreground,
+      children: part
+    },
+    `${part}-${index}`
+  )) });
 }
 function SystemMessageBubble({
   body,
@@ -50197,7 +51569,7 @@ function UserMessageBubble({
 }
 
 // src/components/messages/WorkingIndicator.tsx
-var import_react33 = __toESM(require_react(), 1);
+var import_react32 = __toESM(require_react(), 1);
 var import_jsx_runtime6 = __toESM(require_jsx_runtime(), 1);
 function formatElapsed(startedAt, now) {
   const elapsedSeconds = Math.max(0, Math.floor((now - startedAt) / 1e3));
@@ -50211,11 +51583,11 @@ function formatElapsed(startedAt, now) {
 function WorkingIndicator({
   startedAt
 }) {
-  const [now, setNow] = (0, import_react33.useState)(Date.now());
-  const [frame, setFrame] = (0, import_react33.useState)(0);
+  const [now, setNow] = (0, import_react32.useState)(Date.now());
+  const [frame, setFrame] = (0, import_react32.useState)(0);
   const animatedLabel = "\xB7 Working";
-  const elapsedLabel = (0, import_react33.useMemo)(() => formatElapsed(startedAt, now), [now, startedAt]);
-  (0, import_react33.useEffect)(() => {
+  const elapsedLabel = (0, import_react32.useMemo)(() => formatElapsed(startedAt, now), [now, startedAt]);
+  (0, import_react32.useEffect)(() => {
     const timer = setInterval(() => {
       setNow(Date.now());
       setFrame((current) => current + 1);
@@ -50247,6 +51619,9 @@ function WorkingIndicator({
 var import_jsx_runtime7 = __toESM(require_jsx_runtime(), 1);
 function MessageBubble({ entry }) {
   const lineWidth = useTerminalWidth();
+  if (entry.role === "divider") {
+    return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Text, { color: MESSAGE_THEME.muted, children: "-".repeat(lineWidth) });
+  }
   if (entry.role === "user") {
     return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(UserMessageBubble, { body: entry.body, lineWidth });
   }
@@ -50446,7 +51821,7 @@ var SLASH_COMMANDS = [
     options: []
   }
 ];
-var AGENT_SOURCES_REFRESH_NOTE = "Registry sources update when Aion Chat starts and whenever /sources is run.";
+var AGENT_SOURCES_REFRESH_NOTE = "Registry sources update when Aion Chat starts and whenever /sources or /clear is run.";
 function formatAgentSource(source) {
   return [
     source.sourceKey,
@@ -50603,7 +51978,7 @@ function defaultEnvironmentSettings(environmentId) {
     agents: {}
   };
 }
-function isObject(value) {
+function isObject2(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 function normalizeAgentSourceRecord(key, value, fallback) {
@@ -50789,6 +52164,30 @@ function saveChatSettings(settings, settingsPath = resolveChatSettingsPath()) {
     return `chat2 could not save settings: ${error instanceof Error ? error.message : String(error)}`;
   }
 }
+function clearAgentActiveContext(settings, environmentId, agentKey) {
+  if (!agentKey) {
+    return settings;
+  }
+  const environmentSettings = settings.environments[environmentId];
+  const agent = environmentSettings.agents[agentKey];
+  if (!agent?.activeContextId) {
+    return settings;
+  }
+  const { activeContextId: _activeContextId, ...agentWithoutContext } = agent;
+  return {
+    ...settings,
+    environments: {
+      ...settings.environments,
+      [environmentId]: {
+        ...environmentSettings,
+        agents: {
+          ...environmentSettings.agents,
+          [agentKey]: agentWithoutContext
+        }
+      }
+    }
+  };
+}
 function loadSkippedUpdateVersion(settingsPath = resolveChatSettingsPath()) {
   const rawSettings = readRawSettings(settingsPath);
   const skippedVersion = rawSettings?.updateCheck?.skippedVersion;
@@ -50800,7 +52199,7 @@ function saveSkippedUpdateVersion(version, settingsPath = resolveChatSettingsPat
     const { settings } = loadChatSettings(settingsPath);
     const serialized = serializeSettings(settings, rawSettings);
     serialized.updateCheck = {
-      ...isObject(rawSettings?.updateCheck) ? rawSettings.updateCheck : {},
+      ...isObject2(rawSettings?.updateCheck) ? rawSettings.updateCheck : {},
       skippedVersion: version
     };
     mkdirSync(path.dirname(settingsPath), { recursive: true });
@@ -50948,1343 +52347,6 @@ async function writeClipboard(content, options = {}) {
 // src/lib/input/parser/extractors/filePathExtractor.ts
 import { existsSync as existsSync2, readFileSync as readFileSync3, statSync } from "fs";
 import { basename, extname, resolve } from "path";
-
-// node_modules/@a2a-js/sdk/dist/chunk-IFX37PQI.js
-var TaskState = /* @__PURE__ */ ((TaskState2) => {
-  TaskState2[TaskState2["TASK_STATE_UNSPECIFIED"] = 0] = "TASK_STATE_UNSPECIFIED";
-  TaskState2[TaskState2["TASK_STATE_SUBMITTED"] = 1] = "TASK_STATE_SUBMITTED";
-  TaskState2[TaskState2["TASK_STATE_WORKING"] = 2] = "TASK_STATE_WORKING";
-  TaskState2[TaskState2["TASK_STATE_COMPLETED"] = 3] = "TASK_STATE_COMPLETED";
-  TaskState2[TaskState2["TASK_STATE_FAILED"] = 4] = "TASK_STATE_FAILED";
-  TaskState2[TaskState2["TASK_STATE_CANCELED"] = 5] = "TASK_STATE_CANCELED";
-  TaskState2[TaskState2["TASK_STATE_INPUT_REQUIRED"] = 6] = "TASK_STATE_INPUT_REQUIRED";
-  TaskState2[TaskState2["TASK_STATE_REJECTED"] = 7] = "TASK_STATE_REJECTED";
-  TaskState2[TaskState2["TASK_STATE_AUTH_REQUIRED"] = 8] = "TASK_STATE_AUTH_REQUIRED";
-  TaskState2[TaskState2["UNRECOGNIZED"] = -1] = "UNRECOGNIZED";
-  return TaskState2;
-})(TaskState || {});
-function taskStateFromJSON(object) {
-  switch (object) {
-    case 0:
-    case "TASK_STATE_UNSPECIFIED":
-      return 0;
-    case 1:
-    case "TASK_STATE_SUBMITTED":
-      return 1;
-    case 2:
-    case "TASK_STATE_WORKING":
-      return 2;
-    case 3:
-    case "TASK_STATE_COMPLETED":
-      return 3;
-    case 4:
-    case "TASK_STATE_FAILED":
-      return 4;
-    case 5:
-    case "TASK_STATE_CANCELED":
-      return 5;
-    case 6:
-    case "TASK_STATE_INPUT_REQUIRED":
-      return 6;
-    case 7:
-    case "TASK_STATE_REJECTED":
-      return 7;
-    case 8:
-    case "TASK_STATE_AUTH_REQUIRED":
-      return 8;
-    case -1:
-    case "UNRECOGNIZED":
-    default:
-      return -1;
-  }
-}
-function taskStateToJSON(object) {
-  switch (object) {
-    case 0:
-      return "TASK_STATE_UNSPECIFIED";
-    case 1:
-      return "TASK_STATE_SUBMITTED";
-    case 2:
-      return "TASK_STATE_WORKING";
-    case 3:
-      return "TASK_STATE_COMPLETED";
-    case 4:
-      return "TASK_STATE_FAILED";
-    case 5:
-      return "TASK_STATE_CANCELED";
-    case 6:
-      return "TASK_STATE_INPUT_REQUIRED";
-    case 7:
-      return "TASK_STATE_REJECTED";
-    case 8:
-      return "TASK_STATE_AUTH_REQUIRED";
-    case -1:
-    default:
-      return "UNRECOGNIZED";
-  }
-}
-var Role = /* @__PURE__ */ ((Role2) => {
-  Role2[Role2["ROLE_UNSPECIFIED"] = 0] = "ROLE_UNSPECIFIED";
-  Role2[Role2["ROLE_USER"] = 1] = "ROLE_USER";
-  Role2[Role2["ROLE_AGENT"] = 2] = "ROLE_AGENT";
-  Role2[Role2["UNRECOGNIZED"] = -1] = "UNRECOGNIZED";
-  return Role2;
-})(Role || {});
-function roleFromJSON(object) {
-  switch (object) {
-    case 0:
-    case "ROLE_UNSPECIFIED":
-      return 0;
-    case 1:
-    case "ROLE_USER":
-      return 1;
-    case 2:
-    case "ROLE_AGENT":
-      return 2;
-    case -1:
-    case "UNRECOGNIZED":
-    default:
-      return -1;
-  }
-}
-function roleToJSON(object) {
-  switch (object) {
-    case 0:
-      return "ROLE_UNSPECIFIED";
-    case 1:
-      return "ROLE_USER";
-    case 2:
-      return "ROLE_AGENT";
-    case -1:
-    default:
-      return "UNRECOGNIZED";
-  }
-}
-var SendMessageConfiguration = {
-  fromJSON(object) {
-    return {
-      acceptedOutputModes: globalThis.Array.isArray(object?.acceptedOutputModes) ? object.acceptedOutputModes.map((e) => globalThis.String(e)) : globalThis.Array.isArray(object?.accepted_output_modes) ? object.accepted_output_modes.map(
-        (e) => globalThis.String(e)
-      ) : [],
-      taskPushNotificationConfig: isSet(object.taskPushNotificationConfig) ? TaskPushNotificationConfig.fromJSON(object.taskPushNotificationConfig) : isSet(object.task_push_notification_config) ? TaskPushNotificationConfig.fromJSON(object.task_push_notification_config) : void 0,
-      historyLength: isSet(object.historyLength) ? globalThis.Number(object.historyLength) : isSet(object.history_length) ? globalThis.Number(object.history_length) : void 0,
-      returnImmediately: isSet(object.returnImmediately) ? globalThis.Boolean(object.returnImmediately) : isSet(object.return_immediately) ? globalThis.Boolean(object.return_immediately) : false
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.acceptedOutputModes?.length) {
-      obj.acceptedOutputModes = message.acceptedOutputModes;
-    }
-    if (message.taskPushNotificationConfig !== void 0) {
-      obj.taskPushNotificationConfig = TaskPushNotificationConfig.toJSON(message.taskPushNotificationConfig);
-    }
-    if (message.historyLength !== void 0) {
-      obj.historyLength = Math.round(message.historyLength);
-    }
-    if (message.returnImmediately !== false) {
-      obj.returnImmediately = message.returnImmediately;
-    }
-    return obj;
-  }
-};
-var Task = {
-  fromJSON(object) {
-    return {
-      id: isSet(object.id) ? globalThis.String(object.id) : "",
-      contextId: isSet(object.contextId) ? globalThis.String(object.contextId) : isSet(object.context_id) ? globalThis.String(object.context_id) : "",
-      status: isSet(object.status) ? TaskStatus.fromJSON(object.status) : void 0,
-      artifacts: globalThis.Array.isArray(object?.artifacts) ? object.artifacts.map((e) => Artifact.fromJSON(e)) : [],
-      history: globalThis.Array.isArray(object?.history) ? object.history.map((e) => Message.fromJSON(e)) : [],
-      metadata: isObject2(object.metadata) ? object.metadata : void 0
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.id !== "") {
-      obj.id = message.id;
-    }
-    if (message.contextId !== "") {
-      obj.contextId = message.contextId;
-    }
-    if (message.status !== void 0) {
-      obj.status = TaskStatus.toJSON(message.status);
-    }
-    if (message.artifacts?.length) {
-      obj.artifacts = message.artifacts.map((e) => Artifact.toJSON(e));
-    }
-    if (message.history?.length) {
-      obj.history = message.history.map((e) => Message.toJSON(e));
-    }
-    if (message.metadata !== void 0) {
-      obj.metadata = message.metadata;
-    }
-    return obj;
-  }
-};
-var TaskStatus = {
-  fromJSON(object) {
-    return {
-      state: isSet(object.state) ? taskStateFromJSON(object.state) : 0,
-      message: isSet(object.message) ? Message.fromJSON(object.message) : void 0,
-      timestamp: isSet(object.timestamp) ? globalThis.String(object.timestamp) : void 0
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.state !== 0) {
-      obj.state = taskStateToJSON(message.state);
-    }
-    if (message.message !== void 0) {
-      obj.message = Message.toJSON(message.message);
-    }
-    if (message.timestamp !== void 0) {
-      obj.timestamp = message.timestamp;
-    }
-    return obj;
-  }
-};
-var Part = {
-  fromJSON(object) {
-    return {
-      content: isSet(object.text) ? { $case: "text", value: globalThis.String(object.text) } : isSet(object.raw) ? { $case: "raw", value: Buffer.from(bytesFromBase64(object.raw)) } : isSet(object.url) ? { $case: "url", value: globalThis.String(object.url) } : isSet(object.data) ? { $case: "data", value: object.data } : void 0,
-      metadata: isObject2(object.metadata) ? object.metadata : void 0,
-      filename: isSet(object.filename) ? globalThis.String(object.filename) : "",
-      mediaType: isSet(object.mediaType) ? globalThis.String(object.mediaType) : isSet(object.media_type) ? globalThis.String(object.media_type) : ""
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.content?.$case === "text") {
-      obj.text = message.content.value;
-    } else if (message.content?.$case === "raw") {
-      obj.raw = base64FromBytes(message.content.value);
-    } else if (message.content?.$case === "url") {
-      obj.url = message.content.value;
-    } else if (message.content?.$case === "data") {
-      obj.data = message.content.value;
-    }
-    if (message.metadata !== void 0) {
-      obj.metadata = message.metadata;
-    }
-    if (message.filename !== "") {
-      obj.filename = message.filename;
-    }
-    if (message.mediaType !== "") {
-      obj.mediaType = message.mediaType;
-    }
-    return obj;
-  }
-};
-var Message = {
-  fromJSON(object) {
-    return {
-      messageId: isSet(object.messageId) ? globalThis.String(object.messageId) : isSet(object.message_id) ? globalThis.String(object.message_id) : "",
-      contextId: isSet(object.contextId) ? globalThis.String(object.contextId) : isSet(object.context_id) ? globalThis.String(object.context_id) : "",
-      taskId: isSet(object.taskId) ? globalThis.String(object.taskId) : isSet(object.task_id) ? globalThis.String(object.task_id) : "",
-      role: isSet(object.role) ? roleFromJSON(object.role) : 0,
-      parts: globalThis.Array.isArray(object?.parts) ? object.parts.map((e) => Part.fromJSON(e)) : [],
-      metadata: isObject2(object.metadata) ? object.metadata : void 0,
-      extensions: globalThis.Array.isArray(object?.extensions) ? object.extensions.map((e) => globalThis.String(e)) : [],
-      referenceTaskIds: globalThis.Array.isArray(object?.referenceTaskIds) ? object.referenceTaskIds.map((e) => globalThis.String(e)) : globalThis.Array.isArray(object?.reference_task_ids) ? object.reference_task_ids.map((e) => globalThis.String(e)) : []
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.messageId !== "") {
-      obj.messageId = message.messageId;
-    }
-    if (message.contextId !== "") {
-      obj.contextId = message.contextId;
-    }
-    if (message.taskId !== "") {
-      obj.taskId = message.taskId;
-    }
-    if (message.role !== 0) {
-      obj.role = roleToJSON(message.role);
-    }
-    if (message.parts?.length) {
-      obj.parts = message.parts.map((e) => Part.toJSON(e));
-    }
-    if (message.metadata !== void 0) {
-      obj.metadata = message.metadata;
-    }
-    if (message.extensions?.length) {
-      obj.extensions = message.extensions;
-    }
-    if (message.referenceTaskIds?.length) {
-      obj.referenceTaskIds = message.referenceTaskIds;
-    }
-    return obj;
-  }
-};
-var Artifact = {
-  fromJSON(object) {
-    return {
-      artifactId: isSet(object.artifactId) ? globalThis.String(object.artifactId) : isSet(object.artifact_id) ? globalThis.String(object.artifact_id) : "",
-      name: isSet(object.name) ? globalThis.String(object.name) : "",
-      description: isSet(object.description) ? globalThis.String(object.description) : "",
-      parts: globalThis.Array.isArray(object?.parts) ? object.parts.map((e) => Part.fromJSON(e)) : [],
-      metadata: isObject2(object.metadata) ? object.metadata : void 0,
-      extensions: globalThis.Array.isArray(object?.extensions) ? object.extensions.map((e) => globalThis.String(e)) : []
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.artifactId !== "") {
-      obj.artifactId = message.artifactId;
-    }
-    if (message.name !== "") {
-      obj.name = message.name;
-    }
-    if (message.description !== "") {
-      obj.description = message.description;
-    }
-    if (message.parts?.length) {
-      obj.parts = message.parts.map((e) => Part.toJSON(e));
-    }
-    if (message.metadata !== void 0) {
-      obj.metadata = message.metadata;
-    }
-    if (message.extensions?.length) {
-      obj.extensions = message.extensions;
-    }
-    return obj;
-  }
-};
-var TaskStatusUpdateEvent = {
-  fromJSON(object) {
-    return {
-      taskId: isSet(object.taskId) ? globalThis.String(object.taskId) : isSet(object.task_id) ? globalThis.String(object.task_id) : "",
-      contextId: isSet(object.contextId) ? globalThis.String(object.contextId) : isSet(object.context_id) ? globalThis.String(object.context_id) : "",
-      status: isSet(object.status) ? TaskStatus.fromJSON(object.status) : void 0,
-      metadata: isObject2(object.metadata) ? object.metadata : void 0
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.taskId !== "") {
-      obj.taskId = message.taskId;
-    }
-    if (message.contextId !== "") {
-      obj.contextId = message.contextId;
-    }
-    if (message.status !== void 0) {
-      obj.status = TaskStatus.toJSON(message.status);
-    }
-    if (message.metadata !== void 0) {
-      obj.metadata = message.metadata;
-    }
-    return obj;
-  }
-};
-var TaskArtifactUpdateEvent = {
-  fromJSON(object) {
-    return {
-      taskId: isSet(object.taskId) ? globalThis.String(object.taskId) : isSet(object.task_id) ? globalThis.String(object.task_id) : "",
-      contextId: isSet(object.contextId) ? globalThis.String(object.contextId) : isSet(object.context_id) ? globalThis.String(object.context_id) : "",
-      artifact: isSet(object.artifact) ? Artifact.fromJSON(object.artifact) : void 0,
-      append: isSet(object.append) ? globalThis.Boolean(object.append) : false,
-      lastChunk: isSet(object.lastChunk) ? globalThis.Boolean(object.lastChunk) : isSet(object.last_chunk) ? globalThis.Boolean(object.last_chunk) : false,
-      metadata: isObject2(object.metadata) ? object.metadata : void 0
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.taskId !== "") {
-      obj.taskId = message.taskId;
-    }
-    if (message.contextId !== "") {
-      obj.contextId = message.contextId;
-    }
-    if (message.artifact !== void 0) {
-      obj.artifact = Artifact.toJSON(message.artifact);
-    }
-    if (message.append !== false) {
-      obj.append = message.append;
-    }
-    if (message.lastChunk !== false) {
-      obj.lastChunk = message.lastChunk;
-    }
-    if (message.metadata !== void 0) {
-      obj.metadata = message.metadata;
-    }
-    return obj;
-  }
-};
-var AuthenticationInfo = {
-  fromJSON(object) {
-    return {
-      scheme: isSet(object.scheme) ? globalThis.String(object.scheme) : "",
-      credentials: isSet(object.credentials) ? globalThis.String(object.credentials) : ""
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.scheme !== "") {
-      obj.scheme = message.scheme;
-    }
-    if (message.credentials !== "") {
-      obj.credentials = message.credentials;
-    }
-    return obj;
-  }
-};
-var AgentInterface = {
-  fromJSON(object) {
-    return {
-      url: isSet(object.url) ? globalThis.String(object.url) : "",
-      protocolBinding: isSet(object.protocolBinding) ? globalThis.String(object.protocolBinding) : isSet(object.protocol_binding) ? globalThis.String(object.protocol_binding) : "",
-      tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "",
-      protocolVersion: isSet(object.protocolVersion) ? globalThis.String(object.protocolVersion) : isSet(object.protocol_version) ? globalThis.String(object.protocol_version) : ""
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.url !== "") {
-      obj.url = message.url;
-    }
-    if (message.protocolBinding !== "") {
-      obj.protocolBinding = message.protocolBinding;
-    }
-    if (message.tenant !== "") {
-      obj.tenant = message.tenant;
-    }
-    if (message.protocolVersion !== "") {
-      obj.protocolVersion = message.protocolVersion;
-    }
-    return obj;
-  }
-};
-var AgentCard = {
-  fromJSON(object) {
-    return {
-      name: isSet(object.name) ? globalThis.String(object.name) : "",
-      description: isSet(object.description) ? globalThis.String(object.description) : "",
-      supportedInterfaces: globalThis.Array.isArray(object?.supportedInterfaces) ? object.supportedInterfaces.map((e) => AgentInterface.fromJSON(e)) : globalThis.Array.isArray(object?.supported_interfaces) ? object.supported_interfaces.map((e) => AgentInterface.fromJSON(e)) : [],
-      provider: isSet(object.provider) ? AgentProvider.fromJSON(object.provider) : void 0,
-      version: isSet(object.version) ? globalThis.String(object.version) : "",
-      documentationUrl: isSet(object.documentationUrl) ? globalThis.String(object.documentationUrl) : isSet(object.documentation_url) ? globalThis.String(object.documentation_url) : void 0,
-      capabilities: isSet(object.capabilities) ? AgentCapabilities.fromJSON(object.capabilities) : void 0,
-      securitySchemes: isObject2(object.securitySchemes) ? globalThis.Object.entries(object.securitySchemes).reduce(
-        (acc, [key, value]) => {
-          acc[key] = SecurityScheme.fromJSON(value);
-          return acc;
-        },
-        {}
-      ) : isObject2(object.security_schemes) ? globalThis.Object.entries(object.security_schemes).reduce(
-        (acc, [key, value]) => {
-          acc[key] = SecurityScheme.fromJSON(value);
-          return acc;
-        },
-        {}
-      ) : {},
-      securityRequirements: globalThis.Array.isArray(object?.securityRequirements) ? object.securityRequirements.map((e) => SecurityRequirement.fromJSON(e)) : globalThis.Array.isArray(object?.security_requirements) ? object.security_requirements.map((e) => SecurityRequirement.fromJSON(e)) : [],
-      defaultInputModes: globalThis.Array.isArray(object?.defaultInputModes) ? object.defaultInputModes.map((e) => globalThis.String(e)) : globalThis.Array.isArray(object?.default_input_modes) ? object.default_input_modes.map((e) => globalThis.String(e)) : [],
-      defaultOutputModes: globalThis.Array.isArray(object?.defaultOutputModes) ? object.defaultOutputModes.map((e) => globalThis.String(e)) : globalThis.Array.isArray(object?.default_output_modes) ? object.default_output_modes.map((e) => globalThis.String(e)) : [],
-      skills: globalThis.Array.isArray(object?.skills) ? object.skills.map((e) => AgentSkill.fromJSON(e)) : [],
-      signatures: globalThis.Array.isArray(object?.signatures) ? object.signatures.map((e) => AgentCardSignature.fromJSON(e)) : [],
-      iconUrl: isSet(object.iconUrl) ? globalThis.String(object.iconUrl) : isSet(object.icon_url) ? globalThis.String(object.icon_url) : void 0
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.name !== "") {
-      obj.name = message.name;
-    }
-    if (message.description !== "") {
-      obj.description = message.description;
-    }
-    if (message.supportedInterfaces?.length) {
-      obj.supportedInterfaces = message.supportedInterfaces.map((e) => AgentInterface.toJSON(e));
-    }
-    if (message.provider !== void 0) {
-      obj.provider = AgentProvider.toJSON(message.provider);
-    }
-    if (message.version !== "") {
-      obj.version = message.version;
-    }
-    if (message.documentationUrl !== void 0) {
-      obj.documentationUrl = message.documentationUrl;
-    }
-    if (message.capabilities !== void 0) {
-      obj.capabilities = AgentCapabilities.toJSON(message.capabilities);
-    }
-    if (message.securitySchemes) {
-      const entries = globalThis.Object.entries(message.securitySchemes);
-      if (entries.length > 0) {
-        obj.securitySchemes = {};
-        entries.forEach(([k, v]) => {
-          obj.securitySchemes[k] = SecurityScheme.toJSON(v);
-        });
-      }
-    }
-    if (message.securityRequirements?.length) {
-      obj.securityRequirements = message.securityRequirements.map((e) => SecurityRequirement.toJSON(e));
-    }
-    if (message.defaultInputModes?.length) {
-      obj.defaultInputModes = message.defaultInputModes;
-    }
-    if (message.defaultOutputModes?.length) {
-      obj.defaultOutputModes = message.defaultOutputModes;
-    }
-    if (message.skills?.length) {
-      obj.skills = message.skills.map((e) => AgentSkill.toJSON(e));
-    }
-    if (message.signatures?.length) {
-      obj.signatures = message.signatures.map((e) => AgentCardSignature.toJSON(e));
-    }
-    if (message.iconUrl !== void 0) {
-      obj.iconUrl = message.iconUrl;
-    }
-    return obj;
-  }
-};
-var AgentProvider = {
-  fromJSON(object) {
-    return {
-      url: isSet(object.url) ? globalThis.String(object.url) : "",
-      organization: isSet(object.organization) ? globalThis.String(object.organization) : ""
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.url !== "") {
-      obj.url = message.url;
-    }
-    if (message.organization !== "") {
-      obj.organization = message.organization;
-    }
-    return obj;
-  }
-};
-var AgentCapabilities = {
-  fromJSON(object) {
-    return {
-      streaming: isSet(object.streaming) ? globalThis.Boolean(object.streaming) : void 0,
-      pushNotifications: isSet(object.pushNotifications) ? globalThis.Boolean(object.pushNotifications) : isSet(object.push_notifications) ? globalThis.Boolean(object.push_notifications) : void 0,
-      extensions: globalThis.Array.isArray(object?.extensions) ? object.extensions.map((e) => AgentExtension.fromJSON(e)) : [],
-      extendedAgentCard: isSet(object.extendedAgentCard) ? globalThis.Boolean(object.extendedAgentCard) : isSet(object.extended_agent_card) ? globalThis.Boolean(object.extended_agent_card) : void 0
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.streaming !== void 0) {
-      obj.streaming = message.streaming;
-    }
-    if (message.pushNotifications !== void 0) {
-      obj.pushNotifications = message.pushNotifications;
-    }
-    if (message.extensions?.length) {
-      obj.extensions = message.extensions.map((e) => AgentExtension.toJSON(e));
-    }
-    if (message.extendedAgentCard !== void 0) {
-      obj.extendedAgentCard = message.extendedAgentCard;
-    }
-    return obj;
-  }
-};
-var AgentExtension = {
-  fromJSON(object) {
-    return {
-      uri: isSet(object.uri) ? globalThis.String(object.uri) : "",
-      description: isSet(object.description) ? globalThis.String(object.description) : "",
-      required: isSet(object.required) ? globalThis.Boolean(object.required) : false,
-      params: isObject2(object.params) ? object.params : void 0
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.uri !== "") {
-      obj.uri = message.uri;
-    }
-    if (message.description !== "") {
-      obj.description = message.description;
-    }
-    if (message.required !== false) {
-      obj.required = message.required;
-    }
-    if (message.params !== void 0) {
-      obj.params = message.params;
-    }
-    return obj;
-  }
-};
-var AgentSkill = {
-  fromJSON(object) {
-    return {
-      id: isSet(object.id) ? globalThis.String(object.id) : "",
-      name: isSet(object.name) ? globalThis.String(object.name) : "",
-      description: isSet(object.description) ? globalThis.String(object.description) : "",
-      tags: globalThis.Array.isArray(object?.tags) ? object.tags.map((e) => globalThis.String(e)) : [],
-      examples: globalThis.Array.isArray(object?.examples) ? object.examples.map((e) => globalThis.String(e)) : [],
-      inputModes: globalThis.Array.isArray(object?.inputModes) ? object.inputModes.map((e) => globalThis.String(e)) : globalThis.Array.isArray(object?.input_modes) ? object.input_modes.map((e) => globalThis.String(e)) : [],
-      outputModes: globalThis.Array.isArray(object?.outputModes) ? object.outputModes.map((e) => globalThis.String(e)) : globalThis.Array.isArray(object?.output_modes) ? object.output_modes.map((e) => globalThis.String(e)) : [],
-      securityRequirements: globalThis.Array.isArray(object?.securityRequirements) ? object.securityRequirements.map((e) => SecurityRequirement.fromJSON(e)) : globalThis.Array.isArray(object?.security_requirements) ? object.security_requirements.map((e) => SecurityRequirement.fromJSON(e)) : []
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.id !== "") {
-      obj.id = message.id;
-    }
-    if (message.name !== "") {
-      obj.name = message.name;
-    }
-    if (message.description !== "") {
-      obj.description = message.description;
-    }
-    if (message.tags?.length) {
-      obj.tags = message.tags;
-    }
-    if (message.examples?.length) {
-      obj.examples = message.examples;
-    }
-    if (message.inputModes?.length) {
-      obj.inputModes = message.inputModes;
-    }
-    if (message.outputModes?.length) {
-      obj.outputModes = message.outputModes;
-    }
-    if (message.securityRequirements?.length) {
-      obj.securityRequirements = message.securityRequirements.map((e) => SecurityRequirement.toJSON(e));
-    }
-    return obj;
-  }
-};
-var AgentCardSignature = {
-  fromJSON(object) {
-    return {
-      protected: isSet(object.protected) ? globalThis.String(object.protected) : "",
-      signature: isSet(object.signature) ? globalThis.String(object.signature) : "",
-      header: isObject2(object.header) ? object.header : void 0
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.protected !== "") {
-      obj.protected = message.protected;
-    }
-    if (message.signature !== "") {
-      obj.signature = message.signature;
-    }
-    if (message.header !== void 0) {
-      obj.header = message.header;
-    }
-    return obj;
-  }
-};
-var TaskPushNotificationConfig = {
-  fromJSON(object) {
-    return {
-      tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "",
-      id: isSet(object.id) ? globalThis.String(object.id) : "",
-      taskId: isSet(object.taskId) ? globalThis.String(object.taskId) : isSet(object.task_id) ? globalThis.String(object.task_id) : "",
-      url: isSet(object.url) ? globalThis.String(object.url) : "",
-      token: isSet(object.token) ? globalThis.String(object.token) : "",
-      authentication: isSet(object.authentication) ? AuthenticationInfo.fromJSON(object.authentication) : void 0
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.tenant !== "") {
-      obj.tenant = message.tenant;
-    }
-    if (message.id !== "") {
-      obj.id = message.id;
-    }
-    if (message.taskId !== "") {
-      obj.taskId = message.taskId;
-    }
-    if (message.url !== "") {
-      obj.url = message.url;
-    }
-    if (message.token !== "") {
-      obj.token = message.token;
-    }
-    if (message.authentication !== void 0) {
-      obj.authentication = AuthenticationInfo.toJSON(message.authentication);
-    }
-    return obj;
-  }
-};
-var StringList = {
-  fromJSON(object) {
-    return { list: globalThis.Array.isArray(object?.list) ? object.list.map((e) => globalThis.String(e)) : [] };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.list?.length) {
-      obj.list = message.list;
-    }
-    return obj;
-  }
-};
-var SecurityRequirement = {
-  fromJSON(object) {
-    return {
-      schemes: isObject2(object.schemes) ? globalThis.Object.entries(object.schemes).reduce(
-        (acc, [key, value]) => {
-          acc[key] = StringList.fromJSON(value);
-          return acc;
-        },
-        {}
-      ) : {}
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.schemes) {
-      const entries = globalThis.Object.entries(message.schemes);
-      if (entries.length > 0) {
-        obj.schemes = {};
-        entries.forEach(([k, v]) => {
-          obj.schemes[k] = StringList.toJSON(v);
-        });
-      }
-    }
-    return obj;
-  }
-};
-var SecurityScheme = {
-  fromJSON(object) {
-    return {
-      scheme: isSet(object.apiKeySecurityScheme) ? { $case: "apiKeySecurityScheme", value: APIKeySecurityScheme.fromJSON(object.apiKeySecurityScheme) } : isSet(object.api_key_security_scheme) ? { $case: "apiKeySecurityScheme", value: APIKeySecurityScheme.fromJSON(object.api_key_security_scheme) } : isSet(object.httpAuthSecurityScheme) ? { $case: "httpAuthSecurityScheme", value: HTTPAuthSecurityScheme.fromJSON(object.httpAuthSecurityScheme) } : isSet(object.http_auth_security_scheme) ? { $case: "httpAuthSecurityScheme", value: HTTPAuthSecurityScheme.fromJSON(object.http_auth_security_scheme) } : isSet(object.oauth2SecurityScheme) ? { $case: "oauth2SecurityScheme", value: OAuth2SecurityScheme.fromJSON(object.oauth2SecurityScheme) } : isSet(object.oauth2_security_scheme) ? { $case: "oauth2SecurityScheme", value: OAuth2SecurityScheme.fromJSON(object.oauth2_security_scheme) } : isSet(object.openIdConnectSecurityScheme) ? {
-        $case: "openIdConnectSecurityScheme",
-        value: OpenIdConnectSecurityScheme.fromJSON(object.openIdConnectSecurityScheme)
-      } : isSet(object.open_id_connect_security_scheme) ? {
-        $case: "openIdConnectSecurityScheme",
-        value: OpenIdConnectSecurityScheme.fromJSON(object.open_id_connect_security_scheme)
-      } : isSet(object.mtlsSecurityScheme) ? { $case: "mtlsSecurityScheme", value: MutualTlsSecurityScheme.fromJSON(object.mtlsSecurityScheme) } : isSet(object.mtls_security_scheme) ? { $case: "mtlsSecurityScheme", value: MutualTlsSecurityScheme.fromJSON(object.mtls_security_scheme) } : void 0
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.scheme?.$case === "apiKeySecurityScheme") {
-      obj.apiKeySecurityScheme = APIKeySecurityScheme.toJSON(message.scheme.value);
-    } else if (message.scheme?.$case === "httpAuthSecurityScheme") {
-      obj.httpAuthSecurityScheme = HTTPAuthSecurityScheme.toJSON(message.scheme.value);
-    } else if (message.scheme?.$case === "oauth2SecurityScheme") {
-      obj.oauth2SecurityScheme = OAuth2SecurityScheme.toJSON(message.scheme.value);
-    } else if (message.scheme?.$case === "openIdConnectSecurityScheme") {
-      obj.openIdConnectSecurityScheme = OpenIdConnectSecurityScheme.toJSON(message.scheme.value);
-    } else if (message.scheme?.$case === "mtlsSecurityScheme") {
-      obj.mtlsSecurityScheme = MutualTlsSecurityScheme.toJSON(message.scheme.value);
-    }
-    return obj;
-  }
-};
-var APIKeySecurityScheme = {
-  fromJSON(object) {
-    return {
-      description: isSet(object.description) ? globalThis.String(object.description) : "",
-      location: isSet(object.location) ? globalThis.String(object.location) : "",
-      name: isSet(object.name) ? globalThis.String(object.name) : ""
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.description !== "") {
-      obj.description = message.description;
-    }
-    if (message.location !== "") {
-      obj.location = message.location;
-    }
-    if (message.name !== "") {
-      obj.name = message.name;
-    }
-    return obj;
-  }
-};
-var HTTPAuthSecurityScheme = {
-  fromJSON(object) {
-    return {
-      description: isSet(object.description) ? globalThis.String(object.description) : "",
-      scheme: isSet(object.scheme) ? globalThis.String(object.scheme) : "",
-      bearerFormat: isSet(object.bearerFormat) ? globalThis.String(object.bearerFormat) : isSet(object.bearer_format) ? globalThis.String(object.bearer_format) : ""
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.description !== "") {
-      obj.description = message.description;
-    }
-    if (message.scheme !== "") {
-      obj.scheme = message.scheme;
-    }
-    if (message.bearerFormat !== "") {
-      obj.bearerFormat = message.bearerFormat;
-    }
-    return obj;
-  }
-};
-var OAuth2SecurityScheme = {
-  fromJSON(object) {
-    return {
-      description: isSet(object.description) ? globalThis.String(object.description) : "",
-      flows: isSet(object.flows) ? OAuthFlows.fromJSON(object.flows) : void 0,
-      oauth2MetadataUrl: isSet(object.oauth2MetadataUrl) ? globalThis.String(object.oauth2MetadataUrl) : isSet(object.oauth2_metadata_url) ? globalThis.String(object.oauth2_metadata_url) : ""
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.description !== "") {
-      obj.description = message.description;
-    }
-    if (message.flows !== void 0) {
-      obj.flows = OAuthFlows.toJSON(message.flows);
-    }
-    if (message.oauth2MetadataUrl !== "") {
-      obj.oauth2MetadataUrl = message.oauth2MetadataUrl;
-    }
-    return obj;
-  }
-};
-var OpenIdConnectSecurityScheme = {
-  fromJSON(object) {
-    return {
-      description: isSet(object.description) ? globalThis.String(object.description) : "",
-      openIdConnectUrl: isSet(object.openIdConnectUrl) ? globalThis.String(object.openIdConnectUrl) : isSet(object.open_id_connect_url) ? globalThis.String(object.open_id_connect_url) : ""
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.description !== "") {
-      obj.description = message.description;
-    }
-    if (message.openIdConnectUrl !== "") {
-      obj.openIdConnectUrl = message.openIdConnectUrl;
-    }
-    return obj;
-  }
-};
-var MutualTlsSecurityScheme = {
-  fromJSON(object) {
-    return { description: isSet(object.description) ? globalThis.String(object.description) : "" };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.description !== "") {
-      obj.description = message.description;
-    }
-    return obj;
-  }
-};
-var OAuthFlows = {
-  fromJSON(object) {
-    return {
-      flow: isSet(object.authorizationCode) ? { $case: "authorizationCode", value: AuthorizationCodeOAuthFlow.fromJSON(object.authorizationCode) } : isSet(object.authorization_code) ? { $case: "authorizationCode", value: AuthorizationCodeOAuthFlow.fromJSON(object.authorization_code) } : isSet(object.clientCredentials) ? { $case: "clientCredentials", value: ClientCredentialsOAuthFlow.fromJSON(object.clientCredentials) } : isSet(object.client_credentials) ? { $case: "clientCredentials", value: ClientCredentialsOAuthFlow.fromJSON(object.client_credentials) } : isSet(object.implicit) ? { $case: "implicit", value: ImplicitOAuthFlow.fromJSON(object.implicit) } : isSet(object.password) ? { $case: "password", value: PasswordOAuthFlow.fromJSON(object.password) } : isSet(object.deviceCode) ? { $case: "deviceCode", value: DeviceCodeOAuthFlow.fromJSON(object.deviceCode) } : isSet(object.device_code) ? { $case: "deviceCode", value: DeviceCodeOAuthFlow.fromJSON(object.device_code) } : void 0
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.flow?.$case === "authorizationCode") {
-      obj.authorizationCode = AuthorizationCodeOAuthFlow.toJSON(message.flow.value);
-    } else if (message.flow?.$case === "clientCredentials") {
-      obj.clientCredentials = ClientCredentialsOAuthFlow.toJSON(message.flow.value);
-    } else if (message.flow?.$case === "implicit") {
-      obj.implicit = ImplicitOAuthFlow.toJSON(message.flow.value);
-    } else if (message.flow?.$case === "password") {
-      obj.password = PasswordOAuthFlow.toJSON(message.flow.value);
-    } else if (message.flow?.$case === "deviceCode") {
-      obj.deviceCode = DeviceCodeOAuthFlow.toJSON(message.flow.value);
-    }
-    return obj;
-  }
-};
-var AuthorizationCodeOAuthFlow = {
-  fromJSON(object) {
-    return {
-      authorizationUrl: isSet(object.authorizationUrl) ? globalThis.String(object.authorizationUrl) : isSet(object.authorization_url) ? globalThis.String(object.authorization_url) : "",
-      tokenUrl: isSet(object.tokenUrl) ? globalThis.String(object.tokenUrl) : isSet(object.token_url) ? globalThis.String(object.token_url) : "",
-      refreshUrl: isSet(object.refreshUrl) ? globalThis.String(object.refreshUrl) : isSet(object.refresh_url) ? globalThis.String(object.refresh_url) : "",
-      scopes: isObject2(object.scopes) ? globalThis.Object.entries(object.scopes).reduce(
-        (acc, [key, value]) => {
-          acc[key] = globalThis.String(value);
-          return acc;
-        },
-        {}
-      ) : {},
-      pkceRequired: isSet(object.pkceRequired) ? globalThis.Boolean(object.pkceRequired) : isSet(object.pkce_required) ? globalThis.Boolean(object.pkce_required) : false
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.authorizationUrl !== "") {
-      obj.authorizationUrl = message.authorizationUrl;
-    }
-    if (message.tokenUrl !== "") {
-      obj.tokenUrl = message.tokenUrl;
-    }
-    if (message.refreshUrl !== "") {
-      obj.refreshUrl = message.refreshUrl;
-    }
-    if (message.scopes) {
-      const entries = globalThis.Object.entries(message.scopes);
-      if (entries.length > 0) {
-        obj.scopes = {};
-        entries.forEach(([k, v]) => {
-          obj.scopes[k] = v;
-        });
-      }
-    }
-    if (message.pkceRequired !== false) {
-      obj.pkceRequired = message.pkceRequired;
-    }
-    return obj;
-  }
-};
-var ClientCredentialsOAuthFlow = {
-  fromJSON(object) {
-    return {
-      tokenUrl: isSet(object.tokenUrl) ? globalThis.String(object.tokenUrl) : isSet(object.token_url) ? globalThis.String(object.token_url) : "",
-      refreshUrl: isSet(object.refreshUrl) ? globalThis.String(object.refreshUrl) : isSet(object.refresh_url) ? globalThis.String(object.refresh_url) : "",
-      scopes: isObject2(object.scopes) ? globalThis.Object.entries(object.scopes).reduce(
-        (acc, [key, value]) => {
-          acc[key] = globalThis.String(value);
-          return acc;
-        },
-        {}
-      ) : {}
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.tokenUrl !== "") {
-      obj.tokenUrl = message.tokenUrl;
-    }
-    if (message.refreshUrl !== "") {
-      obj.refreshUrl = message.refreshUrl;
-    }
-    if (message.scopes) {
-      const entries = globalThis.Object.entries(message.scopes);
-      if (entries.length > 0) {
-        obj.scopes = {};
-        entries.forEach(([k, v]) => {
-          obj.scopes[k] = v;
-        });
-      }
-    }
-    return obj;
-  }
-};
-var ImplicitOAuthFlow = {
-  fromJSON(object) {
-    return {
-      authorizationUrl: isSet(object.authorizationUrl) ? globalThis.String(object.authorizationUrl) : isSet(object.authorization_url) ? globalThis.String(object.authorization_url) : "",
-      refreshUrl: isSet(object.refreshUrl) ? globalThis.String(object.refreshUrl) : isSet(object.refresh_url) ? globalThis.String(object.refresh_url) : "",
-      scopes: isObject2(object.scopes) ? globalThis.Object.entries(object.scopes).reduce(
-        (acc, [key, value]) => {
-          acc[key] = globalThis.String(value);
-          return acc;
-        },
-        {}
-      ) : {}
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.authorizationUrl !== "") {
-      obj.authorizationUrl = message.authorizationUrl;
-    }
-    if (message.refreshUrl !== "") {
-      obj.refreshUrl = message.refreshUrl;
-    }
-    if (message.scopes) {
-      const entries = globalThis.Object.entries(message.scopes);
-      if (entries.length > 0) {
-        obj.scopes = {};
-        entries.forEach(([k, v]) => {
-          obj.scopes[k] = v;
-        });
-      }
-    }
-    return obj;
-  }
-};
-var PasswordOAuthFlow = {
-  fromJSON(object) {
-    return {
-      tokenUrl: isSet(object.tokenUrl) ? globalThis.String(object.tokenUrl) : isSet(object.token_url) ? globalThis.String(object.token_url) : "",
-      refreshUrl: isSet(object.refreshUrl) ? globalThis.String(object.refreshUrl) : isSet(object.refresh_url) ? globalThis.String(object.refresh_url) : "",
-      scopes: isObject2(object.scopes) ? globalThis.Object.entries(object.scopes).reduce(
-        (acc, [key, value]) => {
-          acc[key] = globalThis.String(value);
-          return acc;
-        },
-        {}
-      ) : {}
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.tokenUrl !== "") {
-      obj.tokenUrl = message.tokenUrl;
-    }
-    if (message.refreshUrl !== "") {
-      obj.refreshUrl = message.refreshUrl;
-    }
-    if (message.scopes) {
-      const entries = globalThis.Object.entries(message.scopes);
-      if (entries.length > 0) {
-        obj.scopes = {};
-        entries.forEach(([k, v]) => {
-          obj.scopes[k] = v;
-        });
-      }
-    }
-    return obj;
-  }
-};
-var DeviceCodeOAuthFlow = {
-  fromJSON(object) {
-    return {
-      deviceAuthorizationUrl: isSet(object.deviceAuthorizationUrl) ? globalThis.String(object.deviceAuthorizationUrl) : isSet(object.device_authorization_url) ? globalThis.String(object.device_authorization_url) : "",
-      tokenUrl: isSet(object.tokenUrl) ? globalThis.String(object.tokenUrl) : isSet(object.token_url) ? globalThis.String(object.token_url) : "",
-      refreshUrl: isSet(object.refreshUrl) ? globalThis.String(object.refreshUrl) : isSet(object.refresh_url) ? globalThis.String(object.refresh_url) : "",
-      scopes: isObject2(object.scopes) ? globalThis.Object.entries(object.scopes).reduce(
-        (acc, [key, value]) => {
-          acc[key] = globalThis.String(value);
-          return acc;
-        },
-        {}
-      ) : {}
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.deviceAuthorizationUrl !== "") {
-      obj.deviceAuthorizationUrl = message.deviceAuthorizationUrl;
-    }
-    if (message.tokenUrl !== "") {
-      obj.tokenUrl = message.tokenUrl;
-    }
-    if (message.refreshUrl !== "") {
-      obj.refreshUrl = message.refreshUrl;
-    }
-    if (message.scopes) {
-      const entries = globalThis.Object.entries(message.scopes);
-      if (entries.length > 0) {
-        obj.scopes = {};
-        entries.forEach(([k, v]) => {
-          obj.scopes[k] = v;
-        });
-      }
-    }
-    return obj;
-  }
-};
-var SendMessageRequest = {
-  fromJSON(object) {
-    return {
-      tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "",
-      message: isSet(object.message) ? Message.fromJSON(object.message) : void 0,
-      configuration: isSet(object.configuration) ? SendMessageConfiguration.fromJSON(object.configuration) : void 0,
-      metadata: isObject2(object.metadata) ? object.metadata : void 0
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.tenant !== "") {
-      obj.tenant = message.tenant;
-    }
-    if (message.message !== void 0) {
-      obj.message = Message.toJSON(message.message);
-    }
-    if (message.configuration !== void 0) {
-      obj.configuration = SendMessageConfiguration.toJSON(message.configuration);
-    }
-    if (message.metadata !== void 0) {
-      obj.metadata = message.metadata;
-    }
-    return obj;
-  }
-};
-var GetTaskRequest = {
-  fromJSON(object) {
-    return {
-      tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "",
-      id: isSet(object.id) ? globalThis.String(object.id) : "",
-      historyLength: isSet(object.historyLength) ? globalThis.Number(object.historyLength) : isSet(object.history_length) ? globalThis.Number(object.history_length) : void 0
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.tenant !== "") {
-      obj.tenant = message.tenant;
-    }
-    if (message.id !== "") {
-      obj.id = message.id;
-    }
-    if (message.historyLength !== void 0) {
-      obj.historyLength = Math.round(message.historyLength);
-    }
-    return obj;
-  }
-};
-var ListTasksRequest = {
-  fromJSON(object) {
-    return {
-      tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "",
-      contextId: isSet(object.contextId) ? globalThis.String(object.contextId) : isSet(object.context_id) ? globalThis.String(object.context_id) : "",
-      status: isSet(object.status) ? taskStateFromJSON(object.status) : 0,
-      pageSize: isSet(object.pageSize) ? globalThis.Number(object.pageSize) : isSet(object.page_size) ? globalThis.Number(object.page_size) : void 0,
-      pageToken: isSet(object.pageToken) ? globalThis.String(object.pageToken) : isSet(object.page_token) ? globalThis.String(object.page_token) : "",
-      historyLength: isSet(object.historyLength) ? globalThis.Number(object.historyLength) : isSet(object.history_length) ? globalThis.Number(object.history_length) : void 0,
-      statusTimestampAfter: isSet(object.statusTimestampAfter) ? globalThis.String(object.statusTimestampAfter) : isSet(object.status_timestamp_after) ? globalThis.String(object.status_timestamp_after) : void 0,
-      includeArtifacts: isSet(object.includeArtifacts) ? globalThis.Boolean(object.includeArtifacts) : isSet(object.include_artifacts) ? globalThis.Boolean(object.include_artifacts) : void 0
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.tenant !== "") {
-      obj.tenant = message.tenant;
-    }
-    if (message.contextId !== "") {
-      obj.contextId = message.contextId;
-    }
-    if (message.status !== 0) {
-      obj.status = taskStateToJSON(message.status);
-    }
-    if (message.pageSize !== void 0) {
-      obj.pageSize = Math.round(message.pageSize);
-    }
-    if (message.pageToken !== "") {
-      obj.pageToken = message.pageToken;
-    }
-    if (message.historyLength !== void 0) {
-      obj.historyLength = Math.round(message.historyLength);
-    }
-    if (message.statusTimestampAfter !== void 0) {
-      obj.statusTimestampAfter = message.statusTimestampAfter;
-    }
-    if (message.includeArtifacts !== void 0) {
-      obj.includeArtifacts = message.includeArtifacts;
-    }
-    return obj;
-  }
-};
-var ListTasksResponse = {
-  fromJSON(object) {
-    return {
-      tasks: globalThis.Array.isArray(object?.tasks) ? object.tasks.map((e) => Task.fromJSON(e)) : [],
-      nextPageToken: isSet(object.nextPageToken) ? globalThis.String(object.nextPageToken) : isSet(object.next_page_token) ? globalThis.String(object.next_page_token) : "",
-      pageSize: isSet(object.pageSize) ? globalThis.Number(object.pageSize) : isSet(object.page_size) ? globalThis.Number(object.page_size) : 0,
-      totalSize: isSet(object.totalSize) ? globalThis.Number(object.totalSize) : isSet(object.total_size) ? globalThis.Number(object.total_size) : 0
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.tasks?.length) {
-      obj.tasks = message.tasks.map((e) => Task.toJSON(e));
-    }
-    if (message.nextPageToken !== "") {
-      obj.nextPageToken = message.nextPageToken;
-    }
-    if (message.pageSize !== 0) {
-      obj.pageSize = Math.round(message.pageSize);
-    }
-    if (message.totalSize !== 0) {
-      obj.totalSize = Math.round(message.totalSize);
-    }
-    return obj;
-  }
-};
-var CancelTaskRequest = {
-  fromJSON(object) {
-    return {
-      tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "",
-      id: isSet(object.id) ? globalThis.String(object.id) : "",
-      metadata: isObject2(object.metadata) ? object.metadata : void 0
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.tenant !== "") {
-      obj.tenant = message.tenant;
-    }
-    if (message.id !== "") {
-      obj.id = message.id;
-    }
-    if (message.metadata !== void 0) {
-      obj.metadata = message.metadata;
-    }
-    return obj;
-  }
-};
-var GetTaskPushNotificationConfigRequest = {
-  fromJSON(object) {
-    return {
-      tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "",
-      taskId: isSet(object.taskId) ? globalThis.String(object.taskId) : isSet(object.task_id) ? globalThis.String(object.task_id) : "",
-      id: isSet(object.id) ? globalThis.String(object.id) : ""
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.tenant !== "") {
-      obj.tenant = message.tenant;
-    }
-    if (message.taskId !== "") {
-      obj.taskId = message.taskId;
-    }
-    if (message.id !== "") {
-      obj.id = message.id;
-    }
-    return obj;
-  }
-};
-var DeleteTaskPushNotificationConfigRequest = {
-  fromJSON(object) {
-    return {
-      tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "",
-      taskId: isSet(object.taskId) ? globalThis.String(object.taskId) : isSet(object.task_id) ? globalThis.String(object.task_id) : "",
-      id: isSet(object.id) ? globalThis.String(object.id) : ""
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.tenant !== "") {
-      obj.tenant = message.tenant;
-    }
-    if (message.taskId !== "") {
-      obj.taskId = message.taskId;
-    }
-    if (message.id !== "") {
-      obj.id = message.id;
-    }
-    return obj;
-  }
-};
-var SubscribeToTaskRequest = {
-  fromJSON(object) {
-    return {
-      tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "",
-      id: isSet(object.id) ? globalThis.String(object.id) : ""
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.tenant !== "") {
-      obj.tenant = message.tenant;
-    }
-    if (message.id !== "") {
-      obj.id = message.id;
-    }
-    return obj;
-  }
-};
-var ListTaskPushNotificationConfigsRequest = {
-  fromJSON(object) {
-    return {
-      tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "",
-      taskId: isSet(object.taskId) ? globalThis.String(object.taskId) : isSet(object.task_id) ? globalThis.String(object.task_id) : "",
-      pageSize: isSet(object.pageSize) ? globalThis.Number(object.pageSize) : isSet(object.page_size) ? globalThis.Number(object.page_size) : 0,
-      pageToken: isSet(object.pageToken) ? globalThis.String(object.pageToken) : isSet(object.page_token) ? globalThis.String(object.page_token) : ""
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.tenant !== "") {
-      obj.tenant = message.tenant;
-    }
-    if (message.taskId !== "") {
-      obj.taskId = message.taskId;
-    }
-    if (message.pageSize !== 0) {
-      obj.pageSize = Math.round(message.pageSize);
-    }
-    if (message.pageToken !== "") {
-      obj.pageToken = message.pageToken;
-    }
-    return obj;
-  }
-};
-var GetExtendedAgentCardRequest = {
-  fromJSON(object) {
-    return { tenant: isSet(object.tenant) ? globalThis.String(object.tenant) : "" };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.tenant !== "") {
-      obj.tenant = message.tenant;
-    }
-    return obj;
-  }
-};
-var SendMessageResponse = {
-  fromJSON(object) {
-    return {
-      payload: isSet(object.task) ? { $case: "task", value: Task.fromJSON(object.task) } : isSet(object.message) ? { $case: "message", value: Message.fromJSON(object.message) } : void 0
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.payload?.$case === "task") {
-      obj.task = Task.toJSON(message.payload.value);
-    } else if (message.payload?.$case === "message") {
-      obj.message = Message.toJSON(message.payload.value);
-    }
-    return obj;
-  }
-};
-var StreamResponse = {
-  fromJSON(object) {
-    return {
-      payload: isSet(object.task) ? { $case: "task", value: Task.fromJSON(object.task) } : isSet(object.message) ? { $case: "message", value: Message.fromJSON(object.message) } : isSet(object.statusUpdate) ? { $case: "statusUpdate", value: TaskStatusUpdateEvent.fromJSON(object.statusUpdate) } : isSet(object.status_update) ? { $case: "statusUpdate", value: TaskStatusUpdateEvent.fromJSON(object.status_update) } : isSet(object.artifactUpdate) ? { $case: "artifactUpdate", value: TaskArtifactUpdateEvent.fromJSON(object.artifactUpdate) } : isSet(object.artifact_update) ? { $case: "artifactUpdate", value: TaskArtifactUpdateEvent.fromJSON(object.artifact_update) } : void 0
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.payload?.$case === "task") {
-      obj.task = Task.toJSON(message.payload.value);
-    } else if (message.payload?.$case === "message") {
-      obj.message = Message.toJSON(message.payload.value);
-    } else if (message.payload?.$case === "statusUpdate") {
-      obj.statusUpdate = TaskStatusUpdateEvent.toJSON(message.payload.value);
-    } else if (message.payload?.$case === "artifactUpdate") {
-      obj.artifactUpdate = TaskArtifactUpdateEvent.toJSON(message.payload.value);
-    }
-    return obj;
-  }
-};
-var ListTaskPushNotificationConfigsResponse = {
-  fromJSON(object) {
-    return {
-      configs: globalThis.Array.isArray(object?.configs) ? object.configs.map((e) => TaskPushNotificationConfig.fromJSON(e)) : [],
-      nextPageToken: isSet(object.nextPageToken) ? globalThis.String(object.nextPageToken) : isSet(object.next_page_token) ? globalThis.String(object.next_page_token) : ""
-    };
-  },
-  toJSON(message) {
-    const obj = {};
-    if (message.configs?.length) {
-      obj.configs = message.configs.map((e) => TaskPushNotificationConfig.toJSON(e));
-    }
-    if (message.nextPageToken !== "") {
-      obj.nextPageToken = message.nextPageToken;
-    }
-    return obj;
-  }
-};
-function bytesFromBase64(b64) {
-  return Uint8Array.from(globalThis.Buffer.from(b64, "base64"));
-}
-function base64FromBytes(arr) {
-  return globalThis.Buffer.from(arr).toString("base64");
-}
-function isObject2(value) {
-  return typeof value === "object" && value !== null;
-}
-function isSet(value) {
-  return value !== null && value !== void 0;
-}
-
-// node_modules/@a2a-js/sdk/dist/chunk-CZ7TTPKW.js
-var AGENT_CARD_PATH = ".well-known/agent-card.json";
-var A2A_VERSION_HEADER = "A2A-Version";
-var A2A_PROTOCOL_VERSION = "1.0";
-var JSON_CONTENT_TYPE = "application/json";
-var A2A_CONTENT_TYPE = "application/a2a+json";
 
 // src/lib/a2aProtocol.ts
 var TERMINAL_TASK_STATES = /* @__PURE__ */ new Set([
@@ -54010,6 +54072,7 @@ import crypto from "crypto";
 var DISTRIBUTION_EXTENSION_URI_V1 = "https://docs.aion.to/a2a/extensions/aion/distribution/1.0.0";
 var TRACEABILITY_EXTENSION_URI_V1 = "https://docs.aion.to/a2a/extensions/aion/traceability/1.0.0";
 var STREAM_DELTA_ARTIFACT_ID = "aion:stream-delta";
+var THINKING_DELTA_ARTIFACT_ID = "aion:thinking-delta";
 function tokenHex(bytes) {
   return crypto.randomBytes(bytes).toString("hex");
 }
@@ -55410,7 +55473,43 @@ function saveCompletedExchange(snapshot, sessionsDirectory = resolveSessionsDire
 
 // src/lib/protocolOutput.ts
 var import_yaml = __toESM(require_dist(), 1);
+function isRecord2(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+function isStreamResponse(value) {
+  if (!isRecord2(value) || !isRecord2(value.payload)) {
+    return false;
+  }
+  if (!("value" in value.payload)) {
+    return false;
+  }
+  return ["task", "message", "statusUpdate", "artifactUpdate"].includes(
+    String(value.payload.$case)
+  );
+}
+function toProtocolJsonValue(value) {
+  if (isStreamResponse(value)) {
+    return StreamResponse.toJSON(value);
+  }
+  if (isMessage(value)) {
+    return Message.toJSON(value);
+  }
+  if (isTask(value)) {
+    return Task.toJSON(value);
+  }
+  if (isTaskStatusUpdateEvent(value)) {
+    return TaskStatusUpdateEvent.toJSON(value);
+  }
+  if (isTaskArtifactUpdateEvent(value)) {
+    return TaskArtifactUpdateEvent.toJSON(value);
+  }
+  return void 0;
+}
 function toPlainValue(value) {
+  const protocolJson = toProtocolJsonValue(value);
+  if (protocolJson !== void 0) {
+    return protocolJson;
+  }
   try {
     return JSON.parse(JSON.stringify(value));
   } catch {
@@ -55475,6 +55574,188 @@ function getTaskMessages(task) {
   return statusMessage ? [statusMessage] : [];
 }
 
+// src/lib/transcript.ts
+function createStreamTranscriptState() {
+  return {
+    activeSectionsByTaskAndArtifactId: /* @__PURE__ */ new Map(),
+    lastSectionByTaskId: /* @__PURE__ */ new Map(),
+    nextSectionIndexByTaskId: /* @__PURE__ */ new Map(),
+    bodyByEntryId: /* @__PURE__ */ new Map()
+  };
+}
+function clearStreamTranscriptState(state) {
+  state.activeSectionsByTaskAndArtifactId.clear();
+  state.lastSectionByTaskId.clear();
+  state.nextSectionIndexByTaskId.clear();
+  state.bodyByEntryId.clear();
+}
+function streamTranscriptSectionKey(taskId, artifactId) {
+  return `${taskId}::${artifactId}`;
+}
+function getActiveStreamTranscriptSection(state, taskId, artifactId) {
+  return state.activeSectionsByTaskAndArtifactId.get(
+    streamTranscriptSectionKey(taskId, artifactId)
+  );
+}
+function getLastStreamTranscriptSection(state, taskId) {
+  return state.lastSectionByTaskId.get(taskId);
+}
+function clearActiveStreamTranscriptSection(state, taskId, artifactId) {
+  const activeSection = getActiveStreamTranscriptSection(
+    state,
+    taskId,
+    artifactId
+  );
+  state.activeSectionsByTaskAndArtifactId.delete(
+    streamTranscriptSectionKey(taskId, artifactId)
+  );
+  if (activeSection) {
+    state.bodyByEntryId.delete(activeSection.entryId);
+  }
+  if (activeSection && state.lastSectionByTaskId.get(taskId)?.entryId === activeSection.entryId) {
+    state.lastSectionByTaskId.delete(taskId);
+  }
+}
+function upsertTranscriptEntry(entries, entryId, role, body) {
+  const existingIndex = entries.findIndex((item) => item.id === entryId);
+  if (existingIndex === -1) {
+    return [...entries, { id: entryId, role, body }];
+  }
+  const next = [...entries];
+  next[existingIndex] = {
+    ...next[existingIndex],
+    role,
+    body
+  };
+  return next;
+}
+function replaceTranscriptEntryBody(entries, entryId, role, body) {
+  const existingIndex = entries.findIndex((item) => item.id === entryId);
+  if (existingIndex === -1) {
+    return { entries, replaced: false };
+  }
+  const next = [...entries];
+  next[existingIndex] = {
+    ...next[existingIndex],
+    role,
+    body
+  };
+  return { entries: next, replaced: true };
+}
+function createStreamTranscriptSection({
+  state,
+  taskId,
+  artifactId,
+  kind
+}) {
+  const sectionIndex = (state.nextSectionIndexByTaskId.get(taskId) ?? 0) + 1;
+  state.nextSectionIndexByTaskId.set(taskId, sectionIndex);
+  const section = {
+    taskId,
+    artifactId,
+    kind,
+    entryId: `artifact:${taskId}:${artifactId}:${sectionIndex}`,
+    sectionIndex
+  };
+  const previousLastSection = state.lastSectionByTaskId.get(taskId);
+  state.activeSectionsByTaskAndArtifactId.set(
+    streamTranscriptSectionKey(taskId, artifactId),
+    section
+  );
+  state.lastSectionByTaskId.set(taskId, section);
+  return {
+    section,
+    insertDivider: previousLastSection !== void 0 || sectionIndex > 1
+  };
+}
+function prepareStreamTranscriptDelta({
+  state,
+  taskId,
+  artifactId,
+  kind,
+  body,
+  append,
+  replaceCurrentSection = false
+}) {
+  const sectionKey = streamTranscriptSectionKey(taskId, artifactId);
+  const activeSection = state.activeSectionsByTaskAndArtifactId.get(sectionKey);
+  if (append && activeSection !== void 0) {
+    const nextBody = `${state.bodyByEntryId.get(activeSection.entryId) ?? ""}${body}`;
+    state.bodyByEntryId.set(activeSection.entryId, nextBody);
+    return {
+      section: activeSection,
+      body: nextBody,
+      appendToExistingSection: true,
+      replaceExistingSection: false,
+      insertDivider: false
+    };
+  }
+  if (replaceCurrentSection && activeSection !== void 0) {
+    state.bodyByEntryId.set(activeSection.entryId, body);
+    return {
+      section: activeSection,
+      body,
+      appendToExistingSection: false,
+      replaceExistingSection: true,
+      insertDivider: false
+    };
+  }
+  const { section, insertDivider } = createStreamTranscriptSection({
+    state,
+    taskId,
+    artifactId,
+    kind
+  });
+  state.bodyByEntryId.set(section.entryId, body);
+  return {
+    section,
+    body,
+    appendToExistingSection: false,
+    replaceExistingSection: false,
+    insertDivider
+  };
+}
+function applyPreparedStreamTranscriptDelta({
+  entries,
+  prepared
+}) {
+  if (prepared.appendToExistingSection || prepared.replaceExistingSection) {
+    return {
+      entries: upsertTranscriptEntry(
+        entries,
+        prepared.section.entryId,
+        "agent",
+        prepared.body
+      ),
+      section: prepared.section,
+      body: prepared.body,
+      startedNewSection: false
+    };
+  }
+  let nextEntries = entries;
+  if (prepared.insertDivider) {
+    nextEntries = [
+      ...nextEntries,
+      {
+        id: `artifact-divider:${prepared.section.taskId}:${prepared.section.sectionIndex}`,
+        role: "divider",
+        body: ""
+      }
+    ];
+  }
+  return {
+    entries: upsertTranscriptEntry(
+      nextEntries,
+      prepared.section.entryId,
+      "agent",
+      prepared.body
+    ),
+    section: prepared.section,
+    body: prepared.body,
+    startedNewSection: true
+  };
+}
+
 // src/lib/chatSession.ts
 var NO_TASK_ID = "no-task";
 function getMessageTaskId(message, fallbackTaskId) {
@@ -55509,10 +55790,12 @@ function shouldRenderLiveResponseMessage(message) {
 function shouldRenderLiveStatusMessage({
   message,
   taskId,
-  streamedTaskIds
+  streamedTaskIds,
+  activeStreamSectionKind
 }) {
+  const suppressForStreamedResponse = streamedTaskIds.has(taskId) && activeStreamSectionKind !== "thinking";
   return Boolean(
-    message && shouldRenderLiveResponseMessage(message) && !streamedTaskIds.has(taskId)
+    message && shouldRenderLiveResponseMessage(message) && !suppressForStreamedResponse
   );
 }
 function shouldShowNoAgentMessageNotice({
@@ -56043,11 +56326,20 @@ function summarizePartForLog(part) {
     fileMimeType: part.mediaType || void 0
   };
 }
+function roleLabel(role) {
+  if (role === void 0) {
+    return "ROLE_UNSPECIFIED";
+  }
+  if (typeof role === "string") {
+    return role;
+  }
+  return roleToJSON(role);
+}
 function summarizeMessageForLog(message) {
   return {
     kind: "message",
     messageId: message.messageId,
-    role: message.role,
+    role: roleLabel(message.role),
     contextId: message.contextId,
     taskId: message.taskId,
     partCount: message.parts.length,
@@ -56083,12 +56375,14 @@ function summarizeProtocolEventForLog(event) {
       message: event.status?.message ? summarizeMessageForLog(event.status.message) : void 0
     };
   }
+  const artifactEvent = event;
   return {
     kind: "artifact-update",
     taskId: event.taskId,
     contextId: event.contextId,
     artifactId: event.artifact?.artifactId,
     append: event.append,
+    lastChunk: artifactEvent.lastChunk ?? artifactEvent.last_chunk,
     partCount: event.artifact?.parts.length ?? 0,
     parts: event.artifact?.parts.map(summarizePartForLog) ?? []
   };
@@ -56111,21 +56405,34 @@ function summarizeAgentForLog2(agent) {
     connectionAgentId: agent.connectionAgentId
   };
 }
-function upsertEntry(entries, entryId, role, body) {
-  const existingIndex = entries.findIndex((item) => item.id === entryId);
-  if (existingIndex === -1) {
-    return [...entries, { id: entryId, role, body }];
-  }
-  const next = [...entries];
-  next[existingIndex] = {
-    ...next[existingIndex],
-    role,
-    body
-  };
-  return next;
-}
 function isFinalStatusEvent(event) {
   return Boolean(event.final);
+}
+function getStreamArtifactKind(artifactId) {
+  if (artifactId === STREAM_DELTA_ARTIFACT_ID) {
+    return "response";
+  }
+  if (artifactId === THINKING_DELTA_ARTIFACT_ID) {
+    return "thinking";
+  }
+  return void 0;
+}
+function getMetadataString(metadata, key) {
+  const value = metadata?.[key];
+  return typeof value === "string" ? value : void 0;
+}
+function shouldReplaceCurrentStreamSection(event, kind) {
+  if (event.append === true) {
+    return false;
+  }
+  const artifactEvent = event;
+  if (artifactEvent.lastChunk === true || artifactEvent.last_chunk === true) {
+    return true;
+  }
+  const metadata = event.artifact?.metadata;
+  const status = getMetadataString(metadata, "status");
+  const statusReason = getMetadataString(metadata, "status_reason") ?? getMetadataString(metadata, "statusReason");
+  return status === "finalized" || statusReason === "complete_message" || statusReason === "complete_task";
 }
 function parseExactSlashCommand(value) {
   const [command, environmentId, extra] = value.trim().split(/\s+/);
@@ -56134,6 +56441,9 @@ function parseExactSlashCommand(value) {
   }
   if (command === "/copy" && !environmentId) {
     return { kind: "copy" };
+  }
+  if (command === "/clear" && !environmentId) {
+    return { kind: "clear" };
   }
   if ((command === "/environment" || command === "/env") && !extra) {
     if (!environmentId) {
@@ -56147,62 +56457,63 @@ function parseExactSlashCommand(value) {
 }
 function ChatApp({ options }) {
   const { exit } = use_app_default();
-  const initialSettingsResult = (0, import_react34.useMemo)(() => loadChatSettings(), []);
-  const chatSessionLoggerResult = (0, import_react34.useMemo)(
+  const initialSettingsResult = (0, import_react33.useMemo)(() => loadChatSettings(), []);
+  const chatSessionLoggerResult = (0, import_react33.useMemo)(
     () => createChatSessionLogger({
       environmentId: initialSettingsResult.settings.selectedEnvironment
     }),
     [initialSettingsResult.settings.selectedEnvironment]
   );
   const chatSessionLogger = chatSessionLoggerResult.logger;
-  const [chatSettings, setChatSettings] = (0, import_react34.useState)(
+  const [chatSettings, setChatSettings] = (0, import_react33.useState)(
     initialSettingsResult.settings
   );
-  const [selectedEnvironment, setSelectedEnvironment] = (0, import_react34.useState)(
+  const [selectedEnvironment, setSelectedEnvironment] = (0, import_react33.useState)(
     initialSettingsResult.settings.selectedEnvironment
   );
   const activeEnvironmentSettings = chatSettings.environments[selectedEnvironment];
   const controlPlaneApiBaseUrl = getControlPlaneApiBaseUrl(selectedEnvironment);
   const agentEndpointUrl = options.url;
-  const [pushLabel, setPushLabel] = (0, import_react34.useState)(
+  const [pushLabel, setPushLabel] = (0, import_react33.useState)(
     options.pushNotifications ? "Starting..." : "Disabled"
   );
-  const [streamLabel, setStreamLabel] = (0, import_react34.useState)("Idle");
-  const [draft, setDraft] = (0, import_react34.useState)("");
-  const [entries, setEntries] = (0, import_react34.useState)([]);
-  const [notifications, setNotifications] = (0, import_react34.useState)([]);
-  const [contextId, setContextId] = (0, import_react34.useState)();
-  const [taskId, setTaskId] = (0, import_react34.useState)();
-  const [workingStartedAt, setWorkingStartedAt] = (0, import_react34.useState)();
-  const [clientState, setClientState] = (0, import_react34.useState)();
-  const [pushConfig, setPushConfig] = (0, import_react34.useState)();
-  const [discoveredAgents, setDiscoveredAgents] = (0, import_react34.useState)([]);
-  const [agentSources, setAgentSources] = (0, import_react34.useState)(
+  const [streamLabel, setStreamLabel] = (0, import_react33.useState)("Idle");
+  const [draft, setDraft] = (0, import_react33.useState)("");
+  const [entries, setEntries] = (0, import_react33.useState)([]);
+  const [notifications, setNotifications] = (0, import_react33.useState)([]);
+  const [contextId, setContextId] = (0, import_react33.useState)();
+  const [taskId, setTaskId] = (0, import_react33.useState)();
+  const [workingStartedAt, setWorkingStartedAt] = (0, import_react33.useState)();
+  const [clientState, setClientState] = (0, import_react33.useState)();
+  const [pushConfig, setPushConfig] = (0, import_react33.useState)();
+  const [discoveredAgents, setDiscoveredAgents] = (0, import_react33.useState)([]);
+  const [agentSources, setAgentSources] = (0, import_react33.useState)(
     activeEnvironmentSettings.agentSources
   );
-  const [selectedAgentKey, setSelectedAgentKey] = (0, import_react34.useState)(
+  const [selectedAgentKey, setSelectedAgentKey] = (0, import_react33.useState)(
     options.agentId ? void 0 : activeEnvironmentSettings.selectedAgentKey
   );
-  const [selectedAgentId, setSelectedAgentId] = (0, import_react34.useState)(
+  const [selectedAgentId, setSelectedAgentId] = (0, import_react33.useState)(
     options.agentId ?? activeEnvironmentSettings.selectedAgentId
   );
-  const [selectedSuggestionIndex, setSelectedSuggestionIndex] = (0, import_react34.useState)(0);
-  const [selectedFileSuggestionIndex, setSelectedFileSuggestionIndex] = (0, import_react34.useState)(0);
-  const [selectedSlashIndex, setSelectedSlashIndex] = (0, import_react34.useState)(0);
-  const [selectedSlashSubmenuIndex, setSelectedSlashSubmenuIndex] = (0, import_react34.useState)(0);
-  const [slashSubmenuId, setSlashSubmenuId] = (0, import_react34.useState)();
-  const [requestMode, setRequestMode] = (0, import_react34.useState)(
+  const [selectedSuggestionIndex, setSelectedSuggestionIndex] = (0, import_react33.useState)(0);
+  const [selectedFileSuggestionIndex, setSelectedFileSuggestionIndex] = (0, import_react33.useState)(0);
+  const [selectedSlashIndex, setSelectedSlashIndex] = (0, import_react33.useState)(0);
+  const [selectedSlashSubmenuIndex, setSelectedSlashSubmenuIndex] = (0, import_react33.useState)(0);
+  const [slashSubmenuId, setSlashSubmenuId] = (0, import_react33.useState)();
+  const [requestMode, setRequestMode] = (0, import_react33.useState)(
     activeEnvironmentSettings.requestMode
   );
-  const [responseMode, setResponseMode] = (0, import_react34.useState)(
+  const [responseMode, setResponseMode] = (0, import_react33.useState)(
     activeEnvironmentSettings.responseMode
   );
-  const [reconnectNonce, setReconnectNonce] = (0, import_react34.useState)(0);
-  const shownMessageKeysRef = (0, import_react34.useRef)(/* @__PURE__ */ new Set());
-  const streamedTaskIdsRef = (0, import_react34.useRef)(/* @__PURE__ */ new Set());
-  const lastCopyableResponseRef = (0, import_react34.useRef)(void 0);
-  const lastConnectionNoticeRef = (0, import_react34.useRef)(void 0);
-  const notificationTimersRef = (0, import_react34.useRef)([]);
+  const [reconnectNonce, setReconnectNonce] = (0, import_react33.useState)(0);
+  const shownMessageKeysRef = (0, import_react33.useRef)(/* @__PURE__ */ new Set());
+  const streamedTaskIdsRef = (0, import_react33.useRef)(/* @__PURE__ */ new Set());
+  const streamTranscriptStateRef = (0, import_react33.useRef)(createStreamTranscriptState());
+  const lastCopyableResponseRef = (0, import_react33.useRef)(void 0);
+  const lastConnectionNoticeRef = (0, import_react33.useRef)(void 0);
+  const notificationTimersRef = (0, import_react33.useRef)([]);
   const appendEntry = (role, body) => {
     setEntries((current) => [
       ...current,
@@ -56252,7 +56563,7 @@ function ChatApp({ options }) {
     });
     appendEntry("protocol", formatProtocolPayload(payload));
   };
-  (0, import_react34.useEffect)(() => {
+  (0, import_react33.useEffect)(() => {
     const environmentAtStart = selectedEnvironment;
     chatSessionLogger.info("chat.session.started", {
       mode: "interactive",
@@ -56316,6 +56627,7 @@ function ChatApp({ options }) {
     setEntries([]);
     shownMessageKeysRef.current.clear();
     streamedTaskIdsRef.current.clear();
+    clearStreamTranscriptState(streamTranscriptStateRef.current);
     lastCopyableResponseRef.current = void 0;
     setContextId(void 0);
     setTaskId(void 0);
@@ -56340,21 +56652,21 @@ function ChatApp({ options }) {
     setClientState(void 0);
     setReconnectNonce((current) => current + 1);
   };
-  (0, import_react34.useEffect)(() => {
+  (0, import_react33.useEffect)(() => {
     if (initialSettingsResult.warning) {
       appendSystem(initialSettingsResult.warning);
     }
   }, [initialSettingsResult.warning]);
-  const slashQuery = (0, import_react34.useMemo)(() => {
+  const slashQuery = (0, import_react33.useMemo)(() => {
     if (slashSubmenuId) {
       return void 0;
     }
     return getLeadingSlashQuery(draft);
   }, [draft, slashSubmenuId]);
-  const slashCommands = (0, import_react34.useMemo)(() => {
+  const slashCommands = (0, import_react33.useMemo)(() => {
     return filterSlashCommands(slashQuery);
   }, [slashQuery]);
-  const slashSubmenu = (0, import_react34.useMemo)(() => {
+  const slashSubmenu = (0, import_react33.useMemo)(() => {
     const command = getSlashCommandById(slashSubmenuId);
     if (!command) {
       return void 0;
@@ -56366,7 +56678,7 @@ function ChatApp({ options }) {
       selectedIndex: selectedSlashSubmenuIndex
     };
   }, [selectedSlashSubmenuIndex, slashSubmenuId]);
-  const agentSuggestions = (0, import_react34.useMemo)(() => {
+  const agentSuggestions = (0, import_react33.useMemo)(() => {
     if (slashQuery !== void 0 || slashSubmenuId) {
       return [];
     }
@@ -56381,7 +56693,7 @@ function ChatApp({ options }) {
       description: agent.agentCard?.description?.trim() ?? ""
     })).slice(0, 6);
   }, [discoveredAgents, draft, slashQuery, slashSubmenuId]);
-  const fileSuggestions = (0, import_react34.useMemo)(() => {
+  const fileSuggestions = (0, import_react33.useMemo)(() => {
     if (slashQuery !== void 0 || slashSubmenuId) {
       return [];
     }
@@ -56389,12 +56701,12 @@ function ChatApp({ options }) {
     if (!match) return [];
     return getFileSuggestions(match.query);
   }, [draft, slashQuery, slashSubmenuId]);
-  const selectedAgent = (0, import_react34.useMemo)(() => {
+  const selectedAgent = (0, import_react33.useMemo)(() => {
     return discoveredAgents.find(
       (agent) => selectedAgentKey ? agent.agentKey === selectedAgentKey : selectedAgentId ? agent.id === selectedAgentId : false
     );
   }, [discoveredAgents, selectedAgentId, selectedAgentKey]);
-  (0, import_react34.useEffect)(() => {
+  (0, import_react33.useEffect)(() => {
     setSelectedSuggestionIndex((current) => {
       if (agentSuggestions.length === 0) {
         return 0;
@@ -56402,13 +56714,13 @@ function ChatApp({ options }) {
       return Math.min(current, agentSuggestions.length - 1);
     });
   }, [agentSuggestions]);
-  (0, import_react34.useEffect)(() => {
+  (0, import_react33.useEffect)(() => {
     setSelectedFileSuggestionIndex((current) => {
       if (fileSuggestions.length === 0) return 0;
       return Math.min(current, fileSuggestions.length - 1);
     });
   }, [fileSuggestions]);
-  (0, import_react34.useEffect)(() => {
+  (0, import_react33.useEffect)(() => {
     setSelectedSlashIndex((current) => {
       if (slashCommands.length === 0) {
         return 0;
@@ -56416,7 +56728,7 @@ function ChatApp({ options }) {
       return Math.min(current, slashCommands.length - 1);
     });
   }, [slashCommands]);
-  (0, import_react34.useEffect)(() => {
+  (0, import_react33.useEffect)(() => {
     const optionCount = getSlashCommandById(slashSubmenuId)?.options.length ?? 0;
     setSelectedSlashSubmenuIndex((current) => {
       if (optionCount === 0) {
@@ -56519,6 +56831,10 @@ function ChatApp({ options }) {
       } else if (selectedAgentKey || !options.agentId && selectedAgentId) {
         setSelectedAgentKey(void 0);
         setSelectedAgentId(void 0);
+        setClientState(void 0);
+        setContextId(void 0);
+        setTaskId(void 0);
+        setStreamLabel("Idle");
         persistEnvironmentSettings(selectedEnvironment, {
           selectedAgentKey: void 0,
           selectedAgentId: void 0,
@@ -56543,7 +56859,7 @@ ${message}` : `Agent source discovery failed: ${message}`
       return void 0;
     }
   };
-  (0, import_react34.useEffect)(() => {
+  (0, import_react33.useEffect)(() => {
     let closed = false;
     void refreshAgentDiscovery({ isClosed: () => closed });
     return () => {
@@ -56558,7 +56874,7 @@ ${message}` : `Agent source discovery failed: ${message}`
     reconnectNonce,
     selectedEnvironment
   ]);
-  (0, import_react34.useEffect)(() => {
+  (0, import_react33.useEffect)(() => {
     let closed = false;
     let closePush;
     const handlePushEvent = (event) => {
@@ -56650,6 +56966,58 @@ ${JSON.stringify(
     selectedAgent,
     selectedEnvironment
   ]);
+  const replaceLastResponseStreamSection = (message, fallbackTaskId) => {
+    if (!shouldRenderLiveResponseMessage(message)) {
+      return false;
+    }
+    const streamTaskId = getMessageTaskId(message, fallbackTaskId);
+    if (!streamTaskId) {
+      return false;
+    }
+    const activeSection = getActiveStreamTranscriptSection(
+      streamTranscriptStateRef.current,
+      streamTaskId,
+      STREAM_DELTA_ARTIFACT_ID
+    );
+    if (activeSection?.kind !== "response") {
+      return false;
+    }
+    if (shownMessageKeysRef.current.has(getShownMessageKey(message, fallbackTaskId))) {
+      return false;
+    }
+    const body = formatMessageParts(message.parts);
+    if (!body) {
+      return false;
+    }
+    const shownMessageKey = markShownMessage(
+      shownMessageKeysRef.current,
+      message,
+      fallbackTaskId
+    );
+    lastCopyableResponseRef.current = { kind: "message", content: body };
+    chatSessionLogger.debug("chat.agent_message.stream_replaced", {
+      fallbackTaskId,
+      streamTaskId,
+      streamEntryId: activeSection.entryId,
+      body,
+      message: summarizeMessageForLog(message)
+    });
+    setEntries((current) => {
+      lastCopyableResponseRef.current = { kind: "message", content: body };
+      return replaceTranscriptEntryBody(
+        current,
+        activeSection.entryId,
+        "agent",
+        body
+      ).entries;
+    });
+    clearActiveStreamTranscriptSection(
+      streamTranscriptStateRef.current,
+      streamTaskId,
+      STREAM_DELTA_ARTIFACT_ID
+    );
+    return true;
+  };
   const renderAgentResponseBubble = (message, fallbackTaskId) => {
     if (!shouldRenderLiveResponseMessage(message)) {
       return false;
@@ -56673,7 +57041,7 @@ ${JSON.stringify(
       message: summarizeMessageForLog(message)
     });
     setEntries(
-      (current) => upsertEntry(current, `message:${shownMessageKey}`, "agent", body)
+      (current) => upsertTranscriptEntry(current, `message:${shownMessageKey}`, "agent", body)
     );
     return true;
   };
@@ -56686,7 +57054,7 @@ ${JSON.stringify(
       appendProtocol(message);
       return true;
     }
-    return renderAgentResponseBubble(message);
+    return replaceLastResponseStreamSection(message) || renderAgentResponseBubble(message);
   };
   const handleTaskSnapshot = (task) => {
     setContextId(task.contextId);
@@ -56699,13 +57067,10 @@ ${JSON.stringify(
     if (!isTerminalTask) {
       return false;
     }
-    if (streamedTaskIdsRef.current.has(task.id)) {
-      return false;
-    }
     const messages = getUnshownTaskAgentMessages(task, shownMessageKeysRef.current);
     let renderedAgentOutput = false;
     for (const message of messages) {
-      renderedAgentOutput = renderAgentResponseBubble(message, task.id) || renderedAgentOutput;
+      renderedAgentOutput = replaceLastResponseStreamSection(message, task.id) || renderAgentResponseBubble(message, task.id) || renderedAgentOutput;
     }
     return renderedAgentOutput;
   };
@@ -56717,10 +57082,18 @@ ${JSON.stringify(
       appendProtocol(event);
       return true;
     }
+    if (event.status?.message && (isTerminalTaskState(event.status.state) || isFinalStatusEvent(event)) && replaceLastResponseStreamSection(event.status.message, event.taskId)) {
+      return true;
+    }
+    const activeStreamSection = getLastStreamTranscriptSection(
+      streamTranscriptStateRef.current,
+      event.taskId
+    );
     if (shouldRenderLiveStatusMessage({
       message: event.status?.message,
       taskId: event.taskId,
-      streamedTaskIds: streamedTaskIdsRef.current
+      streamedTaskIds: streamedTaskIdsRef.current,
+      activeStreamSectionKind: activeStreamSection?.kind
     })) {
       return event.status?.message ? renderAgentResponseBubble(event.status.message, event.taskId) : false;
     }
@@ -56733,27 +57106,64 @@ ${JSON.stringify(
     if (!artifact) {
       return false;
     }
-    if (artifact.artifactId === STREAM_DELTA_ARTIFACT_ID) {
+    const streamArtifactKind = getStreamArtifactKind(artifact.artifactId);
+    if (streamArtifactKind === "response") {
       setStreamLabel("Streaming");
+    } else if (streamArtifactKind === "thinking") {
+      setStreamLabel("Thinking");
     }
     if (responseMode === "a2a-protocol") {
       appendProtocol(event);
       return true;
     }
-    if (artifact.artifactId !== STREAM_DELTA_ARTIFACT_ID) {
+    if (!streamArtifactKind) {
       return false;
     }
     const artifactText = formatMessageParts(artifact.parts);
     if (!artifactText) {
       return false;
     }
-    streamedTaskIdsRef.current.add(event.taskId);
-    const entryId = `artifact:${event.taskId}:${artifact.artifactId}`;
+    if (streamArtifactKind === "response") {
+      streamedTaskIdsRef.current.add(event.taskId);
+    }
+    const replaceCurrentSection = shouldReplaceCurrentStreamSection(
+      event,
+      streamArtifactKind
+    );
+    const preparedDelta = prepareStreamTranscriptDelta({
+      state: streamTranscriptStateRef.current,
+      taskId: event.taskId,
+      artifactId: artifact.artifactId,
+      kind: streamArtifactKind,
+      body: artifactText,
+      append: event.append === true,
+      replaceCurrentSection
+    });
+    chatSessionLogger.debug("chat.stream_delta.prepared", {
+      taskId: event.taskId,
+      contextId: event.contextId,
+      artifactId: artifact.artifactId,
+      kind: streamArtifactKind,
+      append: event.append,
+      replaceCurrentSection,
+      entryId: preparedDelta.section.entryId,
+      sectionIndex: preparedDelta.section.sectionIndex,
+      appendToExistingSection: preparedDelta.appendToExistingSection,
+      replaceExistingSection: preparedDelta.replaceExistingSection,
+      insertDivider: preparedDelta.insertDivider
+    });
     setEntries((current) => {
-      const existing = current.find((item) => item.id === entryId);
-      const nextBody = event.append && existing ? `${existing.body}${artifactText}` : artifactText;
-      lastCopyableResponseRef.current = { kind: "message", content: nextBody };
-      return upsertEntry(current, entryId, "agent", nextBody);
+      const result = applyPreparedStreamTranscriptDelta({
+        entries: current,
+        prepared: preparedDelta
+      });
+      if (streamArtifactKind === "response") {
+        lastCopyableResponseRef.current = {
+          kind: "message",
+          content: result.body
+        };
+      }
+      return result.entries;
     });
     return true;
   };
@@ -56863,8 +57273,8 @@ ${JSON.stringify(
       return;
     }
     if (command.id === "clear") {
-      clearTranscript();
       resetSlashSelection();
+      runClearSlashCommand();
       return;
     }
     if (command.id === "copy") {
@@ -56964,6 +57374,24 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
     reloadEnvironmentState(environmentId);
     appendSystem(`Aion environment set to ${environmentId}.`);
   };
+  const runClearSlashCommand = () => {
+    const selectedContextAgentKey = selectedAgent?.agentKey ?? selectedAgentKey;
+    clearTranscript();
+    if (selectedContextAgentKey) {
+      persistSettings(
+        clearAgentActiveContext(
+          chatSettings,
+          selectedEnvironment,
+          selectedContextAgentKey
+        )
+      );
+    }
+    chatSessionLogger.info("chat.clear", {
+      environmentId: selectedEnvironment,
+      agentKey: selectedContextAgentKey
+    });
+    setReconnectNonce((current) => current + 1);
+  };
   const runCopySlashCommand = async () => {
     const response = lastCopyableResponseRef.current;
     if (!response) {
@@ -57007,6 +57435,10 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
     }
     if (command.kind === "copy") {
       void runCopySlashCommand();
+      return true;
+    }
+    if (command.kind === "clear") {
+      runClearSlashCommand();
       return true;
     }
     runEnvironmentSlashCommand(command.environmentId);
@@ -57597,7 +58029,7 @@ function writeLine(stream, line) {
 }
 function writeDiscoveryErrors(discovery, stderr) {
   for (const error of discovery.errors) {
-    if (error.source.isDefault) {
+    if (!shouldWriteDiscoveryError(error, discovery)) {
       continue;
     }
     writeLine(
@@ -57605,6 +58037,15 @@ function writeDiscoveryErrors(discovery, stderr) {
       `Failed to discover agents from ${error.source.description}: ${error.error ?? error.source.lastError ?? "unknown error"}`
     );
   }
+}
+function shouldWriteDiscoveryError(error, discovery) {
+  if (error.source.type === "registry") {
+    return true;
+  }
+  if (!error.source.isDefault) {
+    return true;
+  }
+  return discovery.agents.length === 0;
 }
 function normalizeSelector(value) {
   return value.trim().toLowerCase();
@@ -57632,7 +58073,34 @@ function formatAgentCandidates(agents) {
   }
   return agents.slice(0, 10).map(formatAgentCandidate).join(", ");
 }
-function selectAgentBySelector(agents, selector, explicitSourceKey) {
+function pluralizeAgents(count) {
+  return count === 1 ? "1 agent" : `${count} agents`;
+}
+function formatSourceStatuses(discovery) {
+  if (discovery.sources.length === 0) {
+    return "none";
+  }
+  const errorsBySourceKey = new Map(
+    discovery.errors.map((error) => [error.source.sourceKey, error])
+  );
+  const agentCountsBySourceKey = /* @__PURE__ */ new Map();
+  for (const agent of discovery.agents) {
+    agentCountsBySourceKey.set(
+      agent.sourceKey,
+      (agentCountsBySourceKey.get(agent.sourceKey) ?? 0) + 1
+    );
+  }
+  return discovery.sources.map((source) => {
+    const error = errorsBySourceKey.get(source.sourceKey);
+    if (error) {
+      return `${source.description}: unavailable (${error.error ?? source.lastError ?? "unknown error"})`;
+    }
+    const agentCount = agentCountsBySourceKey.get(source.sourceKey) ?? 0;
+    const status = source.status === "unchecked" && agentCount > 0 ? "available" : source.status ?? "unknown";
+    return `${source.description}: ${status} (${pluralizeAgents(agentCount)})`;
+  }).join("; ");
+}
+function selectAgentBySelector(agents, selector, explicitSourceKey, discovery, environmentId) {
   const normalizedSelector = normalizeSelector(selector);
   const normalizedWithoutAt = withoutAtPrefix(normalizedSelector);
   let matches = agents.filter((agent) => {
@@ -57649,7 +58117,7 @@ function selectAgentBySelector(agents, selector, explicitSourceKey) {
   }
   if (matches.length === 0) {
     throw new Error(
-      `No discovered agent matched '${selector}'. Available agents: ${formatAgentCandidates(agents)}`
+      `No discovered agent matched '${selector}' in ${environmentId}. Available agents: ${formatAgentCandidates(agents)}. Sources checked: ${formatSourceStatuses(discovery)}`
     );
   }
   if (matches.length > 1) {
@@ -57659,9 +58127,16 @@ function selectAgentBySelector(agents, selector, explicitSourceKey) {
   }
   return matches[0];
 }
-function selectHeadlessAgent(agents, options, selectedAgentKey, selectedAgentId, explicitSourceKey) {
+function selectHeadlessAgent(discovery, options, selectedAgentKey, selectedAgentId, explicitSourceKey, environmentId) {
+  const agents = discovery.agents;
   if (options.agentSelector) {
-    return selectAgentBySelector(agents, options.agentSelector, explicitSourceKey);
+    return selectAgentBySelector(
+      agents,
+      options.agentSelector,
+      explicitSourceKey,
+      discovery,
+      environmentId
+    );
   }
   const shouldIgnoreSavedSelection = Boolean(explicitSourceKey && !options.agentId);
   const selected = selectDiscoveredAgent(agents, {
@@ -57673,10 +58148,17 @@ function selectHeadlessAgent(agents, options, selectedAgentKey, selectedAgentId,
   });
   if (!selected) {
     throw new Error(
-      `No agent selected. Use --agent with one of: ${formatAgentCandidates(agents)}`
+      `No agent selected in ${environmentId}. Use --agent with one of: ${formatAgentCandidates(agents)}. Sources checked: ${formatSourceStatuses(discovery)}`
     );
   }
   return selected;
+}
+function createHeadlessRunLogger(createLogger, environmentId, stderr) {
+  const result = createLogger({ environmentId });
+  if (result.warning) {
+    writeLine(stderr, result.warning);
+  }
+  return result;
 }
 function appendOutput(state, key, body, append = false) {
   if (!body) {
@@ -57870,9 +58352,6 @@ function getConnectionOptions(options, selectedAgent, environmentId, registryTok
     pushReceiver: options.pushReceiver
   };
 }
-function getContextId(selectedAgent, environmentAgents) {
-  return environmentAgents[selectedAgent.agentKey]?.activeContextId ?? selectedAgent.activeContextId;
-}
 async function runHeadless(options, dependencies = {}) {
   const stdout = dependencies.stdout ?? process.stdout;
   const stderr = dependencies.stderr ?? process.stderr;
@@ -57882,11 +58361,17 @@ async function runHeadless(options, dependencies = {}) {
   const connectClientImpl = dependencies.connectClientImpl ?? connectClient;
   const buildMessagePartsImpl = dependencies.buildMessagePartsImpl ?? buildMessageParts2;
   const getStoredAccessTokenImpl = dependencies.getStoredAccessTokenImpl ?? getStoredAccessToken;
+  const createChatSessionLoggerImpl = dependencies.createChatSessionLoggerImpl ?? createChatSessionLogger;
   const { settings, warning } = loadChatSettingsImpl();
   if (warning) {
     writeLine(stderr, warning);
   }
   const selectedEnvironment = settings.selectedEnvironment;
+  const { logger } = createHeadlessRunLogger(
+    createChatSessionLoggerImpl,
+    selectedEnvironment,
+    stderr
+  );
   const environmentSettings = settings.environments[selectedEnvironment];
   const explicitSourceKey = options.url ? createExplicitAgentSource(options.url).sourceKey : void 0;
   const runtimeSources = mergeAgentSources(
@@ -57898,63 +58383,100 @@ async function runHeadless(options, dependencies = {}) {
     token: options.token,
     headers: options.headers
   });
-  const discovery = await discoverAgentSourcesImpl(runtimeSources, fetchImpl, {
+  logger.info("headless.run.started", {
     environmentId: selectedEnvironment,
-    controlPlaneAccessTokenProvider: () => getStoredAccessTokenImpl(selectedEnvironment),
-    graphQLFetchImpl: fetchImpl,
-    sourceFetchImpl: (source) => source.sourceKey === explicitSourceKey ? explicitSourceFetch : fetchImpl
+    requestMode: options.requestMode,
+    responseMode: options.responseMode,
+    agentSelector: options.agentSelector,
+    agentId: options.agentId,
+    hasExplicitUrl: Boolean(options.url),
+    sourceCount: runtimeSources.length,
+    usesPersistedContext: false
   });
-  writeDiscoveryErrors(discovery, stderr);
-  if (discovery.agents.length === 0) {
-    throw new Error("No agents discovered for the selected environment.");
-  }
-  const selectedAgent = selectHeadlessAgent(
-    discovery.agents,
-    options,
-    environmentSettings.selectedAgentKey,
-    environmentSettings.selectedAgentId,
-    explicitSourceKey
-  );
-  const clientState = await connectClientImpl(
-    getConnectionOptions(
+  try {
+    const discovery = await discoverAgentSourcesImpl(runtimeSources, fetchImpl, {
+      environmentId: selectedEnvironment,
+      controlPlaneAccessTokenProvider: () => getStoredAccessTokenImpl(selectedEnvironment),
+      graphQLFetchImpl: fetchImpl,
+      sourceFetchImpl: (source) => source.sourceKey === explicitSourceKey ? explicitSourceFetch : fetchImpl,
+      logger
+    });
+    writeDiscoveryErrors(discovery, stderr);
+    if (discovery.agents.length === 0) {
+      throw new Error(
+        `No agents discovered for ${selectedEnvironment}. Sources checked: ${formatSourceStatuses(discovery)}`
+      );
+    }
+    const selectedAgent = selectHeadlessAgent(
+      discovery,
       options,
-      selectedAgent,
-      selectedEnvironment,
-      () => getStoredAccessTokenImpl(selectedEnvironment)
-    )
-  );
-  const parts = await buildMessagePartsImpl(options.message ?? "");
-  const pushConfig = options.pushNotifications ? createPushNotificationConfig(options.pushReceiver) : void 0;
-  const params = buildMessageParams(
-    parts,
-    getContextId(selectedAgent, environmentSettings.agents),
-    void 0,
-    pushConfig
-  );
-  if (options.requestMode === "streaming-message" && canStream(clientState.agentCard)) {
-    await sendStreamingMessage({
+      environmentSettings.selectedAgentKey,
+      environmentSettings.selectedAgentId,
+      explicitSourceKey,
+      selectedEnvironment
+    );
+    const clientState = await connectClientImpl(
+      getConnectionOptions(
+        options,
+        selectedAgent,
+        selectedEnvironment,
+        () => getStoredAccessTokenImpl(selectedEnvironment)
+      )
+    );
+    const parts = await buildMessagePartsImpl(options.message ?? "");
+    const pushConfig = options.pushNotifications ? createPushNotificationConfig(options.pushReceiver) : void 0;
+    const params = buildMessageParams(
+      parts,
+      void 0,
+      void 0,
+      pushConfig
+    );
+    if (options.requestMode === "streaming-message" && canStream(clientState.agentCard)) {
+      await sendStreamingMessage({
+        clientState,
+        params,
+        responseMode: options.responseMode,
+        stdout,
+        stderr
+      });
+      logger.info("headless.run.completed", {
+        environmentId: selectedEnvironment,
+        selectedAgentKey: selectedAgent.agentKey,
+        selectedAgentId: selectedAgent.agentId,
+        selectedAgentHandle: selectedAgent.agentHandle,
+        requestMode: options.requestMode,
+        responseMode: options.responseMode
+      });
+      return 0;
+    }
+    if (options.requestMode === "streaming-message") {
+      writeLine(
+        stderr,
+        "Request mode fallback: agent does not support streaming, using Send message."
+      );
+    }
+    await sendSingleMessage({
       clientState,
       params,
       responseMode: options.responseMode,
       stdout,
       stderr
     });
+    logger.info("headless.run.completed", {
+      environmentId: selectedEnvironment,
+      selectedAgentKey: selectedAgent.agentKey,
+      selectedAgentId: selectedAgent.agentId,
+      selectedAgentHandle: selectedAgent.agentHandle,
+      requestMode: options.requestMode,
+      responseMode: options.responseMode
+    });
     return 0;
+  } catch (error) {
+    logger.error("headless.run.failed", { error });
+    throw error;
+  } finally {
+    logger.flush();
   }
-  if (options.requestMode === "streaming-message") {
-    writeLine(
-      stderr,
-      "Request mode fallback: agent does not support streaming, using Send message."
-    );
-  }
-  await sendSingleMessage({
-    clientState,
-    params,
-    responseMode: options.responseMode,
-    stdout,
-    stderr
-  });
-  return 0;
 }
 
 // src/cli.tsx

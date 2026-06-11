@@ -68,16 +68,20 @@ export function shouldRenderLiveResponseMessage(message: Message): boolean {
 export function shouldRenderLiveStatusMessage({
 	message,
 	taskId,
-	streamedTaskIds
+	streamedTaskIds,
+	activeStreamSectionKind
 }: {
 	message: Message | undefined;
 	taskId: string;
 	streamedTaskIds: ReadonlySet<string>;
+	activeStreamSectionKind?: "response" | "thinking";
 }): boolean {
+	const suppressForStreamedResponse =
+		streamedTaskIds.has(taskId) && activeStreamSectionKind !== "thinking";
 	return Boolean(
 		message &&
 		shouldRenderLiveResponseMessage(message) &&
-		!streamedTaskIds.has(taskId)
+		!suppressForStreamedResponse
 	);
 }
 

@@ -95,7 +95,7 @@ describe("slashCommands", () => {
 				"URL: http://localhost:8000",
 				"Status: available",
 				"",
-				"Registry sources update when Aion Chat starts and whenever /sources is run."
+				"Registry sources update when Aion Chat starts and whenever /sources or /clear is run."
 			].join("\n")
 		);
 	});

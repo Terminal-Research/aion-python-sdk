@@ -212,7 +212,7 @@ def my_node(state: dict, writer: StreamWriter):
 
 ### Streaming chunks
 
-`AIMessageChunk` emitted via `emit_message` produces `STREAM_DELTA` artifacts (identical to LangGraph's automatic `messages` stream mode):
+`AIMessageChunk` emitted via `emit_message` produces `STREAM_DELTA` artifacts with artifact ID `aion:stream-delta` (identical to LangGraph's automatic `messages` stream mode):
 
 ```python
 def streaming_node(state: dict, writer: StreamWriter):
@@ -227,10 +227,10 @@ def streaming_node(state: dict, writer: StreamWriter):
 
 | Trigger | Client receives |
 |---|---|
-| LLM output chunk (automatic via `messages` stream) | `TaskArtifactUpdateEvent(STREAM_DELTA, last_chunk=false)` |
+| LLM output chunk (automatic via `messages` stream) | `TaskArtifactUpdateEvent(aion:stream-delta, last_chunk=false)` |
 | `emit_message(AIMessage)` | `TaskStatusUpdateEvent(working, message=...)` |
 | `emit_message(AIMessage, ephemeral=True)` | `TaskArtifactUpdateEvent(EPHEMERAL_MESSAGE)` |
-| `emit_message(AIMessageChunk)` | `TaskArtifactUpdateEvent(STREAM_DELTA)` |
+| `emit_message(AIMessageChunk)` | `TaskArtifactUpdateEvent(aion:stream-delta)` |
 | `emit_task_update` | `TaskStatusUpdateEvent(working, message=..., metadata=...)` |
 | `emit_file_artifact` / `emit_data_artifact` | `TaskArtifactUpdateEvent` |
 | `thread.reply` / `thread.post` | `TaskStatusUpdateEvent(working, message=...)` |

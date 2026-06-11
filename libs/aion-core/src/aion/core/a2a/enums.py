@@ -26,6 +26,7 @@ class MessageType(str, Enum):
 class ArtifactId(str, Enum):
     """Artifact IDs used in A2A message headers."""
     STREAM_DELTA = "aion:stream-delta"
+    THINKING_DELTA = "aion:thinking-delta"
     EPHEMERAL_MESSAGE = "aion:ephemeral-message"
     REACTION = "aion:reaction"
 
@@ -34,6 +35,7 @@ class ArtifactName(str, Enum):
     """Named artifacts that can be created and referenced."""
     MESSAGE_RESULT = "Message Result"
     STREAM_DELTA = "Stream Delta"
+    THINKING_DELTA = "Thinking Delta"
     EPHEMERAL_MESSAGE = "Ephemeral Message"
     REACTION = "Reaction"
     OUTPUT_FILE = "Output File"
