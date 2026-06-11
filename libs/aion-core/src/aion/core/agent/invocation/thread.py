@@ -22,6 +22,29 @@ class BaseThread(ABC):
     Provides common thread metadata, shared routing helpers, and a consistent
     public API (reply, post, typing, history). Concrete implementations supply
     the framework-specific transport for post() and typing().
+
+    Attributes:
+        context: Full Aion runtime context for this invocation. Carries the
+            inbox, typed event, and distribution payload.
+        context_id: Identifier of the conversational context (channel, chat, or thread)
+            where the inbound request originated. Resolved from the Aion event
+            payload when the request routes through a distribution, or from the
+            A2A inbox message or task when the request arrives without an event
+            envelope. ``None`` when no context identifier is present.
+        parent_context_id: Parent context identifier when the inbound event is nested
+            inside a thread reply (``parent_context_id`` from the event
+            payload). ``None`` when there is no parent context.
+        network: Originating network or distribution endpoint type, e.g.
+            ``"slack"``, ``"telegram"``, ``"teams"``. Falls back to ``"A2A"``
+            for direct A2A requests that do not include a distribution payload.
+        default_reply_target: Canonical target used by ``reply()``. Set to
+            ``parent_context_id`` when the inbound trajectory is ``"reply"``
+            (thread reply flow) so the response lands in the parent thread;
+            otherwise set to ``context_id`` to echo back to the originating
+            context. ``None`` when no context identifier is available.
+        message: Inbound ``Message`` bound to this thread, or ``None`` when
+            the invocation carries no inbound message (task-only turns or
+            direct A2A requests without a message part).
     """
 
     _message_class: ClassVar[Type]
@@ -30,25 +53,21 @@ class BaseThread(ABC):
     def __init__(
         self,
         context: AionRuntimeContext,
-        id: Optional[str],
-        parent_id: Optional[str],
+        context_id: Optional[str],
+        parent_context_id: Optional[str],
         network: str,
         default_reply_target: Optional[str],
     ) -> None:
         self.context = context
-        self.id = id
-        self.parent_id = parent_id
+        self.context_id = context_id
+        self.parent_context_id = parent_context_id
         self.network = network
         self.default_reply_target = default_reply_target
         self.message = self._build_message()
 
     @classmethod
-    def _extract_context_params(cls, context: AionRuntimeContext) -> dict:
-        """Extract common thread constructor params from AionRuntimeContext.
-
-        Called by concrete from_context() implementations to avoid duplicating
-        context-extraction logic across frameworks.
-        """
+    def from_context(cls, context: AionRuntimeContext) -> "BaseThread":
+        """Create a Thread from an AionRuntimeContext."""
         payload = context.event.payload if context.event else None
 
         context_id = getattr(payload, "context_id", None)
@@ -69,18 +88,13 @@ class BaseThread(ABC):
         distribution = context.get_distribution()
         network = distribution.endpoint_type if distribution is not None else "A2A"
 
-        return dict(
+        return cls(
             context=context,
-            id=context_id,
-            parent_id=parent_context_id,
+            context_id=context_id,
+            parent_context_id=parent_context_id,
             network=network,
             default_reply_target=default_reply_target,
         )
-
-    @classmethod
-    def from_context(cls, context: AionRuntimeContext, **kwargs) -> "BaseThread":
-        """Create a Thread from an AionRuntimeContext."""
-        return cls(**cls._extract_context_params(context))
 
     def _build_message(self):
         """Build the inbound Message object bound to this thread."""

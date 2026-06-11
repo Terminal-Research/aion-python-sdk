@@ -20,8 +20,8 @@ def make_thread(context=None, **kwargs):
     ctx = context or make_mock_context()
     return Thread(
         context=ctx,
-        id=kwargs.get("id", "C123"),
-        parent_id=kwargs.get("parent_id", None),
+        context_id=kwargs.get("context_id", "C123"),
+        parent_context_id=kwargs.get("parent_context_id", None),
         network=kwargs.get("network", "Slack"),
         default_reply_target=kwargs.get("default_reply_target", "C123"),
     )
@@ -37,7 +37,7 @@ class TestThreadFromContext:
         ctx = make_mock_context(event=make_mock_event(payload=payload))
 
         thread = Thread.from_context(ctx)
-        assert thread.id == "C-from-event"
+        assert thread.context_id == "C-from-event"
 
     def test_falls_back_to_inbox_message_context_id(self):
         # when no event payload, context_id comes from inbox.message
@@ -48,7 +48,7 @@ class TestThreadFromContext:
         ctx = make_mock_context(event=None, inbox=make_mock_inbox(message=inbox_msg))
 
         thread = Thread.from_context(ctx)
-        assert thread.id == "C-from-inbox"
+        assert thread.context_id == "C-from-inbox"
 
     def test_falls_back_to_inbox_task_context_id(self):
         # when no event and no inbox message, context_id comes from inbox.task
@@ -57,7 +57,7 @@ class TestThreadFromContext:
         ctx = make_mock_context(event=None, inbox=make_mock_inbox(task=task))
 
         thread = Thread.from_context(ctx)
-        assert thread.id == "C-from-task"
+        assert thread.context_id == "C-from-task"
 
     def test_reply_trajectory_sets_default_target_to_parent(self):
         # reply trajectory routes responses to the parent context, not the current one
