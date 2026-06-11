@@ -6,34 +6,34 @@ import importlib
 import asyncio
 from threading import Event, Thread
 
-from click.testing import CliRunner
+from asyncclick.testing import CliRunner
 
 from aion.cli.cli import __version__, cli
 from aion.cli.services.chat import BinaryResolutionError
 
 
-def test_version() -> None:
+async def test_version() -> None:
     """Verify that the version flag renders the package version."""
     runner = CliRunner()
 
-    result = runner.invoke(cli, ["--version"])
+    result = await runner.invoke(cli, ["--version"])
 
     assert result.exit_code == 0
     assert __version__ in result.output
 
 
-def test_help_lists_chat_command() -> None:
+async def test_help_lists_chat_command() -> None:
     """Ensure the help output advertises the experimental chat command."""
     runner = CliRunner()
 
-    result = runner.invoke(cli, ["--help"])
+    result = await runner.invoke(cli, ["--help"])
 
     assert result.exit_code == 0
     assert "chat" in result.output
     assert "logs" in result.output
 
 
-def test_chat_launches_ui(monkeypatch) -> None:
+async def test_chat_launches_ui(monkeypatch) -> None:
     """Ensure ``aion chat`` forwards CLI flags into launch options."""
     runner = CliRunner()
     chat_module = importlib.import_module("aion.cli.commands.chat")
@@ -45,7 +45,7 @@ def test_chat_launches_ui(monkeypatch) -> None:
 
     monkeypatch.setattr(chat_module, "launch_chat", fake_launch)
 
-    result = runner.invoke(
+    result = await runner.invoke(
         cli,
         [
             "chat",
@@ -73,7 +73,7 @@ def test_chat_launches_ui(monkeypatch) -> None:
     assert options.push_receiver == "http://localhost:5050"
 
 
-def test_chat_reports_missing_artifact(monkeypatch) -> None:
+async def test_chat_reports_missing_artifact(monkeypatch) -> None:
     """Ensure binary resolution failures surface as Click exceptions."""
     runner = CliRunner()
     chat_module = importlib.import_module("aion.cli.commands.chat")
@@ -83,13 +83,13 @@ def test_chat_reports_missing_artifact(monkeypatch) -> None:
 
     monkeypatch.setattr(chat_module, "launch_chat", fake_launch)
 
-    result = runner.invoke(cli, ["chat", "--url", "http://localhost:8000"])
+    result = await runner.invoke(cli, ["chat", "--url", "http://localhost:8000"])
 
     assert result.exit_code != 0
     assert "missing chat artifact" in result.output
 
 
-def test_chat_defaults_to_local_proxy(monkeypatch) -> None:
+async def test_chat_defaults_to_local_proxy(monkeypatch) -> None:
     """Ensure ``aion chat`` lets the UI resolve the selected environment."""
     runner = CliRunner()
     chat_module = importlib.import_module("aion.cli.commands.chat")
@@ -101,14 +101,14 @@ def test_chat_defaults_to_local_proxy(monkeypatch) -> None:
 
     monkeypatch.setattr(chat_module, "launch_chat", fake_launch)
 
-    result = runner.invoke(cli, ["chat"])
+    result = await runner.invoke(cli, ["chat"])
 
     assert result.exit_code == 0
     options = called["options"]
     assert options.endpoint is None
 
 
-def test_chat_run_launches_headless_ui(monkeypatch) -> None:
+async def test_chat_run_launches_headless_ui(monkeypatch) -> None:
     """Ensure ``aion chat run`` forwards one-shot request options."""
     runner = CliRunner()
     chat_module = importlib.import_module("aion.cli.commands.chat")
@@ -120,7 +120,7 @@ def test_chat_run_launches_headless_ui(monkeypatch) -> None:
 
     monkeypatch.setattr(chat_module, "launch_chat_run", fake_launch)
 
-    result = runner.invoke(
+    result = await runner.invoke(
         cli,
         [
             "chat",
@@ -144,11 +144,11 @@ def test_chat_run_launches_headless_ui(monkeypatch) -> None:
     assert options.message == "hello there"
 
 
-def test_chat_run_help_describes_headless_usage() -> None:
+async def test_chat_run_help_describes_headless_usage() -> None:
     """Ensure ``aion chat run --help`` includes headless usage guidance."""
     runner = CliRunner()
 
-    result = runner.invoke(cli, ["chat", "run", "--help"])
+    result = await runner.invoke(cli, ["chat", "run", "--help"])
 
     assert result.exit_code == 0
     assert "Agent selection:" in result.output
@@ -156,7 +156,7 @@ def test_chat_run_help_describes_headless_usage() -> None:
     assert "aion chat run --agent @team-agent" in result.output
 
 
-def test_logs_tails_authenticated_version_logs(monkeypatch) -> None:
+async def test_logs_tails_authenticated_version_logs(monkeypatch) -> None:
     """Ensure ``aion logs`` streams formatted version log events."""
     runner = CliRunner()
     logs_service = importlib.import_module("aion.cli.services.logs")
@@ -191,7 +191,7 @@ def test_logs_tails_authenticated_version_logs(monkeypatch) -> None:
 
     monkeypatch.setattr(logs_service, "AionGqlContextClient", FakeContextClient)
 
-    result = runner.invoke(
+    result = await runner.invoke(
         cli, ["logs", "--since", "2026-05-14T15:00:00Z"]
     )
 
@@ -205,7 +205,7 @@ def test_logs_tails_authenticated_version_logs(monkeypatch) -> None:
     assert "requestId=req-1" not in result.output
 
 
-def test_logs_can_include_properties(monkeypatch) -> None:
+async def test_logs_can_include_properties(monkeypatch) -> None:
     """Ensure structured properties are opt-in for log output."""
     runner = CliRunner()
     logs_service = importlib.import_module("aion.cli.services.logs")
@@ -235,7 +235,7 @@ def test_logs_can_include_properties(monkeypatch) -> None:
 
     monkeypatch.setattr(logs_service, "AionGqlContextClient", FakeContextClient)
 
-    result = runner.invoke(
+    result = await runner.invoke(
         cli,
         [
             "logs",
@@ -279,21 +279,21 @@ def test_logs_worker_cancellation_stops_subscription_task() -> None:
     assert errors == []
 
 
-def test_login_is_not_a_python_cli_command() -> None:
+async def test_login_is_not_a_python_cli_command() -> None:
     """Ensure chat UI login remains scoped to the npm CLI and composer."""
     runner = CliRunner()
 
-    result = runner.invoke(cli, ["login"])
+    result = await runner.invoke(cli, ["login"])
 
     assert result.exit_code != 0
     assert "No such command" in result.output
 
 
-def test_environment_is_not_a_python_cli_command() -> None:
+async def test_environment_is_not_a_python_cli_command() -> None:
     """Ensure chat UI environment switching remains scoped to npm and composer."""
     runner = CliRunner()
 
-    result = runner.invoke(cli, ["env", "development"])
+    result = await runner.invoke(cli, ["env", "development"])
 
     assert result.exit_code != 0
     assert "No such command" in result.output

@@ -22,7 +22,7 @@ def _install_test_stubs() -> None:
     environment. These stubs keep the tests focused on ``aion-cli`` behavior.
     """
 
-    import click
+    import asyncclick as click
 
     sys.modules.setdefault("asyncclick", click)
 

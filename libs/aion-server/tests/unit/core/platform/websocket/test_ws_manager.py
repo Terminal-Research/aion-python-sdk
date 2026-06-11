@@ -1,6 +1,5 @@
 from unittest.mock import MagicMock
 
-import pytest
 
 from aion.server.core.platform import AionWebSocketManager
 
@@ -63,7 +62,6 @@ class TestAionWebSocketManager:
 
         assert ws_manager.is_connected
 
-    @pytest.mark.asyncio
     async def test_establish_connection_calls_factory_and_connect(self, ws_manager, mock_ws_transport_factory,
                                                                   mock_websocket_transport):
         """Test _establish_connection calls factory and transport connect."""
@@ -73,7 +71,6 @@ class TestAionWebSocketManager:
         mock_websocket_transport.connect.assert_called_once()
         assert ws_manager._transport == mock_websocket_transport
 
-    @pytest.mark.asyncio
     async def test_stop_sets_shutdown_event(self, ws_manager):
         """Test stop method sets shutdown event."""
         await ws_manager.stop()

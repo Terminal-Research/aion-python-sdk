@@ -1,9 +1,12 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help deps-install-dev deps-install deps-lock deps-lock-regenerate deps-sync deps-set-branch deps-set-local deps-set-local-revert
+.PHONY: help tests deps-install-dev deps-install deps-lock deps-lock-regenerate deps-sync deps-set-branch deps-set-local deps-set-local-revert
 
 help: ## Show available commands
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-18s\033[0m %s\n", $$1, $$2}'
+
+tests: ## Run tests for all libs
+	./scripts/tests.py
 
 deps-install-dev: ## Install local dependencies in editable mode for development
 	./scripts/deps/install-dev.py
