@@ -38,7 +38,6 @@ class TestDbManager:
         manager2 = DbManager()
         assert manager1 is manager2
 
-    @pytest.mark.asyncio
     @patch('aion.db.postgres.manager.AsyncConnectionPool')
     @patch('aion.db.postgres.manager.create_async_engine')
     @patch('aion.db.postgres.manager.async_sessionmaker')
@@ -95,7 +94,6 @@ class TestDbManager:
         assert db_manager._engine == mock_engine_instance
         assert db_manager._session_factory == mock_session_factory
 
-    @pytest.mark.asyncio
     @patch('aion.db.postgres.manager.AsyncConnectionPool')
     async def test_initialize_already_initialized(self, mock_pool_class, db_manager, sample_dsn):
         """Test initialization when already initialized."""
@@ -109,7 +107,6 @@ class TestDbManager:
         # Should not create new pool
         mock_pool_class.assert_not_called()
 
-    @pytest.mark.asyncio
     @patch('aion.db.postgres.manager.AsyncConnectionPool')
     async def test_initialize_pool_failure(self, mock_pool_class, db_manager, sample_dsn):
         """Test initialization failure when pool open fails."""
@@ -162,7 +159,6 @@ class TestDbManager:
         with pytest.raises(RuntimeError, match="Session factory not initialized"):
             db_manager.get_session()
 
-    @pytest.mark.asyncio
     async def test_close_full_cleanup(self, db_manager):
         """Test closing with all components initialized."""
         # Setup mocks for all components
@@ -185,7 +181,6 @@ class TestDbManager:
         assert db_manager._pool is None
         assert db_manager._session_factory is None
 
-    @pytest.mark.asyncio
     async def test_close_partial_cleanup(self, db_manager):
         """Test closing with only some components initialized."""
         mock_pool = AsyncMock()
@@ -197,7 +192,6 @@ class TestDbManager:
         mock_pool.close.assert_called_once()
         assert db_manager._pool is None
 
-    @pytest.mark.asyncio
     async def test_close_nothing_to_cleanup(self, db_manager):
         """Test closing when nothing is initialized."""
         # Should not raise any exceptions

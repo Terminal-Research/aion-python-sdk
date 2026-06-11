@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-import pytest
 
 from aion.api.control_plane import (
     AION_PRINCIPAL_SELECTOR_HEADER,
@@ -124,7 +123,6 @@ def test_langgraph_mcp_server_config_sync_resolves_runtime_references() -> None:
     }
 
 
-@pytest.mark.asyncio
 async def test_load_aion_mcp_tools_uses_client_factory() -> None:
     """Verify LangGraph tool loading delegates to MultiServerMCPClient shape."""
     captured = {}

@@ -74,7 +74,6 @@ class TestBasePluginProtocolName:
 
 
 class TestBasePluginProtocolInitialize:
-    @pytest.mark.asyncio
     async def test_initialize_receives_db_manager(self):
         """initialize is called with the db_manager and stores it."""
         plugin = _ConcretePlugin()
@@ -82,7 +81,6 @@ class TestBasePluginProtocolInitialize:
         await plugin.initialize(db_manager)
         assert plugin._initialized_with is db_manager
 
-    @pytest.mark.asyncio
     async def test_initialize_accepts_file_upload_manager(self):
         """initialize accepts an optional file_upload_manager without error."""
         plugin = _ConcretePlugin()
@@ -91,7 +89,6 @@ class TestBasePluginProtocolInitialize:
         await plugin.initialize(db, file_upload_manager=file_mgr)
         assert plugin._initialized_with is db
 
-    @pytest.mark.asyncio
     async def test_initialize_accepts_extra_deps(self):
         """initialize forwards extra keyword dependencies to the implementation."""
         class _DepPlugin(BasePluginProtocol):
@@ -105,13 +102,11 @@ class TestBasePluginProtocolInitialize:
 
 
 class TestBasePluginProtocolTeardown:
-    @pytest.mark.asyncio
     async def test_teardown_default_does_not_raise(self):
         """Default teardown() completes without raising an exception."""
         plugin = _ConcretePlugin()
         await plugin.teardown()  # should complete without error
 
-    @pytest.mark.asyncio
     async def test_teardown_can_be_overridden(self):
         """A subclass can override teardown() with custom cleanup logic."""
         class _WithTeardown(BasePluginProtocol):
@@ -124,7 +119,6 @@ class TestBasePluginProtocolTeardown:
         await plugin.teardown()
         assert _WithTeardown.torn_down is True
 
-    @pytest.mark.asyncio
     async def test_teardown_is_idempotent(self):
         """teardown() can be called multiple times without raising."""
         plugin = _ConcretePlugin()
@@ -133,14 +127,12 @@ class TestBasePluginProtocolTeardown:
 
 
 class TestBasePluginProtocolHealthCheck:
-    @pytest.mark.asyncio
     async def test_default_health_check_returns_true(self):
         """Default health_check() returns True."""
         plugin = _ConcretePlugin()
         result = await plugin.health_check()
         assert result is True
 
-    @pytest.mark.asyncio
     async def test_health_check_can_be_overridden_to_false(self):
         """A subclass can override health_check() to return False when unhealthy."""
         class _Unhealthy(BasePluginProtocol):
@@ -190,7 +182,6 @@ class TestAgentPluginProtocolGetAdapter:
 
 
 class TestAgentPluginProtocolConfigureApp:
-    @pytest.mark.asyncio
     async def test_configure_app_default_does_not_raise(self):
         """Default configure_app() completes without raising an exception."""
         plugin = _ConcreteAgentPlugin()
@@ -198,7 +189,6 @@ class TestAgentPluginProtocolConfigureApp:
         agent = MagicMock()
         await plugin.configure_app(app, agent)  # default impl — should not raise
 
-    @pytest.mark.asyncio
     async def test_configure_app_can_be_overridden(self):
         """A subclass can override configure_app() to perform custom app configuration."""
         class _Configuring(AgentPluginProtocol):
@@ -214,13 +204,11 @@ class TestAgentPluginProtocolConfigureApp:
 
 
 class TestAgentPluginProtocolInheritance:
-    @pytest.mark.asyncio
     async def test_inherits_default_teardown(self):
         """AgentPluginProtocol inherits the default teardown() that does not raise."""
         plugin = _ConcreteAgentPlugin()
         await plugin.teardown()  # should not raise
 
-    @pytest.mark.asyncio
     async def test_inherits_default_health_check(self):
         """AgentPluginProtocol inherits the default health_check() returning True."""
         plugin = _ConcreteAgentPlugin()

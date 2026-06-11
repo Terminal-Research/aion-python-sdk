@@ -19,6 +19,7 @@ aion-core = { git = "https://github.com/Terminal-Research/aion-python-sdk", bran
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=8.0.0"
+pytest-asyncio = ">=0.24"
 
 [tool.ariadne-codegen]
 schema_path = "gql/schema.graphql"
@@ -31,6 +32,7 @@ opentelemetry_client = true
 plugins = ["ariadne_codegen.contrib.extract_operations.ExtractOperationsPlugin"]
 
 [tool.pytest.ini_options]
+asyncio_mode = "auto"
 filterwarnings = ["ignore::DeprecationWarning"]
 
 [build-system]

@@ -22,8 +22,8 @@ def make_thread():
     from aion.adk.authoring.invocation.thread import Thread
     return Thread(
         context=MagicMock(),
-        id="C123",
-        parent_id=None,
+        context_id="C123",
+        parent_context_id=None,
         network="Slack",
         default_reply_target="C123",
     )

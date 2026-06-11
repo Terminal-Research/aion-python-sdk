@@ -76,14 +76,12 @@ class TestIsInitialized:
         mgr = _ConcreteDbManager(initialized=False)
         assert mgr.is_initialized is False
 
-    @pytest.mark.asyncio
     async def test_true_after_initialize(self):
         """Verify that true after initialize."""
         mgr = _ConcreteDbManager()
         await mgr.initialize("postgresql://localhost/test")
         assert mgr.is_initialized is True
 
-    @pytest.mark.asyncio
     async def test_false_after_close(self):
         """Verify that false after close."""
         mgr = _ConcreteDbManager(initialized=True)
@@ -92,21 +90,18 @@ class TestIsInitialized:
 
 
 class TestLifecycle:
-    @pytest.mark.asyncio
     async def test_initialize_stores_dsn(self):
         """Verify that initialize stores dsn."""
         mgr = _ConcreteDbManager()
         await mgr.initialize("postgresql://host/mydb")
         assert mgr.get_dsn() == "postgresql://host/mydb"
 
-    @pytest.mark.asyncio
     async def test_close_is_idempotent(self):
         """Verify that close is idempotent."""
         mgr = _ConcreteDbManager(initialized=True)
         await mgr.close()
         await mgr.close()  # second call should not raise
 
-    @pytest.mark.asyncio
     async def test_reinitialize_after_close(self):
         """Verify that reinitialize after close."""
         mgr = _ConcreteDbManager()
@@ -144,14 +139,12 @@ class TestUninitializedGuard:
 
 
 class TestGetSession:
-    @pytest.mark.asyncio
     async def test_get_session_yields_session(self):
         """Verify that get session yields session."""
         mgr = _ConcreteDbManager(initialized=True)
         async with mgr.get_session() as session:
             assert session is not None
 
-    @pytest.mark.asyncio
     async def test_get_session_usable_multiple_times(self):
         """Verify that get session usable multiple times."""
         mgr = _ConcreteDbManager(initialized=True)
@@ -166,7 +159,6 @@ class TestGetDsn:
         mgr = _ConcreteDbManager()
         assert isinstance(mgr.get_dsn(), str)
 
-    @pytest.mark.asyncio
     async def test_reflects_initialized_dsn(self):
         """Verify that reflects initialized dsn."""
         mgr = _ConcreteDbManager()
