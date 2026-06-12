@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Optional
 
 from a2a.utils import DEFAULT_RPC_URL
 from a2a.utils.telemetry import trace_function
 from aion.server.agent.execution.scope import get_execution_scope
-from aion.core.logging import get_logger
 from aion.server.opentelemetry import generate_request_span_context
 from fastapi import Request, Response
 from opentelemetry import context
@@ -34,7 +34,7 @@ class TracingMiddleware(BaseHTTPMiddleware):
 
     def __init__(self, app):
         super().__init__(app)
-        self.logger = get_logger()
+        self.logger = logging.getLogger(__name__)
 
     async def dispatch(self, request: Request, call_next) -> Response:
         """Process request with active tracing span.

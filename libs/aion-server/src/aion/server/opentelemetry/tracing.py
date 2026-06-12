@@ -1,5 +1,6 @@
 """OpenTelemetry tracing setup and span introspection utilities for the Aion server."""
 
+import logging
 from dataclasses import dataclass
 from typing import Optional, Union
 
@@ -38,8 +39,7 @@ def generate_request_span_context(
     if trace_id is None:
         return None
 
-    from aion.server.logging.factory import get_logger
-    logger = get_logger()
+    logger = logging.getLogger(__name__)
 
     try:
         # Convert trace_id from hex string to int if needed

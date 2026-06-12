@@ -1,5 +1,6 @@
 """AgentAdapter implementation for Google ADK agents."""
 
+import logging
 import inspect
 from pathlib import Path
 from typing import Any, Optional
@@ -9,14 +10,13 @@ from aion.server.agent.exceptions import ConfigurationError
 from aion.core.config.models import AgentConfig
 from aion.core.db import DbManagerProtocol
 from aion.server.files.storage import FileUploadManager
-from aion.core.logging import get_logger
 from google.adk.agents import BaseAgent
 
 from .artifacts.factory import ArtifactServiceFactory
 from .execution import ADKExecutor
 from .session import SessionServiceFactory
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 class ADKAdapter(AgentAdapter):

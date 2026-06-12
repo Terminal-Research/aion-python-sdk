@@ -9,6 +9,7 @@ Uses a composable extractor pattern to separate concerns:
 - MetadataExtractor: Extracts LangGraph-specific metadata and execution status
 """
 
+import logging
 from typing import Any, Optional
 
 from aion.server.agent.adapters import (
@@ -16,12 +17,11 @@ from aion.server.agent.adapters import (
     ExecutionStatus,
     InterruptInfo,
 )
-from aion.core.logging import get_logger
 from langgraph.types import Command, StateSnapshot
 
 from .extractors import MessagesExtractor, MetadataExtractor, StateValuesExtractor
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 class LangGraphStateAdapter:

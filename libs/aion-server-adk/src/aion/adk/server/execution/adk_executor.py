@@ -1,5 +1,6 @@
 """ADK ExecutorAdapter: wires session, artifact, and stream services for a single agent run."""
 
+import logging
 import uuid
 from collections.abc import AsyncIterator
 from typing import Any, Optional, TYPE_CHECKING
@@ -12,7 +13,6 @@ from aion.server.agent.adapters import (
 )
 from aion.server.agent.exceptions import ExecutionError, StateRetrievalError
 from aion.core.config.models import AgentConfig
-from aion.core.logging import get_logger
 from google.adk.artifacts import BaseArtifactService
 from google.adk.events import Event
 from google.adk.sessions import Session, BaseSessionService
@@ -33,7 +33,7 @@ if TYPE_CHECKING:
 
 AgentEvent = TaskStatusUpdateEvent | TaskArtifactUpdateEvent
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 class ADKExecutor(ExecutorAdapter):

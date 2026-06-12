@@ -1,14 +1,14 @@
 """
+
 HTTP client management for AION Agent Proxy Server
 """
+import logging
 from contextlib import asynccontextmanager
 from typing import Optional
 
 import httpx
-from aion.core.logging import get_logger
 
-logger = get_logger()
-
+logger = logging.getLogger(__name__)
 
 class ProxyHttpClient:
     """Manages HTTP client lifecycle for proxy server"""

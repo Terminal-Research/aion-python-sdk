@@ -4,14 +4,14 @@ This module provides a memory-based session storage backend using
 Google ADK's InMemorySessionService.
 """
 
+import logging
 from typing import Any
 
-from aion.core.logging import get_logger
 from google.adk.sessions import InMemorySessionService
 
 from .base import SessionServiceBackend
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 class MemoryBackend(SessionServiceBackend):

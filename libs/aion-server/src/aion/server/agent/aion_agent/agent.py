@@ -6,6 +6,7 @@ configuration, and execution capabilities while delegating framework-specific
 operations to adapters.
 """
 from __future__ import annotations
+import logging
 
 import time
 from a2a.types import TaskStatusUpdateEvent, TaskArtifactUpdateEvent
@@ -28,9 +29,6 @@ if TYPE_CHECKING:
     from a2a.server.agent_execution import RequestContext
 
 
-def _get_logger() -> AionLogger:
-    from aion.server.logging.factory import get_logger
-    return get_logger()
 
 
 class AionAgent:
@@ -100,7 +98,7 @@ class AionAgent:
     @property
     def logger(self) -> AionLogger:
         if not self._logger:
-            self._logger = _get_logger()
+            self._logger = logging.getLogger(__name__)
         return self._logger
 
     @property
@@ -336,7 +334,7 @@ class AionAgent:
             ValueError: If configuration is invalid
             TypeError: If native_agent cannot be initialized
         """
-        logger = _get_logger()
+        logger = logging.getLogger(__name__)
         logger.debug(
             f"Creating AionAgent '{agent_id}' from adapter "
             f"(framework={adapter.framework_name()})"

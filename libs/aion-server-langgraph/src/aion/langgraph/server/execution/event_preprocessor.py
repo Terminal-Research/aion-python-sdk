@@ -4,12 +4,12 @@ Handles LangGraph-specific side-effects (context tracking, logging, etc.)
 before events are converted to A2A protocol format.
 """
 
+import logging
 from typing import Any
 
 from aion.server.agent.execution.scope import set_agent_framework_baggage as exec_scope_set_agent_framework_baggage
-from aion.core.logging import get_logger
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 class LangGraphEventPreprocessor:

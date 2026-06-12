@@ -1,12 +1,12 @@
 """Transforms ADK Content into A2A Parts."""
 
+import logging
 from a2a.types import Part
 from aion.adk.authoring.transformers import convert_genai_part_to_a2a_part
-from aion.core.logging import get_logger
 from google.genai import types
 from typing import List
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 class A2ATransformer:

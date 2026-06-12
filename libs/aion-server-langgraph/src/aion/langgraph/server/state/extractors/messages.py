@@ -4,14 +4,14 @@ This module extracts conversation messages from LangGraph StateSnapshot.values['
 and converts them to unified Message format (if needed in the future).
 """
 
+import logging
 from typing import Any, List, override
 
 from a2a.types import Message
 from aion.server.agent.adapters import StateExtractor
-from aion.core.logging import get_logger
 from langgraph.types import StateSnapshot
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 class MessagesExtractor(StateExtractor):

@@ -50,16 +50,14 @@ class AionLogstashFilter(logging.Filter):
 
     @staticmethod
     def _validate_deployment(record: AionLogRecord):
-        if not any((
-            record.aion_distribution_id,
-            record.aion_version_id
-        )):
-            return False
-        return True
+        return bool(
+            getattr(record, 'aion_distribution_id', None) or
+            getattr(record, 'aion_version_id', None)
+        )
 
     @staticmethod
     def _validate_tracing(record: AionLogRecord):
-        return bool(record.trace_id)
+        return bool(getattr(record, 'trace_id', None))
 
 
 _LOG_LEVEL_MAP = {

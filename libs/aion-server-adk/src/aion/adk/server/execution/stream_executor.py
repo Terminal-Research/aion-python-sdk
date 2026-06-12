@@ -1,5 +1,6 @@
 """Per-call stream executor for ADK agent.run_async."""
 
+import logging
 import asyncio
 import contextlib
 from collections.abc import AsyncIterator, AsyncGenerator
@@ -14,14 +15,13 @@ from aion.adk.authoring.invocation.context_vars import (
     set_adk_ctx,
     set_adk_emitter,
 )
-from aion.core.logging import get_logger
 from aion.core.a2a import ArtifactId, A2AOutbox
 from google.adk.events import Event
 
 from .event_converter import ADKToA2AEventConverter
 from .event_queue import ADKEventConsumer, ADKEventQueue
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 AgentEvent = TaskStatusUpdateEvent | TaskArtifactUpdateEvent
 

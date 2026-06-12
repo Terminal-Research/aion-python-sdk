@@ -3,11 +3,11 @@
 This module provides AppRegistry - a singleton registry that allows developers
 to register custom FastAPI routers and other app-level extensions.
 """
+import logging
 
 import threading
 from typing import List, TYPE_CHECKING
 
-from aion.core.logging import get_logger
 from aion.core.metaclasses import Singleton
 
 from .mixins import RouterRegistryMixin
@@ -15,8 +15,7 @@ from .mixins import RouterRegistryMixin
 if TYPE_CHECKING:
     from fastapi import APIRouter, FastAPI
 
-logger = get_logger()
-
+logger = logging.getLogger(__name__)
 
 class AppRegistry(RouterRegistryMixin, metaclass=Singleton):
     """Singleton registry for custom app-level extensions.

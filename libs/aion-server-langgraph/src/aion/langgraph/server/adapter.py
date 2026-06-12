@@ -1,5 +1,6 @@
 """AgentAdapter implementation for LangGraph compiled graphs."""
 
+import logging
 import inspect
 from pathlib import Path
 from typing import Any, Optional
@@ -8,7 +9,6 @@ from aion.server.agent.adapters import AgentAdapter, ExecutorAdapter
 from aion.server.agent.exceptions import ConfigurationError
 from aion.core.config.models import AgentConfig
 from aion.core.db import DbManagerProtocol
-from aion.core.logging import get_logger
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import StateGraph
 from langgraph.pregel import Pregel
@@ -16,7 +16,7 @@ from langgraph.pregel import Pregel
 from .checkpoint import CheckpointerFactory
 from .execution import LangGraphExecutor
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 class LangGraphAdapter(AgentAdapter):

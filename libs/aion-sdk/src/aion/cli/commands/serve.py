@@ -1,10 +1,10 @@
 """CLI command for serving AION agents and proxy"""
+import logging
 import asyncclick as click
 from aion.core.config.reader import ConfigurationError, AionConfigReader
-from aion.core.logging import get_logger
 from dataclasses import dataclass
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -107,6 +107,9 @@ async def serve(
             "Server dependencies are not installed. "
             "Please refer to the documentation for the required server extras."
         )
+
+    from aion.server.logging import setup_root_logger
+    setup_root_logger()
 
     from aion.cli.handlers.serve import ServeHandler
 

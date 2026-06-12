@@ -1,5 +1,6 @@
 """PostgreSQL checkpointer backend."""
 
+import logging
 from contextlib import asynccontextmanager
 from typing import Any, Optional
 
@@ -8,13 +9,12 @@ from psycopg_pool import AsyncConnectionPool
 
 from aion.db.postgres.constants import AION_SCHEMA
 from aion.core.db import DbManagerProtocol
-from aion.core.logging import get_logger
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 from aion.langgraph.server.constants import AION_LANGGRAPH_SCHEMA
 from .base import CheckpointerBackend
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 class AionAsyncPostgresSaver(AsyncPostgresSaver):

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import multiprocessing
 import time
 from dataclasses import dataclass
@@ -49,8 +50,7 @@ class ProcessManager:
     @property
     def logger(self) -> AionLogger:
         if not self._logger:
-            from aion.server.logging.factory import get_logger
-            self._logger = get_logger()
+            self._logger = logging.getLogger(__name__)
         return self._logger
 
     def create_process(

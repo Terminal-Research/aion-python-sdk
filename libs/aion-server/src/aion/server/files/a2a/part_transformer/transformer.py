@@ -8,6 +8,7 @@ If no upload_manager is provided or resolved, all transform methods are no-ops.
 
 Parts that match skip rules (e.g., JSX Cards) are never uploaded to storage.
 """
+import logging
 
 import copy
 import mimetypes
@@ -19,11 +20,9 @@ from a2a.types import (
     TaskStatusUpdateEvent,
 )
 from aion.server.files.storage.manager import FileUploadManager
-from aion.core.logging import get_logger
 from .rules import PartSkipRule, create_default_skip_rules
 
-logger = get_logger()
-
+logger = logging.getLogger(__name__)
 
 class A2AFileTransformer:
     """Transforms Part(raw=...) > Part(url=...) in A2A events.

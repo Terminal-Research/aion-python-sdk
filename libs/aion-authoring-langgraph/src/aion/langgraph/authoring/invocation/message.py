@@ -6,17 +6,17 @@ enabling agents to respond to inbound messages with normalized reactions
 """
 
 from __future__ import annotations
+import logging
 
 from aion.core.a2a.extensions.messaging import ReactionActionPayload
 from aion.core.agent import BaseMessage, User
-from aion.core.logging import get_logger
 from typing import Literal, Optional
 
 from .emitters import emit_reaction
 
 __all__ = ["Message", "User"]
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 class Message(BaseMessage):

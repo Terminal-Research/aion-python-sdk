@@ -1,11 +1,11 @@
 """Handler for orchestrating AION server startup and management"""
+import logging
 import asyncio
 import signal
 from typing import Optional
 
 import sys
 from aion.core.config import AionConfig
-from aion.core.logging import get_logger
 from aion.server.utils.processes import ProcessManager
 
 from aion.cli.services import (
@@ -19,7 +19,7 @@ from aion.cli.services import (
 from aion.cli.utils.cli_messages import generate_welcome_message
 from aion.cli.utils.port_manager import AionPortManager
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 class ServeHandler:

@@ -4,14 +4,14 @@ This module provides the StateConverter for extracting and converting
 state information from ADK sessions into the unified ExecutionSnapshot format.
 """
 
+import logging
 from typing import Any
 
 from aion.server.agent.adapters import ExecutionSnapshot, ExecutionStatus
-from aion.core.logging import get_logger
 
 from .extractors import MessagesExtractor, StateValuesExtractor
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 class StateConverter:

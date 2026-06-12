@@ -1,5 +1,6 @@
 """Per-request pipeline for processing, deduplicating, and routing A2A events."""
 
+import logging
 import copy
 from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
@@ -7,12 +8,11 @@ from a2a.types import Message, Task, TaskArtifactUpdateEvent, TaskState, TaskSta
 
 from aion.server.agent.execution.scope import get_task_manager as exec_scope_get_task_manager
 from aion.server.files.a2a import A2AFileTransformer
-from aion.core.logging import get_logger
 from aion.server.tasks import A2ATaskDeduplicator
 from aion.server.a2a.utils import task_history_message_ids, is_message_in_task_history
 from typing import Optional
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 def _event_debug_info(event) -> str:

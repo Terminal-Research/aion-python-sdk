@@ -1,5 +1,6 @@
 """Converts ADK events directly to A2A protocol events."""
 
+import logging
 import uuid
 from a2a.types import (
     Artifact,
@@ -24,14 +25,13 @@ from aion.core.agent.invocation.card import Card
 from aion.core.agent.invocation.card.utils import build_card_a2a_part
 from aion.core.constants import CARDS_EXTENSION_URI_V1, MESSAGE_ACTION_PAYLOAD_SCHEMA_V1, MESSAGING_EXTENSION_URI_V1, \
     REACTION_ACTION_PAYLOAD_SCHEMA_V1
-from aion.core.logging import get_logger
 from aion.server.files.storage import FileUploadManager
 from google.adk.events import Event
 from google.protobuf import json_format, struct_pb2
 
 AgentEvent = TaskStatusUpdateEvent | TaskArtifactUpdateEvent
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 class ADKToA2AEventConverter:

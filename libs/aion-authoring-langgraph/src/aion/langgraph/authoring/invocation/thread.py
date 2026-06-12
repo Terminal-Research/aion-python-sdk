@@ -5,12 +5,12 @@ and ephemeral typing indicators via LangGraph's streaming mechanism.
 """
 
 from __future__ import annotations
+import logging
 
 from a2a.types import Artifact as A2AArtifact
 from aion.core.a2a.extensions.messaging import MessageActionPayload
 from aion.core.agent import BaseThread
 from aion.core.agent.invocation.card import Card
-from aion.core.logging import get_logger
 from langchain_core.messages import AIMessage, AIMessageChunk
 from langgraph.config import get_stream_writer
 from typing import Any, Optional
@@ -23,7 +23,7 @@ from .emitters import (
 )
 from .message import Message
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 ReplyResult = Optional[AIMessage]
 """Return type of Thread.post(): the emitted message or message chunk, or None if nothing was sent."""

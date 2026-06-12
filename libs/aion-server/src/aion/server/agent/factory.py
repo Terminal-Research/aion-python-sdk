@@ -3,13 +3,13 @@
 This module provides AgentFactory which handles agent building,
 framework discovery, and executor creation.
 """
+import logging
 
 from typing import Optional, Any
 
 from aion.server.agent.aion_agent import AionAgent
-from aion.core.logging import get_logger
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 class AgentFactory:

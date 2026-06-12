@@ -4,13 +4,13 @@ This module extracts the state dictionary (values) from LangGraph StateSnapshot,
 excluding messages which are handled separately.
 """
 
+import logging
 from typing import Any, Dict, override
 
 from aion.server.agent.adapters import StateExtractor
-from aion.core.logging import get_logger
 from langgraph.types import StateSnapshot
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 class StateValuesExtractor(StateExtractor):

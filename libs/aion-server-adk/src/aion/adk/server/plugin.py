@@ -1,11 +1,11 @@
 """AgentPluginProtocol implementation for the Google ADK framework."""
 
+import logging
 from typing import Optional, Any, override
 
 from aion.core.db import DbManagerProtocol
 from aion.server.files.storage import FileUploadManager
 from aion.core.logging import AionLogger
-from aion.core.logging import get_logger
 from aion.server.plugins import AgentPluginProtocol
 
 from .adapter import ADKAdapter
@@ -26,7 +26,7 @@ class ADKPlugin(AgentPluginProtocol):
     def logger(self) -> AionLogger:
         """Lazily initialize and return the plugin logger."""
         if not self._logger:
-            self._logger = get_logger()
+            self._logger = logging.getLogger(__name__)
         return self._logger
 
     @override

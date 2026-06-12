@@ -1,12 +1,12 @@
 """Stub file storage backend for development and testing."""
 
+import logging
 import mimetypes
 from uuid import uuid4
 
-from aion.core.logging import get_logger
 from aion.server.files.storage.backends.base import FileStorageBackend
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 class StubFileStorageBackend(FileStorageBackend):

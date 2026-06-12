@@ -106,3 +106,6 @@ class AionLogger(logging.Logger):
                     raise KeyError("Attempt to overwrite %r in AionLogRecord" % key)
                 rv.__dict__[key] = extra[key]
         return rv
+
+
+logging.setLoggerClass(AionLogger)

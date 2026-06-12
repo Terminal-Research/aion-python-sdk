@@ -4,13 +4,13 @@ This module extracts LangGraph-specific metadata from StateSnapshot,
 including next_steps, interrupts, timestamps, and configuration.
 """
 
+import logging
 from typing import Any, Dict, override
 
 from aion.server.agent.adapters import StateExtractor, ExecutionStatus
-from aion.core.logging import get_logger
 from langgraph.types import StateSnapshot, Interrupt
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 class MetadataExtractor(StateExtractor):

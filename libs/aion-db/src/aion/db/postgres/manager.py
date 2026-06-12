@@ -1,7 +1,6 @@
 from typing import Optional, override
 
 from aion.core.db import DbManagerProtocol
-from aion.core.logging import get_logger
 import logging
 from aion.core.metaclasses import SingletonABCMeta
 from psycopg_pool import AsyncConnectionPool
@@ -29,7 +28,7 @@ class DbManager(DbManagerProtocol, metaclass=SingletonABCMeta):
     @property
     def logger(self) -> logging.Logger:
         if not self._logger:
-            self._logger = get_logger()
+            self._logger = logging.getLogger(__name__)
         return self._logger
 
     @property

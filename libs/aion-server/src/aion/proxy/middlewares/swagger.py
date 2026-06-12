@@ -1,24 +1,24 @@
 """
+
 Middleware for fixing Swagger UI OpenAPI paths in AION proxy server.
 
 This middleware ensures that when accessing agent documentation through the proxy
 (e.g., /agents/{agent_id}/docs), the Swagger UI loads the correct OpenAPI schema
 from /agents/{agent_id}/openapi.json instead of /openapi.json.
 """
+import logging
 
 import json
 import re
 from typing import Callable
 
-from aion.core.logging import get_logger
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response, HTMLResponse, JSONResponse
 
 from ..constants import AGENT_PATH_PATTERN, build_agent_path
 
-logger = get_logger()
-
+logger = logging.getLogger(__name__)
 
 class ProxySwaggerUIFixMiddleware(BaseHTTPMiddleware):
     """

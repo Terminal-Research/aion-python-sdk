@@ -5,15 +5,15 @@ conversation state and provide message/artifact emission interfaces.
 """
 
 from __future__ import annotations
+import logging
 
 from abc import ABC, abstractmethod
 from typing import Any, ClassVar, List, Optional, Type
 
-from aion.core.logging import get_logger
 from aion.core.runtime.context import AionRuntimeContext
 from aion.core.a2a.extensions.messaging import MessageActionPayload
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 class BaseThread(ABC):

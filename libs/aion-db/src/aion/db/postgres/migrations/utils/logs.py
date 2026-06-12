@@ -1,10 +1,10 @@
 """Migration logging utilities."""
 
-from aion.core.logging import get_logger
 
+import logging
 from ..env import config
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 def log_migrations() -> None:

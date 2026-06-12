@@ -1,14 +1,14 @@
 """Database utility functions."""
 
 from __future__ import annotations
+import logging
 
 import uuid
 from typing import Literal, Optional
 
 import psycopg
-from aion.core.logging import get_logger
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "convert_pg_url",

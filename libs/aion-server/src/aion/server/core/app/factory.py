@@ -3,6 +3,7 @@
 This module provides AppFactory which coordinates the initialization of
 database, plugins, agent, and FastAPI application using dependency injection.
 """
+import logging
 
 from a2a.server.routes import create_agent_card_routes
 from a2a.utils.constants import DEFAULT_RPC_URL
@@ -10,7 +11,6 @@ from aion.db.postgres import DbFactory
 from aion.server.agent.aion_agent import AionAgent
 from aion.server.files.a2a import A2AFileTransformer
 from aion.server.files.storage.manager import FileUploadManager
-from aion.core.logging import get_logger
 from fastapi import FastAPI
 from starlette.routing import Route
 from typing import Optional
@@ -26,7 +26,7 @@ from aion.server.tasks import StoreManager, PushNotificationFactory
 from .lifespan import AppLifespan
 from .registry import app_registry
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 class AppFactory:

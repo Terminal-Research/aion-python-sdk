@@ -3,12 +3,12 @@
 This module extracts the state dictionary (values) from ADK Session.state field.
 """
 
+import logging
 from typing import Any, Dict, override
 
 from aion.server.agent.adapters import StateExtractor
-from aion.core.logging import get_logger
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 class StateValuesExtractor(StateExtractor):

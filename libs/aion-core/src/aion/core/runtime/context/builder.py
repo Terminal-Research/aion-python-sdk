@@ -5,6 +5,7 @@ message metadata into a typed AionRuntimeContext object.
 """
 
 from __future__ import annotations
+import logging
 
 from google.protobuf.json_format import MessageToDict
 from typing import TYPE_CHECKING, Optional
@@ -13,7 +14,6 @@ from aion.core.constants import (
     DISTRIBUTION_EXTENSION_URI_V1,
     EVENT_EXTENSION_URI_V1,
 )
-from aion.core.logging import get_logger
 from aion.core.a2a import A2AInbox
 from aion.core.a2a.extensions.distribution import DistributionExtensionV1
 from .models import AionRuntimeContext
@@ -22,7 +22,7 @@ from .utils import extract_event
 if TYPE_CHECKING:
     from a2a.server.agent_execution import RequestContext
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 class AionRuntimeContextBuilder:

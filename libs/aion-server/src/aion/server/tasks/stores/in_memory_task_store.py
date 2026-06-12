@@ -1,5 +1,6 @@
 """In-memory task store implementation for development and testing."""
 
+import logging
 import asyncio
 from a2a.server.context import ServerCallContext
 from a2a.server.owner_resolver import OwnerResolver, resolve_user_scope
@@ -8,12 +9,11 @@ from a2a.types.a2a_pb2 import Task
 from a2a.utils.constants import DEFAULT_LIST_TASKS_PAGE_SIZE
 from a2a.utils.errors import InvalidParamsError
 from a2a.utils.task import decode_page_token, encode_page_token
-from aion.core.logging import get_logger
 from typing import Iterator, Optional, List
 
 from .base_task_store import BaseTaskStore
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 class InMemoryTaskStore(BaseTaskStore):

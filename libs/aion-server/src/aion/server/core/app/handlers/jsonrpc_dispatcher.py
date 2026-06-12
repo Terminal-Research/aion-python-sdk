@@ -1,5 +1,6 @@
 """JSON-RPC dispatcher extended with Aion-specific method handling."""
 
+import logging
 from typing import override
 
 from a2a.server.jsonrpc_models import (
@@ -10,7 +11,6 @@ from a2a.server.jsonrpc_models import (
 from a2a.server.request_handlers import prepare_response_object
 from a2a.server.routes.jsonrpc_dispatcher import JsonRpcDispatcher
 from a2a.utils.errors import UnsupportedOperationError
-from aion.core.logging import get_logger
 from aion.core.a2a import GetContextParams, GetContextsListParams
 from jsonrpc.jsonrpc2 import JSONRPC20Request
 from pydantic import ValidationError
@@ -19,7 +19,7 @@ from starlette.responses import JSONResponse, Response
 
 from .request_handler import AionRequestHandler
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 class AionJsonRpcDispatcher(JsonRpcDispatcher):

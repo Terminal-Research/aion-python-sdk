@@ -1,5 +1,6 @@
 """Converts LangGraph events directly to A2A protocol events."""
 
+import logging
 import uuid
 from a2a.types import (
     Artifact,
@@ -22,7 +23,6 @@ from aion.core.constants import (
     REACTION_ACTION_PAYLOAD_SCHEMA_V1,
     STREAM_DELTA_PAYLOAD_SCHEMA_V1,
 )
-from aion.core.logging import get_logger
 from aion.langgraph.authoring.events.custom_events import (
     ArtifactCustomEvent,
     CardCustomEvent,
@@ -41,7 +41,7 @@ SupportedCustomEvents = ArtifactCustomEvent | CardCustomEvent | MessageCustomEve
 
 A2AAgentEvent = TaskStatusUpdateEvent | TaskArtifactUpdateEvent
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 SKIP_EVENTS = ("values", "updates")
 

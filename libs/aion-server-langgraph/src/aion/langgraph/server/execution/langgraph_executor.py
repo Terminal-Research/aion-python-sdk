@@ -1,9 +1,9 @@
 """LangGraph executor — orchestrates stream, state retrieval, and result handling."""
 from __future__ import annotations
+import logging
 
 from a2a.types import Message, Task, TaskArtifactUpdateEvent, TaskStatusUpdateEvent
 from aion.core.config.models import AgentConfig
-from aion.core.logging import get_logger
 from collections.abc import AsyncIterator
 from typing import Any, Optional, TYPE_CHECKING
 
@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 
 AgentEvent = TaskStatusUpdateEvent | TaskArtifactUpdateEvent | Task | Message
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 class LangGraphExecutor(ExecutorAdapter):

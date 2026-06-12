@@ -13,7 +13,6 @@ from typing import Any, Dict, Optional
 import yaml
 from pydantic import ValidationError
 
-from aion.core.logging import get_logger
 from aion.core.utils.path import get_config_path
 
 from .exceptions import ConfigurationError
@@ -29,7 +28,7 @@ class AionConfigReader:
         logger_: Optional[logging.Logger] = None,
     ):
         self.config_path = config_path or get_config_path()
-        self.logger = logger_ or get_logger()
+        self.logger = logger_ or logging.getLogger(__name__)
 
     def load_config_file(self) -> Dict[str, Any]:
         if not self.config_path.exists():
