@@ -171,6 +171,8 @@ class AionLogstashHandler(AsynchronousLogstashHandler):
     """
 
     def __init__(self, client_id: str, node_name: str, **kwargs):
+        from aion.server.logging.filters import ServerAionContextFilter
         super().__init__(**kwargs)
         self.setFormatter(AionLogstashFormatter(client_id=client_id, node_name=node_name))
+        self.addFilter(ServerAionContextFilter())
         self.addFilter(AionLogstashFilter())

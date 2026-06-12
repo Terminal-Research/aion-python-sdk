@@ -42,13 +42,14 @@ class ServerAionContextFilter(logging.Filter):
     """
     Enriches logging.LogRecord with OpenTelemetry tracing and server execution context.
 
-    Attach to a logger in _configure_logger so all handlers receive enriched records
-    before any filtering or formatting takes place.
+    Attach to a handler so all records receive enriched fields before filtering or formatting.
     """
 
     def filter(self, record: logging.LogRecord) -> bool:
-        self._enrich_otel(record)
-        self._enrich_server_context(record)
+        if not getattr(record, '_aion_enriched', False):
+            self._enrich_otel(record)
+            self._enrich_server_context(record)
+            record._aion_enriched = True
         return True
 
     @staticmethod

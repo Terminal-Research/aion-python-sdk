@@ -14,11 +14,11 @@ def setup_root_logger():
 
     root = logging.getLogger()
     root.setLevel(app_settings.log_level)
-    root.addFilter(ServerAionContextFilter())
 
     log_namespace_filter = NamespaceFilter(BASE_RULES)
 
     stream_handler = LogStreamHandler()
+    stream_handler.addFilter(ServerAionContextFilter())
     stream_handler.addFilter(log_namespace_filter)
     root.addHandler(stream_handler)
 
