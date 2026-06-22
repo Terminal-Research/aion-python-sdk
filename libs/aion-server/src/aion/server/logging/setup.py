@@ -13,6 +13,10 @@ def setup_root_logger():
     from .handlers import AionLogstashHandler, LogStreamHandler
 
     root = logging.getLogger()
+
+    if any(isinstance(h, LogStreamHandler) for h in root.handlers):
+        return
+
     root.setLevel(app_settings.log_level)
 
     log_namespace_filter = NamespaceFilter(BASE_RULES)

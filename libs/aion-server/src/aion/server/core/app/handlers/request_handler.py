@@ -14,7 +14,7 @@ from typing import override
 
 from aion.server.agent.execution import AionActiveTaskRegistry
 from aion.server.tasks import store_manager
-from aion.server.utils import ConversationBuilder
+from aion.server.a2a.conversation import ConversationBuilder
 from .request_preprocessors import A2ARequestPreprocessor
 
 

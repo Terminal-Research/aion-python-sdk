@@ -88,14 +88,16 @@ class ProcessManager:
             parent_conn = None
             child_conn = None
 
+            ctx = multiprocessing.get_context('fork')
+
             # Create pipe if requested
             if use_pipe:
-                parent_conn, child_conn = multiprocessing.Pipe()
+                parent_conn, child_conn = ctx.Pipe()
                 # Add child_conn to kwargs if target function expects it
                 func_kwargs['conn'] = child_conn
 
             # Create new process
-            process = multiprocessing.Process(
+            process = ctx.Process(
                 target=func,
                 args=func_args,
                 kwargs=func_kwargs,

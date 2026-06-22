@@ -139,6 +139,7 @@ class ADKStreamExecutor:
             async for event in self._agent.run_async(invocation_context):
                 queue.enqueue_event(event)
         except Exception as exc:
+            logger.error("Agent run_async failed: %s", exc, exc_info=True)
             queue.enqueue_error(exc)
         finally:
             queue.close()
@@ -152,6 +153,16 @@ class ADKStreamExecutor:
         """Stamp, persist, convert, track and yield A2A events for one ADK Event."""
         self._stamp_event(event, invocation_context)
         await self._session_service.append_event(session, event)
+
+        if not event.partial and event.content:
+            for part in event.content.parts:
+                fc = getattr(part, "function_call", None)
+                if fc:
+                    logger.info("Tool call: %s", fc.name)
+                    continue
+                fr = getattr(part, "function_response", None)
+                if fr:
+                    logger.debug("Tool response: %s", fr.name)
 
         for a2a_event in await self._converter.convert(event):
             self._track(a2a_event)
