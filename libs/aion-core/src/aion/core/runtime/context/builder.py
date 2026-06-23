@@ -7,8 +7,7 @@ message metadata into a typed AionRuntimeContext object.
 from __future__ import annotations
 import logging
 
-from google.protobuf.json_format import MessageToDict
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from aion.core.constants import (
     DISTRIBUTION_EXTENSION_URI_V1,
@@ -17,7 +16,7 @@ from aion.core.constants import (
 from aion.core.a2a import A2AInbox
 from aion.core.a2a.extensions.distribution import DistributionExtensionV1
 from .models import AionRuntimeContext
-from .utils import extract_event
+from .utils import extract_event, proto_to_dict
 
 if TYPE_CHECKING:
     from a2a.server.agent_execution import RequestContext
@@ -63,7 +62,7 @@ class AionRuntimeContextBuilder:
         Returns:
             Runtime context with the parsed distribution extension payload.
         """
-        dist_dict = MessageToDict(inbox.metadata[DISTRIBUTION_EXTENSION_URI_V1])
+        dist_dict = proto_to_dict(inbox.metadata[DISTRIBUTION_EXTENSION_URI_V1])
         dist_ext = DistributionExtensionV1.model_validate(dist_dict)
 
         has_event = (

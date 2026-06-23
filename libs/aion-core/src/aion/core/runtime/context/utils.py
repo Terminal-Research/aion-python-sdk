@@ -6,7 +6,7 @@ a typed Event with the appropriate NormalizedPayload variant.
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
 
 from aion.core.constants import (
     EVENT_EXTENSION_URI_V1,
@@ -41,6 +41,17 @@ _SCHEMA_TO_PAYLOAD_CLS = {
 }
 
 
+def proto_to_dict(value: Any) -> dict:
+    """Convert a protobuf message or an already-deserialized dict to a plain dict.
+
+    The A2A library may deliver metadata values as either protobuf Struct objects
+    or plain Python dicts depending on the transport layer. This normalizes both.
+    """
+    if isinstance(value, dict):
+        return value
+    return MessageToDict(value)
+
+
 def extract_event(inbox: A2AInbox) -> Event:
     """Parse and return an Event from the inbox message's event extension metadata.
 
@@ -54,7 +65,7 @@ def extract_event(inbox: A2AInbox) -> Event:
     if EVENT_EXTENSION_URI_V1 not in message.metadata:
         raise ValueError(f"Missing event metadata: {EVENT_EXTENSION_URI_V1}")
 
-    meta_dict = MessageToDict(message.metadata[EVENT_EXTENSION_URI_V1])
+    meta_dict = proto_to_dict(message.metadata[EVENT_EXTENSION_URI_V1])
     event_meta = EventMessageMetadataV1.model_validate(meta_dict)
 
     try:
@@ -68,15 +79,15 @@ def extract_event(inbox: A2AInbox) -> Event:
         if EVENT_EXTENSION_URI_V1 not in part.metadata:
             continue
 
-        part_meta_dict = MessageToDict(part.metadata[EVENT_EXTENSION_URI_V1])
+        part_meta_dict = proto_to_dict(part.metadata[EVENT_EXTENSION_URI_V1])
         part_meta = EventPartMetadataV1.model_validate(part_meta_dict)
 
         payload_cls = _SCHEMA_TO_PAYLOAD_CLS.get(part_meta.schema_uri)
         if payload_cls is not None and payload is None:
-            payload = payload_cls.model_validate(MessageToDict(part.data))
+            payload = payload_cls.model_validate(proto_to_dict(part.data))
 
         if part_meta.schema_uri == SOURCE_SYSTEM_EVENT_PAYLOAD_SCHEMA_V1 and raw is None:
-            raw = SourceSystemEventPayload.model_validate(MessageToDict(part.data))
+            raw = SourceSystemEventPayload.model_validate(proto_to_dict(part.data))
 
     if payload is None:
         raise ValueError(f"No recognized payload found for event kind: {kind}")
