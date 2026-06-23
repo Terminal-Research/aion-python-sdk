@@ -1,17 +1,17 @@
 """Per-call stream executor for LangGraph astream."""
 
+import logging
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any, Optional
 
 from a2a.types import TaskArtifactUpdateEvent, TaskStatusUpdateEvent
-from aion.core.logging import get_logger
 from aion.core.a2a import ArtifactId
 
 from .event_converter import LangGraphA2AConverter
 from .event_preprocessor import LangGraphEventPreprocessor
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 AgentEvent = TaskStatusUpdateEvent | TaskArtifactUpdateEvent
 

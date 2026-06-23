@@ -5,16 +5,16 @@ retrieval of custom FastAPI routers.
 """
 
 from __future__ import annotations
+import logging
 
 from typing import List, Set, TYPE_CHECKING
 
-from aion.core.logging import get_logger
 
 if TYPE_CHECKING:
     from fastapi import APIRouter, FastAPI
     from threading import Lock
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 class RouterRegistryMixin:

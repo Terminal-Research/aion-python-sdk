@@ -4,13 +4,13 @@ This module provides the PluginFactory which handles all plugin lifecycle
 operations, dependency injection, error handling, and integration with the
 server's systems.
 """
+import logging
 
 from typing import Optional
 
 from aion.server.agent.aion_agent import AionAgent
 from aion.server.agent.adapters import adapter_registry
 from aion.core.db import DbManagerProtocol
-from aion.core.logging import get_logger
 from aion.core.logging import AionLogger
 from aion.server.plugins.agent import AgentPluginProtocol
 from aion.server.plugins.base import BasePluginProtocol
@@ -51,7 +51,7 @@ class PluginFactory:
     @property
     def logger(self) -> AionLogger:
         if not self._logger:
-            self._logger = get_logger()
+            self._logger = logging.getLogger(__name__)
         return self._logger
 
     async def initialize(self, **extra_deps) -> None:

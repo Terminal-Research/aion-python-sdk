@@ -1,27 +1,21 @@
 """Entry points for running the Aion agent server process."""
 
+import aion.core.logging.base  # noqa: F401
 import logging
 import os
 import sys
-
 import uvicorn
-from aion.server.agent import agent_manager
 from aion.core.config import AgentConfig
-from aion.core.logging import get_logger
-from aion.core.logging.base import AionLogger
-from aion.server.utils.logging import replace_uvicorn_loggers, replace_logstash_loggers
-from dotenv import load_dotenv
-
-from aion.server.agent import AgentFactory
-from aion.server.core.app import AppFactory
 from aion.db.postgres import DbFactory, db_manager
+from aion.server.agent import AgentFactory
+from aion.server.agent import agent_manager
+from aion.server.core.app import AppFactory
+from aion.server.logging import setup_root_logger
 from aion.server.plugins import PluginFactory
 from aion.server.tasks import store_manager
+from dotenv import load_dotenv
 
-# Set custom logger class globally for all loggers including uvicorn
-logging.setLoggerClass(AionLogger)
-
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 dotenv_path = load_dotenv(dotenv_path=os.path.join(os.getcwd(), '.env'), verbose=True)
 
@@ -102,9 +96,7 @@ async def run_server(
 ):
     """Configure logging, then run the agent server until completion or interrupt."""
     try:
-        # Configure custom loggers from uvicorn / logstash
-        replace_uvicorn_loggers(suppress_startup_logs=True)
-        replace_logstash_loggers()
+        setup_root_logger()
 
         # RUN AGENT
         await async_serve(agent_id, agent_config, port, startup_callback, serialized_socket)

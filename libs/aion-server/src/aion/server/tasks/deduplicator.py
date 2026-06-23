@@ -10,6 +10,7 @@ platform-owned and are never allowed to be overwritten by incoming payloads.
 """
 
 from __future__ import annotations
+import logging
 
 import copy
 from typing import Any
@@ -18,13 +19,12 @@ from a2a.types import Artifact, Message, Task, TaskArtifactUpdateEvent, TaskStat
 from google.protobuf.json_format import MessageToDict, ParseDict
 from google.protobuf.struct_pb2 import Struct
 from aion.server.a2a.utils import task_history_message_ids
-from aion.core.logging import get_logger
 from aion.server.a2a.constants import TRANSIENT_ARTIFACT_IDS
 
 __all__ = ["A2ATaskDeduplicator"]
 
 PLATFORM_METADATA_PREFIX = "https://docs.aion.to"
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 class A2ATaskDeduplicator:

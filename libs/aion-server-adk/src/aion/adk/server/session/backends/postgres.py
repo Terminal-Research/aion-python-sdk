@@ -1,10 +1,10 @@
 """Database session service backend."""
 
+import logging
 import asyncio
 from typing import Optional
 
 from aion.core.db import DbManagerProtocol
-from aion.core.logging import get_logger
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 from google.adk.sessions import DatabaseSessionService
@@ -12,7 +12,7 @@ from google.adk.sessions import DatabaseSessionService
 from aion.adk.server.constants import AION_ADK_SCHEMA
 from .base import SessionServiceBackend
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 class AionADKSessionService(DatabaseSessionService):

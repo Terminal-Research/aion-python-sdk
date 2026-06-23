@@ -50,16 +50,14 @@ class AionLogstashFilter(logging.Filter):
 
     @staticmethod
     def _validate_deployment(record: AionLogRecord):
-        if not any((
-            record.aion_distribution_id,
-            record.aion_version_id
-        )):
-            return False
-        return True
+        return bool(
+            getattr(record, 'aion_distribution_id', None) or
+            getattr(record, 'aion_version_id', None)
+        )
 
     @staticmethod
     def _validate_tracing(record: AionLogRecord):
-        return bool(record.trace_id)
+        return bool(getattr(record, 'trace_id', None))
 
 
 _LOG_LEVEL_MAP = {
@@ -173,6 +171,8 @@ class AionLogstashHandler(AsynchronousLogstashHandler):
     """
 
     def __init__(self, client_id: str, node_name: str, **kwargs):
+        from aion.server.logging.filters import ServerAionContextFilter
         super().__init__(**kwargs)
         self.setFormatter(AionLogstashFormatter(client_id=client_id, node_name=node_name))
+        self.addFilter(ServerAionContextFilter())
         self.addFilter(AionLogstashFilter())

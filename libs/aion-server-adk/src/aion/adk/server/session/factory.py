@@ -4,16 +4,16 @@ This module provides the SessionServiceFactory for creating session service
 instances by selecting the appropriate storage backend.
 """
 
+import logging
 from typing import Optional
 
 from aion.core.db import DbManagerProtocol
-from aion.core.logging import get_logger
 from google.adk.sessions import BaseSessionService, InMemorySessionService
 from google.adk.sessions.database_session_service import DatabaseSessionService
 
 from .backends import PostgresBackend, MemoryBackend
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 class SessionServiceFactory:

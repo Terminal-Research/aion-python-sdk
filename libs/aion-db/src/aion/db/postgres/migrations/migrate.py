@@ -1,10 +1,10 @@
 """Alembic migration utilities for the Aion server."""
 
 from __future__ import annotations
+import logging
 
 import asyncio
 
-from aion.core.logging import get_logger
 from alembic import command
 
 from .env import config
@@ -13,7 +13,7 @@ from .utils import (
     log_migrations
 )
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 async def upgrade_to_head() -> None:

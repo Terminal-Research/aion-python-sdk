@@ -6,13 +6,13 @@ invocation context.
 """
 
 from __future__ import annotations
+import logging
 
 from a2a.types import Artifact as A2AArtifact
 from aion.adk.authoring.invocation import emit_artifact, emit_card, emit_message
 from aion.core.a2a.extensions.messaging import MessageActionPayload
 from aion.core.agent import BaseThread
 from aion.core.agent.invocation.card import Card
-from aion.core.logging import get_logger
 from google.adk.events import Event
 from google.genai import types
 from typing import AsyncIterator, Optional, Union, TYPE_CHECKING
@@ -23,7 +23,7 @@ from .message import Message
 if TYPE_CHECKING:
     from aion.adk.authoring.invocation import AionInvocationContext
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 class Thread(BaseThread):

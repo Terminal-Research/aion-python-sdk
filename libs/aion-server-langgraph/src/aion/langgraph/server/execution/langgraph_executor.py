@@ -1,9 +1,10 @@
 """LangGraph executor — orchestrates stream, state retrieval, and result handling."""
 from __future__ import annotations
+import logging
+import time
 
 from a2a.types import Message, Task, TaskArtifactUpdateEvent, TaskStatusUpdateEvent
 from aion.core.config.models import AgentConfig
-from aion.core.logging import get_logger
 from collections.abc import AsyncIterator
 from typing import Any, Optional, TYPE_CHECKING
 
@@ -14,6 +15,7 @@ from aion.server.agent.adapters import (
 )
 from aion.server.agent.exceptions import ExecutionError, StateRetrievalError
 from aion.core.runtime.context.registry import AionRuntimeContextRegistry
+from aion.server.a2a.utils import extract_input_preview
 from .event_converter import LangGraphA2AConverter
 from .event_preprocessor import LangGraphEventPreprocessor
 from .result_handler import ExecutionResultHandler
@@ -27,7 +29,7 @@ if TYPE_CHECKING:
 
 AgentEvent = TaskStatusUpdateEvent | TaskArtifactUpdateEvent | Task | Message
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 class LangGraphExecutor(ExecutorAdapter):
@@ -58,11 +60,16 @@ class LangGraphExecutor(ExecutorAdapter):
             config: Optional[ExecutionConfig] = None,
     ) -> AsyncIterator[AgentEvent]:
         """Run the graph from scratch and stream A2A events."""
+        context_id = context.context_id
         converter = LangGraphA2AConverter(
             task_id=context.task_id,
-            context_id=context.context_id,
+            context_id=context_id,
         )
+        start = time.monotonic()
         try:
+            input_preview = extract_input_preview(context.message)
+            logger.info(f"Starting LangGraph stream: context_id={context_id}, input={input_preview!r}")
+
             lg_inputs = LangGraphTransformer.generate_langgraph_inputs(context)
             lg_config = LangGraphTransformer.generate_langgraph_config(config)
 
@@ -78,8 +85,10 @@ class LangGraphExecutor(ExecutorAdapter):
             async for a2a_event in self._finalize(stream_exec.result, config, context, converter):
                 yield a2a_event
 
+            logger.info(f"LangGraph stream completed: context_id={context_id}, duration={time.monotonic() - start:.3f}s")
+
         except Exception as e:
-            logger.error(f"LangGraph stream failed: {e}")
+            logger.error(f"LangGraph stream failed ({time.monotonic() - start:.3f}s): {e}", exc_info=True)
             yield converter.convert_error(str(e), type(e).__name__)
             raise ExecutionError(f"Failed to stream agent: {e}") from e
 

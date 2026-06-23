@@ -1,4 +1,5 @@
 """Split task JSON column into status, artifacts, history, metadata; add context_id index."""
+import logging
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import JSONB
@@ -8,9 +9,8 @@ down_revision = "002"
 branch_labels = None
 depends_on = None
 
-from aion.core.logging import get_logger
 from aion.db.postgres.constants import TASKS_TABLE
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 def upgrade() -> None:

@@ -1,5 +1,7 @@
 """ADK ExecutorAdapter: wires session, artifact, and stream services for a single agent run."""
 
+import logging
+import time
 import uuid
 from collections.abc import AsyncIterator
 from typing import Any, Optional, TYPE_CHECKING
@@ -12,7 +14,6 @@ from aion.server.agent.adapters import (
 )
 from aion.server.agent.exceptions import ExecutionError, StateRetrievalError
 from aion.core.config.models import AgentConfig
-from aion.core.logging import get_logger
 from google.adk.artifacts import BaseArtifactService
 from google.adk.events import Event
 from google.adk.sessions import Session, BaseSessionService
@@ -24,6 +25,7 @@ from aion.server.files.storage import FileUploadManager
 from aion.adk.server.session import SessionServiceFactory
 from aion.adk.server.state.converter import StateConverter
 from aion.adk.server.transformers.a2a_to_adk import ADKTransformer
+from aion.server.a2a.utils import extract_input_preview
 from .event_converter import ADKToA2AEventConverter
 from .result_handler import ADKExecutionResultHandler
 from .stream_executor import ADKStreamExecutor, ADKStreamResult
@@ -33,7 +35,7 @@ if TYPE_CHECKING:
 
 AgentEvent = TaskStatusUpdateEvent | TaskArtifactUpdateEvent
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 class ADKExecutor(ExecutorAdapter):
@@ -78,9 +80,11 @@ class ADKExecutor(ExecutorAdapter):
         task_id = context.task_id or str(uuid.uuid4())
         context_id = ADKTransformer.to_session_id(config) or str(uuid.uuid4())
         converter = ADKToA2AEventConverter(task_id=task_id, context_id=context_id, file_uploader=self._file_uploader)
+        start = time.monotonic()
 
         try:
-            logger.info(f"Starting ADK stream: context_id={context_id}")
+            input_preview = extract_input_preview(context.message)
+            logger.info(f"Starting ADK stream: context_id={context_id}, input={input_preview!r}")
 
             session = await self._get_or_create_session(context_id)
             user_content = ADKTransformer.transform_context(context)
@@ -110,10 +114,10 @@ class ADKExecutor(ExecutorAdapter):
             ):
                 yield a2a_event
 
-            logger.info(f"ADK stream completed: context_id={context_id}")
+            logger.info(f"ADK stream completed: context_id={context_id}, duration={time.monotonic() - start:.3f}s")
 
         except Exception as e:
-            logger.error(f"ADK stream failed: {e}", exc_info=True)
+            logger.error(f"ADK stream failed ({time.monotonic() - start:.3f}s): {e}", exc_info=True)
             yield converter.generate_error(error=str(e), error_type=type(e).__name__)
             raise ExecutionError(f"Failed to stream agent: {e}") from e
 
@@ -232,12 +236,14 @@ class ADKExecutor(ExecutorAdapter):
         )
 
         if not session:
-            logger.debug(f"Creating new session: {session_id}")
+            logger.info(f"Session created: {session_id}")
             session = await self._session_service.create_session(
                 app_name=app_name,
                 user_id=user_id,
                 session_id=session_id,
             )
+        else:
+            logger.debug(f"Session resumed: {session_id}")
 
         return session
 

@@ -4,15 +4,15 @@ This module provides the ArtifactServiceFactory for creating artifact service
 instances by selecting the appropriate storage backend.
 """
 
+import logging
 from typing import Optional
 
 from aion.core.db import DbManagerProtocol
-from aion.core.logging import get_logger
 from google.adk.artifacts import BaseArtifactService
 
 from .backends import A2ABackend, MemoryBackend
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 class ArtifactServiceFactory:

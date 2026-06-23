@@ -4,15 +4,13 @@ Provides a clean API over FileStorageBackend for uploading raw bytes and
 obtaining a URI. Supports background (non-blocking) uploads and scoped
 waiting for specific URIs — without coupling callers to asyncio internals.
 """
+import logging
 
 import asyncio
 
-from aion.core.logging import get_logger
-
 from .backends.base import FileStorageBackend
 
-logger = get_logger()
-
+logger = logging.getLogger(__name__)
 
 class FileUploadManager:
     """Manages background file uploads and provides scoped waiting.

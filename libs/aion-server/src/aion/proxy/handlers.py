@@ -1,11 +1,11 @@
 """
 Request handlers for AION Agent Proxy Server
 """
+import logging
 from typing import Dict, Any
 from urllib.parse import urljoin
 
 import httpx
-from aion.core.logging import get_logger
 from fastapi import Request, Response
 
 from .exceptions import (
@@ -16,7 +16,7 @@ from .exceptions import (
 )
 from .types import AgentHealthInfo
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 class RequestHandler:

@@ -10,16 +10,9 @@ Focus areas:
     - makeRecord with extra dict merges fields
     - makeRecord raises KeyError for protected keys
 
-  get_logger (factory):
-    - Returns AionLogger instance
-    - Re-uses existing logger by same name
-    - Does not re-configure already-configured logger
-    - Configures logger level from app_settings when level is None
-
-  _is_logger_configured:
-    - False when no handlers
-    - True when AionLogstashHandler present
-    - True when LogStreamHandler present
+  get_logger:
+    - Returns AionLogger instance when setLoggerClass is active
+    - Re-uses existing logger by same name (stdlib caching)
 
   AionLogstashFilter:
     - Rejects DEBUG records
@@ -145,50 +138,16 @@ class TestAionLogger:
 
 class TestGetLogger:
     def test_returns_aion_logger_instance(self):
-        """get_logger returns an AionLogger instance."""
-        from aion.server.logging.factory import get_logger
-        with patch("aion.server.settings.app_settings") as mock_settings:
-            with patch("aion.core.settings.api_settings") as mock_api:
-                mock_settings.log_level = logging.DEBUG
-                mock_settings.logstash_host = "localhost"
-                mock_settings.logstash_port = 5000
-                mock_settings.is_logstash_configured = False
-                mock_settings.node_name = "test-node"
-                mock_settings.version_id = "1.0.0"
-                mock_api.client_id = "test-client"
-                logger = get_logger("unique_factory_test_logger")
+        """logging.getLogger returns AionLogger when setLoggerClass is active."""
+        logging.setLoggerClass(AionLogger)
+        logger = logging.getLogger("unique_factory_test_logger")
         assert isinstance(logger, AionLogger)
 
     def test_same_logger_returned_for_same_name(self):
-        """get_logger returns the same logger instance for the same name (caching)."""
-        from aion.server.logging.factory import get_logger
-        with patch("aion.server.settings.app_settings") as mock_settings:
-            with patch("aion.core.settings.api_settings") as mock_api:
-                mock_settings.log_level = logging.INFO
-                mock_settings.logstash_host = "localhost"
-                mock_settings.logstash_port = 5000
-                mock_settings.is_logstash_configured = False
-                mock_settings.node_name = "n"
-                mock_settings.version_id = "v"
-                mock_api.client_id = "c"
-                l1 = get_logger("same_name_logger")
-                l2 = get_logger("same_name_logger")
+        """logging.getLogger returns the same logger instance for the same name."""
+        l1 = logging.getLogger("same_name_logger_x")
+        l2 = logging.getLogger("same_name_logger_x")
         assert l1 is l2
-
-    def test_is_logger_configured_false_for_new_logger(self):
-        """_is_logger_configured returns False for loggers with no handlers."""
-        from aion.server.logging.factory import _is_logger_configured
-        logger = logging.getLogger("unconfigured_logger_99")
-        logger.handlers.clear()
-        assert not _is_logger_configured(logger)
-
-    def test_is_logger_configured_true_with_stream_handler(self):
-        """_is_logger_configured returns True when LogStreamHandler is attached."""
-        from aion.server.logging.factory import _is_logger_configured
-        logger = logging.getLogger("configured_stream_test")
-        logger.handlers.clear()
-        logger.addHandler(LogStreamHandler())
-        assert _is_logger_configured(logger)
 
 class TestAionLogstashFilter:
     def _filter(self) -> AionLogstashFilter:

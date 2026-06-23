@@ -1,5 +1,5 @@
-from .factory import get_logger
-from .filters import ServerAionContextFilter
 from aion.core.logging.base import AionLogger, AionLogRecord
+from .filters import ServerAionContextFilter
+from .setup import setup_root_logger
 
-__all__ = ["get_logger", "AionLogger", "AionLogRecord", "ServerAionContextFilter"]
+__all__ = ["AionLogger", "AionLogRecord", "ServerAionContextFilter", "setup_root_logger"]

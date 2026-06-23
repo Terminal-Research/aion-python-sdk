@@ -193,10 +193,8 @@ class TestGetSpanInfo:
 
 class TestGenerateRequestSpanContext:
     def _patch_logger(self):
-        # get_logger is imported lazily inside the function body, so we patch
-        # where it lives, not where it's referenced from.
         return patch(
-            "aion.server.logging.factory.get_logger",
+            "aion.server.opentelemetry.tracing.logging.getLogger",
             return_value=MagicMock()
         )
 
@@ -222,7 +220,7 @@ class TestGenerateRequestSpanContext:
     def test_returns_none_for_invalid_hex_trace_id(self):
         """Verify that returns none for invalid hex trace ID."""
         mock_logger = MagicMock()
-        with patch("aion.server.logging.factory.get_logger", return_value=mock_logger):
+        with patch("aion.server.opentelemetry.tracing.logging.getLogger", return_value=mock_logger):
             ctx = generate_request_span_context(trace_id="not-valid-hex!!")
         assert ctx is None
         mock_logger.warning.assert_called_once()
@@ -244,7 +242,7 @@ class TestGenerateRequestSpanContext:
     def test_invalid_hex_span_id_falls_back_to_invalid(self):
         """Verify that invalid hex span ID falls back to invalid."""
         mock_logger = MagicMock()
-        with patch("aion.server.logging.factory.get_logger", return_value=mock_logger):
+        with patch("aion.server.opentelemetry.tracing.logging.getLogger", return_value=mock_logger):
             ctx = generate_request_span_context(trace_id=1, span_id="not-hex!!")
         # Falls back to INVALID_SPAN_ID; context still created (not None)
         assert ctx is not None
@@ -259,7 +257,7 @@ class TestGenerateRequestSpanContext:
     def test_exception_in_span_context_returns_none(self):
         """Verify that exception in span context returns none."""
         mock_logger = MagicMock()
-        with patch("aion.server.logging.factory.get_logger", return_value=mock_logger):
+        with patch("aion.server.opentelemetry.tracing.logging.getLogger", return_value=mock_logger):
             with patch(
                 "aion.server.opentelemetry.tracing.SpanContext",
                 side_effect=RuntimeError("unexpected"),

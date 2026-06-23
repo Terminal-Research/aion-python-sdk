@@ -12,6 +12,7 @@ All emit_* functions follow the same pattern:
 """
 
 from __future__ import annotations
+import logging
 
 from a2a.types import Artifact
 from aion.adk.authoring.constants import AION_OUTPUT_KEY, AION_ROUTING_KEY
@@ -19,7 +20,6 @@ from aion.adk.authoring.transformers import convert_a2a_part_to_genai_part
 from aion.core.a2a.enums import ArtifactId, ArtifactName
 from aion.core.a2a.extensions.messaging import MessageActionPayload, ReactionActionPayload
 from aion.core.agent.invocation.card import Card
-from aion.core.logging import get_logger
 from google.adk.events import Event, EventActions
 from google.genai import types
 from .context_vars import EventEmitter
@@ -27,7 +27,7 @@ from .event_metadata import AionOutput, ArtifactOutput, CardOutput
 
 from .invocation_context import AionInvocationContext
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 def emit_message(

@@ -1,17 +1,17 @@
 """Aion-specific task manager that orchestrates event routing and persistence."""
 
+import logging
 from a2a.server.events import Event
 from a2a.server.tasks import TaskManager
 from a2a.types import Message, Task, TaskArtifactUpdateEvent, TaskState, TaskStatus, TaskStatusUpdateEvent
 from aion.server.a2a.constants import TRANSIENT_ARTIFACT_IDS, NON_ACTIVE_TASK_STATES
 from aion.server.a2a.utils import is_task_interrupted, task_history_message_ids, is_message_in_task_history
 from aion.server.agent.execution.scope import set_task_status
-from aion.core.logging import get_logger
 from typing import override
 
 from aion.server.tasks import store_manager
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 _HISTORY_TERMINAL_STATES = NON_ACTIVE_TASK_STATES - {TaskState.TASK_STATE_COMPLETED}
 

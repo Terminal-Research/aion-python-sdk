@@ -1,6 +1,7 @@
 """A2A artifact backend: memory-first storage with DB fallback and TTL eviction."""
 
 from __future__ import annotations
+import logging
 
 from typing_extensions import override
 
@@ -10,7 +11,6 @@ import time
 from a2a.types import Artifact
 from aion.adk.authoring.transformers import convert_a2a_part_to_genai_part
 from aion.core.db import DbManagerProtocol
-from aion.core.logging import get_logger
 from aion.db.postgres.repositories.tasks.repository import TasksRepository
 from google.adk.artifacts import BaseArtifactService
 from google.adk.artifacts.base_artifact_service import ArtifactVersion, ensure_part
@@ -20,7 +20,7 @@ from typing import Any, Optional, List, Union
 
 from .base import ArtifactServiceBackend
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 @dataclasses.dataclass

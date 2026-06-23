@@ -1,12 +1,12 @@
 """A2A ↔ GenAI part conversion utilities shared across aion-authoring-adk and aion-server-adk."""
 
+import logging
 from a2a import types as a2a_types
-from aion.core.logging import get_logger
 from google.genai import types as genai_types
 from google.protobuf import json_format, struct_pb2
 from typing import Optional
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 # Wire-format constants shared with genai_part_to_a2a_part in aion-server-adk.
 # Changing these values is a breaking protocol change.

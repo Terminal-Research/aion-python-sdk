@@ -1,8 +1,8 @@
 """Module-level task store manager that holds the active store instance for the server process."""
 
+import logging
 from typing import Optional
 
-from aion.core.logging import get_logger
 
 from aion.db.postgres import db_manager
 from .stores import (
@@ -11,7 +11,7 @@ from .stores import (
     PostgresTaskStore
 )
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 class StoreManager:

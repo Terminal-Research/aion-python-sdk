@@ -250,6 +250,3 @@ def get_task_manager() -> Optional['AionTaskManagerProtocol']:
     if scope is None:
         raise RuntimeError("No scope is currently set. Use set_execution_scope() first.")
     return scope.runtime.task_manager
-
-
-

@@ -5,17 +5,17 @@ event-specific handlers with automatic dependency injection.
 """
 
 from __future__ import annotations
+import logging
 
 import inspect
 from typing import Any, Callable, Dict, List, Optional, Set
 
-from aion.core.logging import get_logger
 from aion.core.runtime.context import AionRuntimeContext
 from aion.core.runtime.context.models import EventKind
 from aion.langgraph.authoring.invocation.thread import Thread
 from langgraph.runtime import Runtime
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 _POSITIONAL = inspect.Parameter.POSITIONAL_OR_KEYWORD
 """Shorthand for inspect.Parameter.POSITIONAL_OR_KEYWORD used in __signature__ overrides."""

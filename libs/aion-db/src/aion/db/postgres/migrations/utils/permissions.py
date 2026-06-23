@@ -1,15 +1,15 @@
 """Pre-migration permission checks — exits the process if DB user lacks required privileges."""
 
 from __future__ import annotations
+import logging
 
 import sys
 
-from aion.core.logging import get_logger
 
 from aion.db.postgres.utils import validate_permissions, convert_pg_url
 from ..env import config
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 async def fail_if_no_permissions():

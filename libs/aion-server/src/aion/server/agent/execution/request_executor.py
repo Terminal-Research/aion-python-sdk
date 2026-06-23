@@ -1,4 +1,5 @@
 """Framework-agnostic A2A executor for AionAgent."""
+import logging
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
@@ -12,7 +13,6 @@ from a2a.utils.errors import (
     UnsupportedOperationError,
 )
 from a2a.utils.telemetry import trace_function
-from aion.core.logging import get_logger
 from aion.core.runtime import AionRuntimeContextBuilder
 from aion.core.runtime.context.registry import AionRuntimeContextRegistry
 from aion.server.a2a.constants import TERMINAL_TASK_STATES
@@ -24,7 +24,7 @@ from typing import Optional, Tuple
 
 from .event_pipeline import AionEventPipeline
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 class AionAgentRequestExecutor(AgentExecutor):
@@ -166,7 +166,8 @@ class AionAgentRequestExecutor(AgentExecutor):
 
         # Create new task
         task = new_task_from_user_message(context.message)
-        task.metadata = context.metadata or None
+        if context.metadata:
+            task.metadata = context.metadata
         context.current_task = task
 
         set_task_id(task.id)

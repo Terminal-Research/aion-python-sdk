@@ -4,14 +4,14 @@ This module provides DbFactory which handles database connection setup,
 migrations, and resource cleanup.
 """
 
-from aion.core.logging import get_logger
+import logging
 from aion.db.settings import db_settings
 
 from aion.db.postgres.utils import verify_connection
 from aion.db.postgres.manager import DbManager
 from aion.db.postgres.migrations import upgrade_to_head
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 class DbFactory:

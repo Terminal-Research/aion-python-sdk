@@ -1,4 +1,5 @@
 """Service for starting AION proxy server process"""
+import logging
 import asyncio
 import os
 from typing import Dict
@@ -6,10 +7,9 @@ from typing import Dict
 from aion.proxy import AionAgentProxyServer
 from aion.core.config import AionConfig
 from aion.server.services import BaseExecuteService
-from aion.core.logging import get_logger
 from aion.server.utils.processes import ProcessManager
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 class ServeProxyStartupService(BaseExecuteService):

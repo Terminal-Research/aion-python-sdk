@@ -1,7 +1,7 @@
+import logging
 from datetime import datetime, timezone
 from typing import Optional, List, Any, AsyncIterator
 
-from aion.core.logging import get_logger
 
 from aion.api.control_plane import CapabilitySubject, PrincipalSelector
 from aion.api.http import AionJWTManager
@@ -18,7 +18,7 @@ from .generated.graphql_client import (
 from .generated.graphql_client.client import GqlClient
 from .generated.graphql_client.custom_mutations import Mutation
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 def _serialize_offset_datetime(value: datetime | str) -> str:

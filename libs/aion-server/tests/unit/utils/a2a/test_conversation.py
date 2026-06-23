@@ -3,7 +3,7 @@ import pytest
 from a2a.types import Task, TaskState, Artifact, Message, TaskStatus
 from aion.core.a2a import ArtifactName, ConversationTaskStatus
 from aion.core.a2a.enums import A2AMetadataKey, MessageType
-from aion.server.utils import ConversationBuilder
+from aion.server.a2a.conversation import ConversationBuilder
 
 
 class TestConversationBuilder:

@@ -6,6 +6,7 @@ It also provides discovery functionality to find specific objects within modules
 """
 
 from __future__ import annotations
+import logging
 
 import importlib
 import importlib.util
@@ -18,9 +19,6 @@ if TYPE_CHECKING:
     from aion.core.logging.base import AionLogger
 
 
-def _get_logger() -> AionLogger:
-    from aion.server.logging.factory import get_logger
-    return get_logger()
 
 
 class ModuleLoader:
@@ -46,7 +44,7 @@ class ModuleLoader:
     @property
     def logger(self) -> AionLogger:
         if not self._logger:
-            self._logger = _get_logger()
+            self._logger = logging.getLogger(__name__)
         return self._logger
 
     def load(self, path: str) -> ModuleType:

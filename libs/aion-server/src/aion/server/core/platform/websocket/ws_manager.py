@@ -1,13 +1,13 @@
 """Manager that maintains a persistent WebSocket connection to the Aion platform."""
 
+import logging
 import asyncio
 from typing import Optional
 
-from aion.core.logging import get_logger
 
 from aion.server.interfaces import IWebsocketTransportFactory, IWebSocketManager
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "AionWebSocketManager",

@@ -57,11 +57,6 @@ def _install_test_stubs() -> None:
     reader_module.AionConfigReader = AionConfigReader
     sys.modules.setdefault("aion.core.config.reader", reader_module)
 
-    logging_module = types.ModuleType("aion.server.logging")
-    logging_module.get_logger = lambda name=None: logging.getLogger(
-        name or "aion-cli-tests"
-    )
-    sys.modules.setdefault("aion.server.logging", logging_module)
 
 
 _install_test_stubs()

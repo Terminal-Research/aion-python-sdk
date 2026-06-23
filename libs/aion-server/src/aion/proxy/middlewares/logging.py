@@ -1,6 +1,6 @@
 """Request logging middleware for the Aion proxy."""
 
-from aion.core.logging import get_logger
+import logging
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -19,7 +19,7 @@ class ProxyLoggingMiddleware(BaseHTTPMiddleware):
 
     def __init__(self, app):
         super().__init__(app)
-        self.logger = get_logger()
+        self.logger = logging.getLogger(__name__)
 
     async def dispatch(self, request: Request, call_next) -> Response:
         """Process request and log response information.

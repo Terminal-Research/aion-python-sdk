@@ -5,6 +5,7 @@ in the AION server. For multi-agent scenarios, deploy multiple servers behind
 a proxy instead.
 """
 from __future__ import annotations
+import logging
 
 from aion.core.config.models import AgentConfig
 from aion.core.metaclasses import Singleton
@@ -37,8 +38,7 @@ class AgentManager(metaclass=Singleton):
     @property
     def logger(self) -> AionLogger:
         if not self._logger:
-            from aion.server.logging.factory import get_logger
-            self._logger = get_logger()
+            self._logger = logging.getLogger(__name__)
         return self._logger
 
     @property

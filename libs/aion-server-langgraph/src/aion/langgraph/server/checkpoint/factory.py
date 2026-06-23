@@ -1,13 +1,13 @@
 """LangGraph checkpoint factory."""
 
+import logging
 from typing import Any, Optional
 
 from aion.core.db import DbManagerProtocol
-from aion.core.logging import get_logger
 
 from .backends import MemoryBackend, PostgresBackend
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 class CheckpointerFactory:

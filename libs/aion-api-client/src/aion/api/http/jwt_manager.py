@@ -1,6 +1,7 @@
 """JWT management utilities for Aion API clients."""
 
 from __future__ import annotations
+import logging
 
 import asyncio
 import threading
@@ -11,12 +12,11 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import jwt
-from aion.core.logging import get_logger
 
 from aion.api.exceptions import AionAuthenticationError
 from .client import AionHttpClient
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 @dataclass

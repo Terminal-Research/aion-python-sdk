@@ -1,4 +1,5 @@
 """Generic port reservation manager without business logic."""
+import logging
 import socket
 from typing import Dict, Optional, Set, Tuple
 
@@ -59,8 +60,7 @@ class PortReservationManager:
     @property
     def logger(self):
         if not self._logger:
-            from aion.server.logging.factory import get_logger
-            self._logger = get_logger()
+            self._logger = logging.getLogger(__name__)
         return self._logger
 
     def reserve(self, key: str, port: int) -> bool:

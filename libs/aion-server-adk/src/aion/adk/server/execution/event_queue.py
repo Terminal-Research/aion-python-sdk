@@ -15,16 +15,16 @@ distinguish them from normal Events without isinstance(item, BaseException).
 """
 
 from __future__ import annotations
+import logging
 
 import asyncio
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from typing import Any
 
-from aion.core.logging import get_logger
 from google.adk.events import Event
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 _CLOSED = object()
 """Sentinel placed in the queue when it is closed."""

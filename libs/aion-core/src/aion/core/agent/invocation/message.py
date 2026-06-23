@@ -5,19 +5,19 @@ agent execution to represent inbound messages and reactions.
 """
 
 from __future__ import annotations
+import logging
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, Optional
 
 from aion.core.constants import EVENT_EXTENSION_URI_V1
-from aion.core.logging import get_logger
 from aion.core.runtime.context import AionRuntimeContext
 
 if TYPE_CHECKING:
     from .thread import BaseThread
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)

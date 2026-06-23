@@ -1,4 +1,5 @@
 """Remove unique constraint from context_id in tasks table."""
+import logging
 from alembic import op
 from aion.db.postgres.constants import TASKS_TABLE
 
@@ -7,8 +8,7 @@ down_revision = "001"
 branch_labels = None
 depends_on = None
 
-from aion.core.logging import get_logger
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 def upgrade() -> None:

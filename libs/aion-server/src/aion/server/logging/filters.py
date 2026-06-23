@@ -2,27 +2,58 @@
 
 import logging
 
-from aion.core.logging.base import AionLogRecord
+# Rules for stream handler: namespace -> minimum log level, None = exclude entirely
+BASE_RULES: dict[str, int | None] = {
+    "httpcore": logging.WARNING,
+    "httpx": logging.WARNING,
+    "asyncio": logging.WARNING,
+    "urllib3": logging.WARNING,
+    "multipart": logging.WARNING,
+    "charset_normalizer": logging.WARNING,
+    "uvicorn": logging.WARNING,
+    "uvicorn.access": logging.WARNING,
+    "a2a": logging.WARNING,
+    "alembic": logging.WARNING,
+}
+
+
+class NamespaceFilter(logging.Filter):
+    """Filter log records by logger namespace with per-namespace minimum log levels.
+
+    Rules are matched by longest prefix first, so more specific namespaces
+    override parent rules (e.g. "uvicorn.access" overrides "uvicorn").
+    A level of None means the namespace is excluded entirely.
+    """
+
+    def __init__(self, rules: dict[str, int | None]):
+        super().__init__()
+        self._rules = sorted(rules.items(), key=lambda x: len(x[0]), reverse=True)
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        for namespace, level in self._rules:
+            if record.name == namespace or record.name.startswith(namespace + "."):
+                if level is None:
+                    return False
+                return record.levelno >= level
+        return True
 
 
 class ServerAionContextFilter(logging.Filter):
     """
-    Enriches AionLogRecord with OpenTelemetry tracing and server execution context.
+    Enriches logging.LogRecord with OpenTelemetry tracing and server execution context.
 
-    Attach to a logger in _configure_logger so all handlers receive enriched records
-    before any filtering or formatting takes place.
+    Attach to a handler so all records receive enriched fields before filtering or formatting.
     """
 
     def filter(self, record: logging.LogRecord) -> bool:
-        if not isinstance(record, AionLogRecord):
-            return True
-
-        self._enrich_otel(record)
-        self._enrich_server_context(record)
+        if not getattr(record, '_aion_enriched', False):
+            self._enrich_otel(record)
+            self._enrich_server_context(record)
+            record._aion_enriched = True
         return True
 
     @staticmethod
-    def _enrich_otel(record: AionLogRecord) -> None:
+    def _enrich_otel(record: logging.LogRecord) -> None:
         """Populate trace_id, span_id, span_name, and parent_span_id from the active OTel span."""
         try:
             from aion.server.opentelemetry.tracing import get_span_info
@@ -36,7 +67,7 @@ class ServerAionContextFilter(logging.Filter):
             pass
 
     @classmethod
-    def _enrich_server_context(cls, record: AionLogRecord) -> None:
+    def _enrich_server_context(cls, record: logging.LogRecord) -> None:
         """Populate Aion deployment, task, and request fields from the current execution scope."""
         try:
             from aion.server.agent.execution.scope import get_execution_scope

@@ -1,5 +1,7 @@
 """Utility functions for inspecting A2A task and message objects."""
 
+from typing import Optional
+
 from a2a.types import Message, Task
 
 from aion.server.a2a.constants import INTERRUPT_TASK_STATES
@@ -8,6 +10,7 @@ __all__ = [
     "is_task_interrupted",
     "task_history_message_ids",
     "is_message_in_task_history",
+    "extract_input_preview",
 ]
 
 
@@ -15,6 +18,28 @@ def _require_task(task: object) -> Task:
     if not isinstance(task, Task):
         raise TypeError(f"Expected Task, got {type(task).__name__}")
     return task
+
+
+def extract_input_preview(message: Optional[Message], max_len: int = 120) -> str:
+    """Return a short preview of an A2A message for logging purposes.
+
+    Scans message parts in order and returns the first non-empty text part,
+    stripped of leading/trailing whitespace and truncated to max_len characters.
+    Returns "<no text>" if the message is None, has no parts, or contains no text parts.
+
+    Args:
+        message: The A2A Message to preview, or None.
+        max_len: Maximum number of characters to return before appending "...".
+
+    Returns:
+        Truncated text preview, or "<no text>" if no text content is found.
+    """
+    if message:
+        for part in message.parts:
+            if part.text:
+                text = part.text.strip()
+                return text[:max_len] + ("..." if len(text) > max_len else "")
+    return "<no text>"
 
 
 def is_task_interrupted(task: Task) -> bool:

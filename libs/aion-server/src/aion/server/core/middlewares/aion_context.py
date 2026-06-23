@@ -1,5 +1,6 @@
 """Middleware that extracts A2A request metadata and populates the execution scope."""
 
+import logging
 from typing import Any
 
 from a2a.server.jsonrpc_models import InternalError, InvalidRequestError
@@ -15,7 +16,6 @@ from aion.server.agent.execution.scope import (
     set_traceability,
     set_request,
 )
-from aion.core.logging import get_logger
 from aion.core.a2a.extensions.distribution import DistributionExtensionV1
 from aion.core.a2a.extensions.traceability import TraceabilityExtensionV1
 from fastapi import Request, Response
@@ -23,7 +23,7 @@ from pydantic import ValidationError
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "AionContextMiddleware",

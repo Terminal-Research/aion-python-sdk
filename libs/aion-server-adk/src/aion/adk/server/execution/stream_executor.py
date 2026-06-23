@@ -1,5 +1,6 @@
 """Per-call stream executor for ADK agent.run_async."""
 
+import logging
 import asyncio
 import contextlib
 from collections.abc import AsyncIterator, AsyncGenerator
@@ -14,14 +15,13 @@ from aion.adk.authoring.invocation.context_vars import (
     set_adk_ctx,
     set_adk_emitter,
 )
-from aion.core.logging import get_logger
 from aion.core.a2a import ArtifactId, A2AOutbox
 from google.adk.events import Event
 
 from .event_converter import ADKToA2AEventConverter
 from .event_queue import ADKEventConsumer, ADKEventQueue
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 AgentEvent = TaskStatusUpdateEvent | TaskArtifactUpdateEvent
 
@@ -139,6 +139,7 @@ class ADKStreamExecutor:
             async for event in self._agent.run_async(invocation_context):
                 queue.enqueue_event(event)
         except Exception as exc:
+            logger.error("Agent run_async failed: %s", exc, exc_info=True)
             queue.enqueue_error(exc)
         finally:
             queue.close()
@@ -152,6 +153,16 @@ class ADKStreamExecutor:
         """Stamp, persist, convert, track and yield A2A events for one ADK Event."""
         self._stamp_event(event, invocation_context)
         await self._session_service.append_event(session, event)
+
+        if not event.partial and event.content:
+            for part in event.content.parts:
+                fc = getattr(part, "function_call", None)
+                if fc:
+                    logger.info("Tool call: %s", fc.name)
+                    continue
+                fr = getattr(part, "function_response", None)
+                if fr:
+                    logger.debug("Tool response: %s", fr.name)
 
         for a2a_event in await self._converter.convert(event):
             self._track(a2a_event)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import logging
 from typing import Any, TYPE_CHECKING
 
 from a2a.types import (
@@ -22,6 +23,8 @@ if TYPE_CHECKING:
     from a2a.server.agent_execution import RequestContext
 
 AgentEvent = TaskStatusUpdateEvent | TaskArtifactUpdateEvent
+
+logger = logging.getLogger(__name__)
 
 
 class ADKExecutionResultHandler:
@@ -70,8 +73,10 @@ class ADKExecutionResultHandler:
             if outbox is not None:
                 result = self._handle_outbox(outbox, context, task_id, context_id)
                 if result is not None:
+                    logger.debug("Result via outbox: %d event(s)", len(result))
                     return result
 
+        logger.debug("Result via stream fallback")
         return converter.finalize_stream(stream_result.delta_text)
 
     def _handle_outbox(

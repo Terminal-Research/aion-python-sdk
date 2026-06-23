@@ -4,6 +4,7 @@ This module extracts conversation messages from ADK Session.events field
 and converts them to unified Message format with a2a Part objects.
 """
 
+import logging
 from typing import Any, List, override
 
 from a2a.types import Message
@@ -11,11 +12,10 @@ from aion.server.agent.adapters import (
     StateExtractor,
     create_message_from_parts,
 )
-from aion.core.logging import get_logger
 
 from aion.adk.server.transformers import A2ATransformer
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 class MessagesExtractor(StateExtractor):
