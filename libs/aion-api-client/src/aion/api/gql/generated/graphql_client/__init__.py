@@ -17,7 +17,7 @@ from .chat_completion_stream import (
     ChatCompletionStreamChatCompletionStreamChatCompletionStreamResponseChunkResponseChoicesDelta,
 )
 from .client import GqlClient
-from .enums import AgentBehaviorKind
+from .enums import AgentBehaviorKind, CapabilityKind
 from .exceptions import (
     GraphQLClientError,
     GraphQLClientGraphQLError,
@@ -53,6 +53,7 @@ __all__ = [
     "AsyncBaseClientOpenTelemetry",
     "BaseModel",
     "CHAT_COMPLETION_STREAM_GQL",
+    "CapabilityKind",
     "CapabilitySubjectGQLInput",
     "ChatCompletionRequestInput",
     "ChatCompletionStream",

@@ -40,6 +40,13 @@ enum AgentBehaviorKind {
   System
 }
 
+"Kind of behavior-owned service surface."
+enum CapabilityKind {
+  A2AEndpoint
+  EventEmitter
+  McpServer
+}
+
 "JSON-RPC request envelope for agent-to-agent workflows"
 input A2AJsonRpcRequestGQLInput {
   "JSON-RPC protocol version, defaults to 2.0"
@@ -137,6 +144,30 @@ type AgentBehavior {
   agentCard: Json
   "Stable identifier for the behavior across versions"
   behaviorKey: String!
+  "Capability declarations owned by this behavior"
+  capabilities: [Capability!]!
+}
+
+"Behavior-owned declaration for one service surface."
+type Capability {
+  "Unique identifier for the capability row."
+  id: ID!
+  "Behavior that owns this capability."
+  behaviorId: ID!
+  "Stable capability key used by runtime routes."
+  capabilityKey: String!
+  "Kind of service surface declared by this capability."
+  kind: CapabilityKind!
+  "Optional user-facing description of the capability."
+  description: String
+  "Whether this is the default capability for its kind."
+  isPrimary: Boolean!
+  "Canonical category values for this capability."
+  categories: [String!]!
+  "Optional configuration schema for this capability."
+  configurationSchema: Json
+  "Optional internal MCP profile metadata."
+  mcpProfile: Json
 }
 
 type ChatCompletionStreamChoice {
@@ -205,6 +236,7 @@ type Mutations {
 
 type PromptTokensDetails {
   cachedTokens: Int
+  cacheWriteTokens: Int
 }
 
 type Queries {
