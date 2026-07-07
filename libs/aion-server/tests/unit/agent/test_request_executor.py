@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from a2a.server.agent_execution import RequestContext
 from a2a.server.events import EventQueue
-from a2a.types import TaskState
+from a2a.types import Message, Part, Role, TaskState
 from a2a.utils.errors import TaskNotCancelableError, TaskNotFoundError, UnsupportedOperationError
 
 from aion.server.agent.execution import AionAgentRequestExecutor
@@ -18,11 +18,17 @@ def _make_task(state: TaskState = TaskState.TASK_STATE_WORKING):
     return task
 
 
-def _make_context(task=None):
+def _make_context(task=None, message=None, metadata=None):
     ctx = MagicMock(spec=RequestContext)
     ctx.current_task = task
     ctx.task_id = task.id if task else None
     ctx.context_id = task.context_id if task else None
+    ctx.message = message or Message(
+        message_id="msg-123",
+        role=Role.ROLE_USER,
+        parts=[Part(text="hello")],
+    )
+    ctx.metadata = metadata
     return ctx
 
 
@@ -123,6 +129,20 @@ class TestExecuteRuntimeContext:
 
                         # Verify set_current_context was NOT called when context is None
                         MockRegistry.aset_current_context.assert_not_awaited()
+
+
+class TestGetTaskForExecution:
+    @pytest.mark.anyio
+    async def test_new_task_without_metadata_does_not_assign_none(self):
+        """A new task should omit metadata when the request context has none."""
+        ctx = _make_context(task=None, metadata=None)
+        init_execution_scope()
+
+        task, is_new_task = await AionAgentRequestExecutor._get_task_for_execution(ctx)
+
+        assert is_new_task is True
+        assert ctx.current_task == task
+        assert not task.HasField("metadata")
 
 
 class TestCancel:

@@ -7,7 +7,7 @@ message metadata into a typed AionRuntimeContext object.
 from __future__ import annotations
 import logging
 
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Optional
 
 from aion.core.constants import (
     DISTRIBUTION_EXTENSION_URI_V1,

@@ -437,6 +437,25 @@ class TestAionRuntimeContextBuilder:
         assert result.get_principal_identity().id == "agent-1"
         assert result.get_behavior().behavior_key == "main"
 
+    def test_with_distribution_dict_metadata_returns_context_with_distribution_payload(self):
+        """Verify that decoded dict distribution metadata builds runtime context."""
+        inbox = A2AInbox(
+            message=None,
+            metadata={DISTRIBUTION_EXTENSION_URI_V1: deepcopy(_DIST_STRUCT_DATA)},
+        )
+        rc = _make_mock_rc(
+            metadata={DISTRIBUTION_EXTENSION_URI_V1: deepcopy(_DIST_STRUCT_DATA)}
+        )
+
+        with patch("aion.core.runtime.context.builder.A2AInbox.from_request_context", return_value=inbox):
+            result = AionRuntimeContextBuilder.from_request_context(rc)
+
+        assert isinstance(result, AionRuntimeContext)
+        assert result.event is None
+        assert result.distribution_extension_payload is not None
+        assert result.get_principal_identity().id == "agent-1"
+        assert result.get_behavior().behavior_key == "main"
+
     def test_with_distribution_and_event_returns_full_context(self):
         """Verify that with distribution and event returns full context."""
         inbox = _make_inbox_with_dist(include_event=True)
