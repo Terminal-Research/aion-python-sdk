@@ -20,9 +20,15 @@ from aion.server.a2a.utils import is_task_interrupted
 from aion.server.agent.aion_agent import AionAgent
 from aion.server.agent.execution.scope import set_task_id
 from aion.server.files.a2a import A2AFileTransformer
-from typing import Optional, Tuple
+from collections.abc import Callable, Iterable
+from typing import Literal, Optional, Tuple
 
 from .event_pipeline import AionEventPipeline
+from .extensions import (
+    ExtensionTaskHandler,
+    ROUTED_EXTENSION_METADATA_KEY,
+    discover_extension_task_handlers,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -43,10 +49,28 @@ class AionAgentRequestExecutor(AgentExecutor):
             self,
             aion_agent: AionAgent,
             file_transformer: Optional[A2AFileTransformer] = None,
+            extension_handlers: Iterable[ExtensionTaskHandler] = (),
     ):
         self.agent = aion_agent
         self._task_updater: TaskUpdater | None = None
         self._file_transformer = file_transformer
+        self._extension_handlers: dict[str, ExtensionTaskHandler] = {
+            handler.uri: handler for handler in extension_handlers
+        }
+
+    @classmethod
+    async def create(
+            cls,
+            aion_agent: AionAgent,
+            file_transformer: Optional[A2AFileTransformer] = None,
+    ) -> "AionAgentRequestExecutor":
+        """Build the executor, keeping only extension handlers available for this agent."""
+        candidates = discover_extension_task_handlers()
+        available = [
+            handler for handler in candidates
+            if await handler.is_available(aion_agent.config)
+        ]
+        return cls(aion_agent, file_transformer=file_transformer, extension_handlers=available)
 
     @trace_function
     async def execute(
@@ -61,23 +85,20 @@ class AionAgentRequestExecutor(AgentExecutor):
         task, is_new_task = await self._get_task_for_execution(context)
         self._task_updater = TaskUpdater(event_queue, task.id, task.context_id)
 
+        await self._setup_runtime_context(context)
+
+        operation: Literal["stream", "resume"] = "stream" if is_new_task else "resume"
+        produce_events = await self._resolve(task, operation)
+
         if is_new_task:
             logger.info("Created task")
             await event_queue.enqueue_event(task)
         else:
             logger.info("Resuming task")
 
-        await self._setup_runtime_context(context)
-
         try:
-            event_stream = (
-                self.agent.stream(context=context)
-                if is_new_task
-                else self.agent.resume(context=context)
-            )
-
             pipeline = AionEventPipeline(event_queue, self._task_updater, self._file_transformer)
-            async for agent_event in event_stream:
+            async for agent_event in produce_events(context=context):
                 await pipeline.process(agent_event)
 
         except Exception as ex:
@@ -119,10 +140,11 @@ class AionAgentRequestExecutor(AgentExecutor):
                 message=f"Task {task.id} cannot be canceled - current state: {task.status.state}"
             )
 
+        cancel = await self._resolve(task, "cancel")
         try:
-            await self.agent.cancel(context)
+            await cancel(context=context)
         except UnsupportedOperationError:
-            logger.debug("Framework does not support cancellation, proceeding with A2A cancel")
+            logger.debug("Handler does not support cancellation, proceeding with A2A cancel")
 
         task_updater = TaskUpdater(event_queue, task.id, task.context_id)
         await task_updater.cancel()
@@ -133,6 +155,35 @@ class AionAgentRequestExecutor(AgentExecutor):
         runtime_context = AionRuntimeContextBuilder.from_request_context(context)
         if runtime_context:
             await AionRuntimeContextRegistry.aset_current_context(runtime_context)
+
+    async def _resolve(
+            self,
+            task: Task,
+            operation: Literal["stream", "resume", "cancel"],
+    ) -> Callable:
+        """Resolve the callable for an operation on the task's routed handler.
+
+        "stream" is only ever requested for a newly created task: it decides
+        routing from the live runtime context and persists that decision onto
+        the task's metadata. "resume"/"cancel" are requested for an
+        already-routed task: they recall the decision from that metadata
+        instead of re-deciding it. Either way, falls back to the agent's own
+        framework adapter when no extension is routed for the task.
+        """
+        handler = self.agent
+        if operation == "stream":
+            if self._extension_handlers:
+                runtime_context = await AionRuntimeContextRegistry.aget_current_context()
+                if runtime_context is not None:
+                    for candidate in self._extension_handlers.values():
+                        if runtime_context.is_active(candidate.uri):
+                            task.metadata[ROUTED_EXTENSION_METADATA_KEY] = candidate.uri
+                            handler = candidate
+                            break
+
+        elif task.HasField("metadata") and ROUTED_EXTENSION_METADATA_KEY in task.metadata:
+            handler = self._extension_handlers.get(task.metadata[ROUTED_EXTENSION_METADATA_KEY], self.agent)
+        return getattr(handler, operation)
 
     @staticmethod
     async def _get_task_for_execution(context: RequestContext) -> Tuple[Task, bool]:

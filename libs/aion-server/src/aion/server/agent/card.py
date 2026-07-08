@@ -33,13 +33,13 @@ class AionAgentCard:
                     description="Get Conversation info based on context",
                     params=GetContextParams.model_json_schema(),
                     required=False,
-                    uri=f"{app_settings.docs_url}/extensions/aion/context/get-context/1.0.0"
+                    uri=f"{app_settings.docs_url}/a2a/extensions/aion/context/get-context/1.0.0"
                 ),
                 AgentExtension(
                     description="Get list of available contexts",
                     params=GetContextsListParams.model_json_schema(),
                     required=False,
-                    uri=f"{app_settings.docs_url}/extensions/aion/context/get-contexts/1.0.0"
+                    uri=f"{app_settings.docs_url}/a2a/extensions/aion/context/get-contexts/1.0.0"
                 )
             ])
 

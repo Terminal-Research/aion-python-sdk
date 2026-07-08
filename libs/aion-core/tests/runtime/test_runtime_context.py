@@ -316,6 +316,31 @@ class TestAionRuntimeContextIsActive:
         ctx = self._make_ctx()
         assert ctx.is_active() is True
 
+    def test_plain_string_uri_present_returns_true(self):
+        """A raw string URI (e.g. an agent-specific extension) matches directly."""
+        ctx = self._make_ctx("aion://extensions/behaviour-evolution/v1")
+        assert ctx.is_active("aion://extensions/behaviour-evolution/v1") is True
+
+    def test_plain_string_uri_absent_returns_false(self):
+        """A raw string URI not declared on the message is not active."""
+        ctx = self._make_ctx(DISTRIBUTION_EXTENSION_URI_V1)
+        assert ctx.is_active("aion://extensions/behaviour-evolution/v1") is False
+
+    def test_mixed_enum_and_string_uris_all_required(self):
+        """A mix of AionExtensions and plain string URIs are all checked."""
+        ctx = self._make_ctx(
+            DISTRIBUTION_EXTENSION_URI_V1,
+            "aion://extensions/behaviour-evolution/v1",
+        )
+        assert ctx.is_active(
+            AionExtensions.DISTRIBUTION,
+            "aion://extensions/behaviour-evolution/v1",
+        ) is True
+        assert ctx.is_active(
+            AionExtensions.DISTRIBUTION,
+            "aion://extensions/other/v1",
+        ) is False
+
     def test_graph_kwargs_stored(self):
         """Verify that graph kwargs stored."""
         msg = Message(message_id="m1", role=Role.ROLE_USER)

@@ -30,6 +30,8 @@ __all__ = [
     "STREAM_DELTA_PAYLOAD_SCHEMA_V1",
     # Traceability extension
     "TRACEABILITY_EXTENSION_URI_V1",
+    # Evolution extension
+    "EVOLUTION_EXTENSION_URI_V1",
 ]
 
 # Distribution extension
@@ -67,3 +69,7 @@ STREAM_DELTA_PAYLOAD_SCHEMA_V1 = f"{MESSAGING_EXTENSION_URI_V1}#StreamDeltaPaylo
 # Traceability extension (W3C trace context)
 # See: https://docs.aion.to/a2a/extensions/aion/traceability/1.0.0
 TRACEABILITY_EXTENSION_URI_V1 = "https://docs.aion.to/a2a/extensions/aion/traceability/1.0.0"
+
+# Evolution extension (self-improvement directive routing)
+# See: https://docs.aion.to/a2a/extensions/aion/evolution/1.0.0
+EVOLUTION_EXTENSION_URI_V1 = "https://docs.aion.to/a2a/extensions/aion/evolution/1.0.0"

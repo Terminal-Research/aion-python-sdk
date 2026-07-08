@@ -16,6 +16,7 @@ from aion.core.constants.a2a import (
     COMMAND_EVENT_TYPE_V1,
     DISTRIBUTION_EXTENSION_URI_V1,
     EVENT_EXTENSION_URI_V1,
+    EVOLUTION_EXTENSION_URI_V1,
     MESSAGE_EVENT_TYPE_V1,
     MESSAGING_EXTENSION_URI_V1,
     REACTION_EVENT_TYPE_V1,
@@ -59,6 +60,7 @@ class AionExtensions(str, Enum):
     CARDS = CARDS_EXTENSION_URI_V1
     EVENT = EVENT_EXTENSION_URI_V1
     TRACEABILITY = TRACEABILITY_EXTENSION_URI_V1
+    EVOLUTION = EVOLUTION_EXTENSION_URI_V1
 
 
 @dataclass(frozen=True)
@@ -125,12 +127,14 @@ class AionRuntimeContext:
         object.__setattr__(self, "distribution_extension_payload", distribution_extension_payload)
         object.__setattr__(self, "graph_kwargs", graph_kwargs)
 
-    def is_active(self, *extensions: AionExtensions) -> bool:
+    def is_active(self, *extensions: Union[AionExtensions, str]) -> bool:
         """Return whether all requested Aion extensions are active.
 
         Args:
             *extensions: Extension identifiers to check against the inbound
-                message's declared extension list.
+                message's declared extension list. Accepts ``AionExtensions``
+                members for the closed set of core extensions, or plain string
+                URIs for agent/toolkit-specific extensions not in that enum.
 
         Returns:
             ``True`` when every requested extension is declared on the inbound
@@ -142,7 +146,10 @@ class AionRuntimeContext:
             return False
 
         active = set(self.inbox.message.extensions or [])
-        return all(ext.value in active for ext in extensions)
+        return all(
+            (ext.value if isinstance(ext, AionExtensions) else ext) in active
+            for ext in extensions
+        )
 
     def get_distribution(self) -> Optional[Distribution]:
         """Return the distribution model from the Aion distribution payload.
