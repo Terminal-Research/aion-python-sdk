@@ -37,6 +37,9 @@ __all__ = [
     "BEHAVIOUR_EVOLUTION_RESULT_ACTION_PAYLOAD_SCHEMA_V1",
     # Daemon extension
     "DAEMON_EXTENSION_URI_V1",
+    # Context extensions
+    "GET_CONTEXT_EXTENSION_URI_V1",
+    "GET_CONTEXTS_LIST_EXTENSION_URI_V1",
 ]
 
 # Distribution extension
@@ -85,3 +88,8 @@ BEHAVIOUR_EVOLUTION_RESULT_ACTION_PAYLOAD_SCHEMA_V1 = f"{BEHAVIOUR_EVOLUTION_EXT
 # Daemon extension (authenticated, environment-scoped daemon interaction)
 # See: https://docs.aion.to/a2a/extensions/aion/daemon/1.0.0
 DAEMON_EXTENSION_URI_V1 = "https://docs.aion.to/a2a/extensions/aion/daemon/1.0.0"
+
+# Context extensions
+# See: https://docs.aion.to/a2a/extensions/aion/context
+GET_CONTEXT_EXTENSION_URI_V1 = "https://docs.aion.to/a2a/extensions/aion/context/get-context/1.0.0"
+GET_CONTEXTS_LIST_EXTENSION_URI_V1 = "https://docs.aion.to/a2a/extensions/aion/context/get-contexts/1.0.0"
