@@ -183,6 +183,10 @@ class Environment(A2ABaseModel):
 
     id: str = Field(description="Environment id in the Aion control plane.")
     name: str = Field(description="Human-readable environment name.")
+    project_id: Optional[str] = Field(
+        default=None,
+        description="Project id that owns this agent environment, when known.",
+    )
     deployment_id: str = Field(
         description="Deployment id associated with this environment."
     )

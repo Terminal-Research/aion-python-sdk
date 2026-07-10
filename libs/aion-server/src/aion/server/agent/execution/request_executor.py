@@ -13,7 +13,7 @@ from a2a.utils.errors import (
     UnsupportedOperationError,
 )
 from a2a.utils.telemetry import trace_function
-from aion.core.runtime import AionRuntimeContextBuilder
+from aion.core.runtime import AionRuntimeContextBuilder, ExtensionActivationError
 from aion.core.runtime.context.registry import AionRuntimeContextRegistry
 from aion.server.a2a.constants import TERMINAL_TASK_STATES
 from aion.server.a2a.utils import is_task_interrupted
@@ -85,7 +85,10 @@ class AionAgentRequestExecutor(AgentExecutor):
         task, is_new_task = await self._get_task_for_execution(context)
         self._task_updater = TaskUpdater(event_queue, task.id, task.context_id)
 
-        await self._setup_runtime_context(context)
+        try:
+            await self._setup_runtime_context(context)
+        except ExtensionActivationError as ex:
+            raise InvalidParamsError(message=str(ex)) from ex
 
         operation: Literal["stream", "resume"] = "stream" if is_new_task else "resume"
         produce_events = await self._resolve(task, operation)
@@ -169,17 +172,25 @@ class AionAgentRequestExecutor(AgentExecutor):
         already-routed task: they recall the decision from that metadata
         instead of re-deciding it. Either way, falls back to the agent's own
         framework adapter when no extension is routed for the task.
+
+        Routing itself is a plain lookup against
+        AionRuntimeContext.extensions - the set of extensions already
+        collected and verified (schema + co-activation requirements) during
+        data prep in AionRuntimeContextBuilder. No activation or validation
+        logic lives here.
         """
         handler = self.agent
         if operation == "stream":
             if self._extension_handlers:
                 runtime_context = await AionRuntimeContextRegistry.aget_current_context()
                 if runtime_context is not None:
-                    for candidate in self._extension_handlers.values():
-                        if runtime_context.is_active(candidate.uri):
-                            task.metadata[ROUTED_EXTENSION_METADATA_KEY] = candidate.uri
-                            handler = candidate
-                            break
+                    matched = next(
+                        (uri for uri in self._extension_handlers if runtime_context.is_extension_active(uri)),
+                        None,
+                    )
+                    if matched:
+                        task.metadata[ROUTED_EXTENSION_METADATA_KEY] = matched
+                        handler = self._extension_handlers[matched]
 
         elif task.HasField("metadata") and ROUTED_EXTENSION_METADATA_KEY in task.metadata:
             handler = self._extension_handlers.get(task.metadata[ROUTED_EXTENSION_METADATA_KEY], self.agent)

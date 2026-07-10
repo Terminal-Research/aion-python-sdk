@@ -9,6 +9,7 @@ import logging
 
 from aion.core.config.models import AgentConfig
 from aion.core.metaclasses import Singleton
+from aion.core.runtime import aion_a2a_extension_registry
 from typing import Optional, TYPE_CHECKING
 
 from .agent import AionAgent
@@ -89,6 +90,7 @@ class AgentManager(metaclass=Singleton):
         """
         self._agent_id = agent_id
         self._agent_config = config
+        aion_a2a_extension_registry.activate(config.enabled_extensions)
 
     async def create_agent(
             self,
@@ -175,6 +177,7 @@ class AgentManager(metaclass=Singleton):
             self._agent = None
             self._agent_id = None
             self._agent_config = None
+            aion_a2a_extension_registry.reset_to_default()
         else:
             self.logger.debug("No agent to clear")
 

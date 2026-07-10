@@ -1,6 +1,6 @@
 """Stub ExtensionTaskHandler for the evolution A2A extension.
 
-First increment: only proves that a task routed to EVOLUTION_EXTENSION_URI_V1
+First increment: only proves that a task routed to BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1
 is handled here instead of the agent's framework adapter. Does not yet drive
 the real toolkit (aion-toolkit-behaviour-evolution-python) - stream()/resume()
 emit a placeholder status and complete immediately. See §4-4.5 of
@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 
 from a2a.types import Message, Part, Role, TaskState, TaskStatus, TaskStatusUpdateEvent
 from a2a.utils.errors import UnsupportedOperationError
-from aion.core.constants.a2a import EVOLUTION_EXTENSION_URI_V1
+from aion.core.constants.a2a import BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1
 
 if TYPE_CHECKING:
     from a2a.server.agent_execution import RequestContext
@@ -32,7 +32,7 @@ class EvolutionTaskHandler:
     run doesn't exist yet, so there is nothing to interrupt.
     """
 
-    uri = EVOLUTION_EXTENSION_URI_V1
+    uri = BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1
 
     async def is_available(self, config: "AgentConfig") -> bool:
         return True

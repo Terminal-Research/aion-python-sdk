@@ -8,14 +8,23 @@ from google.protobuf.json_format import ParseDict
 from google.protobuf.struct_pb2 import Struct
 
 from aion.core.constants.a2a import (
+    DAEMON_EXTENSION_URI_V1,
     DISTRIBUTION_EXTENSION_URI_V1,
     EVENT_EXTENSION_URI_V1,
     MESSAGE_EVENT_PAYLOAD_SCHEMA_V1,
     MESSAGE_EVENT_TYPE_V1,
+    MESSAGING_EXTENSION_URI_V1,
     REACTION_EVENT_TYPE_V1,
     REACTION_EVENT_PAYLOAD_SCHEMA_V1,
+    TRACEABILITY_EXTENSION_URI_V1,
 )
 from aion.core.runtime.context.builder import AionRuntimeContextBuilder
+from aion.core.runtime.context.extensions import (
+    AionRuntimeExtensions,
+    ExtensionActivationError,
+    ExtensionDescriptor,
+    aion_a2a_extension_registry,
+)
 from aion.core.runtime.context.models import (
     AionExtensions,
     AionRuntimeContext,
@@ -289,42 +298,46 @@ class TestAionRuntimeContextDistributionPayload:
 
 class TestAionRuntimeContextIsActive:
     def _make_ctx(self, *extension_uris: str) -> AionRuntimeContext:
-        msg = Message(message_id="m1", role=Role.ROLE_USER)
-        for uri in extension_uris:
-            msg.extensions.append(uri)
-        inbox = A2AInbox(message=msg, metadata={})
-        return AionRuntimeContext(inbox=inbox)
+        """is_extension_active() delegates to extensions.is_active().
+        Constructing AionRuntimeExtensions with these URIs directly simulates
+        "already registered and verified" - is_active()'s own job here is
+        just enum-vs-string normalization and delegation, not verification
+        (that's the verifier's job, covered separately in
+        test_extension_activation.py)."""
+        return AionRuntimeContext(
+            extensions=AionRuntimeExtensions({uri: None for uri in extension_uris})
+        )
 
     def test_present_extension_returns_true(self):
         """Verify that present extension returns true."""
         ctx = self._make_ctx(DISTRIBUTION_EXTENSION_URI_V1)
-        assert ctx.is_active(AionExtensions.DISTRIBUTION) is True
+        assert ctx.is_extension_active(AionExtensions.DISTRIBUTION) is True
 
     def test_absent_extension_returns_false(self):
         """Verify that absent extension returns false."""
         ctx = self._make_ctx(EVENT_EXTENSION_URI_V1)
-        assert ctx.is_active(AionExtensions.DISTRIBUTION) is False
+        assert ctx.is_extension_active(AionExtensions.DISTRIBUTION) is False
 
     def test_all_extensions_must_be_present(self):
         """Verify that all extensions must be present."""
         ctx = self._make_ctx(DISTRIBUTION_EXTENSION_URI_V1)
         # DISTRIBUTION present, CARDS absent — is_active requires both
-        assert ctx.is_active(AionExtensions.DISTRIBUTION, AionExtensions.CARDS) is False
+        assert ctx.is_extension_active(AionExtensions.DISTRIBUTION, AionExtensions.CARDS) is False
 
     def test_empty_extensions_returns_true_for_no_args(self):
         """Verify that empty extensions returns true for no args."""
         ctx = self._make_ctx()
-        assert ctx.is_active() is True
+        assert ctx.is_extension_active() is True
 
     def test_plain_string_uri_present_returns_true(self):
         """A raw string URI (e.g. an agent-specific extension) matches directly."""
         ctx = self._make_ctx("aion://extensions/behaviour-evolution/v1")
-        assert ctx.is_active("aion://extensions/behaviour-evolution/v1") is True
+        assert ctx.is_extension_active("aion://extensions/behaviour-evolution/v1") is True
 
     def test_plain_string_uri_absent_returns_false(self):
         """A raw string URI not declared on the message is not active."""
         ctx = self._make_ctx(DISTRIBUTION_EXTENSION_URI_V1)
-        assert ctx.is_active("aion://extensions/behaviour-evolution/v1") is False
+        assert ctx.is_extension_active("aion://extensions/behaviour-evolution/v1") is False
 
     def test_mixed_enum_and_string_uris_all_required(self):
         """A mix of AionExtensions and plain string URIs are all checked."""
@@ -332,11 +345,11 @@ class TestAionRuntimeContextIsActive:
             DISTRIBUTION_EXTENSION_URI_V1,
             "aion://extensions/behaviour-evolution/v1",
         )
-        assert ctx.is_active(
+        assert ctx.is_extension_active(
             AionExtensions.DISTRIBUTION,
             "aion://extensions/behaviour-evolution/v1",
         ) is True
-        assert ctx.is_active(
+        assert ctx.is_extension_active(
             AionExtensions.DISTRIBUTION,
             "aion://extensions/other/v1",
         ) is False
@@ -405,6 +418,7 @@ def _make_inbox_with_dist(include_event: bool = False, include_principal: bool =
         return A2AInbox(message=None, metadata={DISTRIBUTION_EXTENSION_URI_V1: dist_struct})
 
     msg = Message(message_id="msg-1", role=Role.ROLE_USER)
+    msg.extensions.append(MESSAGING_EXTENSION_URI_V1)
     msg.metadata.get_or_create_struct(EVENT_EXTENSION_URI_V1).update({
         "type": MESSAGE_EVENT_TYPE_V1,
         "source": "slack://workspace",
@@ -427,6 +441,7 @@ def _make_mock_rc(message=None, metadata=None):
     rc.current_task = None
     rc.message = message
     rc.metadata = metadata if metadata is not None else {}
+    rc.requested_extensions = frozenset()
     return rc
 
 
@@ -465,18 +480,56 @@ class TestAionRuntimeContextBuilder:
     def test_with_distribution_and_event_returns_full_context(self):
         """Verify that with distribution and event returns full context."""
         inbox = _make_inbox_with_dist(include_event=True)
+        rc = _make_mock_rc(
+            message=inbox.message,
+            metadata={DISTRIBUTION_EXTENSION_URI_V1: _make_dist_struct()},
+        )
         with patch("aion.core.runtime.context.builder.A2AInbox.from_request_context", return_value=inbox):
-            result = AionRuntimeContextBuilder.from_request_context(_make_mock_rc())
+            result = AionRuntimeContextBuilder.from_request_context(rc)
         assert isinstance(result, AionRuntimeContext)
         assert result.event is not None
         assert result.event.kind == EventKind.MESSAGE
         assert result.distribution_extension_payload is not None
 
+    def test_unrecognized_event_type_sets_event_none_without_discarding_distribution(self):
+        """A message declaring messaging active but carrying an unknown event type must
+        leave event as None while still populating the distribution extension payload."""
+        msg = Message(message_id="msg-fail", role=Role.ROLE_USER)
+        msg.extensions.append(MESSAGING_EXTENSION_URI_V1)
+        msg.metadata.get_or_create_struct(EVENT_EXTENSION_URI_V1).update({
+            "type": "to.unknown.event.type",
+            "source": "slack://workspace",
+            "id": "ev-fail",
+        })
+        inbox = _make_inbox_with_dist(include_event=False)
+        rc = _make_mock_rc(
+            message=msg,
+            metadata={DISTRIBUTION_EXTENSION_URI_V1: _make_dist_struct()},
+        )
+        with patch("aion.core.runtime.context.builder.A2AInbox.from_request_context", return_value=inbox):
+            result = AionRuntimeContextBuilder.from_request_context(rc)
+        assert result.event is None
+        assert result.distribution_extension_payload is not None
+
+    def test_missing_principal_keeps_distribution_payload(self):
+        """Verify that missing principal identity does not discard payload records."""
+        inbox = _make_inbox_with_dist(include_event=False, include_principal=False)
+        rc = _make_mock_rc(
+            metadata={DISTRIBUTION_EXTENSION_URI_V1: _make_dist_struct(include_principal=False)}
+        )
+        with patch("aion.core.runtime.context.builder.A2AInbox.from_request_context", return_value=inbox):
+            result = AionRuntimeContextBuilder.from_request_context(rc)
+
+        assert result.get_principal_identity() is None
+        assert result.get_service_identity().id == "svc-1"
+        assert result.get_behavior().behavior_key == "main"
+        assert result.get_environment().name == "prod"
+
     def test_key_error_in_build_returns_none(self):
         """Verify that key error in build returns none."""
         rc = _make_mock_rc()
         with patch(
-            "aion.core.runtime.context.builder.AionRuntimeContextBuilder._build_without_distribution",
+            "aion.core.runtime.context.builder.AionRuntimeContextBuilder._build",
             side_effect=KeyError("missing"),
         ):
             result = AionRuntimeContextBuilder.from_request_context(rc)
@@ -486,7 +539,7 @@ class TestAionRuntimeContextBuilder:
         """Verify that attribute error in build returns none."""
         rc = _make_mock_rc()
         with patch(
-            "aion.core.runtime.context.builder.AionRuntimeContextBuilder._build_without_distribution",
+            "aion.core.runtime.context.builder.AionRuntimeContextBuilder._build",
             side_effect=AttributeError("attr"),
         ):
             result = AionRuntimeContextBuilder.from_request_context(rc)
@@ -496,65 +549,92 @@ class TestAionRuntimeContextBuilder:
         """Verify that generic exception in build returns none."""
         rc = _make_mock_rc()
         with patch(
-            "aion.core.runtime.context.builder.AionRuntimeContextBuilder._build_without_distribution",
+            "aion.core.runtime.context.builder.AionRuntimeContextBuilder._build",
             side_effect=RuntimeError("boom"),
         ):
             result = AionRuntimeContextBuilder.from_request_context(rc)
         assert result is None
 
 
-class TestBuildFromDistribution:
-    def test_without_event_sets_event_none(self):
-        """Verify that without event sets event none."""
-        inbox = _make_inbox_with_dist(include_event=False)
-        result = AionRuntimeContextBuilder._build_from_distribution(inbox)
-        assert isinstance(result, AionRuntimeContext)
-        assert result.event is None
-        assert result.distribution_extension_payload is not None
-
-    def test_with_event_populates_event(self):
-        """Verify that with event populates event."""
-        inbox = _make_inbox_with_dist(include_event=True)
-        result = AionRuntimeContextBuilder._build_from_distribution(inbox)
-        assert result.event is not None
-        assert result.event.kind == EventKind.MESSAGE
-        assert result.event.source == "slack://workspace"
-
-    def test_extract_event_failure_sets_event_none(self):
-        """Verify that extract event failure sets event none."""
-        inbox = _make_inbox_with_dist(include_event=True)
-        with patch("aion.core.runtime.context.builder.extract_event", side_effect=ValueError("parse error")):
-            result = AionRuntimeContextBuilder._build_from_distribution(inbox)
-        assert result.event is None
-        assert result.distribution_extension_payload is not None
-
-    def test_missing_principal_keeps_distribution_payload(self):
-        """Verify that missing principal identity does not discard payload records."""
-        inbox = _make_inbox_with_dist(include_event=False, include_principal=False)
-        result = AionRuntimeContextBuilder._build_from_distribution(inbox)
-
-        assert result.get_principal_identity() is None
-        assert result.get_service_identity().id == "svc-1"
-        assert result.get_behavior().behavior_key == "main"
-        assert result.get_environment().name == "prod"
-
-    def test_distribution_payload_fields_correct(self):
-        """Verify that distribution payload fields are exposed through helpers."""
-        inbox = _make_inbox_with_dist(include_event=False)
-        result = AionRuntimeContextBuilder._build_from_distribution(inbox)
-
-        assert result.distribution_extension_payload.distribution.id == "dist-1"
-        assert result.get_principal_identity().id == "agent-1"
-        assert result.get_behavior().behavior_key == "main"
-        assert result.get_environment().name == "prod"
+def _make_daemon_struct() -> Struct:
+    data = {
+        "daemon_identity": {
+            "kind": "daemon",
+            "id": "daemon-1",
+            "network_type": "Aion",
+            "organization_id": "org-1",
+            "display_name": "Inventory Daemon",
+        },
+        "behavior": {"id": "beh-1", "behavior_key": "main", "version_id": "v-1"},
+        "environment": {
+            "id": "env-1",
+            "name": "prod",
+            "deployment_id": "dep-1",
+            "configuration_variables": {"llm": "qwen"},
+            "daemon_agent_identity_id": "daemon-1",
+        },
+    }
+    s = Struct()
+    ParseDict(data, s)
+    return s
 
 
-class TestBuildWithoutDistribution:
-    def test_returns_minimal_context(self):
-        """Verify that returns minimal context."""
-        inbox = A2AInbox(message=None, metadata={})
-        result = AionRuntimeContextBuilder._build_without_distribution(inbox)
-        assert isinstance(result, AionRuntimeContext)
-        assert result.event is None
+class TestBuilderExtensionPipeline:
+    """Covers the collector/verifier pipeline wired into from_request_context,
+    using the DAEMON descriptor aion-core registers for itself."""
+
+    def test_daemon_payload_parsed_into_extensions_and_get_daemon(self):
+        rc = _make_mock_rc(metadata={DAEMON_EXTENSION_URI_V1: _make_daemon_struct()})
+        inbox = A2AInbox(message=None, metadata={DAEMON_EXTENSION_URI_V1: _make_daemon_struct()})
+
+        with patch("aion.core.runtime.context.builder.A2AInbox.from_request_context", return_value=inbox):
+            result = AionRuntimeContextBuilder.from_request_context(rc)
+
+        assert result is not None
         assert result.distribution_extension_payload is None
-        assert result.inbox is inbox
+        daemon = result.get_daemon()
+        assert daemon is not None
+        assert daemon.daemon_identity.id == "daemon-1"
+        assert daemon.environment.configuration_variables["llm"] == "qwen"
+        assert result.extensions.get(DAEMON_EXTENSION_URI_V1) is daemon
+
+    def test_traceability_payload_parsed_into_extensions_and_get_traceability(self):
+        """traceability delivers its payload the same way daemon does
+        (params.metadata[uri]) and has a registered descriptor - it must not
+        sit merely "active" without being parsed."""
+        struct = Struct()
+        ParseDict({"traceparent": "00-trace-01"}, struct)
+        rc = _make_mock_rc(metadata={TRACEABILITY_EXTENSION_URI_V1: struct})
+        inbox = A2AInbox(message=None, metadata={TRACEABILITY_EXTENSION_URI_V1: struct})
+
+        with patch("aion.core.runtime.context.builder.A2AInbox.from_request_context", return_value=inbox):
+            result = AionRuntimeContextBuilder.from_request_context(rc)
+
+        traceability = result.get_traceability()
+        assert traceability is not None
+        assert traceability.traceparent == "00-trace-01"
+        assert result.extensions.get(TRACEABILITY_EXTENSION_URI_V1) is traceability
+
+    def test_unmet_requires_raises_and_is_not_swallowed(self):
+        """A registered descriptor whose co-activation requirement is unmet
+        must reject the request (ExtensionActivationError), not fall through
+        the builder's broad except clauses into a silent None context - a
+        silent None would make _resolve() treat the request as if no
+        extension were active at all."""
+        fake_uri = "aion://extensions/test-half-activated/v1"
+        descriptor = ExtensionDescriptor(uri=fake_uri, requires=(DAEMON_EXTENSION_URI_V1,))
+        aion_a2a_extension_registry.register(descriptor)
+        try:
+            msg = Message(message_id="m1", role=Role.ROLE_USER)
+            msg.extensions.append(fake_uri)
+            inbox = A2AInbox(message=msg, metadata={})
+            rc = _make_mock_rc(message=msg, metadata={})
+
+            with patch("aion.core.runtime.context.builder.A2AInbox.from_request_context", return_value=inbox):
+                with pytest.raises(ExtensionActivationError) as exc_info:
+                    AionRuntimeContextBuilder.from_request_context(rc)
+
+            assert exc_info.value.uri == fake_uri
+            assert exc_info.value.missing_requires == frozenset({DAEMON_EXTENSION_URI_V1})
+        finally:
+            aion_a2a_extension_registry._descriptors.pop(fake_uri, None)

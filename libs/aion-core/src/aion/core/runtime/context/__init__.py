@@ -5,6 +5,17 @@ distribution metadata, and identity information to agent execution code.
 """
 
 from .builder import AionRuntimeContextBuilder
+from .extensions import (
+    ExtensionActivationError,
+    ExtensionPayloadCollector,
+    MarkerCollector,
+    TaskMetadataCollector,
+    MessagesCollector,
+    ExtensionDescriptor,
+    AionRuntimeExtensions,
+    AionA2AExtensionRegistry,
+    aion_a2a_extension_registry,
+)
 from .models import (
     AionExtensions,
     AionRuntimeContext,
@@ -30,4 +41,13 @@ __all__ = [
     "AionRuntimeContextRegistry",
     "get_aion_runtime_context",
     "aget_aion_runtime_context",
+    "ExtensionActivationError",
+    "ExtensionPayloadCollector",
+    "MarkerCollector",
+    "TaskMetadataCollector",
+    "MessagesCollector",
+    "ExtensionDescriptor",
+    "AionRuntimeExtensions",
+    "AionA2AExtensionRegistry",
+    "aion_a2a_extension_registry",
 ]

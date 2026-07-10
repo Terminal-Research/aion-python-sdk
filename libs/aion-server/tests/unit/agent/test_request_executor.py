@@ -277,7 +277,7 @@ class TestResolve:
         task = _make_real_task()
 
         mock_runtime_context = MagicMock()
-        mock_runtime_context.is_active.side_effect = lambda uri: uri == handler.uri
+        mock_runtime_context.extensions = {handler.uri: None}
 
         with patch(
             "aion.server.agent.execution.request_executor.AionRuntimeContextRegistry"
@@ -359,7 +359,7 @@ class TestExecuteViaResolve:
         init_execution_scope()
 
         mock_runtime_context = MagicMock()
-        mock_runtime_context.is_active.side_effect = lambda uri: uri == handler.uri
+        mock_runtime_context.extensions = {handler.uri: None}
 
         with patch(
             "aion.server.agent.execution.request_executor.new_task_from_user_message",

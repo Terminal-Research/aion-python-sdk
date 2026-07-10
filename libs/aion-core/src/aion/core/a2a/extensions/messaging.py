@@ -4,11 +4,19 @@ Defines payload models for message-based events (messages, reactions, commands),
 and action payloads for routing message responses through distribution channels.
 """
 
-from typing import Any, Dict, Literal, Optional
+from typing import Any, ClassVar, Dict, Literal, Optional
 
 from pydantic import Field
 
 from aion.core.a2a import A2ABaseModel
+from aion.core.constants.a2a import (
+    COMMAND_EVENT_PAYLOAD_SCHEMA_V1,
+    COMMAND_EVENT_TYPE_V1,
+    MESSAGE_EVENT_PAYLOAD_SCHEMA_V1,
+    MESSAGE_EVENT_TYPE_V1,
+    REACTION_EVENT_PAYLOAD_SCHEMA_V1,
+    REACTION_EVENT_TYPE_V1,
+)
 
 __all__ = [
     "MessageEventTrajectory",
@@ -28,6 +36,9 @@ MessageActionTrajectory = MessageEventTrajectory
 class MessageEventPayload(A2ABaseModel):
     """Normalized inbound message context (DM, mention, thread reply, or channel message)."""
 
+    SCHEMA_URI: ClassVar[str] = MESSAGE_EVENT_PAYLOAD_SCHEMA_V1
+    EVENT_TYPE: ClassVar[str] = MESSAGE_EVENT_TYPE_V1
+
     user_id: str = Field(description="Sender identifier on the source network.")
     context_id: str = Field(description="Source-network conversation, room, or thread id.")
     message_id: str = Field(description="Source-network message id.")
@@ -44,6 +55,9 @@ class MessageEventPayload(A2ABaseModel):
 
 class ReactionEventPayload(A2ABaseModel):
     """Reaction or emoji-style activity applied to an existing message."""
+
+    SCHEMA_URI: ClassVar[str] = REACTION_EVENT_PAYLOAD_SCHEMA_V1
+    EVENT_TYPE: ClassVar[str] = REACTION_EVENT_TYPE_V1
 
     user_id: str = Field(description="Actor who added or removed the reaction.")
     context_id: str = Field(description="Source-network conversation, room, or thread id.")
@@ -66,6 +80,9 @@ class ReactionEventPayload(A2ABaseModel):
 
 class CommandEventPayload(A2ABaseModel):
     """Command-style invocation sent through a messaging provider (slash commands, app commands)."""
+
+    SCHEMA_URI: ClassVar[str] = COMMAND_EVENT_PAYLOAD_SCHEMA_V1
+    EVENT_TYPE: ClassVar[str] = COMMAND_EVENT_TYPE_V1
 
     user_id: str = Field(description="Actor who invoked the command.")
     context_id: str = Field(description="Room, channel, thread, or DM context where the command ran.")

@@ -30,8 +30,13 @@ __all__ = [
     "STREAM_DELTA_PAYLOAD_SCHEMA_V1",
     # Traceability extension
     "TRACEABILITY_EXTENSION_URI_V1",
-    # Evolution extension
-    "EVOLUTION_EXTENSION_URI_V1",
+    # Reflection extension (behaviour evolution)
+    "BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1",
+    "BEHAVIOUR_EVOLUTION_DIRECTIVE_EVENT_PAYLOAD_SCHEMA_V1",
+    "BEHAVIOUR_EVOLUTION_VERDICT_EVENT_PAYLOAD_SCHEMA_V1",
+    "BEHAVIOUR_EVOLUTION_RESULT_ACTION_PAYLOAD_SCHEMA_V1",
+    # Daemon extension
+    "DAEMON_EXTENSION_URI_V1",
 ]
 
 # Distribution extension
@@ -70,6 +75,13 @@ STREAM_DELTA_PAYLOAD_SCHEMA_V1 = f"{MESSAGING_EXTENSION_URI_V1}#StreamDeltaPaylo
 # See: https://docs.aion.to/a2a/extensions/aion/traceability/1.0.0
 TRACEABILITY_EXTENSION_URI_V1 = "https://docs.aion.to/a2a/extensions/aion/traceability/1.0.0"
 
-# Evolution extension (self-improvement directive routing)
-# See: https://docs.aion.to/a2a/extensions/aion/evolution/1.0.0
-EVOLUTION_EXTENSION_URI_V1 = "https://docs.aion.to/a2a/extensions/aion/evolution/1.0.0"
+# Reflection extension (behaviour evolution: improver directive/verdict/result payloads)
+# See: https://docs.aion.to/a2a/extensions/aion/behaviour/evolution/1.0.0
+BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1 = "https://docs.aion.to/a2a/extensions/aion/behaviour/evolution/1.0.0"
+BEHAVIOUR_EVOLUTION_DIRECTIVE_EVENT_PAYLOAD_SCHEMA_V1 = f"{BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1}#EvolutionDirectiveEventPayload"
+BEHAVIOUR_EVOLUTION_VERDICT_EVENT_PAYLOAD_SCHEMA_V1 = f"{BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1}#EvolutionVerdictEventPayload"
+BEHAVIOUR_EVOLUTION_RESULT_ACTION_PAYLOAD_SCHEMA_V1 = f"{BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1}#EvolutionResultActionPayload"
+
+# Daemon extension (authenticated, environment-scoped daemon interaction)
+# See: https://docs.aion.to/a2a/extensions/aion/daemon/1.0.0
+DAEMON_EXTENSION_URI_V1 = "https://docs.aion.to/a2a/extensions/aion/daemon/1.0.0"

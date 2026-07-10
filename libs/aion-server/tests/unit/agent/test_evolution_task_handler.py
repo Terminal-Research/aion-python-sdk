@@ -2,7 +2,8 @@ import pytest
 from a2a.types import Task, TaskState, TaskStatus, TaskStatusUpdateEvent
 from a2a.utils.errors import UnsupportedOperationError
 
-from aion.core.constants.a2a import EVOLUTION_EXTENSION_URI_V1
+from aion.core.constants.a2a import DAEMON_EXTENSION_URI_V1, BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1
+from aion.core.runtime import aion_a2a_extension_registry
 from aion.server.agent.execution.extensions.evolution import EvolutionTaskHandler
 
 
@@ -22,7 +23,21 @@ def _make_context(state: TaskState = TaskState.TASK_STATE_WORKING):
 
 class TestEvolutionTaskHandler:
     def test_uri_matches_core_constant(self):
-        assert EvolutionTaskHandler.uri == EVOLUTION_EXTENSION_URI_V1
+        assert EvolutionTaskHandler.uri == BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1
+
+    def test_registers_descriptor_requiring_daemon(self):
+        """Evolution is daemon-driven only — its descriptor requires the daemon
+        extension to also be active. Registered centrally in aion-core registry."""
+        descriptors = {d.uri: d for d in aion_a2a_extension_registry.get_all()}
+        assert BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1 in descriptors
+        assert descriptors[BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1].requires == (DAEMON_EXTENSION_URI_V1,)
+
+    def test_registers_descriptor_inactive_by_default(self):
+        """Evolution is agent-specific, not protocol-level — inactive by default,
+        requires AgentConfig.enabled_extensions to opt in."""
+        aion_a2a_extension_registry.reset_to_default()
+        descriptors = {d.uri: d for d in aion_a2a_extension_registry.get_all()}
+        assert descriptors[BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1].active is False
 
     @pytest.mark.anyio
     async def test_is_available_unconditionally_true(self):

@@ -84,7 +84,7 @@ class ExtensionTaskHandler(Protocol):
 # Explicit, known extension handler classes. See
 # Notes/WorkPlans/aion-core-extension-routing-integration.md §5-6 for the
 # incremental plan (EvolutionTaskHandler is currently a stub) and the open
-# terminology question (EVOLUTION_EXTENSION_URI_V1 vs REFLECTION_EXTENSION_URI_V1).
+# Uses BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1 (behaviour/evolution namespace).
 _KNOWN_TASK_HANDLERS: list[type[ExtensionTaskHandler]] = [EvolutionTaskHandler]
 
 
