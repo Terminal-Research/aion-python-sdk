@@ -26,7 +26,12 @@ MessageActionTrajectory = MessageEventTrajectory
 
 
 class MessageEventPayload(A2ABaseModel):
-    """Normalized inbound message context (DM, mention, thread reply, or channel message)."""
+    """Normalized inbound message context.
+
+    ``parent_context_id`` represents context hierarchy, while
+    ``reply_to_message_id`` represents a direct source-message reference. The
+    fields are independent and may appear together or separately.
+    """
 
     user_id: str = Field(description="Sender identifier on the source network.")
     context_id: str = Field(description="Source-network conversation, room, or thread id.")
@@ -39,6 +44,10 @@ class MessageEventPayload(A2ABaseModel):
     parent_context_id: Optional[str] = Field(
         default=None,
         description="Parent context id when nested threads are used.",
+    )
+    reply_to_message_id: Optional[str] = Field(
+        default=None,
+        description="Source-network message directly referenced by this message.",
     )
 
 
@@ -85,10 +94,12 @@ class CommandEventPayload(A2ABaseModel):
 
 
 class SourceSystemEventPayload(A2ABaseModel):
-    """Verbatim provider event preserved for downstream inspection beyond the normalized payload."""
+    """Complete parsed provider event preserved for downstream inspection."""
 
     provider: str = Field(description="Source provider name, e.g. 'slack' or 'telegram'.")
-    event: Dict[str, Any] = Field(description="Verbatim event payload from the source system.")
+    event: Dict[str, Any] = Field(
+        description="Complete semantic JSON event, including unknown provider fields.",
+    )
 
 
 class MessageActionPayload(A2ABaseModel):
@@ -102,11 +113,7 @@ class MessageActionPayload(A2ABaseModel):
     context_id: str = Field(description="Target conversation, thread, or channel context.")
     parent_context_id: Optional[str] = Field(
         default=None,
-        description=(
-            "Parent context when the target is nested inside a broader context. "
-            "Used for provider constructs such as Telegram Forum Topics, where "
-            "contextId is the group and parentContextId is the topic id."
-        ),
+        description="Immediate parent when the target context is nested.",
     )
     user_id: Optional[str] = Field(
         default=None,

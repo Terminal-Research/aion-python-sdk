@@ -20,6 +20,9 @@ This repository is a monorepo containing multiple projects located primarily und
   compatible model-service connection helpers, request-scoped model-service
   principal header injection, and typed control-plane addressing utilities
   used by framework packages.
+- **aion-core** – shared A2A payloads, runtime context, invocation abstractions,
+  constants, configuration, and logging used across Aion SDK packages. Owns the
+  provider-neutral Distribution/Messaging context hierarchy and reply contract.
 - **aion-adk** – Google ADK helper package for Aion-backed model
   configuration. Provides direct authoring helpers such as `aion_lite_llm`.
 - **aion-authoring-adk** – Google ADK authoring toolkit for Aion MCP access.
@@ -28,7 +31,8 @@ This repository is a monorepo containing multiple projects located primarily und
 - **aion-authoring-langgraph** – LangGraph authoring toolkit for Aion.
   Provides model helpers, event-routing utilities, streaming helpers, and MCP
   tool-loading bindings for runtime Aion contexts, including model clients that
-  resolve principal headers at request time.
+  resolve principal headers at request time, plus provider-neutral immediate
+  context and direct-reply routing.
 - **aion-shared** – shared configuration, settings, logging, A2A types, file handling, and utility modules used across Aion Python SDK packages.
 - **aion-mcp** – creates an ASGI proxy for an MCP server defined in
   `aion.yaml` and provides authenticated remote Aion MCP endpoint helpers for

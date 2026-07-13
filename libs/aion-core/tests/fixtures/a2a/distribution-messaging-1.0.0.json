@@ -1,0 +1,93 @@
+{
+  "extensionUri": "https://docs.aion.to/a2a/extensions/aion/distribution/messaging/1.0.0",
+  "eventUri": "https://docs.aion.to/a2a/extensions/aion/event/1.0.0",
+  "eventTypes": {
+    "message": "to.aion.distribution.message.1.0.0",
+    "reaction": "to.aion.distribution.reaction.1.0.0",
+    "command": "to.aion.distribution.command.1.0.0"
+  },
+  "schemaUris": {
+    "messageEvent": "https://docs.aion.to/a2a/extensions/aion/distribution/messaging/1.0.0#MessageEventPayload",
+    "reactionEvent": "https://docs.aion.to/a2a/extensions/aion/distribution/messaging/1.0.0#ReactionEventPayload",
+    "commandEvent": "https://docs.aion.to/a2a/extensions/aion/distribution/messaging/1.0.0#CommandEventPayload",
+    "sourceSystemEvent": "https://docs.aion.to/a2a/extensions/aion/distribution/messaging/1.0.0#SourceSystemEventPayload",
+    "messageAction": "https://docs.aion.to/a2a/extensions/aion/distribution/messaging/1.0.0#MessageActionPayload",
+    "reactionAction": "https://docs.aion.to/a2a/extensions/aion/distribution/messaging/1.0.0#ReactionActionPayload",
+    "streamDelta": "https://docs.aion.to/a2a/extensions/aion/distribution/messaging/1.0.0#StreamDeltaPayload"
+  },
+  "messageExtensions": [
+    "https://docs.aion.to/a2a/extensions/aion/distribution/1.0.0",
+    "https://docs.aion.to/a2a/extensions/aion/event/1.0.0",
+    "https://docs.aion.to/a2a/extensions/aion/distribution/messaging/1.0.0"
+  ],
+  "messageEventPayloads": {
+    "root": {
+      "userId": "source-user-42",
+      "contextId": "context-room",
+      "messageId": "message-100",
+      "trajectory": "conversation"
+    },
+    "nested": {
+      "userId": "source-user-42",
+      "contextId": "context-thread",
+      "messageId": "message-101",
+      "trajectory": "conversation",
+      "parentContextId": "context-room"
+    },
+    "directReply": {
+      "userId": "source-user-42",
+      "contextId": "context-room",
+      "messageId": "message-102",
+      "trajectory": "reply",
+      "replyToMessageId": "message-100"
+    },
+    "nestedReply": {
+      "userId": "source-user-42",
+      "contextId": "context-thread",
+      "messageId": "message-103",
+      "trajectory": "reply",
+      "parentContextId": "context-room",
+      "replyToMessageId": "message-101"
+    }
+  },
+  "reactionEventPayload": {
+    "userId": "source-user-42",
+    "contextId": "context-thread",
+    "messageId": "message-103",
+    "reactionKey": "party-parrot",
+    "action": "added",
+    "displayValue": ":party_parrot:",
+    "isCustom": true,
+    "parentContextId": "context-room"
+  },
+  "commandEventPayload": {
+    "userId": "source-user-42",
+    "contextId": "context-thread",
+    "command": "/deploy",
+    "arguments": "service=api env=staging",
+    "invocationId": "command-1",
+    "parentContextId": "context-room"
+  },
+  "sourceSystemEventPayload": {
+    "provider": "example-messaging",
+    "event": {
+      "type": "message",
+      "unknown": {
+        "preserved": true
+      }
+    }
+  },
+  "messageActionPayload": {
+    "trajectory": "reply",
+    "contextId": "context-thread",
+    "parentContextId": "context-room",
+    "replyToMessageId": "message-101"
+  },
+  "reactionActionPayload": {
+    "contextId": "context-thread",
+    "messageId": "message-103",
+    "reactionKey": "thumbsup",
+    "operation": "add",
+    "displayValue": ":thumbsup:"
+  }
+}
