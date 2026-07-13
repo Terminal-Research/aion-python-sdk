@@ -6,7 +6,7 @@ from .descriptors import (
     MessagesCollector,
     ExtensionDescriptor,
 )
-from .pipeline import AionRuntimeExtensions
+from .pipeline import AionRuntimeExtensions, UnknownExtension
 from .registry import AionA2AExtensionRegistry, aion_a2a_extension_registry
 
 __all__ = [
@@ -17,6 +17,7 @@ __all__ = [
     "MessagesCollector",
     "ExtensionDescriptor",
     "AionRuntimeExtensions",
+    "UnknownExtension",
     "AionA2AExtensionRegistry",
     "aion_a2a_extension_registry",
 ]

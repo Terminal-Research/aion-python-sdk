@@ -429,11 +429,15 @@ class TestExecuteViaResolve:
 class TestCreateFactory:
     @pytest.mark.anyio
     async def test_create_keeps_only_available_handlers(self):
+        from aion.server.agent.execution.extensions import ExtensionAvailability
+
         available_handler = _make_handler(uri="https://docs.aion.to/a2a/extensions/aion/evolution/1.0.0")
-        available_handler.is_available = AsyncMock(return_value=True)
+        available_handler.availability = AsyncMock(return_value=ExtensionAvailability.ok())
 
         unavailable_handler = _make_handler(uri="https://docs.aion.to/a2a/extensions/aion/other/1.0.0")
-        unavailable_handler.is_available = AsyncMock(return_value=False)
+        unavailable_handler.availability = AsyncMock(
+            return_value=ExtensionAvailability.unavailable("the other toolkit is not installed")
+        )
 
         agent = _make_agent()
         agent.config = MagicMock()
@@ -445,5 +449,59 @@ class TestCreateFactory:
             executor = await AionAgentRequestExecutor.create(aion_agent=agent)
 
         assert executor._extension_handlers == {available_handler.uri: available_handler}
-        available_handler.is_available.assert_awaited_once_with(agent.config)
-        unavailable_handler.is_available.assert_awaited_once_with(agent.config)
+        available_handler.availability.assert_awaited_once_with(agent.config)
+        unavailable_handler.availability.assert_awaited_once_with(agent.config)
+
+    @pytest.mark.anyio
+    async def test_create_marks_enabled_unavailable_handler_in_registry(self):
+        """Availability is a registry concern: an enabled extension whose
+        handler cannot run is recorded via mark_unavailable() so the shared
+        verification pipeline rejects requests with the handler's own reason."""
+        from types import SimpleNamespace
+        from aion.server.agent.execution.extensions import ExtensionAvailability
+
+        unavailable_handler = _make_handler(uri="https://docs.aion.to/a2a/extensions/aion/other/1.0.0")
+        unavailable_handler.availability = AsyncMock(
+            return_value=ExtensionAvailability.unavailable("the other toolkit is not installed")
+        )
+
+        agent = _make_agent()
+        agent.config = SimpleNamespace(enabled_extensions=[unavailable_handler.uri])
+
+        with patch(
+            "aion.server.agent.execution.request_executor.discover_extension_task_handlers",
+            return_value=[unavailable_handler],
+        ), patch(
+            "aion.server.agent.execution.request_executor.aion_a2a_extension_registry"
+        ) as mock_registry:
+            executor = await AionAgentRequestExecutor.create(aion_agent=agent)
+
+        assert executor._extension_handlers == {}
+        mock_registry.mark_unavailable.assert_called_once_with(
+            unavailable_handler.uri, "the other toolkit is not installed"
+        )
+
+    @pytest.mark.anyio
+    async def test_create_does_not_mark_not_enabled_handler(self):
+        """A handler that is unavailable merely because the agent didn't opt
+        in must not be marked - the registry already rejects such requests
+        as not enabled for this agent."""
+        from types import SimpleNamespace
+        from aion.server.agent.execution.extensions import ExtensionAvailability
+
+        handler = _make_handler(uri="https://docs.aion.to/a2a/extensions/aion/other/1.0.0")
+        handler.availability = AsyncMock(
+            return_value=ExtensionAvailability.unavailable("not enabled")
+        )
+        agent = _make_agent()
+        agent.config = SimpleNamespace(enabled_extensions=[])
+
+        with patch(
+            "aion.server.agent.execution.request_executor.discover_extension_task_handlers",
+            return_value=[handler],
+        ), patch(
+            "aion.server.agent.execution.request_executor.aion_a2a_extension_registry"
+        ) as mock_registry:
+            await AionAgentRequestExecutor.create(aion_agent=agent)
+
+        mock_registry.mark_unavailable.assert_not_called()

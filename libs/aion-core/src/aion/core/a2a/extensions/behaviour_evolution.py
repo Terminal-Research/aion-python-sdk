@@ -8,11 +8,17 @@ not a single object at params.metadata[uri]. See:
 https://docs.aion.to/a2a/extensions/aion/behaviour/evolution/1.0.0
 """
 
-from typing import Literal, Optional
+from typing import ClassVar, Literal, Optional
 
 from pydantic import Field
 
 from aion.core.a2a import A2ABaseModel
+from aion.core.constants.a2a import (
+    BEHAVIOUR_EVOLUTION_DIRECTIVE_EVENT_PAYLOAD_SCHEMA_V1,
+    BEHAVIOUR_EVOLUTION_DIRECTIVE_EVENT_TYPE_V1,
+    BEHAVIOUR_EVOLUTION_VERDICT_EVENT_PAYLOAD_SCHEMA_V1,
+    BEHAVIOUR_EVOLUTION_VERDICT_EVENT_TYPE_V1,
+)
 
 __all__ = [
     "TargetContext",
@@ -41,6 +47,9 @@ class EvolutionDirectiveEventPayload(A2ABaseModel):
     it from aion.yaml in the target repo after cloning.
     """
 
+    SCHEMA_URI: ClassVar[str] = BEHAVIOUR_EVOLUTION_DIRECTIVE_EVENT_PAYLOAD_SCHEMA_V1
+    EVENT_TYPE: ClassVar[str] = BEHAVIOUR_EVOLUTION_DIRECTIVE_EVENT_TYPE_V1
+
     target: TargetContext = Field(description="Repo coordinates for the agent being improved.")
     kind: Literal["feature", "bugfix"] = Field(
         description="Nature of the change: new capability, or a fix to incorrect behaviour."
@@ -57,6 +66,9 @@ class EvolutionVerdictEventPayload(A2ABaseModel):
     is the verifier's free-form assessment. The improver never issues the
     final verdict on its own beta - this always arrives from outside.
     """
+
+    SCHEMA_URI: ClassVar[str] = BEHAVIOUR_EVOLUTION_VERDICT_EVENT_PAYLOAD_SCHEMA_V1
+    EVENT_TYPE: ClassVar[str] = BEHAVIOUR_EVOLUTION_VERDICT_EVENT_TYPE_V1
 
     verdict: Literal["approve", "reject", "needs-changes"] = Field(
         description="Branching signal: promote the beta, roll back, or start a new run."

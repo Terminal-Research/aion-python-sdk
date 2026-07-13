@@ -32,6 +32,8 @@ __all__ = [
     "TRACEABILITY_EXTENSION_URI_V1",
     # Reflection extension (behaviour evolution)
     "BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1",
+    "BEHAVIOUR_EVOLUTION_DIRECTIVE_EVENT_TYPE_V1",
+    "BEHAVIOUR_EVOLUTION_VERDICT_EVENT_TYPE_V1",
     "BEHAVIOUR_EVOLUTION_DIRECTIVE_EVENT_PAYLOAD_SCHEMA_V1",
     "BEHAVIOUR_EVOLUTION_VERDICT_EVENT_PAYLOAD_SCHEMA_V1",
     "BEHAVIOUR_EVOLUTION_RESULT_ACTION_PAYLOAD_SCHEMA_V1",
@@ -81,6 +83,8 @@ TRACEABILITY_EXTENSION_URI_V1 = "https://docs.aion.to/a2a/extensions/aion/tracea
 # Reflection extension (behaviour evolution: improver directive/verdict/result payloads)
 # See: https://docs.aion.to/a2a/extensions/aion/behaviour/evolution/1.0.0
 BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1 = "https://docs.aion.to/a2a/extensions/aion/behaviour/evolution/1.0.0"
+BEHAVIOUR_EVOLUTION_DIRECTIVE_EVENT_TYPE_V1 = "to.aion.behaviour.evolution.directive.1.0.0"
+BEHAVIOUR_EVOLUTION_VERDICT_EVENT_TYPE_V1 = "to.aion.behaviour.evolution.verdict.1.0.0"
 BEHAVIOUR_EVOLUTION_DIRECTIVE_EVENT_PAYLOAD_SCHEMA_V1 = f"{BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1}#EvolutionDirectiveEventPayload"
 BEHAVIOUR_EVOLUTION_VERDICT_EVENT_PAYLOAD_SCHEMA_V1 = f"{BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1}#EvolutionVerdictEventPayload"
 BEHAVIOUR_EVOLUTION_RESULT_ACTION_PAYLOAD_SCHEMA_V1 = f"{BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1}#EvolutionResultActionPayload"

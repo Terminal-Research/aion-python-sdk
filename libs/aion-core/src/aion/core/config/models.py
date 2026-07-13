@@ -168,8 +168,9 @@ class AgentConfig(BaseModel):
     enabled_extensions: List[str] = Field(
         default_factory=list,
         description="Optional A2A extension URIs this agent additionally activates "
-                    "(e.g. 'evolution'). Extensions that are active by default "
-                    "(e.g. daemon, distribution) are unaffected by this list.")
+                    "(opt-in extensions, e.g. daemon and behaviour-evolution). "
+                    "Extensions that are active by default (e.g. distribution, "
+                    "messaging) are unaffected by this list.")
 
     @field_validator('configuration', mode='before')
     @classmethod

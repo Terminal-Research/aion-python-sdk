@@ -5,6 +5,10 @@ from __future__ import annotations
 import dataclasses
 from typing import Iterable
 
+from aion.core.a2a.extensions.behaviour_evolution import (
+    EvolutionDirectiveEventPayload,
+    EvolutionVerdictEventPayload,
+)
 from aion.core.a2a.extensions.cards import CardActionEventPayload
 from aion.core.a2a.extensions.daemon import DaemonExtensionPayload
 from aion.core.a2a.extensions.distribution import DistributionExtensionV1
@@ -50,16 +54,16 @@ class AionA2AExtensionRegistry(metaclass=Singleton):
 
     def __init__(self) -> None:
         self._descriptors: dict[str, ExtensionDescriptor] = {}
-        self._defaults: dict[str, bool] = {}
+        self._defaults: dict[str, tuple[bool, str | None]] = {}
 
     def register(self, descriptor: ExtensionDescriptor) -> None:
         """Register (or replace) an extension descriptor by URI.
 
-        Snapshots descriptor.active as this URI's default for
-        reset_to_default().
+        Snapshots descriptor.active/unavailable_reason as this URI's
+        defaults for reset_to_default().
         """
         self._descriptors[descriptor.uri] = descriptor
-        self._defaults[descriptor.uri] = descriptor.active
+        self._defaults[descriptor.uri] = (descriptor.active, descriptor.unavailable_reason)
 
     def activate(self, uris: Iterable[str]) -> None:
         """Turn on exactly the registered descriptors named in `uris`.
@@ -75,10 +79,27 @@ class AionA2AExtensionRegistry(metaclass=Singleton):
             if descriptor is not None:
                 self._descriptors[uri] = dataclasses.replace(descriptor, active=True)
 
+    def mark_unavailable(self, uri: str, reason: str) -> None:
+        """Record that an enabled extension cannot function on this deployment.
+
+        Called at startup by whichever component owns the extension's runtime
+        dependencies (e.g. the server marks a task-handler extension whose
+        optional toolkit is not installed). The request-time verifier rejects
+        any request declaring the extension with exactly this reason. A URI
+        with no registered descriptor is a no-op, mirroring activate().
+        """
+        descriptor = self._descriptors.get(uri)
+        if descriptor is not None:
+            self._descriptors[uri] = dataclasses.replace(descriptor, unavailable_reason=reason)
+
     def reset_to_default(self) -> None:
-        """Restore every descriptor's `active` to the value it was registered with."""
-        for uri, default in self._defaults.items():
-            self._descriptors[uri] = dataclasses.replace(self._descriptors[uri], active=default)
+        """Restore every descriptor's activation/availability to registration values."""
+        for uri, (active, unavailable_reason) in self._defaults.items():
+            self._descriptors[uri] = dataclasses.replace(
+                self._descriptors[uri],
+                active=active,
+                unavailable_reason=unavailable_reason,
+            )
 
     def get_all(self) -> tuple[ExtensionDescriptor, ...]:
         """Return every registered descriptor with its current activation state."""
@@ -124,8 +145,8 @@ aion_a2a_extension_registry.register(
             CommandEventPayload,
         ),
         description="Messaging event types and payload schemas layered on the distribution "
-                    "extension; delivered per-message-part via the event extension, not a "
-                    "single payload at params.metadata[uri] - see extract_event()/Event.",
+                    "extension; delivered per-message-part via the event extension as an "
+                    "event envelope, not as a single aggregate payload.",
     )
 )
 aion_a2a_extension_registry.register(
@@ -146,6 +167,10 @@ aion_a2a_extension_registry.register(
     ExtensionDescriptor(
         uri=BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1,
         requires=(DAEMON_EXTENSION_URI_V1,),
+        collector=MessagesCollector(
+            EvolutionDirectiveEventPayload,
+            EvolutionVerdictEventPayload,
+        ),
         description="Self-improvement flow: daemon-driven directive/verdict/result routing.",
         active=False,
     )

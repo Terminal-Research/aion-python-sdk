@@ -11,7 +11,7 @@ from aion.server.agent.execution.extensions.evolution import EvolutionTaskHandle
 class _FakeHandler:
     uri = "https://docs.aion.to/a2a/extensions/aion/fake/1.0.0"
 
-    async def is_available(self, config):
+    async def availability(self, config):
         return True
 
     def stream(self, context):

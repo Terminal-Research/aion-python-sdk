@@ -324,10 +324,11 @@ class TestAionA2AExtensionRegistry:
         assert descriptors[BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1].requires == (DAEMON_EXTENSION_URI_V1,)
 
     def test_core_protocol_extensions_default_active(self):
-        """Per the A2A extension specs, daemon/traceability/distribution/
-        messaging/event/cards all activate without any agent-level opt-in -
-        only genuinely agent-specific features (e.g. evolution) default
-        inactive. Regression guard for registry.py's registration defaults."""
+        """Per the A2A extension specs, traceability/distribution/messaging/
+        event/cards all activate without any agent-level opt-in - only
+        opt-in features (daemon-scoped invocation, evolution) default
+        inactive and require AgentConfig.enabled_extensions. Regression
+        guard for registry.py's registration defaults."""
         from aion.core.constants.a2a import (
             CARDS_EXTENSION_URI_V1,
             DAEMON_EXTENSION_URI_V1,
@@ -339,7 +340,6 @@ class TestAionA2AExtensionRegistry:
 
         descriptors = {d.uri: d for d in aion_a2a_extension_registry.get_all()}
         for uri in (
-            DAEMON_EXTENSION_URI_V1,
             TRACEABILITY_EXTENSION_URI_V1,
             DISTRIBUTION_EXTENSION_URI_V1,
             MESSAGING_EXTENSION_URI_V1,
@@ -347,3 +347,36 @@ class TestAionA2AExtensionRegistry:
             CARDS_EXTENSION_URI_V1,
         ):
             assert descriptors[uri].active is True
+        assert descriptors[DAEMON_EXTENSION_URI_V1].active is False
+
+
+class TestMarkUnavailable:
+    def setup_method(self):
+        aion_a2a_extension_registry.reset_to_default()
+
+    def teardown_method(self):
+        aion_a2a_extension_registry.reset_to_default()
+
+    def test_mark_unavailable_records_reason(self):
+        fake_uri = "aion://extensions/test-registry-unavailable/v1"
+        aion_a2a_extension_registry.register(ExtensionDescriptor(uri=fake_uri, active=True))
+
+        aion_a2a_extension_registry.mark_unavailable(fake_uri, "toolkit not installed")
+
+        descriptor = next(d for d in aion_a2a_extension_registry.get_all() if d.uri == fake_uri)
+        assert descriptor.unavailable_reason == "toolkit not installed"
+
+    def test_mark_unavailable_unknown_uri_is_a_noop(self):
+        aion_a2a_extension_registry.mark_unavailable(
+            "aion://extensions/does-not-exist/v1", "whatever"
+        )
+
+    def test_reset_restores_availability(self):
+        fake_uri = "aion://extensions/test-registry-unavailable-reset/v1"
+        aion_a2a_extension_registry.register(ExtensionDescriptor(uri=fake_uri, active=True))
+        aion_a2a_extension_registry.mark_unavailable(fake_uri, "gone")
+
+        aion_a2a_extension_registry.reset_to_default()
+
+        descriptor = next(d for d in aion_a2a_extension_registry.get_all() if d.uri == fake_uri)
+        assert descriptor.unavailable_reason is None

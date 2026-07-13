@@ -261,3 +261,104 @@ class TestAionRequestHandler:
         # Verify
         assert isinstance(result, ContextsList)
         assert result.root == []
+
+
+class TestVerifyDeclaredExtensions:
+    """Extension declarations are verified from the request path, before any
+    ActiveTask machinery: client mistakes must come back as InvalidParamsError
+    (a WARNING-level request error), not as producer 'Execution failed'
+    ERROR tracebacks."""
+
+    @staticmethod
+    def _call_context(requested=frozenset()):
+        from types import SimpleNamespace
+        return SimpleNamespace(requested_extensions=set(requested))
+
+    @staticmethod
+    def _handler_self():
+        """Minimal stand-in for the handler instance (self is not consulted)."""
+        from types import SimpleNamespace
+        return SimpleNamespace()
+
+    def _verify(self, params, call_context):
+        AionRequestHandler._verify_declared_extensions(
+            self._handler_self(), params, call_context
+        )
+
+    def test_declared_inactive_extension_rejected_as_invalid_params(self):
+        from a2a.types import Message, Role, SendMessageRequest
+        from a2a.utils.errors import InvalidParamsError
+        from aion.core.constants.a2a import BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1
+        from aion.core.runtime import aion_a2a_extension_registry
+
+        aion_a2a_extension_registry.reset_to_default()
+        message = Message(message_id="m-1", role=Role.ROLE_USER)
+        message.extensions.append(BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1)
+        params = SendMessageRequest(message=message)
+
+        with pytest.raises(InvalidParamsError, match="not enabled for this agent"):
+            self._verify(params, self._call_context())
+
+    def test_header_declared_inactive_extension_rejected(self):
+        from a2a.types import Message, Role, SendMessageRequest
+        from a2a.utils.errors import InvalidParamsError
+        from aion.core.constants.a2a import DAEMON_EXTENSION_URI_V1
+        from aion.core.runtime import aion_a2a_extension_registry
+
+        aion_a2a_extension_registry.reset_to_default()
+        params = SendMessageRequest(message=Message(message_id="m-1", role=Role.ROLE_USER))
+
+        with pytest.raises(InvalidParamsError):
+            self._verify(params, self._call_context({DAEMON_EXTENSION_URI_V1}))
+
+    def test_request_without_declared_extensions_passes(self):
+        from a2a.types import Message, Role, SendMessageRequest
+        from aion.core.runtime import aion_a2a_extension_registry
+
+        aion_a2a_extension_registry.reset_to_default()
+        params = SendMessageRequest(message=Message(message_id="m-1", role=Role.ROLE_USER))
+
+        self._verify(params, self._call_context())
+
+    def test_enabled_extension_marked_unavailable_rejected(self):
+        """The silent-fallback guard: an enabled extension marked unavailable
+        in the registry (e.g. its toolkit is not installed) must reject the
+        request with the recorded reason, not fall through to the primary graph."""
+        from a2a.types import Message, Role, SendMessageRequest
+        from a2a.utils.errors import InvalidParamsError
+        from aion.core.constants.a2a import DAEMON_EXTENSION_URI_V1
+        from aion.core.runtime import aion_a2a_extension_registry
+        from google.protobuf.json_format import ParseDict
+
+        aion_a2a_extension_registry.activate([DAEMON_EXTENSION_URI_V1])
+        aion_a2a_extension_registry.mark_unavailable(
+            DAEMON_EXTENSION_URI_V1, "the daemon handler cannot run here"
+        )
+        try:
+            params = SendMessageRequest(message=Message(message_id="m-1", role=Role.ROLE_USER))
+            ParseDict({
+                "daemonIdentity": {
+                    "kind": "daemon",
+                    "id": "daemon-1",
+                    "networkType": "Aion",
+                    "organizationId": "org-1",
+                },
+                "behavior": {"id": "b-1", "behaviorKey": "main", "versionId": "v-1"},
+                "environment": {
+                    "id": "env-1",
+                    "name": "dev",
+                    "deploymentId": "dep-1",
+                    "configurationVariables": {},
+                    "daemonAgentIdentityId": "daemon-1",
+                },
+            }, params.metadata.get_or_create_struct(DAEMON_EXTENSION_URI_V1))
+
+            with pytest.raises(InvalidParamsError, match="daemon handler cannot run here"):
+                self._verify(params, self._call_context())
+
+            # Sanity: once availability is restored the same request passes.
+            aion_a2a_extension_registry.reset_to_default()
+            aion_a2a_extension_registry.activate([DAEMON_EXTENSION_URI_V1])
+            self._verify(params, self._call_context())
+        finally:
+            aion_a2a_extension_registry.reset_to_default()

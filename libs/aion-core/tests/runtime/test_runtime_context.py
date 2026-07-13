@@ -584,19 +584,25 @@ class TestBuilderExtensionPipeline:
     using the DAEMON descriptor aion-core registers for itself."""
 
     def test_daemon_payload_parsed_into_extensions_and_get_daemon(self):
-        rc = _make_mock_rc(metadata={DAEMON_EXTENSION_URI_V1: _make_daemon_struct()})
-        inbox = A2AInbox(message=None, metadata={DAEMON_EXTENSION_URI_V1: _make_daemon_struct()})
+        # Daemon defaults inactive - opt it in the way AgentManager does from
+        # AgentConfig.enabled_extensions.
+        aion_a2a_extension_registry.activate([DAEMON_EXTENSION_URI_V1])
+        try:
+            rc = _make_mock_rc(metadata={DAEMON_EXTENSION_URI_V1: _make_daemon_struct()})
+            inbox = A2AInbox(message=None, metadata={DAEMON_EXTENSION_URI_V1: _make_daemon_struct()})
 
-        with patch("aion.core.runtime.context.builder.A2AInbox.from_request_context", return_value=inbox):
-            result = AionRuntimeContextBuilder.from_request_context(rc)
+            with patch("aion.core.runtime.context.builder.A2AInbox.from_request_context", return_value=inbox):
+                result = AionRuntimeContextBuilder.from_request_context(rc)
 
-        assert result is not None
-        assert result.distribution_extension_payload is None
-        daemon = result.get_daemon()
-        assert daemon is not None
-        assert daemon.daemon_identity.id == "daemon-1"
-        assert daemon.environment.configuration_variables["llm"] == "qwen"
-        assert result.extensions.get(DAEMON_EXTENSION_URI_V1) is daemon
+            assert result is not None
+            assert result.distribution_extension_payload is None
+            daemon = result.get_daemon()
+            assert daemon is not None
+            assert daemon.daemon_identity.id == "daemon-1"
+            assert daemon.environment.configuration_variables["llm"] == "qwen"
+            assert result.extensions.get(DAEMON_EXTENSION_URI_V1) is daemon
+        finally:
+            aion_a2a_extension_registry.reset_to_default()
 
     def test_traceability_payload_parsed_into_extensions_and_get_traceability(self):
         """traceability delivers its payload the same way daemon does
@@ -638,3 +644,199 @@ class TestBuilderExtensionPipeline:
             assert exc_info.value.missing_requires == frozenset({DAEMON_EXTENSION_URI_V1})
         finally:
             aion_a2a_extension_registry._descriptors.pop(fake_uri, None)
+            # Drop the default too - a stale default makes any later
+            # reset_to_default() KeyError on the unregistered URI.
+            aion_a2a_extension_registry._defaults.pop(fake_uri, None)
+
+
+def _make_evolution_directive_message(
+    event_type: str = None,
+    payload_schema: str = None,
+) -> Message:
+    """A daemon-scoped directive message: text instruction part + schema-tagged data part."""
+    from aion.core.constants.a2a import (
+        BEHAVIOUR_EVOLUTION_DIRECTIVE_EVENT_PAYLOAD_SCHEMA_V1,
+        BEHAVIOUR_EVOLUTION_DIRECTIVE_EVENT_TYPE_V1,
+        BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1,
+    )
+
+    msg = Message(message_id="msg-evo-1", role=Role.ROLE_USER)
+    msg.extensions.append(BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1)
+    msg.metadata.get_or_create_struct(EVENT_EXTENSION_URI_V1).update({
+        "type": event_type or BEHAVIOUR_EVOLUTION_DIRECTIVE_EVENT_TYPE_V1,
+        "source": "aion://control-plane/reflection",
+        "id": "ev-evo-1",
+    })
+
+    msg.parts.append(Part(text="Append one short, friendly sentence to the end of README.md."))
+
+    data_part = Part()
+    data_part.metadata.get_or_create_struct(EVENT_EXTENSION_URI_V1).update({
+        "schema": payload_schema or BEHAVIOUR_EVOLUTION_DIRECTIVE_EVENT_PAYLOAD_SCHEMA_V1,
+    })
+    payload = Struct()
+    ParseDict({
+        "target": {
+            "repoUrl": "https://github.com/acme/target-agent.git",
+            "baseRef": "HEAD",
+            "targetVersionId": "v-42",
+        },
+        "kind": "feature",
+        "mode": "advisory",
+    }, payload)
+    data_part.data.struct_value.CopyFrom(payload)
+    msg.parts.append(data_part)
+    return msg
+
+
+class TestBuilderEvolutionDirectivePipeline:
+    """Covers the behaviour-evolution descriptor's MessagesCollector: a
+    daemon-scoped directive event must arrive downstream as a typed Event
+    with an EvolutionDirectiveEventPayload."""
+
+    def test_directive_event_parsed_when_evolution_and_daemon_enabled(self):
+        from aion.core.a2a.extensions.behaviour_evolution import EvolutionDirectiveEventPayload
+        from aion.core.constants.a2a import (
+            BEHAVIOUR_EVOLUTION_DIRECTIVE_EVENT_TYPE_V1,
+            BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1,
+        )
+
+        aion_a2a_extension_registry.activate(
+            [BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1, DAEMON_EXTENSION_URI_V1]
+        )
+        try:
+            msg = _make_evolution_directive_message()
+            metadata = {DAEMON_EXTENSION_URI_V1: _make_daemon_struct()}
+            inbox = A2AInbox(message=msg, metadata=metadata)
+            rc = _make_mock_rc(message=msg, metadata=metadata)
+
+            with patch(
+                "aion.core.runtime.context.builder.A2AInbox.from_request_context",
+                return_value=inbox,
+            ):
+                result = AionRuntimeContextBuilder.from_request_context(rc)
+
+            assert result is not None
+            assert result.is_extension_active(BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1)
+            event = result.extensions.get(BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1)
+            assert event is not None
+            assert event.kind == BEHAVIOUR_EVOLUTION_DIRECTIVE_EVENT_TYPE_V1
+            assert isinstance(event.payload, EvolutionDirectiveEventPayload)
+            assert event.payload.target.repo_url == "https://github.com/acme/target-agent.git"
+            assert event.payload.target.target_version_id == "v-42"
+            assert event.payload.kind == "feature"
+            assert event.payload.mode == "advisory"
+        finally:
+            aion_a2a_extension_registry.reset_to_default()
+
+    def test_directive_without_daemon_extension_rejected(self):
+        """The daemon co-activation gate: evolution declared alone must raise,
+        not silently route the request as a primary task."""
+        from aion.core.constants.a2a import BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1
+
+        aion_a2a_extension_registry.activate(
+            [BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1, DAEMON_EXTENSION_URI_V1]
+        )
+        try:
+            msg = _make_evolution_directive_message()
+            inbox = A2AInbox(message=msg, metadata={})
+            rc = _make_mock_rc(message=msg, metadata={})
+
+            with patch(
+                "aion.core.runtime.context.builder.A2AInbox.from_request_context",
+                return_value=inbox,
+            ):
+                with pytest.raises(ExtensionActivationError) as exc_info:
+                    AionRuntimeContextBuilder.from_request_context(rc)
+
+            assert exc_info.value.uri == BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1
+            assert exc_info.value.missing_requires == frozenset({DAEMON_EXTENSION_URI_V1})
+        finally:
+            aion_a2a_extension_registry.reset_to_default()
+
+    def test_directive_not_collected_when_extension_not_enabled_for_agent(self):
+        """Without AgentConfig.enabled_extensions opting evolution in, a request
+        declaring it must be rejected as inactive for this agent."""
+        from aion.core.constants.a2a import BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1
+
+        aion_a2a_extension_registry.reset_to_default()
+        msg = _make_evolution_directive_message()
+        inbox = A2AInbox(message=msg, metadata={})
+        rc = _make_mock_rc(message=msg, metadata={})
+
+        with patch(
+            "aion.core.runtime.context.builder.A2AInbox.from_request_context",
+            return_value=inbox,
+        ):
+            with pytest.raises(ExtensionActivationError) as exc_info:
+                AionRuntimeContextBuilder.from_request_context(rc)
+
+        assert exc_info.value.uri == BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1
+
+
+class TestUnknownExtensions:
+    """Declared URIs no registered descriptor claims: never an error, never
+    active - but carried on the runtime context as inert UnknownExtension
+    entries instead of being silently dropped at parsing."""
+
+    UNKNOWN_URI = "https://example.com/extensions/vendor/custom/1.0.0"
+
+    def _build(self):
+        from aion.core.runtime.context.extensions import UnknownExtension  # noqa: F401
+
+        msg = Message(message_id="m-unknown", role=Role.ROLE_USER)
+        msg.extensions.append(self.UNKNOWN_URI)
+        inbox = A2AInbox(message=msg, metadata={})
+        rc = _make_mock_rc(message=msg, metadata={})
+
+        with patch(
+            "aion.core.runtime.context.builder.A2AInbox.from_request_context",
+            return_value=inbox,
+        ):
+            return AionRuntimeContextBuilder.from_request_context(rc)
+
+    def test_unknown_extension_is_carried_but_not_active(self):
+        from aion.core.runtime.context.extensions import UnknownExtension
+
+        result = self._build()
+
+        assert result is not None
+        assert result.is_extension_active(self.UNKNOWN_URI) is False
+        carried = result.extensions.get(self.UNKNOWN_URI)
+        assert isinstance(carried, UnknownExtension)
+        assert carried.uri == self.UNKNOWN_URI
+        assert self.UNKNOWN_URI in result.extensions
+        assert self.UNKNOWN_URI in list(result.extensions)
+        assert [u.uri for u in result.extensions.unknown] == [self.UNKNOWN_URI]
+
+    def test_undeclared_extension_is_absent_entirely(self):
+        result = self._build()
+
+        other = "https://example.com/extensions/vendor/other/1.0.0"
+        assert result.extensions.get(other) is None
+        assert other not in result.extensions
+
+
+class TestUnavailableExtensionVerification:
+    """An extension that is enabled but marked unavailable must reject the
+    request with the recorded, extension-authored reason."""
+
+    def test_active_but_unavailable_extension_rejected_with_reason(self):
+        fake_uri = "aion://extensions/test-unavailable-pipeline/v1"
+        aion_a2a_extension_registry.register(ExtensionDescriptor(uri=fake_uri, active=True))
+        aion_a2a_extension_registry.mark_unavailable(fake_uri, "its toolkit is not installed")
+        try:
+            msg = Message(message_id="m-unavail", role=Role.ROLE_USER)
+            msg.extensions.append(fake_uri)
+            inbox = A2AInbox(message=msg, metadata={})
+            rc = _make_mock_rc(message=msg, metadata={})
+
+            with patch(
+                "aion.core.runtime.context.builder.A2AInbox.from_request_context",
+                return_value=inbox,
+            ):
+                with pytest.raises(ExtensionActivationError, match="its toolkit is not installed"):
+                    AionRuntimeContextBuilder.from_request_context(rc)
+        finally:
+            aion_a2a_extension_registry._descriptors.pop(fake_uri, None)
+            aion_a2a_extension_registry._defaults.pop(fake_uri, None)

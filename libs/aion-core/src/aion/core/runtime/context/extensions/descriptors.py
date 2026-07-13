@@ -42,11 +42,12 @@ class ExtensionActivationError(Exception):
         self.reason = reason
         if missing_requires:
             message = (
-                f"Extension '{uri}' is active but requires also-active "
-                f"extension(s): {sorted(missing_requires)}"
+                f"Extension '{uri}' requires extension(s) that are not active "
+                f"on this request: {sorted(missing_requires)} - declare them "
+                f"alongside it"
             )
         else:
-            message = f"Extension '{uri}' is active but invalid: {reason}"
+            message = f"Extension '{uri}' cannot be activated: {reason}"
         super().__init__(message)
 
 
@@ -104,7 +105,11 @@ class TaskMetadataCollector:
         raw_metadata = dict(request_context.metadata) if request_context.metadata else {}
         payload = raw_metadata.get(uri)
         if payload is None:
-            raise ExtensionActivationError(uri, reason="declared active but payload missing")
+            raise ExtensionActivationError(
+                uri,
+                reason="the extension was declared active but its payload is "
+                       "missing from the request metadata",
+            )
         try:
             return self.payload_model.model_validate(proto_to_dict(payload))
         except Exception as ex:
@@ -235,6 +240,12 @@ class ExtensionDescriptor:
             Agent-specific features (evolution, reflection) register with
             active=False and rely on AgentConfig.enabled_extensions to
             turn them on.
+        unavailable_reason: When set, the extension is enabled but cannot
+            actually function on this deployment (e.g. its optional toolkit
+            is not installed) - a request declaring it is rejected with
+            exactly this user-facing message. None means available. Marked
+            at startup via AionA2AExtensionRegistry.mark_unavailable() by
+            whichever component owns the extension's runtime dependencies.
     """
 
     uri: str
@@ -242,3 +253,4 @@ class ExtensionDescriptor:
     requires: tuple[str, ...] = ()
     description: str = ""
     active: bool = True
+    unavailable_reason: Optional[str] = None

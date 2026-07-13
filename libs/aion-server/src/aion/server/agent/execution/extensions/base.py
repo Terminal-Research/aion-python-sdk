@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Protocol
 
 from a2a.types import TaskArtifactUpdateEvent, TaskStatusUpdateEvent
 
+from .availability import ExtensionAvailability
 from .evolution import EvolutionTaskHandler
 
 if TYPE_CHECKING:
@@ -21,6 +22,7 @@ if TYPE_CHECKING:
     from aion.core.config.models import AgentConfig
 
 __all__ = [
+    "ExtensionAvailability",
     "ExtensionTaskHandler",
     "discover_extension_task_handlers",
     "ROUTED_EXTENSION_METADATA_KEY",
@@ -49,11 +51,13 @@ class ExtensionTaskHandler(Protocol):
     uri: str
     """Extension URI this handler owns (matched against message.extensions[])."""
 
-    async def is_available(self, config: "AgentConfig") -> bool:
-        """Return whether this handler can run for the given agent config.
+    async def availability(self, config: "AgentConfig") -> ExtensionAvailability:
+        """Report whether this handler can run for the given agent config.
 
         Called once per executor instance at startup, e.g. to check that a
-        required optional toolkit dependency is installed.
+        required optional toolkit dependency is installed. When unavailable,
+        the returned reason is surfaced verbatim to clients whose requests
+        declare this extension - make it actionable.
         """
         ...
 
@@ -82,8 +86,6 @@ class ExtensionTaskHandler(Protocol):
 
 
 # Explicit, known extension handler classes. See
-# Notes/WorkPlans/aion-core-extension-routing-integration.md §5-6 for the
-# incremental plan (EvolutionTaskHandler is currently a stub) and the open
 # Uses BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1 (behaviour/evolution namespace).
 _KNOWN_TASK_HANDLERS: list[type[ExtensionTaskHandler]] = [EvolutionTaskHandler]
 

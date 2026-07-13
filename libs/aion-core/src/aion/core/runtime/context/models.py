@@ -32,6 +32,8 @@ from aion.core.a2a.extensions import (
     Distribution,
     DistributionExtensionV1,
     Environment,
+    EvolutionDirectiveEventPayload,
+    EvolutionVerdictEventPayload,
     MessageEventPayload,
     PrincipalIdentity,
     ReactionEventPayload,
@@ -61,6 +63,8 @@ NormalizedPayload = Union[
     ReactionEventPayload,
     CommandEventPayload,
     CardActionEventPayload,
+    EvolutionDirectiveEventPayload,
+    EvolutionVerdictEventPayload,
 ]
 
 

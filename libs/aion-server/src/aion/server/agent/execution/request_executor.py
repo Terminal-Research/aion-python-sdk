@@ -13,7 +13,11 @@ from a2a.utils.errors import (
     UnsupportedOperationError,
 )
 from a2a.utils.telemetry import trace_function
-from aion.core.runtime import AionRuntimeContextBuilder, ExtensionActivationError
+from aion.core.runtime import (
+    AionRuntimeContextBuilder,
+    ExtensionActivationError,
+    aion_a2a_extension_registry,
+)
 from aion.core.runtime.context.registry import AionRuntimeContextRegistry
 from aion.server.a2a.constants import TERMINAL_TASK_STATES
 from aion.server.a2a.utils import is_task_interrupted
@@ -64,13 +68,35 @@ class AionAgentRequestExecutor(AgentExecutor):
             aion_agent: AionAgent,
             file_transformer: Optional[A2AFileTransformer] = None,
     ) -> "AionAgentRequestExecutor":
-        """Build the executor, keeping only extension handlers available for this agent."""
-        candidates = discover_extension_task_handlers()
-        available = [
-            handler for handler in candidates
-            if await handler.is_available(aion_agent.config)
-        ]
-        return cls(aion_agent, file_transformer=file_transformer, extension_handlers=available)
+        """Build the executor, keeping only extension handlers available for this agent.
+
+        A handler that reports itself unavailable is recorded in the central
+        extension registry (mark_unavailable) with its own reason - the
+        request-time verification pipeline then rejects any request declaring
+        that extension, uniformly with extensions that have no handler at
+        all. The executor keeps no availability state of its own.
+        """
+        available: list[ExtensionTaskHandler] = []
+        for handler in discover_extension_task_handlers():
+            result = await handler.availability(aion_agent.config)
+            if result.available:
+                available.append(handler)
+                continue
+            reason = result.reason or f"extension '{handler.uri}' is not available on this agent"
+            enabled = getattr(aion_agent.config, "enabled_extensions", None) or ()
+            if handler.uri in enabled:
+                aion_a2a_extension_registry.mark_unavailable(handler.uri, reason)
+                logger.warning(
+                    "Extension '%s' task handler is unavailable - requests "
+                    "declaring it will be rejected: %s",
+                    handler.uri,
+                    reason,
+                )
+        return cls(
+            aion_agent,
+            file_transformer=file_transformer,
+            extension_handlers=available,
+        )
 
     @trace_function
     async def execute(
