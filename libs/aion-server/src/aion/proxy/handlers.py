@@ -7,6 +7,7 @@ from urllib.parse import urljoin
 
 import httpx
 from fastapi import Request, Response
+from fastapi.responses import StreamingResponse
 
 from .exceptions import (
     AgentNotFoundException,
@@ -17,6 +18,15 @@ from .exceptions import (
 from .types import AgentHealthInfo
 
 logger = logging.getLogger(__name__)
+
+# Upstream timeout for forwarded requests: connect/write/pool stay bounded,
+# but read is unbounded - streamed agent responses (SSE task updates) may
+# legitimately stay silent between chunks longer than any fixed limit.
+_FORWARD_TIMEOUT = httpx.Timeout(30.0, read=None)
+
+# Hop-by-hop framing headers that must not be copied from the upstream
+# response: the proxied response is re-framed (chunked) by the server.
+_EXCLUDED_RESPONSE_HEADERS = frozenset({"content-length", "transfer-encoding", "connection"})
 
 
 class RequestHandler:
@@ -84,7 +94,13 @@ class RequestHandler:
 
     async def forward_request(self, agent_id: str, path: str, request: Request) -> Response:
         """
-        Forward the incoming request to the target agent
+        Forward the incoming request to the target agent, streaming the
+        response body through as it arrives.
+
+        The upstream response is not buffered: each chunk is relayed to the
+        client as soon as the agent produces it, so streaming transports
+        (e.g. SSE task updates from SendStreamingMessage) deliver
+        intermediate events in real time instead of one batch at completion.
 
         Args:
             agent_id: Target agent identifier
@@ -92,7 +108,7 @@ class RequestHandler:
             request: Incoming FastAPI request
 
         Returns:
-            Response from the target agent
+            Streaming response relaying the target agent's response
 
         Raises:
             AgentNotFoundException: When agent_id is not found
@@ -121,27 +137,16 @@ class RequestHandler:
             # Read request body
             body = await request.body()
 
-            # Forward the request
-            response = await self.http_client.request(
+            # Forward the request; stream=True returns as soon as the
+            # upstream response headers arrive, without reading the body
+            upstream_request = self.http_client.build_request(
                 method=request.method,
                 url=target_url,
                 headers=headers,
-                content=body
+                content=body,
+                timeout=_FORWARD_TIMEOUT,
             )
-
-            # Prepare response headers
-            response_headers = dict(response.headers)
-            # Remove headers that might cause issues
-            response_headers.pop('content-encoding', None)
-            response_headers.pop('transfer-encoding', None)
-
-            # Return response
-            return Response(
-                content=response.content,
-                status_code=response.status_code,
-                headers=response_headers,
-                media_type=response_headers.get('content-type')
-            )
+            upstream = await self.http_client.send(upstream_request, stream=True)
 
         except httpx.ConnectError:
             logger.error(f"Failed to connect to agent '{agent_id}' at {agent_base_url}")
@@ -154,3 +159,31 @@ class RequestHandler:
         except Exception as e:
             logger.error(f"Error forwarding request to agent '{agent_id}': {str(e)}")
             raise AgentProxyException(agent_id, str(e))
+
+        # Relay body bytes exactly as sent (aiter_raw skips httpx's
+        # content decoding), so upstream headers - including any
+        # content-encoding - stay valid; only framing headers are dropped
+        response_headers = {
+            key: value
+            for key, value in upstream.headers.items()
+            if key.lower() not in _EXCLUDED_RESPONSE_HEADERS
+        }
+
+        async def relay_upstream():
+            try:
+                async for chunk in upstream.aiter_raw():
+                    yield chunk
+            except httpx.HTTPError as e:
+                # Response headers are already sent - the error can only be
+                # logged; closing the generator aborts the client connection
+                logger.error(
+                    f"Error streaming response from agent '{agent_id}': {str(e)}"
+                )
+            finally:
+                await upstream.aclose()
+
+        return StreamingResponse(
+            relay_upstream(),
+            status_code=upstream.status_code,
+            headers=response_headers,
+        )
