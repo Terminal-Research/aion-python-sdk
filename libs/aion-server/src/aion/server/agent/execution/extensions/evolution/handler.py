@@ -1,21 +1,25 @@
 """ExtensionTaskHandler driving aion-toolkit-behaviour-evolution-python.
 
-Second increment: a task routed to BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1 now
-drives a real toolkit run - parse the directive off the request (directive.py),
-wire an EvolutionWorker from env config (tools_factory.py, behind the lazy
-toolkit import), poll worker.snapshot() into WORKING status updates (the
-toolkit has no progress callback, poll is its only progress surface), then
-publish the result artifact and terminal status (events.py).
+A task routed to BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1 drives a real toolkit
+run: parse the directive off the request (directive.py), wire an
+EvolutionWorker from env config (tools_factory.py, behind the lazy toolkit
+import), then consume the worker's typed event stream — phase transitions,
+branch resolution (fresh vs resumed), the executor's live feed, the captured
+spec — mapping each onto A2A events (events.py). Every WORKING update carries
+a machine-readable progress struct so consumers can track the stage and
+post-process content per type.
 
-Runs are single-shot (clone -> apply -> verify -> commit -> push): the flow
-never emits INPUT_REQUIRED, so resume() is unreachable in practice and kept
-minimal. Run-pointer persistence in Task.metadata and true mid-flow resume
-are deferred past the MVP - see Notes/WorkPlans/aion-evolution-handler-mvp.md.
+Resumability lives in the target repo, not in this process: the toolkit pins
+each evolution to a stable branch (`evolution/{contextId}` — the A2A context
+id) whose spec + commits are the durable state. Re-driving the same context
+id clones, finds the branch, and continues, so `resume()` is simply another
+`stream()` — no run pointer to restore. The A2A task/status metadata this
+handler emits is informational (progress tracking, audit), never load-bearing
+for resume.
 """
 
 from __future__ import annotations
 
-import asyncio
 import importlib.util
 import logging
 from collections.abc import AsyncIterator, Callable
@@ -40,7 +44,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _TOOLKIT_MODULE = "aion.toolkits.behaviour_evolution"
-_POLL_INTERVAL_S = 1.0
 
 
 def _toolkit_installed() -> bool:
@@ -66,12 +69,10 @@ class EvolutionTaskHandler:
         build_worker: Optional[
             Callable[[ParsedDirective, Optional["DaemonExtensionPayload"]], "EvolutionWorker"]
         ] = None,
-        poll_interval_s: float = _POLL_INTERVAL_S,
     ) -> None:
         # build_worker is a DI seam for tests; None defers to the real
         # factory in tools_factory.py, imported lazily inside stream().
         self._build_worker = build_worker
-        self._poll_interval_s = poll_interval_s
         self._running: dict[str, "EvolutionWorker"] = {}
 
     async def availability(self, config: "AgentConfig") -> ExtensionAvailability:
@@ -100,33 +101,30 @@ class EvolutionTaskHandler:
             yield events.failed_event(task, error=str(ex))
             return
 
-        run = asyncio.ensure_future(worker.run())
         self._running[task.id] = worker
+        result = None
+        run_stream = worker.stream()
         try:
-            last_progress = None
-            while True:
-                snapshot = worker.snapshot()
-                progress = (snapshot.phase, snapshot.detail)
-                if progress != last_progress:
-                    last_progress = progress
-                    yield events.snapshot_event(task, snapshot)
-                if run.done():
-                    break
-                await asyncio.wait({run}, timeout=self._poll_interval_s)
-
-            # Operational errors never escape worker.run() (they land in
-            # result.outcome/error); anything raised here is a wiring bug.
-            result = None if run.cancelled() else run.result()
+            async for event in run_stream:
+                if type(event).__name__ == "RunCompleted":
+                    # Terminal mapping is owned below by result_events, after
+                    # the stream is fully drained and cleaned up.
+                    result = event.result
+                    continue
+                mapped = events.map_stream_event(task, event)
+                if mapped is not None:
+                    yield mapped
         except Exception as ex:
+            # Operational errors never escape the worker's stream (they land
+            # in result.outcome/error); anything raised here is a wiring bug.
             logger.exception("evolution run for task %s crashed", task.id)
             yield events.failed_event(task, error=f"evolution run crashed: {ex}")
             return
         finally:
             self._running.pop(task.id, None)
-            if not run.done():
-                # The producer driving this generator was torn down mid-run
-                # (shutdown); don't leave an orphaned toolkit run behind.
-                run.cancel()
+            # If this generator was torn down mid-run (shutdown), closing the
+            # worker stream cancels the underlying run - no orphans.
+            await run_stream.aclose()
 
         if result is not None:
             for event in events.result_events(task, result):
@@ -135,13 +133,16 @@ class EvolutionTaskHandler:
     async def resume(
         self, context: "RequestContext"
     ) -> AsyncIterator[TaskStatusUpdateEvent | TaskArtifactUpdateEvent]:
-        # Unreachable in practice: stream() never emits INPUT_REQUIRED, so no
-        # evolution task can be interrupted. Terminate explicitly rather than
-        # pretending a resumed run completed.
-        yield events.failed_event(
-            context.current_task,
-            error="evolution runs are single-shot; resuming is not supported yet",
-        )
+        """Resume an interrupted evolution by re-driving it.
+
+        The evolution's durable state is in the target repo (stable branch +
+        spec), so resuming IS running: the toolkit clones, finds the existing
+        `evolution/{contextId}` branch, and continues from the first
+        unfinished subtask. Requires the request to still carry the directive
+        event; a bare resume with no directive fails explicitly.
+        """
+        async for event in self.stream(context):
+            yield event
 
     async def cancel(self, context: "RequestContext") -> None:
         task = context.current_task

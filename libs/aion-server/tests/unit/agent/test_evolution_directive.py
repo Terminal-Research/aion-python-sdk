@@ -47,18 +47,23 @@ def _runtime_ctx(event: Event | None):
     return SimpleNamespace(extensions=AionRuntimeExtensions(verified))
 
 
-def _request_ctx(text: str | None = "Append a friendly sentence to README.md."):
+def _request_ctx(
+    text: str | None = "Append a friendly sentence to README.md.",
+    context_id: str | None = "ctx-456",
+):
     parts = [Part(text=text)] if text is not None else [Part()]
     msg = Message(message_id="msg-1", role=Role.ROLE_USER, parts=parts)
-    return SimpleNamespace(message=msg)
+    task = SimpleNamespace(context_id=context_id) if context_id is not None else None
+    return SimpleNamespace(message=msg, current_task=task)
 
 
 class TestParseDirective:
-    def test_happy_path_returns_instruction_and_payload(self):
+    def test_happy_path_returns_instruction_context_and_payload(self):
         payload = _payload()
         parsed = parse_directive(_request_ctx(), _runtime_ctx(_event(payload=payload)))
 
         assert parsed.instruction == "Append a friendly sentence to README.md."
+        assert parsed.context_id == "ctx-456"
         assert parsed.payload is payload
         assert parsed.payload.target.repo_url == REPO_URL
 
@@ -68,11 +73,19 @@ class TestParseDirective:
             role=Role.ROLE_USER,
             parts=[Part(text="  "), Part(text="Fix the greeting."), Part(text="ignored")],
         )
-        ctx = SimpleNamespace(message=msg)
+        ctx = SimpleNamespace(message=msg, current_task=SimpleNamespace(context_id="ctx-456"))
 
         parsed = parse_directive(ctx, _runtime_ctx(_event(payload=_payload())))
 
         assert parsed.instruction == "Fix the greeting."
+
+    def test_missing_task_context_id_rejected(self):
+        """The context id is the evolution's identity (branch + spec dir);
+        without it a run cannot be resumed later."""
+        with pytest.raises(DirectiveError, match="no context id"):
+            parse_directive(
+                _request_ctx(context_id=None), _runtime_ctx(_event(payload=_payload()))
+            )
 
     def test_missing_runtime_context_rejected(self):
         with pytest.raises(DirectiveError, match="runtime context"):

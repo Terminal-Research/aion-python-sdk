@@ -1,6 +1,13 @@
-"""Tests for the toolkit-DTO -> A2A event mappers (toolkit-free, duck-typed)."""
+"""Tests for the toolkit-event -> A2A event mappers (toolkit-free, duck-typed).
 
+The toolkit is not installed for unit tests: stream events are stand-in
+dataclasses whose *class names* match the toolkit's event types, since the
+mapper discriminates by name and reads fields duck-typed.
+"""
+
+from dataclasses import dataclass, field
 from types import SimpleNamespace
+from typing import Optional
 
 from google.protobuf.json_format import MessageToDict
 
@@ -18,6 +25,33 @@ from aion.core.constants.a2a import (
 from aion.server.agent.execution.extensions.evolution import events
 
 
+# Stand-ins for the toolkit's typed stream events (matched by class name).
+@dataclass(frozen=True)
+class PhaseStarted:
+    phase: SimpleNamespace
+    detail: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class BranchResolved:
+    branch: str
+    resumed: bool
+    prior_commits: int = 0
+
+
+@dataclass(frozen=True)
+class ExecutorEvent:
+    kind: str
+    text: Optional[str] = None
+    raw: dict = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class SpecCaptured:
+    path: str
+    content: str
+
+
 def _task() -> Task:
     return Task(
         id="task-1",
@@ -26,17 +60,17 @@ def _task() -> Task:
     )
 
 
-def _snapshot(phase: str = "cloning", detail: str | None = None):
-    return SimpleNamespace(phase=SimpleNamespace(value=phase), detail=detail)
-
-
 def _result(outcome: str = "succeeded", **overrides):
     values = {
         "outcome": outcome,
-        "branch": "evolution/v-1-1752000000",
+        "branch": "evolution/ctx-1",
         "commit_sha": "abc1234",
         "diff_summary": "1 file changed",
         "error": None,
+        "resumed": False,
+        "commit_count": 3,
+        "pr_url": None,
+        "spec_path": ".aion/evolutions/ctx-1/retries.md",
     }
     values.update(overrides)
     return SimpleNamespace(**values)
@@ -46,19 +80,77 @@ def _text(event: TaskStatusUpdateEvent) -> str:
     return event.status.message.parts[0].text
 
 
-class TestSnapshotEvent:
-    def test_phase_only(self):
-        event = events.snapshot_event(_task(), _snapshot("applying"))
+def _progress(event: TaskStatusUpdateEvent) -> dict:
+    return MessageToDict(event.metadata)[events.PROGRESS_METADATA_KEY]
+
+
+class TestMapStreamEvent:
+    def test_phase_started_carries_stage_metadata(self):
+        event = events.map_stream_event(_task(), PhaseStarted(phase=SimpleNamespace(value="executing")))
 
         assert isinstance(event, TaskStatusUpdateEvent)
-        assert event.task_id == "task-1"
-        assert event.context_id == "ctx-1"
         assert event.status.state == TaskState.TASK_STATE_WORKING
-        assert _text(event) == "applying"
+        assert _text(event) == "executing"
+        assert _progress(event) == {"stage": "executing"}
 
-    def test_phase_with_detail(self):
-        event = events.snapshot_event(_task(), _snapshot("applying", detail="attempt 2"))
-        assert _text(event) == "applying: attempt 2"
+    def test_branch_resolved_fresh(self):
+        event = events.map_stream_event(
+            _task(), BranchResolved(branch="evolution/ctx-1", resumed=False)
+        )
+
+        assert "started evolution branch evolution/ctx-1" in _text(event)
+        assert _progress(event) == {
+            "stage": "branch",
+            "branch": "evolution/ctx-1",
+            "resumed": False,
+            "priorCommits": 0,
+        }
+
+    def test_branch_resolved_resumed_names_prior_work(self):
+        event = events.map_stream_event(
+            _task(), BranchResolved(branch="evolution/ctx-1", resumed=True, prior_commits=4)
+        )
+
+        assert "resuming evolution" in _text(event)
+        assert "4 commit(s)" in _text(event)
+        assert _progress(event)["resumed"] is True
+        assert _progress(event)["priorCommits"] == 4
+
+    def test_agent_message_surfaced_with_executor_metadata(self):
+        event = events.map_stream_event(
+            _task(), ExecutorEvent(kind="agent_message", text="Implemented retries")
+        )
+
+        assert _text(event) == "Implemented retries"
+        assert _progress(event) == {"stage": "executing", "executorKind": "agent_message"}
+
+    def test_command_execution_surfaced_as_shell_line(self):
+        event = events.map_stream_event(
+            _task(), ExecutorEvent(kind="command_execution", text="pytest -q")
+        )
+        assert _text(event) == "$ pytest -q"
+
+    def test_unsurfaced_executor_kinds_are_dropped(self):
+        assert events.map_stream_event(_task(), ExecutorEvent(kind="reasoning", text="hmm")) is None
+        assert events.map_stream_event(_task(), ExecutorEvent(kind="turn.completed")) is None
+        assert (
+            events.map_stream_event(_task(), ExecutorEvent(kind="agent_message", text=None)) is None
+        )
+
+    def test_spec_captured_becomes_markdown_artifact(self):
+        event = events.map_stream_event(
+            _task(), SpecCaptured(path=".aion/evolutions/ctx-1/retries.md", content="# Spec")
+        )
+
+        assert isinstance(event, TaskArtifactUpdateEvent)
+        assert event.artifact.name == events.SPEC_ARTIFACT_NAME
+        assert event.last_chunk is True
+        assert event.artifact.parts[0].text == "# Spec"
+        meta = MessageToDict(event.artifact.metadata)[events.PROGRESS_METADATA_KEY]
+        assert meta == {"path": ".aion/evolutions/ctx-1/retries.md"}
+
+    def test_unknown_event_types_are_dropped(self):
+        assert events.map_stream_event(_task(), SimpleNamespace()) is None
 
 
 class TestFailedEvent:
@@ -81,8 +173,10 @@ class TestResultEvents:
         part = artifact_event.artifact.parts[0]
         data = MessageToDict(part.data)
         assert data["outcome"] == "succeeded"
-        assert data["branch"] == "evolution/v-1-1752000000"
+        assert data["branch"] == "evolution/ctx-1"
         assert data["commitSha"] == "abc1234"
+        assert data["commitCount"] == 3
+        assert data["specPath"] == ".aion/evolutions/ctx-1/retries.md"
         assert "error" not in data
 
         part_meta = MessageToDict(part.metadata)
@@ -91,12 +185,29 @@ class TestResultEvents:
         )
 
         assert terminal.status.state == TaskState.TASK_STATE_COMPLETED
-        assert "evolution/v-1-1752000000" in _text(terminal)
+        assert "evolution/ctx-1" in _text(terminal)
         assert "abc1234" in _text(terminal)
+
+    def test_resumed_run_reports_resumed_flag(self):
+        out = events.result_events(_task(), _result("succeeded", resumed=True))
+        data = MessageToDict(out[0].artifact.parts[0].data)
+        assert data["resumed"] is True
+
+    def test_pr_url_lands_in_payload_and_terminal_text(self):
+        out = events.result_events(
+            _task(), _result("succeeded", pr_url="https://github.com/acme/x/pull/7")
+        )
+        data = MessageToDict(out[0].artifact.parts[0].data)
+        assert data["prUrl"] == "https://github.com/acme/x/pull/7"
+        assert "pull/7" in _text(out[1])
 
     def test_no_change_completes_with_explanation(self):
         out = events.result_events(
-            _task(), _result("no_change", branch=None, commit_sha=None, diff_summary=None)
+            _task(),
+            _result(
+                "no_change", branch=None, commit_sha=None, diff_summary=None, commit_count=0,
+                spec_path=None,
+            ),
         )
 
         artifact_event, terminal = out
@@ -107,7 +218,15 @@ class TestResultEvents:
     def test_failed_reports_error_in_artifact_and_status(self):
         out = events.result_events(
             _task(),
-            _result("failed", branch=None, commit_sha=None, diff_summary=None, error="push denied"),
+            _result(
+                "failed",
+                branch=None,
+                commit_sha=None,
+                diff_summary=None,
+                error="push denied",
+                commit_count=None,
+                spec_path=None,
+            ),
         )
 
         artifact_event, terminal = out

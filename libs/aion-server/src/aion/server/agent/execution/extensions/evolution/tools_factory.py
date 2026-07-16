@@ -33,6 +33,7 @@ Env:
     CODEX_BIN                           optional, default "codex"
     GITHUB_TOKEN                        required, injected JIT into git calls
     EVOLUTION_BRANCH_STRATEGY           optional strategy override
+    EVOLUTION_SPECS_ROOT                optional spec-convention root override
     BEHAVIOUR_EVOLUTION_WORKDIR_ROOT    optional workdir root override
 """
 
@@ -59,13 +60,19 @@ from .errors import SetupError
 if TYPE_CHECKING:
     from aion.core.a2a.extensions.daemon import DaemonExtensionPayload
 
-__all__ = ["BRANCH_STRATEGY_CONFIG_KEY", "LLM_CONFIG_KEY", "build_worker"]
+__all__ = [
+    "BRANCH_STRATEGY_CONFIG_KEY",
+    "LLM_CONFIG_KEY",
+    "SPECS_ROOT_CONFIG_KEY",
+    "build_worker",
+]
 
 # aion.yaml configuration fields; the control plane parameterizes them back
 # into daemon requests as
 # DaemonExtensionPayload.environment.configuration_variables[<key>].
 LLM_CONFIG_KEY = "llm"
 BRANCH_STRATEGY_CONFIG_KEY = "evolution_branch_strategy"
+SPECS_ROOT_CONFIG_KEY = "evolution_specs_root"
 
 _BRANCH_STRATEGIES = ("beta-branch", "pull-request")
 
@@ -93,6 +100,7 @@ def build_worker(
     try:
         directive = EvolutionDirective(
             instruction=parsed.instruction,
+            context_id=parsed.context_id,
             kind=parsed.payload.kind,
             mode=parsed.payload.mode,
             target=TargetContext(
@@ -106,9 +114,17 @@ def build_worker(
         # toolkit's Literal types supports.
         raise SetupError(f"directive is not supported by the installed toolkit: {ex}") from ex
 
+    config_kwargs = {}
+    specs_root = os.environ.get("EVOLUTION_SPECS_ROOT") or _daemon_config_var(
+        daemon, SPECS_ROOT_CONFIG_KEY
+    )
+    if specs_root:
+        config_kwargs["specs_root"] = specs_root
+
     config = EvolutionConfig(
         branch_strategy=_branch_strategy(daemon),
         workdir_root=os.environ.get("BEHAVIOUR_EVOLUTION_WORKDIR_ROOT"),
+        **config_kwargs,
     )
 
     codex_config, credentials_provider = _codex_access(daemon)

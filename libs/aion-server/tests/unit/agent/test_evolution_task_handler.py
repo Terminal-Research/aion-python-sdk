@@ -2,11 +2,14 @@
 
 The toolkit itself is optional and not installed for unit tests - the worker
 factory is injected through the handler's build_worker DI seam, and the
-worker/result DTOs are duck-typed fakes mirroring EvolutionWorker's surface
-(run/snapshot/cancel)."""
+worker/event/result DTOs are duck-typed fakes mirroring EvolutionWorker's
+surface (stream/cancel). Stream-event stand-ins carry the toolkit's class
+names, since the event mapper discriminates by name."""
 
 import asyncio
+from dataclasses import dataclass, field
 from types import SimpleNamespace
+from typing import Optional
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -42,6 +45,42 @@ from aion.server.agent.execution.extensions.evolution.errors import SetupError
 @pytest.fixture
 def anyio_backend():
     return "asyncio"
+
+
+# Stand-ins for the toolkit's typed stream events (matched by class name).
+@dataclass(frozen=True)
+class PhaseStarted:
+    phase: SimpleNamespace
+    detail: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class BranchResolved:
+    branch: str
+    resumed: bool
+    prior_commits: int = 0
+
+
+@dataclass(frozen=True)
+class ExecutorEvent:
+    kind: str
+    text: Optional[str] = None
+    raw: dict = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class SpecCaptured:
+    path: str
+    content: str
+
+
+@dataclass(frozen=True)
+class RunCompleted:
+    result: object
+
+
+def _phase(value: str) -> PhaseStarted:
+    return PhaseStarted(phase=SimpleNamespace(value=value))
 
 
 def _make_context(state: TaskState = TaskState.TASK_STATE_WORKING):
@@ -99,50 +138,58 @@ def _patch_runtime(runtime_ctx):
 def _result(outcome: str = "succeeded", **overrides):
     values = {
         "outcome": outcome,
-        "branch": "evolution/v-1-1",
+        "branch": "evolution/ctx-456",
         "commit_sha": "abc1234",
         "diff_summary": "1 file changed",
         "error": None,
+        "resumed": False,
+        "commit_count": 1,
+        "pr_url": None,
+        "spec_path": None,
     }
     values.update(overrides)
     return SimpleNamespace(**values)
 
 
-class FakeWorker:
-    """Mirrors EvolutionWorker's caller-facing surface: run/snapshot/cancel."""
+def _default_events(result) -> list:
+    return [
+        _phase("preparing"),
+        BranchResolved(branch="evolution/ctx-456", resumed=False),
+        _phase("executing"),
+        ExecutorEvent(kind="agent_message", text="working on it"),
+        _phase("delivering"),
+        SpecCaptured(path=".aion/evolutions/ctx-456/spec.md", content="# Spec"),
+        RunCompleted(result=result),
+    ]
 
-    def __init__(self, result, phases=("cloning", "applying", "pushing")):
-        self._snapshots = [
-            SimpleNamespace(phase=SimpleNamespace(value=phase), detail=None)
-            for phase in phases
-        ]
-        self._result = result
-        self._index = 0
+
+class FakeWorker:
+    """Mirrors EvolutionWorker's caller-facing surface: stream/cancel."""
+
+    def __init__(self, result, events=None):
+        self._events = _default_events(result) if events is None else events
         self.cancel_called = False
 
-    def snapshot(self):
-        return self._snapshots[self._index]
-
-    async def run(self):
-        for index in range(len(self._snapshots)):
-            self._index = index
+    async def stream(self):
+        for event in self._events:
             await asyncio.sleep(0)
-        return self._result
+            yield event
 
     def cancel(self):
         self.cancel_called = True
 
 
 class CrashingWorker(FakeWorker):
-    async def run(self):
+    async def stream(self):
         await asyncio.sleep(0)
         raise RuntimeError("boom")
+        yield  # pragma: no cover — makes this an async generator
 
 
 def _handler(worker=None, build_worker=None):
     if build_worker is None:
         build_worker = (lambda parsed, daemon: worker) if worker is not None else None
-    return EvolutionTaskHandler(build_worker=build_worker, poll_interval_s=0.005)
+    return EvolutionTaskHandler(build_worker=build_worker)
 
 
 class TestRegistration:
@@ -208,7 +255,7 @@ class TestAvailability:
 
 class TestStream:
     @pytest.mark.anyio
-    async def test_drives_worker_and_emits_progress_artifact_terminal(self):
+    async def test_maps_typed_events_and_emits_result(self):
         worker = FakeWorker(_result("succeeded"))
         handler = _handler(worker=worker)
         ctx = _make_context()
@@ -221,11 +268,18 @@ class TestStream:
             if isinstance(e, TaskStatusUpdateEvent)
             and e.status.state == TaskState.TASK_STATE_WORKING
         ]
-        assert working, "expected at least one WORKING phase event"
-        assert working[0].status.message.parts[0].text == "cloning"
+        texts = [e.status.message.parts[0].text for e in working]
+        assert texts == [
+            "preparing",
+            "started evolution branch evolution/ctx-456",
+            "executing",
+            "working on it",
+            "delivering",
+        ]
 
         artifacts = [e for e in out if isinstance(e, TaskArtifactUpdateEvent)]
-        assert len(artifacts) == 1
+        names = [a.artifact.name for a in artifacts]
+        assert names == ["evolution-spec", "evolution-result"]
 
         assert out[-1].status.state == TaskState.TASK_STATE_COMPLETED
         assert all(e.task_id == "task-123" and e.context_id == "ctx-456" for e in out)
@@ -246,10 +300,11 @@ class TestStream:
         assert handler._running == {}
 
     @pytest.mark.anyio
-    async def test_worker_factory_receives_directive_and_daemon_payload(self):
+    async def test_worker_factory_receives_directive_context_and_daemon_payload(self):
         """The daemon payload must reach the factory - it names the Codex
         model (environment's `llm` config var) and the principal that model
-        usage is attributed to."""
+        usage is attributed to. The parsed directive must carry the task's
+        A2A context id: it is the evolution's identity (branch + spec dir)."""
         daemon = SimpleNamespace(
             environment=SimpleNamespace(
                 configuration_variables={"llm": "qwen"},
@@ -270,6 +325,7 @@ class TestStream:
 
         assert captured["daemon"] is daemon
         assert captured["parsed"].payload.target.target_version_id == "v-1"
+        assert captured["parsed"].context_id == "ctx-456"
 
     @pytest.mark.anyio
     async def test_setup_error_fails_task(self):
@@ -302,7 +358,11 @@ class TestStream:
     async def test_cancelled_outcome_emits_no_terminal(self):
         """The A2A cancel flow (executor's TaskUpdater.cancel) owns the
         terminal CANCELED event - the stream must not race it."""
-        handler = _handler(worker=FakeWorker(_result("cancelled")))
+        worker = FakeWorker(
+            _result("cancelled"),
+            events=[_phase("preparing"), RunCompleted(result=_result("cancelled"))],
+        )
+        handler = _handler(worker=worker)
         ctx = _make_context()
 
         with _patch_runtime(_runtime_ctx()):
@@ -317,15 +377,33 @@ class TestStream:
 
 class TestResume:
     @pytest.mark.anyio
-    async def test_resume_fails_explicitly(self):
-        handler = _handler(worker=FakeWorker(_result()))
+    async def test_resume_re_drives_the_evolution(self):
+        """Resume = run again: the toolkit finds the existing evolution branch
+        and continues, so the handler simply re-streams."""
+        result = _result("succeeded", resumed=True, commit_count=3)
+        worker = FakeWorker(
+            result,
+            events=[
+                _phase("preparing"),
+                BranchResolved(branch="evolution/ctx-456", resumed=True, prior_commits=2),
+                _phase("executing"),
+                _phase("delivering"),
+                RunCompleted(result=result),
+            ],
+        )
+        handler = _handler(worker=worker)
         ctx = _make_context(state=TaskState.TASK_STATE_INPUT_REQUIRED)
 
-        out = [event async for event in handler.resume(ctx)]
+        with _patch_runtime(_runtime_ctx()):
+            out = [event async for event in handler.resume(ctx)]
 
-        assert len(out) == 1
-        assert out[0].status.state == TaskState.TASK_STATE_FAILED
-        assert "single-shot" in out[0].status.message.parts[0].text
+        texts = [
+            e.status.message.parts[0].text
+            for e in out
+            if isinstance(e, TaskStatusUpdateEvent) and e.status.HasField("message")
+        ]
+        assert any("resuming evolution" in t for t in texts)
+        assert out[-1].status.state == TaskState.TASK_STATE_COMPLETED
 
 
 class TestCancel:

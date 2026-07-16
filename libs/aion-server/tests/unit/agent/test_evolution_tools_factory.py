@@ -25,6 +25,7 @@ REPO_URL = "https://github.com/acme/target-agent.git"
 def _parsed(kind: str = "feature", mode: str = "advisory") -> ParsedDirective:
     return ParsedDirective(
         instruction="Append a friendly sentence to README.md.",
+        context_id="ctx-456",
         payload=EvolutionDirectiveEventPayload(
             target=TargetContext(repo_url=REPO_URL, base_ref="HEAD", target_version_id="v-1"),
             kind=kind,
@@ -62,6 +63,7 @@ def _set_env(monkeypatch, **overrides):
         "CODEX_MODEL",
         "GITHUB_TOKEN",
         "EVOLUTION_BRANCH_STRATEGY",
+        "EVOLUTION_SPECS_ROOT",
     ):
         monkeypatch.delenv(key, raising=False)
     for key, value in values.items():
@@ -82,6 +84,19 @@ class TestBuildWorker:
         worker = build_worker(_parsed(), _daemon())
 
         assert isinstance(worker, EvolutionWorker)
+        assert worker._directive.context_id == "ctx-456"
+
+    def test_specs_root_from_env_override(self, monkeypatch):
+        _set_env(monkeypatch, EVOLUTION_SPECS_ROOT=".evolution-specs")
+        worker = build_worker(_parsed(), _daemon())
+        assert worker._config.specs_root == ".evolution-specs"
+
+    def test_specs_root_from_daemon_config_var(self, monkeypatch):
+        _set_env(monkeypatch)
+        daemon = _daemon()
+        daemon.environment.configuration_variables["evolution_specs_root"] = "docs/specs"
+        worker = build_worker(_parsed(), daemon)
+        assert worker._config.specs_root == "docs/specs"
 
     def test_overridden_endpoint_attaches_no_token_resolver(self, monkeypatch):
         """The wrapper chooses the mode: an explicit CODEX_BASE_URL means a

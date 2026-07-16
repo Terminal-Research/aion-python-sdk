@@ -95,3 +95,18 @@ class EvolutionResultActionPayload(A2ABaseModel):
     error: Optional[str] = Field(
         default=None, description="Error description; populated when outcome is 'failed'."
     )
+    resumed: bool = Field(
+        default=False,
+        description="True when this run continued the evolution's existing branch.",
+    )
+    commit_count: Optional[int] = Field(
+        default=None,
+        description="Commits on the evolution branch since its base, across all runs.",
+    )
+    pr_url: Optional[str] = Field(
+        default=None, description="URL of the pull request opened for the branch, if any."
+    )
+    spec_path: Optional[str] = Field(
+        default=None,
+        description="Repo-relative path of the evolution's spec document, if captured.",
+    )

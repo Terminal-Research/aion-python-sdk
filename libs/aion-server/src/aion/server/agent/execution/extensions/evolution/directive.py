@@ -37,9 +37,16 @@ __all__ = ["DirectiveError", "ParsedDirective", "parse_directive"]
 
 @dataclass(frozen=True)
 class ParsedDirective:
-    """Validated inbound directive: NL instruction + typed target payload."""
+    """Validated inbound directive: NL instruction + typed target payload.
+
+    `context_id` is the A2A context id of the routed task. It doubles as the
+    evolution's identity in the target repo: the toolkit pins the evolution
+    branch (`evolution/{context_id}`) and the spec directory to it, which is
+    what makes later runs of the same context resumable.
+    """
 
     instruction: str
+    context_id: str
     payload: EvolutionDirectiveEventPayload
 
 
@@ -77,7 +84,14 @@ def parse_directive(
     if not instruction:
         raise DirectiveError("directive message carries no instruction text part")
 
-    return ParsedDirective(instruction=instruction, payload=payload)
+    task = getattr(context, "current_task", None)
+    context_id = (getattr(task, "context_id", "") or "").strip() if task is not None else ""
+    if not context_id:
+        raise DirectiveError(
+            "routed task carries no context id - required as the evolution's identity"
+        )
+
+    return ParsedDirective(instruction=instruction, context_id=context_id, payload=payload)
 
 
 def _first_text(message: Optional["Message"]) -> Optional[str]:
