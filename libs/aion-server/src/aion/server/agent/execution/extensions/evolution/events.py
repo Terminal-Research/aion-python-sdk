@@ -41,6 +41,8 @@ from aion.core.constants.a2a import (
     EVENT_EXTENSION_URI_V1,
 )
 
+from .directive import GATE_METADATA_KEY
+
 if TYPE_CHECKING:
     from aion.toolkits.behaviour_evolution import EvolutionResult
 
@@ -51,6 +53,7 @@ __all__ = [
     "SURFACED_EXECUTOR_KINDS",
     "failed_event",
     "map_stream_event",
+    "plan_gate_events",
     "result_events",
     "status_event",
 ]
@@ -178,6 +181,54 @@ def spec_artifact_event(task: Task, *, path: str, content: str) -> TaskArtifactU
     )
     event.artifact.metadata.get_or_create_struct(PROGRESS_METADATA_KEY).update({"path": path})
     return event
+
+
+def plan_gate_events(
+    task: Task,
+    result: "EvolutionResult",
+    *,
+    stash: dict,
+) -> list[TaskArtifactUpdateEvent | TaskStatusUpdateEvent]:
+    """Terminal mapping for a plan-stage run of a gated evolution.
+
+    A successful planning run does not complete the task — it pauses it:
+    INPUT_REQUIRED with the review prompt, the result artifact for context,
+    and the directive stash attached as event metadata so the TaskManager
+    merges it into Task.metadata (what `parse_gated_resume` reads back on the
+    reviewer's reply). The spec itself was already emitted as the spec
+    artifact by the stream mapping.
+
+    A planning run that produced nothing reviewable (no_change: the executor
+    never committed a spec) fails the task explicitly rather than pausing on
+    an empty gate. failed/cancelled map exactly as ungated runs do.
+    """
+    if result.outcome == "no_change":
+        return [
+            failed_event(
+                task,
+                error=(
+                    "planning run produced no spec to review - the evolution "
+                    "cannot be gated on an empty plan; retry with a refined "
+                    "instruction"
+                ),
+            )
+        ]
+    if result.outcome != "succeeded":
+        return result_events(task, result)
+
+    events = result_events(task, result)
+    gate = status_event(
+        task,
+        state=TaskState.TASK_STATE_INPUT_REQUIRED,
+        text=(
+            "evolution plan is ready for review - approve to start "
+            "implementation, or reply with feedback to revise the plan"
+        ),
+        progress={"stage": "awaiting_approval", "branch": result.branch or ""},
+    )
+    gate.metadata.get_or_create_struct(GATE_METADATA_KEY).update(stash)
+    # Replace the terminal COMPLETED status with the pause; keep the artifact.
+    return [*events[:-1], gate]
 
 
 def result_events(

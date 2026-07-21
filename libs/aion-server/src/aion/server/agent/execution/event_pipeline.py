@@ -144,7 +144,11 @@ class AionEventPipeline:
             return event
 
         if self._deduplicator is None:
-            self._deduplicator = A2ATaskDeduplicator(original_task)
+            # Events here are produced by the agent runtime / extension handlers,
+            # not the public API, so they are allowed to carry platform-owned
+            # (`https://docs.aion.to`) metadata — progress structs and the
+            # plan-gate stash reach Task.metadata through this path.
+            self._deduplicator = A2ATaskDeduplicator(original_task, trusted_source=True)
 
         try:
             result = self._deduplicator.deduplicate(event)

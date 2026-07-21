@@ -57,6 +57,17 @@ class EvolutionDirectiveEventPayload(A2ABaseModel):
     mode: Literal["advisory", "directive"] = Field(
         description="Autonomy level: 'advisory' allows a no_change outcome; 'directive' requires a change."
     )
+    approval: Literal["auto", "required"] = Field(
+        default="auto",
+        description=(
+            "Gating policy for this evolution. 'auto' runs planning and "
+            "implementation in one uninterrupted run. 'required' splits it at "
+            "the plan: the improver first produces only the evolution spec "
+            "with the subtask plan and pauses the task (input_required) until "
+            "a reviewer approves the plan or replies with feedback for a "
+            "revision; implementation starts only after approval."
+        ),
+    )
 
 
 class EvolutionVerdictEventPayload(A2ABaseModel):

@@ -13,9 +13,15 @@ Resumability lives in the target repo, not in this process: the toolkit pins
 each evolution to a stable branch (`evolution/{contextId}` — the A2A context
 id) whose spec + commits are the durable state. Re-driving the same context
 id clones, finds the branch, and continues, so `resume()` is simply another
-`stream()` — no run pointer to restore. The A2A task/status metadata this
-handler emits is informational (progress tracking, audit), never load-bearing
-for resume.
+`stream()` — no run pointer to restore.
+
+The one exception is the plan gate: a directive with `approval="required"`
+runs the planning stage only and pauses the task at INPUT_REQUIRED, stashing
+the directive in Task.metadata (the reply carries no directive event). On
+resume the reply picks the next slice — approval starts the implementation
+run, anything else reruns planning with the reply as feedback. That stash is
+the only load-bearing task metadata; everything else this handler emits is
+informational (progress tracking, audit).
 """
 
 from __future__ import annotations
@@ -23,6 +29,7 @@ from __future__ import annotations
 import importlib.util
 import logging
 from collections.abc import AsyncIterator, Callable
+from dataclasses import replace
 from typing import TYPE_CHECKING, Optional
 
 from a2a.types import TaskArtifactUpdateEvent, TaskStatusUpdateEvent
@@ -32,7 +39,7 @@ from aion.core.runtime.context.registry import AionRuntimeContextRegistry
 
 from ..availability import ExtensionAvailability
 from . import events
-from .directive import ParsedDirective, parse_directive
+from .directive import ParsedDirective, gate_stash, parse_directive, parse_gated_resume
 from .errors import EvolutionHandlerError, SetupError
 
 if TYPE_CHECKING:
@@ -95,7 +102,65 @@ class EvolutionTaskHandler:
     ) -> AsyncIterator[TaskStatusUpdateEvent | TaskArtifactUpdateEvent]:
         task = context.current_task
         try:
-            worker = await self._make_worker(context)
+            runtime_context = await AionRuntimeContextRegistry.aget_current_context()
+            parsed = parse_directive(context, runtime_context)
+            if parsed.approval == "required":
+                # Gated evolution: this run covers the planning slice only;
+                # implementation waits for the reviewer (see resume()).
+                parsed = replace(parsed, stage="plan")
+        except EvolutionHandlerError as ex:
+            logger.warning("evolution task %s rejected: %s", task.id, ex)
+            yield events.failed_event(task, error=str(ex))
+            return
+        async for event in self._drive(context, parsed):
+            yield event
+
+    async def resume(
+        self, context: "RequestContext"
+    ) -> AsyncIterator[TaskStatusUpdateEvent | TaskArtifactUpdateEvent]:
+        """Resume an interrupted evolution.
+
+        A reply on a plan-gated pause (the task carries the gate stash in its
+        metadata) picks the next slice: approval starts the implementation
+        run, anything else reruns planning with the reply as feedback — the
+        directive is rebuilt from the stash, not the request.
+
+        Any other resume re-drives the evolution whole: the durable state is
+        in the target repo (stable branch + spec), so resuming IS running.
+        That path still requires the request to carry the directive event; a
+        bare resume with no directive fails explicitly.
+        """
+        task = context.current_task
+        try:
+            parsed = parse_gated_resume(context)
+        except EvolutionHandlerError as ex:
+            logger.warning("evolution task %s gate reply rejected: %s", task.id, ex)
+            yield events.failed_event(task, error=str(ex))
+            return
+        if parsed is None:
+            async for event in self.stream(context):
+                yield event
+            return
+        logger.info(
+            "evolution task %s gate reply -> stage=%s%s",
+            task.id,
+            parsed.stage,
+            " (with feedback)" if parsed.feedback else "",
+        )
+        async for event in self._drive(context, parsed):
+            yield event
+
+    async def _drive(
+        self, context: "RequestContext", parsed: ParsedDirective
+    ) -> AsyncIterator[TaskStatusUpdateEvent | TaskArtifactUpdateEvent]:
+        """Run one toolkit slice for `parsed` and map its stream onto A2A.
+
+        The terminal mapping depends on the slice: a plan-stage run pauses
+        the task for review (plan_gate_events) instead of completing it.
+        """
+        task = context.current_task
+        try:
+            worker = await self._make_worker(parsed)
         except EvolutionHandlerError as ex:
             logger.warning("evolution task %s rejected: %s", task.id, ex)
             yield events.failed_event(task, error=str(ex))
@@ -107,8 +172,8 @@ class EvolutionTaskHandler:
         try:
             async for event in run_stream:
                 if type(event).__name__ == "RunCompleted":
-                    # Terminal mapping is owned below by result_events, after
-                    # the stream is fully drained and cleaned up.
+                    # Terminal mapping is owned below, after the stream is
+                    # fully drained and cleaned up.
                     result = event.result
                     continue
                 mapped = events.map_stream_event(task, event)
@@ -127,22 +192,12 @@ class EvolutionTaskHandler:
             await run_stream.aclose()
 
         if result is not None:
-            for event in events.result_events(task, result):
+            if parsed.stage == "plan":
+                terminal = events.plan_gate_events(task, result, stash=gate_stash(parsed))
+            else:
+                terminal = events.result_events(task, result)
+            for event in terminal:
                 yield event
-
-    async def resume(
-        self, context: "RequestContext"
-    ) -> AsyncIterator[TaskStatusUpdateEvent | TaskArtifactUpdateEvent]:
-        """Resume an interrupted evolution by re-driving it.
-
-        The evolution's durable state is in the target repo (stable branch +
-        spec), so resuming IS running: the toolkit clones, finds the existing
-        `evolution/{contextId}` branch, and continues from the first
-        unfinished subtask. Requires the request to still carry the directive
-        event; a bare resume with no directive fails explicitly.
-        """
-        async for event in self.stream(context):
-            yield event
 
     async def cancel(self, context: "RequestContext") -> None:
         task = context.current_task
@@ -153,13 +208,14 @@ class EvolutionTaskHandler:
             raise UnsupportedOperationError()
         worker.cancel()
 
-    async def _make_worker(self, context: "RequestContext") -> "EvolutionWorker":
-        runtime_context = await AionRuntimeContextRegistry.aget_current_context()
-        parsed = parse_directive(context, runtime_context)
+    async def _make_worker(self, parsed: ParsedDirective) -> "EvolutionWorker":
         # The daemon payload rides along: it names the model (environment's
         # `llm` configuration variable) and the principal that Codex usage is
-        # attributed to (environment.daemon_agent_identity_id).
-        daemon = runtime_context.get_daemon()
+        # attributed to (environment.daemon_agent_identity_id). A gate reply
+        # is a user turn and may carry no daemon scope — the factory then
+        # falls back to env overrides and fails precisely when it cannot.
+        runtime_context = await AionRuntimeContextRegistry.aget_current_context()
+        daemon = runtime_context.get_daemon() if runtime_context is not None else None
         if self._build_worker is not None:
             return self._build_worker(parsed, daemon)
         try:

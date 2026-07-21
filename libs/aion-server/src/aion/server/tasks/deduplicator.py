@@ -5,8 +5,19 @@ against the original task. The deduplicator caches message and artifact IDs for
 efficient deduplication across multiple payloads. It keeps the original task identity
 authoritative while removing duplicate messages and artifacts from task payloads.
 
-Metadata keys under the ``https://docs.aion.to`` namespace are treated as
-platform-owned and are never allowed to be overwritten by incoming payloads.
+Metadata keys under the ``https://docs.aion.to`` namespace are platform-owned.
+By default (``trusted_source=False``) they are stripped from every payload's
+own metadata and can never be set or overwritten by an incoming merge — the
+guard for untrusted **public-API** input, so a client cannot spoof platform
+metadata (routing hints, progress structs, the plan-gate stash, ...).
+
+A ``trusted_source=True`` deduplicator lifts that guard: the platform's own
+components (the agent runtime and extension handlers streaming their outbound
+events through the event pipeline) ARE allowed to emit metadata under the
+reserved namespace. Without this, an agent's own progress struct and the
+plan-gate stash would be sanitized out of its status events before they could
+reach ``Task.metadata``. The distinction is producer trust, not key shape:
+internal changes may carry ``aion:`` keys, public API input may not.
 """
 
 from __future__ import annotations
@@ -36,13 +47,20 @@ class A2ATaskDeduplicator:
     the original task and suppresses payloads that are already represented.
     """
 
-    def __init__(self, original_task: Task) -> None:
+    def __init__(self, original_task: Task, *, trusted_source: bool = False) -> None:
         """Initialize deduplicator with an original task.
 
         Args:
             original_task: The authoritative task to normalize against.
                           Message and artifact IDs are cached for efficient lookups.
+            trusted_source: When ``True``, payloads are treated as produced by
+                the platform itself (the agent runtime / extension handlers) and
+                are allowed to carry metadata under the reserved
+                ``https://docs.aion.to`` namespace. When ``False`` (default, the
+                public-API stance) those keys are stripped and can never be set
+                by a merge. Keyword-only so callers opt in explicitly.
         """
+        self._trusted_source = trusted_source
         # Keep an isolated copy so apply_processed_item() cannot mutate the
         # task manager's in-memory task through shared references.
         self._original_task = copy.deepcopy(original_task)
@@ -359,12 +377,13 @@ class A2ATaskDeduplicator:
             target.artifacts.append(normalized)
 
     @classmethod
-    def _merge_structs(cls, base: Struct, patch: Struct) -> Struct:
-        """Merge two protobuf structs while preserving platform-owned keys."""
+    def _merge_structs(cls, base: Struct, patch: Struct, *, allow_platform: bool = False) -> Struct:
+        """Merge two protobuf structs, protecting platform-owned keys unless allowed."""
         merged = cls._protobuf_to_dict(base)
         cls._merge_metadata_dicts(
             merged,
             cls._protobuf_to_dict(patch),
+            allow_platform=allow_platform,
         )
 
         result = Struct()
@@ -373,26 +392,35 @@ class A2ATaskDeduplicator:
         return result
 
     def _merge_task_metadata(self, target: Task, patch: Struct) -> None:
-        """Merge task metadata while protecting platform-owned keys."""
+        """Merge task metadata; a trusted source may also set platform-owned keys."""
         if not self._has_field(target, "metadata"):
             target.metadata.CopyFrom(Struct())
 
-        merged = self._merge_structs(target.metadata, patch)
+        merged = self._merge_structs(
+            target.metadata, patch, allow_platform=self._trusted_source
+        )
         target.metadata.CopyFrom(merged)
 
     @classmethod
-    def _merge_metadata_dicts(cls, target: dict[str, Any], source: dict[str, Any]) -> None:
-        """Merge source metadata into target without allowing platform key overrides."""
+    def _merge_metadata_dicts(
+        cls, target: dict[str, Any], source: dict[str, Any], *, allow_platform: bool = False
+    ) -> None:
+        """Merge source metadata into target.
+
+        Platform-owned keys in ``source`` are skipped (and stripped from nested
+        values) unless ``allow_platform`` is set — the trusted-source path, where
+        the platform's own payload is permitted to set reserved-namespace keys.
+        """
         for key, value in source.items():
-            if cls._is_platform_metadata_key(key):
+            if not allow_platform and cls._is_platform_metadata_key(key):
                 continue
 
             existing = target.get(key)
             if isinstance(existing, dict) and isinstance(value, dict):
-                cls._merge_metadata_dicts(existing, value)
+                cls._merge_metadata_dicts(existing, value, allow_platform=allow_platform)
                 continue
 
-            target[key] = cls._strip_platform_metadata_keys(value)
+            target[key] = value if allow_platform else cls._strip_platform_metadata_keys(value)
 
     @classmethod
     def _strip_platform_metadata_keys(cls, value: Any) -> Any:
@@ -407,15 +435,22 @@ class A2ATaskDeduplicator:
             return [cls._strip_platform_metadata_keys(item) for item in value]
         return value
 
-    @classmethod
-    def _sanitize_struct_field(cls, message: Any, field_name: str) -> None:
-        """Strip platform-owned metadata keys from a protobuf Struct field."""
-        if not cls._has_field(message, field_name):
+    def _sanitize_struct_field(self, message: Any, field_name: str) -> None:
+        """Strip platform-owned metadata keys from a protobuf Struct field.
+
+        No-op for a trusted source: the platform's own components are allowed to
+        emit metadata under the reserved namespace (that is how progress structs
+        and the plan-gate stash reach ``Task.metadata``). Only untrusted
+        public-API payloads are sanitized.
+        """
+        if self._trusted_source:
+            return
+        if not self._has_field(message, field_name):
             return
 
         struct_value = getattr(message, field_name)
-        sanitized = cls._strip_platform_metadata_keys(
-            cls._protobuf_to_dict(struct_value)
+        sanitized = self._strip_platform_metadata_keys(
+            self._protobuf_to_dict(struct_value)
         )
 
         if not sanitized:

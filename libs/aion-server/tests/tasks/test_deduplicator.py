@@ -583,6 +583,70 @@ class TestApplyProcessedItemTask:
         assert ded.deduplicate_message(_make_message("msg-injected")) is not None
 
 
+class TestTrustedSourcePreservesPlatformMetadata:
+    """A trusted_source deduplicator lets the platform's own payloads carry
+    reserved-namespace (`https://docs.aion.to`) metadata that the default
+    public-API stance strips. This is what lets an agent's progress structs and
+    the plan-gate stash reach Task.metadata (regression: the stash used to be
+    stripped from the INPUT_REQUIRED status event, breaking gated resume)."""
+
+    def test_status_event_platform_metadata_survives_when_trusted(self):
+        ded = A2ATaskDeduplicator(
+            _make_task(state=TaskState.TASK_STATE_INPUT_REQUIRED), trusted_source=True
+        )
+        event = _make_status_event(state=TaskState.TASK_STATE_INPUT_REQUIRED)
+        s = Struct()
+        ParseDict({PLATFORM_KEY: {"stash": "keep"}, USER_KEY: "visible"}, s)
+        event.metadata.CopyFrom(s)
+
+        result = ded.deduplicate_status_event(event)
+
+        assert result is not None
+        metadata = MessageToDict(result.metadata, preserving_proto_field_name=True)
+        assert metadata == {PLATFORM_KEY: {"stash": "keep"}, USER_KEY: "visible"}
+
+    def test_status_event_platform_metadata_stripped_by_default(self):
+        """Same event, default (public-API) deduplicator still strips it."""
+        ded = A2ATaskDeduplicator(_make_task(state=TaskState.TASK_STATE_INPUT_REQUIRED))
+        event = _make_status_event(state=TaskState.TASK_STATE_INPUT_REQUIRED)
+        s = Struct()
+        ParseDict({PLATFORM_KEY: {"stash": "keep"}, USER_KEY: "visible"}, s)
+        event.metadata.CopyFrom(s)
+
+        result = ded.deduplicate_status_event(event)
+
+        assert result is not None
+        metadata = MessageToDict(result.metadata, preserving_proto_field_name=True)
+        assert metadata == {USER_KEY: "visible"}
+
+    def test_artifact_event_platform_metadata_survives_when_trusted(self):
+        ded = A2ATaskDeduplicator(_make_task(), trusted_source=True)
+        event = _make_artifact_event("art-trusted")
+        s = Struct()
+        ParseDict({PLATFORM_KEY: "keep"}, s)
+        event.metadata.CopyFrom(s)
+
+        result = ded.deduplicate_artifact_event(event)
+
+        assert result is not None
+        assert MessageToDict(result.metadata, preserving_proto_field_name=True) == {
+            PLATFORM_KEY: "keep"
+        }
+
+    def test_task_merge_sets_platform_key_when_trusted(self):
+        """A trusted patch may introduce/overwrite platform keys (the merge
+        protection is lifted); the default stance still blocks it."""
+        original = _make_task(metadata={PLATFORM_KEY: "original", USER_KEY: "old"})
+        ded = A2ATaskDeduplicator(original, trusted_source=True)
+        patch = _make_task(metadata={PLATFORM_KEY: "updated", USER_KEY: "new"})
+
+        result = ded.deduplicate_task(patch)
+
+        metadata = dict(result.metadata.fields)
+        assert metadata[PLATFORM_KEY].string_value == "updated"
+        assert metadata[USER_KEY].string_value == "new"
+
+
 class TestDefensiveHelpers:
     def test_has_field_returns_false_without_hasfield_method(self):
         """Verify defensive handling for non-protobuf objects."""

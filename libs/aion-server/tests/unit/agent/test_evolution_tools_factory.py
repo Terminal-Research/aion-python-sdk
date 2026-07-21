@@ -86,6 +86,7 @@ class TestBuildWorker:
         assert isinstance(worker, EvolutionWorker)
         assert worker._directive.context_id == "ctx-456"
 
+
     def test_specs_root_from_env_override(self, monkeypatch):
         _set_env(monkeypatch, EVOLUTION_SPECS_ROOT=".evolution-specs")
         worker = build_worker(_parsed(), _daemon())
@@ -173,5 +174,30 @@ class TestBuildWorker:
         if "bugfix" in getattr(Kind, "__args__", ()):
             pytest.skip("installed toolkit already supports kind='bugfix'")
 
-        with pytest.raises(SetupError, match="not supported by the installed toolkit"):
+        with pytest.raises(SetupError) as ex:
             build_worker(_parsed(kind="bugfix"), _daemon())
+
+        message = str(ex.value)
+        # Names the field, the requested value, and what the toolkit accepts —
+        # not a raw pydantic dump.
+        assert "behaviour-evolution toolkit does not support" in message
+        assert "kind='bugfix'" in message
+        assert "feature" in message
+        assert "validation error for EvolutionDirective" not in message
+
+    def test_unsupported_mode_surfaces_as_setup_error(self, monkeypatch):
+        """Same capability-gap handling for mode: aion-core advertises
+        mode='directive', the installed toolkit accepts only 'advisory'."""
+        from aion.toolkits.behaviour_evolution.models.directive import Mode
+
+        _set_env(monkeypatch)
+        if "directive" in getattr(Mode, "__args__", ()):
+            pytest.skip("installed toolkit already supports mode='directive'")
+
+        with pytest.raises(SetupError) as ex:
+            build_worker(_parsed(mode="directive"), _daemon())
+
+        message = str(ex.value)
+        assert "mode='directive'" in message
+        assert "advisory" in message
+        assert "validation error for EvolutionDirective" not in message

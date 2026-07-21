@@ -103,6 +103,10 @@ def build_worker(
             context_id=parsed.context_id,
             kind=parsed.payload.kind,
             mode=parsed.payload.mode,
+            # Per-run gate slice, derived by the handler from the task
+            # lifecycle (plan-gated new task / approved resume / revision).
+            stage=parsed.stage,
+            feedback=parsed.feedback,
             target=TargetContext(
                 repo_url=target.repo_url,
                 base_ref=target.base_ref,
@@ -110,9 +114,13 @@ def build_worker(
             ),
         )
     except ValidationError as ex:
-        # E.g. a directive with kind/mode values newer than the installed
-        # toolkit's Literal types supports.
-        raise SetupError(f"directive is not supported by the installed toolkit: {ex}") from ex
+        # aion-core's directive contract can advertise kind/mode/stage values
+        # (e.g. mode="directive", kind="bugfix") ahead of the installed toolkit
+        # version that actually implements them. Reconcile that capability gap
+        # here with a message naming the field, the requested value, and what
+        # this deployment's toolkit accepts — instead of leaking the raw
+        # pydantic error. Auto-adapts when the toolkit widens its Literals.
+        raise SetupError(_unsupported_directive_message(ex)) from ex
 
     config_kwargs = {}
     specs_root = os.environ.get("EVOLUTION_SPECS_ROOT") or _daemon_config_var(
@@ -142,6 +150,34 @@ def build_worker(
         repo_url=target.repo_url,
     )
     return EvolutionWorker(directive, config, tools=tools)
+
+
+def _unsupported_directive_message(ex: ValidationError) -> str:
+    """Turn a toolkit directive-validation error into an actionable message.
+
+    Names each rejected field with the value that was requested and what the
+    installed toolkit accepts, so an operator sees e.g. "mode='directive'
+    (installed toolkit accepts: 'advisory')" rather than a raw pydantic dump.
+    Non-literal errors (should not happen for a well-formed payload) fall back
+    to pydantic's own message for that field.
+    """
+    parts: list[str] = []
+    for err in ex.errors():
+        field = ".".join(str(loc) for loc in err["loc"])
+        if err.get("type") == "literal_error":
+            requested = err.get("input")
+            accepted = err.get("ctx", {}).get("expected")
+            detail = f"{field}={requested!r}"
+            if accepted:
+                detail += f" (installed toolkit accepts: {accepted})"
+            parts.append(detail)
+        else:
+            parts.append(f"{field}: {err.get('msg')}")
+    joined = "; ".join(parts) if parts else str(ex)
+    return (
+        "directive uses a value the installed behaviour-evolution toolkit does "
+        f"not support: {joined}"
+    )
 
 
 def _codex_access(daemon):
