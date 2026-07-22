@@ -45,6 +45,7 @@ from typing import TYPE_CHECKING, Optional
 from pydantic import ValidationError
 
 from aion.toolkits.behaviour_evolution import (
+    BRANCH_STRATEGIES,
     CodexConfig,
     EvolutionConfig,
     EvolutionDirective,
@@ -55,7 +56,7 @@ from aion.toolkits.behaviour_evolution import (
 )
 
 from .directive import ParsedDirective
-from .errors import SetupError
+from .errors import ExtensionSetupError
 
 if TYPE_CHECKING:
     from aion.core.a2a.extensions.daemon import DaemonExtensionPayload
@@ -74,8 +75,6 @@ LLM_CONFIG_KEY = "llm"
 BRANCH_STRATEGY_CONFIG_KEY = "evolution_branch_strategy"
 SPECS_ROOT_CONFIG_KEY = "evolution_specs_root"
 
-_BRANCH_STRATEGIES = ("beta-branch", "pull-request")
-
 
 def build_worker(
     parsed: ParsedDirective,
@@ -89,12 +88,12 @@ def build_worker(
             name and of the principal that model usage is attributed to.
 
     Raises:
-        SetupError: required environment is missing, or the directive is not
+        ExtensionSetupError: required environment is missing, or the directive is not
             supported by the installed toolkit version.
     """
     github_token = os.environ.get("GITHUB_TOKEN")
     if not github_token:
-        raise SetupError("GITHUB_TOKEN is not set - required to push the evolution branch")
+        raise ExtensionSetupError("GITHUB_TOKEN is not set - required to push the evolution branch")
 
     target = parsed.payload.target
     try:
@@ -120,7 +119,7 @@ def build_worker(
         # here with a message naming the field, the requested value, and what
         # this deployment's toolkit accepts — instead of leaking the raw
         # pydantic error. Auto-adapts when the toolkit widens its Literals.
-        raise SetupError(_unsupported_directive_message(ex)) from ex
+        raise ExtensionSetupError(_unsupported_directive_message(ex)) from ex
 
     config_kwargs = {}
     specs_root = os.environ.get("EVOLUTION_SPECS_ROOT") or _daemon_config_var(
@@ -147,7 +146,6 @@ def build_worker(
         codex_config=codex_config,
         token_provider=_token,
         credentials_provider=credentials_provider,
-        repo_url=target.repo_url,
     )
     return EvolutionWorker(directive, config, tools=tools)
 
@@ -195,7 +193,7 @@ def _codex_access(daemon):
 
         principal = _daemon_principal_selector(daemon)
         if principal is None:
-            raise SetupError(
+            raise ExtensionSetupError(
                 "daemon request carries no environment.daemonAgentIdentityId - "
                 "model usage cannot be attributed to a principal"
             )
@@ -231,17 +229,17 @@ def _branch_strategy(daemon) -> str:
     """Branch strategy: local env override -> request config var -> default.
 
     Raises:
-        SetupError: the configured value is not a strategy the toolkit knows.
+        ExtensionSetupError: the configured value is not a strategy the toolkit knows.
     """
     value = (
         os.environ.get("EVOLUTION_BRANCH_STRATEGY")
         or _daemon_config_var(daemon, BRANCH_STRATEGY_CONFIG_KEY)
         or "beta-branch"
     )
-    if value not in _BRANCH_STRATEGIES:
-        raise SetupError(
+    if value not in BRANCH_STRATEGIES:
+        raise ExtensionSetupError(
             f"unsupported evolution branch strategy {value!r} - "
-            f"expected one of {list(_BRANCH_STRATEGIES)}"
+            f"expected one of {list(BRANCH_STRATEGIES)}"
         )
     return value
 

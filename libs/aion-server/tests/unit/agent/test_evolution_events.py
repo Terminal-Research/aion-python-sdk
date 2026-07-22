@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from types import SimpleNamespace
 from typing import Optional
 
+import pytest
 from google.protobuf.json_format import MessageToDict
 
 from a2a.types import (
@@ -151,6 +152,21 @@ class TestMapStreamEvent:
 
     def test_unknown_event_types_are_dropped(self):
         assert events.map_stream_event(_task(), SimpleNamespace()) is None
+
+
+class TestEventKindDriftGuard:
+    def test_known_event_kinds_cover_every_toolkit_event_type(self):
+        """`events._KNOWN_EVENT_KINDS` must name every class the toolkit's
+        `EvolutionEvent` union can carry, so a toolkit-side rename or addition
+        is caught here — as a loud test failure — instead of only a
+        `logger.warning` line the first time it happens in production."""
+        toolkit = pytest.importorskip("aion.toolkits.behaviour_evolution")
+        from typing import get_args
+
+        event_types = get_args(toolkit.EvolutionEvent)
+        assert event_types, "EvolutionEvent resolved to no union members"
+        names = {t.__name__ for t in event_types}
+        assert names == events._KNOWN_EVENT_KINDS
 
 
 class TestFailedEvent:

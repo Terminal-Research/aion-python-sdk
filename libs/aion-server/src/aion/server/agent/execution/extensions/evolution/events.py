@@ -19,6 +19,7 @@ record of what the evolution planned/did/decided, readable without cloning.
 
 from __future__ import annotations
 
+import logging
 import uuid
 from typing import TYPE_CHECKING, Optional
 
@@ -46,6 +47,8 @@ from .directive import GATE_METADATA_KEY
 if TYPE_CHECKING:
     from aion.toolkits.behaviour_evolution import EvolutionResult
 
+logger = logging.getLogger(__name__)
+
 __all__ = [
     "PROGRESS_METADATA_KEY",
     "RESULT_ARTIFACT_NAME",
@@ -71,6 +74,18 @@ PROGRESS_METADATA_KEY = BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1
 # this set, or post-process on the metadata's `executorKind`, to change what
 # the end user sees.
 SURFACED_EXECUTOR_KINDS = frozenset({"agent_message", "command_execution"})
+
+# Every class name `models.EvolutionEvent` can carry, kept in sync with the
+# toolkit by the drift-guard test in test_evolution_events.py (skipped when the
+# optional toolkit isn't installed). `map_stream_event` discriminates by name
+# rather than `isinstance` because the toolkit is an optional dependency this
+# module must work without — see the module docstring. `RunCompleted` is listed
+# so it maps to None without a spurious warning: it carries no progress to
+# surface (the handler reads the terminal result from `worker.result`, not off
+# the stream), yet it is a known, expected member of the event union.
+_KNOWN_EVENT_KINDS = frozenset(
+    {"PhaseStarted", "BranchResolved", "ExecutorEvent", "SpecCaptured", "RunCompleted"}
+)
 
 
 def status_event(
@@ -158,6 +173,14 @@ def map_stream_event(
         )
     if kind == "SpecCaptured":
         return spec_artifact_event(task, path=event.path, content=event.content)
+    if kind not in _KNOWN_EVENT_KINDS:
+        # A toolkit event type this mapper has never heard of: either the
+        # toolkit added one (this module needs a branch for it) or the two
+        # sides drifted apart. Silent drop would look identical to a
+        # deliberately-unsurfaced kind (e.g. a filtered ExecutorEvent) — log
+        # it so drift is visible in production, not just in the drift-guard
+        # test.
+        logger.warning("evolution: unmapped toolkit stream event %r dropped", kind)
     return None
 
 
@@ -181,6 +204,33 @@ def spec_artifact_event(task: Task, *, path: str, content: str) -> TaskArtifactU
     )
     event.artifact.metadata.get_or_create_struct(PROGRESS_METADATA_KEY).update({"path": path})
     return event
+
+
+def _result_artifact_event(task: Task, result: "EvolutionResult") -> TaskArtifactUpdateEvent:
+    """The result artifact alone, schema-tagged — shared by `result_events` and
+    `plan_gate_events`, which each pair it with a different terminal event."""
+    payload = EvolutionResultActionPayload(
+        outcome=result.outcome,
+        branch=result.branch,
+        commit_sha=result.commit_sha,
+        diff_summary=result.diff_summary,
+        error=result.error,
+        resumed=getattr(result, "resumed", False),
+        commit_count=getattr(result, "commit_count", None),
+        pr_url=getattr(result, "pr_url", None),
+        spec_path=getattr(result, "spec_path", None),
+    )
+    artifact_event = new_data_artifact_update_event(
+        task_id=task.id,
+        context_id=task.context_id,
+        name=RESULT_ARTIFACT_NAME,
+        data=payload.model_dump(mode="json", by_alias=True, exclude_none=True),
+        last_chunk=True,
+    )
+    artifact_event.artifact.parts[0].metadata.get_or_create_struct(
+        EVENT_EXTENSION_URI_V1
+    ).update({"schema": BEHAVIOUR_EVOLUTION_RESULT_ACTION_PAYLOAD_SCHEMA_V1})
+    return artifact_event
 
 
 def plan_gate_events(
@@ -216,7 +266,6 @@ def plan_gate_events(
     if result.outcome != "succeeded":
         return result_events(task, result)
 
-    events = result_events(task, result)
     gate = status_event(
         task,
         state=TaskState.TASK_STATE_INPUT_REQUIRED,
@@ -227,8 +276,7 @@ def plan_gate_events(
         progress={"stage": "awaiting_approval", "branch": result.branch or ""},
     )
     gate.metadata.get_or_create_struct(GATE_METADATA_KEY).update(stash)
-    # Replace the terminal COMPLETED status with the pause; keep the artifact.
-    return [*events[:-1], gate]
+    return [_result_artifact_event(task, result), gate]
 
 
 def result_events(
@@ -245,28 +293,7 @@ def result_events(
     if result.outcome == "cancelled":
         return []
 
-    payload = EvolutionResultActionPayload(
-        outcome=result.outcome,
-        branch=result.branch,
-        commit_sha=result.commit_sha,
-        diff_summary=result.diff_summary,
-        error=result.error,
-        resumed=getattr(result, "resumed", False),
-        commit_count=getattr(result, "commit_count", None),
-        pr_url=getattr(result, "pr_url", None),
-        spec_path=getattr(result, "spec_path", None),
-    )
-    artifact_event = new_data_artifact_update_event(
-        task_id=task.id,
-        context_id=task.context_id,
-        name=RESULT_ARTIFACT_NAME,
-        data=payload.model_dump(mode="json", by_alias=True, exclude_none=True),
-        last_chunk=True,
-    )
-    artifact_event.artifact.parts[0].metadata.get_or_create_struct(
-        EVENT_EXTENSION_URI_V1
-    ).update({"schema": BEHAVIOUR_EVOLUTION_RESULT_ACTION_PAYLOAD_SCHEMA_V1})
-
+    artifact_event = _result_artifact_event(task, result)
     if result.outcome == "failed":
         terminal = failed_event(task, error=result.error or "evolution run failed")
     elif result.outcome == "no_change":

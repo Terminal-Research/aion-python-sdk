@@ -44,7 +44,7 @@ from aion.server.agent.execution.extensions.evolution.directive import (
     ParsedDirective,
     gate_stash,
 )
-from aion.server.agent.execution.extensions.evolution.errors import SetupError
+from aion.server.agent.execution.extensions.evolution.errors import ExtensionSetupError
 
 
 @pytest.fixture
@@ -184,16 +184,23 @@ def _default_events(result) -> list:
 
 
 class FakeWorker:
-    """Mirrors EvolutionWorker's caller-facing surface: stream/cancel."""
+    """Mirrors EvolutionWorker's caller-facing surface: stream/cancel/result.
+
+    `result` is None until the stream drains, matching the real worker (which
+    sets it as it yields the terminal RunCompleted event) — the handler reads
+    it only after the stream completes."""
 
     def __init__(self, result, events=None):
         self._events = _default_events(result) if events is None else events
+        self._terminal_result = result
+        self.result = None
         self.cancel_called = False
 
     async def stream(self):
         for event in self._events:
             await asyncio.sleep(0)
             yield event
+        self.result = self._terminal_result
 
     def cancel(self):
         self.cancel_called = True
@@ -350,7 +357,7 @@ class TestStream:
     @pytest.mark.anyio
     async def test_setup_error_fails_task(self):
         def _raise(parsed, daemon):
-            raise SetupError("CODEX_BASE_URL is not set")
+            raise ExtensionSetupError("CODEX_BASE_URL is not set")
 
         handler = _handler(build_worker=_raise)
         ctx = _make_context()

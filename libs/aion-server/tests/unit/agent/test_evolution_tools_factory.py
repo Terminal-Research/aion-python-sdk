@@ -16,7 +16,7 @@ from aion.core.a2a.extensions.behaviour_evolution import (  # noqa: E402
     TargetContext,
 )
 from aion.server.agent.execution.extensions.evolution.directive import ParsedDirective  # noqa: E402
-from aion.server.agent.execution.extensions.evolution.errors import SetupError  # noqa: E402
+from aion.server.agent.execution.extensions.evolution.errors import ExtensionSetupError  # noqa: E402
 from aion.server.agent.execution.extensions.evolution.tools_factory import build_worker  # noqa: E402
 
 REPO_URL = "https://github.com/acme/target-agent.git"
@@ -74,7 +74,7 @@ def _set_env(monkeypatch, **overrides):
 class TestBuildWorker:
     def test_missing_github_token_raises_setup_error(self, monkeypatch):
         _set_env(monkeypatch, GITHUB_TOKEN=None)
-        with pytest.raises(SetupError, match="GITHUB_TOKEN"):
+        with pytest.raises(ExtensionSetupError, match="GITHUB_TOKEN"):
             build_worker(_parsed(), _daemon())
 
     def test_builds_worker_with_directive_mapped(self, monkeypatch):
@@ -142,39 +142,41 @@ class TestBuildWorker:
         """Going to the model service without a principal would leave usage
         unattributed - reject before the run starts."""
         _set_env(monkeypatch, CODEX_BASE_URL=None)
-        with pytest.raises(SetupError, match="daemonAgentIdentityId"):
+        with pytest.raises(ExtensionSetupError, match="daemonAgentIdentityId"):
             build_worker(_parsed(), _daemon(identity_id=None))
 
     def test_branch_strategy_from_daemon_config_var(self, monkeypatch):
-        """pull-request strategy is observable through the wired forge client."""
+        """The forge client is now built lazily by deliver() from
+        `Tools.forge_factory` (always wired), so branch strategy is only
+        observable through `EvolutionConfig.branch_strategy` itself."""
         _set_env(monkeypatch)
         worker = build_worker(_parsed(), _daemon(branch_strategy="pull-request"))
-        assert worker._tools.forge is not None
+        assert worker._config.branch_strategy == "pull-request"
 
         worker = build_worker(_parsed(), _daemon())  # default beta-branch
-        assert worker._tools.forge is None
+        assert worker._config.branch_strategy == "beta-branch"
 
     def test_env_branch_strategy_overrides_daemon_variable(self, monkeypatch):
         _set_env(monkeypatch, EVOLUTION_BRANCH_STRATEGY="pull-request")
         worker = build_worker(_parsed(), _daemon(branch_strategy="beta-branch"))
-        assert worker._tools.forge is not None
+        assert worker._config.branch_strategy == "pull-request"
 
     def test_unknown_branch_strategy_raises_setup_error(self, monkeypatch):
         _set_env(monkeypatch)
-        with pytest.raises(SetupError, match="unsupported evolution branch strategy"):
+        with pytest.raises(ExtensionSetupError, match="unsupported evolution branch strategy"):
             build_worker(_parsed(), _daemon(branch_strategy="direct-push"))
 
     def test_unsupported_directive_values_surface_as_setup_error(self, monkeypatch):
         """The core payload allows kind/mode values the installed toolkit may
         not support yet (e.g. kind='bugfix' vs the toolkit's Literal['feature']);
         that mismatch must fail the task with a clear message, not a traceback."""
-        from aion.toolkits.behaviour_evolution.models.directive import Kind
+        from aion.toolkits.behaviour_evolution import Kind
 
         _set_env(monkeypatch)
         if "bugfix" in getattr(Kind, "__args__", ()):
             pytest.skip("installed toolkit already supports kind='bugfix'")
 
-        with pytest.raises(SetupError) as ex:
+        with pytest.raises(ExtensionSetupError) as ex:
             build_worker(_parsed(kind="bugfix"), _daemon())
 
         message = str(ex.value)
@@ -188,13 +190,13 @@ class TestBuildWorker:
     def test_unsupported_mode_surfaces_as_setup_error(self, monkeypatch):
         """Same capability-gap handling for mode: aion-core advertises
         mode='directive', the installed toolkit accepts only 'advisory'."""
-        from aion.toolkits.behaviour_evolution.models.directive import Mode
+        from aion.toolkits.behaviour_evolution import Mode
 
         _set_env(monkeypatch)
         if "directive" in getattr(Mode, "__args__", ()):
             pytest.skip("installed toolkit already supports mode='directive'")
 
-        with pytest.raises(SetupError) as ex:
+        with pytest.raises(ExtensionSetupError) as ex:
             build_worker(_parsed(mode="directive"), _daemon())
 
         message = str(ex.value)

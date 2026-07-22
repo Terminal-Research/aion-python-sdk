@@ -40,7 +40,7 @@ from aion.core.runtime.context.registry import AionRuntimeContextRegistry
 from ..availability import ExtensionAvailability
 from . import events
 from .directive import ParsedDirective, gate_stash, parse_directive, parse_gated_resume
-from .errors import EvolutionHandlerError, SetupError
+from .errors import EvolutionHandlerError, ExtensionSetupError
 
 if TYPE_CHECKING:
     from a2a.server.agent_execution import RequestContext
@@ -167,15 +167,9 @@ class EvolutionTaskHandler:
             return
 
         self._running[task.id] = worker
-        result = None
         run_stream = worker.stream()
         try:
             async for event in run_stream:
-                if type(event).__name__ == "RunCompleted":
-                    # Terminal mapping is owned below, after the stream is
-                    # fully drained and cleaned up.
-                    result = event.result
-                    continue
                 mapped = events.map_stream_event(task, event)
                 if mapped is not None:
                     yield mapped
@@ -191,6 +185,12 @@ class EvolutionTaskHandler:
             # worker stream cancels the underlying run - no orphans.
             await run_stream.aclose()
 
+        # The worker exposes the terminal result once its stream has drained
+        # (the RunCompleted event flows through map_stream_event as a no-op).
+        # Reading it from `worker.result` — rather than intercepting the
+        # RunCompleted event by class name — keeps the handler free of any type
+        # coupling to the optional toolkit.
+        result = worker.result
         if result is not None:
             if parsed.stage == "plan":
                 terminal = events.plan_gate_events(task, result, stash=gate_stash(parsed))
@@ -221,5 +221,5 @@ class EvolutionTaskHandler:
         try:
             from .tools_factory import build_worker
         except ModuleNotFoundError as ex:
-            raise SetupError(f"behaviour-evolution toolkit is not installed: {ex}") from ex
+            raise ExtensionSetupError(f"behaviour-evolution toolkit is not installed: {ex}") from ex
         return build_worker(parsed, daemon)
