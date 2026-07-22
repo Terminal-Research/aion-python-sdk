@@ -112,3 +112,20 @@ class TestParseDirective:
         ctx = SimpleNamespace(message=None)
         with pytest.raises(DirectiveError, match="no instruction text"):
             parse_directive(ctx, _runtime_ctx(_event(payload=_payload())))
+
+    def test_stage_is_taken_verbatim_off_the_wire(self):
+        payload = EvolutionDirectiveEventPayload(
+            target=TargetContext(repo_url=REPO_URL, base_ref="HEAD", target_version_id="v-1"),
+            kind="feature",
+            mode="advisory",
+            stage="plan",
+        )
+
+        parsed = parse_directive(_request_ctx(), _runtime_ctx(_event(payload=payload)))
+
+        assert parsed.stage == "plan"
+
+    def test_default_payload_stage_is_auto(self):
+        parsed = parse_directive(_request_ctx(), _runtime_ctx(_event(payload=_payload())))
+
+        assert parsed.stage == "auto"

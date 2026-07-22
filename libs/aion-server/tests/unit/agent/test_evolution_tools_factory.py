@@ -99,6 +99,20 @@ class TestBuildWorker:
         worker = build_worker(_parsed(), daemon)
         assert worker._config.specs_root == "docs/specs"
 
+    def test_executor_network_off_by_default(self, monkeypatch):
+        _set_env(monkeypatch)
+        worker = build_worker(_parsed(), _daemon())
+        assert worker._config.executor_network is False
+
+    def test_executor_network_from_env_flag(self, monkeypatch):
+        """Deployment env only — the directive must not be able to widen the
+        sandbox; the flag reaches both the toolkit config and (via build_tools)
+        the Codex sandbox grant."""
+        _set_env(monkeypatch, EVOLUTION_EXECUTOR_NETWORK="true")
+        worker = build_worker(_parsed(), _daemon())
+        assert worker._config.executor_network is True
+        assert worker._tools.codex.config.network_access is True
+
     def test_overridden_endpoint_attaches_no_token_resolver(self, monkeypatch):
         """The wrapper chooses the mode: an explicit CODEX_BASE_URL means a
         local/foreign endpoint, so no Aion credentials provider is wired and

@@ -254,3 +254,36 @@ class TestResultEvents:
         """The A2A cancel flow owns the terminal CANCELED event; a cancelled
         run must not race it with its own terminal status or artifact."""
         assert events.result_events(_task(), _result("cancelled")) == []
+
+    def test_failed_with_rescue_reports_rescue_fields(self):
+        """A failed run's rescue state travels on the result artifact: the
+        client learns whether undelivered work was pushed to the evolution
+        branch (durable, resume picks it up) or fell back to a pod-local
+        bundle an operator must restore promptly."""
+        out = events.result_events(
+            _task(),
+            _result(
+                "failed",
+                error="the remote end hung up",
+                rescue_pushed=False,
+                rescue_path="/data/rescue-ctx-1.bundle",
+            ),
+        )
+
+        data = MessageToDict(out[0].artifact.parts[0].data)
+        assert data["rescuePath"] == "/data/rescue-ctx-1.bundle"
+        assert "rescuePushed" not in data or data["rescuePushed"] is False
+
+        out = events.result_events(
+            _task(), _result("failed", error="codex died", rescue_pushed=True)
+        )
+        data = MessageToDict(out[0].artifact.parts[0].data)
+        assert data["rescuePushed"] is True
+        assert "rescuePath" not in data
+
+    def test_result_without_rescue_fields_still_maps(self):
+        """An older toolkit's result object has no rescue fields — the mapping
+        must degrade to defaults instead of raising."""
+        out = events.result_events(_task(), _result("failed", error="boom"))
+        data = MessageToDict(out[0].artifact.parts[0].data)
+        assert "rescuePath" not in data

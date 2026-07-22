@@ -32,7 +32,13 @@ class TargetContext(A2ABaseModel):
     """Repo coordinates for the agent being improved: where to clone and which version to start from."""
 
     repo_url: str = Field(description="Git URL of the target agent's repository.")
-    base_ref: str = Field(description="Git ref to clone from, e.g. a branch name or 'HEAD'.")
+    base_ref: str = Field(
+        description=(
+            "Git ref to clone from: a branch name, tag, or commit sha; "
+            "'HEAD' uses the repository's default branch. A branch name here "
+            "also becomes the base the evolution's pull request targets."
+        )
+    )
     target_version_id: str = Field(
         description="Target version identifier; guards against re-running a stale directive."
     )
@@ -57,15 +63,16 @@ class EvolutionDirectiveEventPayload(A2ABaseModel):
     mode: Literal["advisory", "directive"] = Field(
         description="Autonomy level: 'advisory' allows a no_change outcome; 'directive' requires a change."
     )
-    approval: Literal["auto", "required"] = Field(
+    stage: Literal["auto", "plan", "implement"] = Field(
         default="auto",
         description=(
-            "Gating policy for this evolution. 'auto' runs planning and "
-            "implementation in one uninterrupted run. 'required' splits it at "
-            "the plan: the improver first produces only the evolution spec "
-            "with the subtask plan and pauses the task (input_required) until "
-            "a reviewer approves the plan or replies with feedback for a "
-            "revision; implementation starts only after approval."
+            "Which slice of the evolution this run covers. 'auto' runs "
+            "planning and implementation in one run. 'plan' produces only "
+            "the evolution spec and subtask plan, without implementing it. "
+            "'implement' executes the already-approved plan without "
+            "re-planning. Phasing and gating between runs is the "
+            "distributor's policy - the improver does not pause a run to "
+            "wait on this field."
         ),
     )
 
@@ -120,4 +127,21 @@ class EvolutionResultActionPayload(A2ABaseModel):
     spec_path: Optional[str] = Field(
         default=None,
         description="Repo-relative path of the evolution's spec document, if captured.",
+    )
+    rescue_pushed: bool = Field(
+        default=False,
+        description=(
+            "True when a failed run's committed-but-undelivered work was rescued by "
+            "pushing the evolution branch: the work is durable in the target repo and "
+            "the next run of this context resumes on it automatically."
+        ),
+    )
+    rescue_path: Optional[str] = Field(
+        default=None,
+        description=(
+            "Path of a git bundle holding committed-but-undelivered work — the rescue "
+            "fallback when even the rescue push failed. The path is local to the "
+            "improver's machine (lost with an ephemeral filesystem): an operator "
+            "restores it promptly with `git fetch <bundle> <branch>` in any clone."
+        ),
     )

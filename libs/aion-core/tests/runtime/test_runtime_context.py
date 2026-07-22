@@ -652,6 +652,7 @@ class TestBuilderExtensionPipeline:
 def _make_evolution_directive_message(
     event_type: str = None,
     payload_schema: str = None,
+    payload_overrides: dict = None,
 ) -> Message:
     """A daemon-scoped directive message: text instruction part + schema-tagged data part."""
     from aion.core.constants.a2a import (
@@ -675,7 +676,7 @@ def _make_evolution_directive_message(
         "schema": payload_schema or BEHAVIOUR_EVOLUTION_DIRECTIVE_EVENT_PAYLOAD_SCHEMA_V1,
     })
     payload = Struct()
-    ParseDict({
+    payload_dict = {
         "target": {
             "repoUrl": "https://github.com/acme/target-agent.git",
             "baseRef": "HEAD",
@@ -683,7 +684,10 @@ def _make_evolution_directive_message(
         },
         "kind": "feature",
         "mode": "advisory",
-    }, payload)
+    }
+    if payload_overrides:
+        payload_dict.update(payload_overrides)
+    ParseDict(payload_dict, payload)
     data_part.data.struct_value.CopyFrom(payload)
     msg.parts.append(data_part)
     return msg
@@ -726,6 +730,100 @@ class TestBuilderEvolutionDirectivePipeline:
             assert event.payload.target.target_version_id == "v-42"
             assert event.payload.kind == "feature"
             assert event.payload.mode == "advisory"
+            assert event.payload.stage == "auto"
+        finally:
+            aion_a2a_extension_registry.reset_to_default()
+
+    def test_directive_stage_parsed_from_payload(self):
+        from aion.core.constants.a2a import BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1
+
+        aion_a2a_extension_registry.activate(
+            [BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1, DAEMON_EXTENSION_URI_V1]
+        )
+        try:
+            msg = _make_evolution_directive_message(payload_overrides={"stage": "plan"})
+            metadata = {DAEMON_EXTENSION_URI_V1: _make_daemon_struct()}
+            inbox = A2AInbox(message=msg, metadata=metadata)
+            rc = _make_mock_rc(message=msg, metadata=metadata)
+
+            with patch(
+                "aion.core.runtime.context.builder.A2AInbox.from_request_context",
+                return_value=inbox,
+            ):
+                result = AionRuntimeContextBuilder.from_request_context(rc)
+
+            event = result.extensions.get(BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1)
+            assert event.payload.stage == "plan"
+        finally:
+            aion_a2a_extension_registry.reset_to_default()
+
+    def test_directive_stage_defaults_to_auto_when_absent(self):
+        from aion.core.constants.a2a import BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1
+
+        aion_a2a_extension_registry.activate(
+            [BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1, DAEMON_EXTENSION_URI_V1]
+        )
+        try:
+            msg = _make_evolution_directive_message()
+            metadata = {DAEMON_EXTENSION_URI_V1: _make_daemon_struct()}
+            inbox = A2AInbox(message=msg, metadata=metadata)
+            rc = _make_mock_rc(message=msg, metadata=metadata)
+
+            with patch(
+                "aion.core.runtime.context.builder.A2AInbox.from_request_context",
+                return_value=inbox,
+            ):
+                result = AionRuntimeContextBuilder.from_request_context(rc)
+
+            event = result.extensions.get(BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1)
+            assert event.payload.stage == "auto"
+        finally:
+            aion_a2a_extension_registry.reset_to_default()
+
+    def test_directive_rejects_invalid_stage(self):
+        """Schema-level contract: an out-of-Literal stage value fails pydantic
+        validation on the payload model itself."""
+        from pydantic import ValidationError
+
+        from aion.core.a2a.extensions.behaviour_evolution import EvolutionDirectiveEventPayload
+
+        with pytest.raises(ValidationError):
+            EvolutionDirectiveEventPayload.model_validate({
+                "target": {
+                    "repo_url": "https://github.com/acme/target-agent.git",
+                    "base_ref": "HEAD",
+                    "target_version_id": "v-42",
+                },
+                "kind": "feature",
+                "mode": "advisory",
+                "stage": "review",
+            })
+
+    def test_malformed_directive_fails_closed_through_pipeline(self):
+        """A directive part tagged with a known schema but carrying an invalid
+        value (stage='review') must fail the request with a real diagnostic:
+        the MessagesCollector surfaces the payload validation error as
+        ExtensionActivationError instead of swallowing it and letting the
+        request read downstream as 'no event on the request at all'."""
+        from aion.core.constants.a2a import BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1
+
+        aion_a2a_extension_registry.activate(
+            [BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1, DAEMON_EXTENSION_URI_V1]
+        )
+        try:
+            msg = _make_evolution_directive_message(payload_overrides={"stage": "review"})
+            metadata = {DAEMON_EXTENSION_URI_V1: _make_daemon_struct()}
+            inbox = A2AInbox(message=msg, metadata=metadata)
+            rc = _make_mock_rc(message=msg, metadata=metadata)
+
+            with patch(
+                "aion.core.runtime.context.builder.A2AInbox.from_request_context",
+                return_value=inbox,
+            ):
+                with pytest.raises(ExtensionActivationError) as exc_info:
+                    AionRuntimeContextBuilder.from_request_context(rc)
+
+            assert "failed validation" in str(exc_info.value)
         finally:
             aion_a2a_extension_registry.reset_to_default()
 
@@ -772,6 +870,90 @@ class TestBuilderEvolutionDirectivePipeline:
                 AionRuntimeContextBuilder.from_request_context(rc)
 
         assert exc_info.value.uri == BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1
+
+
+class TestMessagesCollectorMalformedPayload:
+    """MessagesCollector.collect honours the ExtensionPayloadCollector contract:
+    a part tagged with a known schema but whose data fails validation surfaces
+    as ExtensionActivationError, not a silent drop — while a later valid part
+    still wins (multi-part fallback) and a genuinely absent payload returns None."""
+
+    def _collector(self):
+        from aion.core.a2a.extensions.behaviour_evolution import EvolutionDirectiveEventPayload
+        from aion.core.runtime.context.extensions.descriptors import MessagesCollector
+
+        return MessagesCollector(EvolutionDirectiveEventPayload)
+
+    def _envelope(self, msg):
+        from aion.core.constants.a2a import BEHAVIOUR_EVOLUTION_DIRECTIVE_EVENT_TYPE_V1
+
+        msg.metadata.get_or_create_struct(EVENT_EXTENSION_URI_V1).update({
+            "type": BEHAVIOUR_EVOLUTION_DIRECTIVE_EVENT_TYPE_V1,
+            "source": "aion://control-plane/reflection",
+            "id": "ev-evo-mp",
+        })
+
+    def _data_part(self, *, stage=None):
+        from aion.core.constants.a2a import BEHAVIOUR_EVOLUTION_DIRECTIVE_EVENT_PAYLOAD_SCHEMA_V1
+
+        part = Part()
+        part.metadata.get_or_create_struct(EVENT_EXTENSION_URI_V1).update({
+            "schema": BEHAVIOUR_EVOLUTION_DIRECTIVE_EVENT_PAYLOAD_SCHEMA_V1,
+        })
+        payload_dict = {
+            "target": {
+                "repoUrl": "https://github.com/acme/target-agent.git",
+                "baseRef": "HEAD",
+                "targetVersionId": "v-42",
+            },
+            "kind": "feature",
+            "mode": "advisory",
+        }
+        if stage is not None:
+            payload_dict["stage"] = stage
+        s = Struct()
+        ParseDict(payload_dict, s)
+        part.data.struct_value.CopyFrom(s)
+        return part
+
+    def test_malformed_known_schema_part_raises(self):
+        from aion.core.constants.a2a import BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1
+
+        msg = Message(message_id="m-mp-1", role=Role.ROLE_USER)
+        self._envelope(msg)
+        msg.parts.append(self._data_part(stage="review"))  # invalid enum value
+        rc = _make_mock_rc(message=msg)
+
+        with pytest.raises(ExtensionActivationError) as exc_info:
+            self._collector().collect(BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1, rc)
+        assert "failed validation" in str(exc_info.value)
+
+    def test_later_valid_part_wins_over_earlier_invalid(self):
+        """The multi-part fallback the silent drop used to provide must survive:
+        an earlier malformed part does not veto a later valid one."""
+        from aion.core.constants.a2a import BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1
+
+        msg = Message(message_id="m-mp-2", role=Role.ROLE_USER)
+        self._envelope(msg)
+        msg.parts.append(self._data_part(stage="review"))  # invalid, first
+        msg.parts.append(self._data_part(stage="plan"))  # valid, second
+        rc = _make_mock_rc(message=msg)
+
+        event = self._collector().collect(BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1, rc)
+        assert event is not None
+        assert event.payload.stage == "plan"
+
+    def test_absent_payload_returns_none(self):
+        """No part carries a known schema: genuinely no event for us — still
+        None, not an error (distinct from the malformed-but-present case)."""
+        from aion.core.constants.a2a import BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1
+
+        msg = Message(message_id="m-mp-3", role=Role.ROLE_USER)
+        self._envelope(msg)
+        msg.parts.append(Part(text="just an instruction, no data part"))
+        rc = _make_mock_rc(message=msg)
+
+        assert self._collector().collect(BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1, rc) is None
 
 
 class TestUnknownExtensions:

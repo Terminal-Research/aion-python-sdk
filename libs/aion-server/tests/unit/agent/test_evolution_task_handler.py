@@ -39,11 +39,6 @@ from aion.core.runtime.context.extensions import AionRuntimeExtensions
 from aion.core.runtime.context.models import Event
 from aion.core.runtime.context.registry import AionRuntimeContextRegistry
 from aion.server.agent.execution.extensions.evolution import EvolutionTaskHandler
-from aion.server.agent.execution.extensions.evolution.directive import (
-    GATE_METADATA_KEY,
-    ParsedDirective,
-    gate_stash,
-)
 from aion.server.agent.execution.extensions.evolution.errors import ExtensionSetupError
 
 
@@ -91,19 +86,11 @@ def _phase(value: str) -> PhaseStarted:
 def _make_context(
     state: TaskState = TaskState.TASK_STATE_WORKING,
     text: str = "Append a friendly sentence to README.md.",
-    decision: Optional[str] = None,
-    stash: Optional[dict] = None,
 ):
     task = Task(id="task-123", context_id="ctx-456", status=TaskStatus(state=state))
-    if stash is not None:
-        task.metadata.get_or_create_struct(GATE_METADATA_KEY).update(stash)
     parts = []
     if text:
         parts.append(Part(text=text))
-    if decision is not None:
-        part = Part()
-        part.data.struct_value.update({"decision": decision})
-        parts.append(part)
     message = Message(message_id="msg-1", role=Role.ROLE_USER, parts=parts)
 
     class _Ctx:
@@ -114,7 +101,7 @@ def _make_context(
     return ctx
 
 
-def _payload(approval: str = "auto") -> EvolutionDirectiveEventPayload:
+def _payload(stage: str = "auto") -> EvolutionDirectiveEventPayload:
     return EvolutionDirectiveEventPayload(
         target=TargetContext(
             repo_url="https://github.com/acme/target-agent.git",
@@ -123,17 +110,17 @@ def _payload(approval: str = "auto") -> EvolutionDirectiveEventPayload:
         ),
         kind="feature",
         mode="advisory",
-        approval=approval,
+        stage=stage,
     )
 
 
-def _runtime_ctx(with_directive: bool = True, daemon=None, approval: str = "auto"):
+def _runtime_ctx(with_directive: bool = True, daemon=None, stage: str = "auto"):
     if not with_directive:
         return SimpleNamespace(
             extensions=AionRuntimeExtensions({}),
             get_daemon=lambda: daemon,
         )
-    payload = _payload(approval)
+    payload = _payload(stage=stage)
     event = Event(
         kind=BEHAVIOUR_EVOLUTION_DIRECTIVE_EVENT_TYPE_V1,
         id="ev-1",
@@ -355,6 +342,51 @@ class TestStream:
         assert captured["parsed"].context_id == "ctx-456"
 
     @pytest.mark.anyio
+    async def test_wire_stage_reaches_worker_factory_and_run_completes_without_gating(self):
+        """`stage` rides the wire straight through to the worker factory - the
+        handler never pauses or gates on it; the run always terminates via
+        result_events (with the spec/result artifacts), never INPUT_REQUIRED."""
+        captured = {}
+
+        def _capture(parsed, daemon):
+            captured["stage"] = parsed.stage
+            return FakeWorker(_result("succeeded"))
+
+        handler = _handler(build_worker=_capture)
+        ctx = _make_context()
+
+        with _patch_runtime(_runtime_ctx(stage="plan")):
+            out = [event async for event in handler.stream(ctx)]
+
+        assert captured["stage"] == "plan"
+        assert out[-1].status.state == TaskState.TASK_STATE_COMPLETED
+        artifacts = [e for e in out if isinstance(e, TaskArtifactUpdateEvent)]
+        assert [a.artifact.name for a in artifacts] == ["evolution-spec", "evolution-result"]
+        assert all(
+            not (
+                isinstance(e, TaskStatusUpdateEvent)
+                and e.status.state == TaskState.TASK_STATE_INPUT_REQUIRED
+            )
+            for e in out
+        )
+
+    @pytest.mark.anyio
+    async def test_implement_stage_reaches_worker_factory(self):
+        captured = {}
+
+        def _capture(parsed, daemon):
+            captured["stage"] = parsed.stage
+            return FakeWorker(_result("succeeded"))
+
+        handler = _handler(build_worker=_capture)
+        ctx = _make_context()
+
+        with _patch_runtime(_runtime_ctx(stage="implement")):
+            [event async for event in handler.stream(ctx)]
+
+        assert captured["stage"] == "implement"
+
+    @pytest.mark.anyio
     async def test_setup_error_fails_task(self):
         def _raise(parsed, daemon):
             raise ExtensionSetupError("CODEX_BASE_URL is not set")
@@ -405,8 +437,11 @@ class TestStream:
 class TestResume:
     @pytest.mark.anyio
     async def test_resume_re_drives_the_evolution(self):
-        """Resume = run again: the toolkit finds the existing evolution branch
-        and continues, so the handler simply re-streams."""
+        """Resume delegates straight to stream(): the toolkit finds the
+        existing evolution branch and continues, so the handler simply
+        re-streams. The interrupted state that made this task resumable is
+        produced outside the handler (which never emits INPUT_REQUIRED
+        itself)."""
         result = _result("succeeded", resumed=True, commit_count=3)
         worker = FakeWorker(
             result,
@@ -431,166 +466,6 @@ class TestResume:
         ]
         assert any("resuming evolution" in t for t in texts)
         assert out[-1].status.state == TaskState.TASK_STATE_COMPLETED
-
-
-def _stash(approval: str = "required") -> dict:
-    return gate_stash(
-        ParsedDirective(
-            instruction="Append a friendly sentence to README.md.",
-            context_id="ctx-456",
-            payload=_payload(approval),
-            approval=approval,
-        )
-    )
-
-
-class TestPlanGate:
-    @pytest.mark.anyio
-    async def test_gated_directive_runs_plan_stage_and_pauses(self):
-        """approval=required -> the run covers the plan slice only and the
-        task pauses at INPUT_REQUIRED with the directive stashed in the event
-        metadata (what the TaskManager merges into Task.metadata)."""
-        captured = {}
-
-        def _capture(parsed, daemon):
-            captured["parsed"] = parsed
-            return FakeWorker(_result())
-
-        handler = _handler(build_worker=_capture)
-
-        with _patch_runtime(_runtime_ctx(approval="required")):
-            out = [event async for event in handler.stream(_make_context())]
-
-        assert captured["parsed"].stage == "plan"
-        assert captured["parsed"].feedback is None
-        terminal = out[-1]
-        assert terminal.status.state == TaskState.TASK_STATE_INPUT_REQUIRED
-        assert "review" in terminal.status.message.parts[0].text
-        assert GATE_METADATA_KEY in terminal.metadata
-        # result artifact still ships for context; no COMPLETED emitted
-        names = [e.artifact.name for e in out if isinstance(e, TaskArtifactUpdateEvent)]
-        assert "evolution-result" in names
-        assert all(
-            e.status.state != TaskState.TASK_STATE_COMPLETED
-            for e in out
-            if isinstance(e, TaskStatusUpdateEvent)
-        )
-
-    @pytest.mark.anyio
-    async def test_auto_directive_is_not_gated(self):
-        captured = {}
-
-        def _capture(parsed, daemon):
-            captured["parsed"] = parsed
-            return FakeWorker(_result())
-
-        handler = _handler(build_worker=_capture)
-
-        with _patch_runtime(_runtime_ctx(approval="auto")):
-            out = [event async for event in handler.stream(_make_context())]
-
-        assert captured["parsed"].stage == "auto"
-        assert out[-1].status.state == TaskState.TASK_STATE_COMPLETED
-
-    @pytest.mark.anyio
-    async def test_gate_reply_approval_runs_implement_stage(self):
-        captured = {}
-
-        def _capture(parsed, daemon):
-            captured["parsed"] = parsed
-            return FakeWorker(_result())
-
-        handler = _handler(build_worker=_capture)
-        ctx = _make_context(
-            state=TaskState.TASK_STATE_INPUT_REQUIRED, text="approve", stash=_stash()
-        )
-
-        # No directive event on the reply turn — the stash carries it.
-        with _patch_runtime(_runtime_ctx(with_directive=False)):
-            out = [event async for event in handler.resume(ctx)]
-
-        parsed = captured["parsed"]
-        assert parsed.stage == "implement"
-        assert parsed.feedback is None  # a bare approval word is not feedback
-        assert parsed.instruction == "Append a friendly sentence to README.md."
-        assert parsed.context_id == "ctx-456"
-        assert parsed.payload.target.repo_url == "https://github.com/acme/target-agent.git"
-        assert out[-1].status.state == TaskState.TASK_STATE_COMPLETED
-
-    @pytest.mark.anyio
-    async def test_gate_reply_text_reruns_plan_with_feedback(self):
-        captured = {}
-
-        def _capture(parsed, daemon):
-            captured["parsed"] = parsed
-            return FakeWorker(_result())
-
-        handler = _handler(build_worker=_capture)
-        ctx = _make_context(
-            state=TaskState.TASK_STATE_INPUT_REQUIRED,
-            text="drop subtask C, split subtask A",
-            stash=_stash(),
-        )
-
-        with _patch_runtime(_runtime_ctx(with_directive=False)):
-            out = [event async for event in handler.resume(ctx)]
-
-        parsed = captured["parsed"]
-        assert parsed.stage == "plan"
-        assert parsed.feedback == "drop subtask C, split subtask A"
-        # a revision pauses at the gate again
-        assert out[-1].status.state == TaskState.TASK_STATE_INPUT_REQUIRED
-
-    @pytest.mark.anyio
-    async def test_gate_reply_decision_part_with_note_approves_with_feedback(self):
-        """A structured approve plus a text note: implementation starts and
-        the note rides along as feedback for the executor."""
-        captured = {}
-
-        def _capture(parsed, daemon):
-            captured["parsed"] = parsed
-            return FakeWorker(_result())
-
-        handler = _handler(build_worker=_capture)
-        ctx = _make_context(
-            state=TaskState.TASK_STATE_INPUT_REQUIRED,
-            text="mind the retry backoff defaults",
-            decision="approve",
-            stash=_stash(),
-        )
-
-        with _patch_runtime(_runtime_ctx(with_directive=False)):
-            [event async for event in handler.resume(ctx)]
-
-        parsed = captured["parsed"]
-        assert parsed.stage == "implement"
-        assert parsed.feedback == "mind the retry backoff defaults"
-
-    @pytest.mark.anyio
-    async def test_gate_reply_without_text_or_decision_fails(self):
-        handler = _handler(worker=FakeWorker(_result()))
-        ctx = _make_context(
-            state=TaskState.TASK_STATE_INPUT_REQUIRED, text="", stash=_stash()
-        )
-
-        with _patch_runtime(_runtime_ctx(with_directive=False)):
-            out = [event async for event in handler.resume(ctx)]
-
-        assert len(out) == 1
-        assert out[0].status.state == TaskState.TASK_STATE_FAILED
-        assert "approve the plan or provide revision feedback" in out[0].status.message.parts[0].text
-
-    @pytest.mark.anyio
-    async def test_plan_run_with_no_change_fails_instead_of_empty_gate(self):
-        result = _result("no_change", branch=None, commit_sha=None, commit_count=0)
-        worker = FakeWorker(result, events=[_phase("preparing"), RunCompleted(result=result)])
-        handler = _handler(worker=worker)
-
-        with _patch_runtime(_runtime_ctx(approval="required")):
-            out = [event async for event in handler.stream(_make_context())]
-
-        assert out[-1].status.state == TaskState.TASK_STATE_FAILED
-        assert "no spec to review" in out[-1].status.message.parts[0].text
 
 
 class TestCancel:

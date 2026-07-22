@@ -42,8 +42,6 @@ from aion.core.constants.a2a import (
     EVENT_EXTENSION_URI_V1,
 )
 
-from .directive import GATE_METADATA_KEY
-
 if TYPE_CHECKING:
     from aion.toolkits.behaviour_evolution import EvolutionResult
 
@@ -56,7 +54,6 @@ __all__ = [
     "SURFACED_EXECUTOR_KINDS",
     "failed_event",
     "map_stream_event",
-    "plan_gate_events",
     "result_events",
     "status_event",
 ]
@@ -207,8 +204,8 @@ def spec_artifact_event(task: Task, *, path: str, content: str) -> TaskArtifactU
 
 
 def _result_artifact_event(task: Task, result: "EvolutionResult") -> TaskArtifactUpdateEvent:
-    """The result artifact alone, schema-tagged — shared by `result_events` and
-    `plan_gate_events`, which each pair it with a different terminal event."""
+    """The result artifact alone, schema-tagged, paired with a terminal status
+    event by `result_events`."""
     payload = EvolutionResultActionPayload(
         outcome=result.outcome,
         branch=result.branch,
@@ -219,6 +216,8 @@ def _result_artifact_event(task: Task, result: "EvolutionResult") -> TaskArtifac
         commit_count=getattr(result, "commit_count", None),
         pr_url=getattr(result, "pr_url", None),
         spec_path=getattr(result, "spec_path", None),
+        rescue_pushed=getattr(result, "rescue_pushed", False),
+        rescue_path=getattr(result, "rescue_path", None),
     )
     artifact_event = new_data_artifact_update_event(
         task_id=task.id,
@@ -233,52 +232,6 @@ def _result_artifact_event(task: Task, result: "EvolutionResult") -> TaskArtifac
     return artifact_event
 
 
-def plan_gate_events(
-    task: Task,
-    result: "EvolutionResult",
-    *,
-    stash: dict,
-) -> list[TaskArtifactUpdateEvent | TaskStatusUpdateEvent]:
-    """Terminal mapping for a plan-stage run of a gated evolution.
-
-    A successful planning run does not complete the task — it pauses it:
-    INPUT_REQUIRED with the review prompt, the result artifact for context,
-    and the directive stash attached as event metadata so the TaskManager
-    merges it into Task.metadata (what `parse_gated_resume` reads back on the
-    reviewer's reply). The spec itself was already emitted as the spec
-    artifact by the stream mapping.
-
-    A planning run that produced nothing reviewable (no_change: the executor
-    never committed a spec) fails the task explicitly rather than pausing on
-    an empty gate. failed/cancelled map exactly as ungated runs do.
-    """
-    if result.outcome == "no_change":
-        return [
-            failed_event(
-                task,
-                error=(
-                    "planning run produced no spec to review - the evolution "
-                    "cannot be gated on an empty plan; retry with a refined "
-                    "instruction"
-                ),
-            )
-        ]
-    if result.outcome != "succeeded":
-        return result_events(task, result)
-
-    gate = status_event(
-        task,
-        state=TaskState.TASK_STATE_INPUT_REQUIRED,
-        text=(
-            "evolution plan is ready for review - approve to start "
-            "implementation, or reply with feedback to revise the plan"
-        ),
-        progress={"stage": "awaiting_approval", "branch": result.branch or ""},
-    )
-    gate.metadata.get_or_create_struct(GATE_METADATA_KEY).update(stash)
-    return [_result_artifact_event(task, result), gate]
-
-
 def result_events(
     task: Task,
     result: "EvolutionResult",
@@ -288,7 +241,11 @@ def result_events(
     A cancelled run maps to no events at all: cancellation only ever comes
     from the A2A cancel flow, and the executor's TaskUpdater.cancel() already
     owns the terminal CANCELED event - emitting a second terminal here would
-    race it.
+    race it (the CANCELED is published before the worker finishes unwinding,
+    so even an artifact yielded here could land after the terminal). A
+    cancelled run's undelivered commits are still durable without any event:
+    the toolkit's rescue pushes the evolution branch, and the next run of the
+    context resumes on it.
     """
     if result.outcome == "cancelled":
         return []

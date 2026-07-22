@@ -164,6 +164,7 @@ class MessagesCollector:
 
         schema_dispatch = self.schema_dispatch()
         payload: Optional[NormalizedPayload] = None
+        payload_error: Optional[Exception] = None
         raw: Optional[SourceSystemEventPayload] = None
 
         for part in message.parts:
@@ -180,8 +181,16 @@ class MessagesCollector:
             if payload_cls is not None and payload is None:
                 try:
                     payload = payload_cls.model_validate(proto_to_dict(part.data))
-                except Exception:
-                    pass
+                except Exception as exc:
+                    # A part tagged with a schema this collector knows, but whose
+                    # data does not validate, is a malformed payload — a sender
+                    # bug, not "no event". Remember the first such failure so it
+                    # can be surfaced below if no other part yields a valid
+                    # payload. Not raised inline: a later part carrying the same
+                    # (or another known) schema may still validate, and that
+                    # fallback must win — parity with the pre-existing behaviour.
+                    if payload_error is None:
+                        payload_error = exc
 
             if part_meta.schema_uri == SOURCE_SYSTEM_EVENT_PAYLOAD_SCHEMA_V1 and raw is None:
                 try:
@@ -190,6 +199,20 @@ class MessagesCollector:
                     pass
 
         if payload is None:
+            if payload_error is not None:
+                # A known-schema part was present but malformed. Fail closed with
+                # a diagnostic that names the schema violation (honouring the
+                # ExtensionPayloadCollector contract: "Raises … payload … fails
+                # validation") rather than returning None, which downstream reads
+                # as "no event on the request at all" — a misleading diagnostic
+                # for what is really a sender-side payload bug.
+                raise ExtensionActivationError(
+                    uri,
+                    reason=(
+                        "a message part declared a known event schema but its "
+                        f"payload failed validation: {payload_error}"
+                    ),
+                )
             return None
 
         return Event(

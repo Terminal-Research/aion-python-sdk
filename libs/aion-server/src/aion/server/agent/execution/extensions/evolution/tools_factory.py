@@ -34,6 +34,13 @@ Env:
     GITHUB_TOKEN                        required, injected JIT into git calls
     EVOLUTION_BRANCH_STRATEGY           optional strategy override
     EVOLUTION_SPECS_ROOT                optional spec-convention root override
+    EVOLUTION_EXECUTOR_NETWORK          optional, "1"/"true" grants the executor
+                                        sandbox network access (installs allowed,
+                                        briefing demands manifest declaration);
+                                        deployment env only, never the request -
+                                        it widens the sandbox, so the operator
+                                        who owns the deployment's confinement
+                                        decides, not the directive author
     BEHAVIOUR_EVOLUTION_WORKDIR_ROOT    optional workdir root override
 """
 
@@ -102,10 +109,8 @@ def build_worker(
             context_id=parsed.context_id,
             kind=parsed.payload.kind,
             mode=parsed.payload.mode,
-            # Per-run gate slice, derived by the handler from the task
-            # lifecycle (plan-gated new task / approved resume / revision).
+            # stage arrives on the wire from the distributor.
             stage=parsed.stage,
-            feedback=parsed.feedback,
             target=TargetContext(
                 repo_url=target.repo_url,
                 base_ref=target.base_ref,
@@ -131,6 +136,7 @@ def build_worker(
     config = EvolutionConfig(
         branch_strategy=_branch_strategy(daemon),
         workdir_root=os.environ.get("BEHAVIOUR_EVOLUTION_WORKDIR_ROOT"),
+        executor_network=_env_flag("EVOLUTION_EXECUTOR_NETWORK"),
         **config_kwargs,
     )
 
@@ -242,6 +248,11 @@ def _branch_strategy(daemon) -> str:
             f"expected one of {list(BRANCH_STRATEGIES)}"
         )
     return value
+
+
+def _env_flag(name: str) -> bool:
+    """A boolean deployment env var: "1"/"true"/"yes"/"on" (any case) is True."""
+    return (os.environ.get(name) or "").strip().lower() in ("1", "true", "yes", "on")
 
 
 def _daemon_config_var(daemon, key: str) -> Optional[str]:

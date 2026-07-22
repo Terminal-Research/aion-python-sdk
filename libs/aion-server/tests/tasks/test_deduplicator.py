@@ -586,9 +586,9 @@ class TestApplyProcessedItemTask:
 class TestTrustedSourcePreservesPlatformMetadata:
     """A trusted_source deduplicator lets the platform's own payloads carry
     reserved-namespace (`https://docs.aion.to`) metadata that the default
-    public-API stance strips. This is what lets an agent's progress structs and
-    the plan-gate stash reach Task.metadata (regression: the stash used to be
-    stripped from the INPUT_REQUIRED status event, breaking gated resume)."""
+    public-API stance strips. This is what lets an agent's progress structs
+    reach Task.metadata (a public-API payload would have that metadata
+    stripped)."""
 
     def test_status_event_platform_metadata_survives_when_trusted(self):
         ded = A2ATaskDeduplicator(
