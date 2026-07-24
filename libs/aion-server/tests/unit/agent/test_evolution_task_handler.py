@@ -7,7 +7,7 @@ surface (stream/cancel). Stream-event stand-ins carry the toolkit's class
 names, since the event mapper discriminates by name."""
 
 import asyncio
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Optional
 from unittest.mock import AsyncMock, patch
@@ -39,6 +39,7 @@ from aion.core.runtime.context.extensions import AionRuntimeExtensions
 from aion.core.runtime.context.models import Event
 from aion.core.runtime.context.registry import AionRuntimeContextRegistry
 from aion.server.agent.execution.extensions.evolution import EvolutionTaskHandler
+from aion.server.agent.execution.extensions.evolution import events as evolution_events
 from aion.server.agent.execution.extensions.evolution.errors import ExtensionSetupError
 
 
@@ -62,10 +63,9 @@ class BranchResolved:
 
 
 @dataclass(frozen=True)
-class ExecutorEvent:
-    kind: str
-    text: Optional[str] = None
-    raw: dict = field(default_factory=dict)
+class AgentMessage:
+    text: str
+    final: bool = False
 
 
 @dataclass(frozen=True)
@@ -163,7 +163,7 @@ def _default_events(result) -> list:
         _phase("preparing"),
         BranchResolved(branch="evolution/ctx-456", resumed=False),
         _phase("executing"),
-        ExecutorEvent(kind="agent_message", text="working on it"),
+        AgentMessage(text="working on it", final=False),
         _phase("delivering"),
         SpecCaptured(path=".aion/evolutions/ctx-456/spec.md", content="# Spec"),
         RunCompleted(result=result),
@@ -284,11 +284,11 @@ class TestStream:
         ]
         texts = [e.status.message.parts[0].text for e in working]
         assert texts == [
-            "preparing",
+            evolution_events._PHASE_TEXT["preparing"],
             "started evolution branch evolution/ctx-456",
-            "executing",
+            evolution_events._PHASE_TEXT["executing"],
             "working on it",
-            "delivering",
+            evolution_events._PHASE_TEXT["delivering"],
         ]
 
         artifacts = [e for e in out if isinstance(e, TaskArtifactUpdateEvent)]

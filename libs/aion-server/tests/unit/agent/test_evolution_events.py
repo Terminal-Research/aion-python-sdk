@@ -20,9 +20,13 @@ from a2a.types import (
     TaskStatusUpdateEvent,
 )
 from aion.core.constants.a2a import (
+    BEHAVIOUR_EVOLUTION_AGENT_MESSAGE_PAYLOAD_SCHEMA_V1,
+    BEHAVIOUR_EVOLUTION_COMMAND_COMPLETED_PAYLOAD_SCHEMA_V1,
+    BEHAVIOUR_EVOLUTION_COMMAND_STARTED_PAYLOAD_SCHEMA_V1,
     BEHAVIOUR_EVOLUTION_RESULT_ACTION_PAYLOAD_SCHEMA_V1,
     EVENT_EXTENSION_URI_V1,
 )
+from aion.server.a2a.utils import is_ephemeral_status_event
 from aion.server.agent.execution.extensions.evolution import events
 
 
@@ -41,7 +45,28 @@ class BranchResolved:
 
 
 @dataclass(frozen=True)
-class ExecutorEvent:
+class CommandStarted:
+    call_id: str
+    command: str
+
+
+@dataclass(frozen=True)
+class CommandCompleted:
+    call_id: str
+    command: str
+    exit_code: Optional[int] = None
+    output: Optional[str] = None
+    truncated: bool = False
+
+
+@dataclass(frozen=True)
+class AgentMessage:
+    text: str
+    final: bool = False
+
+
+@dataclass(frozen=True)
+class ExecutorTrace:
     kind: str
     text: Optional[str] = None
     raw: dict = field(default_factory=dict)
@@ -85,14 +110,32 @@ def _progress(event: TaskStatusUpdateEvent) -> dict:
     return MessageToDict(event.metadata)[events.PROGRESS_METADATA_KEY]
 
 
+def _data(event: TaskStatusUpdateEvent) -> dict:
+    """The typed payload carried on the status message's data part."""
+    return MessageToDict(event.status.message.parts[1].data)
+
+
+def _part_schema(event: TaskStatusUpdateEvent) -> str:
+    """The schema URI tagged on the status message's data part."""
+    return MessageToDict(event.status.message.parts[1].metadata)[EVENT_EXTENSION_URI_V1]["schema"]
+
+
 class TestMapStreamEvent:
     def test_phase_started_carries_stage_metadata(self):
+        # The wrapper owns phrasing: the phase enum maps to a human sentence,
+        # while the raw token stays on the progress `stage` for machines.
         event = events.map_stream_event(_task(), PhaseStarted(phase=SimpleNamespace(value="executing")))
 
         assert isinstance(event, TaskStatusUpdateEvent)
         assert event.status.state == TaskState.TASK_STATE_WORKING
-        assert _text(event) == "executing"
+        assert _text(event) == events._PHASE_TEXT["executing"]
+        assert _text(event) != "executing"
         assert _progress(event) == {"stage": "executing"}
+
+    def test_unmapped_phase_falls_back_to_raw_token(self):
+        event = events.map_stream_event(_task(), PhaseStarted(phase=SimpleNamespace(value="brand-new")))
+        assert _text(event) == "brand-new"
+        assert _progress(event) == {"stage": "brand-new"}
 
     def test_branch_resolved_fresh(self):
         event = events.map_stream_event(
@@ -100,8 +143,10 @@ class TestMapStreamEvent:
         )
 
         assert "started evolution branch evolution/ctx-1" in _text(event)
+        # BranchResolved is a fact within the PREPARING phase, not its own phase —
+        # stage matches the toolkit's Phase.PREPARING, same as a bare PhaseStarted.
         assert _progress(event) == {
-            "stage": "branch",
+            "stage": "preparing",
             "branch": "evolution/ctx-1",
             "resumed": False,
             "priorCommits": 0,
@@ -117,26 +162,97 @@ class TestMapStreamEvent:
         assert _progress(event)["resumed"] is True
         assert _progress(event)["priorCommits"] == 4
 
-    def test_agent_message_surfaced_with_executor_metadata(self):
+    def test_command_started_is_ephemeral_typed_and_correlated(self):
         event = events.map_stream_event(
-            _task(), ExecutorEvent(kind="agent_message", text="Implemented retries")
+            _task(), CommandStarted(call_id="call_1", command="pytest -q")
+        )
+
+        assert _text(event) == "running $ pytest -q"
+        assert is_ephemeral_status_event(event) is True
+        assert _part_schema(event) == BEHAVIOUR_EVOLUTION_COMMAND_STARTED_PAYLOAD_SCHEMA_V1
+        assert _data(event) == {"callId": "call_1", "command": "pytest -q"}
+        assert _progress(event) == {
+            "stage": "executing",
+            "executorKind": "command_execution",
+            "callId": "call_1",
+        }
+
+    def test_command_completed_carries_exit_code_and_output(self):
+        event = events.map_stream_event(
+            _task(),
+            CommandCompleted(
+                call_id="call_1", command="pytest -q", exit_code=0, output="3 passed"
+            ),
+        )
+
+        assert _text(event) == "$ pytest -q"
+        assert is_ephemeral_status_event(event) is True
+        assert _part_schema(event) == BEHAVIOUR_EVOLUTION_COMMAND_COMPLETED_PAYLOAD_SCHEMA_V1
+        assert _data(event) == {
+            "callId": "call_1",
+            "command": "pytest -q",
+            "exitCode": 0,
+            "output": "3 passed",
+            "truncated": False,
+        }
+        assert _progress(event) == {
+            "stage": "executing",
+            "executorKind": "command_execution",
+            "callId": "call_1",
+            "exitCode": 0,
+            "output": "3 passed",
+        }
+
+    def test_command_completed_nonzero_exit_is_flagged_in_text(self):
+        event = events.map_stream_event(
+            _task(), CommandCompleted(call_id="c", command="pytest -q", exit_code=1)
+        )
+        assert _text(event) == "$ pytest -q (exit 1)"
+        assert _progress(event)["exitCode"] == 1
+
+    def test_command_completed_bounds_chatty_output_and_flags_truncated(self):
+        big = "x" * (events._COMMAND_OUTPUT_TAIL_CHARS + 500)
+        event = events.map_stream_event(
+            _task(), CommandCompleted(call_id="c", command="cat big.log", output=big)
+        )
+        data = _data(event)
+        assert len(data["output"]) == events._COMMAND_OUTPUT_TAIL_CHARS
+        assert data["output"] == big[-events._COMMAND_OUTPUT_TAIL_CHARS:]
+        assert data["truncated"] is True
+
+    def test_command_completed_without_exit_code_omits_it(self):
+        event = events.map_stream_event(
+            _task(), CommandCompleted(call_id="c", command="ls")
+        )
+        assert _text(event) == "$ ls"
+        assert "exitCode" not in _progress(event)
+        assert "exitCode" not in _data(event)
+
+    def test_intermediate_agent_message_is_ephemeral(self):
+        event = events.map_stream_event(_task(), AgentMessage(text="working", final=False))
+
+        assert _text(event) == "working"
+        assert is_ephemeral_status_event(event) is True
+        assert _part_schema(event) == BEHAVIOUR_EVOLUTION_AGENT_MESSAGE_PAYLOAD_SCHEMA_V1
+        assert _data(event) == {"text": "working", "final": False}
+        assert _progress(event)["final"] is False
+
+    def test_final_agent_message_is_durable(self):
+        event = events.map_stream_event(
+            _task(), AgentMessage(text="Implemented retries", final=True)
         )
 
         assert _text(event) == "Implemented retries"
-        assert _progress(event) == {"stage": "executing", "executorKind": "agent_message"}
+        # The run's one durable message: NOT flagged ephemeral, so it persists.
+        assert is_ephemeral_status_event(event) is False
+        assert _data(event) == {"text": "Implemented retries", "final": True}
 
-    def test_command_execution_surfaced_as_shell_line(self):
-        event = events.map_stream_event(
-            _task(), ExecutorEvent(kind="command_execution", text="pytest -q")
-        )
-        assert _text(event) == "$ pytest -q"
+    def test_empty_agent_message_is_dropped(self):
+        assert events.map_stream_event(_task(), AgentMessage(text="", final=False)) is None
 
-    def test_unsurfaced_executor_kinds_are_dropped(self):
-        assert events.map_stream_event(_task(), ExecutorEvent(kind="reasoning", text="hmm")) is None
-        assert events.map_stream_event(_task(), ExecutorEvent(kind="turn.completed")) is None
-        assert (
-            events.map_stream_event(_task(), ExecutorEvent(kind="agent_message", text=None)) is None
-        )
+    def test_executor_trace_is_dropped_without_warning(self):
+        assert events.map_stream_event(_task(), ExecutorTrace(kind="reasoning", text="hmm")) is None
+        assert events.map_stream_event(_task(), ExecutorTrace(kind="turn.completed")) is None
 
     def test_spec_captured_becomes_markdown_artifact(self):
         event = events.map_stream_event(

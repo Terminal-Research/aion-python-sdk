@@ -61,9 +61,17 @@ def _set_env(monkeypatch, **overrides):
     for key in (
         "CODEX_BASE_URL",
         "CODEX_MODEL",
+        "CODEX_MODEL_CONTEXT_WINDOW",
         "GITHUB_TOKEN",
         "EVOLUTION_BRANCH_STRATEGY",
         "EVOLUTION_SPECS_ROOT",
+        "EVOLUTION_EXECUTOR_NETWORK",
+        "EVOLUTION_OP_TIMEOUT_S",
+        "EVOLUTION_NETWORK_TIMEOUT_S",
+        "EVOLUTION_CODEX_TIMEOUT_S",
+        "EVOLUTION_MAX_TOTAL_TOKENS",
+        "EVOLUTION_SETUP_COMMAND",
+        "EVOLUTION_SETUP_TIMEOUT_S",
     ):
         monkeypatch.delenv(key, raising=False)
     for key, value in values.items():
@@ -112,6 +120,69 @@ class TestBuildWorker:
         worker = build_worker(_parsed(), _daemon())
         assert worker._config.executor_network is True
         assert worker._tools.codex.config.network_access is True
+
+    def test_operator_knobs_default_to_toolkit_defaults(self, monkeypatch):
+        """Unset, none of the new knobs override the toolkit's own defaults."""
+        _set_env(monkeypatch)
+        worker = build_worker(_parsed(), _daemon())
+        config = worker._config
+        assert config.op_timeout_s is None
+        assert config.network_timeout_s is None
+        assert config.codex_timeout_s is None
+        assert config.setup_command is None
+        assert config.setup_timeout_s is None
+        assert worker._tools.codex.config.max_total_tokens is None
+        # No timeouts set -> codex client runs unbounded.
+        assert worker._tools.codex._timeout is None
+
+    def test_timeout_and_budget_knobs_from_env(self, monkeypatch):
+        _set_env(
+            monkeypatch,
+            EVOLUTION_OP_TIMEOUT_S="30",
+            EVOLUTION_NETWORK_TIMEOUT_S="45.5",
+            EVOLUTION_CODEX_TIMEOUT_S="600",
+            EVOLUTION_MAX_TOTAL_TOKENS="120000",
+        )
+        worker = build_worker(_parsed(), _daemon())
+        config = worker._config
+        assert config.op_timeout_s == 30.0
+        assert config.network_timeout_s == 45.5
+        assert config.codex_timeout_s == 600.0
+        assert worker._tools.codex.config.max_total_tokens == 120000
+        # build_tools wires codex_timeout_s (falling back to op_timeout_s) as the
+        # CodexClient wall-clock ceiling.
+        assert worker._tools.codex._timeout == 600.0
+
+    def test_codex_timeout_falls_back_to_op_timeout(self, monkeypatch):
+        _set_env(monkeypatch, EVOLUTION_OP_TIMEOUT_S="90")
+        worker = build_worker(_parsed(), _daemon())
+        assert worker._tools.codex._timeout == 90.0
+
+    def test_setup_command_is_shlex_split(self, monkeypatch):
+        _set_env(
+            monkeypatch,
+            EVOLUTION_SETUP_COMMAND=".venv/bin/pip install -e . --no-deps",
+            EVOLUTION_SETUP_TIMEOUT_S="120",
+        )
+        worker = build_worker(_parsed(), _daemon())
+        assert worker._config.setup_command == [
+            ".venv/bin/pip",
+            "install",
+            "-e",
+            ".",
+            "--no-deps",
+        ]
+        assert worker._config.setup_timeout_s == 120.0
+
+    def test_malformed_timeout_raises_setup_error(self, monkeypatch):
+        _set_env(monkeypatch, EVOLUTION_CODEX_TIMEOUT_S="soon")
+        with pytest.raises(ExtensionSetupError, match="EVOLUTION_CODEX_TIMEOUT_S"):
+            build_worker(_parsed(), _daemon())
+
+    def test_malformed_token_budget_raises_setup_error(self, monkeypatch):
+        _set_env(monkeypatch, EVOLUTION_MAX_TOTAL_TOKENS="lots")
+        with pytest.raises(ExtensionSetupError, match="EVOLUTION_MAX_TOTAL_TOKENS"):
+            build_worker(_parsed(), _daemon())
 
     def test_overridden_endpoint_attaches_no_token_resolver(self, monkeypatch):
         """The wrapper chooses the mode: an explicit CODEX_BASE_URL means a

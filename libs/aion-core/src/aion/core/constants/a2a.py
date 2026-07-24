@@ -37,6 +37,9 @@ __all__ = [
     "BEHAVIOUR_EVOLUTION_DIRECTIVE_EVENT_PAYLOAD_SCHEMA_V1",
     "BEHAVIOUR_EVOLUTION_VERDICT_EVENT_PAYLOAD_SCHEMA_V1",
     "BEHAVIOUR_EVOLUTION_RESULT_ACTION_PAYLOAD_SCHEMA_V1",
+    "BEHAVIOUR_EVOLUTION_COMMAND_STARTED_PAYLOAD_SCHEMA_V1",
+    "BEHAVIOUR_EVOLUTION_COMMAND_COMPLETED_PAYLOAD_SCHEMA_V1",
+    "BEHAVIOUR_EVOLUTION_AGENT_MESSAGE_PAYLOAD_SCHEMA_V1",
     # Daemon extension
     "DAEMON_EXTENSION_URI_V1",
     # Context extensions
@@ -88,6 +91,13 @@ BEHAVIOUR_EVOLUTION_VERDICT_EVENT_TYPE_V1 = "to.aion.behaviour.evolution.verdict
 BEHAVIOUR_EVOLUTION_DIRECTIVE_EVENT_PAYLOAD_SCHEMA_V1 = f"{BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1}#EvolutionDirectiveEventPayload"
 BEHAVIOUR_EVOLUTION_VERDICT_EVENT_PAYLOAD_SCHEMA_V1 = f"{BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1}#EvolutionVerdictEventPayload"
 BEHAVIOUR_EVOLUTION_RESULT_ACTION_PAYLOAD_SCHEMA_V1 = f"{BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1}#EvolutionResultActionPayload"
+# Progress-event payloads streamed while a run is in flight (schema-tagged data
+# parts on WORKING status messages, not CloudEvents — no EVENT_TYPE). The
+# distributor reacts to these programmatically; they are streamed to the client
+# but not persisted in task history (see the improver's events.py).
+BEHAVIOUR_EVOLUTION_COMMAND_STARTED_PAYLOAD_SCHEMA_V1 = f"{BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1}#EvolutionCommandStartedPayload"
+BEHAVIOUR_EVOLUTION_COMMAND_COMPLETED_PAYLOAD_SCHEMA_V1 = f"{BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1}#EvolutionCommandCompletedPayload"
+BEHAVIOUR_EVOLUTION_AGENT_MESSAGE_PAYLOAD_SCHEMA_V1 = f"{BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1}#EvolutionAgentMessagePayload"
 
 # Daemon extension (authenticated, environment-scoped daemon interaction)
 # See: https://docs.aion.to/a2a/extensions/aion/daemon/1.0.0

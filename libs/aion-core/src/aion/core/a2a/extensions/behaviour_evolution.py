@@ -14,6 +14,9 @@ from pydantic import Field
 
 from aion.core.a2a import A2ABaseModel
 from aion.core.constants.a2a import (
+    BEHAVIOUR_EVOLUTION_AGENT_MESSAGE_PAYLOAD_SCHEMA_V1,
+    BEHAVIOUR_EVOLUTION_COMMAND_COMPLETED_PAYLOAD_SCHEMA_V1,
+    BEHAVIOUR_EVOLUTION_COMMAND_STARTED_PAYLOAD_SCHEMA_V1,
     BEHAVIOUR_EVOLUTION_DIRECTIVE_EVENT_PAYLOAD_SCHEMA_V1,
     BEHAVIOUR_EVOLUTION_DIRECTIVE_EVENT_TYPE_V1,
     BEHAVIOUR_EVOLUTION_VERDICT_EVENT_PAYLOAD_SCHEMA_V1,
@@ -25,6 +28,9 @@ __all__ = [
     "EvolutionDirectiveEventPayload",
     "EvolutionVerdictEventPayload",
     "EvolutionResultActionPayload",
+    "EvolutionCommandStartedPayload",
+    "EvolutionCommandCompletedPayload",
+    "EvolutionAgentMessagePayload",
 ]
 
 
@@ -144,4 +150,66 @@ class EvolutionResultActionPayload(A2ABaseModel):
             "improver's machine (lost with an ephemeral filesystem): an operator "
             "restores it promptly with `git fetch <bundle> <branch>` in any clone."
         ),
+    )
+
+
+class EvolutionCommandStartedPayload(A2ABaseModel):
+    """A shell command the executor has begun running, reported mid-run.
+
+    Streamed to the client for live progress but not persisted in task history
+    (see the improver's events.py). Correlate with the matching
+    EvolutionCommandCompletedPayload by ``call_id`` — a started payload with no
+    completed counterpart marks a command still running (or a hung run).
+    """
+
+    SCHEMA_URI: ClassVar[str] = BEHAVIOUR_EVOLUTION_COMMAND_STARTED_PAYLOAD_SCHEMA_V1
+
+    call_id: str = Field(
+        description="Correlates this start with its EvolutionCommandCompletedPayload."
+    )
+    command: str = Field(description="The shell command line the executor started running.")
+
+
+class EvolutionCommandCompletedPayload(A2ABaseModel):
+    """A shell command the executor finished running, with its result.
+
+    Streamed to the client for live progress but not persisted in task history.
+    Carries the exit code and (bounded) output the started payload cannot: a
+    consumer tells a passing command from a failing one off ``exit_code``.
+    """
+
+    SCHEMA_URI: ClassVar[str] = BEHAVIOUR_EVOLUTION_COMMAND_COMPLETED_PAYLOAD_SCHEMA_V1
+
+    call_id: str = Field(
+        description="Correlates this completion with its EvolutionCommandStartedPayload."
+    )
+    command: str = Field(description="The shell command line that was executed.")
+    exit_code: Optional[int] = Field(
+        default=None,
+        description="Process exit code; None when the executor did not report one.",
+    )
+    output: Optional[str] = Field(
+        default=None,
+        description="Command output tail, bounded by the improver before it is sent.",
+    )
+    truncated: bool = Field(
+        default=False,
+        description="True when the output was truncated to fit the size bound.",
+    )
+
+
+class EvolutionAgentMessagePayload(A2ABaseModel):
+    """A natural-language message from the executor during a run.
+
+    Intermediate messages (``final=False``) are streamed but not persisted; the
+    single ``final=True`` message is the run's durable summary and is kept in
+    task history.
+    """
+
+    SCHEMA_URI: ClassVar[str] = BEHAVIOUR_EVOLUTION_AGENT_MESSAGE_PAYLOAD_SCHEMA_V1
+
+    text: str = Field(description="The executor's message text.")
+    final: bool = Field(
+        default=False,
+        description="True for the last message of the run (the durable summary).",
     )

@@ -10,7 +10,14 @@ __all__ = [
     "TERMINAL_TASK_STATES",
     "TRANSIENT_ARTIFACT_IDS",
     "NON_ACTIVE_TASK_STATES",
+    "EPHEMERAL_STATUS_METADATA_KEY",
 ]
+
+# Namespaced metadata flag marking a TaskStatusUpdateEvent as ephemeral: the
+# client receives it in the live stream, but the task manager does not persist
+# it into task history. The status-message counterpart of TRANSIENT_ARTIFACT_IDS
+# — for live progress that must not accumulate in the durable task record.
+EPHEMERAL_STATUS_METADATA_KEY = "aion:ephemeral"
 
 INTERRUPT_TASK_STATES = (
     TaskState.TASK_STATE_INPUT_REQUIRED,

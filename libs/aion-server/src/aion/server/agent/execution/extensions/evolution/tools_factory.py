@@ -42,11 +42,31 @@ Env:
                                         who owns the deployment's confinement
                                         decides, not the directive author
     BEHAVIOUR_EVOLUTION_WORKDIR_ROOT    optional workdir root override
+    EVOLUTION_OP_TIMEOUT_S              optional, per-subprocess-op timeout (s)
+    EVOLUTION_NETWORK_TIMEOUT_S         optional, timeout for network git ops (s)
+    EVOLUTION_CODEX_TIMEOUT_S           optional, wall-clock ceiling for one whole
+                                        codex exec run (s); falls back to
+                                        EVOLUTION_OP_TIMEOUT_S when unset
+    EVOLUTION_MAX_TOTAL_TOKENS          optional, int per-call token budget; on
+                                        reaching it the executor stops gracefully
+                                        and the run still delivers what's committed
+                                        (COMPLETED, not FAILED)
+    EVOLUTION_SETUP_COMMAND             optional, shell-quoted argv run in the
+                                        workdir after the overlay venv, WITH
+                                        network (e.g. ".venv/bin/pip install -e .
+                                        --no-deps"); runs build hooks outside the
+                                        sandbox - trusted targets only
+    EVOLUTION_SETUP_TIMEOUT_S           optional, timeout for EVOLUTION_SETUP_COMMAND (s)
+
+All timeout/budget vars are deployment env only (never the request), and a
+malformed value fails the run with a named ExtensionSetupError rather than a
+raw ValueError from inside the toolkit.
 """
 
 from __future__ import annotations
 
 import os
+import shlex
 from typing import TYPE_CHECKING, Optional
 
 from pydantic import ValidationError
@@ -137,6 +157,16 @@ def build_worker(
         branch_strategy=_branch_strategy(daemon),
         workdir_root=os.environ.get("BEHAVIOUR_EVOLUTION_WORKDIR_ROOT"),
         executor_network=_env_flag("EVOLUTION_EXECUTOR_NETWORK"),
+        # Operator-facing timeout/setup knobs (deployment env only). Left unset
+        # they keep the toolkit defaults (no limit); a malformed value fails the
+        # run here with a named error rather than a raw ValueError deep in the
+        # toolkit. `codex_timeout_s` falls back to `op_timeout_s` inside the
+        # toolkit when unset — see EvolutionConfig.
+        op_timeout_s=_env_float("EVOLUTION_OP_TIMEOUT_S"),
+        network_timeout_s=_env_float("EVOLUTION_NETWORK_TIMEOUT_S"),
+        codex_timeout_s=_env_float("EVOLUTION_CODEX_TIMEOUT_S"),
+        setup_command=_env_argv("EVOLUTION_SETUP_COMMAND"),
+        setup_timeout_s=_env_float("EVOLUTION_SETUP_TIMEOUT_S"),
         **config_kwargs,
     )
 
@@ -213,13 +243,17 @@ def _codex_access(daemon):
             # enforcement lands on the service side later).
             return ModelServiceCredentials(secret=await aion_jwt_api_key(), principal=principal)
 
-    context_window = os.environ.get("CODEX_MODEL_CONTEXT_WINDOW")
     codex_config = CodexConfig(
         base_url=base_url,
         model=os.environ.get("CODEX_MODEL") or _daemon_model(daemon),
         model_catalog_json=os.environ.get("CODEX_MODEL_CATALOG_JSON"),
         model_reasoning_effort=os.environ.get("CODEX_MODEL_REASONING_EFFORT"),
-        model_context_window=int(context_window) if context_window else None,
+        model_context_window=_env_int("CODEX_MODEL_CONTEXT_WINDOW"),
+        # Per-call token budget: on reaching it the executor is stopped
+        # gracefully at the next turn boundary and the run still delivers what
+        # was committed (COMPLETED, not FAILED) — see the toolkit's
+        # CodexConfig.max_total_tokens. Deployment env only.
+        max_total_tokens=_env_int("EVOLUTION_MAX_TOTAL_TOKENS"),
         codex_bin=os.environ.get("CODEX_BIN", "codex"),
         **codex_kwargs,
     )
@@ -253,6 +287,48 @@ def _branch_strategy(daemon) -> str:
 def _env_flag(name: str) -> bool:
     """A boolean deployment env var: "1"/"true"/"yes"/"on" (any case) is True."""
     return (os.environ.get(name) or "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _env_float(name: str) -> Optional[float]:
+    """A numeric deployment env var (seconds); None when unset/blank.
+
+    A malformed value fails the run here with a named error, rather than
+    surfacing as a raw ValueError from deep inside the toolkit.
+    """
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return None
+    try:
+        return float(raw)
+    except ValueError as ex:
+        raise ExtensionSetupError(f"{name} must be a number of seconds, got {raw!r}") from ex
+
+
+def _env_int(name: str) -> Optional[int]:
+    """An integer deployment env var; None when unset/blank."""
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return None
+    try:
+        return int(raw)
+    except ValueError as ex:
+        raise ExtensionSetupError(f"{name} must be an integer, got {raw!r}") from ex
+
+
+def _env_argv(name: str) -> Optional[list[str]]:
+    """A shell-quoted command line split into argv; None when unset/blank.
+
+    Parsed with `shlex` so an operator can write
+    `EVOLUTION_SETUP_COMMAND=".venv/bin/pip install -e . --no-deps"`. An
+    unbalanced-quote value fails the run here with a named error.
+    """
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return None
+    try:
+        return shlex.split(raw)
+    except ValueError as ex:
+        raise ExtensionSetupError(f"{name} is not a valid command line: {ex}") from ex
 
 
 def _daemon_config_var(daemon, key: str) -> Optional[str]:
