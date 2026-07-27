@@ -3,7 +3,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from a2a.server.agent_execution import RequestContext
 from a2a.server.events import EventQueue
 from a2a.types import Task, TaskState, TaskStatus
-from a2a.utils.errors import TaskNotCancelableError, TaskNotFoundError, UnsupportedOperationError
+from a2a.utils.errors import (
+    InternalError,
+    TaskNotCancelableError,
+    TaskNotFoundError,
+    UnsupportedOperationError,
+)
 
 from aion.server.agent.execution import AionAgentRequestExecutor
 from aion.server.agent.execution.extensions.base import ROUTED_EXTENSION_METADATA_KEY
@@ -505,3 +510,119 @@ class TestCreateFactory:
             await AionAgentRequestExecutor.create(aion_agent=agent)
 
         mock_registry.mark_unavailable.assert_not_called()
+
+
+class TestFailureClosesTheTask:
+    """A crashing producer must leave the task in a terminal state.
+
+    The JSON-RPC error only reaches the caller of that one request; without a
+    terminal status the task stays WORKING in the store forever, and any client
+    that reconnects or polls sees work that never ends.
+    """
+
+    @staticmethod
+    def _boom(*args, **kwargs):
+        async def _gen():
+            raise RuntimeError("producer exploded")
+            yield  # pragma: no cover - makes this an async generator
+
+        return _gen()
+
+    @pytest.mark.anyio
+    async def test_producer_crash_marks_task_failed(self):
+        executor = AionAgentRequestExecutor(aion_agent=_make_agent())
+        task = _make_task()
+        ctx = _make_context(task=task)
+        event_queue = AsyncMock(spec=EventQueue)
+        init_execution_scope()
+
+        executor.agent.stream = self._boom
+
+        with patch("aion.server.agent.execution.request_executor.TaskUpdater") as MockUpdater:
+            updater = MockUpdater.return_value
+            updater.failed = AsyncMock()
+            with patch("aion.server.agent.execution.request_executor.AionEventPipeline") as MockPipeline:
+                MockPipeline.return_value.terminal_seen = False
+                with patch.object(
+                    executor, "_get_task_for_execution", new=AsyncMock(return_value=(task, True))
+                ):
+                    with pytest.raises(InternalError):
+                        await executor.execute(ctx, event_queue)
+
+            updater.failed.assert_awaited_once()
+
+    @pytest.mark.anyio
+    async def test_producer_that_already_reported_its_outcome_is_not_overridden(self):
+        """A producer that emitted a terminal state and then crashed has already
+        said how the task ended; a second terminal event would contradict it."""
+        executor = AionAgentRequestExecutor(aion_agent=_make_agent())
+        task = _make_task()
+        ctx = _make_context(task=task)
+        event_queue = AsyncMock(spec=EventQueue)
+        init_execution_scope()
+
+        executor.agent.stream = self._boom
+
+        with patch("aion.server.agent.execution.request_executor.TaskUpdater") as MockUpdater:
+            updater = MockUpdater.return_value
+            updater.failed = AsyncMock()
+            with patch("aion.server.agent.execution.request_executor.AionEventPipeline") as MockPipeline:
+                MockPipeline.return_value.terminal_seen = True
+                with patch.object(
+                    executor, "_get_task_for_execution", new=AsyncMock(return_value=(task, True))
+                ):
+                    with pytest.raises(InternalError):
+                        await executor.execute(ctx, event_queue)
+
+            updater.failed.assert_not_awaited()
+
+    @pytest.mark.anyio
+    async def test_failure_to_mark_failed_does_not_mask_the_original_error(self):
+        executor = AionAgentRequestExecutor(aion_agent=_make_agent())
+        task = _make_task()
+        ctx = _make_context(task=task)
+        event_queue = AsyncMock(spec=EventQueue)
+        init_execution_scope()
+
+        executor.agent.stream = self._boom
+
+        with patch("aion.server.agent.execution.request_executor.TaskUpdater") as MockUpdater:
+            updater = MockUpdater.return_value
+            updater.failed = AsyncMock(side_effect=ConnectionError("store is down"))
+            with patch("aion.server.agent.execution.request_executor.AionEventPipeline") as MockPipeline:
+                MockPipeline.return_value.terminal_seen = False
+                with patch.object(
+                    executor, "_get_task_for_execution", new=AsyncMock(return_value=(task, True))
+                ):
+                    # InternalError, not ConnectionError.
+                    with pytest.raises(InternalError):
+                        await executor.execute(ctx, event_queue)
+
+    @pytest.mark.anyio
+    async def test_updater_is_per_execution_not_shared_state(self):
+        """One executor instance serves every concurrent request, so the updater
+        must not live on the instance where a later execution would clobber it."""
+        executor = AionAgentRequestExecutor(aion_agent=_make_agent())
+        init_execution_scope()
+
+        async def empty_stream(*args, **kwargs):
+            return
+            yield
+
+        executor.agent.stream = empty_stream
+        event_queue = AsyncMock(spec=EventQueue)
+
+        with patch("aion.server.agent.execution.request_executor.TaskUpdater") as MockUpdater:
+            with patch("aion.server.agent.execution.request_executor.AionEventPipeline"):
+                for task_id in ("task-a", "task-b"):
+                    task = _make_task()
+                    task.id = task_id
+                    with patch.object(
+                        executor,
+                        "_get_task_for_execution",
+                        new=AsyncMock(return_value=(task, True)),
+                    ):
+                        await executor.execute(_make_context(task=task), event_queue)
+
+        assert [call.args[1] for call in MockUpdater.call_args_list] == ["task-a", "task-b"]
+        assert not hasattr(executor, "_task_updater")

@@ -19,6 +19,11 @@ from a2a.types import (
     TaskStatus,
     TaskStatusUpdateEvent,
 )
+from aion.core.a2a.extensions.behaviour_evolution import (
+    EVOLUTION_VIEW_ACTIVITY,
+    EVOLUTION_VIEW_FULL,
+    EVOLUTION_VIEW_MILESTONES,
+)
 from aion.core.constants.a2a import (
     BEHAVIOUR_EVOLUTION_AGENT_MESSAGE_PAYLOAD_SCHEMA_V1,
     BEHAVIOUR_EVOLUTION_COMMAND_COMPLETED_PAYLOAD_SCHEMA_V1,
@@ -131,6 +136,10 @@ class TestMapStreamEvent:
         assert _text(event) == events._PHASE_TEXT["executing"]
         assert _text(event) != "executing"
         assert _progress(event) == {"stage": "executing"}
+        # Narration of a phase the run has already left: streamed live, kept
+        # out of the durable record. What happened in the phase survives on the
+        # result artifact and the final summary.
+        assert is_ephemeral_status_event(event) is True
 
     def test_unmapped_phase_falls_back_to_raw_token(self):
         event = events.map_stream_event(_task(), PhaseStarted(phase=SimpleNamespace(value="brand-new")))
@@ -142,7 +151,9 @@ class TestMapStreamEvent:
             _task(), BranchResolved(branch="evolution/ctx-1", resumed=False)
         )
 
-        assert "started evolution branch evolution/ctx-1" in _text(event)
+        # A fresh start is the default, and the branch name is plumbing: no
+        # message at all. The structured facts still ride the event.
+        assert not event.status.HasField("message")
         # BranchResolved is a fact within the PREPARING phase, not its own phase —
         # stage matches the toolkit's Phase.PREPARING, same as a bare PhaseStarted.
         assert _progress(event) == {
@@ -151,16 +162,28 @@ class TestMapStreamEvent:
             "resumed": False,
             "priorCommits": 0,
         }
+        # A persisted milestone, not live progress: it is the only record of
+        # which branch a run that later fails was working on.
+        assert is_ephemeral_status_event(event) is False
 
     def test_branch_resolved_resumed_names_prior_work(self):
         event = events.map_stream_event(
             _task(), BranchResolved(branch="evolution/ctx-1", resumed=True, prior_commits=4)
         )
 
-        assert "resuming evolution" in _text(event)
-        assert "4 commit(s)" in _text(event)
+        # The one fact the user cannot infer, in their terms — no branch name,
+        # no git vocabulary.
+        assert "Picking up where the previous run left off" in _text(event)
+        assert "4 change(s)" in _text(event)
+        assert "evolution/ctx-1" not in _text(event)
         assert _progress(event)["resumed"] is True
         assert _progress(event)["priorCommits"] == 4
+
+    def test_resume_without_prior_work_omits_the_count(self):
+        event = events.map_stream_event(
+            _task(), BranchResolved(branch="evolution/ctx-1", resumed=True, prior_commits=0)
+        )
+        assert _text(event) == "Picking up where the previous run left off"
 
     def test_command_started_is_ephemeral_typed_and_correlated(self):
         event = events.map_stream_event(
@@ -183,6 +206,7 @@ class TestMapStreamEvent:
             CommandCompleted(
                 call_id="call_1", command="pytest -q", exit_code=0, output="3 passed"
             ),
+            view=EVOLUTION_VIEW_FULL,
         )
 
         assert _text(event) == "$ pytest -q"
@@ -195,12 +219,13 @@ class TestMapStreamEvent:
             "output": "3 passed",
             "truncated": False,
         }
+        # The output rides the typed payload only — the progress struct must
+        # not carry a second copy of it on every command the executor runs.
         assert _progress(event) == {
             "stage": "executing",
             "executorKind": "command_execution",
             "callId": "call_1",
             "exitCode": 0,
-            "output": "3 passed",
         }
 
     def test_command_completed_nonzero_exit_is_flagged_in_text(self):
@@ -213,7 +238,9 @@ class TestMapStreamEvent:
     def test_command_completed_bounds_chatty_output_and_flags_truncated(self):
         big = "x" * (events._COMMAND_OUTPUT_TAIL_CHARS + 500)
         event = events.map_stream_event(
-            _task(), CommandCompleted(call_id="c", command="cat big.log", output=big)
+            _task(),
+            CommandCompleted(call_id="c", command="cat big.log", output=big),
+            view=EVOLUTION_VIEW_FULL,
         )
         data = _data(event)
         assert len(data["output"]) == events._COMMAND_OUTPUT_TAIL_CHARS
@@ -234,6 +261,8 @@ class TestMapStreamEvent:
         assert _text(event) == "working"
         assert is_ephemeral_status_event(event) is True
         assert _part_schema(event) == BEHAVIOUR_EVOLUTION_AGENT_MESSAGE_PAYLOAD_SCHEMA_V1
+        # Both representations ride the event on purpose: prose for the user,
+        # a typed payload for a consumer that does not parse prose.
         assert _data(event) == {"text": "working", "final": False}
         assert _progress(event)["final"] is False
 
@@ -268,6 +297,56 @@ class TestMapStreamEvent:
 
     def test_unknown_event_types_are_dropped(self):
         assert events.map_stream_event(_task(), SimpleNamespace()) is None
+
+
+class TestStreamViewShapesCommandOutput:
+    """Only `full` puts a command's output — the target repo's own content — on
+    the wire. Every other view keeps the command and its exit code, which is
+    what a progress renderer actually needs."""
+
+    def _completed(self, view: str, **kwargs):
+        return events.map_stream_event(
+            _task(),
+            CommandCompleted(call_id="c", command="cat secrets.env", **kwargs),
+            view=view,
+        )
+
+    def test_full_view_carries_the_output(self):
+        data = _data(self._completed(EVOLUTION_VIEW_FULL, output="TOKEN=abc"))
+        assert data["output"] == "TOKEN=abc"
+        assert data["truncated"] is False
+
+    @pytest.mark.parametrize("view", [EVOLUTION_VIEW_ACTIVITY, EVOLUTION_VIEW_MILESTONES])
+    def test_reduced_views_withhold_the_output(self, view):
+        data = _data(self._completed(view, exit_code=0, output="TOKEN=abc"))
+
+        assert "output" not in data
+        # The command and its result still arrive — withholding output must not
+        # cost the consumer the ability to render the step.
+        assert data["command"] == "cat secrets.env"
+        assert data["exitCode"] == 0
+
+    def test_withheld_output_is_flagged_truncated(self):
+        """`truncated` is how a consumer tells "printed nothing" from "printed
+        something you were not sent"; the two are otherwise identical."""
+        assert _data(self._completed(EVOLUTION_VIEW_ACTIVITY, output="TOKEN=abc"))["truncated"] is True
+
+    def test_a_silent_command_is_not_flagged_truncated(self):
+        assert _data(self._completed(EVOLUTION_VIEW_ACTIVITY))["truncated"] is False
+
+    def test_default_view_withholds_the_output(self):
+        """The mapper's default matches the directive's own default, so a caller
+        that never mentions `view` is not sent the repository's file contents."""
+        event = events.map_stream_event(
+            _task(), CommandCompleted(call_id="c", command="cat x", output="body")
+        )
+        assert "output" not in _data(event)
+
+    def test_view_does_not_change_which_events_are_ephemeral(self):
+        """Views bound delivery; the ephemeral mark decides persistence. They
+        must stay independent, or `milestones` would stop matching the record."""
+        for view in (EVOLUTION_VIEW_FULL, EVOLUTION_VIEW_ACTIVITY, EVOLUTION_VIEW_MILESTONES):
+            assert is_ephemeral_status_event(self._completed(view, output="x")) is True
 
 
 class TestEventKindDriftGuard:
@@ -317,8 +396,10 @@ class TestResultEvents:
         )
 
         assert terminal.status.state == TaskState.TASK_STATE_COMPLETED
-        assert "evolution/ctx-1" in _text(terminal)
-        assert "abc1234" in _text(terminal)
+        # Without a pull request the branch is the user's only pointer to the
+        # work, so it is named — but the commit sha stays on the artifact.
+        assert _text(terminal) == "Done — changes are on branch evolution/ctx-1"
+        assert "abc1234" not in _text(terminal)
 
     def test_resumed_run_reports_resumed_flag(self):
         out = events.result_events(_task(), _result("succeeded", resumed=True))
@@ -331,7 +412,10 @@ class TestResultEvents:
         )
         data = MessageToDict(out[0].artifact.parts[0].data)
         assert data["prUrl"] == "https://github.com/acme/x/pull/7"
-        assert "pull/7" in _text(out[1])
+        # A pull request is somewhere the user can go, so it replaces the
+        # branch name rather than joining it.
+        assert _text(out[1]) == "Done — ready for review: https://github.com/acme/x/pull/7"
+        assert "evolution/ctx-1" not in _text(out[1])
 
     def test_no_change_completes_with_explanation(self):
         out = events.result_events(
@@ -345,7 +429,7 @@ class TestResultEvents:
         artifact_event, terminal = out
         assert MessageToDict(artifact_event.artifact.parts[0].data)["outcome"] == "no_change"
         assert terminal.status.state == TaskState.TASK_STATE_COMPLETED
-        assert _text(terminal) == "no changes produced"
+        assert _text(terminal) == "No changes were needed"
 
     def test_failed_reports_error_in_artifact_and_status(self):
         out = events.result_events(
@@ -362,9 +446,14 @@ class TestResultEvents:
         )
 
         artifact_event, terminal = out
+        # The diagnostic reaches the operator on the artifact...
         assert MessageToDict(artifact_event.artifact.parts[0].data)["error"] == "push denied"
         assert terminal.status.state == TaskState.TASK_STATE_FAILED
-        assert _text(terminal) == "push denied"
+        # ...while the person who asked for the change reads a fixed sentence.
+        # A toolkit failure is `str(exc)`, which for an executor error carries
+        # CLI flags and a stderr tail.
+        assert _text(terminal) == events._RUN_FAILED_TEXT
+        assert "push denied" not in _text(terminal)
 
     def test_cancelled_emits_nothing(self):
         """The A2A cancel flow owns the terminal CANCELED event; a cancelled
@@ -403,3 +492,54 @@ class TestResultEvents:
         out = events.result_events(_task(), _result("failed", error="boom"))
         data = MessageToDict(out[0].artifact.parts[0].data)
         assert "rescuePath" not in data
+
+
+class TestDurableEventsAreNeverEphemeral:
+    """Whatever ends the run has to survive in the record — the ephemeral flag
+    is for live progress only."""
+
+    def test_failed_event_is_durable(self):
+        event = events.failed_event(_task(), error="clone failed: repository not found")
+        assert is_ephemeral_status_event(event) is False
+        assert event.status.state == TaskState.TASK_STATE_FAILED
+
+    def test_terminal_result_status_is_durable(self):
+        produced = events.result_events(
+            _task(), _result(outcome="succeeded", branch="evolution/ctx-1")
+        )
+        statuses = [e for e in produced if isinstance(e, TaskStatusUpdateEvent)]
+        assert statuses, "a terminal status is expected alongside the artifact"
+        assert all(is_ephemeral_status_event(e) is False for e in statuses)
+
+
+class TestTerminalStageReachesDurableMetadata:
+    """A status event's metadata is merged into `task.metadata` on persist, so
+    the last persisted event carrying a `stage` decides what a finished run
+    reports. Phase narration is ephemeral, so the terminal event has to."""
+
+    def test_succeeded_terminal_reports_the_terminal_stage(self):
+        produced = events.result_events(
+            _task(), _result(outcome="succeeded", branch="evolution/ctx-1")
+        )
+        terminal = [e for e in produced if isinstance(e, TaskStatusUpdateEvent)][-1]
+        assert _progress(terminal)["stage"] == events._TERMINAL_STAGE
+        assert _progress(terminal)["outcome"] == "succeeded"
+
+    def test_failed_terminal_reports_the_terminal_stage(self):
+        produced = events.result_events(_task(), _result(outcome="failed", error="boom"))
+        terminal = [e for e in produced if isinstance(e, TaskStatusUpdateEvent)][-1]
+        assert _progress(terminal)["stage"] == events._TERMINAL_STAGE
+        assert _progress(terminal)["outcome"] == "failed"
+
+    def test_no_change_terminal_reports_the_terminal_stage(self):
+        produced = events.result_events(_task(), _result(outcome="no_change"))
+        terminal = [e for e in produced if isinstance(e, TaskStatusUpdateEvent)][-1]
+        assert _progress(terminal)["stage"] == events._TERMINAL_STAGE
+        assert _progress(terminal)["outcome"] == "no_change"
+
+    def test_a_finished_run_does_not_still_report_preparing(self):
+        """The regression this guards: with phase narration ephemeral, the only
+        persisted stage was the one branch resolution announced."""
+        produced = events.result_events(_task(), _result(outcome="succeeded"))
+        terminal = [e for e in produced if isinstance(e, TaskStatusUpdateEvent)][-1]
+        assert _progress(terminal)["stage"] != "preparing"

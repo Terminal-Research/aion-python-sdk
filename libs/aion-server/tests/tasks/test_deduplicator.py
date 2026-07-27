@@ -651,3 +651,46 @@ class TestDefensiveHelpers:
     def test_has_field_returns_false_without_hasfield_method(self):
         """Verify defensive handling for non-protobuf objects."""
         assert A2ATaskDeduplicator._has_field(object(), "status") is False
+
+
+class TestReservedShortNamespace:
+    """`aion:` keys are platform control flags, not client data.
+
+    `aion:ephemeral` decides whether an event is persisted at all, so a client
+    able to set it through its own metadata could drop its events from the task
+    record.
+    """
+
+    def test_untrusted_source_cannot_set_an_aion_key(self):
+        original = _make_task(metadata={"user-key": "keep"})
+        deduplicator = A2ATaskDeduplicator(original)
+        incoming = _make_task(
+            metadata={"aion:ephemeral": True, "user-key": "updated"}
+        )
+
+        merged = deduplicator.deduplicate(incoming)
+
+        metadata = MessageToDict(merged.metadata)
+        assert "aion:ephemeral" not in metadata
+        assert metadata["user-key"] == "updated"
+
+    def test_untrusted_source_cannot_smuggle_an_aion_key_in_a_nested_value(self):
+        original = _make_task()
+        deduplicator = A2ATaskDeduplicator(original)
+        incoming = _make_task(metadata={"nested": {"aion:ephemeral": True, "ok": 1}})
+
+        merged = deduplicator.deduplicate(incoming)
+
+        nested = MessageToDict(merged.metadata)["nested"]
+        assert "aion:ephemeral" not in nested
+        assert nested["ok"] == 1
+
+    def test_trusted_source_may_set_an_aion_key(self):
+        """The server's own components mark their events ephemeral this way."""
+        original = _make_task()
+        deduplicator = A2ATaskDeduplicator(original, trusted_source=True)
+        incoming = _make_task(metadata={"aion:ephemeral": True})
+
+        merged = deduplicator.deduplicate(incoming)
+
+        assert MessageToDict(merged.metadata)["aion:ephemeral"] is True

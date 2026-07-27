@@ -56,7 +56,6 @@ class AionAgentRequestExecutor(AgentExecutor):
             extension_handlers: Iterable[ExtensionTaskHandler] = (),
     ):
         self.agent = aion_agent
-        self._task_updater: TaskUpdater | None = None
         self._file_transformer = file_transformer
         self._extension_handlers: dict[str, ExtensionTaskHandler] = {
             handler.uri: handler for handler in extension_handlers
@@ -109,7 +108,10 @@ class AionAgentRequestExecutor(AgentExecutor):
             raise InvalidParamsError()
 
         task, is_new_task = await self._get_task_for_execution(context)
-        self._task_updater = TaskUpdater(event_queue, task.id, task.context_id)
+        # Local, not instance state: one executor instance serves every
+        # concurrent request, so an attribute here would be overwritten by
+        # whichever execution started most recently.
+        task_updater = TaskUpdater(event_queue, task.id, task.context_id)
 
         try:
             await self._setup_runtime_context(context)
@@ -125,14 +127,44 @@ class AionAgentRequestExecutor(AgentExecutor):
         else:
             logger.info("Resuming task")
 
+        pipeline = AionEventPipeline(event_queue, task_updater, self._file_transformer)
         try:
-            pipeline = AionEventPipeline(event_queue, self._task_updater, self._file_transformer)
             async for agent_event in produce_events(context=context):
                 await pipeline.process(agent_event)
 
         except Exception as ex:
             logger.exception("Execution failed")
+            await self._close_failed_task(task_updater, pipeline)
             raise InternalError() from ex
+
+    @staticmethod
+    async def _close_failed_task(
+            task_updater: TaskUpdater,
+            pipeline: AionEventPipeline,
+    ) -> None:
+        """Put a crashed execution's task into a terminal FAILED state.
+
+        The JSON-RPC error alone only reaches the caller of this one request:
+        the task itself would stay WORKING in the store forever, so a later
+        `tasks/get` — or any client that reconnects — sees work that is
+        permanently in progress. Skipped when the producer already emitted a
+        terminal state, since that outcome is the authoritative one.
+
+        No message is attached: the exception text is internal detail, and it
+        is already logged. Failures here are swallowed so they cannot mask the
+        original error being propagated by the caller.
+
+        Args:
+            task_updater: Updater bound to the failed execution's task.
+            pipeline: Pipeline that processed the execution's events, consulted
+                for whether a terminal state was already reported.
+        """
+        if pipeline.terminal_seen:
+            return
+        try:
+            await task_updater.failed()
+        except Exception:  # noqa: BLE001 - must not mask the original failure
+            logger.exception("Could not mark the task as failed after an execution error")
 
     async def drain(self) -> None:
         """Wait for all in-flight background uploads to complete.

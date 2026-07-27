@@ -18,7 +18,11 @@ AGENT_ID = "test-agent"
 AGENT_URL = "http://agent.local:8001"
 
 
-def make_request(method: str = "POST", body: bytes = b"{}") -> Request:
+def make_request(
+    method: str = "POST",
+    body: bytes = b"{}",
+    extra_headers: list[tuple[bytes, bytes]] | None = None,
+) -> Request:
     scope = {
         "type": "http",
         "method": method,
@@ -28,6 +32,7 @@ def make_request(method: str = "POST", body: bytes = b"{}") -> Request:
             (b"host", b"proxy.local"),
             (b"content-type", b"application/json"),
             (b"x-custom-request", b"yes"),
+            *(extra_headers or []),
         ],
     }
 
@@ -175,3 +180,86 @@ class TestForwardRequestErrors:
 
         with pytest.raises(AgentTimeoutException):
             await handler.forward_request(AGENT_ID, "", make_request())
+
+
+class TestRequestHeaderHygiene:
+    """Headers describing the client's hop to the proxy end at the proxy.
+
+    Forwarding them upstream lets the client's own framing contradict the
+    request httpx builds — `content-length` in particular is recomputed from
+    the body the proxy sends.
+    """
+
+    async def test_hop_by_hop_request_headers_are_not_forwarded(self):
+        seen: dict[str, str | None] = {}
+
+        def transport_handler(request: httpx.Request) -> httpx.Response:
+            seen.update(
+                {key.lower(): value for key, value in request.headers.items()}
+            )
+            return httpx.Response(200, content=b"ok")
+
+        handler = make_handler(transport_handler)
+        request = make_request(
+            body=b'{"a": 1}',
+            extra_headers=[
+                (b"connection", b"keep-alive"),
+                (b"keep-alive", b"timeout=5"),
+                (b"transfer-encoding", b"chunked"),
+                (b"te", b"trailers"),
+                (b"upgrade", b"websocket"),
+                (b"proxy-authorization", b"Basic c2VjcmV0"),
+            ],
+        )
+
+        await handler.forward_request(AGENT_ID, "", request)
+
+        for dropped in (
+            "keep-alive",
+            "transfer-encoding",
+            "te",
+            "upgrade",
+            "proxy-authorization",
+        ):
+            assert dropped not in seen, f"{dropped} was forwarded upstream"
+        # The proxy addresses the agent, not the name the client used for us.
+        assert seen.get("host") != "proxy.local"
+
+    async def test_content_length_matches_the_forwarded_body(self):
+        """A stale `content-length` from the client must not survive a body the
+        proxy re-frames."""
+        seen: dict[str, str | None] = {}
+
+        def transport_handler(request: httpx.Request) -> httpx.Response:
+            seen["content-length"] = request.headers.get("content-length")
+            return httpx.Response(200, content=b"ok")
+
+        handler = make_handler(transport_handler)
+        body = b'{"hello": "world"}'
+        request = make_request(
+            body=body, extra_headers=[(b"content-length", b"99999")]
+        )
+
+        await handler.forward_request(AGENT_ID, "", request)
+
+        assert seen["content-length"] == str(len(body))
+
+    async def test_ordinary_headers_still_reach_the_agent(self):
+        seen: dict[str, str | None] = {}
+
+        def transport_handler(request: httpx.Request) -> httpx.Response:
+            seen.update(
+                {key.lower(): value for key, value in request.headers.items()}
+            )
+            return httpx.Response(200, content=b"ok")
+
+        handler = make_handler(transport_handler)
+        request = make_request(
+            extra_headers=[(b"authorization", b"Bearer token-123")]
+        )
+
+        await handler.forward_request(AGENT_ID, "", request)
+
+        assert seen["x-custom-request"] == "yes"
+        assert seen["content-type"] == "application/json"
+        assert seen["authorization"] == "Bearer token-123"

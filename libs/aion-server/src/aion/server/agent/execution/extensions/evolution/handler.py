@@ -27,8 +27,10 @@ from typing import TYPE_CHECKING, Optional
 
 from a2a.types import TaskArtifactUpdateEvent, TaskStatusUpdateEvent
 from a2a.utils.errors import UnsupportedOperationError
+from aion.core.a2a.extensions.behaviour_evolution import EVOLUTION_VIEW_MILESTONES
 from aion.core.constants.a2a import BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1
 from aion.core.runtime.context.registry import AionRuntimeContextRegistry
+from aion.server.a2a.utils import is_ephemeral_status_event
 
 from ..availability import ExtensionAvailability
 from . import events
@@ -133,11 +135,20 @@ class EvolutionTaskHandler:
 
         self._running[task.id] = worker
         run_stream = worker.stream()
+        # Under `milestones` the caller receives exactly what the task record
+        # keeps. Deciding that by the ephemeral flag — the same mark the task
+        # manager persists by — is what makes the promise hold: a future event
+        # cannot be live-only for storage and durable for delivery, because
+        # there is one mark, not two lists.
+        milestones_only = parsed.view == EVOLUTION_VIEW_MILESTONES
         try:
             async for event in run_stream:
-                mapped = events.map_stream_event(task, event)
-                if mapped is not None:
-                    yield mapped
+                mapped = events.map_stream_event(task, event, view=parsed.view)
+                if mapped is None:
+                    continue
+                if milestones_only and is_ephemeral_status_event(mapped):
+                    continue
+                yield mapped
         except Exception as ex:
             # Operational errors never escape the worker's stream (they land
             # in result.outcome/error); anything raised here is a wiring bug.

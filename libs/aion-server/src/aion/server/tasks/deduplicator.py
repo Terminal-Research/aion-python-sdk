@@ -35,6 +35,13 @@ from aion.server.a2a.constants import TRANSIENT_ARTIFACT_IDS
 __all__ = ["A2ATaskDeduplicator"]
 
 PLATFORM_METADATA_PREFIX = "https://docs.aion.to"
+
+# Every namespace the platform reserves for its own metadata. Besides the
+# documentation URI, the short ``aion:`` prefix carries server-owned control
+# flags — ``aion:ephemeral`` decides whether an event is persisted at all, so a
+# client able to set it could delete its own events from task history.
+PLATFORM_METADATA_PREFIXES = (PLATFORM_METADATA_PREFIX, "aion:")
+
 logger = logging.getLogger(__name__)
 
 
@@ -525,4 +532,4 @@ class A2ATaskDeduplicator:
     @classmethod
     def _is_platform_metadata_key(cls, key: str) -> bool:
         """Return `True` for reserved platform metadata keys."""
-        return isinstance(key, str) and key.startswith(PLATFORM_METADATA_PREFIX)
+        return isinstance(key, str) and key.startswith(PLATFORM_METADATA_PREFIXES)

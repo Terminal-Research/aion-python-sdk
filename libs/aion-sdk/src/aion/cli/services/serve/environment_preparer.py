@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from aion.api.gql import AionGqlContextClient
+from aion.api.http import aion_jwt_manager
 from aion.server.services import BaseExecuteService
 from aion.server.settings import app_settings
 
@@ -12,26 +13,42 @@ from aion.server.settings import app_settings
 class EnvironmentContext:
     """Environment context with VERSION_ID and its source."""
     version_id: Optional[str] = None
+    auth_available: bool = False
 
 
 class ServeEnvironmentPreparerService(BaseExecuteService):
-    """Prepares environment before starting agents (VERSION_ID, etc)."""
+    """Prepares environment before starting agents (auth state, VERSION_ID, etc)."""
 
     async def execute(self) -> EnvironmentContext:
-        """Prepare environment by ensuring VERSION_ID is available."""
+        """Prepare environment by settling platform auth and VERSION_ID."""
+        auth_available = await self._preflight_auth()
+
         if version_id := os.environ.get('VERSION_ID'):
             self.logger.debug(f"VERSION_ID found in environment: {version_id}")
-            return EnvironmentContext(version_id=version_id)
+            return EnvironmentContext(version_id=version_id, auth_available=auth_available)
 
         version_id = await self._fetch_version_from_control_plane()
 
         if version_id:
             self._cache_version_id(version_id)
             self.logger.debug(f"VERSION_ID obtained from control plane: {version_id}")
-            return EnvironmentContext(version_id=version_id)
+            return EnvironmentContext(version_id=version_id, auth_available=auth_available)
 
         self.logger.warning("VERSION_ID not available from env or control plane")
-        return EnvironmentContext(version_id=None)
+        return EnvironmentContext(version_id=None, auth_available=auth_available)
+
+    @staticmethod
+    async def _preflight_auth() -> bool:
+        """Settle platform auth once, in the parent, before any agent is forked.
+
+        Agents are started with the ``fork`` start method, so whatever the
+        shared ``aion_jwt_manager`` holds at this point is what every child
+        begins with: a valid token they can reuse instead of each fetching
+        their own, or a latched 401 that keeps them from each re-reporting the
+        same failure. Without this, the parent and every agent discover a bad
+        credential independently and log the same warning N+1 times.
+        """
+        return (await aion_jwt_manager.get_token()) is not None
 
     async def _fetch_version_from_control_plane(self) -> Optional[str]:
         """Fetch VERSION_ID from control plane via GraphQL."""

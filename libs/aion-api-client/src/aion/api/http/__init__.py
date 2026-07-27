@@ -3,6 +3,7 @@
 from .client import AionHttpClient
 from .jwt_manager import (
     aion_jwt_manager,
+    AionAuthState,
     AionJWTManager,
     AionRefreshingJWTManager,
 )
@@ -10,6 +11,7 @@ from .jwt_manager import (
 __all__ = [
     "AionHttpClient",
     "aion_jwt_manager",
+    "AionAuthState",
     "AionJWTManager",
     "AionRefreshingJWTManager",
 ]

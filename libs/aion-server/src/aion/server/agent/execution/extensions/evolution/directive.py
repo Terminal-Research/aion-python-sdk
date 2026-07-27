@@ -27,7 +27,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional
 
-from aion.core.a2a.extensions.behaviour_evolution import EvolutionDirectiveEventPayload
+from aion.core.a2a.extensions.behaviour_evolution import (
+    EVOLUTION_VIEW_ACTIVITY,
+    EvolutionDirectiveEventPayload,
+)
 from aion.core.constants.a2a import (
     BEHAVIOUR_EVOLUTION_DIRECTIVE_EVENT_TYPE_V1,
     BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1,
@@ -58,12 +61,18 @@ class ParsedDirective:
 
     `stage` is the phase the caller wants this run to cover
     (`auto`/`plan`/`implement`), taken verbatim off the wire.
+
+    `view` is how much of the run's stream the caller asked to receive
+    (`full`/`activity`/`milestones`), also verbatim. The payload model
+    constrains it, so an unknown value is a validation error on the directive
+    rather than something this side has to second-guess.
     """
 
     instruction: str
     context_id: str
     payload: EvolutionDirectiveEventPayload
     stage: str = "auto"
+    view: str = EVOLUTION_VIEW_ACTIVITY
 
 
 def parse_directive(
@@ -112,6 +121,7 @@ def parse_directive(
         context_id=context_id,
         payload=payload,
         stage=payload.stage,
+        view=payload.view,
     )
 
 

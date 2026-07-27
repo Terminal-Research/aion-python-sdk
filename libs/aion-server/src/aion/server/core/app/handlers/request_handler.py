@@ -157,6 +157,12 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         Overrides DefaultRequestHandler to emit the final Task object after
         all other events have been streamed. This ensures the client receives
         a complete Task snapshot with all accumulated state at stream end.
+
+        How much detail a run's own events carry is not decided here: it is a
+        property of the request an extension parses (the evolution directive's
+        `view`, say), so the producer shapes and drops its events before they
+        reach this handler. This layer knows nothing about any extension's
+        payload.
         """
         async for event in super().on_message_send_stream(params, context):
             yield event

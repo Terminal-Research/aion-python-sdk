@@ -28,6 +28,24 @@ _FORWARD_TIMEOUT = httpx.Timeout(30.0, read=None)
 # response: the proxied response is re-framed (chunked) by the server.
 _EXCLUDED_RESPONSE_HEADERS = frozenset({"content-length", "transfer-encoding", "connection"})
 
+# Headers that describe the *client's* connection to the proxy and say nothing
+# about the proxy's own connection upstream. `host` would address the wrong
+# server; the framing headers (RFC 9110 §7.6.1) describe a hop that ends here —
+# forwarding `content-length` or `transfer-encoding` alongside a body httpx
+# re-frames itself is how a request ends up declaring two different lengths.
+_EXCLUDED_REQUEST_HEADERS = frozenset({
+    "host",
+    "content-length",
+    "transfer-encoding",
+    "connection",
+    "keep-alive",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "te",
+    "trailer",
+    "upgrade",
+})
+
 
 class RequestHandler:
     """Handles request forwarding to agent servers"""
@@ -130,9 +148,14 @@ class RequestHandler:
             target_url = f"{target_url}?{request.url.query}"
 
         try:
-            # Prepare headers (exclude host header to avoid conflicts)
-            headers = dict(request.headers)
-            headers.pop('host', None)
+            # Prepare headers: everything the client sent except what described
+            # its own hop to us (see _EXCLUDED_REQUEST_HEADERS). httpx frames the
+            # upstream request itself from `content`.
+            headers = {
+                key: value
+                for key, value in request.headers.items()
+                if key.lower() not in _EXCLUDED_REQUEST_HEADERS
+            }
 
             # Read request body
             body = await request.body()

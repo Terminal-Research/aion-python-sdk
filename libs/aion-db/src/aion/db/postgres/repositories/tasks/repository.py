@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from typing import List, Type, Optional
 
-from sqlalchemy import select, func, desc
+from sqlalchemy import select, func, asc, desc
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql import Select
 
 try:
     from a2a.types import Artifact
@@ -17,6 +18,18 @@ from aion.db.postgres.repositories.base import BaseRepository
 from aion.db.postgres.models import TaskRecordModel
 from aion.db.postgres.types import Pagination, Sorting
 from aion.db.postgres.repositories.tasks.selectors import latest_artifacts, artifacts_by_version, all_versions_by_name
+
+
+STATUS_TIMESTAMP_SORT_KEY = "status.timestamp"
+"""Reserved :class:`~aion.db.postgres.types.SortKey` column naming the task's
+last state-change time.
+
+The value lives inside the ``status`` JSON column rather than in a column of
+its own, so it cannot be resolved by attribute lookup like an ordinary sort
+key. :meth:`TasksRepository._apply_sorting` recognises this name and orders by
+the JSON path instead. Rows with no timestamp sort last in both directions —
+an absent timestamp means "unknown", not "oldest".
+"""
 
 
 class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
@@ -62,6 +75,77 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
                 self.model_class.status["timestamp"].astext >= status_timestamp_after
             )
         return stmt
+
+    def _apply_sorting(self, stmt: Select, sorting: Sorting) -> Select:
+        """Apply ORDER BY clauses, resolving the task-specific status timestamp.
+
+        Extends the base implementation with :data:`STATUS_TIMESTAMP_SORT_KEY`,
+        which addresses a value inside the ``status`` JSON column instead of a
+        mapped attribute. Missing timestamps are ordered last regardless of
+        direction, so tasks whose state was never stamped never displace tasks
+        that carry a real time.
+
+        Args:
+            stmt: Statement to order.
+            sorting: Sort keys applied left-to-right.
+
+        Returns:
+            The statement with ORDER BY clauses appended.
+        """
+        for key in sorting.keys:
+            if key.column == STATUS_TIMESTAMP_SORT_KEY:
+                column = self.model_class.status["timestamp"].astext
+                ordering = desc(column) if key.descending else asc(column)
+                stmt = stmt.order_by(ordering.nullslast())
+                continue
+            column = getattr(self.model_class, key.column)
+            stmt = stmt.order_by(desc(column) if key.descending else asc(column))
+        return stmt
+
+    async def find_ids(
+            self,
+            task_id: Optional[str] = None,
+            context_id: Optional[str] = None,
+            status_state: Optional[str] = None,
+            status_timestamp_after: Optional[str] = None,
+            pagination: Optional[Pagination] = None,
+            sorting: Optional[Sorting] = None,
+    ) -> List[str]:
+        """Find the ids of matching tasks, in the requested order.
+
+        The identifier-only counterpart of :meth:`find`, for callers that need
+        the shape of a result set — its size, or the position of one task
+        within it — without paying to load and deserialize every task's JSON
+        payload. Accepts the same filters, ordering and pagination.
+
+        Args:
+            task_id: Restrict to a single task id.
+            context_id: Restrict to one context.
+            status_state: Restrict to tasks in this state.
+            status_timestamp_after: Restrict to tasks stamped at or after this
+                ISO-8601 timestamp.
+            pagination: Offset/limit window over the ordered result.
+            sorting: Sort keys applied left-to-right.
+
+        Returns:
+            Matching task ids as strings, in the requested order.
+        """
+        stmt = select(self.model_class.id)
+        stmt = self._apply_filter(
+            stmt,
+            task_id=task_id,
+            context_id=context_id,
+            status_state=status_state,
+            status_timestamp_after=status_timestamp_after,
+        )
+
+        if sorting is not None:
+            stmt = self._apply_sorting(stmt, sorting)
+        if pagination is not None:
+            stmt = self._apply_pagination(stmt, pagination)
+
+        result = await self._session.execute(stmt)
+        return [str(row[0]) for row in result.fetchall()]
 
     async def save(self, entity: TaskRecord) -> None:
         """Save or update a task entity."""

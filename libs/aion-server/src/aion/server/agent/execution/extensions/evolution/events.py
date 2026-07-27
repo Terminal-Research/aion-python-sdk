@@ -7,7 +7,7 @@ toolkit owns all executor-stream parsing (its `CodexEventClassifier` turns
 codex's `--json` envelopes into typed events); this module never sees a raw
 codex event.
 
-Two axes govern how an event crosses to A2A:
+Three axes govern how an event crosses to A2A:
 
 - *Typing.* The executor-stream events (`CommandStarted`, `CommandCompleted`,
   `AgentMessage`) are carried as schema-tagged data parts on the status
@@ -23,6 +23,14 @@ Two axes govern how an event crosses to A2A:
   from task history by the task manager. Only milestones persist: branch
   resolution, the executor's final summary (`AgentMessage(final=True)`), the
   terminal status, and the `evolution-spec`/`evolution-result` artifacts.
+
+- *Delivery.* The directive's `view` says how much of that the caller wants:
+  `full` (everything, including each command's output), `activity` (the same
+  chronicle minus the output — the default), `milestones` (only the durable
+  events). This module shapes `full` vs `activity`, because dropping a payload
+  field is the producer's job; `milestones` is the handler dropping whatever
+  this module already flagged ephemeral, so the reduced view cannot drift from
+  what the task record keeps.
 
 The result artifact reuses aion-core's EvolutionResultActionPayload so the
 outbound shape is the one the extension spec already defines, schema-tagged on
@@ -50,6 +58,8 @@ from a2a.types import (
     TaskStatusUpdateEvent,
 )
 from aion.core.a2a.extensions.behaviour_evolution import (
+    EVOLUTION_VIEW_ACTIVITY,
+    EVOLUTION_VIEW_FULL,
     EvolutionAgentMessagePayload,
     EvolutionCommandCompletedPayload,
     EvolutionCommandStartedPayload,
@@ -60,7 +70,6 @@ from aion.core.constants.a2a import (
     BEHAVIOUR_EVOLUTION_COMMAND_COMPLETED_PAYLOAD_SCHEMA_V1,
     BEHAVIOUR_EVOLUTION_COMMAND_STARTED_PAYLOAD_SCHEMA_V1,
     BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1,
-    BEHAVIOUR_EVOLUTION_RESULT_ACTION_PAYLOAD_SCHEMA_V1,
     EVENT_EXTENSION_URI_V1,
 )
 from aion.server.a2a.utils import mark_status_event_ephemeral
@@ -124,12 +133,35 @@ _KNOWN_EVENT_KINDS = frozenset(
 # progress struct's `stage` (what machines branch on); this is only the sentence
 # a plain chat/A2A client shows the user. An unmapped phase falls back to its
 # raw token — a new toolkit phase degrades gracefully instead of vanishing.
+# Stage reported on the terminal event. Matches the toolkit's own terminal
+# Phase token, so a consumer branching on `stage` sees the same vocabulary the
+# stream used rather than a name invented here.
+_TERMINAL_STAGE = "reporting"
+
+# Names the effect on the user's work, not the mechanism that produces it: a
+# workspace, a clone, a branch and a commit are means the user never asked for
+# and cannot act on. Everything an operator or a UI needs is already carried
+# structurally — `branch`/`resumed`/`priorCommits` on the progress struct that
+# reaches `task.metadata`, and branch/sha/PR on the result artifact — so none
+# of it has to be repeated in prose.
+#
+# `reporting` is absent on purpose: the toolkit sets that phase on its worker
+# state but never emits a PhaseStarted for it, and the terminal message follows
+# immediately anyway. An unmapped phase still falls back to its raw token, so a
+# phase a future toolkit adds degrades to something visible rather than nothing.
 _PHASE_TEXT = {
-    "preparing": "Preparing workspace and evolution branch",
-    "executing": "Running the evolution — planning, editing, and validating changes",
-    "delivering": "Delivering — collecting commits and pushing the branch",
-    "reporting": "Finalizing",
+    "preparing": "Preparing to work on your project",
+    "executing": "Working on the change — planning, editing, and checking the result",
+    "delivering": "Saving the result",
 }
+
+# What the user reads when a run fails. Fixed and short by design: the toolkit
+# reports failures as the exception string (`ctx.fail(str(exc))`), which for an
+# executor failure carries the CLI flags it was invoked with and up to 1500
+# characters of its stderr. That belongs to whoever is debugging the deployment,
+# and reaches them intact on the result artifact's `error` field — not to the
+# person who asked for a change.
+_RUN_FAILED_TEXT = "The run could not be completed. See the run result for details."
 
 
 def status_event(
@@ -138,10 +170,16 @@ def status_event(
     state: "TaskState.ValueType",
     text: str | None = None,
     progress: dict | None = None,
+    ephemeral: bool = False,
 ) -> TaskStatusUpdateEvent:
     """A status update for the task: optional agent message (what the end user
     reads) plus optional machine-readable `progress` struct (what consumers
-    branch on)."""
+    branch on).
+
+    When `ephemeral`, the update is streamed to the client but kept out of task
+    history (see `mark_status_event_ephemeral`). Never flag a terminal state
+    ephemeral — that is the record of how the run ended.
+    """
     status = TaskStatus(state=state)
     if text:
         status.message.CopyFrom(
@@ -160,6 +198,8 @@ def status_event(
     )
     if progress:
         event.metadata.get_or_create_struct(PROGRESS_METADATA_KEY).update(progress)
+    if ephemeral:
+        mark_status_event_ephemeral(event)
     return event
 
 
@@ -169,7 +209,7 @@ def failed_event(task: Task, *, error: str) -> TaskStatusUpdateEvent:
 
 
 def map_stream_event(
-    task: Task, event: object
+    task: Task, event: object, *, view: str = EVOLUTION_VIEW_ACTIVITY
 ) -> Optional[TaskStatusUpdateEvent | TaskArtifactUpdateEvent]:
     """Map one toolkit stream event onto an A2A event, or None to drop it.
 
@@ -178,6 +218,13 @@ def map_stream_event(
     terminal mapping via `result_events`. `ExecutorTrace` maps to None (dropped)
     without a warning: it is the toolkit's escape hatch for reasoning / stream
     framing this module has no reason to surface.
+
+    `view` is the caller's requested detail level. Only `EVOLUTION_VIEW_FULL`
+    puts a command's output on the wire; every other view (including
+    `milestones`, whose events the handler drops afterwards anyway) shapes the
+    payload without it. The default matches the directive's own default, so a
+    caller that never mentions `view` does not get the repository's file
+    contents streamed to it.
     """
     kind = type(event).__name__
     if kind == "PhaseStarted":
@@ -187,15 +234,25 @@ def map_stream_event(
             state=TaskState.TASK_STATE_WORKING,
             text=_PHASE_TEXT.get(phase, phase),
             progress={"stage": phase},
+            # Narration of a phase the run has already left: live progress, not
+            # a fact the durable record needs. What actually happened in each
+            # phase survives in the result artifact and the final summary, so
+            # persisting these would only pad the history of every evolution
+            # sharing a context.
+            ephemeral=True,
         )
     if kind == "BranchResolved":
+        # Only a resume is worth a sentence: that this continues earlier work is
+        # the one thing the user cannot infer, and it changes what they should
+        # expect back. A fresh start is the default and its branch name is
+        # plumbing, so that case ships no message at all — the event still
+        # carries its progress struct, so the branch reaches `task.metadata`
+        # either way and stays available to a UI or an operator.
+        text = None
         if event.resumed:
-            text = (
-                f"resuming evolution on {event.branch} "
-                f"({event.prior_commits} commit(s) from earlier runs)"
-            )
-        else:
-            text = f"started evolution branch {event.branch}"
+            text = "Picking up where the previous run left off"
+            if event.prior_commits:
+                text = f"{text} — {event.prior_commits} change(s) already made"
         return status_event(
             task,
             state=TaskState.TASK_STATE_WORKING,
@@ -212,11 +269,15 @@ def map_stream_event(
                 "resumed": event.resumed,
                 "priorCommits": event.prior_commits,
             },
+            # Deliberately NOT ephemeral: branch resolution is one of the
+            # milestones this module's contract says the task record keeps (see
+            # the module docstring). It is also the only record of *which*
+            # branch a run that later fails was working on.
         )
     if kind == "CommandStarted":
         return _command_started_event(task, event)
     if kind == "CommandCompleted":
-        return _command_completed_event(task, event)
+        return _command_completed_event(task, event, view=view)
     if kind == "AgentMessage":
         return _agent_message_event(task, event)
     if kind == "SpecCaptured":
@@ -304,12 +365,24 @@ def _command_started_event(task: Task, event: object) -> TaskStatusUpdateEvent:
     )
 
 
-def _command_completed_event(task: Task, event: object) -> TaskStatusUpdateEvent:
+def _command_completed_event(
+    task: Task, event: object, *, view: str = EVOLUTION_VIEW_ACTIVITY
+) -> TaskStatusUpdateEvent:
     """A command the executor finished, with its result — ephemeral live
     progress. A non-zero exit is called out in the human-facing text; the exit
-    code and bounded output ride the typed payload and the progress struct."""
+    code and bounded output ride the typed payload and the progress struct.
+
+    Outside `EVOLUTION_VIEW_FULL` the output is withheld: it is the target
+    repository's content, and a caller rendering progress needs the command and
+    its exit code, not what it printed. `truncated` then stays True whenever
+    there *was* output, so a consumer can tell "produced nothing" from "produced
+    something you were not sent" — the two are otherwise identical on the wire.
+    """
     exit_code = _exit_code(event)
     output, truncated = _bounded_output(event)
+    if view != EVOLUTION_VIEW_FULL:
+        truncated = truncated or output is not None
+        output = None
     text = f"$ {event.command}"
     if exit_code is not None and exit_code != 0:
         text = f"{text} (exit {exit_code})"
@@ -320,8 +393,9 @@ def _command_completed_event(task: Task, event: object) -> TaskStatusUpdateEvent
     }
     if exit_code is not None:
         progress["exitCode"] = exit_code
-    if output is not None:
-        progress["output"] = output
+    # The output itself rides the typed payload only. Repeating it here would
+    # put the same (already bounded) text on the wire a second time for every
+    # command the executor runs, which is the bulk of a run's traffic.
     return _typed_status_event(
         task,
         text=text,
@@ -402,7 +476,7 @@ def _result_artifact_event(task: Task, result: "EvolutionResult") -> TaskArtifac
     )
     artifact_event.artifact.parts[0].metadata.get_or_create_struct(
         EVENT_EXTENSION_URI_V1
-    ).update({"schema": BEHAVIOUR_EVOLUTION_RESULT_ACTION_PAYLOAD_SCHEMA_V1})
+    ).update({"schema": EvolutionResultActionPayload.SCHEMA_URI})
     return artifact_event
 
 
@@ -424,19 +498,44 @@ def result_events(
     if result.outcome == "cancelled":
         return []
 
+    # A status event's metadata is merged into `task.metadata` on persist, so
+    # `stage` there is only ever as current as the last *persisted* event that
+    # carried one. Phase narration is ephemeral and carries none, so without a
+    # stage here the durable metadata of a finished run would still read
+    # "preparing" — the phase its branch resolution announced.
+    terminal_progress = {"stage": _TERMINAL_STAGE, "outcome": result.outcome}
+
     artifact_event = _result_artifact_event(task, result)
     if result.outcome == "failed":
-        terminal = failed_event(task, error=result.error or "evolution run failed")
+        # `result.error` rides the artifact above, where an operator reads it.
+        terminal = failed_event(task, error=_RUN_FAILED_TEXT)
+        terminal.metadata.get_or_create_struct(PROGRESS_METADATA_KEY).update(
+            terminal_progress
+        )
     elif result.outcome == "no_change":
         terminal = status_event(
             task,
             state=TaskState.TASK_STATE_COMPLETED,
-            text="no changes produced",
+            text="No changes were needed",
+            progress=terminal_progress,
         )
     else:
-        text = f"pushed {result.branch} @ {result.commit_sha}"
+        # Where the work can be found, in the terms the user can act on. A pull
+        # request is a place to go; without one the branch is the only pointer
+        # they have, so it is named — as a location, not as a git operation.
+        # The commit sha is omitted: it identifies the work for machines, and
+        # the artifact already carries it.
         pr_url = getattr(result, "pr_url", None)
         if pr_url:
-            text = f"{text} ({pr_url})"
-        terminal = status_event(task, state=TaskState.TASK_STATE_COMPLETED, text=text)
+            text = f"Done — ready for review: {pr_url}"
+        elif result.branch:
+            text = f"Done — changes are on branch {result.branch}"
+        else:
+            text = "Done"
+        terminal = status_event(
+            task,
+            state=TaskState.TASK_STATE_COMPLETED,
+            text=text,
+            progress=terminal_progress,
+        )
     return [artifact_event, terminal]

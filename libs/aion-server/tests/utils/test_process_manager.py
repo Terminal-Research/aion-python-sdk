@@ -15,6 +15,7 @@ Focus areas:
 """
 
 import time
+from contextlib import contextmanager
 from multiprocessing.connection import Connection
 from typing import Any
 from unittest.mock import MagicMock, patch, call
@@ -39,6 +40,30 @@ def _mock_process(alive: bool = True) -> MagicMock:
     return p
 
 
+@contextmanager
+def _patched_context(parent=None, child=None):
+    """Stub the multiprocessing context ProcessManager creates processes through.
+
+    ProcessManager deliberately builds its children from an explicit
+    ``multiprocessing.get_context('fork')``, so patching the module-level
+    ``multiprocessing.Process``/``Pipe`` has no effect at all — the tests that
+    tried it were silently forking real processes. The context object is what
+    has to be stubbed.
+
+    Yields:
+        Tuple of (context mock, the process mock its ``Process`` call returns).
+    """
+    ctx = MagicMock()
+    proc = _mock_process()
+    ctx.Process.return_value = proc
+    ctx.Pipe.return_value = (
+        parent if parent is not None else MagicMock(spec=Connection),
+        child if child is not None else MagicMock(spec=Connection),
+    )
+    with patch("multiprocessing.get_context", return_value=ctx):
+        yield ctx, proc
+
+
 def _make_process_info(key: str = "p1", alive: bool = True) -> ProcessInfo:
     return ProcessInfo(
         key=key,
@@ -56,10 +81,7 @@ class TestCreateProcess:
     def test_creates_process_with_key(self):
         """Verify that creates process with key."""
         mgr = _manager()
-        with patch("multiprocessing.Process") as MockProc:
-            mock_p = _mock_process()
-            MockProc.return_value = mock_p
-
+        with _patched_context():
             result = mgr.create_process("p1", func=lambda: None)
 
         assert result is True
@@ -81,31 +103,28 @@ class TestCreateProcess:
         def _fn(**kwargs):
             captured_kwargs.update(kwargs)
 
-        with patch("multiprocessing.Process") as MockProc:
-            with patch("multiprocessing.Pipe") as MockPipe:
-                parent = MagicMock(spec=Connection)
-                child = MagicMock(spec=Connection)
-                MockPipe.return_value = (parent, child)
-                mock_p = _mock_process()
-                MockProc.return_value = mock_p
-
-                result = mgr.create_process("p1", func=_fn, use_pipe=True)
+        parent = MagicMock(spec=Connection)
+        child = MagicMock(spec=Connection)
+        with _patched_context(parent=parent, child=child) as (ctx, _proc):
+            result = mgr.create_process("p1", func=_fn, use_pipe=True)
 
         assert result is True
         info = mgr.processes["p1"]
         assert info.parent_conn is parent
         assert info.child_conn is child
-        assert info.kwargs.get("conn") is child
+        assert info.use_pipe is True
+        # The child gets the connection...
+        assert ctx.Process.call_args.kwargs["kwargs"]["conn"] is child
+        # ...but the recorded kwargs stay free of it, so a restart does not
+        # hand the replacement the terminated process's closed pipe end.
+        assert "conn" not in info.kwargs
 
     def test_process_info_stored_correctly(self):
         """Verify that process info stored correctly."""
         mgr = _manager()
         fn = lambda: None
 
-        with patch("multiprocessing.Process") as MockProc:
-            mock_p = _mock_process()
-            MockProc.return_value = mock_p
-
+        with _patched_context():
             mgr.create_process("p1", func=fn, func_args=(1, 2), func_kwargs={"x": 3})
 
         info = mgr.processes["p1"]
@@ -118,7 +137,8 @@ class TestCreateProcess:
     def test_returns_false_on_exception(self):
         """Verify that returns false on exception."""
         mgr = _manager()
-        with patch("multiprocessing.Process", side_effect=OSError("fork failed")):
+        with _patched_context() as (ctx, _proc):
+            ctx.Process.side_effect = OSError("fork failed")
             result = mgr.create_process("p1", func=lambda: None)
         assert result is False
 
@@ -461,14 +481,43 @@ class TestRestartProcess:
         info.target_function = fn
         mgr.processes["p1"] = info
 
-        with patch("multiprocessing.Process") as MockProc:
-            mock_p = _mock_process()
-            MockProc.return_value = mock_p
-
+        with _patched_context():
             result = mgr.restart_process("p1")
 
         assert result is True
         assert "p1" in mgr.processes
+
+    def test_piped_process_is_restarted_with_a_fresh_pipe(self):
+        """Terminating the old process closes both ends of its pipe, so the
+        replacement must not inherit that connection."""
+        mgr = _manager()
+        dead_child = MagicMock(spec=Connection)
+        info = _make_process_info("p1", alive=False)
+        info.use_pipe = True
+        info.parent_conn = MagicMock(spec=Connection)
+        info.child_conn = dead_child
+        mgr.processes["p1"] = info
+
+        new_child = MagicMock(spec=Connection)
+        with _patched_context(child=new_child) as (ctx, _proc):
+            assert mgr.restart_process("p1") is True
+
+        restarted = mgr.processes["p1"]
+        assert restarted.use_pipe is True
+        assert restarted.child_conn is new_child
+        assert ctx.Process.call_args.kwargs["kwargs"]["conn"] is new_child
+        assert ctx.Process.call_args.kwargs["kwargs"]["conn"] is not dead_child
+
+    def test_restart_without_pipe_stays_without_one(self):
+        mgr = _manager()
+        mgr.processes["p1"] = _make_process_info("p1", alive=False)
+
+        with _patched_context() as (ctx, _proc):
+            assert mgr.restart_process("p1") is True
+
+        assert mgr.processes["p1"].use_pipe is False
+        assert "conn" not in ctx.Process.call_args.kwargs["kwargs"]
+        ctx.Pipe.assert_not_called()
 
 
 class TestContextManager:

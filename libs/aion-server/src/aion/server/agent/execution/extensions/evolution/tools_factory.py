@@ -173,6 +173,22 @@ def build_worker(
     codex_config, credentials_provider = _codex_access(daemon)
 
     async def _token(_repo_url: str) -> str:
+        # Repo-independent BY DESIGN, not by oversight. `GITHUB_TOKEN` is
+        # expected to be scoped to the one repository this deployment serves,
+        # so the token's own scope *is* the authorization: a directive naming
+        # any other repository fails at the forge, not at a check here. Two
+        # things follow, and both matter if that assumption ever changes:
+        #
+        #   * One agent, one repository. A deployment serving several targets
+        #     needs a token spanning all of them, and the choice of target
+        #     would then be back in the caller's hands, unguarded.
+        #   * Widening the token (an org-wide installation, a classic PAT with
+        #     `repo`) silently removes the guarantee. Nothing here would fail.
+        #
+        # The eventual fix is to stop taking the target from the payload at
+        # all — resolve it from the authenticated deployment — at which point
+        # this provider gets a real per-repository token and the argument.
+        #
         # The toolkit injects this inline into git network calls only; it is
         # never stored on instances, written to .git/config, or exported.
         return github_token

@@ -19,11 +19,15 @@ from aion.core.constants.a2a import (
     BEHAVIOUR_EVOLUTION_COMMAND_STARTED_PAYLOAD_SCHEMA_V1,
     BEHAVIOUR_EVOLUTION_DIRECTIVE_EVENT_PAYLOAD_SCHEMA_V1,
     BEHAVIOUR_EVOLUTION_DIRECTIVE_EVENT_TYPE_V1,
+    BEHAVIOUR_EVOLUTION_RESULT_ACTION_PAYLOAD_SCHEMA_V1,
     BEHAVIOUR_EVOLUTION_VERDICT_EVENT_PAYLOAD_SCHEMA_V1,
     BEHAVIOUR_EVOLUTION_VERDICT_EVENT_TYPE_V1,
 )
 
 __all__ = [
+    "EVOLUTION_VIEW_FULL",
+    "EVOLUTION_VIEW_ACTIVITY",
+    "EVOLUTION_VIEW_MILESTONES",
     "TargetContext",
     "EvolutionDirectiveEventPayload",
     "EvolutionVerdictEventPayload",
@@ -32,6 +36,28 @@ __all__ = [
     "EvolutionCommandCompletedPayload",
     "EvolutionAgentMessagePayload",
 ]
+
+
+# How much of a run's event stream the caller wants delivered. The three views
+# nest: milestones ⊂ activity ⊂ full. Which events carry which is the improver's
+# concern; what the caller promises here is only how much detail it is willing
+# to receive — and, since a client that logs or forwards the stream retains
+# whatever reaches it, how much of the target repo's content it takes on.
+
+# Everything the improver produces, including the output of every shell command
+# the executor runs. That output is the target repository's own content — file
+# bodies, test logs — so this is the debugging view, not the default.
+EVOLUTION_VIEW_FULL = "full"
+
+# The live chronicle without the bulk data: phases, branch resolution, every
+# command that starts and the exit code it ends with, the executor's messages.
+# Enough to render progress; no command output.
+EVOLUTION_VIEW_ACTIVITY = "activity"
+
+# Only what survives the run in the durable task record: branch resolution, the
+# final summary, the artifacts, the terminal state. What a caller that logs,
+# forwards, or hands the stream to another agent should ask for.
+EVOLUTION_VIEW_MILESTONES = "milestones"
 
 
 class TargetContext(A2ABaseModel):
@@ -81,6 +107,21 @@ class EvolutionDirectiveEventPayload(A2ABaseModel):
             "wait on this field."
         ),
     )
+    view: Literal["full", "activity", "milestones"] = Field(
+        default=EVOLUTION_VIEW_ACTIVITY,
+        description=(
+            "How much of the run's event stream to deliver. 'activity' - the "
+            "default - carries the live chronicle without command output: "
+            "phases, each command and the exit code it ended with, the "
+            "executor's messages. 'full' adds the output of every command, "
+            "which is the target repository's own content; ask for it to debug "
+            "a deployment. 'milestones' carries only what the durable task "
+            "record keeps, for a caller that logs or forwards the stream. This "
+            "bounds delivery, not access: the terminal result and its artifacts "
+            "arrive in every view, and even 'activity' carries command lines "
+            "and executor prose that can quote the repository."
+        ),
+    )
 
 
 class EvolutionVerdictEventPayload(A2ABaseModel):
@@ -105,6 +146,8 @@ class EvolutionVerdictEventPayload(A2ABaseModel):
 
 class EvolutionResultActionPayload(A2ABaseModel):
     """Outbound run result reported by the improver once a run completes."""
+
+    SCHEMA_URI: ClassVar[str] = BEHAVIOUR_EVOLUTION_RESULT_ACTION_PAYLOAD_SCHEMA_V1
 
     outcome: Literal["succeeded", "failed", "no_change"] = Field(
         description="Run outcome. 'no_change' is only valid when the directive's mode is 'advisory'."
@@ -200,6 +243,14 @@ class EvolutionCommandCompletedPayload(A2ABaseModel):
 
 class EvolutionAgentMessagePayload(A2ABaseModel):
     """A natural-language message from the executor during a run.
+
+    ``text`` repeats the message's first (text) part on purpose. A status event
+    carries both representations — prose for the end user, a schema-tagged
+    payload for programmatic consumers — and the contract is that a consumer
+    reads the payload *instead of* parsing the prose. Dropping ``text`` here
+    would leave such a consumer with framing and no message, and would break the
+    symmetry with the command payloads, whose ``command`` likewise restates what
+    the text renders.
 
     Intermediate messages (``final=False``) are streamed but not persisted; the
     single ``final=True`` message is the run's durable summary and is kept in

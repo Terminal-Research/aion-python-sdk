@@ -24,8 +24,12 @@ from a2a.types import (
     TaskStatusUpdateEvent,
 )
 from a2a.utils.errors import UnsupportedOperationError
+from google.protobuf.json_format import MessageToDict
 
 from aion.core.a2a.extensions.behaviour_evolution import (
+    EVOLUTION_VIEW_ACTIVITY,
+    EVOLUTION_VIEW_FULL,
+    EVOLUTION_VIEW_MILESTONES,
     EvolutionDirectiveEventPayload,
     TargetContext,
 )
@@ -38,6 +42,7 @@ from aion.core.runtime import aion_a2a_extension_registry
 from aion.core.runtime.context.extensions import AionRuntimeExtensions
 from aion.core.runtime.context.models import Event
 from aion.core.runtime.context.registry import AionRuntimeContextRegistry
+from aion.server.a2a.utils import is_ephemeral_status_event
 from aion.server.agent.execution.extensions.evolution import EvolutionTaskHandler
 from aion.server.agent.execution.extensions.evolution import events as evolution_events
 from aion.server.agent.execution.extensions.evolution.errors import ExtensionSetupError
@@ -66,6 +71,15 @@ class BranchResolved:
 class AgentMessage:
     text: str
     final: bool = False
+
+
+@dataclass(frozen=True)
+class CommandCompleted:
+    call_id: str
+    command: str
+    exit_code: Optional[int] = None
+    output: Optional[str] = None
+    truncated: bool = False
 
 
 @dataclass(frozen=True)
@@ -101,7 +115,9 @@ def _make_context(
     return ctx
 
 
-def _payload(stage: str = "auto") -> EvolutionDirectiveEventPayload:
+def _payload(
+    stage: str = "auto", view: str = EVOLUTION_VIEW_ACTIVITY
+) -> EvolutionDirectiveEventPayload:
     return EvolutionDirectiveEventPayload(
         target=TargetContext(
             repo_url="https://github.com/acme/target-agent.git",
@@ -111,16 +127,22 @@ def _payload(stage: str = "auto") -> EvolutionDirectiveEventPayload:
         kind="feature",
         mode="advisory",
         stage=stage,
+        view=view,
     )
 
 
-def _runtime_ctx(with_directive: bool = True, daemon=None, stage: str = "auto"):
+def _runtime_ctx(
+    with_directive: bool = True,
+    daemon=None,
+    stage: str = "auto",
+    view: str = EVOLUTION_VIEW_ACTIVITY,
+):
     if not with_directive:
         return SimpleNamespace(
             extensions=AionRuntimeExtensions({}),
             get_daemon=lambda: daemon,
         )
-    payload = _payload(stage=stage)
+    payload = _payload(stage=stage, view=view)
     event = Event(
         kind=BEHAVIOUR_EVOLUTION_DIRECTIVE_EVENT_TYPE_V1,
         id="ev-1",
@@ -282,14 +304,20 @@ class TestStream:
             if isinstance(e, TaskStatusUpdateEvent)
             and e.status.state == TaskState.TASK_STATE_WORKING
         ]
-        texts = [e.status.message.parts[0].text for e in working]
+        # A fresh branch resolution carries no message (its facts ride the
+        # progress struct), so it is present as an event but silent to the user.
+        texts = [
+            e.status.message.parts[0].text
+            for e in working
+            if e.status.HasField("message")
+        ]
         assert texts == [
             evolution_events._PHASE_TEXT["preparing"],
-            "started evolution branch evolution/ctx-456",
             evolution_events._PHASE_TEXT["executing"],
             "working on it",
             evolution_events._PHASE_TEXT["delivering"],
         ]
+        assert len(working) == len(texts) + 1
 
         artifacts = [e for e in out if isinstance(e, TaskArtifactUpdateEvent)]
         names = [a.artifact.name for a in artifacts]
@@ -434,6 +462,92 @@ class TestStream:
         )
 
 
+class TestStreamView:
+    """The directive's `view` decides how much of the run reaches the caller.
+
+    `milestones` is defined by the ephemeral mark rather than by a list of
+    event kinds, so what it delivers cannot drift from what the task record
+    keeps."""
+
+    def _events(self, result):
+        return [
+            _phase("preparing"),
+            BranchResolved(branch="evolution/ctx-456", resumed=False),
+            _phase("executing"),
+            CommandCompleted(call_id="c", command="cat .env", exit_code=0, output="TOKEN=abc"),
+            AgentMessage(text="working on it", final=False),
+            AgentMessage(text="Added retries", final=True),
+            SpecCaptured(path=".aion/evolutions/ctx-456/spec.md", content="# Spec"),
+            RunCompleted(result=result),
+        ]
+
+    async def _run(self, view: str):
+        result = _result("succeeded")
+        handler = _handler(worker=FakeWorker(result, events=self._events(result)))
+        with _patch_runtime(_runtime_ctx(view=view)):
+            return [event async for event in handler.stream(_make_context())]
+
+    @staticmethod
+    def _command_payloads(out):
+        payloads = []
+        for event in out:
+            if not (isinstance(event, TaskStatusUpdateEvent) and event.status.HasField("message")):
+                continue
+            for part in event.status.message.parts:
+                if not part.HasField("data"):
+                    continue
+                data = MessageToDict(part.data)
+                if "command" in data:
+                    payloads.append(data)
+        return payloads
+
+    @pytest.mark.anyio
+    async def test_full_view_streams_command_output(self):
+        assert self._command_payloads(await self._run(EVOLUTION_VIEW_FULL))[0]["output"] == "TOKEN=abc"
+
+    @pytest.mark.anyio
+    async def test_activity_view_keeps_the_command_and_drops_its_output(self):
+        payload = self._command_payloads(await self._run(EVOLUTION_VIEW_ACTIVITY))[0]
+
+        assert payload["command"] == "cat .env"
+        assert payload["exitCode"] == 0
+        assert "output" not in payload
+
+    @pytest.mark.anyio
+    async def test_milestones_view_drops_every_ephemeral_event(self):
+        out = await self._run(EVOLUTION_VIEW_MILESTONES)
+
+        assert self._command_payloads(out) == []
+        texts = [
+            e.status.message.parts[0].text
+            for e in out
+            if isinstance(e, TaskStatusUpdateEvent) and e.status.HasField("message")
+        ]
+        # Phase narration and the intermediate message are gone; the run's one
+        # durable message and the terminal summary remain.
+        assert "working on it" not in texts
+        assert "Added retries" in texts
+        assert not any(t in texts for t in evolution_events._PHASE_TEXT.values())
+
+    @pytest.mark.anyio
+    async def test_milestones_view_still_delivers_artifacts_and_terminal_state(self):
+        """A reduced view bounds the chronicle, not the result: whoever asked
+        for `milestones` still needs to know what the run produced."""
+        out = await self._run(EVOLUTION_VIEW_MILESTONES)
+
+        artifacts = [e for e in out if isinstance(e, TaskArtifactUpdateEvent)]
+        assert [a.artifact.name for a in artifacts] == ["evolution-spec", "evolution-result"]
+        assert out[-1].status.state == TaskState.TASK_STATE_COMPLETED
+
+    @pytest.mark.anyio
+    async def test_milestones_view_delivers_exactly_the_durable_events(self):
+        """The invariant that justifies defining the view by the mark: nothing
+        the caller receives is an event the task manager would have skipped."""
+        out = await self._run(EVOLUTION_VIEW_MILESTONES)
+
+        assert not any(is_ephemeral_status_event(e) for e in out)
+
+
 class TestResume:
     @pytest.mark.anyio
     async def test_resume_re_drives_the_evolution(self):
@@ -464,7 +578,7 @@ class TestResume:
             for e in out
             if isinstance(e, TaskStatusUpdateEvent) and e.status.HasField("message")
         ]
-        assert any("resuming evolution" in t for t in texts)
+        assert any("Picking up where the previous run left off" in t for t in texts)
         assert out[-1].status.state == TaskState.TASK_STATE_COMPLETED
 
 

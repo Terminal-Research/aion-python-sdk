@@ -4,11 +4,11 @@ import asyncio
 import signal
 from typing import Optional
 
-import sys
 from aion.core.config import AionConfig
 from aion.server.utils.processes import ProcessManager
 
 from aion.cli.services import (
+    EnvironmentContext,
     ServeAgentStartupService,
     ServeEnvironmentPreparerService,
     ServeMonitoringService,
@@ -35,26 +35,58 @@ class ServeHandler:
         self.process_manager: Optional[ProcessManager] = None
         self.port_manager: Optional[AionPortManager] = None
         self.config: Optional[AionConfig] = None
+        self.env_context: Optional[EnvironmentContext] = None
         self.successful_agents: list[str] = []
         self.failed_agents: list[str] = []
         self.proxy_started: bool = False
-        self._setup_signal_handlers()
+        self._shutdown_requested = asyncio.Event()
+        self._background_tasks: set[asyncio.Task] = set()
 
-    def _setup_signal_handlers(self):
-        """Setup signal handlers for graceful shutdown"""
-        signal.signal(signal.SIGINT, self._signal_handler)
-        signal.signal(signal.SIGTERM, self._signal_handler)
+    def _setup_signal_handlers(self) -> None:
+        """Route SIGINT/SIGTERM into the running loop as a shutdown request.
 
-    def _signal_handler(self, signum, frame):
-        """Handle shutdown signals gracefully"""
+        Signal handlers run between bytecodes on the main thread, so doing the
+        shutdown *in* one blocks the event loop for as long as the child
+        processes take to die (up to 30s), and racing it against the normal
+        ``finally`` path would shut everything down twice. Instead the handler
+        only sets an event, and ``run``'s own ``finally`` performs the one
+        graceful, awaited shutdown.
+
+        Falls back to plain ``signal.signal`` where the loop cannot install
+        handlers (Windows), which is no worse than the previous behaviour.
+        """
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            try:
+                loop.add_signal_handler(sig, self._request_shutdown, sig)
+            except (NotImplementedError, RuntimeError):
+                signal.signal(sig, lambda signum, _frame: self._request_shutdown(signum))
+
+    def _request_shutdown(self, signum) -> None:
+        """Record that a shutdown signal arrived; the loop does the rest."""
         logger.debug(
             f"Received signal {signum}, shutting down all agents and proxy..."
         )
-        if self.process_manager:
-            self.process_manager.shutdown_all(timeout=30)
-        if self.port_manager:
-            self.port_manager.release_all()
-        sys.exit(0)
+        self._shutdown_requested.set()
+
+    def _track_background_task(self, task: asyncio.Task, description: str) -> None:
+        """Hold a reference to ``task`` and surface whatever it raises.
+
+        A bare ``asyncio.create_task`` result is only weakly referenced by the
+        loop: without a strong reference the task can be garbage-collected
+        mid-flight, and an exception inside it is never observed by anyone.
+        """
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
+
+        def _report(finished: asyncio.Task) -> None:
+            if finished.cancelled():
+                return
+            error = finished.exception()
+            if error is not None:
+                logger.warning(f"{description} failed: {error}")
+
+        task.add_done_callback(_report)
 
     async def run(
             self,
@@ -81,6 +113,8 @@ class ServeHandler:
             startup_timeout: Timeout in seconds for startup confirmation (0 to skip)
         """
         try:
+            self._setup_signal_handlers()
+
             # Startup phase
             successful_agents, failed_agents, proxy_started = await self._startup(
                 config=config,
@@ -96,8 +130,20 @@ class ServeHandler:
             if not successful_agents:
                 return
 
-            # Broadcast config to aion api
-            asyncio.create_task(AionDeploymentRegisterVersionService().execute(successful_agents))
+            # Broadcast config to aion api. Preflight already established
+            # whether the platform will talk to us, so skip the round trip
+            # instead of failing it again with the same missing token.
+            if self.env_context and self.env_context.auth_available:
+                self._track_background_task(
+                    asyncio.create_task(
+                        AionDeploymentRegisterVersionService().execute(successful_agents)
+                    ),
+                    "deployment version registration",
+                )
+            else:
+                logger.debug(
+                    "Skipping deployment version registration: platform auth unavailable"
+                )
 
             # Monitor processes (blocking call until shutdown)
             await self._monitor()
@@ -135,8 +181,11 @@ class ServeHandler:
         self.config = config
 
         # Prepare environment BEFORE starting agents
-        env_context = await ServeEnvironmentPreparerService().execute()
-        logger.info(f"Environment prepared. VERSION_ID: {env_context.version_id}")
+        self.env_context = env_context = await ServeEnvironmentPreparerService().execute()
+        logger.info(
+            f"Environment prepared. VERSION_ID: {env_context.version_id}, "
+            f"platform auth: {'available' if env_context.auth_available else 'unavailable'}"
+        )
 
         # Initialize port reservation manager
         self.port_manager = AionPortManager()
@@ -234,18 +283,40 @@ class ServeHandler:
         This is a blocking call that runs until all agents stop or shutdown is requested.
         Uses internal state from startup() call.
 
+        Returns as soon as either the monitoring service finishes on its own or
+        a shutdown signal arrives (see :meth:`_setup_signal_handlers`). The
+        actual teardown is left to the caller's ``finally``, so it happens once
+        and on the event loop rather than inside a signal handler.
+
         Raises:
             RuntimeError: If called before startup()
         """
         if not self.process_manager or not self.config:
             raise RuntimeError("_monitor() called before _startup()")
 
-        await ServeMonitoringService().execute(
-            successful_agents=self.successful_agents,
-            proxy_started=self.proxy_started,
-            config=self.config,
-            process_manager=self.process_manager,
+        monitoring = asyncio.ensure_future(
+            ServeMonitoringService().execute(
+                successful_agents=self.successful_agents,
+                proxy_started=self.proxy_started,
+                config=self.config,
+                process_manager=self.process_manager,
+            )
         )
+        signalled = asyncio.ensure_future(self._shutdown_requested.wait())
+        try:
+            await asyncio.wait(
+                {monitoring, signalled}, return_when=asyncio.FIRST_COMPLETED
+            )
+        finally:
+            for task in (monitoring, signalled):
+                if not task.done():
+                    task.cancel()
+            # Surface an error the monitor raised; a cancelled task is expected.
+            for task in (monitoring, signalled):
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
 
     async def shutdown(self, timeout: int = 30) -> bool:
         """

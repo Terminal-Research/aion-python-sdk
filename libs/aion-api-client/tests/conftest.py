@@ -16,6 +16,21 @@ def anyio_backend():
 
 
 @pytest.fixture
+def configured_auth(monkeypatch):
+    """Make ``api_settings`` look like a workspace with usable credentials.
+
+    ``AionRefreshingJWTManager`` refuses to authenticate when the platform
+    credentials are absent, so tests that stub the HTTP client still need the
+    settings to say authentication is worth attempting.
+    """
+    from aion.core.settings import api_settings
+
+    monkeypatch.setattr(api_settings, "client_id", "test-client-id")
+    monkeypatch.setattr(api_settings, "client_secret", "test-client-secret")
+    return api_settings
+
+
+@pytest.fixture
 def valid_jwt_token():
     """Create a valid JWT token for testing."""
     exp = datetime.datetime.now(tz=datetime.timezone.utc) + datetime.timedelta(

@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 from a2a.types import Message, Part, Role
+from pydantic import ValidationError
 
 from aion.core.a2a.extensions.behaviour_evolution import (
     EvolutionDirectiveEventPayload,
@@ -129,3 +130,34 @@ class TestParseDirective:
         parsed = parse_directive(_request_ctx(), _runtime_ctx(_event(payload=_payload())))
 
         assert parsed.stage == "auto"
+
+    def test_view_is_taken_verbatim_off_the_wire(self):
+        payload = EvolutionDirectiveEventPayload(
+            target=TargetContext(repo_url=REPO_URL, base_ref="HEAD", target_version_id="v-1"),
+            kind="feature",
+            mode="advisory",
+            view="full",
+        )
+
+        parsed = parse_directive(_request_ctx(), _runtime_ctx(_event(payload=payload)))
+
+        assert parsed.view == "full"
+
+    def test_default_payload_view_is_activity(self):
+        """A caller that never mentions `view` gets the chronicle without
+        command output — the target repo's content is opt-in, not default."""
+        parsed = parse_directive(_request_ctx(), _runtime_ctx(_event(payload=_payload())))
+
+        assert parsed.view == "activity"
+
+    def test_unknown_view_is_rejected_by_the_payload_schema(self):
+        """The vocabulary lives in the published extension schema, so a typo is
+        a validation error on the directive rather than a silently ignored
+        value that widens or narrows the stream behind the caller's back."""
+        with pytest.raises(ValidationError):
+            EvolutionDirectiveEventPayload(
+                target=TargetContext(repo_url=REPO_URL, base_ref="HEAD", target_version_id="v-1"),
+                kind="feature",
+                mode="advisory",
+                view="milestone",
+            )
