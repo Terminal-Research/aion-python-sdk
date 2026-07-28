@@ -33,6 +33,14 @@ def reserve_port(port: int = 0) -> Tuple[int, socket.socket]:
     before your server starts. The returned socket must be closed by the caller
     after the server has bound to the port.
 
+    The socket listens, and the reservation depends on it. A bound socket that
+    never listens does not hold the address on Linux: SO_REUSEADDR lets a second
+    socket bind the same address as long as neither side is listening, so a
+    competing process could bind *and* listen on a port this function had
+    already handed out. (BSD/macOS refuses that second bind, which is why the
+    gap is invisible there.) Listening closes it against every variant --
+    wildcard or specific address, with or without SO_REUSEADDR/SO_REUSEPORT.
+
     Args:
         port: Port to reserve (0 = let OS choose)
 
@@ -42,6 +50,10 @@ def reserve_port(port: int = 0) -> Tuple[int, socket.socket]:
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.bind((HOST, port))
+    # Full backlog rather than a token one: this socket is handed to the server
+    # process as-is (see `serialize_socket`), so between the handover and the
+    # server's own `listen` the queue here is what holds arriving connections.
+    sock.listen(socket.SOMAXCONN)
     actual_port = sock.getsockname()[1]
     return actual_port, sock
 
@@ -176,18 +188,13 @@ def find_free_port_reserved(
         if port_filter is not None and not port_filter(port_num):
             continue
 
-        # Try to reserve the port
+        # Try to reserve the port. Delegated rather than inlined so the
+        # reservation is made one way: an inline bind here would silently be a
+        # weaker reservation than `reserve_port`'s (see its docstring).
         try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            sock.bind((HOST, port_num))
-            return port_num, sock
+            return reserve_port(port_num)
         except (OSError, socket.error):
             # Port is not available, try next one
-            try:
-                sock.close()
-            except:
-                pass
             continue
 
     return None

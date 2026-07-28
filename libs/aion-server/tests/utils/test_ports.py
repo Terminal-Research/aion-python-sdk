@@ -22,10 +22,18 @@ from aion.server.utils.ports.reservation import PortReservationManager
 
 
 def _bind_port(port: int = 0) -> tuple[int, socket.socket]:
-    """Bind a socket on a free port and return (port, socket)."""
+    """Occupy a port the way a real server does, and return (port, socket).
+
+    The `listen` is what makes the port occupied, not the `bind`: on Linux two
+    SO_REUSEADDR sockets may hold the same address as long as neither is
+    listening, so a bound-but-idle socket leaves `is_port_available` answering
+    True. (BSD/macOS refuses the second bind outright, which is why a test
+    written without the `listen` passes there and fails here.)
+    """
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.bind(("0.0.0.0", port))
+    sock.listen(1)
     return sock.getsockname()[1], sock
 
 
