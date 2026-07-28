@@ -16,11 +16,16 @@ class TestAppSettings:
         assert app_settings.log_level in ["DEBUG", "INFO", "WARNING", "ERROR"]
 
     def test_default_log_level(self):
-        """Test that log level from .env file or defaults to INFO"""
-        # The .env file in the project has LOG_LEVEL=DEBUG, which takes precedence
-        # when a new AppSettings instance is created
-        settings = AppSettings()
-        assert settings.log_level == "DEBUG"
+        """Test that log level defaults to INFO when nothing sets it.
+
+        The default is only observable with LOG_LEVEL cleared: the field reads
+        it from the environment, and the settings loader also picks up a
+        project .env, so an ambient value would be what gets asserted instead.
+        """
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop('LOG_LEVEL', None)
+            settings = AppSettings(_env_file=None)
+        assert settings.log_level == "INFO"
 
     def test_valid_log_levels(self):
         """Test that all valid log levels are accepted"""
