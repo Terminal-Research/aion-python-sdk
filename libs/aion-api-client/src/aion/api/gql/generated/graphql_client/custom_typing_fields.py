@@ -51,6 +51,12 @@ class AgentBehaviorGraphQLField(GraphQLField):
         return self
 
 
+class CapabilityGraphQLField(GraphQLField):
+    def alias(self, alias: str) -> "CapabilityGraphQLField":
+        self._alias = alias
+        return self
+
+
 class ChatCompletionStreamChoiceGraphQLField(GraphQLField):
     def alias(self, alias: str) -> "ChatCompletionStreamChoiceGraphQLField":
         self._alias = alias

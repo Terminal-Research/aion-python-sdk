@@ -1,0 +1,179 @@
+{
+  "provider": "slack",
+  "a2aContextId": "ctx-slack-thread-001",
+  "invocations": [
+    {
+      "expectedTask": {
+        "id": "task-slack-001",
+        "contextId": "ctx-slack-thread-001",
+        "state": "input-required",
+        "continuesTaskId": null
+      },
+      "normalized": {
+        "userId": "U0USER123",
+        "contextId": "1715182600.001900",
+        "messageId": "1715182600.001900",
+        "trajectory": "conversation",
+        "parentContextId": "C0CHANNEL1"
+      },
+      "source": {
+        "provider": "slack",
+        "event": {
+          "type": "event_callback",
+          "team_id": "T0WORKSPACE1",
+          "api_app_id": "A0APP123",
+          "event": {
+            "type": "app_mention",
+            "user": "U0USER123",
+            "channel": "C0CHANNEL1",
+            "text": "<@U0AIONBOT> prepare a summary",
+            "ts": "1715182600.001900",
+            "thread_ts": "1715182600.001900",
+            "event_ts": "1715182600.001900"
+          },
+          "authorizations": [
+            {
+              "team_id": "T0WORKSPACE1",
+              "user_id": "U0AIONBOT",
+              "is_bot": true,
+              "is_enterprise_install": false
+            }
+          ],
+          "event_id": "Ev0EVENT001",
+          "event_time": 1715182600,
+          "is_ext_shared_channel": false,
+          "context_team_id": "T0WORKSPACE1",
+          "context_enterprise_id": null
+        }
+      }
+    },
+    {
+      "expectedTask": {
+        "id": "task-slack-002",
+        "contextId": "ctx-slack-thread-001",
+        "state": "completed",
+        "continuesTaskId": null
+      },
+      "normalized": {
+        "userId": "U0USER456",
+        "contextId": "1715182600.001900",
+        "messageId": "1715182634.002500",
+        "trajectory": "reply",
+        "parentContextId": "C0CHANNEL1",
+        "replyToMessageId": "1715182600.001900"
+      },
+      "source": {
+        "provider": "slack",
+        "event": {
+          "type": "event_callback",
+          "team_id": "T0WORKSPACE1",
+          "api_app_id": "A0APP123",
+          "event": {
+            "type": "message",
+            "user": "U0USER456",
+            "channel": "C0CHANNEL1",
+            "channel_type": "channel",
+            "text": "Include the latest deployment status",
+            "ts": "1715182634.002500",
+            "thread_ts": "1715182600.001900",
+            "event_ts": "1715182634.002500"
+          },
+          "authorizations": [
+            {
+              "team_id": "T0WORKSPACE1",
+              "user_id": "U0AIONBOT",
+              "is_bot": true,
+              "is_enterprise_install": false
+            }
+          ],
+          "event_id": "Ev0EVENT002",
+          "event_time": 1715182634,
+          "is_ext_shared_channel": false,
+          "context_team_id": "T0WORKSPACE1",
+          "context_enterprise_id": null
+        }
+      }
+    },
+    {
+      "expectedTask": {
+        "id": "task-slack-003",
+        "contextId": "ctx-slack-thread-001",
+        "state": "completed",
+        "continuesTaskId": null
+      },
+      "normalized": {
+        "userId": "U0USER123",
+        "contextId": "1715182600.001900",
+        "messageId": "1715182700.003100",
+        "trajectory": "reply",
+        "parentContextId": "C0CHANNEL1",
+        "replyToMessageId": "1715182600.001900"
+      },
+      "source": {
+        "provider": "slack",
+        "event": {
+          "type": "event_callback",
+          "team_id": "T0WORKSPACE1",
+          "api_app_id": "A0APP123",
+          "event": {
+            "type": "message",
+            "user": "U0USER123",
+            "channel": "C0CHANNEL1",
+            "channel_type": "channel",
+            "text": "That is all the input",
+            "ts": "1715182700.003100",
+            "thread_ts": "1715182600.001900",
+            "event_ts": "1715182700.003100"
+          },
+          "authorizations": [
+            {
+              "team_id": "T0WORKSPACE1",
+              "user_id": "U0AIONBOT",
+              "is_bot": true,
+              "is_enterprise_install": false
+            }
+          ],
+          "event_id": "Ev0EVENT003",
+          "event_time": 1715182700,
+          "is_ext_shared_channel": false,
+          "context_team_id": "T0WORKSPACE1",
+          "context_enterprise_id": null
+        }
+      }
+    }
+  ],
+  "reaction": {
+    "normalized": {
+      "userId": "U0USER456",
+      "contextId": "1715182600.001900",
+      "messageId": "1715182634.002500",
+      "reactionKey": "thumbsup",
+      "action": "added",
+      "displayValue": ":thumbsup:",
+      "isCustom": false,
+      "parentContextId": "C0CHANNEL1"
+    },
+    "source": {
+      "provider": "slack",
+      "event": {
+        "type": "event_callback",
+        "team_id": "T0WORKSPACE1",
+        "api_app_id": "A0APP123",
+        "event": {
+          "type": "reaction_added",
+          "user": "U0USER456",
+          "reaction": "thumbsup",
+          "item": {
+            "type": "message",
+            "channel": "C0CHANNEL1",
+            "ts": "1715182634.002500"
+          },
+          "event_ts": "1715182750.004000"
+        },
+        "event_id": "Ev0EVENT004",
+        "event_time": 1715182750,
+        "context_team_id": "T0WORKSPACE1"
+      }
+    }
+  }
+}

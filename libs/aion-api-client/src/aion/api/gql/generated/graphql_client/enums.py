@@ -9,3 +9,9 @@ class AgentBehaviorKind(str, Enum):
     AionDeployment = "AionDeployment"
     Distribution = "Distribution"
     System = "System"
+
+
+class CapabilityKind(str, Enum):
+    A2AEndpoint = "A2AEndpoint"
+    EventEmitter = "EventEmitter"
+    McpServer = "McpServer"

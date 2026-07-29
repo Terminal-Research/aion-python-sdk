@@ -74,6 +74,20 @@ primary MCP server for the incoming distribution.
 Use `AionLangGraphMcpResolver` when you want to reuse the same MCP resolution
 settings across invocations.
 
+### Slack distributions
+
+The tested [Slack distribution example](examples/slack_distribution.py) shows
+three compatible authoring levels: ordinary LangGraph messages, an explicit
+`A2AInbox`/`A2AOutbox` hybrid, and SDK-aware event handlers. It also maps the
+normalized Messaging context and parent context to Slack history calls loaded
+from the incoming distribution's primary MCP capability. No distribution ID,
+Slack token, app provisioning logic, or direct Web API client belongs in agent
+code.
+
+Use `Thread.reply`, `Thread.post`, and the streaming helpers for outbound
+messages. Use distribution-bound MCP tools for provider history;
+`Thread.history()` remains unimplemented and should not be used for Slack.
+
 ---
 
 ## Event Routing

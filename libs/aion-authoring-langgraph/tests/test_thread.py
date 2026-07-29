@@ -59,8 +59,8 @@ class TestThreadFromContext:
         thread = Thread.from_context(ctx)
         assert thread.context_id == "C-from-task"
 
-    def test_reply_trajectory_sets_default_target_to_parent(self):
-        # reply trajectory routes responses to the parent context, not the current one
+    def test_reply_trajectory_keeps_default_target_in_immediate_context(self):
+        # parent context is navigation metadata, not the reply destination
         payload = Mock()
         payload.context_id = "C-current"
         payload.trajectory = "reply"
@@ -68,7 +68,7 @@ class TestThreadFromContext:
         ctx = make_mock_context(event=make_mock_event(payload=payload))
 
         thread = Thread.from_context(ctx)
-        assert thread.default_reply_target == "C-parent"
+        assert thread.default_reply_target == "C-current"
 
     def test_conversation_trajectory_sets_default_target_to_context_id(self):
         # non-reply trajectory routes responses to the current context

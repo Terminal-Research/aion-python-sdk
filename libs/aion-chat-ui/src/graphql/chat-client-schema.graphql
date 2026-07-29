@@ -187,7 +187,10 @@ their user.
   systemKey: String
   "Identity name; personal identities should match the owning user's name"
   name: String
-  "Agent-to-Agent protocol endpoint URL"
+"""
+Agent-card discovery URL used for Agent-to-Agent discovery. Detail
+queries populate this from the active A2A distribution when available.
+"""
   a2aUrl: String
   "Website URL for human consumption"
   website: String
@@ -231,23 +234,9 @@ type AgentIdentityDetail {
   "Agent environments currently using this identity as their daemon identity."
   daemonUsages: [AgentIdentityDaemonUsage!]!
   "Distributions currently using this identity as their principal identity."
-  distributionUsages: [AgentIdentityDistributionUsage!]!
+  distributionUsages: [IdentityDistributionUsage!]!
   "Active direct role keys currently assigned to this agent identity."
   roleKeys: [String!]!
-}
-
-"One principal-identity usage on a distribution."
-type AgentIdentityDistributionUsage {
-  "Owning project identifier"
-  projectId: ID!
-  "Owning project display name"
-  projectName: String!
-  "Distribution identifier using the principal identity"
-  distributionId: ID!
-  "Network type of the distribution using the principal identity"
-  networkType: NetworkTypeGQL!
-  "Linked service identity profile, when one exists"
-  serviceIdentity: IdentityProfile
 }
 
 "Health-check result for a check that failed to complete."
@@ -262,6 +251,24 @@ type FailedHealthCheckResult {
 type HealthyHealthCheckResult {
   "Normalized health-check status."
   status: HealthCheckStatus!
+}
+
+"One active distribution reference for an identity."
+type IdentityDistributionUsage {
+  "Owning project identifier"
+  projectId: ID!
+  "Owning project display name"
+  projectName: String!
+  "Distribution identifier using the identity"
+  distributionId: ID!
+  "Network type of the distribution"
+  networkType: NetworkTypeGQL!
+  "Agent environment identifier backing the distribution"
+  agentEnvironmentId: ID
+  "Agent environment display name"
+  agentEnvironmentName: String
+  "Linked service identity profile, when one exists"
+  serviceIdentity: IdentityProfile
 }
 
 "Normalized identity profile for display and auditing. When fields typed as IdentityProfile are null, the referenced profile is no longer available in the system."
@@ -300,12 +307,16 @@ type LoginResponse {
   email: String
 }
 
-"Links a user to an organization"
-type Membership {
-  "Unique identifier for the membership"
-  id: ID!
+"Active user membership in an organization."
+type OrganizationMember {
+  "Unique identifier of the membership row"
+  membershipId: ID!
+  "Unique identifier of the organization member"
+  userId: ID!
   "Organization associated with the membership"
   organization: Organization!
+  "Direct organization system role keys for this member"
+  roleKeys: [String!]!
 }
 
 "Represents a tenant workspace within Aion"
@@ -321,6 +332,8 @@ type Organization {
 type Queries {
   "Retrieves a user by ID. When no userId is supplied, returns the currently authenticated user."
   user(userId: ID): User @auth(subjectType: "User")
+  "Loads the authenticated user's effective action-level permissions for one organization."
+  userPermissions("Organization identifier used for permission expansion" organizationId: ID!): [UserPermissionGQL!]! @auth(subjectType: "User")
   "Checks runtime health for the agent actor bound to an agent environment."
   healthCheckAgent("Agent environment identifier" agentEnvironmentId: ID!): HealthCheckResult @auth(subjectType: "User")
   "Retrieves agent identity details for the authenticated user. GraphQL field selection determines whether usage rows and role keys are loaded."
@@ -357,9 +370,7 @@ type User {
   "Personal organization associated with the user"
   homeOrganization: Organization
   "Organizations the user is a member of"
-  memberships: [Membership!]
-  "Effective action-level permissions for the user in one organization"
-  permissions("Organization identifier. When omitted, the user's home organization is used." organizationId: ID): [UserPermissionGQL!]
+  memberships: [OrganizationMember!]
 }
 
 "Association between a user and an external network"
