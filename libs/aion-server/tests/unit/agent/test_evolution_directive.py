@@ -27,7 +27,7 @@ REPO_URL = "https://github.com/acme/target-agent.git"
 
 def _payload() -> EvolutionDirectiveEventPayload:
     return EvolutionDirectiveEventPayload(
-        target=TargetContext(repo_url=REPO_URL, base_ref="HEAD", target_version_id="v-1"),
+        target=TargetContext(repo_url=REPO_URL, base_ref="HEAD"),
         kind="feature",
         mode="advisory",
     )
@@ -116,24 +116,24 @@ class TestParseDirective:
 
     def test_stage_is_taken_verbatim_off_the_wire(self):
         payload = EvolutionDirectiveEventPayload(
-            target=TargetContext(repo_url=REPO_URL, base_ref="HEAD", target_version_id="v-1"),
+            target=TargetContext(repo_url=REPO_URL, base_ref="HEAD"),
             kind="feature",
             mode="advisory",
-            stage="plan",
+            scope="plan",
         )
 
         parsed = parse_directive(_request_ctx(), _runtime_ctx(_event(payload=payload)))
 
-        assert parsed.stage == "plan"
+        assert parsed.scope == "plan"
 
     def test_default_payload_stage_is_auto(self):
         parsed = parse_directive(_request_ctx(), _runtime_ctx(_event(payload=_payload())))
 
-        assert parsed.stage == "auto"
+        assert parsed.scope == "auto"
 
     def test_view_is_taken_verbatim_off_the_wire(self):
         payload = EvolutionDirectiveEventPayload(
-            target=TargetContext(repo_url=REPO_URL, base_ref="HEAD", target_version_id="v-1"),
+            target=TargetContext(repo_url=REPO_URL, base_ref="HEAD"),
             kind="feature",
             mode="advisory",
             view="full",
@@ -156,7 +156,7 @@ class TestParseDirective:
         value that widens or narrows the stream behind the caller's back."""
         with pytest.raises(ValidationError):
             EvolutionDirectiveEventPayload(
-                target=TargetContext(repo_url=REPO_URL, base_ref="HEAD", target_version_id="v-1"),
+                target=TargetContext(repo_url=REPO_URL, base_ref="HEAD"),
                 kind="feature",
                 mode="advisory",
                 view="milestone",

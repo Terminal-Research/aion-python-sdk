@@ -10,9 +10,9 @@ Framework adapters never participate in this decision.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Optional, Protocol
 
-from a2a.types import TaskArtifactUpdateEvent, TaskStatusUpdateEvent
+from a2a.types import Message, TaskArtifactUpdateEvent, TaskStatusUpdateEvent
 
 from .availability import ExtensionAvailability
 from .evolution import EvolutionTaskHandler
@@ -73,7 +73,7 @@ class ExtensionTaskHandler(Protocol):
         """Resume an interrupted task previously routed to this extension."""
         ...
 
-    async def cancel(self, context: "RequestContext") -> None:
+    async def cancel(self, context: "RequestContext") -> Optional["Message"]:
         """Cancel a task previously routed to this extension.
 
         Called in place of the agent's framework-adapter cancel hook when the
@@ -81,6 +81,13 @@ class ExtensionTaskHandler(Protocol):
         UnsupportedOperationError (see a2a.utils.errors) if this handler does
         not support cancellation - the executor still emits the terminal A2A
         CANCELED state either way.
+
+        May return a message for the executor to attach to that terminal
+        CANCELED. It is the only way a handler can report anything about a
+        cancelled task: the event consumer shuts down on the first terminal
+        state, so an event published after the CANCELED is dropped rather than
+        delivered late. A handler with nothing to add returns None, leaving the
+        CANCELED bare.
         """
         ...
 

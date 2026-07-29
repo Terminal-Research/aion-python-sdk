@@ -96,6 +96,8 @@ class ProcessManager:
             parent_conn = None
             child_conn = None
 
+            process_kwargs = dict(func_kwargs)
+
             # Create pipe if requested
             if use_pipe:
                 parent_conn, child_conn = multiprocessing.Pipe()

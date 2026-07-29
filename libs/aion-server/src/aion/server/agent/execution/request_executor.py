@@ -3,7 +3,7 @@ import logging
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
-from a2a.types import Task
+from a2a.types import Message, Task
 from a2a.helpers import new_task_from_user_message
 from a2a.utils.errors import (
     InternalError,
@@ -202,13 +202,22 @@ class AionAgentRequestExecutor(AgentExecutor):
             )
 
         cancel = await self._resolve(task, "cancel")
+        cancel_message = None
         try:
-            await cancel(context=context)
+            cancel_message = await cancel(context=context)
         except UnsupportedOperationError:
             logger.debug("Handler does not support cancellation, proceeding with A2A cancel")
 
+        # An extension handler may hand back a closing message to carry on the
+        # terminal event - the only channel it has, since the event consumer
+        # stops accepting events the moment a terminal state lands. Framework
+        # adapters return None, so this is inert for them; anything that is not
+        # a Message is ignored rather than trusted into the A2A event.
+        if not isinstance(cancel_message, Message):
+            cancel_message = None
+
         task_updater = TaskUpdater(event_queue, task.id, task.context_id)
-        await task_updater.cancel()
+        await task_updater.cancel(message=cancel_message)
 
     @staticmethod
     async def _setup_runtime_context(context: RequestContext) -> None:

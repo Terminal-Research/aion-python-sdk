@@ -27,7 +27,7 @@ def _parsed(kind: str = "feature", mode: str = "advisory") -> ParsedDirective:
         instruction="Append a friendly sentence to README.md.",
         context_id="ctx-456",
         payload=EvolutionDirectiveEventPayload(
-            target=TargetContext(repo_url=REPO_URL, base_ref="HEAD", target_version_id="v-1"),
+            target=TargetContext(repo_url=REPO_URL, base_ref="HEAD"),
             kind=kind,
             mode=mode,
         ),

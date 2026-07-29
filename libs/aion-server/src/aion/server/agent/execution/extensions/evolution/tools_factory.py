@@ -83,7 +83,7 @@ from aion.toolkits.behaviour_evolution import (
 )
 
 from .directive import ParsedDirective
-from .errors import ExtensionSetupError
+from .errors import ExtensionSetupError, UnsupportedDirectiveError
 
 if TYPE_CHECKING:
     from aion.core.a2a.extensions.daemon import DaemonExtensionPayload
@@ -129,22 +129,25 @@ def build_worker(
             context_id=parsed.context_id,
             kind=parsed.payload.kind,
             mode=parsed.payload.mode,
-            # stage arrives on the wire from the distributor.
-            stage=parsed.stage,
+            # scope arrives on the wire from the distributor.
+            scope=parsed.scope,
             target=TargetContext(
                 repo_url=target.repo_url,
                 base_ref=target.base_ref,
-                target_version_id=target.target_version_id,
             ),
         )
     except ValidationError as ex:
-        # aion-core's directive contract can advertise kind/mode/stage values
+        # aion-core's directive contract can advertise kind/mode/scope values
         # (e.g. mode="directive", kind="bugfix") ahead of the installed toolkit
         # version that actually implements them. Reconcile that capability gap
         # here with a message naming the field, the requested value, and what
         # this deployment's toolkit accepts — instead of leaking the raw
         # pydantic error. Auto-adapts when the toolkit widens its Literals.
-        raise ExtensionSetupError(_unsupported_directive_message(ex)) from ex
+        #
+        # UnsupportedDirectiveError (not the bare setup error) so this detail
+        # survives the narrowing every other setup failure gets: the caller is
+        # the only party who can route around a capability gap.
+        raise UnsupportedDirectiveError(_unsupported_directive_message(ex)) from ex
 
     config_kwargs = {}
     specs_root = os.environ.get("EVOLUTION_SPECS_ROOT") or _daemon_config_var(

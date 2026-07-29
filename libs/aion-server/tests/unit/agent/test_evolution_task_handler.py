@@ -45,7 +45,12 @@ from aion.core.runtime.context.registry import AionRuntimeContextRegistry
 from aion.server.a2a.utils import is_ephemeral_status_event
 from aion.server.agent.execution.extensions.evolution import EvolutionTaskHandler
 from aion.server.agent.execution.extensions.evolution import events as evolution_events
-from aion.server.agent.execution.extensions.evolution.errors import ExtensionSetupError
+from aion.server.agent.execution.extensions.evolution.errors import (
+    ExtensionSetupError,
+    UnsupportedDirectiveError,
+)
+from aion.server.agent.execution.extensions.evolution import handler as handler_module
+from aion.server.agent.execution.extensions.evolution.handler import _RunHandle
 
 
 @pytest.fixture
@@ -116,17 +121,16 @@ def _make_context(
 
 
 def _payload(
-    stage: str = "auto", view: str = EVOLUTION_VIEW_ACTIVITY
+    scope: str = "auto", view: str = EVOLUTION_VIEW_ACTIVITY
 ) -> EvolutionDirectiveEventPayload:
     return EvolutionDirectiveEventPayload(
         target=TargetContext(
             repo_url="https://github.com/acme/target-agent.git",
             base_ref="HEAD",
-            target_version_id="v-1",
         ),
         kind="feature",
         mode="advisory",
-        stage=stage,
+        scope=scope,
         view=view,
     )
 
@@ -134,7 +138,7 @@ def _payload(
 def _runtime_ctx(
     with_directive: bool = True,
     daemon=None,
-    stage: str = "auto",
+    scope: str = "auto",
     view: str = EVOLUTION_VIEW_ACTIVITY,
 ):
     if not with_directive:
@@ -142,7 +146,7 @@ def _runtime_ctx(
             extensions=AionRuntimeExtensions({}),
             get_daemon=lambda: daemon,
         )
-    payload = _payload(stage=stage, view=view)
+    payload = _payload(scope=scope, view=view)
     event = Event(
         kind=BEHAVIOUR_EVOLUTION_DIRECTIVE_EVENT_TYPE_V1,
         id="ev-1",
@@ -178,6 +182,11 @@ def _result(outcome: str = "succeeded", **overrides):
     }
     values.update(overrides)
     return SimpleNamespace(**values)
+
+
+def _progress(event) -> dict:
+    """The machine-readable progress struct on a status event."""
+    return MessageToDict(event.metadata)[evolution_events.PROGRESS_METADATA_KEY]
 
 
 def _default_events(result) -> list:
@@ -289,6 +298,51 @@ class TestAvailability:
         assert "behaviour-evolution toolkit" in result.reason
 
 
+class TestEventKindDriftAtBindTime:
+    """availability() is where the server and the installed toolkit are bound
+    together, and the only place both halves are certain to be present - so it
+    is where their event vocabularies get compared."""
+
+    @staticmethod
+    async def _availability(kinds, caplog):
+        handler = _handler(worker=FakeWorker(_result()))
+        config = SimpleNamespace(enabled_extensions=[EvolutionTaskHandler.uri])
+        with patch(
+            "aion.server.agent.execution.extensions.evolution.handler._toolkit_event_kinds",
+            return_value=kinds,
+        ), caplog.at_level("WARNING"):
+            # Awaited inside the with-block: availability() is a coroutine, so
+            # returning it unawaited would run the check after the patch and the
+            # log capture had already been torn down.
+            return await handler.availability(config)
+
+    @pytest.mark.anyio
+    async def test_drift_is_reported_but_the_extension_keeps_serving(self, caplog):
+        """Drift degrades progress; it does not break a run - the result and the
+        terminal status come off worker.result, not off the stream. Refusing to
+        serve would cost the caller more than the mismatch being reported."""
+        result = await self._availability({"PhaseStarted", "CheckpointReached"}, caplog)
+
+        assert result.available is True
+        assert "CheckpointReached" in caplog.text
+
+    @pytest.mark.anyio
+    async def test_agreement_is_silent(self, caplog):
+        result = await self._availability(set(evolution_events._KNOWN_EVENT_KINDS), caplog)
+
+        assert result.available is True
+        assert caplog.text == ""
+
+    @pytest.mark.anyio
+    async def test_unreadable_kinds_are_not_reported_as_drift(self, caplog):
+        """None means 'nothing to compare against' - a toolkit that no longer
+        exports the union must not read as though every kind had vanished."""
+        result = await self._availability(None, caplog)
+
+        assert result.available is True
+        assert caplog.text == ""
+
+
 class TestStream:
     @pytest.mark.anyio
     async def test_maps_typed_events_and_emits_result(self):
@@ -366,27 +420,30 @@ class TestStream:
             [event async for event in handler.stream(_make_context())]
 
         assert captured["daemon"] is daemon
-        assert captured["parsed"].payload.target.target_version_id == "v-1"
+        assert (
+            captured["parsed"].payload.target.repo_url
+            == "https://github.com/acme/target-agent.git"
+        )
         assert captured["parsed"].context_id == "ctx-456"
 
     @pytest.mark.anyio
     async def test_wire_stage_reaches_worker_factory_and_run_completes_without_gating(self):
-        """`stage` rides the wire straight through to the worker factory - the
+        """`scope` rides the wire straight through to the worker factory - the
         handler never pauses or gates on it; the run always terminates via
         result_events (with the spec/result artifacts), never INPUT_REQUIRED."""
         captured = {}
 
         def _capture(parsed, daemon):
-            captured["stage"] = parsed.stage
+            captured["scope"] = parsed.scope
             return FakeWorker(_result("succeeded"))
 
         handler = _handler(build_worker=_capture)
         ctx = _make_context()
 
-        with _patch_runtime(_runtime_ctx(stage="plan")):
+        with _patch_runtime(_runtime_ctx(scope="plan")):
             out = [event async for event in handler.stream(ctx)]
 
-        assert captured["stage"] == "plan"
+        assert captured["scope"] == "plan"
         assert out[-1].status.state == TaskState.TASK_STATE_COMPLETED
         artifacts = [e for e in out if isinstance(e, TaskArtifactUpdateEvent)]
         assert [a.artifact.name for a in artifacts] == ["evolution-spec", "evolution-result"]
@@ -403,19 +460,22 @@ class TestStream:
         captured = {}
 
         def _capture(parsed, daemon):
-            captured["stage"] = parsed.stage
+            captured["scope"] = parsed.scope
             return FakeWorker(_result("succeeded"))
 
         handler = _handler(build_worker=_capture)
         ctx = _make_context()
 
-        with _patch_runtime(_runtime_ctx(stage="implement")):
+        with _patch_runtime(_runtime_ctx(scope="implement")):
             [event async for event in handler.stream(ctx)]
 
-        assert captured["stage"] == "implement"
+        assert captured["scope"] == "implement"
 
     @pytest.mark.anyio
-    async def test_setup_error_fails_task(self):
+    async def test_setup_error_hides_deployment_detail_behind_a_code(self):
+        """A misconfigured deployment is the operator's problem, not the
+        caller's: they get a stable code, not the name of an env var."""
+
         def _raise(parsed, daemon):
             raise ExtensionSetupError("CODEX_BASE_URL is not set")
 
@@ -427,7 +487,26 @@ class TestStream:
 
         assert len(out) == 1
         assert out[0].status.state == TaskState.TASK_STATE_FAILED
-        assert "CODEX_BASE_URL" in out[0].status.message.parts[0].text
+        assert "CODEX_BASE_URL" not in out[0].status.message.parts[0].text
+        assert _progress(out[0])["errorCode"] == "misconfigured_deployment"
+
+    @pytest.mark.anyio
+    async def test_unsupported_directive_keeps_its_detail(self):
+        """The mirror case: only the caller can route around a directive this
+        deployment cannot serve, so the detail has to reach them."""
+
+        def _raise(parsed, daemon):
+            raise UnsupportedDirectiveError("mode='directive' (installed toolkit accepts: 'advisory')")
+
+        handler = _handler(build_worker=_raise)
+        ctx = _make_context()
+
+        with _patch_runtime(_runtime_ctx()):
+            out = [event async for event in handler.stream(ctx)]
+
+        text = out[0].status.message.parts[0].text
+        assert "mode='directive'" in text
+        assert _progress(out[0])["errorCode"] == "unsupported_directive"
 
     @pytest.mark.anyio
     async def test_worker_crash_fails_task(self):
@@ -438,7 +517,9 @@ class TestStream:
             out = [event async for event in handler.stream(ctx)]
 
         assert out[-1].status.state == TaskState.TASK_STATE_FAILED
-        assert "evolution run crashed" in out[-1].status.message.parts[0].text
+        # A wiring bug's text is a traceback fragment; the caller gets a code.
+        assert "boom" not in out[-1].status.message.parts[0].text
+        assert _progress(out[-1])["errorCode"] == "internal_error"
         assert handler._running == {}
 
     @pytest.mark.anyio
@@ -582,15 +663,68 @@ class TestResume:
         assert out[-1].status.state == TaskState.TASK_STATE_COMPLETED
 
 
+def _inflight(handler, result=None, *, finished=True) -> FakeWorker:
+    """Register a run as in flight on `handler`, as _drive would.
+
+    `finished` mirrors whether the run has already unwound: cancel() waits on
+    that rendezvous before it can report anything.
+    """
+    worker = FakeWorker(_result())
+    handle = _RunHandle(worker)
+    handle.result = result
+    if finished:
+        handle.finished.set()
+    handler._running["task-123"] = handle
+    return worker
+
+
 class TestCancel:
     @pytest.mark.anyio
     async def test_cancel_running_worker(self):
         handler = _handler(worker=FakeWorker(_result()))
-        worker = FakeWorker(_result())
-        handler._running["task-123"] = worker
+        worker = _inflight(handler, _result("cancelled"))
 
         await handler.cancel(_make_context())
 
+        assert worker.cancel_called is True
+
+    @pytest.mark.anyio
+    async def test_cancel_reports_rescued_work_on_the_terminal_message(self):
+        """A cancelled run's rescue outcome has nowhere else to go: events
+        published after the terminal CANCELED are dropped by the consumer, so
+        it rides the CANCELED itself."""
+        handler = _handler(worker=FakeWorker(_result()))
+        _inflight(
+            handler,
+            _result("cancelled", rescue_pushed=True, branch="evolution/ctx-456"),
+        )
+
+        message = await handler.cancel(_make_context())
+
+        assert isinstance(message, Message)
+        assert "evolution/ctx-456" in message.parts[0].text
+        payload = MessageToDict(message.parts[1].data)
+        assert payload["outcome"] == "cancelled"
+        assert payload["rescuePushed"] is True
+
+    @pytest.mark.anyio
+    async def test_cancel_says_nothing_when_the_run_already_finished(self):
+        """The run reached its own outcome inside the race window and _drive
+        already reported it; a second report here would contradict it."""
+        handler = _handler(worker=FakeWorker(_result()))
+        _inflight(handler, _result("succeeded"))
+
+        assert await handler.cancel(_make_context()) is None
+
+    @pytest.mark.anyio
+    async def test_cancel_gives_up_reporting_rather_than_hanging(self, monkeypatch):
+        """The wait for the unwind is bounded: a run that will not finish must
+        not hold the cancel request open. The CANCELED still goes out, bare."""
+        monkeypatch.setattr(handler_module, "_CANCEL_DRAIN_TIMEOUT_S", 0.01)
+        handler = _handler(worker=FakeWorker(_result()))
+        worker = _inflight(handler, _result("cancelled"), finished=False)
+
+        assert await handler.cancel(_make_context()) is None
         assert worker.cancel_called is True
 
     @pytest.mark.anyio

@@ -680,7 +680,6 @@ def _make_evolution_directive_message(
         "target": {
             "repoUrl": "https://github.com/acme/target-agent.git",
             "baseRef": "HEAD",
-            "targetVersionId": "v-42",
         },
         "kind": "feature",
         "mode": "advisory",
@@ -727,10 +726,10 @@ class TestBuilderEvolutionDirectivePipeline:
             assert event.kind == BEHAVIOUR_EVOLUTION_DIRECTIVE_EVENT_TYPE_V1
             assert isinstance(event.payload, EvolutionDirectiveEventPayload)
             assert event.payload.target.repo_url == "https://github.com/acme/target-agent.git"
-            assert event.payload.target.target_version_id == "v-42"
+            assert event.payload.target.base_ref == "HEAD"
             assert event.payload.kind == "feature"
             assert event.payload.mode == "advisory"
-            assert event.payload.stage == "auto"
+            assert event.payload.scope == "auto"
         finally:
             aion_a2a_extension_registry.reset_to_default()
 
@@ -741,7 +740,7 @@ class TestBuilderEvolutionDirectivePipeline:
             [BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1, DAEMON_EXTENSION_URI_V1]
         )
         try:
-            msg = _make_evolution_directive_message(payload_overrides={"stage": "plan"})
+            msg = _make_evolution_directive_message(payload_overrides={"scope": "plan"})
             metadata = {DAEMON_EXTENSION_URI_V1: _make_daemon_struct()}
             inbox = A2AInbox(message=msg, metadata=metadata)
             rc = _make_mock_rc(message=msg, metadata=metadata)
@@ -753,7 +752,7 @@ class TestBuilderEvolutionDirectivePipeline:
                 result = AionRuntimeContextBuilder.from_request_context(rc)
 
             event = result.extensions.get(BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1)
-            assert event.payload.stage == "plan"
+            assert event.payload.scope == "plan"
         finally:
             aion_a2a_extension_registry.reset_to_default()
 
@@ -776,12 +775,12 @@ class TestBuilderEvolutionDirectivePipeline:
                 result = AionRuntimeContextBuilder.from_request_context(rc)
 
             event = result.extensions.get(BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1)
-            assert event.payload.stage == "auto"
+            assert event.payload.scope == "auto"
         finally:
             aion_a2a_extension_registry.reset_to_default()
 
     def test_directive_rejects_invalid_stage(self):
-        """Schema-level contract: an out-of-Literal stage value fails pydantic
+        """Schema-level contract: an out-of-Literal scope value fails pydantic
         validation on the payload model itself."""
         from pydantic import ValidationError
 
@@ -792,16 +791,15 @@ class TestBuilderEvolutionDirectivePipeline:
                 "target": {
                     "repo_url": "https://github.com/acme/target-agent.git",
                     "base_ref": "HEAD",
-                    "target_version_id": "v-42",
                 },
                 "kind": "feature",
                 "mode": "advisory",
-                "stage": "review",
+                "scope": "review",
             })
 
     def test_malformed_directive_fails_closed_through_pipeline(self):
         """A directive part tagged with a known schema but carrying an invalid
-        value (stage='review') must fail the request with a real diagnostic:
+        value (scope='review') must fail the request with a real diagnostic:
         the MessagesCollector surfaces the payload validation error as
         ExtensionActivationError instead of swallowing it and letting the
         request read downstream as 'no event on the request at all'."""
@@ -811,7 +809,7 @@ class TestBuilderEvolutionDirectivePipeline:
             [BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1, DAEMON_EXTENSION_URI_V1]
         )
         try:
-            msg = _make_evolution_directive_message(payload_overrides={"stage": "review"})
+            msg = _make_evolution_directive_message(payload_overrides={"scope": "review"})
             metadata = {DAEMON_EXTENSION_URI_V1: _make_daemon_struct()}
             inbox = A2AInbox(message=msg, metadata=metadata)
             rc = _make_mock_rc(message=msg, metadata=metadata)
@@ -893,7 +891,7 @@ class TestMessagesCollectorMalformedPayload:
             "id": "ev-evo-mp",
         })
 
-    def _data_part(self, *, stage=None):
+    def _data_part(self, *, scope=None):
         from aion.core.constants.a2a import BEHAVIOUR_EVOLUTION_DIRECTIVE_EVENT_PAYLOAD_SCHEMA_V1
 
         part = Part()
@@ -904,13 +902,12 @@ class TestMessagesCollectorMalformedPayload:
             "target": {
                 "repoUrl": "https://github.com/acme/target-agent.git",
                 "baseRef": "HEAD",
-                "targetVersionId": "v-42",
             },
             "kind": "feature",
             "mode": "advisory",
         }
-        if stage is not None:
-            payload_dict["stage"] = stage
+        if scope is not None:
+            payload_dict["scope"] = scope
         s = Struct()
         ParseDict(payload_dict, s)
         part.data.struct_value.CopyFrom(s)
@@ -921,7 +918,7 @@ class TestMessagesCollectorMalformedPayload:
 
         msg = Message(message_id="m-mp-1", role=Role.ROLE_USER)
         self._envelope(msg)
-        msg.parts.append(self._data_part(stage="review"))  # invalid enum value
+        msg.parts.append(self._data_part(scope="review"))  # invalid enum value
         rc = _make_mock_rc(message=msg)
 
         with pytest.raises(ExtensionActivationError) as exc_info:
@@ -935,13 +932,13 @@ class TestMessagesCollectorMalformedPayload:
 
         msg = Message(message_id="m-mp-2", role=Role.ROLE_USER)
         self._envelope(msg)
-        msg.parts.append(self._data_part(stage="review"))  # invalid, first
-        msg.parts.append(self._data_part(stage="plan"))  # valid, second
+        msg.parts.append(self._data_part(scope="review"))  # invalid, first
+        msg.parts.append(self._data_part(scope="plan"))  # valid, second
         rc = _make_mock_rc(message=msg)
 
         event = self._collector().collect(BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1, rc)
         assert event is not None
-        assert event.payload.stage == "plan"
+        assert event.payload.scope == "plan"
 
     def test_absent_payload_returns_none(self):
         """No part carries a known schema: genuinely no event for us — still

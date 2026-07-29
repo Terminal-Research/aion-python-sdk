@@ -11,8 +11,8 @@ boundary.
 
 One task = one evolution step: every routed request, new or resumed, carries
 its own directive event, and the durable state (branch + spec) lives in the
-target repo, not in this process or in Task.metadata. The phase the caller
-wants (`auto`/`plan`/`implement`) rides on the wire as `stage`; there is no
+target repo, not in this process or in Task.metadata. The slice the caller
+wants (`auto`/`plan`/`implement`) rides on the wire as `scope`; there is no
 gating, pausing, or stash inside this extension — phasing a multi-run
 evolution into plan-then-implement is the distributor's policy, expressed as
 two separate tasks in the same context.
@@ -59,8 +59,10 @@ class ParsedDirective:
     branch (`evolution/{context_id}`) and the spec directory to it, which is
     what makes later runs of the same context resumable.
 
-    `stage` is the phase the caller wants this run to cover
-    (`auto`/`plan`/`implement`), taken verbatim off the wire.
+    `scope` is the slice of the evolution the caller wants this run to cover
+    (`auto`/`plan`/`implement`), taken verbatim off the wire. Not to be
+    confused with the run's stage, which the extension reports as the run
+    progresses: scope is fixed by the directive, stage moves.
 
     `view` is how much of the run's stream the caller asked to receive
     (`full`/`activity`/`milestones`), also verbatim. The payload model
@@ -71,7 +73,7 @@ class ParsedDirective:
     instruction: str
     context_id: str
     payload: EvolutionDirectiveEventPayload
-    stage: str = "auto"
+    scope: str = "auto"
     view: str = EVOLUTION_VIEW_ACTIVITY
 
 
@@ -120,7 +122,7 @@ def parse_directive(
         instruction=instruction,
         context_id=context_id,
         payload=payload,
-        stage=payload.stage,
+        scope=payload.scope,
         view=payload.view,
     )
 
