@@ -96,21 +96,14 @@ class ProcessManager:
             parent_conn = None
             child_conn = None
 
-            ctx = multiprocessing.get_context('fork')
-
-            # The connection is per-generation state, so it is injected into the
-            # kwargs the child is started with and kept out of the kwargs
-            # recorded on ProcessInfo — see ProcessInfo.use_pipe.
-            process_kwargs = dict(func_kwargs)
-
             # Create pipe if requested
             if use_pipe:
-                parent_conn, child_conn = ctx.Pipe()
+                parent_conn, child_conn = multiprocessing.Pipe()
                 # Add child_conn to kwargs if target function expects it
                 process_kwargs['conn'] = child_conn
 
             # Create new process
-            process = ctx.Process(
+            process = multiprocessing.Process(
                 target=func,
                 args=func_args,
                 kwargs=process_kwargs,
