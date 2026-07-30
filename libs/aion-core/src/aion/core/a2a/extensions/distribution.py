@@ -39,8 +39,15 @@ class PrincipalIdentity(A2ABaseModel):
     id: str = Field(
         description="Identity id for the principal associated with this distribution."
     )
-    network_type: str = Field(
-        description="Communication-network namespace for the identity."
+    network_type: Optional[str] = Field(
+        default=None,
+        description=(
+            "Communication-network namespace for the identity, matching the "
+            "control-plane network type values such as Aion, A2A, Telegram, or "
+            "Twitter. None when the distribution projection did not supply one; "
+            "treat it as unknown rather than assuming a network, and compare "
+            "case-insensitively."
+        ),
     )
     organization_id: str = Field(description="Owning organization id.")
     represented_user_id: Optional[str] = Field(
@@ -98,8 +105,14 @@ class ServiceIdentity(A2ABaseModel):
     id: str = Field(
         description="Identity id for the service identity associated with this distribution."
     )
-    network_type: str = Field(
-        description="Communication-network namespace for the identity."
+    network_type: Optional[str] = Field(
+        default=None,
+        description=(
+            "External communication-network namespace for the identity, such as "
+            "Telegram, Twitter, or GitHub. None when the distribution projection "
+            "did not supply one; treat it as unknown rather than assuming a "
+            "network, and compare case-insensitively."
+        ),
     )
     organization_id: str = Field(description="Owning organization id.")
     represented_user_id: Optional[str] = Field(
