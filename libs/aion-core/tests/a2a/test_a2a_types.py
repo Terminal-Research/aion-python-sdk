@@ -631,6 +631,13 @@ class TestDistributionExtension:
         )
         assert r.kind == "service"
 
+    def test_identity_network_type_is_optional(self):
+        """Identities omit network_type when the distribution projection has none."""
+        principal = PrincipalIdentity(kind="principal", id="a1", organization_id="org-1")
+        service = ServiceIdentity(kind="service", id="s1", organization_id="org-1")
+        assert principal.network_type is None
+        assert service.network_type is None
+
     def test_distribution_with_identities(self):
         """Distribution stores identities list and id correctly."""
         rec = _make_distribution()
