@@ -118,21 +118,9 @@ class AionContextMiddleware(BaseHTTPMiddleware):
         raw = metadata.get(DISTRIBUTION_EXTENSION_URI_V1)
         if raw is None:
             return None
-        extension = DistributionExtensionV1.model_validate(raw)
-
-        # networkType is optional on the wire but every identity is expected to
-        # carry one; a missing value points at the distribution projection
-        # upstream, so surface it instead of silently defaulting a network.
-        for identity in extension.distribution.identities:
-            if identity.network_type is None:
-                logger.warning(
-                    "Distribution %s sent %s identity %s without networkType",
-                    extension.distribution.id,
-                    identity.kind,
-                    identity.id,
-                )
-
-        return extension
+        # Required spec fields are enforced by the model, so a projection that
+        # omits one raises here rather than reaching the agent with silent gaps.
+        return DistributionExtensionV1.model_validate(raw)
 
     @staticmethod
     def _get_traceability_extension(metadata: dict[str, Any]) -> TraceabilityExtensionV1 | None:

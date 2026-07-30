@@ -77,7 +77,8 @@ def _make_distribution_ext(
             PrincipalIdentity(
                 kind="principal",
                 id=agent_id,
-                network_type="aion",
+                identity_network="aion",
+                identity_kind="Personal",
                 organization_id="org-1",
                 display_name="Bot",
                 user_name="bot",
@@ -88,7 +89,8 @@ def _make_distribution_ext(
             ServiceIdentity(
                 kind="service",
                 id="svc-1",
-                network_type="slack",
+                identity_network="slack",
+                identity_kind="User",
                 organization_id="org-1",
                 display_name="Slack App",
             )
@@ -105,6 +107,7 @@ def _make_distribution_ext(
         environment=Environment(
             id=env_id,
             name=env_name,
+            project_id="proj-1",
             deployment_id="dep-1",
             configuration_variables=config_vars or {},
             daemon_agent_identity_id=daemon_agent_identity_id,
@@ -220,7 +223,7 @@ class TestAionRuntimeContextDistributionPayload:
         assert identity.id == "agent-abc"
         assert identity.display_name == "Bot"
         assert identity.user_name == "bot"
-        assert identity.network_type == "aion"
+        assert identity.identity_network == "aion"
 
     def test_service_identity_extracted(self):
         """Verify that service identity is read from the distribution payload."""
@@ -230,7 +233,7 @@ class TestAionRuntimeContextDistributionPayload:
         service_identity = ctx.get_service_identity()
 
         assert service_identity.id == "svc-1"
-        assert service_identity.network_type == "slack"
+        assert service_identity.identity_network == "slack"
 
     def test_behavior_returned(self):
         """Verify that behavior is returned from the distribution payload."""
@@ -335,7 +338,8 @@ _DIST_STRUCT_DATA = {
             {
                 "kind": "principal",
                 "id": "agent-1",
-                "networkType": "aion",
+                "identityNetwork": "aion",
+                "identityKind": "Personal",
                 "organizationId": "org-1",
                 "displayName": "Bot",
                 "userName": "bot",
@@ -350,6 +354,7 @@ _DIST_STRUCT_DATA = {
     "environment": {
         "id": "env-1",
         "name": "prod",
+        "projectId": "proj-1",
         "deploymentId": "dep-1",
         "configurationVariables": {},
     },
@@ -363,7 +368,8 @@ def _make_dist_struct(include_principal: bool = True) -> Struct:
             {
                 "kind": "service",
                 "id": "svc-1",
-                "networkType": "slack",
+                "identityNetwork": "slack",
+                "identityKind": "User",
                 "organizationId": "org-1",
             }
         ]
