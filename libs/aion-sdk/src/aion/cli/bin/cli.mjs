@@ -57046,23 +57046,23 @@ ${JSON.stringify(
     );
     return true;
   };
-  const handleMessage = (message) => {
+  const handleMessage = (message, protocolPayload = message) => {
     if (message.contextId) {
       setContextId(message.contextId);
     }
     setTaskId(void 0);
     if (responseMode === "a2a-protocol") {
-      appendProtocol(message);
+      appendProtocol(protocolPayload);
       return true;
     }
     return replaceLastResponseStreamSection(message) || renderAgentResponseBubble(message);
   };
-  const handleTaskSnapshot = (task) => {
+  const handleTaskSnapshot = (task, protocolPayload = task) => {
     setContextId(task.contextId);
     const isTerminalTask = isTerminalTaskState(task.status?.state);
     setTaskId(isTaskContinuationState(task.status?.state) ? task.id : void 0);
     if (responseMode === "a2a-protocol") {
-      appendProtocol(task);
+      appendProtocol(protocolPayload);
       return true;
     }
     if (!isTerminalTask) {
@@ -57075,12 +57075,12 @@ ${JSON.stringify(
     }
     return renderedAgentOutput;
   };
-  const handleStatusUpdate = (event) => {
+  const handleStatusUpdate = (event, protocolPayload = event) => {
     setContextId(event.contextId);
     setTaskId(isTaskContinuationState(event.status?.state) ? event.taskId : void 0);
     setStreamLabel(taskStateLabel(event.status?.state));
     if (responseMode === "a2a-protocol") {
-      appendProtocol(event);
+      appendProtocol(protocolPayload);
       return true;
     }
     if (event.status?.message && (isTerminalTaskState(event.status.state) || isFinalStatusEvent(event)) && replaceLastResponseStreamSection(event.status.message, event.taskId)) {
@@ -57100,7 +57100,7 @@ ${JSON.stringify(
     }
     return false;
   };
-  const handleArtifactUpdate = (event) => {
+  const handleArtifactUpdate = (event, protocolPayload = event) => {
     setContextId(event.contextId);
     setTaskId(void 0);
     const artifact = event.artifact;
@@ -57114,7 +57114,7 @@ ${JSON.stringify(
       setStreamLabel("Thinking");
     }
     if (responseMode === "a2a-protocol") {
-      appendProtocol(event);
+      appendProtocol(protocolPayload);
       return true;
     }
     if (!streamArtifactKind) {
@@ -57546,13 +57546,13 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
             event: summarizeProtocolEventForLog(event)
           });
           if (isMessage(event)) {
-            renderedAgentOutput = handleMessage(event) || renderedAgentOutput;
+            renderedAgentOutput = handleMessage(event, streamResponse) || renderedAgentOutput;
           } else if (isTask(event)) {
             if (isTerminalTaskState(event.status?.state)) {
               completedTask = event;
               reachedTerminal = true;
             }
-            renderedAgentOutput = handleTaskSnapshot(event) || renderedAgentOutput;
+            renderedAgentOutput = handleTaskSnapshot(event, streamResponse) || renderedAgentOutput;
           } else if (isTaskStatusUpdateEvent(event)) {
             if (isTerminalTaskState(event.status?.state)) {
               reachedTerminal = true;
@@ -57560,9 +57560,9 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
             if (isFinalStatusEvent(event)) {
               finalStatusUpdate = event;
             }
-            renderedAgentOutput = handleStatusUpdate(event) || renderedAgentOutput;
+            renderedAgentOutput = handleStatusUpdate(event, streamResponse) || renderedAgentOutput;
           } else {
-            renderedAgentOutput = handleArtifactUpdate(event) || renderedAgentOutput;
+            renderedAgentOutput = handleArtifactUpdate(event, streamResponse) || renderedAgentOutput;
           }
         }
         if (shouldShowNoAgentMessageNotice({

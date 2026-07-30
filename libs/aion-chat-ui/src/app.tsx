@@ -1037,27 +1037,27 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		return true;
 	};
 
-	const handleMessage = (message: Message): boolean => {
+	const handleMessage = (message: Message, protocolPayload: unknown = message): boolean => {
 		if (message.contextId) {
 			setContextId(message.contextId);
 		}
 		setTaskId(undefined);
 
 		if (responseMode === "a2a-protocol") {
-			appendProtocol(message);
+			appendProtocol(protocolPayload);
 			return true;
 		}
 
 		return replaceLastResponseStreamSection(message) || renderAgentResponseBubble(message);
 	};
 
-	const handleTaskSnapshot = (task: Task): boolean => {
+	const handleTaskSnapshot = (task: Task, protocolPayload: unknown = task): boolean => {
 		setContextId(task.contextId);
 		const isTerminalTask = isTerminalTaskState(task.status?.state);
 		setTaskId(isTaskContinuationState(task.status?.state) ? task.id : undefined);
 
 		if (responseMode === "a2a-protocol") {
-			appendProtocol(task);
+			appendProtocol(protocolPayload);
 			return true;
 		}
 
@@ -1076,13 +1076,16 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		return renderedAgentOutput;
 	};
 
-	const handleStatusUpdate = (event: TaskStatusUpdateEvent): boolean => {
+	const handleStatusUpdate = (
+		event: TaskStatusUpdateEvent,
+		protocolPayload: unknown = event
+	): boolean => {
 		setContextId(event.contextId);
 		setTaskId(isTaskContinuationState(event.status?.state) ? event.taskId : undefined);
 		setStreamLabel(taskStateLabel(event.status?.state));
 
 		if (responseMode === "a2a-protocol") {
-			appendProtocol(event);
+			appendProtocol(protocolPayload);
 			return true;
 		}
 
@@ -1113,7 +1116,10 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		return false;
 	};
 
-	const handleArtifactUpdate = (event: TaskArtifactUpdateEvent): boolean => {
+	const handleArtifactUpdate = (
+		event: TaskArtifactUpdateEvent,
+		protocolPayload: unknown = event
+	): boolean => {
 		setContextId(event.contextId);
 		setTaskId(undefined);
 
@@ -1130,7 +1136,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		}
 
 		if (responseMode === "a2a-protocol") {
-			appendProtocol(event);
+			appendProtocol(protocolPayload);
 			return true;
 		}
 
@@ -1614,13 +1620,15 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 						event: summarizeProtocolEventForLog(event)
 					});
 					if (isMessage(event)) {
-						renderedAgentOutput = handleMessage(event) || renderedAgentOutput;
+						renderedAgentOutput =
+							handleMessage(event, streamResponse) || renderedAgentOutput;
 					} else if (isTask(event)) {
 						if (isTerminalTaskState(event.status?.state)) {
 							completedTask = event;
 							reachedTerminal = true;
 						}
-						renderedAgentOutput = handleTaskSnapshot(event) || renderedAgentOutput;
+						renderedAgentOutput =
+							handleTaskSnapshot(event, streamResponse) || renderedAgentOutput;
 					} else if (isTaskStatusUpdateEvent(event)) {
 						if (isTerminalTaskState(event.status?.state)) {
 							reachedTerminal = true;
@@ -1628,9 +1636,11 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 						if (isFinalStatusEvent(event)) {
 							finalStatusUpdate = event;
 						}
-						renderedAgentOutput = handleStatusUpdate(event) || renderedAgentOutput;
+						renderedAgentOutput =
+							handleStatusUpdate(event, streamResponse) || renderedAgentOutput;
 					} else {
-						renderedAgentOutput = handleArtifactUpdate(event) || renderedAgentOutput;
+						renderedAgentOutput =
+							handleArtifactUpdate(event, streamResponse) || renderedAgentOutput;
 					}
 				}
 				if (
