@@ -37,6 +37,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from a2a.types import Artifact, Message, Role, Task, TaskState, TaskStatus
+from pydantic import ValidationError
 
 from aion.core.a2a.enums import (
     A2AEventType,
@@ -580,7 +581,8 @@ def _make_distribution() -> Distribution:
     identity = PrincipalIdentity(
         kind="principal",
         id="agent-1",
-        network_type="slack",
+        identity_network="slack",
+        identity_kind="Personal",
         organization_id="org-1",
     )
     return Distribution(
@@ -603,6 +605,7 @@ def _make_environment() -> Environment:
     return Environment(
         id="env-1",
         name="production",
+        project_id="proj-1",
         deployment_id="dep-1",
         configuration_variables={"KEY": "VALUE"},
     )
@@ -610,11 +613,12 @@ def _make_environment() -> Environment:
 
 class TestDistributionExtension:
     def test_principal_identity(self):
-        """PrincipalIdentity stores kind, id, network_type and defaults optional fields to None."""
+        """PrincipalIdentity stores kind, id, identity_network and defaults optional fields to None."""
         r = PrincipalIdentity(
             kind="principal",
             id="a1",
-            network_type="slack",
+            identity_network="slack",
+            identity_kind="Personal",
             organization_id="org-1",
         )
         assert r.kind == "principal"
@@ -626,10 +630,18 @@ class TestDistributionExtension:
         r = ServiceIdentity(
             kind="service",
             id="s1",
-            network_type="webhook",
+            identity_network="webhook",
+            identity_kind="User",
             organization_id="org-2",
         )
         assert r.kind == "service"
+
+    def test_identity_requires_identity_network_and_kind(self):
+        """The spec marks identityNetwork and identityKind required on both identity kinds."""
+        with pytest.raises(ValidationError):
+            PrincipalIdentity(kind="principal", id="a1", organization_id="org-1")
+        with pytest.raises(ValidationError):
+            ServiceIdentity(kind="service", id="s1", organization_id="org-1")
 
     def test_distribution_with_identities(self):
         """Distribution stores identities list and id correctly."""
@@ -652,29 +664,36 @@ class TestDistributionExtension:
         assert env.get_configuration_variable("KEY") == "VALUE"
         assert env.get_configuration_variable("MISSING") is None
         assert env.daemon_agent_identity_id is None
-        assert env.system_prompt is None
 
     def test_environment_with_optional_fields(self):
-        """Environment stores daemon_agent_identity_id and system_prompt when provided."""
+        """Environment stores daemon_agent_identity_id when provided."""
         env = Environment(
             id="env-2",
             name="staging",
+            project_id="proj-2",
             deployment_id="dep-2",
             configuration_variables={},
             daemon_agent_identity_id="daemon-1",
-            system_prompt="You are helpful.",
         )
         assert env.daemon_agent_identity_id == "daemon-1"
-        assert env.system_prompt == "You are helpful."
+
+    def test_environment_requires_project_id(self):
+        """The spec marks projectId required on the environment record."""
+        with pytest.raises(ValidationError):
+            Environment(
+                id="env-3",
+                name="staging",
+                deployment_id="dep-3",
+                configuration_variables={},
+            )
 
     def test_distribution_extension_v1(self):
-        """DistributionExtensionV1 defaults version to '1.0.0' and sender_id to None."""
+        """DistributionExtensionV1 defaults sender_id to None."""
         ext = DistributionExtensionV1(
             distribution=_make_distribution(),
             behavior=_make_behavior(),
             environment=_make_environment(),
         )
-        assert ext.version == "1.0.0"
         assert ext.sender_id is None
 
     def test_distribution_extension_with_sender_id(self):
@@ -698,7 +717,8 @@ class TestDistributionExtension:
         svc_identity = ServiceIdentity(
             kind="service",
             id="s1",
-            network_type="webhook",
+            identity_network="webhook",
+            identity_kind="User",
             organization_id="org-1",
         )
         rec = Distribution(

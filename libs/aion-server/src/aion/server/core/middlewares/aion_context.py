@@ -118,6 +118,8 @@ class AionContextMiddleware(BaseHTTPMiddleware):
         raw = metadata.get(DISTRIBUTION_EXTENSION_URI_V1)
         if raw is None:
             return None
+        # Required spec fields are enforced by the model, so a projection that
+        # omits one raises here rather than reaching the agent with silent gaps.
         return DistributionExtensionV1.model_validate(raw)
 
     @staticmethod

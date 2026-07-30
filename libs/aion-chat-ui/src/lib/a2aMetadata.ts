@@ -13,7 +13,6 @@ export interface MetadataOptions {
 	agentUsername?: string;
 	behaviorKey?: string;
 	environmentName?: string;
-	systemPrompt?: string;
 	senderId?: string;
 	nodeId?: string;
 }
@@ -37,42 +36,42 @@ export function generateTaskMetadata(
 
 	return {
 		[DISTRIBUTION_EXTENSION_URI_V1]: {
-			sender_id: senderId,
+			senderId,
 			distribution: {
 				id: crypto.randomUUID(),
-				endpoint_type: "Aion",
+				endpointType: "Aion",
 				url: "https://example.com/agent-card",
 				identities: [
 					{
 						kind: "principal",
 						id: crypto.randomUUID(),
-						network_type: "Aion",
-						represented_user_id: crypto.randomUUID(),
-						organization_id: orgId,
-						display_name: agentName,
-						user_name: agentUsername,
-						avatar_image_url: "https://example.com/avatar.png",
-						agent_type: "Deployed",
+						identityNetwork: "Aion",
+						identityKind: "Personal",
+						representedUserId: crypto.randomUUID(),
+						organizationId: orgId,
+						displayName: agentName,
+						userName: agentUsername,
+						avatarImageUrl: "https://example.com/avatar.png",
+						agentType: "Personal",
 						url: "https://example.com/agent"
 					}
 				]
 			},
 			behavior: {
 				id: crypto.randomUUID(),
-				behavior_key: behaviorKey,
-				version_id: crypto.randomUUID()
+				behaviorKey: behaviorKey,
+				versionId: crypto.randomUUID()
 			},
 			environment: {
 				id: crypto.randomUUID(),
 				name: environmentName,
-				deployment_id: crypto.randomUUID(),
-				configuration_variables: {
+				projectId: crypto.randomUUID(),
+				deploymentId: crypto.randomUUID(),
+				configurationVariables: {
 					API_TIMEOUT: "30",
 					MAX_RETRIES: "3",
 					LOG_LEVEL: "INFO"
-				},
-				system_prompt:
-					options.systemPrompt ?? `You are ${agentName}, a helpful assistant.`
+				}
 			}
 		},
 		[TRACEABILITY_EXTENSION_URI_V1]: {

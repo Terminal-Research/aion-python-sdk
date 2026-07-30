@@ -25,7 +25,8 @@ def make_mock_distribution_extension(endpoint_type="A2A", include_principal=True
             PrincipalIdentity(
                 kind="principal",
                 id="agent-1",
-                network_type="aion",
+                identity_network="aion",
+                identity_kind="Personal",
                 organization_id="org-1",
             )
         )
@@ -34,7 +35,8 @@ def make_mock_distribution_extension(endpoint_type="A2A", include_principal=True
             ServiceIdentity(
                 kind="service",
                 id="svc-1",
-                network_type=endpoint_type,
+                identity_network=endpoint_type,
+                identity_kind="User",
                 organization_id="org-1",
             )
         )
@@ -50,6 +52,7 @@ def make_mock_distribution_extension(endpoint_type="A2A", include_principal=True
         environment=Environment(
             id="env-1",
             name="prod",
+            project_id="proj-1",
             deployment_id="dep-1",
             configuration_variables={},
         ),

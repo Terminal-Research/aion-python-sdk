@@ -39,8 +39,19 @@ class PrincipalIdentity(A2ABaseModel):
     id: str = Field(
         description="Identity id for the principal associated with this distribution."
     )
-    network_type: str = Field(
-        description="Communication-network namespace for the identity."
+    identity_network: str = Field(
+        description=(
+            "Communication-network namespace for the identity, matching the "
+            "control-plane identity network values such as Aion, A2A, Telegram, or "
+            "Twitter. Compare case-insensitively."
+        )
+    )
+    identity_kind: str = Field(
+        description=(
+            "Agent type category for this principal identity, such as Personal, "
+            "Principal, Daemon, or System. Mirrors agent_type for principal "
+            "identities."
+        )
     )
     organization_id: str = Field(description="Owning organization id.")
     represented_user_id: Optional[str] = Field(
@@ -98,8 +109,17 @@ class ServiceIdentity(A2ABaseModel):
     id: str = Field(
         description="Identity id for the service identity associated with this distribution."
     )
-    network_type: str = Field(
-        description="Communication-network namespace for the identity."
+    identity_network: str = Field(
+        description=(
+            "External communication-network namespace for the identity, such as "
+            "Telegram, Twitter, or GitHub. Compare case-insensitively."
+        )
+    )
+    identity_kind: str = Field(
+        description=(
+            "External principal category for this service identity, such as Bot, "
+            "PhoneNumber, or User."
+        )
     )
     organization_id: str = Field(description="Owning organization id.")
     represented_user_id: Optional[str] = Field(
@@ -145,6 +165,14 @@ class Distribution(A2ABaseModel):
     url: str = Field(
         description="Distribution-facing A2A URL; currently sourced from the principal identity A2A URL."
     )
+    component_agent_card_url: Optional[str] = Field(
+        default=None,
+        description=(
+            "Agent-card discovery URL for the environment backing this distribution, "
+            "addressing the node as a singular agent rather than as the distribution "
+            "sequence entrypoint. None when the projection did not supply one."
+        ),
+    )
     identities: List[Identity] = Field(
         description=(
             "Identities associated directly with this distribution. A distribution "
@@ -183,10 +211,7 @@ class Environment(A2ABaseModel):
 
     id: str = Field(description="Environment id in the Aion control plane.")
     name: str = Field(description="Human-readable environment name.")
-    project_id: Optional[str] = Field(
-        default=None,
-        description="Project id that owns this agent environment, when known.",
-    )
+    project_id: str = Field(description="Project that owns this environment.")
     deployment_id: str = Field(
         description="Deployment id associated with this environment."
     )
@@ -200,10 +225,6 @@ class Environment(A2ABaseModel):
     daemon_agent_identity_id: Optional[str] = Field(
         default=None,
         description="Daemon agent identity id assigned for internal addressing.",
-    )
-    system_prompt: Optional[str] = Field(
-        default=None,
-        description="System prompt associated with this environment, when provided.",
     )
 
     def get_configuration_variable(self, key: str) -> Optional[str]:
@@ -225,10 +246,6 @@ class DistributionExtensionV1(A2ABaseModel):
     Spec: https://docs.aion.to/a2a/extensions/aion/distribution/1.0.0
     """
 
-    version: Literal["1.0.0"] = Field(
-        default="1.0.0",
-        description="Distribution extension schema version used to parse this payload.",
-    )
     sender_id: Optional[str] = Field(
         default=None,
         description="Source-network sender identifier for this request.",
