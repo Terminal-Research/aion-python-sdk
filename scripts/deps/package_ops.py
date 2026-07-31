@@ -2,12 +2,11 @@
 Internal module for package operations.
 """
 
-import os
 import subprocess
 from pathlib import Path
 from typing import Tuple, Optional
 
-from config import PACKAGES, LIBS_DIR
+from config import LIBS_DIR
 
 
 def check_poetry_available() -> bool:
@@ -36,6 +35,10 @@ def run_command(
     """
     Execute a shell command in a specific directory.
 
+    The command runs with `cwd` set to the package directory so that Poetry
+    picks up that package's `poetry.toml`, which is resolved relative to the
+    working directory rather than to the project being operated on.
+
     Args:
         command: List of command arguments
         package_dir: Directory to run the command in
@@ -62,6 +65,7 @@ def run_command(
 
 def _handle_command_result(
     success: bool,
+    stdout: str,
     stderr: str,
     command_name: str,
     success_message: str,
@@ -70,8 +74,13 @@ def _handle_command_result(
     """
     Handle command execution result with consistent error reporting.
 
+    Both streams are reported on failure. Poetry writes most of its diagnostics
+    to stdout rather than stderr, so surfacing stderr alone leaves failures with
+    no explanation at all.
+
     Args:
         success: Whether command succeeded
+        stdout: Standard output, reported alongside stderr on failure
         stderr: Standard error output
         command_name: Name of the command for error messages
         success_message: Message to display on success
@@ -84,54 +93,10 @@ def _handle_command_result(
         print(f"  [SUCCESS] {success_message}")
     else:
         print(f"{error_prefix} {command_name} failed")
-        if stderr:
-            print(f"  {stderr.strip()}")
+        for stream in (stdout, stderr):
+            if stream and stream.strip():
+                print(f"  {stream.strip()}")
     return success
-
-
-def ensure_poetry_environment(package_dir: Path) -> bool:
-    """
-    Ensure a Poetry environment exists for a package.
-
-    If the environment doesn't exist or is broken, initializes it by running
-    `poetry install`.
-
-    Args:
-        package_dir: Path to the package directory
-
-    Returns:
-        True if environment is ready, False otherwise
-    """
-    try:
-        result = subprocess.run(
-            ['poetry', 'env', 'info', '--path'],
-            cwd=package_dir,
-            capture_output=True,
-            text=True
-        )
-
-        if result.returncode == 0 and result.stdout.strip():
-            test_result = subprocess.run(
-                ['poetry', 'run', 'python', '--version'],
-                cwd=package_dir,
-                capture_output=True,
-                text=True
-            )
-            if test_result.returncode == 0:
-                return True
-
-        print(f"  [SETUP] Initializing Poetry environment for {package_dir.name}")
-        init_result = subprocess.run(
-            ['poetry', 'install'],
-            cwd=package_dir,
-            capture_output=True,
-            text=True
-        )
-        return init_result.returncode == 0
-
-    except Exception as e:
-        print(f"  [ERROR] Failed to initialize Poetry environment: {e}")
-        return False
 
 
 def validate_package(package_name: str, package_dir: Optional[Path] = None) -> Tuple[bool, Optional[Path]]:
@@ -157,39 +122,6 @@ def validate_package(package_name: str, package_dir: Optional[Path] = None) -> T
     return True, package_dir
 
 
-def install_package_editable(dep_name: str, package_dir: Path) -> bool:
-    """
-    Install a local package in editable mode using pip.
-
-    Runs `poetry run pip install -e <relative_path>` to install the dependency
-    in editable/development mode, allowing live code changes.
-
-    Args:
-        dep_name: Name of the dependency package to install
-        package_dir: Directory of the parent package where dependency will be installed
-
-    Returns:
-        True if installation succeeded, False otherwise
-    """
-    is_valid, dep_path = validate_package(dep_name)
-
-    if not is_valid:
-        print(f"  [ERROR] Invalid package: {dep_name}")
-        return False
-
-    relative_path = os.path.relpath(dep_path, package_dir)
-    cmd = ['poetry', 'run', 'pip', 'install', '-e', relative_path]
-
-    success, stdout, stderr = run_command(cmd, package_dir)
-
-    return _handle_command_result(
-        success,
-        stderr,
-        f"pip install -e {dep_name}",
-        f"Installed {dep_name} < {dep_path}"
-    )
-
-
 def execute_poetry_command(
     package_name: str,
     command: list,
@@ -205,7 +137,7 @@ def execute_poetry_command(
 
     Args:
         package_name: Name of the package to process
-        command: List of command arguments (e.g., ['lock'], ['install', '--sync'])
+        command: List of command arguments (e.g., ['lock'], ['install'])
         action_description: Description of the action for logging (e.g., "locking dependencies")
         success_message: Message to display on success (e.g., "Lock file updated")
         timeout: Command timeout in seconds (default: 300)
@@ -214,8 +146,8 @@ def execute_poetry_command(
         True if command succeeded, False otherwise
 
     Example:
-        execute_poetry_command('aion-cli', ['lock'], 'locking dependencies', 'Lock file updated')
-        execute_poetry_command('aion-server', ['install', '--sync'], 'syncing dependencies', 'Dependencies synced')
+        execute_poetry_command('aion-core', ['lock'], 'locking dependencies', 'Lock file updated')
+        execute_poetry_command('aion-server', ['sync'], 'syncing dependencies', 'Dependencies synced')
     """
     is_valid, package_dir = validate_package(package_name)
 
@@ -230,20 +162,11 @@ def execute_poetry_command(
 
     return _handle_command_result(
         success,
+        stdout,
         stderr,
         f"Poetry {' '.join(command)}",
         success_message
     )
-
-
-def get_all_packages():
-    """
-    Get all package names from configuration.
-
-    Returns:
-        List of package names
-    """
-    return list(PACKAGES.keys())
 
 
 def validate_libs_dir() -> bool:
