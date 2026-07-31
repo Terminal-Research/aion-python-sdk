@@ -66,6 +66,10 @@ class AionAgentRequestExecutor(AgentExecutor):
             await event_queue.enqueue_event(task)
         else:
             logger.info("Resuming task")
+            # A resumed task announces nothing of its own, so the turn is
+            # acknowledged here instead of on the agent's first event: the
+            # client learns the task is working without waiting out the model.
+            await self._task_updater.start_work()
 
         await self._setup_runtime_context(context)
 
@@ -76,7 +80,12 @@ class AionAgentRequestExecutor(AgentExecutor):
                 else self.agent.resume(context=context)
             )
 
-            pipeline = AionEventPipeline(event_queue, self._task_updater, self._file_transformer)
+            pipeline = AionEventPipeline(
+                event_queue,
+                self._task_updater,
+                self._file_transformer,
+                task_started=not is_new_task,
+            )
             async for agent_event in event_stream:
                 await pipeline.process(agent_event)
 
