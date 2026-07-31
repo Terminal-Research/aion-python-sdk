@@ -23,9 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-# Paths
-ROOT_DIR = Path(__file__).parent.parent.parent
-LIBS_DIR = ROOT_DIR / "libs"
+from config import ROOT_DIR, LIBS_DIR, find_pyproject_files
 
 # Comment markers to track conversions
 LOCAL_MARKER = "# [LOCAL-DEP]"
@@ -51,11 +49,6 @@ class DependencyInfo:
     name: str
     extras: Optional[list] = None
     optional: bool = False
-
-
-def find_pyproject_files() -> List[Path]:
-    """Find all pyproject.toml files in libs directory."""
-    return list(LIBS_DIR.glob("*/pyproject.toml"))
 
 
 def parse_dependencies(file_path: Path) -> dict:

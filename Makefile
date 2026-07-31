@@ -1,15 +1,12 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help tests deps-install-dev deps-install deps-lock deps-lock-regenerate deps-sync deps-set-branch deps-set-local deps-set-local-revert
+.PHONY: help tests deps-install deps-lock deps-lock-regenerate deps-sync deps-set-branch deps-set-local deps-set-local-revert deps-use-local deps-use-remote deps-verify deps-verify-clean
 
 help: ## Show available commands
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
 tests: ## Run tests for all libs
 	./scripts/tests.py
-
-deps-install-dev: ## Install local dependencies in editable mode for development
-	./scripts/deps/install-dev.py
 
 deps-install: ## Install dependencies from lock files for all packages
 	./scripts/deps/install.py
@@ -31,8 +28,26 @@ deps-set-branch: ## Update git branch references (usage: make deps-set-branch BR
 	fi
 	./scripts/deps/set-branch.py $(BRANCH)
 
-deps-set-local: ## Switch to local path dependencies
+deps-set-local: ## Switch to local path dependencies (edits pyproject.toml only)
 	./scripts/deps/set-local.py apply
 
-deps-set-local-revert: ## Revert to original dependencies
+deps-set-local-revert: ## Revert to original dependencies (edits pyproject.toml only)
 	./scripts/deps/set-local.py revert
+
+deps-use-local: ## Develop locally: switch to local paths, then lock, sync and verify
+	./scripts/deps/set-local.py apply
+	./scripts/deps/lock.py
+	./scripts/deps/sync.py
+	./scripts/deps/verify.py --clean
+
+deps-use-remote: ## Return to git dependencies: revert, then lock, sync and verify
+	./scripts/deps/set-local.py revert
+	./scripts/deps/lock.py
+	./scripts/deps/sync.py
+	./scripts/deps/verify.py
+
+deps-verify: ## Check that packages resolve to the working tree as declared
+	./scripts/deps/verify.py
+
+deps-verify-clean: ## Same as deps-verify, plus delete leftover .venv/src clones
+	./scripts/deps/verify.py --clean

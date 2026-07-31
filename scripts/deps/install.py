@@ -1,28 +1,35 @@
 #!/usr/bin/env python3
 """
-Install production dependencies for all packages in the monorepo.
+Install dependencies for every package in the monorepo.
 
-This script runs `poetry install --sync` on all packages defined in config.PACKAGES
-to install dependencies from their poetry.lock files, removing any packages
-not specified in the lock file.
+This script runs `poetry install --all-extras` on each discovered package to
+install dependencies from its `poetry.lock`. Local path dependencies declared
+with `develop = true` are installed in editable mode by Poetry itself, so no
+separate editable-install step is needed.
+
+Extras are included because they are how this monorepo wires optional siblings:
+`aion-sdk` reaches `aion.server` only through `aion-server-langgraph` and
+`aion-server-adk`, both of which sit behind extras. Installing without them
+leaves `aion serve` unable to start. On packages that declare no extras the flag
+is a no-op.
 
 Usage:
     python install.py
 
 Example:
     $ python scripts/deps/install.py
-    [INFO] Installing: aion-cli, aion-server, ...
-    [PACKAGE] aion-cli: installing dependencies
+    [INFO] Installing: aion-api-client, aion-core, ...
+    [PACKAGE] aion-api-client: installing dependencies
       [SUCCESS] Dependencies installed
     ...
 """
 
 import sys
 
+from config import get_all_packages
 from package_ops import (
     check_poetry_available,
     execute_poetry_command,
-    get_all_packages,
     validate_libs_dir
 )
 
@@ -55,7 +62,7 @@ def main():
         try:
             if execute_poetry_command(
                 package_name,
-                ['install'],
+                ['install', '--all-extras'],
                 'installing dependencies',
                 'Dependencies installed'
             ):

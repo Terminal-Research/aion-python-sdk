@@ -19,13 +19,7 @@ import sys
 from pathlib import Path
 from typing import List, Tuple
 
-ROOT_DIR = Path(__file__).parent.parent.parent
-LIBS_DIR = ROOT_DIR / "libs"
-
-
-def find_pyproject_files() -> List[Path]:
-    """Find all pyproject.toml files in libs directory."""
-    return list(LIBS_DIR.glob("*/pyproject.toml"))
+from config import LIBS_DIR, find_pyproject_files
 
 
 def update_branch_in_file(file_path: Path, target_branch: str) -> Tuple[int, List[str]]:
