@@ -1,12 +1,14 @@
 """Aion request handler extending the default A2A handler with preprocessors and Aion methods."""
 
+import logging
 from a2a.server.agent_execution import RequestContext
 from a2a.server.agent_execution.active_task import ActiveTask
 from a2a.server.context import ServerCallContext
 from a2a.server.events import Event
 from a2a.server.request_handlers import DefaultRequestHandlerV2
-from a2a.types import SendMessageRequest
-from aion.server.a2a.constants import NON_ACTIVE_TASK_STATES
+from a2a.types import SendMessageRequest, SubscribeToTaskRequest, Task
+from a2a.utils.errors import InternalError
+from a2a.utils.task import apply_history_length
 from aion.core.a2a import ContextsList, Conversation, GetContextParams, GetContextsListParams
 from collections.abc import AsyncGenerator
 from functools import wraps
@@ -16,6 +18,9 @@ from aion.server.agent.execution import AionActiveTaskRegistry
 from aion.server.tasks import store_manager
 from aion.server.a2a.conversation import ConversationBuilder
 from .request_preprocessors import A2ARequestPreprocessor
+from .terminal_task_projection import TerminalTaskProjection
+
+logger = logging.getLogger(__name__)
 
 
 def _with_preprocessors(method):
@@ -101,23 +106,71 @@ class AionRequestHandler(DefaultRequestHandlerV2):
             offset=params.history_offset)
         return ContextsList.model_validate(context_ids)
 
+    @override
+    async def on_message_send(
+            self,
+            params: SendMessageRequest,
+            context: ServerCallContext,
+    ) -> Task:
+        """Unary handler that always answers with a Task.
+
+        The base handler answers with a Message when the agent never created a
+        task (message-only interaction). Aion's contract is the same on both
+        the unary and the streaming path — the caller receives a Task — so such
+        a reply is resolved against the store.
+        """
+        result = await super().on_message_send(params, context)
+        if isinstance(result, Task):
+            return result
+
+        task_id = result.task_id or params.message.task_id
+        # The store is read directly: ActiveTask.get_task() waits on a flag that
+        # a message-only interaction never sets, which would hang the request.
+        task = await self.task_store.get(task_id, context) if task_id else None
+
+        if task is None:
+            # Aion's executor always announces a Task, so a message with no task
+            # behind it means the executor is out of contract. Fail loudly
+            # rather than answer with a task id that resolves to nothing.
+            logger.error(
+                "message/send answered with a Message and no stored task (task_id=%s)",
+                task_id or "<none>",
+            )
+            raise InternalError(
+                message="Agent answered with a Message instead of a Task."
+            )
+
+        return apply_history_length(task, params.configuration)
+
     async def on_message_send_stream(
             self,
             params: SendMessageRequest,
             context: ServerCallContext,
     ) -> AsyncGenerator[Event]:
-        """Stream handler that emits final Task before stream closes.
+        """Stream handler that closes the stream with the final Task.
 
-        Overrides DefaultRequestHandler to emit the final Task object after
-        all other events have been streamed. This ensures the client receives
-        a complete Task snapshot with all accumulated state at stream end.
+        Status updates carrying a non-active state are withheld and replaced by
+        a complete Task snapshot, so the client observes task completion through
+        exactly one event. See TerminalTaskProjection.
         """
-        async for event in super().on_message_send_stream(params, context):
+        projection = TerminalTaskProjection(
+            task_store=self.task_store,
+            call_context=context,
+            task_transform=lambda task: apply_history_length(task, params.configuration),
+        )
+        async for event in projection.project(super().on_message_send_stream(params, context)):
             yield event
 
-        # After stream completes, emit final Task if it's in a final state
-        task_id = params.message.task_id
-        if task_id:
-            final_task = await self.task_store.get(task_id, context)
-            if final_task and final_task.status.state in NON_ACTIVE_TASK_STATES:
-                yield final_task
+    async def on_subscribe_to_task(
+            self,
+            params: SubscribeToTaskRequest,
+            context: ServerCallContext,
+    ) -> AsyncGenerator[Event]:
+        """Resubscribe handler applying the same terminal-Task projection."""
+        projection = TerminalTaskProjection(
+            task_store=self.task_store,
+            call_context=context,
+            task_id=params.id,
+        )
+        async for event in projection.project(super().on_subscribe_to_task(params, context)):
+            yield event

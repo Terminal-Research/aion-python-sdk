@@ -4,16 +4,14 @@ import logging
 from a2a.server.events import Event
 from a2a.server.tasks import TaskManager
 from a2a.types import Message, Task, TaskArtifactUpdateEvent, TaskState, TaskStatus, TaskStatusUpdateEvent
-from aion.server.a2a.constants import TRANSIENT_ARTIFACT_IDS, NON_ACTIVE_TASK_STATES
-from aion.server.a2a.utils import is_task_interrupted, task_history_message_ids, is_message_in_task_history
+from aion.server.a2a.constants import NON_ACTIVE_TASK_STATES, TRANSIENT_ARTIFACT_IDS
+from aion.server.a2a.utils import is_task_interrupted
 from aion.server.agent.execution.scope import set_task_status
 from typing import override
 
 from aion.server.tasks import store_manager
 
 logger = logging.getLogger(__name__)
-
-_HISTORY_TERMINAL_STATES = NON_ACTIVE_TASK_STATES - {TaskState.TASK_STATE_COMPLETED}
 
 
 class AionTaskManager(TaskManager):
@@ -22,6 +20,10 @@ class AionTaskManager(TaskManager):
 
     Inherits from the base TaskManager and adds capabilities for automatically finding and assigning
     the last task from a given context, with optional filtering for interrupted tasks only.
+
+    Message placement follows the A2A convention implemented by the base class:
+    `status.message` holds the most recent message and `history` holds everything
+    before it, so the two together are the conversation with no duplicates.
     """
 
     @override
@@ -43,61 +45,41 @@ class AionTaskManager(TaskManager):
         if isinstance(event, Message):
             event = await self._wrap_message_as_status_event(event)
 
-        # The base class unconditionally moves task.status.message to history before
-        # overwriting it. If _append_terminal_message_to_history already committed that
-        # message (e.g. on INPUT_REQUIRED), clear it first to avoid a duplicate when
-        # a subsequent event (e.g. TASK_STATE_CANCELED) is processed.
-        if isinstance(event, (TaskStatusUpdateEvent, Task)):
-            task = self._current_task
-            if task is not None and task.status.HasField('message'):
-                if is_message_in_task_history(task, message=task.status.message):
-                    task.status.ClearField('message')
+        event = await self._carry_pending_message(event)
 
         result = await super().process(event)
         self._track_task_status(event)
-
-        if (
-                isinstance(event, (TaskStatusUpdateEvent, Task))
-                and event.status.state in _HISTORY_TERMINAL_STATES
-                and event.status.HasField('message')
-        ):
-            await self._append_terminal_message_to_history(event.status.message)
-
         return result
 
-    @override
-    def update_with_message(self, message: Message, task: Task) -> Task:
-        """Override to prevent duplicate history entries when resuming an interrupted task.
+    async def _carry_pending_message(self, event: Event) -> Event:
+        """Keep the turn's closing message in status when the task stops.
 
-        The base implementation unconditionally moves task.status.message to history.
-        When _append_terminal_message_to_history has already committed the interrupt
-        message to history, this would create a duplicate on resume.
+        The base class always demotes the pending `status.message` to history
+        before applying a new status. That is right while the task is running —
+        the message is no longer the current one — but wrong for the event that
+        ends the turn: agents usually announce completion with a bare status,
+        which would bury the answer in history and lose it entirely for a
+        `historyLength=0` request.
+
+        So when a non-active state arrives without a message of its own, the
+        pending message is moved onto that event: it stays the current message,
+        exactly once, and migrates to history on the next turn.
         """
-        if task.status.HasField('message'):
-            if not is_message_in_task_history(task, message=task.status.message):
-                task.history.append(task.status.message)
-            task.status.ClearField('message')
-        task.history.append(message)
-        self._current_task = task
-        return task
+        if not isinstance(event, TaskStatusUpdateEvent):
+            return event
 
-    async def _append_terminal_message_to_history(self, message: Message) -> None:
-        """Add terminal status message to task history if not already present.
+        if event.status.state not in NON_ACTIVE_TASK_STATES or event.status.HasField('message'):
+            return event
 
-        The base TaskManager only moves the *previous* status.message to history
-        before overwriting it. For non-completed terminal states the incoming
-        message stays only in task.status — this method persists it to history
-        so all three invocation paths (blocking, non-blocking, streaming) expose it.
-        """
-        task = self._current_task
-        if task is None:
-            return
+        task = await self.get_task()
+        if task is None or not task.status.HasField('message'):
+            return event
 
-        if is_message_in_task_history(task, message=message):
-            return
-
-        task.history.append(message)
-        await self.task_store.save(task, self._call_context)
+        carried = TaskStatusUpdateEvent()
+        carried.CopyFrom(event)
+        carried.status.message.CopyFrom(task.status.message)
+        task.status.ClearField('message')
+        return carried
 
     async def _wrap_message_as_status_event(self, message: Message) -> TaskStatusUpdateEvent:
         """Wrap a standalone Message into a TaskStatusUpdateEvent.
