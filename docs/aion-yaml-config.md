@@ -291,23 +291,25 @@ Agent configuration supports multiple field types with comprehensive validation 
 
 ### Protected Values in Aion
 
-The `configuration` block defines a static semantic schema. Do not add a
-`secret` property to a field. In Composer, a user may choose literal or
-protected storage for a complete top-level `string` value when that runtime has
-an approved protected-value adapter. LLM selectors, nested strings, numbers,
-booleans, arrays, and objects remain literal. Every declaration `default` is
-also literal and is never promoted automatically.
+The `configuration` block defines a static semantic schema. Set `secret: true`
+on a top-level `string` field when that value must use protected storage.
+Composer then renders a write-only protected input rather than asking the user
+to choose a storage mode. Ordinary strings remain literal. Protected fields
+cannot declare defaults or appear inside arrays or objects; LLM selectors,
+numbers, booleans, arrays, and objects also remain literal.
 
 Protected plaintext is sent through Aion's write-only service. The Project
 stores an opaque scope-and-purpose-bound reference, and neither the SDK nor
 Composer provides a reveal operation. Reusing one reference within the same
 Project and purpose intentionally shares its rotation and clear lifecycle.
 
-Runtime configuration reaches the SDK as strings. Requests to Aion Remote and
-A2A Remote runtimes carry literal agent configuration in the
+Runtime configuration reaches the SDK as strings. Aion resolves protected
+references before constructing agent runtime context, including requests to
+Aion Remote and A2A Remote runtimes. Distribution and daemon contexts carry
+the resolved configuration as ordinary string maps. Distribution context uses
+the
 [Aion Distribution extension](https://docs.aion.to/a2a/extensions/aion/distribution/1.0.0).
-Aion omits protected entries from that payload. Configure secrets required by a
-self-managed agent in its process or deployment environment.
+Neither runtime payload exposes secret references.
 
 ### String Fields
 
@@ -323,12 +325,23 @@ field_name:
   enum: ["option1", "option2", "option3"]  # Allowed values only
 ```
 
+To require protected storage, omit `default` and declare the field explicitly:
+
+```yaml
+api_key:
+  type: "string"
+  description: "Provider API key"
+  secret: true
+  required: true
+```
+
 **String validation options:**
 - `required`: Must be provided in configuration
 - `nullable`: Can accept `null` as valid value
 - `min_length`/`max_length`: Character count limits
 - `enum`: Restricts to specific values
 - `default`: Used when field not provided
+- `secret`: Requires write-only protected storage; top-level fields only
 
 ### LLM Fields
 

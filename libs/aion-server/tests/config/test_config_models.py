@@ -97,15 +97,48 @@ class TestAgentConfigConfiguration:
 
         assert agent.configuration["model"].type == ConfigurationType.LLM
 
-    def test_secret_schema_property_is_rejected(self):
-        """Protection cannot be declared by the static SDK field schema."""
-        with pytest.raises(ValidationError, match="secret"):
-            AgentConfig(
-                path="my.module:Agent",
-                configuration={
-                    "api_key": {"type": "string", "secret": True},
-                },
+    def test_top_level_string_may_require_protected_storage(self):
+        """AgentConfig accepts schema-owned protection for a string field."""
+        agent = AgentConfig(
+            path="my.module:Agent",
+            configuration={
+                "api_key": {"type": "string", "secret": True},
+            },
+        )
+
+        assert agent.configuration["api_key"].secret is True
+
+    @pytest.mark.parametrize("field_type", ["integer", "llm", "array"])
+    def test_non_string_fields_reject_secret_policy(self, field_type):
+        """Only string declarations may require protected storage."""
+        with pytest.raises(ValidationError, match="Only string fields"):
+            ConfigurationField(type=field_type, secret=True)
+
+    def test_secret_string_rejects_a_default(self):
+        """Protected string declarations cannot seed plaintext defaults."""
+        with pytest.raises(ValidationError, match="cannot declare a default"):
+            ConfigurationField(
+                type=ConfigurationType.STRING,
+                secret=True,
+                default="plaintext",
             )
+
+    @pytest.mark.parametrize(
+        "field_type,items",
+        [
+            ("array", {"type": "string", "secret": True}),
+            ("object", {"api_key": {"type": "string", "secret": True}}),
+        ],
+    )
+    def test_nested_string_rejects_secret_policy(self, field_type, items):
+        """Protected string declarations must remain top-level."""
+        with pytest.raises(ValidationError, match="must be top-level"):
+            ConfigurationField(type=field_type, items=items)
+
+    def test_secret_policy_requires_a_boolean(self):
+        """String-like values are not coerced into schema policy booleans."""
+        with pytest.raises(ValidationError):
+            ConfigurationField(type=ConfigurationType.STRING, secret="true")
 
 
 class TestAionConfig:

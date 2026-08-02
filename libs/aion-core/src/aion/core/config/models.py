@@ -22,11 +22,9 @@ class ConfigurationType(str, Enum):
 class ConfigurationField(BaseModel):
     """Describe one semantic agent configuration field.
 
-    This static schema intentionally does not select literal or protected
-    storage. The Aion control plane owns that choice for each concrete value,
-    and only complete top-level string values are eligible. Declaration
-    defaults remain literal. Nested fields, LLM selectors, numeric and boolean
-    fields, arrays, and objects are never independently protected.
+    A top-level string may require protected storage by setting ``secret``.
+    Protected fields cannot declare defaults or appear inside arrays or
+    objects. Other field types always use literal configuration values.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -41,6 +39,11 @@ class ConfigurationField(BaseModel):
     type: Optional[ConfigurationType] = Field(
         default=ConfigurationType.STRING,
         description="Type of the configuration field")
+    secret: bool = Field(
+        default=False,
+        strict=True,
+        description="Whether a top-level string requires protected storage",
+    )
 
     # Numeric constraints
     min: Optional[Union[int, float]] = Field(default=None, description="Minimum value for numeric types")
@@ -104,6 +107,32 @@ class ConfigurationField(BaseModel):
             if value is not None:
                 raise ValueError(f"Items field is only valid for array and object types, got {field_type}")
             return None
+
+    @model_validator(mode="after")
+    def validate_secret_policy(self) -> "ConfigurationField":
+        """Validate schema-owned protected-storage constraints.
+
+        Returns:
+            The validated configuration field.
+
+        Raises:
+            ValueError: If protected storage is declared for an unsupported
+                field, default, or nested location.
+        """
+        if self.secret and self.type != ConfigurationType.STRING:
+            raise ValueError("Only string fields may set secret=true")
+        if self.secret and self.default is not None:
+            raise ValueError("Secret string fields cannot declare a default")
+
+        nested_fields = []
+        if isinstance(self.items, ConfigurationField):
+            nested_fields.append(self.items)
+        elif isinstance(self.items, dict):
+            nested_fields.extend(self.items.values())
+        if any(field.secret for field in nested_fields):
+            raise ValueError("Secret string fields must be top-level")
+
+        return self
 
     def model_dump(self, **kwargs) -> Dict[str, Any]:
         """Custom model dump that handles nested ConfigurationField objects."""

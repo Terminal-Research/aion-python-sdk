@@ -25,8 +25,9 @@ This repository is a monorepo containing multiple projects located primarily und
   principal header injection, and typed control-plane addressing utilities
   used by framework packages.
 - **aion-core** – shared A2A payloads, runtime context, invocation abstractions,
-  constants, static agent configuration schema parsing/publication, and logging
-  used across Aion SDK packages. Owns the
+  constants, static agent configuration schema parsing/publication (including
+  schema-owned protected strings), and logging used across Aion SDK packages.
+  Owns the
   provider-neutral Distribution/Messaging context hierarchy, reply contract,
   and representative provider payload fixtures used to verify that contract.
 - **aion-adk** – Google ADK helper package for Aion-backed model
