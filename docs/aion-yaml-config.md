@@ -303,12 +303,11 @@ stores an opaque scope-and-purpose-bound reference, and neither the SDK nor
 Composer provides a reveal operation. Reusing one reference within the same
 Project and purpose intentionally shares its rotation and clear lifecycle.
 
-The SDK continues to expose resolved runtime configuration as strings. Aion
-does not deliver protected agent configuration to Aion Remote or A2A Remote
-runtimes in v1. Supported protected delivery is limited to reviewed boundaries,
-including Aion GitHub deployment environment variables and remote MCP static
-headers. Configure secrets required by self-managed agent runtimes in that
-runtime's own environment.
+Runtime configuration reaches the SDK as strings. Requests to Aion Remote and
+A2A Remote runtimes carry literal agent configuration in the
+[Aion Distribution extension](https://docs.aion.to/a2a/extensions/aion/distribution/1.0.0).
+Aion omits protected entries from that payload. Configure secrets required by a
+self-managed agent in its process or deployment environment.
 
 ### String Fields
 
