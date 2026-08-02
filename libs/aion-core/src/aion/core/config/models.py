@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 class ConfigurationType(str, Enum):
     """Supported configuration types."""
     STRING = "string"
+    LLM = "llm"
     INTEGER = "integer"
     FLOAT = "float"
     BOOLEAN = "boolean"
@@ -19,9 +20,22 @@ class ConfigurationType(str, Enum):
 
 
 class ConfigurationField(BaseModel):
-    """Schema for a single configuration field with support for nested objects."""
+    """Describe one semantic agent configuration field.
+
+    This static schema intentionally does not select literal or protected
+    storage. The Aion control plane owns that choice for each concrete value,
+    and only complete top-level string values are eligible. Declaration
+    defaults remain literal. Nested fields, LLM selectors, numeric and boolean
+    fields, arrays, and objects are never independently protected.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
     description: str = Field(default="", description="Description of the configuration field")
-    default: Optional[Any] = None
+    default: Optional[Any] = Field(
+        default=None,
+        description="Literal declaration default for this field",
+    )
     required: bool = Field(default=False, description="Whether this field is required")
     nullable: bool = Field(default=True, description="Whether this field can be null")
     type: Optional[ConfigurationType] = Field(

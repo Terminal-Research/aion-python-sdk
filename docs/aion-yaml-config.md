@@ -11,7 +11,9 @@
   - [Complex Agent Configuration](#complex-agent-configuration)
   - [Configuration Properties](#configuration-properties)
 - [Configuration Field Types](#configuration-field-types)
+  - [Protected Values in Aion](#protected-values-in-aion)
   - [String Fields](#string-fields)
+  - [LLM Fields](#llm-fields)
   - [Numeric Fields](#numeric-fields)
   - [Boolean Fields](#boolean-fields)
   - [Array Fields](#array-fields)
@@ -287,6 +289,27 @@ Each skill object contains:
 
 Agent configuration supports multiple field types with comprehensive validation options.
 
+### Protected Values in Aion
+
+The `configuration` block defines a static semantic schema. Do not add a
+`secret` property to a field. In Composer, a user may choose literal or
+protected storage for a complete top-level `string` value when that runtime has
+an approved protected-value adapter. LLM selectors, nested strings, numbers,
+booleans, arrays, and objects remain literal. Every declaration `default` is
+also literal and is never promoted automatically.
+
+Protected plaintext is sent through Aion's write-only service. The Project
+stores an opaque scope-and-purpose-bound reference, and neither the SDK nor
+Composer provides a reveal operation. Reusing one reference within the same
+Project and purpose intentionally shares its rotation and clear lifecycle.
+
+The SDK continues to expose resolved runtime configuration as strings. Aion
+does not deliver protected agent configuration to Aion Remote or A2A Remote
+runtimes in v1. Supported protected delivery is limited to reviewed boundaries,
+including Aion GitHub deployment environment variables and remote MCP static
+headers. Configure secrets required by self-managed agent runtimes in that
+runtime's own environment.
+
 ### String Fields
 
 ```yaml
@@ -307,6 +330,20 @@ field_name:
 - `min_length`/`max_length`: Character count limits
 - `enum`: Restricts to specific values
 - `default`: Used when field not provided
+
+### LLM Fields
+
+An `llm` field stores a model identifier while allowing the Aion control plane
+to render a model selector. It is a specialized field and does not support
+protected storage.
+
+```yaml
+model:
+  type: "llm"
+  description: "Model used for responses"
+  default: "openai/gpt-4.1-mini"
+  required: true
+```
 
 ### Numeric Fields
 

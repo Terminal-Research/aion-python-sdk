@@ -88,6 +88,25 @@ class TestAgentConfigConfiguration:
         with pytest.raises(ValidationError):
             AgentConfig(path="my.module:Agent", configuration={"key": 42})
 
+    def test_llm_field_is_a_distinct_non_string_schema_type(self):
+        """AgentConfig preserves the LLM selector discriminator."""
+        agent = AgentConfig(
+            path="my.module:Agent",
+            configuration={"model": {"type": "llm"}},
+        )
+
+        assert agent.configuration["model"].type == ConfigurationType.LLM
+
+    def test_secret_schema_property_is_rejected(self):
+        """Protection cannot be declared by the static SDK field schema."""
+        with pytest.raises(ValidationError, match="secret"):
+            AgentConfig(
+                path="my.module:Agent",
+                configuration={
+                    "api_key": {"type": "string", "secret": True},
+                },
+            )
+
 
 class TestAionConfig:
     def test_dict_of_agent_configs(self):
