@@ -41,11 +41,20 @@ class AionEventPipeline:
             event_queue: EventQueue,
             task_updater: TaskUpdater,
             file_transformer: Optional[A2AFileTransformer] = None,
+            task_started: bool = False,
     ):
+        """
+        Args:
+            event_queue: Queue the processed events are emitted to.
+            task_updater: Updater used to announce the task is working.
+            file_transformer: Optional transformer for inline file parts.
+            task_started: True when the caller has already announced the work,
+                as the executor does for a resumed task.
+        """
         self._queue = event_queue
         self._task_updater = task_updater
         self._file_transformer = file_transformer
-        self._first_event = True
+        self._task_started = task_started
         self._terminal_seen = False
         self._deduplicator: Optional[A2ATaskDeduplicator] = None
 
@@ -145,9 +154,9 @@ class AionEventPipeline:
         await self._queue.enqueue_event(event_copy)
 
     async def _ensure_task_started(self) -> None:
-        if self._first_event:
+        if not self._task_started:
             await self._task_updater.start_work()
-            self._first_event = False
+            self._task_started = True
 
     async def _prepare_event(self, event):
         if self._file_transformer:

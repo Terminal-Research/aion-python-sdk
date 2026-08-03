@@ -2,27 +2,33 @@
 """
 Sync dependencies for all packages in the monorepo.
 
-This script runs `poetry sync` on all packages defined in config.PACKAGES
-to synchronize their environments with poetry.lock files, removing any packages
-not specified in the lock file.
+This script runs `poetry sync --all-extras` on every discovered package to
+synchronize its environment with poetry.lock, removing any package not named in
+the lock file.
+
+Extras are included because they are how this monorepo wires optional siblings:
+`aion-sdk` reaches `aion.server` only through `aion-server-langgraph` and
+`aion-server-adk`, both of which sit behind extras. Syncing without them leaves
+`aion serve` unable to start. On packages that declare no extras the flag is a
+no-op.
 
 Usage:
     python sync.py
 
 Example:
     $ python scripts/deps/sync.py
-    [INFO] Syncing: aion-cli, aion-server, ...
-    [PACKAGE] aion-cli: syncing dependencies
+    [INFO] Syncing: aion-api-client, aion-core, ...
+    [PACKAGE] aion-api-client: syncing dependencies
       [SUCCESS] Dependencies synced
     ...
 """
 
 import sys
 
+from config import get_all_packages
 from package_ops import (
     check_poetry_available,
     execute_poetry_command,
-    get_all_packages,
     validate_libs_dir
 )
 
@@ -55,7 +61,7 @@ def main():
         try:
             if execute_poetry_command(
                 package_name,
-                ['sync'],
+                ['sync', '--all-extras'],
                 'syncing dependencies',
                 'Dependencies synced'
             ):

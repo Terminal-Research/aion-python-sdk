@@ -88,6 +88,63 @@ class TestAgentConfigConfiguration:
         with pytest.raises(ValidationError):
             AgentConfig(path="my.module:Agent", configuration={"key": 42})
 
+    def test_llm_field_is_a_distinct_non_string_schema_type(self):
+        """AgentConfig preserves the LLM selector discriminator."""
+        agent = AgentConfig(
+            path="my.module:Agent",
+            configuration={"model": {"type": "llm"}},
+        )
+
+        assert agent.configuration["model"].type == ConfigurationType.LLM
+
+    def test_top_level_secret_field_requires_protected_storage(self):
+        """AgentConfig accepts the dedicated protected field type."""
+        agent = AgentConfig(
+            path="my.module:Agent",
+            configuration={
+                "api_key": {"type": "secret"},
+            },
+        )
+
+        assert agent.configuration["api_key"].type == ConfigurationType.SECRET
+
+    @pytest.mark.parametrize(
+        "metadata",
+        [
+            {"default": "plaintext"},
+            {"min": 1},
+            {"max": 10},
+            {"min_length": 1},
+            {"max_length": 10},
+            {"enum": ["one"]},
+            {"items": {"type": "string"}},
+        ],
+    )
+    def test_secret_field_rejects_literal_metadata(self, metadata):
+        """Secret declarations cannot carry literal validation metadata."""
+        with pytest.raises(ValidationError, match="literal metadata"):
+            ConfigurationField(
+                type=ConfigurationType.SECRET,
+                **metadata,
+            )
+
+    @pytest.mark.parametrize(
+        "field_type,items",
+        [
+            ("array", {"type": "secret"}),
+            ("object", {"api_key": {"type": "secret"}}),
+        ],
+    )
+    def test_nested_secret_field_is_rejected(self, field_type, items):
+        """Secret declarations must remain top-level."""
+        with pytest.raises(ValidationError, match="must be top-level"):
+            ConfigurationField(type=field_type, items=items)
+
+    def test_legacy_secret_property_is_rejected(self):
+        """The removed string policy property is not accepted."""
+        with pytest.raises(ValidationError):
+            ConfigurationField(type=ConfigurationType.STRING, secret="true")
+
 
 class TestAionConfig:
     def test_dict_of_agent_configs(self):

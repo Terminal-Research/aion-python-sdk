@@ -11,6 +11,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 class ConfigurationType(str, Enum):
     """Supported configuration types."""
     STRING = "string"
+    SECRET = "secret"
+    LLM = "llm"
     INTEGER = "integer"
     FLOAT = "float"
     BOOLEAN = "boolean"
@@ -19,15 +21,25 @@ class ConfigurationType(str, Enum):
 
 
 class ConfigurationField(BaseModel):
-    """Schema for a single configuration field with support for nested objects."""
+    """Describe one semantic agent configuration field.
+
+    A top-level ``secret`` field requires protected storage and cannot declare
+    literal validation metadata or appear inside arrays or objects. Other
+    field types always use literal configuration values.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
     description: str = Field(default="", description="Description of the configuration field")
-    default: Optional[Any] = None
+    default: Optional[Any] = Field(
+        default=None,
+        description="Literal declaration default for this field",
+    )
     required: bool = Field(default=False, description="Whether this field is required")
     nullable: bool = Field(default=True, description="Whether this field can be null")
     type: Optional[ConfigurationType] = Field(
         default=ConfigurationType.STRING,
         description="Type of the configuration field")
-
     # Numeric constraints
     min: Optional[Union[int, float]] = Field(default=None, description="Minimum value for numeric types")
     max: Optional[Union[int, float]] = Field(default=None, description="Maximum value for numeric types")
@@ -53,7 +65,11 @@ class ConfigurationField(BaseModel):
 
         field_type = info.data.get('type')
 
-        if field_type == ConfigurationType.ARRAY:
+        if field_type == ConfigurationType.SECRET:
+            raise ValueError(
+                "Secret fields cannot declare literal metadata: items"
+            )
+        elif field_type == ConfigurationType.ARRAY:
             # For arrays, items should be a single ConfigurationField
             if isinstance(value, ConfigurationField):
                 return value
@@ -85,11 +101,49 @@ class ConfigurationField(BaseModel):
                     raise ValueError(f"Property '{key}' must be a ConfigurationField instance, dict, or None")
 
             return result
+
         else:
             # For other types, items should not be used
             if value is not None:
                 raise ValueError(f"Items field is only valid for array and object types, got {field_type}")
             return None
+
+    @model_validator(mode="after")
+    def validate_secret_field(self) -> "ConfigurationField":
+        """Validate the dedicated protected-storage field constraints.
+
+        Returns:
+            The validated configuration field.
+
+        Raises:
+            ValueError: If a secret field declares literal metadata or appears
+                in a nested location.
+        """
+        if self.type == ConfigurationType.SECRET:
+            invalid_fields = {
+                "default",
+                "min",
+                "max",
+                "min_length",
+                "max_length",
+                "enum",
+                "items",
+            } & self.model_fields_set
+            if invalid_fields:
+                names = ", ".join(sorted(invalid_fields))
+                raise ValueError(
+                    f"Secret fields cannot declare literal metadata: {names}"
+                )
+
+        nested_fields = []
+        if isinstance(self.items, ConfigurationField):
+            nested_fields.append(self.items)
+        elif isinstance(self.items, dict):
+            nested_fields.extend(self.items.values())
+        if any(field.type == ConfigurationType.SECRET for field in nested_fields):
+            raise ValueError("Secret fields must be top-level")
+
+        return self
 
     def model_dump(self, **kwargs) -> Dict[str, Any]:
         """Custom model dump that handles nested ConfigurationField objects."""

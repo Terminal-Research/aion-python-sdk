@@ -49,6 +49,40 @@ class TestCollectStringField:
         assert "min" not in result
         assert "max" not in result
 
+    def test_string_field_has_no_secret_policy(self):
+        """collect publishes ordinary strings without storage metadata."""
+        result = _collect(
+            {"api_key": ConfigurationField(type=ConfigurationType.STRING)}
+        )["api_key"]
+
+        assert "secret" not in result
+
+    def test_secret_field_publishes_only_common_metadata(self):
+        """collect publishes the dedicated secret discriminator."""
+        result = _collect(
+            {"api_key": {"type": "secret", "required": True}}
+        )["api_key"]
+
+        assert result == {
+            "type": "secret",
+            "description": "",
+            "required": True,
+            "nullable": True,
+        }
+
+
+class TestCollectLlmField:
+    def test_llm_field_preserves_its_specialized_discriminator(self):
+        """collect publishes LLM selectors without string constraints."""
+        result = _collect(
+            {"model": ConfigurationField(type=ConfigurationType.LLM)}
+        )["model"]
+
+        assert result["type"] == "llm"
+        assert "min_length" not in result
+        assert "max_length" not in result
+        assert "secret" not in result
+
 
 class TestCollectIntegerField:
     def test_integer_specific_fields_included(self):

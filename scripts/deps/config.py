@@ -1,101 +1,37 @@
-from collections import deque
-from pathlib import Path
+"""
+Shared paths and package discovery for the dependency scripts.
 
+Packages are discovered from the filesystem rather than listed by hand: any
+directory under `libs/` holding a `pyproject.toml` is a Poetry package. A
+hand-maintained list duplicates what `pyproject.toml` already declares and
+drifts from it silently, so there is nothing here to keep in sync.
+"""
+
+from pathlib import Path
 from typing import List
 
 ROOT_DIR = Path(__file__).parent.parent.parent
 LIBS_DIR = ROOT_DIR / "libs"
 
-# Unified configuration: package name -> list of direct local dependencies
-# Note: Only direct dependencies need to be specified. Transitive dependencies
-# are resolved automatically using resolve_dependencies() function.
-PACKAGES = {
-    "aion-sdk": [
-        "aion-server",
-        "aion-authoring-langgraph",
-        "aion-server-langgraph",
-        "aion-authoring-adk",
-        "aion-server-adk",
-    ],
-    "aion-server": [
-        "aion-core",
-        "aion-api-client",
-        "aion-db",
-    ],
-    "aion-server-langgraph": [
-        "aion-core",
-        "aion-server",
-        "aion-authoring-langgraph",
-        "aion-db",
-    ],
-    "aion-server-adk": [
-        "aion-authoring-adk",
-        "aion-server",
-    ],
-    "aion-authoring-langgraph": [
-        "aion-core",
-        "aion-api-client",
-        "aion-mcp",
-    ],
-    "aion-authoring-adk": [
-        "aion-api-client",
-        "aion-mcp",
-    ],
-    "aion-api-client": [
-        "aion-core",
-    ],
-    "aion-mcp": [
-        "aion-api-client",
-    ],
-    "aion-db": [
-        "aion-core",
-    ],
-    "aion-core": [],
-}
 
-
-def resolve_dependencies(package_name: str) -> List[str]:
+def find_pyproject_files() -> List[Path]:
     """
-    Resolve all transitive dependencies for a package using level-order traversal (BFS).
-
-    Dependencies are resolved level by level, ensuring higher-level packages
-    are installed before their dependencies.
-
-    Args:
-        package_name: The package to resolve dependencies for
+    Find every `pyproject.toml` under `libs/`.
 
     Returns:
-        List of all packages in installation order (current package, then dependencies level by level)
-
-    Raises:
-        ValueError: If a circular dependency is detected
+        Sorted list of paths, one per Poetry package
     """
-    result = []
-    seen = set()
-    queue = deque([package_name])
-    in_progress = set()
+    return sorted(LIBS_DIR.glob("*/pyproject.toml"))
 
-    while queue:
-        current = queue.popleft()
 
-        # Skip if already processed
-        if current in seen:
-            continue
+def get_all_packages() -> List[str]:
+    """
+    Discover all Poetry packages in the monorepo.
 
-        # Check for circular dependency
-        if current in in_progress:
-            raise ValueError(f"Circular dependency detected: {current}")
+    Directories without a `pyproject.toml` (for example the npm-based
+    `aion-chat-ui`) are not Poetry packages and are skipped.
 
-        in_progress.add(current)
-        seen.add(current)
-        result.append(current)
-
-        # Add direct dependencies to queue
-        direct_deps = PACKAGES.get(current, [])
-        for dep in direct_deps:
-            if dep not in seen:
-                queue.append(dep)
-
-        in_progress.remove(current)
-
-    return result
+    Returns:
+        Sorted list of package names
+    """
+    return [path.parent.name for path in find_pyproject_files()]

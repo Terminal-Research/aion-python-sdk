@@ -428,7 +428,8 @@ class TestExecuteViaResolve:
                     await executor.execute(ctx, event_queue)
 
         assert resume_called_with.get("context") is ctx
-        event_queue.enqueue_event.assert_not_awaited()
+        enqueued = [call.args[0] for call in event_queue.enqueue_event.await_args_list]
+        assert task not in enqueued
 
 
 class TestCreateFactory:

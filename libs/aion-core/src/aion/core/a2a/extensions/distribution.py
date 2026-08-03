@@ -205,8 +205,9 @@ class Environment(A2ABaseModel):
     """Control-plane environment configuration for the invoked agent runtime.
 
     The environment is the administrator-configured runtime configuration for
-    this server invocation. It supplies the values for configuration variables
-    declared by the static behavior configuration.
+    this server invocation. It supplies literal values for configuration
+    variables declared by the static behavior configuration. Aion omits
+    protected entries from the extension payload.
     """
 
     id: str = Field(description="Environment id in the Aion control plane.")
@@ -217,9 +218,8 @@ class Environment(A2ABaseModel):
     )
     configuration_variables: Dict[str, str] = Field(
         description=(
-            "Environment configuration key/value pairs resolved for this runtime "
-            "invocation. These are the administrator-provided values for variables "
-            "defined by the agent behavior configuration."
+            "Literal environment configuration key/value pairs included for this "
+            "runtime invocation. Protected entries are omitted by Aion."
         )
     )
     daemon_agent_identity_id: Optional[str] = Field(

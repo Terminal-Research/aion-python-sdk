@@ -2,8 +2,8 @@
 """
 Lock dependencies for all packages in the monorepo.
 
-This script runs `poetry lock` on all packages defined in config.PACKAGES
-to update their poetry.lock files based on the current pyproject.toml specifications.
+This script runs `poetry lock` on every discovered package to update its
+poetry.lock based on the current pyproject.toml specification.
 
 By default, poetry lock performs an incremental update, preserving existing
 locked versions that still satisfy constraints. Use --regenerate to force
@@ -28,10 +28,10 @@ Examples:
 
 import sys
 
+from config import get_all_packages
 from package_ops import (
     check_poetry_available,
     execute_poetry_command,
-    get_all_packages,
     validate_libs_dir
 )
 

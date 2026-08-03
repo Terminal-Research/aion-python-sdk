@@ -14,14 +14,20 @@ This repository is a monorepo containing multiple projects located primarily und
 - **_agent-workflow** – example implementation of a langgraph project using langgraph_api as a server
 - **aion-sdk** – command line interface for the Aion Python SDK exposing the `aion` entry point. Delegates `aion chat` and headless `aion chat run` requests to the packaged standalone chat UI, sets the Python credential-helper environment for Python-launched chat auth, and leaves interactive chat commands to the npm `aio`/`aion-chat` entrypoints and composer slash commands.
 - **aion-chat-ui** – standalone React/Ink terminal chat UI built with TypeScript. Packaged for `aion-sdk` as the `aion chat` experience and published to npm as `@terminal-research/aion`, which installs the `aio` executable with an `aion-chat` alias. Includes interactive chat, headless one-shot `run`, slash-command request/response mode controls, update prompts with GitHub release-note links, environment-scoped agent source discovery, local session/settings persistence, and WorkOS CLI/device login with npm keyring storage or the Python credential helper supplied by `aion-sdk`.
-- **aion-server** – Google A2A server running a LangGraph agent. Provides task store, agent/plugin lifecycle, and FastAPI application. DB management is delegated to `aion-db`. Graphs and HTTP apps are configured via `aion.yaml` and can be dynamically mounted onto the server.
+- **aion-server** – Google A2A server running a LangGraph agent. Provides task
+  store, agent/plugin lifecycle, FastAPI application, and contract tests for
+  published `aion.yaml` configuration schemas. DB management is delegated to
+  `aion-db`. Graphs and HTTP apps are configured via `aion.yaml` and can be
+  dynamically mounted onto the server.
 - **aion-api-client** – provides a low level GraphQL client and a high level
   `ApiClient` interface for the Aion API. Also owns low-level HTTP/OpenAI-
   compatible model-service connection helpers, request-scoped model-service
   principal header injection, and typed control-plane addressing utilities
   used by framework packages.
 - **aion-core** – shared A2A payloads, runtime context, invocation abstractions,
-  constants, configuration, and logging used across Aion SDK packages. Owns the
+  constants, static agent configuration schema parsing/publication (including
+  dedicated secret fields), and logging used across Aion SDK packages.
+  Owns the
   provider-neutral Distribution/Messaging context hierarchy, reply contract,
   and representative provider payload fixtures used to verify that contract.
 - **aion-adk** – Google ADK helper package for Aion-backed model

@@ -11,7 +11,9 @@
   - [Complex Agent Configuration](#complex-agent-configuration)
   - [Configuration Properties](#configuration-properties)
 - [Configuration Field Types](#configuration-field-types)
+  - [Protected Values in Aion](#protected-values-in-aion)
   - [String Fields](#string-fields)
+  - [LLM Fields](#llm-fields)
   - [Numeric Fields](#numeric-fields)
   - [Boolean Fields](#boolean-fields)
   - [Array Fields](#array-fields)
@@ -287,6 +289,28 @@ Each skill object contains:
 
 Agent configuration supports multiple field types with comprehensive validation options.
 
+### Protected Values in Aion
+
+The `configuration` block defines a static semantic schema. Use a top-level
+`secret` field when a value must use protected storage. Composer renders a
+write-only protected input for that field. Ordinary strings remain literal.
+Secret fields cannot declare literal defaults, validation constraints, or
+nested item schemas; LLM selectors, numbers, booleans, arrays, and objects also
+remain literal.
+
+Protected plaintext is sent through Aion's write-only service. The Project
+stores an opaque scope-and-purpose-bound reference, and neither the SDK nor
+Composer provides a reveal operation. Reusing one reference within the same
+Project and purpose intentionally shares its rotation and clear lifecycle.
+
+Runtime configuration reaches the SDK as strings. Aion resolves protected
+references before constructing agent runtime context, including requests to
+Aion Remote and A2A Remote runtimes. Distribution and daemon contexts carry
+the resolved configuration as ordinary string maps. Distribution context uses
+the
+[Aion Distribution extension](https://docs.aion.to/a2a/extensions/aion/distribution/1.0.0).
+Neither runtime payload exposes secret references.
+
 ### String Fields
 
 ```yaml
@@ -307,6 +331,38 @@ field_name:
 - `min_length`/`max_length`: Character count limits
 - `enum`: Restricts to specific values
 - `default`: Used when field not provided
+
+### Secret Fields
+
+Use a dedicated secret field for write-only protected configuration:
+
+```yaml
+api_key:
+  type: "secret"
+  description: "Provider API key"
+  required: true
+```
+
+**Secret field options:**
+- `required`: Must be provided in configuration
+- `nullable`: Can accept `null` as valid value
+
+Secret fields must be top-level and do not accept `default`, `min_length`,
+`max_length`, `enum`, or `items`.
+
+### LLM Fields
+
+An `llm` field stores a model identifier while allowing the Aion control plane
+to render a model selector. It is a specialized field and does not support
+protected storage.
+
+```yaml
+model:
+  type: "llm"
+  description: "Model used for responses"
+  default: "openai/gpt-4.1-mini"
+  required: true
+```
 
 ### Numeric Fields
 
@@ -447,9 +503,11 @@ All field types support these properties:
 |----------|------|-------------|
 | `type` | string | Field type (required) |
 | `description` | string | Human-readable description |
-| `default` | any | Default value when not provided |
 | `required` | boolean | Whether field must be specified |
 | `nullable` | boolean | Whether field can be `null` |
+
+Literal field types may also define a type-appropriate `default`. Secret fields
+never define defaults.
 
 #### Type-Specific Properties
 
