@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 class ConfigurationType(str, Enum):
     """Supported configuration types."""
     STRING = "string"
+    SECRET = "secret"
     LLM = "llm"
     INTEGER = "integer"
     FLOAT = "float"
@@ -22,9 +23,9 @@ class ConfigurationType(str, Enum):
 class ConfigurationField(BaseModel):
     """Describe one semantic agent configuration field.
 
-    A top-level string may require protected storage by setting ``secret``.
-    Protected fields cannot declare defaults or appear inside arrays or
-    objects. Other field types always use literal configuration values.
+    A top-level ``secret`` field requires protected storage and cannot declare
+    literal validation metadata or appear inside arrays or objects. Other
+    field types always use literal configuration values.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -39,12 +40,6 @@ class ConfigurationField(BaseModel):
     type: Optional[ConfigurationType] = Field(
         default=ConfigurationType.STRING,
         description="Type of the configuration field")
-    secret: bool = Field(
-        default=False,
-        strict=True,
-        description="Whether a top-level string requires protected storage",
-    )
-
     # Numeric constraints
     min: Optional[Union[int, float]] = Field(default=None, description="Minimum value for numeric types")
     max: Optional[Union[int, float]] = Field(default=None, description="Maximum value for numeric types")
@@ -70,7 +65,11 @@ class ConfigurationField(BaseModel):
 
         field_type = info.data.get('type')
 
-        if field_type == ConfigurationType.ARRAY:
+        if field_type == ConfigurationType.SECRET:
+            raise ValueError(
+                "Secret fields cannot declare literal metadata: items"
+            )
+        elif field_type == ConfigurationType.ARRAY:
             # For arrays, items should be a single ConfigurationField
             if isinstance(value, ConfigurationField):
                 return value
@@ -102,6 +101,7 @@ class ConfigurationField(BaseModel):
                     raise ValueError(f"Property '{key}' must be a ConfigurationField instance, dict, or None")
 
             return result
+
         else:
             # For other types, items should not be used
             if value is not None:
@@ -109,28 +109,39 @@ class ConfigurationField(BaseModel):
             return None
 
     @model_validator(mode="after")
-    def validate_secret_policy(self) -> "ConfigurationField":
-        """Validate schema-owned protected-storage constraints.
+    def validate_secret_field(self) -> "ConfigurationField":
+        """Validate the dedicated protected-storage field constraints.
 
         Returns:
             The validated configuration field.
 
         Raises:
-            ValueError: If protected storage is declared for an unsupported
-                field, default, or nested location.
+            ValueError: If a secret field declares literal metadata or appears
+                in a nested location.
         """
-        if self.secret and self.type != ConfigurationType.STRING:
-            raise ValueError("Only string fields may set secret=true")
-        if self.secret and self.default is not None:
-            raise ValueError("Secret string fields cannot declare a default")
+        if self.type == ConfigurationType.SECRET:
+            invalid_fields = {
+                "default",
+                "min",
+                "max",
+                "min_length",
+                "max_length",
+                "enum",
+                "items",
+            } & self.model_fields_set
+            if invalid_fields:
+                names = ", ".join(sorted(invalid_fields))
+                raise ValueError(
+                    f"Secret fields cannot declare literal metadata: {names}"
+                )
 
         nested_fields = []
         if isinstance(self.items, ConfigurationField):
             nested_fields.append(self.items)
         elif isinstance(self.items, dict):
             nested_fields.extend(self.items.values())
-        if any(field.secret for field in nested_fields):
-            raise ValueError("Secret string fields must be top-level")
+        if any(field.type == ConfigurationType.SECRET for field in nested_fields):
+            raise ValueError("Secret fields must be top-level")
 
         return self
 

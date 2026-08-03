@@ -97,46 +97,51 @@ class TestAgentConfigConfiguration:
 
         assert agent.configuration["model"].type == ConfigurationType.LLM
 
-    def test_top_level_string_may_require_protected_storage(self):
-        """AgentConfig accepts schema-owned protection for a string field."""
+    def test_top_level_secret_field_requires_protected_storage(self):
+        """AgentConfig accepts the dedicated protected field type."""
         agent = AgentConfig(
             path="my.module:Agent",
             configuration={
-                "api_key": {"type": "string", "secret": True},
+                "api_key": {"type": "secret"},
             },
         )
 
-        assert agent.configuration["api_key"].secret is True
+        assert agent.configuration["api_key"].type == ConfigurationType.SECRET
 
-    @pytest.mark.parametrize("field_type", ["integer", "llm", "array"])
-    def test_non_string_fields_reject_secret_policy(self, field_type):
-        """Only string declarations may require protected storage."""
-        with pytest.raises(ValidationError, match="Only string fields"):
-            ConfigurationField(type=field_type, secret=True)
-
-    def test_secret_string_rejects_a_default(self):
-        """Protected string declarations cannot seed plaintext defaults."""
-        with pytest.raises(ValidationError, match="cannot declare a default"):
+    @pytest.mark.parametrize(
+        "metadata",
+        [
+            {"default": "plaintext"},
+            {"min": 1},
+            {"max": 10},
+            {"min_length": 1},
+            {"max_length": 10},
+            {"enum": ["one"]},
+            {"items": {"type": "string"}},
+        ],
+    )
+    def test_secret_field_rejects_literal_metadata(self, metadata):
+        """Secret declarations cannot carry literal validation metadata."""
+        with pytest.raises(ValidationError, match="literal metadata"):
             ConfigurationField(
-                type=ConfigurationType.STRING,
-                secret=True,
-                default="plaintext",
+                type=ConfigurationType.SECRET,
+                **metadata,
             )
 
     @pytest.mark.parametrize(
         "field_type,items",
         [
-            ("array", {"type": "string", "secret": True}),
-            ("object", {"api_key": {"type": "string", "secret": True}}),
+            ("array", {"type": "secret"}),
+            ("object", {"api_key": {"type": "secret"}}),
         ],
     )
-    def test_nested_string_rejects_secret_policy(self, field_type, items):
-        """Protected string declarations must remain top-level."""
+    def test_nested_secret_field_is_rejected(self, field_type, items):
+        """Secret declarations must remain top-level."""
         with pytest.raises(ValidationError, match="must be top-level"):
             ConfigurationField(type=field_type, items=items)
 
-    def test_secret_policy_requires_a_boolean(self):
-        """String-like values are not coerced into schema policy booleans."""
+    def test_legacy_secret_property_is_rejected(self):
+        """The removed string policy property is not accepted."""
         with pytest.raises(ValidationError):
             ConfigurationField(type=ConfigurationType.STRING, secret="true")
 

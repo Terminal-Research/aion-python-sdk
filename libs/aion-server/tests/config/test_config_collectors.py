@@ -49,21 +49,26 @@ class TestCollectStringField:
         assert "min" not in result
         assert "max" not in result
 
-    def test_string_field_publishes_default_secret_policy(self):
-        """collect publishes the default literal policy for strings."""
+    def test_string_field_has_no_secret_policy(self):
+        """collect publishes ordinary strings without storage metadata."""
         result = _collect(
             {"api_key": ConfigurationField(type=ConfigurationType.STRING)}
         )["api_key"]
 
-        assert result["secret"] is False
+        assert "secret" not in result
 
-    def test_string_field_publishes_protected_secret_policy(self):
-        """collect publishes schema-owned protection for strings."""
+    def test_secret_field_publishes_only_common_metadata(self):
+        """collect publishes the dedicated secret discriminator."""
         result = _collect(
-            {"api_key": {"type": "string", "secret": True}}
+            {"api_key": {"type": "secret", "required": True}}
         )["api_key"]
 
-        assert result["secret"] is True
+        assert result == {
+            "type": "secret",
+            "description": "",
+            "required": True,
+            "nullable": True,
+        }
 
 
 class TestCollectLlmField:

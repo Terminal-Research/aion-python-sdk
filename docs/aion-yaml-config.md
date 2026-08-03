@@ -291,12 +291,12 @@ Agent configuration supports multiple field types with comprehensive validation 
 
 ### Protected Values in Aion
 
-The `configuration` block defines a static semantic schema. Set `secret: true`
-on a top-level `string` field when that value must use protected storage.
-Composer then renders a write-only protected input rather than asking the user
-to choose a storage mode. Ordinary strings remain literal. Protected fields
-cannot declare defaults or appear inside arrays or objects; LLM selectors,
-numbers, booleans, arrays, and objects also remain literal.
+The `configuration` block defines a static semantic schema. Use a top-level
+`secret` field when a value must use protected storage. Composer renders a
+write-only protected input for that field. Ordinary strings remain literal.
+Secret fields cannot declare literal defaults, validation constraints, or
+nested item schemas; LLM selectors, numbers, booleans, arrays, and objects also
+remain literal.
 
 Protected plaintext is sent through Aion's write-only service. The Project
 stores an opaque scope-and-purpose-bound reference, and neither the SDK nor
@@ -325,23 +325,30 @@ field_name:
   enum: ["option1", "option2", "option3"]  # Allowed values only
 ```
 
-To require protected storage, omit `default` and declare the field explicitly:
-
-```yaml
-api_key:
-  type: "string"
-  description: "Provider API key"
-  secret: true
-  required: true
-```
-
 **String validation options:**
 - `required`: Must be provided in configuration
 - `nullable`: Can accept `null` as valid value
 - `min_length`/`max_length`: Character count limits
 - `enum`: Restricts to specific values
 - `default`: Used when field not provided
-- `secret`: Requires write-only protected storage; top-level fields only
+
+### Secret Fields
+
+Use a dedicated secret field for write-only protected configuration:
+
+```yaml
+api_key:
+  type: "secret"
+  description: "Provider API key"
+  required: true
+```
+
+**Secret field options:**
+- `required`: Must be provided in configuration
+- `nullable`: Can accept `null` as valid value
+
+Secret fields must be top-level and do not accept `default`, `min_length`,
+`max_length`, `enum`, or `items`.
 
 ### LLM Fields
 
@@ -496,9 +503,11 @@ All field types support these properties:
 |----------|------|-------------|
 | `type` | string | Field type (required) |
 | `description` | string | Human-readable description |
-| `default` | any | Default value when not provided |
 | `required` | boolean | Whether field must be specified |
 | `nullable` | boolean | Whether field can be `null` |
+
+Literal field types may also define a type-appropriate `default`. Secret fields
+never define defaults.
 
 #### Type-Specific Properties
 

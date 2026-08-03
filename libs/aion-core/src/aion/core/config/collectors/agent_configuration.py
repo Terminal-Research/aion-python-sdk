@@ -42,14 +42,17 @@ class AgentConfigurationCollector(BaseCollector):
         config = {
             "type": field_type,
             "description": field.description or "",
-            "default": field.default,
             "required": field.required,
             "nullable": field.nullable
         }
 
-        if field_type in ["string"]:
+        if field_type == "secret":
+            return config
+
+        config["default"] = field.default
+
+        if field_type == "string":
             config.update({
-                "secret": field.secret,
                 "min_length": field.min_length,
                 "max_length": field.max_length,
                 "enum": field.enum
@@ -95,7 +98,6 @@ class AgentConfigurationCollector(BaseCollector):
             "default": None,
             "required": False,
             "nullable": True,
-            "secret": False,
             "min_length": None,
             "max_length": None,
             "enum": None
