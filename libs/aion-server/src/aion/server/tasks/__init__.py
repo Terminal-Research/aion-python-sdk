@@ -2,6 +2,7 @@ from .stores import BaseTaskStore, PostgresTaskStore, InMemoryTaskStore
 from .store_manager import store_manager, StoreManager
 from .task_manager import AionTaskManager
 from .push_notifications import PushNotificationFactory
+from .terminal_push_sender import TerminalTaskPushSender
 from .deduplicator import A2ATaskDeduplicator
 
 __all__ = [
@@ -14,5 +15,6 @@ __all__ = [
     "AionTaskManager",
     # Push notifications
     "PushNotificationFactory",
+    "TerminalTaskPushSender",
     "A2ATaskDeduplicator",
 ]

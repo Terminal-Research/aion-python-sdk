@@ -6,7 +6,7 @@ from a2a.server.agent_execution.active_task import ActiveTask
 from a2a.server.agent_execution.active_task_registry import ActiveTaskRegistry
 from a2a.server.context import ServerCallContext
 
-from aion.server.tasks import AionTaskManager
+from aion.server.tasks import AionTaskManager, TerminalTaskPushSender
 from aion.server.agent.execution.scope import set_task_manager
 
 
@@ -36,11 +36,18 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
 
             set_task_manager(task_manager)
 
+            # Push dispatch runs in the background consumer with no request
+            # context, so the outbound projection is bound per task, to the
+            # manager that carries the task's call context.
+            push_sender = self._push_sender
+            if push_sender is not None:
+                push_sender = TerminalTaskPushSender(inner=push_sender, task_manager=task_manager)
+
             active_task = ActiveTask(
                 agent_executor=self._agent_executor,
                 task_id=task_id,
                 task_manager=task_manager,
-                push_sender=self._push_sender,
+                push_sender=push_sender,
                 on_cleanup=self._on_active_task_cleanup,
             )
             self._active_tasks[task_id] = active_task
