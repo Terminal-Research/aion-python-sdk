@@ -16,7 +16,8 @@ This repository is a monorepo containing multiple projects located primarily und
 - **aion-chat-ui** – standalone React/Ink terminal chat UI built with TypeScript. Packaged for `aion-sdk` as the `aion chat` experience and published to npm as `@terminal-research/aion`, which installs the `aio` executable with an `aion-chat` alias. Includes interactive chat, headless one-shot `run`, slash-command request/response mode controls, update prompts with GitHub release-note links, environment-scoped agent source discovery, local session/settings persistence, and WorkOS CLI/device login with npm keyring storage or the Python credential helper supplied by `aion-sdk`.
 - **aion-server** – Google A2A server running a LangGraph agent. Provides task
   store, agent/plugin lifecycle, FastAPI application, and contract tests for
-  published `aion.yaml` configuration schemas. DB management is delegated to
+  published `aion.yaml` configuration schemas, including compact discovery
+  documents that omit null field metadata. DB management is delegated to
   `aion-db`. Graphs and HTTP apps are configured via `aion.yaml` and can be
   dynamically mounted onto the server.
 - **aion-api-client** – provides a low level GraphQL client and a high level
