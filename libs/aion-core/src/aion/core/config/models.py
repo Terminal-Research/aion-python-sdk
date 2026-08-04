@@ -23,9 +23,9 @@ class ConfigurationType(str, Enum):
 class ConfigurationField(BaseModel):
     """Describe one semantic agent configuration field.
 
-    A top-level ``secret`` field requires protected storage and cannot declare
-    literal validation metadata or appear inside arrays or objects. Other
-    field types always use literal configuration values.
+    ``secret`` is a dedicated top-level field type. It cannot declare literal
+    validation metadata or appear inside arrays or objects. Other field types
+    always use literal configuration values.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -110,7 +110,7 @@ class ConfigurationField(BaseModel):
 
     @model_validator(mode="after")
     def validate_secret_field(self) -> "ConfigurationField":
-        """Validate the dedicated protected-storage field constraints.
+        """Validate the dedicated secret field constraints.
 
         Returns:
             The validated configuration field.

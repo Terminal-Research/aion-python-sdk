@@ -16,7 +16,7 @@ def test_configuration_route_omits_null_secret_metadata():
             configuration={
                 "api_key": {
                     "type": "secret",
-                    "description": "Protected API credential",
+                    "description": "Provider API credential",
                     "nullable": True,
                 }
             }
@@ -29,7 +29,7 @@ def test_configuration_route_omits_null_secret_metadata():
 
     assert response.status_code == 200
     assert response.json()["configuration"]["api_key"] == {
-        "description": "Protected API credential",
+        "description": "Provider API credential",
         "required": False,
         "nullable": True,
         "type": "secret",

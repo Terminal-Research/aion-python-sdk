@@ -97,8 +97,8 @@ class TestAgentConfigConfiguration:
 
         assert agent.configuration["model"].type == ConfigurationType.LLM
 
-    def test_top_level_secret_field_requires_protected_storage(self):
-        """AgentConfig accepts the dedicated protected field type."""
+    def test_top_level_secret_field_uses_dedicated_type(self):
+        """AgentConfig accepts the dedicated secret field type."""
         agent = AgentConfig(
             path="my.module:Agent",
             configuration={
