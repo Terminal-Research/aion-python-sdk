@@ -310,10 +310,9 @@ field_name:
 
 ### Secret Fields
 
-Use `type: "secret"` for a top-level configuration field whose value must remain
-write-only. A secret is a dedicated field type, not a property that can be
-added to a string or another field type. Composer accepts only secret input for
-the field and does not offer a literal storage option.
+Use `type: "secret"` for a top-level configuration value that must be encrypted
+at rest. Composer provides a write-only input and does not display the saved
+value.
 
 ```yaml
 api_key:
@@ -329,19 +328,13 @@ api_key:
 Secret fields must be top-level and do not accept `default`, `min_length`,
 `max_length`, `enum`, or `items`.
 
-Values submitted for a secret field go directly to Aion's write-only secret
-service. The Project stores an opaque scope-and-purpose-bound reference, and
-neither the SDK nor Composer provides a reveal operation. Each update creates a
-new immutable Secret version, allowing an earlier Project version to restore
-the exact value it referenced.
-
-Runtime configuration reaches the SDK as strings. Aion resolves secret fields
-before constructing agent runtime context, including requests to Aion Remote
-and A2A Remote runtimes. The
+At runtime, secret values are provided to the agent as ordinary strings. When
+Aion calls a remote server, these values are included as plaintext in the
+configuration map carried by the
 [Distribution extension](https://docs.aion.to/a2a/extensions/aion/distribution/1.0.0)
-and [Daemon extension](https://docs.aion.to/a2a/extensions/aion/daemon/1.0.0)
-carry resolved configuration as ordinary string maps and never expose opaque
-Project secret references.
+or [Daemon extension](https://docs.aion.to/a2a/extensions/aion/daemon/1.0.0).
+Treat these payloads as sensitive data. Do not log, persist, or forward their
+configuration values beyond the intended runtime.
 
 ### LLM Fields
 
