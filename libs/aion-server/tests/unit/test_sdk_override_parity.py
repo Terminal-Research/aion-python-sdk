@@ -26,6 +26,7 @@ from a2a.server.agent_execution.active_task_registry import ActiveTaskRegistry
 from a2a.server.request_handlers import DefaultRequestHandlerV2
 from a2a.server.routes.jsonrpc_dispatcher import JsonRpcDispatcher
 from a2a.server.tasks import TaskManager, TaskStore
+from a2a.server.tasks.base_push_notification_sender import BasePushNotificationSender
 from a2a.server.tasks.push_notification_sender import PushNotificationSender
 from a2a.types import Message, Role
 from unittest.mock import AsyncMock, Mock, patch
@@ -36,6 +37,7 @@ from aion.server.agent.execution.request_context_builder import AionRequestConte
 from aion.server.agent.execution.request_executor import AionAgentRequestExecutor
 from aion.server.core.app.handlers.jsonrpc_dispatcher import AionJsonRpcDispatcher
 from aion.server.core.app.handlers.request_handler import AionRequestHandler
+from aion.server.tasks.authenticated_push_sender import AuthenticatedPushNotificationSender
 from aion.server.tasks.stores.in_memory_task_store import InMemoryTaskStore
 from aion.server.tasks.stores.postgres_task_store import PostgresTaskStore
 from aion.server.tasks.task_manager import AionTaskManager
@@ -58,6 +60,11 @@ OVERRIDES = [
     (AionAgentRequestExecutor, AgentExecutor, "execute"),
     (AionAgentRequestExecutor, AgentExecutor, "cancel"),
     (TerminalTaskPushSender, PushNotificationSender, "send_notification"),
+    (
+        AuthenticatedPushNotificationSender,
+        BasePushNotificationSender,
+        "_dispatch_notification",
+    ),
     (InMemoryTaskStore, TaskStore, "save"),
     (InMemoryTaskStore, TaskStore, "get"),
     (InMemoryTaskStore, TaskStore, "delete"),

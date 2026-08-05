@@ -90,7 +90,7 @@ class AionLogstashFormatter(LogstashFormatter):
             "span.name": record.trace_span_name,
             "parent.span.id": record.trace_parent_span_id,
 
-            "tags": trace_baggage | agent_framework_baggage | {
+            "_tags": trace_baggage | agent_framework_baggage | {
                 "aion.distribution.id": record.aion_distribution_id,
                 "aion.version.id": record.aion_version_id,
                 "aion.agentEnvironment.id": record.aion_agent_environment_id,

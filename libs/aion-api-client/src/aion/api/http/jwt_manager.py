@@ -9,7 +9,7 @@ from abc import ABC, abstractmethod
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Any, Dict, Optional
 
 import jwt
 
@@ -160,6 +160,51 @@ class AionRefreshingJWTManager(AionJWTManager):
                     await self._refresh_token()
             return None if not self._token else self._token.value
 
+    def _store_token(self, data: Dict[str, Any]) -> None:
+        """
+        Cache the token carried by an authentication response.
+
+        Extracts the access token, creates a :class:`Token` from it, and clears
+        the auth-failed latch so a recovered endpoint resumes serving tokens.
+        """
+        token_value = data.get("accessToken")
+        if not token_value:
+            raise ValueError("Access Token is missing in response.")
+
+        first_token = self._token is None
+        self._token = Token.from_jwt(token_value)
+        # Reset auth failed flag on successful authentication
+        self._auth_failed = False
+
+        logger.info(
+            "Token %s successfully, expires at: %s",
+            "fetched" if first_token else "refreshed",
+            self._token.expires_at,
+        )
+
+    def _handle_auth_error(self, ex: AionAuthenticationError) -> None:
+        """
+        Drop the cached token, latching only when credentials were rejected.
+
+        Only a 401 means the credentials themselves are wrong, which no amount
+        of retrying will fix. Every other status - a 404 from a stale endpoint,
+        a 5xx, a gateway error - is transient or a deployment problem, and
+        latching on it would disable authentication for every consumer sharing
+        this manager until the process restarts.
+        """
+        self._token = None
+
+        if ex.status_code == 401:
+            self._auth_failed = True
+            logger.warning(
+                "Aion authentication failed with 401 error. "
+                "Further refresh attempts will be skipped until reset.")
+            return
+
+        logger.warning(
+            "Aion authentication failed: %s. Refresh will be retried on the "
+            "next token request.", ex)
+
     async def _refresh_token(self) -> None:
         """
         Refresh the token using the HTTP client.
@@ -177,33 +222,11 @@ class AionRefreshingJWTManager(AionJWTManager):
         if self._auth_failed:
             return
 
-        first_token = self._token is None
         try:
-            data = await self._client.authenticate()
-            token_value = data.get("accessToken")
-            if not token_value:
-                raise ValueError("Access Token is missing in response.")
+            self._store_token(await self._client.authenticate())
 
-            self._token = Token.from_jwt(token_value)
-            # Reset auth failed flag on successful authentication
-            self._auth_failed = False
-
-            if first_token:
-                processed_action = "fetched"
-            else:
-                processed_action = "refreshed"
-            logger.info(
-                "Token %s successfully, expires at: %s",
-                processed_action,
-                self._token.expires_at,
-            )
-
-        except AionAuthenticationError:
-            self._auth_failed = True
-            self._token = None
-            logger.warning(
-                "Aion authentication failed with 401 error. "
-                "Further refresh attempts will be skipped until reset.")
+        except AionAuthenticationError as ex:
+            self._handle_auth_error(ex)
 
         except Exception as ex:
             logger.error("Token refresh failed: %s", ex)
@@ -236,32 +259,11 @@ class AionRefreshingJWTManager(AionJWTManager):
         if self._auth_failed:
             return
 
-        first_token = self._token is None
         try:
-            data = self._client.authenticate_sync()
-            token_value = data.get("accessToken")
-            if not token_value:
-                raise ValueError("Access Token is missing in response.")
+            self._store_token(self._client.authenticate_sync())
 
-            self._token = Token.from_jwt(token_value)
-            self._auth_failed = False
-
-            if first_token:
-                processed_action = "fetched"
-            else:
-                processed_action = "refreshed"
-            logger.info(
-                "Token %s successfully, expires at: %s",
-                processed_action,
-                self._token.expires_at,
-            )
-
-        except AionAuthenticationError:
-            self._auth_failed = True
-            self._token = None
-            logger.warning(
-                "Aion authentication failed with 401 error. "
-                "Further refresh attempts will be skipped until reset.")
+        except AionAuthenticationError as ex:
+            self._handle_auth_error(ex)
 
         except Exception as ex:
             logger.error("Token refresh failed: %s", ex)

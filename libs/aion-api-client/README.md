@@ -44,7 +44,7 @@ The REST helpers target these control-plane endpoints:
 
 | Endpoint | Purpose |
 |---|---|
-| `POST /auth/token` | Exchanges Aion client credentials for an API token. |
+| `POST /auth/tokens` | Exchanges Aion client credentials for an API token. |
 | `GET /v1/models` | Lists model-service catalog entries available through Aion. |
 | `GET /v1/models/{model}` | Retrieves one model-service catalog entry. |
 | `POST /v1/chat/completions` | Creates a model-service chat completion, including streaming responses when requested. |

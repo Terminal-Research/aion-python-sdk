@@ -46,7 +46,7 @@ class AionHttpClient:
         """
         response = self.request_sync(
             method="POST",
-            endpoint="/auth/token",
+            endpoint="/auth/tokens",
             token=None,
             json_data=self._authentication_payload(),
         )
@@ -67,10 +67,13 @@ class AionHttpClient:
         response: httpx.Response,
     ) -> Dict[str, Any]:
         if response.status_code == 401:
-            raise AionAuthenticationError("Invalid client credentials")
+            raise AionAuthenticationError(
+                "Invalid client credentials", status_code=401
+            )
         if response.status_code != 200:
             raise AionAuthenticationError(
-                f"Authentication failed: {response.status_code}"
+                f"Authentication failed: {response.status_code}",
+                status_code=response.status_code,
             )
 
         return response.json()
