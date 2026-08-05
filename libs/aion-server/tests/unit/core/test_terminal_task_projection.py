@@ -20,6 +20,7 @@ from a2a.utils.errors import InternalError
 from a2a.utils.task import apply_history_length
 from unittest.mock import AsyncMock, Mock
 
+from aion.core.a2a.enums import A2AMetadataKey
 from aion.server.core.app.handlers.terminal_task_projection import TerminalTaskProjection
 
 TASK_ID = "task-1"
@@ -78,11 +79,6 @@ def _store(task: Task | None) -> Mock:
 
 async def _collect(projection: TerminalTaskProjection, *events) -> list:
     return [event async for event in projection.project(_stream(*events))]
-
-
-def _saved(store: Mock) -> Task:
-    store.save.assert_awaited_once()
-    return store.save.await_args.args[0]
 
 
 class TestTerminalTaskProjection:
@@ -188,8 +184,13 @@ class TestTerminalTaskProjection:
             await _collect(projection, _status(TaskState.TASK_STATE_WORKING, _message()))
 
     @pytest.mark.anyio
-    async def test_stale_active_snapshot_is_settled_before_it_is_emitted(self):
-        """A snapshot still in an active state is closed rather than emitted as is."""
+    async def test_stale_active_snapshot_is_answered_with_the_declared_state(self):
+        """A store lagging behind a declared outcome still closes the stream properly.
+
+        The SDK persists an outcome before the event reaches the projection, so
+        this should not happen. If it does, the client is answered with what the
+        stream declared — but the store is left to its owner.
+        """
         store = _store(_task(TaskState.TASK_STATE_WORKING))
         projection = TerminalTaskProjection(task_store=store, call_context=Mock())
 
@@ -199,7 +200,7 @@ class TestTerminalTaskProjection:
         assert [type(event) for event in result] == [Task, Task]
         assert result[0].status.state == TaskState.TASK_STATE_WORKING
         assert result[-1].status.state == TaskState.TASK_STATE_COMPLETED
-        assert _saved(store).status.state == TaskState.TASK_STATE_COMPLETED
+        store.save.assert_not_awaited()
 
     @pytest.mark.anyio
     async def test_event_after_non_active_status_releases_it_in_order(self):
@@ -337,7 +338,13 @@ class TestFailureClosing:
 
     @pytest.mark.anyio
     async def test_failure_closes_the_task_and_ends_the_stream(self):
-        """The client is told the task failed instead of getting a broken stream."""
+        """The client is told the task failed instead of getting a broken stream.
+
+        The SDK persists FAILED on both its producer and its consumer path
+        before the exception reaches a subscriber, so the projection only has
+        to read. A store still holding an active state is a lag the client is
+        answered around, not one the projection writes through.
+        """
         store = _store(_task(TaskState.TASK_STATE_WORKING))
         projection = TerminalTaskProjection(task_store=store, call_context=Mock())
 
@@ -345,7 +352,7 @@ class TestFailureClosing:
 
         assert [type(event) for event in result] == [Task, TaskStatusUpdateEvent, Task]
         assert result[-1].status.state == TaskState.TASK_STATE_FAILED
-        assert _saved(store).status.state == TaskState.TASK_STATE_FAILED
+        store.save.assert_not_awaited()
 
     @pytest.mark.anyio
     async def test_failure_keeps_a_state_the_agent_already_declared(self):
@@ -385,23 +392,60 @@ class TestFailureClosing:
 
 
 class TestUnsettledStream:
-    """A stream that ends without an outcome is settled as COMPLETED."""
+    """A stream that ends without an outcome is closed on the stored task as is.
+
+    The projection cannot tell a finished turn from its own disconnection —
+    ``ActiveTask`` absorbs the cancellation and ends the subscription normally
+    either way. Since a disconnected client does not stop the execution, which
+    goes on to record the real outcome, inventing a state here would race a
+    live writer. So nothing is invented and nothing is written.
+    """
 
     @pytest.mark.anyio
-    async def test_active_task_is_completed_when_the_stream_ends(self):
-        """Nothing reported a failure, so the task is closed as COMPLETED."""
+    async def test_silent_stream_closes_on_the_stored_task(self):
+        """The stream still ends with a Task, carrying whatever the store holds."""
         store = _store(_task(TaskState.TASK_STATE_WORKING))
         projection = TerminalTaskProjection(task_store=store, call_context=Mock())
 
         result = await _collect(projection, _status(TaskState.TASK_STATE_WORKING, _message()))
 
         assert [type(event) for event in result] == [Task, TaskStatusUpdateEvent, Task]
-        assert result[-1].status.state == TaskState.TASK_STATE_COMPLETED
-        assert _saved(store).status.state == TaskState.TASK_STATE_COMPLETED
+        assert result[-1].status.state == TaskState.TASK_STATE_WORKING
 
     @pytest.mark.anyio
-    async def test_settling_invents_no_message(self):
-        """A silent stream completes without a fabricated answer."""
+    async def test_silent_stream_never_writes(self):
+        """A subscriber ending is not evidence that the execution ended."""
+        store = _store(_task(TaskState.TASK_STATE_WORKING))
+        projection = TerminalTaskProjection(task_store=store, call_context=Mock())
+
+        await _collect(projection, _status(TaskState.TASK_STATE_WORKING))
+
+        store.save.assert_not_awaited()
+
+    @pytest.mark.anyio
+    async def test_silent_stream_invents_no_settlement_reason(self):
+        """Nothing was settled, so nothing claims it was."""
+        store = _store(_task(TaskState.TASK_STATE_WORKING))
+        projection = TerminalTaskProjection(task_store=store, call_context=Mock())
+
+        result = await _collect(projection, _status(TaskState.TASK_STATE_WORKING))
+
+        assert A2AMetadataKey.SETTLED_REASON.value not in result[-1].metadata
+
+    @pytest.mark.anyio
+    async def test_declared_outcome_is_used_and_left_unmarked(self):
+        """A state the agent declared is not an invention, so it carries no reason."""
+        store = _store(_task(TaskState.TASK_STATE_WORKING))
+        projection = TerminalTaskProjection(task_store=store, call_context=Mock())
+
+        result = await _collect(projection, _status(TaskState.TASK_STATE_COMPLETED))
+
+        assert result[-1].status.state == TaskState.TASK_STATE_COMPLETED
+        assert A2AMetadataKey.SETTLED_REASON.value not in result[-1].metadata
+
+    @pytest.mark.anyio
+    async def test_closing_invents_no_message(self):
+        """A silent stream ends without a fabricated answer."""
         stored = _task(TaskState.TASK_STATE_WORKING)
         projection = TerminalTaskProjection(task_store=_store(stored), call_context=Mock())
 

@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from aion.server.logging.filters import BASE_RULES, LOGSTASH_OVERRIDES, NamespaceFilter
+from aion.server.logging.filters import BASE_RULES, NamespaceFilter
 
 
 class TestNamespaceFilter:
@@ -52,19 +52,6 @@ class TestNamespaceFilter:
         """Exact namespace name matches (not only prefix)."""
         f = self._filter({"logstash_async": None})
         assert not f.filter(self._record("logstash_async"))
-
-    def test_logstash_overrides_stricter_than_base(self):
-        """LOGSTASH_OVERRIDES raises minimum level compared to BASE_RULES."""
-        logstash_rules = {**BASE_RULES, **LOGSTASH_OVERRIDES}
-        base_filter = NamespaceFilter(BASE_RULES)
-        logstash_filter = NamespaceFilter(logstash_rules)
-
-        for name, override_level in LOGSTASH_OVERRIDES.items():
-            base_level = BASE_RULES.get(name)
-            if base_level is not None and override_level is not None:
-                assert override_level >= base_level, (
-                    f"LOGSTASH_OVERRIDES[{name!r}] should be >= BASE_RULES[{name!r}]"
-                )
 
 
 class TestSetupRootLogger:

@@ -125,6 +125,70 @@ class TestExecuteRuntimeContext:
                         MockRegistry.aset_current_context.assert_not_awaited()
 
 
+class TestTaskForExecution:
+    """The gate that decides what a request executes.
+
+    A task is continued whenever it is not terminal: the SDK serialises
+    requests per task and treats a follow-up message as the next turn, so an
+    active task must not be rejected. A terminal task is skipped rather than
+    raised on, because an exception out of execute() fails the whole task in
+    the SDK producer instead of rejecting the single request.
+    """
+
+    @pytest.mark.anyio
+    @pytest.mark.parametrize("state", [
+        TaskState.TASK_STATE_INPUT_REQUIRED,
+        TaskState.TASK_STATE_AUTH_REQUIRED,
+        TaskState.TASK_STATE_WORKING,
+        TaskState.TASK_STATE_SUBMITTED,
+    ])
+    async def test_non_terminal_task_is_continued(self, executor, state):
+        task = _make_task(state=state)
+        ctx = _make_context(task=task)
+
+        assert await executor._get_task_for_execution(ctx) == (task, False)
+
+    @pytest.mark.anyio
+    @pytest.mark.parametrize("state", [
+        TaskState.TASK_STATE_COMPLETED,
+        TaskState.TASK_STATE_CANCELED,
+        TaskState.TASK_STATE_FAILED,
+        TaskState.TASK_STATE_REJECTED,
+    ])
+    async def test_terminal_task_is_skipped(self, executor, state):
+        ctx = _make_context(task=_make_task(state=state))
+
+        assert await executor._get_task_for_execution(ctx) is None
+
+    @pytest.mark.anyio
+    async def test_missing_task_is_created(self, executor):
+        ctx = _make_context(task=None)
+        ctx.message = MagicMock()
+        ctx.metadata = None
+        init_execution_scope()
+
+        with patch(
+            "aion.server.agent.execution.request_executor.new_task_from_user_message"
+        ) as make_task:
+            make_task.return_value = _make_task(state=TaskState.TASK_STATE_SUBMITTED)
+            result = await executor._get_task_for_execution(ctx)
+
+        assert result == (make_task.return_value, True)
+
+    @pytest.mark.anyio
+    async def test_execute_on_terminal_task_runs_nothing(self, executor, event_queue):
+        """A skipped request must not raise: the SDK reads that as agent failure."""
+        executor.agent.stream = MagicMock()
+        executor.agent.resume = MagicMock()
+        ctx = _make_context(task=_make_task(state=TaskState.TASK_STATE_COMPLETED))
+
+        await executor.execute(ctx, event_queue)
+
+        executor.agent.stream.assert_not_called()
+        executor.agent.resume.assert_not_called()
+        event_queue.enqueue_event.assert_not_awaited()
+
+
 class TestCancel:
     @pytest.mark.anyio
     async def test_cancel_missing_task_raises_not_found(self, executor, event_queue):
