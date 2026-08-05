@@ -25,11 +25,13 @@ outcome on the push channel.
 """
 
 import asyncio
+import httpx
 import pytest
 from a2a.server.agent_execution.agent_executor import AgentExecutor
 from a2a.server.agent_execution.context import RequestContext
 from a2a.server.context import ServerCallContext
 from a2a.server.events import EventQueue
+from a2a.server.tasks import InMemoryPushNotificationConfigStore
 from a2a.auth.user import User
 from a2a.types import (
     Message,
@@ -41,11 +43,13 @@ from a2a.types import (
     TaskStatus,
     TaskStatusUpdateEvent,
 )
+from a2a.types.a2a_pb2 import AuthenticationInfo, TaskPushNotificationConfig
 from unittest.mock import AsyncMock, Mock
 
 from aion.server.agent.execution import AionActiveTaskRegistry
 from aion.server.agent.execution.scope import clear_execution_scope, init_execution_scope
 from aion.server.core.app.handlers.terminal_task_projection import TerminalTaskProjection
+from aion.server.tasks.authenticated_push_sender import AuthenticatedPushNotificationSender
 from aion.server.tasks.stores.in_memory_task_store import InMemoryTaskStore
 from aion.server.tasks.terminal_push_sender import TerminalTaskPushSender
 
@@ -271,3 +275,87 @@ class TestPushSenderWiring:
 
         assert isinstance(active_task._push_sender, TerminalTaskPushSender)
         assert active_task._push_sender._inner is raw_push
+
+
+class TestAuthenticatedWebhookDelivery:
+    """The credentials a client declares on the config reach the HTTP call.
+
+    The tests above stub the transport, so they prove what the sender is
+    *asked* to deliver but not how it authenticates. This one runs the real
+    AuthenticatedPushNotificationSender underneath the same registry wiring,
+    with only httpx faked, and follows the config the whole way: stored by the
+    request handler on ``message/send``, read back at dispatch time, and turned
+    into request headers.
+    """
+
+    WEBHOOK_URL = "https://api-staging.aion.to/a2a/callbacks/jobs/job-1/push"
+    CREDENTIALS = "external-server-token"
+
+    @staticmethod
+    def _http_client() -> Mock:
+        """Returns an httpx client stand-in that accepts every delivery."""
+        client = Mock()
+        client.post = AsyncMock(
+            return_value=httpx.Response(
+                200, request=httpx.Request("POST", TestAuthenticatedWebhookDelivery.WEBHOOK_URL)
+            )
+        )
+        return client
+
+    async def _deliver(self, call_context: ServerCallContext, http_client: Mock) -> None:
+        """Runs one task to completion with the real push sender attached."""
+        config_store = InMemoryPushNotificationConfigStore()
+        await config_store.set_info(
+            TASK_ID,
+            TaskPushNotificationConfig(
+                task_id=TASK_ID,
+                url=self.WEBHOOK_URL,
+                authentication=AuthenticationInfo(
+                    scheme="Bearer", credentials=self.CREDENTIALS
+                ),
+            ),
+            call_context,
+        )
+        registry = AionActiveTaskRegistry(
+            agent_executor=_ScriptedExecutor([
+                Task(id=TASK_ID, context_id=CONTEXT_ID,
+                     status=TaskStatus(state=TaskState.TASK_STATE_SUBMITTED)),
+                _terminal_status(TaskState.TASK_STATE_COMPLETED),
+            ]),
+            task_store=InMemoryTaskStore(),
+            push_sender=AuthenticatedPushNotificationSender(
+                httpx_client=http_client, config_store=config_store
+            ),
+        )
+        active_task = await registry.get_or_create(
+            TASK_ID, call_context=call_context, context_id=CONTEXT_ID, create_task_if_missing=True,
+        )
+        request_context = RequestContext(
+            call_context=call_context, task_id=TASK_ID, context_id=CONTEXT_ID,
+        )
+        async for _ in active_task.subscribe(request=request_context):
+            pass
+        await asyncio.sleep(0.05)  # let the push-side consumer drain past the terminal event
+
+    @pytest.mark.anyio
+    async def test_declared_credentials_reach_the_webhook(self, execution_scope):
+        """Every delivery for an authenticated config carries the Authorization header."""
+        http_client = self._http_client()
+
+        await self._deliver(ServerCallContext(user=_NamedUser("alice")), http_client)
+
+        assert http_client.post.await_args_list, "no webhook call was made"
+        for call in http_client.post.await_args_list:
+            assert call.args[0] == self.WEBHOOK_URL
+            assert call.kwargs["headers"]["Authorization"] == f"Bearer {self.CREDENTIALS}"
+
+    @pytest.mark.anyio
+    async def test_terminal_task_is_the_authenticated_payload(self, execution_scope):
+        """The run still settles as a full Task — authentication does not alter the contract."""
+        http_client = self._http_client()
+
+        await self._deliver(ServerCallContext(user=_NamedUser("alice")), http_client)
+
+        final_payload = http_client.post.await_args_list[-1].kwargs["json"]
+        assert final_payload["task"]["id"] == TASK_ID
+        assert final_payload["task"]["status"]["state"] == "TASK_STATE_COMPLETED"

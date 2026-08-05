@@ -23,6 +23,20 @@ class AppSettings(BaseEnvSettings):
         )
     )
 
+    push_notification_timeout_seconds: float = Field(
+        default=30.0,
+        alias="PUSH_NOTIFICATION_TIMEOUT_SECONDS",
+        description=(
+            "Read/write timeout for webhook deliveries, in seconds. The httpx "
+            "default of 5s is too short for a receiver that does real work on the "
+            "callback before answering, which shows up as httpx.ReadTimeout even "
+            "though the request was accepted. Connect timeout stays at 5s: an "
+            "unreachable host should fail fast. Note that the first delivery of a "
+            "run is awaited in the request path, so this value bounds how long a "
+            "slow webhook can delay the message/send response."
+        )
+    )
+
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = Field(
         description="Logging level to use.",
         alias="LOG_LEVEL",
