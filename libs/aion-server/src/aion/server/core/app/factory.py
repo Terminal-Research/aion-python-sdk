@@ -5,7 +5,7 @@ database, plugins, agent, and FastAPI application using dependency injection.
 """
 import logging
 
-from a2a.server.routes import create_agent_card_routes
+from a2a.server.routes import add_a2a_routes_to_fastapi, create_agent_card_routes
 from a2a.utils.constants import DEFAULT_RPC_URL
 from aion.db.postgres import DbFactory
 from aion.server.agent.aion_agent import AionAgent
@@ -75,6 +75,7 @@ class AppFactory:
 
         self.fastapi_app: Optional[FastAPI] = None
         self._executor: Optional[AionAgentRequestExecutor] = None
+        self._request_handler: Optional[AionRequestHandler] = None
 
     async def initialize(self):
         """Initialize the application factory.
@@ -121,18 +122,26 @@ class AppFactory:
             raise RuntimeError("Application is already created")
 
         request_handler = await self._create_request_handler()
+        self._request_handler = request_handler
 
         jsonrpc_dispatcher = AionJsonRpcDispatcher(
             request_handler=request_handler,
             enable_v0_3_compat=True,
         )
-        routes = [
-            *create_agent_card_routes(self.aion_agent.card),
-            Route(DEFAULT_RPC_URL, endpoint=jsonrpc_dispatcher.handle_requests, methods=['POST']),
-        ]
-
         lifespan = AppLifespan(app_factory=self)
-        self.fastapi_app = FastAPI(routes=routes, lifespan=lifespan.executor)
+        self.fastapi_app = FastAPI(lifespan=lifespan.executor)
+
+        # Registered through the SDK helper rather than FastAPI(routes=...) so
+        # the A2A endpoints are re-wrapped as APIRoute and show up in /docs with
+        # proto-derived request schemas. The routes themselves are unchanged —
+        # JSON-RPC still dispatches through AionJsonRpcDispatcher.
+        add_a2a_routes_to_fastapi(
+            self.fastapi_app,
+            agent_card_routes=create_agent_card_routes(self.aion_agent.card),
+            jsonrpc_routes=[
+                Route(DEFAULT_RPC_URL, endpoint=jsonrpc_dispatcher.handle_requests, methods=['POST']),
+            ],
+        )
         AionExtraHTTPRoutes(self.aion_agent).register(self.fastapi_app)
         self._add_extra_middlewares()
 
@@ -170,6 +179,18 @@ class AppFactory:
     async def shutdown(self) -> None:
         """Shutdown the application and cleanup resources."""
         logger.info("Shutting down application factory")
+
+        # Drain in-flight tasks before the resources they hold are torn down.
+        # The SDK spawns a producer and a consumer asyncio.Task per active task;
+        # without this they survive until event-loop shutdown and surface as
+        # "Task was destroyed but it is pending!", still writing to a task store
+        # and plugins that the steps below are about to close.
+        if self._request_handler is not None:
+            try:
+                await self._request_handler.aclose()
+                logger.info("Active tasks drained")
+            except Exception as exc:
+                logger.error("Error draining active tasks", exc_info=exc)
 
         if self._executor is not None:
             try:

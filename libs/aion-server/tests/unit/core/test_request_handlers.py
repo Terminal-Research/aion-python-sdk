@@ -347,6 +347,7 @@ class TestVerifyDeclaredExtensions:
                 "environment": {
                     "id": "env-1",
                     "name": "dev",
+                    "projectId": "proj-1",
                     "deploymentId": "dep-1",
                     "configurationVariables": {},
                     "daemonAgentIdentityId": "daemon-1",

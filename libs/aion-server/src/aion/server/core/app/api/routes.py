@@ -46,4 +46,4 @@ class AionExtraHTTPRoutes:
                 self.agent.config.configuration
             ).collect(),
         )
-        return JSONResponse(response.model_dump())
+        return JSONResponse(response.model_dump(exclude_none=True))

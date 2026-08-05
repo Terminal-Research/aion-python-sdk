@@ -67,6 +67,16 @@ A streaming chunk is delivered as a `TaskArtifactUpdateEvent`:
     a visual break before the new section.
   - `true` - Append this chunk to the current section for this task and artifact.
 
+  An artifact must be opened before it can be appended to. Sending `append: true`
+  for an `artifactId` that has no previously sent artifact is a protocol
+  violation, and since a2a-sdk 1.1.2 it fails the task with
+  `InvalidAgentResponseError`. Earlier versions logged a warning and silently
+  dropped the chunk, so a graph that emits artifacts in this order used to
+  appear to work while losing content. The built-in LangGraph and ADK adapters
+  always open with `append: false` and are unaffected; this applies to artifacts
+  emitted directly from graph code, for example via `emit_artifact`, which
+  defaults to `append=False`.
+
 - **`lastChunk`**:
   - `false` while more stream events may follow.
   - `true` when the adapter is closing this stream-delta sequence.

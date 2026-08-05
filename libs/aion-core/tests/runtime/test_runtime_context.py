@@ -575,6 +575,7 @@ def _make_daemon_struct() -> Struct:
         "environment": {
             "id": "env-1",
             "name": "prod",
+            "project_id": "proj-1",
             "deployment_id": "dep-1",
             "configuration_variables": {"llm": "qwen"},
             "daemon_agent_identity_id": "daemon-1",

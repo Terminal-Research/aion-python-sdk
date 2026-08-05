@@ -22,17 +22,29 @@ class TerminalTaskProjection:
     event — the complete ``Task``.
 
     This projection bridges the two. It withholds non-active status updates and
-    emits the stored ``Task`` once the source stream is exhausted, and it closes
-    every other way a stream can end:
+    emits the stored ``Task`` once the source stream is exhausted, however the
+    stream ended:
 
-    * the agent never reached a non-active state — the snapshot is closed as
-      ``COMPLETED``, since nothing reported a failure;
-    * the agent raised — the snapshot is closed as ``FAILED`` and the stream
-      ends normally, because a failure is a terminal state the client is
-      entitled to receive as a Task. Only a request that never got as far as
+    * the agent declared an outcome — the SDK consumer persists it before the
+      event reaches this projection, so the stored snapshot already carries it;
+    * the stream raised — the SDK persists FAILED on both the producer and the
+      consumer path before the exception is handed to subscribers, so again the
+      stored snapshot carries it. Only a request that never got as far as
       creating a task propagates the error to the transport;
-    * the task produced events but is missing from the store — the stream fails,
-      because a snapshot whose id resolves to nothing is worse than an error.
+    * the stream ended without an outcome — the stored snapshot is emitted as
+      it stands, active state and all.
+
+    That last case is the reason this projection never writes. A subscriber
+    cannot tell a finished turn from its own disconnection: ``ActiveTask``
+    absorbs the cancellation and ends the subscription normally either way. But
+    a disconnected client does not stop the execution, which keeps running and
+    records the real outcome itself. Inventing a non-active state here would
+    race that writer, and on the resubscribe path it would let an observer
+    settle a task that is merely being watched. A turn that ends with the task
+    still active is legitimate for the SDK — the task simply stays resumable —
+    so the honest close is the snapshot as stored. The one place a state has to
+    be supplied is a shutdown, where the execution is known to be dead; that is
+    done by the active task registry, which owns the lifecycle.
 
     A standalone ``Message`` needs no handling here: Aion's executor always
     announces a Task first, so the SDK consumer is in task mode and rejects a
@@ -104,7 +116,10 @@ class TerminalTaskProjection:
             yield failed
             return
 
-        final_task = await self._close_snapshot(TaskState.TASK_STATE_COMPLETED)
+        # A withheld event names the outcome the agent declared; a stream that
+        # ended silently declares nothing, and the stored snapshot stands.
+        expected_state = self._withheld.status.state if self._withheld is not None else None
+        final_task = await self._close_snapshot(expected_state)
         if final_task is not None:
             yield final_task
         elif self._task_id:
@@ -144,16 +159,23 @@ class TerminalTaskProjection:
         logger.debug("Opening the stream for task %s with a Task snapshot", self._task_id)
         return self._task_transform(task) if self._task_transform else task
 
-    async def _close_snapshot(self, fallback_state: TaskState) -> Task | None:
-        """Load the stored task and make sure it carries a non-active state.
+    async def _close_snapshot(self, expected_state: Optional[TaskState]) -> Task | None:
+        """Load the Task the stream should close with.
 
-        A task still in an active state means the stream ended without the agent
-        declaring an outcome. The projection settles it with ``fallback_state``
-        and persists that, so a later ``tasks/get`` agrees with what the client
-        was told on the stream.
+        The store is only read. Every outcome a stream can end on is persisted
+        by the SDK before it reaches this projection, so the stored snapshot is
+        the authoritative answer; writing here would race the execution, which
+        outlives a disconnected subscriber.
+
+        ``expected_state`` is what the source stream declared, when it declared
+        anything. Finding the store still active despite a declared outcome
+        means the SDK's write has not landed, which should not happen — the
+        client is answered with the declared state so the stream still closes
+        as non-active, but nothing is persisted and the disagreement is logged.
 
         Args:
-            fallback_state: State to settle on when the task is still active.
+            expected_state: Non-active state the source stream declared, or
+                None when it ended without declaring one.
 
         Returns:
             The final Task, or None when the store holds no task.
@@ -165,20 +187,19 @@ class TerminalTaskProjection:
         if task is None:
             return None
 
-        if task.status.state not in NON_ACTIVE_TASK_STATES:
+        if expected_state is not None and task.status.state not in NON_ACTIVE_TASK_STATES:
             logger.warning(
-                "Stream for task %s ended in %s, settling it as %s",
+                "Stream for task %s declared %s but the store still holds %s",
                 task.id,
+                TaskState.Name(expected_state),
                 TaskState.Name(task.status.state),
-                TaskState.Name(fallback_state),
             )
-            # Settle a copy: the snapshot that opened this stream may be the
-            # very same object, and it has already been sent to the client.
-            settled = Task()
-            settled.CopyFrom(task)
-            settled.status.state = fallback_state
-            await self._task_store.save(settled, self._call_context)
-            task = settled
+            # Answer from a copy: the snapshot that opened this stream may be
+            # the very same object, and it has already been sent to the client.
+            declared = Task()
+            declared.CopyFrom(task)
+            declared.status.state = expected_state
+            task = declared
 
         return self._task_transform(task) if self._task_transform else task
 

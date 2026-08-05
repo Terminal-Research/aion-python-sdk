@@ -11,8 +11,8 @@
   - [Complex Agent Configuration](#complex-agent-configuration)
   - [Configuration Properties](#configuration-properties)
 - [Configuration Field Types](#configuration-field-types)
-  - [Protected Values in Aion](#protected-values-in-aion)
   - [String Fields](#string-fields)
+  - [Secret Fields](#secret-fields)
   - [LLM Fields](#llm-fields)
   - [Numeric Fields](#numeric-fields)
   - [Boolean Fields](#boolean-fields)
@@ -168,13 +168,11 @@ aion:
       
       # Custom Configuration
       configuration:
-        # String Configuration
+        # Secret Configuration
         api_key:
-          type: "string"
+          type: "secret"
           description: "API key for external services"
           required: true
-          min_length: 10
-          max_length: 100
         
         # Integer Configuration
         max_retries:
@@ -289,28 +287,6 @@ Each skill object contains:
 
 Agent configuration supports multiple field types with comprehensive validation options.
 
-### Protected Values in Aion
-
-The `configuration` block defines a static semantic schema. Use a top-level
-`secret` field when a value must use protected storage. Composer renders a
-write-only protected input for that field. Ordinary strings remain literal.
-Secret fields cannot declare literal defaults, validation constraints, or
-nested item schemas; LLM selectors, numbers, booleans, arrays, and objects also
-remain literal.
-
-Protected plaintext is sent through Aion's write-only service. The Project
-stores an opaque scope-and-purpose-bound reference, and neither the SDK nor
-Composer provides a reveal operation. Reusing one reference within the same
-Project and purpose intentionally shares its rotation and clear lifecycle.
-
-Runtime configuration reaches the SDK as strings. Aion resolves protected
-references before constructing agent runtime context, including requests to
-Aion Remote and A2A Remote runtimes. Distribution and daemon contexts carry
-the resolved configuration as ordinary string maps. Distribution context uses
-the
-[Aion Distribution extension](https://docs.aion.to/a2a/extensions/aion/distribution/1.0.0).
-Neither runtime payload exposes secret references.
-
 ### String Fields
 
 ```yaml
@@ -334,7 +310,9 @@ field_name:
 
 ### Secret Fields
 
-Use a dedicated secret field for write-only protected configuration:
+Use `type: "secret"` for a top-level configuration value that must be encrypted
+at rest. Composer provides a write-only input and does not display the saved
+value.
 
 ```yaml
 api_key:
@@ -350,11 +328,19 @@ api_key:
 Secret fields must be top-level and do not accept `default`, `min_length`,
 `max_length`, `enum`, or `items`.
 
+At runtime, secret values are provided to the agent as ordinary strings. When
+Aion calls a remote server, these values are included as plaintext in the
+configuration map carried by the
+[Distribution extension](https://docs.aion.to/a2a/extensions/aion/distribution/1.0.0)
+or [Daemon extension](https://docs.aion.to/a2a/extensions/aion/daemon/1.0.0).
+Treat these payloads as sensitive data. Do not log, persist, or forward their
+configuration values beyond the intended runtime.
+
 ### LLM Fields
 
 An `llm` field stores a model identifier while allowing the Aion control plane
-to render a model selector. It is a specialized field and does not support
-protected storage.
+to render a model selector. It is a specialized field whose value is always
+literal.
 
 ```yaml
 model:
