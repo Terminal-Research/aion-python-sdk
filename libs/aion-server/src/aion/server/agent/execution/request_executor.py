@@ -16,7 +16,6 @@ from a2a.utils.telemetry import trace_function
 from aion.core.runtime import AionRuntimeContextBuilder
 from aion.core.runtime.context.registry import AionRuntimeContextRegistry
 from aion.server.a2a.constants import TERMINAL_TASK_STATES
-from aion.server.a2a.utils import is_task_interrupted
 from aion.server.agent.aion_agent import AionAgent
 from aion.server.agent.execution.scope import set_task_id
 from aion.server.files.a2a import A2AFileTransformer
@@ -58,7 +57,11 @@ class AionAgentRequestExecutor(AgentExecutor):
         if error:
             raise InvalidParamsError()
 
-        task, is_new_task = await self._get_task_for_execution(context)
+        execution = await self._get_task_for_execution(context)
+        if execution is None:
+            return
+
+        task, is_new_task = execution
         self._task_updater = TaskUpdater(event_queue, task.id, task.context_id)
 
         if is_new_task:
@@ -144,34 +147,47 @@ class AionAgentRequestExecutor(AgentExecutor):
             await AionRuntimeContextRegistry.aset_current_context(runtime_context)
 
     @staticmethod
-    async def _get_task_for_execution(context: RequestContext) -> Tuple[Task, bool]:
-        """Get or create a task for execution.
+    async def _get_task_for_execution(context: RequestContext) -> Optional[Tuple[Task, bool]]:
+        """Decide what this request should execute, if anything.
 
-        Logic:
-        1. If current_task exists and is interrupted -> resume it
-        2. If current_task exists but not interrupted -> error
-        3. If no current_task -> create new task
+        An existing task is continued whenever it is not terminal. That covers
+        both an interrupted task, which resumes where it stopped, and one that
+        is still active, which the SDK reaches by dequeuing a second request
+        for the same task: ``ActiveTask`` serialises requests through
+        ``_request_queue`` and treats a follow-up message as the next turn, not
+        as an error. Whether continuing means resuming a suspended run or
+        simply taking another turn is the framework adapter's decision, not
+        this executor's.
+
+        A terminal task is not executed. Reaching one here is a narrow race
+        rather than the normal path — the SDK already rejects a terminal task
+        in ``ActiveTask.start`` and in ``subscribe``, and shuts the request
+        queue down once a terminal state is consumed. The race is that the
+        producer takes a request off the queue before that shutdown lands. The
+        request is dropped silently instead of raising, because an exception
+        out of ``execute`` is not a per-request rejection: the SDK producer
+        reads it as agent failure, persists FAILED for the whole task and
+        propagates the error to every subscriber.
 
         Args:
             context: Request context with optional current task
 
         Returns:
-            Tuple of (task, is_new_task)
-
-        Raises:
-            InvalidParamsError: if task is in a terminal state
+            Tuple of (task, is_new_task), or None when there is nothing to run.
         """
         current_task = context.current_task
 
         if current_task is not None:
-            if is_task_interrupted(current_task):
-                context.current_task = current_task
-                return current_task, False
-            else:
-                raise InvalidParamsError(
-                    message=f"Task {current_task.id} is in terminal state: "
-                            f"{current_task.status.state}"
+            if current_task.status.state in TERMINAL_TASK_STATES:
+                logger.warning(
+                    "Skipping request for task %s already in terminal state %s",
+                    current_task.id,
+                    current_task.status.state,
                 )
+                return None
+
+            context.current_task = current_task
+            return current_task, False
 
         # Create new task
         task = new_task_from_user_message(context.message)
