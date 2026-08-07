@@ -17,6 +17,7 @@ Focus areas:
 import time
 from contextlib import contextmanager
 from multiprocessing.connection import Connection
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock, patch, call
 
@@ -42,26 +43,28 @@ def _mock_process(alive: bool = True) -> MagicMock:
 
 @contextmanager
 def _patched_context(parent=None, child=None):
-    """Stub the multiprocessing context ProcessManager creates processes through.
+    """Stub the multiprocessing entry points ProcessManager creates children through.
 
-    ProcessManager deliberately builds its children from an explicit
-    ``multiprocessing.get_context('fork')``, so patching the module-level
-    ``multiprocessing.Process``/``Pipe`` has no effect at all — the tests that
-    tried it were silently forking real processes. The context object is what
-    has to be stubbed.
+    ProcessManager builds its children from the module-level
+    ``multiprocessing.Process``/``Pipe`` so that the interpreter's default start
+    method applies; there is no explicit ``fork`` context left to stub. Patching
+    ``get_context`` instead stubs nothing, and the failure is not a loud one:
+    the tests go on to create *real* subprocesses, which under ``forkserver``
+    cannot pickle their lambda targets and under ``fork`` quietly succeed while
+    every assertion against these mocks compares them to real objects.
 
     Yields:
-        Tuple of (context mock, the process mock its ``Process`` call returns).
+        Tuple of (namespace holding the patched ``Process``/``Pipe`` mocks, the
+        process mock ``Process`` returns).
     """
-    ctx = MagicMock()
     proc = _mock_process()
-    ctx.Process.return_value = proc
-    ctx.Pipe.return_value = (
+    process = MagicMock(return_value=proc)
+    pipe = MagicMock(return_value=(
         parent if parent is not None else MagicMock(spec=Connection),
         child if child is not None else MagicMock(spec=Connection),
-    )
-    with patch("multiprocessing.get_context", return_value=ctx):
-        yield ctx, proc
+    ))
+    with patch("multiprocessing.Process", process), patch("multiprocessing.Pipe", pipe):
+        yield SimpleNamespace(Process=process, Pipe=pipe), proc
 
 
 def _make_process_info(key: str = "p1", alive: bool = True) -> ProcessInfo:
