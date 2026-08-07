@@ -8,6 +8,27 @@ from aion.api.exceptions import AionAuthenticationError
 
 logger = logging.getLogger(__name__)
 
+AUTH_TOKENS_ENDPOINT = "/auth/tokens"
+
+DEFAULT_HTTP_TIMEOUT_SECONDS = 30.0
+"""Timeout shared by every Aion HTTP path.
+
+The GraphQL client used to leave this to httpx, whose default is 5s, so the
+authentication call tolerated a slow link six times longer than the operations it
+authenticated - and a sub-5s connect hiccup failed version registration outright.
+Both paths read this constant so they cannot drift apart again.
+"""
+
+
+def auth_tokens_url() -> str:
+    """Return the fully qualified authentication URL.
+
+    Failure messages name the URL that was actually called: the same credentials
+    fail against staging and succeed against production, and the host is otherwise
+    invisible in the logs.
+    """
+    return f"{api_settings.http_url}{AUTH_TOKENS_ENDPOINT}"
+
 
 class AionHttpClient:
     """
@@ -17,7 +38,7 @@ class AionHttpClient:
     Aion API, including authentication and general request handling.
     """
 
-    def __init__(self, timeout: float = 30.0):
+    def __init__(self, timeout: float = DEFAULT_HTTP_TIMEOUT_SECONDS):
         self.timeout = timeout
 
     async def authenticate(self) -> Dict[str, Any]:
@@ -30,7 +51,7 @@ class AionHttpClient:
         """
         response = await self.request(
             method="POST",
-            endpoint="/auth/tokens",
+            endpoint=AUTH_TOKENS_ENDPOINT,
             token=None,
             json_data=self._authentication_payload(),
         )
@@ -46,7 +67,7 @@ class AionHttpClient:
         """
         response = self.request_sync(
             method="POST",
-            endpoint="/auth/tokens",
+            endpoint=AUTH_TOKENS_ENDPOINT,
             token=None,
             json_data=self._authentication_payload(),
         )

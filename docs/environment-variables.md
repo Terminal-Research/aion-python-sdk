@@ -14,6 +14,7 @@ AION_DOCS_URL=https://docs.aion.to/
 LOGSTASH_HOST=0.0.0.0
 LOGSTASH_PORT=5000
 FILE_STORAGE_BACKEND=stub
+ENCRYPTION_KEY=your_fernet_key_here
 
 # AION API Client (Required)
 AION_CLIENT_ID=your_client_id_here
@@ -53,6 +54,15 @@ AION_API_KEEP_ALIVE=60
 - When not set, file parts are passed through unchanged (base64 preserved)
 - Allowed values: `stub`
   - `stub` — development/testing only; generates placeholder URLs without uploading any data
+
+**`ENCRYPTION_KEY`**
+- Type: `string` (optional)
+- Default: not set (sensitive data is stored unencrypted)
+- Encrypts sensitive data at rest. One key per deployment, shared by every subsystem that needs it — currently the push-notification configuration store, which persists callback URLs together with the credentials the receiving webhook expects
+- Must be a URL-safe base64-encoded 32-byte Fernet key; a malformed value is rejected at startup
+- Generate with: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`
+- Applies to persistent storage only; when the agent falls back to in-memory storage nothing is written to disk
+- Turning encryption **on** for an existing database is safe — rows already written in plaintext are still readable. **Changing** an existing key is not yet supported: data written under the old key becomes unreadable (see the `TODO(encryption)` in `push_notifications.py`)
 
 **`LOGSTASH_HOST`**
 - Type: `string` (optional)

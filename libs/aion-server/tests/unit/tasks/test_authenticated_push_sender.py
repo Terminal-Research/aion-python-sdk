@@ -8,10 +8,18 @@ rejects every delivery. These tests pin the header derivation and the failure
 handling around it.
 """
 
+import datetime
 import httpx
 import logging
 import pytest
-from a2a.types import Task, TaskState, TaskStatus
+from a2a.types import (
+    Artifact,
+    Task,
+    TaskArtifactUpdateEvent,
+    TaskState,
+    TaskStatus,
+    TaskStatusUpdateEvent,
+)
 from a2a.types.a2a_pb2 import AuthenticationInfo, TaskPushNotificationConfig
 from unittest.mock import AsyncMock, Mock
 
@@ -34,6 +42,7 @@ def _config(
         token: str = "",
         scheme: str | None = None,
         credentials: str | None = None,
+        url: str = WEBHOOK_URL,
 ) -> TaskPushNotificationConfig:
     """Builds a stored push configuration.
 
@@ -42,11 +51,12 @@ def _config(
         scheme: Authentication scheme to declare, None to omit authentication
             entirely, empty string to declare credentials without a scheme.
         credentials: Credential value to declare, None to omit authentication.
+        url: Target webhook, distinct per config when a fan-out is under test.
 
     Returns:
         The configuration as it would come back from the config store.
     """
-    config = TaskPushNotificationConfig(task_id=TASK_ID, url=WEBHOOK_URL, token=token)
+    config = TaskPushNotificationConfig(task_id=TASK_ID, url=url, token=token)
     if credentials is not None:
         config.authentication.CopyFrom(
             AuthenticationInfo(scheme=scheme or "", credentials=credentials)
@@ -63,11 +73,41 @@ def _event() -> Task:
     )
 
 
-def _client(status_code: int = 200, body: str = "") -> Mock:
-    """Returns an httpx client stand-in whose POST answers with the given status."""
+def _event_status(state: int = TaskState.TASK_STATE_WORKING) -> TaskStatusUpdateEvent:
+    """Returns an intermediate status update, the event a run emits most often."""
+    return TaskStatusUpdateEvent(
+        task_id=TASK_ID, context_id=CONTEXT_ID, status=TaskStatus(state=state)
+    )
+
+
+def _event_artifact(
+        artifact_id: str = "evolution-diff", last_chunk: bool = True
+) -> TaskArtifactUpdateEvent:
+    """Returns an artifact update, one of the many a streaming run emits."""
+    return TaskArtifactUpdateEvent(
+        task_id=TASK_ID,
+        context_id=CONTEXT_ID,
+        artifact=Artifact(artifact_id=artifact_id),
+        last_chunk=last_chunk,
+    )
+
+
+def _client(
+        status_code: int = 200, body: str = "", elapsed_ms: float | None = None
+) -> Mock:
+    """Returns an httpx client stand-in whose POST answers with the given status.
+
+    Args:
+        status_code: Status the webhook answers with.
+        body: Response body, as a receiver's refusal message.
+        elapsed_ms: Round-trip duration to attribute to the response, None to
+            leave it unset the way a hand-built response arrives.
+    """
     response = httpx.Response(
         status_code, request=httpx.Request("POST", WEBHOOK_URL), text=body
     )
+    if elapsed_ms is not None:
+        response.elapsed = datetime.timedelta(milliseconds=elapsed_ms)
     client = Mock()
     client.post = AsyncMock(return_value=response)
     return client
@@ -84,6 +124,38 @@ def _sender(config: TaskPushNotificationConfig, client: Mock) -> AuthenticatedPu
     return AuthenticatedPushNotificationSender(
         httpx_client=client, config_store=_store(config)
     )
+
+
+def _fan_out_sender(
+        statuses: dict[str, int], client: Mock | None = None
+) -> AuthenticatedPushNotificationSender:
+    """Builds a sender whose task has one webhook per entry in ``statuses``.
+
+    Args:
+        statuses: Target URL mapped to the status code that URL answers with.
+        client: Client stand-in to use, built from ``statuses`` when omitted.
+
+    Returns:
+        A sender wired to a store that dispatches to every URL in ``statuses``.
+    """
+    store = Mock()
+    store.get_info_for_dispatch = AsyncMock(
+        return_value=[_config(url=url) for url in statuses]
+    )
+    if client is None:
+        async def post(url, **_kwargs):
+            return httpx.Response(
+                statuses[url], request=httpx.Request("POST", url), text=""
+            )
+
+        client = Mock()
+        client.post = AsyncMock(side_effect=post)
+    return AuthenticatedPushNotificationSender(httpx_client=client, config_store=store)
+
+
+def _our_records(caplog) -> list[logging.LogRecord]:
+    """Returns the records the sender itself emitted, ignoring the SDK's."""
+    return [r for r in caplog.records if r.name.endswith("authenticated_push_sender")]
 
 
 def _sent_headers(client: Mock) -> dict[str, str] | None:
@@ -214,7 +286,7 @@ class TestFailureHandling:
 
     @pytest.mark.anyio
     async def test_dispatch_reports_failure(self):
-        """The per-webhook dispatch reports False so the fan-out can log a summary."""
+        """The per-webhook dispatch reports False so the fan-out can count it."""
         client = _client(status_code=500)
         sender = _sender(_config(scheme="Bearer", credentials=CREDENTIALS), client)
 
@@ -328,3 +400,198 @@ class TestFailureHandling:
         record = next(r for r in caplog.records if r.name.endswith("authenticated_push_sender"))
         assert record.levelno == logging.ERROR
         assert record.exc_info is not None
+
+
+class TestLogsIdentifyTheEvent:
+    """Every delivery log names the event, so one line differs from the next.
+
+    A run pushes many times to the same callback URL — a status update per
+    transition, an update per artifact, the terminal Task at the end. Naming
+    only the task would make those lines identical, leaving the log unable to
+    answer whether the outcome landed or which artifact the receiver refused.
+    """
+
+    @pytest.mark.anyio
+    async def test_delivered_terminal_task_is_named_with_its_state(self, caplog):
+        """The line that matters most — the outcome reached the client — says so."""
+        client = _client()
+        sender = _sender(_config(), client)
+
+        with caplog.at_level(logging.DEBUG):
+            await sender.send_notification(TASK_ID, _event())
+
+        message = _our_records(caplog)[0].getMessage()
+        assert "Task state=TASK_STATE_COMPLETED" in message
+        assert "HTTP 200" in message
+
+    @pytest.mark.anyio
+    async def test_status_update_is_distinguishable_from_the_terminal_task(self, caplog):
+        """An intermediate update must not read like the settled Task."""
+        client = _client()
+        sender = _sender(_config(), client)
+
+        with caplog.at_level(logging.DEBUG):
+            await sender.send_notification(TASK_ID, _event_status())
+
+        message = _our_records(caplog)[0].getMessage()
+        assert "TaskStatusUpdateEvent state=TASK_STATE_WORKING" in message
+
+    @pytest.mark.anyio
+    async def test_artifact_update_names_the_artifact_and_the_chunk(self, caplog):
+        """Which artifact, and whether it was the closing chunk."""
+        client = _client()
+        sender = _sender(_config(), client)
+
+        with caplog.at_level(logging.DEBUG):
+            await sender.send_notification(TASK_ID, _event_artifact())
+
+        message = _our_records(caplog)[0].getMessage()
+        assert "artifact=evolution-diff" in message
+        assert "last_chunk=True" in message
+
+    @pytest.mark.anyio
+    async def test_rejection_names_what_was_rejected(self, caplog):
+        """Ranking a failure needs the event: a refused outcome is not a refused ping."""
+        client = _client(status_code=503, body="upstream connect error")
+        sender = _sender(_config(), client)
+
+        with caplog.at_level(logging.DEBUG):
+            await sender.send_notification(TASK_ID, _event())
+
+        message = _our_records(caplog)[0].getMessage()
+        assert "Task state=TASK_STATE_COMPLETED" in message
+        assert "503" in message
+
+    @pytest.mark.anyio
+    async def test_timeout_names_what_was_being_delivered(self, caplog):
+        """Same question on the timeout path, where the receiver never answered."""
+        client = Mock()
+        client.post = AsyncMock(side_effect=httpx.ReadTimeout("timed out"))
+        sender = _sender(_config(), client)
+
+        with caplog.at_level(logging.DEBUG):
+            await sender.send_notification(TASK_ID, _event_status())
+
+        assert "TaskStatusUpdateEvent state=TASK_STATE_WORKING" in caplog.text
+
+    @pytest.mark.anyio
+    async def test_task_id_is_not_repeated_in_the_message(self, caplog):
+        """The id reaches the record as a structured field; the text must not echo it."""
+        client = _client()
+        sender = _sender(_config(), client)
+
+        with caplog.at_level(logging.DEBUG):
+            await sender.send_notification(TASK_ID, _event())
+
+        assert TASK_ID not in _our_records(caplog)[0].getMessage()
+
+    @pytest.mark.anyio
+    async def test_round_trip_duration_is_reported_when_known(self, caplog):
+        """Latency is the only warning before the timeout budget starts biting."""
+        client = _client(elapsed_ms=143)
+        sender = _sender(_config(), client)
+
+        with caplog.at_level(logging.DEBUG):
+            await sender.send_notification(TASK_ID, _event())
+
+        assert "143 ms" in _our_records(caplog)[0].getMessage()
+
+    @pytest.mark.anyio
+    async def test_missing_duration_does_not_break_the_line(self, caplog):
+        """httpx times one transport round-trip; a response without one still logs."""
+        client = _client()
+        sender = _sender(_config(), client)
+
+        with caplog.at_level(logging.DEBUG):
+            await sender.send_notification(TASK_ID, _event())
+
+        message = _our_records(caplog)[0].getMessage()
+        assert "ms" not in message
+        assert message.endswith("(HTTP 200)")
+
+    @pytest.mark.anyio
+    async def test_unknown_state_falls_back_to_its_value(self, caplog):
+        """A peer on a newer schema must not turn a log line into a traceback.
+
+        proto3 keeps an unrecognised enum number rather than rejecting it, so a
+        state this build has no name for can reach the log.
+        """
+        client = _client()
+        sender = _sender(_config(), client)
+        event = _event()
+        event.status.state = 9999
+
+        with caplog.at_level(logging.DEBUG):
+            await sender.send_notification(TASK_ID, event)
+
+        assert "state=9999" in _our_records(caplog)[0].getMessage()
+
+
+class TestFanOutSummary:
+    """The fan-out reports only what the per-webhook lines do not already say.
+
+    The SDK base class answers any failure with a bare "some notifications
+    failed" line carrying nothing but the task id, which on the common
+    single-webhook task is a second, less informative copy of the rejection
+    logged one line above. These tests pin the summary to the case where it
+    adds something: a real fan-out, reported with counts.
+    """
+
+    @pytest.mark.anyio
+    async def test_single_failing_webhook_is_reported_once(self, caplog):
+        """One webhook, one failure, one line — the one naming the URL and the status."""
+        sender = _fan_out_sender({WEBHOOK_URL: 503})
+
+        with caplog.at_level(logging.DEBUG):
+            await sender.send_notification(TASK_ID, _event())
+
+        records = _our_records(caplog)
+        assert len(records) == 1
+        assert "503" in records[0].getMessage()
+        assert "fan-out" not in caplog.text
+
+    @pytest.mark.anyio
+    async def test_partial_fan_out_failure_is_summarised_with_counts(self, caplog):
+        """With several receivers the summary states how much of the fan-out got through."""
+        sender = _fan_out_sender(
+            {WEBHOOK_URL: 503, f"{WEBHOOK_URL}-b": 200, f"{WEBHOOK_URL}-c": 401}
+        )
+
+        with caplog.at_level(logging.DEBUG):
+            await sender.send_notification(TASK_ID, _event())
+
+        summary = next(r for r in _our_records(caplog) if "fan-out" in r.getMessage())
+        assert summary.levelno == logging.WARNING
+        assert "2 of 3 deliveries failed" in summary.getMessage()
+
+    @pytest.mark.anyio
+    async def test_fully_delivered_fan_out_is_not_summarised(self, caplog):
+        """Nothing failed, so there is no failure to summarise."""
+        sender = _fan_out_sender({WEBHOOK_URL: 200, f"{WEBHOOK_URL}-b": 200})
+
+        with caplog.at_level(logging.DEBUG):
+            await sender.send_notification(TASK_ID, _event())
+
+        assert "fan-out" not in caplog.text
+
+    @pytest.mark.anyio
+    async def test_task_without_webhooks_dispatches_nothing(self):
+        """A task nobody subscribed to short-circuits before any request goes out."""
+        client = Mock()
+        client.post = AsyncMock()
+        sender = _fan_out_sender({}, client)
+
+        await sender.send_notification(TASK_ID, _event())
+
+        client.post.assert_not_awaited()
+
+    @pytest.mark.anyio
+    async def test_every_webhook_is_attempted_despite_an_early_failure(self):
+        """A refusal from one receiver must not cost the others their delivery."""
+        sender = _fan_out_sender(
+            {WEBHOOK_URL: 401, f"{WEBHOOK_URL}-b": 200, f"{WEBHOOK_URL}-c": 200}
+        )
+
+        await sender.send_notification(TASK_ID, _event())
+
+        assert sender._client.post.await_count == 3

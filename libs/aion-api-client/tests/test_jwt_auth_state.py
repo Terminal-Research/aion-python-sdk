@@ -19,7 +19,7 @@ pytest.importorskip("jwt")
 
 from aion.api.exceptions import AionAuthenticationError
 from aion.api.http.client import AionHttpClient
-from aion.api.http.jwt_manager import AionRefreshingJWTManager
+from aion.api.http.jwt_manager import AionRefreshingJWTManager, describe_exception
 
 AUTH_ENDPOINT = "/auth/tokens"
 
@@ -178,3 +178,80 @@ def test_successful_refresh_clears_latch(valid_jwt_token) -> None:
 
     assert manager.get_token_sync() == valid_jwt_token
     assert manager.is_auth_failed is False
+
+
+class ExplodingClient:
+    """Auth client that fails with a non-HTTP exception, as a network error does."""
+
+    def __init__(self, exception: BaseException) -> None:
+        self.exception = exception
+
+    async def authenticate(self):
+        raise self.exception
+
+    def authenticate_sync(self):
+        raise self.exception
+
+
+def test_describe_exception_keeps_type_when_message_is_empty() -> None:
+    """httpx network errors stringify to nothing, so the type has to carry the meaning.
+
+    ``str(httpx.ConnectTimeout(""))`` is the empty string. Logged with "%s" it
+    produced a line that trailed off after the colon and named neither the failure
+    nor its cause - the reason an authentication outage was undiagnosable from the
+    logs alone.
+    """
+    import httpx
+
+    assert describe_exception(httpx.ConnectTimeout("")) == "ConnectTimeout"
+    assert describe_exception(httpx.ReadTimeout("")) == "ReadTimeout"
+    assert describe_exception(ValueError("boom")) == "ValueError: boom"
+
+
+def test_rejected_credentials_are_recorded_as_last_auth_error() -> None:
+    """A 401 should leave behind a reason a consumer can quote."""
+    manager = AionRefreshingJWTManager()
+    manager._client = FailingClient(401)
+
+    assert manager.get_token_sync() is None
+    assert "401" in manager.last_auth_error
+
+
+def test_network_failure_is_recorded_as_last_auth_error() -> None:
+    """The unexpected-exception path must record too, not just the HTTP ones.
+
+    This is the path a connect timeout takes, and it is the one that used to
+    discard its exception entirely.
+    """
+    import httpx
+
+    manager = AionRefreshingJWTManager()
+    manager._client = ExplodingClient(httpx.ConnectTimeout(""))
+
+    assert manager.get_token_sync() is None
+    assert manager.last_auth_error == "ConnectTimeout"
+
+
+def test_successful_refresh_clears_last_auth_error(valid_jwt_token) -> None:
+    """A recovered endpoint must not keep reporting the failure that preceded it."""
+    manager = AionRefreshingJWTManager()
+    manager._client = FailingClient(503)
+    manager.get_token_sync()
+    assert manager.last_auth_error is not None
+
+    manager._client = RecordingHttpClient(token=valid_jwt_token)
+
+    assert manager.get_token_sync() == valid_jwt_token
+    assert manager.last_auth_error is None
+
+
+@pytest.mark.anyio("asyncio")
+async def test_async_path_records_failures_too() -> None:
+    """get_token and get_token_sync share the contract, so both must record."""
+    import httpx
+
+    manager = AionRefreshingJWTManager()
+    manager._client = ExplodingClient(httpx.ConnectError(""))
+
+    assert await manager.get_token() is None
+    assert manager.last_auth_error == "ConnectError"

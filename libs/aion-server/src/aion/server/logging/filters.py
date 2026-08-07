@@ -23,6 +23,9 @@ class NamespaceFilter(logging.Filter):
     Rules are matched by longest prefix first, so more specific namespaces
     override parent rules (e.g. "uvicorn.access" overrides "uvicorn").
     A level of None means the namespace is excluded entirely.
+
+    A namespace no rule names is left to LOG_LEVEL, which the root logger
+    already enforces.
     """
 
     def __init__(self, rules: dict[str, int | None]):

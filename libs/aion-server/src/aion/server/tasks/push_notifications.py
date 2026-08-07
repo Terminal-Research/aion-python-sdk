@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import httpx
 from a2a.server.tasks import InMemoryPushNotificationConfigStore
 from a2a.server.tasks.push_notification_config_store import PushNotificationConfigStore
@@ -12,6 +14,8 @@ from typing import Optional
 
 from aion.server.settings import app_settings
 from .authenticated_push_sender import AuthenticatedPushNotificationSender
+
+logger = logging.getLogger(__name__)
 
 CONNECT_TIMEOUT_SECONDS = 5.0
 
@@ -65,15 +69,54 @@ class PushNotificationFactory:
 
     @staticmethod
     def _create_postgres_store(db_manager: DbManagerProtocol) -> PushNotificationConfigStore:
-        """Build a DatabasePushNotificationConfigStore bound to the shared engine."""
+        """Build a DatabasePushNotificationConfigStore bound to the shared engine.
+
+        A stored configuration is the callback URL plus the credentials the
+        receiver expects to see on the webhook call. Handing the store the
+        deployment's encryption key makes it Fernet-encrypt that payload before
+        it reaches the ``config_data`` column; without one the credentials are
+        persisted as plaintext JSON. The key is opt-in because encryption is not
+        free to adopt: see the rotation note below.
+
+        Returns:
+            The database-backed config store, encrypting at rest when
+            ``ENCRYPTION_KEY`` is configured.
+        """
         from a2a.server.tasks.database_push_notification_config_store import (
             DatabasePushNotificationConfigStore,
         )
         engine = db_manager.get_engine().execution_options(
             schema_translate_map={None: AION_SCHEMA}
         )
+        encryption_key = app_settings.encryption_key
+
+        # TODO(encryption): support rotating ENCRYPTION_KEY. The SDK store takes
+        #  a single Fernet key and reads every row with it, so changing the
+        #  value strands configs written under the old one: decryption fails, the
+        #  plaintext-JSON fallback fails too, and ``get_info_for_dispatch``
+        #  raises out of ``send_notification`` — deliveries break for tasks
+        #  registered before the change, rather than degrading. Enabling
+        #  encryption on an existing database is safe (rows written as plaintext
+        #  still parse through that same fallback); it is only key *changes*
+        #  that are unsupported. Fix by passing a MultiFernet built from a
+        #  primary plus retired keys via ``core_to_model_conversion`` /
+        #  ``model_to_core_conversion``, or by re-encrypting the table on
+        #  rotation.
+        if encryption_key:
+            logger.info(
+                "Push-notification configs will be encrypted at rest with "
+                "ENCRYPTION_KEY."
+            )
+        else:
+            logger.warning(
+                "Push-notification configs will be stored unencrypted, including "
+                "any webhook credentials they carry. Set ENCRYPTION_KEY to "
+                "encrypt them at rest."
+            )
+
         return DatabasePushNotificationConfigStore(
             engine=engine,
+            encryption_key=encryption_key,
             owner_resolver=lambda _ctx: "",
         )
 
