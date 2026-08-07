@@ -96,8 +96,15 @@ class TestBaseRules:
         assert not f.filter(self._record("gql.transport.websockets", logging.INFO))
 
 
-class TestPushNotificationAggregateIsMuted:
-    """The a2a base sender's aggregate line repeats what our sender already logged."""
+class TestPushNotificationLogging:
+    """The blanket a2a rule must not reach the sender that carries the diagnosis.
+
+    There is deliberately no rule for the SDK's own push-notification module:
+    AuthenticatedPushNotificationSender overrides both of its logging methods
+    and never delegates, so that module emits nothing here and a rule naming it
+    would only pin us to an SDK-internal path that an upgrade can rename
+    silently. What has to hold is the pair below.
+    """
 
     def _record(self, name: str, level: int) -> logging.LogRecord:
         return logging.LogRecord(
@@ -105,28 +112,15 @@ class TestPushNotificationAggregateIsMuted:
             lineno=1, msg="test", args=(), exc_info=None,
         )
 
-    def test_aggregate_warning_is_dropped(self):
-        f = NamespaceFilter(BASE_RULES)
-
-        assert not f.filter(self._record(
-            "a2a.server.tasks.base_push_notification_sender", logging.WARNING))
-
     def test_our_own_sender_still_reports_failures(self):
-        """Muting the aggregate must not touch the line that carries the diagnosis."""
+        """Our sender logs under aion.*, which no rule narrows."""
         f = NamespaceFilter(BASE_RULES)
 
         assert f.filter(self._record(
             "aion.server.tasks.authenticated_push_sender", logging.WARNING))
 
-    def test_other_a2a_warnings_are_kept(self):
-        """Only that one module is narrowed; the rest of a2a keeps its warnings."""
+    def test_a2a_warnings_are_kept(self):
+        """The a2a rule trims the namespace to WARNING, it does not silence it."""
         f = NamespaceFilter(BASE_RULES)
 
         assert f.filter(self._record("a2a.server.tasks.task_manager", logging.WARNING))
-
-    def test_errors_from_the_muted_module_still_pass(self):
-        """Narrowed to ERROR, not excluded - a real fault there must still surface."""
-        f = NamespaceFilter(BASE_RULES)
-
-        assert f.filter(self._record(
-            "a2a.server.tasks.base_push_notification_sender", logging.ERROR))

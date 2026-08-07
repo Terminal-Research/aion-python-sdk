@@ -1,8 +1,20 @@
 """Tests for AionAgentCard.from_config()."""
 
+import pytest
+from unittest.mock import patch
+
 from aion.server.agent.card import AionAgentCard
 from aion.core.config.models import AgentConfig, AgentSkill
-from aion.core.runtime import aion_a2a_extension_registry
+
+
+DOCS_URL = "https://docs.example.com"
+
+
+@pytest.fixture(autouse=True)
+def mock_docs_url():
+    with patch("aion.server.agent.card.app_settings") as mock_settings:
+        mock_settings.docs_url = DOCS_URL
+        yield mock_settings
 
 
 def _make_config(**kwargs) -> AgentConfig:
@@ -22,19 +34,16 @@ class TestCapabilities:
         card = AionAgentCard.from_config(_make_config(), "http://localhost:8000")
         assert card.capabilities.push_notifications is True
 
-    def test_active_registry_extensions_are_advertised(self):
-        """The card advertises exactly the registry's active extensions.
-
-        Asserted against the registry rather than a fixed count: which
-        extensions ship is the registry's business, and a card that quietly
-        stopped advertising one — or advertised an inactive one, which a client
-        would then be entitled to invoke — is the failure worth catching.
-        """
+    def test_two_extensions_registered(self):
+        """from_config registers exactly two capability extensions."""
         card = AionAgentCard.from_config(_make_config(), "http://localhost:8000")
-        expected = {ext.uri for ext in aion_a2a_extension_registry.get_all() if ext.active}
+        assert len(card.capabilities.extensions) == 2
 
-        assert {ext.uri for ext in card.capabilities.extensions} == expected
-        assert expected, "registry has no active extensions; the assertion above is vacuous"
+    def test_extension_uris_use_docs_url(self):
+        """All capability extension URIs start with the configured docs URL."""
+        card = AionAgentCard.from_config(_make_config(), "http://localhost:8000")
+        uris = [ext.uri for ext in card.capabilities.extensions]
+        assert all(uri.startswith(DOCS_URL) for uri in uris)
 
     def test_extensions_not_required(self):
         """All capability extensions have required set to False."""

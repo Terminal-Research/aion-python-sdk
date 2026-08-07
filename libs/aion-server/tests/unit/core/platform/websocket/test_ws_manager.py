@@ -92,12 +92,16 @@ class TestAionWebSocketManager:
         ws_manager.ping_interval = 30.0
         await ws_manager.start()
 
+        # start() logs its own success line, and caplog keeps records for the
+        # whole test, so clearing here is what narrows the assertion below to
+        # what the shutdown itself emitted.
+        caplog.clear()
         with caplog.at_level(logging.WARNING):
             await asyncio.wait_for(ws_manager.stop(), timeout=1.0)
 
         assert ws_manager._websocket_task.done()
         assert not ws_manager._websocket_task.cancelled()
-        assert not caplog.records
+        assert [r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING] == []
 
     async def test_stop_closes_the_transport(self, ws_manager, mock_websocket_transport):
         """The transport is closed on the way out, not merely abandoned."""

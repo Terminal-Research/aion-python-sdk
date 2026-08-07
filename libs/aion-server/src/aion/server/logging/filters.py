@@ -12,6 +12,7 @@ BASE_RULES: dict[str, int | None] = {
     "charset_normalizer": logging.WARNING,
     "uvicorn": logging.WARNING,
     "uvicorn.access": logging.WARNING,
+    "gql": logging.WARNING,
     "a2a": logging.WARNING,
     "alembic": logging.WARNING,
 }
