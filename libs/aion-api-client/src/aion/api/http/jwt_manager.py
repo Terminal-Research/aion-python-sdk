@@ -6,19 +6,30 @@ import logging
 import asyncio
 import threading
 from abc import ABC, abstractmethod
-from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Any, Dict, Optional
 
 import jwt
 
 from aion.api.exceptions import AionAuthenticationError
 from aion.core.settings import api_settings
 
-from .client import AionHttpClient
+from .client import AionHttpClient, auth_tokens_url
 
 logger = logging.getLogger(__name__)
+
+
+def describe_exception(ex: BaseException) -> str:
+    """Render an exception for a log line, keeping the type when the message is empty.
+
+    httpx network failures - ConnectTimeout, ReadTimeout, ConnectError - carry an
+    empty ``str()``. Formatting one with "%s" produces a line that trails off after
+    the colon and names neither what failed nor why, which is exactly the case a
+    reader of an authentication failure most needs to distinguish.
+    """
+    text = str(ex)
+    return f"{type(ex).__name__}: {text}" if text else type(ex).__name__
 
 
 @dataclass
@@ -106,18 +117,15 @@ class AionAuthState:
         return not self._failed
 
     def mark_failed(self) -> None:
-        """Latch authentication off after a 401, reporting only the transition."""
+        """Latch authentication off after a 401.
+
+        The failure itself is reported by the caller, which knows the endpoint it
+        was rejected by; latching is what keeps that report to one per transition,
+        because every later call returns on :attr:`can_attempt` without retrying.
+        """
         with self._lock:
-            first_report = not self._reported
             self._failed = True
             self._reported = True
-
-        if first_report:
-            logger.warning(
-                "Aion authentication failed with 401 error. "
-                "Further refresh attempts will be skipped until reset.")
-        else:
-            logger.debug("Aion authentication still failing with 401 error; refresh skipped.")
 
     def mark_succeeded(self) -> None:
         """Clear the latch so a later failure is reported again."""
@@ -160,6 +168,17 @@ class AionJWTManager(ABC):
         self._lock = asyncio.Lock()
         self._lock_loop: Optional[asyncio.AbstractEventLoop] = None
         self._lock_guard = threading.Lock()
+        self._last_auth_error: Optional[str] = None
+
+    @property
+    def last_auth_error(self) -> Optional[str]:
+        """Describe the most recent authentication failure, or ``None`` after a success.
+
+        A missing token is a soft failure here - callers get ``None`` rather than an
+        exception - so the reason has to travel somewhere. Consumers that can only
+        observe the absent token read this to report why it is absent.
+        """
+        return self._last_auth_error
 
     def _loop_lock(self) -> asyncio.Lock:
         """Return an ``asyncio.Lock`` owned by the currently running loop.
@@ -189,9 +208,43 @@ class AionJWTManager(ABC):
         """
         async with self._loop_lock():
             if self.should_refresh_token():
-                with suppress(Exception):
-                    await self._refresh_token()
+                await self._try_refresh()
             return None if not self._token else self._token.value
+
+    async def _try_refresh(self) -> None:
+        """Refresh the token, recording the failure instead of propagating it.
+
+        The exception must not escape - every caller treats a missing token as a
+        soft failure - but discarding it silently is what turns a connect timeout
+        into an unexplained "no token". Record it and log the traceback once, here,
+        so no caller has to re-raise to find out what happened.
+        """
+        try:
+            await self._refresh_token()
+        except Exception as ex:
+            self._record_auth_error(describe_exception(ex), exc_info=True)
+
+    def _record_auth_error(
+        self,
+        reason: str,
+        *,
+        retryable: bool = False,
+        exc_info: bool = False,
+    ) -> None:
+        """Store and log an authentication failure against the endpoint it came from.
+
+        ``retryable`` downgrades the record to a warning and says so in the message:
+        a 5xx resolves itself on the next request, while rejected credentials or an
+        unexpected exception need someone to look.
+        """
+        self._last_auth_error = reason
+        logger.log(
+            logging.WARNING if retryable else logging.ERROR,
+            "Aion authentication failed against %s - %s.%s",
+            auth_tokens_url(),
+            reason,
+            " Refresh will be retried on the next token request." if retryable else "",
+            exc_info=exc_info)
 
     def should_refresh_token(self) -> bool:
         """
@@ -250,9 +303,52 @@ class AionRefreshingJWTManager(AionJWTManager):
                 return None
 
             if self.should_refresh_token():
-                with suppress(Exception):
-                    await self._refresh_token()
+                await self._try_refresh()
             return None if not self._token else self._token.value
+
+    def _store_token(self, data: Dict[str, Any]) -> None:
+        """
+        Cache the token carried by an authentication response.
+
+        Extracts the access token, creates a :class:`Token` from it, and clears
+        the auth-failed latch so a recovered endpoint resumes serving tokens.
+        """
+        token_value = data.get("accessToken")
+        if not token_value:
+            raise ValueError("Access Token is missing in response.")
+
+        first_token = self._token is None
+        self._token = Token.from_jwt(token_value)
+        # Clear the latch on success, so a later failure is reported again.
+        self._auth_state.mark_succeeded()
+        self._last_auth_error = None
+
+        logger.info(
+            "Token %s successfully, expires at: %s",
+            "fetched" if first_token else "refreshed",
+            self._token.expires_at,
+        )
+
+    def _handle_auth_error(self, ex: AionAuthenticationError) -> None:
+        """
+        Drop the cached token, latching only when credentials were rejected.
+
+        Only a 401 means the credentials themselves are wrong, which no amount
+        of retrying will fix. Every other status - a 404 from a stale endpoint,
+        a 5xx, a gateway error - is transient or a deployment problem, and
+        latching on it would disable authentication for every consumer sharing
+        this manager until the process restarts.
+        """
+        self._token = None
+
+        if ex.status_code == 401:
+            self._auth_state.mark_failed()
+            self._record_auth_error(
+                "401 - credentials rejected (check AION_CLIENT_ID / AION_CLIENT_SECRET "
+                "against this host). Further refresh attempts will be skipped until reset")
+            return
+
+        self._record_auth_error(describe_exception(ex), retryable=True)
 
     async def _refresh_token(self) -> None:
         """
@@ -270,33 +366,14 @@ class AionRefreshingJWTManager(AionJWTManager):
         if not self._auth_state.can_attempt:
             return
 
-        first_token = self._token is None
         try:
-            data = await self._client.authenticate()
-            token_value = data.get("accessToken")
-            if not token_value:
-                raise ValueError("Access Token is missing in response.")
+            self._store_token(await self._client.authenticate())
 
-            self._token = Token.from_jwt(token_value)
-            self._auth_state.mark_succeeded()
+        except AionAuthenticationError as ex:
+            self._handle_auth_error(ex)
 
-            if first_token:
-                processed_action = "fetched"
-            else:
-                processed_action = "refreshed"
-            logger.info(
-                "Token %s successfully, expires at: %s",
-                processed_action,
-                self._token.expires_at,
-            )
-
-        except AionAuthenticationError:
-            self._token = None
-            self._auth_state.mark_failed()
-
-        except Exception as ex:
-            logger.error("Token refresh failed: %s", ex)
-            raise
+        # Anything else - a connect timeout, a DNS failure, missing credentials - is
+        # recorded and logged with its traceback by the _try_refresh caller.
 
     def get_token_sync(self) -> Optional[str]:
         """
@@ -312,9 +389,19 @@ class AionRefreshingJWTManager(AionJWTManager):
                 return None
 
             if self.should_refresh_token():
-                with suppress(Exception):
-                    self._refresh_token_sync()
+                self._try_refresh_sync()
             return None if not self._token else self._token.value
+
+    def _try_refresh_sync(self) -> None:
+        """Refresh synchronously, recording the failure instead of propagating it.
+
+        The synchronous mirror of :meth:`_try_refresh`; see it for why the exception
+        is absorbed here rather than by each caller.
+        """
+        try:
+            self._refresh_token_sync()
+        except Exception as ex:
+            self._record_auth_error(describe_exception(ex), exc_info=True)
 
     def _refresh_token_sync(self) -> None:
         """
@@ -326,33 +413,13 @@ class AionRefreshingJWTManager(AionJWTManager):
         if not self._auth_state.can_attempt:
             return
 
-        first_token = self._token is None
         try:
-            data = self._client.authenticate_sync()
-            token_value = data.get("accessToken")
-            if not token_value:
-                raise ValueError("Access Token is missing in response.")
+            self._store_token(self._client.authenticate_sync())
 
-            self._token = Token.from_jwt(token_value)
-            self._auth_state.mark_succeeded()
+        except AionAuthenticationError as ex:
+            self._handle_auth_error(ex)
 
-            if first_token:
-                processed_action = "fetched"
-            else:
-                processed_action = "refreshed"
-            logger.info(
-                "Token %s successfully, expires at: %s",
-                processed_action,
-                self._token.expires_at,
-            )
-
-        except AionAuthenticationError:
-            self._token = None
-            self._auth_state.mark_failed()
-
-        except Exception as ex:
-            logger.error("Token refresh failed: %s", ex)
-            raise
+        # As in _refresh_token, unexpected failures are left to _try_refresh_sync.
 
     def reset_auth_state(self) -> None:
         """
@@ -364,6 +431,7 @@ class AionRefreshingJWTManager(AionJWTManager):
         """
         self._auth_state.reset()
         self._token = None
+        self._last_auth_error = None
         logger.info("Authentication state reset. Fresh authentication will be attempted.")
 
     @property

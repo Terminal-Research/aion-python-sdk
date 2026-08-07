@@ -128,7 +128,8 @@ class AionWebSocketManager(IWebSocketManager):
         try:
             ping_count = 0
             while not self._shutdown_event.is_set():
-                await asyncio.sleep(self.ping_interval)
+                if await self._wait_until_next_ping():
+                    break
 
                 try:
                     if hasattr(self._transport, 'websocket') and self._transport.websocket:
@@ -147,6 +148,22 @@ class AionWebSocketManager(IWebSocketManager):
                 await self._transport.close()
                 logger.info("WebSocket connection closed")
 
+    async def _wait_until_next_ping(self) -> bool:
+        """Wait one ping interval, returning True if shutdown was requested first.
+
+        A plain sleep here left the loop deaf to shutdown for up to ping_interval
+        seconds while stop() waits only five, so an ordinary Ctrl-C ended in a forced
+        cancellation and a warning that described this sleep rather than anything the
+        platform did. Mirrors how the reconnect delay in :meth:`_connection_loop` is
+        already made interruptible.
+        """
+        try:
+            await asyncio.wait_for(
+                self._shutdown_event.wait(), timeout=self.ping_interval)
+            return True
+        except asyncio.TimeoutError:
+            return False
+
     @property
     def is_connected(self) -> bool:
         """
@@ -155,9 +172,9 @@ class AionWebSocketManager(IWebSocketManager):
         Returns:
             True if connection is active, False otherwise
         """
-        return (
-                self._websocket_task and
-                not self._websocket_task.done() and
-                not self._shutdown_event.is_set() and
-                self._connection_ready.is_set()
+        return bool(
+            self._websocket_task
+            and not self._websocket_task.done()
+            and not self._shutdown_event.is_set()
+            and self._connection_ready.is_set()
         )

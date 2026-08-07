@@ -5,6 +5,7 @@ import signal
 from typing import Optional
 
 from aion.core.config import AionConfig
+from aion.core.settings import api_settings
 from aion.server.utils.processes import ProcessManager
 
 from aion.cli.services import (
@@ -182,10 +183,16 @@ class ServeHandler:
 
         # Prepare environment BEFORE starting agents
         self.env_context = env_context = await ServeEnvironmentPreparerService().execute()
+        # The API host belongs on this line: the same credentials fail against one
+        # environment and succeed against another, and nothing else in the startup
+        # log says which one was targeted.
         logger.info(
-            f"Environment prepared. VERSION_ID: {env_context.version_id}, "
-            f"platform auth: {'available' if env_context.auth_available else 'unavailable'}"
-        )
+            "Environment prepared. VERSION_ID: %s | Aion API: %s | client_id: %s | "
+            "platform auth: %s",
+            env_context.version_id,
+            api_settings.http_url,
+            api_settings.client_id or "<unset>",
+            "available" if env_context.auth_available else "unavailable")
 
         # Initialize port reservation manager
         self.port_manager = AionPortManager()

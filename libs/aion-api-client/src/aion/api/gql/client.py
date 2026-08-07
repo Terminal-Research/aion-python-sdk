@@ -3,8 +3,13 @@ from datetime import datetime, timezone
 from typing import Optional, List, Any, AsyncIterator
 
 
+import httpx
+
+from aion.core.settings import api_settings
+
 from aion.api.control_plane import CapabilitySubject, PrincipalSelector
 from aion.api.http import AionJWTManager
+from aion.api.http.client import DEFAULT_HTTP_TIMEOUT_SECONDS
 from aion.api.model_service_client import aion_model_principal_selector_value
 from .generated.graphql_client import (
     MessageInput,
@@ -178,7 +183,13 @@ class AionGqlClient:
 
         aion_token = await self.jwt_manager.get_token()
         if not aion_token:
-            raise ValueError("No token received from authentication")
+            # The manager absorbs its own failures, so the reason is only ever here.
+            reason = getattr(self.jwt_manager, "last_auth_error", None)
+            raise ValueError(
+                "No token received from authentication ({url}): {reason}".format(
+                    url=api_settings.http_url,
+                    reason=reason or "no failure recorded - see preceding "
+                                     "aion.api.http.jwt_manager log lines"))
 
         self.client = GqlClient(
             url="{gql_url}?token={token}".format(
@@ -187,6 +198,10 @@ class AionGqlClient:
             ws_url="{ws_url}?token={token}".format(
                 ws_url=self.ws_url, token=aion_token
             ),
+            # Inject the transport rather than let the generated client build its
+            # own: unconfigured, httpx gives it a 5s timeout, well under what the
+            # authentication call that precedes it already allows.
+            http_client=httpx.AsyncClient(timeout=DEFAULT_HTTP_TIMEOUT_SECONDS),
         )
 
     async def chat_completion_stream(
