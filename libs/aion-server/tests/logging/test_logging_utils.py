@@ -78,3 +78,49 @@ class TestSetupRootLogger:
             count_after_second = sum(1 for h in root.handlers if isinstance(h, LogStreamHandler))
 
         assert count_after_first == count_after_second == 1
+
+
+class TestBaseRules:
+    """The shipped rules muzzle library chatter LOG_LEVEL alone would let through."""
+
+    def _record(self, name: str, level: int) -> logging.LogRecord:
+        return logging.LogRecord(
+            name=name, level=level, pathname="x.py",
+            lineno=1, msg="test", args=(), exc_info=None,
+        )
+
+    def test_base_rules_muzzle_gql_transport_chatter(self):
+        """gql logs its websocket frames at INFO, which is noise in a server log."""
+        f = NamespaceFilter(BASE_RULES)
+
+        assert not f.filter(self._record("gql.transport.websockets", logging.INFO))
+
+
+class TestPushNotificationLogging:
+    """The blanket a2a rule must not reach the sender that carries the diagnosis.
+
+    There is deliberately no rule for the SDK's own push-notification module:
+    AuthenticatedPushNotificationSender overrides both of its logging methods
+    and never delegates, so that module emits nothing here and a rule naming it
+    would only pin us to an SDK-internal path that an upgrade can rename
+    silently. What has to hold is the pair below.
+    """
+
+    def _record(self, name: str, level: int) -> logging.LogRecord:
+        return logging.LogRecord(
+            name=name, level=level, pathname="x.py",
+            lineno=1, msg="test", args=(), exc_info=None,
+        )
+
+    def test_our_own_sender_still_reports_failures(self):
+        """Our sender logs under aion.*, which no rule narrows."""
+        f = NamespaceFilter(BASE_RULES)
+
+        assert f.filter(self._record(
+            "aion.server.tasks.authenticated_push_sender", logging.WARNING))
+
+    def test_a2a_warnings_are_kept(self):
+        """The a2a rule trims the namespace to WARNING, it does not silence it."""
+        f = NamespaceFilter(BASE_RULES)
+
+        assert f.filter(self._record("a2a.server.tasks.task_manager", logging.WARNING))

@@ -22,10 +22,18 @@ from aion.server.utils.ports.reservation import PortReservationManager
 
 
 def _bind_port(port: int = 0) -> tuple[int, socket.socket]:
-    """Bind a socket on a free port and return (port, socket)."""
+    """Occupy a port the way a real server does, and return (port, socket).
+
+    The `listen` is what makes the port occupied, not the `bind`: on Linux two
+    SO_REUSEADDR sockets may hold the same address as long as neither is
+    listening, so a bound-but-idle socket leaves `is_port_available` answering
+    True. (BSD/macOS refuses the second bind outright, which is why a test
+    written without the `listen` passes there and fails here.)
+    """
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.bind(("0.0.0.0", port))
+    sock.listen(1)
     return sock.getsockname()[1], sock
 
 
@@ -101,23 +109,30 @@ class TestFindFreePorts:
         assert len(set(ports)) == 3  # all unique
 
     def test_count_capped_by_available_range(self):
-        """Verify that count capped by available range."""
-        # Ask for 5 ports but range is only wide enough for 2 free ones
-        port1, s1 = _bind_port()
-        port2, s2 = _bind_port()
-        try:
-            ports = find_free_ports(
-                count=5,
-                port_min=port1,
-                port_max=port2,
-                excluded_ports={port1, port2},
-            )
-            # The two explicitly bound ports are excluded → could be 0 depending on range
-            assert len(ports) <= 5
-            assert len(set(ports)) == len(ports)
-        finally:
-            s1.close()
-            s2.close()
+        """Asking for more than the range holds returns what fits, not what was asked.
+
+        The range is a fixed window with all but two of its ports excluded, so
+        the ceiling is known regardless of what the machine happens to be
+        running: at most those two can come back, against a request for five.
+        Deriving the window from OS-assigned ephemeral ports instead would be
+        flaky - the kernel hands them out in no particular order, so the pair
+        lands reversed often enough, and find_free_port rejects an inverted
+        range rather than searching it.
+        """
+        port_min, port_max = 20000, 20009
+        allowed = {port_min, port_max}
+        excluded = set(range(port_min, port_max + 1)) - allowed
+
+        ports = find_free_ports(
+            count=5,
+            port_min=port_min,
+            port_max=port_max,
+            excluded_ports=excluded,
+        )
+
+        assert len(ports) <= len(allowed)
+        assert set(ports) <= allowed
+        assert len(set(ports)) == len(ports)
 
 
 class TestFindFreePortReserved:

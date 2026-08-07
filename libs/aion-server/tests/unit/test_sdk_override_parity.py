@@ -65,6 +65,11 @@ OVERRIDES = [
         BasePushNotificationSender,
         "_dispatch_notification",
     ),
+    (
+        AuthenticatedPushNotificationSender,
+        BasePushNotificationSender,
+        "send_notification",
+    ),
     (InMemoryTaskStore, TaskStore, "save"),
     (InMemoryTaskStore, TaskStore, "get"),
     (InMemoryTaskStore, TaskStore, "delete"),

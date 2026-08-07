@@ -6,6 +6,7 @@ from typing import Optional
 
 import sys
 from aion.core.config import AionConfig
+from aion.core.settings import api_settings
 from aion.server.utils.processes import ProcessManager
 
 from aion.cli.services import (
@@ -38,6 +39,7 @@ class ServeHandler:
         self.successful_agents: list[str] = []
         self.failed_agents: list[str] = []
         self.proxy_started: bool = False
+        self._register_version_task: Optional[asyncio.Task] = None
         self._setup_signal_handlers()
 
     def _setup_signal_handlers(self):
@@ -96,8 +98,11 @@ class ServeHandler:
             if not successful_agents:
                 return
 
-            # Broadcast config to aion api
-            asyncio.create_task(AionDeploymentRegisterVersionService().execute(successful_agents))
+            # Broadcast config to aion api. Keep the reference: the event loop only
+            # holds a weak one, so an unreferenced task can be collected mid-flight
+            # and registration would then fail with nothing logged at all.
+            self._register_version_task = asyncio.create_task(
+                AionDeploymentRegisterVersionService().execute(successful_agents))
 
             # Monitor processes (blocking call until shutdown)
             await self._monitor()
@@ -136,7 +141,14 @@ class ServeHandler:
 
         # Prepare environment BEFORE starting agents
         env_context = await ServeEnvironmentPreparerService().execute()
-        logger.info(f"Environment prepared. VERSION_ID: {env_context.version_id}")
+        # The API host belongs on this line: the same credentials fail against one
+        # environment and succeed against another, and nothing else in the startup
+        # log says which one was targeted.
+        logger.info(
+            "Environment prepared. VERSION_ID: %s | Aion API: %s | client_id: %s",
+            env_context.version_id,
+            api_settings.http_url,
+            api_settings.client_id or "<unset>")
 
         # Initialize port reservation manager
         self.port_manager = AionPortManager()

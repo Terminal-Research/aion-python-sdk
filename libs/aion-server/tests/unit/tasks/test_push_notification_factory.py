@@ -1,13 +1,15 @@
 """Tests for PushNotificationFactory.
 
-The factory decides two things the push channel depends on and nothing else
+The factory decides three things the push channel depends on and nothing else
 asserts: which sender the server dispatches through — the SDK base class sends
-webhook calls anonymously — and how long a delivery may wait for the receiver,
-which httpx otherwise defaults to five seconds for.
+webhook calls anonymously — how long a delivery may wait for the receiver, which
+httpx otherwise defaults to five seconds for, and whether stored configs, which
+carry webhook credentials, are encrypted at rest.
 """
 
 import pytest
 from a2a.server.tasks import InMemoryPushNotificationConfigStore
+from cryptography.fernet import Fernet
 from unittest.mock import Mock, patch
 
 from aion.server.tasks.authenticated_push_sender import AuthenticatedPushNotificationSender
@@ -92,3 +94,36 @@ class TestDeliveryTimeout:
         _, sender = PushNotificationFactory.create()
 
         assert sender._client.timeout.read > 5.0
+
+
+class TestConfigEncryption:
+    """Stored configs carry webhook credentials, so the key must reach the store."""
+
+    KEY_SETTING = "aion.server.tasks.push_notifications.app_settings.encryption_key"
+
+    def test_configured_key_reaches_the_store(self, db_manager, monkeypatch):
+        """Without this wiring the key is set in the environment and ignored."""
+        key = Fernet.generate_key().decode()
+        monkeypatch.setattr(self.KEY_SETTING, key)
+
+        with patch(STORE_PATH) as store_cls:
+            PushNotificationFactory.create(db_manager)
+
+        assert store_cls.call_args.kwargs["encryption_key"] == key
+
+    def test_unset_key_leaves_encryption_off(self, db_manager, monkeypatch):
+        """Encryption is opt-in: an absent key must not become a literal value."""
+        monkeypatch.setattr(self.KEY_SETTING, None)
+
+        with patch(STORE_PATH) as store_cls:
+            PushNotificationFactory.create(db_manager)
+
+        assert store_cls.call_args.kwargs["encryption_key"] is None
+
+    def test_key_travels_through_a_real_store(self, db_manager, monkeypatch):
+        """Pins the argument name against an SDK that renames or drops it."""
+        monkeypatch.setattr(self.KEY_SETTING, Fernet.generate_key().decode())
+
+        config_store, _ = PushNotificationFactory.create(db_manager)
+
+        assert config_store._fernet is not None

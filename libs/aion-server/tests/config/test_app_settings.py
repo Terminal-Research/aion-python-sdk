@@ -1,4 +1,5 @@
 import pytest
+from cryptography.fernet import Fernet
 from unittest.mock import patch
 import os
 
@@ -16,11 +17,16 @@ class TestAppSettings:
         assert app_settings.log_level in ["DEBUG", "INFO", "WARNING", "ERROR"]
 
     def test_default_log_level(self):
-        """Test that log level from .env file or defaults to INFO"""
-        # The .env file in the project has LOG_LEVEL=DEBUG, which takes precedence
-        # when a new AppSettings instance is created
-        settings = AppSettings()
-        assert settings.log_level == "DEBUG"
+        """Test that log level defaults to INFO when nothing sets it.
+
+        The default is only observable with LOG_LEVEL cleared: the field reads
+        it from the environment, and the settings loader also picks up a
+        project .env, so an ambient value would be what gets asserted instead.
+        """
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop('LOG_LEVEL', None)
+            settings = AppSettings(_env_file=None)
+        assert settings.log_level == "INFO"
 
     def test_valid_log_levels(self):
         """Test that all valid log levels are accepted"""
@@ -80,6 +86,38 @@ class TestAppSettings:
         """Test that logstash_port can be set via environment variable."""
         settings = AppSettings()
         assert settings.logstash_port == 5000
+
+
+class TestEncryptionKey:
+    """The key guards sensitive data at rest, so a bad one must not reach a store."""
+
+    def test_key_is_unset_by_default(self):
+        """Encryption stays opt-in."""
+        settings = AppSettings()
+        assert settings.encryption_key is None
+
+    def test_valid_key_from_environment(self):
+        """A Fernet key passes through untouched."""
+        key = Fernet.generate_key().decode()
+
+        with patch.dict(os.environ, {"ENCRYPTION_KEY": key}):
+            settings = AppSettings()
+
+        assert settings.encryption_key == key
+
+    def test_blank_key_is_treated_as_unset(self):
+        """An empty variable means 'off', not 'encrypt with an empty key'."""
+        with patch.dict(os.environ, {"ENCRYPTION_KEY": ""}):
+            settings = AppSettings()
+
+        assert settings.encryption_key is None
+
+    @pytest.mark.parametrize("key", ["not-base64!", "c2hvcnQ="])
+    def test_malformed_key_is_rejected_at_startup(self, key):
+        """Otherwise the failure surfaces from inside the SDK on the first write."""
+        with patch.dict(os.environ, {"ENCRYPTION_KEY": key}):
+            with pytest.raises(ValueError, match="URL-safe base64-encoded 32-byte key"):
+                AppSettings()
 
 
 class TestApiSettings:

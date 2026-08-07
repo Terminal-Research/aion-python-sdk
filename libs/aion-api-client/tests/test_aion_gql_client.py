@@ -296,3 +296,81 @@ async def test_a2a_stream_accepts_generated_graphql_transport_inputs(
     call = generated_client.calls[0]
     assert call["target"] is target
     assert call["principal"] == principal
+
+
+@pytest.mark.anyio("asyncio")
+async def test_missing_token_error_names_host_and_reason() -> None:
+    """The build failure must quote why the token is missing, not just that it is.
+
+    The manager absorbs its own failures and hands back ``None``, so this is the
+    only place the reason can surface. Without it the operator gets a bare "No
+    token received from authentication" and no way to tell a rejected credential
+    from an unreachable host.
+    """
+    from aion.api.http import AionJWTManager
+
+    class FailedJWTManager(AionJWTManager):
+        async def _refresh_token(self) -> None:
+            self._last_auth_error = "ConnectTimeout"
+
+    client = AionGqlClient(
+        client_id="test-id",
+        client_secret="test-secret",
+        jwt_manager=FailedJWTManager(),
+        gql_url=aion_api_settings.gql_url,
+        ws_url=aion_api_settings.ws_gql_url,
+    )
+
+    with pytest.raises(ValueError) as excinfo:
+        await client._build_client()
+
+    message = str(excinfo.value)
+    assert "ConnectTimeout" in message
+    assert aion_api_settings.http_url in message
+
+
+@pytest.mark.anyio("asyncio")
+async def test_missing_token_error_points_at_logs_when_no_reason_recorded() -> None:
+    """With nothing recorded, say where to look rather than going silent."""
+    from aion.api.http import AionJWTManager
+
+    class SilentJWTManager(AionJWTManager):
+        async def _refresh_token(self) -> None:
+            return None
+
+    client = AionGqlClient(
+        client_id="test-id",
+        client_secret="test-secret",
+        jwt_manager=SilentJWTManager(),
+        gql_url=aion_api_settings.gql_url,
+        ws_url=aion_api_settings.ws_gql_url,
+    )
+
+    with pytest.raises(ValueError) as excinfo:
+        await client._build_client()
+
+    assert "jwt_manager" in str(excinfo.value)
+
+
+@pytest.mark.anyio("asyncio")
+async def test_gql_transport_shares_the_auth_timeout(dummy_jwt_manager) -> None:
+    """The GraphQL transport must not fall back to the httpx default.
+
+    Unconfigured, httpx gives it 5s - six times less than the authentication call
+    that precedes it already allows, and short enough that an ordinary connect
+    hiccup failed version registration outright.
+    """
+    from aion.api.http.client import DEFAULT_HTTP_TIMEOUT_SECONDS
+
+    client = AionGqlClient(
+        client_id="test-id",
+        client_secret="test-secret",
+        jwt_manager=dummy_jwt_manager,
+        gql_url=aion_api_settings.gql_url,
+        ws_url=aion_api_settings.ws_gql_url,
+    )
+
+    await client._build_client()
+
+    assert client.client.http_client.timeout.connect == DEFAULT_HTTP_TIMEOUT_SECONDS
+    assert client.client.http_client.timeout.read == DEFAULT_HTTP_TIMEOUT_SECONDS
