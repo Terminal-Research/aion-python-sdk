@@ -108,7 +108,9 @@ async def serve(
             "Please refer to the documentation for the required server extras."
         )
 
+    from aion.core.logging import set_process_role
     from aion.server.logging import setup_root_logger
+    set_process_role("CLI")
     setup_root_logger()
 
     from aion.cli.handlers.serve import ServeHandler

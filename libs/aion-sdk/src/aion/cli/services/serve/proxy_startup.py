@@ -110,6 +110,19 @@ class ServeProxyStartupService(BaseExecuteService):
             conn: Pipe connection to parent process (optional)
         """
         try:
+            from aion.core.logging import set_process_role
+            from aion.server.logging import setup_root_logger
+
+            # Claim the label here rather than inheriting one: the proxy shares a
+            # console with the CLI and the agents, and has no agent to name itself by.
+            set_process_role("Proxy")
+
+            # Without this the process has no log handlers of its own and drops
+            # everything it writes, request logging included. It only ever worked
+            # by inheriting the parent's handlers across a fork, which the default
+            # start method no longer gives us.
+            setup_root_logger()
+
             # Reset signal handlers to default in child process
             # This prevents inherited signal handlers from parent process from running
             # which would cause issues with process management (AssertionError in is_alive)

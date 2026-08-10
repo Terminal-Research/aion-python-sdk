@@ -50,7 +50,9 @@ class ProxySwaggerUIFixMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         agent_id = match.group(1)
-        agent_path = match.group(2).rstrip('/')
+        # None when the request addresses an agent's root with no trailing slash,
+        # which the pattern matches too because that form is routed as well.
+        agent_path = (match.group(2) or '').rstrip('/')
         response = await call_next(request)
 
         # Fix paths based on endpoint type

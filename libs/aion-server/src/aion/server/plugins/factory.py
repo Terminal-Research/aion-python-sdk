@@ -81,7 +81,6 @@ class PluginFactory:
 
         for plugin in plugins:
             try:
-                self.logger.debug(f"Registering plugin: {plugin.name()}")
                 self._registry.register(plugin)
             except Exception as e:
                 self.logger.error(f"Failed to register plugin {plugin.name()}: {e}", exc_info=True)
@@ -145,14 +144,13 @@ class PluginFactory:
             return
 
         plugins = self._registry.get_all()
-        self.logger.info(f"Tearing down {len(plugins)} plugin(s)...")
+        self.logger.debug(f"Tearing down {len(plugins)} plugin(s)...")
 
         # Teardown in reverse order
         for plugin in reversed(plugins):
             try:
-                self.logger.debug(f"Tearing down plugin: {plugin.name()}")
                 await plugin.teardown()
-                self.logger.info(f"Plugin '{plugin.name()}' teardown complete")
+                self.logger.debug(f"Plugin '{plugin.name()}' teardown complete")
             except Exception as e:
                 self.logger.error(
                     f"Failed to teardown plugin '{plugin.name()}': {e}",
@@ -257,10 +255,11 @@ class PluginFactory:
                 continue
 
             try:
-                self.logger.debug(f"Configuring app with plugin: {plugin.name()}")
                 await plugin.configure_app(app, agent)
                 configured_count += 1
-                self.logger.info(f"Plugin '{plugin.name()}' configured app successfully")
+                # Debug, not info: the tally below is what an operator reads, and
+                # the plugins were already named when they were registered.
+                self.logger.debug(f"Plugin '{plugin.name()}' configured app successfully")
             except Exception as e:
                 self.logger.error(
                     f"Failed to configure app with plugin '{plugin.name()}': {e}",

@@ -52,8 +52,9 @@ class AgentFactory:
 
         try:
             logger.debug(f"Building agent '{self.aion_agent.id}'")
+            # build() announces the result itself, and names the framework it
+            # settled on, which is the part worth having in the log.
             await self.aion_agent.build(base_path=base_path)
-            logger.info(f"Agent '{self.aion_agent.id}' built successfully")
             return self.aion_agent
         except FileNotFoundError as exc:
             logger.error(

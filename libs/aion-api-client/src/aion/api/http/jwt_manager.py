@@ -32,6 +32,20 @@ def describe_exception(ex: BaseException) -> str:
     return f"{type(ex).__name__}: {text}" if text else type(ex).__name__
 
 
+def describe_lifetime(token: "Token") -> str:
+    """Say how long a token is good for, in the reader's own clock.
+
+    Expiry is held in UTC, while log timestamps are written in local time. A bare
+    UTC expiry printed beside them reads as a token that died hours before it was
+    issued, so it is converted here and led by the remaining lifetime, which is
+    the part worth knowing at a glance.
+    """
+    remaining = int((token.expires_at - datetime.now(tz=timezone.utc)).total_seconds())
+    lifetime = f"{remaining}s" if abs(remaining) < 120 else f"{remaining // 60}m"
+    expires_at = token.expires_at.astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
+    return f"valid for {lifetime} (expires {expires_at})"
+
+
 @dataclass
 class Token:
     """
@@ -324,9 +338,9 @@ class AionRefreshingJWTManager(AionJWTManager):
         self._last_auth_error = None
 
         logger.info(
-            "Token %s successfully, expires at: %s",
+            "Token %s successfully, %s",
             "fetched" if first_token else "refreshed",
-            self._token.expires_at,
+            describe_lifetime(self._token),
         )
 
     def _handle_auth_error(self, ex: AionAuthenticationError) -> None:

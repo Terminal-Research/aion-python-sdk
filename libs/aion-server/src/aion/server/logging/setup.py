@@ -9,7 +9,12 @@ def setup_root_logger():
     """Configure the root logger with Aion stream and Logstash handlers."""
     from aion.server.settings import app_settings
     from aion.core.settings import api_settings
-    from .filters import BASE_RULES, NamespaceFilter, ServerAionContextFilter
+    from .filters import (
+        BASE_RULES,
+        NamespaceFilter,
+        ServerAionContextFilter,
+        ShieldedWebsocketCloseFilter,
+    )
     from .handlers import AionLogstashHandler, LogStreamHandler
 
     root = logging.getLogger()
@@ -20,10 +25,14 @@ def setup_root_logger():
     root.setLevel(app_settings.log_level)
 
     log_namespace_filter = NamespaceFilter(BASE_RULES)
+    # A level rule cannot reach this one: asyncio reports it at ERROR, well over
+    # the threshold BASE_RULES sets for that namespace.
+    shielded_close_filter = ShieldedWebsocketCloseFilter()
 
     stream_handler = LogStreamHandler()
     stream_handler.addFilter(ServerAionContextFilter())
     stream_handler.addFilter(log_namespace_filter)
+    stream_handler.addFilter(shielded_close_filter)
     root.addHandler(stream_handler)
 
     logstash_handler = AionLogstashHandler(
@@ -38,4 +47,5 @@ def setup_root_logger():
         node_name=app_settings.node_name,
     )
     logstash_handler.addFilter(log_namespace_filter)
+    logstash_handler.addFilter(shielded_close_filter)
     root.addHandler(logstash_handler)
