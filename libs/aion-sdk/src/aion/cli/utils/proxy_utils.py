@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
-from aion.proxy.constants import AGENT_PROXY_URL
+from aion.proxy.constants import build_agent_path
 
 
 def format_agent_proxy_path(agent_id: str, path: str = "") -> str:
-    """Format a proxy path using the AGENT_PROXY_URL template.
+    """Format a proxy path for an agent served behind the proxy.
 
-    This function constructs a complete proxy path by combining the agent ID
-    and a relative path using the standard AGENT_PROXY_URL template pattern.
-    It ensures there are no double slashes in the resulting path.
+    Delegates to the proxy's own builder rather than formatting the URL template
+    again here. Spelling the address a second time is how this helper and
+    ``build_agent_path`` came to disagree about the trailing slash on an agent's
+    root, which put two different addresses for one endpoint into circulation -
+    the CLI advertised one, the OpenAPI schema the other.
 
     Args:
         agent_id: The agent identifier (e.g., 'my-agent', 'langgraph-agent')
@@ -18,12 +20,7 @@ def format_agent_proxy_path(agent_id: str, path: str = "") -> str:
               Leading slashes will be automatically removed.
 
     Returns:
-        Formatted proxy path without leading slash
-        (e.g., 'agents/my-agent/.well-known/agent-card.json')
+        Formatted proxy path
+        (e.g., '/agents/my-agent/.well-known/agent-card.json')
     """
-    # Remove leading slashes from the path to avoid double slashes
-    clean_path = path.lstrip("/")
-
-    return AGENT_PROXY_URL.replace("{path:path}", "{path}").format(
-        agent_id=agent_id, path=clean_path
-    )
+    return build_agent_path(agent_id, path)

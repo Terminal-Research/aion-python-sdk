@@ -96,6 +96,11 @@ async def run_server(
 ):
     """Configure logging, then run the agent server until completion or interrupt."""
     try:
+        from aion.core.logging import set_process_role
+
+        # Covers the lines this process writes before the agent is loaded and can
+        # name itself; once it is, the agent's own name takes over.
+        set_process_role("Agent")
         setup_root_logger()
 
         # RUN AGENT

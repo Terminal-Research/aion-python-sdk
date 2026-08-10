@@ -4,6 +4,7 @@ import logging
 from datetime import datetime
 
 from aion.core.logging.base import AionLogRecord
+from aion.core.logging.process import get_process_role
 from aion.core.utils.text import colorize_text
 
 
@@ -30,6 +31,11 @@ class LogStreamFormatter(logging.Formatter):
         context_parts = []
         if agent_manager.agent_id:
             context_parts.append(f"Agent [{agent_manager.agent_id}]")
+        elif role := get_process_role():
+            # The CLI and the proxy share this console with the agents and have
+            # no agent to name, so without their role their lines read as coming
+            # from nowhere in particular.
+            context_parts.append(role)
 
         if hasattr(record, 'task_id') and record.task_id:
             context_parts.append(f"Task [{record.task_id}]")

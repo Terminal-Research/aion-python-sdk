@@ -26,6 +26,25 @@ class AppLifespan:
         """Initialize the lifespan manager with an app factory."""
         self.app_factory: AppFactory = app_factory
         self._websocket_manager: Optional[AionWebSocketManager] = None
+        # asyncio only holds a weak reference to a running task, so a background
+        # task nobody keeps can be collected mid-flight. Same reason the version
+        # registration task is held onto rather than fired and forgotten.
+        self._background_tasks: set[asyncio.Task] = set()
+
+    def _spawn(self, coro) -> asyncio.Task:
+        """Run a coroutine in the background, keeping it alive until it finishes."""
+        task = asyncio.create_task(coro)
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
+        return task
+
+    @property
+    def platform_connection_state(self) -> dict:
+        """Report the platform WebSocket connection for health checks."""
+        if self._websocket_manager is None:
+            # No platform credentials, so the connection was never meant to exist.
+            return {"status": "disabled", "reconnects": 0, "lastError": None}
+        return self._websocket_manager.connection_state
 
     async def _get_websocket_manager(self, create: bool = True) -> AionWebSocketManager:
         """Return the AionWebSocketManager instance."""
@@ -60,7 +79,7 @@ class AppLifespan:
 
         # SETUP OPEN-TELEMETRY
         init_tracing()
-        asyncio.create_task(self._start_ws_connection())
+        self._spawn(self._start_ws_connection())
 
     async def shutdown(self):
         """Handle application shutdown events."""
@@ -80,6 +99,6 @@ class AppLifespan:
         if auth_token:
             # START WEBSOCKET CONNECTION WITH AION
             ws_manager = await self._get_websocket_manager(create=True)
-            asyncio.create_task(
+            self._spawn(
                 aion_services.AionWebSocketService(websocket_manager=ws_manager)
                 .start_connection())

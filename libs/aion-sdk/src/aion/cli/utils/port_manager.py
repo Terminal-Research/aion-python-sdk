@@ -158,7 +158,9 @@ class AionPortManager:
                     f"Failed to reserve port for agent '{agent_id}' from range {port_range_start}-{port_range_end}"
                 )
                 return False
-            reserved_ports.append(str(port))
+            # Named, because a bare list of ports leaves you guessing which agent
+            # owns which one as soon as there is more than one of them.
+            reserved_ports.append(f"{agent_id}={port}")
 
         logger.info(f"Reserved agent ports: {', '.join(reserved_ports)}")
         return True
@@ -297,7 +299,6 @@ class AionPortManager:
     def release_all(self) -> None:
         """Release all reserved ports."""
         self._port_manager.release_all()
-        logger.debug("Released all AION service ports")
 
     def __enter__(self):
         """Context manager entry."""

@@ -49,6 +49,10 @@ class PortReservationManager:
     This is a generic utility without business logic - it doesn't know about
     agents, proxies, or any other domain concepts. Use keys (strings) to
     identify different port reservations.
+
+    Successful reservations are announced by the caller, which can name what the
+    port is for; logging them here too only prints the same allocation twice.
+    Failures are reported here, since a caller cannot describe what went wrong.
     """
 
     def __init__(self):
@@ -91,7 +95,6 @@ class PortReservationManager:
 
             self._reserved[key] = (port, sock)
             self._locked_ports.add(port)
-            self.logger.debug(f"Reserved port {port} for key '{key}'")
             return True
 
         except (OSError, socket.error) as e:
@@ -135,7 +138,6 @@ class PortReservationManager:
             port, sock = result
             self._reserved[key] = (port, sock)
             self._locked_ports.add(port)
-            self.logger.debug(f"Reserved port {port} for key '{key}' from range {port_min}-{port_max}")
             return port
 
         except Exception as e:
@@ -276,8 +278,6 @@ class PortReservationManager:
         for key in keys:
             self.release(key)
 
-        self.logger.debug("Released all reserved ports")
-
     def get_all(self) -> Dict[str, int]:
         """
         Get all reserved ports.
@@ -306,9 +306,15 @@ class PortReservationManager:
         return False
 
     def __del__(self):
-        """Destructor - ensure all ports are released."""
-        try:
-            self.release_all()
-        except Exception:
-            # Ignore errors during cleanup
-            pass
+        """Last-resort cleanup for a manager that was never released.
+
+        Deliberately does not call release_all(): a destructor usually runs while
+        the interpreter is tearing down, where logging raises inside logging
+        itself and Python prints the failure as a spurious traceback on every
+        exit. Closing the sockets directly keeps the cleanup and drops the noise.
+        """
+        for _, sock in getattr(self, "_reserved", {}).values():
+            try:
+                sock.close()
+            except Exception:
+                pass

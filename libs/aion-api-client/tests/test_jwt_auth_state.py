@@ -255,3 +255,47 @@ async def test_async_path_records_failures_too() -> None:
 
     assert await manager.get_token() is None
     assert manager.last_auth_error == "ConnectError"
+
+
+class TestLifetimeReporting:
+    """The token line is read next to log timestamps, which are in local time."""
+
+    def _token(self, minutes: int):
+        import datetime
+
+        import jwt as pyjwt
+
+        from aion.api.http.jwt_manager import Token
+
+        exp = datetime.datetime.now(tz=datetime.timezone.utc) + datetime.timedelta(
+            minutes=minutes)
+        return Token.from_jwt(
+            pyjwt.encode({"exp": int(exp.timestamp())}, "secret", algorithm="HS256"))
+
+    def test_expiry_is_stated_in_the_local_clock(self) -> None:
+        """A UTC expiry beside a local timestamp reads as a token already dead.
+
+        This is not hypothetical: at UTC+3 a freshly issued hour-long token used
+        to log an expiry two hours in the past.
+        """
+        import datetime
+
+        from aion.api.http.jwt_manager import describe_lifetime
+
+        token = self._token(60)
+        local_hour = token.expires_at.astimezone().strftime("%H:%M")
+
+        assert local_hour in describe_lifetime(token)
+        assert "+00:00" not in describe_lifetime(token)
+
+    def test_remaining_lifetime_leads_the_line(self) -> None:
+        """The useful number is how long the token has left, not a wall-clock time."""
+        from aion.api.http.jwt_manager import describe_lifetime
+
+        assert describe_lifetime(self._token(60)).startswith("valid for 59m")
+
+    def test_short_lifetimes_are_reported_in_seconds(self) -> None:
+        """A token good for well under a minute must not round to '0m'."""
+        from aion.api.http.jwt_manager import describe_lifetime
+
+        assert "s (expires" in describe_lifetime(self._token(1))

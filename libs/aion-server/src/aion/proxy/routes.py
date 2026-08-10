@@ -10,6 +10,7 @@ from .constants import (
     SYSTEM_HEALTH_CHECK_URL,
     MANIFEST_URL,
     AGENT_PROXY_URL,
+    AGENT_PROXY_PREFIX,
 )
 from .handlers import RequestHandler
 from .types import SystemHealthResponse
@@ -100,10 +101,9 @@ class ProxyRouter:
     def _register_proxy(self) -> None:
         """Register proxy endpoint for forwarding requests to agents"""
 
-        @self.app.api_route(
-            AGENT_PROXY_URL,
-            methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"]
-        )
+        methods = ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"]
+
+        @self.app.api_route(AGENT_PROXY_URL, methods=methods)
         async def proxy_request(agent_id: str, path: str, request: Request) -> Response:
             """
             Proxy requests to the appropriate agent server
@@ -117,3 +117,24 @@ class ProxyRouter:
                 Response from the target agent server
             """
             return await self.request_handler.forward_request(agent_id, path, request)
+
+        @self.app.api_route(AGENT_PROXY_PREFIX, methods=methods)
+        async def proxy_agent_root(agent_id: str, request: Request) -> Response:
+            """
+            Proxy requests addressed to an agent's root, with no trailing slash.
+
+            The route above cannot match this form - it has no segment left for
+            ``path`` - so without this one Starlette falls back to redirecting to
+            the trailing-slash form. That answers every RPC call with a 307 and
+            has the client send the whole request a second time, and a client
+            that does not follow redirects on POST gets only the redirect. As a
+            central entry point the proxy cannot make that a caller's problem.
+
+            Args:
+                agent_id: The target agent identifier
+                request: The incoming FastAPI request
+
+            Returns:
+                Response from the target agent server
+            """
+            return await self.request_handler.forward_request(agent_id, "", request)

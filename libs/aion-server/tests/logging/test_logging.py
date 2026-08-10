@@ -414,3 +414,53 @@ class TestServerAionContextFilter:
         assert result is True
         # Record should have None values (not enriched)
         assert rec.trace_id is None
+
+
+class TestProcessRoleInStreamOutput:
+    """aion serve interleaves three processes on one console.
+
+    Only agents used to identify themselves, so a line from the CLI and a line
+    from the proxy were indistinguishable -- which is how a token fetched by the
+    CLI reads as a second, unexplained fetch by the agent.
+    """
+
+    def _formatted(self, message: str = "hello") -> str:
+        import logging as _logging
+
+        from aion.server.logging.handlers.stream import LogStreamFormatter
+
+        record = _logging.LogRecord(
+            name="aion.test", level=_logging.INFO, pathname="x.py",
+            lineno=1, msg=message, args=(), exc_info=None,
+        )
+        return LogStreamFormatter().format(record)
+
+    def test_role_labels_a_process_without_an_agent(self, monkeypatch):
+        from aion.core.logging import process, set_process_role
+
+        monkeypatch.setattr(process, "_process_role", None)
+        set_process_role("Proxy")
+
+        assert "Proxy" in self._formatted()
+
+    def test_an_agent_name_wins_over_the_role(self, monkeypatch):
+        """The agent process claims "Agent" early, then names itself."""
+        from aion.core.logging import process, set_process_role
+        from aion.server.agent.aion_agent import agent_manager
+
+        monkeypatch.setattr(process, "_process_role", None)
+        set_process_role("Agent")
+        monkeypatch.setattr(agent_manager, "_agent_id", "command-agent")
+
+        formatted = self._formatted()
+
+        assert "Agent [command-agent]" in formatted
+        assert "- Agent -" not in formatted
+
+    def test_an_unclaimed_process_still_formats(self, monkeypatch):
+        """A role is optional; anything importing the formatter must not break."""
+        from aion.core.logging import process
+
+        monkeypatch.setattr(process, "_process_role", None)
+
+        assert "hello" in self._formatted()
