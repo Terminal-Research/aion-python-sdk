@@ -45,7 +45,6 @@ async def upgrade_to_head() -> None:
         # Run migrations
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, _run_migrations)
-        logger.debug("Database migrations completed successfully")
     except Exception as e:
         logger.error(f"Database migration failed: {e}", exc_info=True)
         raise

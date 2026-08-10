@@ -13,6 +13,14 @@ BASE_RULES: dict[str, int | None] = {
     "uvicorn": logging.WARNING,
     "uvicorn.access": logging.WARNING,
     "gql": logging.WARNING,
+    # Logs every streamed chunk whole at DEBUG. One agent reply is hundreds of
+    # them, each carrying the full task payload - the user's own text, the
+    # distribution metadata - into stdout and on to logstash.
+    "sse_starlette": logging.WARNING,
+    # Traces every frame at DEBUG: ~14 lines a minute of keepalive ping/pong alone,
+    # plus a handshake dump that spells out the auth token in the request line.
+    # Failures stay visible: it reports transfer and keepalive errors at ERROR.
+    "websockets": logging.WARNING,
     "a2a": logging.WARNING,
     "alembic": logging.WARNING,
 }
@@ -40,6 +48,38 @@ class NamespaceFilter(logging.Filter):
                     return False
                 return record.levelno >= level
         return True
+
+
+class ShieldedWebsocketCloseFilter(logging.Filter):
+    """Drop asyncio's duplicate account of a websocket close we already handled.
+
+    ``websockets`` awaits its own teardown under ``asyncio.shield``. When the
+    outer future is abandoned, CPython attaches ``_log_on_exception`` to the
+    inner one (asyncio/tasks.py), which hands the close exception to the loop's
+    exception handler - and that reports it at ERROR with a full traceback.
+
+    The record is a duplicate by construction: it fires only for an exception
+    nobody retrieved from the shield, and this one we do retrieve, through
+    ``wait_closed()`` and ``close_exception``, then report as a warning naming
+    both the reason and how long the connection lasted. So every reconnect cost
+    a twenty-line ERROR describing an event we handled and recovered from within
+    a second, which downstream is an alert that means nothing.
+
+    Deliberately narrow: asyncio's own logger, this one message, and only when
+    the exception came from websockets. Everything else asyncio reports still
+    gets through - "Task exception was never retrieved" above all, which is how
+    a dropped background task announces itself.
+    """
+
+    _MESSAGE = "exception in shielded future"
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        # Ordered so that all but a handful of records leave on one comparison.
+        if record.name != "asyncio" or self._MESSAGE not in record.getMessage():
+            return True
+
+        error = record.exc_info[1] if record.exc_info else None
+        return not (error and type(error).__module__.startswith("websockets"))
 
 
 class ServerAionContextFilter(logging.Filter):
