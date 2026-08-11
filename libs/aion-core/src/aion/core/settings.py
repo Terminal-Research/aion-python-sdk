@@ -62,6 +62,17 @@ class ApiSettings(BaseEnvSettings):
     _ws_gql_url: Optional[str] = None
     _http_url: Optional[str] = None
 
+    @property
+    def has_credentials(self) -> bool:
+        """Report whether this process has anything to authenticate with.
+
+        Absent credentials are not a failure to recover from: nothing about them
+        is temporary, and every call that needs a token raises the same way every
+        time. Callers read this to skip the platform entirely rather than to
+        discover its absence one error at a time.
+        """
+        return bool(self.client_id and self.client_secret)
+
     @field_validator("api_host")
     @classmethod
     def validate_api_host(cls, v):

@@ -2,10 +2,14 @@
 import logging
 import asyncio
 import signal
+from contextlib import suppress
 from typing import Optional
 
+from aion.api.http import aion_jwt_manager
 from aion.core.config import AionConfig
 from aion.core.settings import api_settings
+from aion.server import services as aion_services
+from aion.server.core.platform import AionWebSocketManager, WebsocketTransportFactory
 from aion.server.utils.processes import ProcessManager
 
 from aion.cli.services import (
@@ -40,6 +44,8 @@ class ServeHandler:
         self.successful_agents: list[str] = []
         self.failed_agents: list[str] = []
         self.proxy_started: bool = False
+        self._platform_link_task: Optional[asyncio.Task] = None
+        self._websocket_manager: Optional[AionWebSocketManager] = None
         self._shutdown_requested = asyncio.Event()
         self._background_tasks: set[asyncio.Task] = set()
 
@@ -131,20 +137,14 @@ class ServeHandler:
             if not successful_agents:
                 return
 
-            # Broadcast config to aion api. Preflight already established
-            # whether the platform will talk to us, so skip the round trip
-            # instead of failing it again with the same missing token.
-            if self.env_context and self.env_context.auth_available:
-                self._track_background_task(
-                    asyncio.create_task(
-                        AionDeploymentRegisterVersionService().execute(successful_agents)
-                    ),
-                    "deployment version registration",
-                )
-            else:
-                logger.debug(
-                    "Skipping deployment version registration: platform auth unavailable"
-                )
+            # Announce this deployment to the platform, in the background so the
+            # agents keep serving while registration retries. Tracked rather than
+            # left to the loop, which holds only a weak reference: an unreferenced
+            # task can be collected mid-flight, and registration would then fail
+            # with nothing logged at all.
+            self._platform_link_task = asyncio.create_task(
+                self._link_to_platform(successful_agents))
+            self._track_background_task(self._platform_link_task, "platform link")
 
             # Monitor processes (blocking call until shutdown)
             await self._monitor()
@@ -152,6 +152,64 @@ class ServeHandler:
         finally:
             # Ensure graceful shutdown
             await self.shutdown()
+
+    async def _link_to_platform(self, agent_ids: list[str]) -> None:
+        """Register the deployment version, then connect to the platform.
+
+        The connection announces a deployment version rather than an agent, so it
+        only means anything once the platform knows that version exists. Opened
+        unconditionally it claimed a healthy link on behalf of a deployment that
+        would never receive traffic, and sat in the log directly under the warning
+        saying registration had failed - which is how an operator reads past it.
+
+        Registration retries transient failures for as long as this runs, so this
+        can sit here for the life of the deployment and open the socket the moment
+        a tunnel or an ingress starts routing. It returns early only when there is
+        no platform to reach, or when the platform refuses the version outright.
+        """
+        if not api_settings.has_credentials:
+            # Not a degraded deployment but a different mode of running one, and
+            # the only one the retry loop below cannot survive: with no credentials
+            # every attempt raises identically, so retrying announces a permanent
+            # local setup as an outage, once at startup and then forever.
+            logger.info(
+                "AION_CLIENT_ID / AION_CLIENT_SECRET are not set, so this "
+                "deployment has no identity on the platform: the agents serve "
+                "locally, no version is registered and no platform connection is "
+                "opened")
+            return
+
+        registered = await AionDeploymentRegisterVersionService().execute(agent_ids)
+        if not registered:
+            logger.error(
+                "The agents are serving locally but the platform refused the "
+                "deployment version, so they will receive no platform traffic and "
+                "no connection to the platform was opened - restart once the cause "
+                "above is resolved")
+            return
+
+        self._websocket_manager = AionWebSocketManager(
+            ws_transport_factory=WebsocketTransportFactory(
+                ws_url=api_settings.ws_gql_url,
+                auth_manager=aion_services.AionAuthManagerService(
+                    jwt_manager=aion_jwt_manager),
+            )
+        )
+        await aion_services.AionWebSocketService(
+            websocket_manager=self._websocket_manager).start_connection()
+
+    async def _stop_platform_link(self) -> None:
+        """Close the platform connection, dropping a registration still in flight."""
+        task, self._platform_link_task = self._platform_link_task, None
+        if task is not None and not task.done():
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+
+        manager, self._websocket_manager = self._websocket_manager, None
+        if manager is not None:
+            await aion_services.AionWebSocketService(
+                websocket_manager=manager).stop_connection()
 
     async def _startup(
             self,
@@ -336,6 +394,8 @@ class ServeHandler:
             bool: True if all processes shut down successfully
         """
         shutdown_successful = True
+
+        await self._stop_platform_link()
 
         if self.process_manager:
             shutdown_successful = await ServeShutdownService().execute(

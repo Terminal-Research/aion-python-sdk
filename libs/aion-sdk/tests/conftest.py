@@ -40,7 +40,15 @@ def _install_test_stubs() -> None:
     handlers_module.start_chat = start_chat
     handlers_module.ChatSession = object
     handlers_module.ServeHandler = ServeHandler
-    sys.modules.setdefault("aion.cli.handlers", handlers_module)
+
+    # Only stand in for the real handlers when they cannot be imported. The stub is
+    # not a package, so installing it unconditionally makes
+    # ``aion.cli.handlers.serve`` unimportable and any test of a handler's own
+    # behaviour impossible to write.
+    try:
+        import aion.cli.handlers  # noqa: F401
+    except Exception:
+        sys.modules.setdefault("aion.cli.handlers", handlers_module)
 
     reader_module = types.ModuleType("aion.core.config.reader")
 
