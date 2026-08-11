@@ -142,7 +142,7 @@ class AppFactory:
                 Route(DEFAULT_RPC_URL, endpoint=jsonrpc_dispatcher.handle_requests, methods=['POST']),
             ],
         )
-        AionExtraHTTPRoutes(self.aion_agent, lifespan=lifespan).register(self.fastapi_app)
+        AionExtraHTTPRoutes(self.aion_agent).register(self.fastapi_app)
         self._add_extra_middlewares()
 
     async def _create_request_handler(self) -> AionRequestHandler:

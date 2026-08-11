@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from aion.api.gql import AionGqlContextClient
+from aion.core.settings import api_settings
 from aion.server.services import BaseExecuteService
 from aion.server.settings import app_settings
 
@@ -18,10 +19,21 @@ class ServeEnvironmentPreparerService(BaseExecuteService):
     """Prepares environment before starting agents (VERSION_ID, etc)."""
 
     async def execute(self) -> EnvironmentContext:
-        """Prepare environment by ensuring VERSION_ID is available."""
+        """Prepare environment by ensuring VERSION_ID is available.
+
+        A deployment identifies itself to the control plane with its credentials,
+        so without them there is no version to look up and nothing to warn about:
+        the query would fail on its own missing arguments and report a local run as
+        two failures of the platform.
+        """
         if version_id := os.environ.get('VERSION_ID'):
             self.logger.debug(f"VERSION_ID found in environment: {version_id}")
             return EnvironmentContext(version_id=version_id)
+
+        if not api_settings.has_credentials:
+            self.logger.debug(
+                "No Aion credentials, serving without a VERSION_ID")
+            return EnvironmentContext(version_id=None)
 
         version_id = await self._fetch_version_from_control_plane()
 

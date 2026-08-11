@@ -1,17 +1,12 @@
-"""FastAPI application lifespan: startup (tracing, WebSocket) and shutdown orchestration."""
+"""FastAPI application lifespan: startup (tracing) and shutdown orchestration."""
 
 from __future__ import annotations
 
-import asyncio
 from contextlib import asynccontextmanager
-from typing import TYPE_CHECKING, AsyncGenerator, Optional
+from typing import TYPE_CHECKING, AsyncGenerator
 
-from aion.api.http import aion_jwt_manager
 from aion.core.runtime.context.registry import AionRuntimeContextRegistry
-from aion.core.settings import api_settings
-from aion.server import services as aion_services
 from aion.server.agent.execution.context import RequestScopeRuntimeContextProvider
-from aion.server.core.platform import AionWebSocketManager, WebsocketTransportFactory
 from aion.server.opentelemetry import init_tracing
 from fastapi import FastAPI
 
@@ -20,42 +15,19 @@ if TYPE_CHECKING:
 
 
 class AppLifespan:
-    """Manages the lifecycle of the FastAPI application."""
+    """Manages the lifecycle of the FastAPI application.
+
+    The connection to the Aion platform is deliberately not started here. It
+    announces the presence of a *deployment version*, which is registered once by
+    the ``aion serve`` process that owns these agents - so the socket lives there
+    too, opened only if that registration succeeded. Held per agent process it was
+    both duplicated across agents and connected regardless of whether the platform
+    had ever heard of the version, which made an unreachable agent look healthy.
+    """
 
     def __init__(self, app_factory: AppFactory):
         """Initialize the lifespan manager with an app factory."""
         self.app_factory: AppFactory = app_factory
-        self._websocket_manager: Optional[AionWebSocketManager] = None
-        # asyncio only holds a weak reference to a running task, so a background
-        # task nobody keeps can be collected mid-flight. Same reason the version
-        # registration task is held onto rather than fired and forgotten.
-        self._background_tasks: set[asyncio.Task] = set()
-
-    def _spawn(self, coro) -> asyncio.Task:
-        """Run a coroutine in the background, keeping it alive until it finishes."""
-        task = asyncio.create_task(coro)
-        self._background_tasks.add(task)
-        task.add_done_callback(self._background_tasks.discard)
-        return task
-
-    @property
-    def platform_connection_state(self) -> dict:
-        """Report the platform WebSocket connection for health checks."""
-        if self._websocket_manager is None:
-            # No platform credentials, so the connection was never meant to exist.
-            return {"status": "disabled", "reconnects": 0, "lastError": None}
-        return self._websocket_manager.connection_state
-
-    async def _get_websocket_manager(self, create: bool = True) -> AionWebSocketManager:
-        """Return the AionWebSocketManager instance."""
-        if not self._websocket_manager and create:
-            self._websocket_manager = AionWebSocketManager(
-                ws_transport_factory=WebsocketTransportFactory(
-                    ws_url=api_settings.ws_gql_url,
-                    auth_manager=aion_services.AionAuthManagerService(jwt_manager=aion_jwt_manager)
-                )
-            )
-        return self._websocket_manager
 
     @asynccontextmanager
     async def executor(self, app: FastAPI) -> AsyncGenerator[None, None]:
@@ -79,26 +51,7 @@ class AppLifespan:
 
         # SETUP OPEN-TELEMETRY
         init_tracing()
-        self._spawn(self._start_ws_connection())
 
     async def shutdown(self):
         """Handle application shutdown events."""
-        # stop websocket connection with aion api
-        ws_manager = await self._get_websocket_manager(create=False)
-        if ws_manager:
-            await aion_services.AionWebSocketService(websocket_manager=ws_manager).stop_connection()
-
-        # Delegate other shutdown logic to app factory
         await self.app_factory.shutdown()
-
-    async def _start_ws_connection(self):
-        """Authenticate and open the persistent WebSocket connection to the Aion platform."""
-        # fetch token before services execution to reduce number of requests to aion api
-        auth_token = await aion_services.AionAuthManagerService(jwt_manager=aion_jwt_manager).get_token()
-
-        if auth_token:
-            # START WEBSOCKET CONNECTION WITH AION
-            ws_manager = await self._get_websocket_manager(create=True)
-            self._spawn(
-                aion_services.AionWebSocketService(websocket_manager=ws_manager)
-                .start_connection())

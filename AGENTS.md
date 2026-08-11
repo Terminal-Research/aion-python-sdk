@@ -139,10 +139,22 @@ and are discovered by `aion-server` at runtime.
 ## Repo tooling
 
 - `make help` lists all targets. `make tests` runs `scripts/tests.py`, which
-  discovers every `libs/aion-*` package with a `tests/` directory and runs
-  `poetry run pytest` inside it (libs without tests are skipped). Target
-  specific packages with `python scripts/tests.py aion-core aion-db`, and use
-  `--fail-fast` to stop at the first failure.
+  discovers every `libs/aion-*` package with a `tests/` directory and runs its
+  suite (libs without tests are skipped). Prefer it over calling `pytest` by
+  hand: the whole repo takes under three seconds, because the libs run
+  concurrently and each is addressed through its own `.venv/bin/python` rather
+  than through `poetry run`, which starts a second interpreter to work out that
+  same path. Poetry remains the fallback for a lib whose venv is missing.
+  Target specific packages with `python scripts/tests.py aion-core aion-db`,
+  `--jobs 1` to run them one at a time, and `--fail-fast` to skip whatever has
+  not started yet (libs already running are left to finish - their output would
+  otherwise be lost). Anything after a bare `--` goes to pytest untouched, so
+  narrowing a run needs no detour around the script:
+  `make tests ARGS="aion-sdk -- tests/handlers -q"` or
+  `python scripts/tests.py -- -k websocket`. A lib that matches nothing is
+  reported as `no tests` rather than as a pass or a failure. Almost all of a suite's wall time is importing, not
+  testing, so a lib with twelve tests costs about as much as one with a
+  thousand.
 - Internal packages depend on each other by git reference, not by version, so
   a shared-dependency bump does not lock against `main`. For cross-package
   work use `make deps-use-local` (switch to local paths, lock, sync, verify)

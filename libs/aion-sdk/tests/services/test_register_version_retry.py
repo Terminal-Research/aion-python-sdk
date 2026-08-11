@@ -1,6 +1,14 @@
-"""Tests for the retry policy around version registration."""
+"""Tests for the retry policy around version registration.
+
+What is worth pinning here is which failures are worth retrying. That is the only
+real decision in the service, it has no other guardrail, and it fails silently:
+misjudge one code and the deployment stays invisible to the platform with nothing
+red anywhere. The loop around it is a ``while True`` and needs no test of its own.
+"""
 
 from __future__ import annotations
+
+import logging
 
 import pytest
 
@@ -10,6 +18,7 @@ import httpx
 
 import aion.cli.services.aion.deployment_register_version as register_version
 from aion.api.gql.generated.graphql_client import (
+    GraphQLClientGraphQLError,
     GraphQLClientGraphQLMultiError,
     GraphQLClientHttpError,
 )
@@ -33,7 +42,13 @@ def unlatched_auth(monkeypatch):
 
 
 def install_failing_client(monkeypatch, exception, succeed_after=None):
-    """Point the service at a client that raises, and count the attempts."""
+    """Point the service at a client that raises, and count the attempts.
+
+    Retrying is unbounded, so ``succeed_after`` is what ends the loop: every test
+    states its own exit rather than borrowing one from a production limit. That is
+    how the previous version of this file hung - it counted on the attempt budget
+    to stop, and the day the budget went away it looped until it exhausted memory.
+    """
     calls = {"count": 0}
 
     class FakeClient:
@@ -58,47 +73,61 @@ def install_failing_client(monkeypatch, exception, succeed_after=None):
     return calls
 
 
-def graphql_refusal() -> GraphQLClientGraphQLMultiError:
-    class Error:
-        message = "version already registered"
-        path = None
-        extensions = None
-
-    return GraphQLClientGraphQLMultiError([Error()], None)
+def http_error(status_code: int) -> GraphQLClientHttpError:
+    """Build the transport-level error the client raises for a bare HTTP status."""
+    return GraphQLClientHttpError(
+        status_code=status_code, response=httpx.Response(status_code=status_code))
 
 
-async def test_transient_failure_is_retried_until_it_succeeds(monkeypatch):
-    """A connect timeout shorter than the outage must not cost the registration.
-
-    This is the case that motivated the retry: registration fires once at startup,
-    so a momentary blip used to leave the agent running but unknown to the platform
-    until someone restarted it.
-    """
-    calls = install_failing_client(
-        monkeypatch, httpx.ConnectTimeout(""), succeed_after=3)
-
-    assert await register_version.AionDeploymentRegisterVersionService().execute([])
-    assert calls["count"] == 3
+def graphql_errors(*codes: str) -> GraphQLClientGraphQLMultiError:
+    """Build a GraphQL response carrying one error per code."""
+    return GraphQLClientGraphQLMultiError(
+        [GraphQLClientGraphQLError(message=code, extensions={"code": code})
+         for code in codes],
+        None)
 
 
-async def test_transient_failure_gives_up_after_the_budget(monkeypatch):
-    """Retrying is bounded - a real outage should end in the warning, not a loop."""
-    calls = install_failing_client(monkeypatch, httpx.ConnectTimeout(""))
-
-    assert not await register_version.AionDeploymentRegisterVersionService().execute([])
-    assert calls["count"] == register_version.REGISTRATION_ATTEMPTS
+def uncoded_graphql_error() -> GraphQLClientGraphQLMultiError:
+    """Build a GraphQL error that carries no extensions at all."""
+    return GraphQLClientGraphQLMultiError(
+        [GraphQLClientGraphQLError(message="version already registered")], None)
 
 
-async def test_graphql_refusal_is_not_retried(monkeypatch):
-    """The platform answered and said no; asking again only delays the warning."""
-    calls = install_failing_client(monkeypatch, graphql_refusal())
+@pytest.mark.parametrize(
+    "error, retried",
+    [
+        # The case the retry was written for: a connect timeout shorter than the
+        # outage it hit.
+        (httpx.ConnectTimeout(""), True),
+        # The platform could not answer, as against would not.
+        (http_error(500), True),
+        (http_error(400), False),
+        # Registration is the platform reading back the endpoint we serve, so it
+        # fails until the tunnel or ingress in front of us starts routing.
+        (graphql_errors("SERVICE_UNAVAILABLE"), True),
+        # An unlabelled failure is a refusal by default: guessing that it is
+        # temporary is how a permanent one turns into silence.
+        (uncoded_graphql_error(), False),
+        # Every error transient, not any one - the other half rejects us again no
+        # matter how long we wait for this half to clear.
+        (graphql_errors("SERVICE_UNAVAILABLE", "BAD_USER_INPUT"), False),
+    ],
+)
+async def test_which_failures_are_worth_retrying(monkeypatch, error, retried):
+    """Waiting must be reserved for failures that waiting can fix."""
+    calls = install_failing_client(monkeypatch, error, succeed_after=3)
 
-    assert not await register_version.AionDeploymentRegisterVersionService().execute([])
-    assert calls["count"] == 1
+    assert await register_version.AionDeploymentRegisterVersionService().execute([]) \
+        is retried
+    assert calls["count"] == (3 if retried else 1)
 
 
 async def test_rejected_credentials_are_not_retried(monkeypatch):
-    """A latched 401 means no amount of waiting will produce a token."""
+    """A latched 401 means no amount of waiting will produce a token.
+
+    Retrying is unbounded, so getting this wrong is no longer a wasted minute - it
+    is a loop asking the platform forever with credentials it has already refused.
+    """
     monkeypatch.setattr(
         register_version.aion_jwt_manager, "_auth_failed", True, raising=False)
     calls = install_failing_client(monkeypatch, httpx.ConnectTimeout(""))
@@ -107,23 +136,53 @@ async def test_rejected_credentials_are_not_retried(monkeypatch):
     assert calls["count"] == 1
 
 
-@pytest.mark.parametrize(
-    "status_code, expected_attempts",
-    [
-        (500, 5),
-        (503, 5),
-        (429, 5),
-        (400, 1),
-        (404, 1),
-    ],
-)
-async def test_http_status_decides_whether_to_retry(
-    monkeypatch, status_code, expected_attempts
-):
-    """5xx and 429 are transient; a 4xx is the platform rejecting the request."""
-    error = GraphQLClientHttpError(
-        status_code=status_code, response=httpx.Response(status_code=status_code))
-    calls = install_failing_client(monkeypatch, error)
+async def test_the_warnings_stop_once_local_mode_is_declared(monkeypatch, caplog):
+    """Three warnings, then quiet: the state is announced once, not repeated.
 
-    assert not await register_version.AionDeploymentRegisterVersionService().execute([])
-    assert calls["count"] == expected_attempts
+    Nothing after the third attempt can say anything that line has not - the same
+    endpoint fails the same way for as long as it is down - and an hourly reminder
+    would only teach the reader to skip the level this service warns on.
+    """
+    caplog.set_level(logging.DEBUG)
+    install_failing_client(
+        monkeypatch, httpx.ConnectTimeout(""), succeed_after=6)
+
+    assert await register_version.AionDeploymentRegisterVersionService().execute([])
+
+    levels = [record.levelno for record in caplog.records]
+    assert levels == [
+        logging.WARNING,  # a deployment the platform cannot reach is not ordinary
+        logging.WARNING,
+        logging.WARNING,  # ...and this one says what that has added up to
+        logging.DEBUG,    # from here the retrying is nobody's business
+        logging.DEBUG,
+        logging.INFO,     # the only line that revokes local mode
+    ]
+    assert "serve locally" in caplog.records[2].message
+    assert "no longer serving locally" in caplog.records[-1].message
+
+
+async def test_a_run_that_never_reached_local_mode_says_nothing_about_it(
+        monkeypatch, caplog):
+    """The success line claims to end a state, so it must not invent one."""
+    caplog.set_level(logging.DEBUG)
+    install_failing_client(
+        monkeypatch, httpx.ConnectTimeout(""), succeed_after=2)
+
+    await register_version.AionDeploymentRegisterVersionService().execute([])
+
+    assert "locally" not in caplog.records[-1].message
+
+
+async def test_retrying_is_not_capped(monkeypatch):
+    """An outage that outlasts any fixed number of attempts must not cost the link.
+
+    Registration is the platform reading back an endpoint that may take a while to
+    start routing, and if waiting can fix that there is no attempt at which it
+    stops being able to. A cap made a restart the price of a slow tunnel.
+    """
+    calls = install_failing_client(
+        monkeypatch, httpx.ConnectTimeout(""), succeed_after=9)
+
+    assert await register_version.AionDeploymentRegisterVersionService().execute([])
+    assert calls["count"] == 9
