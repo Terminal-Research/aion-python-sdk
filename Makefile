@@ -5,8 +5,8 @@
 help: ## Show available commands
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
-tests: ## Run tests for all libs
-	./scripts/tests.py
+tests: ## Run tests for all libs (make tests ARGS="aion-sdk -- -k platform_link")
+	./scripts/tests.py $(ARGS)
 
 deps-install: ## Install dependencies from lock files for all packages
 	./scripts/deps/install.py
