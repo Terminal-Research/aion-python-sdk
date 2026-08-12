@@ -43,7 +43,9 @@ and are discovered by `aion-server` at runtime.
 - **aion-api-client** — low-level Aion control-plane access: a websocket
   GraphQL client generated with `gql` + `ariadne-codegen` (`aion.api.gql`),
   an HTTP client and JWT manager (`aion.api.http`) that authenticates via
-  `AION_CLIENT_ID`/`AION_CLIENT_SECRET` against `/auth/tokens`, typed
+  `AION_CLIENT_ID`/`AION_CLIENT_SECRET` against `/auth/tokens` and exposes the
+  deployment version those credentials are scoped to (`get_version_id()`, read
+  from the token's `sub`/`sub_type` claims), typed
   control-plane addressing (`aion.api.control_plane`: `CapabilityReference`,
   `CapabilitySubject`, `PrincipalSelector`, path helpers), and the
   OpenAI-compatible `model_service_client` with request-scoped

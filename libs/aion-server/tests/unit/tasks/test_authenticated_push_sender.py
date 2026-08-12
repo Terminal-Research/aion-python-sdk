@@ -14,6 +14,9 @@ import logging
 import pytest
 from a2a.types import (
     Artifact,
+    Message,
+    Part,
+    Role,
     Task,
     TaskArtifactUpdateEvent,
     TaskState,
@@ -70,6 +73,17 @@ def _event() -> Task:
         id=TASK_ID,
         context_id=CONTEXT_ID,
         status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED),
+    )
+
+
+def _message(text: str, message_id: str = "msg-1") -> Message:
+    """Returns an agent message, the shape a reply reaches the client in."""
+    return Message(
+        message_id=message_id,
+        context_id=CONTEXT_ID,
+        task_id=TASK_ID,
+        role=Role.ROLE_AGENT,
+        parts=[Part(text=text)],
     )
 
 
@@ -525,6 +539,97 @@ class TestLogsIdentifyTheEvent:
             await sender.send_notification(TASK_ID, event)
 
         assert "state=9999" in _our_records(caplog)[0].getMessage()
+
+
+class TestDeliveredContent:
+    """What was pushed can be read back, on DEBUG and only there.
+
+    A non-streaming turn is answered entirely through this channel — the
+    outbound projection that reports a stream event by event never runs — so
+    without these lines an agent's words are absent from the log of a
+    ``message/send`` run.
+    """
+
+    @staticmethod
+    def _contents(caplog) -> list[str]:
+        return [
+            record.getMessage()
+            for record in _our_records(caplog)
+            if "content:" in record.getMessage()
+        ]
+
+    @pytest.mark.anyio
+    async def test_a_delivered_reply_can_be_read_back(self, caplog):
+        """The words the agent sent, on the level that may carry them."""
+        sender = _sender(_config(), _client())
+        event = _event_status()
+        event.status.message.CopyFrom(_message("Affirmative!"))
+
+        with caplog.at_level(logging.DEBUG):
+            await sender.send_notification(TASK_ID, event)
+
+        record = next(r for r in _our_records(caplog) if "content:" in r.getMessage())
+        assert record.levelno == logging.DEBUG
+        assert record.getMessage() == "Push-notification content: 'Affirmative!'"
+
+    @pytest.mark.anyio
+    async def test_content_stays_off_the_delivery_line(self, caplog):
+        """The delivery line is INFO, and INFO travels to logstash."""
+        sender = _sender(_config(), _client())
+        event = _event_status()
+        event.status.message.CopyFrom(_message("the secret is hunter2"))
+
+        with caplog.at_level(logging.DEBUG):
+            await sender.send_notification(TASK_ID, event)
+
+        delivered = next(r for r in _our_records(caplog) if "sent to URL" in r.getMessage())
+        assert "hunter2" not in delivered.getMessage()
+
+    @pytest.mark.anyio
+    async def test_terminal_task_does_not_repeat_the_reply(self, caplog):
+        """It carries the message pushed as a status update moments earlier."""
+        sender = _sender(_config(), _client())
+        event = _event()
+        event.status.message.CopyFrom(_message("all done"))
+
+        with caplog.at_level(logging.DEBUG):
+            await sender.send_notification(TASK_ID, event)
+
+        assert self._contents(caplog) == []
+
+    @pytest.mark.anyio
+    async def test_events_without_text_get_no_content_line(self, caplog):
+        """A bare transition says so on its delivery line already."""
+        sender = _sender(_config(), _client())
+
+        with caplog.at_level(logging.DEBUG):
+            await sender.send_notification(TASK_ID, _event_status())
+
+        assert self._contents(caplog) == []
+
+    @pytest.mark.anyio
+    async def test_content_is_reported_once_for_a_fan_out(self, caplog):
+        """The words do not differ between receivers, so they are not repeated."""
+        sender = _fan_out_sender({WEBHOOK_URL: 200, f"{WEBHOOK_URL}-b": 200})
+        event = _event_status()
+        event.status.message.CopyFrom(_message("Affirmative!"))
+
+        with caplog.at_level(logging.DEBUG):
+            await sender.send_notification(TASK_ID, event)
+
+        assert len(self._contents(caplog)) == 1
+
+    @pytest.mark.anyio
+    async def test_a_streamed_chunk_is_reported_too(self, caplog):
+        """Chunks are pushed one by one, and reading one back is the point."""
+        sender = _sender(_config(), _client())
+        event = _event_artifact(last_chunk=False)
+        event.artifact.parts.append(Part(text="Command"))
+
+        with caplog.at_level(logging.DEBUG):
+            await sender.send_notification(TASK_ID, event)
+
+        assert self._contents(caplog) == ["Push-notification content: 'Command'"]
 
 
 class TestFanOutSummary:

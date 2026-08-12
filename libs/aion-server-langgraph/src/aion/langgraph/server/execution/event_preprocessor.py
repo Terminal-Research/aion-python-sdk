@@ -1,15 +1,12 @@
 """Pre-conversion processor for raw LangGraph events.
 
-Handles LangGraph-specific side-effects (context tracking, logging, etc.)
-before events are converted to A2A protocol format.
+Handles LangGraph-specific side-effects (context tracking) before events are
+converted to A2A protocol format.
 """
 
-import logging
 from typing import Any
 
 from aion.server.agent.execution.scope import set_agent_framework_baggage as exec_scope_set_agent_framework_baggage
-
-logger = logging.getLogger(__name__)
 
 
 class LangGraphEventPreprocessor:
@@ -51,4 +48,3 @@ class LangGraphEventPreprocessor:
         node_name = next(iter(event_data.keys()), None)
         if node_name:
             exec_scope_set_agent_framework_baggage({"langgraph.node": node_name}, update=True)
-            logger.debug(f"Node: {node_name}")
