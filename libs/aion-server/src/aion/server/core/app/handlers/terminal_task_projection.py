@@ -3,9 +3,10 @@
 import logging
 from a2a.server.context import ServerCallContext
 from a2a.server.events import Event
-from a2a.types import Task, TaskState, TaskStatusUpdateEvent
+from a2a.types import Message, Task, TaskState, TaskStatusUpdateEvent
 from a2a.utils.errors import InternalError
 from aion.server.a2a.constants import NON_ACTIVE_TASK_STATES
+from aion.server.a2a.utils import NO_TEXT, describe_event, extract_event_preview
 from collections.abc import AsyncGenerator, AsyncIterable, Callable
 from typing import Optional
 
@@ -74,6 +75,8 @@ class TerminalTaskProjection:
         self._task_transform = task_transform
         self._withheld: TaskStatusUpdateEvent | None = None
         self._opened = False
+        self._delivered_count = 0
+        self._previewed_messages: set[str] = set()
 
     async def project(self, source: AsyncIterable[Event]) -> AsyncGenerator[Event, None]:
         """Yield the source stream, opened and closed by a Task."""
@@ -85,7 +88,7 @@ class TerminalTaskProjection:
                     self._opened = True
                     opening = await self._opening_snapshot(event)
                     if opening is not None:
-                        yield opening
+                        yield self._delivered(opening)
                         if self._restates(opening, event):
                             continue
 
@@ -98,10 +101,10 @@ class TerminalTaskProjection:
                 # original position rather than dropping it.
                 if self._withheld is not None:
                     logger.debug("Event after non-active status, releasing withheld update")
-                    yield self._withheld
+                    yield self._delivered(self._withheld)
                     self._withheld = None
 
-                yield event
+                yield self._delivered(event)
         except Exception as ex:
             failed = await self._close_snapshot(TaskState.TASK_STATE_FAILED)
             if failed is None:
@@ -113,7 +116,7 @@ class TerminalTaskProjection:
                 self._task_id,
                 type(ex).__name__,
             )
-            yield failed
+            yield self._delivered(failed)
             return
 
         # A withheld event names the outcome the agent declared; a stream that
@@ -121,7 +124,7 @@ class TerminalTaskProjection:
         expected_state = self._withheld.status.state if self._withheld is not None else None
         final_task = await self._close_snapshot(expected_state)
         if final_task is not None:
-            yield final_task
+            yield self._delivered(final_task)
         elif self._task_id:
             # The consumer persists a transition before handing it to us, so a
             # task that produced events and is then missing means the store is
@@ -129,6 +132,101 @@ class TerminalTaskProjection:
             # id resolves to nothing.
             logger.error("Task %s produced events but is missing from the store", self._task_id)
             raise InternalError(message=f"Final state for task {self._task_id} is unavailable.")
+
+    def _delivered(self, event: Event) -> Event:
+        """Report an event on its way out and return it for yielding.
+
+        A streaming turn is otherwise invisible in the log. The push channel
+        reports every delivery it makes, so a run answered over ``message/send``
+        can be read line by line — what the agent produced, and whether the
+        outcome reached the client. A run answered over
+        ``message/stream`` produced nothing between "stream started" and
+        "stream completed", which is precisely the window a report of "the agent
+        said nothing" is about.
+
+        This is the streaming counterpart, and it deliberately names the event
+        with the same helper the push sender uses, so the same event reads
+        identically whichever channel carried it. What it cannot borrow is the
+        receipt: a push logs the receiver's HTTP status, while an event yielded
+        here has only been handed to the transport — the client acknowledges
+        nothing. The position is logged instead, because order is what a stream
+        guarantees and a gap in it is the symptom worth seeing.
+
+        Streamed chunks get a line each, like everything else. Collapsing a run
+        of them into one summary reads better afterwards, but it withholds the
+        report until the run is over — and the window it covers is exactly the
+        one someone watching a live agent is asking about. A per-chunk line also
+        carries what no summary can: the time each chunk left, which is how a
+        stall between two of them becomes visible at all.
+
+        What the event says follows on DEBUG, after the line that names it. An
+        INFO record travels to logstash, and the agent's words are already kept
+        in the task store — the same reason the transport logger that used to
+        dump every streamed payload is capped at WARNING (see
+        ``logging.filters``). On DEBUG they are worth having, chunk by chunk:
+        capped there, this is the only way to read back what a turn said.
+
+        Args:
+            event: The event about to be yielded to the client.
+
+        Returns:
+            The event, unchanged.
+        """
+        self._delivered_count += 1
+        position = self._delivered_count
+
+        logger.info(
+            "Stream event #%s sent to client — %s",
+            position,
+            describe_event(event),
+        )
+        self._report_content(position, event)
+        return event
+
+    def _report_content(self, position: int, event: Event) -> None:
+        """Report what an event carries, when it carries anything new.
+
+        Two things are deliberately not reported. An event with no text says so
+        on its INFO line already — a bare transition, a Task snapshot, a chunk
+        holding a file — so a line repeating it as ``<no text>`` says nothing.
+        And a message already reported once is not reported again: the Task that
+        closes a stream carries the reply the agent has just sent, so previewing
+        it would print the same words twice in a row.
+
+        The exception that makes the check worth having is the interrupt. Its
+        status update is withheld by this projection, so the prompt asking the
+        user for input reaches them only inside the closing Task — an unseen
+        message, and the only place that turn's question can be read back from.
+
+        Args:
+            position: The event's place in the stream, to tie the two lines.
+            event: The event being delivered.
+        """
+        if not logger.isEnabledFor(logging.DEBUG):
+            return
+
+        message_id = self._carried_message_id(event)
+        if message_id and message_id in self._previewed_messages:
+            return
+
+        preview = extract_event_preview(event)
+        if preview == NO_TEXT:
+            return
+
+        if message_id:
+            self._previewed_messages.add(message_id)
+
+        logger.debug("Stream event #%s content: %r", position, preview)
+
+    @staticmethod
+    def _carried_message_id(event: Event) -> str | None:
+        """Return the id of the message an event carries, when it carries one."""
+        if isinstance(event, Message):
+            return event.message_id or None
+        status = getattr(event, 'status', None)
+        if status is not None and status.HasField('message'):
+            return status.message.message_id or None
+        return None
 
     async def _opening_snapshot(self, first_event: Event) -> Task | None:
         """Return the Task a stream must open with, when the source omits it.

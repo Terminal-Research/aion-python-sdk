@@ -15,7 +15,7 @@ from aion.server.agent.adapters import (
 )
 from aion.server.agent.exceptions import ExecutionError, StateRetrievalError
 from aion.core.runtime.context.registry import AionRuntimeContextRegistry
-from aion.server.a2a.utils import extract_input_preview
+from aion.server.a2a.utils import empty_input_warning, extract_input_preview
 from .event_converter import LangGraphA2AConverter
 from .event_preprocessor import LangGraphEventPreprocessor
 from .result_handler import ExecutionResultHandler
@@ -67,8 +67,14 @@ class LangGraphExecutor(ExecutorAdapter):
         )
         start = time.monotonic()
         try:
-            input_preview = extract_input_preview(context.message)
-            logger.info(f"Starting LangGraph stream: context_id={context_id}, input={input_preview!r}")
+            # The input text itself stays on DEBUG: an INFO record travels to
+            # logstash, and the user's own words are already kept in the task
+            # store under this very context_id.
+            logger.info(
+                f"Starting LangGraph stream: context_id={context_id}"
+                f"{empty_input_warning(context.message)}"
+            )
+            logger.debug(f"Input preview: {extract_input_preview(context.message)!r}")
 
             lg_inputs = LangGraphTransformer.generate_langgraph_inputs(context)
             lg_config = LangGraphTransformer.generate_langgraph_config(config)
