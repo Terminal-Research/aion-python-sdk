@@ -25,7 +25,7 @@ from aion.server.files.storage import FileUploadManager
 from aion.adk.server.session import SessionServiceFactory
 from aion.adk.server.state.converter import StateConverter
 from aion.adk.server.transformers.a2a_to_adk import ADKTransformer
-from aion.server.a2a.utils import extract_input_preview
+from aion.server.a2a.utils import empty_input_warning, extract_input_preview
 from .event_converter import ADKToA2AEventConverter
 from .result_handler import ADKExecutionResultHandler
 from .stream_executor import ADKStreamExecutor, ADKStreamResult
@@ -83,8 +83,14 @@ class ADKExecutor(ExecutorAdapter):
         start = time.monotonic()
 
         try:
-            input_preview = extract_input_preview(context.message)
-            logger.info(f"Starting ADK stream: context_id={context_id}, input={input_preview!r}")
+            # The input text itself stays on DEBUG: an INFO record travels to
+            # logstash, and the user's own words are already kept in the task
+            # store under this very context_id.
+            logger.info(
+                f"Starting ADK stream: context_id={context_id}"
+                f"{empty_input_warning(context.message)}"
+            )
+            logger.debug(f"Input preview: {extract_input_preview(context.message)!r}")
 
             session = await self._get_or_create_session(context_id)
             user_content = ADKTransformer.transform_context(context)

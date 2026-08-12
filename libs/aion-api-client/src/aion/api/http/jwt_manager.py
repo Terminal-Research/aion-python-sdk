@@ -19,6 +19,15 @@ from .client import AionHttpClient, auth_tokens_url
 
 logger = logging.getLogger(__name__)
 
+VERSION_SUBJECT_TYPE = "Version"
+"""Value of the ``sub_type`` claim on a token issued to a deployment version.
+
+A token minted from ``AION_CLIENT_ID``/``AION_CLIENT_SECRET`` is already scoped
+to one version, and its ``sub`` is that version's id. Other principals - a user,
+notably - authenticate against the same endpoint and put their own id in ``sub``,
+so the type has to be checked before the subject is read as a version.
+"""
+
 
 def describe_exception(ex: BaseException) -> str:
     """Render an exception for a log line, keeping the type when the message is empty.
@@ -46,36 +55,85 @@ def describe_lifetime(token: "Token") -> str:
     return f"valid for {lifetime} (expires {expires_at})"
 
 
+def describe_principal(token: "Token") -> str:
+    """Say who a token authenticates as, for a line that explains a refusal.
+
+    A version withheld from a caller is otherwise indistinguishable from one that
+    was never issued: both surface as ``None``, and the claims that decided it are
+    decoded and dropped in the same breath. Naming the principal turns "no version"
+    into "not that kind of token", which is the difference between a wrong client
+    id and an issuer that renamed a claim.
+    """
+    if token.subject_type is None:
+        return "an unidentified principal (no sub_type claim)"
+    return f"{token.subject_type} {token.subject}"
+
+
 @dataclass
 class Token:
     """
-    Represents an authentication token with expiration metadata.
+    Represents an authentication token with the metadata it carries.
 
     This dataclass encapsulates a JWT token string along with its expiration
-    timestamp, providing convenient methods for checking token validity
-    and expiration status.
+    timestamp and the identity it authenticates as, providing convenient
+    methods for checking token validity and expiration status.
+
+    Identity is held twice on purpose. ``version_id`` is the fact consumers act
+    on, already judged; ``subject`` and ``subject_type`` are what the token
+    claimed, kept verbatim so a withheld version can be explained rather than
+    just observed. Only the claim pair is a transcription, and only because
+    something reads it: see :func:`describe_principal`.
 
     Attributes:
         value (str): The JWT token string
         expires_at (datetime): Token expiration timestamp in UTC
+        version_id (Optional[str]): The deployment version this token
+            authenticates as, or ``None`` for any other principal
+        subject (Optional[str]): The ``sub`` claim as issued - the id of
+            whatever principal this token belongs to
+        subject_type (Optional[str]): The ``sub_type`` claim as issued - what
+            kind of principal ``subject`` identifies
     """
 
     value: str
     expires_at: datetime
+    version_id: Optional[str] = None
+    subject: Optional[str] = None
+    subject_type: Optional[str] = None
 
     @classmethod
     def from_jwt(cls, token: str) -> "Token":
-        """Create Token instance from JWT string by decoding expiration.
+        """Create Token instance from JWT string by decoding its claims.
 
-        Decodes the JWT token to extract the expiration timestamp and creates
-        a Token instance with the original token string and parsed expiration time.
+        Decodes the JWT token to extract the expiration timestamp and the
+        deployment version the token is scoped to, and creates a Token instance
+        with the original token string alongside them.
+
+        The version is withheld unless ``sub_type`` says the subject is one.
+        Other principals - a user, notably - authenticate against the same
+        endpoint and put their own id in the same claim, so reading ``sub``
+        unguarded would hand back a user id for a version id and register a
+        deployment under it.
+
+        The signature is deliberately not verified. This token was just issued
+        by the Aion auth endpoint over TLS and no local trust decision rests on
+        it - the server validates it again on every request - and the SDK has no
+        public key to verify it with.
 
         Args:
             token (str): JWT token string to decode
         """
         payload = jwt.decode(token, options={"verify_signature": False})
         exp = datetime.fromtimestamp(payload["exp"], tz=timezone.utc)
-        return cls(value=token, expires_at=exp)
+        subject = payload.get("sub")
+        subject_type = payload.get("sub_type")
+        return cls(
+            value=token,
+            expires_at=exp,
+            version_id=subject if subject_type == VERSION_SUBJECT_TYPE else None,
+            subject=subject,
+            subject_type=subject_type,
+        )
 
     @property
     def expired(self) -> bool:
@@ -224,6 +282,33 @@ class AionJWTManager(ABC):
             if self.should_refresh_token():
                 await self._try_refresh()
             return None if not self._token else self._token.value
+
+    async def get_version_id(self) -> Optional[str]:
+        """Return the deployment version the current token is scoped to.
+
+        Credentials are issued per version, so the version id is already in the
+        token and needs no separate lookup against the control plane. Returns
+        ``None`` when no token could be obtained or when the token belongs to a
+        principal that is not a version.
+
+        Withholding is logged with the principal that caused it. This is the one
+        place that still holds the claims behind the decision - the caller only
+        sees ``None``, and by the time it falls back to the control plane there
+        is nothing left to say why.
+
+        The token is read back after :meth:`get_token` releases the lock; a
+        refresh racing in between replaces it with one carrying the same
+        subject, so the value cannot change underneath this call.
+        """
+        if await self.get_token() is None:
+            return None
+        if self._token is None:
+            return None
+        if self._token.version_id is None:
+            logger.debug(
+                "Access token authenticates as %s, not a deployment version",
+                describe_principal(self._token))
+        return self._token.version_id
 
     async def _try_refresh(self) -> None:
         """Refresh the token, recording the failure instead of propagating it.

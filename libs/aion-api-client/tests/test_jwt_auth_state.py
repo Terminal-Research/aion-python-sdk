@@ -322,6 +322,134 @@ async def test_async_path_records_failures_too() -> None:
     assert manager.last_auth_error == "ConnectError"
 
 
+class TestVersionFromToken:
+    """Credentials are issued per version, so the token already names it.
+
+    The control plane resolves the same id from the same client id, so reading it
+    here removes a round trip - but only for tokens that actually belong to a
+    version.
+    """
+
+    def _token(self, **claims):
+        import datetime
+
+        import jwt as pyjwt
+
+        exp = datetime.datetime.now(tz=datetime.timezone.utc) + datetime.timedelta(
+            minutes=5)
+        return pyjwt.encode(
+            {"exp": int(exp.timestamp()), **claims}, "secret", algorithm="HS256")
+
+    def test_version_token_yields_its_subject(self) -> None:
+        """A version-scoped token carries the VERSION_ID in ``sub``."""
+        from aion.api.http.jwt_manager import Token
+
+        token = Token.from_jwt(self._token(sub="version-1", sub_type="Version"))
+
+        assert token.version_id == "version-1"
+
+    def test_other_principals_yield_no_version(self) -> None:
+        """A user's id sits in the same claim and must not pass for a version.
+
+        Both principals authenticate against ``/auth/tokens``, so without the
+        ``sub_type`` guard a user-authenticated caller would register a version
+        under their own id instead of failing over to the control-plane query.
+        """
+        from aion.api.http.jwt_manager import Token
+
+        token = Token.from_jwt(self._token(sub="user-1", sub_type="User"))
+
+        assert token.version_id is None
+
+    def test_missing_subject_type_yields_no_version(self) -> None:
+        """An issuer that stops sending ``sub_type`` must degrade, not guess."""
+        from aion.api.http.jwt_manager import Token
+
+        token = Token.from_jwt(self._token(sub="version-1"))
+
+        assert token.version_id is None
+
+    def test_the_rejected_claims_are_kept(self) -> None:
+        """Judging the claims must not consume them.
+
+        ``version_id`` alone cannot distinguish a token issued to someone else
+        from a token that was never issued, and that distinction is the whole
+        content of a "no VERSION_ID" report.
+        """
+        from aion.api.http.jwt_manager import Token
+
+        token = Token.from_jwt(self._token(sub="user-1", sub_type="User"))
+
+        assert (token.subject, token.subject_type) == ("user-1", "User")
+
+    @pytest.mark.anyio("asyncio")
+    async def test_manager_reports_version_of_fetched_token(self) -> None:
+        """The manager fetches a token if it has none, then reads the version off it."""
+        manager = AionRefreshingJWTManager()
+        manager._client = RecordingHttpClient(
+            token=self._token(sub="version-1", sub_type="Version"))
+
+        assert await manager.get_version_id() == "version-1"
+
+    @pytest.mark.anyio("asyncio")
+    async def test_manager_reports_no_version_without_a_token(self) -> None:
+        """Failed authentication has to surface as an absent version, not a crash.
+
+        The caller treats ``None`` as "ask the control plane instead", which is
+        also the right move when the token could not be fetched at all.
+        """
+        manager = AionRefreshingJWTManager()
+        manager._client = FailingClient(401)
+
+        assert await manager.get_version_id() is None
+
+    @pytest.mark.anyio("asyncio")
+    async def test_a_withheld_version_names_the_principal(self, caplog) -> None:
+        """The fallback is silent unless the refusal explains itself here.
+
+        By the time the caller has fallen back to the control plane it holds only
+        a ``None``; the claims that decided it live nowhere else, so a version
+        withheld from a user-authenticated caller would look exactly like a
+        version the platform failed to issue.
+        """
+        import logging as stdlib_logging
+
+        manager = AionRefreshingJWTManager()
+        manager._client = RecordingHttpClient(
+            token=self._token(sub="user-1", sub_type="User"))
+
+        with caplog.at_level(stdlib_logging.DEBUG, logger="aion.api.http.jwt_manager"):
+            assert await manager.get_version_id() is None
+
+        assert "User user-1" in caplog.text
+
+    @pytest.mark.anyio("asyncio")
+    async def test_a_granted_version_says_nothing(self, caplog) -> None:
+        """The explanation belongs to the refusal, not to every token fetch."""
+        import logging as stdlib_logging
+
+        manager = AionRefreshingJWTManager()
+        manager._client = RecordingHttpClient(
+            token=self._token(sub="version-1", sub_type="Version"))
+
+        with caplog.at_level(stdlib_logging.DEBUG, logger="aion.api.http.jwt_manager"):
+            assert await manager.get_version_id() == "version-1"
+
+        assert "not a deployment version" not in caplog.text
+
+    def test_an_unlabelled_principal_is_named_as_such(self) -> None:
+        """A missing ``sub_type`` is a distinct diagnosis from a wrong one.
+
+        It points at the issuer rather than at the caller's credentials, so the
+        line must not render it as the string "None".
+        """
+        from aion.api.http.jwt_manager import Token, describe_principal
+
+        token = Token.from_jwt(self._token(sub="version-1"))
+
+        assert describe_principal(token) == "an unidentified principal (no sub_type claim)"
+
+
 class TestLifetimeReporting:
     """The token line is read next to log timestamps, which are in local time."""
 

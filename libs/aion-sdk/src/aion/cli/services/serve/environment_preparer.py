@@ -39,6 +39,11 @@ class ServeEnvironmentPreparerService(BaseExecuteService):
                 "No Aion credentials, serving without a VERSION_ID")
             return EnvironmentContext(version_id=None, auth_available=auth_available)
 
+        if version_id := await self._version_from_token():
+            self._cache_version_id(version_id)
+            self.logger.debug(f"VERSION_ID obtained from access token: {version_id}")
+            return EnvironmentContext(version_id=version_id, auth_available=auth_available)
+
         version_id = await self._fetch_version_from_control_plane()
 
         if version_id:
@@ -46,7 +51,7 @@ class ServeEnvironmentPreparerService(BaseExecuteService):
             self.logger.debug(f"VERSION_ID obtained from control plane: {version_id}")
             return EnvironmentContext(version_id=version_id, auth_available=auth_available)
 
-        self.logger.warning("VERSION_ID not available from env or control plane")
+        self.logger.warning("VERSION_ID not available from env, token, or control plane")
         return EnvironmentContext(version_id=None, auth_available=auth_available)
 
     @staticmethod
@@ -61,6 +66,23 @@ class ServeEnvironmentPreparerService(BaseExecuteService):
         credential independently and log the same warning N+1 times.
         """
         return (await aion_jwt_manager.get_token()) is not None
+
+    async def _version_from_token(self) -> Optional[str]:
+        """Read VERSION_ID out of the access token the credentials already bought.
+
+        Client credentials are issued per version, so the token that authenticates
+        the control-plane query carries in its ``sub`` the exact id that query
+        returns - the round trip only asks the server to repeat what it just said.
+
+        A token scoped to anything but a version yields ``None`` and the caller
+        falls back to the query, which resolves the version by client id and is
+        correct for those principals too.
+        """
+        try:
+            return await aion_jwt_manager.get_version_id()
+        except Exception as ex:
+            self.logger.warning(f"Failed to read VERSION_ID from access token: {ex}")
+            return None
 
     async def _fetch_version_from_control_plane(self) -> Optional[str]:
         """Fetch VERSION_ID from control plane via GraphQL."""

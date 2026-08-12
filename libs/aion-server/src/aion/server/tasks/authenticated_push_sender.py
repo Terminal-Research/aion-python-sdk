@@ -5,9 +5,10 @@ import httpx
 import logging
 from a2a.server.tasks.base_push_notification_sender import BasePushNotificationSender
 from a2a.server.tasks.push_notification_sender import PushNotificationEvent
-from a2a.types import Task, TaskArtifactUpdateEvent, TaskState, TaskStatusUpdateEvent
+from a2a.types import Task
 from a2a.types.a2a_pb2 import TaskPushNotificationConfig
 from a2a.utils.proto_utils import to_stream_response
+from aion.server.a2a.utils import NO_TEXT, describe_event, extract_event_preview
 from google.protobuf.json_format import MessageToDict
 
 logger = logging.getLogger(__name__)
@@ -15,55 +16,41 @@ logger = logging.getLogger(__name__)
 DEFAULT_AUTH_SCHEME = 'Bearer'
 RESPONSE_SUMMARY_LIMIT = 200
 
+# The event vocabulary is shared with the streaming path — see describe_event.
+# A rejection is also ranked by it: a refused intermediate status is cosmetic,
+# since the next update supersedes it, while a refused terminal Task leaves the
+# client without an outcome.
 
-def _describe(event: PushNotificationEvent) -> str:
-    """Names the event a log line is about.
 
-    A task pushes many times over a run — a status update per transition, an
-    update per artifact chunk, and the terminal Task — to a single callback URL.
-    Without a discriminator every delivery logs an identical line, and the
-    questions this log is opened with cannot be answered from it: whether the
-    terminal Task landed or only an intermediate ``WORKING``, and which artifact
-    the receiver refused.
+def _report_content(event: PushNotificationEvent) -> None:
+    """Report what a delivered event carries, when it carries anything new.
 
-    The distinction also ranks failures. A rejection of an intermediate status
-    is cosmetic, since the next update supersedes it; a rejection of the
-    terminal Task leaves the client without an outcome.
+    The push channel answers a non-streaming turn, where nothing else logs the
+    events at all: the outbound projection only runs on a stream. So without
+    this line an agent's own words cannot be read back from a ``message/send``
+    run, and the delivery lines above say only that something was accepted.
+
+    DEBUG and no higher, for the reason the streaming side keeps the same rule:
+    an INFO record travels to logstash, and the words are already kept in the
+    task store. Reported once per event rather than once per webhook — the
+    content does not differ between receivers.
+
+    The terminal Task is skipped. It carries the reply that went out as a status
+    update moments earlier, so previewing it prints the same words twice. Unlike
+    the streaming path, no message reaches the client through the Task alone:
+    the interrupt prompt that the outbound projection withholds there is pushed
+    here as the status update it is.
 
     Args:
-        event: The event being delivered.
-
-    Returns:
-        A short, single-line description of the event.
+        event: The event that was just delivered.
     """
+    if not logger.isEnabledFor(logging.DEBUG):
+        return
     if isinstance(event, Task):
-        return f'Task state={_state_name(event.status.state)}'
-    if isinstance(event, TaskStatusUpdateEvent):
-        return f'TaskStatusUpdateEvent state={_state_name(event.status.state)}'
-    if isinstance(event, TaskArtifactUpdateEvent):
-        return (
-            f'TaskArtifactUpdateEvent '
-            f'artifact={event.artifact.artifact_id or "<unidentified>"} '
-            f'last_chunk={event.last_chunk}'
-        )
-    return type(event).__name__
-
-
-def _state_name(state: int) -> str:
-    """Renders a task state as its declared name.
-
-    Args:
-        state: The enum value carried by the event.
-
-    Returns:
-        The enum name, or the raw value when this build does not know it —
-        proto3 keeps unrecognised enum numbers, so a peer on a newer schema
-        must not turn a log line into a traceback.
-    """
-    try:
-        return TaskState.Name(state)
-    except ValueError:
-        return str(state)
+        return
+    preview = extract_event_preview(event)
+    if preview != NO_TEXT:
+        logger.debug('Push-notification content: %r', preview)
 
 
 def _timing(response: httpx.Response) -> str:
@@ -164,6 +151,7 @@ class AuthenticatedPushNotificationSender(BasePushNotificationSender):
                 for push_info in push_configs
             ]
         )
+        _report_content(event)
 
         failed = results.count(False)
         if failed and len(results) > 1:
@@ -171,7 +159,7 @@ class AuthenticatedPushNotificationSender(BasePushNotificationSender):
                 'Push-notification fan-out: %s of %s deliveries failed — %s',
                 failed,
                 len(results),
-                _describe(event),
+                describe_event(event),
             )
 
     async def _dispatch_notification(
@@ -209,7 +197,7 @@ class AuthenticatedPushNotificationSender(BasePushNotificationSender):
             logger.info(
                 'Push-notification sent to URL: %s — %s (HTTP %s%s)',
                 url,
-                _describe(event),
+                describe_event(event),
                 response.status_code,
                 _timing(response),
             )
@@ -223,7 +211,7 @@ class AuthenticatedPushNotificationSender(BasePushNotificationSender):
             logger.warning(
                 'Push-notification rejected by URL: %s — %s — HTTP %s: %s',
                 url,
-                _describe(event),
+                describe_event(event),
                 error.response.status_code,
                 _summarize(error.response),
             )
@@ -238,7 +226,7 @@ class AuthenticatedPushNotificationSender(BasePushNotificationSender):
                 'Raise PUSH_NOTIFICATION_TIMEOUT_SECONDS if the receiver is '
                 'expected to be this slow.',
                 url,
-                _describe(event),
+                describe_event(event),
                 type(error).__name__,
             )
             return False
@@ -246,7 +234,7 @@ class AuthenticatedPushNotificationSender(BasePushNotificationSender):
             logger.exception(
                 'Error sending push-notification to URL: %s — %s.',
                 url,
-                _describe(event),
+                describe_event(event),
             )
             return False
         return True
