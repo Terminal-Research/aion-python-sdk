@@ -150,7 +150,7 @@ class AppFactory:
         self.store_manager.initialize()
         task_store = self.store_manager.get_store()
 
-        self._executor = AionAgentRequestExecutor(
+        self._executor = await AionAgentRequestExecutor.create(
             self.aion_agent,
             file_transformer=self.file_transformer,
         )

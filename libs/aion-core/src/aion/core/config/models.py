@@ -219,6 +219,13 @@ class AgentConfig(BaseModel):
         default_factory=dict,
         description="Additional configuration parameters")
 
+    enabled_extensions: List[str] = Field(
+        default_factory=list,
+        description="Optional A2A extension URIs this agent additionally activates "
+                    "(opt-in extensions, e.g. daemon and behaviour-evolution). "
+                    "Extensions that are active by default (e.g. distribution, "
+                    "messaging) are unaffected by this list.")
+
     @field_validator('configuration', mode='before')
     @classmethod
     def validate_configuration(cls, value):

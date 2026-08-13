@@ -54,6 +54,7 @@ def test_model_api_key_provider_refreshes_on_each_call():
 
 def test_refreshing_jwt_manager_supports_sync_token_provider(
     valid_jwt_token,
+    configured_auth,
 ):
     class FakeHttpClient:
         def __init__(self):

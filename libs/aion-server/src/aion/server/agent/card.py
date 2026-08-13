@@ -9,14 +9,11 @@ from a2a.types import (
 )
 
 from aion.core.config import AgentConfig
-from aion.server.settings import app_settings
-from aion.core.a2a import GetContextParams, GetContextsListParams
+from aion.core.runtime import aion_a2a_extension_registry
 
 
 class AionAgentCard:
-    """
-    Factory for creating AgentCard with Aion-specific extensions.
-    """
+    """Factory for creating AgentCard with Aion-specific extensions."""
 
     @classmethod
     def from_config(
@@ -25,23 +22,16 @@ class AionAgentCard:
             base_url: str,
     ) -> AgentCard:
         """Build an AgentCard from agent config and the server's base URL."""
+        extensions = [
+            AgentExtension(uri=ext.uri, description=ext.description, required=False)
+            for ext in aion_a2a_extension_registry.get_all()
+            if ext.active
+        ]
         capabilities = AgentCapabilities(
             streaming=True,
             push_notifications=True,
-            extensions=[
-                AgentExtension(
-                    description="Get Conversation info based on context",
-                    params=GetContextParams.model_json_schema(),
-                    required=False,
-                    uri=f"{app_settings.docs_url}/extensions/aion/context/get-context/1.0.0"
-                ),
-                AgentExtension(
-                    description="Get list of available contexts",
-                    params=GetContextsListParams.model_json_schema(),
-                    required=False,
-                    uri=f"{app_settings.docs_url}/extensions/aion/context/get-contexts/1.0.0"
-                )
-            ])
+            extensions=extensions,
+        )
 
         skills = []
         for skill_config in config.skills:

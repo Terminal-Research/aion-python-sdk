@@ -7,11 +7,15 @@ from a2a.server.context import ServerCallContext
 from a2a.server.events import Event
 from a2a.server.request_handlers import DefaultRequestHandlerV2
 from a2a.types import SendMessageRequest, SubscribeToTaskRequest, Task
-from a2a.utils.errors import InternalError
+from a2a.utils.errors import InternalError, InvalidParamsError
 from a2a.utils.task import apply_history_length
 from aion.core.a2a import ContextsList, Conversation, GetContextParams, GetContextsListParams
+from aion.core.runtime import ExtensionActivationError, aion_a2a_extension_registry
+from aion.core.runtime.context.extensions import AionRuntimeExtensions
 from collections.abc import AsyncGenerator
 from functools import wraps
+from google.protobuf import json_format
+from types import SimpleNamespace
 from typing import override
 
 from aion.server.agent.execution import AionActiveTaskRegistry
@@ -62,7 +66,48 @@ class AionRequestHandler(DefaultRequestHandlerV2):
             call_context: ServerCallContext,
     ) -> tuple[ActiveTask, RequestContext]:
         """Setup the active task registry with preprocessors."""
+        self._verify_declared_extensions(params, call_context)
         return await super()._setup_active_task(params, call_context)
+
+    def _verify_declared_extensions(
+            self,
+            params: SendMessageRequest,
+            call_context: ServerCallContext,
+    ) -> None:
+        """Reject invalid extension declarations from the request path.
+
+        Runs the same collect/verify pipeline the executor's runtime-context
+        builder repeats later, but before any task machinery exists: a client
+        mistake (declaring an extension the agent hasn't enabled, missing
+        co-activation, malformed payload) comes back as a plain
+        InvalidParamsError response instead of surfacing as a producer-side
+        "Execution failed" ERROR traceback in ActiveTask - and no idle
+        ActiveTask is ever registered for the rejected request.
+
+        Availability is a registry concern: an enabled extension whose
+        runtime dependencies are missing on this deployment was marked via
+        AionA2AExtensionRegistry.mark_unavailable() at startup, so the same
+        pipeline rejects it here with the extension-authored reason - never
+        silently handing the request to the primary flow the client
+        explicitly asked to bypass.
+
+        Raises:
+            InvalidParamsError: an extension declared active on the request
+                fails verification for this agent.
+        """
+        declaration = SimpleNamespace(
+            message=params.message,
+            # Mirrors RequestContext.metadata: recurse into nested Structs so
+            # collectors see the same plain-dict shape they see in execute().
+            metadata=json_format.MessageToDict(params.metadata),
+            requested_extensions=call_context.requested_extensions,
+        )
+        try:
+            AionRuntimeExtensions.collect(
+                declaration, aion_a2a_extension_registry.get_all()
+            )
+        except ExtensionActivationError as ex:
+            raise InvalidParamsError(message=str(ex)) from ex
 
     @staticmethod
     async def on_get_context(
@@ -148,6 +193,16 @@ class AionRequestHandler(DefaultRequestHandlerV2):
             context: ServerCallContext,
     ) -> AsyncGenerator[Event]:
         """Stream handler that closes the stream with the final Task.
+
+        Overrides DefaultRequestHandler to emit the final Task object after
+        all other events have been streamed. This ensures the client receives
+        a complete Task snapshot with all accumulated state at stream end.
+
+        How much detail a run's own events carry is not decided here: it is a
+        property of the request an extension parses (the evolution directive's
+        `view`, say), so the producer shapes and drops its events before they
+        reach this handler. This layer knows nothing about any extension's
+        payload.
 
         Status updates carrying a non-active state are withheld and replaced by
         a complete Task snapshot, so the client observes task completion through

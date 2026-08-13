@@ -1,7 +1,12 @@
 """Utilities for extracting typed event payloads from A2A inbox messages.
 
-Parses event extension metadata from an inbound A2A message to produce
-a typed Event with the appropriate NormalizedPayload variant.
+Parses event extension metadata from an inbound A2A message to produce a
+typed Event. Dispatch (which CloudEvents `type` values are recognized,
+which schema URI maps to which payload class) is read from the extension
+registry's ExtensionDescriptor.event_payloads - each extension declares its
+own schemas where it's defined (e.g. messaging.py's payloads registered
+alongside the messaging descriptor in registry.py), so this module doesn't
+hardcode knowledge of any specific extension's event vocabulary.
 """
 
 from __future__ import annotations
@@ -11,45 +16,37 @@ from typing import Any, Optional
 from aion.core.constants import (
     EVENT_EXTENSION_URI_V1,
     SOURCE_SYSTEM_EVENT_PAYLOAD_SCHEMA_V1,
-    CARD_ACTION_EVENT_PAYLOAD_SCHEMA_V1,
-    COMMAND_EVENT_PAYLOAD_SCHEMA_V1,
-    MESSAGE_EVENT_PAYLOAD_SCHEMA_V1,
-    REACTION_EVENT_PAYLOAD_SCHEMA_V1,
 )
 from aion.core.a2a import A2AInbox
-from aion.core.a2a.extensions.cards import CardActionEventPayload
 from aion.core.a2a.extensions.event import (
     EventMessageMetadataV1,
     EventPartMetadataV1,
 )
-from aion.core.a2a.extensions.messaging import (
-    CommandEventPayload,
-    MessageEventPayload,
-    ReactionEventPayload,
-    SourceSystemEventPayload,
-)
-from google.protobuf.json_format import MessageToDict
+from aion.core.a2a.extensions.messaging import SourceSystemEventPayload
 
-from .models import Event, EventKind, NormalizedPayload
+from .extensions.descriptors import MessagesCollector
+from .extensions.registry import aion_a2a_extension_registry
+from .models import Event, NormalizedPayload
+from aion.core.utils.protobuf import proto_to_dict
 
-# Maps schema URI to the corresponding typed payload model.
-_SCHEMA_TO_PAYLOAD_CLS = {
-    MESSAGE_EVENT_PAYLOAD_SCHEMA_V1: MessageEventPayload,
-    REACTION_EVENT_PAYLOAD_SCHEMA_V1: ReactionEventPayload,
-    COMMAND_EVENT_PAYLOAD_SCHEMA_V1: CommandEventPayload,
-    CARD_ACTION_EVENT_PAYLOAD_SCHEMA_V1: CardActionEventPayload,
-}
+__all__ = ["extract_event"]
 
 
-def proto_to_dict(value: Any) -> dict:
-    """Convert a protobuf message or an already-deserialized dict to a plain dict.
+def _registered_messages_dispatch() -> tuple[dict[str, Any], frozenset[str]]:
+    """Build schema→class dispatch table and known event types from active MessagesCollectors.
 
-    The A2A library may deliver metadata values as either protobuf Struct objects
-    or plain Python dicts depending on the transport layer. This normalizes both.
+    Only includes descriptors whose collector is a MessagesCollector (or subclass),
+    and only when the descriptor is currently active. Inactive extensions (e.g.
+    reflection when an agent hasn't opted in) are excluded - same activation gate
+    as everywhere else in this system.
     """
-    if isinstance(value, dict):
-        return value
-    return MessageToDict(value)
+    schema_to_cls: dict[str, Any] = {}
+    known_event_types: set[str] = set()
+    for descriptor in aion_a2a_extension_registry.get_all():
+        if descriptor.active and isinstance(descriptor.collector, MessagesCollector):
+            schema_to_cls.update(descriptor.collector.schema_dispatch())
+            known_event_types.update(descriptor.collector.known_event_types())
+    return schema_to_cls, frozenset(known_event_types)
 
 
 def extract_event(inbox: A2AInbox) -> Event:
@@ -68,10 +65,10 @@ def extract_event(inbox: A2AInbox) -> Event:
     meta_dict = proto_to_dict(message.metadata[EVENT_EXTENSION_URI_V1])
     event_meta = EventMessageMetadataV1.model_validate(meta_dict)
 
-    try:
-        kind = EventKind(event_meta.type)
-    except ValueError:
+    schema_to_payload_cls, known_types = _registered_messages_dispatch()
+    if event_meta.type not in known_types:
         raise ValueError(f"Unrecognized event type: {event_meta.type}")
+    kind = event_meta.type
 
     payload: Optional[NormalizedPayload] = None
     raw: Optional[SourceSystemEventPayload] = None
@@ -82,7 +79,7 @@ def extract_event(inbox: A2AInbox) -> Event:
         part_meta_dict = proto_to_dict(part.metadata[EVENT_EXTENSION_URI_V1])
         part_meta = EventPartMetadataV1.model_validate(part_meta_dict)
 
-        payload_cls = _SCHEMA_TO_PAYLOAD_CLS.get(part_meta.schema_uri)
+        payload_cls = schema_to_payload_cls.get(part_meta.schema_uri)
         if payload_cls is not None and payload is None:
             payload = payload_cls.model_validate(proto_to_dict(part.data))
 

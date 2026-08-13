@@ -101,6 +101,11 @@ class ApiSettings(BaseEnvSettings):
         return parsed.port or (443 if parsed.scheme == "https" else 80)
 
     @property
+    def auth_configured(self) -> bool:
+        """Whether there are credentials to authenticate against the platform with."""
+        return bool(self.client_id and self.client_secret)
+
+    @property
     def http_url(self) -> str:
         """
         Get the complete HTTP URL for API requests.

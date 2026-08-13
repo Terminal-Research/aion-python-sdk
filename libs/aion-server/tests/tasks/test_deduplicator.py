@@ -583,7 +583,114 @@ class TestApplyProcessedItemTask:
         assert ded.deduplicate_message(_make_message("msg-injected")) is not None
 
 
+class TestTrustedSourcePreservesPlatformMetadata:
+    """A trusted_source deduplicator lets the platform's own payloads carry
+    reserved-namespace (`https://docs.aion.to`) metadata that the default
+    public-API stance strips. This is what lets an agent's progress structs
+    reach Task.metadata (a public-API payload would have that metadata
+    stripped)."""
+
+    def test_status_event_platform_metadata_survives_when_trusted(self):
+        ded = A2ATaskDeduplicator(
+            _make_task(state=TaskState.TASK_STATE_INPUT_REQUIRED), trusted_source=True
+        )
+        event = _make_status_event(state=TaskState.TASK_STATE_INPUT_REQUIRED)
+        s = Struct()
+        ParseDict({PLATFORM_KEY: {"stash": "keep"}, USER_KEY: "visible"}, s)
+        event.metadata.CopyFrom(s)
+
+        result = ded.deduplicate_status_event(event)
+
+        assert result is not None
+        metadata = MessageToDict(result.metadata, preserving_proto_field_name=True)
+        assert metadata == {PLATFORM_KEY: {"stash": "keep"}, USER_KEY: "visible"}
+
+    def test_status_event_platform_metadata_stripped_by_default(self):
+        """Same event, default (public-API) deduplicator still strips it."""
+        ded = A2ATaskDeduplicator(_make_task(state=TaskState.TASK_STATE_INPUT_REQUIRED))
+        event = _make_status_event(state=TaskState.TASK_STATE_INPUT_REQUIRED)
+        s = Struct()
+        ParseDict({PLATFORM_KEY: {"stash": "keep"}, USER_KEY: "visible"}, s)
+        event.metadata.CopyFrom(s)
+
+        result = ded.deduplicate_status_event(event)
+
+        assert result is not None
+        metadata = MessageToDict(result.metadata, preserving_proto_field_name=True)
+        assert metadata == {USER_KEY: "visible"}
+
+    def test_artifact_event_platform_metadata_survives_when_trusted(self):
+        ded = A2ATaskDeduplicator(_make_task(), trusted_source=True)
+        event = _make_artifact_event("art-trusted")
+        s = Struct()
+        ParseDict({PLATFORM_KEY: "keep"}, s)
+        event.metadata.CopyFrom(s)
+
+        result = ded.deduplicate_artifact_event(event)
+
+        assert result is not None
+        assert MessageToDict(result.metadata, preserving_proto_field_name=True) == {
+            PLATFORM_KEY: "keep"
+        }
+
+    def test_task_merge_sets_platform_key_when_trusted(self):
+        """A trusted patch may introduce/overwrite platform keys (the merge
+        protection is lifted); the default stance still blocks it."""
+        original = _make_task(metadata={PLATFORM_KEY: "original", USER_KEY: "old"})
+        ded = A2ATaskDeduplicator(original, trusted_source=True)
+        patch = _make_task(metadata={PLATFORM_KEY: "updated", USER_KEY: "new"})
+
+        result = ded.deduplicate_task(patch)
+
+        metadata = dict(result.metadata.fields)
+        assert metadata[PLATFORM_KEY].string_value == "updated"
+        assert metadata[USER_KEY].string_value == "new"
+
+
 class TestDefensiveHelpers:
     def test_has_field_returns_false_without_hasfield_method(self):
         """Verify defensive handling for non-protobuf objects."""
         assert A2ATaskDeduplicator._has_field(object(), "status") is False
+
+
+class TestReservedShortNamespace:
+    """`aion:` keys are platform control flags, not client data.
+
+    `aion:ephemeral` decides whether an event is persisted at all, so a client
+    able to set it through its own metadata could drop its events from the task
+    record.
+    """
+
+    def test_untrusted_source_cannot_set_an_aion_key(self):
+        original = _make_task(metadata={"user-key": "keep"})
+        deduplicator = A2ATaskDeduplicator(original)
+        incoming = _make_task(
+            metadata={"aion:ephemeral": True, "user-key": "updated"}
+        )
+
+        merged = deduplicator.deduplicate(incoming)
+
+        metadata = MessageToDict(merged.metadata)
+        assert "aion:ephemeral" not in metadata
+        assert metadata["user-key"] == "updated"
+
+    def test_untrusted_source_cannot_smuggle_an_aion_key_in_a_nested_value(self):
+        original = _make_task()
+        deduplicator = A2ATaskDeduplicator(original)
+        incoming = _make_task(metadata={"nested": {"aion:ephemeral": True, "ok": 1}})
+
+        merged = deduplicator.deduplicate(incoming)
+
+        nested = MessageToDict(merged.metadata)["nested"]
+        assert "aion:ephemeral" not in nested
+        assert nested["ok"] == 1
+
+    def test_trusted_source_may_set_an_aion_key(self):
+        """The server's own components mark their events ephemeral this way."""
+        original = _make_task()
+        deduplicator = A2ATaskDeduplicator(original, trusted_source=True)
+        incoming = _make_task(metadata={"aion:ephemeral": True})
+
+        merged = deduplicator.deduplicate(incoming)
+
+        assert MessageToDict(merged.metadata)["aion:ephemeral"] is True

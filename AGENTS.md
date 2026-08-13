@@ -88,9 +88,11 @@ and are discovered by `aion-server` at runtime.
   from `LOGSTASH_HOST` (bare host or full URL) with `LOGSTASH_PORT` as a
   fallback; platform endpoints require an Aion bearer token and are skipped
   rather than erroring while no token is available. Every outbound stream is
-  closed with a full `Task`; tasks left active at shutdown are settled as
-  `INPUT_REQUIRED` with `aion:settledReason = server_shutdown`. DB management
-  is delegated to `aion-db`.
+  closed with a full `Task`; tasks left active by a stopped process are settled
+  as `FAILED` with `aion:settledReason` naming the cause — `server_shutdown`
+  when the shutdown itself cancelled the execution, `server_restart` when the
+  next start found them still active after a hard kill. DB management is
+  delegated to `aion-db`.
 - **aion-server-langgraph** — server-side LangGraph integration under
   `aion.langgraph.server`. Implements `AgentPluginProtocol`/`AgentAdapter`,
   adapts inbound A2A requests into `graph.astream()` invocations and maps

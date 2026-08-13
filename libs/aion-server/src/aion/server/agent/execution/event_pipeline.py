@@ -9,7 +9,12 @@ from a2a.types import Message, Task, TaskArtifactUpdateEvent, TaskState, TaskSta
 from aion.server.agent.execution.scope import get_task_manager as exec_scope_get_task_manager
 from aion.server.files.a2a import A2AFileTransformer
 from aion.server.tasks import A2ATaskDeduplicator
-from aion.server.a2a.utils import task_history_message_ids, is_message_in_task_history
+from aion.server.a2a.constants import TERMINAL_TASK_STATES
+from aion.server.a2a.utils import (
+    is_ephemeral_status_event,
+    is_message_in_task_history,
+    task_history_message_ids,
+)
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -50,11 +55,23 @@ class AionEventPipeline:
         self._task_updater = task_updater
         self._file_transformer = file_transformer
         self._task_started = task_started
+        self._terminal_seen = False
         self._deduplicator: Optional[A2ATaskDeduplicator] = None
 
     @property
     def _task_manager(self):
         return exec_scope_get_task_manager()
+
+    @property
+    def terminal_seen(self) -> bool:
+        """Whether a terminal task state has already passed through the pipeline.
+
+        The caller uses this to decide whether a crashing producer still owes
+        the task a terminal status: a producer that failed *after* reporting
+        its own outcome has already closed the task, and a second terminal
+        event would contradict the first.
+        """
+        return self._terminal_seen
 
     async def process(self, event) -> None:
         await self._ensure_task_started()
@@ -72,8 +89,20 @@ class AionEventPipeline:
             # All other events are streamed to client
             await self._emit_to_client(event)
 
-        if self._deduplicator is not None:
+        self._note_terminal_state(event)
+
+        # An ephemeral event never reaches the task record, so folding it into
+        # the deduplicator's cache would leave that cache describing a history
+        # the database does not have.
+        if self._deduplicator is not None and not is_ephemeral_status_event(event):
             self._deduplicator.apply_processed_item(event)
+
+    def _note_terminal_state(self, event) -> None:
+        """Record that this event closed the task, whatever shape it arrived in."""
+        if isinstance(event, (Task, TaskStatusUpdateEvent)):
+            self._terminal_seen = (
+                self._terminal_seen or event.status.state in TERMINAL_TASK_STATES
+            )
 
     async def _flush_pending_status_message(self, incoming_task: Task) -> None:
         """Move pending status.message from current task into incoming task's history.
@@ -153,7 +182,11 @@ class AionEventPipeline:
             return event
 
         if self._deduplicator is None:
-            self._deduplicator = A2ATaskDeduplicator(original_task)
+            # Events here are produced by the agent runtime / extension handlers,
+            # not the public API, so they are allowed to carry platform-owned
+            # (`https://docs.aion.to`) metadata — progress structs and the
+            # plan-gate stash reach Task.metadata through this path.
+            self._deduplicator = A2ATaskDeduplicator(original_task, trusted_source=True)
 
         try:
             result = self._deduplicator.deduplicate(event)

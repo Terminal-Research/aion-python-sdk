@@ -5,3 +5,5 @@ from .traceability import *
 from .messaging import *
 from .cards import *
 from .event import *
+from .daemon import *
+from .behaviour_evolution import *

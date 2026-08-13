@@ -1,7 +1,7 @@
 """Request handlers for the AION Agent Proxy Server."""
 
 import logging
-from typing import Any, Dict
+from typing import Any, AsyncIterator, Dict
 from urllib.parse import urljoin
 
 import httpx
@@ -18,6 +18,29 @@ from .exceptions import (
 from .types import AgentHealthInfo
 
 logger = logging.getLogger(__name__)
+
+# Upstream timeout for forwarded requests: connect/write/pool stay bounded,
+# but read is unbounded - streamed agent responses (SSE task updates) may
+# legitimately stay silent between chunks longer than any fixed limit.
+_FORWARD_TIMEOUT = httpx.Timeout(30.0, read=None)
+
+# Headers that describe the *client's* connection to the proxy and say nothing
+# about the proxy's own connection upstream. `host` would address the wrong
+# server; the framing headers (RFC 9110 7.6.1) describe a hop that ends here -
+# forwarding `content-length` or `transfer-encoding` alongside a body httpx
+# re-frames itself is how a request ends up declaring two different lengths.
+_REQUEST_HEADERS_MANAGED_BY_PROXY = frozenset({
+    'host',
+    'connection',
+    'content-length',
+    'keep-alive',
+    'proxy-authenticate',
+    'proxy-authorization',
+    'te',
+    'trailer',
+    'transfer-encoding',
+    'upgrade',
+})
 
 _RESPONSE_HEADERS_MANAGED_BY_PROXY = frozenset({
     'connection',
@@ -46,19 +69,42 @@ class UpstreamStreamingResponse(StreamingResponse):
         self,
         upstream_response: httpx.Response,
         headers: Dict[str, str],
+        agent_id: str,
     ) -> None:
         """Initialize a response backed by the upstream raw byte stream.
 
         Args:
             upstream_response: Open HTTPX response to forward.
             headers: End-to-end response headers safe to forward downstream.
+            agent_id: Target agent identifier, used when logging stream errors.
         """
         self._upstream_response = upstream_response
+        self._agent_id = agent_id
         super().__init__(
-            content=upstream_response.aiter_raw(),
+            content=self._relay_upstream(),
             status_code=upstream_response.status_code,
             headers=headers,
         )
+
+    async def _relay_upstream(self) -> AsyncIterator[bytes]:
+        """Yield upstream body bytes, ending the body on a transport failure.
+
+        ``aiter_raw`` skips HTTPX content decoding, so the forwarded bytes stay
+        consistent with the upstream headers - including ``content-encoding``.
+        A failure mid-stream cannot be reported downstream: the response status
+        and headers are already on the wire, so it is logged and the body ends.
+
+        Yields:
+            Raw response chunks in the order the agent produced them.
+        """
+        try:
+            async for chunk in self._upstream_response.aiter_raw():
+                yield chunk
+        except httpx.HTTPError as e:
+            logger.error(
+                f"Error streaming response from agent "
+                f"'{self._agent_id}': {str(e)}"
+            )
 
     async def __call__(
         self,
@@ -138,7 +184,13 @@ class RequestHandler:
 
     async def forward_request(self, agent_id: str, path: str, request: Request) -> Response:
         """
-        Forward the incoming request to the target agent
+        Forward the incoming request to the target agent, streaming the
+        response body through as it arrives.
+
+        The upstream response is not buffered: each chunk is relayed to the
+        client as soon as the agent produces it, so streaming transports
+        (e.g. SSE task updates from SendStreamingMessage) deliver
+        intermediate events in real time instead of one batch at completion.
 
         Args:
             agent_id: Target agent identifier
@@ -146,7 +198,7 @@ class RequestHandler:
             request: Incoming FastAPI request
 
         Returns:
-            Response from the target agent
+            Streaming response relaying the target agent's response
 
         Raises:
             AgentNotFoundException: When agent_id is not found
@@ -168,9 +220,14 @@ class RequestHandler:
             target_url = f"{target_url}?{request.url.query}"
 
         try:
-            # Prepare headers (exclude host header to avoid conflicts)
-            headers = dict(request.headers)
-            headers.pop('host', None)
+            # Prepare headers: everything the client sent except what described
+            # its own hop to us (see _REQUEST_HEADERS_MANAGED_BY_PROXY). httpx
+            # frames the upstream request itself from `content`.
+            headers = {
+                key: value
+                for key, value in request.headers.items()
+                if key.lower() not in _REQUEST_HEADERS_MANAGED_BY_PROXY
+            }
 
             # Read request body
             body = await request.body()
@@ -181,7 +238,8 @@ class RequestHandler:
                 method=request.method,
                 url=target_url,
                 headers=headers,
-                content=body
+                content=body,
+                timeout=_FORWARD_TIMEOUT,
             )
             response = await self.http_client.send(
                 upstream_request,
@@ -191,6 +249,7 @@ class RequestHandler:
             return UpstreamStreamingResponse(
                 response,
                 self._forwarded_response_headers(response),
+                agent_id,
             )
 
         except httpx.ConnectError:

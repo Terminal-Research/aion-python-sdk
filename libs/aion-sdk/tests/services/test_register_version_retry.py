@@ -17,6 +17,7 @@ pytest.importorskip("httpx")
 import httpx
 
 import aion.cli.services.aion.deployment_register_version as register_version
+from aion.api.http.jwt_manager import AionAuthState
 from aion.api.gql.generated.graphql_client import (
     GraphQLClientGraphQLError,
     GraphQLClientGraphQLMultiError,
@@ -38,7 +39,7 @@ def unlatched_auth(monkeypatch):
     would silently disable retrying in every test that followed.
     """
     monkeypatch.setattr(
-        register_version.aion_jwt_manager, "_auth_failed", False, raising=False)
+        register_version.aion_jwt_manager, "_auth_state", AionAuthState())
 
 
 def install_failing_client(monkeypatch, exception, succeed_after=None):
@@ -128,8 +129,9 @@ async def test_rejected_credentials_are_not_retried(monkeypatch):
     Retrying is unbounded, so getting this wrong is no longer a wasted minute - it
     is a loop asking the platform forever with credentials it has already refused.
     """
-    monkeypatch.setattr(
-        register_version.aion_jwt_manager, "_auth_failed", True, raising=False)
+    # The latch lives on the throwaway state installed by ``unlatched_auth``,
+    # so tripping it here cannot leak into the next test.
+    register_version.aion_jwt_manager._auth_state.mark_failed()
     calls = install_failing_client(monkeypatch, httpx.ConnectTimeout(""))
 
     assert not await register_version.AionDeploymentRegisterVersionService().execute([])

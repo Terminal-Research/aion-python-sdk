@@ -35,6 +35,14 @@ class ProcessInfo:
     pid: Optional[int] = None
     parent_conn: Optional[Connection] = None
     child_conn: Optional[Connection] = None
+    use_pipe: bool = False
+    """Whether this process was created with a parent/child pipe.
+
+    Recorded so :meth:`ProcessManager.restart_process` can build the restarted
+    process the same way. ``kwargs`` deliberately does *not* hold the injected
+    ``conn``: the connection belongs to one process generation, and reusing a
+    terminated process's (closed) end would hand the replacement a dead pipe.
+    """
 
 
 class ProcessManager:
@@ -88,17 +96,19 @@ class ProcessManager:
             parent_conn = None
             child_conn = None
 
+            process_kwargs = dict(func_kwargs)
+
             # Create pipe if requested
             if use_pipe:
                 parent_conn, child_conn = multiprocessing.Pipe()
                 # Add child_conn to kwargs if target function expects it
-                func_kwargs['conn'] = child_conn
+                process_kwargs['conn'] = child_conn
 
             # Create new process
             process = multiprocessing.Process(
                 target=func,
                 args=func_args,
-                kwargs=func_kwargs,
+                kwargs=process_kwargs,
                 name=f"{key}"
             )
 
@@ -116,7 +126,8 @@ class ProcessManager:
                 status=ProcessStatus.RUNNING,
                 pid=process.pid,
                 parent_conn=parent_conn,
-                child_conn=child_conn
+                child_conn=child_conn,
+                use_pipe=use_pipe
             )
 
             self.processes[key] = process_info
@@ -387,6 +398,10 @@ class ProcessManager:
         """
         Restart a specific process
 
+        A piped process is restarted with a *fresh* pipe: terminating the old
+        one closes both ends, so carrying its connection over would leave the
+        replacement talking into a closed pipe.
+
         Args:
             key: Process key to restart
             timeout: Timeout for termination
@@ -404,6 +419,7 @@ class ProcessManager:
         target_function = process_info.target_function
         args = process_info.args
         kwargs = process_info.kwargs
+        use_pipe = process_info.use_pipe
 
         # Terminate current process
         if not self.terminate_process(key, timeout):
@@ -418,7 +434,8 @@ class ProcessManager:
             key=key,
             func=target_function,
             func_args=args,
-            func_kwargs=kwargs
+            func_kwargs=kwargs,
+            use_pipe=use_pipe
         )
 
     def __enter__(self):

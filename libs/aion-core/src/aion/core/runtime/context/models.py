@@ -8,17 +8,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, Optional, Union, cast
+from typing import TYPE_CHECKING, Any, Dict, Optional, Union, cast
 
 from aion.core.constants.a2a import (
     CARD_ACTION_EVENT_TYPE_V1,
     CARDS_EXTENSION_URI_V1,
     COMMAND_EVENT_TYPE_V1,
+    DAEMON_EXTENSION_URI_V1,
     DISTRIBUTION_EXTENSION_URI_V1,
     EVENT_EXTENSION_URI_V1,
     MESSAGE_EVENT_TYPE_V1,
     MESSAGING_EXTENSION_URI_V1,
     REACTION_EVENT_TYPE_V1,
+    BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1,
     TRACEABILITY_EXTENSION_URI_V1,
 )
 from aion.core.a2a import A2AInbox
@@ -26,18 +28,30 @@ from aion.core.a2a.extensions import (
     Behavior,
     CardActionEventPayload,
     CommandEventPayload,
+    DaemonExtensionPayload,
     Distribution,
     DistributionExtensionV1,
     Environment,
+    EvolutionDirectiveEventPayload,
+    EvolutionVerdictEventPayload,
     MessageEventPayload,
     PrincipalIdentity,
     ReactionEventPayload,
     ServiceIdentity,
     SourceSystemEventPayload,
+    TraceabilityExtensionV1,
 )
+if TYPE_CHECKING:
+    from .extensions import AionRuntimeExtensions
 
 
 class EventKind(str, Enum):
+    """Named constants for the CloudEvents `type` values aion-core's own
+    extensions (messaging, cards) declare via ExtensionDescriptor.event_payloads
+    (see registry.py) - convenience imports for comparing against Event.kind,
+    not an exhaustive list. Event.kind itself is a plain str: other
+    extensions (e.g. reflection) register their own event types the same
+    way, without needing a matching member here."""
     MESSAGE = MESSAGE_EVENT_TYPE_V1
     REACTION = REACTION_EVENT_TYPE_V1
     COMMAND = COMMAND_EVENT_TYPE_V1
@@ -49,6 +63,8 @@ NormalizedPayload = Union[
     ReactionEventPayload,
     CommandEventPayload,
     CardActionEventPayload,
+    EvolutionDirectiveEventPayload,
+    EvolutionVerdictEventPayload,
 ]
 
 
@@ -59,14 +75,18 @@ class AionExtensions(str, Enum):
     CARDS = CARDS_EXTENSION_URI_V1
     EVENT = EVENT_EXTENSION_URI_V1
     TRACEABILITY = TRACEABILITY_EXTENSION_URI_V1
+    EVOLUTION = BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1
 
 
 @dataclass(frozen=True)
 class Event:
     """Typed inbound event extracted from an A2A inbox message."""
 
-    kind: EventKind
-    """Type of event: 'message', 'reaction', 'command', or 'card_action'."""
+    kind: str
+    """CloudEvents `type` of this event, e.g. EventKind.MESSAGE - a plain
+    str (not EventKind) since any registered extension can add its own
+    event types via ExtensionDescriptor.event_payloads, not just the ones
+    EventKind names."""
     id: str
     """Producer-specified event id for idempotency (CloudEvents `id`)."""
     source: str
@@ -93,6 +113,18 @@ class AionRuntimeContext:
     """Typed inbound event with kind and normalized payload. None for direct A2A requests."""
     distribution_extension_payload: Optional[DistributionExtensionV1]
     """Parsed Aion distribution extension payload, if the invocation carries one."""
+    extensions: AionRuntimeExtensions
+    """Verified, per-request set of active, registered A2A extensions.
+
+    Populated once by AionRuntimeContextBuilder, sourced directly from the
+    RequestContext (A2A-Extensions header, the message's own extension list,
+    and metadata keys) - never from A2AInbox, since this is a transient
+    per-request routing signal with no business being part of the
+    graph-facing, potentially checkpointed snapshot. Only extensions with a
+    registered ExtensionDescriptor that satisfy their co-activation
+    requirements appear here; there is nothing to verify or return for an
+    unregistered URI. Backs is_extension_active() and the get_*() extension accessors.
+    """
     graph_kwargs: Dict[str, Any]
     """Extra kwargs passed by the graph framework, such as LangGraph config."""
 
@@ -101,6 +133,7 @@ class AionRuntimeContext:
             inbox: Optional[A2AInbox] = None,
             event: Optional[Event] = None,
             distribution_extension_payload: Optional[DistributionExtensionV1] = None,
+            extensions: Optional[AionRuntimeExtensions] = None,
             **graph_kwargs: Any,
     ) -> None:
         """Create an Aion runtime context.
@@ -111,6 +144,9 @@ class AionRuntimeContext:
             distribution_extension_payload: Parsed Aion distribution extension
                 payload. This mirrors the extension payload shape sent by the
                 control plane.
+            extensions: Verified, per-request set of active,
+                registered extensions, produced by the collect/verify
+                pipeline.
             **graph_kwargs: Extra framework-specific values passed by the graph
                 runtime.
         """
@@ -123,26 +159,30 @@ class AionRuntimeContext:
         object.__setattr__(self, "inbox", inbox)
         object.__setattr__(self, "event", event)
         object.__setattr__(self, "distribution_extension_payload", distribution_extension_payload)
+        if extensions is None:
+            from .extensions import AionRuntimeExtensions as _AE
+            extensions = _AE({})
+        object.__setattr__(self, "extensions", extensions)
         object.__setattr__(self, "graph_kwargs", graph_kwargs)
 
-    def is_active(self, *extensions: AionExtensions) -> bool:
+    def is_extension_active(self, *extensions: Union[AionExtensions, str]) -> bool:
         """Return whether all requested Aion extensions are active.
 
         Args:
-            *extensions: Extension identifiers to check against the inbound
-                message's declared extension list.
+            *extensions: Extension identifiers to check. Accepts
+                ``AionExtensions`` members for the closed set of core
+                extensions, or plain string URIs. Only extensions with a
+                registered ExtensionDescriptor can ever read as active here -
+                see ``extensions``.
 
         Returns:
-            ``True`` when every requested extension is declared on the inbound
-            message. When no extensions are requested, returns ``True``.
+            ``True`` when every requested extension is active and
+            registered for this request. When no extensions are requested,
+            returns ``True``.
         """
-        if not extensions:
-            return True
-        if self.inbox is None or self.inbox.message is None:
-            return False
-
-        active = set(self.inbox.message.extensions or [])
-        return all(ext.value in active for ext in extensions)
+        return self.extensions.is_active(
+            *((ext.value if isinstance(ext, AionExtensions) else ext) for ext in extensions)
+        )
 
     def get_distribution(self) -> Optional[Distribution]:
         """Return the distribution model from the Aion distribution payload.
@@ -165,6 +205,24 @@ class AionRuntimeContext:
         if self.distribution_extension_payload is None:
             return None
         return self.distribution_extension_payload.behavior
+
+    def get_daemon(self) -> Optional[DaemonExtensionPayload]:
+        """Return the verified daemon extension payload for this invocation.
+
+        Returns:
+            The parsed ``DaemonExtensionPayload``, or ``None`` when the
+            request is not a daemon-scoped request.
+        """
+        return self.extensions.get(DAEMON_EXTENSION_URI_V1)
+
+    def get_traceability(self) -> Optional[TraceabilityExtensionV1]:
+        """Return the verified traceability extension payload for this invocation.
+
+        Returns:
+            The parsed ``TraceabilityExtensionV1``, or ``None`` when the
+            request does not carry W3C trace context propagation.
+        """
+        return self.extensions.get(TRACEABILITY_EXTENSION_URI_V1)
 
     def get_environment(self) -> Optional[Environment]:
         """Return the environment model from the Aion distribution payload.

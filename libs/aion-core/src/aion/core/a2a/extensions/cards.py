@@ -3,11 +3,12 @@
 Defines payload models for card action events (user interactions with rendered cards).
 """
 
-from typing import Optional
+from typing import ClassVar, Optional
 
 from pydantic import Field
 
 from aion.core.a2a import A2ABaseModel
+from aion.core.constants.a2a import CARD_ACTION_EVENT_PAYLOAD_SCHEMA_V1, CARD_ACTION_EVENT_TYPE_V1
 
 __all__ = [
     "CardActionEventPayload",
@@ -19,6 +20,9 @@ class CardActionEventPayload(A2ABaseModel):
 
     See: https://docs.aion.to/a2a/extensions/aion/distribution/cards/1.0.0
     """
+
+    SCHEMA_URI: ClassVar[str] = CARD_ACTION_EVENT_PAYLOAD_SCHEMA_V1
+    EVENT_TYPE: ClassVar[str] = CARD_ACTION_EVENT_TYPE_V1
 
     user_id: str = Field(description="Actor who triggered the card action.")
     context_id: str = Field(

@@ -1,0 +1,163 @@
+"""Tests for evolution directive extraction/validation (toolkit-free)."""
+
+from types import SimpleNamespace
+
+import pytest
+from a2a.types import Message, Part, Role
+from pydantic import ValidationError
+
+from aion.core.a2a.extensions.behaviour_evolution import (
+    EvolutionDirectiveEventPayload,
+    TargetContext,
+)
+from aion.core.constants.a2a import (
+    BEHAVIOUR_EVOLUTION_DIRECTIVE_EVENT_TYPE_V1,
+    BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1,
+    BEHAVIOUR_EVOLUTION_VERDICT_EVENT_TYPE_V1,
+)
+from aion.core.runtime.context.extensions import AionRuntimeExtensions
+from aion.core.runtime.context.models import Event
+from aion.server.agent.execution.extensions.evolution.directive import (
+    DirectiveError,
+    parse_directive,
+)
+
+REPO_URL = "https://github.com/acme/target-agent.git"
+
+
+def _payload() -> EvolutionDirectiveEventPayload:
+    return EvolutionDirectiveEventPayload(
+        target=TargetContext(repo_url=REPO_URL, base_ref="HEAD"),
+        kind="feature",
+        mode="advisory",
+    )
+
+
+def _event(kind: str = BEHAVIOUR_EVOLUTION_DIRECTIVE_EVENT_TYPE_V1, payload=None) -> Event:
+    return Event(
+        kind=kind,
+        id="ev-1",
+        source="aion://control-plane/reflection",
+        payload=payload,
+        raw=None,
+    )
+
+
+def _runtime_ctx(event: Event | None):
+    verified = {BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1: event} if event is not None else {}
+    return SimpleNamespace(extensions=AionRuntimeExtensions(verified))
+
+
+def _request_ctx(
+    text: str | None = "Append a friendly sentence to README.md.",
+    context_id: str | None = "ctx-456",
+):
+    parts = [Part(text=text)] if text is not None else [Part()]
+    msg = Message(message_id="msg-1", role=Role.ROLE_USER, parts=parts)
+    task = SimpleNamespace(context_id=context_id) if context_id is not None else None
+    return SimpleNamespace(message=msg, current_task=task)
+
+
+class TestParseDirective:
+    def test_happy_path_returns_instruction_context_and_payload(self):
+        payload = _payload()
+        parsed = parse_directive(_request_ctx(), _runtime_ctx(_event(payload=payload)))
+
+        assert parsed.instruction == "Append a friendly sentence to README.md."
+        assert parsed.context_id == "ctx-456"
+        assert parsed.payload is payload
+        assert parsed.payload.target.repo_url == REPO_URL
+
+    def test_instruction_is_first_nonempty_text_part(self):
+        msg = Message(
+            message_id="msg-1",
+            role=Role.ROLE_USER,
+            parts=[Part(text="  "), Part(text="Fix the greeting."), Part(text="ignored")],
+        )
+        ctx = SimpleNamespace(message=msg, current_task=SimpleNamespace(context_id="ctx-456"))
+
+        parsed = parse_directive(ctx, _runtime_ctx(_event(payload=_payload())))
+
+        assert parsed.instruction == "Fix the greeting."
+
+    def test_missing_task_context_id_rejected(self):
+        """The context id is the evolution's identity (branch + spec dir);
+        without it a run cannot be resumed later."""
+        with pytest.raises(DirectiveError, match="no context id"):
+            parse_directive(
+                _request_ctx(context_id=None), _runtime_ctx(_event(payload=_payload()))
+            )
+
+    def test_missing_runtime_context_rejected(self):
+        with pytest.raises(DirectiveError, match="runtime context"):
+            parse_directive(_request_ctx(), None)
+
+    def test_missing_directive_event_rejected(self):
+        with pytest.raises(DirectiveError, match="no evolution event"):
+            parse_directive(_request_ctx(), _runtime_ctx(None))
+
+    def test_non_directive_event_type_rejected(self):
+        event = _event(kind=BEHAVIOUR_EVOLUTION_VERDICT_EVENT_TYPE_V1, payload=_payload())
+        with pytest.raises(DirectiveError, match="unsupported evolution event type"):
+            parse_directive(_request_ctx(), _runtime_ctx(event))
+
+    def test_missing_payload_rejected(self):
+        with pytest.raises(DirectiveError, match="no directive payload"):
+            parse_directive(_request_ctx(), _runtime_ctx(_event(payload=None)))
+
+    def test_missing_instruction_text_rejected(self):
+        with pytest.raises(DirectiveError, match="no instruction text"):
+            parse_directive(_request_ctx(text=None), _runtime_ctx(_event(payload=_payload())))
+
+    def test_missing_message_rejected(self):
+        ctx = SimpleNamespace(message=None)
+        with pytest.raises(DirectiveError, match="no instruction text"):
+            parse_directive(ctx, _runtime_ctx(_event(payload=_payload())))
+
+    def test_stage_is_taken_verbatim_off_the_wire(self):
+        payload = EvolutionDirectiveEventPayload(
+            target=TargetContext(repo_url=REPO_URL, base_ref="HEAD"),
+            kind="feature",
+            mode="advisory",
+            scope="plan",
+        )
+
+        parsed = parse_directive(_request_ctx(), _runtime_ctx(_event(payload=payload)))
+
+        assert parsed.scope == "plan"
+
+    def test_default_payload_stage_is_auto(self):
+        parsed = parse_directive(_request_ctx(), _runtime_ctx(_event(payload=_payload())))
+
+        assert parsed.scope == "auto"
+
+    def test_view_is_taken_verbatim_off_the_wire(self):
+        payload = EvolutionDirectiveEventPayload(
+            target=TargetContext(repo_url=REPO_URL, base_ref="HEAD"),
+            kind="feature",
+            mode="advisory",
+            view="full",
+        )
+
+        parsed = parse_directive(_request_ctx(), _runtime_ctx(_event(payload=payload)))
+
+        assert parsed.view == "full"
+
+    def test_default_payload_view_is_activity(self):
+        """A caller that never mentions `view` gets the chronicle without
+        command output — the target repo's content is opt-in, not default."""
+        parsed = parse_directive(_request_ctx(), _runtime_ctx(_event(payload=_payload())))
+
+        assert parsed.view == "activity"
+
+    def test_unknown_view_is_rejected_by_the_payload_schema(self):
+        """The vocabulary lives in the published extension schema, so a typo is
+        a validation error on the directive rather than a silently ignored
+        value that widens or narrows the stream behind the caller's back."""
+        with pytest.raises(ValidationError):
+            EvolutionDirectiveEventPayload(
+                target=TargetContext(repo_url=REPO_URL, base_ref="HEAD"),
+                kind="feature",
+                mode="advisory",
+                view="milestone",
+            )

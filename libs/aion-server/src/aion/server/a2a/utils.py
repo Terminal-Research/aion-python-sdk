@@ -12,7 +12,7 @@ from a2a.types import (
 )
 
 from aion.core.a2a.enums import ArtifactId
-from aion.server.a2a.constants import INTERRUPT_TASK_STATES
+from aion.server.a2a.constants import EPHEMERAL_STATUS_METADATA_KEY, INTERRUPT_TASK_STATES
 
 __all__ = [
     "is_task_interrupted",
@@ -24,6 +24,8 @@ __all__ = [
     "describe_event",
     "describe_artifact",
     "task_state_name",
+    "mark_status_event_ephemeral",
+    "is_ephemeral_status_event",
     "NO_TEXT",
 ]
 
@@ -142,6 +144,27 @@ def _message_suffix(status: TaskStatus) -> str:
     if not status.HasField('message'):
         return ''
     return f' message_id={status.message.message_id or "<unidentified>"}'
+
+
+def mark_status_event_ephemeral(event: TaskStatusUpdateEvent) -> None:
+    """Flag a status update as ephemeral.
+
+    An ephemeral status update is streamed to the client for live progress but
+    never persisted into task history — see
+    ``AionTaskManager._check_process_skip_event``, which drops flagged events
+    before the base manager can fold their message into history.
+    """
+    event.metadata[EPHEMERAL_STATUS_METADATA_KEY] = True
+
+
+def is_ephemeral_status_event(event: object) -> bool:
+    """Return True when ``event`` is a status update flagged ephemeral."""
+    if not isinstance(event, TaskStatusUpdateEvent):
+        return False
+    return (
+        EPHEMERAL_STATUS_METADATA_KEY in event.metadata
+        and bool(event.metadata[EPHEMERAL_STATUS_METADATA_KEY])
+    )
 
 
 def _require_task(task: object) -> Task:

@@ -11,6 +11,7 @@ from a2a.utils.errors import InvalidParamsError
 from a2a.utils.task import decode_page_token, encode_page_token
 from typing import Iterator, Optional, List
 
+from aion.server.a2a.constants import ACTIVE_TASK_STATES
 from .base_task_store import BaseTaskStore
 
 logger = logging.getLogger(__name__)
@@ -239,6 +240,23 @@ class InMemoryTaskStore(BaseTaskStore):
                 break
 
         return matching_tasks
+
+    async def get_active_tasks(self) -> List[Task]:
+        """Retrieve every task in an active state, across all owners.
+
+        The startup reap that consumes this always sees an empty result here:
+        this store's contents die with the process, so a task it holds in an
+        active state belongs to an execution that is still running.
+
+        Returns:
+            All tasks whose state is one of ``ACTIVE_TASK_STATES``.
+        """
+        async with self.lock:
+            return [
+                task
+                for task in self._all_tasks()
+                if task.status.state in ACTIVE_TASK_STATES
+            ]
 
     async def get_context_last_task(self, context_id: str) -> Optional[Task]:
         """Retrieve the most recent task for a specific context."""

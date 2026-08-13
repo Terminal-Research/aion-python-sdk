@@ -5,7 +5,7 @@ from a2a.server.events import Event
 from a2a.server.tasks import TaskManager
 from a2a.types import Message, Task, TaskArtifactUpdateEvent, TaskState, TaskStatus, TaskStatusUpdateEvent
 from aion.server.a2a.constants import NON_ACTIVE_TASK_STATES, TRANSIENT_ARTIFACT_IDS
-from aion.server.a2a.utils import is_task_interrupted
+from aion.server.a2a.utils import is_ephemeral_status_event, is_task_interrupted
 from aion.server.agent.execution.scope import set_task_status
 from typing import override
 
@@ -112,6 +112,12 @@ class AionTaskManager(TaskManager):
         Stream delta artifacts are filtered out to prevent persisting intermediate
         streaming chunks, keeping only final/complete artifacts in storage.
 
+        Status updates flagged ephemeral are skipped the same way: the client
+        still receives them off the event stream (this method only gates
+        persistence), but they never become task.status.message and so are never
+        folded into history — the milestone-only history policy for live
+        progress (running commands, intermediate agent messages).
+
         Args:
             event: The event to check.
 
@@ -121,6 +127,8 @@ class AionTaskManager(TaskManager):
         if isinstance(event, TaskArtifactUpdateEvent):
             if event.artifact.artifact_id in TRANSIENT_ARTIFACT_IDS:
                 return True
+        if is_ephemeral_status_event(event):
+            return True
         return False
 
     async def auto_discover_and_assign_task(self, interrupted: bool = False) -> Task | None:

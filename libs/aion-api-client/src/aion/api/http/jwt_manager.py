@@ -13,6 +13,8 @@ from typing import Any, Dict, Optional
 import jwt
 
 from aion.api.exceptions import AionAuthenticationError
+from aion.core.settings import api_settings
+
 from .client import AionHttpClient, auth_tokens_url
 
 logger = logging.getLogger(__name__)
@@ -152,6 +154,75 @@ class Token:
         return datetime.now(tz=timezone.utc) >= self.expires_at - timedelta(minutes=1)
 
 
+class AionAuthState:
+    """
+    Process-wide latch for whether Aion authentication is worth attempting.
+
+    Authentication is an all-or-nothing property of a process: once the platform
+    rejects the configured credentials, every consumer in that process is
+    equally dead, and once credentials are absent no consumer can do anything
+    about it. Keeping that decision here means it is reported once — on the
+    transition — instead of once per call site, and that the async and sync
+    refresh paths share a single guard rather than racing two separate locks.
+
+    Agent processes are forked from the CLI parent, so a child inherits this
+    latch as-is: whatever the parent already discovered, the child does not
+    rediscover and re-report.
+    """
+
+    def __init__(self) -> None:
+        self._failed = False
+        self._reported = False
+        self._lock = threading.Lock()
+
+    @property
+    def failed(self) -> bool:
+        """Whether a 401 has latched authentication off for this process."""
+        return self._failed
+
+    @property
+    def can_attempt(self) -> bool:
+        """Whether a token refresh is worth making right now."""
+        if not api_settings.auth_configured:
+            self._report_unconfigured()
+            return False
+        return not self._failed
+
+    def mark_failed(self) -> None:
+        """Latch authentication off after a 401.
+
+        The failure itself is reported by the caller, which knows the endpoint it
+        was rejected by; latching is what keeps that report to one per transition,
+        because every later call returns on :attr:`can_attempt` without retrying.
+        """
+        with self._lock:
+            self._failed = True
+            self._reported = True
+
+    def mark_succeeded(self) -> None:
+        """Clear the latch so a later failure is reported again."""
+        with self._lock:
+            self._failed = False
+            self._reported = False
+
+    def reset(self) -> None:
+        """Forget both the failure and the fact that it was reported."""
+        self.mark_succeeded()
+
+    def _report_unconfigured(self) -> None:
+        """Explain once that authentication is unconfigured, not broken."""
+        with self._lock:
+            if self._reported:
+                return
+            self._reported = True
+
+        logger.info(
+            "Aion authentication is not configured "
+            "(AION_CLIENT_ID/AION_CLIENT_SECRET are not set). "
+            "Platform features are unavailable."
+        )
+
+
 class AionJWTManager(ABC):
     """
     Thread-safe JWT token manager without automatic refresh.
@@ -167,6 +238,8 @@ class AionJWTManager(ABC):
     def __init__(self) -> None:
         self._token: Optional[Token] = None
         self._lock = asyncio.Lock()
+        self._lock_loop: Optional[asyncio.AbstractEventLoop] = None
+        self._lock_guard = threading.Lock()
         self._last_auth_error: Optional[str] = None
 
     @property
@@ -179,6 +252,23 @@ class AionJWTManager(ABC):
         """
         return self._last_auth_error
 
+    def _loop_lock(self) -> asyncio.Lock:
+        """Return an ``asyncio.Lock`` owned by the currently running loop.
+
+        This manager is a module-level singleton built before any loop exists,
+        and agent processes are forked from the CLI parent, so one instance
+        outlives several event loops. An ``asyncio.Lock`` binds to the first
+        loop that contends for it and raises in every other one, so the lock is
+        rebuilt whenever the running loop changes. Waiters are only discarded
+        when the loop they belonged to is already gone.
+        """
+        loop = asyncio.get_running_loop()
+        with self._lock_guard:
+            if self._lock_loop is not loop:
+                self._lock = asyncio.Lock()
+                self._lock_loop = loop
+            return self._lock
+
     async def get_token(self) -> Optional[str]:
         """
         Get a valid token string, refreshing if necessary.
@@ -188,7 +278,7 @@ class AionJWTManager(ABC):
         or expiring soon. If refresh fails, ``None`` is returned. This method is
         thread-safe and ensures only one refresh operation occurs at a time.
         """
-        async with self._lock:
+        async with self._loop_lock():
             if self.should_refresh_token():
                 await self._try_refresh()
             return None if not self._token else self._token.value
@@ -292,7 +382,7 @@ class AionRefreshingJWTManager(AionJWTManager):
     def __init__(self) -> None:
         super().__init__()
         self._client = AionHttpClient()
-        self._auth_failed = False
+        self._auth_state = AionAuthState()
         self._sync_lock = threading.Lock()
 
     async def get_token(self) -> Optional[str]:
@@ -301,13 +391,14 @@ class AionRefreshingJWTManager(AionJWTManager):
 
         Returns the cached JWT token string, automatically calling
         :meth:`_refresh_token` when the current token is missing, expired,
-        or expiring soon. If a previous 401 error occurred, returns None
-        without attempting refresh. This method is thread-safe and ensures
-        only one refresh operation occurs at a time.
+        or expiring soon. If authentication is disabled or a previous 401 error
+        occurred, returns None without attempting refresh. This method is
+        thread-safe and ensures only one refresh operation occurs at a time.
         """
-        async with self._lock:
-            # If authentication failed previously, don't attempt refresh
-            if self._auth_failed:
+        async with self._loop_lock():
+            # Authentication is off for this process — disabled, unconfigured,
+            # or already rejected. Nothing to refresh.
+            if not self._auth_state.can_attempt:
                 return None
 
             if self.should_refresh_token():
@@ -327,8 +418,8 @@ class AionRefreshingJWTManager(AionJWTManager):
 
         first_token = self._token is None
         self._token = Token.from_jwt(token_value)
-        # Reset auth failed flag on successful authentication
-        self._auth_failed = False
+        # Clear the latch on success, so a later failure is reported again.
+        self._auth_state.mark_succeeded()
         self._last_auth_error = None
 
         logger.info(
@@ -350,7 +441,7 @@ class AionRefreshingJWTManager(AionJWTManager):
         self._token = None
 
         if ex.status_code == 401:
-            self._auth_failed = True
+            self._auth_state.mark_failed()
             self._record_auth_error(
                 "401 - credentials rejected (check AION_CLIENT_ID / AION_CLIENT_SECRET "
                 "against this host). Further refresh attempts will be skipped until reset")
@@ -368,11 +459,10 @@ class AionRefreshingJWTManager(AionJWTManager):
         3. Creating a new :class:`Token` object from the JWT
         4. Updating the cached token
 
-        If a 401 error occurs, sets the auth_failed flag to prevent
-        further refresh attempts.
+        If a 401 error occurs, latches authentication off in
+        :class:`AionAuthState` to prevent further refresh attempts.
         """
-        # If authentication failed previously, don't attempt refresh
-        if self._auth_failed:
+        if not self._auth_state.can_attempt:
             return
 
         try:
@@ -390,10 +480,11 @@ class AionRefreshingJWTManager(AionJWTManager):
 
         This checks the same cached token used by async callers and refreshes
         it through the synchronous HTTP client when it is missing, expired, or
-        expiring soon.
+        expiring soon. The auth state is shared with the async path, so a 401
+        seen by either one stops the other from retrying and re-reporting it.
         """
         with self._sync_lock:
-            if self._auth_failed:
+            if not self._auth_state.can_attempt:
                 return None
 
             if self.should_refresh_token():
@@ -418,7 +509,7 @@ class AionRefreshingJWTManager(AionJWTManager):
         This is used by OpenAI-compatible model clients that call API-key
         providers from synchronous request paths.
         """
-        if self._auth_failed:
+        if not self._auth_state.can_attempt:
             return
 
         try:
@@ -433,11 +524,11 @@ class AionRefreshingJWTManager(AionJWTManager):
         """
         Reset the authentication failure state.
 
-        Clears the auth_failed flag and cached token, allowing fresh
+        Clears the failure latch and cached token, allowing fresh
         authentication attempts. Use this when credentials have been
         updated or when you want to retry authentication after a 401 error.
         """
-        self._auth_failed = False
+        self._auth_state.reset()
         self._token = None
         self._last_auth_error = None
         logger.info("Authentication state reset. Fresh authentication will be attempted.")
@@ -451,7 +542,7 @@ class AionRefreshingJWTManager(AionJWTManager):
             bool: True if a 401 error occurred and no further refresh
                   attempts will be made, False otherwise.
         """
-        return self._auth_failed
+        return self._auth_state.failed
 
 
 # Global instance used by the API client

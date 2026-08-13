@@ -6,12 +6,11 @@ from typing import Any, override
 from a2a.server.agent_execution.active_task import ActiveTask
 from a2a.server.agent_execution.active_task_registry import ActiveTaskRegistry
 from a2a.server.context import ServerCallContext
-from a2a.types import Task, TaskState
+from a2a.types import TaskState
 from a2a.types.a2a_pb2 import Message
 
-from aion.core.a2a.enums import A2AMetadataKey, TaskSettlementReason
-from aion.server.a2a.constants import NON_ACTIVE_TASK_STATES
-from aion.server.tasks import AionTaskManager, TerminalTaskPushSender
+from aion.core.a2a.enums import TaskSettlementReason
+from aion.server.tasks import AionTaskManager, TerminalTaskPushSender, settled_task
 from aion.server.agent.execution.scope import set_task_manager
 
 logger = logging.getLogger(__name__)
@@ -127,9 +126,9 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
         whatever active state it had. Nothing is left to correct it — the
         execution is gone — so the task would be presented as running forever.
 
-        Such a task is settled as ``INPUT_REQUIRED``, marked in metadata with
-        ``SERVER_SHUTDOWN``: non-active, so it stops looking alive, but not
-        terminal, so a client can still resume it once the server is back.
+        Such a task is settled as ``FAILED``, marked in metadata with
+        ``SERVER_SHUTDOWN``. See ``aion.server.tasks.settlement`` for why the
+        state is terminal rather than resumable.
         """
         async with self._lock:
             task_managers = list(self._task_managers.values())
@@ -153,18 +152,16 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
     async def _settle_interrupted_task(task_manager: AionTaskManager) -> None:
         """Mark a single task as interrupted by shutdown, if it is still active."""
         task = await task_manager.get_task()
-        if task is None or task.status.state in NON_ACTIVE_TASK_STATES:
+        if task is None:
+            return
+
+        settled = settled_task(task, TaskSettlementReason.SERVER_SHUTDOWN)
+        if settled is None:
             return
 
         logger.info(
             "Settling task %s left in %s by shutdown",
             task.id,
             TaskState.Name(task.status.state),
-        )
-        settled = Task()
-        settled.CopyFrom(task)
-        settled.status.state = TaskState.TASK_STATE_INPUT_REQUIRED
-        settled.metadata[A2AMetadataKey.SETTLED_REASON.value] = (
-            TaskSettlementReason.SERVER_SHUTDOWN.value
         )
         await task_manager.save_task_event(settled)

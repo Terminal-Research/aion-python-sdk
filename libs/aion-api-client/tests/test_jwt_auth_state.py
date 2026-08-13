@@ -1,16 +1,15 @@
-"""Tests for authentication endpoints and auth-failure latching."""
+"""Tests for authentication endpoints and the process-wide auth-failure latch."""
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import os
 import sys
 
 sys.path.insert(
     0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src"))
 )
-
-os.environ.setdefault("AION_CLIENT_ID", "test-client")
-os.environ.setdefault("AION_CLIENT_SECRET", "test-secret")
 
 import pytest
 
@@ -25,17 +24,14 @@ AUTH_ENDPOINT = "/auth/tokens"
 
 
 @pytest.fixture(autouse=True)
-def credentials(monkeypatch):
-    """Give the auth payload builder credentials to work with.
+def credentials(configured_auth):
+    """Give every test in this module a workspace that looks authenticated.
 
-    ``api_settings`` is a singleton built when ``aion.core.settings`` is first
-    imported, so setting environment variables at module scope only works when
-    this module happens to be imported first. Patch the instance instead.
+    ``AionRefreshingJWTManager`` refuses to reach the network when the platform
+    credentials are absent, so tests that stub the HTTP client still need
+    ``api_settings`` to say authentication is worth attempting.
     """
-    from aion.core.settings import api_settings
-
-    monkeypatch.setattr(api_settings, "client_id", "test-client")
-    monkeypatch.setattr(api_settings, "client_secret", "test-secret")
+    return configured_auth
 
 
 class RecordingHttpClient(AionHttpClient):
@@ -68,8 +64,10 @@ class FailingClient:
 
     def __init__(self, status_code: int | None) -> None:
         self.status_code = status_code
+        self.calls = 0
 
     def _fail(self):
+        self.calls += 1
         raise AionAuthenticationError(
             f"Authentication failed: {self.status_code}",
             status_code=self.status_code,
@@ -80,6 +78,36 @@ class FailingClient:
 
     def authenticate_sync(self):
         self._fail()
+
+
+class ExplodingClient:
+    """Auth client that fails with a non-HTTP exception, as a network error does."""
+
+    def __init__(self, exception: BaseException) -> None:
+        self.exception = exception
+
+    async def authenticate(self):
+        raise self.exception
+
+    def authenticate_sync(self):
+        raise self.exception
+
+
+@pytest.fixture
+def rejecting_manager():
+    """A manager whose every authentication attempt is answered with a 401."""
+    manager = AionRefreshingJWTManager()
+    manager._client = FailingClient(401)
+    return manager
+
+
+def _auth_failure_reports(caplog):
+    """The lines that tell a reader authentication failed, at any severity."""
+    return [
+        record for record in caplog.records
+        if record.levelno >= logging.WARNING
+        and "authentication failed" in record.getMessage()
+    ]
 
 
 @pytest.mark.anyio("asyncio")
@@ -118,28 +146,81 @@ def test_authentication_error_carries_status_code() -> None:
     assert "404" in str(excinfo.value)
 
 
-def test_invalid_credentials_latch_auth_failed() -> None:
+def test_invalid_credentials_latch_auth_failed(rejecting_manager) -> None:
     """A 401 means the credentials are wrong, so refreshing should stop."""
-    manager = AionRefreshingJWTManager()
-    manager._client = FailingClient(401)
-
-    assert manager.get_token_sync() is None
-    assert manager.is_auth_failed is True
+    assert rejecting_manager.get_token_sync() is None
+    assert rejecting_manager.is_auth_failed is True
 
 
 @pytest.mark.parametrize("status_code", [404, 500, 502, None])
 def test_non_401_failures_do_not_latch(status_code) -> None:
     """Only rejected credentials are permanent; everything else stays retryable.
 
-    ``_auth_failed`` is shared by every consumer of the global manager, so
-    latching on a 404 or a 5xx would disable authentication process-wide -
-    including callers whose own requests would have succeeded - until restart.
+    The latch is shared by every consumer of the global manager, so tripping it
+    on a 404 or a 5xx would disable authentication process-wide - including
+    callers whose own requests would have succeeded - until restart.
     """
     manager = AionRefreshingJWTManager()
     manager._client = FailingClient(status_code)
 
     assert manager.get_token_sync() is None
     assert manager.is_auth_failed is False
+
+
+def test_401_is_reported_once_across_async_and_sync_paths(rejecting_manager, caplog):
+    """The async and sync refresh paths share one latch, so one 401, one report."""
+    with caplog.at_level(logging.DEBUG, logger="aion.api.http.jwt_manager"):
+        assert asyncio.run(rejecting_manager.get_token()) is None
+        assert asyncio.run(rejecting_manager.get_token()) is None
+        assert rejecting_manager.get_token_sync() is None
+
+    assert len(_auth_failure_reports(caplog)) == 1
+    assert rejecting_manager.is_auth_failed
+    # Only the first attempt reaches the network; the latch stops the rest.
+    assert rejecting_manager._client.calls == 1
+
+
+def test_reset_allows_the_next_failure_to_be_reported_again(rejecting_manager, caplog):
+    with caplog.at_level(logging.DEBUG, logger="aion.api.http.jwt_manager"):
+        asyncio.run(rejecting_manager.get_token())
+        rejecting_manager.reset_auth_state()
+        asyncio.run(rejecting_manager.get_token())
+
+    assert len(_auth_failure_reports(caplog)) == 2
+
+
+def test_missing_credentials_skip_the_network_entirely(
+    rejecting_manager, configured_auth, caplog, monkeypatch
+):
+    """Without credentials there is nothing to try, so say so once and stop.
+
+    This used to raise out of the payload builder on every single call, which
+    reported an error per consumer instead of a fact about the workspace.
+    """
+    monkeypatch.setattr(configured_auth, "client_secret", None)
+
+    with caplog.at_level(logging.DEBUG, logger="aion.api.http.jwt_manager"):
+        assert asyncio.run(rejecting_manager.get_token()) is None
+        assert rejecting_manager.get_token_sync() is None
+
+    assert _auth_failure_reports(caplog) == []
+    assert rejecting_manager._client.calls == 0
+    assert not rejecting_manager.is_auth_failed
+    unconfigured = [
+        record for record in caplog.records
+        if "authentication is not configured" in record.getMessage()
+    ]
+    assert len(unconfigured) == 1
+
+
+def test_lock_survives_being_used_from_a_second_event_loop(rejecting_manager):
+    """Forked agents run a fresh loop; a lock bound to the parent's would raise."""
+
+    async def contend(manager):
+        await asyncio.gather(*(manager.get_token() for _ in range(5)))
+
+    asyncio.run(contend(rejecting_manager))
+    asyncio.run(contend(rejecting_manager))
 
 
 @pytest.mark.anyio("asyncio")
@@ -180,19 +261,6 @@ def test_successful_refresh_clears_latch(valid_jwt_token) -> None:
     assert manager.is_auth_failed is False
 
 
-class ExplodingClient:
-    """Auth client that fails with a non-HTTP exception, as a network error does."""
-
-    def __init__(self, exception: BaseException) -> None:
-        self.exception = exception
-
-    async def authenticate(self):
-        raise self.exception
-
-    def authenticate_sync(self):
-        raise self.exception
-
-
 def test_describe_exception_keeps_type_when_message_is_empty() -> None:
     """httpx network errors stringify to nothing, so the type has to carry the meaning.
 
@@ -208,13 +276,10 @@ def test_describe_exception_keeps_type_when_message_is_empty() -> None:
     assert describe_exception(ValueError("boom")) == "ValueError: boom"
 
 
-def test_rejected_credentials_are_recorded_as_last_auth_error() -> None:
+def test_rejected_credentials_are_recorded_as_last_auth_error(rejecting_manager) -> None:
     """A 401 should leave behind a reason a consumer can quote."""
-    manager = AionRefreshingJWTManager()
-    manager._client = FailingClient(401)
-
-    assert manager.get_token_sync() is None
-    assert "401" in manager.last_auth_error
+    assert rejecting_manager.get_token_sync() is None
+    assert "401" in rejecting_manager.last_auth_error
 
 
 def test_network_failure_is_recorded_as_last_auth_error() -> None:
