@@ -2,21 +2,16 @@
 
 from __future__ import annotations
 
-import logging
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, AsyncGenerator
 
 from aion.core.runtime.context.registry import AionRuntimeContextRegistry
 from aion.server.agent.execution.context import RequestScopeRuntimeContextProvider
 from aion.server.opentelemetry import init_tracing
-from aion.server.tasks import settle_orphaned_tasks
 from fastapi import FastAPI
 
 if TYPE_CHECKING:
     from aion.server.core.app import AppFactory
-
-logger = logging.getLogger(__name__)
-
 
 class AppLifespan:
     """Manages the lifecycle of the FastAPI application.
@@ -56,6 +51,10 @@ class AppLifespan:
         # SETUP OPEN-TELEMETRY
         init_tracing()
 
+        # Startup settlement is intentionally disabled. The durable task store
+        # is shared by multiple agent processes, so this process cannot safely
+        # distinguish its predecessor's orphaned work from work another agent
+        # is still executing.
         await self._settle_orphaned_tasks()
 
     async def _settle_orphaned_tasks(self):
@@ -71,10 +70,13 @@ class AppLifespan:
         and the same store is about to report its condition on the first
         request anyway.
         """
-        try:
-            await settle_orphaned_tasks(self.app_factory.store_manager.get_store())
-        except Exception as exc:
-            logger.error("Failed to settle tasks left by a previous process", exc_info=exc)
+        # try:
+        #     await settle_orphaned_tasks(self.app_factory.store_manager.get_store())
+        # except Exception as exc:
+        #     logger.error(
+        #         "Failed to settle tasks left by a previous process", exc_info=exc
+        #     )
+        pass
 
     async def shutdown(self):
         """Handle application shutdown events."""
