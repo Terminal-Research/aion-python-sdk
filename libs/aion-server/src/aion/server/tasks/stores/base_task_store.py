@@ -55,6 +55,21 @@ class BaseTaskStore(TaskStore):
         pass
 
     @abstractmethod
+    async def get_active_tasks(self) -> List[Task]:
+        """
+        Retrieve every task the store still presents as running.
+
+        Deliberately owner-agnostic and unpaginated: this serves process-level
+        maintenance, which asks about the store as a whole rather than on
+        behalf of a caller. Its one consumer today is the startup reap of tasks
+        an interrupted process left active.
+
+        Returns:
+            All tasks in an active state, in no particular order
+        """
+        pass
+
+    @abstractmethod
     async def get_context_last_task(self, context_id: str) -> Optional[Task]:
         """
         Retrieve the most recent task for a specific context.

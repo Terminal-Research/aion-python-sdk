@@ -13,6 +13,7 @@ from a2a.types import Task, TaskState, TaskStatus
 from unittest.mock import AsyncMock, Mock, patch
 
 from aion.core.a2a.enums import A2AMetadataKey, TaskSettlementReason
+from aion.server.a2a.constants import INTERRUPT_TASK_STATES
 from aion.server.agent.execution.active_task_registry import AionActiveTaskRegistry
 from aion.server.agent.execution.scope import clear_execution_scope, init_execution_scope
 
@@ -69,27 +70,27 @@ def _settled(store: AsyncMock) -> Task:
 
 class TestShutdownSettlement:
     @pytest.mark.anyio
-    async def test_active_task_is_settled_as_input_required(self, execution_scope):
+    async def test_active_task_is_settled_as_failed(self, execution_scope):
         """A task the shutdown interrupted must stop being presented as running."""
         registry, store, _ = await _registry_holding(TaskState.TASK_STATE_WORKING)
 
         await registry.aclose()
 
-        assert _settled(store).status.state == TaskState.TASK_STATE_INPUT_REQUIRED
+        assert _settled(store).status.state == TaskState.TASK_STATE_FAILED
 
     @pytest.mark.anyio
-    async def test_settled_task_stays_resumable(self, execution_scope):
-        """The supplied state is not terminal, so a client can continue the task."""
+    async def test_settled_task_does_not_await_input(self, execution_scope):
+        """The run is over, so the task must not be left waiting on the client.
+
+        An interrupt state would be adopted by ``RequestContextBuilder`` as the
+        resumable task of its context, and the next message of the conversation
+        would be delivered as the answer to a question no agent asked.
+        """
         registry, store, _ = await _registry_holding(TaskState.TASK_STATE_WORKING)
 
         await registry.aclose()
 
-        assert _settled(store).status.state not in (
-            TaskState.TASK_STATE_COMPLETED,
-            TaskState.TASK_STATE_CANCELED,
-            TaskState.TASK_STATE_FAILED,
-            TaskState.TASK_STATE_REJECTED,
-        )
+        assert _settled(store).status.state not in INTERRUPT_TASK_STATES
 
     @pytest.mark.anyio
     async def test_settlement_records_its_reason(self, execution_scope):

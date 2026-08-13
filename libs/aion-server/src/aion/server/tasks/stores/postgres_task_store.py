@@ -17,6 +17,7 @@ from aion.db.postgres.manager import db_manager
 from aion.db.postgres.types import Pagination, Sorting, SortKey
 from aion.db.postgres.repositories import STATUS_TIMESTAMP_SORT_KEY, TasksRepository
 from aion.db.postgres.records import TaskRecord
+from aion.server.a2a.constants import ACTIVE_TASK_STATES
 from .base_task_store import BaseTaskStore
 
 
@@ -220,6 +221,25 @@ class PostgresTaskStore(BaseTaskStore):
                 pagination=Pagination(limit=limit, offset=offset),
                 sorting=Sorting(SortKey(column="created_at")),
             )
+        return [self._entity_to_task(str(r.id), r) for r in records]
+
+    async def get_active_tasks(self) -> List[Task]:
+        """Retrieve every task in an active state, across all contexts.
+
+        Queried one state at a time because the repository filters on a single
+        state; the set is two members wide, and this runs once per process
+        start, so the extra round trips cost nothing worth folding into a
+        shared-package change.
+
+        Returns:
+            All tasks whose stored state is one of ``ACTIVE_TASK_STATES``.
+        """
+        records: List[TaskRecord] = []
+        async with db_manager.get_session() as session:
+            repository = TasksRepository(session)
+            for state in ACTIVE_TASK_STATES:
+                records.extend(await repository.find(status_state=TaskState.Name(state)))
+
         return [self._entity_to_task(str(r.id), r) for r in records]
 
     async def get_context_last_task(self, context_id: str) -> Optional[Task]:

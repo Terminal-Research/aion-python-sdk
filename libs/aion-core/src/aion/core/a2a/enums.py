@@ -75,15 +75,31 @@ class TaskSettlementReason(str, Enum):
     stream that merely ends — because the client disconnected or the turn
     produced no outcome — is left alone: the execution outlives the subscriber
     and records the truth itself.
+
+    Every reason settles the task as `FAILED`. The run stopped without an
+    outcome and nothing can carry it on, and a non-terminal state would claim
+    the opposite: the server auto-adopts the last interrupted task of a context
+    for a message that arrives without a task id, so such a task would swallow
+    the next message of the conversation as the answer to a question no agent
+    asked. The conversation continues regardless — the context keeps the
+    history and the next message opens a fresh task on it.
     """
 
     SERVER_SHUTDOWN = "server_shutdown"
     """The server stopped while the task was still running.
 
     Shutdown cancels the execution, so nothing is left to record an outcome and
-    the task would otherwise stay active in the store forever. It is settled as
-    `INPUT_REQUIRED`: non-active, so the task is no longer presented as running,
-    yet non-terminal, so it can still be resumed.
+    the task would otherwise stay active in the store forever.
+    """
+
+    SERVER_RESTART = "server_restart"
+    """A previous server process died while the task was still running.
+
+    A hard kill — SIGKILL, OOM, a lost machine — leaves no chance to settle
+    anything: the process is gone before shutdown runs, so the task keeps the
+    active state it had with nothing alive to advance it. The next start finds
+    it in the store and settles it as a graceful shutdown would have; only the
+    reason tells the two apart.
     """
 
 

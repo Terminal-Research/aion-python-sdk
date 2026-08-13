@@ -5,6 +5,7 @@ from .push_notifications import PushNotificationFactory
 from .authenticated_push_sender import AuthenticatedPushNotificationSender
 from .terminal_push_sender import TerminalTaskPushSender
 from .deduplicator import A2ATaskDeduplicator
+from .settlement import settle_orphaned_tasks, settled_task
 
 __all__ = [
     "BaseTaskStore",
@@ -19,4 +20,7 @@ __all__ = [
     "AuthenticatedPushNotificationSender",
     "TerminalTaskPushSender",
     "A2ATaskDeduplicator",
+    # Settlement of tasks whose execution is gone
+    "settled_task",
+    "settle_orphaned_tasks",
 ]

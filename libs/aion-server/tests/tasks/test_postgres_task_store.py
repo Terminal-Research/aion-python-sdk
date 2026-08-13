@@ -19,6 +19,7 @@ from a2a.utils.errors import InvalidParamsError
 from a2a.utils.task import encode_page_token
 
 from aion.db.postgres.repositories import STATUS_TIMESTAMP_SORT_KEY
+from aion.server.a2a.constants import ACTIVE_TASK_STATES
 from aion.server.tasks.stores.postgres_task_store import PostgresTaskStore
 
 TASK_UUID = "0f6c6b1e-9a2a-4a1e-9b3a-1f2e3d4c5b6a"
@@ -112,6 +113,34 @@ class TestContextLastTask:
 
         with pytest.raises(ConnectionError):
             await store.get_context_last_task("ctx-1")
+
+
+class TestActiveTasks:
+    """The query behind the startup reap of tasks a killed process left running."""
+
+    async def test_asks_for_every_active_state(self, store, repository):
+        """Missing a state would leave that kind of task running forever."""
+        await store.get_active_tasks()
+
+        queried = {
+            call.kwargs["status_state"] for call in repository.find.await_args_list
+        }
+        assert queried == {
+            TaskState.Name(state) for state in ACTIVE_TASK_STATES
+        }
+
+    async def test_returns_the_tasks_of_all_states_together(self, store, repository):
+        ids = [str(uuid.uuid4()) for _ in ACTIVE_TASK_STATES]
+        repository.find.side_effect = [[_make_entity(i)] for i in ids]
+
+        tasks = await store.get_active_tasks()
+
+        assert sorted(task.id for task in tasks) == sorted(ids)
+
+    async def test_no_active_task_is_an_empty_answer(self, store, repository):
+        repository.find.return_value = []
+
+        assert await store.get_active_tasks() == []
 
 
 class TestList:
