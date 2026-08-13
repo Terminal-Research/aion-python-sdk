@@ -74,8 +74,12 @@ and are discovered by `aion-server` at runtime.
   (`services/aion`), OpenTelemetry wiring, logging setup with stream and
   Logstash handlers, and the proxy server (`aion.proxy`) that fronts multiple
   agents. Graphs and HTTP apps are configured via `aion.yaml` and can be
-  mounted dynamically; contract tests cover published configuration schemas,
-  including compact discovery documents that omit null field metadata.
+  mounted dynamically. JSON-RPC streams use LF-delimited SSE events so their
+  blank event boundary remains distinct from HTTP/1.1 CRLF transfer framing.
+  The proxy preserves streaming response bodies and establishes fresh
+  downstream transfer framing rather than buffering agent SSE output;
+  contract tests cover published configuration schemas, including compact
+  discovery documents that omit null field metadata.
   Push notifications authenticate against external callbacks using the
   credentials in `taskPushNotificationConfig.authentication` (the a2a-sdk
   base sender ignores them); delivery timeouts come from

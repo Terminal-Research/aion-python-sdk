@@ -1,13 +1,13 @@
-"""
-Request handlers for AION Agent Proxy Server
-"""
+"""Request handlers for the AION Agent Proxy Server."""
+
 import logging
-from typing import Dict, Any
+from typing import Any, AsyncIterator, Dict
 from urllib.parse import urljoin
 
 import httpx
 from fastapi import Request, Response
-from fastapi.responses import StreamingResponse
+from starlette.responses import StreamingResponse
+from starlette.types import Receive, Scope, Send
 
 from .exceptions import (
     AgentNotFoundException,
@@ -24,27 +24,99 @@ logger = logging.getLogger(__name__)
 # legitimately stay silent between chunks longer than any fixed limit.
 _FORWARD_TIMEOUT = httpx.Timeout(30.0, read=None)
 
-# Hop-by-hop framing headers that must not be copied from the upstream
-# response: the proxied response is re-framed (chunked) by the server.
-_EXCLUDED_RESPONSE_HEADERS = frozenset({"content-length", "transfer-encoding", "connection"})
-
 # Headers that describe the *client's* connection to the proxy and say nothing
 # about the proxy's own connection upstream. `host` would address the wrong
-# server; the framing headers (RFC 9110 §7.6.1) describe a hop that ends here —
+# server; the framing headers (RFC 9110 7.6.1) describe a hop that ends here -
 # forwarding `content-length` or `transfer-encoding` alongside a body httpx
 # re-frames itself is how a request ends up declaring two different lengths.
-_EXCLUDED_REQUEST_HEADERS = frozenset({
-    "host",
-    "content-length",
-    "transfer-encoding",
-    "connection",
-    "keep-alive",
-    "proxy-authenticate",
-    "proxy-authorization",
-    "te",
-    "trailer",
-    "upgrade",
+_REQUEST_HEADERS_MANAGED_BY_PROXY = frozenset({
+    'host',
+    'connection',
+    'content-length',
+    'keep-alive',
+    'proxy-authenticate',
+    'proxy-authorization',
+    'te',
+    'trailer',
+    'transfer-encoding',
+    'upgrade',
 })
+
+_RESPONSE_HEADERS_MANAGED_BY_PROXY = frozenset({
+    'connection',
+    'content-length',
+    'date',
+    'keep-alive',
+    'proxy-authenticate',
+    'proxy-authorization',
+    'server',
+    'te',
+    'trailer',
+    'transfer-encoding',
+    'upgrade',
+})
+
+
+class UpstreamStreamingResponse(StreamingResponse):
+    """Stream one HTTPX response and always release its connection.
+
+    Starlette normally runs response background tasks after streaming. A
+    downstream disconnect can instead raise before those tasks run, so this
+    response closes the upstream connection from a ``finally`` block.
+    """
+
+    def __init__(
+        self,
+        upstream_response: httpx.Response,
+        headers: Dict[str, str],
+        agent_id: str,
+    ) -> None:
+        """Initialize a response backed by the upstream raw byte stream.
+
+        Args:
+            upstream_response: Open HTTPX response to forward.
+            headers: End-to-end response headers safe to forward downstream.
+            agent_id: Target agent identifier, used when logging stream errors.
+        """
+        self._upstream_response = upstream_response
+        self._agent_id = agent_id
+        super().__init__(
+            content=self._relay_upstream(),
+            status_code=upstream_response.status_code,
+            headers=headers,
+        )
+
+    async def _relay_upstream(self) -> AsyncIterator[bytes]:
+        """Yield upstream body bytes, ending the body on a transport failure.
+
+        ``aiter_raw`` skips HTTPX content decoding, so the forwarded bytes stay
+        consistent with the upstream headers - including ``content-encoding``.
+        A failure mid-stream cannot be reported downstream: the response status
+        and headers are already on the wire, so it is logged and the body ends.
+
+        Yields:
+            Raw response chunks in the order the agent produced them.
+        """
+        try:
+            async for chunk in self._upstream_response.aiter_raw():
+                yield chunk
+        except httpx.HTTPError as e:
+            logger.error(
+                f"Error streaming response from agent "
+                f"'{self._agent_id}': {str(e)}"
+            )
+
+    async def __call__(
+        self,
+        scope: Scope,
+        receive: Receive,
+        send: Send,
+    ) -> None:
+        """Send the response and close its upstream stream afterward."""
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            await self._upstream_response.aclose()
 
 
 class RequestHandler:
@@ -149,19 +221,19 @@ class RequestHandler:
 
         try:
             # Prepare headers: everything the client sent except what described
-            # its own hop to us (see _EXCLUDED_REQUEST_HEADERS). httpx frames the
-            # upstream request itself from `content`.
+            # its own hop to us (see _REQUEST_HEADERS_MANAGED_BY_PROXY). httpx
+            # frames the upstream request itself from `content`.
             headers = {
                 key: value
                 for key, value in request.headers.items()
-                if key.lower() not in _EXCLUDED_REQUEST_HEADERS
+                if key.lower() not in _REQUEST_HEADERS_MANAGED_BY_PROXY
             }
 
             # Read request body
             body = await request.body()
 
-            # Forward the request; stream=True returns as soon as the
-            # upstream response headers arrive, without reading the body
+            # Keep the upstream response open so streaming responses can flow
+            # through the proxy without first being buffered in memory.
             upstream_request = self.http_client.build_request(
                 method=request.method,
                 url=target_url,
@@ -169,7 +241,16 @@ class RequestHandler:
                 content=body,
                 timeout=_FORWARD_TIMEOUT,
             )
-            upstream = await self.http_client.send(upstream_request, stream=True)
+            response = await self.http_client.send(
+                upstream_request,
+                stream=True,
+            )
+
+            return UpstreamStreamingResponse(
+                response,
+                self._forwarded_response_headers(response),
+                agent_id,
+            )
 
         except httpx.ConnectError:
             logger.error(f"Failed to connect to agent '{agent_id}' at {agent_base_url}")
@@ -183,30 +264,30 @@ class RequestHandler:
             logger.error(f"Error forwarding request to agent '{agent_id}': {str(e)}")
             raise AgentProxyException(agent_id, str(e))
 
-        # Relay body bytes exactly as sent (aiter_raw skips httpx's
-        # content decoding), so upstream headers - including any
-        # content-encoding - stay valid; only framing headers are dropped
-        response_headers = {
-            key: value
-            for key, value in upstream.headers.items()
-            if key.lower() not in _EXCLUDED_RESPONSE_HEADERS
+    @staticmethod
+    def _forwarded_response_headers(
+        response: httpx.Response,
+    ) -> Dict[str, str]:
+        """Select headers that remain valid after proxy reframing.
+
+        The proxy consumes upstream transfer framing and lets the downstream
+        ASGI server establish new framing. It must therefore omit the original
+        content length, transfer encoding, and other hop-by-hop headers.
+
+        Args:
+            response: Open upstream HTTP response.
+
+        Returns:
+            End-to-end headers safe to attach to the downstream response.
+        """
+        connection_headers = {
+            value.strip().lower()
+            for value in response.headers.get('connection', '').split(',')
+            if value.strip()
         }
-
-        async def relay_upstream():
-            try:
-                async for chunk in upstream.aiter_raw():
-                    yield chunk
-            except httpx.HTTPError as e:
-                # Response headers are already sent - the error can only be
-                # logged; closing the generator aborts the client connection
-                logger.error(
-                    f"Error streaming response from agent '{agent_id}': {str(e)}"
-                )
-            finally:
-                await upstream.aclose()
-
-        return StreamingResponse(
-            relay_upstream(),
-            status_code=upstream.status_code,
-            headers=response_headers,
-        )
+        excluded = _RESPONSE_HEADERS_MANAGED_BY_PROXY | connection_headers
+        return {
+            name: value
+            for name, value in response.headers.items()
+            if name.lower() not in excluded
+        }
