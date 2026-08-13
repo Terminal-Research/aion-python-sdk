@@ -1,8 +1,10 @@
 """JSON-RPC dispatcher extended with Aion-specific method handling."""
 
 import logging
-from typing import override
+from collections.abc import AsyncGenerator
+from typing import Any, override
 
+from a2a.server.context import ServerCallContext
 from a2a.server.jsonrpc_models import (
     InvalidParamsError,
     InvalidRequestError,
@@ -14,12 +16,15 @@ from a2a.utils.errors import UnsupportedOperationError
 from aion.core.a2a import GetContextParams, GetContextsListParams
 from jsonrpc.jsonrpc2 import JSONRPC20Request
 from pydantic import ValidationError
+from sse_starlette.sse import EventSourceResponse
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 from .request_handler import AionRequestHandler
 
 logger = logging.getLogger(__name__)
+
+_SSE_LINE_SEPARATOR = '\n'
 
 
 class AionJsonRpcDispatcher(JsonRpcDispatcher):
@@ -48,6 +53,29 @@ class AionJsonRpcDispatcher(JsonRpcDispatcher):
             return await self._handle_aion_method(body, request)
 
         return await super().handle_requests(request)
+
+    @override
+    def _create_response(
+        self,
+        context: ServerCallContext,
+        handler_result: AsyncGenerator[dict[str, Any], None] | dict[str, Any],
+    ) -> Response:
+        """Create a response with tunnel-safe SSE event delimiters.
+
+        LF is a valid SSE line separator and keeps the required blank line
+        between events independent from HTTP/1.1 CRLF transfer framing.
+
+        Args:
+            context: Server context associated with the JSON-RPC request.
+            handler_result: Streaming or unary result produced by the handler.
+
+        Returns:
+            JSON or SSE response created by the upstream A2A dispatcher.
+        """
+        response = super()._create_response(context, handler_result)
+        if isinstance(response, EventSourceResponse):
+            response.sep = _SSE_LINE_SEPARATOR
+        return response
 
     async def _handle_aion_method(self, body: dict, request: Request) -> Response:
         """Validate, parse, and dispatch an Aion-specific JSON-RPC method call."""

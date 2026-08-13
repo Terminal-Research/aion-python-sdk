@@ -1,12 +1,13 @@
-"""
-Request handlers for AION Agent Proxy Server
-"""
+"""Request handlers for the AION Agent Proxy Server."""
+
 import logging
-from typing import Dict, Any
+from typing import Any, Dict
 from urllib.parse import urljoin
 
 import httpx
 from fastapi import Request, Response
+from starlette.responses import StreamingResponse
+from starlette.types import Receive, Scope, Send
 
 from .exceptions import (
     AgentNotFoundException,
@@ -17,6 +18,59 @@ from .exceptions import (
 from .types import AgentHealthInfo
 
 logger = logging.getLogger(__name__)
+
+_RESPONSE_HEADERS_MANAGED_BY_PROXY = frozenset({
+    'connection',
+    'content-length',
+    'date',
+    'keep-alive',
+    'proxy-authenticate',
+    'proxy-authorization',
+    'server',
+    'te',
+    'trailer',
+    'transfer-encoding',
+    'upgrade',
+})
+
+
+class UpstreamStreamingResponse(StreamingResponse):
+    """Stream one HTTPX response and always release its connection.
+
+    Starlette normally runs response background tasks after streaming. A
+    downstream disconnect can instead raise before those tasks run, so this
+    response closes the upstream connection from a ``finally`` block.
+    """
+
+    def __init__(
+        self,
+        upstream_response: httpx.Response,
+        headers: Dict[str, str],
+    ) -> None:
+        """Initialize a response backed by the upstream raw byte stream.
+
+        Args:
+            upstream_response: Open HTTPX response to forward.
+            headers: End-to-end response headers safe to forward downstream.
+        """
+        self._upstream_response = upstream_response
+        super().__init__(
+            content=upstream_response.aiter_raw(),
+            status_code=upstream_response.status_code,
+            headers=headers,
+        )
+
+    async def __call__(
+        self,
+        scope: Scope,
+        receive: Receive,
+        send: Send,
+    ) -> None:
+        """Send the response and close its upstream stream afterward."""
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            await self._upstream_response.aclose()
 
 
 class RequestHandler:
@@ -121,26 +175,22 @@ class RequestHandler:
             # Read request body
             body = await request.body()
 
-            # Forward the request
-            response = await self.http_client.request(
+            # Keep the upstream response open so streaming responses can flow
+            # through the proxy without first being buffered in memory.
+            upstream_request = self.http_client.build_request(
                 method=request.method,
                 url=target_url,
                 headers=headers,
                 content=body
             )
+            response = await self.http_client.send(
+                upstream_request,
+                stream=True,
+            )
 
-            # Prepare response headers
-            response_headers = dict(response.headers)
-            # Remove headers that might cause issues
-            response_headers.pop('content-encoding', None)
-            response_headers.pop('transfer-encoding', None)
-
-            # Return response
-            return Response(
-                content=response.content,
-                status_code=response.status_code,
-                headers=response_headers,
-                media_type=response_headers.get('content-type')
+            return UpstreamStreamingResponse(
+                response,
+                self._forwarded_response_headers(response),
             )
 
         except httpx.ConnectError:
@@ -154,3 +204,31 @@ class RequestHandler:
         except Exception as e:
             logger.error(f"Error forwarding request to agent '{agent_id}': {str(e)}")
             raise AgentProxyException(agent_id, str(e))
+
+    @staticmethod
+    def _forwarded_response_headers(
+        response: httpx.Response,
+    ) -> Dict[str, str]:
+        """Select headers that remain valid after proxy reframing.
+
+        The proxy consumes upstream transfer framing and lets the downstream
+        ASGI server establish new framing. It must therefore omit the original
+        content length, transfer encoding, and other hop-by-hop headers.
+
+        Args:
+            response: Open upstream HTTP response.
+
+        Returns:
+            End-to-end headers safe to attach to the downstream response.
+        """
+        connection_headers = {
+            value.strip().lower()
+            for value in response.headers.get('connection', '').split(',')
+            if value.strip()
+        }
+        excluded = _RESPONSE_HEADERS_MANAGED_BY_PROXY | connection_headers
+        return {
+            name: value
+            for name, value in response.headers.items()
+            if name.lower() not in excluded
+        }
