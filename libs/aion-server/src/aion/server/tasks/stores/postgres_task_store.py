@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import timezone
 from typing import Optional, List
 
 from a2a.server.context import ServerCallContext
@@ -57,8 +57,6 @@ class PostgresTaskStore(BaseTaskStore):
         if task_id is None:
             task_id = cls._require_task_uuid(task.id)
 
-        now = datetime.now(tz=timezone.utc)
-
         return TaskRecord(
             id=task_id,
             context_id=task.context_id,
@@ -66,8 +64,6 @@ class PostgresTaskStore(BaseTaskStore):
             artifacts=task.artifacts,
             history=task.history,
             task_metadata=task.metadata if task.HasField('metadata') else None,
-            created_at=now,
-            updated_at=now,
         )
 
     @staticmethod
@@ -149,7 +145,7 @@ class PostgresTaskStore(BaseTaskStore):
         """
         status_state = TaskState.Name(params.status) if params.status else None
         status_timestamp_after = (
-            params.status_timestamp_after.ToJsonString()
+            params.status_timestamp_after.ToDatetime(tzinfo=timezone.utc)
             if params.HasField('status_timestamp_after')
             else None
         )

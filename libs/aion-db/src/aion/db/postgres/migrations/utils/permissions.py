@@ -1,10 +1,7 @@
-"""Pre-migration permission checks — exits the process if DB user lacks required privileges."""
+"""Pre-migration permission checks for the database migration user."""
 
 from __future__ import annotations
 import logging
-
-import sys
-
 
 from aion.db.postgres.utils import validate_permissions, convert_pg_url
 from ..env import config
@@ -16,7 +13,7 @@ async def fail_if_no_permissions():
     """Test database permissions and fail if insufficient for migrations.
 
     This function checks if the current database user has permissions to create tables.
-    If not, it logs an error and exits the process.
+    If not, it logs an error and raises an exception for the caller to handle.
     """
     # Get connection URL from Alembic config (convert from SQLAlchemy format to standard)
     conn_url = convert_pg_url(config.get_main_option("sqlalchemy.url"), driver=None)
@@ -29,7 +26,7 @@ async def fail_if_no_permissions():
         logger.error("Cannot connect to database")
         if permissions['error']:
             logger.error(f"Connection error: {permissions['error']}")
-        sys.exit(1)
+        raise RuntimeError("Cannot connect to database; migrations cannot proceed")
 
     if not permissions['can_create_table']:
         error_msg = "Insufficient database permissions to create tables"
@@ -40,7 +37,7 @@ async def fail_if_no_permissions():
         logger.error(
             f"Current user: {permissions['user_info']['current_user'] if permissions['user_info'] else 'Unknown'}")
         logger.error(f"Current database: {permissions['current_database']}")
-        sys.exit(1)
+        raise PermissionError(error_msg)
 
     # Schema permissions are not critical, just log a warning
     if not permissions['can_create_schema']:

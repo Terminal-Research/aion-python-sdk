@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import datetime as _dt
 from typing import List, Type, Optional
 
 from sqlalchemy import select, func, asc, desc
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Select
 
@@ -24,11 +26,9 @@ STATUS_TIMESTAMP_SORT_KEY = "status.timestamp"
 """Reserved :class:`~aion.db.postgres.types.SortKey` column naming the task's
 last state-change time.
 
-The value lives inside the ``status`` JSON column rather than in a column of
-its own, so it cannot be resolved by attribute lookup like an ordinary sort
-key. :meth:`TasksRepository._apply_sorting` recognises this name and orders by
-the JSON path instead. Rows with no timestamp sort last in both directions —
-an absent timestamp means "unknown", not "oldest".
+The public name remains stable while the repository resolves it to the generated
+``status_timestamp`` column. Rows with no timestamp sort last in both directions
+— an absent timestamp means "unknown", not "oldest".
 """
 
 
@@ -59,7 +59,7 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
             task_id: Optional[str] = None,
             context_id: Optional[str] = None,
             status_state: Optional[str] = None,
-            status_timestamp_after: Optional[str] = None,
+            status_timestamp_after: Optional[_dt.datetime] = None,
     ):
         """Apply task filter conditions to ``stmt`` and return the updated statement."""
         if task_id is not None:
@@ -67,23 +67,18 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
         if context_id is not None:
             stmt = stmt.where(self.model_class.context_id == context_id)
         if status_state is not None:
-            stmt = stmt.where(
-                self.model_class.status["state"].astext == status_state
-            )
+            stmt = stmt.where(self.model_class.state == status_state)
         if status_timestamp_after is not None:
-            stmt = stmt.where(
-                self.model_class.status["timestamp"].astext >= status_timestamp_after
-            )
+            stmt = stmt.where(self.model_class.status_timestamp >= status_timestamp_after)
         return stmt
 
     def _apply_sorting(self, stmt: Select, sorting: Sorting) -> Select:
         """Apply ORDER BY clauses, resolving the task-specific status timestamp.
 
         Extends the base implementation with :data:`STATUS_TIMESTAMP_SORT_KEY`,
-        which addresses a value inside the ``status`` JSON column instead of a
-        mapped attribute. Missing timestamps are ordered last regardless of
-        direction, so tasks whose state was never stamped never displace tasks
-        that carry a real time.
+        which resolves to the generated ``status_timestamp`` column. Missing
+        timestamps are ordered last regardless of direction, so tasks whose
+        state was never stamped never displace tasks that carry a real time.
 
         Args:
             stmt: Statement to order.
@@ -94,7 +89,7 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
         """
         for key in sorting.keys:
             if key.column == STATUS_TIMESTAMP_SORT_KEY:
-                column = self.model_class.status["timestamp"].astext
+                column = self.model_class.status_timestamp
                 ordering = desc(column) if key.descending else asc(column)
                 stmt = stmt.order_by(ordering.nullslast())
                 continue
@@ -107,7 +102,7 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
             task_id: Optional[str] = None,
             context_id: Optional[str] = None,
             status_state: Optional[str] = None,
-            status_timestamp_after: Optional[str] = None,
+            status_timestamp_after: Optional[_dt.datetime] = None,
             pagination: Optional[Pagination] = None,
             sorting: Optional[Sorting] = None,
     ) -> List[str]:
@@ -123,7 +118,7 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
             context_id: Restrict to one context.
             status_state: Restrict to tasks in this state.
             status_timestamp_after: Restrict to tasks stamped at or after this
-                ISO-8601 timestamp.
+                timezone-aware datetime.
             pagination: Offset/limit window over the ordered result.
             sorting: Sort keys applied left-to-right.
 
@@ -148,28 +143,32 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
         return [str(row[0]) for row in result.fetchall()]
 
     async def save(self, entity: TaskRecord) -> None:
-        """Save or update a task entity."""
-        stmt = select(self.model_class).where(self.model_class.id == entity.id)
-        result = await self._session.execute(stmt)
-        existing_model = result.scalar_one_or_none()
+        """Insert or update a task atomically by its identifier.
 
-        if existing_model:
-            existing_model.context_id = entity.context_id
-            existing_model.status = entity.status
-            existing_model.artifacts = entity.artifacts
-            existing_model.history = entity.history
-            existing_model.task_metadata = entity.task_metadata
-        else:
-            model = self.model_class(
-                id=entity.id,
-                context_id=entity.context_id,
-                status=entity.status,
-                artifacts=entity.artifacts,
-                history=entity.history,
-                task_metadata=entity.task_metadata,
-            )
-            self._session.add(model)
-
+        ``created_at`` is deliberately absent from both the insert values and
+        the conflict update. The database owns it and an entity constructed
+        from an incoming A2A task must never be able to reset it.
+        """
+        stmt = insert(self.model_class).values(
+            id=entity.id,
+            context_id=entity.context_id,
+            status=entity.status,
+            artifacts=entity.artifacts,
+            history=entity.history,
+            task_metadata=entity.task_metadata,
+        )
+        stmt = stmt.on_conflict_do_update(
+            index_elements=[self.model_class.id],
+            set_={
+                "context_id": stmt.excluded.context_id,
+                "status": stmt.excluded.status,
+                "artifacts": stmt.excluded.artifacts,
+                "history": stmt.excluded.history,
+                "metadata": stmt.excluded.metadata,
+                "updated_at": func.now(),
+            },
+        )
+        await self._session.execute(stmt)
         await self._session.flush()
 
     async def find(
@@ -177,7 +176,7 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
             task_id: Optional[str] = None,
             context_id: Optional[str] = None,
             status_state: Optional[str] = None,
-            status_timestamp_after: Optional[str] = None,
+            status_timestamp_after: Optional[_dt.datetime] = None,
             pagination: Optional[Pagination] = None,
             sorting: Optional[Sorting] = None,
     ) -> List[TaskRecord]:

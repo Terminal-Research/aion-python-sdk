@@ -11,12 +11,14 @@ Focus areas:
 
 import uuid
 from contextlib import asynccontextmanager
+from datetime import timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from a2a.types import Task, TaskState, TaskStatus, a2a_pb2
 from a2a.utils.errors import InvalidParamsError
 from a2a.utils.task import encode_page_token
+from google.protobuf.timestamp_pb2 import Timestamp
 
 from aion.db.postgres.repositories import STATUS_TIMESTAMP_SORT_KEY
 from aion.server.a2a.constants import ACTIVE_TASK_STATES
@@ -157,6 +159,18 @@ class TestList:
             "id",
         ]
         assert all(key.descending for key in sorting.keys)
+
+    async def test_timestamp_filter_is_converted_to_datetime(self, store, repository):
+        timestamp = Timestamp(
+            seconds=1_754_000_000,
+            nanos=123_000_000,
+        )
+
+        await store.list(self._request(status_timestamp_after=timestamp))
+
+        expected = timestamp.ToDatetime(tzinfo=timezone.utc)
+        assert repository.find_ids.await_args.kwargs["status_timestamp_after"] == expected
+        assert repository.find.await_args.kwargs["status_timestamp_after"] == expected
 
     async def test_only_the_requested_page_is_loaded(self, store, repository):
         ids = [str(uuid.uuid4()) for _ in range(10)]

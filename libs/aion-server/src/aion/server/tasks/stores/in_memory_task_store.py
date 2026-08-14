@@ -2,6 +2,7 @@
 
 import logging
 import asyncio
+from datetime import datetime, timezone
 from a2a.server.context import ServerCallContext
 from a2a.server.owner_resolver import OwnerResolver, resolve_user_scope
 from a2a.types import a2a_pb2
@@ -15,6 +16,14 @@ from aion.server.a2a.constants import ACTIVE_TASK_STATES
 from .base_task_store import BaseTaskStore
 
 logger = logging.getLogger(__name__)
+_MIN_TIMESTAMP = datetime.min.replace(tzinfo=timezone.utc)
+
+
+def _status_timestamp(task: Task) -> datetime | None:
+    """Return a task timestamp as an aware datetime, if it has one."""
+    if not task.HasField('status') or not task.status.HasField('timestamp'):
+        return None
+    return task.status.timestamp.ToDatetime(tzinfo=timezone.utc)
 
 
 class InMemoryTaskStore(BaseTaskStore):
@@ -103,29 +112,23 @@ class InMemoryTaskStore(BaseTaskStore):
                 task for task in tasks if task.status.state == params.status
             ]
         if params.HasField('status_timestamp_after'):
-            last_updated_after_iso = (
-                params.status_timestamp_after.ToJsonString()
+            last_updated_after = params.status_timestamp_after.ToDatetime(
+                tzinfo=timezone.utc
             )
             tasks = [
                 task
                 for task in tasks
                 if (
-                        task.HasField('status')
-                        and task.status.HasField('timestamp')
-                        and task.status.timestamp.ToJsonString()
-                        >= last_updated_after_iso
+                    (timestamp := _status_timestamp(task)) is not None
+                    and timestamp >= last_updated_after
                 )
             ]
 
         # Order tasks by last update time. To ensure stable sorting, in cases where timestamps are null or not unique, do a second order comparison of IDs.
         tasks.sort(
             key=lambda task: (
-                task.status.HasField('timestamp')
-                if task.HasField('status')
-                else False,
-                task.status.timestamp.ToJsonString()
-                if task.HasField('status') and task.status.HasField('timestamp')
-                else '',
+                (timestamp := _status_timestamp(task)) is not None,
+                timestamp or _MIN_TIMESTAMP,
                 task.id,
             ),
             reverse=True,

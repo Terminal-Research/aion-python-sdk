@@ -35,9 +35,9 @@ class TaskRecord(BaseModel):
     """Conversation message history associated with the task, if any."""
     task_metadata: Struct | None = None
     """Arbitrary key-value metadata attached to the task (protobuf Struct)."""
-    created_at: _dt.datetime
+    created_at: _dt.datetime | None = None
     """Timestamp when the record was first inserted into the database."""
-    updated_at: _dt.datetime
+    updated_at: _dt.datetime | None = None
     """Timestamp of the most recent update to this record."""
 
     def to_task(self, task_id: str) -> Task:

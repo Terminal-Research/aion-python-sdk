@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from sqlalchemy import Column, DateTime, String, func
+from sqlalchemy import Column, Computed, DateTime, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import declarative_base
 from google.protobuf.struct_pb2 import Struct
@@ -49,6 +49,24 @@ class TaskRecordModel(BaseModel):
         ProtobufType(TaskStatus),
         nullable=False,
         doc="Current task status stored as JSONB (serialized TaskStatus protobuf).")
+
+    state = Column(
+        Text,
+        Computed(
+            "COALESCE(status->>'state', 'TASK_STATE_UNSPECIFIED')",
+            persisted=True,
+        ),
+        nullable=False,
+        doc="Task state projected from status for filtering.")
+
+    status_timestamp = Column(
+        DateTime(timezone=True),
+        Computed(
+            "aion.rfc3339_to_timestamptz(status->>'timestamp')",
+            persisted=True,
+        ),
+        nullable=True,
+        doc="Task status timestamp projected from status for filtering and sorting.")
 
     artifacts = Column(
         ProtobufType(Artifact, many=True),
