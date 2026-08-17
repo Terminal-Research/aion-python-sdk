@@ -3,7 +3,12 @@
 from typing import Any, Union
 
 from .base_operation import GraphQLField
-from .custom_typing_fields import AgentBehaviorGraphQLField, CapabilityGraphQLField
+from .custom_typing_fields import (
+    AgentBehaviorGraphQLField,
+    AuthenticationStartResultGraphQLField,
+    CapabilityGraphQLField,
+    ServiceConnectStartGraphQLField,
+)
 
 
 class AgentBehaviorFields(GraphQLField):
@@ -57,6 +62,42 @@ class AgentBehaviorFields(GraphQLField):
         return self
 
 
+class AuthenticationStartResultFields(GraphQLField):
+    """Safe result of starting an authentication flow."""
+
+    outcome: "AuthenticationStartResultGraphQLField" = (
+        AuthenticationStartResultGraphQLField("outcome")
+    )
+    "Typed start outcome."
+    redirect_url: "AuthenticationStartResultGraphQLField" = (
+        AuthenticationStartResultGraphQLField("redirectUrl")
+    )
+    "Provider-hosted authorization URL, when started."
+    status_handle: "AuthenticationStartResultGraphQLField" = (
+        AuthenticationStartResultGraphQLField("statusHandle")
+    )
+    "Aion-issued asynchronous status handle."
+
+    @classmethod
+    def setup(cls) -> "ServiceConnectStartFields":
+        """Module-owned setup result, when started."""
+        return ServiceConnectStartFields("setup")
+
+    def fields(
+        self,
+        *subfields: Union[
+            AuthenticationStartResultGraphQLField, "ServiceConnectStartFields"
+        ],
+    ) -> "AuthenticationStartResultFields":
+        """Subfields should come from the AuthenticationStartResultFields class"""
+        self._subfields.extend(subfields)
+        return self
+
+    def alias(self, alias: str) -> "AuthenticationStartResultFields":
+        self._alias = alias
+        return self
+
+
 class CapabilityFields(GraphQLField):
     """Behavior-owned declaration for one service surface."""
 
@@ -87,5 +128,29 @@ class CapabilityFields(GraphQLField):
         return self
 
     def alias(self, alias: str) -> "CapabilityFields":
+        self._alias = alias
+        return self
+
+
+class ServiceConnectStartFields(GraphQLField):
+    """Started provider-managed service-connect flow."""
+
+    redirect_url: "ServiceConnectStartGraphQLField" = ServiceConnectStartGraphQLField(
+        "redirectUrl"
+    )
+    "Provider-hosted URL the client should open, when setup redirects"
+    setup_id: "ServiceConnectStartGraphQLField" = ServiceConnectStartGraphQLField(
+        "setupId"
+    )
+    "Persisted setup identifier for a resumable setup flow"
+
+    def fields(
+        self, *subfields: ServiceConnectStartGraphQLField
+    ) -> "ServiceConnectStartFields":
+        """Subfields should come from the ServiceConnectStartFields class"""
+        self._subfields.extend(subfields)
+        return self
+
+    def alias(self, alias: str) -> "ServiceConnectStartFields":
         self._alias = alias
         return self

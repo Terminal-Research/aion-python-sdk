@@ -41,6 +41,13 @@ class A2AServiceParametersGQLInput(BaseModel):
     "Additional service parameters"
 
 
+class AgentMailServiceAccountSetupStartInput(BaseModel):
+    """AgentMail inbox name for a deferred setup step."""
+
+    local_part: str = Field(alias="localPart")
+    "Inbox name before the server-selected domain"
+
+
 class CapabilitySubjectGQLInput(BaseModel):
     """Select exactly one capability subject. Supplying zero or multiple selectors causes the request to be rejected."""
 
@@ -67,5 +74,34 @@ class MessageInput(BaseModel):
     content: str
 
 
+class ServiceAccountSetupProfileInput(BaseModel):
+    """Desired service-account profile collected before setup."""
+
+    display_name: str = Field(alias="displayName")
+    "Primary service-account display name"
+    description: Optional[str] = None
+    "Optional service-account description"
+    avatar_url: Optional[str] = Field(alias="avatarUrl", default=None)
+    "Optional service-account avatar URL"
+
+
+class ServiceAccountSetupStartInput(BaseModel):
+    """Deferred setup data for an authentication method."""
+
+    strategy_key: str = Field(alias="strategyKey")
+    "Provider-advertised setup strategy key"
+    idempotency_key: str = Field(alias="idempotencyKey")
+    "Caller-stable setup request identifier"
+    desired_profile: "ServiceAccountSetupProfileInput" = Field(alias="desiredProfile")
+    "Desired initial service-account profile"
+    setup_id: Optional[str] = Field(alias="setupId", default=None)
+    "Existing setup identifier when resuming provider work"
+    agent_mail: Optional["AgentMailServiceAccountSetupStartInput"] = Field(
+        alias="agentMail", default=None
+    )
+    "AgentMail-specific setup fields when creating an inbox"
+
+
 A2AServiceParametersGQLInput.model_rebuild()
 ChatCompletionRequestInput.model_rebuild()
+ServiceAccountSetupStartInput.model_rebuild()

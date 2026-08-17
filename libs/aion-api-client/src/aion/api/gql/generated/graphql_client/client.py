@@ -18,6 +18,7 @@ from graphql import (
 )
 
 from .a_2_a_stream import A2AStream
+from .agent_mail_service_account_options import AgentMailServiceAccountOptions
 from .async_base_client_open_telemetry import AsyncBaseClientOpenTelemetry
 from .base_model import UNSET, UnsetType
 from .base_operation import GraphQLField
@@ -26,8 +27,16 @@ from .input_types import (
     A2AJsonRpcRequestGQLInput,
     CapabilitySubjectGQLInput,
     ChatCompletionRequestInput,
+    ServiceAccountSetupStartInput,
 )
-from .operations import A_2_A_STREAM_GQL, CHAT_COMPLETION_STREAM_GQL, VERSION_LOGS_GQL
+from .operations import (
+    A_2_A_STREAM_GQL,
+    AGENT_MAIL_SERVICE_ACCOUNT_OPTIONS_GQL,
+    CHAT_COMPLETION_STREAM_GQL,
+    START_AGENT_MAIL_INBOX_SETUP_GQL,
+    VERSION_LOGS_GQL,
+)
+from .start_agent_mail_inbox_setup import StartAgentMailInboxSetup
 from .version_logs import VersionLogs
 
 
@@ -82,6 +91,43 @@ class GqlClient(AsyncBaseClientOpenTelemetry):
             **kwargs,
         ):
             yield VersionLogs.model_validate(data)
+
+    async def start_agent_mail_inbox_setup(
+        self,
+        organization_id: str,
+        target_id: str,
+        method_key: str,
+        operation_key: str,
+        setup: ServiceAccountSetupStartInput,
+        **kwargs: Any,
+    ) -> StartAgentMailInboxSetup:
+        variables: dict[str, object] = {
+            "organizationId": organization_id,
+            "targetId": target_id,
+            "methodKey": method_key,
+            "operationKey": operation_key,
+            "setup": setup,
+        }
+        response = await self.execute(
+            query=START_AGENT_MAIL_INBOX_SETUP_GQL,
+            operation_name="StartAgentMailInboxSetup",
+            variables=variables,
+            **kwargs,
+        )
+        data = self.get_data(response)
+        return StartAgentMailInboxSetup.model_validate(data)
+
+    async def agent_mail_service_account_options(
+        self, organization_id: str, **kwargs: Any
+    ) -> AsyncIterator[AgentMailServiceAccountOptions]:
+        variables: dict[str, object] = {"organizationId": organization_id}
+        async for data in self.execute_ws(
+            query=AGENT_MAIL_SERVICE_ACCOUNT_OPTIONS_GQL,
+            operation_name="AgentMailServiceAccountOptions",
+            variables=variables,
+            **kwargs,
+        ):
+            yield AgentMailServiceAccountOptions.model_validate(data)
 
     async def execute_custom_operation(
         self, *fields: GraphQLField, operation_type: OperationType, operation_name: str
