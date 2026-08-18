@@ -40,11 +40,92 @@ enum AgentBehaviorKind {
   System
 }
 
+"Credential mechanism backing an authentication connection."
+enum AuthenticationMechanism {
+  AionManagedProvisionedCredential
+  AionOAuth
+  ProviderHostedCredential
+  ProviderManagedAuthorization
+}
+
+"Safe outcome of starting an authentication flow."
+enum AuthenticationStartOutcome {
+  AuthorizationStarted
+  Completed
+  RecoveryRequired
+  Rejected
+  SetupStarted
+}
+
 "Kind of behavior-owned service surface."
 enum CapabilityKind {
   A2AEndpoint
   EventEmitter
   McpServer
+}
+
+"Communication-network namespace used by merged identity profile views."
+enum IdentityNetworkGQL {
+  A2A
+  AgentMail
+  Aion
+  Composio
+  GitHub
+  Google
+  Slack
+  Telegram
+  Twilio
+  Twitter
+}
+
+"Enumeration of supported network types."
+enum NetworkTypeGQL {
+  A2A
+  AgentMail
+  Aion
+  GitHub
+  Meet
+  Playground
+  Slack
+  Telegram
+  Twitter
+  Voice
+}
+
+"Operation currently available for an account setup."
+enum ServiceAccountSetupAction {
+  Begin
+  Cancel
+  ConfirmProviderAction
+  Delete
+  RestartAuthorization
+  Resume
+  Retry
+}
+
+"Pre-identity lifecycle for a resumable account setup."
+enum ServiceAccountSetupLifecycle {
+  AdminApprovalPending
+  AwaitingAuthorization
+  AwaitingInstall
+  Cancelled
+  Completed
+  Failed
+  Orphaned
+  Pending
+  Provisioning
+}
+
+"Public product or service provider integrated with Aion."
+enum ServiceIntegrationTypeGQL {
+  AgentMail
+  Composio
+  GitHub
+  Google
+  Slack
+  Telegram
+  Twilio
+  Twitter
 }
 
 "JSON-RPC request envelope for agent-to-agent workflows"
@@ -77,6 +158,12 @@ input A2AServiceParametersGQLInput {
   additional: [A2AServiceParameterGQLInput!]
 }
 
+"AgentMail inbox name for a deferred setup step."
+input AgentMailServiceAccountSetupStartInput {
+  "Inbox name before the server-selected domain"
+  localPart: String!
+}
+
 "Select exactly one capability subject. Supplying zero or multiple selectors causes the request to be rejected."
 input CapabilitySubjectGQLInput {
   "Direct distribution identifier. Addresses the external ingress path for a distribution-backed agent sequence."
@@ -100,6 +187,30 @@ input MessageInput {
   content: String!
 }
 
+"Desired service-account profile collected before setup."
+input ServiceAccountSetupProfileInput {
+  "Primary service-account display name"
+  displayName: String!
+  "Optional service-account description"
+  description: String
+  "Optional service-account avatar URL"
+  avatarUrl: String
+}
+
+"Deferred setup data for an authentication method."
+input ServiceAccountSetupStartInput {
+  "Provider-advertised setup strategy key"
+  strategyKey: String!
+  "Caller-stable setup request identifier"
+  idempotencyKey: ID!
+  "Desired initial service-account profile"
+  desiredProfile: ServiceAccountSetupProfileInput!
+  "Existing setup identifier when resuming provider work"
+  setupId: ID
+  "AgentMail-specific setup fields when creating an inbox"
+  agentMail: AgentMailServiceAccountSetupStartInput
+}
+
 type A2AJsonRpcError {
   code: Int!
   message: String!
@@ -118,6 +229,18 @@ type A2AJsonRpcSuccessResponseGQL {
   id: RequestCorrelationId
   result: Json!
   jsonrpc: String!
+}
+
+"AgentMail-specific service-account option metadata."
+type AgentMailServiceAccountOptionsDetails {
+  "Server-selected domain for provisioned inbox addresses"
+  addressDomain: String!
+}
+
+"AgentMail inbox details for an incomplete setup."
+type AgentMailServiceAccountSetupDetails {
+  "Canonical inbox address after provider creation"
+  emailAddress: String
 }
 
 "Core persisted configuration for one agent behavior"
@@ -146,6 +269,18 @@ type AgentBehavior {
   behaviorKey: String!
   "Capability declarations owned by this behavior"
   capabilities: [Capability!]!
+}
+
+"Safe result of starting an authentication flow."
+type AuthenticationStartResult {
+  "Typed start outcome."
+  outcome: AuthenticationStartOutcome!
+  "Provider-hosted authorization URL, when started."
+  redirectUrl: String
+  "Aion-issued asynchronous status handle."
+  statusHandle: ID
+  "Module-owned setup result, when started."
+  setup: ServiceConnectStart
 }
 
 "Behavior-owned declaration for one service surface."
@@ -229,7 +364,25 @@ type LogEvent {
   properties: [KVStringString!]!
 }
 
+"Normalized identity profile for display and auditing."
+type IdentityProfile {
+  "Identifier of the source identity record"
+  id: ID!
+  "Identifier of the profile in its network"
+  networkUserId: String!
+  "Communication network for this merged identity view, when applicable"
+  identityNetwork: IdentityNetworkGQL
+  "Network-scoped category for this external principal, when applicable"
+  identityKind: String
+  "Optional user handle for the profile"
+  userName: String
+  "Display name for the profile"
+  name: String
+}
+
 type Mutations {
+  "Starts one exact new authentication connection."
+  startAuthentication("Organization that will own the connection." organizationId: ID!, "Opaque installed authentication target." targetId: ID!, "Exact target-local authentication method." methodKey: String!, "Caller-stable key for this operation and its retries." operationKey: ID!, "Typed module setup data, when required by the method." setup: ServiceAccountSetupStartInput): AuthenticationStartResult @auth(subjectType: "User")
   "Registers behavior metadata for a deployment version. Runtime metadata is resolved according to the deployment type."
   registerVersion("Identifier of the version being registered. This is required when authenticating as a User. When authenticating as a Version, this query will only register the Version connected to your credentials." versionId: ID): [AgentBehavior!]
 }
@@ -244,11 +397,89 @@ type Queries {
   versionIdByClientId("Client identifier to resolve" clientId: ID!): ID
 }
 
+"Connected service account."
+type ServiceAccount {
+  "Service integration type for the connected account"
+  integrationType: ServiceIntegrationTypeGQL!
+  "Distribution network this option can fulfill, when one exists"
+  networkType: NetworkTypeGQL
+  "External identity associated with the connected authentication record"
+  identity: IdentityProfile!
+  "Number of active distributions currently using this service identity"
+  usageCount: Int!
+}
+
+"Connected service-account options for the selected identity network."
+type ServiceAccountOptions {
+  "Connected service accounts for the selected network"
+  accounts: [ServiceAccount!]!
+  "User-facing account kind label for the selected identity scope"
+  accountLabel: String
+  "Resumable service-account setups before identity creation"
+  setups: [ServiceAccountSetup!]!
+  "AgentMail-specific option metadata"
+  agentMail: AgentMailServiceAccountOptionsDetails
+}
+
+"Resumable service-account setup before identity creation."
+type ServiceAccountSetup {
+  "Opaque setup identifier"
+  id: ID!
+  "Organization that owns this setup"
+  organizationId: ID!
+  "Service integration being provisioned"
+  integrationType: ServiceIntegrationTypeGQL!
+  "Identity network this setup will create"
+  identityNetwork: IdentityNetworkGQL!
+  "Network-scoped identity kind this setup will create"
+  identityKind: String!
+  "Current pre-identity setup lifecycle"
+  lifecycle: ServiceAccountSetupLifecycle!
+  "Stable machine-readable lifecycle reason"
+  reasonCode: String
+  "Authenticated setup operations currently available"
+  availableActions: [ServiceAccountSetupAction!]!
+  "Desired provider-neutral service profile"
+  desiredProfile: ServiceAccountSetupProfile
+  "Service identity created after successful completion"
+  resultingServiceIdentityId: ID
+  "Latest redacted user-actionable setup error"
+  latestSafeError: String
+  "Setup creation time"
+  createdAt: OffsetDateTime!
+  "Latest committed lifecycle transition time"
+  updatedAt: OffsetDateTime!
+  "Successful completion time"
+  completedAt: OffsetDateTime
+  "AgentMail-specific setup details"
+  agentMail: AgentMailServiceAccountSetupDetails
+}
+
+"Provider-neutral profile collected before identity creation."
+type ServiceAccountSetupProfile {
+  "Primary service-account display name"
+  displayName: String!
+  "Optional service-account description"
+  description: String
+  "Optional service-account avatar URL"
+  avatarUrl: String
+}
+
+"Started provider-managed service-connect flow."
+type ServiceConnectStart {
+  "Provider-hosted URL the client should open, when setup redirects"
+  redirectUrl: String
+  "Persisted setup identifier for a resumable setup flow"
+  setupId: ID
+}
+
 type Subscriptions {
   "Executes an agent-to-agent JSON-RPC request and streams the responses."
   a2aRpc("JSON-RPC request body" request: A2AJsonRpcRequestGQLInput!, "A2A capability subject" target: CapabilitySubjectGQLInput!, "Service parameters associated with the request" serviceParameters: A2AServiceParametersGQLInput, "Optional Aion resource URI selecting the effective principal. Supported forms include aion://agent/environment/{id}, aion://agent/identity/{id}, and aion://agent/identity/name/{name}. When omitted, the authenticated subject is used." principal: String): A2AJsonRpcResponseGQL
   "Streams delta chunks for an LLM chat-completion request. When `stream=true` is set, the underlying model returns partial responses; this subscription forwards those chunks to the client as they become available, enabling token-level streaming UIs."
   chatCompletionStream("Chat completion request payload." request: ChatCompletionRequestInput!, "Optional Aion resource URI selecting the effective principal. Supported forms include aion://agent/environment/{id}, aion://agent/identity/{id}, and aion://agent/identity/name/{name}. When omitted, the authenticated subject is used." principal: String): ChatCompletionStreamChunk @auth(subjectType: "Version")
+  "Emits refreshed connected service-account options when a matching service-account option changes."
+  serviceAccountOptions("Organization that owns the service integrations" organizationId: ID!, "Identity network whose compatible accounts should be listed." identityNetwork: IdentityNetworkGQL!, "Network-scoped identity categories whose accounts should be listed." identityKinds: [String!]!): ServiceAccountOptions @auth(subjectType: "User")
   "Streams raw log events for the authenticated version."
   versionLogs("Lower bound for log retrieval serialized as RFC 3339 (ISO-8601) with offset, in UTC." startTime: OffsetDateTime!): LogEvent @auth(subjectType: "Version")
 }

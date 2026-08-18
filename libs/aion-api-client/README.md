@@ -92,6 +92,44 @@ Principal selectors serialize as abstract Aion resource URIs, such as
 The GraphQL client accepts these SDK model objects at its boundary and converts
 them to their canonical resource URI strings before sending requests.
 
+## AgentMail inbox setup models
+
+The generated GraphQL package includes the exact AgentMail enums, setup input,
+setup result, and service-account lifecycle models used by the Aion control
+plane. Build an inbox setup input with the generated Python field names; the
+model serializes the server's camel-case GraphQL fields:
+
+```python
+from aion.api.gql.generated.graphql_client import (
+    AgentMailServiceAccountSetupStartInput,
+    ServiceAccountSetupProfileInput,
+    ServiceAccountSetupStartInput,
+)
+
+setup = ServiceAccountSetupStartInput(
+    strategy_key="provision-inbox",
+    idempotency_key="caller-stable-operation-id",
+    desired_profile=ServiceAccountSetupProfileInput(
+        display_name="support",
+        description="Aion-managed email inbox",
+    ),
+    agent_mail=AgentMailServiceAccountSetupStartInput(local_part="support"),
+)
+```
+
+`GqlClient.start_agent_mail_inbox_setup` submits that model, while
+`GqlClient.agent_mail_service_account_options` streams the server-selected
+address domain, connected inboxes, and pending setup lifecycle. Both operations
+require a user-authenticated control-plane transport plus server-issued target
+and method identifiers. Deployment-version credentials do not authorize inbox
+administration.
+
+The SDK does not choose an address domain or a provider Pod. It also does not
+currently expose a distribution-selection mutation. Create the inbox and select
+it as the **Email Inbox** for an AgentMail Distribution in the Aion application.
+The selected Distribution then scopes the runtime `mcp.agentmail` capability to
+that inbox.
+
 ## Development
 
 Install the project using Poetry and run the tests with `pytest`:

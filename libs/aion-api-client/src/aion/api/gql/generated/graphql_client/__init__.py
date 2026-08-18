@@ -6,6 +6,16 @@ from .a_2_a_stream import (
     A2AStreamA2ARpcA2AJsonRpcErrorResponseGQLError,
     A2AStreamA2ARpcA2AJsonRpcSuccessResponseGQL,
 )
+from .agent_mail_service_account_options import (
+    AgentMailServiceAccountOptions,
+    AgentMailServiceAccountOptionsServiceAccountOptions,
+    AgentMailServiceAccountOptionsServiceAccountOptionsAccounts,
+    AgentMailServiceAccountOptionsServiceAccountOptionsAccountsIdentity,
+    AgentMailServiceAccountOptionsServiceAccountOptionsAgentMail,
+    AgentMailServiceAccountOptionsServiceAccountOptionsSetups,
+    AgentMailServiceAccountOptionsServiceAccountOptionsSetupsAgentMail,
+    AgentMailServiceAccountOptionsServiceAccountOptionsSetupsDesiredProfile,
+)
 from .async_base_client_open_telemetry import AsyncBaseClientOpenTelemetry
 from .base_model import BaseModel, Upload
 from .chat_completion_stream import (
@@ -17,7 +27,17 @@ from .chat_completion_stream import (
     ChatCompletionStreamChatCompletionStreamChatCompletionStreamResponseChunkResponseChoicesDelta,
 )
 from .client import GqlClient
-from .enums import AgentBehaviorKind, CapabilityKind
+from .enums import (
+    AgentBehaviorKind,
+    AuthenticationMechanism,
+    AuthenticationStartOutcome,
+    CapabilityKind,
+    IdentityNetworkGQL,
+    NetworkTypeGQL,
+    ServiceAccountSetupAction,
+    ServiceAccountSetupLifecycle,
+    ServiceIntegrationTypeGQL,
+)
 from .exceptions import (
     GraphQLClientError,
     GraphQLClientGraphQLError,
@@ -29,11 +49,25 @@ from .input_types import (
     A2AJsonRpcRequestGQLInput,
     A2AServiceParameterGQLInput,
     A2AServiceParametersGQLInput,
+    AgentMailServiceAccountSetupStartInput,
     CapabilitySubjectGQLInput,
     ChatCompletionRequestInput,
     MessageInput,
+    ServiceAccountSetupProfileInput,
+    ServiceAccountSetupStartInput,
 )
-from .operations import A_2_A_STREAM_GQL, CHAT_COMPLETION_STREAM_GQL, VERSION_LOGS_GQL
+from .operations import (
+    A_2_A_STREAM_GQL,
+    AGENT_MAIL_SERVICE_ACCOUNT_OPTIONS_GQL,
+    CHAT_COMPLETION_STREAM_GQL,
+    START_AGENT_MAIL_INBOX_SETUP_GQL,
+    VERSION_LOGS_GQL,
+)
+from .start_agent_mail_inbox_setup import (
+    StartAgentMailInboxSetup,
+    StartAgentMailInboxSetupStartAuthentication,
+    StartAgentMailInboxSetupStartAuthenticationSetup,
+)
 from .version_logs import (
     VersionLogs,
     VersionLogsVersionLogs,
@@ -48,9 +82,21 @@ __all__ = [
     "A2AStreamA2ARpcA2AJsonRpcErrorResponseGQL",
     "A2AStreamA2ARpcA2AJsonRpcErrorResponseGQLError",
     "A2AStreamA2ARpcA2AJsonRpcSuccessResponseGQL",
+    "AGENT_MAIL_SERVICE_ACCOUNT_OPTIONS_GQL",
     "A_2_A_STREAM_GQL",
     "AgentBehaviorKind",
+    "AgentMailServiceAccountOptions",
+    "AgentMailServiceAccountOptionsServiceAccountOptions",
+    "AgentMailServiceAccountOptionsServiceAccountOptionsAccounts",
+    "AgentMailServiceAccountOptionsServiceAccountOptionsAccountsIdentity",
+    "AgentMailServiceAccountOptionsServiceAccountOptionsAgentMail",
+    "AgentMailServiceAccountOptionsServiceAccountOptionsSetups",
+    "AgentMailServiceAccountOptionsServiceAccountOptionsSetupsAgentMail",
+    "AgentMailServiceAccountOptionsServiceAccountOptionsSetupsDesiredProfile",
+    "AgentMailServiceAccountSetupStartInput",
     "AsyncBaseClientOpenTelemetry",
+    "AuthenticationMechanism",
+    "AuthenticationStartOutcome",
     "BaseModel",
     "CHAT_COMPLETION_STREAM_GQL",
     "CapabilityKind",
@@ -68,7 +114,18 @@ __all__ = [
     "GraphQLClientGraphQLMultiError",
     "GraphQLClientHttpError",
     "GraphQLClientInvalidResponseError",
+    "IdentityNetworkGQL",
     "MessageInput",
+    "NetworkTypeGQL",
+    "START_AGENT_MAIL_INBOX_SETUP_GQL",
+    "ServiceAccountSetupAction",
+    "ServiceAccountSetupLifecycle",
+    "ServiceAccountSetupProfileInput",
+    "ServiceAccountSetupStartInput",
+    "ServiceIntegrationTypeGQL",
+    "StartAgentMailInboxSetup",
+    "StartAgentMailInboxSetupStartAuthentication",
+    "StartAgentMailInboxSetupStartAuthenticationSetup",
     "Upload",
     "VERSION_LOGS_GQL",
     "VersionLogs",

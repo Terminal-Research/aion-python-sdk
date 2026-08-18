@@ -45,8 +45,26 @@ class A2AJsonRpcSuccessResponseGQLGraphQLField(GraphQLField):
         return self
 
 
+class AgentMailServiceAccountOptionsDetailsGraphQLField(GraphQLField):
+    def alias(self, alias: str) -> "AgentMailServiceAccountOptionsDetailsGraphQLField":
+        self._alias = alias
+        return self
+
+
+class AgentMailServiceAccountSetupDetailsGraphQLField(GraphQLField):
+    def alias(self, alias: str) -> "AgentMailServiceAccountSetupDetailsGraphQLField":
+        self._alias = alias
+        return self
+
+
 class AgentBehaviorGraphQLField(GraphQLField):
     def alias(self, alias: str) -> "AgentBehaviorGraphQLField":
+        self._alias = alias
+        return self
+
+
+class AuthenticationStartResultGraphQLField(GraphQLField):
+    def alias(self, alias: str) -> "AuthenticationStartResultGraphQLField":
         self._alias = alias
         return self
 
@@ -111,6 +129,12 @@ class LogEventGraphQLField(GraphQLField):
         return self
 
 
+class IdentityProfileGraphQLField(GraphQLField):
+    def alias(self, alias: str) -> "IdentityProfileGraphQLField":
+        self._alias = alias
+        return self
+
+
 class MutationsGraphQLField(GraphQLField):
     def alias(self, alias: str) -> "MutationsGraphQLField":
         self._alias = alias
@@ -125,6 +149,36 @@ class PromptTokensDetailsGraphQLField(GraphQLField):
 
 class QueriesGraphQLField(GraphQLField):
     def alias(self, alias: str) -> "QueriesGraphQLField":
+        self._alias = alias
+        return self
+
+
+class ServiceAccountGraphQLField(GraphQLField):
+    def alias(self, alias: str) -> "ServiceAccountGraphQLField":
+        self._alias = alias
+        return self
+
+
+class ServiceAccountOptionsGraphQLField(GraphQLField):
+    def alias(self, alias: str) -> "ServiceAccountOptionsGraphQLField":
+        self._alias = alias
+        return self
+
+
+class ServiceAccountSetupGraphQLField(GraphQLField):
+    def alias(self, alias: str) -> "ServiceAccountSetupGraphQLField":
+        self._alias = alias
+        return self
+
+
+class ServiceAccountSetupProfileGraphQLField(GraphQLField):
+    def alias(self, alias: str) -> "ServiceAccountSetupProfileGraphQLField":
+        self._alias = alias
+        return self
+
+
+class ServiceConnectStartGraphQLField(GraphQLField):
+    def alias(self, alias: str) -> "ServiceConnectStartGraphQLField":
         self._alias = alias
         return self
 

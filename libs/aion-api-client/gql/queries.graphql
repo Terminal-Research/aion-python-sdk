@@ -59,3 +59,76 @@ subscription VersionLogs($startTime: OffsetDateTime!) {
     }
   }
 }
+
+mutation StartAgentMailInboxSetup(
+  $organizationId: ID!
+  $targetId: ID!
+  $methodKey: String!
+  $operationKey: ID!
+  $setup: ServiceAccountSetupStartInput!
+) {
+  startAuthentication(
+    organizationId: $organizationId
+    targetId: $targetId
+    methodKey: $methodKey
+    operationKey: $operationKey
+    setup: $setup
+  ) {
+    outcome
+    redirectUrl
+    statusHandle
+    setup {
+      redirectUrl
+      setupId
+    }
+  }
+}
+
+subscription AgentMailServiceAccountOptions($organizationId: ID!) {
+  serviceAccountOptions(
+    organizationId: $organizationId
+    identityNetwork: AgentMail
+    identityKinds: ["Inbox"]
+  ) {
+    accountLabel
+    agentMail {
+      addressDomain
+    }
+    accounts {
+      integrationType
+      networkType
+      usageCount
+      identity {
+        id
+        networkUserId
+        identityNetwork
+        identityKind
+        userName
+        name
+      }
+    }
+    setups {
+      id
+      organizationId
+      integrationType
+      identityNetwork
+      identityKind
+      lifecycle
+      reasonCode
+      availableActions
+      desiredProfile {
+        displayName
+        description
+        avatarUrl
+      }
+      resultingServiceIdentityId
+      latestSafeError
+      createdAt
+      updatedAt
+      completedAt
+      agentMail {
+        emailAddress
+      }
+    }
+  }
+}
