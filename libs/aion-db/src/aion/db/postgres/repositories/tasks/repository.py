@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import datetime as _dt
+import uuid
 from typing import List, Type, Optional
 
-from sqlalchemy import select, func, asc, desc
+from sqlalchemy import select, func, asc, desc, literal
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Select
@@ -17,6 +18,7 @@ except Exception as exc:
 
 from aion.db.postgres.records import TaskRecord
 from aion.db.postgres.repositories.base import BaseRepository
+from aion.db.postgres.repositories.task_claims import TaskClaimsRepository
 from aion.db.postgres.models import TaskRecordModel
 from aion.db.postgres.types import Pagination, Sorting
 from aion.db.postgres.repositories.tasks.selectors import latest_artifacts, artifacts_by_version, all_versions_by_name
@@ -170,6 +172,64 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
         )
         await self._session.execute(stmt)
         await self._session.flush()
+
+    async def save_owned(self, entity: TaskRecord, owner_token: uuid.UUID) -> bool:
+        """Fenced upsert a task only while ``owner_token`` is current.
+
+        The ownership predicate is the source relation of the upsert itself.
+        Consequently an absent or replaced claim produces zero rows in both the
+        insert and conflict-update paths; callers can treat ``False`` as a
+        definitive ownership loss without a check-then-write race.
+
+        Args:
+            entity: Complete task snapshot to persist.
+            owner_token: Process-local claim token, passed only to SQL.
+
+        Returns:
+            ``True`` when the row was inserted or updated, ``False`` when the
+            claim predicate produced no source row.
+        """
+        # Normal writes and claim acquisition both take the task row first.  A
+        # new task has no row yet, so the SELECT is intentionally allowed to
+        # return zero rows; the claim predicate below remains authoritative.
+        await self._session.execute(
+            select(self.model_class.id)
+            .where(self.model_class.id == entity.id)
+            .with_for_update()
+        )
+
+        # The claim check is the source relation of the insert: a row is
+        # produced to insert only while ``owned`` yields one. Literals carry
+        # the model's own column types so ProtobufType serializes them the
+        # same way a plain ``.values()`` insert would.
+        owned = TaskClaimsRepository.owned_cte(entity.id, owner_token)
+        source = select(
+            literal(entity.id, type_=self.model_class.id.type),
+            literal(entity.context_id, type_=self.model_class.context_id.type),
+            literal(entity.status, type_=self.model_class.status.type),
+            literal(entity.artifacts, type_=self.model_class.artifacts.type),
+            literal(entity.history, type_=self.model_class.history.type),
+            literal(entity.task_metadata, type_=self.model_class.task_metadata.type),
+        ).select_from(owned)
+
+        insert_stmt = insert(self.model_class).from_select(
+            ["id", "context_id", "status", "artifacts", "history", "metadata"],
+            source,
+        )
+        stmt = insert_stmt.on_conflict_do_update(
+            index_elements=[self.model_class.id],
+            set_={
+                "context_id": insert_stmt.excluded.context_id,
+                "status": insert_stmt.excluded.status,
+                "artifacts": insert_stmt.excluded.artifacts,
+                "history": insert_stmt.excluded.history,
+                "metadata": insert_stmt.excluded.metadata,
+                "updated_at": func.clock_timestamp(),
+            },
+        ).returning(self.model_class.id)
+        result = await self._session.execute(stmt)
+        await self._session.flush()
+        return result.first() is not None
 
     async def find(
             self,

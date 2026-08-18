@@ -10,61 +10,34 @@ from a2a.server.context import ServerCallContext
 from a2a.types import Task, TaskState
 from a2a.types import a2a_pb2
 from a2a.utils.constants import DEFAULT_LIST_TASKS_PAGE_SIZE
-from a2a.utils.errors import InvalidParamsError
+from a2a.utils.errors import InvalidParamsError, TaskNotCancelableError
 from a2a.utils.task import decode_page_token, encode_page_token
+from sqlalchemy import text
 
+from aion.db.postgres.jsonb import as_jsonb
 from aion.db.postgres.manager import db_manager
 from aion.db.postgres.types import Pagination, Sorting, SortKey
 from aion.db.postgres.repositories import STATUS_TIMESTAMP_SORT_KEY, TasksRepository
 from aion.db.postgres.records import TaskRecord
-from aion.server.a2a.constants import ACTIVE_TASK_STATES
+from aion.server.a2a.constants import ACTIVE_TASK_STATES, TERMINAL_TASK_STATES
+from aion.server.tasks.identifiers import require_task_uuid
+from aion.server.tasks.ownership import OwnershipProvider, TaskOwnershipLost
 from .base_task_store import BaseTaskStore
 
 
 class PostgresTaskStore(BaseTaskStore):
     """Store tasks in a Postgres database using repository pattern."""
 
-    @staticmethod
-    def _require_task_uuid(task_id: str) -> uuid.UUID:
-        """Parse a task identifier, refusing anything this store cannot address.
+    def __init__(self, ownership_provider: OwnershipProvider) -> None:
+        """Initialize the store with its process-local ownership provider.
 
-        Task rows are keyed by a UUID column, and every read path here
-        (``get``, ``delete``) resolves an identifier by parsing it as a UUID.
-        Substituting a generated UUID for an unparseable one would write the
-        task under an identifier nobody holds: the write reports success, and
-        every subsequent lookup by the caller's own identifier returns nothing.
-        Failing loudly keeps that silent divergence out of the store.
-
-        Args:
-            task_id: Identifier carried by the task being written.
-
-        Returns:
-            The identifier parsed as a UUID.
-
-        Raises:
-            InvalidParamsError: If the identifier is missing or is not a UUID.
+        The provider is required rather than optional: an instance without one
+        would be a shared store whose writes are unfenced, which is the exact
+        combination the pairing in ``StoreManager`` exists to make unreachable.
         """
-        try:
-            return uuid.UUID(task_id)
-        except (ValueError, AttributeError, TypeError) as exc:
-            raise InvalidParamsError(
-                f'Task id must be a UUID for the Postgres task store, got: {task_id!r}'
-            ) from exc
-
-    @classmethod
-    def _task_to_entity(cls, task: Task, task_id: uuid.UUID = None) -> TaskRecord:
-        """Convert Task to TaskRecord entity."""
-        if task_id is None:
-            task_id = cls._require_task_uuid(task.id)
-
-        return TaskRecord(
-            id=task_id,
-            context_id=task.context_id,
-            status=task.status,
-            artifacts=task.artifacts,
-            history=task.history,
-            task_metadata=task.metadata if task.HasField('metadata') else None,
-        )
+        if ownership_provider is None:
+            raise ValueError("PostgresTaskStore requires an ownership provider")
+        self.ownership_provider = ownership_provider
 
     @staticmethod
     def _entity_to_task(task_id: str, entity: TaskRecord) -> Task:
@@ -77,15 +50,87 @@ class PostgresTaskStore(BaseTaskStore):
         """Save a task.
 
         Raises:
-            InvalidParamsError: If ``task.id`` is not a UUID (see
-                :meth:`_require_task_uuid`).
+            ValueError: If ``task.id`` is not a UUID (see
+                :meth:`TaskRecord.from_task`).
         """
-        entity = self._task_to_entity(task, self._require_task_uuid(task.id))
+        entity = TaskRecord.from_task(task)
+
+        claim = self.ownership_provider.claim_for(task.id)
+        if claim is None:
+            raise TaskOwnershipLost(task.id)
 
         async with db_manager.get_session() as session:
             repository = TasksRepository(session)
-            await repository.save(entity)
+            if not await repository.save_owned(entity, claim.owner_token):
+                raise TaskOwnershipLost(task.id)
             await session.commit()
+
+    async def cancel(
+            self, task_id: str, context: ServerCallContext | None = None
+    ) -> Task | None:
+        """Cancel a task while holding its task-row mutex.
+
+        Cancellation is the one control-plane path that intentionally does not
+        present an owner token.  It locks ``tasks`` first, changes a non-terminal
+        task to ``CANCELED``, and removes any claim in the same transaction so a
+        running owner discovers the loss on its next heartbeat.
+
+        The already-terminal case is reported from here rather than inferred by
+        the caller from the returned state: a successful cancellation also ends
+        in a terminal state, so afterwards the two are indistinguishable.
+
+        Returns:
+            The canceled task, or ``None`` when no such task exists.
+
+        Raises:
+            TaskNotCancelableError: If the task already has an outcome.
+        """
+        try:
+            task_uuid = require_task_uuid(task_id)
+        except InvalidParamsError:
+            return None
+
+        async with db_manager.get_session() as session:
+            async with session.begin():
+                locked = await session.execute(
+                    text("SELECT id FROM tasks WHERE id = :task_id FOR UPDATE"),
+                    {"task_id": task_uuid},
+                )
+                if locked.first() is None:
+                    return None
+
+                repository = TasksRepository(session)
+                entity = await repository.find_by_id(task_uuid)
+                if entity is None:
+                    return None
+
+                task = entity.to_task(task_id)
+                if task.status.state in TERMINAL_TASK_STATES:
+                    raise TaskNotCancelableError(
+                        message=(
+                            "Task cannot be canceled - current state: "
+                            f"{TaskState.Name(task.status.state)}"
+                        )
+                    )
+
+                task.status.state = TaskState.TASK_STATE_CANCELED
+                await session.execute(
+                    text(
+                        "UPDATE tasks SET status = CAST(:status AS jsonb), "
+                        "updated_at = clock_timestamp() "
+                        "WHERE id = :task_id"
+                    ),
+                    {"task_id": task_uuid, "status": as_jsonb(task.status)},
+                )
+                # Deleted without a token on purpose: removing the lease is how
+                # a pod that is not the owner tells the owner it has stopped
+                # being one.
+                await session.execute(
+                    text("DELETE FROM task_claims WHERE task_id = :task_id"),
+                    {"task_id": task_uuid},
+                )
+
+                return task
 
     async def get(
             self, task_id: str, context: ServerCallContext | None = None

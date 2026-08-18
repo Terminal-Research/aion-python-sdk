@@ -17,7 +17,7 @@ if str(src_path) not in sys.path:
 if os.getenv("POSTGRES_TEST_URL"):
     os.environ["POSTGRES_URL"] = os.environ["POSTGRES_TEST_URL"]
 
-from aion.db.postgres.constants import AION_SCHEMA, TASKS_TABLE
+from aion.db.postgres.constants import AION_SCHEMA, TASK_CLAIMS_TABLE, TASKS_TABLE
 from aion.db.postgres.migrations import upgrade_to_head
 from aion.db.postgres.utils import convert_pg_url
 
@@ -45,7 +45,10 @@ async def postgres_session(postgres_engine):
     """Provide a clean database session for one integration test."""
     async with postgres_engine.begin() as connection:
         await connection.execute(
-            text(f"TRUNCATE TABLE {AION_SCHEMA}.{TASKS_TABLE} CASCADE")
+            text(
+                f"TRUNCATE TABLE {AION_SCHEMA}.{TASK_CLAIMS_TABLE}, "
+                f"{AION_SCHEMA}.{TASKS_TABLE} CASCADE"
+            )
         )
 
     async with AsyncSession(postgres_engine, expire_on_commit=False) as session:

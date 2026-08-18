@@ -5,6 +5,7 @@ from typing import Optional
 
 
 from aion.db.postgres import db_manager
+from .ownership import OwnershipProvider, PostgresOwnershipProvider
 from .stores import (
     BaseTaskStore,
     InMemoryTaskStore,
@@ -25,7 +26,8 @@ class StoreManager:
 
     def __init__(self):
         self._is_initialized = False
-        self._store: Optional[InMemoryTaskStore | PostgresTaskStore]  = None
+        self._store: Optional[InMemoryTaskStore | PostgresTaskStore] = None
+        self._ownership_provider: Optional[OwnershipProvider] = None
 
     def initialize(self):
         """
@@ -39,12 +41,19 @@ class StoreManager:
             return
 
         if db_manager.is_initialized:
-            task_store = PostgresTaskStore()
+            ownership_provider = PostgresOwnershipProvider()
+            task_store = PostgresTaskStore(ownership_provider=ownership_provider)
         else:
             task_store = InMemoryTaskStore()
+            ownership_provider = task_store.ownership_provider
+            logger.warning(
+                "Task ownership enforcement is disabled; in-memory task storage "
+                "is safe only in a single server instance"
+            )
 
         self._is_initialized = True
         self._store = task_store
+        self._ownership_provider = ownership_provider
 
     def get_store(self) -> BaseTaskStore:
         """
@@ -59,5 +68,16 @@ class StoreManager:
         if not self._is_initialized:
             raise RuntimeError("Trying to get a store without initialization")
         return self._store
+
+    def get_ownership_provider(self) -> OwnershipProvider:
+        """Return the provider selected alongside the active task store.
+
+        Storage and enforcement are one decision: a shared store always comes
+        with fenced claims, a process-local store always comes with the
+        degenerate provider, and no third combination can be assembled.
+        """
+        if not self._is_initialized:
+            raise RuntimeError("Trying to get ownership provider without initialization")
+        return self._ownership_provider
 
 store_manager = StoreManager()

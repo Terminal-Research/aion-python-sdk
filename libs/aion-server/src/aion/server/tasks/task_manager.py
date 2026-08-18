@@ -1,10 +1,16 @@
 """Aion-specific task manager that orchestrates event routing and persistence."""
 
 import logging
+from collections.abc import Callable
+
 from a2a.server.events import Event
 from a2a.server.tasks import TaskManager
 from a2a.types import Message, Task, TaskArtifactUpdateEvent, TaskState, TaskStatus, TaskStatusUpdateEvent
-from aion.server.a2a.constants import NON_ACTIVE_TASK_STATES, TRANSIENT_ARTIFACT_IDS
+from aion.server.a2a.constants import (
+    INTERRUPT_TASK_STATES,
+    NON_ACTIVE_TASK_STATES,
+    TRANSIENT_ARTIFACT_IDS,
+)
 from aion.server.a2a.utils import is_ephemeral_status_event, is_task_interrupted
 from aion.server.agent.execution.scope import set_task_status
 from typing import override
@@ -25,6 +31,68 @@ class AionTaskManager(TaskManager):
     `status.message` holds the most recent message and `history` holds everything
     before it, so the two together are the conversation with no duplicates.
     """
+
+    def __init__(
+        self,
+        *args,
+        on_interrupted: Callable[[str], None] | None = None,
+        ownership_provider=None,
+        **kwargs,
+    ):
+        """Initialize the manager and bind the registry's interrupt callback.
+
+        The callback is deliberately synchronous and only schedules cleanup.
+        ``save_task_event`` runs inside the SDK consumer; awaiting ``aclose``
+        from that stack would cancel the consumer while it is handling the very
+        event that requested cleanup.
+        """
+        super().__init__(*args, **kwargs)
+        self._on_interrupted = on_interrupted
+        self._ownership_provider = ownership_provider
+
+    async def refresh_task(self) -> Task | None:
+        """Reload the task snapshot from the store and replace the local cache.
+
+        Ownership acquisition is a transition in the database.  A cached task
+        from before that transition may already be terminal, so every execute
+        path explicitly refreshes before it starts an ``ActiveTask``.
+        """
+        if not self.task_id:
+            self._current_task = None
+            return None
+        self._current_task = await self.task_store.get(
+            self.task_id,
+            self._call_context,
+        )
+        return self._current_task
+
+    @override
+    async def _save_task(self, task: Task) -> None:
+        """Persist through the store, then release non-active ownership.
+
+        The store performs the fencing write.  Release happens only after that
+        write returns successfully, so a terminal outcome never discards the
+        token before it has served as proof of ownership. The receipt is
+        captured before the write: a replacement incarnation must not be
+        released if the old write races with ownership loss.
+        """
+        claim = (
+            self._ownership_provider.claim_for(task.id)
+            if self._ownership_provider is not None
+            else None
+        )
+        await super()._save_task(task)
+
+        state = task.status.state
+        if state not in NON_ACTIVE_TASK_STATES:
+            return
+
+        # A claim only exists when a provider handed one out.
+        if claim is not None:
+            await self._ownership_provider.release(claim)
+
+        if state in INTERRUPT_TASK_STATES and self._on_interrupted is not None:
+            self._on_interrupted(task.id)
 
     @override
     async def process(self, event: Event) -> Event:

@@ -5,14 +5,15 @@ import asyncio
 from datetime import datetime, timezone
 from a2a.server.context import ServerCallContext
 from a2a.server.owner_resolver import OwnerResolver, resolve_user_scope
-from a2a.types import a2a_pb2
+from a2a.types import TaskState, a2a_pb2
 from a2a.types.a2a_pb2 import Task
 from a2a.utils.constants import DEFAULT_LIST_TASKS_PAGE_SIZE
-from a2a.utils.errors import InvalidParamsError
+from a2a.utils.errors import InvalidParamsError, TaskNotCancelableError
 from a2a.utils.task import decode_page_token, encode_page_token
 from typing import Iterator, Optional, List
 
-from aion.server.a2a.constants import ACTIVE_TASK_STATES
+from aion.server.a2a.constants import ACTIVE_TASK_STATES, TERMINAL_TASK_STATES
+from aion.server.tasks.ownership import DegenerateOwnershipProvider
 from .base_task_store import BaseTaskStore
 
 logger = logging.getLogger(__name__)
@@ -41,6 +42,7 @@ class InMemoryTaskStore(BaseTaskStore):
         self.tasks: dict[str, dict[str, Task]] = {}
         self.lock = asyncio.Lock()
         self.owner_resolver = owner_resolver
+        self.ownership_provider = DegenerateOwnershipProvider()
 
     def _get_owner_tasks(self, owner: str) -> dict[str, Task]:
         return self.tasks.get(owner, {})
@@ -193,6 +195,36 @@ class InMemoryTaskStore(BaseTaskStore):
             if not owner_tasks:
                 del self.tasks[owner]
                 logger.debug('Removed empty owner %s from store.', owner)
+
+    async def cancel(
+            self, task_id: str, context: ServerCallContext | None = None
+    ) -> Task | None:
+        """Cancel a task in the local store without ownership state.
+
+        Mirrors the durable store's contract, including reporting the
+        already-terminal case as an error rather than leaving the caller to
+        infer it from a state that a successful cancellation also produces.
+
+        Returns:
+            The canceled task, or ``None`` when no such task exists.
+
+        Raises:
+            TaskNotCancelableError: If the task already has an outcome.
+        """
+        owner = self.owner_resolver(context)
+        async with self.lock:
+            task = self._get_owner_tasks(owner).get(task_id)
+            if task is None:
+                return None
+            if task.status.state in TERMINAL_TASK_STATES:
+                raise TaskNotCancelableError(
+                    message=(
+                        "Task cannot be canceled - current state: "
+                        f"{TaskState.Name(task.status.state)}"
+                    )
+                )
+            task.status.state = TaskState.TASK_STATE_CANCELED
+            return task
 
     async def get_context_ids(
             self,

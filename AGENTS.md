@@ -51,11 +51,11 @@ and are discovered by `aion-server` at runtime.
   OpenAI-compatible `model_service_client` with request-scoped
   model-service principal header injection.
 - **aion-db** — centralized DB management layer under the `aion.db.postgres`
-  namespace: `DbManager`, `DbFactory`, task records/models, repositories,
-  Alembic migrations, custom fields/types, and utilities (`convert_pg_url`,
-  `verify_connection`, `validate_permissions`). Structured so sibling
-  namespaces (`aion.db.redis`, …) can be added later. Used by `aion-server`
-  and server-side framework packages.
+  namespace: `DbManager`, `DbFactory`, task records/models, fenced task-claim
+  records, repositories, Alembic migrations, custom fields/types, and utilities
+  (`convert_pg_url`, `verify_connection`, `validate_permissions`). Structured so
+  sibling namespaces (`aion.db.redis`, …) can be added later. Used by
+  `aion-server` and server-side framework packages.
 - **aion-mcp** — MCP integration utilities: an ASGI proxy for a local MCP
   server declared in `aion.yaml` (`proxy.py`) and authenticated remote Aion
   MCP endpoint builders (`endpoints.py`) for direct capability servers and the
@@ -68,7 +68,8 @@ and are discovered by `aion-server` at runtime.
   factory, lifespan and route registry (`core/app`), middlewares, the
   platform websocket link (`core/platform`), the agent card/factory and
   execution adapters (`agent/`), the plugin registry and factory
-  (`plugins/`), task stores, task manager, event deduplicator and push
+  (`plugins/`), fenced task stores, expiring task ownership supervision, task
+  manager, event deduplicator and push
   notification senders (`tasks/`), file storage and A2A file handling
   (`files/`), Aion auth manager and websocket connection services
   (`services/aion`), OpenTelemetry wiring, logging setup with stream and

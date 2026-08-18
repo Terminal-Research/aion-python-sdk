@@ -22,6 +22,7 @@ from google.protobuf.timestamp_pb2 import Timestamp
 
 from aion.db.postgres.repositories import STATUS_TIMESTAMP_SORT_KEY
 from aion.server.a2a.constants import ACTIVE_TASK_STATES
+from aion.server.tasks.ownership import Claim
 from aion.server.tasks.stores.postgres_task_store import PostgresTaskStore
 
 TASK_UUID = "0f6c6b1e-9a2a-4a1e-9b3a-1f2e3d4c5b6a"
@@ -33,6 +34,20 @@ def _make_task(task_id: str = TASK_UUID, context_id: str = "ctx-1") -> Task:
         context_id=context_id,
         status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
     )
+
+
+def _claiming_provider(token: uuid.UUID | None = None) -> MagicMock:
+    """A provider that always hands out a claim for the task under test."""
+    provider = MagicMock()
+    provider.claim_for = MagicMock(
+        side_effect=lambda task_id: Claim(
+            task_id=task_id,
+            owner_token=token or uuid.uuid4(),
+            lease_expires_at=None,
+            deadline=float("inf"),
+        )
+    )
+    return provider
 
 
 def _make_entity(task_id: str):
@@ -47,6 +62,7 @@ def _make_entity(task_id: str):
 def repository():
     repo = MagicMock()
     repo.save = AsyncMock()
+    repo.save_owned = AsyncMock(return_value=True)
     repo.find = AsyncMock(return_value=[])
     repo.find_ids = AsyncMock(return_value=[])
     repo.delete_by_id = AsyncMock()
@@ -71,14 +87,14 @@ def store(repository):
         return_value=repository,
     ):
         manager.get_session = _session
-        yield PostgresTaskStore()
+        yield PostgresTaskStore(ownership_provider=_claiming_provider())
 
 
 class TestSaveIdentity:
     async def test_save_keeps_the_callers_identifier(self, store, repository):
         await store.save(_make_task())
 
-        entity = repository.save.await_args.args[0]
+        entity = repository.save_owned.await_args.args[0]
         assert str(entity.id) == TASK_UUID
 
     @pytest.mark.parametrize("task_id", ["not-a-uuid", "", "evo-test-e1907a4c"])
@@ -87,10 +103,10 @@ class TestSaveIdentity:
     ):
         """Rewriting the id to a fresh UUID would report success while storing
         the task where nobody can look it up again."""
-        with pytest.raises(InvalidParamsError):
+        with pytest.raises(ValueError):
             await store.save(_make_task(task_id=task_id))
 
-        repository.save.assert_not_awaited()
+        repository.save_owned.assert_not_awaited()
 
 
 class TestContextLastTask:

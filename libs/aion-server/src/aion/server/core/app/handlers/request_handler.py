@@ -6,8 +6,18 @@ from a2a.server.agent_execution.active_task import ActiveTask
 from a2a.server.context import ServerCallContext
 from a2a.server.events import Event
 from a2a.server.request_handlers import DefaultRequestHandlerV2
-from a2a.types import SendMessageRequest, SubscribeToTaskRequest, Task
-from a2a.utils.errors import InternalError, InvalidParamsError
+from a2a.server.request_handlers.request_handler import validate, validate_request_params
+from a2a.types import (
+    CancelTaskRequest,
+    SendMessageRequest,
+    SubscribeToTaskRequest,
+    Task,
+)
+from a2a.utils.errors import (
+    InternalError,
+    InvalidParamsError,
+    TaskNotFoundError,
+)
 from a2a.utils.task import apply_history_length
 from aion.core.a2a import ContextsList, Conversation, GetContextParams, GetContextsListParams
 from aion.core.runtime import ExtensionActivationError, aion_a2a_extension_registry
@@ -20,6 +30,7 @@ from typing import override
 
 from aion.server.agent.execution import AionActiveTaskRegistry
 from aion.server.tasks import store_manager
+from aion.server.tasks.ownership import OwnershipProvider
 from aion.server.a2a.conversation import ConversationBuilder
 from .request_preprocessors import A2ARequestPreprocessor
 from .terminal_task_projection import TerminalTaskProjection
@@ -49,12 +60,26 @@ def _with_preprocessors(method):
 class AionRequestHandler(DefaultRequestHandlerV2):
     """Request handler implementation for Aion management operations."""
 
-    def __init__(self, *args, preprocessors: list[A2ARequestPreprocessor] | None = None, **kwargs) -> None:
+    def __init__(
+            self,
+            *args,
+            preprocessors: list[A2ARequestPreprocessor] | None = None,
+            ownership_provider: OwnershipProvider | None = None,
+            **kwargs,
+    ) -> None:
+        """Build the handler and hand the registry its ownership provider.
+
+        The provider arrives from the same factory that chose the task store,
+        keeping the pair one decision. Omitted, the registry falls back to the
+        single-process provider, which is what a handler built without a
+        durable store should get.
+        """
         super().__init__(*args, **kwargs)
         self._active_task_registry = AionActiveTaskRegistry(
             agent_executor=self.agent_executor,
             task_store=self.task_store,
             push_sender=self._push_sender,
+            ownership_provider=ownership_provider,
         )
         self._preprocessors = preprocessors or []
 
@@ -216,16 +241,49 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         async for event in projection.project(super().on_message_send_stream(params, context)):
             yield event
 
+    @validate_request_params
+    async def on_cancel_task(
+            self,
+            params: CancelTaskRequest,
+            context: ServerCallContext,
+    ) -> Task:
+        """Cancel directly in the store without creating an ``ActiveTask``.
+
+        The cancellation transaction locks the task row, writes ``CANCELED``
+        and removes the claim.  The former owner then tears down on the next
+        heartbeat, so a pod that received the control request need not know
+        which pod is executing the task.
+        """
+        # The store raises TaskNotCancelableError for a task that already has
+        # an outcome. It cannot be decided from the returned state here: a
+        # successful cancellation is itself terminal.
+        task = await self.task_store.cancel(params.id, context)
+        if task is None:
+            raise TaskNotFoundError
+        return task
+
+    @validate_request_params
+    @validate(
+        lambda self: self._agent_card.capabilities.streaming,
+        'Streaming is not supported by the agent',
+    )
     async def on_subscribe_to_task(
             self,
             params: SubscribeToTaskRequest,
             context: ServerCallContext,
     ) -> AsyncGenerator[Event]:
         """Resubscribe handler applying the same terminal-Task projection."""
+        active_task = await self._active_task_registry.get_for_attach(
+            params.id,
+            context,
+        )
         projection = TerminalTaskProjection(
             task_store=self.task_store,
             call_context=context,
             task_id=params.id,
         )
-        async for event in projection.project(super().on_subscribe_to_task(params, context)):
+
+        async for event in projection.project(
+            active_task.subscribe(include_initial_task=True)
+        ):
             yield event

@@ -8,7 +8,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import declarative_base
 from google.protobuf.struct_pb2 import Struct
 
-from .constants import TASKS_TABLE
+from .constants import TASK_CLAIMS_TABLE, TASKS_TABLE
 from .fields import ProtobufType
 
 
@@ -22,10 +22,56 @@ except Exception as exc:  # pragma: no cover - explicit failure if missing
 
 __all__ = [
     "BaseModel",
+    "TaskClaimModel",
     "TaskRecordModel",
 ]
 
 BaseModel = declarative_base()
+
+
+class TaskClaimModel(BaseModel):
+    """Representation of a task's expiring execution lease.
+
+    The claim table deliberately has no foreign key to ``tasks``. A new task is
+    claimed before its first durable row is written, and an expired orphan is
+    safe to remove during reconciliation.
+    """
+
+    __tablename__ = TASK_CLAIMS_TABLE
+
+    task_id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        doc="UUID of the task whose execution lease is held.",
+    )
+    owner_token = Column(
+        UUID(as_uuid=True),
+        nullable=False,
+        doc="Random incarnation token used for fencing writes.",
+    )
+    lease_expires_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        index=True,
+        doc="Database timestamp after which another process may acquire the lease.",
+    )
+    acquired_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.clock_timestamp(),
+        doc="Timestamp at which this incarnation acquired the lease.",
+    )
+    renewed_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.clock_timestamp(),
+        doc="Timestamp of the most recent successful renewal.",
+    )
+    owner_instance_id = Column(
+        Text,
+        nullable=True,
+        doc="Best-effort pod/process identity used for diagnostics only.",
+    )
 
 
 class TaskRecordModel(BaseModel):

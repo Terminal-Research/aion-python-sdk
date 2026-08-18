@@ -160,6 +160,7 @@ class AppFactory:
         return AionRequestHandler(
             agent_executor=self._executor,
             task_store=task_store,
+            ownership_provider=self.store_manager.get_ownership_provider(),
             push_config_store=push_config_store,
             push_sender=push_sender,
             agent_card=self.aion_agent.card,

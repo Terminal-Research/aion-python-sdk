@@ -7,6 +7,7 @@ Complete reference for all environment variables available in the Aion Agent SDK
 ```bash
 # Database Configuration
 POSTGRES_URL=postgresql://your_username:your_password@localhost:5432/your_database_name
+AION_TASK_OWNERSHIP_REAPER=false
 
 # Application Settings
 LOG_LEVEL=INFO
@@ -34,6 +35,18 @@ AION_API_KEEP_ALIVE=60
 - PostgreSQL connection string in format: `postgresql://username:password@host:port/database`
 - If not provided, the system automatically creates and uses in-memory storage when the agent starts
 - Example: `postgresql://user:password@localhost:5432/aion_db`
+
+**`AION_TASK_OWNERSHIP_REAPER`**
+- Type: `boolean` (optional, default `false`)
+- Accepts `1`, `true`, `yes`, `on`
+- Lets this process close out tasks whose execution lease expired, and tasks
+  left active with no lease at all
+- Only meaningful with `POSTGRES_URL` set: without a shared database there are
+  no leases to reclaim
+- Enable it only once every instance writing to that database renews its
+  leases. A deployment where some instances still predate lease renewal would
+  have their live work reclaimed as abandoned, so this is turned on in a later
+  deployment than the one that introduces it
 
 ### Application Settings
 

@@ -3,3 +3,4 @@
 AION_SCHEMA = "aion"
 
 TASKS_TABLE = "tasks"
+TASK_CLAIMS_TABLE = "task_claims"
