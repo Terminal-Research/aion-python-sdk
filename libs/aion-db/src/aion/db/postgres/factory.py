@@ -36,7 +36,15 @@ class DbFactory:
         """Initialize database connection and run migrations.
 
         Returns:
-            bool: True if initialization successful, False otherwise
+            bool: True if PostgreSQL is ready, False only when ``POSTGRES_URL``
+                is absent - the explicit single-process configuration.
+
+        Raises:
+            RuntimeError: ``POSTGRES_URL`` is set but the connection cannot be
+                verified, the manager fails to initialize, or migrations fail.
+                A configured PostgreSQL that turns out unreachable must stop
+                startup rather than silently degrade to an in-memory store
+                with no ownership enforcement across pods.
         """
         pg_url = db_settings.pg_url
         if not pg_url:
@@ -46,8 +54,12 @@ class DbFactory:
         # Verify connection
         is_connection_verified = await verify_connection(pg_url)
         if not is_connection_verified:
-            logger.warning("Cannot verify postgres connection")
-            return False
+            logger.error("POSTGRES_URL is set but the connection cannot be verified")
+            await self.cleanup()
+            raise RuntimeError(
+                "Configured PostgreSQL is unreachable; refusing to fall back "
+                "to an in-memory store"
+            )
 
         # Initialize database manager
         try:
@@ -55,7 +67,10 @@ class DbFactory:
         except Exception as exc:
             logger.error("Failed to initialize database", exc_info=exc)
             await self.cleanup()
-            return False
+            raise RuntimeError(
+                "Configured PostgreSQL failed to initialize; refusing to "
+                "fall back to an in-memory store"
+            ) from exc
 
         # Run migrations
         try:
@@ -65,7 +80,10 @@ class DbFactory:
         except Exception as exc:
             logger.error("Migration failed: %s", exc, exc_info=True)
             await self.cleanup()
-            return False
+            raise RuntimeError(
+                "Database migration failed; refusing to fall back to an "
+                "in-memory store"
+            ) from exc
 
     async def cleanup(self) -> None:
         """Close database connections if initialized."""

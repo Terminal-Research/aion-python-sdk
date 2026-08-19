@@ -119,6 +119,10 @@ class AuthenticatedPushNotificationSender(BasePushNotificationSender):
     rather than at delivery time.
     """
 
+    async def aclose(self) -> None:
+        """Close the underlying HTTP client and its connection pool."""
+        await self._client.aclose()
+
     async def send_notification(
             self, task_id: str, event: PushNotificationEvent
     ) -> None:

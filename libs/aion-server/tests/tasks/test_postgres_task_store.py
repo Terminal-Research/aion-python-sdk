@@ -16,11 +16,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from a2a.types import Task, TaskState, TaskStatus, a2a_pb2
+from a2a.utils.constants import DEFAULT_LIST_TASKS_PAGE_SIZE, MAX_LIST_TASKS_PAGE_SIZE
 from a2a.utils.errors import InvalidParamsError, TaskNotCancelableError
 from a2a.utils.task import encode_page_token
 from google.protobuf.timestamp_pb2 import Timestamp
 
-from aion.db.postgres.repositories import STATUS_TIMESTAMP_SORT_KEY
 from aion.server.a2a.constants import ACTIVE_TASK_STATES
 from aion.server.tasks.ownership import Claim
 from aion.server.tasks.stores.postgres_task_store import PostgresTaskStore
@@ -65,6 +65,10 @@ def repository():
     repo.save_owned = AsyncMock(return_value=True)
     repo.find = AsyncMock(return_value=[])
     repo.find_ids = AsyncMock(return_value=[])
+    repo.count = AsyncMock(return_value=0)
+    repo.sort_key_for_id = AsyncMock(return_value=None)
+    repo.find_page = AsyncMock(return_value=[])
+    repo.find_unique_context_ids = AsyncMock(return_value=[])
     repo.delete_by_id = AsyncMock()
     repo.find_by_id = AsyncMock(return_value=None)
     repo.find_by_id_for_update = AsyncMock(return_value=None)
@@ -214,19 +218,26 @@ class TestActiveTasks:
 
 
 class TestList:
+    """``list`` delegates ordering, counting, and page position to the
+    repository (``count`` / ``sort_key_for_id`` / ``find_page``); the
+    keyset predicate itself - including the NULLS-LAST tail - is exercised
+    against a real database in ``aion-db``'s ``test_postgres_tasks.py``.
+    """
+
     @staticmethod
     def _request(**kwargs) -> a2a_pb2.ListTasksRequest:
         return a2a_pb2.ListTasksRequest(**kwargs)
 
-    async def test_ordering_is_delegated_to_the_database(self, store, repository):
-        await store.list(self._request(context_id="ctx-1"))
+    async def test_total_size_comes_from_count_not_a_loaded_list(
+        self, store, repository
+    ):
+        repository.count.return_value = 10
+        repository.find_page.return_value = [_make_entity(str(uuid.uuid4())) for _ in range(3)]
 
-        sorting = repository.find.await_args.kwargs["sorting"]
-        assert [key.column for key in sorting.keys] == [
-            STATUS_TIMESTAMP_SORT_KEY,
-            "id",
-        ]
-        assert all(key.descending for key in sorting.keys)
+        response = await store.list(self._request(page_size=3))
+
+        assert response.total_size == 10
+        assert len(response.tasks) == 3
 
     async def test_timestamp_filter_is_converted_to_datetime(self, store, repository):
         timestamp = Timestamp(
@@ -237,57 +248,106 @@ class TestList:
         await store.list(self._request(status_timestamp_after=timestamp))
 
         expected = timestamp.ToDatetime(tzinfo=timezone.utc)
-        assert repository.find_ids.await_args.kwargs["status_timestamp_after"] == expected
-        assert repository.find.await_args.kwargs["status_timestamp_after"] == expected
+        assert repository.count.await_args.kwargs["status_timestamp_after"] == expected
+        assert repository.find_page.await_args.kwargs["status_timestamp_after"] == expected
 
     async def test_only_the_requested_page_is_loaded(self, store, repository):
-        ids = [str(uuid.uuid4()) for _ in range(10)]
-        repository.find_ids.return_value = ids
-        repository.find.return_value = [_make_entity(i) for i in ids[:3]]
+        repository.count.return_value = 10
+        ids = [str(uuid.uuid4()) for _ in range(3)]
+        repository.find_page.return_value = [_make_entity(i) for i in ids]
 
         response = await store.list(self._request(page_size=3))
 
-        pagination = repository.find.await_args.kwargs["pagination"]
-        assert (pagination.offset, pagination.limit) == (0, 3)
-        assert response.total_size == 10
+        assert repository.find_page.await_args.kwargs["limit"] == 4  # page_size + 1
         assert len(response.tasks) == 3
 
-    async def test_next_page_token_points_past_the_current_page(
+    async def test_page_size_is_capped_at_the_protocol_maximum(
         self, store, repository
     ):
-        ids = [str(uuid.uuid4()) for _ in range(10)]
-        repository.find_ids.return_value = ids
-        repository.find.return_value = [_make_entity(i) for i in ids[:3]]
+        await store.list(self._request(page_size=MAX_LIST_TASKS_PAGE_SIZE + 50))
+
+        assert repository.find_page.await_args.kwargs["limit"] == MAX_LIST_TASKS_PAGE_SIZE + 1
+
+    async def test_next_page_token_names_the_last_row_of_the_current_page(
+        self, store, repository
+    ):
+        # find_page returns page_size + 1 rows: the extra row is the
+        # has-more signal and is trimmed before it ever reaches the client.
+        ids = [str(uuid.uuid4()) for _ in range(4)]
+        repository.find_page.return_value = [_make_entity(i) for i in ids]
 
         response = await store.list(self._request(page_size=3))
 
-        assert response.next_page_token == encode_page_token(ids[3])
+        assert response.next_page_token == encode_page_token(ids[2])
+        assert len(response.tasks) == 3
 
     async def test_last_page_has_no_next_token(self, store, repository):
         ids = [str(uuid.uuid4()) for _ in range(2)]
-        repository.find_ids.return_value = ids
-        repository.find.return_value = [_make_entity(i) for i in ids]
+        repository.find_page.return_value = [_make_entity(i) for i in ids]
 
         response = await store.list(self._request(page_size=5))
 
         assert not response.next_page_token
 
-    async def test_page_token_resolves_to_a_database_offset(self, store, repository):
-        ids = [str(uuid.uuid4()) for _ in range(10)]
-        repository.find_ids.return_value = ids
-        repository.find.return_value = [_make_entity(i) for i in ids[4:6]]
+    async def test_page_token_resolves_to_a_keyset_cursor(self, store, repository):
+        cursor = (None, "cursor-task-id")
+        repository.sort_key_for_id.return_value = cursor
 
         await store.list(
-            self._request(page_size=2, page_token=encode_page_token(ids[4]))
+            self._request(page_size=2, page_token=encode_page_token("cursor-task-id"))
         )
 
-        pagination = repository.find.await_args.kwargs["pagination"]
-        assert (pagination.offset, pagination.limit) == (4, 2)
+        repository.sort_key_for_id.assert_awaited_once_with("cursor-task-id")
+        assert repository.find_page.await_args.kwargs["after"] == cursor
+
+    async def test_first_page_has_no_cursor(self, store, repository):
+        await store.list(self._request(page_size=2))
+
+        repository.sort_key_for_id.assert_not_awaited()
+        assert repository.find_page.await_args.kwargs["after"] is None
 
     async def test_unknown_page_token_is_rejected(self, store, repository):
-        repository.find_ids.return_value = [str(uuid.uuid4())]
+        repository.sort_key_for_id.return_value = None
 
         with pytest.raises(InvalidParamsError):
             await store.list(
                 self._request(page_token=encode_page_token("no-such-task"))
             )
+
+
+class TestContextPaginationDefaults:
+    """An omitted ``limit`` used to reach the repository as ``None`` and come
+    back unbounded, because ``_apply_pagination`` skips a falsy limit. Both
+    methods must fall back to a real default and cap an oversized one, the
+    same way ``list`` does for ``page_size``.
+    """
+
+    async def test_context_tasks_default_when_limit_is_omitted(
+        self, store, repository
+    ):
+        await store.get_context_tasks(context_id="ctx-1")
+
+        pagination = repository.find.await_args.kwargs["pagination"]
+        assert pagination.limit == DEFAULT_LIST_TASKS_PAGE_SIZE
+
+    async def test_context_tasks_caps_an_oversized_limit(self, store, repository):
+        await store.get_context_tasks(
+            context_id="ctx-1", limit=MAX_LIST_TASKS_PAGE_SIZE + 50
+        )
+
+        pagination = repository.find.await_args.kwargs["pagination"]
+        assert pagination.limit == MAX_LIST_TASKS_PAGE_SIZE
+
+    async def test_context_ids_default_when_limit_is_omitted(
+        self, store, repository
+    ):
+        await store.get_context_ids()
+
+        pagination = repository.find_unique_context_ids.await_args.kwargs["pagination"]
+        assert pagination.limit == DEFAULT_LIST_TASKS_PAGE_SIZE
+
+    async def test_context_ids_caps_an_oversized_limit(self, store, repository):
+        await store.get_context_ids(limit=MAX_LIST_TASKS_PAGE_SIZE + 50)
+
+        pagination = repository.find_unique_context_ids.await_args.kwargs["pagination"]
+        assert pagination.limit == MAX_LIST_TASKS_PAGE_SIZE

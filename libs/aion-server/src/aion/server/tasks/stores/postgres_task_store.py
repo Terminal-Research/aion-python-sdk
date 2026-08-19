@@ -9,14 +9,13 @@ from typing import Optional, List
 from a2a.server.context import ServerCallContext
 from a2a.types import Task, TaskState
 from a2a.types import a2a_pb2
-from a2a.utils.constants import DEFAULT_LIST_TASKS_PAGE_SIZE
+from a2a.utils.constants import DEFAULT_LIST_TASKS_PAGE_SIZE, MAX_LIST_TASKS_PAGE_SIZE
 from a2a.utils.errors import InvalidParamsError, TaskNotCancelableError
 from a2a.utils.task import decode_page_token, encode_page_token
 
 from aion.db.postgres.manager import db_manager
 from aion.db.postgres.types import Pagination, Sorting, SortKey
 from aion.db.postgres.repositories import (
-    STATUS_TIMESTAMP_SORT_KEY,
     TaskClaimsRepository,
     TasksRepository,
 )
@@ -155,12 +154,21 @@ class PostgresTaskStore(BaseTaskStore):
             params: a2a_pb2.ListTasksRequest,
             context: ServerCallContext | None = None,
     ) -> a2a_pb2.ListTasksResponse:
-        """List tasks with optional filtering and pagination.
+        """List tasks with optional filtering and keyset pagination.
 
-        Ordering and windowing are done by the database. Only the requested
-        page is loaded as full task rows; the surrounding query reads
-        identifiers alone, which is what makes the total size and the page
-        token's position affordable on a large table.
+        ``total_size`` comes from a single ``COUNT(*)``, and a page is found
+        by keeping only rows past the previous page's last position in the
+        same order - never by loading every matching id or asking the
+        database to skip ``OFFSET`` rows of a full sort. Both would cost the
+        same as scanning the whole filtered result on a large table; this
+        costs one page.
+
+        The page token's wire format is unchanged - the id of the last row
+        already returned - so an old token still decodes. What changed is
+        that its position is looked up again on each request through
+        :meth:`TasksRepository.sort_key_for_id` instead of being read off an
+        in-memory list, which also means a token stays usable even if the
+        task it names no longer matches the current filters.
 
         Args:
             params: Filter, page size, and page token of the request.
@@ -171,8 +179,8 @@ class PostgresTaskStore(BaseTaskStore):
             for the next page when one exists.
 
         Raises:
-            InvalidParamsError: If the page token does not name a task in the
-                current result set.
+            InvalidParamsError: If the page token does not name an existing
+                task.
         """
         status_state = TaskState.Name(params.status) if params.status else None
         status_timestamp_after = (
@@ -185,39 +193,30 @@ class PostgresTaskStore(BaseTaskStore):
             status_state=status_state,
             status_timestamp_after=status_timestamp_after,
         )
-        # Newest state change first; the id breaks ties so a page boundary
-        # always falls in the same place for the same data.
-        sorting = Sorting(
-            SortKey(column=STATUS_TIMESTAMP_SORT_KEY, descending=True),
-            SortKey(column="id", descending=True),
-        )
         page_size = params.page_size or DEFAULT_LIST_TASKS_PAGE_SIZE
+        page_size = min(page_size, MAX_LIST_TASKS_PAGE_SIZE)
 
         async with db_manager.get_session() as session:
             repository = TasksRepository(session)
-            ordered_ids = await repository.find_ids(sorting=sorting, **filters)
 
-            total_size = len(ordered_ids)
-            start_idx = 0
+            total_size = await repository.count(**filters)
+
+            after = None
             if params.page_token:
                 start_task_id = decode_page_token(params.page_token)
-                try:
-                    start_idx = ordered_ids.index(start_task_id)
-                except ValueError:
+                after = await repository.sort_key_for_id(start_task_id)
+                if after is None:
                     raise InvalidParamsError(f'Invalid page token: {params.page_token}')
 
-            entities = await repository.find(
-                sorting=sorting,
-                pagination=Pagination(offset=start_idx, limit=page_size),
-                **filters,
-            )
+            # One extra row reveals whether a next page exists without a
+            # second round trip or an approximate `has_more` from the count.
+            entities = await repository.find_page(after=after, limit=page_size + 1, **filters)
 
+        has_next = len(entities) > page_size
+        entities = entities[:page_size]
         tasks = [self._entity_to_task(str(e.id), e) for e in entities]
 
-        end_idx = start_idx + page_size
-        next_page_token = (
-            encode_page_token(ordered_ids[end_idx]) if end_idx < total_size else None
-        )
+        next_page_token = encode_page_token(str(entities[-1].id)) if has_next else None
 
         response_kwargs: dict = dict(tasks=tasks, total_size=total_size, page_size=page_size)
         if next_page_token:
@@ -229,7 +228,14 @@ class PostgresTaskStore(BaseTaskStore):
             offset: Optional[int] = None,
             limit: Optional[int] = None
     ) -> List[str]:
-        """Retrieve unique context IDs with pagination support."""
+        """Retrieve unique context IDs, capped even when the caller asks for everything.
+
+        ``limit=None`` used to reach the repository unbounded, and
+        ``_apply_pagination`` skips a falsy limit - so an omitted limit read
+        every context id the table has ever seen. Callers that truly want a
+        default get one now instead of an unbounded scan.
+        """
+        limit = min(limit, MAX_LIST_TASKS_PAGE_SIZE) if limit else DEFAULT_LIST_TASKS_PAGE_SIZE
         async with db_manager.get_session() as session:
             repository = TasksRepository(session)
             return await repository.find_unique_context_ids(pagination=Pagination(limit=limit, offset=offset))
@@ -240,7 +246,14 @@ class PostgresTaskStore(BaseTaskStore):
             offset: Optional[int] = None,
             limit: Optional[int] = None
     ) -> List[Task]:
-        """Retrieve tasks for a specific context with pagination support."""
+        """Retrieve tasks for a specific context, capped even when the caller asks for everything.
+
+        Same reasoning as :meth:`get_context_ids`: an omitted ``limit``
+        previously reached the repository as ``None`` and came back
+        unbounded, loading every task - full JSON artifacts and history
+        included - that the context has ever had.
+        """
+        limit = min(limit, MAX_LIST_TASKS_PAGE_SIZE) if limit else DEFAULT_LIST_TASKS_PAGE_SIZE
         async with db_manager.get_session() as session:
             repository = TasksRepository(session)
             records = await repository.find(

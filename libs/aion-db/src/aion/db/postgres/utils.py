@@ -8,6 +8,8 @@ from typing import Literal, Optional
 
 import psycopg
 
+from aion.db.postgres.constants import AION_SCHEMA
+
 logger = logging.getLogger(__name__)
 
 __all__ = [
@@ -135,16 +137,23 @@ async def validate_permissions(url: str) -> dict:
                     }
                     results["current_database"] = user_info[1]
 
-            # Test table creation
+            # Test table creation in the schema migrations actually use, not
+            # an unqualified name. Relying on the connection's default
+            # search_path reports a false negative on a database that has no
+            # "public" schema (dropped, or never created) even though the
+            # migration itself creates AION_SCHEMA before writing to it.
             try:
                 # Generate unique names to avoid conflicts with parallel executions
                 unique_id = uuid.uuid4().hex[:8]
                 test_table = f"_test_permissions_{unique_id}"
 
                 async with conn.cursor() as cur:
-                    # Test table creation in a transaction that we'll rollback
+                    # Test schema and table creation in a transaction that we'll rollback
                     await cur.execute("BEGIN")
-                    await cur.execute(f"CREATE TABLE {test_table} (id serial PRIMARY KEY)")
+                    await cur.execute(f"CREATE SCHEMA IF NOT EXISTS {AION_SCHEMA}")
+                    await cur.execute(
+                        f"CREATE TABLE {AION_SCHEMA}.{test_table} (id serial PRIMARY KEY)"
+                    )
                     await cur.execute("ROLLBACK")
                     results["can_create_table"] = True
             except Exception as table_exc:

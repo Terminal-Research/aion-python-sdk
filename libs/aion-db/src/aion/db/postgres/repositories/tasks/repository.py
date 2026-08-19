@@ -6,7 +6,7 @@ import datetime as _dt
 import uuid
 from typing import List, Type, Optional
 
-from sqlalchemy import select, func, asc, desc, literal, update
+from sqlalchemy import select, func, asc, desc, literal, update, and_, or_
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Select
@@ -143,6 +143,104 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
 
         result = await self._session.execute(stmt)
         return [str(row[0]) for row in result.fetchall()]
+
+    async def count(
+            self,
+            task_id: Optional[str] = None,
+            context_id: Optional[str] = None,
+            status_state: Optional[str] = None,
+            status_timestamp_after: Optional[_dt.datetime] = None,
+    ) -> int:
+        """Count matching tasks without loading a single row.
+
+        The result set's size for a caller that only wants ``total_size`` -
+        keeping it a single aggregate query is what makes that number
+        affordable on a large table, unlike materializing every matching id.
+        """
+        stmt = select(func.count(self.model_class.id))
+        stmt = self._apply_filter(
+            stmt,
+            task_id=task_id,
+            context_id=context_id,
+            status_state=status_state,
+            status_timestamp_after=status_timestamp_after,
+        )
+        result = await self._session.execute(stmt)
+        return result.scalar_one()
+
+    async def sort_key_for_id(self, task_id: str) -> Optional[tuple[_dt.datetime | None, str]]:
+        """Return one task's ``(status_timestamp, id)``, for resuming a keyset page.
+
+        A page token names a task, not a position, so the position has to be
+        looked up again on the next request rather than carried in the token.
+        A point lookup by primary key is cheap enough to pay on every paged
+        request in exchange for a token that stays a plain task id.
+        """
+        stmt = select(self.model_class.status_timestamp, self.model_class.id).where(
+            self.model_class.id == task_id
+        )
+        result = await self._session.execute(stmt)
+        row = result.first()
+        return (row[0], str(row[1])) if row is not None else None
+
+    async def find_page(
+            self,
+            *,
+            task_id: Optional[str] = None,
+            context_id: Optional[str] = None,
+            status_state: Optional[str] = None,
+            status_timestamp_after: Optional[_dt.datetime] = None,
+            after: Optional[tuple[_dt.datetime | None, str]] = None,
+            limit: int,
+    ) -> List[TaskRecord]:
+        """Return up to ``limit`` tasks ordered by status_timestamp desc, id desc.
+
+        This is the keyset counterpart of ``find`` with an offset
+        :class:`Pagination`: instead of asking the database to skip
+        ``offset`` rows of a full sort, ``after`` restricts the scan to rows
+        strictly past a known position in the same order, so each page costs
+        the same regardless of how deep into the result set it is.
+
+        Args:
+            after: The ``(status_timestamp, id)`` of the last row already
+                returned, from :meth:`sort_key_for_id`. ``None`` starts from
+                the first page. A missing timestamp sorts last, so it is
+                compared with ``IS NULL`` rather than ordinary inequality.
+            limit: Maximum rows to return.
+
+        Returns:
+            Matching tasks in stable order, at most ``limit`` of them.
+        """
+        stmt = select(self.model_class)
+        stmt = self._apply_filter(
+            stmt,
+            task_id=task_id,
+            context_id=context_id,
+            status_state=status_state,
+            status_timestamp_after=status_timestamp_after,
+        )
+
+        if after is not None:
+            cursor_ts, cursor_id = after
+            ts_col = self.model_class.status_timestamp
+            id_col = self.model_class.id
+            if cursor_ts is not None:
+                stmt = stmt.where(
+                    or_(
+                        ts_col < cursor_ts,
+                        and_(ts_col == cursor_ts, id_col < cursor_id),
+                        ts_col.is_(None),
+                    )
+                )
+            else:
+                stmt = stmt.where(and_(ts_col.is_(None), id_col < cursor_id))
+
+        stmt = stmt.order_by(
+            desc(self.model_class.status_timestamp).nullslast(),
+            desc(self.model_class.id),
+        ).limit(limit)
+
+        return await self._execute_and_convert_many(stmt)
 
     async def save(self, entity: TaskRecord) -> None:
         """Insert or update a task atomically by its identifier.
@@ -343,6 +441,13 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
             stmt = stmt.where(self.model_class.artifacts.contains([{"name": artifact_name}]))
         if effective_version is not None:
             stmt = stmt.where(self.model_class.artifacts.contains([{"metadata": {"version": effective_version}}]))
+
+        if artifact_name is not None and want_latest:
+            # Rows are already filtered to ones containing this one name and
+            # ordered newest task first. latest_artifacts() below takes the
+            # first occurrence in the first such row as the answer, so no row
+            # past it could ever change the result - only cost more to fetch.
+            stmt = stmt.limit(1)
 
         result = await self._session.execute(stmt)
         rows = result.scalars().all()

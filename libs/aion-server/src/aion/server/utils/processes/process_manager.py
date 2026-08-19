@@ -133,6 +133,10 @@ class ProcessManager:
             # Start the process
             process.start()
 
+            if child_conn is not None:
+                # Closes our duplicate fd so poll() sees EOF right after the child dies.
+                child_conn.close()
+
             # Store process information
             process_info = ProcessInfo(
                 key=key,

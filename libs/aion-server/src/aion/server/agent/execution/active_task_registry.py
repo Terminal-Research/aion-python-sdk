@@ -274,14 +274,26 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
         cleanup.add_done_callback(self._cleanup_tasks.discard)
 
     async def _remove_task_for_incarnation(self, active_task: ActiveTask) -> None:
-        """Drop one object and its manager without touching a replacement."""
+        """Drop one object and its manager, then release any lease it still holds.
+
+        A consumer that fails while writing its own failure can miss the
+        terminal write that normally releases the claim (see
+        ``AionTaskManager._save_task``), leaving the heartbeat renewing a
+        lease for work that no longer exists. Releasing it here is a no-op on
+        the normal path, where the claim is already gone by the time cleanup
+        runs.
+        """
         async with self._lock:
             if self._active_tasks.get(active_task.task_id) is not active_task:
                 return
             self._active_tasks.pop(active_task.task_id, None)
             if self._task_managers.get(active_task.task_id) is active_task._task_manager:
                 self._task_managers.pop(active_task.task_id, None)
+            claim = self._ownership.claim_for(active_task.task_id)
             logger.debug("Removed active task for %s", active_task.task_id)
+
+        if claim is not None:
+            await self._ownership.release(claim)
 
     async def get_for_attach(
         self,
