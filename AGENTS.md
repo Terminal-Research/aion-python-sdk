@@ -93,7 +93,8 @@ and are discovered by `aion-server` at runtime.
   as `FAILED` with `aion:settledReason` naming the cause — `server_shutdown`
   when the shutdown itself cancelled the execution, `server_restart` when the
   next start found them still active after a hard kill. DB management is
-  delegated to `aion-db`.
+  delegated to `aion-db`. PostgreSQL task claims record the deployment-provided
+  `HOST_NAME` as their optional diagnostic owner instance identity.
 - **aion-server-langgraph** — server-side LangGraph integration under
   `aion.langgraph.server`. Implements `AgentPluginProtocol`/`AgentAdapter`,
   adapts inbound A2A requests into `graph.astream()` invocations and maps

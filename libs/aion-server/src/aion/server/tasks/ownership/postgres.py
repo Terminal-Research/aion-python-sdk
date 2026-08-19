@@ -56,7 +56,8 @@ class PostgresOwnershipProvider:
             db_manager: Aion PostgreSQL manager used for short transactions.
             task_id_parser: Identifier parsing, shared with the task store so a
                 lease and its task resolve to the same key.
-            owner_instance_id: Optional diagnostic pod identity.
+            owner_instance_id: Optional diagnostic instance identity. When it
+                is absent, the deployment-provided ``HOST_NAME`` is used.
             settings: Lease timing; the defaults are the deployed ones.
             reconciler_enabled: Whether this process reclaims expired leases.
                 Defaults to the ``AION_TASK_OWNERSHIP_REAPER`` switch, which is
@@ -65,11 +66,7 @@ class PostgresOwnershipProvider:
         self._db_manager = db_manager
         self._task_id_parser = task_id_parser
         self.settings = settings or LeaseSettings()
-        self.owner_instance_id = (
-            owner_instance_id
-            if owner_instance_id is not None
-            else os.getenv("POD_NAME") or os.getenv("HOSTNAME") or None
-        )
+        self.owner_instance_id = owner_instance_id or os.getenv("HOST_NAME") or None
         self.reconciler_enabled = (
             reaper_enabled_by_environment()
             if reconciler_enabled is None

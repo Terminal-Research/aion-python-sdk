@@ -409,6 +409,50 @@ def test_reaper_is_on_unless_its_switch_is_cleared(monkeypatch) -> None:
     assert PostgresOwnershipProvider(db_manager=_DbManager()).reconciler_enabled is False
 
 
+def test_owner_instance_id_prefers_explicit_value(monkeypatch) -> None:
+    """An injected runtime identity takes precedence over the environment."""
+    monkeypatch.setenv("HOST_NAME", "pod-from-environment")
+
+    provider = PostgresOwnershipProvider(
+        db_manager=_DbManager(),
+        owner_instance_id="pod-from-caller",
+    )
+
+    assert provider.owner_instance_id == "pod-from-caller"
+
+
+def test_owner_instance_id_uses_host_name(monkeypatch) -> None:
+    """The deployment-provided host name identifies the claim holder."""
+    monkeypatch.setenv("HOST_NAME", "pod-from-environment")
+
+    provider = PostgresOwnershipProvider(db_manager=_DbManager())
+
+    assert provider.owner_instance_id == "pod-from-environment"
+
+
+def test_blank_owner_instance_id_falls_back_to_host_name(monkeypatch) -> None:
+    """An empty injected value is absent rather than an instance identity."""
+    monkeypatch.setenv("HOST_NAME", "pod-from-environment")
+
+    provider = PostgresOwnershipProvider(
+        db_manager=_DbManager(),
+        owner_instance_id="",
+    )
+
+    assert provider.owner_instance_id == "pod-from-environment"
+
+
+def test_owner_instance_id_is_none_without_host_name(monkeypatch) -> None:
+    """Legacy host variables do not silently become the instance identity."""
+    monkeypatch.delenv("HOST_NAME", raising=False)
+    monkeypatch.setenv("POD_NAME", "legacy-pod")
+    monkeypatch.setenv("HOSTNAME", "legacy-host")
+
+    provider = PostgresOwnershipProvider(db_manager=_DbManager())
+
+    assert provider.owner_instance_id is None
+
+
 @pytest.mark.anyio
 async def test_disabled_reaper_touches_nothing() -> None:
     """A disabled reaper reports no work rather than querying for candidates."""
