@@ -273,7 +273,7 @@ async def test_cancelling_a_finished_task_is_reported_as_such() -> None:
     await store.save(_task(TaskState.TASK_STATE_COMPLETED))
 
     with pytest.raises(TaskNotCancelableError):
-        await store.cancel(TASK_ID)
+        await store.cancel_with_ownership_revocation(TASK_ID)
 
 
 @pytest.mark.anyio
@@ -282,7 +282,7 @@ async def test_cancelling_a_running_task_returns_the_canceled_task() -> None:
     store = _memory_store()
     await store.save(_task(TaskState.TASK_STATE_WORKING))
 
-    task = await store.cancel(TASK_ID)
+    task = await store.cancel_with_ownership_revocation(TASK_ID)
 
     assert task is not None
     assert task.status.state == TaskState.TASK_STATE_CANCELED
@@ -291,4 +291,4 @@ async def test_cancelling_a_running_task_returns_the_canceled_task() -> None:
 @pytest.mark.anyio
 async def test_cancelling_an_unknown_task_returns_nothing() -> None:
     """A missing task is distinguishable from one that cannot be canceled."""
-    assert await _memory_store().cancel(TASK_ID) is None
+    assert await _memory_store().cancel_with_ownership_revocation(TASK_ID) is None

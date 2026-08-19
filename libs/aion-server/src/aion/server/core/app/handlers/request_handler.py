@@ -268,7 +268,10 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         # The store raises TaskNotCancelableError for a task that already has
         # an outcome. It cannot be decided from the returned state here: a
         # successful cancellation is itself terminal.
-        task = await self.task_store.cancel(params.id, context)
+        task = await self.task_store.cancel_with_ownership_revocation(
+            params.id,
+            context,
+        )
         if task is None:
             raise TaskNotFoundError
         return task

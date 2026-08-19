@@ -6,13 +6,13 @@ import datetime as _dt
 import uuid
 from typing import List, Type, Optional
 
-from sqlalchemy import select, func, asc, desc, literal
+from sqlalchemy import select, func, asc, desc, literal, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Select
 
 try:
-    from a2a.types import Artifact
+    from a2a.types import Artifact, TaskStatus
 except Exception as exc:
     raise ImportError("The 'a2a-sdk' package is required to use this repository") from exc
 
@@ -230,6 +230,39 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
         result = await self._session.execute(stmt)
         await self._session.flush()
         return result.first() is not None
+
+    async def find_by_id_for_update(self, task_id: uuid.UUID) -> Optional[TaskRecord]:
+        """Find and lock a task row until the surrounding transaction ends.
+
+        Callers use this as the stable mutex for operations that coordinate a
+        task row with its optional ownership claim.  The repository does not
+        open or commit a transaction; the caller must keep the same session
+        and transaction for every dependent write.
+        """
+        stmt = (
+            select(self.model_class)
+            .where(self.model_class.id == task_id)
+            .with_for_update()
+        )
+        return await self._execute_and_convert(stmt)
+
+    async def update_status(self, task_id: uuid.UUID, status: TaskStatus) -> None:
+        """Update only a task's status inside the caller's transaction.
+
+        A targeted update avoids replacing artifacts, history, or metadata
+        from a stale full-task snapshot.  ``ProtobufType`` on the ORM model
+        performs the JSONB serialization.
+
+        Nothing is reported back about how many rows changed: the caller holds
+        the row lock from :meth:`find_by_id_for_update`, so the row it just
+        read cannot disappear before this statement runs.
+        """
+        stmt = (
+            update(self.model_class)
+            .where(self.model_class.id == task_id)
+            .values(status=status, updated_at=func.clock_timestamp())
+        )
+        await self._session.execute(stmt)
 
     async def find(
             self,

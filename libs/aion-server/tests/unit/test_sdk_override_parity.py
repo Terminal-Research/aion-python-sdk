@@ -80,6 +80,19 @@ OVERRIDES = [
     (PostgresTaskStore, TaskStore, "list"),
 ]
 
+# Aion-only TaskStore operations must not silently become overrides when the
+# a2a-sdk grows its storage contract. Such a collision requires an explicit
+# compatibility decision during the dependency upgrade.
+AION_TASK_STORE_EXTENSIONS = ["cancel_with_ownership_revocation"]
+
+
+@pytest.mark.parametrize("method_name", AION_TASK_STORE_EXTENSIONS)
+def test_task_store_extensions_do_not_shadow_sdk(method_name):
+    assert method_name not in TaskStore.__dict__, (
+        f"BaseTaskStore.{method_name} now shadows an a2a-sdk TaskStore method; "
+        "review both contracts before upgrading the SDK."
+    )
+
 
 def _accepts_arbitrary_keywords(signature: inspect.Signature) -> bool:
     """Reports whether a signature absorbs unknown keyword arguments.

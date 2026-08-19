@@ -12,12 +12,14 @@ from a2a.types import a2a_pb2
 from a2a.utils.constants import DEFAULT_LIST_TASKS_PAGE_SIZE
 from a2a.utils.errors import InvalidParamsError, TaskNotCancelableError
 from a2a.utils.task import decode_page_token, encode_page_token
-from sqlalchemy import text
 
-from aion.db.postgres.jsonb import as_jsonb
 from aion.db.postgres.manager import db_manager
 from aion.db.postgres.types import Pagination, Sorting, SortKey
-from aion.db.postgres.repositories import STATUS_TIMESTAMP_SORT_KEY, TasksRepository
+from aion.db.postgres.repositories import (
+    STATUS_TIMESTAMP_SORT_KEY,
+    TaskClaimsRepository,
+    TasksRepository,
+)
 from aion.db.postgres.records import TaskRecord
 from aion.server.a2a.constants import ACTIVE_TASK_STATES, TERMINAL_TASK_STATES
 from aion.server.tasks.identifiers import require_task_uuid
@@ -65,7 +67,7 @@ class PostgresTaskStore(BaseTaskStore):
                 raise TaskOwnershipLost(task.id)
             await session.commit()
 
-    async def cancel(
+    async def cancel_with_ownership_revocation(
             self, task_id: str, context: ServerCallContext | None = None
     ) -> Task | None:
         """Cancel a task while holding its task-row mutex.
@@ -92,19 +94,13 @@ class PostgresTaskStore(BaseTaskStore):
 
         async with db_manager.get_session() as session:
             async with session.begin():
-                locked = await session.execute(
-                    text("SELECT id FROM tasks WHERE id = :task_id FOR UPDATE"),
-                    {"task_id": task_uuid},
-                )
-                if locked.first() is None:
-                    return None
-
-                repository = TasksRepository(session)
-                entity = await repository.find_by_id(task_uuid)
+                tasks = TasksRepository(session)
+                claims = TaskClaimsRepository(session)
+                entity = await tasks.find_by_id_for_update(task_uuid)
                 if entity is None:
                     return None
 
-                task = entity.to_task(task_id)
+                task = self._entity_to_task(task_id, entity)
                 if task.status.state in TERMINAL_TASK_STATES:
                     raise TaskNotCancelableError(
                         message=(
@@ -114,21 +110,11 @@ class PostgresTaskStore(BaseTaskStore):
                     )
 
                 task.status.state = TaskState.TASK_STATE_CANCELED
-                await session.execute(
-                    text(
-                        "UPDATE tasks SET status = CAST(:status AS jsonb), "
-                        "updated_at = clock_timestamp() "
-                        "WHERE id = :task_id"
-                    ),
-                    {"task_id": task_uuid, "status": as_jsonb(task.status)},
-                )
+                await tasks.update_status(task_uuid, task.status)
                 # Deleted without a token on purpose: removing the lease is how
                 # a pod that is not the owner tells the owner it has stopped
                 # being one.
-                await session.execute(
-                    text("DELETE FROM task_claims WHERE task_id = :task_id"),
-                    {"task_id": task_uuid},
-                )
+                await claims.revoke_unconditionally(task_uuid)
 
                 return task
 

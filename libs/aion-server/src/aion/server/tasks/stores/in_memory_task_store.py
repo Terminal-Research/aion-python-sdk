@@ -196,7 +196,7 @@ class InMemoryTaskStore(BaseTaskStore):
                 del self.tasks[owner]
                 logger.debug('Removed empty owner %s from store.', owner)
 
-    async def cancel(
+    async def cancel_with_ownership_revocation(
             self, task_id: str, context: ServerCallContext | None = None
     ) -> Task | None:
         """Cancel a task in the local store without ownership state.

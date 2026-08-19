@@ -137,6 +137,19 @@ class TaskClaimsRepository(BaseRepository[TaskClaimModel, TaskClaimRecord]):
             )
         )
 
+    async def revoke_unconditionally(self, task_id: uuid.UUID) -> None:
+        """Delete any lease for a task, regardless of its owner token.
+
+        This is intentionally stronger than :meth:`release`: a control-plane
+        cancellation may arrive on a process that does not own the task, and
+        removing the lease is how it fences the current owner from later
+        writes.  Callers must first lock the corresponding task row and keep
+        both operations in the same transaction.
+        """
+        await self._session.execute(
+            delete(TaskClaimModel).where(TaskClaimModel.task_id == task_id)
+        )
+
     async def find_by_task_id(self, task_id: uuid.UUID) -> Optional[TaskClaimRecord]:
         """Read a claim row unconditionally, for diagnostics only.
 

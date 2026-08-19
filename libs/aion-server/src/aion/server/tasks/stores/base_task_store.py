@@ -18,7 +18,7 @@ class BaseTaskStore(TaskStore):
    """
 
     @abstractmethod
-    async def cancel(
+    async def cancel_with_ownership_revocation(
             self,
             task_id: str,
             context: Optional[ServerCallContext] = None,

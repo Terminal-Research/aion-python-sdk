@@ -217,7 +217,7 @@ async def test_cancelling_removes_the_lease_of_another_instance(database) -> Non
     await _write(owner, task_id, TaskState.TASK_STATE_WORKING)
 
     controller = PostgresTaskStore(ownership_provider=_provider("pod-b"))
-    canceled = await controller.cancel(task_id)
+    canceled = await controller.cancel_with_ownership_revocation(task_id)
 
     assert canceled is not None
     assert canceled.status.state == TaskState.TASK_STATE_CANCELED

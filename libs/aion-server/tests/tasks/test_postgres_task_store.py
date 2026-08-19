@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from a2a.types import Task, TaskState, TaskStatus, a2a_pb2
-from a2a.utils.errors import InvalidParamsError
+from a2a.utils.errors import InvalidParamsError, TaskNotCancelableError
 from a2a.utils.task import encode_page_token
 from google.protobuf.timestamp_pb2 import Timestamp
 
@@ -67,11 +67,20 @@ def repository():
     repo.find_ids = AsyncMock(return_value=[])
     repo.delete_by_id = AsyncMock()
     repo.find_by_id = AsyncMock(return_value=None)
+    repo.find_by_id_for_update = AsyncMock(return_value=None)
+    repo.update_status = AsyncMock()
     return repo
 
 
 @pytest.fixture
-def store(repository):
+def claim_repository():
+    repo = MagicMock()
+    repo.revoke_unconditionally = AsyncMock()
+    return repo
+
+
+@pytest.fixture
+def store(repository, claim_repository):
     """A store whose session and repository are stubbed out."""
     session = MagicMock()
     session.commit = AsyncMock()
@@ -85,9 +94,52 @@ def store(repository):
     ) as manager, patch(
         "aion.server.tasks.stores.postgres_task_store.TasksRepository",
         return_value=repository,
+    ), patch(
+        "aion.server.tasks.stores.postgres_task_store.TaskClaimsRepository",
+        return_value=claim_repository,
     ):
         manager.get_session = _session
         yield PostgresTaskStore(ownership_provider=_claiming_provider())
+
+
+class TestCancel:
+    async def test_locks_updates_and_revokes_in_one_store_operation(
+        self, store, repository, claim_repository
+    ):
+        repository.find_by_id_for_update.return_value = _make_entity(TASK_UUID)
+
+        canceled = await store.cancel_with_ownership_revocation(TASK_UUID)
+
+        task_uuid = uuid.UUID(TASK_UUID)
+        repository.find_by_id_for_update.assert_awaited_once_with(task_uuid)
+        repository.update_status.assert_awaited_once_with(task_uuid, canceled.status)
+        claim_repository.revoke_unconditionally.assert_awaited_once_with(task_uuid)
+        assert canceled.status.state == TaskState.TASK_STATE_CANCELED
+
+    async def test_missing_task_does_not_attempt_writes(
+        self, store, repository, claim_repository
+    ):
+        assert await store.cancel_with_ownership_revocation(TASK_UUID) is None
+
+        repository.update_status.assert_not_awaited()
+        claim_repository.revoke_unconditionally.assert_not_awaited()
+
+    async def test_terminal_task_is_not_updated_or_revoked(
+        self, store, repository, claim_repository
+    ):
+        entity = _make_entity(TASK_UUID)
+        entity.to_task.side_effect = lambda tid: Task(
+            id=tid,
+            context_id="ctx-1",
+            status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED),
+        )
+        repository.find_by_id_for_update.return_value = entity
+
+        with pytest.raises(TaskNotCancelableError):
+            await store.cancel_with_ownership_revocation(TASK_UUID)
+
+        repository.update_status.assert_not_awaited()
+        claim_repository.revoke_unconditionally.assert_not_awaited()
 
 
 class TestSaveIdentity:
