@@ -16,7 +16,11 @@ from unittest.mock import AsyncMock, MagicMock, Mock
 import pytest
 from a2a.types import Task, TaskState, TaskStatus, TaskStatusUpdateEvent
 
+from a2a.server.agent_execution import RequestContext
+
 from aion.server.agent.execution.active_task_registry import AionActiveTaskRegistry
+from aion.server.agent.execution.scope import init_execution_scope
+from aion.server.tasks.stores.in_memory_task_store import InMemoryTaskStore
 from aion.server.tasks.ownership import Claim, TaskOwnershipLost
 from aion.server.tasks.task_manager import AionTaskManager
 
@@ -209,3 +213,154 @@ async def test_shutdown_writes_nothing_for_a_task_owned_elsewhere() -> None:
 
     task_manager.save_task_event.assert_awaited_once()
     assert registry._task_managers == {}
+
+
+class _AskingAgent:
+    """An agent that announces its task, asks the user a question, and returns."""
+
+    def __init__(self, task_id: str) -> None:
+        """Bind the agent to the task it will announce."""
+        self.task_id = task_id
+
+    async def execute(self, context, event_queue) -> None:
+        """Produce the two events a turn ending in a question produces."""
+        await event_queue.enqueue_event(
+            Task(
+                id=self.task_id,
+                context_id=CONTEXT_ID,
+                status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
+            )
+        )
+        await event_queue.enqueue_event(
+            TaskStatusUpdateEvent(
+                task_id=self.task_id,
+                context_id=CONTEXT_ID,
+                status=TaskStatus(state=TaskState.TASK_STATE_INPUT_REQUIRED),
+            )
+        )
+
+    async def cancel(self, context, event_queue) -> None:
+        """Nothing to cancel in this agent."""
+
+
+@pytest.mark.anyio
+async def test_a_real_interrupted_turn_leaves_the_registry_empty() -> None:
+    """The whole teardown, driven by an agent rather than by a signal.
+
+    The focused tests above each drive one link of the chain: the interrupt
+    signal, the close, the release. This one runs a turn end to end and looks
+    at what is left over - the maps, and the background tasks the SDK spawns
+    per execution, which are what a leak here would actually cost.
+    """
+    task_id = str(uuid.uuid4())
+    store = InMemoryTaskStore(owner_resolver=lambda _context: "owner")
+    registry = AionActiveTaskRegistry(
+        agent_executor=_AskingAgent(task_id),
+        task_store=store,
+        push_sender=None,
+    )
+    init_execution_scope()
+    call_context = Mock()
+
+    active_task = await registry.get_or_create(
+        task_id,
+        call_context=call_context,
+        context_id=CONTEXT_ID,
+        create_task_if_missing=True,
+    )
+    request = RequestContext(
+        call_context=call_context,
+        task_id=task_id,
+        context_id=CONTEXT_ID,
+    )
+    async for _event in active_task.subscribe(request=request):
+        pass
+    await _drain_pending()
+
+    stored = await store.get(task_id, call_context)
+    assert stored.status.state == TaskState.TASK_STATE_INPUT_REQUIRED
+    assert registry._active_tasks == {}
+    assert registry._task_managers == {}
+    assert registry._interruption_tasks_by_id == {}
+    assert active_task._is_finished.is_set()
+    assert _background_tasks_for(task_id) == []
+
+
+def _background_tasks_for(task_id: str) -> list[str]:
+    """Return the names of unfinished asyncio tasks the SDK spawned for a task."""
+    return [
+        task.get_name()
+        for task in asyncio.all_tasks()
+        if not task.done() and task.get_name().endswith(task_id)
+    ]
+
+
+async def _drain_pending() -> None:
+    """Let the callbacks the SDK schedules run before anything is asserted."""
+    for _ in range(10):
+        await asyncio.sleep(0)
+
+
+class _EnforcingProvider:
+    """The smallest provider that reports ownership as enforced.
+
+    Enough for the attach path, which asks two questions: whether enforcement
+    is on, and who owns the task. It never hands out a lease, which is exactly
+    the position of a process that is not executing the task.
+    """
+
+    enforcement_enabled = True
+    reconciler_enabled = False
+
+    def claim_for(self, task_id: str):
+        """Report no locally held lease."""
+        return None
+
+    async def current_owner(self, task_id: str) -> str | None:
+        """Report the owner a Busy refusal would name."""
+        return "pod-elsewhere"
+
+    def set_loss_callback(self, callback) -> None:
+        """Accept the registry callback."""
+
+    def start(self) -> None:
+        """No supervision in the stub."""
+
+    async def stop(self) -> None:
+        """No supervision to stop."""
+
+
+@pytest.mark.anyio
+async def test_attaching_to_an_interrupted_task_leaves_nothing_behind() -> None:
+    """A subscriber must not leave an execution nobody can ever finish.
+
+    A conversation waiting for the user is reconnected to constantly, and the
+    answer usually lands on another instance. An object built here would never
+    reach a terminal event and never be closed, so the registry would keep it,
+    its task manager, and the two background tasks of its execution until the
+    process stopped - once per conversation, without bound.
+    """
+    task_id = str(uuid.uuid4())
+    store = InMemoryTaskStore(owner_resolver=lambda _context: "owner")
+    provider = _EnforcingProvider()
+    await store.save(
+        Task(
+            id=task_id,
+            context_id=CONTEXT_ID,
+            status=TaskStatus(state=TaskState.TASK_STATE_INPUT_REQUIRED),
+        )
+    )
+    registry = AionActiveTaskRegistry(
+        agent_executor=Mock(),
+        task_store=store,
+        push_sender=None,
+        ownership_provider=provider,
+    )
+    init_execution_scope()
+
+    assert await registry.get_for_attach(task_id, Mock()) is None
+
+    await _drain_pending()
+    assert registry._active_tasks == {}
+    assert registry._task_managers == {}
+    assert _background_tasks_for(task_id) == []

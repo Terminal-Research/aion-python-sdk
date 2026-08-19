@@ -287,7 +287,7 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
         self,
         task_id: str,
         call_context: ServerCallContext,
-    ) -> ActiveTask:
+    ) -> ActiveTask | None:
         """Return a local running task for a passive subscriber.
 
         A subscriber never acquires a lease. It may attach to what this process
@@ -296,6 +296,14 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
         decides: an active state implies a live lease held elsewhere, while a
         terminal or interrupted task legitimately has no owner and is safe to
         replay locally.
+
+        Returns:
+            The ``ActiveTask`` to subscribe to, or ``None`` when there is no
+            execution to join and none can be started here - a task that
+            already has an outcome, or, where ownership is enforced, one that
+            is waiting for input. The caller answers those from the store.
+            Only single-process serving still attaches to an interrupted task,
+            because only there can the same object carry the next turn.
 
         Raises:
             TaskNotFoundError: If no such task exists.
@@ -330,9 +338,28 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
             owner = await self._ownership.current_owner(task_id)
             raise TaskOwnershipBusy(task_id, owner_instance_id=owner)
 
-        # Nothing is executing this task: it is waiting for input or already
-        # has an outcome. Attaching replays the durable task and closes, which
-        # is what a reconnecting client is asking for.
+        if task.status.state in TERMINAL_TASK_STATES:
+            # A settled task is not resumable and never will be, and
+            # ``ActiveTask.start`` refuses one: building an execution here
+            # would answer the most ordinary reconnect there is - a client
+            # reading the result of a finished turn - with "your parameters
+            # are wrong". The stored task is the whole answer.
+            return None
+
+        if self._ownership.enforcement_enabled:
+            # An interrupted task, and this process is not executing it. An
+            # object built here would never finish: the SDK ends an execution
+            # on a terminal event or on ``aclose``, and a process that only
+            # reads the task produces neither, so the registry would hold it
+            # until shutdown. Nor could it ever carry the answer - the resume
+            # acquires a lease, and an object without one is replaced rather
+            # than reused. The stored task is again the whole answer.
+            return None
+
+        # Single-process serving, where a resume does reuse this object and a
+        # subscriber attached now goes on to see the next turn. Kept for that,
+        # and only there: the same object left behind by a process that cannot
+        # resume it is a leak.
         return await self.get_or_create(
             task_id,
             call_context=call_context,

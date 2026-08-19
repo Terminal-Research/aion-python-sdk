@@ -160,25 +160,83 @@ async def test_attach_to_a_task_running_elsewhere_is_refused() -> None:
     [
         TaskState.TASK_STATE_INPUT_REQUIRED,
         TaskState.TASK_STATE_AUTH_REQUIRED,
-        TaskState.TASK_STATE_COMPLETED,
-        TaskState.TASK_STATE_FAILED,
     ],
 )
-async def test_attach_to_a_task_nobody_runs_is_allowed(state: TaskState) -> None:
-    """A task awaiting input or already finished has no owner to conflict with.
+async def test_attach_to_a_task_waiting_for_input_builds_no_execution(
+    state: TaskState,
+) -> None:
+    """A task awaiting input is replayed, not joined.
 
-    Its lease was released on purpose, so refusing here would break the most
-    ordinary client behaviour there is: reconnecting to a conversation that is
-    waiting for an answer, or re-reading a finished one.
+    Refusing the attach outright would break the most ordinary client
+    behaviour there is - reconnecting to a conversation that is waiting for an
+    answer - so the request is allowed and answered from the store. What it
+    must not do is build an execution: nothing here will ever finish it, and
+    the resume will replace it rather than reuse it, so the object would sit
+    in the registry until the process stops.
     """
     store = AsyncMock()
     store.get.return_value = _task(state)
     provider = _StubProvider()
     registry = _registry(provider, store)
+    registry.get_or_create = AsyncMock()
+
+    assert await registry.get_for_attach(TASK_ID, Mock()) is None
+    registry.get_or_create.assert_not_called()
+    assert provider.acquire_calls == 0
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "state",
+    [
+        TaskState.TASK_STATE_INPUT_REQUIRED,
+        TaskState.TASK_STATE_AUTH_REQUIRED,
+    ],
+)
+async def test_a_single_process_still_attaches_to_a_task_waiting_for_input(
+    state: TaskState,
+) -> None:
+    """Without enforcement the resume reuses this object, so it is worth having.
+
+    One process, one registry: the answer arrives here or nowhere, the same
+    ``ActiveTask`` carries it, and a subscriber attached now sees the next
+    turn.
+    """
+    store = AsyncMock()
+    store.get.return_value = _task(state)
+    provider = _StubProvider()
+    provider.enforcement_enabled = False
+    registry = _registry(provider, store)
     expected = object()
     registry.get_or_create = AsyncMock(return_value=expected)
 
     assert await registry.get_for_attach(TASK_ID, Mock()) is expected
+    assert provider.acquire_calls == 0
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "state",
+    [
+        TaskState.TASK_STATE_COMPLETED,
+        TaskState.TASK_STATE_FAILED,
+        TaskState.TASK_STATE_CANCELED,
+    ],
+)
+async def test_attach_to_a_settled_task_builds_no_execution(state: TaskState) -> None:
+    """A finished task is replayed from the store, not from an execution.
+
+    ``ActiveTask.start`` refuses a terminal task, so creating one here would
+    answer a client reading a finished turn with an invalid-parameters error.
+    """
+    store = AsyncMock()
+    store.get.return_value = _task(state)
+    provider = _StubProvider()
+    registry = _registry(provider, store)
+    registry.get_or_create = AsyncMock()
+
+    assert await registry.get_for_attach(TASK_ID, Mock()) is None
+    registry.get_or_create.assert_not_called()
     assert provider.acquire_calls == 0
 
 

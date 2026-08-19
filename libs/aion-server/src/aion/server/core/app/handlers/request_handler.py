@@ -57,6 +57,17 @@ def _with_preprocessors(method):
     return wrapper
 
 
+async def _no_events() -> AsyncGenerator[Event]:
+    """An empty event stream, for a subscription with nothing to wait for.
+
+    Handed to ``TerminalTaskProjection``, it produces exactly the stored Task:
+    the projection closes every stream that way, so a settled task needs no
+    separate reply path of its own.
+    """
+    return
+    yield  # pragma: no cover - unreachable, and what makes this a generator
+
+
 class AionRequestHandler(DefaultRequestHandlerV2):
     """Request handler implementation for Aion management operations."""
 
@@ -272,7 +283,13 @@ class AionRequestHandler(DefaultRequestHandlerV2):
             params: SubscribeToTaskRequest,
             context: ServerCallContext,
     ) -> AsyncGenerator[Event]:
-        """Resubscribe handler applying the same terminal-Task projection."""
+        """Resubscribe handler applying the same terminal-Task projection.
+
+        A task that already has an outcome has no execution to join, and the
+        SDK will not start one for it. Its stream is empty and the projection
+        closes it with the stored Task - which is the answer the client asked
+        for, and the reason the reaper settles a task rather than deleting it.
+        """
         active_task = await self._active_task_registry.get_for_attach(
             params.id,
             context,
@@ -282,8 +299,11 @@ class AionRequestHandler(DefaultRequestHandlerV2):
             call_context=context,
             task_id=params.id,
         )
-
-        async for event in projection.project(
+        source = (
             active_task.subscribe(include_initial_task=True)
-        ):
+            if active_task is not None
+            else _no_events()
+        )
+
+        async for event in projection.project(source):
             yield event

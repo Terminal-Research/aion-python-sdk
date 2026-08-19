@@ -22,6 +22,9 @@ pytest-cov = "^7.1.0"
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "integration: needs a real service or real processes; slower than a unit test",
+]
 
 [build-system]
 requires = ["poetry-core"]

@@ -147,7 +147,21 @@ and are discovered by `aion-server` at runtime.
 
 ## Repo tooling
 
-- `make help` lists all targets. `make tests` runs `scripts/tests.py`, which
+- `make help` lists all targets. `make tests` runs the unit suite;
+  `make tests-integration` runs the integration suite and
+  `make tests-all` runs both. A test marked `integration` needs a real
+  PostgreSQL or real child processes and waits for real timeouts, so it is not
+  what you run between two edits - run it before you commit. The database is
+  handled for you: both integration targets start a disposable container,
+  run the suite, and stop the container again, carrying the suite's exit
+  status across the teardown. `PG_TEST_KEEP=1` leaves it up between runs while
+  you debug one, and `make pg-test-up` / `make pg-test-down` drive it by hand.
+  Setting `POSTGRES_TEST_URL` yourself - in CI, or at a PostgreSQL of your own
+  - takes over completely and nothing touches Docker. That variable is named
+  apart from the ordinary connection setting on purpose: these tests migrate
+  and truncate what they are pointed at. Without it `scripts/tests.py
+  --integration` refuses to run rather than reporting a pass for a suite that
+  skipped itself. `scripts/tests.py`
   discovers every `libs/aion-*` package with a `tests/` directory and runs its
   suite (libs without tests are skipped). Prefer it over calling `pytest` by
   hand: the whole repo takes under three seconds, because the libs run

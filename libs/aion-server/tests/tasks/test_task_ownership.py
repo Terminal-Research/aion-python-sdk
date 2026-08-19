@@ -15,6 +15,7 @@ from a2a.types import Task, TaskState, TaskStatus, TaskStatusUpdateEvent
 from aion.server.agent.execution.active_task_registry import AionActiveTaskRegistry
 from aion.server.tasks.ownership import (
     RECONCILER_ENV_VAR,
+    Busy,
     Claim,
     LeaseSettings,
     Lost,
@@ -417,3 +418,88 @@ async def test_disabled_reaper_touches_nothing() -> None:
     )
 
     assert await provider.reconcile() == 0
+
+
+class _RefusingDbManager:
+    """Database manager whose every acquire is refused."""
+
+    def get_session(self):
+        """Return a session that answers no claim row."""
+        return _AcquireSession(row=None)
+
+
+class _FailingSession:
+    """Session that fails the moment it is entered."""
+
+    async def __aenter__(self):
+        """Fail on entry, the way an unreachable database does."""
+        raise ConnectionError("database is unreachable")
+
+    async def __aexit__(self, *_):
+        """Never reached."""
+
+
+class _FailingDbManager:
+    """Database manager that cannot open a session."""
+
+    def get_session(self):
+        """Return the failing session context manager."""
+        return _FailingSession()
+
+
+def _refusing_provider(db_manager) -> PostgresOwnershipProvider:
+    """Build a provider that parses every task id as a fresh UUID."""
+    return PostgresOwnershipProvider(
+        db_manager=db_manager,
+        task_id_parser=lambda task_id: uuid.UUID(task_id),
+    )
+
+
+@pytest.mark.anyio
+async def test_refused_acquires_leave_no_locks_behind() -> None:
+    """A per-task lock lives for the length of an attempt, not of a lease.
+
+    A refusal hands back no claim, so nothing is released later and nothing
+    would ever remove the lock. A process that mostly meets tasks owned by
+    other instances refuses most of its acquires, which is exactly where an
+    entry per task id must not accumulate.
+    """
+    provider = _refusing_provider(_RefusingDbManager())
+
+    for _ in range(1000):
+        assert isinstance(await provider.acquire(str(uuid.uuid4())), Busy)
+
+    assert provider._claims == {}
+    assert provider._acquire_locks == {}
+    assert provider._acquire_lock_users == {}
+
+
+@pytest.mark.anyio
+async def test_a_failed_acquire_leaves_no_lock_behind() -> None:
+    """An unreachable database is the other outcome with nothing to release."""
+    provider = _refusing_provider(_FailingDbManager())
+
+    with pytest.raises(ConnectionError):
+        await provider.acquire(str(uuid.uuid4()))
+
+    assert provider._acquire_locks == {}
+    assert provider._acquire_lock_users == {}
+
+
+@pytest.mark.anyio
+async def test_a_released_claim_leaves_no_lock_behind() -> None:
+    """The ordinary path drops the lock when its acquire ends, not later."""
+    token = uuid.uuid4()
+    provider = PostgresOwnershipProvider(
+        db_manager=_AcquireDbManager(_claim_row(token)),
+        task_id_parser=lambda _task_id: uuid.UUID(TASK_ID),
+    )
+
+    claim = await provider.acquire(TASK_ID)
+    assert isinstance(claim, Claim)
+    assert provider._acquire_locks == {}
+
+    await provider.release(claim)
+    assert provider._claims == {}
+    assert provider._acquire_locks == {}
+    assert provider._acquire_lock_users == {}

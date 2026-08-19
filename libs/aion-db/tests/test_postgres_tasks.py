@@ -22,10 +22,13 @@ from aion.db.postgres.repositories import STATUS_TIMESTAMP_SORT_KEY, TasksReposi
 from aion.db.postgres.types import SortKey, Sorting
 
 
-pytestmark = pytest.mark.skipif(
-    not os.getenv("POSTGRES_TEST_URL"),
-    reason="POSTGRES_TEST_URL is not set",
-)
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.skipif(
+        not os.getenv("POSTGRES_TEST_URL"),
+        reason="POSTGRES_TEST_URL is not set",
+    ),
+]
 
 
 def _status(timestamp: datetime | None = None, state=TaskState.TASK_STATE_WORKING):

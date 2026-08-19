@@ -8,39 +8,40 @@ a database that may be migrated and truncated.
 
 from __future__ import annotations
 
-import os
 import uuid
 
 import pytest
 import pytest_asyncio
 
-POSTGRES_TEST_URL = os.getenv("POSTGRES_TEST_URL")
+from .postgres_support import (
+    POSTGRES_TEST_URL,
+    claim_count as _claim_count,
+    expire_all as _expire_all,
+    prepared_database,
+    provider as _provider,
+    task_state as _state,
+    truncate,
+    write_task as _write,
+)
 
-if POSTGRES_TEST_URL:
-    os.environ["POSTGRES_URL"] = POSTGRES_TEST_URL
+from a2a.types import TaskState
+from sqlalchemy import text
 
-from a2a.types import Task, TaskState, TaskStatus  # noqa: E402
-from sqlalchemy import text  # noqa: E402
-
-from aion.db.settings import db_settings  # noqa: E402
-from aion.db.postgres.migrations.env import config as alembic_config  # noqa: E402
-from aion.db.postgres.utils import convert_pg_url  # noqa: E402
-from aion.db.postgres.manager import db_manager  # noqa: E402
-from aion.db.postgres.migrations import upgrade_to_head  # noqa: E402
-from aion.server.tasks.ownership import (  # noqa: E402
+from aion.db.postgres.manager import db_manager
+from aion.server.tasks.ownership import (
     Busy,
     Claim,
     Lost,
     Owned,
-    PostgresOwnershipProvider,
     TaskOwnershipLost,
 )
-from aion.server.tasks.stores.postgres_task_store import PostgresTaskStore  # noqa: E402
+from aion.server.tasks.stores.postgres_task_store import PostgresTaskStore
 
 # One event loop for the whole module: the database manager is a process-wide
 # singleton holding a connection pool, and a pool bound to a loop that has been
 # closed cannot serve the next test.
 pytestmark = [
+    pytest.mark.integration,
     pytest.mark.skipif(not POSTGRES_TEST_URL, reason="POSTGRES_TEST_URL is not set"),
     pytest.mark.asyncio(loop_scope="module"),
 ]
@@ -48,75 +49,16 @@ pytestmark = [
 
 @pytest_asyncio.fixture(scope="module", loop_scope="module")
 async def _migrated_database():
-    """Migrate once and keep one initialized manager for the whole session.
-
-    ``db_manager`` is a process-wide singleton; tearing it down and rebuilding
-    it per test serialises every connection through repeated pool setup.
-    """
-    # Assigned rather than left to the environment. Both the settings object
-    # and the Alembic config read the URL when they are first imported, which
-    # in a whole-suite run happens before this module is read at all.
-    db_settings.pg_url = POSTGRES_TEST_URL
-    alembic_config.set_main_option(
-        "sqlalchemy.url",
-        convert_pg_url(POSTGRES_TEST_URL, driver="psycopg"),
-    )
-    await upgrade_to_head()
-    await db_manager.initialize(POSTGRES_TEST_URL)
-    try:
-        yield db_manager
-    finally:
-        await db_manager.close()
+    """Migrate once and keep one initialized manager for the whole module."""
+    async with prepared_database() as manager:
+        yield manager
 
 
 @pytest_asyncio.fixture(loop_scope="module")
 async def database(_migrated_database):
     """Hand each test an empty claim and task table."""
-    async with db_manager.get_session() as session:
-        await session.execute(text("TRUNCATE task_claims, tasks CASCADE"))
-        await session.commit()
+    await truncate()
     return _migrated_database
-
-
-def _provider(instance: str, **kwargs) -> PostgresOwnershipProvider:
-    """Build a provider standing in for one agent instance."""
-    return PostgresOwnershipProvider(
-        task_id_parser=lambda task_id: uuid.UUID(task_id),
-        owner_instance_id=instance,
-        **kwargs,
-    )
-
-
-async def _write(provider: PostgresOwnershipProvider, task_id: str, state: TaskState):
-    """Write a task through the fenced store the provider belongs to."""
-    store = PostgresTaskStore(ownership_provider=provider)
-    await store.save(
-        Task(id=task_id, context_id="ctx", status=TaskStatus(state=state))
-    )
-
-
-async def _state(task_id: str) -> str | None:
-    """Read the durable state column for a task."""
-    async with db_manager.get_session() as session:
-        result = await session.execute(
-            text("SELECT state FROM tasks WHERE id = :id"), {"id": uuid.UUID(task_id)}
-        )
-        return result.scalar()
-
-
-async def _claim_count() -> int:
-    """Count the rows in the claim table."""
-    async with db_manager.get_session() as session:
-        return (await session.execute(text("SELECT count(*) FROM task_claims"))).scalar()
-
-
-async def _expire_all() -> None:
-    """Move every lease into the past."""
-    async with db_manager.get_session() as session:
-        await session.execute(
-            text("UPDATE task_claims SET lease_expires_at = clock_timestamp() - interval '5 min'")
-        )
-        await session.commit()
 
 
 async def test_only_one_instance_holds_a_task(database) -> None:

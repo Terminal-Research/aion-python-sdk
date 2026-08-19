@@ -82,6 +82,11 @@ class PostgresOwnershipProvider:
         # database: the second upsert would meet the first one's live lease and
         # report the process busy against itself.
         self._acquire_locks: dict[str, asyncio.Lock] = {}
+        # How many acquires are currently using each lock. The lock exists for
+        # the length of an attempt, not for the length of a lease: a refusal
+        # has no lease to release later, and without a count the entry would
+        # outlive every attempt that was ever refused.
+        self._acquire_lock_users: dict[str, int] = {}
         self._loss_callback: OwnershipLossCallback | None = None
         self._heartbeat_task: asyncio.Task[None] | None = None
         self._reconciler_task: asyncio.Task[None] | None = None
@@ -103,17 +108,42 @@ class PostgresOwnershipProvider:
     async def acquire(self, task_id: str) -> Claim | Busy:
         """Acquire a free or expired lease using a conditional upsert."""
         task_uuid = self._task_id_parser(task_id)
-        async with self._acquire_lock_for(task_id):
-            return await self._acquire_locked(task_id, task_uuid)
+        lock = self._checkout_acquire_lock(task_id)
+        try:
+            async with lock:
+                return await self._acquire_locked(task_id, task_uuid)
+        finally:
+            # In a finally because a refusal and a database error are the two
+            # outcomes that leave nothing behind to clean the entry up later.
+            self._return_acquire_lock(task_id)
 
-    def _acquire_lock_for(self, task_id: str) -> asyncio.Lock:
+    def _checkout_acquire_lock(self, task_id: str) -> asyncio.Lock:
         """Return the per-task lock serialising acquires inside this process."""
         with self._claims_lock:
             lock = self._acquire_locks.get(task_id)
             if lock is None:
                 lock = asyncio.Lock()
                 self._acquire_locks[task_id] = lock
+            self._acquire_lock_users[task_id] = self._acquire_lock_users.get(task_id, 0) + 1
             return lock
+
+    def _return_acquire_lock(self, task_id: str) -> None:
+        """Drop the lock once the last acquire using it has finished.
+
+        Counted rather than read off ``asyncio.Lock.locked()``. Releasing a
+        lock wakes the next waiter through the event loop, so between the two
+        the lock reports itself free while an acquire is still queued on it.
+        Dropping the entry in that window lets the next caller build a second
+        lock and reach the database beside the one being woken - the very race
+        the lock exists to prevent.
+        """
+        with self._claims_lock:
+            remaining = self._acquire_lock_users.get(task_id, 0) - 1
+            if remaining > 0:
+                self._acquire_lock_users[task_id] = remaining
+                return
+            self._acquire_lock_users.pop(task_id, None)
+            self._acquire_locks.pop(task_id, None)
 
     async def _acquire_locked(self, task_id: str, task_uuid: uuid.UUID) -> Claim | Busy:
         """Run one acquire while this process holds the per-task lock."""
@@ -219,7 +249,6 @@ class PostgresOwnershipProvider:
             with self._claims_lock:
                 if self._same_claim(self._claims.get(claim.task_id), claim):
                     self._claims.pop(claim.task_id, None)
-                self._forget_acquire_lock(claim.task_id)
 
     def claim_for(self, task_id: str) -> Claim | None:
         """Return the locally remembered lease without querying PostgreSQL.
@@ -278,7 +307,6 @@ class PostgresOwnershipProvider:
             if not self._same_claim(self._claims.get(claim.task_id), claim):
                 return
             self._claims.pop(claim.task_id, None)
-            self._forget_acquire_lock(claim.task_id)
         self._notify_loss(claim.task_id, reason)
 
     def _notify_loss(self, task_id: str, reason: str) -> None:
@@ -290,17 +318,6 @@ class PostgresOwnershipProvider:
             callback(task_id, reason)
         except Exception:
             logger.exception("Ownership-loss callback failed for %s", task_id)
-
-    def _forget_acquire_lock(self, task_id: str) -> None:
-        """Drop an idle per-task acquire lock; callers hold ``_claims_lock``.
-
-        A lock currently held belongs to an acquire in flight and is left
-        alone: dropping it would let a second caller build a new one and reach
-        the database concurrently with the first.
-        """
-        lock = self._acquire_locks.get(task_id)
-        if lock is not None and not lock.locked():
-            self._acquire_locks.pop(task_id, None)
 
     # -- supervision ---------------------------------------------------------
 
