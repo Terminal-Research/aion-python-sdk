@@ -12,7 +12,7 @@ from collections.abc import Callable
 from dataclasses import replace
 from datetime import timedelta
 
-from sqlalchemy import select
+from sqlalchemy import BigInteger, func, literal, select
 
 from aion.db.postgres import db_manager as default_db_manager
 from aion.db.postgres.manager import DbManager
@@ -20,7 +20,12 @@ from aion.db.postgres.models import TaskRecordModel
 from aion.db.postgres.repositories import TaskClaimsRepository
 from aion.server.tasks.identifiers import require_task_uuid
 
-from .config import LeaseSettings, RECONCILER_ENV_VAR, reaper_enabled_by_environment
+from .config import (
+    LeaseSettings,
+    RECONCILE_ADVISORY_LOCK_KEY,
+    RECONCILER_ENV_VAR,
+    reaper_enabled_by_environment,
+)
 from .heartbeat import OwnershipHeartbeat
 from .reaper import ClaimReaper
 from .types import Busy, Claim, Lost, Owned, OwnershipLossCallback, Unknown
@@ -43,6 +48,7 @@ class PostgresOwnershipProvider:
 
     def __init__(
         self,
+        agent_id: str,
         *,
         db_manager: DbManager = default_db_manager,
         task_id_parser: Callable[[str], uuid.UUID] = require_task_uuid,
@@ -53,6 +59,9 @@ class PostgresOwnershipProvider:
         """Initialize a provider without opening a database connection.
 
         Args:
+            agent_id: Identity of the agent this process serves. Every claim
+                it acquires or reads is scoped to it, so several agents can
+                share one database without fencing each other's leases.
             db_manager: Aion PostgreSQL manager used for short transactions.
             task_id_parser: Identifier parsing, shared with the task store so a
                 lease and its task resolve to the same key.
@@ -60,9 +69,10 @@ class PostgresOwnershipProvider:
                 is absent, the deployment-provided ``HOST_NAME`` is used.
             settings: Lease timing; the defaults are the deployed ones.
             reconciler_enabled: Whether this process reclaims expired leases.
-                Defaults to the ``AION_TASK_OWNERSHIP_REAPER`` switch, which is
+                Defaults to the ``TASK_OWNERSHIP_REAPER`` switch, which is
                 on unless explicitly disabled.
         """
+        self.agent_id = agent_id
         self._db_manager = db_manager
         self._task_id_parser = task_id_parser
         self.settings = settings or LeaseSettings()
@@ -165,7 +175,7 @@ class PostgresOwnershipProvider:
                         .with_for_update()
                     )
                     record = await TaskClaimsRepository(session).acquire(
-                        task_uuid, token, ttl, self.owner_instance_id
+                        task_uuid, self.agent_id, token, ttl, self.owner_instance_id
                     )
                     await session.commit()
         except Exception:
@@ -227,6 +237,61 @@ class PostgresOwnershipProvider:
                 self._claims[claim.task_id] = updated
         return Owned(record.lease_expires_at)
 
+    async def renew_batch(self, claims: list[Claim]) -> dict[str, Owned | Lost] | Unknown:
+        """Conditionally extend many leases in one round trip.
+
+        Same fencing and result semantics as :meth:`renew`, batched: a
+        statement that executes is definitive for every claim in it - some
+        renew, some do not, exactly as calling :meth:`renew` once per claim
+        would report - so only a failed or timed-out statement is uncertain,
+        and it is uncertain for the whole batch at once rather than as one
+        ``Unknown`` per claim.
+
+        Returns:
+            A mapping from ``task_id`` to its outcome when the statement
+            executed, or a single :class:`Unknown` for the whole batch when
+            it did not.
+        """
+        if not claims:
+            return {}
+
+        started = time.monotonic()
+        ttl = timedelta(seconds=self.settings.ttl_seconds)
+        try:
+            pairs = [(self._task_id_parser(claim.task_id), claim.owner_token) for claim in claims]
+            async with asyncio.timeout(self.settings.statement_timeout_seconds):
+                async with self._db_manager.get_session() as session:
+                    records = await TaskClaimsRepository(session).renew_batch(pairs, ttl)
+                    await session.commit()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            return Unknown(exc)
+
+        renewed_by_task_id = {str(record.task_id): record for record in records}
+        deadline = self._safe_deadline(started)
+        results: dict[str, Owned | Lost] = {}
+        for claim in claims:
+            record = renewed_by_task_id.get(claim.task_id)
+            if record is None:
+                # A definitive loss, reported the same way renew() reports
+                # one: the receipt goes now, synchronously, so the follow-up
+                # mark_lost the caller does for bookkeeping is idempotent.
+                self.mark_lost(claim, "renew_lost")
+                results[claim.task_id] = Lost()
+                continue
+
+            updated = replace(
+                claim,
+                lease_expires_at=record.lease_expires_at,
+                deadline=deadline,
+            )
+            with self._claims_lock:
+                if self._same_claim(self._claims.get(claim.task_id), claim):
+                    self._claims[claim.task_id] = updated
+            results[claim.task_id] = Owned(record.lease_expires_at)
+        return results
+
     async def release(self, claim: Claim) -> None:
         """Conditionally delete a lease and always forget the local receipt."""
         task_uuid = self._task_id_parser(claim.task_id)
@@ -268,7 +333,9 @@ class PostgresOwnershipProvider:
         try:
             async with asyncio.timeout(self.settings.statement_timeout_seconds):
                 async with self._db_manager.get_session() as session:
-                    record = await TaskClaimsRepository(session).find_by_task_id(task_uuid)
+                    record = await TaskClaimsRepository(session).find_by_task_id(
+                        task_uuid, self.agent_id
+                    )
         except Exception:
             logger.debug(
                 "Could not read the current owner of %s for diagnostics",
@@ -338,6 +405,7 @@ class PostgresOwnershipProvider:
                 OwnershipHeartbeat(self).run(),
                 name="task-ownership-heartbeat",
             )
+            self._heartbeat_task.add_done_callback(self._on_heartbeat_task_done)
         if not self.reconciler_enabled:
             logger.info(
                 "Task ownership reaper is disabled; set %s to enable it",
@@ -349,6 +417,64 @@ class PostgresOwnershipProvider:
                 self._reconcile_loop(),
                 name="task-ownership-reconciler",
             )
+            self._reconciler_task.add_done_callback(self._on_reconciler_task_done)
+
+    def _on_heartbeat_task_done(self, task: asyncio.Task[None]) -> None:
+        """Restart the heartbeat if it ended on its own rather than via stop().
+
+        ``OwnershipHeartbeat.run`` only returns by raising, and it already
+        fails closed on every claim it knows about before letting an
+        exception escape - see ``_renew_all``. So the only two ways this
+        callback fires are an expected cancellation from :meth:`stop`, and a
+        bug that escaped that handling anyway. The first is silent on
+        purpose: :meth:`stop` has already cleared ``_heartbeat_task``, which
+        is what tells the two apart here without a separate flag.
+
+        The second must not be silent. A heartbeat that stopped running is
+        the one failure this whole mechanism exists to prevent: every lease
+        already in the claim map would sit unrenewed while the executions
+        holding them keep going, discovered only whenever each next happens
+        to attempt a write. Restarting immediately does not undo whatever
+        renewals were missed, but it puts every claim back under active
+        supervision rather than leaving them to be found one write at a time.
+        """
+        if task is not self._heartbeat_task:
+            # stop() always clears the reference before it cancels the task,
+            # so a mismatch here means that path already handled this exit.
+            return
+        if task.cancelled():
+            logger.error("Task ownership heartbeat was cancelled outside stop(); restarting")
+        else:
+            logger.error(
+                "Task ownership heartbeat crashed; restarting", exc_info=task.exception()
+            )
+        self._heartbeat_task = None
+        self.start()
+
+    def _on_reconciler_task_done(self, task: asyncio.Task[None]) -> None:
+        """Restart the reconciler if it ended on its own rather than via stop().
+
+        Milder than losing the heartbeat - nothing this process is executing
+        is put at risk, since fencing on write is what actually protects a
+        claim, not the reconciler being alive. But a dead reconciler is
+        silent: no lease anywhere reports it, no execution notices, and this
+        pod simply stops helping reclaim leases other processes abandoned.
+        In a single-pod deployment, or if every pod hit the same bug, nothing
+        would ever reap an orphaned lease again. Same detection as
+        :meth:`_on_heartbeat_task_done`: :meth:`stop` clears the reference
+        before it cancels the task, so a mismatch here means that path
+        already handled this exit.
+        """
+        if task is not self._reconciler_task:
+            return
+        if task.cancelled():
+            logger.error("Task ownership reconciler was cancelled outside stop(); restarting")
+        else:
+            logger.error(
+                "Task ownership reconciler crashed; restarting", exc_info=task.exception()
+            )
+        self._reconciler_task = None
+        self.start()
 
     async def stop(self) -> None:
         """Cancel and await the heartbeat and reconciler tasks."""
@@ -365,24 +491,82 @@ class PostgresOwnershipProvider:
             await asyncio.gather(*tasks, return_exceptions=True)
 
     async def _reconcile_loop(self) -> None:
-        """Run periodic reconciliation without overlapping passes."""
+        """Run periodic reconciliation without overlapping passes.
+
+        Two cadences share one wake-up timer. The claim-expiry pass runs
+        every tick, at ``reconcile_interval_seconds``; the active-task sweep
+        - the rarer, defensive pass, see :meth:`ClaimReaper.run_once` - only
+        piggybacks on a tick once its own, longer
+        ``active_task_sweep_interval_seconds`` has elapsed. Both are timed
+        from when they last ran, the same discipline the heartbeat uses, so
+        neither drifts against the other from a slow tick.
+        """
         next_run = time.monotonic() + self.settings.reconcile_interval_seconds
+        next_sweep = time.monotonic() + self.settings.active_task_sweep_interval_seconds
         while True:
             delay = next_run - time.monotonic()
             if delay > 0:
                 await asyncio.sleep(delay)
             started = time.monotonic()
+            include_sweep = started >= next_sweep
             try:
-                await self.reconcile()
+                await self.reconcile(include_active_task_sweep=include_sweep)
             except asyncio.CancelledError:
                 raise
             except Exception:
                 logger.warning("Task ownership reconciliation failed", exc_info=True)
             next_run = started + self.settings.reconcile_interval_seconds
+            if include_sweep:
+                next_sweep = started + self.settings.active_task_sweep_interval_seconds
 
-    async def reconcile(self) -> int:
+    async def reconcile(self, *, include_active_task_sweep: bool = True) -> int:
         """Run one reaper pass, if this process is allowed to reclaim leases."""
         if not self.reconciler_enabled:
             return 0
         async with self._reconcile_lock:
-            return await self._reaper.run_once()
+            return await self._reconcile_with_cluster_lock(include_active_task_sweep)
+
+    async def _reconcile_with_cluster_lock(self, include_active_task_sweep: bool) -> int:
+        """Run one reaper pass only while this process holds the cluster-wide lock.
+
+        Every process reconciles against the same claims and tasks, so
+        letting all of them run every tick means every one of them reads the
+        same candidate list and most lose the race for each row to
+        ``FOR UPDATE SKIP LOCKED`` - correct, but wasted work that scales with
+        pod count rather than with orphans found. A non-blocking advisory
+        lock picks one worker per tick instead: a pod that does not get it
+        skips the tick outright rather than queuing behind whichever pod is
+        already reaping, and tries again on the next one regardless.
+
+        The lock lives on its own connection, held only for the duration of
+        this one call and never handed to the reaper's own short
+        transactions - those keep using the pool as normal. Session-scoped,
+        so a pod that dies mid-tick releases it the moment its connection
+        closes, with nothing here depending on that cleanup running.
+        """
+        # Typed explicitly: the key exceeds a 32-bit int, and an untyped
+        # literal would leave the driver to guess the parameter's OID.
+        lock_key = literal(RECONCILE_ADVISORY_LOCK_KEY, type_=BigInteger)
+        engine = self._db_manager.get_engine()
+        async with engine.connect() as connection:
+            acquired = (
+                await connection.execute(select(func.pg_try_advisory_lock(lock_key)))
+            ).scalar()
+            await connection.commit()
+            if not acquired:
+                return 0
+            try:
+                return await self._reaper.run_once(
+                    include_active_task_sweep=include_active_task_sweep
+                )
+            finally:
+                try:
+                    await connection.execute(select(func.pg_advisory_unlock(lock_key)))
+                    await connection.commit()
+                except Exception:
+                    # Best-effort: a dead connection cannot be unlocked, but
+                    # Postgres already releases a session-scoped lock when the
+                    # session that holds it closes, whatever killed it here.
+                    logger.warning(
+                        "Failed to release reconcile advisory lock", exc_info=True
+                    )

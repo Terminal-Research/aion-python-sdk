@@ -71,6 +71,12 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
         self._task_managers: dict[str, AionTaskManager] = {}
         self._interruption_tasks: set[asyncio.Task[None]] = set()
         self._interruption_tasks_by_id: dict[str, ActiveTask] = {}
+        # Set for the duration of aclose(). While it is set,
+        # _remove_task_for_incarnation must not release a claim: aclose() has
+        # already taken its own snapshot of the claims held at shutdown, and
+        # releases them itself only after _settle_interrupted_task has used
+        # them to write the shutdown outcome.
+        self._shutting_down = False
 
         self._ownership: OwnershipProvider = (
             ownership_provider
@@ -289,7 +295,11 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
             self._active_tasks.pop(active_task.task_id, None)
             if self._task_managers.get(active_task.task_id) is active_task._task_manager:
                 self._task_managers.pop(active_task.task_id, None)
-            claim = self._ownership.claim_for(active_task.task_id)
+            claim = (
+                None
+                if self._shutting_down
+                else self._ownership.claim_for(active_task.task_id)
+            )
             logger.debug("Removed active task for %s", active_task.task_id)
 
         if claim is not None:
@@ -432,9 +442,22 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
         Such a task is settled as ``FAILED``, marked in metadata with
         ``SERVER_SHUTDOWN``. See ``aion.server.tasks.settlement`` for why the
         state is terminal rather than resumable.
+
+        The claim each task manager needs to write that outcome is snapshotted
+        here, before the drain, and released explicitly afterwards. Draining
+        finishes each ``ActiveTask``, which would otherwise release its claim
+        through the ordinary cleanup path well before settlement gets to use
+        it - see ``_remove_task_for_incarnation``, which is told to stand
+        down for the duration via ``_shutting_down``.
         """
         async with self._lock:
+            self._shutting_down = True
             task_managers = list(self._task_managers.values())
+            claims = [
+                claim
+                for task_id in self._task_managers
+                if (claim := self._ownership.claim_for(task_id)) is not None
+            ]
 
         await super().aclose()
 
@@ -457,6 +480,9 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
 
         async with self._lock:
             self._task_managers.clear()
+
+        for claim in claims:
+            await self._ownership.release(claim)
 
         await self._ownership.stop()
 

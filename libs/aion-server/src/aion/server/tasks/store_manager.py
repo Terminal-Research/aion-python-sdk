@@ -29,20 +29,26 @@ class StoreManager:
         self._store: Optional[InMemoryTaskStore | PostgresTaskStore] = None
         self._ownership_provider: Optional[OwnershipProvider] = None
 
-    def initialize(self):
+    def initialize(self, agent_id: str):
         """
         Initialize the store manager with appropriate storage backend.
 
         Selects PostgresTaskStore if database manager is initialized,
         otherwise uses InMemoryTaskStore as fallback. Safe to call multiple times.
+
+        Args:
+            agent_id: Identity of the agent this process serves. Scopes every
+                task and claim the Postgres backend touches, so several
+                agents can share one database. Unused by the in-memory
+                fallback, which is already isolated by being unshared.
         """
         if self._is_initialized:
             logger.warning("Tried to initialize store, already initialized")
             return
 
         if db_manager.is_initialized:
-            ownership_provider = PostgresOwnershipProvider()
-            task_store = PostgresTaskStore(ownership_provider=ownership_provider)
+            ownership_provider = PostgresOwnershipProvider(agent_id)
+            task_store = PostgresTaskStore(agent_id=agent_id, ownership_provider=ownership_provider)
         else:
             task_store = InMemoryTaskStore()
             ownership_provider = task_store.ownership_provider

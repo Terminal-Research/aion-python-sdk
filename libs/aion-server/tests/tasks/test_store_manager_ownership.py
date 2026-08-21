@@ -13,7 +13,7 @@ def test_uninitialized_database_selects_in_memory_pair() -> None:
     manager = StoreManager()
 
     with patch("aion.server.tasks.store_manager.db_manager", Mock(is_initialized=False)):
-        manager.initialize()
+        manager.initialize("test-agent")
 
     assert isinstance(manager.get_store(), InMemoryTaskStore)
     assert isinstance(manager.get_ownership_provider(), DegenerateOwnershipProvider)
@@ -25,7 +25,7 @@ def test_initialized_database_selects_postgres_pair() -> None:
     manager = StoreManager()
 
     with patch("aion.server.tasks.store_manager.db_manager", Mock(is_initialized=True)):
-        manager.initialize()
+        manager.initialize("test-agent")
 
     assert isinstance(manager.get_store(), PostgresTaskStore)
     assert isinstance(manager.get_ownership_provider(), PostgresOwnershipProvider)

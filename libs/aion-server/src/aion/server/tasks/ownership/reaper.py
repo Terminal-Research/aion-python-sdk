@@ -11,17 +11,19 @@ consequences, and only one of them is safe to enable on the first deployment.
 
 from __future__ import annotations
 
+import datetime as _dt
 import logging
 import uuid
 
-from sqlalchemy import text
+from sqlalchemy import delete, exists, func, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from aion.core.a2a.enums import TaskSettlementReason
 from aion.db.postgres.manager import DbManager
+from aion.db.postgres.models import TaskClaimModel, TaskRecordModel
 from aion.db.postgres.records import TaskRecord
-from aion.db.postgres.repositories import TasksRepository
+from aion.db.postgres.repositories import TaskClaimsRepository, TasksRepository
 from aion.server.a2a.constants import ACTIVE_TASK_STATES
-from aion.server.tasks.identifiers import as_uuid
 from aion.server.tasks.settlement import settled_task
 from a2a.types import TaskState
 
@@ -62,16 +64,54 @@ class ClaimReaper:
         self._settings = settings
         self._owner_instance_id = owner_instance_id
 
-    async def run_once(self) -> int:
-        """Run both passes and report how many tasks were settled."""
+    async def run_once(self, *, include_active_task_sweep: bool = True) -> int:
+        """Run the claim-expiry pass, and the active-task sweep when due.
+
+        Args:
+            include_active_task_sweep: Whether to also run
+                :meth:`_unowned_active_task_candidates` this call. The claim
+                table is the everyday source of truth for what expired, and
+                the caller runs that pass every tick; the sweep exists only
+                for a task presented as active with no lease behind it at
+                all, which the expiry index can never surface. That case
+                should not occur, so the caller checks it far less often -
+                see ``ACTIVE_TASK_SWEEP_INTERVAL_SECONDS``.
+        """
+        await self._delete_orphan_claims()
         settled = 0
         for task_uuid in await self._expired_claim_candidates():
             if await self._settle_expired_claim(task_uuid):
                 settled += 1
-        for task_uuid in await self._unowned_active_task_candidates():
-            if await self._settle_unowned_active_task(task_uuid):
-                settled += 1
+        if include_active_task_sweep:
+            for task_uuid in await self._unowned_active_task_candidates():
+                if await self._settle_unowned_active_task(task_uuid):
+                    settled += 1
         return settled
+
+    async def _delete_orphan_claims(self) -> None:
+        """Remove expired leases whose task row is gone, as their own pass.
+
+        An empty ``FOR UPDATE SKIP LOCKED`` result means one of two different
+        things: the row does not exist, or another process holds it right
+        now. Treating an empty result as "gone" in the settlement passes
+        would delete a live claim out from under its holder; treating it as
+        "busy" always would mean a genuine orphan - the task row was deleted
+        with its claim left behind - is never removed.
+
+        This batch delete is the only place that decides "gone", and it does
+        so with a plain, unlocked ``NOT EXISTS`` rather than by racing a
+        settlement transaction for the row. A claim missed here because the
+        task was deleted between this statement and a settlement attempt is
+        caught on the next pass.
+        """
+        async with self._db_manager.get_session() as session:
+            await session.execute(
+                delete(TaskClaimModel).where(
+                    TaskClaimModel.lease_expires_at <= func.statement_timestamp(),
+                    ~exists().where(TaskRecordModel.id == TaskClaimModel.task_id),
+                )
+            )
+            await session.commit()
 
     async def _expired_claim_candidates(self) -> list[uuid.UUID]:
         """Read a bounded, lock-free hypothesis of expired lease rows.
@@ -82,14 +122,12 @@ class ClaimReaper:
         """
         async with self._db_manager.get_session() as session:
             result = await session.execute(
-                text(
-                    "SELECT task_id FROM task_claims "
-                    "WHERE lease_expires_at <= clock_timestamp() "
-                    "ORDER BY lease_expires_at LIMIT :limit"
-                ),
-                {"limit": self._settings.reconcile_batch_size},
+                select(TaskClaimModel.task_id)
+                .where(TaskClaimModel.lease_expires_at <= func.statement_timestamp())
+                .order_by(TaskClaimModel.lease_expires_at)
+                .limit(self._settings.reconcile_batch_size)
             )
-            return [as_uuid(row[0]) for row in result.fetchall()]
+            return list(result.scalars().all())
 
     async def _unowned_active_task_candidates(self) -> list[uuid.UUID]:
         """Read old active tasks that have no lease, without taking locks.
@@ -99,23 +137,21 @@ class ClaimReaper:
         excluded by ``ACTIVE_TASK_STATES``: a task waiting for a user has no
         owner on purpose.
         """
+        threshold = func.statement_timestamp() - _dt.timedelta(
+            seconds=self._settings.orphan_task_age_seconds
+        )
         async with self._db_manager.get_session() as session:
             result = await session.execute(
-                text(
-                    "SELECT id FROM tasks "
-                    "WHERE state = ANY(CAST(:states AS text[])) "
-                    "  AND updated_at <= clock_timestamp() - CAST(:age AS interval) "
-                    "  AND NOT EXISTS (SELECT 1 FROM task_claims "
-                    "                  WHERE task_claims.task_id = tasks.id) "
-                    "ORDER BY updated_at LIMIT :limit"
-                ),
-                {
-                    "states": self._active_state_names(),
-                    "age": f"{self._settings.orphan_task_age_seconds} seconds",
-                    "limit": self._settings.reconcile_batch_size,
-                },
+                select(TaskRecordModel.id)
+                .where(
+                    TaskRecordModel.state.in_(self._active_state_names()),
+                    TaskRecordModel.updated_at <= threshold,
+                    ~exists().where(TaskClaimModel.task_id == TaskRecordModel.id),
+                )
+                .order_by(TaskRecordModel.updated_at)
+                .limit(self._settings.reconcile_batch_size)
             )
-            return [as_uuid(row[0]) for row in result.fetchall()]
+            return list(result.scalars().all())
 
     @staticmethod
     def _active_state_names() -> list[str]:
@@ -123,70 +159,51 @@ class ClaimReaper:
         return [TaskState.Name(state) for state in ACTIVE_TASK_STATES]
 
     async def _settle_expired_claim(self, task_uuid: uuid.UUID) -> bool:
-        """Recheck and settle one expired lease in its own short transaction."""
+        """Recheck and settle one expired lease in its own short transaction.
+
+        A task row missing here is not this pass's concern: it means either
+        the claim is an orphan, which :meth:`_delete_orphan_claims` removes
+        on its own pass, or the row was deleted between the candidate read
+        and this transaction, which the next pass sees as an orphan too.
+        """
         token = uuid.uuid4()
         try:
             async with self._db_manager.get_session() as session:
                 async with session.begin():
-                    # A lease is acquired before the first task row is written,
-                    # so an expired lease with no task behind it is an orphan
-                    # from a process that died in that window. Nothing will ever
-                    # settle it; only this delete keeps the table bounded. The
-                    # expiry predicate makes it safe against a fresh acquire,
-                    # which moves the expiry into the future.
-                    exists = await session.execute(
-                        text("SELECT id FROM tasks WHERE id = :task_id"),
-                        {"task_id": task_uuid},
-                    )
-                    if exists.first() is None:
-                        await session.execute(
-                            text(
-                                "DELETE FROM task_claims "
-                                " WHERE task_id = :task_id "
-                                "   AND lease_expires_at <= clock_timestamp()"
-                            ),
-                            {"task_id": task_uuid},
-                        )
-                        return False
+                    repository = TasksRepository(session)
 
-                    # Task row first (the lock order every writer follows), and
-                    # skipped rather than awaited: an unavailable row means
-                    # another process is already on this candidate.
-                    task_row = await session.execute(
-                        text(
-                            "SELECT id FROM tasks WHERE id = :task_id "
-                            "FOR UPDATE SKIP LOCKED"
-                        ),
-                        {"task_id": task_uuid},
+                    # Task row first (the lock order every writer follows),
+                    # skipped rather than waited on: an unavailable row means
+                    # another process is already on this candidate. Read in
+                    # full so the settlement below never re-fetches it.
+                    entity = await repository.find_by_id_for_update(
+                        task_uuid, skip_locked=True
                     )
-                    if task_row.first() is None:
+                    if entity is None:
                         raise _ReconcileAbort
 
-                    # Rechecked under the lock. This is what makes the lock-free
-                    # candidate query safe: the owner may have renewed in
-                    # between.
+                    # Recheck and fence in the same statement: a claim that no
+                    # longer matches the expiry predicate was renewed between
+                    # the lock-free candidate read and this transaction, which
+                    # is exactly what the lock-free read has to tolerate.
+                    # Replacing the token also shuts out a revived owner that
+                    # would otherwise write between this decision and the
+                    # outcome below.
                     claim_row = await session.execute(
-                        text(
-                            "SELECT lease_expires_at FROM task_claims "
-                            "WHERE task_id = :task_id "
-                            "  AND lease_expires_at <= clock_timestamp() "
-                            "FOR UPDATE"
-                        ),
-                        {"task_id": task_uuid},
+                        update(TaskClaimModel)
+                        .where(
+                            TaskClaimModel.task_id == task_uuid,
+                            TaskClaimModel.lease_expires_at <= func.statement_timestamp(),
+                        )
+                        .values(owner_token=token)
+                        .returning(TaskClaimModel.task_id)
                     )
                     if claim_row.first() is None:
                         raise _ReconcileAbort
 
-                    # Replacing the token shuts out a revived owner that would
-                    # otherwise write between the decision and the outcome.
-                    await session.execute(
-                        text(
-                            "UPDATE task_claims SET owner_token = :new_token "
-                            "WHERE task_id = :task_id"
-                        ),
-                        {"task_id": task_uuid, "new_token": token},
+                    return await self._settle_locked_task(
+                        session, repository, task_uuid, token, entity
                     )
-                    return await self._settle_locked_task(session, task_uuid, token)
         except _ReconcileAbort:
             return False
 
@@ -196,57 +213,76 @@ class ClaimReaper:
         try:
             async with self._db_manager.get_session() as session:
                 async with session.begin():
-                    task_row = await session.execute(
-                        text(
-                            "SELECT id FROM tasks "
-                            "WHERE id = :task_id "
-                            "  AND state = ANY(CAST(:states AS text[])) "
-                            "  AND updated_at <= clock_timestamp() - CAST(:age AS interval) "
-                            "  AND NOT EXISTS (SELECT 1 FROM task_claims "
-                            "                  WHERE task_claims.task_id = tasks.id) "
-                            "FOR UPDATE SKIP LOCKED"
-                        ),
-                        {
-                            "task_id": task_uuid,
-                            "states": self._active_state_names(),
-                            "age": f"{self._settings.orphan_task_age_seconds} seconds",
-                        },
+                    repository = TasksRepository(session)
+
+                    # Locked and read in full up front, so settlement below
+                    # never re-fetches this row. The candidate query's other
+                    # predicates - active state, age, no existing claim - are
+                    # rechecked in Python against this same locked read rather
+                    # than repeated in SQL.
+                    entity = await repository.find_by_id_for_update(
+                        task_uuid, skip_locked=True
                     )
-                    if task_row.first() is None:
+                    if entity is None or not self._is_still_unowned_active(entity):
+                        raise _ReconcileAbort
+
+                    claim_row = await session.execute(
+                        select(TaskClaimModel.task_id).where(
+                            TaskClaimModel.task_id == task_uuid
+                        )
+                    )
+                    if claim_row.first() is not None:
                         raise _ReconcileAbort
 
                     # A lease of our own, so the outcome below is written under
-                    # the same fencing rule as any other write.
+                    # the same fencing rule as any other write. agent_id comes
+                    # from the task row just locked above, not this process's
+                    # own identity: the reaper settles orphans for whichever
+                    # agent the task actually belongs to.
+                    insert_stmt = pg_insert(TaskClaimModel).values(
+                        task_id=task_uuid,
+                        agent_id=entity.agent_id,
+                        owner_token=token,
+                        lease_expires_at=func.clock_timestamp()
+                        + _dt.timedelta(seconds=self._settings.ttl_seconds),
+                        owner_instance_id=self._owner_instance_id,
+                    )
                     inserted = await session.execute(
-                        text(
-                            "INSERT INTO task_claims "
-                            "(task_id, owner_token, lease_expires_at, owner_instance_id) "
-                            "VALUES (:task_id, :owner_token, "
-                            "        clock_timestamp() + CAST(:ttl AS interval), "
-                            "        :owner_instance_id) "
-                            "ON CONFLICT (task_id) DO NOTHING "
-                            "RETURNING task_id"
-                        ),
-                        {
-                            "task_id": task_uuid,
-                            "owner_token": token,
-                            "ttl": f"{self._settings.ttl_seconds} seconds",
-                            "owner_instance_id": self._owner_instance_id,
-                        },
+                        insert_stmt.on_conflict_do_nothing(
+                            index_elements=[TaskClaimModel.task_id]
+                        ).returning(TaskClaimModel.task_id)
                     )
                     if inserted.first() is None:
                         raise _ReconcileAbort
-                    return await self._settle_locked_task(session, task_uuid, token)
+                    return await self._settle_locked_task(
+                        session, repository, task_uuid, token, entity
+                    )
         except _ReconcileAbort:
             return False
+
+    def _is_still_unowned_active(self, entity: TaskRecord) -> bool:
+        """Recheck the candidate predicates against a row already locked."""
+        if entity.status.state not in ACTIVE_TASK_STATES:
+            return False
+        threshold = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(
+            seconds=self._settings.orphan_task_age_seconds
+        )
+        return entity.updated_at is not None and entity.updated_at <= threshold
 
     async def _settle_locked_task(
         self,
         session,
+        repository: TasksRepository,
         task_uuid: uuid.UUID,
         token: uuid.UUID,
+        entity: TaskRecord,
     ) -> bool:
         """Write a fenced restart outcome and release the temporary lease.
+
+        Args:
+            entity: The task row as read by the caller's own locking query -
+                never re-fetched here, since the caller already holds the row
+                lock and has already paid for reading it once.
 
         Returns:
             ``True`` when an outcome was recorded for the task, ``False`` when
@@ -257,21 +293,22 @@ class ClaimReaper:
                 whole candidate back rather than leaving a replaced token
                 behind.
         """
-        repository = TasksRepository(session)
-        entity = await repository.find_by_id(task_uuid)
-        settled = (
-            settled_task(entity.to_task(str(task_uuid)), TaskSettlementReason.SERVER_RESTART)
-            if entity is not None
-            else None
+        settled = settled_task(
+            entity.to_task(str(task_uuid)), TaskSettlementReason.LEASE_EXPIRED
         )
         if settled is None:
-            # No task row, or one that is terminal or waiting for input on
-            # purpose. The lease is still stale and must not be rediscovered
-            # every pass, but the task itself must remain untouched.
+            # A task that is terminal or waiting for input on purpose. The
+            # lease is still stale and must not be rediscovered every pass,
+            # but the task itself must remain untouched.
             await self._delete_claim(session, task_uuid, token)
             return False
 
-        if not await repository.save_owned(TaskRecord.from_task(settled), token):
+        # The row is already locked by this transaction's own read above, so
+        # the fenced upsert does not need to lock it a second time. agent_id
+        # is carried over from the row just read, never reassigned here.
+        if not await repository.save_owned_locked(
+            TaskRecord.from_task(settled, entity.agent_id), token
+        ):
             raise _ReconcileAbort
         await self._delete_claim(session, task_uuid, token)
         return True
@@ -279,10 +316,4 @@ class ClaimReaper:
     @staticmethod
     async def _delete_claim(session, task_uuid: uuid.UUID, token: uuid.UUID) -> None:
         """Delete only the temporary fencing incarnation used by settlement."""
-        await session.execute(
-            text(
-                "DELETE FROM task_claims "
-                "WHERE task_id = :task_id AND owner_token = :owner_token"
-            ),
-            {"task_id": task_uuid, "owner_token": token},
-        )
+        await TaskClaimsRepository(session).release(task_uuid, token)

@@ -8,6 +8,7 @@ a database that may be migrated and truncated.
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 
 import pytest
@@ -97,6 +98,22 @@ async def test_a_replaced_owner_learns_it_on_the_next_renewal(database) -> None:
     assert isinstance(await first.renew(claim), Lost)
 
 
+async def test_renew_batch_resolves_each_claim_independently(database) -> None:
+    """One statement renews a live claim and reports a replaced one as lost."""
+    live_id, replaced_id = str(uuid.uuid4()), str(uuid.uuid4())
+    owner = _provider("pod-a")
+    live_claim = await owner.acquire(live_id)
+    replaced_claim = await owner.acquire(replaced_id)
+
+    await _expire_all()
+    await _provider("pod-b").acquire(replaced_id)
+
+    outcome = await owner.renew_batch([live_claim, replaced_claim])
+
+    assert isinstance(outcome[live_id], Owned)
+    assert isinstance(outcome[replaced_id], Lost)
+
+
 async def test_writes_under_a_replaced_token_are_refused(database) -> None:
     """Fencing is what makes a late writer harmless."""
     task_id = str(uuid.uuid4())
@@ -127,6 +144,41 @@ async def test_an_expired_lease_is_settled_and_released(database) -> None:
     assert await reaper.reconcile() == 1
     assert await _state(task_id) == "TASK_STATE_FAILED"
     assert await _claim_count() == 0
+
+
+async def test_only_one_pod_reaps_the_same_tick(database) -> None:
+    """The cluster-wide advisory lock, not application logic, picks the winner.
+
+    Both pods race for the real Postgres session-scoped lock at the same
+    time; ``FOR UPDATE SKIP LOCKED`` inside the reaper already makes running
+    both harmless, so this asserts the coordination itself - exactly one of
+    the two concurrent calls actually reaches ``ClaimReaper.run_once``.
+    """
+    task_id = str(uuid.uuid4())
+    owner = _provider("pod-a")
+    await owner.acquire(task_id)
+    await _write(owner, task_id, TaskState.TASK_STATE_WORKING)
+    await _expire_all()
+
+    reaper_a = _provider("pod-b", reconciler_enabled=True)
+    reaper_b = _provider("pod-c", reconciler_enabled=True)
+    ran = []
+    for reaper in (reaper_a, reaper_b):
+        original = reaper._reaper.run_once
+
+        async def _counted(*, include_active_task_sweep=True, _original=original):
+            ran.append(True)
+            return await _original(include_active_task_sweep=include_active_task_sweep)
+
+        reaper._reaper.run_once = _counted
+
+    settled_a, settled_b = await asyncio.gather(
+        reaper_a.reconcile(), reaper_b.reconcile()
+    )
+
+    assert len(ran) == 1
+    assert {settled_a, settled_b} == {0, 1}
+    assert await _state(task_id) == "TASK_STATE_FAILED"
 
 
 async def test_a_renewed_lease_survives_the_reaper(database) -> None:
@@ -216,7 +268,8 @@ async def test_cancelling_removes_the_lease_of_another_instance(database) -> Non
     claim = await owner.acquire(task_id)
     await _write(owner, task_id, TaskState.TASK_STATE_WORKING)
 
-    controller = PostgresTaskStore(ownership_provider=_provider("pod-b"))
+    controller_owner = _provider("pod-b")
+    controller = PostgresTaskStore(agent_id=controller_owner.agent_id, ownership_provider=controller_owner)
     canceled = await controller.cancel_with_ownership_revocation(task_id)
 
     assert canceled is not None

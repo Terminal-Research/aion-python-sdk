@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import time
 import uuid
 from datetime import datetime, timezone
@@ -36,6 +37,7 @@ def _claim_row(token: uuid.UUID) -> dict:
     now = datetime.now(timezone.utc)
     return {
         "task_id": uuid.UUID(TASK_ID),
+        "agent_id": "test-agent",
         "owner_token": token,
         "lease_expires_at": now,
         "acquired_at": now,
@@ -61,12 +63,29 @@ class _ScriptedProvider:
         self.renew_calls = 0
         self.releases = 0
 
-    async def renew(self, claim: Claim):
-        """Return the next scripted renewal outcome after the scripted delay."""
+    async def renew_batch(self, claims: list[Claim]):
+        """Return the next scripted outcome, applied to every claim in the batch.
+
+        Mirrors ``PostgresOwnershipProvider.renew_batch``: an ``Unknown``
+        outcome is uncertain for the whole batch and reported as-is; any
+        other scripted outcome is definitive per claim, and a scripted
+        ``Lost()`` is reported here through ``mark_lost`` exactly as the real
+        provider reports it, rather than left for the heartbeat to notice.
+        """
         self.renew_calls += 1
         if self.delay:
             await asyncio.sleep(self.delay)
-        return self.outcomes.popleft()
+        outcome = self.outcomes.popleft()
+        if isinstance(outcome, Unknown):
+            return outcome
+        results = {}
+        for claim in claims:
+            if isinstance(outcome, Lost):
+                self.mark_lost(claim, "renew_lost")
+                results[claim.task_id] = Lost()
+            else:
+                results[claim.task_id] = outcome
+        return results
 
     def mark_lost(self, claim: Claim, reason: str) -> None:
         """Record fail-closed notifications from the heartbeat."""
@@ -88,7 +107,7 @@ async def test_heartbeat_lost_does_not_release() -> None:
     """A definitive loss notifies the registry and never calls release."""
     provider = _ScriptedProvider([Lost()])
 
-    await OwnershipHeartbeat(provider)._renew_until_known(_claim())
+    await OwnershipHeartbeat(provider)._renew_all([_claim()])
 
     assert provider.losses == [(TASK_ID, "renew_lost")]
     assert provider.releases == 0
@@ -99,7 +118,7 @@ async def test_heartbeat_retries_unknown_until_success() -> None:
     """A transient database failure is retried before the safe deadline."""
     provider = _ScriptedProvider([Unknown(RuntimeError("temporary")), Owned()])
 
-    await OwnershipHeartbeat(provider)._renew_until_known(_claim())
+    await OwnershipHeartbeat(provider)._renew_all([_claim()])
 
     assert provider.renew_calls == 2
     assert provider.losses == []
@@ -112,7 +131,7 @@ async def test_heartbeat_fails_closed_at_unknown_deadline() -> None:
     claim = _claim(deadline=time.monotonic() + 0.01)
 
     await asyncio.wait_for(
-        OwnershipHeartbeat(provider)._renew_until_known(claim),
+        OwnershipHeartbeat(provider)._renew_all([claim]),
         timeout=0.2,
     )
 
@@ -211,6 +230,7 @@ async def test_acquire_reuses_local_claim_without_second_database_acquire() -> N
     token = uuid.uuid4()
     db_manager = _AcquireDbManager(_claim_row(token))
     provider = PostgresOwnershipProvider(
+        "test-agent",
         db_manager=db_manager,
         task_id_parser=lambda _task_id: uuid.UUID(TASK_ID),
     )
@@ -228,6 +248,7 @@ async def test_acquire_reuses_local_claim_without_second_database_acquire() -> N
 async def test_postgres_renew_lost_removes_receipt_and_notifies() -> None:
     """A zero-row fenced renewal removes the exact local incarnation."""
     provider = PostgresOwnershipProvider(
+        "test-agent",
         db_manager=_DbManager(),
         task_id_parser=lambda _task_id: uuid.UUID(TASK_ID),
     )
@@ -348,6 +369,7 @@ async def test_renew_reports_unknown_when_the_statement_never_answers() -> None:
     its expiry while another instance legitimately takes the work over.
     """
     provider = PostgresOwnershipProvider(
+        "test-agent",
         db_manager=_HangingDbManager(),
         task_id_parser=lambda _task_id: uuid.UUID(TASK_ID),
         settings=LeaseSettings(statement_timeout_seconds=0.05),
@@ -370,6 +392,7 @@ async def test_concurrent_acquires_reach_the_database_once() -> None:
     token = uuid.uuid4()
     db_manager = _AcquireDbManager(_claim_row(token))
     provider = PostgresOwnershipProvider(
+        "test-agent",
         db_manager=db_manager,
         task_id_parser=lambda _task_id: uuid.UUID(TASK_ID),
     )
@@ -395,7 +418,7 @@ async def test_confirmed_renewal_past_the_old_deadline_keeps_the_claim() -> None
     provider = _ScriptedProvider([Owned()], delay=0.05)
     claim = _claim(deadline=time.monotonic() + 0.02)
 
-    await OwnershipHeartbeat(provider)._renew_until_known(claim)
+    await OwnershipHeartbeat(provider)._renew_all([claim])
 
     assert provider.losses == []
 
@@ -403,10 +426,14 @@ async def test_confirmed_renewal_past_the_old_deadline_keeps_the_claim() -> None
 def test_reaper_is_on_unless_its_switch_is_cleared(monkeypatch) -> None:
     """The reaper defaults on, assuming the heartbeat is already everywhere."""
     monkeypatch.delenv(RECONCILER_ENV_VAR, raising=False)
-    assert PostgresOwnershipProvider(db_manager=_DbManager()).reconciler_enabled is True
+    assert PostgresOwnershipProvider(
+        "test-agent",
+        db_manager=_DbManager()).reconciler_enabled is True
 
     monkeypatch.setenv(RECONCILER_ENV_VAR, "false")
-    assert PostgresOwnershipProvider(db_manager=_DbManager()).reconciler_enabled is False
+    assert PostgresOwnershipProvider(
+        "test-agent",
+        db_manager=_DbManager()).reconciler_enabled is False
 
 
 def test_owner_instance_id_prefers_explicit_value(monkeypatch) -> None:
@@ -414,6 +441,7 @@ def test_owner_instance_id_prefers_explicit_value(monkeypatch) -> None:
     monkeypatch.setenv("HOST_NAME", "pod-from-environment")
 
     provider = PostgresOwnershipProvider(
+        "test-agent",
         db_manager=_DbManager(),
         owner_instance_id="pod-from-caller",
     )
@@ -425,7 +453,9 @@ def test_owner_instance_id_uses_host_name(monkeypatch) -> None:
     """The deployment-provided host name identifies the claim holder."""
     monkeypatch.setenv("HOST_NAME", "pod-from-environment")
 
-    provider = PostgresOwnershipProvider(db_manager=_DbManager())
+    provider = PostgresOwnershipProvider(
+        "test-agent",
+        db_manager=_DbManager())
 
     assert provider.owner_instance_id == "pod-from-environment"
 
@@ -435,6 +465,7 @@ def test_blank_owner_instance_id_falls_back_to_host_name(monkeypatch) -> None:
     monkeypatch.setenv("HOST_NAME", "pod-from-environment")
 
     provider = PostgresOwnershipProvider(
+        "test-agent",
         db_manager=_DbManager(),
         owner_instance_id="",
     )
@@ -448,7 +479,9 @@ def test_owner_instance_id_is_none_without_host_name(monkeypatch) -> None:
     monkeypatch.setenv("POD_NAME", "legacy-pod")
     monkeypatch.setenv("HOSTNAME", "legacy-host")
 
-    provider = PostgresOwnershipProvider(db_manager=_DbManager())
+    provider = PostgresOwnershipProvider(
+        "test-agent",
+        db_manager=_DbManager())
 
     assert provider.owner_instance_id is None
 
@@ -457,11 +490,213 @@ def test_owner_instance_id_is_none_without_host_name(monkeypatch) -> None:
 async def test_disabled_reaper_touches_nothing() -> None:
     """A disabled reaper reports no work rather than querying for candidates."""
     provider = PostgresOwnershipProvider(
+        "test-agent",
         db_manager=_DbManager(),
         reconciler_enabled=False,
     )
 
     assert await provider.reconcile() == 0
+
+
+class _AdvisoryLockState:
+    """One simulated Postgres advisory lock, shared across fake connections."""
+
+    def __init__(self, *, held: bool = False) -> None:
+        """Start the lock free unless a test wants it pre-held."""
+        self.held = held
+
+
+class _LockScalarResult:
+    """The one value a lock/unlock statement's ``.scalar()`` reports."""
+
+    def __init__(self, value) -> None:
+        """Store the value :meth:`scalar` returns."""
+        self._value = value
+
+    def scalar(self):
+        """Return the configured value, mirroring a real cursor result."""
+        return self._value
+
+
+class _LockConnection:
+    """Fake connection answering only the two statements the lock needs."""
+
+    def __init__(self, state: _AdvisoryLockState) -> None:
+        """Bind to the shared lock state this connection may acquire."""
+        self._state = state
+        self._holds_it = False
+
+    async def __aenter__(self):
+        """Enter the fake connection."""
+        return self
+
+    async def __aexit__(self, *_):
+        """Leave the fake connection."""
+
+    async def execute(self, stmt):
+        """Acquire or release the shared lock, by which function was called."""
+        rendered = str(stmt)
+        if "pg_try_advisory_lock" in rendered:
+            if self._state.held:
+                return _LockScalarResult(False)
+            self._state.held = True
+            self._holds_it = True
+            return _LockScalarResult(True)
+        if "pg_advisory_unlock" in rendered:
+            if self._holds_it:
+                self._state.held = False
+                self._holds_it = False
+            return _LockScalarResult(True)
+        raise AssertionError(f"unexpected statement: {rendered}")
+
+    async def commit(self):
+        """Commit the fake connection's implicit transaction."""
+
+
+class _LockEngine:
+    """Fake engine handing out connections bound to one shared lock state."""
+
+    def __init__(self, state: _AdvisoryLockState) -> None:
+        """Bind to the shared lock state every connection will see."""
+        self._state = state
+
+    def connect(self):
+        """Return a fresh connection over the shared lock state."""
+        return _LockConnection(self._state)
+
+
+class _ClusterDbManager:
+    """Database manager exposing only ``get_engine``, for advisory-lock tests."""
+
+    def __init__(self, state: _AdvisoryLockState) -> None:
+        """Bind to the shared lock state the engine will see."""
+        self._engine = _LockEngine(state)
+
+    def get_engine(self):
+        """Return the fake engine bound to the shared lock state."""
+        return self._engine
+
+
+@pytest.mark.anyio
+async def test_reconcile_runs_when_the_cluster_lock_is_free() -> None:
+    """A pod that wins the advisory lock does the pass and releases it after."""
+    state = _AdvisoryLockState()
+    provider = PostgresOwnershipProvider("test-agent", db_manager=_ClusterDbManager(state))
+    provider._reaper.run_once = AsyncMock(return_value=3)
+
+    result = await provider.reconcile()
+
+    assert result == 3
+    provider._reaper.run_once.assert_awaited_once_with(include_active_task_sweep=True)
+    assert state.held is False
+
+
+@pytest.mark.anyio
+async def test_reconcile_skips_the_tick_when_another_pod_holds_the_lock() -> None:
+    """A pod that loses the race does no reads or writes this tick."""
+    state = _AdvisoryLockState(held=True)
+    provider = PostgresOwnershipProvider("test-agent", db_manager=_ClusterDbManager(state))
+    provider._reaper.run_once = AsyncMock(return_value=99)
+
+    result = await provider.reconcile()
+
+    assert result == 0
+    provider._reaper.run_once.assert_not_awaited()
+    assert state.held is True
+
+
+@pytest.mark.anyio
+async def test_active_task_sweep_runs_far_less_often_than_the_claim_pass() -> None:
+    """The sweep piggybacks on a tick only once its own longer interval elapses."""
+    state = _AdvisoryLockState()
+    provider = PostgresOwnershipProvider(
+        "test-agent",
+        db_manager=_ClusterDbManager(state),
+        settings=LeaseSettings(
+            reconcile_interval_seconds=0.01,
+            active_task_sweep_interval_seconds=0.03,
+        ),
+    )
+    seen: list[bool] = []
+
+    async def _record(*, include_active_task_sweep: bool) -> int:
+        seen.append(include_active_task_sweep)
+        return 0
+
+    provider._reaper.run_once = _record
+
+    loop_task = asyncio.get_running_loop().create_task(provider._reconcile_loop())
+    try:
+        await asyncio.sleep(0.08)
+    finally:
+        loop_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await loop_task
+
+    assert len(seen) >= 6
+    # Roughly one tick in three (0.03 / 0.01 seconds), never every tick.
+    assert any(seen)
+    assert seen.count(True) < len(seen) / 2
+
+
+@pytest.mark.anyio
+async def test_heartbeat_restarts_after_crashing_outside_stop(monkeypatch) -> None:
+    """A heartbeat task that dies from a bug, not stop(), comes back on its own."""
+    provider = PostgresOwnershipProvider(
+        "test-agent", db_manager=_DbManager(), reconciler_enabled=False
+    )
+    attempts = 0
+
+    async def _flaky_run(self) -> None:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError("boom")
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(OwnershipHeartbeat, "run", _flaky_run)
+    provider.start()
+    try:
+        for _ in range(50):
+            if attempts >= 2:
+                break
+            await asyncio.sleep(0.01)
+
+        assert attempts == 2
+        assert provider._heartbeat_task is not None
+        assert not provider._heartbeat_task.done()
+    finally:
+        await provider.stop()
+
+
+@pytest.mark.anyio
+async def test_reconciler_restarts_after_crashing_outside_stop() -> None:
+    """A reconciler task that dies from a bug, not stop(), comes back on its own."""
+    provider = PostgresOwnershipProvider(
+        "test-agent", db_manager=_DbManager(), reconciler_enabled=True
+    )
+    attempts = 0
+
+    async def _flaky_loop() -> None:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError("boom")
+        await asyncio.Event().wait()
+
+    provider._reconcile_loop = _flaky_loop
+    provider.start()
+    try:
+        for _ in range(50):
+            if attempts >= 2:
+                break
+            await asyncio.sleep(0.01)
+
+        assert attempts == 2
+        assert provider._reconciler_task is not None
+        assert not provider._reconciler_task.done()
+    finally:
+        await provider.stop()
 
 
 class _RefusingDbManager:
@@ -494,6 +729,7 @@ class _FailingDbManager:
 def _refusing_provider(db_manager) -> PostgresOwnershipProvider:
     """Build a provider that parses every task id as a fresh UUID."""
     return PostgresOwnershipProvider(
+        "test-agent",
         db_manager=db_manager,
         task_id_parser=lambda task_id: uuid.UUID(task_id),
     )
@@ -535,6 +771,7 @@ async def test_a_released_claim_leaves_no_lock_behind() -> None:
     """The ordinary path drops the lock when its acquire ends, not later."""
     token = uuid.uuid4()
     provider = PostgresOwnershipProvider(
+        "test-agent",
         db_manager=_AcquireDbManager(_claim_row(token)),
         task_id_parser=lambda _task_id: uuid.UUID(TASK_ID),
     )

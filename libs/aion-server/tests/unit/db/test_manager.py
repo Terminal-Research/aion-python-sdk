@@ -65,7 +65,7 @@ class TestDbManager:
             max_size=10,
             max_idle=300,
             max_lifetime=3600,
-            timeout=30,
+            timeout=30.0,
             max_waiting=20,
             open=False,
             kwargs={"options": "-csearch_path=aion"}
@@ -78,6 +78,8 @@ class TestDbManager:
         mock_engine.assert_called_once_with(
             expected_sqlalchemy_dsn,
             connect_args={"options": "-csearch_path=aion"},
+            pool_size=2,
+            max_overflow=8,
             pool_pre_ping=True,
             echo=False
         )
@@ -223,6 +225,8 @@ class TestDbManager:
         mock_engine.assert_called_once_with(
             expected_dsn,
             connect_args={"options": "-csearch_path=aion"},
+            pool_size=2,
+            max_overflow=8,
             pool_pre_ping=True,
             echo=False
         )

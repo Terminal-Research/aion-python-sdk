@@ -32,6 +32,16 @@ class OwnershipProvider(Protocol):
         """Renew a claim and report ownership or uncertainty."""
         ...
 
+    async def renew_batch(self, claims: list[Claim]) -> dict[str, Owned | Lost] | Unknown:
+        """Renew many claims in one round trip; the heartbeat's only entry point.
+
+        Definitive per claim when the underlying statement executes, and a
+        single ``Unknown`` for the whole batch when it does not - see
+        :meth:`PostgresOwnershipProvider.renew_batch` for why those are the
+        only two shapes a batch outcome can take.
+        """
+        ...
+
     async def release(self, claim: Claim) -> None:
         """Conditionally abandon a claim."""
         ...
@@ -97,6 +107,10 @@ class DegenerateOwnershipProvider:
     async def renew(self, claim: Claim) -> Owned:
         """Always report ownership in the single-process implementation."""
         return Owned()
+
+    async def renew_batch(self, claims: list[Claim]) -> dict[str, Owned]:
+        """Always report ownership for every claim; there is nothing to lose."""
+        return {claim.task_id: Owned() for claim in claims}
 
     async def release(self, claim: Claim) -> None:
         """Release is a no-op because no claim map exists."""

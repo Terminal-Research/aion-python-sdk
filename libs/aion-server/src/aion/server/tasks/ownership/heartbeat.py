@@ -7,7 +7,7 @@ import logging
 import random
 import time
 
-from .types import Claim, Lost, Owned
+from .types import Claim, Unknown
 
 __all__ = ["OwnershipHeartbeat"]
 
@@ -49,51 +49,60 @@ class OwnershipHeartbeat:
                 await asyncio.sleep(delay)
 
     async def _renew_all(self, claims: list[Claim]) -> None:
-        """Renew every claim concurrently and fail closed on a surprise error."""
-        results = await asyncio.gather(
-            *(self._renew_until_known(claim) for claim in claims),
-            return_exceptions=True,
-        )
-        for claim, result in zip(claims, results, strict=True):
-            if isinstance(result, Exception):
-                self.provider.mark_lost(claim, "renew_supervisor_error")
-                logger.error(
-                    "Unexpected task ownership heartbeat failure for %s",
-                    claim.task_id,
-                    exc_info=result,
-                )
+        """Renew every held claim in as few round trips as retries allow.
 
-    async def _renew_until_known(self, claim: Claim) -> None:
-        """Retry unknown renewals until the fail-closed deadline.
-
-        An unknown outcome is the absence of a fact, not a loss: treating it as
-        one would drop live tasks over a blink of the network. Treating it as
-        permission to continue would be worse. So work is allowed to continue
-        until the deadline of the last confirmed renewal, and then stops
-        without writing anything.
+        One batched statement replaces one transaction per claim. A batch
+        that executes is definitive for each claim in it - exactly as
+        calling ``renew`` once per claim would report, just paid for once -
+        so retrying is only ever needed when the statement itself failed or
+        timed out, uncertain for every claim still pending at once rather
+        than one ``Unknown`` per claim.
         """
-        while True:
+        pending = list(claims)
+        try:
+            while pending:
+                outcome = await self.provider.renew_batch(pending)
+                if not isinstance(outcome, Unknown):
+                    # Every claim in this attempt now has a definitive
+                    # Owned or Lost outcome, already applied by the provider.
+                    return
+                pending = self._survivors(pending)
+                if not pending:
+                    return
+                await self._backoff(pending)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            # A bug here must not silently leave a claim renewing forever:
+            # fail closed on whatever is still pending rather than let the
+            # exception escape and kill the supervisor loop.
+            for claim in pending:
+                self.provider.mark_lost(claim, "renew_supervisor_error")
+            logger.error(
+                "Unexpected task ownership heartbeat failure for %s",
+                [claim.task_id for claim in pending],
+                exc_info=exc,
+            )
+
+    def _survivors(self, pending: list[Claim]) -> list[Claim]:
+        """Drop claims whose fail-closed deadline has already passed.
+
+        An unknown outcome is the absence of a fact, not a loss: treating it
+        as one would drop live tasks over a blink of the network. Treating it
+        as permission to continue would be worse. So each claim keeps
+        retrying only until the deadline of its last confirmed renewal.
+        """
+        survivors = []
+        for claim in pending:
             if time.monotonic() >= claim.deadline:
                 self.provider.mark_lost(claim, "renew_deadline")
-                return
+            else:
+                survivors.append(claim)
+        return survivors
 
-            result = await self.provider.renew(claim)
-            if isinstance(result, Owned):
-                # A confirmed renewal is proof, and the provider has already
-                # recorded the deadline it starts. Discarding the claim because
-                # the previous deadline passed while this call was in flight
-                # would tear down an execution that demonstrably still owns its
-                # lease.
-                return
-            if isinstance(result, Lost):
-                self.provider.mark_lost(claim, "renew_lost")
-                return
-
-            remaining = claim.deadline - time.monotonic()
-            if remaining <= 0:
-                self.provider.mark_lost(claim, "renew_unknown_deadline")
-                return
-
-            retry_seconds = self.provider.settings.unknown_retry_seconds
-            retry = random.uniform(retry_seconds * 0.75, retry_seconds * 1.25)
-            await asyncio.sleep(min(retry, remaining))
+    async def _backoff(self, pending: list[Claim]) -> None:
+        """Wait before the next retry, bounded by the nearest deadline."""
+        retry_seconds = self.provider.settings.unknown_retry_seconds
+        retry = random.uniform(retry_seconds * 0.75, retry_seconds * 1.25)
+        remaining = min(claim.deadline for claim in pending) - time.monotonic()
+        await asyncio.sleep(max(0.0, min(retry, remaining)))

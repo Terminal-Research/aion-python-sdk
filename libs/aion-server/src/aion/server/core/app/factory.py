@@ -148,7 +148,7 @@ class AppFactory:
 
     async def _create_request_handler(self) -> AionRequestHandler:
         """Create and configure the request handler with task store and agent executor."""
-        self.store_manager.initialize()
+        self.store_manager.initialize(agent_id=self.aion_agent.id)
         task_store = self.store_manager.get_store()
 
         self._executor = await AionAgentRequestExecutor.create(

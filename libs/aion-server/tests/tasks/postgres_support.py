@@ -77,9 +77,16 @@ async def truncate() -> None:
         await session.commit()
 
 
-def provider(instance: str, **kwargs) -> PostgresOwnershipProvider:
-    """Build a provider standing in for one agent instance."""
+def provider(instance: str, agent_id: str = "test-agent", **kwargs) -> PostgresOwnershipProvider:
+    """Build a provider standing in for one replica of ``agent_id``.
+
+    ``instance`` names one pod-like replica of the same agent (the tests use
+    it for HA scenarios like "pod-a" vs "pod-b"); pass a different
+    ``agent_id`` explicitly for a test that needs two distinct agents sharing
+    one database instead.
+    """
     return PostgresOwnershipProvider(
+        agent_id,
         task_id_parser=lambda task_id: uuid.UUID(task_id),
         owner_instance_id=instance,
         **kwargs,
@@ -111,7 +118,7 @@ async def write_task(
     context_id: str = "ctx",
 ) -> None:
     """Write a task through the fenced store the provider belongs to."""
-    store = PostgresTaskStore(ownership_provider=owner)
+    store = PostgresTaskStore(agent_id=owner.agent_id, ownership_provider=owner)
     await store.save(
         Task(id=task_id, context_id=context_id, status=TaskStatus(state=state))
     )

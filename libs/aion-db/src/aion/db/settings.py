@@ -31,6 +31,23 @@ class DatabaseSettings(BaseSettings):
         description="Postgres connection URL"
     )
 
+    # Two separate pools sit in front of one PostgreSQL: SQLAlchemy serves
+    # ``tasks`` and ADK, raw psycopg serves the LangGraph saver. Both are
+    # sized from the same two knobs so the deployer reasons about one
+    # connection budget (pods x processes x pools), checked against a given
+    # PostgreSQL's ``max_connections``, instead of two pools' worth of
+    # library-specific settings.
+    pool_min_size: int = Field(
+        default=2,
+        alias="POSTGRES_POOL_MIN_SIZE",
+        description="Minimum size of each PostgreSQL connection pool",
+    )
+    pool_max_size: int = Field(
+        default=10,
+        alias="POSTGRES_POOL_MAX_SIZE",
+        description="Maximum size of each PostgreSQL connection pool",
+    )
+
     @field_validator('pg_url')
     @classmethod
     def validate_postgres_url(cls, value: Optional[str]) -> Optional[str]:

@@ -19,7 +19,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from aion.db.postgres.constants import AION_SCHEMA, TASK_CLAIMS_TABLE
 from aion.db.postgres.records import TaskRecord
-from aion.db.postgres.repositories import STATUS_TIMESTAMP_SORT_KEY, TasksRepository
+from aion.db.postgres.repositories import (
+    STATUS_TIMESTAMP_SORT_KEY,
+    TaskArtifactsRepository,
+    TasksRepository,
+)
 from aion.db.postgres.types import SortKey, Sorting
 
 
@@ -30,6 +34,9 @@ pytestmark = [
         reason="POSTGRES_TEST_URL is not set",
     ),
 ]
+
+
+AGENT_ID = "test-agent"
 
 
 def _status(timestamp: datetime | None = None, state=TaskState.TASK_STATE_WORKING):
@@ -44,9 +51,11 @@ def _record(
     *,
     timestamp: datetime | None = None,
     context_id: str = "ctx-1",
+    agent_id: str = AGENT_ID,
 ) -> TaskRecord:
     return TaskRecord(
         id=task_id or uuid.uuid4(),
+        agent_id=agent_id,
         context_id=context_id,
         status=_status(timestamp),
     )
@@ -64,27 +73,50 @@ async def test_status_sorting_and_inclusive_timestamp_filter(postgres_session):
     first = _record(timestamp=base)
     fractional = _record(timestamp=base + timedelta(milliseconds=123))
     second = _record(timestamp=base + timedelta(seconds=1))
-    unstamped = _record()
 
-    for entity in (first, fractional, second, unstamped):
+    for entity in (first, fractional, second):
         await repository.save(entity)
     await postgres_session.commit()
 
     ascending = await repository.find_ids(
-        sorting=Sorting(SortKey(STATUS_TIMESTAMP_SORT_KEY, descending=False))
+        agent_id=AGENT_ID,
+        sorting=Sorting(SortKey(STATUS_TIMESTAMP_SORT_KEY, descending=False)),
     )
     descending = await repository.find_ids(
-        sorting=Sorting(SortKey(STATUS_TIMESTAMP_SORT_KEY, descending=True))
+        agent_id=AGENT_ID,
+        sorting=Sorting(SortKey(STATUS_TIMESTAMP_SORT_KEY, descending=True)),
     )
 
-    assert ascending == [str(first.id), str(fractional.id), str(second.id), str(unstamped.id)]
-    assert descending == [str(second.id), str(fractional.id), str(first.id), str(unstamped.id)]
+    assert ascending == [str(first.id), str(fractional.id), str(second.id)]
+    assert descending == [str(second.id), str(fractional.id), str(first.id)]
 
     matching = await repository.find_ids(
+        agent_id=AGENT_ID,
         status_timestamp_after=base + timedelta(milliseconds=123),
         sorting=Sorting(SortKey(STATUS_TIMESTAMP_SORT_KEY, descending=False)),
     )
     assert matching == [str(fractional.id), str(second.id)]
+
+
+async def test_omitted_timestamp_is_stamped_with_the_current_time(postgres_session):
+    """A ``TaskStatus`` with no timestamp gets one on construction, not on
+    save: ``status_timestamp`` and ``status.timestamp`` must already agree
+    before the entity ever reaches the repository."""
+    before = datetime.now(timezone.utc)
+    entity = _record()
+    after = datetime.now(timezone.utc)
+
+    assert entity.status_timestamp is not None
+    assert before <= entity.status_timestamp <= after
+    assert entity.status.timestamp.ToDatetime(tzinfo=timezone.utc) == entity.status_timestamp
+
+    repository = TasksRepository(postgres_session)
+    await repository.save(entity)
+    await postgres_session.commit()
+
+    reloaded = await repository.find_by_id(entity.id, AGENT_ID)
+    assert reloaded is not None
+    assert reloaded.status_timestamp == entity.status_timestamp
 
 
 async def test_generated_state_column_drives_state_filter(postgres_session):
@@ -92,6 +124,7 @@ async def test_generated_state_column_drives_state_filter(postgres_session):
     working = _record()
     completed = TaskRecord(
         id=uuid.uuid4(),
+        agent_id=AGENT_ID,
         context_id="ctx-1",
         status=_status(state=TaskState.TASK_STATE_COMPLETED),
     )
@@ -100,7 +133,7 @@ async def test_generated_state_column_drives_state_filter(postgres_session):
     await repository.save(completed)
     await postgres_session.commit()
 
-    assert await repository.find_ids(status_state="TASK_STATE_COMPLETED") == [
+    assert await repository.find_ids(agent_id=AGENT_ID, status_state="TASK_STATE_COMPLETED") == [
         str(completed.id)
     ]
 
@@ -111,7 +144,7 @@ async def test_upsert_preserves_created_at_and_updates_updated_at(postgres_sessi
     first_entity = _record(task_id, timestamp=datetime.now(timezone.utc))
 
     await _save(postgres_session, first_entity)
-    first = await repository.find_by_id(task_id)
+    first = await repository.find_by_id(task_id, AGENT_ID)
     assert first is not None
     assert first.created_at is not None
     assert first.updated_at is not None
@@ -123,7 +156,7 @@ async def test_upsert_preserves_created_at_and_updates_updated_at(postgres_sessi
         timestamp=datetime.now(timezone.utc) + timedelta(seconds=1),
     )
     await _save(postgres_session, second_entity)
-    second = await repository.find_by_id(task_id)
+    second = await repository.find_by_id(task_id, AGENT_ID)
     assert second is not None
 
     assert second.created_at == first.created_at
@@ -145,7 +178,7 @@ async def test_concurrent_upserts_for_one_task_id_are_safe(postgres_engine):
     await asyncio.gather(save_one(0), save_one(1))
 
     async with AsyncSession(postgres_engine, expire_on_commit=False) as session:
-        entity = await TasksRepository(session).find_by_id(task_id)
+        entity = await TasksRepository(session).find_by_id(task_id, AGENT_ID)
         assert entity is not None
         assert entity.status.timestamp.ToDatetime(tzinfo=timezone.utc) in {
             base,
@@ -158,17 +191,17 @@ async def test_fenced_upsert_requires_the_exact_claim(postgres_session):
     repository = TasksRepository(postgres_session)
     missing_claim_id = uuid.uuid4()
     assert not await repository.save_owned(_record(missing_claim_id), uuid.uuid4())
-    assert await repository.find_by_id(missing_claim_id) is None
+    assert await repository.find_by_id(missing_claim_id, AGENT_ID) is None
 
     task_id = uuid.uuid4()
     token = uuid.uuid4()
     await postgres_session.execute(
         text(
             f"INSERT INTO {AION_SCHEMA}.{TASK_CLAIMS_TABLE} "
-            "(task_id, owner_token, lease_expires_at) "
-            "VALUES (:task_id, :owner_token, clock_timestamp() + interval '60 seconds')"
+            "(task_id, agent_id, owner_token, lease_expires_at) "
+            "VALUES (:task_id, :agent_id, :owner_token, clock_timestamp() + interval '60 seconds')"
         ),
-        {"task_id": task_id, "owner_token": token},
+        {"task_id": task_id, "agent_id": AGENT_ID, "owner_token": token},
     )
     assert await repository.save_owned(_record(task_id), token)
     await postgres_session.commit()
@@ -177,7 +210,7 @@ async def test_fenced_upsert_requires_the_exact_claim(postgres_session):
     changed.status.state = TaskState.TASK_STATE_COMPLETED
     assert not await repository.save_owned(changed, uuid.uuid4())
 
-    current = await repository.find_by_id(task_id)
+    current = await repository.find_by_id(task_id, AGENT_ID)
     assert current is not None
     assert current.status.state == TaskState.TASK_STATE_WORKING
 
@@ -189,22 +222,18 @@ async def test_count_matches_the_filtered_result_size(postgres_session):
     await repository.save(_record(context_id="ctx-other"))
     await postgres_session.commit()
 
-    assert await repository.count(context_id="ctx-count") == 3
-    assert await repository.count() == 4
-
-
-async def test_sort_key_for_id_reports_none_for_a_missing_task(postgres_session):
-    repository = TasksRepository(postgres_session)
-    assert await repository.sort_key_for_id(str(uuid.uuid4())) is None
+    assert await repository.count(agent_id=AGENT_ID, context_id="ctx-count") == 3
+    assert await repository.count(agent_id=AGENT_ID) == 4
 
 
 async def test_find_page_walks_the_same_order_as_an_unbounded_find_ids(
     postgres_session,
 ):
     """Paging through ``find_page`` must reconstruct exactly the order
-    ``find_ids`` reports in one shot - including the NULLS-LAST tail of
-    tasks whose status was never stamped, which is the case the keyset
-    predicate has to get right to match ``find_ids``' ``.nullslast()``.
+    ``find_ids`` reports in one shot. A record built without an explicit
+    timestamp still gets a real one - the current UTC time, stamped by
+    ``TaskRecord`` itself - so every row participates in ordinary
+    ``status_timestamp`` ordering; there is no NULLS-LAST tail left to cover.
     """
     repository = TasksRepository(postgres_session)
     base = datetime(2026, 8, 14, 12, 0, tzinfo=timezone.utc)
@@ -213,8 +242,8 @@ async def test_find_page_walks_the_same_order_as_an_unbounded_find_ids(
         _record(timestamp=base + timedelta(seconds=5)),
         _record(timestamp=base + timedelta(milliseconds=500)),
         _record(timestamp=base + timedelta(seconds=5)),  # ties the second row
-        _record(),  # unstamped
-        _record(),  # unstamped
+        _record(),  # stamped with the current time on construction
+        _record(),  # stamped with the current time on construction
     ):
         await repository.save(entity)
     await postgres_session.commit()
@@ -223,17 +252,18 @@ async def test_find_page_walks_the_same_order_as_an_unbounded_find_ids(
         SortKey(STATUS_TIMESTAMP_SORT_KEY, descending=True),
         SortKey("id", descending=True),
     )
-    expected_ids = await repository.find_ids(sorting=sorting)
+    expected_ids = await repository.find_ids(agent_id=AGENT_ID, sorting=sorting)
     assert len(expected_ids) == 6  # sanity: every saved row is accounted for
 
     walked_ids: list[str] = []
     after = None
     for _ in range(len(expected_ids) + 1):
-        page = await repository.find_page(after=after, limit=2)
+        page = await repository.find_page(agent_id=AGENT_ID, after=after, limit=2)
         if not page:
             break
         walked_ids.extend(str(entity.id) for entity in page)
-        after = await repository.sort_key_for_id(str(page[-1].id))
+        last = page[-1]
+        after = (last.status_timestamp, str(last.id))
 
     assert walked_ids == expected_ids
 
@@ -246,7 +276,7 @@ async def test_find_page_context_filter_matches_find(postgres_session):
     await repository.save(other_context)
     await postgres_session.commit()
 
-    page = await repository.find_page(context_id="ctx-page", limit=10)
+    page = await repository.find_page(agent_id=AGENT_ID, context_id="ctx-page", limit=10)
 
     assert [str(entity.id) for entity in page] == [str(in_context.id)]
 
@@ -259,39 +289,32 @@ async def test_find_artifacts_latest_only_returns_the_newest_task_s_version(
     the newest task's occurrence of the name - not merely some row.
     """
     repository = TasksRepository(postgres_session)
+    artifacts_repository = TaskArtifactsRepository(postgres_session)
 
     def _artifact(version: str) -> Artifact:
         meta = Struct()
         meta.update({"version": version})
         return Artifact(name="report", artifact_id=f"report-v{version}", metadata=meta)
 
-    older = TaskRecord(
-        id=uuid.uuid4(),
-        context_id="ctx-artifacts",
-        status=_status(),
-        artifacts=[_artifact("1")],
-    )
+    older = TaskRecord(id=uuid.uuid4(), agent_id=AGENT_ID, context_id="ctx-artifacts", status=_status())
     await repository.save(older)
+    await artifacts_repository.upsert_batch(older.id, [_artifact("1")])
     await postgres_session.commit()
     await asyncio.sleep(0.01)
 
-    newer = TaskRecord(
-        id=uuid.uuid4(),
-        context_id="ctx-artifacts",
-        status=_status(),
-        artifacts=[_artifact("2")],
-    )
+    newer = TaskRecord(id=uuid.uuid4(), agent_id=AGENT_ID, context_id="ctx-artifacts", status=_status())
     await repository.save(newer)
+    await artifacts_repository.upsert_batch(newer.id, [_artifact("2")])
     await postgres_session.commit()
 
     latest = await repository.find_artifacts(
-        context_id="ctx-artifacts", artifact_name="report", artifact_version="-1"
+        agent_id=AGENT_ID, context_id="ctx-artifacts", artifact_name="report", artifact_version="-1"
     )
 
     assert [a.artifact_id for a in latest] == ["report-v2"]
 
     # The other modes this method serves must still see the full history.
     all_versions = await repository.find_artifacts(
-        context_id="ctx-artifacts", artifact_name="report"
+        agent_id=AGENT_ID, context_id="ctx-artifacts", artifact_name="report"
     )
     assert sorted(a.artifact_id for a in all_versions) == ["report-v1", "report-v2"]

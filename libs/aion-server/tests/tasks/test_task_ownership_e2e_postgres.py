@@ -138,7 +138,7 @@ def _instance(name: str, **provider_kwargs) -> _Instance:
     around it.
     """
     provider = _provider(name, **provider_kwargs)
-    store = PostgresTaskStore(ownership_provider=provider)
+    store = PostgresTaskStore(agent_id=provider.agent_id, ownership_provider=provider)
     agent_card = Mock()
     agent_card.capabilities.streaming = True
     handler = AionRequestHandler(

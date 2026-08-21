@@ -6,7 +6,7 @@ import uuid
 from datetime import timedelta
 from typing import Optional, Type
 
-from sqlalchemy import CTE, delete, func, select, update
+from sqlalchemy import CTE, delete, func, select, tuple_, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from aion.db.postgres.models import TaskClaimModel
@@ -15,6 +15,7 @@ from aion.db.postgres.repositories.base import BaseRepository
 
 _TASK_CLAIM_COLUMNS = (
     TaskClaimModel.task_id,
+    TaskClaimModel.agent_id,
     TaskClaimModel.owner_token,
     TaskClaimModel.lease_expires_at,
     TaskClaimModel.acquired_at,
@@ -65,6 +66,7 @@ class TaskClaimsRepository(BaseRepository[TaskClaimModel, TaskClaimRecord]):
     async def acquire(
         self,
         task_id: uuid.UUID,
+        agent_id: str,
         owner_token: uuid.UUID,
         ttl: timedelta,
         owner_instance_id: Optional[str],
@@ -73,6 +75,7 @@ class TaskClaimsRepository(BaseRepository[TaskClaimModel, TaskClaimRecord]):
 
         Args:
             task_id: Identifier of the task being claimed.
+            agent_id: Identity of the agent process making the claim.
             owner_token: Fresh incarnation token for this acquisition.
             ttl: How long the new lease survives without a renewal.
             owner_instance_id: Diagnostic pod identity to record on the row.
@@ -82,6 +85,7 @@ class TaskClaimsRepository(BaseRepository[TaskClaimModel, TaskClaimRecord]):
         """
         insert_stmt = pg_insert(TaskClaimModel).values(
             task_id=task_id,
+            agent_id=agent_id,
             owner_token=owner_token,
             lease_expires_at=func.clock_timestamp() + ttl,
             owner_instance_id=owner_instance_id,
@@ -89,6 +93,7 @@ class TaskClaimsRepository(BaseRepository[TaskClaimModel, TaskClaimRecord]):
         stmt = insert_stmt.on_conflict_do_update(
             index_elements=[TaskClaimModel.task_id],
             set_={
+                "agent_id": insert_stmt.excluded.agent_id,
                 "owner_token": insert_stmt.excluded.owner_token,
                 "lease_expires_at": insert_stmt.excluded.lease_expires_at,
                 "acquired_at": func.clock_timestamp(),
@@ -128,6 +133,43 @@ class TaskClaimsRepository(BaseRepository[TaskClaimModel, TaskClaimRecord]):
         row = result.mappings().first()
         return TaskClaimRecord(**row) if row is not None else None
 
+    async def renew_batch(
+        self,
+        claims: list[tuple[uuid.UUID, uuid.UUID]],
+        ttl: timedelta,
+    ) -> list[TaskClaimRecord]:
+        """Conditionally extend many leases in one statement.
+
+        Same fencing predicate as :meth:`renew`, applied to every
+        ``(task_id, owner_token)`` pair at once: one heartbeat tick's
+        renewals become one round trip instead of one per held claim. A pair
+        whose token no longer owns the lease - or whose task_id has none -
+        is simply absent from the result, exactly as a single ``renew``
+        would return ``None`` for it.
+
+        Args:
+            claims: ``(task_id, owner_token)`` pairs to renew, one per
+                locally held claim.
+            ttl: How long each renewed lease survives from now.
+
+        Returns:
+            The renewed rows, in no particular order. Pairs not present here
+            were not renewed.
+        """
+        if not claims:
+            return []
+        stmt = (
+            update(TaskClaimModel)
+            .where(tuple_(TaskClaimModel.task_id, TaskClaimModel.owner_token).in_(claims))
+            .values(
+                lease_expires_at=func.clock_timestamp() + ttl,
+                renewed_at=func.clock_timestamp(),
+            )
+            .returning(*_TASK_CLAIM_COLUMNS)
+        )
+        result = await self._session.execute(stmt)
+        return [TaskClaimRecord(**row) for row in result.mappings().all()]
+
     async def release(self, task_id: uuid.UUID, owner_token: uuid.UUID) -> None:
         """Conditionally delete a lease still held by ``owner_token``."""
         await self._session.execute(
@@ -137,26 +179,34 @@ class TaskClaimsRepository(BaseRepository[TaskClaimModel, TaskClaimRecord]):
             )
         )
 
-    async def revoke_unconditionally(self, task_id: uuid.UUID) -> None:
+    async def revoke_unconditionally(self, task_id: uuid.UUID, agent_id: str) -> None:
         """Delete any lease for a task, regardless of its owner token.
 
         This is intentionally stronger than :meth:`release`: a control-plane
         cancellation may arrive on a process that does not own the task, and
         removing the lease is how it fences the current owner from later
         writes.  Callers must first lock the corresponding task row and keep
-        both operations in the same transaction.
+        both operations in the same transaction. ``agent_id`` is checked
+        too, so a task id that happens to collide across agents cannot
+        revoke a claim that belongs to a different one.
         """
         await self._session.execute(
-            delete(TaskClaimModel).where(TaskClaimModel.task_id == task_id)
+            delete(TaskClaimModel).where(
+                TaskClaimModel.task_id == task_id,
+                TaskClaimModel.agent_id == agent_id,
+            )
         )
 
-    async def find_by_task_id(self, task_id: uuid.UUID) -> Optional[TaskClaimRecord]:
+    async def find_by_task_id(self, task_id: uuid.UUID, agent_id: str) -> Optional[TaskClaimRecord]:
         """Read a claim row unconditionally, for diagnostics only.
 
         Not part of any fencing predicate: nothing here decides ownership,
         it only reports whatever the row currently says.
         """
-        stmt = select(*_TASK_CLAIM_COLUMNS).where(TaskClaimModel.task_id == task_id)
+        stmt = select(*_TASK_CLAIM_COLUMNS).where(
+            TaskClaimModel.task_id == task_id,
+            TaskClaimModel.agent_id == agent_id,
+        )
         result = await self._session.execute(stmt)
         row = result.mappings().first()
         return TaskClaimRecord(**row) if row is not None else None

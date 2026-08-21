@@ -8,6 +8,13 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, Asyn
 
 from aion.db.postgres.utils import convert_pg_url
 from aion.db.postgres.constants import AION_SCHEMA
+from aion.db.settings import db_settings
+
+# Not deployment-specific enough to warrant their own environment variables;
+# fixed here rather than duplicated as knobs alongside pool_min_size/pool_max_size.
+_PSYCOPG_POOL_TIMEOUT_SECONDS = 30.0
+_PSYCOPG_POOL_MAX_WAITING = 20
+_SQLALCHEMY_POOL_PRE_PING = True
 
 
 class DbManager(DbManagerProtocol, metaclass=SingletonABCMeta):
@@ -53,12 +60,12 @@ class DbManager(DbManagerProtocol, metaclass=SingletonABCMeta):
         # Initialize psycopg pool
         self._pool = AsyncConnectionPool(
             dsn,
-            min_size=2,
-            max_size=10,
+            min_size=db_settings.pool_min_size,
+            max_size=db_settings.pool_max_size,
             max_idle=300,
             max_lifetime=3600,
-            timeout=30,
-            max_waiting=20,
+            timeout=_PSYCOPG_POOL_TIMEOUT_SECONDS,
+            max_waiting=_PSYCOPG_POOL_MAX_WAITING,
             open=False,
             kwargs={"options": f"-csearch_path={AION_SCHEMA}"},
         )
@@ -81,7 +88,9 @@ class DbManager(DbManagerProtocol, metaclass=SingletonABCMeta):
         self._engine = create_async_engine(
             sqlalchemy_dsn,
             connect_args={"options": f"-csearch_path={AION_SCHEMA}"},
-            pool_pre_ping=True,
+            pool_size=db_settings.pool_min_size,
+            max_overflow=db_settings.pool_max_size - db_settings.pool_min_size,
+            pool_pre_ping=_SQLALCHEMY_POOL_PRE_PING,
             echo=False,  # Set to True for SQL debugging
         )
 

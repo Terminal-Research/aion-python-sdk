@@ -102,6 +102,14 @@ class TaskSettlementReason(str, Enum):
     reason tells the two apart.
     """
 
+    LEASE_EXPIRED = "lease_expired"
+    """This task's ownership lease expired before it was renewed.
+
+    Reported when a task is reclaimed by timeout rather than found gone at
+    startup, so it carries a weaker guarantee than `SERVER_RESTART`: the
+    previous owner is presumed gone, not confirmed gone.
+    """
+
 
 class ArtifactStreamingStatus(str, Enum):
     """Enumeration representing the current status of artifact streaming."""
