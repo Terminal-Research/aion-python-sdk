@@ -30,7 +30,9 @@ from typing import override
 
 from aion.server.agent.execution import AionActiveTaskRegistry
 from aion.server.tasks import store_manager
+from aion.server.tasks.notifications import TaskTerminalListener
 from aion.server.tasks.ownership import OwnershipProvider
+from aion.server.tasks.ownership.config import CANCEL_WAIT_SECONDS
 from aion.server.a2a.conversation import ConversationBuilder
 from .request_preprocessors import A2ARequestPreprocessor
 from .terminal_task_projection import TerminalTaskProjection
@@ -76,6 +78,7 @@ class AionRequestHandler(DefaultRequestHandlerV2):
             *args,
             preprocessors: list[A2ARequestPreprocessor] | None = None,
             ownership_provider: OwnershipProvider | None = None,
+            terminal_listener: TaskTerminalListener | None = None,
             **kwargs,
     ) -> None:
         """Build the handler and hand the registry its ownership provider.
@@ -84,6 +87,15 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         keeping the pair one decision. Omitted, the registry falls back to the
         single-process provider, which is what a handler built without a
         durable store should get.
+
+        ``terminal_listener`` is threaded in the same way rather than read off
+        the module-level ``store_manager`` singleton at call time: a handler
+        built directly, outside ``AppFactory`` - as every ownership test does
+        - would otherwise reach a singleton nothing ever initialized. ``None``
+        is a legitimate value, not just a not-yet-wired default: it is what an
+        in-memory-backed handler should have, since ``on_cancel_task``'s
+        second branch is unreachable without a durable store to hold the
+        claim it waits on.
         """
         super().__init__(*args, **kwargs)
         self._active_task_registry = AionActiveTaskRegistry(
@@ -92,6 +104,7 @@ class AionRequestHandler(DefaultRequestHandlerV2):
             push_sender=self._push_sender,
             ownership_provider=ownership_provider,
         )
+        self._terminal_listener = terminal_listener
         self._preprocessors = preprocessors or []
 
     @override
@@ -258,18 +271,68 @@ class AionRequestHandler(DefaultRequestHandlerV2):
             params: CancelTaskRequest,
             context: ServerCallContext,
     ) -> Task:
-        """Cancel directly in the store without creating an ``ActiveTask``.
+        """Cancel a task, wherever in the process fleet it is actually executing.
 
-        The cancellation transaction locks the task row, writes ``CANCELED``
-        and removes the claim.  The former owner then tears down on the next
-        heartbeat, so a pod that received the control request need not know
-        which pod is executing the task.
+        Three branches, tried in order:
+
+        1. This process is executing the task right now
+           (``AionActiveTaskRegistry.cancel_local``). Cancelled through the
+           ordinary A2A executor path - rescue included, for evolution runs -
+           and the resulting terminal task is returned directly with no
+           further waiting.
+        2. Another process holds a live claim
+           (``BaseTaskStore.request_cancellation``). This process cannot run
+           that owner's teardown itself, so it marks the claim and waits,
+           bounded, for the terminal write the owner's own heartbeat-driven
+           cancellation will produce - see ``TaskTerminalListener`` and
+           ``AionActiveTaskRegistry._on_control_signal``. A wait that outruns
+           the bound answers with the task as currently stored rather than
+           blocking the caller further: the eventual terminal state still
+           reaches the client later, over push or ``tasks/resubscribe``.
+        3. No live claim exists anywhere. There is no owner to ask, so the
+           terminal state is written directly
+           (``BaseTaskStore.cancel_with_ownership_revocation``), exactly as
+           this method used to do unconditionally.
+
+        In every branch, the already-terminal case is reported as an error
+        rather than inferred from the returned state: a successful
+        cancellation is itself terminal, so afterwards the two would be
+        indistinguishable.
         """
-        # The store raises TaskNotCancelableError for a task that already has
-        # an outcome. It cannot be decided from the returned state here: a
-        # successful cancellation is itself terminal.
+        task_id = params.id
+
+        local = await self._active_task_registry.cancel_local(task_id, context)
+        if local is not None:
+            return local
+
+        # Registered before request_cancellation's transaction commits, not
+        # after: the owner's own notification can only follow that commit,
+        # but nothing stops it from arriving within a heartbeat tick of it -
+        # registering any later would race that notification and could miss
+        # it. See TaskTerminalListener.register / Waiter.
+        waiter = self._terminal_listener.register(task_id) if self._terminal_listener else None
+        try:
+            marked = await self.task_store.request_cancellation(task_id, context)
+            if marked is None:
+                raise TaskNotFoundError
+
+            if marked:
+                if waiter is not None:
+                    await waiter.wait(timeout=CANCEL_WAIT_SECONDS)
+                # Read regardless of whether the wait was woken or timed out:
+                # a woken wait still needs the settled row, and a timed-out
+                # one may have missed a notification lost to a listener
+                # reconnect rather than a cancellation that never happened.
+                task = await self.task_store.get(task_id, context)
+                if task is None:
+                    raise TaskNotFoundError
+                return task
+        finally:
+            if waiter is not None:
+                waiter.release()
+
         task = await self.task_store.cancel_with_ownership_revocation(
-            params.id,
+            task_id,
             context,
         )
         if task is None:

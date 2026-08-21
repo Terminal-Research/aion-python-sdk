@@ -5,6 +5,7 @@ from typing import Optional
 
 
 from aion.db.postgres import db_manager
+from .notifications import TaskTerminalListener, task_terminal_listener
 from .ownership import OwnershipProvider, PostgresOwnershipProvider
 from .stores import (
     BaseTaskStore,
@@ -28,6 +29,7 @@ class StoreManager:
         self._is_initialized = False
         self._store: Optional[InMemoryTaskStore | PostgresTaskStore] = None
         self._ownership_provider: Optional[OwnershipProvider] = None
+        self._terminal_listener: Optional[TaskTerminalListener] = None
 
     def initialize(self, agent_id: str):
         """
@@ -49,9 +51,15 @@ class StoreManager:
         if db_manager.is_initialized:
             ownership_provider = PostgresOwnershipProvider(agent_id)
             task_store = PostgresTaskStore(agent_id=agent_id, ownership_provider=ownership_provider)
+            # Only the durable store has anyone to signal across pods: the
+            # in-memory fallback settles every cancellation locally, through
+            # AionActiveTaskRegistry.cancel_local, and never reaches the
+            # claim-signal path this listener answers.
+            terminal_listener = task_terminal_listener
         else:
             task_store = InMemoryTaskStore()
             ownership_provider = task_store.ownership_provider
+            terminal_listener = None
             logger.warning(
                 "Task ownership enforcement is disabled; in-memory task storage "
                 "is safe only in a single server instance"
@@ -60,6 +68,7 @@ class StoreManager:
         self._is_initialized = True
         self._store = task_store
         self._ownership_provider = ownership_provider
+        self._terminal_listener = terminal_listener
 
     def get_store(self) -> BaseTaskStore:
         """
@@ -85,5 +94,18 @@ class StoreManager:
         if not self._is_initialized:
             raise RuntimeError("Trying to get ownership provider without initialization")
         return self._ownership_provider
+
+    def get_terminal_listener(self) -> Optional[TaskTerminalListener]:
+        """Return the process's cross-pod cancellation-wakeup listener, if any.
+
+        ``None`` for the in-memory backend, which has nothing to listen for -
+        see :meth:`initialize`.
+
+        Raises:
+            RuntimeError: If called before initialization.
+        """
+        if not self._is_initialized:
+            raise RuntimeError("Trying to get terminal listener without initialization")
+        return self._terminal_listener
 
 store_manager = StoreManager()

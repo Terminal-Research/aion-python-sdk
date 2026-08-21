@@ -9,6 +9,7 @@ boolean and lose the distinction.
 
 from __future__ import annotations
 
+import enum
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
@@ -23,6 +24,8 @@ __all__ = [
     "Lost",
     "Unknown",
     "OwnershipLossCallback",
+    "ControlSignal",
+    "ControlSignalCallback",
     "TaskOwnershipBusy",
     "TaskOwnershipLost",
 ]
@@ -98,6 +101,13 @@ class Owned:
     """A renewal returned the claim row for the presented token."""
 
     lease_expires_at: datetime | None = None
+    cancel_requested: bool = False
+    """Whether a non-owner asked this claim's owner to cancel the task.
+
+    Carried on the same round trip that renews the lease, from the same
+    row - a non-owner cannot run this task's teardown itself, so it can only
+    mark the claim and wait for the owner to notice here and act locally.
+    """
 
 
 @dataclass(frozen=True, slots=True)
@@ -114,3 +124,19 @@ class Unknown:
 
 OwnershipLossCallback = Callable[[str, str], None]
 """Called with ``(task_id, reason)`` once work on a task may no longer continue."""
+
+
+class ControlSignal(enum.Enum):
+    """A request from a non-owner to this claim's owner, carried on the lease.
+
+    One member today. Named and typed as a set rather than a lone boolean so
+    a second signal - something other than cancellation - can be added later
+    without renaming the callback or its plumbing between the ownership
+    provider and the execution registry.
+    """
+
+    CANCEL = "cancel"
+
+
+ControlSignalCallback = Callable[[str, ControlSignal], None]
+"""Called with ``(task_id, signal)`` once a held claim carries a new request."""

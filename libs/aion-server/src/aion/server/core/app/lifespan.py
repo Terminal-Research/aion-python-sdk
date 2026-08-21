@@ -59,6 +59,18 @@ class AppLifespan:
         # lease says the task has a live owner. It is a no-op until the reaper
         # switch is on.
         await self._settle_orphaned_tasks()
+        self._start_terminal_listener()
+
+    def _start_terminal_listener(self):
+        """Start the cross-pod cancellation-wakeup listener, if this store has one.
+
+        ``None`` for the in-memory backend - see ``StoreManager.initialize``.
+        Started here rather than by the store manager itself because it needs
+        a running event loop, which does not exist yet when stores are built.
+        """
+        listener = self.app_factory.store_manager.get_terminal_listener()
+        if listener is not None:
+            listener.start()
 
     async def _settle_orphaned_tasks(self):
         """Run the ownership reconciler once before the server accepts work.
@@ -81,4 +93,7 @@ class AppLifespan:
 
     async def shutdown(self):
         """Handle application shutdown events."""
+        listener = self.app_factory.store_manager.get_terminal_listener()
+        if listener is not None:
+            await listener.stop()
         await self.app_factory.shutdown()

@@ -82,6 +82,9 @@ class ClaimReaper:
         for task_uuid in await self._expired_claim_candidates():
             if await self._settle_expired_claim(task_uuid):
                 settled += 1
+        for task_uuid in await self._cancel_overdue_candidates():
+            if await self._settle_overdue_cancel(task_uuid):
+                settled += 1
         if include_active_task_sweep:
             for task_uuid in await self._unowned_active_task_candidates():
                 if await self._settle_unowned_active_task(task_uuid):
@@ -153,6 +156,20 @@ class ClaimReaper:
             )
             return list(result.scalars().all())
 
+    async def _cancel_overdue_candidates(self) -> list[uuid.UUID]:
+        """Read a bounded, lock-free hypothesis of overdue cancel signals.
+
+        A claim can carry a cancellation request while its lease keeps
+        renewing normally - the owner is alive, just stuck unwinding - so it
+        never appears among :meth:`_expired_claim_candidates`. This reads the
+        partial index on ``cancel_requested_at`` instead, the one index built
+        for exactly this pass.
+        """
+        async with self._db_manager.get_session() as session:
+            grace = _dt.timedelta(seconds=self._settings.cancel_grace_seconds)
+            claims = await TaskClaimsRepository(session).find_cancel_overdue(grace)
+            return [claim.task_id for claim in claims]
+
     @staticmethod
     def _active_state_names() -> list[str]:
         """Return the state names the database stores for running tasks."""
@@ -196,13 +213,23 @@ class ClaimReaper:
                             TaskClaimModel.lease_expires_at <= func.statement_timestamp(),
                         )
                         .values(owner_token=token)
-                        .returning(TaskClaimModel.task_id)
+                        .returning(TaskClaimModel.task_id, TaskClaimModel.cancel_requested_at)
                     )
-                    if claim_row.first() is None:
+                    row = claim_row.first()
+                    if row is None:
                         raise _ReconcileAbort
 
+                    # The expired claim still names a pending cancellation:
+                    # that request must survive its own lease, or it is lost
+                    # the moment this pass deletes the row that carried it.
+                    # See TaskSettlementReason.CANCEL_REQUESTED.
+                    reason = (
+                        TaskSettlementReason.CANCEL_REQUESTED
+                        if row.cancel_requested_at is not None
+                        else TaskSettlementReason.LEASE_EXPIRED
+                    )
                     return await self._settle_locked_task(
-                        session, repository, task_uuid, token, entity
+                        session, repository, task_uuid, token, entity, reason
                     )
         except _ReconcileAbort:
             return False
@@ -255,7 +282,7 @@ class ClaimReaper:
                     if inserted.first() is None:
                         raise _ReconcileAbort
                     return await self._settle_locked_task(
-                        session, repository, task_uuid, token, entity
+                        session, repository, task_uuid, token, entity, TaskSettlementReason.LEASE_EXPIRED
                     )
         except _ReconcileAbort:
             return False
@@ -276,6 +303,7 @@ class ClaimReaper:
         task_uuid: uuid.UUID,
         token: uuid.UUID,
         entity: TaskRecord,
+        reason: TaskSettlementReason,
     ) -> bool:
         """Write a fenced restart outcome and release the temporary lease.
 
@@ -283,6 +311,9 @@ class ClaimReaper:
             entity: The task row as read by the caller's own locking query -
                 never re-fetched here, since the caller already holds the row
                 lock and has already paid for reading it once.
+            reason: Why the server is deciding this outcome rather than the
+                agent - see ``TaskSettlementReason``, which also decides
+                whether ``settled_task`` writes ``CANCELED`` or ``FAILED``.
 
         Returns:
             ``True`` when an outcome was recorded for the task, ``False`` when
@@ -293,9 +324,7 @@ class ClaimReaper:
                 whole candidate back rather than leaving a replaced token
                 behind.
         """
-        settled = settled_task(
-            entity.to_task(str(task_uuid)), TaskSettlementReason.LEASE_EXPIRED
-        )
+        settled = settled_task(entity.to_task(str(task_uuid)), reason)
         if settled is None:
             # A task that is terminal or waiting for input on purpose. The
             # lease is still stale and must not be rediscovered every pass,
@@ -310,8 +339,66 @@ class ClaimReaper:
             TaskRecord.from_task(settled, entity.agent_id), token
         ):
             raise _ReconcileAbort
+        # Before the claim goes: a pod waiting on this task's cancellation
+        # only hears about it if it actually asked, and by the time the
+        # claim is gone the exists-check this reads would find nothing.
+        await TaskClaimsRepository(session).notify_terminal_if_cancel_requested(task_uuid)
         await self._delete_claim(session, task_uuid, token)
         return True
+
+    async def _settle_overdue_cancel(self, task_uuid: uuid.UUID) -> bool:
+        """Force-close a task whose signaled cancellation outlived its grace period.
+
+        Distinct from :meth:`_settle_expired_claim`: here the lease is still
+        live - the owner's heartbeat keeps renewing it, which is exactly why
+        this row never appears among ``_expired_claim_candidates``. The owner
+        is alive and stuck, not gone, so this does not take its claim over
+        the way an ordinary reap does. Instead it writes on the owner's
+        behalf, fenced by the very token the live claim still carries - safe
+        because holding the task row's lock here blocks the owner's own
+        concurrent write (``save_owned`` takes the same lock first) for the
+        length of this transaction, and nothing but a successful write can
+        change that token. The claim is then revoked unconditionally, exactly
+        as a direct-store cancellation does, so the owner discovers the loss
+        on its next heartbeat and tears down whatever it was still doing.
+        """
+        async with self._db_manager.get_session() as session:
+            async with session.begin():
+                repository = TasksRepository(session)
+                entity = await repository.find_by_id_for_update(task_uuid, skip_locked=True)
+                if entity is None or entity.status.state not in ACTIVE_TASK_STATES:
+                    return False
+
+                claims = TaskClaimsRepository(session)
+                claim = await claims.find_by_task_id(task_uuid, entity.agent_id)
+                if not self._is_still_cancel_overdue(claim):
+                    return False
+
+                settled = settled_task(
+                    entity.to_task(str(task_uuid)), TaskSettlementReason.CANCEL_TIMEOUT
+                )
+                if settled is None:
+                    return False
+
+                if not await repository.save_owned_locked(
+                    TaskRecord.from_task(settled, entity.agent_id), claim.owner_token
+                ):
+                    # The owner finished on its own between the recheck above
+                    # and this write; its outcome stands, and there is
+                    # nothing left here to force.
+                    return False
+
+                await claims.notify_terminal_if_cancel_requested(task_uuid)
+                await claims.revoke_unconditionally(task_uuid, entity.agent_id)
+                return True
+
+    def _is_still_cancel_overdue(self, claim) -> bool:
+        """Recheck the candidate predicate against a claim read under lock."""
+        if claim is None or claim.cancel_requested_at is None:
+            return False
+        grace = _dt.timedelta(seconds=self._settings.cancel_grace_seconds)
+        threshold = _dt.datetime.now(_dt.timezone.utc) - grace
+        return claim.cancel_requested_at <= threshold
 
     @staticmethod
     async def _delete_claim(session, task_uuid: uuid.UUID, token: uuid.UUID) -> None:

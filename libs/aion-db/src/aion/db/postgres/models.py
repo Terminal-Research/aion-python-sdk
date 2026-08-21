@@ -79,6 +79,15 @@ class TaskClaimModel(BaseModel):
         nullable=True,
         doc="Best-effort pod/process identity used for diagnostics only.",
     )
+    cancel_requested_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        doc=(
+            "When a non-owner asked this claim's owner to cancel the task. "
+            "NULL means no cancellation is pending. Rides on the claim: it "
+            "disappears with the incarnation it was addressed to."
+        ),
+    )
 
 
 class TaskRecordModel(BaseModel):

@@ -217,6 +217,13 @@ class PostgresTaskStore(BaseTaskStore):
                 entity.id, self._effective_history(task)
             )
             await TaskArtifactsRepository(session).upsert_batch(entity.id, task.artifacts)
+            if entity.status.state in TERMINAL_TASK_STATES:
+                # Before the claim is released - the release happens one
+                # layer up, in AionTaskManager._save_task, only after this
+                # write returns successfully. A pod waiting on this task's
+                # cancellation is only woken if it actually asked; see
+                # notify_terminal_if_cancel_requested.
+                await TaskClaimsRepository(session).notify_terminal_if_cancel_requested(entity.id)
             await session.commit()
 
     async def cancel_with_ownership_revocation(
@@ -275,6 +282,63 @@ class PostgresTaskStore(BaseTaskStore):
                 await claims.revoke_unconditionally(task_uuid, self.agent_id)
 
                 return task
+
+    async def request_cancellation(
+            self, task_id: str, context: ServerCallContext | None = None
+    ) -> Optional[bool]:
+        """Ask this task's owner to cancel it, without writing a terminal state.
+
+        The non-owner mirror of :meth:`save`'s fenced write: a pod that does
+        not hold this task's claim cannot run its teardown, so instead of
+        writing ``CANCELED`` itself it marks the claim and lets the owner
+        discover the mark on its next heartbeat renewal and cancel locally -
+        see ``PostgresOwnershipProvider._notify_control_signal_once`` and
+        ``AionActiveTaskRegistry._on_control_signal``. The eventual terminal
+        write, and its notification to whoever is waiting on it, both happen
+        over there, not here.
+
+        Locks the task row before marking the claim, in the same transaction,
+        for the same reason :meth:`cancel_with_ownership_revocation` does:
+        a task that reaches an outcome between the read and the write must
+        not have a cancellation request attached to a claim it no longer
+        needs. Whichever of the two writers gets the lock first decides the
+        race; the loser's transaction observes the outcome the winner already
+        committed.
+
+        Returns:
+            ``True`` when a live claim was marked - the caller should now
+            wait for the terminal write it will trigger. ``False`` when the
+            task exists but has no live claim - there is no owner to ask, and
+            the caller must close the task out directly instead, exactly as
+            :meth:`cancel_with_ownership_revocation` already does. ``None``
+            when no such task exists.
+
+        Raises:
+            TaskNotCancelableError: If the task already has an outcome.
+        """
+        try:
+            task_uuid = require_task_uuid(task_id)
+        except InvalidParamsError:
+            return None
+
+        async with db_manager.get_session() as session:
+            async with session.begin():
+                tasks = TasksRepository(session)
+                claims = TaskClaimsRepository(session)
+                entity = await tasks.find_by_id_for_update(task_uuid, self.agent_id)
+                if entity is None:
+                    return None
+
+                if entity.status.state in TERMINAL_TASK_STATES:
+                    raise TaskNotCancelableError(
+                        message=(
+                            "Task cannot be canceled - current state: "
+                            f"{TaskState.Name(entity.status.state)}"
+                        )
+                    )
+
+                marked = await claims.request_cancel(task_uuid, self.agent_id)
+                return marked is not None
 
     async def get(
             self, task_id: str, context: ServerCallContext | None = None

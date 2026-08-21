@@ -79,6 +79,12 @@ class _StubProvider:
     def set_loss_callback(self, callback) -> None:
         """Accept the registry callback."""
 
+    def set_control_signal_callback(self, callback) -> None:
+        """Accept the registry callback."""
+
+    def forget_control_signal(self, task_id: str) -> None:
+        """Nothing here ever marks a signal delivered."""
+
     def mark_lost(self, claim: Claim, reason: str) -> None:
         """Drop the claim."""
         self._claims.pop(claim.task_id, None)

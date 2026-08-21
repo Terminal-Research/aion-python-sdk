@@ -34,19 +34,45 @@ from .postgres_support import (
     write_task,
 )
 
+from a2a.server.tasks import TaskUpdater
 from a2a.types import CancelTaskRequest, SubscribeToTaskRequest, Task, TaskState
+from a2a.utils.errors import TaskNotCancelableError
+from sqlalchemy import text
 
 from aion.server.agent.execution.scope import init_execution_scope
+from aion.server.core.app.handlers import request_handler as _request_handler_module
 from aion.server.core.app.handlers.request_handler import AionRequestHandler
+from aion.server.tasks.notifications import TaskTerminalListener
 from aion.server.tasks.ownership import (
     PostgresOwnershipProvider,
     TaskOwnershipBusy,
     TaskOwnershipLost,
 )
 from aion.server.tasks.stores.postgres_task_store import PostgresTaskStore
+from .postgres_support import db_manager as _db_manager
 
 STREAM_TIMEOUT_SECONDS = 10.0
 """How long a resubscribe may take before the test calls it a hang."""
+
+
+class _GracefulAgentExecutor:
+    """Stands in for the real ``AionAgentRequestExecutor`` where cancel matters.
+
+    A plain ``Mock`` works for every other test here because nothing drives
+    its ``execute`` to completion: ``create_task_if_missing=True`` alone never
+    enqueues a request, so the producer sits blocked on an empty queue and
+    ``execute`` is never called. Cancellation is different - cross-pod
+    cancellation now depends on the owner's own ``ActiveTask.cancel`` actually
+    publishing a terminal event through ``TaskUpdater``, the same way the real
+    executor does, or the waiting side has nothing to ever wake up for.
+    """
+
+    async def execute(self, context, event_queue) -> None:
+        raise NotImplementedError("not exercised by these tests")
+
+    async def cancel(self, context, event_queue) -> None:
+        """Publish the terminal CANCELED event, exactly as a real cancel does."""
+        await TaskUpdater(event_queue, context.task_id, context.context_id).cancel()
 
 pytestmark = [
     pytest.mark.integration,
@@ -77,6 +103,7 @@ class _Instance:
     provider: PostgresOwnershipProvider
     store: PostgresTaskStore
     handler: AionRequestHandler
+    listener: TaskTerminalListener
 
     @property
     def registry(self):
@@ -126,6 +153,7 @@ class _Instance:
     async def aclose(self) -> None:
         """Shut the instance down, releasing whatever it still holds."""
         await self.registry.aclose()
+        await self.listener.stop()
 
 
 def _instance(name: str, **provider_kwargs) -> _Instance:
@@ -133,21 +161,27 @@ def _instance(name: str, **provider_kwargs) -> _Instance:
 
     The store and the provider are the pair ``StoreManager`` selects together,
     and the handler is given that same provider, which is how a deployed
-    process is built. Nothing here is a stub except the agent executor and the
-    agent card: no test in this module runs agent logic, only the coordination
-    around it.
+    process is built. The agent executor is ``_GracefulAgentExecutor`` rather
+    than a plain ``Mock`` because a cross-pod cancellation genuinely depends
+    on it publishing a terminal event, and the terminal listener is real and
+    started immediately - both needed for
+    ``test_cancelling_from_another_instance_stops_the_holder`` to observe the
+    real ``LISTEN``/``NOTIFY`` path rather than only its fencing logic.
     """
     provider = _provider(name, **provider_kwargs)
     store = PostgresTaskStore(agent_id=provider.agent_id, ownership_provider=provider)
     agent_card = Mock()
     agent_card.capabilities.streaming = True
+    listener = TaskTerminalListener(db_manager=_db_manager)
+    listener.start()
     handler = AionRequestHandler(
-        agent_executor=Mock(),
+        agent_executor=_GracefulAgentExecutor(),
         task_store=store,
         agent_card=agent_card,
         ownership_provider=provider,
+        terminal_listener=listener,
     )
-    return _Instance(name=name, provider=provider, store=store, handler=handler)
+    return _Instance(name=name, provider=provider, store=store, handler=handler, listener=listener)
 
 
 @pytest_asyncio.fixture(loop_scope="module")
@@ -215,8 +249,11 @@ async def test_a_task_running_elsewhere_cannot_be_attached_to(instances) -> None
 async def test_cancelling_from_another_instance_stops_the_holder(instances) -> None:
     """The control request need not know which instance is executing.
 
-    Cancellation removes the lease. The holder learns of it from its own
-    heartbeat, gives up the execution, and can no longer write.
+    Cancellation marks the claim rather than writing a terminal state
+    directly. The holder discovers the mark on its own next heartbeat renewal,
+    cancels the execution locally through its ordinary A2A executor path, and
+    writes CANCELED itself. The controller learns of it via LISTEN/NOTIFY, not
+    by polling, and returns that same terminal task to its own caller.
     """
     task_id = str(uuid.uuid4())
     holder = instances("pod-a", settings=short_lease())
@@ -234,6 +271,133 @@ async def test_cancelling_from_another_instance_stops_the_holder(instances) -> N
     with pytest.raises(TaskOwnershipLost):
         await write_task(holder.provider, task_id, TaskState.TASK_STATE_COMPLETED)
     assert await task_state(task_id) == "TASK_STATE_CANCELED"
+
+
+async def test_cancelling_an_already_terminal_task_raises(instances) -> None:
+    """A cancellation that arrives too late is an error, not a silent no-op.
+
+    A successful cancellation is itself terminal, so the two cases must be
+    told apart here rather than left for the caller to infer from state.
+    """
+    task_id = str(uuid.uuid4())
+    holder = instances("pod-a")
+    controller = instances("pod-b")
+    await holder.execute(task_id)
+    await write_task(holder.provider, task_id, TaskState.TASK_STATE_COMPLETED)
+
+    with pytest.raises(TaskNotCancelableError):
+        await controller.cancel(task_id)
+
+
+async def test_a_task_that_completes_before_the_owner_notices_the_signal_keeps_its_outcome(
+    instances,
+) -> None:
+    """A legitimate outcome must not be overwritten by a request that lost the race.
+
+    Deterministic version of the race, not a timing-dependent one: the mark
+    is placed first, exactly as it would be mid-run, and the owner is then
+    made to reach its own outcome before anything acts on that mark - the
+    same as if the owner's heartbeat simply had not ticked yet. The mark must
+    not retroactively change what already happened; the client's original
+    request is answered as "too late" instead.
+    """
+    task_id = str(uuid.uuid4())
+    holder = instances("pod-a")
+    controller = instances("pod-b")
+    await holder.execute(task_id)
+    await write_task(holder.provider, task_id, TaskState.TASK_STATE_WORKING)
+
+    assert await controller.store.request_cancellation(task_id) is True
+
+    # The owner reaches its own outcome unaware of the mark - the same fenced
+    # write it would make regardless, still using its still-current token.
+    await write_task(holder.provider, task_id, TaskState.TASK_STATE_COMPLETED)
+    assert await task_state(task_id) == "TASK_STATE_COMPLETED"
+
+    with pytest.raises(TaskNotCancelableError):
+        await controller.cancel(task_id)
+    assert await task_state(task_id) == "TASK_STATE_COMPLETED"
+
+
+async def test_cancelling_a_task_with_no_live_claim_writes_canceled_directly(
+    instances,
+) -> None:
+    """Branch three of ``on_cancel_task``: nobody to signal, so no waiting.
+
+    An interrupted task's owner has already released its claim on purpose -
+    there is no heartbeat left to deliver a signal to, so the only correct
+    move is the direct, unconditional write the store already provides.
+    """
+    task_id = str(uuid.uuid4())
+    holder = instances("pod-a")
+    controller = instances("pod-b")
+    await holder.execute(task_id)
+    await write_task(holder.provider, task_id, TaskState.TASK_STATE_INPUT_REQUIRED)
+    async with _db_manager.get_session() as session:
+        await session.execute(text("DELETE FROM task_claims"))
+        await session.commit()
+
+    canceled = await controller.cancel(task_id)
+
+    assert canceled is not None
+    assert canceled.status.state == TaskState.TASK_STATE_CANCELED
+    assert await claim_count() == 0
+
+
+async def test_cancel_wait_timeout_still_reports_current_state_and_converges_later(
+    instances, monkeypatch
+) -> None:
+    """A wait that outruns its budget must not block the caller further.
+
+    The owner's heartbeat interval here is deliberately left at the deployed
+    default, far longer than the wait budget this test shrinks it against, so
+    the controller's wait is guaranteed to time out. The mark it left behind
+    is not lost, though: the same task converges to CANCELED once the owner's
+    own heartbeat eventually ticks - simulated here by driving one renewal
+    directly rather than waiting the real interval out.
+    """
+    monkeypatch.setattr(_request_handler_module, "CANCEL_WAIT_SECONDS", 0.05)
+    task_id = str(uuid.uuid4())
+    holder = instances("pod-a")
+    controller = instances("pod-b")
+    await holder.execute(task_id)
+    await write_task(holder.provider, task_id, TaskState.TASK_STATE_WORKING)
+
+    reported = await controller.cancel(task_id)
+
+    assert reported is not None
+    assert reported.status.state == TaskState.TASK_STATE_WORKING
+    assert await claim_count() == 1
+
+    claim = holder.provider.claim_for(task_id)
+    await holder.provider.renew(claim)
+
+    await _until(lambda: holder.provider.claim_for(task_id) is None)
+    assert await task_state(task_id) == "TASK_STATE_CANCELED"
+
+
+async def test_concurrent_cancels_from_different_instances_agree(instances) -> None:
+    """Two callers racing the same cancellation must not fight each other.
+
+    Both requests mark the same claim - the second finds the mark already
+    there and leaves it alone - and both wait on the very same local
+    ``asyncio.Event``, so the one notification the owner eventually sends
+    wakes both at once.
+    """
+    task_id = str(uuid.uuid4())
+    holder = instances("pod-a", settings=short_lease())
+    controller_a = instances("pod-b")
+    controller_b = instances("pod-c")
+    await holder.execute(task_id)
+    await write_task(holder.provider, task_id, TaskState.TASK_STATE_WORKING)
+
+    first, second = await asyncio.gather(
+        controller_a.cancel(task_id), controller_b.cancel(task_id)
+    )
+
+    assert first.status.state == TaskState.TASK_STATE_CANCELED
+    assert second.status.state == TaskState.TASK_STATE_CANCELED
+    assert await claim_count() == 0
 
 
 async def test_a_task_left_by_a_dead_instance_is_settled(instances) -> None:

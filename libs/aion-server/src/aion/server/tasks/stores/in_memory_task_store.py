@@ -226,6 +226,34 @@ class InMemoryTaskStore(BaseTaskStore):
             task.status.state = TaskState.TASK_STATE_CANCELED
             return task
 
+    async def request_cancellation(
+            self, task_id: str, context: ServerCallContext | None = None
+    ) -> bool | None:
+        """Report "no live claim" for any cancelable task.
+
+        A single-process store has no distributed claim to mark: the
+        in-process ``ActiveTaskRegistry`` already gives mutual exclusion
+        stricter than a lease, so ``on_cancel_task`` finds and cancels the
+        local execution directly and never needs this path to signal
+        anything - see its first branch, tried before this one. When it is
+        reached anyway, always answering ``False`` sends the caller straight
+        to :meth:`cancel_with_ownership_revocation`, the correct single-writer
+        outcome here.
+        """
+        owner = self.owner_resolver(context)
+        async with self.lock:
+            task = self._get_owner_tasks(owner).get(task_id)
+            if task is None:
+                return None
+            if task.status.state in TERMINAL_TASK_STATES:
+                raise TaskNotCancelableError(
+                    message=(
+                        "Task cannot be canceled - current state: "
+                        f"{TaskState.Name(task.status.state)}"
+                    )
+                )
+            return False
+
     async def get_context_ids(
             self,
             offset: Optional[int] = None,

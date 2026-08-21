@@ -73,6 +73,19 @@ SHUTDOWN_DB_TIMEOUT_SECONDS = 2.0
 # outcome, which the deadline logic already handles.
 DB_STATEMENT_TIMEOUT_SECONDS = 10.0
 
+# How long a signaled cancellation may go un-honored, at a live lease, before
+# the reaper forces the task closed regardless. Strictly greater than the
+# evolution handler's own cancel-drain budget (60s -
+# aion.server.agent.execution.extensions.evolution.handler._CANCEL_DRAIN_TIMEOUT_S)
+# so the reaper never preempts an owner still mid-rescue.
+CANCEL_GRACE_SECONDS = 120.0
+
+# How long the pod that received tasks/cancel waits, after marking the claim,
+# before answering with whatever the store currently holds instead of the
+# settled terminal task. Short: this blocks an HTTP request, and a client that
+# times out here still gets the terminal task later via push or resubscribe.
+CANCEL_WAIT_SECONDS = 10.0
+
 # Reclaiming expired leases is only safe once every writer renews them. The
 # heartbeat is now assumed present on every deployed instance, so the reaper
 # defaults on; set this to a falsy value to disable it, e.g. during a rollout
@@ -93,6 +106,8 @@ class LeaseSettings:
     active_task_sweep_interval_seconds: float = ACTIVE_TASK_SWEEP_INTERVAL_SECONDS
     reconcile_batch_size: int = RECONCILE_BATCH_SIZE
     orphan_task_age_seconds: float = ORPHAN_TASK_AGE_SECONDS
+    cancel_grace_seconds: float = CANCEL_GRACE_SECONDS
+    cancel_wait_seconds: float = CANCEL_WAIT_SECONDS
 
     @property
     def working_window_seconds(self) -> float:

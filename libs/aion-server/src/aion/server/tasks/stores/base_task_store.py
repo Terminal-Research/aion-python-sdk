@@ -48,6 +48,37 @@ class BaseTaskStore(TaskStore):
         pass
 
     @abstractmethod
+    async def request_cancellation(
+            self,
+            task_id: str,
+            context: Optional[ServerCallContext] = None,
+    ) -> Optional[bool]:
+        """Ask this task's owner to cancel it, without writing a terminal state.
+
+        The non-owner mirror of :meth:`cancel_with_ownership_revocation`:
+        used when there may be a live execution elsewhere that can give the
+        task a graceful, reported cancellation if only it is asked - see
+        ``AionRequestHandler.on_cancel_task`` for the three-way branch this
+        feeds into, and ``PostgresTaskStore.request_cancellation`` for the
+        durable implementation's fencing.
+
+        Args:
+            task_id: Identifier of the task to cancel.
+            context: Server call context, when one exists.
+
+        Returns:
+            ``True`` when a live claim was marked and the caller should wait
+            for the terminal write it triggers. ``False`` when the task
+            exists but nothing holds a claim on it, meaning the caller must
+            fall back to :meth:`cancel_with_ownership_revocation`. ``None``
+            when no such task exists.
+
+        Raises:
+            TaskNotCancelableError: If the task already has an outcome.
+        """
+        pass
+
+    @abstractmethod
     async def get_context_ids(
             self,
             offset: Optional[int] = None,

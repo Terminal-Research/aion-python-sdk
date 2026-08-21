@@ -167,6 +167,8 @@ class TaskClaimRecord(BaseModel):
     """Timestamp of the most recent successful renewal."""
     owner_instance_id: str | None = None
     """Best-effort pod/process identity used for diagnostics only."""
+    cancel_requested_at: _dt.datetime | None = None
+    """When a non-owner asked this claim's owner to cancel the task, or None."""
 
 
 class TaskMessageRecord(BaseModel):

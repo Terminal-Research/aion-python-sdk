@@ -28,7 +28,16 @@ from .config import (
 )
 from .heartbeat import OwnershipHeartbeat
 from .reaper import ClaimReaper
-from .types import Busy, Claim, Lost, Owned, OwnershipLossCallback, Unknown
+from .types import (
+    Busy,
+    Claim,
+    ControlSignal,
+    ControlSignalCallback,
+    Lost,
+    Owned,
+    OwnershipLossCallback,
+    Unknown,
+)
 
 __all__ = ["PostgresOwnershipProvider"]
 
@@ -95,6 +104,18 @@ class PostgresOwnershipProvider:
         # outlive every attempt that was ever refused.
         self._acquire_lock_users: dict[str, int] = {}
         self._loss_callback: OwnershipLossCallback | None = None
+        self._control_signal_callback: ControlSignalCallback | None = None
+        # Which (task_id, owner_token) incarnations already had a CANCEL
+        # signal delivered to the registry. A cancellation request sits on
+        # the claim row until the owner finishes acting on it, so every
+        # renewal in between would otherwise re-report the same request -
+        # this makes delivery a one-shot event per incarnation instead.
+        # Bounded by the claim map itself: an entry is dropped wherever a
+        # claim is, in release()/mark_lost(), and also on demand by
+        # forget_control_signal() when a delivered signal was not acted on
+        # successfully - so it never outlives its claim, and never survives
+        # a failed delivery either.
+        self._signaled_cancel: set[tuple[str, uuid.UUID]] = set()
         self._heartbeat_task: asyncio.Task[None] | None = None
         self._reconciler_task: asyncio.Task[None] | None = None
         self._reconcile_lock = asyncio.Lock()
@@ -235,7 +256,9 @@ class PostgresOwnershipProvider:
         with self._claims_lock:
             if self._same_claim(self._claims.get(claim.task_id), claim):
                 self._claims[claim.task_id] = updated
-        return Owned(record.lease_expires_at)
+        if record.cancel_requested_at is not None:
+            self._notify_control_signal_once(claim.task_id, claim.owner_token, ControlSignal.CANCEL)
+        return Owned(record.lease_expires_at, cancel_requested=record.cancel_requested_at is not None)
 
     async def renew_batch(self, claims: list[Claim]) -> dict[str, Owned | Lost] | Unknown:
         """Conditionally extend many leases in one round trip.
@@ -289,7 +312,12 @@ class PostgresOwnershipProvider:
             with self._claims_lock:
                 if self._same_claim(self._claims.get(claim.task_id), claim):
                     self._claims[claim.task_id] = updated
-            results[claim.task_id] = Owned(record.lease_expires_at)
+            cancel_requested = record.cancel_requested_at is not None
+            if cancel_requested:
+                self._notify_control_signal_once(
+                    claim.task_id, claim.owner_token, ControlSignal.CANCEL
+                )
+            results[claim.task_id] = Owned(record.lease_expires_at, cancel_requested=cancel_requested)
         return results
 
     async def release(self, claim: Claim) -> None:
@@ -311,6 +339,7 @@ class PostgresOwnershipProvider:
             with self._claims_lock:
                 if self._same_claim(self._claims.get(claim.task_id), claim):
                     self._claims.pop(claim.task_id, None)
+                self._signaled_cancel.discard((claim.task_id, claim.owner_token))
 
     def claim_for(self, task_id: str) -> Claim | None:
         """Return the locally remembered lease without querying PostgreSQL.
@@ -365,12 +394,31 @@ class PostgresOwnershipProvider:
         """Register the callback invoked once fail-closed ownership is lost."""
         self._loss_callback = callback
 
+    def set_control_signal_callback(self, callback: ControlSignalCallback | None) -> None:
+        """Register the callback invoked once a held claim carries a new request."""
+        self._control_signal_callback = callback
+
+    def forget_control_signal(self, task_id: str) -> None:
+        """Let the next renewal re-deliver a signal this process failed to act on.
+
+        Scoped to the token this process currently holds for ``task_id``:
+        there is nothing to forget for a task whose claim already moved on or
+        was never held here, and this must never touch a different
+        incarnation's bookkeeping by accident.
+        """
+        claim = self.claim_for(task_id)
+        if claim is None:
+            return
+        with self._claims_lock:
+            self._signaled_cancel.discard((task_id, claim.owner_token))
+
     def mark_lost(self, claim: Claim, reason: str) -> None:
         """Forget a lease only if the map still contains that incarnation."""
         with self._claims_lock:
             if not self._same_claim(self._claims.get(claim.task_id), claim):
                 return
             self._claims.pop(claim.task_id, None)
+            self._signaled_cancel.discard((claim.task_id, claim.owner_token))
         self._notify_loss(claim.task_id, reason)
 
     def _notify_loss(self, task_id: str, reason: str) -> None:
@@ -382,6 +430,28 @@ class PostgresOwnershipProvider:
             callback(task_id, reason)
         except Exception:
             logger.exception("Ownership-loss callback failed for %s", task_id)
+
+    def _notify_control_signal_once(
+        self, task_id: str, owner_token: uuid.UUID, signal: ControlSignal
+    ) -> None:
+        """Deliver a signal to the registry exactly once per claim incarnation.
+
+        The request sits on the claim row for as long as the owner takes to
+        act on it, so every renewal in between reads it again - deduplication
+        happens here, not at the database, which stays a plain fenced read.
+        """
+        key = (task_id, owner_token)
+        with self._claims_lock:
+            if key in self._signaled_cancel:
+                return
+            self._signaled_cancel.add(key)
+        callback = self._control_signal_callback
+        if callback is None:
+            return
+        try:
+            callback(task_id, signal)
+        except Exception:
+            logger.exception("Control-signal callback failed for %s", task_id)
 
     # -- supervision ---------------------------------------------------------
 

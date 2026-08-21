@@ -31,6 +31,7 @@ from aion.db.postgres.migrations.env import config as alembic_config  # noqa: E4
 from aion.db.postgres.utils import convert_pg_url  # noqa: E402
 from aion.db.postgres.manager import db_manager  # noqa: E402
 from aion.db.postgres.migrations import upgrade_to_head  # noqa: E402
+from aion.db.postgres.repositories import TaskClaimsRepository  # noqa: E402
 from aion.server.tasks.ownership import LeaseSettings, PostgresOwnershipProvider  # noqa: E402
 from aion.server.tasks.stores.postgres_task_store import PostgresTaskStore  # noqa: E402
 
@@ -44,6 +45,9 @@ __all__ = [
     "claim_count",
     "lease_expiry",
     "expire_all",
+    "request_cancel",
+    "cancel_requested_at",
+    "age_cancel_request",
 ]
 
 
@@ -157,5 +161,53 @@ async def expire_all() -> None:
                 "UPDATE task_claims SET lease_expires_at = "
                 "clock_timestamp() - interval '5 min'"
             )
+        )
+        await session.commit()
+
+
+async def request_cancel(owner: PostgresOwnershipProvider, task_id: str) -> bool:
+    """Mark a live claim as having a cancellation requested against it.
+
+    Bypasses the task-row lock ``PostgresTaskStore.request_cancellation``
+    takes: these tests exercise the claim-table statement in isolation, the
+    same way ``write_task`` exercises ``save`` without the task-row lock a
+    full ``on_cancel_task`` call would also take.
+
+    Returns:
+        Whether a live claim existed to mark.
+    """
+    async with db_manager.get_session() as session:
+        marked = await TaskClaimsRepository(session).request_cancel(
+            uuid.UUID(task_id), owner.agent_id
+        )
+        await session.commit()
+        return marked is not None
+
+
+async def cancel_requested_at(task_id: str):
+    """Read the raw ``cancel_requested_at`` column for one claim, or ``None``."""
+    async with db_manager.get_session() as session:
+        result = await session.execute(
+            text("SELECT cancel_requested_at FROM task_claims WHERE task_id = :id"),
+            {"id": uuid.UUID(task_id)},
+        )
+        return result.scalar()
+
+
+async def age_cancel_request(task_id: str, seconds: float) -> None:
+    """Push one claim's ``cancel_requested_at`` ``seconds`` into the past.
+
+    Lets a test put a cancellation request past any grace period without
+    waiting the grace period out or shrinking it to something a test can
+    race against.
+    """
+    async with db_manager.get_session() as session:
+        await session.execute(
+            text(
+                "UPDATE task_claims SET cancel_requested_at = "
+                "clock_timestamp() - make_interval(secs => :seconds) "
+                "WHERE task_id = :id"
+            ),
+            {"id": uuid.UUID(task_id), "seconds": seconds},
         )
         await session.commit()

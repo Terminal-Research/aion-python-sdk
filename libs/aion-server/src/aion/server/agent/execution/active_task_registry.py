@@ -7,9 +7,13 @@ from typing import Any, override
 from a2a.server.agent_execution.active_task import ActiveTask
 from a2a.server.agent_execution.active_task_registry import ActiveTaskRegistry
 from a2a.server.context import ServerCallContext
-from a2a.types import TaskState
+from a2a.types import Task, TaskState
 from a2a.types.a2a_pb2 import Message
-from a2a.utils.errors import InvalidParamsError, TaskNotFoundError
+from a2a.utils.errors import (
+    InvalidParamsError,
+    TaskNotCancelableError,
+    TaskNotFoundError,
+)
 
 from aion.core.a2a.enums import TaskSettlementReason
 from aion.server.a2a.constants import ACTIVE_TASK_STATES, TERMINAL_TASK_STATES
@@ -21,6 +25,7 @@ from aion.server.tasks.ownership import (
     SHUTDOWN_DB_TIMEOUT_SECONDS,
     Busy,
     Claim,
+    ControlSignal,
     TaskOwnershipBusy,
 )
 
@@ -71,6 +76,13 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
         self._task_managers: dict[str, AionTaskManager] = {}
         self._interruption_tasks: set[asyncio.Task[None]] = set()
         self._interruption_tasks_by_id: dict[str, ActiveTask] = {}
+        # Cancellation signaled through the claim rather than requested on
+        # this pod directly - see _on_control_signal. Tracked the same way as
+        # _interruption_tasks: one background dispatch per ActiveTask
+        # incarnation, forgotten once it finishes so a later incarnation of
+        # the same task_id can be signaled again.
+        self._cancel_signal_tasks: set[asyncio.Task[None]] = set()
+        self._cancel_signal_tasks_by_id: dict[str, ActiveTask] = {}
         # Set for the duration of aclose(). While it is set,
         # _remove_task_for_incarnation must not release a claim: aclose() has
         # already taken its own snapshot of the claims held at shutdown, and
@@ -84,6 +96,7 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
             else DegenerateOwnershipProvider()
         )
         self._ownership.set_loss_callback(self._on_ownership_lost)
+        self._ownership.set_control_signal_callback(self._on_control_signal)
         self._ownership.start()
 
     @override
@@ -422,6 +435,136 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
         logger.warning("Task %s lost ownership (%s); stopping execution", task_id, reason)
         self._on_task_interrupted(task_id)
 
+    def _on_control_signal(self, task_id: str, signal: ControlSignal) -> None:
+        """React to a request a non-owner left on this process's held claim.
+
+        Called synchronously from the ownership provider's renewal path (see
+        ``PostgresOwnershipProvider._notify_control_signal_once``), so this
+        only schedules the actual work rather than awaiting it - the same
+        discipline ``_on_ownership_lost``/``_on_task_interrupted`` already
+        follow, and for the same reason: this runs on the heartbeat's own
+        coroutine, which must return to keep renewing every other lease.
+
+        A signal naming a task this process is not currently executing is a
+        contradiction - the claim it rode in on is only renewed for a task
+        this process holds - and is logged rather than acted on; whatever
+        left that mark eventually stops waiting for it (see the reaper's
+        overdue-cancel pass, and the request-side wait timeout).
+        """
+        if signal is not ControlSignal.CANCEL:
+            return
+        active_task = self._active_tasks.get(task_id)
+        if active_task is None:
+            logger.warning(
+                "Received a cancel signal for %s but this process holds no "
+                "active execution for it",
+                task_id,
+            )
+            return
+        self._dispatch_cancel(task_id, active_task)
+
+    def _dispatch_cancel(self, task_id: str, active_task: ActiveTask) -> None:
+        """Schedule ``active_task.cancel`` at most once per incarnation.
+
+        Mirrors ``_on_task_interrupted``'s scheduling exactly: the identity
+        check against ``active_task`` (not just ``task_id``) is what makes a
+        second signal for the same incarnation a no-op while still allowing a
+        later incarnation - after a resume - to be signaled again.
+        """
+        if self._cancel_signal_tasks_by_id.get(task_id) is active_task:
+            return
+
+        task_manager = self._task_managers.get(task_id)
+        call_context = getattr(task_manager, "_call_context", None) or ServerCallContext()
+
+        pending = asyncio.create_task(
+            self._run_signaled_cancel(task_id, active_task, call_context),
+            name=f"cancel-signal:{task_id}",
+        )
+        self._cancel_signal_tasks.add(pending)
+        self._cancel_signal_tasks_by_id[task_id] = active_task
+
+        def forget_pending(done: asyncio.Task[None]) -> None:
+            self._cancel_signal_tasks.discard(done)
+            if self._cancel_signal_tasks_by_id.get(task_id) is active_task:
+                self._cancel_signal_tasks_by_id.pop(task_id, None)
+
+        pending.add_done_callback(forget_pending)
+
+    async def _run_signaled_cancel(
+        self, task_id: str, active_task: ActiveTask, call_context: ServerCallContext
+    ) -> None:
+        """Run the same graceful cancel a local ``tasks/cancel`` call would run.
+
+        ``ActiveTask.cancel`` is the SDK's own path: it cancels the producer,
+        calls the executor's ``cancel`` (rescue included, for evolution runs -
+        see ``EvolutionHandler.cancel``), and waits for the consumer to persist
+        the terminal outcome. Using it here rather than a bespoke teardown is
+        what lets a cross-pod cancellation get exactly the same result a
+        same-pod one does.
+
+        Delivery of the signal that led here is one-shot per claim
+        incarnation (see ``PostgresOwnershipProvider._notify_control_signal_once``),
+        so a failure below would otherwise go unretried until the reaper's
+        much slower ``CANCEL_TIMEOUT`` backstop forces the task closed without
+        rescue. ``forget_control_signal`` undoes that bookkeeping on any
+        failure that leaves the task still cancelable, so the very next
+        heartbeat renewal re-delivers the same request and tries again.
+        """
+        try:
+            await active_task.cancel(call_context)
+        except TaskNotCancelableError:
+            # Reached its own terminal outcome in the race between the signal
+            # and the run finishing on its own; nothing left to cancel, and
+            # nothing to retry either.
+            pass
+        except Exception:
+            logger.error("Signaled cancel failed for task %s", task_id, exc_info=True)
+            self._ownership.forget_control_signal(task_id)
+
+    async def cancel_local(
+        self, task_id: str, call_context: ServerCallContext
+    ) -> Task | None:
+        """Cancel a task this process is executing right now, without a signal round trip.
+
+        The fast path for ``tasks/cancel``: when the request lands on the pod
+        already running the task, there is no reason to wait out a heartbeat
+        tick the way a cross-pod request must. Returns ``None`` only when no
+        live execution is found here, which tells the caller to fall through
+        to the claim-signal or direct-store path instead.
+
+        Raises:
+            TaskNotCancelableError: If this process's own copy of the task
+                already has an outcome. Left to propagate rather than
+                swallowed into the ``None`` case: the answer is authoritative
+                here, so there is nothing a fallback path would learn that
+                this call does not already know.
+
+                ``_has_finished`` alone does not guarantee this: the SDK's own
+                ``ActiveTask.cancel`` awaits ``task_manager.get_task()`` before
+                it re-checks its finished flag under its own lock, and does
+                not raise if the run reaches its own outcome in that window -
+                it silently returns the task as it already stood. Re-derived
+                here so a race that lands in that window still gets the same
+                error branches 2 and 3 already guarantee, instead of a
+                same-pod cancel occasionally answering as if it had succeeded.
+        """
+        active_task = self._active_tasks.get(task_id)
+        if active_task is None or _has_finished(active_task):
+            return None
+        task = await active_task.cancel(call_context)
+        if (
+            task.status.state in TERMINAL_TASK_STATES
+            and task.status.state != TaskState.TASK_STATE_CANCELED
+        ):
+            raise TaskNotCancelableError(
+                message=(
+                    "Task cannot be canceled - current state: "
+                    f"{TaskState.Name(task.status.state)}"
+                )
+            )
+        return task
+
     @override
     async def _remove_task(self, task_id: str) -> None:
         """Drop the task manager alongside the base registry's own entry."""
@@ -463,6 +606,8 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
 
         if self._interruption_tasks:
             await asyncio.gather(*self._interruption_tasks, return_exceptions=True)
+        if self._cancel_signal_tasks:
+            await asyncio.gather(*self._cancel_signal_tasks, return_exceptions=True)
 
         try:
             async with asyncio.timeout(SHUTDOWN_DB_TIMEOUT_SECONDS):

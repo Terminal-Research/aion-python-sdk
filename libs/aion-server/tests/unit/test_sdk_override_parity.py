@@ -83,7 +83,7 @@ OVERRIDES = [
 # Aion-only TaskStore operations must not silently become overrides when the
 # a2a-sdk grows its storage contract. Such a collision requires an explicit
 # compatibility decision during the dependency upgrade.
-AION_TASK_STORE_EXTENSIONS = ["cancel_with_ownership_revocation"]
+AION_TASK_STORE_EXTENSIONS = ["cancel_with_ownership_revocation", "request_cancellation"]
 
 
 @pytest.mark.parametrize("method_name", AION_TASK_STORE_EXTENSIONS)

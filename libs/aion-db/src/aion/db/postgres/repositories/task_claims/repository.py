@@ -6,9 +6,10 @@ import uuid
 from datetime import timedelta
 from typing import Optional, Type
 
-from sqlalchemy import CTE, delete, func, select, tuple_, update
+from sqlalchemy import CTE, delete, exists, func, literal, select, tuple_, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from aion.db.postgres.constants import TASK_TERMINAL_CHANNEL
 from aion.db.postgres.models import TaskClaimModel
 from aion.db.postgres.records import TaskClaimRecord
 from aion.db.postgres.repositories.base import BaseRepository
@@ -21,6 +22,7 @@ _TASK_CLAIM_COLUMNS = (
     TaskClaimModel.acquired_at,
     TaskClaimModel.renewed_at,
     TaskClaimModel.owner_instance_id,
+    TaskClaimModel.cancel_requested_at,
 )
 
 
@@ -196,6 +198,83 @@ class TaskClaimsRepository(BaseRepository[TaskClaimModel, TaskClaimRecord]):
                 TaskClaimModel.agent_id == agent_id,
             )
         )
+
+    async def request_cancel(self, task_id: uuid.UUID, agent_id: str) -> Optional[TaskClaimRecord]:
+        """Mark a live claim as having a cancellation requested against it.
+
+        This is the control-plane channel for a pod that does not hold the
+        claim: it cannot run the owner's teardown itself, so it leaves a mark
+        the owner discovers on its next heartbeat renewal and acts on
+        locally. ``COALESCE`` makes a repeated request idempotent - it never
+        pushes the timestamp forward, so a retried ``tasks/cancel`` does not
+        reset whatever grace period is measured from it.
+
+        Returns:
+            The updated claim, or ``None`` when no live claim exists for this
+            task under this agent - the caller's signal that there is no
+            owner to ask, and it must close the task out itself instead.
+        """
+        stmt = (
+            update(TaskClaimModel)
+            .where(
+                TaskClaimModel.task_id == task_id,
+                TaskClaimModel.agent_id == agent_id,
+            )
+            .values(
+                cancel_requested_at=func.coalesce(
+                    TaskClaimModel.cancel_requested_at, func.clock_timestamp()
+                )
+            )
+            .returning(*_TASK_CLAIM_COLUMNS)
+        )
+        result = await self._session.execute(stmt)
+        row = result.mappings().first()
+        return TaskClaimRecord(**row) if row is not None else None
+
+    async def find_cancel_overdue(self, grace: timedelta) -> list[TaskClaimRecord]:
+        """Read claims whose cancellation request has outlived its grace period.
+
+        A claim can carry a pending cancel while its lease keeps renewing
+        normally - the owner is alive but stuck unwinding. That claim never
+        goes stale, so the ordinary expired-lease sweep never finds it; this
+        is the reaper's separate pass for exactly that case, read through the
+        partial index on ``cancel_requested_at``.
+
+        Args:
+            grace: How long a cancellation request may go unhonored before
+                the reaper forces the task closed regardless of lease state.
+        """
+        stmt = select(*_TASK_CLAIM_COLUMNS).where(
+            TaskClaimModel.cancel_requested_at.isnot(None),
+            TaskClaimModel.cancel_requested_at <= func.clock_timestamp() - grace,
+        )
+        result = await self._session.execute(stmt)
+        return [TaskClaimRecord(**row) for row in result.mappings().all()]
+
+    async def notify_terminal_if_cancel_requested(self, task_id: uuid.UUID) -> None:
+        """Wake a pod waiting on this task's cancellation, if one is waiting.
+
+        Call this in the same transaction as the terminal write it announces,
+        before commit: ``NOTIFY`` only takes effect on commit, so a rollback
+        of the terminal write silently takes the notification with it, and no
+        separate rollback handling is needed here.
+
+        The check - "does a live claim for this task still carry a
+        cancellation request" - is what keeps this silent on every ordinary
+        terminal write. Only a task whose claim was marked by
+        :meth:`request_cancel` has anyone listening for it at all; every
+        other terminal write pays for one indexed existence check and
+        notifies nobody.
+        """
+        stmt = select(func.pg_notify(literal(TASK_TERMINAL_CHANNEL), literal(str(task_id)))).where(
+            exists(
+                select(1).where(
+                    TaskClaimModel.task_id == task_id,
+                    TaskClaimModel.cancel_requested_at.isnot(None),
+                )
+            )
+        )
+        await self._session.execute(stmt)
 
     async def find_by_task_id(self, task_id: uuid.UUID, agent_id: str) -> Optional[TaskClaimRecord]:
         """Read a claim row unconditionally, for diagnostics only.

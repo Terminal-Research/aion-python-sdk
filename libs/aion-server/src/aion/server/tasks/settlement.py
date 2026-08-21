@@ -5,17 +5,24 @@ cancelled by shutdown, or it died with its process. Both leave a task holding an
 active state with nothing alive to advance it, so it would be presented as
 running forever.
 
-Such a task is settled as ``FAILED``. It is terminal on purpose: the run did
-not finish and nothing can continue it. The alternative — a non-terminal state,
-so a client could pick the task back up — is worse than it sounds, because the
-task is not waiting for anything. ``RequestContextBuilder`` adopts the last
-interrupted task of a context whenever a message arrives without a task id, and
-the executor continues any non-terminal task through the handler's ``resume``.
-A task settled as ``INPUT_REQUIRED`` would therefore capture the next message
-of its context and have it delivered as the answer to a question no agent
-asked, resuming from a suspension point that does not exist in the checkpoint.
-Terminal is the honest answer, and continuity is not lost by it: the context
-keeps the history, so the next message opens a fresh task that reads it.
+Such a task is settled terminally — most often as ``FAILED``, since the run
+did not finish and nothing can continue it. The alternative — a non-terminal
+state, so a client could pick the task back up — is worse than it sounds,
+because the task is not waiting for anything. ``RequestContextBuilder`` adopts
+the last interrupted task of a context whenever a message arrives without a
+task id, and the executor continues any non-terminal task through the
+handler's ``resume``. A task settled as ``INPUT_REQUIRED`` would therefore
+capture the next message of its context and have it delivered as the answer
+to a question no agent asked, resuming from a suspension point that does not
+exist in the checkpoint. Terminal is the honest answer, and continuity is not
+lost by it: the context keeps the history, so the next message opens a fresh
+task that reads it.
+
+``CANCEL_REQUESTED`` and ``CANCEL_TIMEOUT`` are the one pair of reasons that
+settle as ``CANCELED`` instead: both mean someone asked for exactly this
+outcome (see ``TaskSettlementReason``), so it is not a failure the server
+supplies in the run's absence, it is the run's own requested ending arriving
+late.
 
 The reason is recorded in metadata under ``A2AMetadataKey.SETTLED_REASON`` so a
 client can tell a state the server had to supply from one the agent declared.
@@ -58,9 +65,17 @@ def settled_task(task: Task, reason: TaskSettlementReason) -> Optional[Task]:
     if task.status.state in NON_ACTIVE_TASK_STATES:
         return None
 
+    cancel_reasons = (
+        TaskSettlementReason.CANCEL_REQUESTED,
+        TaskSettlementReason.CANCEL_TIMEOUT,
+    )
     settled = Task()
     settled.CopyFrom(task)
-    settled.status.state = TaskState.TASK_STATE_FAILED
+    settled.status.state = (
+        TaskState.TASK_STATE_CANCELED
+        if reason in cancel_reasons
+        else TaskState.TASK_STATE_FAILED
+    )
     settled.metadata[A2AMetadataKey.SETTLED_REASON.value] = reason.value
     return settled
 

@@ -27,6 +27,8 @@ from .postgres import PostgresOwnershipProvider
 from .types import (
     Busy,
     Claim,
+    ControlSignal,
+    ControlSignalCallback,
     Lost,
     Owned,
     OwnershipLossCallback,
@@ -47,6 +49,8 @@ __all__ = [
     "Lost",
     "Unknown",
     "OwnershipLossCallback",
+    "ControlSignal",
+    "ControlSignalCallback",
     "TaskOwnershipBusy",
     "TaskOwnershipLost",
     # Port and implementations

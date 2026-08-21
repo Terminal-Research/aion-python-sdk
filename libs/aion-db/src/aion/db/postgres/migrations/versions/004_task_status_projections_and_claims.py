@@ -50,6 +50,18 @@ read it - measured at ~130ms for one agent's ~80k tasks in a 16M-row table,
 ``ix_tasks_context_id_created_at`` (``003``): every lookup the narrower index
 could serve, the wider one already does, so it is dropped here as dead weight
 rather than carried forward.
+
+``task_claims.cancel_requested_at`` is a control signal from a non-owner to
+the owner, not task state: a pod that receives ``tasks/cancel`` for a task it
+does not execute has no way to run that task's own teardown, so it can only
+mark the claim and let the owner discover the mark on its next heartbeat and
+cancel locally. The column lives exactly as long as the claim it rides on -
+when the owner releases the claim, or the reaper reclaims an expired one, the
+request for cancellation goes with it, which is why the reaper reads this
+column before deleting a claim rather than after. The index is partial
+because a live cancellation request is rare against the full set of held
+leases, and the one reaper pass that reads it (sweeping requests stuck past
+their grace period on an otherwise live lease) only ever wants those rows.
 """
 
 import logging
@@ -213,11 +225,18 @@ def upgrade() -> None:
             server_default=sa.text("clock_timestamp()"),
         ),
         sa.Column("owner_instance_id", sa.Text(), nullable=True),
+        sa.Column("cancel_requested_at", sa.DateTime(timezone=True), nullable=True),
     )
     op.create_index(
         "task_claims_expiry_idx",
         TASK_CLAIMS_TABLE,
         ["lease_expires_at"],
+    )
+    op.create_index(
+        "task_claims_cancel_requested_idx",
+        TASK_CLAIMS_TABLE,
+        ["cancel_requested_at"],
+        postgresql_where=sa.text("cancel_requested_at IS NOT NULL"),
     )
 
     logger.debug("Creating task_messages")
@@ -341,6 +360,7 @@ def downgrade() -> None:
     op.drop_table(TASK_MESSAGES_TABLE)
 
     logger.debug("Dropping task ownership claims table")
+    op.drop_index("task_claims_cancel_requested_idx", table_name=TASK_CLAIMS_TABLE)
     op.drop_index("task_claims_expiry_idx", table_name=TASK_CLAIMS_TABLE)
     op.drop_table(TASK_CLAIMS_TABLE)
 

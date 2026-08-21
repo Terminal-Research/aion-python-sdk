@@ -5,7 +5,15 @@ from __future__ import annotations
 import uuid
 from typing import Protocol
 
-from .types import Busy, Claim, Lost, Owned, OwnershipLossCallback, Unknown
+from .types import (
+    Busy,
+    Claim,
+    ControlSignalCallback,
+    Lost,
+    Owned,
+    OwnershipLossCallback,
+    Unknown,
+)
 
 __all__ = ["OwnershipProvider", "DegenerateOwnershipProvider"]
 
@@ -56,6 +64,24 @@ class OwnershipProvider(Protocol):
 
     def set_loss_callback(self, callback: OwnershipLossCallback | None) -> None:
         """Set the callback used when heartbeat can no longer permit work."""
+        ...
+
+    def set_control_signal_callback(self, callback: ControlSignalCallback | None) -> None:
+        """Set the callback used when a held claim starts carrying a new request."""
+        ...
+
+    def forget_control_signal(self, task_id: str) -> None:
+        """Let a signal already delivered for ``task_id`` be delivered again.
+
+        Delivery is normally one-shot per claim incarnation - see
+        :meth:`set_control_signal_callback` - so that a request sitting on
+        the claim is not re-reported on every renewal while it is still being
+        acted on. A caller whose attempt to act on it failed calls this to
+        undo that bookkeeping, so the next renewal re-delivers the same
+        request instead of leaving it to expire off the claim or wait out the
+        much slower reaper backstop. A no-op if nothing is currently marked
+        for this task.
+        """
         ...
 
     def mark_lost(self, claim: Claim, reason: str) -> None:
@@ -135,6 +161,19 @@ class DegenerateOwnershipProvider:
 
     def set_loss_callback(self, callback: OwnershipLossCallback | None) -> None:
         """Accept the common callback wiring; nothing here can ever lose a lease."""
+
+    def set_control_signal_callback(self, callback: ControlSignalCallback | None) -> None:
+        """Accept the common callback wiring; this provider carries no claim to signal on.
+
+        A single-process deployment's ``ActiveTaskRegistry`` already gives
+        mutual exclusion in-process, so ``on_cancel_task`` cancels locally
+        without ever reaching this provider - see the registry's first
+        branch, tried before either the signal or the ownership-revocation
+        path.
+        """
+
+    def forget_control_signal(self, task_id: str) -> None:
+        """Ignore: this provider never delivers a signal to forget in the first place."""
 
     def mark_lost(self, claim: Claim, reason: str) -> None:
         """Ignore loss notifications because this provider has no claim map."""

@@ -323,6 +323,12 @@ class _EnforcingProvider:
     def set_loss_callback(self, callback) -> None:
         """Accept the registry callback."""
 
+    def set_control_signal_callback(self, callback) -> None:
+        """Accept the registry callback."""
+
+    def forget_control_signal(self, task_id: str) -> None:
+        """Nothing here ever marks a signal delivered."""
+
     def start(self) -> None:
         """No supervision in the stub."""
 
