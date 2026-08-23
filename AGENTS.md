@@ -140,7 +140,9 @@ and are discovered by `aion-server` at runtime.
   slash-command request/response mode controls, update prompts with GitHub
   release-note links, environment-scoped agent source discovery, local
   session/settings persistence, and WorkOS CLI/device login with npm keyring
-  storage or the Python credential helper supplied by `aion-sdk`. See
+  storage or the Python credential helper supplied by `aion-sdk`. Its GraphQL
+  operation types are generated from the restricted chat schema copied from
+  `aion-api`; rebuild and run `stage:python` after contract changes. See
   `libs/aion-chat-ui/AGENTS.md` for session-log inspection and package-local
   conventions.
 

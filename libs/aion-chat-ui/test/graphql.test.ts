@@ -301,7 +301,22 @@ describe("registry GraphQL", () => {
 				updatedAt: "2026-05-01T00:00:00Z"
 			}
 		]);
+
+		const catalogRequest = JSON.parse(
+			String(vi.mocked(fetchImpl).mock.calls[2]?.[1]?.body)
+		) as {
+			query: string;
+			variables: { organizationId: string; networkTypes: string[] };
+		};
+		expect(catalogRequest.query).toContain(
+			"$networkTypes: [EndpointTypeGQL!]"
+		);
+		expect(catalogRequest.variables).toEqual({
+			organizationId: "org-1",
+			networkTypes: ["A2A"]
+		});
 	});
+
 	it("debug logs skipped catalog identities without raw profile fields", async () => {
 		const logger = createMockSessionLogger();
 		const fetchImpl = vi

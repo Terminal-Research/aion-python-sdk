@@ -16,13 +16,17 @@ export type AgentIdentityType =
   | 'Principal'
   | 'System';
 
-/** Enumeration of supported network types. */
-export type NetworkTypeGQL =
+/** Enumeration of supported Distribution endpoint types. */
+export type EndpointTypeGQL =
   | 'A2A'
+  | 'AgentMail'
   | 'Aion'
   | 'GitHub'
+  | 'Meet'
   | 'Playground'
+  | 'Slack'
   | 'Telegram'
+  | 'TelegramBot'
   | 'Twitter'
   | 'Voice';
 
@@ -40,8 +44,8 @@ export type CurrentUserQuery = { user: { id: string, homeOrganization: { id: str
 
 export type AgentCatalogIdentitiesQueryVariables = Exact<{
   organizationId: string | number;
-  networkTypes?: Array<NetworkTypeGQL> | NetworkTypeGQL | null | undefined;
+  networkTypes?: Array<EndpointTypeGQL> | EndpointTypeGQL | null | undefined;
 }>;
 
 
-export type AgentCatalogIdentitiesQuery = { agentIdentityDetails: Array<{ identity: { id: string, agentType: AgentIdentityType, userId: string | null, organizationId: string, systemKey: string | null, name: string | null, a2aUrl: string | null, website: string | null, email: string | null, atName: string | null, biography: string | null, avatarImageUrl: string | null, backgroundImageUrl: string | null, updatedAt: string, notes: string | null }, distributionUsages: Array<{ distributionId: string, networkType: NetworkTypeGQL }> }> | null };
+export type AgentCatalogIdentitiesQuery = { agentIdentityDetails: Array<{ identity: { id: string, agentType: AgentIdentityType, userId: string | null, organizationId: string, systemKey: string | null, name: string | null, a2aUrl: string | null, website: string | null, email: string | null, atName: string | null, biography: string | null, avatarImageUrl: string | null, backgroundImageUrl: string | null, updatedAt: string, notes: string | null }, distributionUsages: Array<{ distributionId: string, networkType: EndpointTypeGQL }> }> | null };

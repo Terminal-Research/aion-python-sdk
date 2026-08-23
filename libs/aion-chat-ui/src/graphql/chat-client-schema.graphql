@@ -28,7 +28,7 @@ scalar RequestCorrelationId
 union A2AJsonRpcResponseGQL = A2AJsonRpcErrorResponseGQL | A2AJsonRpcSuccessResponseGQL
 
 "Result union returned by runtime health-check queries."
-union HealthCheckResult = FailedHealthCheckResult | HealthyHealthCheckResult | UnhealthyHealthCheckResult
+union HealthCheckResult = FailedHealthCheckResult | HealthyHealthCheckResult | InactiveHealthCheckResult | UnhealthyHealthCheckResult
 
 """
 Classifies the role of the identity.
@@ -45,53 +45,41 @@ enum AgentIdentityType {
   System
 }
 
-"Authorization resource kinds that can anchor scopes and grants."
-enum AuthorizationResourceKindGQL {
-  AgentBehavior
-  AgentEnvironment
-  AgentIdentity
-  Deployment
-  Distribution
-  Identity
-  Organization
-  Project
+"Enumeration of supported Distribution endpoint types."
+enum EndpointTypeGQL {
+  A2A
+  AgentMail
+  Aion
+  GitHub
+  Meet
+  Playground
+  Slack
+  Telegram
+  TelegramBot
+  Twitter
+  Voice
 }
 
 "Normalized status for a health-check response."
 enum HealthCheckStatus {
   Failed
   Healthy
+  Inactive
   Unhealthy
-}
-
-"Category for an external identity principal."
-enum IdentityKindGQL {
-  Bot
-  PhoneNumber
-  User
 }
 
 "Communication-network namespace used by merged identity profile views."
 enum IdentityNetworkGQL {
   A2A
+  AgentMail
   Aion
+  Composio
   GitHub
   Google
   Slack
   Telegram
   Twilio
   Twitter
-}
-
-"Enumeration of supported network types."
-enum NetworkTypeGQL {
-  A2A
-  Aion
-  GitHub
-  Playground
-  Telegram
-  Twitter
-  Voice
 }
 
 enum OrganizationTypeGQL {
@@ -137,6 +125,8 @@ input A2AServiceParametersGQLInput {
 input CapabilitySubjectGQLInput {
   "Direct distribution identifier. Addresses the external ingress path for a distribution-backed agent sequence."
   distributionId: ID
+  "Direct deployment identifier. Addresses the deployment's control capability surface, not an agent running on the deployment."
+  deploymentId: ID
   "Direct agent environment identifier. Addresses the daemon for the specific project node instance represented by that environment."
   agentEnvironmentId: ID
   "Agent identity identifier for identity-addressed ingress. Personal or principal identities resolve to a distribution endpoint, while daemon identities resolve directly to the component daemon."
@@ -239,7 +229,7 @@ type AgentIdentityDetail {
   roleKeys: [String!]!
 }
 
-"Health-check result for a check that failed to complete."
+"Health-check result for a failed check or target lifecycle."
 type FailedHealthCheckResult {
   "Failure reason reported by the health check."
   message: String!
@@ -253,6 +243,28 @@ type HealthyHealthCheckResult {
   status: HealthCheckStatus!
 }
 
+"Lightweight identity summary used when only avatar and routing metadata is required."
+type IdentityAvatar {
+  "Identifier of the source identity record"
+  id: ID!
+  "Optional local user id linked to this avatar"
+  userId: ID
+  "Identifier of the avatar in its network"
+  networkUserId: String!
+  "Communication network for this merged identity view, when applicable"
+  identityNetwork: IdentityNetworkGQL
+  "Network-scoped external identity category"
+  identityKind: String
+  "Optional user handle for the avatar"
+  userName: String
+  "Display name for the avatar"
+  name: String
+  "Avatar image URL"
+  avatarImageUrl: String
+  "True when this avatar represents a platform-managed system identity"
+  systemIdentity: Boolean!
+}
+
 "One active distribution reference for an identity."
 type IdentityDistributionUsage {
   "Owning project identifier"
@@ -262,7 +274,7 @@ type IdentityDistributionUsage {
   "Distribution identifier using the identity"
   distributionId: ID!
   "Network type of the distribution"
-  networkType: NetworkTypeGQL!
+  networkType: EndpointTypeGQL!
   "Agent environment identifier backing the distribution"
   agentEnvironmentId: ID
   "Agent environment display name"
@@ -279,8 +291,8 @@ type IdentityProfile {
   networkUserId: String!
   "Communication network for this merged identity view, when applicable"
   identityNetwork: IdentityNetworkGQL
-  "Category for this external principal, when applicable"
-  identityKind: IdentityKindGQL
+  "Network-scoped category for this external principal, when applicable"
+  identityKind: String
   "Optional user handle for the profile"
   userName: String
   "Optional local user id linked to this profile"
@@ -297,14 +309,38 @@ type IdentityProfile {
   systemIdentity: Boolean!
 }
 
+"Health-check result for a target that is not running."
+type InactiveHealthCheckResult {
+  "Reason the target is inactive."
+  reason: String!
+  "Normalized health-check status."
+  status: HealthCheckStatus!
+}
+
 "Details returned from login query to let backend decide post-login routing"
 type LoginResponse {
+  "Local organization selected by the authenticated login token when known"
+  activeOrganizationId: ID
   "Route path the client should navigate to when present"
   nextRoute: String
   "AgentIdentity name"
   name: String
   "AgentIdentity email"
   email: String
+}
+
+"Represents a tenant workspace within Aion"
+type Organization {
+  "Unique identifier of the organization"
+  id: ID!
+  "Display name of the organization"
+  name: String!
+  "Classification describing the organization type"
+  organizationType: OrganizationTypeGQL!
+  "Linked WorkOS organization id when present"
+  workOSOrganizationId: String
+  "Official IANA timezone for organization-owned schedules"
+  timezone: String!
 }
 
 "Active user membership in an organization."
@@ -317,27 +353,17 @@ type OrganizationMember {
   organization: Organization!
   "Direct organization system role keys for this member"
   roleKeys: [String!]!
-}
-
-"Represents a tenant workspace within Aion"
-type Organization {
-  "Unique identifier of the organization"
-  id: ID!
-  "Display name of the organization"
-  name: String!
-  "Classification describing the organization type"
-  organizationType: OrganizationTypeGQL!
+  "Personal identity avatar used for display"
+  avatar: IdentityAvatar
 }
 
 type Queries {
   "Retrieves a user by ID. When no userId is supplied, returns the currently authenticated user."
   user(userId: ID): User @auth(subjectType: "User")
-  "Loads the authenticated user's effective action-level permissions for one organization."
-  userPermissions("Organization identifier used for permission expansion" organizationId: ID!): [UserPermissionGQL!]! @auth(subjectType: "User")
   "Checks runtime health for the agent actor bound to an agent environment."
   healthCheckAgent("Agent environment identifier" agentEnvironmentId: ID!): HealthCheckResult @auth(subjectType: "User")
   "Retrieves agent identity details for the authenticated user. GraphQL field selection determines whether usage rows and role keys are loaded."
-  agentIdentityDetails("Organization whose visible identities should be listed" organizationId: ID!, "Optional identity-type filter applied to organization-visible identities." types: [AgentIdentityType!], "Optional distribution network types used to keep only identities that are used by at least one active distribution for every requested network. For example, choosing A2A and Playground returns only identities that have distributions for both." networkTypes: [NetworkTypeGQL!], "When true, include the caller's own personal identity for the requested organization even when it falls outside the normal visible set or type filter." includePersonalSelf: Boolean!): [AgentIdentityDetail!] @auth(subjectType: "User")
+  agentIdentityDetails("Organization whose visible identities should be listed" organizationId: ID!, "Optional identity-type filter applied to organization-visible identities." types: [AgentIdentityType!], "Optional distribution network types used to keep only identities that are used by at least one active distribution for every requested network. For example, choosing A2A and Playground returns only identities that have distributions for both." networkTypes: [EndpointTypeGQL!], "When true, include the caller's own personal identity for the requested organization even when it falls outside the normal visible set or type filter." includePersonalSelf: Boolean!): [AgentIdentityDetail!] @auth(subjectType: "User")
   "Retrieves one agent identity detail payload by identifier for the authenticated user."
   agentIdentityDetail(agentIdentityId: ID!): AgentIdentityDetail @auth(subjectType: "User")
   "Returns post-login routing. The optional intendedRoute is a one-time frontend route hint. Invitation accept routes are returned before onboarding so invitation acceptance can run first. Otherwise onboarding overrides the intended route. When no backend detour is needed, the intended route is echoed unchanged."
@@ -375,24 +401,6 @@ type User {
 
 "Association between a user and an external network"
 type UserConnection {
-  "Type of network linked to the user"
-  network: NetworkTypeGQL!
-}
-
-"One effective user permission grouped by action key and deduplicated effective scopes."
-type UserPermissionGQL {
-  "Canonical action key"
-  actionKey: String!
-  "Distinct scopes where the action is effective"
-  scopes: [UserPermissionScopeGQL!]!
-  "Earliest expiry across contributing grants, used to refresh permission state before it changes"
-  expiresAt: OffsetDateTime
-}
-
-"One effective permission scope for a user action."
-type UserPermissionScopeGQL {
-  "Resource kind the permission scope applies to"
-  resourceKind: AuthorizationResourceKindGQL!
-  "Concrete resource identifier for the scope"
-  resourceId: ID!
+  "Identity-network namespace linked to the user"
+  identityNetwork: IdentityNetworkGQL!
 }

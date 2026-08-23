@@ -19,7 +19,7 @@ query CurrentUser {
 
 query AgentCatalogIdentities(
 	$organizationId: ID!
-	$networkTypes: [NetworkTypeGQL!]
+	$networkTypes: [EndpointTypeGQL!]
 ) {
 	agentIdentityDetails(
 		organizationId: $organizationId

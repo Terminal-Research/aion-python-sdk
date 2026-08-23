@@ -42,7 +42,7 @@ query CurrentUser {
 `;
 
 export const AGENT_CATALOG_IDENTITIES_QUERY = `
-query AgentCatalogIdentities($organizationId: ID!, $networkTypes: [NetworkTypeGQL!]) {
+query AgentCatalogIdentities($organizationId: ID!, $networkTypes: [EndpointTypeGQL!]) {
 	agentIdentityDetails(
 		organizationId: $organizationId
 		types: [Principal, Personal]
