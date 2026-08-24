@@ -50821,6 +50821,7 @@ var COMPOSER_THEME = {
   background: AION_THEME.colors.panelBackground,
   foreground: AION_THEME.colors.textPrimary,
   placeholder: AION_THEME.colors.textPlaceholder,
+  primary: AION_THEME.colors.brandPrimary,
   accent: AION_THEME.colors.textStrong,
   muted: AION_THEME.colors.textMuted,
   selection: AION_THEME.colors.selection
@@ -50854,6 +50855,7 @@ var import_jsx_runtime = __toESM(require_jsx_runtime(), 1);
 var INPUT_BACKGROUND = COMPOSER_THEME.background;
 var INPUT_FOREGROUND = COMPOSER_THEME.foreground;
 var INPUT_PLACEHOLDER = COMPOSER_THEME.placeholder;
+var INPUT_PRIMARY = COMPOSER_THEME.primary;
 var INPUT_ACCENT = COMPOSER_THEME.accent;
 var SECONDARY_TEXT = COMPOSER_THEME.muted;
 var PRIMARY_TEXT = INPUT_FOREGROUND;
@@ -51053,7 +51055,7 @@ function ChatComposer({
         const isCursorRow = index === draftLines.length - 1;
         return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { children: [
           /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { ref: isCursorRow ? cursorAnchorRef : void 0, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { backgroundColor: INPUT_BACKGROUND, color: INPUT_ACCENT, children: prefix }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { backgroundColor: INPUT_BACKGROUND, color: INPUT_PRIMARY, children: prefix }),
             /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
               Text,
               {
@@ -51066,7 +51068,7 @@ function ChatComposer({
           padding.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { backgroundColor: INPUT_BACKGROUND, children: padding }) : null
         ] }, `draft-${index}`);
       }) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { children: [
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { ref: cursorAnchorRef, children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { backgroundColor: INPUT_BACKGROUND, color: INPUT_ACCENT, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { ref: cursorAnchorRef, children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { backgroundColor: INPUT_BACKGROUND, color: INPUT_PRIMARY, children: [
           "\u203A",
           " "
         ] }) }),

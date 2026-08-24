@@ -28,6 +28,7 @@ export const COMPOSER_THEME = {
 	background: AION_THEME.colors.panelBackground,
 	foreground: AION_THEME.colors.textPrimary,
 	placeholder: AION_THEME.colors.textPlaceholder,
+	primary: AION_THEME.colors.brandPrimary,
 	accent: AION_THEME.colors.textStrong,
 	muted: AION_THEME.colors.textMuted,
 	selection: AION_THEME.colors.selection

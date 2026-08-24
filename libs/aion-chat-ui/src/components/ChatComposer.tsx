@@ -19,6 +19,7 @@ import { COMPOSER_THEME } from "../lib/theme.js";
 const INPUT_BACKGROUND = COMPOSER_THEME.background;
 const INPUT_FOREGROUND = COMPOSER_THEME.foreground;
 const INPUT_PLACEHOLDER = COMPOSER_THEME.placeholder;
+const INPUT_PRIMARY = COMPOSER_THEME.primary;
 const INPUT_ACCENT = COMPOSER_THEME.accent;
 const SECONDARY_TEXT = COMPOSER_THEME.muted;
 const PRIMARY_TEXT = INPUT_FOREGROUND;
@@ -341,7 +342,7 @@ export function ChatComposer({
 						return (
 							<Box key={`draft-${index}`}>
 								<Box ref={isCursorRow ? cursorAnchorRef : undefined}>
-									<Text backgroundColor={INPUT_BACKGROUND} color={INPUT_ACCENT}>
+									<Text backgroundColor={INPUT_BACKGROUND} color={INPUT_PRIMARY}>
 										{prefix}
 									</Text>
 									<Text
@@ -360,7 +361,7 @@ export function ChatComposer({
 				) : (
 					<Box>
 						<Box ref={cursorAnchorRef}>
-							<Text backgroundColor={INPUT_BACKGROUND} color={INPUT_ACCENT}>
+							<Text backgroundColor={INPUT_BACKGROUND} color={INPUT_PRIMARY}>
 								›{" "}
 							</Text>
 						</Box>

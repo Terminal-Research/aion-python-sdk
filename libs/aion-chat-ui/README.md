@@ -48,9 +48,10 @@ headings, emphasis, block quotes, lists, fenced code, links, and tables. While
 a response is streaming, its unfinished line remains literal until a newline
 arrives; the complete response is rendered when the stream closes.
 
-The composer displays the terminal's native cursor at the current insertion
-point, including when the draft wraps onto another row. Cursor shape and
-blinking follow the terminal's own configuration.
+The composer uses Aion's primary color for its prompt and displays the
+terminal's native cursor at the current insertion point, including when the
+draft wraps onto another row. Cursor shape and blinking follow the terminal's
+own configuration.
 
 Finalized transcript entries are emitted to terminal scrollback and removed
 from Ink's mutable layout. The current streaming exchange remains dynamic so it
