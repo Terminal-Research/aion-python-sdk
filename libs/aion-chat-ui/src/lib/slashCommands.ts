@@ -58,9 +58,9 @@ export const SLASH_COMMANDS = [
 	{
 		id: "clear",
 		label: "/clear",
-		description: "Clear the visible transcript and start fresh.",
-		title: "Clear Transcript",
-		subtitle: "Clear the visible transcript and start fresh.",
+		description: "Clear terminal output and start a fresh chat context.",
+		title: "Clear Terminal",
+		subtitle: "Clear terminal output and start a fresh chat context.",
 		options: []
 	},
 	{

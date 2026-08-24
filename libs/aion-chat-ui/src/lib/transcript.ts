@@ -10,6 +10,12 @@ export interface TranscriptEntry {
 	id: string;
 	body: string;
 	role: TranscriptRole;
+	isFinalized: boolean;
+}
+
+export interface TranscriptPartition {
+	scrollbackEntries: TranscriptEntry[];
+	dynamicEntries: TranscriptEntry[];
 }
 
 export type StreamTranscriptArtifactKind = "response" | "thinking";
@@ -35,6 +41,7 @@ export interface PreparedStreamTranscriptDelta {
 	appendToExistingSection: boolean;
 	replaceExistingSection: boolean;
 	insertDivider: boolean;
+	finalizedEntryIds: string[];
 }
 
 export interface ApplyStreamTranscriptDeltaResult {
@@ -120,18 +127,20 @@ export function upsertTranscriptEntry(
 	entries: TranscriptEntry[],
 	entryId: string,
 	role: TranscriptEntry["role"],
-	body: string
+	body: string,
+	isFinalized = true
 ): TranscriptEntry[] {
 	const existingIndex = entries.findIndex((item) => item.id === entryId);
 	if (existingIndex === -1) {
-		return [...entries, { id: entryId, role, body }];
+		return [...entries, { id: entryId, role, body, isFinalized }];
 	}
 
 	const next = [...entries];
 	next[existingIndex] = {
 		...next[existingIndex],
 		role,
-		body
+		body,
+		isFinalized
 	};
 	return next;
 }
@@ -140,7 +149,8 @@ export function replaceTranscriptEntryBody(
 	entries: TranscriptEntry[],
 	entryId: string,
 	role: TranscriptEntry["role"],
-	body: string
+	body: string,
+	isFinalized = true
 ): ReplaceTranscriptEntryResult {
 	const existingIndex = entries.findIndex((item) => item.id === entryId);
 	if (existingIndex === -1) {
@@ -151,9 +161,46 @@ export function replaceTranscriptEntryBody(
 	next[existingIndex] = {
 		...next[existingIndex],
 		role,
-		body
+		body,
+		isFinalized
 	};
 	return { entries: next, replaced: true };
+}
+
+export function finalizeTranscriptEntries(
+	entries: TranscriptEntry[],
+	entryIds?: ReadonlySet<string>
+): TranscriptEntry[] {
+	let changed = false;
+	const next = entries.map((entry) => {
+		if (
+			entry.isFinalized ||
+			(entryIds !== undefined && !entryIds.has(entry.id))
+		) {
+			return entry;
+		}
+
+		changed = true;
+		return { ...entry, isFinalized: true };
+	});
+	return changed ? next : entries;
+}
+
+export function partitionTranscriptEntries(
+	entries: TranscriptEntry[]
+): TranscriptPartition {
+	const firstDynamicIndex = entries.findIndex((entry) => !entry.isFinalized);
+	if (firstDynamicIndex === -1) {
+		return {
+			scrollbackEntries: entries,
+			dynamicEntries: []
+		};
+	}
+
+	return {
+		scrollbackEntries: entries.slice(0, firstDynamicIndex),
+		dynamicEntries: entries.slice(firstDynamicIndex)
+	};
 }
 
 function createStreamTranscriptSection({
@@ -166,7 +213,13 @@ function createStreamTranscriptSection({
 	taskId: string;
 	artifactId: string;
 	kind: StreamTranscriptArtifactKind;
-}): { section: StreamTranscriptSection; insertDivider: boolean } {
+}): {
+	section: StreamTranscriptSection;
+	insertDivider: boolean;
+	supersededEntryId?: string;
+} {
+	const sectionKey = streamTranscriptSectionKey(taskId, artifactId);
+	const supersededSection = state.activeSectionsByTaskAndArtifactId.get(sectionKey);
 	const sectionIndex = (state.nextSectionIndexByTaskId.get(taskId) ?? 0) + 1;
 	state.nextSectionIndexByTaskId.set(taskId, sectionIndex);
 
@@ -178,15 +231,21 @@ function createStreamTranscriptSection({
 		sectionIndex
 	};
 	const previousLastSection = state.lastSectionByTaskId.get(taskId);
+	if (supersededSection) {
+		state.bodyByEntryId.delete(supersededSection.entryId);
+	}
 	state.activeSectionsByTaskAndArtifactId.set(
-		streamTranscriptSectionKey(taskId, artifactId),
+		sectionKey,
 		section
 	);
 	state.lastSectionByTaskId.set(taskId, section);
 
 	return {
 		section,
-		insertDivider: previousLastSection !== undefined || sectionIndex > 1
+		insertDivider: previousLastSection !== undefined || sectionIndex > 1,
+		...(supersededSection
+			? { supersededEntryId: supersededSection.entryId }
+			: {})
 	};
 }
 
@@ -217,7 +276,8 @@ export function prepareStreamTranscriptDelta({
 			body: nextBody,
 			appendToExistingSection: true,
 			replaceExistingSection: false,
-			insertDivider: false
+			insertDivider: false,
+			finalizedEntryIds: []
 		};
 	}
 
@@ -228,11 +288,12 @@ export function prepareStreamTranscriptDelta({
 			body,
 			appendToExistingSection: false,
 			replaceExistingSection: true,
-			insertDivider: false
+			insertDivider: false,
+			finalizedEntryIds: []
 		};
 	}
 
-	const { section, insertDivider } = createStreamTranscriptSection({
+	const { section, insertDivider, supersededEntryId } = createStreamTranscriptSection({
 		state,
 		taskId,
 		artifactId,
@@ -245,7 +306,8 @@ export function prepareStreamTranscriptDelta({
 		body,
 		appendToExistingSection: false,
 		replaceExistingSection: false,
-		insertDivider
+		insertDivider,
+		finalizedEntryIds: supersededEntryId ? [supersededEntryId] : []
 	};
 }
 
@@ -256,13 +318,17 @@ export function applyPreparedStreamTranscriptDelta({
 	entries: TranscriptEntry[];
 	prepared: PreparedStreamTranscriptDelta;
 }): ApplyStreamTranscriptDeltaResult {
+	const finalizedEntryIds = new Set(prepared.finalizedEntryIds);
+	let nextEntries = finalizeTranscriptEntries(entries, finalizedEntryIds);
+
 	if (prepared.appendToExistingSection || prepared.replaceExistingSection) {
 		return {
 			entries: upsertTranscriptEntry(
-				entries,
+				nextEntries,
 				prepared.section.entryId,
 				"agent",
-				prepared.body
+				prepared.body,
+				false
 			),
 			section: prepared.section,
 			body: prepared.body,
@@ -270,14 +336,14 @@ export function applyPreparedStreamTranscriptDelta({
 		};
 	}
 
-	let nextEntries = entries;
 	if (prepared.insertDivider) {
 		nextEntries = [
 			...nextEntries,
 			{
 				id: `artifact-divider:${prepared.section.taskId}:${prepared.section.sectionIndex}`,
 				role: "divider",
-				body: ""
+				body: "",
+				isFinalized: true
 			}
 		];
 	}
@@ -287,12 +353,49 @@ export function applyPreparedStreamTranscriptDelta({
 			nextEntries,
 			prepared.section.entryId,
 			"agent",
-			prepared.body
+			prepared.body,
+			false
 		),
 		section: prepared.section,
 		body: prepared.body,
 		startedNewSection: true
 	};
+}
+
+export function closeStreamTranscriptSections({
+	state,
+	taskId
+}: {
+	state: StreamTranscriptState;
+	taskId?: string;
+}): Set<string> {
+	const sections = [...state.activeSectionsByTaskAndArtifactId.values()].filter(
+		(section) => taskId === undefined || section.taskId === taskId
+	);
+	const entryIds = new Set(sections.map((section) => section.entryId));
+	for (const section of sections) {
+		clearActiveStreamTranscriptSection(
+			state,
+			section.taskId,
+			section.artifactId
+		);
+	}
+	return entryIds;
+}
+
+export function finalizeStreamTranscriptSections({
+	entries,
+	state,
+	taskId
+}: {
+	entries: TranscriptEntry[];
+	state: StreamTranscriptState;
+	taskId?: string;
+}): TranscriptEntry[] {
+	const entryIds = closeStreamTranscriptSections({ state, taskId });
+	return entryIds.size > 0
+		? finalizeTranscriptEntries(entries, entryIds)
+		: entries;
 }
 
 export function applyStreamTranscriptDelta({

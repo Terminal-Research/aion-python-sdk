@@ -125,7 +125,7 @@ var require_react_production = __commonJS({
     function isValidElement(object) {
       return "object" === typeof object && null !== object && object.$$typeof === REACT_ELEMENT_TYPE;
     }
-    function escape3(key) {
+    function escape4(key) {
       var escaperLookup = { "=": "=0", ":": "=2" };
       return "$" + key.replace(/[=:]/g, function(match) {
         return escaperLookup[match];
@@ -133,7 +133,7 @@ var require_react_production = __commonJS({
     }
     var userProvidedKeyEscapeRegex = /\/+/g;
     function getElementKey(element, index) {
-      return "object" === typeof element && null !== element && null != element.key ? escape3("" + element.key) : index.toString(36);
+      return "object" === typeof element && null !== element && null != element.key ? escape4("" + element.key) : index.toString(36);
     }
     function resolveThenable(thenable) {
       switch (thenable.status) {
@@ -700,14 +700,14 @@ var require_react_development = __commonJS({
       function isValidElement(object) {
         return "object" === typeof object && null !== object && object.$$typeof === REACT_ELEMENT_TYPE;
       }
-      function escape3(key) {
+      function escape4(key) {
         var escaperLookup = { "=": "=0", ":": "=2" };
         return "$" + key.replace(/[=:]/g, function(match) {
           return escaperLookup[match];
         });
       }
       function getElementKey(element, index) {
-        return "object" === typeof element && null !== element && null != element.key ? (checkKeyStringCoercion(element.key), escape3("" + element.key)) : index.toString(36);
+        return "object" === typeof element && null !== element && null != element.key ? (checkKeyStringCoercion(element.key), escape4("" + element.key)) : index.toString(36);
       }
       function resolveThenable(thenable) {
         switch (thenable.status) {
@@ -1922,9 +1922,9 @@ var require_scheduler_production = __commonJS({
         currentPriorityLevel = previousPriorityLevel;
       }
     };
-    exports.unstable_scheduleCallback = function(priorityLevel, callback, options) {
+    exports.unstable_scheduleCallback = function(priorityLevel, callback, options2) {
       var currentTime = exports.unstable_now();
-      "object" === typeof options && null !== options ? (options = options.delay, options = "number" === typeof options && 0 < options ? currentTime + options : currentTime) : options = currentTime;
+      "object" === typeof options2 && null !== options2 ? (options2 = options2.delay, options2 = "number" === typeof options2 && 0 < options2 ? currentTime + options2 : currentTime) : options2 = currentTime;
       switch (priorityLevel) {
         case 1:
           var timeout = -1;
@@ -1941,16 +1941,16 @@ var require_scheduler_production = __commonJS({
         default:
           timeout = 5e3;
       }
-      timeout = options + timeout;
+      timeout = options2 + timeout;
       priorityLevel = {
         id: taskIdCounter++,
         callback,
         priorityLevel,
-        startTime: options,
+        startTime: options2,
         expirationTime: timeout,
         sortIndex: -1
       };
-      options > currentTime ? (priorityLevel.sortIndex = options, push(timerQueue, priorityLevel), null === peek(taskQueue) && priorityLevel === peek(timerQueue) && (isHostTimeoutScheduled ? (localClearTimeout(taskTimeoutID), taskTimeoutID = -1) : isHostTimeoutScheduled = true, requestHostTimeout(handleTimeout, options - currentTime))) : (priorityLevel.sortIndex = timeout, push(taskQueue, priorityLevel), isHostCallbackScheduled || isPerformingWork || (isHostCallbackScheduled = true, isMessageLoopRunning || (isMessageLoopRunning = true, schedulePerformWorkUntilDeadline())));
+      options2 > currentTime ? (priorityLevel.sortIndex = options2, push(timerQueue, priorityLevel), null === peek(taskQueue) && priorityLevel === peek(timerQueue) && (isHostTimeoutScheduled ? (localClearTimeout(taskTimeoutID), taskTimeoutID = -1) : isHostTimeoutScheduled = true, requestHostTimeout(handleTimeout, options2 - currentTime))) : (priorityLevel.sortIndex = timeout, push(taskQueue, priorityLevel), isHostCallbackScheduled || isPerformingWork || (isHostCallbackScheduled = true, isMessageLoopRunning || (isMessageLoopRunning = true, schedulePerformWorkUntilDeadline())));
       return priorityLevel;
     };
     exports.unstable_shouldYield = shouldYieldToHost;
@@ -2179,9 +2179,9 @@ var require_scheduler_development = __commonJS({
           currentPriorityLevel = previousPriorityLevel;
         }
       };
-      exports.unstable_scheduleCallback = function(priorityLevel, callback, options) {
+      exports.unstable_scheduleCallback = function(priorityLevel, callback, options2) {
         var currentTime = exports.unstable_now();
-        "object" === typeof options && null !== options ? (options = options.delay, options = "number" === typeof options && 0 < options ? currentTime + options : currentTime) : options = currentTime;
+        "object" === typeof options2 && null !== options2 ? (options2 = options2.delay, options2 = "number" === typeof options2 && 0 < options2 ? currentTime + options2 : currentTime) : options2 = currentTime;
         switch (priorityLevel) {
           case 1:
             var timeout = -1;
@@ -2198,16 +2198,16 @@ var require_scheduler_development = __commonJS({
           default:
             timeout = 5e3;
         }
-        timeout = options + timeout;
+        timeout = options2 + timeout;
         priorityLevel = {
           id: taskIdCounter++,
           callback,
           priorityLevel,
-          startTime: options,
+          startTime: options2,
           expirationTime: timeout,
           sortIndex: -1
         };
-        options > currentTime ? (priorityLevel.sortIndex = options, push(timerQueue, priorityLevel), null === peek(taskQueue) && priorityLevel === peek(timerQueue) && (isHostTimeoutScheduled ? (localClearTimeout(taskTimeoutID), taskTimeoutID = -1) : isHostTimeoutScheduled = true, requestHostTimeout(handleTimeout, options - currentTime))) : (priorityLevel.sortIndex = timeout, push(taskQueue, priorityLevel), isHostCallbackScheduled || isPerformingWork || (isHostCallbackScheduled = true, isMessageLoopRunning || (isMessageLoopRunning = true, schedulePerformWorkUntilDeadline())));
+        options2 > currentTime ? (priorityLevel.sortIndex = options2, push(timerQueue, priorityLevel), null === peek(taskQueue) && priorityLevel === peek(timerQueue) && (isHostTimeoutScheduled ? (localClearTimeout(taskTimeoutID), taskTimeoutID = -1) : isHostTimeoutScheduled = true, requestHostTimeout(handleTimeout, options2 - currentTime))) : (priorityLevel.sortIndex = timeout, push(taskQueue, priorityLevel), isHostCallbackScheduled || isPerformingWork || (isHostCallbackScheduled = true, isMessageLoopRunning || (isMessageLoopRunning = true, schedulePerformWorkUntilDeadline())));
         return priorityLevel;
       };
       exports.unstable_shouldYield = shouldYieldToHost;
@@ -2245,8 +2245,8 @@ var require_react_reconciler_production = __commonJS({
   "node_modules/react-reconciler/cjs/react-reconciler.production.js"(exports, module) {
     "use strict";
     module.exports = function($$$config) {
-      function createFiber(tag, pendingProps, key, mode) {
-        return new FiberNode(tag, pendingProps, key, mode);
+      function createFiber(tag2, pendingProps, key, mode) {
+        return new FiberNode(tag2, pendingProps, key, mode);
       }
       function noop2() {
       }
@@ -2343,21 +2343,21 @@ var require_react_reconciler_production = __commonJS({
         return a.stateNode.current === a ? fiber : alternate;
       }
       function findCurrentHostFiberImpl(node) {
-        var tag = node.tag;
-        if (5 === tag || 26 === tag || 27 === tag || 6 === tag) return node;
+        var tag2 = node.tag;
+        if (5 === tag2 || 26 === tag2 || 27 === tag2 || 6 === tag2) return node;
         for (node = node.child; null !== node; ) {
-          tag = findCurrentHostFiberImpl(node);
-          if (null !== tag) return tag;
+          tag2 = findCurrentHostFiberImpl(node);
+          if (null !== tag2) return tag2;
           node = node.sibling;
         }
         return null;
       }
       function findCurrentHostFiberWithNoPortalsImpl(node) {
-        var tag = node.tag;
-        if (5 === tag || 26 === tag || 27 === tag || 6 === tag) return node;
+        var tag2 = node.tag;
+        if (5 === tag2 || 26 === tag2 || 27 === tag2 || 6 === tag2) return node;
         for (node = node.child; null !== node; ) {
-          if (4 !== node.tag && (tag = findCurrentHostFiberWithNoPortalsImpl(node), null !== tag))
-            return tag;
+          if (4 !== node.tag && (tag2 = findCurrentHostFiberWithNoPortalsImpl(node), null !== tag2))
+            return tag2;
           node = node.sibling;
         }
         return null;
@@ -2910,22 +2910,22 @@ var require_react_reconciler_production = __commonJS({
       function popHydrationState(fiber) {
         if (!supportsHydration || fiber !== hydrationParentFiber) return false;
         if (!isHydrating) return popToNextHostParent(fiber), isHydrating = true, false;
-        var tag = fiber.tag;
-        supportsSingletons ? 3 !== tag && 27 !== tag && (5 !== tag || shouldDeleteUnhydratedTailInstances(fiber.type) && !shouldSetTextContent(fiber.type, fiber.memoizedProps)) && nextHydratableInstance && throwOnHydrationMismatch(fiber) : 3 !== tag && (5 !== tag || shouldDeleteUnhydratedTailInstances(fiber.type) && !shouldSetTextContent(fiber.type, fiber.memoizedProps)) && nextHydratableInstance && throwOnHydrationMismatch(fiber);
+        var tag2 = fiber.tag;
+        supportsSingletons ? 3 !== tag2 && 27 !== tag2 && (5 !== tag2 || shouldDeleteUnhydratedTailInstances(fiber.type) && !shouldSetTextContent(fiber.type, fiber.memoizedProps)) && nextHydratableInstance && throwOnHydrationMismatch(fiber) : 3 !== tag2 && (5 !== tag2 || shouldDeleteUnhydratedTailInstances(fiber.type) && !shouldSetTextContent(fiber.type, fiber.memoizedProps)) && nextHydratableInstance && throwOnHydrationMismatch(fiber);
         popToNextHostParent(fiber);
-        if (13 === tag) {
+        if (13 === tag2) {
           if (!supportsHydration) throw Error(formatProdErrorMessage(316));
           fiber = fiber.memoizedState;
           fiber = null !== fiber ? fiber.dehydrated : null;
           if (!fiber) throw Error(formatProdErrorMessage(317));
           nextHydratableInstance = getNextHydratableInstanceAfterSuspenseInstance(fiber);
-        } else if (31 === tag) {
+        } else if (31 === tag2) {
           fiber = fiber.memoizedState;
           fiber = null !== fiber ? fiber.dehydrated : null;
           if (!fiber) throw Error(formatProdErrorMessage(317));
           nextHydratableInstance = getNextHydratableInstanceAfterActivityInstance(fiber);
         } else
-          nextHydratableInstance = supportsSingletons && 27 === tag ? getNextHydratableSiblingAfterSingleton(
+          nextHydratableInstance = supportsSingletons && 27 === tag2 ? getNextHydratableSiblingAfterSingleton(
             fiber.type,
             nextHydratableInstance
           ) : hydrationParentFiber ? getNextHydratableSibling(fiber.stateNode) : null;
@@ -2965,34 +2965,34 @@ var require_react_reconciler_production = __commonJS({
         var fiber = workInProgress2.child;
         null !== fiber && (fiber.return = workInProgress2);
         for (; null !== fiber; ) {
-          var list = fiber.dependencies;
-          if (null !== list) {
+          var list2 = fiber.dependencies;
+          if (null !== list2) {
             var nextFiber = fiber.child;
-            list = list.firstContext;
-            a: for (; null !== list; ) {
-              var dependency = list;
-              list = fiber;
+            list2 = list2.firstContext;
+            a: for (; null !== list2; ) {
+              var dependency = list2;
+              list2 = fiber;
               for (var i = 0; i < contexts.length; i++)
                 if (dependency.context === contexts[i]) {
-                  list.lanes |= renderLanes2;
-                  dependency = list.alternate;
+                  list2.lanes |= renderLanes2;
+                  dependency = list2.alternate;
                   null !== dependency && (dependency.lanes |= renderLanes2);
                   scheduleContextWorkOnParentPath(
-                    list.return,
+                    list2.return,
                     renderLanes2,
                     workInProgress2
                   );
                   forcePropagateEntireTree || (nextFiber = null);
                   break a;
                 }
-              list = dependency.next;
+              list2 = dependency.next;
             }
           } else if (18 === fiber.tag) {
             nextFiber = fiber.return;
             if (null === nextFiber) throw Error(formatProdErrorMessage(341));
             nextFiber.lanes |= renderLanes2;
-            list = nextFiber.alternate;
-            null !== list && (list.lanes |= renderLanes2);
+            list2 = nextFiber.alternate;
+            null !== list2 && (list2.lanes |= renderLanes2);
             scheduleContextWorkOnParentPath(nextFiber, renderLanes2, workInProgress2);
             nextFiber = null;
           } else nextFiber = fiber.child;
@@ -4289,7 +4289,7 @@ var require_react_reconciler_production = __commonJS({
         null === (null === workInProgressHook ? index.memoizedState : workInProgressHook.next) && (index = index.alternate, ReactSharedInternals.H = null === index || null === index.memoizedState ? HooksDispatcherOnMount : HooksDispatcherOnUpdate);
         return thenable;
       }
-      function use(usable) {
+      function use2(usable) {
         if (null !== usable && "object" === typeof usable) {
           if ("function" === typeof usable.then) return useThenable(usable);
           if (usable.$$typeof === REACT_CONTEXT_TYPE) return readContext(usable);
@@ -4703,13 +4703,13 @@ var require_react_reconciler_production = __commonJS({
         currentStateHook.memoizedState = action;
         return [stateHook, dispatch, false];
       }
-      function pushSimpleEffect(tag, inst, create3, deps) {
-        tag = { tag, create: create3, deps, inst, next: null };
+      function pushSimpleEffect(tag2, inst, create3, deps) {
+        tag2 = { tag: tag2, create: create3, deps, inst, next: null };
         inst = currentlyRenderingFiber.updateQueue;
         null === inst && (inst = createFunctionComponentUpdateQueue(), currentlyRenderingFiber.updateQueue = inst);
         create3 = inst.lastEffect;
-        null === create3 ? inst.lastEffect = tag.next = tag : (deps = create3.next, create3.next = tag, tag.next = deps, inst.lastEffect = tag);
-        return tag;
+        null === create3 ? inst.lastEffect = tag2.next = tag2 : (deps = create3.next, create3.next = tag2, tag2.next = deps, inst.lastEffect = tag2);
+        return tag2;
       }
       function updateRef() {
         return updateWorkInProgressHook().memoizedState;
@@ -7068,18 +7068,18 @@ var require_react_reconciler_production = __commonJS({
         }
       }
       function insertOrAppendPlacementNodeIntoContainer(node, before, parent) {
-        var tag = node.tag;
-        if (5 === tag || 6 === tag)
+        var tag2 = node.tag;
+        if (5 === tag2 || 6 === tag2)
           node = node.stateNode, before ? insertInContainerBefore(parent, node, before) : appendChildToContainer(parent, node);
-        else if (4 !== tag && (supportsSingletons && 27 === tag && isSingletonScope(node.type) && (parent = node.stateNode, before = null), node = node.child, null !== node))
+        else if (4 !== tag2 && (supportsSingletons && 27 === tag2 && isSingletonScope(node.type) && (parent = node.stateNode, before = null), node = node.child, null !== node))
           for (insertOrAppendPlacementNodeIntoContainer(node, before, parent), node = node.sibling; null !== node; )
             insertOrAppendPlacementNodeIntoContainer(node, before, parent), node = node.sibling;
       }
       function insertOrAppendPlacementNode(node, before, parent) {
-        var tag = node.tag;
-        if (5 === tag || 6 === tag)
+        var tag2 = node.tag;
+        if (5 === tag2 || 6 === tag2)
           node = node.stateNode, before ? insertBefore(parent, node, before) : appendChild(parent, node);
-        else if (4 !== tag && (supportsSingletons && 27 === tag && isSingletonScope(node.type) && (parent = node.stateNode), node = node.child, null !== node))
+        else if (4 !== tag2 && (supportsSingletons && 27 === tag2 && isSingletonScope(node.type) && (parent = node.stateNode), node = node.child, null !== node))
           for (insertOrAppendPlacementNode(node, before, parent), node = node.sibling; null !== node; )
             insertOrAppendPlacementNode(node, before, parent), node = node.sibling;
       }
@@ -8405,7 +8405,7 @@ var require_react_reconciler_production = __commonJS({
         return hostRoot.stateNode.current;
       }
       function matchSelector(fiber$jscomp$0, selector) {
-        var tag = fiber$jscomp$0.tag;
+        var tag2 = fiber$jscomp$0.tag;
         switch (selector.$$typeof) {
           case COMPONENT_TYPE:
             if (fiber$jscomp$0.type === selector.value) return true;
@@ -8414,8 +8414,8 @@ var require_react_reconciler_production = __commonJS({
             a: {
               selector = selector.value;
               fiber$jscomp$0 = [fiber$jscomp$0, 0];
-              for (tag = 0; tag < fiber$jscomp$0.length; ) {
-                var fiber = fiber$jscomp$0[tag++], tag$jscomp$0 = fiber.tag, selectorIndex = fiber$jscomp$0[tag++], selector$jscomp$0 = selector[selectorIndex];
+              for (tag2 = 0; tag2 < fiber$jscomp$0.length; ) {
+                var fiber = fiber$jscomp$0[tag2++], tag$jscomp$0 = fiber.tag, selectorIndex = fiber$jscomp$0[tag2++], selector$jscomp$0 = selector[selectorIndex];
                 if (5 !== tag$jscomp$0 && 26 !== tag$jscomp$0 && 27 !== tag$jscomp$0 || !isHiddenSubtree(fiber)) {
                   for (; null != selector$jscomp$0 && matchSelector(fiber, selector$jscomp$0); )
                     selectorIndex++, selector$jscomp$0 = selector[selectorIndex];
@@ -8431,17 +8431,17 @@ var require_react_reconciler_production = __commonJS({
             }
             return selector;
           case ROLE_TYPE:
-            if ((5 === tag || 26 === tag || 27 === tag) && matchAccessibilityRole(fiber$jscomp$0.stateNode, selector.value))
+            if ((5 === tag2 || 26 === tag2 || 27 === tag2) && matchAccessibilityRole(fiber$jscomp$0.stateNode, selector.value))
               return true;
             break;
           case TEXT_TYPE:
-            if (5 === tag || 6 === tag || 26 === tag || 27 === tag) {
+            if (5 === tag2 || 6 === tag2 || 26 === tag2 || 27 === tag2) {
               if (fiber$jscomp$0 = getTextContent(fiber$jscomp$0), null !== fiber$jscomp$0 && 0 <= fiber$jscomp$0.indexOf(selector.value))
                 return true;
             }
             break;
           case TEST_NAME_TYPE:
-            if (5 === tag || 26 === tag || 27 === tag) {
+            if (5 === tag2 || 26 === tag2 || 27 === tag2) {
               if (fiber$jscomp$0 = fiber$jscomp$0.memoizedProps["data-testname"], "string" === typeof fiber$jscomp$0 && fiber$jscomp$0.toLowerCase() === selector.value.toLowerCase())
                 return true;
             }
@@ -8471,8 +8471,8 @@ var require_react_reconciler_production = __commonJS({
         var matchingFibers = [];
         root = [root, 0];
         for (var index = 0; index < root.length; ) {
-          var fiber = root[index++], tag = fiber.tag, selectorIndex = root[index++], selector = selectors[selectorIndex];
-          if (5 !== tag && 26 !== tag && 27 !== tag || !isHiddenSubtree(fiber)) {
+          var fiber = root[index++], tag2 = fiber.tag, selectorIndex = root[index++], selector = selectors[selectorIndex];
+          if (5 !== tag2 && 26 !== tag2 && 27 !== tag2 || !isHiddenSubtree(fiber)) {
             for (; null != selector && matchSelector(fiber, selector); )
               selectorIndex++, selector = selectors[selectorIndex];
             if (selectorIndex === selectors.length) matchingFibers.push(fiber);
@@ -8490,8 +8490,8 @@ var require_react_reconciler_production = __commonJS({
         selectors = [];
         hostRoot = Array.from(hostRoot);
         for (var index = 0; index < hostRoot.length; ) {
-          var node = hostRoot[index++], tag = node.tag;
-          if (5 === tag || 26 === tag || 27 === tag)
+          var node = hostRoot[index++], tag2 = node.tag;
+          if (5 === tag2 || 26 === tag2 || 27 === tag2)
             isHiddenSubtree(node) || selectors.push(node.stateNode);
           else
             for (node = node.child; null !== node; )
@@ -8721,10 +8721,10 @@ var require_react_reconciler_production = __commonJS({
       }
       function isRenderConsistentWithExternalStores(finishedWork) {
         for (var node = finishedWork; ; ) {
-          var tag = node.tag;
-          if ((0 === tag || 11 === tag || 15 === tag) && node.flags & 16384 && (tag = node.updateQueue, null !== tag && (tag = tag.stores, null !== tag)))
-            for (var i = 0; i < tag.length; i++) {
-              var check2 = tag[i], getSnapshot = check2.getSnapshot;
+          var tag2 = node.tag;
+          if ((0 === tag2 || 11 === tag2 || 15 === tag2) && node.flags & 16384 && (tag2 = node.updateQueue, null !== tag2 && (tag2 = tag2.stores, null !== tag2)))
+            for (var i = 0; i < tag2.length; i++) {
+              var check2 = tag2[i], getSnapshot = check2.getSnapshot;
               check2 = check2.value;
               try {
                 if (!objectIs(getSnapshot(), check2)) return false;
@@ -8732,9 +8732,9 @@ var require_react_reconciler_production = __commonJS({
                 return false;
               }
             }
-          tag = node.child;
-          if (node.subtreeFlags & 16384 && null !== tag)
-            tag.return = node, node = tag;
+          tag2 = node.child;
+          if (node.subtreeFlags & 16384 && null !== tag2)
+            tag2.return = node, node = tag2;
           else {
             if (node === finishedWork) break;
             for (; null === node.sibling; ) {
@@ -9393,8 +9393,8 @@ var require_react_reconciler_production = __commonJS({
       function scheduleCallback(priorityLevel, callback) {
         return scheduleCallback$3(priorityLevel, callback);
       }
-      function FiberNode(tag, pendingProps, key, mode) {
-        this.tag = tag;
+      function FiberNode(tag2, pendingProps, key, mode) {
+        this.tag = tag2;
         this.key = key;
         this.sibling = this.child = this.return = this.stateNode = this.type = this.elementType = null;
         this.index = 0;
@@ -9543,7 +9543,7 @@ var require_react_reconciler_production = __commonJS({
         };
         return mode;
       }
-      function FiberRootNode(containerInfo, tag, hydrate, identifierPrefix, onUncaughtError, onCaughtError, onRecoverableError, onDefaultTransitionIndicator, formState) {
+      function FiberRootNode(containerInfo, tag2, hydrate, identifierPrefix, onUncaughtError, onCaughtError, onRecoverableError, onDefaultTransitionIndicator, formState) {
         this.tag = 1;
         this.containerInfo = containerInfo;
         this.pingCache = this.current = this.pendingChildren = null;
@@ -9563,10 +9563,10 @@ var require_react_reconciler_production = __commonJS({
         this.formState = formState;
         this.incompleteTransitions = /* @__PURE__ */ new Map();
       }
-      function createFiberRoot(containerInfo, tag, hydrate, initialChildren, hydrationCallbacks, isStrictMode, identifierPrefix, formState, onUncaughtError, onCaughtError, onRecoverableError, onDefaultTransitionIndicator) {
+      function createFiberRoot(containerInfo, tag2, hydrate, initialChildren, hydrationCallbacks, isStrictMode, identifierPrefix, formState, onUncaughtError, onCaughtError, onRecoverableError, onDefaultTransitionIndicator) {
         containerInfo = new FiberRootNode(
           containerInfo,
-          tag,
+          tag2,
           hydrate,
           identifierPrefix,
           onUncaughtError,
@@ -9575,19 +9575,19 @@ var require_react_reconciler_production = __commonJS({
           onDefaultTransitionIndicator,
           formState
         );
-        tag = 1;
-        true === isStrictMode && (tag |= 24);
-        isStrictMode = createFiber(3, null, null, tag);
+        tag2 = 1;
+        true === isStrictMode && (tag2 |= 24);
+        isStrictMode = createFiber(3, null, null, tag2);
         containerInfo.current = isStrictMode;
         isStrictMode.stateNode = containerInfo;
-        tag = createCache();
-        tag.refCount++;
-        containerInfo.pooledCache = tag;
-        tag.refCount++;
+        tag2 = createCache();
+        tag2.refCount++;
+        containerInfo.pooledCache = tag2;
+        tag2.refCount++;
         isStrictMode.memoizedState = {
           element: initialChildren,
           isDehydrated: hydrate,
-          cache: tag
+          cache: tag2
         };
         initializeUpdateQueue(isStrictMode);
         return containerInfo;
@@ -9632,14 +9632,14 @@ var require_react_reconciler_production = __commonJS({
       }
       var exports2 = {};
       "use strict";
-      var React15 = require_react(), Scheduler2 = require_scheduler(), assign = Object.assign, REACT_LEGACY_ELEMENT_TYPE = /* @__PURE__ */ Symbol.for("react.element"), REACT_ELEMENT_TYPE = /* @__PURE__ */ Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = /* @__PURE__ */ Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = /* @__PURE__ */ Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = /* @__PURE__ */ Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = /* @__PURE__ */ Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = /* @__PURE__ */ Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = /* @__PURE__ */ Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = /* @__PURE__ */ Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = /* @__PURE__ */ Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = /* @__PURE__ */ Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = /* @__PURE__ */ Symbol.for("react.memo"), REACT_LAZY_TYPE = /* @__PURE__ */ Symbol.for("react.lazy");
+      var React19 = require_react(), Scheduler2 = require_scheduler(), assign = Object.assign, REACT_LEGACY_ELEMENT_TYPE = /* @__PURE__ */ Symbol.for("react.element"), REACT_ELEMENT_TYPE = /* @__PURE__ */ Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = /* @__PURE__ */ Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = /* @__PURE__ */ Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = /* @__PURE__ */ Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = /* @__PURE__ */ Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = /* @__PURE__ */ Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = /* @__PURE__ */ Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = /* @__PURE__ */ Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = /* @__PURE__ */ Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = /* @__PURE__ */ Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = /* @__PURE__ */ Symbol.for("react.memo"), REACT_LAZY_TYPE = /* @__PURE__ */ Symbol.for("react.lazy");
       /* @__PURE__ */ Symbol.for("react.scope");
       var REACT_ACTIVITY_TYPE = /* @__PURE__ */ Symbol.for("react.activity");
       /* @__PURE__ */ Symbol.for("react.legacy_hidden");
       /* @__PURE__ */ Symbol.for("react.tracing_marker");
       var REACT_MEMO_CACHE_SENTINEL = /* @__PURE__ */ Symbol.for("react.memo_cache_sentinel");
       /* @__PURE__ */ Symbol.for("react.view_transition");
-      var MAYBE_ITERATOR_SYMBOL = Symbol.iterator, REACT_CLIENT_REFERENCE = /* @__PURE__ */ Symbol.for("react.client.reference"), isArrayImpl = Array.isArray, ReactSharedInternals = React15.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, rendererVersion = $$$config.rendererVersion, rendererPackageName = $$$config.rendererPackageName, extraDevToolsConfig = $$$config.extraDevToolsConfig, getPublicInstance = $$$config.getPublicInstance, getRootHostContext = $$$config.getRootHostContext, getChildHostContext = $$$config.getChildHostContext, prepareForCommit = $$$config.prepareForCommit, resetAfterCommit = $$$config.resetAfterCommit, createInstance = $$$config.createInstance;
+      var MAYBE_ITERATOR_SYMBOL = Symbol.iterator, REACT_CLIENT_REFERENCE = /* @__PURE__ */ Symbol.for("react.client.reference"), isArrayImpl = Array.isArray, ReactSharedInternals = React19.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, rendererVersion = $$$config.rendererVersion, rendererPackageName = $$$config.rendererPackageName, extraDevToolsConfig = $$$config.extraDevToolsConfig, getPublicInstance = $$$config.getPublicInstance, getRootHostContext = $$$config.getRootHostContext, getChildHostContext = $$$config.getChildHostContext, prepareForCommit = $$$config.prepareForCommit, resetAfterCommit = $$$config.resetAfterCommit, createInstance = $$$config.createInstance;
       $$$config.cloneMutableInstance;
       var appendInitialChild = $$$config.appendInitialChild, finalizeInitialChildren = $$$config.finalizeInitialChildren, shouldSetTextContent = $$$config.shouldSetTextContent, createTextInstance = $$$config.createTextInstance;
       $$$config.cloneMutableTextInstance;
@@ -9732,7 +9732,7 @@ var require_react_reconciler_production = __commonJS({
       var resumedCache = createCursor(null), SuspenseException = Error(formatProdErrorMessage(460)), SuspenseyCommitException = Error(formatProdErrorMessage(474)), SuspenseActionException = Error(formatProdErrorMessage(542)), noopSuspenseyCommitThenable = { then: function() {
       } }, suspendedThenable = null, thenableState$1 = null, thenableIndexCounter$1 = 0, reconcileChildFibers = createChildReconciler(true), mountChildFibers = createChildReconciler(false), concurrentQueues = [], concurrentQueuesIndex = 0, concurrentlyUpdatedLanes = 0, hasForceUpdate = false, didReadFromEntangledAsyncAction = false, currentTreeHiddenStackCursor = createCursor(null), prevEntangledRenderLanesCursor = createCursor(0), suspenseHandlerStackCursor = createCursor(null), shellBoundary = null, suspenseStackCursor = createCursor(0), renderLanes = 0, currentlyRenderingFiber = null, currentHook = null, workInProgressHook = null, didScheduleRenderPhaseUpdate = false, didScheduleRenderPhaseUpdateDuringThisPass = false, shouldDoubleInvokeUserFnsInHooksDEV = false, localIdCounter = 0, thenableIndexCounter = 0, thenableState = null, globalClientIdCounter = 0, ContextOnlyDispatcher = {
         readContext,
-        use,
+        use: use2,
         useCallback: throwInvalidHookError,
         useContext: throwInvalidHookError,
         useEffect: throwInvalidHookError,
@@ -9758,7 +9758,7 @@ var require_react_reconciler_production = __commonJS({
       ContextOnlyDispatcher.useEffectEvent = throwInvalidHookError;
       var HooksDispatcherOnMount = {
         readContext,
-        use,
+        use: use2,
         useCallback: function(callback, deps) {
           mountWorkInProgressHook().memoizedState = [
             callback,
@@ -9947,7 +9947,7 @@ var require_react_reconciler_production = __commonJS({
         }
       }, HooksDispatcherOnUpdate = {
         readContext,
-        use,
+        use: use2,
         useCallback: updateCallback,
         useContext: readContext,
         useEffect: updateEffect,
@@ -9992,7 +9992,7 @@ var require_react_reconciler_production = __commonJS({
       HooksDispatcherOnUpdate.useEffectEvent = updateEvent;
       var HooksDispatcherOnRerender = {
         readContext,
-        use,
+        use: use2,
         useCallback: updateCallback,
         useContext: readContext,
         useEffect: updateEffect,
@@ -10133,10 +10133,10 @@ var require_react_reconciler_production = __commonJS({
       exports2.createComponentSelector = function(component) {
         return { $$typeof: COMPONENT_TYPE, value: component };
       };
-      exports2.createContainer = function(containerInfo, tag, hydrationCallbacks, isStrictMode, concurrentUpdatesByDefaultOverride, identifierPrefix, onUncaughtError, onCaughtError, onRecoverableError, onDefaultTransitionIndicator) {
+      exports2.createContainer = function(containerInfo, tag2, hydrationCallbacks, isStrictMode, concurrentUpdatesByDefaultOverride, identifierPrefix, onUncaughtError, onCaughtError, onRecoverableError, onDefaultTransitionIndicator) {
         return createFiberRoot(
           containerInfo,
-          tag,
+          tag2,
           false,
           null,
           hydrationCallbacks,
@@ -10152,10 +10152,10 @@ var require_react_reconciler_production = __commonJS({
       exports2.createHasPseudoClassSelector = function(selectors) {
         return { $$typeof: HAS_PSEUDO_CLASS_TYPE, value: selectors };
       };
-      exports2.createHydrationContainer = function(initialChildren, callback, containerInfo, tag, hydrationCallbacks, isStrictMode, concurrentUpdatesByDefaultOverride, identifierPrefix, onUncaughtError, onCaughtError, onRecoverableError, onDefaultTransitionIndicator, transitionCallbacks, formState) {
+      exports2.createHydrationContainer = function(initialChildren, callback, containerInfo, tag2, hydrationCallbacks, isStrictMode, concurrentUpdatesByDefaultOverride, identifierPrefix, onUncaughtError, onCaughtError, onRecoverableError, onDefaultTransitionIndicator, transitionCallbacks, formState) {
         initialChildren = createFiberRoot(
           containerInfo,
-          tag,
+          tag2,
           true,
           initialChildren,
           hydrationCallbacks,
@@ -10169,12 +10169,12 @@ var require_react_reconciler_production = __commonJS({
         );
         initialChildren.context = getContextForSubtree(null);
         containerInfo = initialChildren.current;
-        tag = requestUpdateLane();
-        tag = getBumpedLaneForHydrationByLane(tag);
-        hydrationCallbacks = createUpdate(tag);
+        tag2 = requestUpdateLane();
+        tag2 = getBumpedLaneForHydrationByLane(tag2);
+        hydrationCallbacks = createUpdate(tag2);
         hydrationCallbacks.callback = void 0 !== callback && null !== callback ? callback : null;
-        enqueueUpdate(containerInfo, hydrationCallbacks, tag);
-        callback = tag;
+        enqueueUpdate(containerInfo, hydrationCallbacks, tag2);
+        callback = tag2;
         initialChildren.current.lanes = callback;
         markRootUpdated$1(initialChildren, callback);
         ensureRootIsScheduled(initialChildren);
@@ -10282,9 +10282,9 @@ var require_react_reconciler_production = __commonJS({
         selectors = findPaths(hostRoot, selectors);
         selectors = Array.from(selectors);
         for (hostRoot = 0; hostRoot < selectors.length; ) {
-          var fiber = selectors[hostRoot++], tag = fiber.tag;
+          var fiber = selectors[hostRoot++], tag2 = fiber.tag;
           if (!isHiddenSubtree(fiber)) {
-            if ((5 === tag || 26 === tag || 27 === tag) && setFocusIfFocusable(fiber.stateNode))
+            if ((5 === tag2 || 26 === tag2 || 27 === tag2) && setFocusIfFocusable(fiber.stateNode))
               return true;
             for (fiber = fiber.child; null !== fiber; )
               selectors.push(fiber), fiber = fiber.sibling;
@@ -10297,8 +10297,8 @@ var require_react_reconciler_production = __commonJS({
         var maxSelectorIndex = 0, matchedNames = [];
         hostRoot = [findFiberRootForHostRoot(hostRoot), 0];
         for (var index = 0; index < hostRoot.length; ) {
-          var fiber = hostRoot[index++], tag = fiber.tag, selectorIndex = hostRoot[index++], selector = selectors[selectorIndex];
-          if (5 !== tag && 26 !== tag && 27 !== tag || !isHiddenSubtree(fiber)) {
+          var fiber = hostRoot[index++], tag2 = fiber.tag, selectorIndex = hostRoot[index++], selector = selectors[selectorIndex];
+          if (5 !== tag2 && 26 !== tag2 && 27 !== tag2 || !isHiddenSubtree(fiber)) {
             if (matchSelector(fiber, selector) && (matchedNames.push(selectorToString(selector)), selectorIndex++, selectorIndex > maxSelectorIndex && (maxSelectorIndex = selectorIndex)), selectorIndex < selectors.length)
               for (fiber = fiber.child; null !== fiber; )
                 hostRoot.push(fiber, selectorIndex), fiber = fiber.sibling;
@@ -10348,13 +10348,13 @@ var require_react_reconciler_production = __commonJS({
       exports2.isAlreadyRendering = function() {
         return 0 !== (executionContext & 6);
       };
-      exports2.observeVisibleRects = function(hostRoot, selectors, callback, options) {
+      exports2.observeVisibleRects = function(hostRoot, selectors, callback, options2) {
         if (!supportsTestSelectors) throw Error(formatProdErrorMessage(363));
         hostRoot = findAllNodes(hostRoot, selectors);
         var disconnect = setupIntersectionObserver(
           hostRoot,
           callback,
-          options
+          options2
         ).disconnect;
         return {
           disconnect: function() {
@@ -10472,8 +10472,8 @@ var require_react_reconciler_development = __commonJS({
       function shouldErrorImpl() {
         return null;
       }
-      function createFiber(tag, pendingProps, key, mode) {
-        return new FiberNode(tag, pendingProps, key, mode);
+      function createFiber(tag2, pendingProps, key, mode) {
+        return new FiberNode(tag2, pendingProps, key, mode);
       }
       function scheduleRoot(root, element) {
         root.context === emptyContextObject && (updateContainerSync(element, root, null, null), flushSyncWork());
@@ -10611,21 +10611,21 @@ var require_react_reconciler_development = __commonJS({
         return null !== parent ? findCurrentHostFiberImpl(parent) : null;
       }
       function findCurrentHostFiberImpl(node) {
-        var tag = node.tag;
-        if (5 === tag || 26 === tag || 27 === tag || 6 === tag) return node;
+        var tag2 = node.tag;
+        if (5 === tag2 || 26 === tag2 || 27 === tag2 || 6 === tag2) return node;
         for (node = node.child; null !== node; ) {
-          tag = findCurrentHostFiberImpl(node);
-          if (null !== tag) return tag;
+          tag2 = findCurrentHostFiberImpl(node);
+          if (null !== tag2) return tag2;
           node = node.sibling;
         }
         return null;
       }
       function findCurrentHostFiberWithNoPortalsImpl(node) {
-        var tag = node.tag;
-        if (5 === tag || 26 === tag || 27 === tag || 6 === tag) return node;
+        var tag2 = node.tag;
+        if (5 === tag2 || 26 === tag2 || 27 === tag2 || 6 === tag2) return node;
         for (node = node.child; null !== node; ) {
-          if (4 !== node.tag && (tag = findCurrentHostFiberWithNoPortalsImpl(node), null !== tag))
-            return tag;
+          if (4 !== node.tag && (tag2 = findCurrentHostFiberWithNoPortalsImpl(node), null !== tag2))
+            return tag2;
           node = node.sibling;
         }
         return null;
@@ -12329,10 +12329,10 @@ var require_react_reconciler_development = __commonJS({
         if (!supportsHydration || fiber !== hydrationParentFiber) return false;
         if (!isHydrating)
           return popToNextHostParent(fiber), isHydrating = true, false;
-        var tag = fiber.tag;
-        supportsSingletons ? 3 !== tag && 27 !== tag && (5 !== tag || shouldDeleteUnhydratedTailInstances(fiber.type) && !shouldSetTextContent(fiber.type, fiber.memoizedProps)) && nextHydratableInstance && (warnIfUnhydratedTailNodes(fiber), throwOnHydrationMismatch(fiber)) : 3 !== tag && (5 !== tag || shouldDeleteUnhydratedTailInstances(fiber.type) && !shouldSetTextContent(fiber.type, fiber.memoizedProps)) && nextHydratableInstance && (warnIfUnhydratedTailNodes(fiber), throwOnHydrationMismatch(fiber));
+        var tag2 = fiber.tag;
+        supportsSingletons ? 3 !== tag2 && 27 !== tag2 && (5 !== tag2 || shouldDeleteUnhydratedTailInstances(fiber.type) && !shouldSetTextContent(fiber.type, fiber.memoizedProps)) && nextHydratableInstance && (warnIfUnhydratedTailNodes(fiber), throwOnHydrationMismatch(fiber)) : 3 !== tag2 && (5 !== tag2 || shouldDeleteUnhydratedTailInstances(fiber.type) && !shouldSetTextContent(fiber.type, fiber.memoizedProps)) && nextHydratableInstance && (warnIfUnhydratedTailNodes(fiber), throwOnHydrationMismatch(fiber));
         popToNextHostParent(fiber);
-        if (13 === tag) {
+        if (13 === tag2) {
           if (!supportsHydration)
             throw Error(
               "Expected skipPastDehydratedSuspenseInstance() to never be called. This error is likely caused by a bug in React. Please file an issue."
@@ -12344,7 +12344,7 @@ var require_react_reconciler_development = __commonJS({
               "Expected to have a hydrated suspense instance. This error is likely caused by a bug in React. Please file an issue."
             );
           nextHydratableInstance = getNextHydratableInstanceAfterSuspenseInstance(fiber);
-        } else if (31 === tag) {
+        } else if (31 === tag2) {
           fiber = fiber.memoizedState;
           fiber = null !== fiber ? fiber.dehydrated : null;
           if (!fiber)
@@ -12353,7 +12353,7 @@ var require_react_reconciler_development = __commonJS({
             );
           nextHydratableInstance = getNextHydratableInstanceAfterActivityInstance(fiber);
         } else
-          nextHydratableInstance = supportsSingletons && 27 === tag ? getNextHydratableSiblingAfterSingleton(
+          nextHydratableInstance = supportsSingletons && 27 === tag2 ? getNextHydratableSiblingAfterSingleton(
             fiber.type,
             nextHydratableInstance
           ) : hydrationParentFiber ? getNextHydratableSibling(fiber.stateNode) : null;
@@ -12426,27 +12426,27 @@ var require_react_reconciler_development = __commonJS({
         var fiber = workInProgress2.child;
         null !== fiber && (fiber.return = workInProgress2);
         for (; null !== fiber; ) {
-          var list = fiber.dependencies;
-          if (null !== list) {
+          var list2 = fiber.dependencies;
+          if (null !== list2) {
             var nextFiber = fiber.child;
-            list = list.firstContext;
-            a: for (; null !== list; ) {
-              var dependency = list;
-              list = fiber;
+            list2 = list2.firstContext;
+            a: for (; null !== list2; ) {
+              var dependency = list2;
+              list2 = fiber;
               for (var i = 0; i < contexts.length; i++)
                 if (dependency.context === contexts[i]) {
-                  list.lanes |= renderLanes2;
-                  dependency = list.alternate;
+                  list2.lanes |= renderLanes2;
+                  dependency = list2.alternate;
                   null !== dependency && (dependency.lanes |= renderLanes2);
                   scheduleContextWorkOnParentPath(
-                    list.return,
+                    list2.return,
                     renderLanes2,
                     workInProgress2
                   );
                   forcePropagateEntireTree || (nextFiber = null);
                   break a;
                 }
-              list = dependency.next;
+              list2 = dependency.next;
             }
           } else if (18 === fiber.tag) {
             nextFiber = fiber.return;
@@ -12455,8 +12455,8 @@ var require_react_reconciler_development = __commonJS({
                 "We just came from a parent so we must have had a parent. This is a bug in React."
               );
             nextFiber.lanes |= renderLanes2;
-            list = nextFiber.alternate;
-            null !== list && (list.lanes |= renderLanes2);
+            list2 = nextFiber.alternate;
+            null !== list2 && (list2.lanes |= renderLanes2);
             scheduleContextWorkOnParentPath(
               nextFiber,
               renderLanes2,
@@ -14362,7 +14362,7 @@ var require_react_reconciler_development = __commonJS({
         null === (null === workInProgressHook ? index.memoizedState : workInProgressHook.next) && (index = index.alternate, ReactSharedInternals.H = null !== index && null !== index.memoizedState ? HooksDispatcherOnUpdateInDEV : HooksDispatcherOnMountInDEV);
         return thenable;
       }
-      function use(usable) {
+      function use2(usable) {
         if (null !== usable && "object" === typeof usable) {
           if ("function" === typeof usable.then) return useThenable(usable);
           if (usable.$$typeof === REACT_CONTEXT_TYPE) return readContext(usable);
@@ -14918,13 +14918,13 @@ var require_react_reconciler_development = __commonJS({
         currentStateHook.memoizedState = action;
         return [stateHook, dispatch, false];
       }
-      function pushSimpleEffect(tag, inst, create3, deps) {
-        tag = { tag, create: create3, deps, inst, next: null };
+      function pushSimpleEffect(tag2, inst, create3, deps) {
+        tag2 = { tag: tag2, create: create3, deps, inst, next: null };
         inst = currentlyRenderingFiber.updateQueue;
         null === inst && (inst = createFunctionComponentUpdateQueue(), currentlyRenderingFiber.updateQueue = inst);
         create3 = inst.lastEffect;
-        null === create3 ? inst.lastEffect = tag.next = tag : (deps = create3.next, create3.next = tag, tag.next = deps, inst.lastEffect = tag);
-        return tag;
+        null === create3 ? inst.lastEffect = tag2.next = tag2 : (deps = create3.next, create3.next = tag2, tag2.next = deps, inst.lastEffect = tag2);
+        return tag2;
       }
       function mountRef(initialValue) {
         var hook = mountWorkInProgressHook();
@@ -18174,18 +18174,18 @@ var require_react_reconciler_development = __commonJS({
         }
       }
       function insertOrAppendPlacementNodeIntoContainer(node, before, parent) {
-        var tag = node.tag;
-        if (5 === tag || 6 === tag)
+        var tag2 = node.tag;
+        if (5 === tag2 || 6 === tag2)
           node = node.stateNode, before ? insertInContainerBefore(parent, node, before) : appendChildToContainer(parent, node);
-        else if (4 !== tag && (supportsSingletons && 27 === tag && isSingletonScope(node.type) && (parent = node.stateNode, before = null), node = node.child, null !== node))
+        else if (4 !== tag2 && (supportsSingletons && 27 === tag2 && isSingletonScope(node.type) && (parent = node.stateNode, before = null), node = node.child, null !== node))
           for (insertOrAppendPlacementNodeIntoContainer(node, before, parent), node = node.sibling; null !== node; )
             insertOrAppendPlacementNodeIntoContainer(node, before, parent), node = node.sibling;
       }
       function insertOrAppendPlacementNode(node, before, parent) {
-        var tag = node.tag;
-        if (5 === tag || 6 === tag)
+        var tag2 = node.tag;
+        if (5 === tag2 || 6 === tag2)
           node = node.stateNode, before ? insertBefore(parent, node, before) : appendChild(parent, node);
-        else if (4 !== tag && (supportsSingletons && 27 === tag && isSingletonScope(node.type) && (parent = node.stateNode), node = node.child, null !== node))
+        else if (4 !== tag2 && (supportsSingletons && 27 === tag2 && isSingletonScope(node.type) && (parent = node.stateNode), node = node.child, null !== node))
           for (insertOrAppendPlacementNode(node, before, parent), node = node.sibling; null !== node; )
             insertOrAppendPlacementNode(node, before, parent), node = node.sibling;
       }
@@ -20064,7 +20064,7 @@ var require_react_reconciler_development = __commonJS({
         return hostRoot.stateNode.current;
       }
       function matchSelector(fiber$jscomp$0, selector) {
-        var tag = fiber$jscomp$0.tag;
+        var tag2 = fiber$jscomp$0.tag;
         switch (selector.$$typeof) {
           case COMPONENT_TYPE:
             if (fiber$jscomp$0.type === selector.value) return true;
@@ -20073,8 +20073,8 @@ var require_react_reconciler_development = __commonJS({
             a: {
               selector = selector.value;
               fiber$jscomp$0 = [fiber$jscomp$0, 0];
-              for (tag = 0; tag < fiber$jscomp$0.length; ) {
-                var fiber = fiber$jscomp$0[tag++], tag$jscomp$0 = fiber.tag, selectorIndex = fiber$jscomp$0[tag++], selector$jscomp$0 = selector[selectorIndex];
+              for (tag2 = 0; tag2 < fiber$jscomp$0.length; ) {
+                var fiber = fiber$jscomp$0[tag2++], tag$jscomp$0 = fiber.tag, selectorIndex = fiber$jscomp$0[tag2++], selector$jscomp$0 = selector[selectorIndex];
                 if (5 !== tag$jscomp$0 && 26 !== tag$jscomp$0 && 27 !== tag$jscomp$0 || !isHiddenSubtree(fiber)) {
                   for (; null != selector$jscomp$0 && matchSelector(fiber, selector$jscomp$0); )
                     selectorIndex++, selector$jscomp$0 = selector[selectorIndex];
@@ -20090,17 +20090,17 @@ var require_react_reconciler_development = __commonJS({
             }
             return selector;
           case ROLE_TYPE:
-            if ((5 === tag || 26 === tag || 27 === tag) && matchAccessibilityRole(fiber$jscomp$0.stateNode, selector.value))
+            if ((5 === tag2 || 26 === tag2 || 27 === tag2) && matchAccessibilityRole(fiber$jscomp$0.stateNode, selector.value))
               return true;
             break;
           case TEXT_TYPE:
-            if (5 === tag || 6 === tag || 26 === tag || 27 === tag) {
+            if (5 === tag2 || 6 === tag2 || 26 === tag2 || 27 === tag2) {
               if (fiber$jscomp$0 = getTextContent(fiber$jscomp$0), null !== fiber$jscomp$0 && 0 <= fiber$jscomp$0.indexOf(selector.value))
                 return true;
             }
             break;
           case TEST_NAME_TYPE:
-            if (5 === tag || 26 === tag || 27 === tag) {
+            if (5 === tag2 || 26 === tag2 || 27 === tag2) {
               if (fiber$jscomp$0 = fiber$jscomp$0.memoizedProps["data-testname"], "string" === typeof fiber$jscomp$0 && fiber$jscomp$0.toLowerCase() === selector.value.toLowerCase())
                 return true;
             }
@@ -20130,8 +20130,8 @@ var require_react_reconciler_development = __commonJS({
         var matchingFibers = [];
         root = [root, 0];
         for (var index = 0; index < root.length; ) {
-          var fiber = root[index++], tag = fiber.tag, selectorIndex = root[index++], selector = selectors[selectorIndex];
-          if (5 !== tag && 26 !== tag && 27 !== tag || !isHiddenSubtree(fiber)) {
+          var fiber = root[index++], tag2 = fiber.tag, selectorIndex = root[index++], selector = selectors[selectorIndex];
+          if (5 !== tag2 && 26 !== tag2 && 27 !== tag2 || !isHiddenSubtree(fiber)) {
             for (; null != selector && matchSelector(fiber, selector); )
               selectorIndex++, selector = selectors[selectorIndex];
             if (selectorIndex === selectors.length) matchingFibers.push(fiber);
@@ -20150,8 +20150,8 @@ var require_react_reconciler_development = __commonJS({
         selectors = [];
         hostRoot = Array.from(hostRoot);
         for (var index = 0; index < hostRoot.length; ) {
-          var node = hostRoot[index++], tag = node.tag;
-          if (5 === tag || 26 === tag || 27 === tag)
+          var node = hostRoot[index++], tag2 = node.tag;
+          if (5 === tag2 || 26 === tag2 || 27 === tag2)
             isHiddenSubtree(node) || selectors.push(node.stateNode);
           else
             for (node = node.child; null !== node; )
@@ -20547,10 +20547,10 @@ var require_react_reconciler_development = __commonJS({
       }
       function isRenderConsistentWithExternalStores(finishedWork) {
         for (var node = finishedWork; ; ) {
-          var tag = node.tag;
-          if ((0 === tag || 11 === tag || 15 === tag) && node.flags & 16384 && (tag = node.updateQueue, null !== tag && (tag = tag.stores, null !== tag)))
-            for (var i = 0; i < tag.length; i++) {
-              var check2 = tag[i], getSnapshot = check2.getSnapshot;
+          var tag2 = node.tag;
+          if ((0 === tag2 || 11 === tag2 || 15 === tag2) && node.flags & 16384 && (tag2 = node.updateQueue, null !== tag2 && (tag2 = tag2.stores, null !== tag2)))
+            for (var i = 0; i < tag2.length; i++) {
+              var check2 = tag2[i], getSnapshot = check2.getSnapshot;
               check2 = check2.value;
               try {
                 if (!objectIs(getSnapshot(), check2)) return false;
@@ -20558,9 +20558,9 @@ var require_react_reconciler_development = __commonJS({
                 return false;
               }
             }
-          tag = node.child;
-          if (node.subtreeFlags & 16384 && null !== tag)
-            tag.return = node, node = tag;
+          tag2 = node.child;
+          if (node.subtreeFlags & 16384 && null !== tag2)
+            tag2.return = node, node = tag2;
           else {
             if (node === finishedWork) break;
             for (; null === node.sibling; ) {
@@ -21825,13 +21825,13 @@ var require_react_reconciler_development = __commonJS({
       }
       function warnAboutUpdateOnNotYetMountedFiberInDEV(fiber) {
         if ((executionContext & RenderContext) === NoContext) {
-          var tag = fiber.tag;
-          if (3 === tag || 1 === tag || 0 === tag || 11 === tag || 14 === tag || 15 === tag) {
-            tag = getComponentNameFromFiber(fiber) || "ReactComponent";
+          var tag2 = fiber.tag;
+          if (3 === tag2 || 1 === tag2 || 0 === tag2 || 11 === tag2 || 14 === tag2 || 15 === tag2) {
+            tag2 = getComponentNameFromFiber(fiber) || "ReactComponent";
             if (null !== didWarnStateUpdateForNotYetMountedComponent) {
-              if (didWarnStateUpdateForNotYetMountedComponent.has(tag)) return;
-              didWarnStateUpdateForNotYetMountedComponent.add(tag);
-            } else didWarnStateUpdateForNotYetMountedComponent = /* @__PURE__ */ new Set([tag]);
+              if (didWarnStateUpdateForNotYetMountedComponent.has(tag2)) return;
+              didWarnStateUpdateForNotYetMountedComponent.add(tag2);
+            } else didWarnStateUpdateForNotYetMountedComponent = /* @__PURE__ */ new Set([tag2]);
             runWithFiberInDEV(fiber, function() {
               console.error(
                 "Can't perform a React state update on a component that hasn't mounted yet. This indicates that you have a side-effect in your render function that asynchronously tries to update the component. Move this work to useEffect instead."
@@ -21896,10 +21896,10 @@ var require_react_reconciler_development = __commonJS({
       }
       function scheduleFibersWithFamiliesRecursively(fiber, updatedFamilies, staleFamilies) {
         do {
-          var _fiber = fiber, alternate = _fiber.alternate, child = _fiber.child, sibling = _fiber.sibling, tag = _fiber.tag;
+          var _fiber = fiber, alternate = _fiber.alternate, child = _fiber.child, sibling = _fiber.sibling, tag2 = _fiber.tag;
           _fiber = _fiber.type;
           var candidateType = null;
-          switch (tag) {
+          switch (tag2) {
             case 0:
             case 15:
             case 1:
@@ -21912,7 +21912,7 @@ var require_react_reconciler_development = __commonJS({
             throw Error("Expected resolveFamily to be set during hot reload.");
           var needsRender = false;
           _fiber = false;
-          null !== candidateType && (candidateType = resolveFamily(candidateType), void 0 !== candidateType && (staleFamilies.has(candidateType) ? _fiber = true : updatedFamilies.has(candidateType) && (1 === tag ? _fiber = true : needsRender = true)));
+          null !== candidateType && (candidateType = resolveFamily(candidateType), void 0 !== candidateType && (staleFamilies.has(candidateType) ? _fiber = true : updatedFamilies.has(candidateType) && (1 === tag2 ? _fiber = true : needsRender = true)));
           null !== failedBoundaries && (failedBoundaries.has(fiber) || null !== alternate && failedBoundaries.has(alternate)) && (_fiber = true);
           _fiber && (fiber._debugNeedsRemount = true);
           if (_fiber || needsRender)
@@ -21926,8 +21926,8 @@ var require_react_reconciler_development = __commonJS({
           fiber = sibling;
         } while (1);
       }
-      function FiberNode(tag, pendingProps, key, mode) {
-        this.tag = tag;
+      function FiberNode(tag2, pendingProps, key, mode) {
+        this.tag = tag2;
         this.key = key;
         this.sibling = this.child = this.return = this.stateNode = this.type = this.elementType = null;
         this.index = 0;
@@ -22117,7 +22117,7 @@ var require_react_reconciler_development = __commonJS({
         };
         return mode;
       }
-      function FiberRootNode(containerInfo, tag, hydrate, identifierPrefix, onUncaughtError, onCaughtError, onRecoverableError, onDefaultTransitionIndicator, formState) {
+      function FiberRootNode(containerInfo, tag2, hydrate, identifierPrefix, onUncaughtError, onCaughtError, onRecoverableError, onDefaultTransitionIndicator, formState) {
         this.tag = 1;
         this.containerInfo = containerInfo;
         this.pingCache = this.current = this.pendingChildren = null;
@@ -22139,13 +22139,13 @@ var require_react_reconciler_development = __commonJS({
         this.passiveEffectDuration = this.effectDuration = -0;
         this.memoizedUpdaters = /* @__PURE__ */ new Set();
         containerInfo = this.pendingUpdatersLaneMap = [];
-        for (tag = 0; 31 > tag; tag++) containerInfo.push(/* @__PURE__ */ new Set());
+        for (tag2 = 0; 31 > tag2; tag2++) containerInfo.push(/* @__PURE__ */ new Set());
         this._debugRootType = hydrate ? "hydrateRoot()" : "createRoot()";
       }
-      function createFiberRoot(containerInfo, tag, hydrate, initialChildren, hydrationCallbacks, isStrictMode, identifierPrefix, formState, onUncaughtError, onCaughtError, onRecoverableError, onDefaultTransitionIndicator) {
+      function createFiberRoot(containerInfo, tag2, hydrate, initialChildren, hydrationCallbacks, isStrictMode, identifierPrefix, formState, onUncaughtError, onCaughtError, onRecoverableError, onDefaultTransitionIndicator) {
         containerInfo = new FiberRootNode(
           containerInfo,
-          tag,
+          tag2,
           hydrate,
           identifierPrefix,
           onUncaughtError,
@@ -22154,19 +22154,19 @@ var require_react_reconciler_development = __commonJS({
           onDefaultTransitionIndicator,
           formState
         );
-        tag = 1;
-        true === isStrictMode && (tag |= 24);
-        isStrictMode = createFiber(3, null, null, tag | 2);
+        tag2 = 1;
+        true === isStrictMode && (tag2 |= 24);
+        isStrictMode = createFiber(3, null, null, tag2 | 2);
         containerInfo.current = isStrictMode;
         isStrictMode.stateNode = containerInfo;
-        tag = createCache();
-        retainCache(tag);
-        containerInfo.pooledCache = tag;
-        retainCache(tag);
+        tag2 = createCache();
+        retainCache(tag2);
+        containerInfo.pooledCache = tag2;
+        retainCache(tag2);
         isStrictMode.memoizedState = {
           element: initialChildren,
           isDehydrated: hydrate,
-          cache: tag
+          cache: tag2
         };
         initializeUpdateQueue(isStrictMode);
         return containerInfo;
@@ -22232,14 +22232,14 @@ var require_react_reconciler_development = __commonJS({
       }
       var exports2 = {};
       "use strict";
-      var React15 = require_react(), Scheduler2 = require_scheduler(), assign = Object.assign, REACT_LEGACY_ELEMENT_TYPE = /* @__PURE__ */ Symbol.for("react.element"), REACT_ELEMENT_TYPE = /* @__PURE__ */ Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = /* @__PURE__ */ Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = /* @__PURE__ */ Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = /* @__PURE__ */ Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = /* @__PURE__ */ Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = /* @__PURE__ */ Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = /* @__PURE__ */ Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = /* @__PURE__ */ Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = /* @__PURE__ */ Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = /* @__PURE__ */ Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = /* @__PURE__ */ Symbol.for("react.memo"), REACT_LAZY_TYPE = /* @__PURE__ */ Symbol.for("react.lazy");
+      var React19 = require_react(), Scheduler2 = require_scheduler(), assign = Object.assign, REACT_LEGACY_ELEMENT_TYPE = /* @__PURE__ */ Symbol.for("react.element"), REACT_ELEMENT_TYPE = /* @__PURE__ */ Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = /* @__PURE__ */ Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = /* @__PURE__ */ Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = /* @__PURE__ */ Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = /* @__PURE__ */ Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = /* @__PURE__ */ Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = /* @__PURE__ */ Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = /* @__PURE__ */ Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = /* @__PURE__ */ Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = /* @__PURE__ */ Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = /* @__PURE__ */ Symbol.for("react.memo"), REACT_LAZY_TYPE = /* @__PURE__ */ Symbol.for("react.lazy");
       /* @__PURE__ */ Symbol.for("react.scope");
       var REACT_ACTIVITY_TYPE = /* @__PURE__ */ Symbol.for("react.activity");
       /* @__PURE__ */ Symbol.for("react.legacy_hidden");
       /* @__PURE__ */ Symbol.for("react.tracing_marker");
       var REACT_MEMO_CACHE_SENTINEL = /* @__PURE__ */ Symbol.for("react.memo_cache_sentinel");
       /* @__PURE__ */ Symbol.for("react.view_transition");
-      var MAYBE_ITERATOR_SYMBOL = Symbol.iterator, REACT_CLIENT_REFERENCE = /* @__PURE__ */ Symbol.for("react.client.reference"), isArrayImpl = Array.isArray, ReactSharedInternals = React15.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, rendererVersion = $$$config.rendererVersion, rendererPackageName = $$$config.rendererPackageName, extraDevToolsConfig = $$$config.extraDevToolsConfig, getPublicInstance = $$$config.getPublicInstance, getRootHostContext = $$$config.getRootHostContext, getChildHostContext = $$$config.getChildHostContext, prepareForCommit = $$$config.prepareForCommit, resetAfterCommit = $$$config.resetAfterCommit, createInstance = $$$config.createInstance;
+      var MAYBE_ITERATOR_SYMBOL = Symbol.iterator, REACT_CLIENT_REFERENCE = /* @__PURE__ */ Symbol.for("react.client.reference"), isArrayImpl = Array.isArray, ReactSharedInternals = React19.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, rendererVersion = $$$config.rendererVersion, rendererPackageName = $$$config.rendererPackageName, extraDevToolsConfig = $$$config.extraDevToolsConfig, getPublicInstance = $$$config.getPublicInstance, getRootHostContext = $$$config.getRootHostContext, getChildHostContext = $$$config.getChildHostContext, prepareForCommit = $$$config.prepareForCommit, resetAfterCommit = $$$config.resetAfterCommit, createInstance = $$$config.createInstance;
       $$$config.cloneMutableInstance;
       var appendInitialChild = $$$config.appendInitialChild, finalizeInitialChildren = $$$config.finalizeInitialChildren, shouldSetTextContent = $$$config.shouldSetTextContent, createTextInstance = $$$config.createTextInstance;
       $$$config.cloneMutableTextInstance;
@@ -22634,7 +22634,7 @@ var require_react_reconciler_development = __commonJS({
       var didWarnAboutUseFormState = /* @__PURE__ */ new Set();
       var renderLanes = 0, currentlyRenderingFiber = null, currentHook = null, workInProgressHook = null, didScheduleRenderPhaseUpdate = false, didScheduleRenderPhaseUpdateDuringThisPass = false, shouldDoubleInvokeUserFnsInHooksDEV = false, localIdCounter = 0, thenableIndexCounter = 0, thenableState = null, globalClientIdCounter = 0, RE_RENDER_LIMIT = 25, currentHookNameInDev = null, hookTypesDev = null, hookTypesUpdateIndexDev = -1, ignorePreviousDependencies = false, ContextOnlyDispatcher = {
         readContext,
-        use,
+        use: use2,
         useCallback: throwInvalidHookError,
         useContext: throwInvalidHookError,
         useEffect: throwInvalidHookError,
@@ -22663,7 +22663,7 @@ var require_react_reconciler_development = __commonJS({
         readContext: function(context) {
           return readContext(context);
         },
-        use,
+        use: use2,
         useCallback: function(callback, deps) {
           currentHookNameInDev = "useCallback";
           mountHookTypesDev();
@@ -22799,7 +22799,7 @@ var require_react_reconciler_development = __commonJS({
         readContext: function(context) {
           return readContext(context);
         },
-        use,
+        use: use2,
         useCallback: function(callback, deps) {
           currentHookNameInDev = "useCallback";
           updateHookTypesDev();
@@ -22929,7 +22929,7 @@ var require_react_reconciler_development = __commonJS({
         readContext: function(context) {
           return readContext(context);
         },
-        use,
+        use: use2,
         useCallback: function(callback, deps) {
           currentHookNameInDev = "useCallback";
           updateHookTypesDev();
@@ -23059,7 +23059,7 @@ var require_react_reconciler_development = __commonJS({
         readContext: function(context) {
           return readContext(context);
         },
-        use,
+        use: use2,
         useCallback: function(callback, deps) {
           currentHookNameInDev = "useCallback";
           updateHookTypesDev();
@@ -23192,7 +23192,7 @@ var require_react_reconciler_development = __commonJS({
         },
         use: function(usable) {
           warnInvalidHookAccess();
-          return use(usable);
+          return use2(usable);
         },
         useCallback: function(callback, deps) {
           currentHookNameInDev = "useCallback";
@@ -23347,7 +23347,7 @@ var require_react_reconciler_development = __commonJS({
         },
         use: function(usable) {
           warnInvalidHookAccess();
-          return use(usable);
+          return use2(usable);
         },
         useCallback: function(callback, deps) {
           currentHookNameInDev = "useCallback";
@@ -23502,7 +23502,7 @@ var require_react_reconciler_development = __commonJS({
         },
         use: function(usable) {
           warnInvalidHookAccess();
-          return use(usable);
+          return use2(usable);
         },
         useCallback: function(callback, deps) {
           currentHookNameInDev = "useCallback";
@@ -23833,10 +23833,10 @@ var require_react_reconciler_development = __commonJS({
       exports2.createComponentSelector = function(component) {
         return { $$typeof: COMPONENT_TYPE, value: component };
       };
-      exports2.createContainer = function(containerInfo, tag, hydrationCallbacks, isStrictMode, concurrentUpdatesByDefaultOverride, identifierPrefix, onUncaughtError, onCaughtError, onRecoverableError, onDefaultTransitionIndicator) {
+      exports2.createContainer = function(containerInfo, tag2, hydrationCallbacks, isStrictMode, concurrentUpdatesByDefaultOverride, identifierPrefix, onUncaughtError, onCaughtError, onRecoverableError, onDefaultTransitionIndicator) {
         return createFiberRoot(
           containerInfo,
-          tag,
+          tag2,
           false,
           null,
           hydrationCallbacks,
@@ -23852,10 +23852,10 @@ var require_react_reconciler_development = __commonJS({
       exports2.createHasPseudoClassSelector = function(selectors) {
         return { $$typeof: HAS_PSEUDO_CLASS_TYPE, value: selectors };
       };
-      exports2.createHydrationContainer = function(initialChildren, callback, containerInfo, tag, hydrationCallbacks, isStrictMode, concurrentUpdatesByDefaultOverride, identifierPrefix, onUncaughtError, onCaughtError, onRecoverableError, onDefaultTransitionIndicator, transitionCallbacks, formState) {
+      exports2.createHydrationContainer = function(initialChildren, callback, containerInfo, tag2, hydrationCallbacks, isStrictMode, concurrentUpdatesByDefaultOverride, identifierPrefix, onUncaughtError, onCaughtError, onRecoverableError, onDefaultTransitionIndicator, transitionCallbacks, formState) {
         initialChildren = createFiberRoot(
           containerInfo,
-          tag,
+          tag2,
           true,
           initialChildren,
           hydrationCallbacks,
@@ -23869,13 +23869,13 @@ var require_react_reconciler_development = __commonJS({
         );
         initialChildren.context = getContextForSubtree(null);
         containerInfo = initialChildren.current;
-        tag = requestUpdateLane(containerInfo);
-        tag = getBumpedLaneForHydrationByLane(tag);
-        hydrationCallbacks = createUpdate(tag);
+        tag2 = requestUpdateLane(containerInfo);
+        tag2 = getBumpedLaneForHydrationByLane(tag2);
+        hydrationCallbacks = createUpdate(tag2);
         hydrationCallbacks.callback = void 0 !== callback && null !== callback ? callback : null;
-        enqueueUpdate(containerInfo, hydrationCallbacks, tag);
-        startUpdateTimerByLane(tag, "hydrateRoot()", null);
-        callback = tag;
+        enqueueUpdate(containerInfo, hydrationCallbacks, tag2);
+        startUpdateTimerByLane(tag2, "hydrateRoot()", null);
+        callback = tag2;
         initialChildren.current.lanes = callback;
         markRootUpdated$1(initialChildren, callback);
         ensureRootIsScheduled(initialChildren);
@@ -24049,9 +24049,9 @@ var require_react_reconciler_development = __commonJS({
         selectors = findPaths(hostRoot, selectors);
         selectors = Array.from(selectors);
         for (hostRoot = 0; hostRoot < selectors.length; ) {
-          var fiber = selectors[hostRoot++], tag = fiber.tag;
+          var fiber = selectors[hostRoot++], tag2 = fiber.tag;
           if (!isHiddenSubtree(fiber)) {
-            if ((5 === tag || 26 === tag || 27 === tag) && setFocusIfFocusable(fiber.stateNode))
+            if ((5 === tag2 || 26 === tag2 || 27 === tag2) && setFocusIfFocusable(fiber.stateNode))
               return true;
             for (fiber = fiber.child; null !== fiber; )
               selectors.push(fiber), fiber = fiber.sibling;
@@ -24065,8 +24065,8 @@ var require_react_reconciler_development = __commonJS({
         var maxSelectorIndex = 0, matchedNames = [];
         hostRoot = [findFiberRootForHostRoot(hostRoot), 0];
         for (var index = 0; index < hostRoot.length; ) {
-          var fiber = hostRoot[index++], tag = fiber.tag, selectorIndex = hostRoot[index++], selector = selectors[selectorIndex];
-          if (5 !== tag && 26 !== tag && 27 !== tag || !isHiddenSubtree(fiber)) {
+          var fiber = hostRoot[index++], tag2 = fiber.tag, selectorIndex = hostRoot[index++], selector = selectors[selectorIndex];
+          if (5 !== tag2 && 26 !== tag2 && 27 !== tag2 || !isHiddenSubtree(fiber)) {
             if (matchSelector(fiber, selector) && (matchedNames.push(selectorToString(selector)), selectorIndex++, selectorIndex > maxSelectorIndex && (maxSelectorIndex = selectorIndex)), selectorIndex < selectors.length)
               for (fiber = fiber.child; null !== fiber; )
                 hostRoot.push(fiber, selectorIndex), fiber = fiber.sibling;
@@ -24116,7 +24116,7 @@ var require_react_reconciler_development = __commonJS({
         return injectInternals(internals);
       };
       exports2.isAlreadyRendering = isAlreadyRendering;
-      exports2.observeVisibleRects = function(hostRoot, selectors, callback, options) {
+      exports2.observeVisibleRects = function(hostRoot, selectors, callback, options2) {
         function commitHook() {
           var nextInstanceRoots = findAllNodes(hostRoot, selectors);
           instanceRoots.forEach(function(target) {
@@ -24129,7 +24129,7 @@ var require_react_reconciler_development = __commonJS({
         if (!supportsTestSelectors)
           throw Error("Test selector API is not supported by this renderer.");
         var instanceRoots = findAllNodes(hostRoot, selectors);
-        callback = setupIntersectionObserver(instanceRoots, callback, options);
+        callback = setupIntersectionObserver(instanceRoots, callback, options2);
         var disconnect = callback.disconnect, observe = callback.observe, unobserve = callback.unobserve;
         commitHooks.push(commitHook);
         return {
@@ -24233,13 +24233,13 @@ var require_buffer_util = __commonJS({
     "use strict";
     var { EMPTY_BUFFER } = require_constants2();
     var FastBuffer = Buffer[Symbol.species];
-    function concat(list, totalLength) {
-      if (list.length === 0) return EMPTY_BUFFER;
-      if (list.length === 1) return list[0];
+    function concat(list2, totalLength) {
+      if (list2.length === 0) return EMPTY_BUFFER;
+      if (list2.length === 1) return list2[0];
       const target = Buffer.allocUnsafe(totalLength);
       let offset = 0;
-      for (let i = 0; i < list.length; i++) {
-        const buf = list[i];
+      for (let i = 0; i < list2.length; i++) {
+        const buf = list2[i];
         target.set(buf, offset);
         offset += buf.length;
       }
@@ -24393,8 +24393,8 @@ var require_permessage_deflate = __commonJS({
        * @param {Object} [options.zlibInflateOptions] Options to pass to zlib on
        *     inflate
        */
-      constructor(options) {
-        this._options = options || {};
+      constructor(options2) {
+        this._options = options2 || {};
         this._threshold = this._options.threshold !== void 0 ? this._options.threshold : 1024;
         this._maxPayload = this._options.maxPayload | 0;
         this._isServer = !!this._options.isServer;
@@ -24975,14 +24975,14 @@ var require_receiver = __commonJS({
        * @param {Boolean} [options.skipUTF8Validation=false] Specifies whether or
        *     not to skip UTF-8 validation for text and close messages
        */
-      constructor(options = {}) {
+      constructor(options2 = {}) {
         super();
-        this._allowSynchronousEvents = options.allowSynchronousEvents !== void 0 ? options.allowSynchronousEvents : true;
-        this._binaryType = options.binaryType || BINARY_TYPES[0];
-        this._extensions = options.extensions || {};
-        this._isServer = !!options.isServer;
-        this._maxPayload = options.maxPayload | 0;
-        this._skipUTF8Validation = !!options.skipUTF8Validation;
+        this._allowSynchronousEvents = options2.allowSynchronousEvents !== void 0 ? options2.allowSynchronousEvents : true;
+        this._binaryType = options2.binaryType || BINARY_TYPES[0];
+        this._extensions = options2.extensions || {};
+        this._isServer = !!options2.isServer;
+        this._maxPayload = options2.maxPayload | 0;
+        this._skipUTF8Validation = !!options2.skipUTF8Validation;
         this[kWebSocket] = void 0;
         this._bufferedBytes = 0;
         this._buffers = [];
@@ -25591,15 +25591,15 @@ var require_sender = __commonJS({
        * @return {(Buffer|String)[]} The framed data
        * @public
        */
-      static frame(data, options) {
+      static frame(data, options2) {
         let mask;
         let merge = false;
         let offset = 2;
         let skipMasking = false;
-        if (options.mask) {
-          mask = options.maskBuffer || maskBuffer;
-          if (options.generateMask) {
-            options.generateMask(mask);
+        if (options2.mask) {
+          mask = options2.maskBuffer || maskBuffer;
+          if (options2.generateMask) {
+            options2.generateMask(mask);
           } else {
             if (randomPoolPointer === RANDOM_POOL_SIZE) {
               if (randomPool === void 0) {
@@ -25618,15 +25618,15 @@ var require_sender = __commonJS({
         }
         let dataLength;
         if (typeof data === "string") {
-          if ((!options.mask || skipMasking) && options[kByteLength] !== void 0) {
-            dataLength = options[kByteLength];
+          if ((!options2.mask || skipMasking) && options2[kByteLength] !== void 0) {
+            dataLength = options2[kByteLength];
           } else {
             data = Buffer.from(data);
             dataLength = data.length;
           }
         } else {
           dataLength = data.length;
-          merge = options.mask && options.readOnly && !skipMasking;
+          merge = options2.mask && options2.readOnly && !skipMasking;
         }
         let payloadLength = dataLength;
         if (dataLength >= 65536) {
@@ -25637,8 +25637,8 @@ var require_sender = __commonJS({
           payloadLength = 126;
         }
         const target = Buffer.allocUnsafe(merge ? dataLength + offset : offset);
-        target[0] = options.fin ? options.opcode | 128 : options.opcode;
-        if (options.rsv1) target[0] |= 64;
+        target[0] = options2.fin ? options2.opcode | 128 : options2.opcode;
+        if (options2.rsv1) target[0] |= 64;
         target[1] = payloadLength;
         if (payloadLength === 126) {
           target.writeUInt16BE(dataLength, 2);
@@ -25646,7 +25646,7 @@ var require_sender = __commonJS({
           target[2] = target[3] = 0;
           target.writeUIntBE(dataLength, 4, 6);
         }
-        if (!options.mask) return [target, data];
+        if (!options2.mask) return [target, data];
         target[1] |= 128;
         target[offset - 4] = mask[0];
         target[offset - 3] = mask[1];
@@ -25691,7 +25691,7 @@ var require_sender = __commonJS({
             buf.set(data, 2);
           }
         }
-        const options = {
+        const options2 = {
           [kByteLength]: buf.length,
           fin: true,
           generateMask: this._generateMask,
@@ -25702,9 +25702,9 @@ var require_sender = __commonJS({
           rsv1: false
         };
         if (this._state !== DEFAULT) {
-          this.enqueue([this.dispatch, buf, false, options, cb]);
+          this.enqueue([this.dispatch, buf, false, options2, cb]);
         } else {
-          this.sendFrame(_Sender.frame(buf, options), cb);
+          this.sendFrame(_Sender.frame(buf, options2), cb);
         }
       }
       /**
@@ -25732,7 +25732,7 @@ var require_sender = __commonJS({
         if (byteLength > 125) {
           throw new RangeError("The data size must not be greater than 125 bytes");
         }
-        const options = {
+        const options2 = {
           [kByteLength]: byteLength,
           fin: true,
           generateMask: this._generateMask,
@@ -25744,14 +25744,14 @@ var require_sender = __commonJS({
         };
         if (isBlob(data)) {
           if (this._state !== DEFAULT) {
-            this.enqueue([this.getBlobData, data, false, options, cb]);
+            this.enqueue([this.getBlobData, data, false, options2, cb]);
           } else {
-            this.getBlobData(data, false, options, cb);
+            this.getBlobData(data, false, options2, cb);
           }
         } else if (this._state !== DEFAULT) {
-          this.enqueue([this.dispatch, data, false, options, cb]);
+          this.enqueue([this.dispatch, data, false, options2, cb]);
         } else {
-          this.sendFrame(_Sender.frame(data, options), cb);
+          this.sendFrame(_Sender.frame(data, options2), cb);
         }
       }
       /**
@@ -25779,7 +25779,7 @@ var require_sender = __commonJS({
         if (byteLength > 125) {
           throw new RangeError("The data size must not be greater than 125 bytes");
         }
-        const options = {
+        const options2 = {
           [kByteLength]: byteLength,
           fin: true,
           generateMask: this._generateMask,
@@ -25791,14 +25791,14 @@ var require_sender = __commonJS({
         };
         if (isBlob(data)) {
           if (this._state !== DEFAULT) {
-            this.enqueue([this.getBlobData, data, false, options, cb]);
+            this.enqueue([this.getBlobData, data, false, options2, cb]);
           } else {
-            this.getBlobData(data, false, options, cb);
+            this.getBlobData(data, false, options2, cb);
           }
         } else if (this._state !== DEFAULT) {
-          this.enqueue([this.dispatch, data, false, options, cb]);
+          this.enqueue([this.dispatch, data, false, options2, cb]);
         } else {
-          this.sendFrame(_Sender.frame(data, options), cb);
+          this.sendFrame(_Sender.frame(data, options2), cb);
         }
       }
       /**
@@ -25817,10 +25817,10 @@ var require_sender = __commonJS({
        * @param {Function} [cb] Callback
        * @public
        */
-      send(data, options, cb) {
+      send(data, options2, cb) {
         const perMessageDeflate = this._extensions[PerMessageDeflate2.extensionName];
-        let opcode = options.binary ? 2 : 1;
-        let rsv1 = options.compress;
+        let opcode = options2.binary ? 2 : 1;
+        let rsv1 = options2.compress;
         let byteLength;
         let readOnly;
         if (typeof data === "string") {
@@ -25844,12 +25844,12 @@ var require_sender = __commonJS({
           rsv1 = false;
           opcode = 0;
         }
-        if (options.fin) this._firstFragment = true;
+        if (options2.fin) this._firstFragment = true;
         const opts = {
           [kByteLength]: byteLength,
-          fin: options.fin,
+          fin: options2.fin,
           generateMask: this._generateMask,
-          mask: options.mask,
+          mask: options2.mask,
           maskBuffer: this._maskBuffer,
           opcode,
           readOnly,
@@ -25890,8 +25890,8 @@ var require_sender = __commonJS({
        * @param {Function} [cb] Callback
        * @private
        */
-      getBlobData(blob, compress, options, cb) {
-        this._bufferedBytes += options[kByteLength];
+      getBlobData(blob, compress, options2, cb) {
+        this._bufferedBytes += options2[kByteLength];
         this._state = GET_BLOB_DATA;
         blob.arrayBuffer().then((arrayBuffer) => {
           if (this._socket.destroyed) {
@@ -25901,14 +25901,14 @@ var require_sender = __commonJS({
             process.nextTick(callCallbacks, this, err, cb);
             return;
           }
-          this._bufferedBytes -= options[kByteLength];
+          this._bufferedBytes -= options2[kByteLength];
           const data = toBuffer(arrayBuffer);
           if (!compress) {
             this._state = DEFAULT;
-            this.sendFrame(_Sender.frame(data, options), cb);
+            this.sendFrame(_Sender.frame(data, options2), cb);
             this.dequeue();
           } else {
-            this.dispatch(data, compress, options, cb);
+            this.dispatch(data, compress, options2, cb);
           }
         }).catch((err) => {
           process.nextTick(onError, this, err, cb);
@@ -25937,15 +25937,15 @@ var require_sender = __commonJS({
        * @param {Function} [cb] Callback
        * @private
        */
-      dispatch(data, compress, options, cb) {
+      dispatch(data, compress, options2, cb) {
         if (!compress) {
-          this.sendFrame(_Sender.frame(data, options), cb);
+          this.sendFrame(_Sender.frame(data, options2), cb);
           return;
         }
         const perMessageDeflate = this._extensions[PerMessageDeflate2.extensionName];
-        this._bufferedBytes += options[kByteLength];
+        this._bufferedBytes += options2[kByteLength];
         this._state = DEFLATING;
-        perMessageDeflate.compress(data, options.fin, (_, buf) => {
+        perMessageDeflate.compress(data, options2.fin, (_, buf) => {
           if (this._socket.destroyed) {
             const err = new Error(
               "The socket was closed while data was being compressed"
@@ -25953,10 +25953,10 @@ var require_sender = __commonJS({
             callCallbacks(this, err, cb);
             return;
           }
-          this._bufferedBytes -= options[kByteLength];
+          this._bufferedBytes -= options2[kByteLength];
           this._state = DEFAULT;
-          options.readOnly = false;
-          this.sendFrame(_Sender.frame(buf, options), cb);
+          options2.readOnly = false;
+          this.sendFrame(_Sender.frame(buf, options2), cb);
           this.dequeue();
         });
       }
@@ -25989,14 +25989,14 @@ var require_sender = __commonJS({
        * @param {Function} [cb] Callback
        * @private
        */
-      sendFrame(list, cb) {
-        if (list.length === 2) {
+      sendFrame(list2, cb) {
+        if (list2.length === 2) {
           this._socket.cork();
-          this._socket.write(list[0]);
-          this._socket.write(list[1], cb);
+          this._socket.write(list2[0]);
+          this._socket.write(list2[1], cb);
           this._socket.uncork();
         } else {
-          this._socket.write(list[0], cb);
+          this._socket.write(list2[0], cb);
         }
       }
     };
@@ -26069,11 +26069,11 @@ var require_event_target = __commonJS({
        * @param {Boolean} [options.wasClean=false] Indicates whether or not the
        *     connection was cleanly closed
        */
-      constructor(type, options = {}) {
+      constructor(type, options2 = {}) {
         super(type);
-        this[kCode] = options.code === void 0 ? 0 : options.code;
-        this[kReason] = options.reason === void 0 ? "" : options.reason;
-        this[kWasClean] = options.wasClean === void 0 ? false : options.wasClean;
+        this[kCode] = options2.code === void 0 ? 0 : options2.code;
+        this[kReason] = options2.reason === void 0 ? "" : options2.reason;
+        this[kWasClean] = options2.wasClean === void 0 ? false : options2.wasClean;
       }
       /**
        * @type {Number}
@@ -26107,10 +26107,10 @@ var require_event_target = __commonJS({
        * @param {*} [options.error=null] The error that generated this event
        * @param {String} [options.message=''] The error message
        */
-      constructor(type, options = {}) {
+      constructor(type, options2 = {}) {
         super(type);
-        this[kError] = options.error === void 0 ? null : options.error;
-        this[kMessage] = options.message === void 0 ? "" : options.message;
+        this[kError] = options2.error === void 0 ? null : options2.error;
+        this[kMessage] = options2.message === void 0 ? "" : options2.message;
       }
       /**
        * @type {*}
@@ -26136,9 +26136,9 @@ var require_event_target = __commonJS({
        *     attributes via object members of the same name
        * @param {*} [options.data=null] The message content
        */
-      constructor(type, options = {}) {
+      constructor(type, options2 = {}) {
         super(type);
-        this[kData] = options.data === void 0 ? null : options.data;
+        this[kData] = options2.data === void 0 ? null : options2.data;
       }
       /**
        * @type {*}
@@ -26161,9 +26161,9 @@ var require_event_target = __commonJS({
        *     the listener would be automatically removed when invoked.
        * @public
        */
-      addEventListener(type, handler, options = {}) {
+      addEventListener(type, handler, options2 = {}) {
         for (const listener of this.listeners(type)) {
-          if (!options[kForOnEventAttribute] && listener[kListener] === handler && !listener[kForOnEventAttribute]) {
+          if (!options2[kForOnEventAttribute] && listener[kListener] === handler && !listener[kForOnEventAttribute]) {
             return;
           }
         }
@@ -26204,9 +26204,9 @@ var require_event_target = __commonJS({
         } else {
           return;
         }
-        wrapper[kForOnEventAttribute] = !!options[kForOnEventAttribute];
+        wrapper[kForOnEventAttribute] = !!options2[kForOnEventAttribute];
         wrapper[kListener] = handler;
-        if (options.once) {
+        if (options2.once) {
           this.once(type, wrapper);
         } else {
           this.on(type, wrapper);
@@ -26442,7 +26442,7 @@ var require_websocket = __commonJS({
        * @param {(String|String[])} [protocols] The subprotocols
        * @param {Object} [options] Connection options
        */
-      constructor(address, protocols, options) {
+      constructor(address, protocols, options2) {
         super();
         this._binaryType = BINARY_TYPES[0];
         this._closeCode = 1006;
@@ -26466,16 +26466,16 @@ var require_websocket = __commonJS({
             protocols = [];
           } else if (!Array.isArray(protocols)) {
             if (typeof protocols === "object" && protocols !== null) {
-              options = protocols;
+              options2 = protocols;
               protocols = [];
             } else {
               protocols = [protocols];
             }
           }
-          initAsClient(this, address, protocols, options);
+          initAsClient(this, address, protocols, options2);
         } else {
-          this._autoPong = options.autoPong;
-          this._closeTimeout = options.closeTimeout;
+          this._autoPong = options2.autoPong;
+          this._closeTimeout = options2.closeTimeout;
           this._isServer = true;
         }
       }
@@ -26574,16 +26574,16 @@ var require_websocket = __commonJS({
        *     not to skip UTF-8 validation for text and close messages
        * @private
        */
-      setSocket(socket, head, options) {
+      setSocket(socket, head, options2) {
         const receiver = new Receiver2({
-          allowSynchronousEvents: options.allowSynchronousEvents,
+          allowSynchronousEvents: options2.allowSynchronousEvents,
           binaryType: this.binaryType,
           extensions: this._extensions,
           isServer: this._isServer,
-          maxPayload: options.maxPayload,
-          skipUTF8Validation: options.skipUTF8Validation
+          maxPayload: options2.maxPayload,
+          skipUTF8Validation: options2.skipUTF8Validation
         });
-        const sender = new Sender2(socket, this._extensions, options.generateMask);
+        const sender = new Sender2(socket, this._extensions, options2.generateMask);
         this._receiver = receiver;
         this._sender = sender;
         this._socket = socket;
@@ -26761,13 +26761,13 @@ var require_websocket = __commonJS({
        * @param {Function} [cb] Callback which is executed when data is written out
        * @public
        */
-      send(data, options, cb) {
+      send(data, options2, cb) {
         if (this.readyState === _WebSocket.CONNECTING) {
           throw new Error("WebSocket is not open: readyState 0 (CONNECTING)");
         }
-        if (typeof options === "function") {
-          cb = options;
-          options = {};
+        if (typeof options2 === "function") {
+          cb = options2;
+          options2 = {};
         }
         if (typeof data === "number") data = data.toString();
         if (this.readyState !== _WebSocket.OPEN) {
@@ -26779,7 +26779,7 @@ var require_websocket = __commonJS({
           mask: !this._isServer,
           compress: true,
           fin: true,
-          ...options
+          ...options2
         };
         if (!this._extensions[PerMessageDeflate2.extensionName]) {
           opts.compress = false;
@@ -26873,7 +26873,7 @@ var require_websocket = __commonJS({
     WebSocket2.prototype.addEventListener = addEventListener;
     WebSocket2.prototype.removeEventListener = removeEventListener;
     module.exports = WebSocket2;
-    function initAsClient(websocket, address, protocols, options) {
+    function initAsClient(websocket, address, protocols, options2) {
       const opts = {
         allowSynchronousEvents: true,
         autoPong: true,
@@ -26884,7 +26884,7 @@ var require_websocket = __commonJS({
         perMessageDeflate: true,
         followRedirects: false,
         maxRedirects: 10,
-        ...options,
+        ...options2,
         socketPath: void 0,
         hostname: void 0,
         protocol: void 0,
@@ -26996,11 +26996,11 @@ var require_websocket = __commonJS({
           websocket._originalIpc = isIpcUrl;
           websocket._originalSecure = isSecure;
           websocket._originalHostOrSocketPath = isIpcUrl ? opts.socketPath : parsedUrl.host;
-          const headers = options && options.headers;
-          options = { ...options, headers: {} };
+          const headers = options2 && options2.headers;
+          options2 = { ...options2, headers: {} };
           if (headers) {
             for (const [key2, value] of Object.entries(headers)) {
-              options.headers[key2.toLowerCase()] = value;
+              options2.headers[key2.toLowerCase()] = value;
             }
           }
         } else if (websocket.listenerCount("redirect") === 0) {
@@ -27012,8 +27012,8 @@ var require_websocket = __commonJS({
             opts.auth = void 0;
           }
         }
-        if (opts.auth && !options.headers.authorization) {
-          options.headers.authorization = "Basic " + Buffer.from(opts.auth).toString("base64");
+        if (opts.auth && !options2.headers.authorization) {
+          options2.headers.authorization = "Basic " + Buffer.from(opts.auth).toString("base64");
         }
         req = websocket._req = request(opts);
         if (websocket._redirects) {
@@ -27049,7 +27049,7 @@ var require_websocket = __commonJS({
             emitErrorAndClose(websocket, err);
             return;
           }
-          initAsClient(websocket, addr, protocols, options);
+          initAsClient(websocket, addr, protocols, options2);
         } else if (!websocket.emit("unexpected-response", req, res)) {
           abortHandshake(
             websocket,
@@ -27137,16 +27137,16 @@ var require_websocket = __commonJS({
       websocket.emit("error", err);
       websocket.emitClose();
     }
-    function netConnect(options) {
-      options.path = options.socketPath;
-      return net.connect(options);
+    function netConnect(options2) {
+      options2.path = options2.socketPath;
+      return net.connect(options2);
     }
-    function tlsConnect(options) {
-      options.path = void 0;
-      if (!options.servername && options.servername !== "") {
-        options.servername = net.isIP(options.host) ? "" : options.host;
+    function tlsConnect(options2) {
+      options2.path = void 0;
+      if (!options2.servername && options2.servername !== "") {
+        options2.servername = net.isIP(options2.host) ? "" : options2.host;
       }
-      return tls.connect(options);
+      return tls.connect(options2);
     }
     function abortHandshake(websocket, stream, message) {
       websocket._readyState = WebSocket2.CLOSING;
@@ -27305,10 +27305,10 @@ var require_stream = __commonJS({
         this.emit("error", err);
       }
     }
-    function createWebSocketStream2(ws, options) {
+    function createWebSocketStream2(ws, options2) {
       let terminateOnDestroy = true;
       const duplex = new Duplex({
-        ...options,
+        ...options2,
         autoDestroy: false,
         emitClose: false,
         objectMode: false,
@@ -27479,9 +27479,9 @@ var require_websocket_server = __commonJS({
        *     class to use. It must be the `WebSocket` class or class that extends it
        * @param {Function} [callback] A listener for the `listening` event
        */
-      constructor(options, callback) {
+      constructor(options2, callback) {
         super();
-        options = {
+        options2 = {
           allowSynchronousEvents: true,
           autoPong: true,
           maxPayload: 100 * 1024 * 1024,
@@ -27499,14 +27499,14 @@ var require_websocket_server = __commonJS({
           path: null,
           port: null,
           WebSocket: WebSocket2,
-          ...options
+          ...options2
         };
-        if (options.port == null && !options.server && !options.noServer || options.port != null && (options.server || options.noServer) || options.server && options.noServer) {
+        if (options2.port == null && !options2.server && !options2.noServer || options2.port != null && (options2.server || options2.noServer) || options2.server && options2.noServer) {
           throw new TypeError(
             'One and only one of the "port", "server", or "noServer" options must be specified'
           );
         }
-        if (options.port != null) {
+        if (options2.port != null) {
           this._server = http2.createServer((req, res) => {
             const body = http2.STATUS_CODES[426];
             res.writeHead(426, {
@@ -27516,13 +27516,13 @@ var require_websocket_server = __commonJS({
             res.end(body);
           });
           this._server.listen(
-            options.port,
-            options.host,
-            options.backlog,
+            options2.port,
+            options2.host,
+            options2.backlog,
             callback
           );
-        } else if (options.server) {
-          this._server = options.server;
+        } else if (options2.server) {
+          this._server = options2.server;
         }
         if (this._server) {
           const emitConnection = this.emit.bind(this, "connection");
@@ -27534,12 +27534,12 @@ var require_websocket_server = __commonJS({
             }
           });
         }
-        if (options.perMessageDeflate === true) options.perMessageDeflate = {};
-        if (options.clientTracking) {
+        if (options2.perMessageDeflate === true) options2.perMessageDeflate = {};
+        if (options2.clientTracking) {
           this.clients = /* @__PURE__ */ new Set();
           this._shouldEmitClose = false;
         }
-        this.options = options;
+        this.options = options2;
         this._state = RUNNING;
       }
       /**
@@ -28047,7 +28047,7 @@ var require_onetime = __commonJS({
     "use strict";
     var mimicFn = require_mimic_fn();
     var calledFunctions = /* @__PURE__ */ new WeakMap();
-    var onetime2 = (function_, options = {}) => {
+    var onetime2 = (function_, options2 = {}) => {
       if (typeof function_ !== "function") {
         throw new TypeError("Expected a function");
       }
@@ -28059,7 +28059,7 @@ var require_onetime = __commonJS({
         if (callCount === 1) {
           returnValue = function_.apply(this, arguments_);
           function_ = null;
-        } else if (options.throw === true) {
+        } else if (options2.throw === true) {
           throw new Error(`Function \`${functionName}\` can only be called once`);
         }
         return returnValue;
@@ -28590,18 +28590,18 @@ var require_react_jsx_runtime_development = __commonJS({
       function isValidElement(object) {
         return "object" === typeof object && null !== object && object.$$typeof === REACT_ELEMENT_TYPE;
       }
-      var React15 = require_react(), REACT_ELEMENT_TYPE = /* @__PURE__ */ Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = /* @__PURE__ */ Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = /* @__PURE__ */ Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = /* @__PURE__ */ Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = /* @__PURE__ */ Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = /* @__PURE__ */ Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = /* @__PURE__ */ Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = /* @__PURE__ */ Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = /* @__PURE__ */ Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = /* @__PURE__ */ Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = /* @__PURE__ */ Symbol.for("react.memo"), REACT_LAZY_TYPE = /* @__PURE__ */ Symbol.for("react.lazy"), REACT_ACTIVITY_TYPE = /* @__PURE__ */ Symbol.for("react.activity"), REACT_CLIENT_REFERENCE = /* @__PURE__ */ Symbol.for("react.client.reference"), ReactSharedInternals = React15.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, hasOwnProperty = Object.prototype.hasOwnProperty, isArrayImpl = Array.isArray, createTask = console.createTask ? console.createTask : function() {
+      var React19 = require_react(), REACT_ELEMENT_TYPE = /* @__PURE__ */ Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = /* @__PURE__ */ Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = /* @__PURE__ */ Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = /* @__PURE__ */ Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = /* @__PURE__ */ Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = /* @__PURE__ */ Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = /* @__PURE__ */ Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = /* @__PURE__ */ Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = /* @__PURE__ */ Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = /* @__PURE__ */ Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = /* @__PURE__ */ Symbol.for("react.memo"), REACT_LAZY_TYPE = /* @__PURE__ */ Symbol.for("react.lazy"), REACT_ACTIVITY_TYPE = /* @__PURE__ */ Symbol.for("react.activity"), REACT_CLIENT_REFERENCE = /* @__PURE__ */ Symbol.for("react.client.reference"), ReactSharedInternals = React19.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, hasOwnProperty = Object.prototype.hasOwnProperty, isArrayImpl = Array.isArray, createTask = console.createTask ? console.createTask : function() {
         return null;
       };
-      React15 = {
+      React19 = {
         react_stack_bottom_frame: function(callStackForError) {
           return callStackForError();
         }
       };
       var specialPropKeyWarningShown;
       var didWarnAboutElementRef = {};
-      var unknownOwnerDebugStack = React15.react_stack_bottom_frame.bind(
-        React15,
+      var unknownOwnerDebugStack = React19.react_stack_bottom_frame.bind(
+        React19,
         UnknownOwner
       )();
       var unknownOwnerDebugTask = createTask(getTaskName(UnknownOwner));
@@ -29436,14 +29436,14 @@ var require_redact = __commonJS({
         validatePath(path4);
       }
     }
-    function slowRedact(options = {}) {
+    function slowRedact(options2 = {}) {
       const {
         paths = [],
         censor = "[REDACTED]",
         serialize = JSON.stringify,
         strict = true,
         remove = false
-      } = options;
+      } = options2;
       validatePaths(paths);
       const pathStructure = buildPathStructure(paths);
       return function redact(obj) {
@@ -31296,7 +31296,7 @@ var require_transport = __commonJS({
     }
     function transport(fullOptions) {
       const { pipeline, targets, levels, dedupe, worker = {}, caller = getCallers(), sync = false } = fullOptions;
-      const options = {
+      const options2 = {
         ...fullOptions.options
       };
       const callers = typeof caller === "string" ? [caller] : caller;
@@ -31307,13 +31307,13 @@ var require_transport = __commonJS({
       }
       if (targets) {
         target = bundlerOverrides["pino-worker"] || join2(__dirname, "worker.js");
-        options.targets = targets.filter((dest) => dest.target).map((dest) => {
+        options2.targets = targets.filter((dest) => dest.target).map((dest) => {
           return {
             ...dest,
             target: fixTarget(dest.target)
           };
         });
-        options.pipelines = targets.filter((dest) => dest.pipeline).map((dest) => {
+        options2.pipelines = targets.filter((dest) => dest.pipeline).map((dest) => {
           return dest.pipeline.map((t) => {
             return {
               ...t,
@@ -31325,7 +31325,7 @@ var require_transport = __commonJS({
         });
       } else if (pipeline) {
         target = bundlerOverrides["pino-worker"] || join2(__dirname, "worker.js");
-        options.pipelines = [pipeline.map((dest) => {
+        options2.pipelines = [pipeline.map((dest) => {
           return {
             ...dest,
             target: fixTarget(dest.target)
@@ -31333,14 +31333,14 @@ var require_transport = __commonJS({
         })];
       }
       if (levels) {
-        options.levels = levels;
+        options2.levels = levels;
       }
       if (dedupe) {
-        options.dedupe = dedupe;
+        options2.dedupe = dedupe;
       }
-      options.pinoWillSendConfig = true;
+      options2.pinoWillSendConfig = true;
       const name = targets || pipeline ? "pino.transport" : target;
-      return buildStream(fixTarget(target), options, worker, sync, name);
+      return buildStream(fixTarget(target), options2, worker, sync, name);
       function fixTarget(origin) {
         origin = bundlerOverrides[origin] || origin;
         if (isAbsolute2(origin) || origin.indexOf("file://") === 0) {
@@ -32012,14 +32012,14 @@ var require_proto = __commonJS({
       return Object.create(prototype);
     };
     var resetChildingsFormatter = (bindings2) => bindings2;
-    function child(bindings2, options) {
+    function child(bindings2, options2) {
       if (!bindings2) {
         throw Error("missing bindings for child Pino");
       }
       const serializers = this[serializersSym];
       const formatters = this[formattersSym];
       const instance = Object.create(this);
-      if (options == null) {
+      if (options2 == null) {
         if (instance[formattersSym].bindings !== resetChildingsFormatter) {
           instance[formattersSym] = buildFormatters(
             formatters.level,
@@ -32033,7 +32033,7 @@ var require_proto = __commonJS({
         }
         return instance;
       }
-      if (options.hasOwnProperty("serializers") === true) {
+      if (options2.hasOwnProperty("serializers") === true) {
         instance[serializersSym] = /* @__PURE__ */ Object.create(null);
         for (const k in serializers) {
           instance[serializersSym][k] = serializers[k];
@@ -32043,17 +32043,17 @@ var require_proto = __commonJS({
           const ks = parentSymbols[i];
           instance[serializersSym][ks] = serializers[ks];
         }
-        for (const bk in options.serializers) {
-          instance[serializersSym][bk] = options.serializers[bk];
+        for (const bk in options2.serializers) {
+          instance[serializersSym][bk] = options2.serializers[bk];
         }
-        const bindingsSymbols = Object.getOwnPropertySymbols(options.serializers);
+        const bindingsSymbols = Object.getOwnPropertySymbols(options2.serializers);
         for (var bi = 0; bi < bindingsSymbols.length; bi++) {
           const bks = bindingsSymbols[bi];
-          instance[serializersSym][bks] = options.serializers[bks];
+          instance[serializersSym][bks] = options2.serializers[bks];
         }
       } else instance[serializersSym] = serializers;
-      if (options.hasOwnProperty("formatters")) {
-        const { level, bindings: chindings, log } = options.formatters;
+      if (options2.hasOwnProperty("formatters")) {
+        const { level, bindings: chindings, log } = options2.formatters;
         instance[formattersSym] = buildFormatters(
           level || formatters.level,
           chindings || resetChildingsFormatter,
@@ -32066,25 +32066,25 @@ var require_proto = __commonJS({
           formatters.log
         );
       }
-      if (options.hasOwnProperty("customLevels") === true) {
-        assertNoLevelCollisions(this.levels, options.customLevels);
-        instance.levels = mappings(options.customLevels, instance[useOnlyCustomLevelsSym]);
+      if (options2.hasOwnProperty("customLevels") === true) {
+        assertNoLevelCollisions(this.levels, options2.customLevels);
+        instance.levels = mappings(options2.customLevels, instance[useOnlyCustomLevelsSym]);
         genLsCache(instance);
       }
-      if (typeof options.redact === "object" && options.redact !== null || Array.isArray(options.redact)) {
-        instance.redact = options.redact;
+      if (typeof options2.redact === "object" && options2.redact !== null || Array.isArray(options2.redact)) {
+        instance.redact = options2.redact;
         const stringifiers = redaction(instance.redact, stringify);
         const formatOpts = { stringify: stringifiers[redactFmtSym] };
         instance[stringifySym] = stringify;
         instance[stringifiersSym] = stringifiers;
         instance[formatOptsSym] = formatOpts;
       }
-      if (typeof options.msgPrefix === "string") {
-        instance[msgPrefixSym] = (this[msgPrefixSym] || "") + options.msgPrefix;
+      if (typeof options2.msgPrefix === "string") {
+        instance[msgPrefixSym] = (this[msgPrefixSym] || "") + options2.msgPrefix;
       }
       instance[chindingsSym] = asChindings(instance, bindings2);
-      if (options.level !== void 0 && options.level !== this.level || options.hasOwnProperty("customLevels")) {
-        const childLevel = options.level || this.level;
+      if (options2.level !== void 0 && options2.level !== this.level || options2.hasOwnProperty("customLevels")) {
+        const childLevel = options2.level || this.level;
         instance[setLevelSym](childLevel);
       }
       this.onChild(instance);
@@ -32208,9 +32208,9 @@ var require_safe_stable_stringify = __commonJS({
       }
       return res;
     }
-    function getCircularValueOption(options) {
-      if (hasOwnProperty.call(options, "circularValue")) {
-        const circularValue = options.circularValue;
+    function getCircularValueOption(options2) {
+      if (hasOwnProperty.call(options2, "circularValue")) {
+        const circularValue = options2.circularValue;
         if (typeof circularValue === "string") {
           return `"${circularValue}"`;
         }
@@ -32228,30 +32228,30 @@ var require_safe_stable_stringify = __commonJS({
       }
       return '"[Circular]"';
     }
-    function getDeterministicOption(options) {
+    function getDeterministicOption(options2) {
       let value;
-      if (hasOwnProperty.call(options, "deterministic")) {
-        value = options.deterministic;
+      if (hasOwnProperty.call(options2, "deterministic")) {
+        value = options2.deterministic;
         if (typeof value !== "boolean" && typeof value !== "function") {
           throw new TypeError('The "deterministic" argument must be of type boolean or comparator function');
         }
       }
       return value === void 0 ? true : value;
     }
-    function getBooleanOption(options, key) {
+    function getBooleanOption(options2, key) {
       let value;
-      if (hasOwnProperty.call(options, key)) {
-        value = options[key];
+      if (hasOwnProperty.call(options2, key)) {
+        value = options2[key];
         if (typeof value !== "boolean") {
           throw new TypeError(`The "${key}" argument must be of type boolean`);
         }
       }
       return value === void 0 ? true : value;
     }
-    function getPositiveIntegerOption(options, key) {
+    function getPositiveIntegerOption(options2, key) {
       let value;
-      if (hasOwnProperty.call(options, key)) {
-        value = options[key];
+      if (hasOwnProperty.call(options2, key)) {
+        value = options2[key];
         if (typeof value !== "number") {
           throw new TypeError(`The "${key}" argument must be of type number`);
         }
@@ -32279,9 +32279,9 @@ var require_safe_stable_stringify = __commonJS({
       }
       return replacerSet;
     }
-    function getStrictOption(options) {
-      if (hasOwnProperty.call(options, "strict")) {
-        const value = options.strict;
+    function getStrictOption(options2) {
+      if (hasOwnProperty.call(options2, "strict")) {
+        const value = options2.strict;
         if (typeof value !== "boolean") {
           throw new TypeError('The "strict" argument must be of type boolean');
         }
@@ -32294,23 +32294,23 @@ var require_safe_stable_stringify = __commonJS({
         }
       }
     }
-    function configure(options) {
-      options = { ...options };
-      const fail = getStrictOption(options);
+    function configure(options2) {
+      options2 = { ...options2 };
+      const fail = getStrictOption(options2);
       if (fail) {
-        if (options.bigint === void 0) {
-          options.bigint = false;
+        if (options2.bigint === void 0) {
+          options2.bigint = false;
         }
-        if (!("circularValue" in options)) {
-          options.circularValue = Error;
+        if (!("circularValue" in options2)) {
+          options2.circularValue = Error;
         }
       }
-      const circularValue = getCircularValueOption(options);
-      const bigint = getBooleanOption(options, "bigint");
-      const deterministic = getDeterministicOption(options);
+      const circularValue = getCircularValueOption(options2);
+      const bigint = getBooleanOption(options2, "bigint");
+      const deterministic = getDeterministicOption(options2);
       const comparator = typeof deterministic === "function" ? deterministic : void 0;
-      const maximumDepth = getPositiveIntegerOption(options, "maximumDepth");
-      const maximumBreadth = getPositiveIntegerOption(options, "maximumBreadth");
+      const maximumDepth = getPositiveIntegerOption(options2, "maximumDepth");
+      const maximumBreadth = getPositiveIntegerOption(options2, "maximumBreadth");
       function stringifyFnReplacer(key, parent, stack, replacer, spacer, indentation) {
         let value = parent[key];
         if (typeof value === "object" && value !== null && typeof value.toJSON === "function") {
@@ -33477,12 +33477,12 @@ var require_directives = __commonJS({
        * Given a fully resolved tag, returns its printable string form,
        * taking into account current tag prefixes and defaults.
        */
-      tagString(tag) {
+      tagString(tag2) {
         for (const [handle, prefix] of Object.entries(this.tags)) {
-          if (tag.startsWith(prefix))
-            return handle + escapeTagName(tag.substring(prefix.length));
+          if (tag2.startsWith(prefix))
+            return handle + escapeTagName(tag2.substring(prefix.length));
         }
-        return tag[0] === "!" ? tag : `!<${tag}>`;
+        return tag2[0] === "!" ? tag2 : `!<${tag2}>`;
       }
       toString(doc) {
         const lines = this.yaml.explicit ? [`%YAML ${this.yaml.version || "1.2"}`] : [];
@@ -34457,7 +34457,7 @@ ${indent}${start}${value}${end}`;
       const str = value.replace(/\n+/g, `$&
 ${indent}`);
       if (actualString) {
-        const test = (tag) => tag.default && tag.tag !== "tag:yaml.org,2002:str" && tag.test?.test(str);
+        const test = (tag2) => tag2.default && tag2.tag !== "tag:yaml.org,2002:str" && tag2.test?.test(str);
         const { compat, tags } = ctx.doc.schema;
         if (tags.some(test) || compat?.some(test))
           return quotedString(value, ctx);
@@ -34509,7 +34509,7 @@ var require_stringify = __commonJS({
     var identity = require_identity();
     var stringifyComment = require_stringifyComment();
     var stringifyString = require_stringifyString();
-    function createStringifyContext(doc, options) {
+    function createStringifyContext(doc, options2) {
       const opt = Object.assign({
         blockQuote: true,
         commentString: stringifyComment.stringifyComment,
@@ -34529,7 +34529,7 @@ var require_stringify = __commonJS({
         trailingComma: false,
         trueStr: "true",
         verifyAliasOrder: true
-      }, doc.schema.toStringOptions, options);
+      }, doc.schema.toStringOptions, options2);
       let inFlow;
       switch (opt.collectionStyle) {
         case "block":
@@ -34587,9 +34587,9 @@ var require_stringify = __commonJS({
         anchors$1.add(anchor);
         props.push(`&${anchor}`);
       }
-      const tag = node.tag ?? (tagObj.default ? null : tagObj.tag);
-      if (tag)
-        props.push(doc.directives.tagString(tag));
+      const tag2 = node.tag ?? (tagObj.default ? null : tagObj.tag);
+      if (tag2)
+        props.push(doc.directives.tagString(tag2));
       return props.join(" ");
     }
     function stringify(item, ctx, onComment, onChompKeep) {
@@ -34797,7 +34797,7 @@ var require_merge = __commonJS({
       }),
       stringify: () => MERGE_KEY
     };
-    var isMergeKey = (ctx, key) => (merge.identify(key) || identity.isScalar(key) && (!key.type || key.type === Scalar.Scalar.PLAIN) && merge.identify(key.value)) && ctx?.doc.schema.tags.some((tag) => tag.tag === merge.tag && tag.default);
+    var isMergeKey = (ctx, key) => (merge.identify(key) || identity.isScalar(key) && (!key.type || key.type === Scalar.Scalar.PLAIN) && merge.identify(key.value)) && ctx?.doc.schema.tags.some((tag2) => tag2.tag === merge.tag && tag2.default);
     function addMergeToJSMap(ctx, map, value) {
       value = ctx && identity.isAlias(value) ? value.resolve(ctx.doc) : value;
       if (identity.isSeq(value))
@@ -34948,10 +34948,10 @@ var require_stringifyCollection = __commonJS({
     var identity = require_identity();
     var stringify = require_stringify();
     var stringifyComment = require_stringifyComment();
-    function stringifyCollection(collection, ctx, options) {
+    function stringifyCollection(collection, ctx, options2) {
       const flow = ctx.inFlow ?? collection.flow;
       const stringify2 = flow ? stringifyFlowCollection : stringifyBlockCollection;
-      return stringify2(collection, ctx, options);
+      return stringify2(collection, ctx, options2);
     }
     function stringifyBlockCollection({ comment, items }, ctx, { blockItemPrefix, flowChars, itemIndent, onChompKeep, onComment }) {
       const { indent, options: { commentString } } = ctx;
@@ -35461,14 +35461,14 @@ var require_bool = __commonJS({
 var require_stringifyNumber = __commonJS({
   "node_modules/yaml/dist/stringify/stringifyNumber.js"(exports) {
     "use strict";
-    function stringifyNumber({ format, minFractionDigits, tag, value }) {
+    function stringifyNumber({ format, minFractionDigits, tag: tag2, value }) {
       if (typeof value === "bigint")
         return String(value);
       const num = typeof value === "number" ? value : Number(value);
       if (!isFinite(num))
         return isNaN(num) ? ".nan" : num < 0 ? "-.inf" : ".inf";
       let n = Object.is(value, -0) ? "-0" : JSON.stringify(value);
-      if (!format && minFractionDigits && (!tag || tag === "tag:yaml.org,2002:float") && /^\d/.test(n)) {
+      if (!format && minFractionDigits && (!tag2 || tag2 === "tag:yaml.org,2002:float") && /^\d/.test(n)) {
         let i = n.indexOf(".");
         if (i < 0) {
           i = n.length;
@@ -36343,17 +36343,17 @@ var require_tags = __commonJS({
         }
       }
       if (Array.isArray(customTags)) {
-        for (const tag of customTags)
-          tags = tags.concat(tag);
+        for (const tag2 of customTags)
+          tags = tags.concat(tag2);
       } else if (typeof customTags === "function") {
         tags = customTags(tags.slice());
       }
       if (addMergeTag)
         tags = tags.concat(merge.merge);
-      return tags.reduce((tags2, tag) => {
-        const tagObj = typeof tag === "string" ? tagsByName[tag] : tag;
+      return tags.reduce((tags2, tag2) => {
+        const tagObj = typeof tag2 === "string" ? tagsByName[tag2] : tag2;
         if (!tagObj) {
-          const tagName = JSON.stringify(tag);
+          const tagName = JSON.stringify(tag2);
           const keys = Object.keys(tagsByName).map((key) => JSON.stringify(key)).join(", ");
           throw new Error(`Unknown custom tag ${tagName}; use one of ${keys}`);
         }
@@ -36406,10 +36406,10 @@ var require_stringifyDocument = __commonJS({
     var identity = require_identity();
     var stringify = require_stringify();
     var stringifyComment = require_stringifyComment();
-    function stringifyDocument(doc, options) {
+    function stringifyDocument(doc, options2) {
       const lines = [];
-      let hasDirectives = options.directives === true;
-      if (options.directives !== false && doc.directives) {
+      let hasDirectives = options2.directives === true;
+      if (options2.directives !== false && doc.directives) {
         const dir = doc.directives.toString(doc);
         if (dir) {
           lines.push(dir);
@@ -36419,7 +36419,7 @@ var require_stringifyDocument = __commonJS({
       }
       if (hasDirectives)
         lines.push("---");
-      const ctx = stringify.createStringifyContext(doc, options);
+      const ctx = stringify.createStringifyContext(doc, options2);
       const { commentString } = ctx.options;
       if (doc.commentBefore) {
         if (lines.length !== 1)
@@ -36495,7 +36495,7 @@ var require_Document = __commonJS({
     var createNode2 = require_createNode();
     var directives = require_directives();
     var Document = class _Document {
-      constructor(value, replacer, options) {
+      constructor(value, replacer, options2) {
         this.commentBefore = null;
         this.comment = null;
         this.errors = [];
@@ -36504,8 +36504,8 @@ var require_Document = __commonJS({
         let _replacer = null;
         if (typeof replacer === "function" || Array.isArray(replacer)) {
           _replacer = replacer;
-        } else if (options === void 0 && replacer) {
-          options = replacer;
+        } else if (options2 === void 0 && replacer) {
+          options2 = replacer;
           replacer = void 0;
         }
         const opt = Object.assign({
@@ -36517,17 +36517,17 @@ var require_Document = __commonJS({
           stringKeys: false,
           uniqueKeys: true,
           version: "1.2"
-        }, options);
+        }, options2);
         this.options = opt;
         let { version } = opt;
-        if (options?._directives) {
-          this.directives = options._directives.atDocument();
+        if (options2?._directives) {
+          this.directives = options2._directives.atDocument();
           if (this.directives.yaml.explicit)
             version = this.directives.yaml.version;
         } else
           this.directives = new directives.Directives({ version });
-        this.setSchema(version, options);
-        this.contents = value === void 0 ? null : this.createNode(value, _replacer, options);
+        this.setSchema(version, options2);
+        this.contents = value === void 0 ? null : this.createNode(value, _replacer, options2);
       }
       /**
        * Create a deep copy of this Document and its contents.
@@ -36578,7 +36578,7 @@ var require_Document = __commonJS({
         }
         return new Alias.Alias(node.anchor);
       }
-      createNode(value, replacer, options) {
+      createNode(value, replacer, options2) {
         let _replacer = void 0;
         if (typeof replacer === "function") {
           value = replacer.call({ "": value }, "", value);
@@ -36589,11 +36589,11 @@ var require_Document = __commonJS({
           if (asStr.length > 0)
             replacer = replacer.concat(asStr);
           _replacer = replacer;
-        } else if (options === void 0 && replacer) {
-          options = replacer;
+        } else if (options2 === void 0 && replacer) {
+          options2 = replacer;
           replacer = void 0;
         }
-        const { aliasDuplicateObjects, anchorPrefix, flow, keepUndefined, onTagObj, tag } = options ?? {};
+        const { aliasDuplicateObjects, anchorPrefix, flow, keepUndefined, onTagObj, tag: tag2 } = options2 ?? {};
         const { onAnchor, setAnchors, sourceObjects } = anchors.createNodeAnchors(
           this,
           // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
@@ -36608,7 +36608,7 @@ var require_Document = __commonJS({
           schema: this.schema,
           sourceObjects
         };
-        const node = createNode2.createNode(value, tag, ctx);
+        const node = createNode2.createNode(value, tag2, ctx);
         if (flow && identity.isCollection(node))
           node.flow = true;
         setAnchors();
@@ -36618,9 +36618,9 @@ var require_Document = __commonJS({
        * Convert a key and a value into a `Pair` using the current schema,
        * recursively wrapping all values as `Scalar` or `Collection` nodes.
        */
-      createPair(key, value, options = {}) {
-        const k = this.createNode(key, null, options);
-        const v = this.createNode(value, null, options);
+      createPair(key, value, options2 = {}) {
+        const k = this.createNode(key, null, options2);
+        const v = this.createNode(value, null, options2);
         return new Pair.Pair(k, v);
       }
       /**
@@ -36706,7 +36706,7 @@ var require_Document = __commonJS({
        *
        * Overrides all previously set schema options.
        */
-      setSchema(version, options = {}) {
+      setSchema(version, options2 = {}) {
         if (typeof version === "number")
           version = String(version);
         let opt;
@@ -36736,10 +36736,10 @@ var require_Document = __commonJS({
             throw new Error(`Expected '1.1', '1.2' or null as first argument, but found: ${sv}`);
           }
         }
-        if (options.schema instanceof Object)
-          this.schema = options.schema;
+        if (options2.schema instanceof Object)
+          this.schema = options2.schema;
         else if (opt)
-          this.schema = new Schema.Schema(Object.assign(opt, options));
+          this.schema = new Schema.Schema(Object.assign(opt, options2));
         else
           throw new Error(`With a null YAML version, the { schema: Schema } option is required`);
       }
@@ -36769,14 +36769,14 @@ var require_Document = __commonJS({
         return this.toJS({ json: true, jsonArg, mapAsMap: false, onAnchor });
       }
       /** A YAML representation of the document. */
-      toString(options = {}) {
+      toString(options2 = {}) {
         if (this.errors.length > 0)
           throw new Error("Document with errors cannot be stringified");
-        if ("indent" in options && (!Number.isInteger(options.indent) || Number(options.indent) <= 0)) {
-          const s = JSON.stringify(options.indent);
+        if ("indent" in options2 && (!Number.isInteger(options2.indent) || Number(options2.indent) <= 0)) {
+          const s = JSON.stringify(options2.indent);
           throw new Error(`"indent" option must be a positive integer, not ${s}`);
         }
-        return stringifyDocument.stringifyDocument(this, options);
+        return stringifyDocument.stringifyDocument(this, options2);
       }
     };
     function assertCollection(contents) {
@@ -36867,7 +36867,7 @@ var require_resolve_props = __commonJS({
       let reqSpace = false;
       let tab2 = null;
       let anchor = null;
-      let tag = null;
+      let tag2 = null;
       let newlineAfterProp = null;
       let comma = null;
       let found = null;
@@ -36913,7 +36913,7 @@ var require_resolve_props = __commonJS({
               commentSep += token.source;
             atNewline = true;
             hasNewline = true;
-            if (anchor || tag)
+            if (anchor || tag2)
               newlineAfterProp = token;
             hasSpace = true;
             break;
@@ -36929,9 +36929,9 @@ var require_resolve_props = __commonJS({
             reqSpace = true;
             break;
           case "tag": {
-            if (tag)
+            if (tag2)
               onError(token, "MULTIPLE_TAGS", "A node can have at most one tag");
-            tag = token;
+            tag2 = token;
             start ?? (start = token.offset);
             atNewline = false;
             hasSpace = false;
@@ -36939,7 +36939,7 @@ var require_resolve_props = __commonJS({
             break;
           }
           case indicator:
-            if (anchor || tag)
+            if (anchor || tag2)
               onError(token, "BAD_PROP_ORDER", `Anchors and tags must be after the ${token.source} indicator`);
             if (found)
               onError(token, "UNEXPECTED_TOKEN", `Unexpected ${token.source} in ${flow ?? "collection"}`);
@@ -36977,7 +36977,7 @@ var require_resolve_props = __commonJS({
         comment,
         hasNewline,
         anchor,
-        tag,
+        tag: tag2,
         newlineAfterProp,
         end,
         start: start ?? end
@@ -37074,8 +37074,8 @@ var require_resolve_block_map = __commonJS({
     var utilFlowIndentCheck = require_util_flow_indent_check();
     var utilMapIncludes = require_util_map_includes();
     var startColMsg = "All mapping items must start at the same column";
-    function resolveBlockMap({ composeNode, composeEmptyNode }, ctx, bm, onError, tag) {
-      const NodeClass = tag?.nodeClass ?? YAMLMap.YAMLMap;
+    function resolveBlockMap({ composeNode, composeEmptyNode }, ctx, bm, onError, tag2) {
+      const NodeClass = tag2?.nodeClass ?? YAMLMap.YAMLMap;
       const map = new NodeClass(ctx.schema);
       if (ctx.atRoot)
         ctx.atRoot = false;
@@ -37178,8 +37178,8 @@ var require_resolve_block_seq = __commonJS({
     var YAMLSeq = require_YAMLSeq();
     var resolveProps = require_resolve_props();
     var utilFlowIndentCheck = require_util_flow_indent_check();
-    function resolveBlockSeq({ composeNode, composeEmptyNode }, ctx, bs, onError, tag) {
-      const NodeClass = tag?.nodeClass ?? YAMLSeq.YAMLSeq;
+    function resolveBlockSeq({ composeNode, composeEmptyNode }, ctx, bs, onError, tag2) {
+      const NodeClass = tag2?.nodeClass ?? YAMLSeq.YAMLSeq;
       const seq = new NodeClass(ctx.schema);
       if (ctx.atRoot)
         ctx.atRoot = false;
@@ -37279,10 +37279,10 @@ var require_resolve_flow_collection = __commonJS({
     var utilMapIncludes = require_util_map_includes();
     var blockMsg = "Block collections are not allowed within flow collections";
     var isBlock = (token) => token && (token.type === "block-map" || token.type === "block-seq");
-    function resolveFlowCollection({ composeNode, composeEmptyNode }, ctx, fc, onError, tag) {
+    function resolveFlowCollection({ composeNode, composeEmptyNode }, ctx, fc, onError, tag2) {
       const isMap = fc.start.source === "{";
       const fcName = isMap ? "flow map" : "flow sequence";
-      const NodeClass = tag?.nodeClass ?? (isMap ? YAMLMap.YAMLMap : YAMLSeq.YAMLSeq);
+      const NodeClass = tag2?.nodeClass ?? (isMap ? YAMLMap.YAMLMap : YAMLSeq.YAMLSeq);
       const coll = new NodeClass(ctx.schema);
       coll.flow = true;
       const atRoot = ctx.atRoot;
@@ -37470,8 +37470,8 @@ var require_compose_collection = __commonJS({
     var resolveBlockMap = require_resolve_block_map();
     var resolveBlockSeq = require_resolve_block_seq();
     var resolveFlowCollection = require_resolve_flow_collection();
-    function resolveCollection(CN, ctx, token, onError, tagName, tag) {
-      const coll = token.type === "block-map" ? resolveBlockMap.resolveBlockMap(CN, ctx, token, onError, tag) : token.type === "block-seq" ? resolveBlockSeq.resolveBlockSeq(CN, ctx, token, onError, tag) : resolveFlowCollection.resolveFlowCollection(CN, ctx, token, onError, tag);
+    function resolveCollection(CN, ctx, token, onError, tagName, tag2) {
+      const coll = token.type === "block-map" ? resolveBlockMap.resolveBlockMap(CN, ctx, token, onError, tag2) : token.type === "block-seq" ? resolveBlockSeq.resolveBlockSeq(CN, ctx, token, onError, tag2) : resolveFlowCollection.resolveFlowCollection(CN, ctx, token, onError, tag2);
       const Coll = coll.constructor;
       if (tagName === "!" || tagName === Coll.tagName) {
         coll.tag = Coll.tagName;
@@ -37496,12 +37496,12 @@ var require_compose_collection = __commonJS({
       if (!tagToken || !tagName || tagName === "!" || tagName === YAMLMap.YAMLMap.tagName && expType === "map" || tagName === YAMLSeq.YAMLSeq.tagName && expType === "seq") {
         return resolveCollection(CN, ctx, token, onError, tagName);
       }
-      let tag = ctx.schema.tags.find((t) => t.tag === tagName && t.collection === expType);
-      if (!tag) {
+      let tag2 = ctx.schema.tags.find((t) => t.tag === tagName && t.collection === expType);
+      if (!tag2) {
         const kt = ctx.schema.knownTags[tagName];
         if (kt?.collection === expType) {
           ctx.schema.tags.push(Object.assign({}, kt, { default: false }));
-          tag = kt;
+          tag2 = kt;
         } else {
           if (kt) {
             onError(tagToken, "BAD_COLLECTION_TYPE", `${kt.tag} used for ${expType} collection, but expects ${kt.collection ?? "scalar"}`, true);
@@ -37511,13 +37511,13 @@ var require_compose_collection = __commonJS({
           return resolveCollection(CN, ctx, token, onError, tagName);
         }
       }
-      const coll = resolveCollection(CN, ctx, token, onError, tagName, tag);
-      const res = tag.resolve?.(coll, (msg) => onError(tagToken, "TAG_RESOLVE_FAILED", msg), ctx.options) ?? coll;
+      const coll = resolveCollection(CN, ctx, token, onError, tagName, tag2);
+      const res = tag2.resolve?.(coll, (msg) => onError(tagToken, "TAG_RESOLVE_FAILED", msg), ctx.options) ?? coll;
       const node = identity.isNode(res) ? res : new Scalar.Scalar(res);
       node.range = coll.range;
       node.tag = tagName;
-      if (tag?.format)
-        node.format = tag.format;
+      if (tag2?.format)
+        node.format = tag2.format;
       return node;
     }
     exports.composeCollection = composeCollection;
@@ -37937,18 +37937,18 @@ var require_compose_scalar = __commonJS({
     function composeScalar(ctx, token, tagToken, onError) {
       const { value, type, comment, range } = token.type === "block-scalar" ? resolveBlockScalar.resolveBlockScalar(ctx, token, onError) : resolveFlowScalar.resolveFlowScalar(token, ctx.options.strict, onError);
       const tagName = tagToken ? ctx.directives.tagName(tagToken.source, (msg) => onError(tagToken, "TAG_RESOLVE_FAILED", msg)) : null;
-      let tag;
+      let tag2;
       if (ctx.options.stringKeys && ctx.atKey) {
-        tag = ctx.schema[identity.SCALAR];
+        tag2 = ctx.schema[identity.SCALAR];
       } else if (tagName)
-        tag = findScalarTagByName(ctx.schema, value, tagName, tagToken, onError);
+        tag2 = findScalarTagByName(ctx.schema, value, tagName, tagToken, onError);
       else if (token.type === "scalar")
-        tag = findScalarTagByTest(ctx, value, token, onError);
+        tag2 = findScalarTagByTest(ctx, value, token, onError);
       else
-        tag = ctx.schema[identity.SCALAR];
+        tag2 = ctx.schema[identity.SCALAR];
       let scalar;
       try {
-        const res = tag.resolve(value, (msg) => onError(tagToken ?? token, "TAG_RESOLVE_FAILED", msg), ctx.options);
+        const res = tag2.resolve(value, (msg) => onError(tagToken ?? token, "TAG_RESOLVE_FAILED", msg), ctx.options);
         scalar = identity.isScalar(res) ? res : new Scalar.Scalar(res);
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
@@ -37961,8 +37961,8 @@ var require_compose_scalar = __commonJS({
         scalar.type = type;
       if (tagName)
         scalar.tag = tagName;
-      if (tag.format)
-        scalar.format = tag.format;
+      if (tag2.format)
+        scalar.format = tag2.format;
       if (comment)
         scalar.comment = comment;
       return scalar;
@@ -37971,17 +37971,17 @@ var require_compose_scalar = __commonJS({
       if (tagName === "!")
         return schema[identity.SCALAR];
       const matchWithTest = [];
-      for (const tag of schema.tags) {
-        if (!tag.collection && tag.tag === tagName) {
-          if (tag.default && tag.test)
-            matchWithTest.push(tag);
+      for (const tag2 of schema.tags) {
+        if (!tag2.collection && tag2.tag === tagName) {
+          if (tag2.default && tag2.test)
+            matchWithTest.push(tag2);
           else
-            return tag;
+            return tag2;
         }
       }
-      for (const tag of matchWithTest)
-        if (tag.test?.test(value))
-          return tag;
+      for (const tag2 of matchWithTest)
+        if (tag2.test?.test(value))
+          return tag2;
       const kt = schema.knownTags[tagName];
       if (kt && !kt.collection) {
         schema.tags.push(Object.assign({}, kt, { default: false, test: void 0 }));
@@ -37991,17 +37991,17 @@ var require_compose_scalar = __commonJS({
       return schema[identity.SCALAR];
     }
     function findScalarTagByTest({ atKey, directives, schema }, value, token, onError) {
-      const tag = schema.tags.find((tag2) => (tag2.default === true || atKey && tag2.default === "key") && tag2.test?.test(value)) || schema[identity.SCALAR];
+      const tag2 = schema.tags.find((tag3) => (tag3.default === true || atKey && tag3.default === "key") && tag3.test?.test(value)) || schema[identity.SCALAR];
       if (schema.compat) {
-        const compat = schema.compat.find((tag2) => tag2.default && tag2.test?.test(value)) ?? schema[identity.SCALAR];
-        if (tag.tag !== compat.tag) {
-          const ts = directives.tagString(tag.tag);
+        const compat = schema.compat.find((tag3) => tag3.default && tag3.test?.test(value)) ?? schema[identity.SCALAR];
+        if (tag2.tag !== compat.tag) {
+          const ts = directives.tagString(tag2.tag);
           const cs = directives.tagString(compat.tag);
           const msg = `Value may be parsed as either ${ts} or ${cs}`;
           onError(token, "TAG_RESOLVE_FAILED", msg, true);
         }
       }
-      return tag;
+      return tag2;
     }
     exports.composeScalar = composeScalar;
   }
@@ -38050,20 +38050,20 @@ var require_compose_node = __commonJS({
     var CN = { composeNode, composeEmptyNode };
     function composeNode(ctx, token, props, onError) {
       const atKey = ctx.atKey;
-      const { spaceBefore, comment, anchor, tag } = props;
+      const { spaceBefore, comment, anchor, tag: tag2 } = props;
       let node;
       let isSrcToken = true;
       switch (token.type) {
         case "alias":
           node = composeAlias(ctx, token, onError);
-          if (anchor || tag)
+          if (anchor || tag2)
             onError(token, "ALIAS_PROPS", "An alias node must not specify any properties");
           break;
         case "scalar":
         case "single-quoted-scalar":
         case "double-quoted-scalar":
         case "block-scalar":
-          node = composeScalar.composeScalar(ctx, token, tag, onError);
+          node = composeScalar.composeScalar(ctx, token, tag2, onError);
           if (anchor)
             node.anchor = anchor.source.substring(1);
           break;
@@ -38090,7 +38090,7 @@ var require_compose_node = __commonJS({
         onError(anchor, "BAD_ALIAS", "Anchor cannot be an empty string");
       if (atKey && ctx.options.stringKeys && (!identity.isScalar(node) || typeof node.value !== "string" || node.tag && node.tag !== "tag:yaml.org,2002:str")) {
         const msg = "With stringKeys, all keys must be strings";
-        onError(tag ?? token, "NON_STRING_KEY", msg);
+        onError(tag2 ?? token, "NON_STRING_KEY", msg);
       }
       if (spaceBefore)
         node.spaceBefore = true;
@@ -38104,14 +38104,14 @@ var require_compose_node = __commonJS({
         node.srcToken = token;
       return node;
     }
-    function composeEmptyNode(ctx, offset, before, pos, { spaceBefore, comment, anchor, tag, end }, onError) {
+    function composeEmptyNode(ctx, offset, before, pos, { spaceBefore, comment, anchor, tag: tag2, end }, onError) {
       const token = {
         type: "scalar",
         offset: utilEmptyScalarPosition.emptyScalarPosition(offset, before, pos),
         indent: -1,
         source: ""
       };
-      const node = composeScalar.composeScalar(ctx, token, tag, onError);
+      const node = composeScalar.composeScalar(ctx, token, tag2, onError);
       if (anchor) {
         node.anchor = anchor.source.substring(1);
         if (node.anchor === "")
@@ -38125,14 +38125,14 @@ var require_compose_node = __commonJS({
       }
       return node;
     }
-    function composeAlias({ options }, { offset, source, end }, onError) {
+    function composeAlias({ options: options2 }, { offset, source, end }, onError) {
       const alias = new Alias.Alias(source.substring(1));
       if (alias.source === "")
         onError(offset, "BAD_ALIAS", "Alias cannot be an empty string");
       if (alias.source.endsWith(":"))
         onError(offset + source.length - 1, "BAD_ALIAS", "Alias ending in : is ambiguous", true);
       const valueEnd = offset + source.length;
-      const re = resolveEnd.resolveEnd(end, valueEnd, options.strict, onError);
+      const re = resolveEnd.resolveEnd(end, valueEnd, options2.strict, onError);
       alias.range = [offset, valueEnd, re.offset];
       if (re.comment)
         alias.comment = re.comment;
@@ -38151,8 +38151,8 @@ var require_compose_doc = __commonJS({
     var composeNode = require_compose_node();
     var resolveEnd = require_resolve_end();
     var resolveProps = require_resolve_props();
-    function composeDoc(options, directives, { offset, start, value, end }, onError) {
-      const opts = Object.assign({ _directives: directives }, options);
+    function composeDoc(options2, directives, { offset, start, value, end }, onError) {
+      const opts = Object.assign({ _directives: directives }, options2);
       const doc = new Document.Document(void 0, opts);
       const ctx = {
         atKey: false,
@@ -38231,7 +38231,7 @@ var require_composer = __commonJS({
       return { comment, afterEmptyLine };
     }
     var Composer = class {
-      constructor(options = {}) {
+      constructor(options2 = {}) {
         this.doc = null;
         this.atDirectives = false;
         this.prelude = [];
@@ -38244,8 +38244,8 @@ var require_composer = __commonJS({
           else
             this.errors.push(new errors.YAMLParseError(pos, code, message));
         };
-        this.directives = new directives.Directives({ version: options.version || "1.2" });
-        this.options = options;
+        this.directives = new directives.Directives({ version: options2.version || "1.2" });
+        this.options = options2;
       }
       decorate(doc, afterDoc) {
         const { comment, afterEmptyLine } = parsePrelude(this.prelude);
@@ -39418,16 +39418,16 @@ var require_parser = __commonJS({
     "use strict";
     var node_process = __require("process");
     var cst = require_cst();
-    var lexer = require_lexer();
-    function includesToken(list, type) {
-      for (let i = 0; i < list.length; ++i)
-        if (list[i].type === type)
+    var lexer2 = require_lexer();
+    function includesToken(list2, type) {
+      for (let i = 0; i < list2.length; ++i)
+        if (list2[i].type === type)
           return true;
       return false;
     }
-    function findNonEmptyIndex(list) {
-      for (let i = 0; i < list.length; ++i) {
-        switch (list[i].type) {
+    function findNonEmptyIndex(list2) {
+      for (let i = 0; i < list2.length; ++i) {
+        switch (list2[i].type) {
           case "space":
           case "comment":
           case "newline":
@@ -39516,7 +39516,7 @@ var require_parser = __commonJS({
         this.stack = [];
         this.source = "";
         this.type = "";
-        this.lexer = new lexer.Lexer();
+        this.lexer = new lexer2.Lexer();
         this.onNewLine = onNewLine;
       }
       /**
@@ -40289,16 +40289,16 @@ var require_public_api = __commonJS({
     var log = require_log();
     var identity = require_identity();
     var lineCounter = require_line_counter();
-    var parser = require_parser();
-    function parseOptions(options) {
-      const prettyErrors = options.prettyErrors !== false;
-      const lineCounter$1 = options.lineCounter || prettyErrors && new lineCounter.LineCounter() || null;
+    var parser2 = require_parser();
+    function parseOptions(options2) {
+      const prettyErrors = options2.prettyErrors !== false;
+      const lineCounter$1 = options2.lineCounter || prettyErrors && new lineCounter.LineCounter() || null;
       return { lineCounter: lineCounter$1, prettyErrors };
     }
-    function parseAllDocuments(source, options = {}) {
-      const { lineCounter: lineCounter2, prettyErrors } = parseOptions(options);
-      const parser$1 = new parser.Parser(lineCounter2?.addNewLine);
-      const composer$1 = new composer.Composer(options);
+    function parseAllDocuments(source, options2 = {}) {
+      const { lineCounter: lineCounter2, prettyErrors } = parseOptions(options2);
+      const parser$1 = new parser2.Parser(lineCounter2?.addNewLine);
+      const composer$1 = new composer.Composer(options2);
       const docs = Array.from(composer$1.compose(parser$1.parse(source)));
       if (prettyErrors && lineCounter2)
         for (const doc of docs) {
@@ -40309,10 +40309,10 @@ var require_public_api = __commonJS({
         return docs;
       return Object.assign([], { empty: true }, composer$1.streamInfo());
     }
-    function parseDocument(source, options = {}) {
-      const { lineCounter: lineCounter2, prettyErrors } = parseOptions(options);
-      const parser$1 = new parser.Parser(lineCounter2?.addNewLine);
-      const composer$1 = new composer.Composer(options);
+    function parseDocument(source, options2 = {}) {
+      const { lineCounter: lineCounter2, prettyErrors } = parseOptions(options2);
+      const parser$1 = new parser2.Parser(lineCounter2?.addNewLine);
+      const composer$1 = new composer.Composer(options2);
       let doc = null;
       for (const _doc of composer$1.compose(parser$1.parse(source), true, source.length)) {
         if (!doc)
@@ -40328,14 +40328,14 @@ var require_public_api = __commonJS({
       }
       return doc;
     }
-    function parse(src, reviver, options) {
+    function parse(src, reviver, options2) {
       let _reviver = void 0;
       if (typeof reviver === "function") {
         _reviver = reviver;
-      } else if (options === void 0 && reviver && typeof reviver === "object") {
-        options = reviver;
+      } else if (options2 === void 0 && reviver && typeof reviver === "object") {
+        options2 = reviver;
       }
-      const doc = parseDocument(src, options);
+      const doc = parseDocument(src, options2);
       if (!doc)
         return null;
       doc.warnings.forEach((warning) => log.warn(doc.options.logLevel, warning));
@@ -40345,29 +40345,29 @@ var require_public_api = __commonJS({
         else
           doc.errors = [];
       }
-      return doc.toJS(Object.assign({ reviver: _reviver }, options));
+      return doc.toJS(Object.assign({ reviver: _reviver }, options2));
     }
-    function stringify(value, replacer, options) {
+    function stringify(value, replacer, options2) {
       let _replacer = null;
       if (typeof replacer === "function" || Array.isArray(replacer)) {
         _replacer = replacer;
-      } else if (options === void 0 && replacer) {
-        options = replacer;
+      } else if (options2 === void 0 && replacer) {
+        options2 = replacer;
       }
-      if (typeof options === "string")
-        options = options.length;
-      if (typeof options === "number") {
-        const indent = Math.round(options);
-        options = indent < 1 ? void 0 : indent > 8 ? { indent: 8 } : { indent };
+      if (typeof options2 === "string")
+        options2 = options2.length;
+      if (typeof options2 === "number") {
+        const indent = Math.round(options2);
+        options2 = indent < 1 ? void 0 : indent > 8 ? { indent: 8 } : { indent };
       }
       if (value === void 0) {
-        const { keepUndefined } = options ?? replacer ?? {};
+        const { keepUndefined } = options2 ?? replacer ?? {};
         if (!keepUndefined)
           return void 0;
       }
       if (identity.isDocument(value) && !_replacer)
-        return value.toString(options);
-      return new Document.Document(value, _replacer, options).toString(options);
+        return value.toString(options2);
+      return new Document.Document(value, _replacer, options2).toString(options2);
     }
     exports.parse = parse;
     exports.parseAllDocuments = parseAllDocuments;
@@ -40391,9 +40391,9 @@ var require_dist = __commonJS({
     var YAMLMap = require_YAMLMap();
     var YAMLSeq = require_YAMLSeq();
     var cst = require_cst();
-    var lexer = require_lexer();
+    var lexer2 = require_lexer();
     var lineCounter = require_line_counter();
-    var parser = require_parser();
+    var parser2 = require_parser();
     var publicApi = require_public_api();
     var visit = require_visit();
     exports.Composer = composer.Composer;
@@ -40416,9 +40416,9 @@ var require_dist = __commonJS({
     exports.YAMLMap = YAMLMap.YAMLMap;
     exports.YAMLSeq = YAMLSeq.YAMLSeq;
     exports.CST = cst;
-    exports.Lexer = lexer.Lexer;
+    exports.Lexer = lexer2.Lexer;
     exports.LineCounter = lineCounter.LineCounter;
-    exports.Parser = parser.Parser;
+    exports.Parser = parser2.Parser;
     exports.parse = publicApi.parse;
     exports.parseAllDocuments = publicApi.parseAllDocuments;
     exports.parseDocument = publicApi.parseDocument;
@@ -40499,11 +40499,11 @@ function debounce(func, debounceMs, { signal, edges } = {}) {
 }
 
 // node_modules/es-toolkit/dist/compat/function/debounce.mjs
-function debounce2(func, debounceMs = 0, options = {}) {
-  if (typeof options !== "object") {
-    options = {};
+function debounce2(func, debounceMs = 0, options2 = {}) {
+  if (typeof options2 !== "object") {
+    options2 = {};
   }
-  const { leading = false, trailing = true, maxWait } = options;
+  const { leading = false, trailing = true, maxWait } = options2;
   const edges = Array(2);
   if (leading) {
     edges[0] = "leading";
@@ -40543,8 +40543,8 @@ function debounce2(func, debounceMs = 0, options = {}) {
 }
 
 // node_modules/es-toolkit/dist/compat/function/throttle.mjs
-function throttle(func, throttleMs = 0, options = {}) {
-  const { leading = true, trailing = true } = options;
+function throttle(func, throttleMs = 0, options2 = {}) {
+  const { leading = true, trailing = true } = options2;
   return debounce2(func, throttleMs, {
     leading,
     maxWait: throttleMs,
@@ -40716,15 +40716,15 @@ var link = (text, url) => {
   const closeLink = wrapOsc(`${OSC}8${SEP}${SEP}${BEL}`);
   return openLink + text + closeLink;
 };
-var image = (data, options = {}) => {
+var image = (data, options2 = {}) => {
   let returnValue = `${OSC}1337;File=inline=1`;
-  if (options.width) {
-    returnValue += `;width=${options.width}`;
+  if (options2.width) {
+    returnValue += `;width=${options2.width}`;
   }
-  if (options.height) {
-    returnValue += `;height=${options.height}`;
+  if (options2.height) {
+    returnValue += `;height=${options2.height}`;
   }
-  if (options.preserveAspectRatio === false) {
+  if (options2.preserveAspectRatio === false) {
     returnValue += ";preserveAspectRatio=0";
   }
   const imageBuffer = Buffer.from(data);
@@ -40732,17 +40732,17 @@ var image = (data, options = {}) => {
 };
 var iTerm = {
   setCwd: (cwd2 = cwdFunction()) => wrapOsc(`${OSC}50;CurrentDir=${cwd2}${BEL}`),
-  annotation(message, options = {}) {
+  annotation(message, options2 = {}) {
     let returnValue = `${OSC}1337;`;
-    const hasX = options.x !== void 0;
-    const hasY = options.y !== void 0;
-    if ((hasX || hasY) && !(hasX && hasY && options.length !== void 0)) {
+    const hasX = options2.x !== void 0;
+    const hasY = options2.y !== void 0;
+    if ((hasX || hasY) && !(hasX && hasY && options2.length !== void 0)) {
       throw new Error("`x`, `y` and `length` must be defined when `x` or `y` is defined");
     }
     message = message.replaceAll("|", "");
-    returnValue += options.isHidden ? "AddHiddenAnnotation=" : "AddAnnotation=";
-    if (options.length > 0) {
-      returnValue += (hasX ? [message, options.length, options.x, options.y] : [options.length, message]).join("|");
+    returnValue += options2.isHidden ? "AddHiddenAnnotation=" : "AddAnnotation=";
+    if (options2.length > 0) {
+      returnValue += (hasX ? [message, options2.length, options2.x, options2.y] : [options2.length, message]).join("|");
     } else {
       returnValue += message;
     }
@@ -42503,14 +42503,14 @@ var emoji_regex_default = () => {
 // node_modules/wrap-ansi/node_modules/string-width/index.js
 var segmenter = new Intl.Segmenter();
 var defaultIgnorableCodePointRegex = new RegExp("^\\p{Default_Ignorable_Code_Point}$", "u");
-function stringWidth(string, options = {}) {
+function stringWidth(string, options2 = {}) {
   if (typeof string !== "string" || string.length === 0) {
     return 0;
   }
   const {
     ambiguousIsNarrow = true,
     countAnsiEscapeCodes = false
-  } = options;
+  } = options2;
   if (!countAnsiEscapeCodes) {
     string = stripAnsi(string);
   }
@@ -42801,8 +42801,8 @@ var stringVisibleTrimSpacesRight = (string) => {
   }
   return words.slice(0, last).join(" ") + words.slice(last).join("");
 };
-var exec = (string, columns, options = {}) => {
-  if (options.trim !== false && string.trim() === "") {
+var exec = (string, columns, options2 = {}) => {
+  if (options2.trim !== false && string.trim() === "") {
     return "";
   }
   let returnValue = "";
@@ -42811,21 +42811,21 @@ var exec = (string, columns, options = {}) => {
   const lengths = wordLengths(string);
   let rows = [""];
   for (const [index, word] of string.split(" ").entries()) {
-    if (options.trim !== false) {
+    if (options2.trim !== false) {
       rows[rows.length - 1] = rows.at(-1).trimStart();
     }
     let rowLength = stringWidth(rows.at(-1));
     if (index !== 0) {
-      if (rowLength >= columns && (options.wordWrap === false || options.trim === false)) {
+      if (rowLength >= columns && (options2.wordWrap === false || options2.trim === false)) {
         rows.push("");
         rowLength = 0;
       }
-      if (rowLength > 0 || options.trim === false) {
+      if (rowLength > 0 || options2.trim === false) {
         rows[rows.length - 1] += " ";
         rowLength++;
       }
     }
-    if (options.hard && lengths[index] > columns) {
+    if (options2.hard && lengths[index] > columns) {
       const remainingColumns = columns - rowLength;
       const breaksStartingThisLine = 1 + Math.floor((lengths[index] - remainingColumns - 1) / columns);
       const breaksStartingNextLine = Math.floor((lengths[index] - 1) / columns);
@@ -42836,19 +42836,19 @@ var exec = (string, columns, options = {}) => {
       continue;
     }
     if (rowLength + lengths[index] > columns && rowLength > 0 && lengths[index] > 0) {
-      if (options.wordWrap === false && rowLength < columns) {
+      if (options2.wordWrap === false && rowLength < columns) {
         wrapWord(rows, word, columns);
         continue;
       }
       rows.push("");
     }
-    if (rowLength + lengths[index] > columns && options.wordWrap === false) {
+    if (rowLength + lengths[index] > columns && options2.wordWrap === false) {
       wrapWord(rows, word, columns);
       continue;
     }
     rows[rows.length - 1] += word;
   }
-  if (options.trim !== false) {
+  if (options2.trim !== false) {
     rows = rows.map((row) => stringVisibleTrimSpacesRight(row));
   }
   const preString = rows.join("\n");
@@ -42885,8 +42885,8 @@ var exec = (string, columns, options = {}) => {
   }
   return returnValue;
 };
-function wrapAnsi(string, columns, options) {
-  return String(string).normalize().replaceAll("\r\n", "\n").split("\n").map((line) => exec(line, columns, options)).join("\n");
+function wrapAnsi(string, columns, options2) {
+  return String(string).normalize().replaceAll("\r\n", "\n").split("\n").map((line) => exec(line, columns, options2)).join("\n");
 }
 
 // node_modules/terminal-size/index.js
@@ -43042,14 +43042,14 @@ function trailingHalfwidthWidth(segment, eastAsianWidthOptions) {
   }
   return extra;
 }
-function stringWidth2(input, options = {}) {
+function stringWidth2(input, options2 = {}) {
   if (typeof input !== "string" || input.length === 0) {
     return 0;
   }
   const {
     ambiguousIsNarrow = true,
     countAnsiEscapeCodes = false
-  } = options;
+  } = options2;
   let string = input;
   if (!countAnsiEscapeCodes && (string.includes("\x1B") || string.includes("\x9B"))) {
     string = stripAnsi(string);
@@ -44124,13 +44124,13 @@ function getIndexOfNearestSpace(string, wantedIndex, shouldSearchRight) {
   }
   return wantedIndex;
 }
-function cliTruncate(text, columns, options = {}) {
+function cliTruncate(text, columns, options2 = {}) {
   const {
     position = "end",
     space = false,
     preferTruncationOnSpace = false
-  } = options;
-  let { truncationCharacter = "\u2026" } = options;
+  } = options2;
+  let { truncationCharacter = "\u2026" } = options2;
   if (typeof text !== "string") {
     throw new TypeError(`Expected \`input\` to be a string, got ${typeof text}`);
   }
@@ -45217,11 +45217,11 @@ var reconciler_default = (0, import_react_reconciler.default)({
 });
 
 // node_modules/indent-string/index.js
-function indentString(string, count = 1, options = {}) {
+function indentString(string, count = 1, options2 = {}) {
   const {
     indent = " ",
     includeEmptyLines = false
-  } = options;
+  } = options2;
   if (typeof string !== "string") {
     throw new TypeError(
       `Expected \`input\` to be a \`string\`, got \`${typeof string}\``
@@ -45563,10 +45563,10 @@ function _supportsColor(haveStream, { streamIsTTY, sniffFlags = true } = {}) {
   }
   return min;
 }
-function createSupportsColor(stream, options = {}) {
+function createSupportsColor(stream, options2 = {}) {
   const level = _supportsColor(stream, {
     streamIsTTY: stream && stream.isTTY,
-    ...options
+    ...options2
   });
   return translateLevel(level);
 }
@@ -45618,21 +45618,21 @@ var levelMapping = [
   "ansi16m"
 ];
 var styles5 = /* @__PURE__ */ Object.create(null);
-var applyOptions = (object, options = {}) => {
-  if (options.level && !(Number.isInteger(options.level) && options.level >= 0 && options.level <= 3)) {
+var applyOptions = (object, options2 = {}) => {
+  if (options2.level && !(Number.isInteger(options2.level) && options2.level >= 0 && options2.level <= 3)) {
     throw new Error("The `level` option should be an integer from 0 to 3");
   }
   const colorLevel = stdoutColor ? stdoutColor.level : 0;
-  object.level = options.level === void 0 ? colorLevel : options.level;
+  object.level = options2.level === void 0 ? colorLevel : options2.level;
 };
-var chalkFactory = (options) => {
+var chalkFactory = (options2) => {
   const chalk2 = (...strings) => strings.join(" ");
-  applyOptions(chalk2, options);
+  applyOptions(chalk2, options2);
   Object.setPrototypeOf(chalk2, createChalk.prototype);
   return chalk2;
 };
-function createChalk(options) {
-  return chalkFactory(options);
+function createChalk(options2) {
+  return chalkFactory(options2);
 }
 Object.setPrototypeOf(createChalk.prototype, Function.prototype);
 for (const [styleName, style] of Object.entries(ansi_styles_default3)) {
@@ -45889,8 +45889,8 @@ var applyPaddingToText = (node, text) => {
   }
   return text;
 };
-var renderNodeToScreenReaderOutput = (node, options = {}) => {
-  if (options.skipStaticElements && node.internal_static) {
+var renderNodeToScreenReaderOutput = (node, options2 = {}) => {
+  if (options2.skipStaticElements && node.internal_static) {
     return "";
   }
   if (node.yogaNode?.getDisplay() === src_default.DISPLAY_NONE) {
@@ -45905,7 +45905,7 @@ var renderNodeToScreenReaderOutput = (node, options = {}) => {
     output = childNodes.map((childNode) => {
       const screenReaderOutput = renderNodeToScreenReaderOutput(childNode, {
         parentRole: node.internal_accessibility?.role,
-        skipStaticElements: options.skipStaticElements
+        skipStaticElements: options2.skipStaticElements
       });
       return screenReaderOutput;
     }).filter(Boolean).join(separator);
@@ -45919,14 +45919,14 @@ var renderNodeToScreenReaderOutput = (node, options = {}) => {
         output = `(${stateDescription}) ${output}`;
       }
     }
-    if (role && role !== options.parentRole) {
+    if (role && role !== options2.parentRole) {
       output = `${role}: ${output}`;
     }
   }
   return output;
 };
-var renderNodeToOutput = (node, output, options) => {
-  const { offsetX = 0, offsetY = 0, transformers = [], skipStaticElements } = options;
+var renderNodeToOutput = (node, output, options2) => {
+  const { offsetX = 0, offsetY = 0, transformers = [], skipStaticElements } = options2;
   if (skipStaticElements && node.internal_static) {
     return;
   }
@@ -46465,13 +46465,13 @@ var Output = class {
   height;
   operations = [];
   caches = new OutputCaches();
-  constructor(options) {
-    const { width, height } = options;
+  constructor(options2) {
+    const { width, height } = options2;
     this.width = width;
     this.height = height;
   }
-  write(x, y, text, options) {
-    const { transformers } = options;
+  write(x, y, text, options2) {
+    const { transformers } = options2;
     if (!text) {
       return;
     }
@@ -47225,7 +47225,7 @@ var generateLineNumbers = (line, around) => {
   }
   return lineNumbers;
 };
-var codeExcerpt = (source, line, options = {}) => {
+var codeExcerpt = (source, line, options2 = {}) => {
   var _a;
   if (typeof source !== "string") {
     throw new TypeError("Source code is missing.");
@@ -47237,7 +47237,7 @@ var codeExcerpt = (source, line, options = {}) => {
   if (line > lines.length) {
     return;
   }
-  return generateLineNumbers(line, (_a = options.around) !== null && _a !== void 0 ? _a : 3).filter((line2) => lines[line2 - 1] !== void 0).map((line2) => ({ line: line2, value: lines[line2 - 1] }));
+  return generateLineNumbers(line, (_a = options2.around) !== null && _a !== void 0 ? _a : 3).filter((line2) => lines[line2 - 1] !== void 0).map((line2) => ({ line: line2, value: lines[line2 - 1] }));
 };
 var dist_default3 = codeExcerpt;
 
@@ -47904,14 +47904,14 @@ var Ink = class {
   hasPendingThrottledRender = false;
   kittyProtocolEnabled = false;
   cancelKittyDetection;
-  constructor(options) {
+  constructor(options2) {
     autoBind(this);
-    this.options = options;
+    this.options = options2;
     this.rootNode = createNode("ink-root");
     this.rootNode.onComputeLayout = this.calculateLayout;
-    this.isScreenReaderEnabled = options.isScreenReaderEnabled ?? process12.env["INK_SCREEN_READER"] === "true";
-    const unthrottled = options.debug || this.isScreenReaderEnabled;
-    const maxFps = options.maxFps ?? 30;
+    this.isScreenReaderEnabled = options2.isScreenReaderEnabled ?? process12.env["INK_SCREEN_READER"] === "true";
+    const unthrottled = options2.debug || this.isScreenReaderEnabled;
+    const maxFps = options2.maxFps ?? 30;
     const renderThrottleMs = maxFps > 0 ? Math.max(1, Math.ceil(1e3 / maxFps)) : 0;
     if (unthrottled) {
       this.rootNode.onRender = this.onRender;
@@ -47928,8 +47928,8 @@ var Ink = class {
       this.throttledOnRender = throttled;
     }
     this.rootNode.onImmediateRender = this.onRender;
-    this.log = log_update_default.create(options.stdout, {
-      incremental: options.incrementalRendering
+    this.log = log_update_default.create(options2.stdout, {
+      incremental: options2.incrementalRendering
     });
     this.cursorPosition = void 0;
     this.throttledLog = unthrottled ? this.log : throttle((output) => {
@@ -47948,13 +47948,13 @@ var Ink = class {
     });
     this.isUnmounted = false;
     this.isUnmounting = false;
-    this.isConcurrent = options.concurrent ?? false;
+    this.isConcurrent = options2.concurrent ?? false;
     this.lastOutput = "";
     this.lastOutputToRender = "";
     this.lastOutputHeight = 0;
     this.lastTerminalWidth = this.getTerminalWidth();
     this.fullStaticOutput = "";
-    const rootTag = options.concurrent ? import_constants2.ConcurrentRoot : import_constants2.LegacyRoot;
+    const rootTag = options2.concurrent ? import_constants2.ConcurrentRoot : import_constants2.LegacyRoot;
     this.container = reconciler_default.createContainer(this.rootNode, rootTag, null, false, null, "id", () => {
     }, () => {
     }, () => {
@@ -47964,13 +47964,13 @@ var Ink = class {
     if (isDev()) {
       reconciler_default.injectIntoDevTools();
     }
-    if (options.patchConsole) {
+    if (options2.patchConsole) {
       this.patchConsole();
     }
     if (!is_in_ci_default) {
-      options.stdout.on("resize", this.resized);
+      options2.stdout.on("resize", this.resized);
       this.unsubscribeResize = () => {
-        options.stdout.off("resize", this.resized);
+        options2.stdout.off("resize", this.resized);
       };
     }
     this.initKittyKeyboard();
@@ -48356,7 +48356,7 @@ var Ink = class {
 };
 
 // node_modules/ink/build/render.js
-var render = (node, options) => {
+var render = (node, options2) => {
   const inkOptions = {
     stdout: process13.stdout,
     stdin: process13.stdin,
@@ -48367,7 +48367,7 @@ var render = (node, options) => {
     maxFps: 30,
     incrementalRendering: false,
     concurrent: false,
-    ...getOptions(options)
+    ...getOptions(options2)
   };
   const instance = getInstance(inkOptions.stdout, () => new Ink(inkOptions), inkOptions.concurrent ?? false);
   instance.render(node);
@@ -48407,6 +48407,25 @@ var import_constants3 = __toESM(require_constants(), 1);
 
 // node_modules/ink/build/components/Static.js
 var import_react16 = __toESM(require_react(), 1);
+function Static(props) {
+  const { items, children: render2, style: customStyle } = props;
+  const [index, setIndex] = (0, import_react16.useState)(0);
+  const itemsToRender = (0, import_react16.useMemo)(() => {
+    return items.slice(index);
+  }, [items, index]);
+  (0, import_react16.useLayoutEffect)(() => {
+    setIndex(items.length);
+  }, [items.length]);
+  const children = itemsToRender.map((item, itemIndex) => {
+    return render2(item, index + itemIndex);
+  });
+  const style = (0, import_react16.useMemo)(() => ({
+    position: "absolute",
+    flexDirection: "column",
+    ...customStyle
+  }), [customStyle]);
+  return import_react16.default.createElement("ink-box", { internal_static: true, style }, children);
+}
 
 // node_modules/ink/build/components/Transform.js
 var import_react17 = __toESM(require_react(), 1);
@@ -48855,19 +48874,19 @@ var useStdin = () => (0, import_react20.useContext)(StdinContext_default);
 var use_stdin_default = useStdin;
 
 // node_modules/ink/build/hooks/use-input.js
-var useInput = (inputHandler, options = {}) => {
+var useInput = (inputHandler, options2 = {}) => {
   const { stdin, setRawMode, internal_exitOnCtrlC, internal_eventEmitter } = use_stdin_default();
   (0, import_react21.useEffect)(() => {
-    if (options.isActive === false) {
+    if (options2.isActive === false) {
       return;
     }
     setRawMode(true);
     return () => {
       setRawMode(false);
     };
-  }, [options.isActive, setRawMode]);
+  }, [options2.isActive, setRawMode]);
   (0, import_react21.useEffect)(() => {
-    if (options.isActive === false) {
+    if (options2.isActive === false) {
       return;
     }
     const handleData = (data) => {
@@ -48933,7 +48952,7 @@ var useInput = (inputHandler, options = {}) => {
     return () => {
       internal_eventEmitter?.removeListener("input", handleData);
     };
-  }, [options.isActive, stdin, internal_exitOnCtrlC, inputHandler]);
+  }, [options2.isActive, stdin, internal_exitOnCtrlC, inputHandler]);
 };
 var use_input_default = useInput;
 
@@ -49043,7 +49062,7 @@ var package_default = {
   dependencies: {
     "@a2a-js/sdk": "^1.0.0-alpha.0",
     "@napi-rs/keyring": "^1.2.0",
-    "cli-highlight": "^2.1.11",
+    "ansi-escapes": "^7.3.0",
     ink: "^6.2.3",
     marked: "^15.0.12",
     pino: "^10.3.1",
@@ -50753,7 +50772,7 @@ var JSON_CONTENT_TYPE = "application/json";
 var A2A_CONTENT_TYPE = "application/a2a+json";
 
 // src/app.tsx
-var import_react33 = __toESM(require_react(), 1);
+var import_react37 = __toESM(require_react(), 1);
 
 // src/components/ChatComposer.tsx
 var import_react29 = __toESM(require_react(), 1);
@@ -50798,6 +50817,21 @@ var MESSAGE_THEME = {
   accent: AION_THEME.colors.textStrong,
   muted: AION_THEME.colors.textMuted,
   labelAccent: AION_THEME.colors.brandAccent
+};
+var MARKDOWN_THEME = {
+  foreground: AION_THEME.colors.textPrimary,
+  muted: AION_THEME.colors.textMuted,
+  headingPrimary: AION_THEME.colors.brandAccent,
+  headingSecondary: AION_THEME.colors.brandPrimary,
+  headingTertiary: AION_THEME.colors.textStrong,
+  blockquoteBorder: AION_THEME.colors.brandPrimary,
+  listMarker: AION_THEME.colors.brandAccent,
+  inlineCode: "yellow",
+  codeBorder: "yellow",
+  codeText: "yellow",
+  link: AION_THEME.colors.brandAccent,
+  tableBorder: AION_THEME.colors.textMuted,
+  tableHeader: AION_THEME.colors.textStrong
 };
 
 // src/components/ChatComposer.tsx
@@ -51029,6 +51063,247 @@ function ChatComposer({
       /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { color: SECONDARY_TEXT, children: controls })
     ] }) : null
   ] });
+}
+
+// src/components/ChatSession.tsx
+var import_react36 = __toESM(require_react(), 1);
+
+// src/lib/transcript.ts
+function createStreamTranscriptState() {
+  return {
+    activeSectionsByTaskAndArtifactId: /* @__PURE__ */ new Map(),
+    lastSectionByTaskId: /* @__PURE__ */ new Map(),
+    nextSectionIndexByTaskId: /* @__PURE__ */ new Map(),
+    bodyByEntryId: /* @__PURE__ */ new Map()
+  };
+}
+function clearStreamTranscriptState(state) {
+  state.activeSectionsByTaskAndArtifactId.clear();
+  state.lastSectionByTaskId.clear();
+  state.nextSectionIndexByTaskId.clear();
+  state.bodyByEntryId.clear();
+}
+function streamTranscriptSectionKey(taskId, artifactId) {
+  return `${taskId}::${artifactId}`;
+}
+function getActiveStreamTranscriptSection(state, taskId, artifactId) {
+  return state.activeSectionsByTaskAndArtifactId.get(
+    streamTranscriptSectionKey(taskId, artifactId)
+  );
+}
+function getLastStreamTranscriptSection(state, taskId) {
+  return state.lastSectionByTaskId.get(taskId);
+}
+function clearActiveStreamTranscriptSection(state, taskId, artifactId) {
+  const activeSection = getActiveStreamTranscriptSection(
+    state,
+    taskId,
+    artifactId
+  );
+  state.activeSectionsByTaskAndArtifactId.delete(
+    streamTranscriptSectionKey(taskId, artifactId)
+  );
+  if (activeSection) {
+    state.bodyByEntryId.delete(activeSection.entryId);
+  }
+  if (activeSection && state.lastSectionByTaskId.get(taskId)?.entryId === activeSection.entryId) {
+    state.lastSectionByTaskId.delete(taskId);
+  }
+}
+function upsertTranscriptEntry(entries, entryId, role, body, isFinalized = true) {
+  const existingIndex = entries.findIndex((item) => item.id === entryId);
+  if (existingIndex === -1) {
+    return [...entries, { id: entryId, role, body, isFinalized }];
+  }
+  const next = [...entries];
+  next[existingIndex] = {
+    ...next[existingIndex],
+    role,
+    body,
+    isFinalized
+  };
+  return next;
+}
+function replaceTranscriptEntryBody(entries, entryId, role, body, isFinalized = true) {
+  const existingIndex = entries.findIndex((item) => item.id === entryId);
+  if (existingIndex === -1) {
+    return { entries, replaced: false };
+  }
+  const next = [...entries];
+  next[existingIndex] = {
+    ...next[existingIndex],
+    role,
+    body,
+    isFinalized
+  };
+  return { entries: next, replaced: true };
+}
+function finalizeTranscriptEntries(entries, entryIds) {
+  let changed = false;
+  const next = entries.map((entry) => {
+    if (entry.isFinalized || entryIds !== void 0 && !entryIds.has(entry.id)) {
+      return entry;
+    }
+    changed = true;
+    return { ...entry, isFinalized: true };
+  });
+  return changed ? next : entries;
+}
+function partitionTranscriptEntries(entries) {
+  const firstDynamicIndex = entries.findIndex((entry) => !entry.isFinalized);
+  if (firstDynamicIndex === -1) {
+    return {
+      scrollbackEntries: entries,
+      dynamicEntries: []
+    };
+  }
+  return {
+    scrollbackEntries: entries.slice(0, firstDynamicIndex),
+    dynamicEntries: entries.slice(firstDynamicIndex)
+  };
+}
+function createStreamTranscriptSection({
+  state,
+  taskId,
+  artifactId,
+  kind
+}) {
+  const sectionKey = streamTranscriptSectionKey(taskId, artifactId);
+  const supersededSection = state.activeSectionsByTaskAndArtifactId.get(sectionKey);
+  const sectionIndex = (state.nextSectionIndexByTaskId.get(taskId) ?? 0) + 1;
+  state.nextSectionIndexByTaskId.set(taskId, sectionIndex);
+  const section = {
+    taskId,
+    artifactId,
+    kind,
+    entryId: `artifact:${taskId}:${artifactId}:${sectionIndex}`,
+    sectionIndex
+  };
+  const previousLastSection = state.lastSectionByTaskId.get(taskId);
+  if (supersededSection) {
+    state.bodyByEntryId.delete(supersededSection.entryId);
+  }
+  state.activeSectionsByTaskAndArtifactId.set(
+    sectionKey,
+    section
+  );
+  state.lastSectionByTaskId.set(taskId, section);
+  return {
+    section,
+    insertDivider: previousLastSection !== void 0 || sectionIndex > 1,
+    ...supersededSection ? { supersededEntryId: supersededSection.entryId } : {}
+  };
+}
+function prepareStreamTranscriptDelta({
+  state,
+  taskId,
+  artifactId,
+  kind,
+  body,
+  append,
+  replaceCurrentSection = false
+}) {
+  const sectionKey = streamTranscriptSectionKey(taskId, artifactId);
+  const activeSection = state.activeSectionsByTaskAndArtifactId.get(sectionKey);
+  if (append && activeSection !== void 0) {
+    const nextBody = `${state.bodyByEntryId.get(activeSection.entryId) ?? ""}${body}`;
+    state.bodyByEntryId.set(activeSection.entryId, nextBody);
+    return {
+      section: activeSection,
+      body: nextBody,
+      appendToExistingSection: true,
+      replaceExistingSection: false,
+      insertDivider: false,
+      finalizedEntryIds: []
+    };
+  }
+  if (replaceCurrentSection && activeSection !== void 0) {
+    state.bodyByEntryId.set(activeSection.entryId, body);
+    return {
+      section: activeSection,
+      body,
+      appendToExistingSection: false,
+      replaceExistingSection: true,
+      insertDivider: false,
+      finalizedEntryIds: []
+    };
+  }
+  const { section, insertDivider, supersededEntryId } = createStreamTranscriptSection({
+    state,
+    taskId,
+    artifactId,
+    kind
+  });
+  state.bodyByEntryId.set(section.entryId, body);
+  return {
+    section,
+    body,
+    appendToExistingSection: false,
+    replaceExistingSection: false,
+    insertDivider,
+    finalizedEntryIds: supersededEntryId ? [supersededEntryId] : []
+  };
+}
+function applyPreparedStreamTranscriptDelta({
+  entries,
+  prepared
+}) {
+  const finalizedEntryIds = new Set(prepared.finalizedEntryIds);
+  let nextEntries = finalizeTranscriptEntries(entries, finalizedEntryIds);
+  if (prepared.appendToExistingSection || prepared.replaceExistingSection) {
+    return {
+      entries: upsertTranscriptEntry(
+        nextEntries,
+        prepared.section.entryId,
+        "agent",
+        prepared.body,
+        false
+      ),
+      section: prepared.section,
+      body: prepared.body,
+      startedNewSection: false
+    };
+  }
+  if (prepared.insertDivider) {
+    nextEntries = [
+      ...nextEntries,
+      {
+        id: `artifact-divider:${prepared.section.taskId}:${prepared.section.sectionIndex}`,
+        role: "divider",
+        body: "",
+        isFinalized: true
+      }
+    ];
+  }
+  return {
+    entries: upsertTranscriptEntry(
+      nextEntries,
+      prepared.section.entryId,
+      "agent",
+      prepared.body,
+      false
+    ),
+    section: prepared.section,
+    body: prepared.body,
+    startedNewSection: true
+  };
+}
+function closeStreamTranscriptSections({
+  state,
+  taskId
+}) {
+  const sections = [...state.activeSectionsByTaskAndArtifactId.values()].filter(
+    (section) => taskId === void 0 || section.taskId === taskId
+  );
+  const entryIds = new Set(sections.map((section) => section.entryId));
+  for (const section of sections) {
+    clearActiveStreamTranscriptSection(
+      state,
+      section.taskId,
+      section.artifactId
+    );
+  }
+  return entryIds;
 }
 
 // src/components/HomeScreen.tsx
@@ -51315,10 +51590,10 @@ function renderPrefixMenusPanel() {
     row("# Attach File")
   ]);
 }
-function renderHomeMenus(inline, selectedAgentId, requestMode, responseMode) {
-  return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Box_default, { flexDirection: inline ? "row" : "column", alignItems: "center", children: [
+function renderHomeMenus(inline2, selectedAgentId, requestMode, responseMode) {
+  return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Box_default, { flexDirection: inline2 ? "row" : "column", alignItems: "center", children: [
     renderSettingsPanel(selectedAgentId, requestMode, responseMode),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Box_default, { marginLeft: inline ? 3 : 0, marginTop: inline ? 0 : 1, children: renderPrefixMenusPanel() })
+    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Box_default, { marginLeft: inline2 ? 3 : 0, marginTop: inline2 ? 0 : 1, children: renderPrefixMenusPanel() })
   ] });
 }
 function truncateValue(value, maxLength) {
@@ -51420,8 +51695,2449 @@ function HomeScreen({
   ) });
 }
 
-// src/components/messages/messageLayout.ts
+// src/components/MessageBubble.tsx
+var import_react35 = __toESM(require_react(), 1);
+
+// src/components/messages/AgentMessageBubble.tsx
+var import_react32 = __toESM(require_react(), 1);
+
+// src/lib/markdown.tsx
 var import_react31 = __toESM(require_react(), 1);
+import { stripVTControlCharacters } from "util";
+
+// node_modules/marked/lib/marked.esm.js
+function _getDefaults() {
+  return {
+    async: false,
+    breaks: false,
+    extensions: null,
+    gfm: true,
+    hooks: null,
+    pedantic: false,
+    renderer: null,
+    silent: false,
+    tokenizer: null,
+    walkTokens: null
+  };
+}
+var _defaults = _getDefaults();
+function changeDefaults(newDefaults) {
+  _defaults = newDefaults;
+}
+var noopTest = { exec: () => null };
+function edit(regex2, opt = "") {
+  let source = typeof regex2 === "string" ? regex2 : regex2.source;
+  const obj = {
+    replace: (name, val) => {
+      let valSource = typeof val === "string" ? val : val.source;
+      valSource = valSource.replace(other.caret, "$1");
+      source = source.replace(name, valSource);
+      return obj;
+    },
+    getRegex: () => {
+      return new RegExp(source, opt);
+    }
+  };
+  return obj;
+}
+var other = {
+  codeRemoveIndent: /^(?: {1,4}| {0,3}\t)/gm,
+  outputLinkReplace: /\\([\[\]])/g,
+  indentCodeCompensation: /^(\s+)(?:```)/,
+  beginningSpace: /^\s+/,
+  endingHash: /#$/,
+  startingSpaceChar: /^ /,
+  endingSpaceChar: / $/,
+  nonSpaceChar: /[^ ]/,
+  newLineCharGlobal: /\n/g,
+  tabCharGlobal: /\t/g,
+  multipleSpaceGlobal: /\s+/g,
+  blankLine: /^[ \t]*$/,
+  doubleBlankLine: /\n[ \t]*\n[ \t]*$/,
+  blockquoteStart: /^ {0,3}>/,
+  blockquoteSetextReplace: /\n {0,3}((?:=+|-+) *)(?=\n|$)/g,
+  blockquoteSetextReplace2: /^ {0,3}>[ \t]?/gm,
+  listReplaceTabs: /^\t+/,
+  listReplaceNesting: /^ {1,4}(?=( {4})*[^ ])/g,
+  listIsTask: /^\[[ xX]\] /,
+  listReplaceTask: /^\[[ xX]\] +/,
+  anyLine: /\n.*\n/,
+  hrefBrackets: /^<(.*)>$/,
+  tableDelimiter: /[:|]/,
+  tableAlignChars: /^\||\| *$/g,
+  tableRowBlankLine: /\n[ \t]*$/,
+  tableAlignRight: /^ *-+: *$/,
+  tableAlignCenter: /^ *:-+: *$/,
+  tableAlignLeft: /^ *:-+ *$/,
+  startATag: /^<a /i,
+  endATag: /^<\/a>/i,
+  startPreScriptTag: /^<(pre|code|kbd|script)(\s|>)/i,
+  endPreScriptTag: /^<\/(pre|code|kbd|script)(\s|>)/i,
+  startAngleBracket: /^</,
+  endAngleBracket: />$/,
+  pedanticHrefTitle: /^([^'"]*[^\s])\s+(['"])(.*)\2/,
+  unicodeAlphaNumeric: /[\p{L}\p{N}]/u,
+  escapeTest: /[&<>"']/,
+  escapeReplace: /[&<>"']/g,
+  escapeTestNoEncode: /[<>"']|&(?!(#\d{1,7}|#[Xx][a-fA-F0-9]{1,6}|\w+);)/,
+  escapeReplaceNoEncode: /[<>"']|&(?!(#\d{1,7}|#[Xx][a-fA-F0-9]{1,6}|\w+);)/g,
+  unescapeTest: /&(#(?:\d+)|(?:#x[0-9A-Fa-f]+)|(?:\w+));?/ig,
+  caret: /(^|[^\[])\^/g,
+  percentDecode: /%25/g,
+  findPipe: /\|/g,
+  splitPipe: / \|/,
+  slashPipe: /\\\|/g,
+  carriageReturn: /\r\n|\r/g,
+  spaceLine: /^ +$/gm,
+  notSpaceStart: /^\S*/,
+  endingNewline: /\n$/,
+  listItemRegex: (bull) => new RegExp(`^( {0,3}${bull})((?:[	 ][^\\n]*)?(?:\\n|$))`),
+  nextBulletRegex: (indent) => new RegExp(`^ {0,${Math.min(3, indent - 1)}}(?:[*+-]|\\d{1,9}[.)])((?:[ 	][^\\n]*)?(?:\\n|$))`),
+  hrRegex: (indent) => new RegExp(`^ {0,${Math.min(3, indent - 1)}}((?:- *){3,}|(?:_ *){3,}|(?:\\* *){3,})(?:\\n+|$)`),
+  fencesBeginRegex: (indent) => new RegExp(`^ {0,${Math.min(3, indent - 1)}}(?:\`\`\`|~~~)`),
+  headingBeginRegex: (indent) => new RegExp(`^ {0,${Math.min(3, indent - 1)}}#`),
+  htmlBeginRegex: (indent) => new RegExp(`^ {0,${Math.min(3, indent - 1)}}<(?:[a-z].*>|!--)`, "i")
+};
+var newline = /^(?:[ \t]*(?:\n|$))+/;
+var blockCode = /^((?: {4}| {0,3}\t)[^\n]+(?:\n(?:[ \t]*(?:\n|$))*)?)+/;
+var fences = /^ {0,3}(`{3,}(?=[^`\n]*(?:\n|$))|~{3,})([^\n]*)(?:\n|$)(?:|([\s\S]*?)(?:\n|$))(?: {0,3}\1[~`]* *(?=\n|$)|$)/;
+var hr = /^ {0,3}((?:-[\t ]*){3,}|(?:_[ \t]*){3,}|(?:\*[ \t]*){3,})(?:\n+|$)/;
+var heading = /^ {0,3}(#{1,6})(?=\s|$)(.*)(?:\n+|$)/;
+var bullet = /(?:[*+-]|\d{1,9}[.)])/;
+var lheadingCore = /^(?!bull |blockCode|fences|blockquote|heading|html|table)((?:.|\n(?!\s*?\n|bull |blockCode|fences|blockquote|heading|html|table))+?)\n {0,3}(=+|-+) *(?:\n+|$)/;
+var lheading = edit(lheadingCore).replace(/bull/g, bullet).replace(/blockCode/g, /(?: {4}| {0,3}\t)/).replace(/fences/g, / {0,3}(?:`{3,}|~{3,})/).replace(/blockquote/g, / {0,3}>/).replace(/heading/g, / {0,3}#{1,6}/).replace(/html/g, / {0,3}<[^\n>]+>\n/).replace(/\|table/g, "").getRegex();
+var lheadingGfm = edit(lheadingCore).replace(/bull/g, bullet).replace(/blockCode/g, /(?: {4}| {0,3}\t)/).replace(/fences/g, / {0,3}(?:`{3,}|~{3,})/).replace(/blockquote/g, / {0,3}>/).replace(/heading/g, / {0,3}#{1,6}/).replace(/html/g, / {0,3}<[^\n>]+>\n/).replace(/table/g, / {0,3}\|?(?:[:\- ]*\|)+[\:\- ]*\n/).getRegex();
+var _paragraph = /^([^\n]+(?:\n(?!hr|heading|lheading|blockquote|fences|list|html|table| +\n)[^\n]+)*)/;
+var blockText = /^[^\n]+/;
+var _blockLabel = /(?!\s*\])(?:\\.|[^\[\]\\])+/;
+var def = edit(/^ {0,3}\[(label)\]: *(?:\n[ \t]*)?([^<\s][^\s]*|<.*?>)(?:(?: +(?:\n[ \t]*)?| *\n[ \t]*)(title))? *(?:\n+|$)/).replace("label", _blockLabel).replace("title", /(?:"(?:\\"?|[^"\\])*"|'[^'\n]*(?:\n[^'\n]+)*\n?'|\([^()]*\))/).getRegex();
+var list = edit(/^( {0,3}bull)([ \t][^\n]+?)?(?:\n|$)/).replace(/bull/g, bullet).getRegex();
+var _tag = "address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h[1-6]|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|meta|nav|noframes|ol|optgroup|option|p|param|search|section|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul";
+var _comment = /<!--(?:-?>|[\s\S]*?(?:-->|$))/;
+var html = edit(
+  "^ {0,3}(?:<(script|pre|style|textarea)[\\s>][\\s\\S]*?(?:</\\1>[^\\n]*\\n+|$)|comment[^\\n]*(\\n+|$)|<\\?[\\s\\S]*?(?:\\?>\\n*|$)|<![A-Z][\\s\\S]*?(?:>\\n*|$)|<!\\[CDATA\\[[\\s\\S]*?(?:\\]\\]>\\n*|$)|</?(tag)(?: +|\\n|/?>)[\\s\\S]*?(?:(?:\\n[ 	]*)+\\n|$)|<(?!script|pre|style|textarea)([a-z][\\w-]*)(?:attribute)*? */?>(?=[ \\t]*(?:\\n|$))[\\s\\S]*?(?:(?:\\n[ 	]*)+\\n|$)|</(?!script|pre|style|textarea)[a-z][\\w-]*\\s*>(?=[ \\t]*(?:\\n|$))[\\s\\S]*?(?:(?:\\n[ 	]*)+\\n|$))",
+  "i"
+).replace("comment", _comment).replace("tag", _tag).replace("attribute", / +[a-zA-Z:_][\w.:-]*(?: *= *"[^"\n]*"| *= *'[^'\n]*'| *= *[^\s"'=<>`]+)?/).getRegex();
+var paragraph = edit(_paragraph).replace("hr", hr).replace("heading", " {0,3}#{1,6}(?:\\s|$)").replace("|lheading", "").replace("|table", "").replace("blockquote", " {0,3}>").replace("fences", " {0,3}(?:`{3,}(?=[^`\\n]*\\n)|~{3,})[^\\n]*\\n").replace("list", " {0,3}(?:[*+-]|1[.)]) ").replace("html", "</?(?:tag)(?: +|\\n|/?>)|<(?:script|pre|style|textarea|!--)").replace("tag", _tag).getRegex();
+var blockquote = edit(/^( {0,3}> ?(paragraph|[^\n]*)(?:\n|$))+/).replace("paragraph", paragraph).getRegex();
+var blockNormal = {
+  blockquote,
+  code: blockCode,
+  def,
+  fences,
+  heading,
+  hr,
+  html,
+  lheading,
+  list,
+  newline,
+  paragraph,
+  table: noopTest,
+  text: blockText
+};
+var gfmTable = edit(
+  "^ *([^\\n ].*)\\n {0,3}((?:\\| *)?:?-+:? *(?:\\| *:?-+:? *)*(?:\\| *)?)(?:\\n((?:(?! *\\n|hr|heading|blockquote|code|fences|list|html).*(?:\\n|$))*)\\n*|$)"
+).replace("hr", hr).replace("heading", " {0,3}#{1,6}(?:\\s|$)").replace("blockquote", " {0,3}>").replace("code", "(?: {4}| {0,3}	)[^\\n]").replace("fences", " {0,3}(?:`{3,}(?=[^`\\n]*\\n)|~{3,})[^\\n]*\\n").replace("list", " {0,3}(?:[*+-]|1[.)]) ").replace("html", "</?(?:tag)(?: +|\\n|/?>)|<(?:script|pre|style|textarea|!--)").replace("tag", _tag).getRegex();
+var blockGfm = {
+  ...blockNormal,
+  lheading: lheadingGfm,
+  table: gfmTable,
+  paragraph: edit(_paragraph).replace("hr", hr).replace("heading", " {0,3}#{1,6}(?:\\s|$)").replace("|lheading", "").replace("table", gfmTable).replace("blockquote", " {0,3}>").replace("fences", " {0,3}(?:`{3,}(?=[^`\\n]*\\n)|~{3,})[^\\n]*\\n").replace("list", " {0,3}(?:[*+-]|1[.)]) ").replace("html", "</?(?:tag)(?: +|\\n|/?>)|<(?:script|pre|style|textarea|!--)").replace("tag", _tag).getRegex()
+};
+var blockPedantic = {
+  ...blockNormal,
+  html: edit(
+    `^ *(?:comment *(?:\\n|\\s*$)|<(tag)[\\s\\S]+?</\\1> *(?:\\n{2,}|\\s*$)|<tag(?:"[^"]*"|'[^']*'|\\s[^'"/>\\s]*)*?/?> *(?:\\n{2,}|\\s*$))`
+  ).replace("comment", _comment).replace(/tag/g, "(?!(?:a|em|strong|small|s|cite|q|dfn|abbr|data|time|code|var|samp|kbd|sub|sup|i|b|u|mark|ruby|rt|rp|bdi|bdo|span|br|wbr|ins|del|img)\\b)\\w+(?!:|[^\\w\\s@]*@)\\b").getRegex(),
+  def: /^ *\[([^\]]+)\]: *<?([^\s>]+)>?(?: +(["(][^\n]+[")]))? *(?:\n+|$)/,
+  heading: /^(#{1,6})(.*)(?:\n+|$)/,
+  fences: noopTest,
+  // fences not supported
+  lheading: /^(.+?)\n {0,3}(=+|-+) *(?:\n+|$)/,
+  paragraph: edit(_paragraph).replace("hr", hr).replace("heading", " *#{1,6} *[^\n]").replace("lheading", lheading).replace("|table", "").replace("blockquote", " {0,3}>").replace("|fences", "").replace("|list", "").replace("|html", "").replace("|tag", "").getRegex()
+};
+var escape3 = /^\\([!"#$%&'()*+,\-./:;<=>?@\[\]\\^_`{|}~])/;
+var inlineCode = /^(`+)([^`]|[^`][\s\S]*?[^`])\1(?!`)/;
+var br = /^( {2,}|\\)\n(?!\s*$)/;
+var inlineText = /^(`+|[^`])(?:(?= {2,}\n)|[\s\S]*?(?:(?=[\\<!\[`*_]|\b_|$)|[^ ](?= {2,}\n)))/;
+var _punctuation = /[\p{P}\p{S}]/u;
+var _punctuationOrSpace = /[\s\p{P}\p{S}]/u;
+var _notPunctuationOrSpace = /[^\s\p{P}\p{S}]/u;
+var punctuation = edit(/^((?![*_])punctSpace)/, "u").replace(/punctSpace/g, _punctuationOrSpace).getRegex();
+var _punctuationGfmStrongEm = /(?!~)[\p{P}\p{S}]/u;
+var _punctuationOrSpaceGfmStrongEm = /(?!~)[\s\p{P}\p{S}]/u;
+var _notPunctuationOrSpaceGfmStrongEm = /(?:[^\s\p{P}\p{S}]|~)/u;
+var blockSkip = /\[[^[\]]*?\]\((?:\\.|[^\\\(\)]|\((?:\\.|[^\\\(\)])*\))*\)|`[^`]*?`|<[^<>]*?>/g;
+var emStrongLDelimCore = /^(?:\*+(?:((?!\*)punct)|[^\s*]))|^_+(?:((?!_)punct)|([^\s_]))/;
+var emStrongLDelim = edit(emStrongLDelimCore, "u").replace(/punct/g, _punctuation).getRegex();
+var emStrongLDelimGfm = edit(emStrongLDelimCore, "u").replace(/punct/g, _punctuationGfmStrongEm).getRegex();
+var emStrongRDelimAstCore = "^[^_*]*?__[^_*]*?\\*[^_*]*?(?=__)|[^*]+(?=[^*])|(?!\\*)punct(\\*+)(?=[\\s]|$)|notPunctSpace(\\*+)(?!\\*)(?=punctSpace|$)|(?!\\*)punctSpace(\\*+)(?=notPunctSpace)|[\\s](\\*+)(?!\\*)(?=punct)|(?!\\*)punct(\\*+)(?!\\*)(?=punct)|notPunctSpace(\\*+)(?=notPunctSpace)";
+var emStrongRDelimAst = edit(emStrongRDelimAstCore, "gu").replace(/notPunctSpace/g, _notPunctuationOrSpace).replace(/punctSpace/g, _punctuationOrSpace).replace(/punct/g, _punctuation).getRegex();
+var emStrongRDelimAstGfm = edit(emStrongRDelimAstCore, "gu").replace(/notPunctSpace/g, _notPunctuationOrSpaceGfmStrongEm).replace(/punctSpace/g, _punctuationOrSpaceGfmStrongEm).replace(/punct/g, _punctuationGfmStrongEm).getRegex();
+var emStrongRDelimUnd = edit(
+  "^[^_*]*?\\*\\*[^_*]*?_[^_*]*?(?=\\*\\*)|[^_]+(?=[^_])|(?!_)punct(_+)(?=[\\s]|$)|notPunctSpace(_+)(?!_)(?=punctSpace|$)|(?!_)punctSpace(_+)(?=notPunctSpace)|[\\s](_+)(?!_)(?=punct)|(?!_)punct(_+)(?!_)(?=punct)",
+  "gu"
+).replace(/notPunctSpace/g, _notPunctuationOrSpace).replace(/punctSpace/g, _punctuationOrSpace).replace(/punct/g, _punctuation).getRegex();
+var anyPunctuation = edit(/\\(punct)/, "gu").replace(/punct/g, _punctuation).getRegex();
+var autolink = edit(/^<(scheme:[^\s\x00-\x1f<>]*|email)>/).replace("scheme", /[a-zA-Z][a-zA-Z0-9+.-]{1,31}/).replace("email", /[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+(@)[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+(?![-_])/).getRegex();
+var _inlineComment = edit(_comment).replace("(?:-->|$)", "-->").getRegex();
+var tag = edit(
+  "^comment|^</[a-zA-Z][\\w:-]*\\s*>|^<[a-zA-Z][\\w-]*(?:attribute)*?\\s*/?>|^<\\?[\\s\\S]*?\\?>|^<![a-zA-Z]+\\s[\\s\\S]*?>|^<!\\[CDATA\\[[\\s\\S]*?\\]\\]>"
+).replace("comment", _inlineComment).replace("attribute", /\s+[a-zA-Z:_][\w.:-]*(?:\s*=\s*"[^"]*"|\s*=\s*'[^']*'|\s*=\s*[^\s"'=<>`]+)?/).getRegex();
+var _inlineLabel = /(?:\[(?:\\.|[^\[\]\\])*\]|\\.|`[^`]*`|[^\[\]\\`])*?/;
+var link2 = edit(/^!?\[(label)\]\(\s*(href)(?:(?:[ \t]*(?:\n[ \t]*)?)(title))?\s*\)/).replace("label", _inlineLabel).replace("href", /<(?:\\.|[^\n<>\\])+>|[^ \t\n\x00-\x1f]*/).replace("title", /"(?:\\"?|[^"\\])*"|'(?:\\'?|[^'\\])*'|\((?:\\\)?|[^)\\])*\)/).getRegex();
+var reflink = edit(/^!?\[(label)\]\[(ref)\]/).replace("label", _inlineLabel).replace("ref", _blockLabel).getRegex();
+var nolink = edit(/^!?\[(ref)\](?:\[\])?/).replace("ref", _blockLabel).getRegex();
+var reflinkSearch = edit("reflink|nolink(?!\\()", "g").replace("reflink", reflink).replace("nolink", nolink).getRegex();
+var inlineNormal = {
+  _backpedal: noopTest,
+  // only used for GFM url
+  anyPunctuation,
+  autolink,
+  blockSkip,
+  br,
+  code: inlineCode,
+  del: noopTest,
+  emStrongLDelim,
+  emStrongRDelimAst,
+  emStrongRDelimUnd,
+  escape: escape3,
+  link: link2,
+  nolink,
+  punctuation,
+  reflink,
+  reflinkSearch,
+  tag,
+  text: inlineText,
+  url: noopTest
+};
+var inlinePedantic = {
+  ...inlineNormal,
+  link: edit(/^!?\[(label)\]\((.*?)\)/).replace("label", _inlineLabel).getRegex(),
+  reflink: edit(/^!?\[(label)\]\s*\[([^\]]*)\]/).replace("label", _inlineLabel).getRegex()
+};
+var inlineGfm = {
+  ...inlineNormal,
+  emStrongRDelimAst: emStrongRDelimAstGfm,
+  emStrongLDelim: emStrongLDelimGfm,
+  url: edit(/^((?:ftp|https?):\/\/|www\.)(?:[a-zA-Z0-9\-]+\.?)+[^\s<]*|^email/, "i").replace("email", /[A-Za-z0-9._+-]+(@)[a-zA-Z0-9-_]+(?:\.[a-zA-Z0-9-_]*[a-zA-Z0-9])+(?![-_])/).getRegex(),
+  _backpedal: /(?:[^?!.,:;*_'"~()&]+|\([^)]*\)|&(?![a-zA-Z0-9]+;$)|[?!.,:;*_'"~)]+(?!$))+/,
+  del: /^(~~?)(?=[^\s~])((?:\\.|[^\\])*?(?:\\.|[^\s~\\]))\1(?=[^~]|$)/,
+  text: /^([`~]+|[^`~])(?:(?= {2,}\n)|(?=[a-zA-Z0-9.!#$%&'*+\/=?_`{\|}~-]+@)|[\s\S]*?(?:(?=[\\<!\[`*~_]|\b_|https?:\/\/|ftp:\/\/|www\.|$)|[^ ](?= {2,}\n)|[^a-zA-Z0-9.!#$%&'*+\/=?_`{\|}~-](?=[a-zA-Z0-9.!#$%&'*+\/=?_`{\|}~-]+@)))/
+};
+var inlineBreaks = {
+  ...inlineGfm,
+  br: edit(br).replace("{2,}", "*").getRegex(),
+  text: edit(inlineGfm.text).replace("\\b_", "\\b_| {2,}\\n").replace(/\{2,\}/g, "*").getRegex()
+};
+var block = {
+  normal: blockNormal,
+  gfm: blockGfm,
+  pedantic: blockPedantic
+};
+var inline = {
+  normal: inlineNormal,
+  gfm: inlineGfm,
+  breaks: inlineBreaks,
+  pedantic: inlinePedantic
+};
+var escapeReplacements = {
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  '"': "&quot;",
+  "'": "&#39;"
+};
+var getEscapeReplacement = (ch) => escapeReplacements[ch];
+function escape22(html2, encode) {
+  if (encode) {
+    if (other.escapeTest.test(html2)) {
+      return html2.replace(other.escapeReplace, getEscapeReplacement);
+    }
+  } else {
+    if (other.escapeTestNoEncode.test(html2)) {
+      return html2.replace(other.escapeReplaceNoEncode, getEscapeReplacement);
+    }
+  }
+  return html2;
+}
+function cleanUrl(href) {
+  try {
+    href = encodeURI(href).replace(other.percentDecode, "%");
+  } catch {
+    return null;
+  }
+  return href;
+}
+function splitCells(tableRow, count) {
+  const row = tableRow.replace(other.findPipe, (match, offset, str) => {
+    let escaped = false;
+    let curr = offset;
+    while (--curr >= 0 && str[curr] === "\\") escaped = !escaped;
+    if (escaped) {
+      return "|";
+    } else {
+      return " |";
+    }
+  }), cells = row.split(other.splitPipe);
+  let i = 0;
+  if (!cells[0].trim()) {
+    cells.shift();
+  }
+  if (cells.length > 0 && !cells.at(-1)?.trim()) {
+    cells.pop();
+  }
+  if (count) {
+    if (cells.length > count) {
+      cells.splice(count);
+    } else {
+      while (cells.length < count) cells.push("");
+    }
+  }
+  for (; i < cells.length; i++) {
+    cells[i] = cells[i].trim().replace(other.slashPipe, "|");
+  }
+  return cells;
+}
+function rtrim(str, c, invert) {
+  const l = str.length;
+  if (l === 0) {
+    return "";
+  }
+  let suffLen = 0;
+  while (suffLen < l) {
+    const currChar = str.charAt(l - suffLen - 1);
+    if (currChar === c && !invert) {
+      suffLen++;
+    } else if (currChar !== c && invert) {
+      suffLen++;
+    } else {
+      break;
+    }
+  }
+  return str.slice(0, l - suffLen);
+}
+function findClosingBracket(str, b) {
+  if (str.indexOf(b[1]) === -1) {
+    return -1;
+  }
+  let level = 0;
+  for (let i = 0; i < str.length; i++) {
+    if (str[i] === "\\") {
+      i++;
+    } else if (str[i] === b[0]) {
+      level++;
+    } else if (str[i] === b[1]) {
+      level--;
+      if (level < 0) {
+        return i;
+      }
+    }
+  }
+  if (level > 0) {
+    return -2;
+  }
+  return -1;
+}
+function outputLink(cap, link22, raw, lexer2, rules) {
+  const href = link22.href;
+  const title = link22.title || null;
+  const text = cap[1].replace(rules.other.outputLinkReplace, "$1");
+  lexer2.state.inLink = true;
+  const token = {
+    type: cap[0].charAt(0) === "!" ? "image" : "link",
+    raw,
+    href,
+    title,
+    text,
+    tokens: lexer2.inlineTokens(text)
+  };
+  lexer2.state.inLink = false;
+  return token;
+}
+function indentCodeCompensation(raw, text, rules) {
+  const matchIndentToCode = raw.match(rules.other.indentCodeCompensation);
+  if (matchIndentToCode === null) {
+    return text;
+  }
+  const indentToCode = matchIndentToCode[1];
+  return text.split("\n").map((node) => {
+    const matchIndentInNode = node.match(rules.other.beginningSpace);
+    if (matchIndentInNode === null) {
+      return node;
+    }
+    const [indentInNode] = matchIndentInNode;
+    if (indentInNode.length >= indentToCode.length) {
+      return node.slice(indentToCode.length);
+    }
+    return node;
+  }).join("\n");
+}
+var _Tokenizer = class {
+  options;
+  rules;
+  // set by the lexer
+  lexer;
+  // set by the lexer
+  constructor(options2) {
+    this.options = options2 || _defaults;
+  }
+  space(src) {
+    const cap = this.rules.block.newline.exec(src);
+    if (cap && cap[0].length > 0) {
+      return {
+        type: "space",
+        raw: cap[0]
+      };
+    }
+  }
+  code(src) {
+    const cap = this.rules.block.code.exec(src);
+    if (cap) {
+      const text = cap[0].replace(this.rules.other.codeRemoveIndent, "");
+      return {
+        type: "code",
+        raw: cap[0],
+        codeBlockStyle: "indented",
+        text: !this.options.pedantic ? rtrim(text, "\n") : text
+      };
+    }
+  }
+  fences(src) {
+    const cap = this.rules.block.fences.exec(src);
+    if (cap) {
+      const raw = cap[0];
+      const text = indentCodeCompensation(raw, cap[3] || "", this.rules);
+      return {
+        type: "code",
+        raw,
+        lang: cap[2] ? cap[2].trim().replace(this.rules.inline.anyPunctuation, "$1") : cap[2],
+        text
+      };
+    }
+  }
+  heading(src) {
+    const cap = this.rules.block.heading.exec(src);
+    if (cap) {
+      let text = cap[2].trim();
+      if (this.rules.other.endingHash.test(text)) {
+        const trimmed = rtrim(text, "#");
+        if (this.options.pedantic) {
+          text = trimmed.trim();
+        } else if (!trimmed || this.rules.other.endingSpaceChar.test(trimmed)) {
+          text = trimmed.trim();
+        }
+      }
+      return {
+        type: "heading",
+        raw: cap[0],
+        depth: cap[1].length,
+        text,
+        tokens: this.lexer.inline(text)
+      };
+    }
+  }
+  hr(src) {
+    const cap = this.rules.block.hr.exec(src);
+    if (cap) {
+      return {
+        type: "hr",
+        raw: rtrim(cap[0], "\n")
+      };
+    }
+  }
+  blockquote(src) {
+    const cap = this.rules.block.blockquote.exec(src);
+    if (cap) {
+      let lines = rtrim(cap[0], "\n").split("\n");
+      let raw = "";
+      let text = "";
+      const tokens = [];
+      while (lines.length > 0) {
+        let inBlockquote = false;
+        const currentLines = [];
+        let i;
+        for (i = 0; i < lines.length; i++) {
+          if (this.rules.other.blockquoteStart.test(lines[i])) {
+            currentLines.push(lines[i]);
+            inBlockquote = true;
+          } else if (!inBlockquote) {
+            currentLines.push(lines[i]);
+          } else {
+            break;
+          }
+        }
+        lines = lines.slice(i);
+        const currentRaw = currentLines.join("\n");
+        const currentText = currentRaw.replace(this.rules.other.blockquoteSetextReplace, "\n    $1").replace(this.rules.other.blockquoteSetextReplace2, "");
+        raw = raw ? `${raw}
+${currentRaw}` : currentRaw;
+        text = text ? `${text}
+${currentText}` : currentText;
+        const top = this.lexer.state.top;
+        this.lexer.state.top = true;
+        this.lexer.blockTokens(currentText, tokens, true);
+        this.lexer.state.top = top;
+        if (lines.length === 0) {
+          break;
+        }
+        const lastToken = tokens.at(-1);
+        if (lastToken?.type === "code") {
+          break;
+        } else if (lastToken?.type === "blockquote") {
+          const oldToken = lastToken;
+          const newText = oldToken.raw + "\n" + lines.join("\n");
+          const newToken = this.blockquote(newText);
+          tokens[tokens.length - 1] = newToken;
+          raw = raw.substring(0, raw.length - oldToken.raw.length) + newToken.raw;
+          text = text.substring(0, text.length - oldToken.text.length) + newToken.text;
+          break;
+        } else if (lastToken?.type === "list") {
+          const oldToken = lastToken;
+          const newText = oldToken.raw + "\n" + lines.join("\n");
+          const newToken = this.list(newText);
+          tokens[tokens.length - 1] = newToken;
+          raw = raw.substring(0, raw.length - lastToken.raw.length) + newToken.raw;
+          text = text.substring(0, text.length - oldToken.raw.length) + newToken.raw;
+          lines = newText.substring(tokens.at(-1).raw.length).split("\n");
+          continue;
+        }
+      }
+      return {
+        type: "blockquote",
+        raw,
+        tokens,
+        text
+      };
+    }
+  }
+  list(src) {
+    let cap = this.rules.block.list.exec(src);
+    if (cap) {
+      let bull = cap[1].trim();
+      const isordered = bull.length > 1;
+      const list2 = {
+        type: "list",
+        raw: "",
+        ordered: isordered,
+        start: isordered ? +bull.slice(0, -1) : "",
+        loose: false,
+        items: []
+      };
+      bull = isordered ? `\\d{1,9}\\${bull.slice(-1)}` : `\\${bull}`;
+      if (this.options.pedantic) {
+        bull = isordered ? bull : "[*+-]";
+      }
+      const itemRegex = this.rules.other.listItemRegex(bull);
+      let endsWithBlankLine = false;
+      while (src) {
+        let endEarly = false;
+        let raw = "";
+        let itemContents = "";
+        if (!(cap = itemRegex.exec(src))) {
+          break;
+        }
+        if (this.rules.block.hr.test(src)) {
+          break;
+        }
+        raw = cap[0];
+        src = src.substring(raw.length);
+        let line = cap[2].split("\n", 1)[0].replace(this.rules.other.listReplaceTabs, (t) => " ".repeat(3 * t.length));
+        let nextLine = src.split("\n", 1)[0];
+        let blankLine = !line.trim();
+        let indent = 0;
+        if (this.options.pedantic) {
+          indent = 2;
+          itemContents = line.trimStart();
+        } else if (blankLine) {
+          indent = cap[1].length + 1;
+        } else {
+          indent = cap[2].search(this.rules.other.nonSpaceChar);
+          indent = indent > 4 ? 1 : indent;
+          itemContents = line.slice(indent);
+          indent += cap[1].length;
+        }
+        if (blankLine && this.rules.other.blankLine.test(nextLine)) {
+          raw += nextLine + "\n";
+          src = src.substring(nextLine.length + 1);
+          endEarly = true;
+        }
+        if (!endEarly) {
+          const nextBulletRegex = this.rules.other.nextBulletRegex(indent);
+          const hrRegex = this.rules.other.hrRegex(indent);
+          const fencesBeginRegex = this.rules.other.fencesBeginRegex(indent);
+          const headingBeginRegex = this.rules.other.headingBeginRegex(indent);
+          const htmlBeginRegex = this.rules.other.htmlBeginRegex(indent);
+          while (src) {
+            const rawLine = src.split("\n", 1)[0];
+            let nextLineWithoutTabs;
+            nextLine = rawLine;
+            if (this.options.pedantic) {
+              nextLine = nextLine.replace(this.rules.other.listReplaceNesting, "  ");
+              nextLineWithoutTabs = nextLine;
+            } else {
+              nextLineWithoutTabs = nextLine.replace(this.rules.other.tabCharGlobal, "    ");
+            }
+            if (fencesBeginRegex.test(nextLine)) {
+              break;
+            }
+            if (headingBeginRegex.test(nextLine)) {
+              break;
+            }
+            if (htmlBeginRegex.test(nextLine)) {
+              break;
+            }
+            if (nextBulletRegex.test(nextLine)) {
+              break;
+            }
+            if (hrRegex.test(nextLine)) {
+              break;
+            }
+            if (nextLineWithoutTabs.search(this.rules.other.nonSpaceChar) >= indent || !nextLine.trim()) {
+              itemContents += "\n" + nextLineWithoutTabs.slice(indent);
+            } else {
+              if (blankLine) {
+                break;
+              }
+              if (line.replace(this.rules.other.tabCharGlobal, "    ").search(this.rules.other.nonSpaceChar) >= 4) {
+                break;
+              }
+              if (fencesBeginRegex.test(line)) {
+                break;
+              }
+              if (headingBeginRegex.test(line)) {
+                break;
+              }
+              if (hrRegex.test(line)) {
+                break;
+              }
+              itemContents += "\n" + nextLine;
+            }
+            if (!blankLine && !nextLine.trim()) {
+              blankLine = true;
+            }
+            raw += rawLine + "\n";
+            src = src.substring(rawLine.length + 1);
+            line = nextLineWithoutTabs.slice(indent);
+          }
+        }
+        if (!list2.loose) {
+          if (endsWithBlankLine) {
+            list2.loose = true;
+          } else if (this.rules.other.doubleBlankLine.test(raw)) {
+            endsWithBlankLine = true;
+          }
+        }
+        let istask = null;
+        let ischecked;
+        if (this.options.gfm) {
+          istask = this.rules.other.listIsTask.exec(itemContents);
+          if (istask) {
+            ischecked = istask[0] !== "[ ] ";
+            itemContents = itemContents.replace(this.rules.other.listReplaceTask, "");
+          }
+        }
+        list2.items.push({
+          type: "list_item",
+          raw,
+          task: !!istask,
+          checked: ischecked,
+          loose: false,
+          text: itemContents,
+          tokens: []
+        });
+        list2.raw += raw;
+      }
+      const lastItem = list2.items.at(-1);
+      if (lastItem) {
+        lastItem.raw = lastItem.raw.trimEnd();
+        lastItem.text = lastItem.text.trimEnd();
+      } else {
+        return;
+      }
+      list2.raw = list2.raw.trimEnd();
+      for (let i = 0; i < list2.items.length; i++) {
+        this.lexer.state.top = false;
+        list2.items[i].tokens = this.lexer.blockTokens(list2.items[i].text, []);
+        if (!list2.loose) {
+          const spacers = list2.items[i].tokens.filter((t) => t.type === "space");
+          const hasMultipleLineBreaks = spacers.length > 0 && spacers.some((t) => this.rules.other.anyLine.test(t.raw));
+          list2.loose = hasMultipleLineBreaks;
+        }
+      }
+      if (list2.loose) {
+        for (let i = 0; i < list2.items.length; i++) {
+          list2.items[i].loose = true;
+        }
+      }
+      return list2;
+    }
+  }
+  html(src) {
+    const cap = this.rules.block.html.exec(src);
+    if (cap) {
+      const token = {
+        type: "html",
+        block: true,
+        raw: cap[0],
+        pre: cap[1] === "pre" || cap[1] === "script" || cap[1] === "style",
+        text: cap[0]
+      };
+      return token;
+    }
+  }
+  def(src) {
+    const cap = this.rules.block.def.exec(src);
+    if (cap) {
+      const tag2 = cap[1].toLowerCase().replace(this.rules.other.multipleSpaceGlobal, " ");
+      const href = cap[2] ? cap[2].replace(this.rules.other.hrefBrackets, "$1").replace(this.rules.inline.anyPunctuation, "$1") : "";
+      const title = cap[3] ? cap[3].substring(1, cap[3].length - 1).replace(this.rules.inline.anyPunctuation, "$1") : cap[3];
+      return {
+        type: "def",
+        tag: tag2,
+        raw: cap[0],
+        href,
+        title
+      };
+    }
+  }
+  table(src) {
+    const cap = this.rules.block.table.exec(src);
+    if (!cap) {
+      return;
+    }
+    if (!this.rules.other.tableDelimiter.test(cap[2])) {
+      return;
+    }
+    const headers = splitCells(cap[1]);
+    const aligns = cap[2].replace(this.rules.other.tableAlignChars, "").split("|");
+    const rows = cap[3]?.trim() ? cap[3].replace(this.rules.other.tableRowBlankLine, "").split("\n") : [];
+    const item = {
+      type: "table",
+      raw: cap[0],
+      header: [],
+      align: [],
+      rows: []
+    };
+    if (headers.length !== aligns.length) {
+      return;
+    }
+    for (const align of aligns) {
+      if (this.rules.other.tableAlignRight.test(align)) {
+        item.align.push("right");
+      } else if (this.rules.other.tableAlignCenter.test(align)) {
+        item.align.push("center");
+      } else if (this.rules.other.tableAlignLeft.test(align)) {
+        item.align.push("left");
+      } else {
+        item.align.push(null);
+      }
+    }
+    for (let i = 0; i < headers.length; i++) {
+      item.header.push({
+        text: headers[i],
+        tokens: this.lexer.inline(headers[i]),
+        header: true,
+        align: item.align[i]
+      });
+    }
+    for (const row of rows) {
+      item.rows.push(splitCells(row, item.header.length).map((cell, i) => {
+        return {
+          text: cell,
+          tokens: this.lexer.inline(cell),
+          header: false,
+          align: item.align[i]
+        };
+      }));
+    }
+    return item;
+  }
+  lheading(src) {
+    const cap = this.rules.block.lheading.exec(src);
+    if (cap) {
+      return {
+        type: "heading",
+        raw: cap[0],
+        depth: cap[2].charAt(0) === "=" ? 1 : 2,
+        text: cap[1],
+        tokens: this.lexer.inline(cap[1])
+      };
+    }
+  }
+  paragraph(src) {
+    const cap = this.rules.block.paragraph.exec(src);
+    if (cap) {
+      const text = cap[1].charAt(cap[1].length - 1) === "\n" ? cap[1].slice(0, -1) : cap[1];
+      return {
+        type: "paragraph",
+        raw: cap[0],
+        text,
+        tokens: this.lexer.inline(text)
+      };
+    }
+  }
+  text(src) {
+    const cap = this.rules.block.text.exec(src);
+    if (cap) {
+      return {
+        type: "text",
+        raw: cap[0],
+        text: cap[0],
+        tokens: this.lexer.inline(cap[0])
+      };
+    }
+  }
+  escape(src) {
+    const cap = this.rules.inline.escape.exec(src);
+    if (cap) {
+      return {
+        type: "escape",
+        raw: cap[0],
+        text: cap[1]
+      };
+    }
+  }
+  tag(src) {
+    const cap = this.rules.inline.tag.exec(src);
+    if (cap) {
+      if (!this.lexer.state.inLink && this.rules.other.startATag.test(cap[0])) {
+        this.lexer.state.inLink = true;
+      } else if (this.lexer.state.inLink && this.rules.other.endATag.test(cap[0])) {
+        this.lexer.state.inLink = false;
+      }
+      if (!this.lexer.state.inRawBlock && this.rules.other.startPreScriptTag.test(cap[0])) {
+        this.lexer.state.inRawBlock = true;
+      } else if (this.lexer.state.inRawBlock && this.rules.other.endPreScriptTag.test(cap[0])) {
+        this.lexer.state.inRawBlock = false;
+      }
+      return {
+        type: "html",
+        raw: cap[0],
+        inLink: this.lexer.state.inLink,
+        inRawBlock: this.lexer.state.inRawBlock,
+        block: false,
+        text: cap[0]
+      };
+    }
+  }
+  link(src) {
+    const cap = this.rules.inline.link.exec(src);
+    if (cap) {
+      const trimmedUrl = cap[2].trim();
+      if (!this.options.pedantic && this.rules.other.startAngleBracket.test(trimmedUrl)) {
+        if (!this.rules.other.endAngleBracket.test(trimmedUrl)) {
+          return;
+        }
+        const rtrimSlash = rtrim(trimmedUrl.slice(0, -1), "\\");
+        if ((trimmedUrl.length - rtrimSlash.length) % 2 === 0) {
+          return;
+        }
+      } else {
+        const lastParenIndex = findClosingBracket(cap[2], "()");
+        if (lastParenIndex === -2) {
+          return;
+        }
+        if (lastParenIndex > -1) {
+          const start = cap[0].indexOf("!") === 0 ? 5 : 4;
+          const linkLen = start + cap[1].length + lastParenIndex;
+          cap[2] = cap[2].substring(0, lastParenIndex);
+          cap[0] = cap[0].substring(0, linkLen).trim();
+          cap[3] = "";
+        }
+      }
+      let href = cap[2];
+      let title = "";
+      if (this.options.pedantic) {
+        const link22 = this.rules.other.pedanticHrefTitle.exec(href);
+        if (link22) {
+          href = link22[1];
+          title = link22[3];
+        }
+      } else {
+        title = cap[3] ? cap[3].slice(1, -1) : "";
+      }
+      href = href.trim();
+      if (this.rules.other.startAngleBracket.test(href)) {
+        if (this.options.pedantic && !this.rules.other.endAngleBracket.test(trimmedUrl)) {
+          href = href.slice(1);
+        } else {
+          href = href.slice(1, -1);
+        }
+      }
+      return outputLink(cap, {
+        href: href ? href.replace(this.rules.inline.anyPunctuation, "$1") : href,
+        title: title ? title.replace(this.rules.inline.anyPunctuation, "$1") : title
+      }, cap[0], this.lexer, this.rules);
+    }
+  }
+  reflink(src, links) {
+    let cap;
+    if ((cap = this.rules.inline.reflink.exec(src)) || (cap = this.rules.inline.nolink.exec(src))) {
+      const linkString = (cap[2] || cap[1]).replace(this.rules.other.multipleSpaceGlobal, " ");
+      const link22 = links[linkString.toLowerCase()];
+      if (!link22) {
+        const text = cap[0].charAt(0);
+        return {
+          type: "text",
+          raw: text,
+          text
+        };
+      }
+      return outputLink(cap, link22, cap[0], this.lexer, this.rules);
+    }
+  }
+  emStrong(src, maskedSrc, prevChar = "") {
+    let match = this.rules.inline.emStrongLDelim.exec(src);
+    if (!match) return;
+    if (match[3] && prevChar.match(this.rules.other.unicodeAlphaNumeric)) return;
+    const nextChar = match[1] || match[2] || "";
+    if (!nextChar || !prevChar || this.rules.inline.punctuation.exec(prevChar)) {
+      const lLength = [...match[0]].length - 1;
+      let rDelim, rLength, delimTotal = lLength, midDelimTotal = 0;
+      const endReg = match[0][0] === "*" ? this.rules.inline.emStrongRDelimAst : this.rules.inline.emStrongRDelimUnd;
+      endReg.lastIndex = 0;
+      maskedSrc = maskedSrc.slice(-1 * src.length + lLength);
+      while ((match = endReg.exec(maskedSrc)) != null) {
+        rDelim = match[1] || match[2] || match[3] || match[4] || match[5] || match[6];
+        if (!rDelim) continue;
+        rLength = [...rDelim].length;
+        if (match[3] || match[4]) {
+          delimTotal += rLength;
+          continue;
+        } else if (match[5] || match[6]) {
+          if (lLength % 3 && !((lLength + rLength) % 3)) {
+            midDelimTotal += rLength;
+            continue;
+          }
+        }
+        delimTotal -= rLength;
+        if (delimTotal > 0) continue;
+        rLength = Math.min(rLength, rLength + delimTotal + midDelimTotal);
+        const lastCharLength = [...match[0]][0].length;
+        const raw = src.slice(0, lLength + match.index + lastCharLength + rLength);
+        if (Math.min(lLength, rLength) % 2) {
+          const text2 = raw.slice(1, -1);
+          return {
+            type: "em",
+            raw,
+            text: text2,
+            tokens: this.lexer.inlineTokens(text2)
+          };
+        }
+        const text = raw.slice(2, -2);
+        return {
+          type: "strong",
+          raw,
+          text,
+          tokens: this.lexer.inlineTokens(text)
+        };
+      }
+    }
+  }
+  codespan(src) {
+    const cap = this.rules.inline.code.exec(src);
+    if (cap) {
+      let text = cap[2].replace(this.rules.other.newLineCharGlobal, " ");
+      const hasNonSpaceChars = this.rules.other.nonSpaceChar.test(text);
+      const hasSpaceCharsOnBothEnds = this.rules.other.startingSpaceChar.test(text) && this.rules.other.endingSpaceChar.test(text);
+      if (hasNonSpaceChars && hasSpaceCharsOnBothEnds) {
+        text = text.substring(1, text.length - 1);
+      }
+      return {
+        type: "codespan",
+        raw: cap[0],
+        text
+      };
+    }
+  }
+  br(src) {
+    const cap = this.rules.inline.br.exec(src);
+    if (cap) {
+      return {
+        type: "br",
+        raw: cap[0]
+      };
+    }
+  }
+  del(src) {
+    const cap = this.rules.inline.del.exec(src);
+    if (cap) {
+      return {
+        type: "del",
+        raw: cap[0],
+        text: cap[2],
+        tokens: this.lexer.inlineTokens(cap[2])
+      };
+    }
+  }
+  autolink(src) {
+    const cap = this.rules.inline.autolink.exec(src);
+    if (cap) {
+      let text, href;
+      if (cap[2] === "@") {
+        text = cap[1];
+        href = "mailto:" + text;
+      } else {
+        text = cap[1];
+        href = text;
+      }
+      return {
+        type: "link",
+        raw: cap[0],
+        text,
+        href,
+        tokens: [
+          {
+            type: "text",
+            raw: text,
+            text
+          }
+        ]
+      };
+    }
+  }
+  url(src) {
+    let cap;
+    if (cap = this.rules.inline.url.exec(src)) {
+      let text, href;
+      if (cap[2] === "@") {
+        text = cap[0];
+        href = "mailto:" + text;
+      } else {
+        let prevCapZero;
+        do {
+          prevCapZero = cap[0];
+          cap[0] = this.rules.inline._backpedal.exec(cap[0])?.[0] ?? "";
+        } while (prevCapZero !== cap[0]);
+        text = cap[0];
+        if (cap[1] === "www.") {
+          href = "http://" + cap[0];
+        } else {
+          href = cap[0];
+        }
+      }
+      return {
+        type: "link",
+        raw: cap[0],
+        text,
+        href,
+        tokens: [
+          {
+            type: "text",
+            raw: text,
+            text
+          }
+        ]
+      };
+    }
+  }
+  inlineText(src) {
+    const cap = this.rules.inline.text.exec(src);
+    if (cap) {
+      const escaped = this.lexer.state.inRawBlock;
+      return {
+        type: "text",
+        raw: cap[0],
+        text: cap[0],
+        escaped
+      };
+    }
+  }
+};
+var _Lexer = class __Lexer {
+  tokens;
+  options;
+  state;
+  tokenizer;
+  inlineQueue;
+  constructor(options2) {
+    this.tokens = [];
+    this.tokens.links = /* @__PURE__ */ Object.create(null);
+    this.options = options2 || _defaults;
+    this.options.tokenizer = this.options.tokenizer || new _Tokenizer();
+    this.tokenizer = this.options.tokenizer;
+    this.tokenizer.options = this.options;
+    this.tokenizer.lexer = this;
+    this.inlineQueue = [];
+    this.state = {
+      inLink: false,
+      inRawBlock: false,
+      top: true
+    };
+    const rules = {
+      other,
+      block: block.normal,
+      inline: inline.normal
+    };
+    if (this.options.pedantic) {
+      rules.block = block.pedantic;
+      rules.inline = inline.pedantic;
+    } else if (this.options.gfm) {
+      rules.block = block.gfm;
+      if (this.options.breaks) {
+        rules.inline = inline.breaks;
+      } else {
+        rules.inline = inline.gfm;
+      }
+    }
+    this.tokenizer.rules = rules;
+  }
+  /**
+   * Expose Rules
+   */
+  static get rules() {
+    return {
+      block,
+      inline
+    };
+  }
+  /**
+   * Static Lex Method
+   */
+  static lex(src, options2) {
+    const lexer2 = new __Lexer(options2);
+    return lexer2.lex(src);
+  }
+  /**
+   * Static Lex Inline Method
+   */
+  static lexInline(src, options2) {
+    const lexer2 = new __Lexer(options2);
+    return lexer2.inlineTokens(src);
+  }
+  /**
+   * Preprocessing
+   */
+  lex(src) {
+    src = src.replace(other.carriageReturn, "\n");
+    this.blockTokens(src, this.tokens);
+    for (let i = 0; i < this.inlineQueue.length; i++) {
+      const next = this.inlineQueue[i];
+      this.inlineTokens(next.src, next.tokens);
+    }
+    this.inlineQueue = [];
+    return this.tokens;
+  }
+  blockTokens(src, tokens = [], lastParagraphClipped = false) {
+    if (this.options.pedantic) {
+      src = src.replace(other.tabCharGlobal, "    ").replace(other.spaceLine, "");
+    }
+    while (src) {
+      let token;
+      if (this.options.extensions?.block?.some((extTokenizer) => {
+        if (token = extTokenizer.call({ lexer: this }, src, tokens)) {
+          src = src.substring(token.raw.length);
+          tokens.push(token);
+          return true;
+        }
+        return false;
+      })) {
+        continue;
+      }
+      if (token = this.tokenizer.space(src)) {
+        src = src.substring(token.raw.length);
+        const lastToken = tokens.at(-1);
+        if (token.raw.length === 1 && lastToken !== void 0) {
+          lastToken.raw += "\n";
+        } else {
+          tokens.push(token);
+        }
+        continue;
+      }
+      if (token = this.tokenizer.code(src)) {
+        src = src.substring(token.raw.length);
+        const lastToken = tokens.at(-1);
+        if (lastToken?.type === "paragraph" || lastToken?.type === "text") {
+          lastToken.raw += "\n" + token.raw;
+          lastToken.text += "\n" + token.text;
+          this.inlineQueue.at(-1).src = lastToken.text;
+        } else {
+          tokens.push(token);
+        }
+        continue;
+      }
+      if (token = this.tokenizer.fences(src)) {
+        src = src.substring(token.raw.length);
+        tokens.push(token);
+        continue;
+      }
+      if (token = this.tokenizer.heading(src)) {
+        src = src.substring(token.raw.length);
+        tokens.push(token);
+        continue;
+      }
+      if (token = this.tokenizer.hr(src)) {
+        src = src.substring(token.raw.length);
+        tokens.push(token);
+        continue;
+      }
+      if (token = this.tokenizer.blockquote(src)) {
+        src = src.substring(token.raw.length);
+        tokens.push(token);
+        continue;
+      }
+      if (token = this.tokenizer.list(src)) {
+        src = src.substring(token.raw.length);
+        tokens.push(token);
+        continue;
+      }
+      if (token = this.tokenizer.html(src)) {
+        src = src.substring(token.raw.length);
+        tokens.push(token);
+        continue;
+      }
+      if (token = this.tokenizer.def(src)) {
+        src = src.substring(token.raw.length);
+        const lastToken = tokens.at(-1);
+        if (lastToken?.type === "paragraph" || lastToken?.type === "text") {
+          lastToken.raw += "\n" + token.raw;
+          lastToken.text += "\n" + token.raw;
+          this.inlineQueue.at(-1).src = lastToken.text;
+        } else if (!this.tokens.links[token.tag]) {
+          this.tokens.links[token.tag] = {
+            href: token.href,
+            title: token.title
+          };
+        }
+        continue;
+      }
+      if (token = this.tokenizer.table(src)) {
+        src = src.substring(token.raw.length);
+        tokens.push(token);
+        continue;
+      }
+      if (token = this.tokenizer.lheading(src)) {
+        src = src.substring(token.raw.length);
+        tokens.push(token);
+        continue;
+      }
+      let cutSrc = src;
+      if (this.options.extensions?.startBlock) {
+        let startIndex = Infinity;
+        const tempSrc = src.slice(1);
+        let tempStart;
+        this.options.extensions.startBlock.forEach((getStartIndex) => {
+          tempStart = getStartIndex.call({ lexer: this }, tempSrc);
+          if (typeof tempStart === "number" && tempStart >= 0) {
+            startIndex = Math.min(startIndex, tempStart);
+          }
+        });
+        if (startIndex < Infinity && startIndex >= 0) {
+          cutSrc = src.substring(0, startIndex + 1);
+        }
+      }
+      if (this.state.top && (token = this.tokenizer.paragraph(cutSrc))) {
+        const lastToken = tokens.at(-1);
+        if (lastParagraphClipped && lastToken?.type === "paragraph") {
+          lastToken.raw += "\n" + token.raw;
+          lastToken.text += "\n" + token.text;
+          this.inlineQueue.pop();
+          this.inlineQueue.at(-1).src = lastToken.text;
+        } else {
+          tokens.push(token);
+        }
+        lastParagraphClipped = cutSrc.length !== src.length;
+        src = src.substring(token.raw.length);
+        continue;
+      }
+      if (token = this.tokenizer.text(src)) {
+        src = src.substring(token.raw.length);
+        const lastToken = tokens.at(-1);
+        if (lastToken?.type === "text") {
+          lastToken.raw += "\n" + token.raw;
+          lastToken.text += "\n" + token.text;
+          this.inlineQueue.pop();
+          this.inlineQueue.at(-1).src = lastToken.text;
+        } else {
+          tokens.push(token);
+        }
+        continue;
+      }
+      if (src) {
+        const errMsg = "Infinite loop on byte: " + src.charCodeAt(0);
+        if (this.options.silent) {
+          console.error(errMsg);
+          break;
+        } else {
+          throw new Error(errMsg);
+        }
+      }
+    }
+    this.state.top = true;
+    return tokens;
+  }
+  inline(src, tokens = []) {
+    this.inlineQueue.push({ src, tokens });
+    return tokens;
+  }
+  /**
+   * Lexing/Compiling
+   */
+  inlineTokens(src, tokens = []) {
+    let maskedSrc = src;
+    let match = null;
+    if (this.tokens.links) {
+      const links = Object.keys(this.tokens.links);
+      if (links.length > 0) {
+        while ((match = this.tokenizer.rules.inline.reflinkSearch.exec(maskedSrc)) != null) {
+          if (links.includes(match[0].slice(match[0].lastIndexOf("[") + 1, -1))) {
+            maskedSrc = maskedSrc.slice(0, match.index) + "[" + "a".repeat(match[0].length - 2) + "]" + maskedSrc.slice(this.tokenizer.rules.inline.reflinkSearch.lastIndex);
+          }
+        }
+      }
+    }
+    while ((match = this.tokenizer.rules.inline.anyPunctuation.exec(maskedSrc)) != null) {
+      maskedSrc = maskedSrc.slice(0, match.index) + "++" + maskedSrc.slice(this.tokenizer.rules.inline.anyPunctuation.lastIndex);
+    }
+    while ((match = this.tokenizer.rules.inline.blockSkip.exec(maskedSrc)) != null) {
+      maskedSrc = maskedSrc.slice(0, match.index) + "[" + "a".repeat(match[0].length - 2) + "]" + maskedSrc.slice(this.tokenizer.rules.inline.blockSkip.lastIndex);
+    }
+    let keepPrevChar = false;
+    let prevChar = "";
+    while (src) {
+      if (!keepPrevChar) {
+        prevChar = "";
+      }
+      keepPrevChar = false;
+      let token;
+      if (this.options.extensions?.inline?.some((extTokenizer) => {
+        if (token = extTokenizer.call({ lexer: this }, src, tokens)) {
+          src = src.substring(token.raw.length);
+          tokens.push(token);
+          return true;
+        }
+        return false;
+      })) {
+        continue;
+      }
+      if (token = this.tokenizer.escape(src)) {
+        src = src.substring(token.raw.length);
+        tokens.push(token);
+        continue;
+      }
+      if (token = this.tokenizer.tag(src)) {
+        src = src.substring(token.raw.length);
+        tokens.push(token);
+        continue;
+      }
+      if (token = this.tokenizer.link(src)) {
+        src = src.substring(token.raw.length);
+        tokens.push(token);
+        continue;
+      }
+      if (token = this.tokenizer.reflink(src, this.tokens.links)) {
+        src = src.substring(token.raw.length);
+        const lastToken = tokens.at(-1);
+        if (token.type === "text" && lastToken?.type === "text") {
+          lastToken.raw += token.raw;
+          lastToken.text += token.text;
+        } else {
+          tokens.push(token);
+        }
+        continue;
+      }
+      if (token = this.tokenizer.emStrong(src, maskedSrc, prevChar)) {
+        src = src.substring(token.raw.length);
+        tokens.push(token);
+        continue;
+      }
+      if (token = this.tokenizer.codespan(src)) {
+        src = src.substring(token.raw.length);
+        tokens.push(token);
+        continue;
+      }
+      if (token = this.tokenizer.br(src)) {
+        src = src.substring(token.raw.length);
+        tokens.push(token);
+        continue;
+      }
+      if (token = this.tokenizer.del(src)) {
+        src = src.substring(token.raw.length);
+        tokens.push(token);
+        continue;
+      }
+      if (token = this.tokenizer.autolink(src)) {
+        src = src.substring(token.raw.length);
+        tokens.push(token);
+        continue;
+      }
+      if (!this.state.inLink && (token = this.tokenizer.url(src))) {
+        src = src.substring(token.raw.length);
+        tokens.push(token);
+        continue;
+      }
+      let cutSrc = src;
+      if (this.options.extensions?.startInline) {
+        let startIndex = Infinity;
+        const tempSrc = src.slice(1);
+        let tempStart;
+        this.options.extensions.startInline.forEach((getStartIndex) => {
+          tempStart = getStartIndex.call({ lexer: this }, tempSrc);
+          if (typeof tempStart === "number" && tempStart >= 0) {
+            startIndex = Math.min(startIndex, tempStart);
+          }
+        });
+        if (startIndex < Infinity && startIndex >= 0) {
+          cutSrc = src.substring(0, startIndex + 1);
+        }
+      }
+      if (token = this.tokenizer.inlineText(cutSrc)) {
+        src = src.substring(token.raw.length);
+        if (token.raw.slice(-1) !== "_") {
+          prevChar = token.raw.slice(-1);
+        }
+        keepPrevChar = true;
+        const lastToken = tokens.at(-1);
+        if (lastToken?.type === "text") {
+          lastToken.raw += token.raw;
+          lastToken.text += token.text;
+        } else {
+          tokens.push(token);
+        }
+        continue;
+      }
+      if (src) {
+        const errMsg = "Infinite loop on byte: " + src.charCodeAt(0);
+        if (this.options.silent) {
+          console.error(errMsg);
+          break;
+        } else {
+          throw new Error(errMsg);
+        }
+      }
+    }
+    return tokens;
+  }
+};
+var _Renderer = class {
+  options;
+  parser;
+  // set by the parser
+  constructor(options2) {
+    this.options = options2 || _defaults;
+  }
+  space(token) {
+    return "";
+  }
+  code({ text, lang, escaped }) {
+    const langString = (lang || "").match(other.notSpaceStart)?.[0];
+    const code = text.replace(other.endingNewline, "") + "\n";
+    if (!langString) {
+      return "<pre><code>" + (escaped ? code : escape22(code, true)) + "</code></pre>\n";
+    }
+    return '<pre><code class="language-' + escape22(langString) + '">' + (escaped ? code : escape22(code, true)) + "</code></pre>\n";
+  }
+  blockquote({ tokens }) {
+    const body = this.parser.parse(tokens);
+    return `<blockquote>
+${body}</blockquote>
+`;
+  }
+  html({ text }) {
+    return text;
+  }
+  heading({ tokens, depth }) {
+    return `<h${depth}>${this.parser.parseInline(tokens)}</h${depth}>
+`;
+  }
+  hr(token) {
+    return "<hr>\n";
+  }
+  list(token) {
+    const ordered = token.ordered;
+    const start = token.start;
+    let body = "";
+    for (let j = 0; j < token.items.length; j++) {
+      const item = token.items[j];
+      body += this.listitem(item);
+    }
+    const type = ordered ? "ol" : "ul";
+    const startAttr = ordered && start !== 1 ? ' start="' + start + '"' : "";
+    return "<" + type + startAttr + ">\n" + body + "</" + type + ">\n";
+  }
+  listitem(item) {
+    let itemBody = "";
+    if (item.task) {
+      const checkbox = this.checkbox({ checked: !!item.checked });
+      if (item.loose) {
+        if (item.tokens[0]?.type === "paragraph") {
+          item.tokens[0].text = checkbox + " " + item.tokens[0].text;
+          if (item.tokens[0].tokens && item.tokens[0].tokens.length > 0 && item.tokens[0].tokens[0].type === "text") {
+            item.tokens[0].tokens[0].text = checkbox + " " + escape22(item.tokens[0].tokens[0].text);
+            item.tokens[0].tokens[0].escaped = true;
+          }
+        } else {
+          item.tokens.unshift({
+            type: "text",
+            raw: checkbox + " ",
+            text: checkbox + " ",
+            escaped: true
+          });
+        }
+      } else {
+        itemBody += checkbox + " ";
+      }
+    }
+    itemBody += this.parser.parse(item.tokens, !!item.loose);
+    return `<li>${itemBody}</li>
+`;
+  }
+  checkbox({ checked }) {
+    return "<input " + (checked ? 'checked="" ' : "") + 'disabled="" type="checkbox">';
+  }
+  paragraph({ tokens }) {
+    return `<p>${this.parser.parseInline(tokens)}</p>
+`;
+  }
+  table(token) {
+    let header = "";
+    let cell = "";
+    for (let j = 0; j < token.header.length; j++) {
+      cell += this.tablecell(token.header[j]);
+    }
+    header += this.tablerow({ text: cell });
+    let body = "";
+    for (let j = 0; j < token.rows.length; j++) {
+      const row = token.rows[j];
+      cell = "";
+      for (let k = 0; k < row.length; k++) {
+        cell += this.tablecell(row[k]);
+      }
+      body += this.tablerow({ text: cell });
+    }
+    if (body) body = `<tbody>${body}</tbody>`;
+    return "<table>\n<thead>\n" + header + "</thead>\n" + body + "</table>\n";
+  }
+  tablerow({ text }) {
+    return `<tr>
+${text}</tr>
+`;
+  }
+  tablecell(token) {
+    const content = this.parser.parseInline(token.tokens);
+    const type = token.header ? "th" : "td";
+    const tag2 = token.align ? `<${type} align="${token.align}">` : `<${type}>`;
+    return tag2 + content + `</${type}>
+`;
+  }
+  /**
+   * span level renderer
+   */
+  strong({ tokens }) {
+    return `<strong>${this.parser.parseInline(tokens)}</strong>`;
+  }
+  em({ tokens }) {
+    return `<em>${this.parser.parseInline(tokens)}</em>`;
+  }
+  codespan({ text }) {
+    return `<code>${escape22(text, true)}</code>`;
+  }
+  br(token) {
+    return "<br>";
+  }
+  del({ tokens }) {
+    return `<del>${this.parser.parseInline(tokens)}</del>`;
+  }
+  link({ href, title, tokens }) {
+    const text = this.parser.parseInline(tokens);
+    const cleanHref = cleanUrl(href);
+    if (cleanHref === null) {
+      return text;
+    }
+    href = cleanHref;
+    let out = '<a href="' + href + '"';
+    if (title) {
+      out += ' title="' + escape22(title) + '"';
+    }
+    out += ">" + text + "</a>";
+    return out;
+  }
+  image({ href, title, text, tokens }) {
+    if (tokens) {
+      text = this.parser.parseInline(tokens, this.parser.textRenderer);
+    }
+    const cleanHref = cleanUrl(href);
+    if (cleanHref === null) {
+      return escape22(text);
+    }
+    href = cleanHref;
+    let out = `<img src="${href}" alt="${text}"`;
+    if (title) {
+      out += ` title="${escape22(title)}"`;
+    }
+    out += ">";
+    return out;
+  }
+  text(token) {
+    return "tokens" in token && token.tokens ? this.parser.parseInline(token.tokens) : "escaped" in token && token.escaped ? token.text : escape22(token.text);
+  }
+};
+var _TextRenderer = class {
+  // no need for block level renderers
+  strong({ text }) {
+    return text;
+  }
+  em({ text }) {
+    return text;
+  }
+  codespan({ text }) {
+    return text;
+  }
+  del({ text }) {
+    return text;
+  }
+  html({ text }) {
+    return text;
+  }
+  text({ text }) {
+    return text;
+  }
+  link({ text }) {
+    return "" + text;
+  }
+  image({ text }) {
+    return "" + text;
+  }
+  br() {
+    return "";
+  }
+};
+var _Parser = class __Parser {
+  options;
+  renderer;
+  textRenderer;
+  constructor(options2) {
+    this.options = options2 || _defaults;
+    this.options.renderer = this.options.renderer || new _Renderer();
+    this.renderer = this.options.renderer;
+    this.renderer.options = this.options;
+    this.renderer.parser = this;
+    this.textRenderer = new _TextRenderer();
+  }
+  /**
+   * Static Parse Method
+   */
+  static parse(tokens, options2) {
+    const parser2 = new __Parser(options2);
+    return parser2.parse(tokens);
+  }
+  /**
+   * Static Parse Inline Method
+   */
+  static parseInline(tokens, options2) {
+    const parser2 = new __Parser(options2);
+    return parser2.parseInline(tokens);
+  }
+  /**
+   * Parse Loop
+   */
+  parse(tokens, top = true) {
+    let out = "";
+    for (let i = 0; i < tokens.length; i++) {
+      const anyToken = tokens[i];
+      if (this.options.extensions?.renderers?.[anyToken.type]) {
+        const genericToken = anyToken;
+        const ret = this.options.extensions.renderers[genericToken.type].call({ parser: this }, genericToken);
+        if (ret !== false || !["space", "hr", "heading", "code", "table", "blockquote", "list", "html", "paragraph", "text"].includes(genericToken.type)) {
+          out += ret || "";
+          continue;
+        }
+      }
+      const token = anyToken;
+      switch (token.type) {
+        case "space": {
+          out += this.renderer.space(token);
+          continue;
+        }
+        case "hr": {
+          out += this.renderer.hr(token);
+          continue;
+        }
+        case "heading": {
+          out += this.renderer.heading(token);
+          continue;
+        }
+        case "code": {
+          out += this.renderer.code(token);
+          continue;
+        }
+        case "table": {
+          out += this.renderer.table(token);
+          continue;
+        }
+        case "blockquote": {
+          out += this.renderer.blockquote(token);
+          continue;
+        }
+        case "list": {
+          out += this.renderer.list(token);
+          continue;
+        }
+        case "html": {
+          out += this.renderer.html(token);
+          continue;
+        }
+        case "paragraph": {
+          out += this.renderer.paragraph(token);
+          continue;
+        }
+        case "text": {
+          let textToken = token;
+          let body = this.renderer.text(textToken);
+          while (i + 1 < tokens.length && tokens[i + 1].type === "text") {
+            textToken = tokens[++i];
+            body += "\n" + this.renderer.text(textToken);
+          }
+          if (top) {
+            out += this.renderer.paragraph({
+              type: "paragraph",
+              raw: body,
+              text: body,
+              tokens: [{ type: "text", raw: body, text: body, escaped: true }]
+            });
+          } else {
+            out += body;
+          }
+          continue;
+        }
+        default: {
+          const errMsg = 'Token with "' + token.type + '" type was not found.';
+          if (this.options.silent) {
+            console.error(errMsg);
+            return "";
+          } else {
+            throw new Error(errMsg);
+          }
+        }
+      }
+    }
+    return out;
+  }
+  /**
+   * Parse Inline Tokens
+   */
+  parseInline(tokens, renderer2 = this.renderer) {
+    let out = "";
+    for (let i = 0; i < tokens.length; i++) {
+      const anyToken = tokens[i];
+      if (this.options.extensions?.renderers?.[anyToken.type]) {
+        const ret = this.options.extensions.renderers[anyToken.type].call({ parser: this }, anyToken);
+        if (ret !== false || !["escape", "html", "link", "image", "strong", "em", "codespan", "br", "del", "text"].includes(anyToken.type)) {
+          out += ret || "";
+          continue;
+        }
+      }
+      const token = anyToken;
+      switch (token.type) {
+        case "escape": {
+          out += renderer2.text(token);
+          break;
+        }
+        case "html": {
+          out += renderer2.html(token);
+          break;
+        }
+        case "link": {
+          out += renderer2.link(token);
+          break;
+        }
+        case "image": {
+          out += renderer2.image(token);
+          break;
+        }
+        case "strong": {
+          out += renderer2.strong(token);
+          break;
+        }
+        case "em": {
+          out += renderer2.em(token);
+          break;
+        }
+        case "codespan": {
+          out += renderer2.codespan(token);
+          break;
+        }
+        case "br": {
+          out += renderer2.br(token);
+          break;
+        }
+        case "del": {
+          out += renderer2.del(token);
+          break;
+        }
+        case "text": {
+          out += renderer2.text(token);
+          break;
+        }
+        default: {
+          const errMsg = 'Token with "' + token.type + '" type was not found.';
+          if (this.options.silent) {
+            console.error(errMsg);
+            return "";
+          } else {
+            throw new Error(errMsg);
+          }
+        }
+      }
+    }
+    return out;
+  }
+};
+var _Hooks = class {
+  options;
+  block;
+  constructor(options2) {
+    this.options = options2 || _defaults;
+  }
+  static passThroughHooks = /* @__PURE__ */ new Set([
+    "preprocess",
+    "postprocess",
+    "processAllTokens"
+  ]);
+  /**
+   * Process markdown before marked
+   */
+  preprocess(markdown) {
+    return markdown;
+  }
+  /**
+   * Process HTML after marked is finished
+   */
+  postprocess(html2) {
+    return html2;
+  }
+  /**
+   * Process all tokens before walk tokens
+   */
+  processAllTokens(tokens) {
+    return tokens;
+  }
+  /**
+   * Provide function to tokenize markdown
+   */
+  provideLexer() {
+    return this.block ? _Lexer.lex : _Lexer.lexInline;
+  }
+  /**
+   * Provide function to parse tokens
+   */
+  provideParser() {
+    return this.block ? _Parser.parse : _Parser.parseInline;
+  }
+};
+var Marked = class {
+  defaults = _getDefaults();
+  options = this.setOptions;
+  parse = this.parseMarkdown(true);
+  parseInline = this.parseMarkdown(false);
+  Parser = _Parser;
+  Renderer = _Renderer;
+  TextRenderer = _TextRenderer;
+  Lexer = _Lexer;
+  Tokenizer = _Tokenizer;
+  Hooks = _Hooks;
+  constructor(...args) {
+    this.use(...args);
+  }
+  /**
+   * Run callback for every token
+   */
+  walkTokens(tokens, callback) {
+    let values = [];
+    for (const token of tokens) {
+      values = values.concat(callback.call(this, token));
+      switch (token.type) {
+        case "table": {
+          const tableToken = token;
+          for (const cell of tableToken.header) {
+            values = values.concat(this.walkTokens(cell.tokens, callback));
+          }
+          for (const row of tableToken.rows) {
+            for (const cell of row) {
+              values = values.concat(this.walkTokens(cell.tokens, callback));
+            }
+          }
+          break;
+        }
+        case "list": {
+          const listToken = token;
+          values = values.concat(this.walkTokens(listToken.items, callback));
+          break;
+        }
+        default: {
+          const genericToken = token;
+          if (this.defaults.extensions?.childTokens?.[genericToken.type]) {
+            this.defaults.extensions.childTokens[genericToken.type].forEach((childTokens) => {
+              const tokens2 = genericToken[childTokens].flat(Infinity);
+              values = values.concat(this.walkTokens(tokens2, callback));
+            });
+          } else if (genericToken.tokens) {
+            values = values.concat(this.walkTokens(genericToken.tokens, callback));
+          }
+        }
+      }
+    }
+    return values;
+  }
+  use(...args) {
+    const extensions = this.defaults.extensions || { renderers: {}, childTokens: {} };
+    args.forEach((pack) => {
+      const opts = { ...pack };
+      opts.async = this.defaults.async || opts.async || false;
+      if (pack.extensions) {
+        pack.extensions.forEach((ext) => {
+          if (!ext.name) {
+            throw new Error("extension name required");
+          }
+          if ("renderer" in ext) {
+            const prevRenderer = extensions.renderers[ext.name];
+            if (prevRenderer) {
+              extensions.renderers[ext.name] = function(...args2) {
+                let ret = ext.renderer.apply(this, args2);
+                if (ret === false) {
+                  ret = prevRenderer.apply(this, args2);
+                }
+                return ret;
+              };
+            } else {
+              extensions.renderers[ext.name] = ext.renderer;
+            }
+          }
+          if ("tokenizer" in ext) {
+            if (!ext.level || ext.level !== "block" && ext.level !== "inline") {
+              throw new Error("extension level must be 'block' or 'inline'");
+            }
+            const extLevel = extensions[ext.level];
+            if (extLevel) {
+              extLevel.unshift(ext.tokenizer);
+            } else {
+              extensions[ext.level] = [ext.tokenizer];
+            }
+            if (ext.start) {
+              if (ext.level === "block") {
+                if (extensions.startBlock) {
+                  extensions.startBlock.push(ext.start);
+                } else {
+                  extensions.startBlock = [ext.start];
+                }
+              } else if (ext.level === "inline") {
+                if (extensions.startInline) {
+                  extensions.startInline.push(ext.start);
+                } else {
+                  extensions.startInline = [ext.start];
+                }
+              }
+            }
+          }
+          if ("childTokens" in ext && ext.childTokens) {
+            extensions.childTokens[ext.name] = ext.childTokens;
+          }
+        });
+        opts.extensions = extensions;
+      }
+      if (pack.renderer) {
+        const renderer2 = this.defaults.renderer || new _Renderer(this.defaults);
+        for (const prop in pack.renderer) {
+          if (!(prop in renderer2)) {
+            throw new Error(`renderer '${prop}' does not exist`);
+          }
+          if (["options", "parser"].includes(prop)) {
+            continue;
+          }
+          const rendererProp = prop;
+          const rendererFunc = pack.renderer[rendererProp];
+          const prevRenderer = renderer2[rendererProp];
+          renderer2[rendererProp] = (...args2) => {
+            let ret = rendererFunc.apply(renderer2, args2);
+            if (ret === false) {
+              ret = prevRenderer.apply(renderer2, args2);
+            }
+            return ret || "";
+          };
+        }
+        opts.renderer = renderer2;
+      }
+      if (pack.tokenizer) {
+        const tokenizer = this.defaults.tokenizer || new _Tokenizer(this.defaults);
+        for (const prop in pack.tokenizer) {
+          if (!(prop in tokenizer)) {
+            throw new Error(`tokenizer '${prop}' does not exist`);
+          }
+          if (["options", "rules", "lexer"].includes(prop)) {
+            continue;
+          }
+          const tokenizerProp = prop;
+          const tokenizerFunc = pack.tokenizer[tokenizerProp];
+          const prevTokenizer = tokenizer[tokenizerProp];
+          tokenizer[tokenizerProp] = (...args2) => {
+            let ret = tokenizerFunc.apply(tokenizer, args2);
+            if (ret === false) {
+              ret = prevTokenizer.apply(tokenizer, args2);
+            }
+            return ret;
+          };
+        }
+        opts.tokenizer = tokenizer;
+      }
+      if (pack.hooks) {
+        const hooks = this.defaults.hooks || new _Hooks();
+        for (const prop in pack.hooks) {
+          if (!(prop in hooks)) {
+            throw new Error(`hook '${prop}' does not exist`);
+          }
+          if (["options", "block"].includes(prop)) {
+            continue;
+          }
+          const hooksProp = prop;
+          const hooksFunc = pack.hooks[hooksProp];
+          const prevHook = hooks[hooksProp];
+          if (_Hooks.passThroughHooks.has(prop)) {
+            hooks[hooksProp] = (arg) => {
+              if (this.defaults.async) {
+                return Promise.resolve(hooksFunc.call(hooks, arg)).then((ret2) => {
+                  return prevHook.call(hooks, ret2);
+                });
+              }
+              const ret = hooksFunc.call(hooks, arg);
+              return prevHook.call(hooks, ret);
+            };
+          } else {
+            hooks[hooksProp] = (...args2) => {
+              let ret = hooksFunc.apply(hooks, args2);
+              if (ret === false) {
+                ret = prevHook.apply(hooks, args2);
+              }
+              return ret;
+            };
+          }
+        }
+        opts.hooks = hooks;
+      }
+      if (pack.walkTokens) {
+        const walkTokens2 = this.defaults.walkTokens;
+        const packWalktokens = pack.walkTokens;
+        opts.walkTokens = function(token) {
+          let values = [];
+          values.push(packWalktokens.call(this, token));
+          if (walkTokens2) {
+            values = values.concat(walkTokens2.call(this, token));
+          }
+          return values;
+        };
+      }
+      this.defaults = { ...this.defaults, ...opts };
+    });
+    return this;
+  }
+  setOptions(opt) {
+    this.defaults = { ...this.defaults, ...opt };
+    return this;
+  }
+  lexer(src, options2) {
+    return _Lexer.lex(src, options2 ?? this.defaults);
+  }
+  parser(tokens, options2) {
+    return _Parser.parse(tokens, options2 ?? this.defaults);
+  }
+  parseMarkdown(blockType) {
+    const parse2 = (src, options2) => {
+      const origOpt = { ...options2 };
+      const opt = { ...this.defaults, ...origOpt };
+      const throwError = this.onError(!!opt.silent, !!opt.async);
+      if (this.defaults.async === true && origOpt.async === false) {
+        return throwError(new Error("marked(): The async option was set to true by an extension. Remove async: false from the parse options object to return a Promise."));
+      }
+      if (typeof src === "undefined" || src === null) {
+        return throwError(new Error("marked(): input parameter is undefined or null"));
+      }
+      if (typeof src !== "string") {
+        return throwError(new Error("marked(): input parameter is of type " + Object.prototype.toString.call(src) + ", string expected"));
+      }
+      if (opt.hooks) {
+        opt.hooks.options = opt;
+        opt.hooks.block = blockType;
+      }
+      const lexer2 = opt.hooks ? opt.hooks.provideLexer() : blockType ? _Lexer.lex : _Lexer.lexInline;
+      const parser2 = opt.hooks ? opt.hooks.provideParser() : blockType ? _Parser.parse : _Parser.parseInline;
+      if (opt.async) {
+        return Promise.resolve(opt.hooks ? opt.hooks.preprocess(src) : src).then((src2) => lexer2(src2, opt)).then((tokens) => opt.hooks ? opt.hooks.processAllTokens(tokens) : tokens).then((tokens) => opt.walkTokens ? Promise.all(this.walkTokens(tokens, opt.walkTokens)).then(() => tokens) : tokens).then((tokens) => parser2(tokens, opt)).then((html2) => opt.hooks ? opt.hooks.postprocess(html2) : html2).catch(throwError);
+      }
+      try {
+        if (opt.hooks) {
+          src = opt.hooks.preprocess(src);
+        }
+        let tokens = lexer2(src, opt);
+        if (opt.hooks) {
+          tokens = opt.hooks.processAllTokens(tokens);
+        }
+        if (opt.walkTokens) {
+          this.walkTokens(tokens, opt.walkTokens);
+        }
+        let html2 = parser2(tokens, opt);
+        if (opt.hooks) {
+          html2 = opt.hooks.postprocess(html2);
+        }
+        return html2;
+      } catch (e) {
+        return throwError(e);
+      }
+    };
+    return parse2;
+  }
+  onError(silent, async) {
+    return (e) => {
+      e.message += "\nPlease report this to https://github.com/markedjs/marked.";
+      if (silent) {
+        const msg = "<p>An error occurred:</p><pre>" + escape22(e.message + "", true) + "</pre>";
+        if (async) {
+          return Promise.resolve(msg);
+        }
+        return msg;
+      }
+      if (async) {
+        return Promise.reject(e);
+      }
+      throw e;
+    };
+  }
+};
+var markedInstance = new Marked();
+function marked(src, opt) {
+  return markedInstance.parse(src, opt);
+}
+marked.options = marked.setOptions = function(options2) {
+  markedInstance.setOptions(options2);
+  marked.defaults = markedInstance.defaults;
+  changeDefaults(marked.defaults);
+  return marked;
+};
+marked.getDefaults = _getDefaults;
+marked.defaults = _defaults;
+marked.use = function(...args) {
+  markedInstance.use(...args);
+  marked.defaults = markedInstance.defaults;
+  changeDefaults(marked.defaults);
+  return marked;
+};
+marked.walkTokens = function(tokens, callback) {
+  return markedInstance.walkTokens(tokens, callback);
+};
+marked.parseInline = markedInstance.parseInline;
+marked.Parser = _Parser;
+marked.parser = _Parser.parse;
+marked.Renderer = _Renderer;
+marked.TextRenderer = _TextRenderer;
+marked.Lexer = _Lexer;
+marked.lexer = _Lexer.lex;
+marked.Tokenizer = _Tokenizer;
+marked.Hooks = _Hooks;
+marked.parse = marked;
+var options = marked.options;
+var setOptions = marked.setOptions;
+var use = marked.use;
+var walkTokens = marked.walkTokens;
+var parseInline = marked.parseInline;
+var parser = _Parser.parse;
+var lexer = _Lexer.lex;
+
+// src/lib/markdown.tsx
+var import_jsx_runtime3 = __toESM(require_jsx_runtime(), 1);
+var UNSAFE_CONTROL_CHARACTERS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/gu;
+function sanitizeMarkdownText(value) {
+  return stripVTControlCharacters(value).replace(UNSAFE_CONTROL_CHARACTERS, "");
+}
+function splitMarkdownForStreaming(content, isFinalized) {
+  if (isFinalized) {
+    return { parsedContent: content, pendingContent: "" };
+  }
+  const lastNewlineIndex = content.lastIndexOf("\n");
+  if (lastNewlineIndex === -1) {
+    return { parsedContent: "", pendingContent: content };
+  }
+  return {
+    parsedContent: content.slice(0, lastNewlineIndex + 1),
+    pendingContent: content.slice(lastNewlineIndex + 1)
+  };
+}
+function renderCode(content) {
+  const sanitizedContent = sanitizeMarkdownText(content);
+  if (!sanitizedContent.trim()) {
+    return "";
+  }
+  return sanitizedContent;
+}
+function nestedTokens(token) {
+  return "tokens" in token && Array.isArray(token.tokens) ? token.tokens : [];
+}
+function renderInlineTokens(tokens, keyPrefix) {
+  return tokens.map((token, index) => {
+    const key = `${keyPrefix}-${index}`;
+    switch (token.type) {
+      case "text": {
+        const children = nestedTokens(token);
+        return children.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(import_react31.default.Fragment, { children: renderInlineTokens(children, key) }, key) : /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(import_react31.default.Fragment, { children: sanitizeMarkdownText(token.text) }, key);
+      }
+      case "escape":
+        return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(import_react31.default.Fragment, { children: sanitizeMarkdownText(token.text) }, key);
+      case "strong":
+        return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { bold: true, children: renderInlineTokens(nestedTokens(token), key) }, key);
+      case "em":
+        return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { italic: true, children: renderInlineTokens(nestedTokens(token), key) }, key);
+      case "del":
+        return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { strikethrough: true, children: renderInlineTokens(nestedTokens(token), key) }, key);
+      case "codespan":
+        return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { color: MARKDOWN_THEME.inlineCode, children: sanitizeMarkdownText(token.text) }, key);
+      case "link":
+        return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_react31.default.Fragment, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { color: MARKDOWN_THEME.link, underline: true, children: renderInlineTokens(nestedTokens(token), key) }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { color: MARKDOWN_THEME.muted, children: ` (${sanitizeMarkdownText(token.href)})` })
+        ] }, key);
+      case "image":
+        return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { color: MARKDOWN_THEME.muted, children: `[image: ${sanitizeMarkdownText(token.text)}] (${sanitizeMarkdownText(token.href)})` }, key);
+      case "br":
+        return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(import_react31.default.Fragment, { children: "\n" }, key);
+      case "html":
+        return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(import_react31.default.Fragment, { children: sanitizeMarkdownText(token.text) }, key);
+      default: {
+        const children = nestedTokens(token);
+        return children.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(import_react31.default.Fragment, { children: renderInlineTokens(children, key) }, key) : /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(import_react31.default.Fragment, { children: sanitizeMarkdownText(token.raw) }, key);
+      }
+    }
+  });
+}
+function inlineText2(tokens) {
+  return tokens.map((token) => {
+    switch (token.type) {
+      case "text":
+      case "escape":
+      case "codespan":
+      case "html":
+        return sanitizeMarkdownText(token.text);
+      case "image":
+        return sanitizeMarkdownText(token.text);
+      case "br":
+        return " ";
+      default:
+        return inlineText2(nestedTokens(token));
+    }
+  }).join("");
+}
+function renderTableRow({
+  cells,
+  columnWidths,
+  header,
+  keyPrefix
+}) {
+  return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { children: cells.map((cell, index) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_react31.default.Fragment, { children: [
+    index > 0 ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { color: MARKDOWN_THEME.tableBorder, children: " \u2502 " }) : null,
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+      Box_default,
+      {
+        width: columnWidths[index] ?? 1,
+        justifyContent: cell.align === "right" ? "flex-end" : cell.align === "center" ? "center" : "flex-start",
+        children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { color: header ? MARKDOWN_THEME.tableHeader : void 0, bold: header, children: renderInlineTokens(cell.tokens, `${keyPrefix}-${index}`) })
+      }
+    )
+  ] }, `${keyPrefix}-${index}`)) });
+}
+function renderTable(token, width, keyPrefix) {
+  const columnCount = token.header.length;
+  const separatorWidth = Math.max(0, columnCount - 1) * 3;
+  const useGrid = columnCount > 0 && width >= columnCount * 8 + separatorWidth;
+  if (!useGrid) {
+    const labels = token.header.map((cell, index) => {
+      const label = inlineText2(cell.tokens).trim();
+      return label || `Column ${index + 1}`;
+    });
+    return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { flexDirection: "column", children: token.rows.map((row, rowIndex) => /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+      Box_default,
+      {
+        flexDirection: "column",
+        marginBottom: rowIndex < token.rows.length - 1 ? 1 : 0,
+        children: row.map((cell, cellIndex) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { bold: true, color: MARKDOWN_THEME.tableHeader, children: labels[cellIndex] }),
+          ": ",
+          renderInlineTokens(
+            cell.tokens,
+            `${keyPrefix}-row-${rowIndex}-${cellIndex}`
+          )
+        ] }, `${keyPrefix}-row-${rowIndex}-${cellIndex}`))
+      },
+      `${keyPrefix}-row-${rowIndex}`
+    )) });
+  }
+  const availableWidth = width - separatorWidth;
+  const baseWidth = Math.floor(availableWidth / columnCount);
+  const remainder = availableWidth % columnCount;
+  const columnWidths = Array.from(
+    { length: columnCount },
+    (_, index) => baseWidth + (index < remainder ? 1 : 0)
+  );
+  return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { flexDirection: "column", children: [
+    renderTableRow({
+      cells: token.header,
+      columnWidths,
+      header: true,
+      keyPrefix: `${keyPrefix}-header`
+    }),
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { color: MARKDOWN_THEME.tableBorder, children: "\u2500".repeat(width) }),
+    token.rows.map((row, rowIndex) => /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(import_react31.default.Fragment, { children: renderTableRow({
+      cells: row,
+      columnWidths,
+      header: false,
+      keyPrefix: `${keyPrefix}-row-${rowIndex}`
+    }) }, `${keyPrefix}-row-${rowIndex}`))
+  ] });
+}
+function renderBlockToken(token, width, keyPrefix) {
+  switch (token.type) {
+    case "paragraph":
+    case "text": {
+      const children = nestedTokens(token);
+      return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { color: MARKDOWN_THEME.foreground, children: children.length > 0 ? renderInlineTokens(children, keyPrefix) : sanitizeMarkdownText(token.text) });
+    }
+    case "heading": {
+      const heading2 = token;
+      const color = heading2.depth === 1 ? MARKDOWN_THEME.headingPrimary : heading2.depth === 2 ? MARKDOWN_THEME.headingSecondary : MARKDOWN_THEME.headingTertiary;
+      return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { color, bold: true, underline: heading2.depth === 1, children: renderInlineTokens(heading2.tokens, keyPrefix) });
+    }
+    case "code": {
+      const code = token;
+      const language = sanitizeMarkdownText(
+        code.lang?.trim().split(/\s+/u)[0] ?? ""
+      );
+      return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(
+        Box_default,
+        {
+          borderStyle: "round",
+          borderColor: MARKDOWN_THEME.codeBorder,
+          paddingX: 1,
+          flexDirection: "column",
+          width: Math.max(4, width),
+          children: [
+            language ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { color: MARKDOWN_THEME.muted, children: language }) : null,
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { color: MARKDOWN_THEME.codeText, children: renderCode(code.text) })
+          ]
+        }
+      );
+    }
+    case "blockquote": {
+      const blockquote2 = token;
+      return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { color: MARKDOWN_THEME.blockquoteBorder, children: "\u2502 " }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { flexDirection: "column", width: Math.max(1, width - 2), children: renderBlockTokens(
+          blockquote2.tokens,
+          Math.max(1, width - 2),
+          `${keyPrefix}-quote`,
+          true
+        ) })
+      ] });
+    }
+    case "list": {
+      const list2 = token;
+      const start = typeof list2.start === "number" ? list2.start : 1;
+      return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { flexDirection: "column", children: list2.items.map((item, index) => {
+        const marker = item.task ? item.checked ? "[x] " : "[ ] " : list2.ordered ? `${start + index}. ` : "\u2022 ";
+        return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { color: MARKDOWN_THEME.listMarker, children: marker }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+            Box_default,
+            {
+              flexDirection: "column",
+              width: Math.max(1, width - marker.length),
+              children: renderBlockTokens(
+                item.tokens,
+                Math.max(1, width - marker.length),
+                `${keyPrefix}-item-${index}`,
+                true
+              )
+            }
+          )
+        ] }, `${keyPrefix}-item-${index}`);
+      }) });
+    }
+    case "table":
+      return renderTable(token, width, keyPrefix);
+    case "hr":
+      return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { color: MARKDOWN_THEME.muted, children: "\u2500".repeat(Math.max(1, width)) });
+    case "html":
+      return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { children: sanitizeMarkdownText(token.text) });
+    default: {
+      const children = nestedTokens(token);
+      return children.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { flexDirection: "column", children: renderBlockTokens(children, width, `${keyPrefix}-nested`, true) }) : /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { children: sanitizeMarkdownText(token.raw) });
+    }
+  }
+}
+function renderBlockTokens(tokens, width, keyPrefix, compact = false) {
+  const visibleTokens = tokens.filter(
+    (token) => token.type !== "space" && token.type !== "def"
+  );
+  return visibleTokens.map((token, index) => /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+    Box_default,
+    {
+      flexDirection: "column",
+      marginBottom: !compact && index < visibleTokens.length - 1 ? 1 : 0,
+      children: renderBlockToken(token, width, `${keyPrefix}-${index}`)
+    },
+    `${keyPrefix}-${index}`
+  ));
+}
+var MarkdownBlock = (0, import_react31.memo)(function MarkdownBlock2({
+  content,
+  width,
+  isFinalized
+}) {
+  const sanitizedContent = (0, import_react31.useMemo)(() => sanitizeMarkdownText(content), [content]);
+  const { parsedContent, pendingContent } = splitMarkdownForStreaming(
+    sanitizedContent,
+    isFinalized
+  );
+  const tokens = (0, import_react31.useMemo)(() => {
+    if (!parsedContent) {
+      return [];
+    }
+    try {
+      return marked.lexer(parsedContent, { gfm: true });
+    } catch {
+      return void 0;
+    }
+  }, [parsedContent]);
+  if (tokens === void 0) {
+    return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { width: Math.max(1, width), children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { color: MARKDOWN_THEME.foreground, children: sanitizedContent }) });
+  }
+  return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { flexDirection: "column", width: Math.max(1, width), children: [
+    renderBlockTokens(tokens, Math.max(1, width), "markdown"),
+    pendingContent ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { color: MARKDOWN_THEME.foreground, children: pendingContent }) : null,
+    !parsedContent && !pendingContent ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { children: " " }) : null
+  ] });
+});
+
+// src/components/messages/AgentMessageBubble.tsx
+var import_jsx_runtime4 = __toESM(require_jsx_runtime(), 1);
+var AgentMessageBubble = (0, import_react32.memo)(function AgentMessageBubble2({
+  body,
+  lineWidth,
+  isFinalized
+}) {
+  const marker = "\xB7 ";
+  const markerWidth = marker.length;
+  const contentWidth = Math.max(1, lineWidth - markerWidth);
+  return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { width: lineWidth, alignItems: "flex-start", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: MESSAGE_THEME.labelAccent, children: marker }),
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+      MarkdownBlock,
+      {
+        content: body,
+        width: contentWidth,
+        isFinalized
+      }
+    )
+  ] });
+});
+
+// src/components/messages/messageLayout.ts
+var import_react33 = __toESM(require_react(), 1);
 function findSoftBreakIndex(value, width) {
   const searchEnd = Math.min(value.length - 1, width);
   for (let index = searchEnd; index > 0; index -= 1) {
@@ -51465,10 +54181,10 @@ function wrapToWidth2(value, width) {
 }
 function useTerminalWidth() {
   const { stdout } = use_stdout_default();
-  const [viewportWidth, setViewportWidth] = (0, import_react31.useState)(
+  const [viewportWidth, setViewportWidth] = (0, import_react33.useState)(
     stdout?.columns ?? process.stdout.columns ?? 80
   );
-  (0, import_react31.useEffect)(() => {
+  (0, import_react33.useEffect)(() => {
     const handleResize = () => {
       setViewportWidth(stdout?.columns ?? process.stdout.columns ?? 80);
     };
@@ -51481,24 +54197,8 @@ function useTerminalWidth() {
   return Math.max(24, viewportWidth);
 }
 
-// src/components/messages/AgentMessageBubble.tsx
-var import_jsx_runtime3 = __toESM(require_jsx_runtime(), 1);
-function AgentMessageBubble({
-  body,
-  lineWidth
-}) {
-  const marker = "\xB7 ";
-  const markerWidth = marker.length;
-  const contentWidth = Math.max(1, lineWidth - markerWidth);
-  const lines = wrapToWidth2(body, contentWidth);
-  return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { flexDirection: "column", width: lineWidth, children: lines.map((line, index) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { children: [
-    index === 0 ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { color: MESSAGE_THEME.labelAccent, children: marker }) : /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { children: " ".repeat(markerWidth) }),
-    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { color: MESSAGE_THEME.foreground, children: line })
-  ] }, `agent-${index}`)) });
-}
-
 // src/components/messages/SystemMessageBubble.tsx
-var import_jsx_runtime4 = __toESM(require_jsx_runtime(), 1);
+var import_jsx_runtime5 = __toESM(require_jsx_runtime(), 1);
 var SYSTEM_COMMAND_HIGHLIGHTS = ["/sources", "/clear"];
 function labelForKind(kind) {
   switch (kind) {
@@ -51518,9 +54218,9 @@ function renderSystemLine(line) {
   );
   const parts = line.split(pattern).filter((part) => part.length > 0);
   if (parts.length === 1 && parts[0] === line) {
-    return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: MESSAGE_THEME.foreground, children: line });
+    return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { color: MESSAGE_THEME.foreground, children: line });
   }
-  return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(import_jsx_runtime4.Fragment, { children: parts.map((part, index) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+  return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(import_jsx_runtime5.Fragment, { children: parts.map((part, index) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
     Text,
     {
       color: SYSTEM_COMMAND_HIGHLIGHTS.includes(part) ? MESSAGE_THEME.primary : MESSAGE_THEME.foreground,
@@ -51538,14 +54238,14 @@ function SystemMessageBubble({
   const markerWidth = marker.length;
   const contentWidth = Math.max(1, lineWidth - markerWidth);
   const lines = wrapToWidth2(body, contentWidth);
-  return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { flexDirection: "column", width: lineWidth, children: lines.map((line, index) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { children: [
-    index === 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: MESSAGE_THEME.labelAccent, children: marker }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { children: " ".repeat(markerWidth) }),
+  return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { flexDirection: "column", width: lineWidth, children: lines.map((line, index) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { children: [
+    index === 0 ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { color: MESSAGE_THEME.labelAccent, children: marker }) : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { children: " ".repeat(markerWidth) }),
     renderSystemLine(line)
   ] }, `${kind}-${index}`)) });
 }
 
 // src/components/messages/UserMessageBubble.tsx
-var import_jsx_runtime5 = __toESM(require_jsx_runtime(), 1);
+var import_jsx_runtime6 = __toESM(require_jsx_runtime(), 1);
 function UserMessageBubble({
   body,
   lineWidth
@@ -51553,24 +54253,24 @@ function UserMessageBubble({
   const contentWidth = Math.max(1, lineWidth - 2);
   const lines = wrapToWidth2(body, contentWidth);
   const fillerRow = " ".repeat(lineWidth);
-  return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { flexDirection: "column", width: lineWidth, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { backgroundColor: MESSAGE_THEME.background, children: fillerRow }),
+  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Box_default, { flexDirection: "column", width: lineWidth, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { backgroundColor: MESSAGE_THEME.background, children: fillerRow }),
     lines.map((line, index) => {
       const prefix = index === 0 ? "\u203A " : "  ";
       const padding = " ".repeat(Math.max(0, contentWidth - line.length));
-      return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { children: [
-        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { backgroundColor: MESSAGE_THEME.background, color: MESSAGE_THEME.accent, children: prefix }),
-        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { backgroundColor: MESSAGE_THEME.background, color: MESSAGE_THEME.foreground, children: line }),
-        padding.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { backgroundColor: MESSAGE_THEME.background, children: padding }) : null
+      return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Box_default, { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { backgroundColor: MESSAGE_THEME.background, color: MESSAGE_THEME.accent, children: prefix }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { backgroundColor: MESSAGE_THEME.background, color: MESSAGE_THEME.foreground, children: line }),
+        padding.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { backgroundColor: MESSAGE_THEME.background, children: padding }) : null
       ] }, `user-${index}`);
     }),
-    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { backgroundColor: MESSAGE_THEME.background, children: fillerRow })
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { backgroundColor: MESSAGE_THEME.background, children: fillerRow })
   ] });
 }
 
 // src/components/messages/WorkingIndicator.tsx
-var import_react32 = __toESM(require_react(), 1);
-var import_jsx_runtime6 = __toESM(require_jsx_runtime(), 1);
+var import_react34 = __toESM(require_react(), 1);
+var import_jsx_runtime7 = __toESM(require_jsx_runtime(), 1);
 function formatElapsed(startedAt, now) {
   const elapsedSeconds = Math.max(0, Math.floor((now - startedAt) / 1e3));
   if (elapsedSeconds < 60) {
@@ -51583,11 +54283,11 @@ function formatElapsed(startedAt, now) {
 function WorkingIndicator({
   startedAt
 }) {
-  const [now, setNow] = (0, import_react32.useState)(Date.now());
-  const [frame, setFrame] = (0, import_react32.useState)(0);
+  const [now, setNow] = (0, import_react34.useState)(Date.now());
+  const [frame, setFrame] = (0, import_react34.useState)(0);
   const animatedLabel = "\xB7 Working";
-  const elapsedLabel = (0, import_react32.useMemo)(() => formatElapsed(startedAt, now), [now, startedAt]);
-  (0, import_react32.useEffect)(() => {
+  const elapsedLabel = (0, import_react34.useMemo)(() => formatElapsed(startedAt, now), [now, startedAt]);
+  (0, import_react34.useEffect)(() => {
     const timer = setInterval(() => {
       setNow(Date.now());
       setFrame((current) => current + 1);
@@ -51597,8 +54297,8 @@ function WorkingIndicator({
     };
   }, []);
   const activeIndex = frame % animatedLabel.length;
-  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Box_default, { children: [
-    animatedLabel.split("").map((character, index) => /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+  return /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(Box_default, { children: [
+    animatedLabel.split("").map((character, index) => /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
       Text,
       {
         backgroundColor: index === activeIndex ? MESSAGE_THEME.accent : void 0,
@@ -51607,7 +54307,7 @@ function WorkingIndicator({
       },
       `${character}-${index}`
     )),
-    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Text, { color: MESSAGE_THEME.muted, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(Text, { color: MESSAGE_THEME.muted, children: [
       " (",
       elapsedLabel,
       ")"
@@ -51616,19 +54316,28 @@ function WorkingIndicator({
 }
 
 // src/components/MessageBubble.tsx
-var import_jsx_runtime7 = __toESM(require_jsx_runtime(), 1);
-function MessageBubble({ entry }) {
-  const lineWidth = useTerminalWidth();
+var import_jsx_runtime8 = __toESM(require_jsx_runtime(), 1);
+var MessageBubble = (0, import_react35.memo)(function MessageBubble2({
+  entry,
+  lineWidth
+}) {
   if (entry.role === "divider") {
-    return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Text, { color: MESSAGE_THEME.muted, children: "-".repeat(lineWidth) });
+    return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { color: MESSAGE_THEME.muted, children: "-".repeat(lineWidth) });
   }
   if (entry.role === "user") {
-    return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(UserMessageBubble, { body: entry.body, lineWidth });
+    return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(UserMessageBubble, { body: entry.body, lineWidth });
   }
   if (entry.role === "agent") {
-    return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(AgentMessageBubble, { body: entry.body, lineWidth });
+    return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+      AgentMessageBubble,
+      {
+        body: entry.body,
+        lineWidth,
+        isFinalized: entry.isFinalized
+      }
+    );
   }
-  return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+  return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
     SystemMessageBubble,
     {
       body: entry.body,
@@ -51636,10 +54345,10 @@ function MessageBubble({ entry }) {
       lineWidth
     }
   );
-}
+});
 
 // src/components/ChatSession.tsx
-var import_jsx_runtime8 = __toESM(require_jsx_runtime(), 1);
+var import_jsx_runtime9 = __toESM(require_jsx_runtime(), 1);
 function ChatSession({
   entries,
   discoveredCount,
@@ -51648,20 +54357,24 @@ function ChatSession({
   requestMode,
   responseMode
 }) {
+  const lineWidth = useTerminalWidth();
+  const { scrollbackEntries, dynamicEntries } = (0, import_react36.useMemo)(
+    () => partitionTranscriptEntries(entries),
+    [entries]
+  );
+  const scrollbackItems = (0, import_react36.useMemo)(
+    () => entries.length === 0 ? [] : [
+      { id: "transcript-header", kind: "header" },
+      ...scrollbackEntries.map((entry) => ({
+        id: entry.id,
+        kind: "entry",
+        entry
+      }))
+    ],
+    [entries.length, scrollbackEntries]
+  );
   if (entries.length === 0) {
-    return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
-      HomeScreen,
-      {
-        discoveredCount,
-        sourceCount,
-        selectedAgentId,
-        requestMode,
-        responseMode
-      }
-    );
-  }
-  return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(Box_default, { flexDirection: "column", children: [
-    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+    return /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
       HomeScreen,
       {
         discoveredCount,
@@ -51669,22 +54382,52 @@ function ChatSession({
         selectedAgentId,
         requestMode,
         responseMode,
-        mode: "inline"
+        terminalWidth: lineWidth
       }
-    ),
-    entries.map((entry, index) => /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Box_default, { marginBottom: index < entries.length - 1 ? 1 : 0, children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(MessageBubble, { entry }) }, entry.id))
+    );
+  }
+  return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Box_default, { flexDirection: "column", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Static, { items: scrollbackItems, children: (item) => item.kind === "header" ? /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
+      HomeScreen,
+      {
+        discoveredCount,
+        sourceCount,
+        selectedAgentId,
+        requestMode,
+        responseMode,
+        terminalWidth: lineWidth,
+        mode: "inline"
+      },
+      item.id
+    ) : /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Box_default, { marginBottom: 1, children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(MessageBubble, { entry: item.entry, lineWidth }) }, item.id) }),
+    dynamicEntries.map((entry, index) => /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
+      Box_default,
+      {
+        marginBottom: index < dynamicEntries.length - 1 ? 1 : 0,
+        children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(MessageBubble, { entry, lineWidth })
+      },
+      entry.id
+    ))
   ] });
 }
 
 // src/components/SystemNotificationStack.tsx
-var import_jsx_runtime9 = __toESM(require_jsx_runtime(), 1);
+var import_jsx_runtime10 = __toESM(require_jsx_runtime(), 1);
 function SystemNotificationStack({
   notifications
 }) {
+  const lineWidth = useTerminalWidth();
   if (notifications.length === 0) {
     return null;
   }
-  return /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Box_default, { flexDirection: "column", marginBottom: 1, children: notifications.map((notification) => /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(MessageBubble, { entry: notification }, notification.id)) });
+  return /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Box_default, { flexDirection: "column", marginBottom: 1, children: notifications.map((notification) => /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(
+    MessageBubble,
+    {
+      entry: notification,
+      lineWidth
+    },
+    notification.id
+  )) });
 }
 
 // src/lib/agentSelection.ts
@@ -51767,9 +54510,9 @@ var SLASH_COMMANDS = [
   {
     id: "clear",
     label: "/clear",
-    description: "Clear the visible transcript and start fresh.",
-    title: "Clear Transcript",
-    subtitle: "Clear the visible transcript and start fresh.",
+    description: "Clear terminal output and start a fresh chat context.",
+    title: "Clear Terminal",
+    subtitle: "Clear terminal output and start a fresh chat context.",
     options: []
   },
   {
@@ -52235,7 +54978,7 @@ function validateBrowserUrl(url) {
 }
 function buildBrowserOpenCommand(url, platform2 = process.platform) {
   validateBrowserUrl(url);
-  const options = {
+  const options2 = {
     detached: true,
     stdio: "ignore"
   };
@@ -52244,14 +54987,14 @@ function buildBrowserOpenCommand(url, platform2 = process.platform) {
       return {
         command: "open",
         args: [url],
-        options
+        options: options2
       };
     case "win32":
       return {
         command: "cmd",
         args: ["/c", "start", "", url],
         options: {
-          ...options,
+          ...options2,
           windowsHide: true
         }
       };
@@ -52259,7 +55002,7 @@ function buildBrowserOpenCommand(url, platform2 = process.platform) {
       return {
         command: "xdg-open",
         args: [url],
-        options
+        options: options2
       };
   }
 }
@@ -52333,9 +55076,9 @@ async function runClipboardCommand(clipboardCommand, content, spawnImpl) {
     }
   });
 }
-async function writeClipboard(content, options = {}) {
-  const commands = options.commands ?? buildClipboardWriteCommands();
-  const spawnImpl = options.spawnImpl ?? spawn2;
+async function writeClipboard(content, options2 = {}) {
+  const commands = options2.commands ?? buildClipboardWriteCommands();
+  const spawnImpl = options2.spawnImpl ?? spawn2;
   for (const command of commands) {
     if (await runClipboardCommand(command, content, spawnImpl)) {
       return;
@@ -52829,8 +55572,8 @@ var FromProto = class {
 
 // node_modules/@a2a-js/sdk/dist/client/index.js
 var DefaultAgentCardResolver = class {
-  constructor(options) {
-    this.options = options;
+  constructor(options2) {
+    this.options = options2;
   }
   /**
    * Fetches the agent card based on provided base URL and path.
@@ -52945,12 +55688,12 @@ var Client = class {
    * automatically by `ClientFactory` from `AgentInterface.tenant`), the tenant
    * is applied to the request transparently.
    */
-  async getAgentCard(options, verifySignature) {
+  async getAgentCard(options2, verifySignature) {
     if (this.agentCard.capabilities?.extendedAgentCard) {
       this.agentCard = await this.executeWithInterceptors(
         { method: "getAgentCard" },
-        options,
-        (_, options2) => this.transport.getExtendedAgentCard({ tenant: "" }, options2)
+        options2,
+        (_, options22) => this.transport.getExtendedAgentCard({ tenant: "" }, options22)
       );
     }
     if (verifySignature) {
@@ -52962,14 +55705,14 @@ var Client = class {
    * Sends a message to an agent to initiate a new interaction or to continue an existing one.
    * Uses blocking mode by default.
    */
-  sendMessage(params, options) {
+  sendMessage(params, options2) {
     params = this.applyClientConfig({
       params,
       returnImmediately: this.config?.polling ?? false
     });
     return this.executeWithInterceptors(
       { method: "sendMessage", value: params },
-      options,
+      options2,
       this.transport.sendMessage.bind(this.transport)
     );
   }
@@ -52977,13 +55720,13 @@ var Client = class {
    * Sends a message to an agent to initiate/continue a task AND subscribes the client to real-time updates for that task.
    * Performs fallback to non-streaming if not supported by the agent.
    */
-  async *sendMessageStream(params, options) {
+  async *sendMessageStream(params, options2) {
     const method = "sendMessageStream";
     params = this.applyClientConfig({ params, returnImmediately: false });
     const beforeArgs = {
       input: { method, value: params },
       agentCard: this.agentCard,
-      options: this.withVersionHeader(options)
+      options: this.withVersionHeader(options2)
     };
     const beforeResult = await this.interceptBefore(beforeArgs);
     if (beforeResult) {
@@ -53034,13 +55777,13 @@ var Client = class {
    * Creates a push notification configuration for a specified task.
    * Requires the server to have AgentCard.capabilities.pushNotifications: true.
    */
-  createTaskPushNotificationConfig(params, options) {
+  createTaskPushNotificationConfig(params, options2) {
     if (!this.agentCard.capabilities?.pushNotifications) {
       throw new PushNotificationNotSupportedError();
     }
     return this.executeWithInterceptors(
       { method: "createTaskPushNotificationConfig", value: params },
-      options,
+      options2,
       this.transport.createTaskPushNotificationConfig.bind(this.transport)
     );
   }
@@ -53048,13 +55791,13 @@ var Client = class {
    * Retrieves the current push notification configuration for a specified task.
    * Requires the server to have AgentCard.capabilities.pushNotifications: true.
    */
-  getTaskPushNotificationConfig(params, options) {
+  getTaskPushNotificationConfig(params, options2) {
     if (!this.agentCard.capabilities?.pushNotifications) {
       throw new PushNotificationNotSupportedError();
     }
     return this.executeWithInterceptors(
       { method: "getTaskPushNotificationConfig", value: params },
-      options,
+      options2,
       this.transport.getTaskPushNotificationConfig.bind(this.transport)
     );
   }
@@ -53062,33 +55805,33 @@ var Client = class {
    * Retrieves the associated push notification configurations for a specified task.
    * Requires the server to have AgentCard.capabilities.pushNotifications: true.
    */
-  listTaskPushNotificationConfig(params, options) {
+  listTaskPushNotificationConfig(params, options2) {
     if (!this.agentCard.capabilities?.pushNotifications) {
       throw new PushNotificationNotSupportedError();
     }
     return this.executeWithInterceptors(
       { method: "listTaskPushNotificationConfig", value: params },
-      options,
+      options2,
       this.transport.listTaskPushNotificationConfig.bind(this.transport)
     );
   }
   /**
    * Deletes an associated push notification configuration for a task.
    */
-  deleteTaskPushNotificationConfig(params, options) {
+  deleteTaskPushNotificationConfig(params, options2) {
     return this.executeWithInterceptors(
       { method: "deleteTaskPushNotificationConfig", value: params },
-      options,
+      options2,
       this.transport.deleteTaskPushNotificationConfig.bind(this.transport)
     );
   }
   /**
    * Retrieves the current state (including status, artifacts, and optionally history) of a previously initiated task.
    */
-  getTask(params, options) {
+  getTask(params, options2) {
     return this.executeWithInterceptors(
       { method: "getTask", value: params },
-      options,
+      options2,
       this.transport.getTask.bind(this.transport)
     );
   }
@@ -53096,32 +55839,32 @@ var Client = class {
    * Requests the cancellation of an ongoing task. The server will attempt to cancel the task,
    * but success is not guaranteed (e.g., the task might have already completed or failed, or cancellation might not be supported at its current stage).
    */
-  cancelTask(params, options) {
+  cancelTask(params, options2) {
     return this.executeWithInterceptors(
       { method: "cancelTask", value: params },
-      options,
+      options2,
       this.transport.cancelTask.bind(this.transport)
     );
   }
   /**
    * Retrieves a list of tasks with optional filtering and pagination.
    */
-  listTasks(params, options) {
+  listTasks(params, options2) {
     return this.executeWithInterceptors(
       { method: "listTasks", value: params },
-      options,
+      options2,
       this.transport.listTasks.bind(this.transport)
     );
   }
   /**
    * Allows a client to reconnect to an updates stream for an ongoing task after a previous connection was interrupted.
    */
-  async *resubscribeTask(params, options) {
+  async *resubscribeTask(params, options2) {
     const method = "resubscribeTask";
     const beforeArgs = {
       input: { method, value: params },
       agentCard: this.agentCard,
-      options: this.withVersionHeader(options)
+      options: this.withVersionHeader(options2)
     };
     const beforeResult = await this.interceptBefore(beforeArgs);
     if (beforeResult) {
@@ -53172,20 +55915,20 @@ var Client = class {
    * Ensures the A2A-Version header is present in the request's service parameters.
    * Per §3.6.1: "Clients MUST send the A2A-Version header with each request."
    */
-  withVersionHeader(options) {
+  withVersionHeader(options2) {
     return {
-      ...options,
+      ...options2,
       serviceParameters: ServiceParameters.createFrom(
-        options?.serviceParameters,
+        options2?.serviceParameters,
         withA2AVersion(this.protocolVersion)
       )
     };
   }
-  async executeWithInterceptors(input, options, transportCall) {
+  async executeWithInterceptors(input, options2, transportCall) {
     const beforeArgs = {
       input,
       agentCard: this.agentCard,
-      options: this.withVersionHeader(options)
+      options: this.withVersionHeader(options2)
     };
     const beforeResult = await this.interceptBefore(beforeArgs);
     if (beforeResult) {
@@ -53252,61 +55995,61 @@ var TenantTransportDecorator = class {
   _resolveTenant(tenant) {
     return tenant || this.defaultTenant;
   }
-  async getExtendedAgentCard(params, options) {
+  async getExtendedAgentCard(params, options2) {
     return this.base.getExtendedAgentCard(
       { ...params, tenant: this._resolveTenant(params.tenant) },
-      options
+      options2
     );
   }
-  async sendMessage(params, options) {
+  async sendMessage(params, options2) {
     return this.base.sendMessage(
       { ...params, tenant: this._resolveTenant(params.tenant) },
-      options
+      options2
     );
   }
-  async *sendMessageStream(params, options) {
+  async *sendMessageStream(params, options2) {
     yield* this.base.sendMessageStream(
       { ...params, tenant: this._resolveTenant(params.tenant) },
-      options
+      options2
     );
   }
-  async getTask(params, options) {
-    return this.base.getTask({ ...params, tenant: this._resolveTenant(params.tenant) }, options);
+  async getTask(params, options2) {
+    return this.base.getTask({ ...params, tenant: this._resolveTenant(params.tenant) }, options2);
   }
-  async cancelTask(params, options) {
-    return this.base.cancelTask({ ...params, tenant: this._resolveTenant(params.tenant) }, options);
+  async cancelTask(params, options2) {
+    return this.base.cancelTask({ ...params, tenant: this._resolveTenant(params.tenant) }, options2);
   }
-  async listTasks(params, options) {
-    return this.base.listTasks({ ...params, tenant: this._resolveTenant(params.tenant) }, options);
+  async listTasks(params, options2) {
+    return this.base.listTasks({ ...params, tenant: this._resolveTenant(params.tenant) }, options2);
   }
-  async createTaskPushNotificationConfig(params, options) {
+  async createTaskPushNotificationConfig(params, options2) {
     return this.base.createTaskPushNotificationConfig(
       { ...params, tenant: this._resolveTenant(params.tenant) },
-      options
+      options2
     );
   }
-  async getTaskPushNotificationConfig(params, options) {
+  async getTaskPushNotificationConfig(params, options2) {
     return this.base.getTaskPushNotificationConfig(
       { ...params, tenant: this._resolveTenant(params.tenant) },
-      options
+      options2
     );
   }
-  async listTaskPushNotificationConfig(params, options) {
+  async listTaskPushNotificationConfig(params, options2) {
     return this.base.listTaskPushNotificationConfig(
       { ...params, tenant: this._resolveTenant(params.tenant) },
-      options
+      options2
     );
   }
-  async deleteTaskPushNotificationConfig(params, options) {
+  async deleteTaskPushNotificationConfig(params, options2) {
     return this.base.deleteTaskPushNotificationConfig(
       { ...params, tenant: this._resolveTenant(params.tenant) },
-      options
+      options2
     );
   }
-  async *resubscribeTask(params, options) {
+  async *resubscribeTask(params, options2) {
     yield* this.base.resubscribeTask(
       { ...params, tenant: this._resolveTenant(params.tenant) },
-      options
+      options2
     );
   }
 };
@@ -53315,9 +56058,9 @@ var JsonRpcTransport = class _JsonRpcTransport {
   customFetchImpl;
   endpoint;
   requestIdCounter = 1;
-  constructor(options) {
-    this.endpoint = options.endpoint;
-    this.customFetchImpl = options.fetchImpl;
+  constructor(options2) {
+    this.endpoint = options2.endpoint;
+    this.customFetchImpl = options2.fetchImpl;
   }
   get protocolName() {
     return PROTOCOL_NAME;
@@ -53325,20 +56068,20 @@ var JsonRpcTransport = class _JsonRpcTransport {
   get protocolVersion() {
     return A2A_PROTOCOL_VERSION;
   }
-  async getExtendedAgentCard(params, options) {
+  async getExtendedAgentCard(params, options2) {
     const rpcResponse = await this._sendRpcRequest(
       "GetExtendedAgentCard",
       params,
-      options,
+      options2,
       GetExtendedAgentCardRequest
     );
     return AgentCard.fromJSON(rpcResponse.result);
   }
-  async sendMessage(params, options) {
+  async sendMessage(params, options2) {
     const rpcResponse = await this._sendRpcRequest(
       "SendMessage",
       params,
-      options,
+      options2,
       SendMessageRequest
     );
     const response = SendMessageResponse.fromJSON(rpcResponse.result);
@@ -53347,74 +56090,74 @@ var JsonRpcTransport = class _JsonRpcTransport {
     }
     return response.payload.value;
   }
-  async *sendMessageStream(params, options) {
+  async *sendMessageStream(params, options2) {
     yield* this._sendStreamingRequest(
       "SendStreamingMessage",
       params,
-      options,
+      options2,
       SendMessageRequest
     );
   }
-  async createTaskPushNotificationConfig(params, options) {
-    const rpcResponse = await this._sendRpcRequest("CreateTaskPushNotificationConfig", params, options, TaskPushNotificationConfig);
+  async createTaskPushNotificationConfig(params, options2) {
+    const rpcResponse = await this._sendRpcRequest("CreateTaskPushNotificationConfig", params, options2, TaskPushNotificationConfig);
     return TaskPushNotificationConfig.fromJSON(rpcResponse.result);
   }
-  async getTaskPushNotificationConfig(params, options) {
-    const rpcResponse = await this._sendRpcRequest("GetTaskPushNotificationConfig", params, options, GetTaskPushNotificationConfigRequest);
+  async getTaskPushNotificationConfig(params, options2) {
+    const rpcResponse = await this._sendRpcRequest("GetTaskPushNotificationConfig", params, options2, GetTaskPushNotificationConfigRequest);
     return TaskPushNotificationConfig.fromJSON(rpcResponse.result);
   }
-  async listTaskPushNotificationConfig(params, options) {
-    const rpcResponse = await this._sendRpcRequest("ListTaskPushNotificationConfigs", params, options, ListTaskPushNotificationConfigsRequest);
+  async listTaskPushNotificationConfig(params, options2) {
+    const rpcResponse = await this._sendRpcRequest("ListTaskPushNotificationConfigs", params, options2, ListTaskPushNotificationConfigsRequest);
     return ListTaskPushNotificationConfigsResponse.fromJSON(rpcResponse.result);
   }
-  async deleteTaskPushNotificationConfig(params, options) {
+  async deleteTaskPushNotificationConfig(params, options2) {
     await this._sendRpcRequest(
       "DeleteTaskPushNotificationConfig",
       params,
-      options,
+      options2,
       DeleteTaskPushNotificationConfigRequest
     );
   }
-  async getTask(params, options) {
+  async getTask(params, options2) {
     const rpcResponse = await this._sendRpcRequest(
       "GetTask",
       params,
-      options,
+      options2,
       GetTaskRequest
     );
     return Task.fromJSON(rpcResponse.result);
   }
-  async cancelTask(params, options) {
+  async cancelTask(params, options2) {
     const rpcResponse = await this._sendRpcRequest(
       "CancelTask",
       params,
-      options,
+      options2,
       CancelTaskRequest
     );
     return Task.fromJSON(rpcResponse.result);
   }
-  async listTasks(params, options) {
+  async listTasks(params, options2) {
     const rpcResponse = await this._sendRpcRequest(
       "ListTasks",
       params,
-      options,
+      options2,
       ListTasksRequest
     );
     return ListTasksResponse.fromJSON(rpcResponse.result);
   }
-  async *resubscribeTask(params, options) {
+  async *resubscribeTask(params, options2) {
     yield* this._sendStreamingRequest(
       "SubscribeToTask",
       params,
-      options,
+      options2,
       SubscribeToTaskRequest
     );
   }
-  async callExtensionMethod(method, params, options) {
+  async callExtensionMethod(method, params, options2) {
     return await this._sendRpcRequest(
       method,
       params,
-      options,
+      options2,
       void 0
     );
   }
@@ -53429,7 +56172,7 @@ var JsonRpcTransport = class _JsonRpcTransport {
       "A `fetch` implementation was not provided and is not available in the global scope. Please provide a `fetchImpl` in the A2ATransportOptions. "
     );
   }
-  async _sendRpcRequest(method, params, options, requestType) {
+  async _sendRpcRequest(method, params, options2, requestType) {
     const requestId = this.requestIdCounter++;
     const rpcRequest = {
       jsonrpc: "2.0",
@@ -53437,7 +56180,7 @@ var JsonRpcTransport = class _JsonRpcTransport {
       params: requestType?.toJSON(params) ?? params,
       id: requestId
     };
-    const httpResponse = await this._fetchRpc(rpcRequest, JSON_CONTENT_TYPE, options);
+    const httpResponse = await this._fetchRpc(rpcRequest, JSON_CONTENT_TYPE, options2);
     if (!httpResponse.ok) {
       let errorBodyText = "(empty or non-JSON response)";
       let errorJson;
@@ -53470,20 +56213,20 @@ var JsonRpcTransport = class _JsonRpcTransport {
     }
     return rpcResponse;
   }
-  async _fetchRpc(rpcRequest, acceptHeader = JSON_CONTENT_TYPE, options) {
+  async _fetchRpc(rpcRequest, acceptHeader = JSON_CONTENT_TYPE, options2) {
     const requestInit = {
       method: "POST",
       headers: {
-        ...options?.serviceParameters,
+        ...options2?.serviceParameters,
         "Content-Type": JSON_CONTENT_TYPE,
         Accept: acceptHeader
       },
       body: JSON.stringify(rpcRequest),
-      signal: options?.signal
+      signal: options2?.signal
     };
     return this._fetch(this.endpoint, requestInit);
   }
-  async *_sendStreamingRequest(method, params, options, requestType) {
+  async *_sendStreamingRequest(method, params, options2, requestType) {
     const clientRequestId = this.requestIdCounter++;
     const rpcRequest = {
       jsonrpc: "2.0",
@@ -53491,7 +56234,7 @@ var JsonRpcTransport = class _JsonRpcTransport {
       params: requestType?.toJSON(params) ?? params,
       id: clientRequestId
     };
-    const response = await this._fetchRpc(rpcRequest, "text/event-stream", options);
+    const response = await this._fetchRpc(rpcRequest, "text/event-stream", options2);
     if (!response.ok) {
       let errorBody = "";
       try {
@@ -53592,8 +56335,8 @@ var JsonRpcTransport = class _JsonRpcTransport {
   }
 };
 var JsonRpcTransportFactory = class {
-  constructor(options) {
-    this.options = options;
+  constructor(options2) {
+    this.options = options2;
   }
   get protocolName() {
     return PROTOCOL_NAME;
@@ -53617,9 +56360,9 @@ var PROTOCOL_NAME2 = "HTTP+JSON";
 var RestTransport = class _RestTransport {
   customFetchImpl;
   endpoint;
-  constructor(options) {
-    this.endpoint = options.endpoint.replace(/\/+$/, "");
-    this.customFetchImpl = options.fetchImpl;
+  constructor(options2) {
+    this.endpoint = options2.endpoint.replace(/\/+$/, "");
+    this.customFetchImpl = options2.fetchImpl;
   }
   _buildPath(path4, tenant) {
     return tenant ? "/" + encodeURIComponent(tenant) + path4 : path4;
@@ -53630,45 +56373,45 @@ var RestTransport = class _RestTransport {
   get protocolVersion() {
     return A2A_PROTOCOL_VERSION;
   }
-  async getExtendedAgentCard(params, options) {
+  async getExtendedAgentCard(params, options2) {
     const path4 = this._buildPath("/extendedAgentCard", params.tenant);
     const response = await this._sendRequest(
       "GET",
       path4,
       void 0,
-      options,
+      options2,
       void 0,
       AgentCard
     );
     return response;
   }
-  async sendMessage(params, options) {
+  async sendMessage(params, options2) {
     const requestBody = params;
     const path4 = this._buildPath("/message:send", params.tenant);
     const response = await this._sendRequest(
       "POST",
       path4,
       requestBody,
-      options,
+      options2,
       SendMessageRequest,
       SendMessageResponse
     );
     return FromProto.sendMessageResult(response);
   }
-  async *sendMessageStream(params, options) {
+  async *sendMessageStream(params, options2) {
     const requestBody = SendMessageRequest.toJSON(params);
     const path4 = this._buildPath("/message:stream", params.tenant);
-    yield* this._sendStreamingRequest(path4, requestBody, options);
+    yield* this._sendStreamingRequest(path4, requestBody, options2);
   }
-  async createTaskPushNotificationConfig(params, options) {
+  async createTaskPushNotificationConfig(params, options2) {
     const path4 = this._buildPath(
       `/tasks/${encodeURIComponent(params.taskId)}/pushNotificationConfigs`,
       params.tenant
     );
-    const response = await this._sendRequest("POST", path4, params, options, TaskPushNotificationConfig, TaskPushNotificationConfig);
+    const response = await this._sendRequest("POST", path4, params, options2, TaskPushNotificationConfig, TaskPushNotificationConfig);
     return response;
   }
-  async getTaskPushNotificationConfig(params, options) {
+  async getTaskPushNotificationConfig(params, options2) {
     const path4 = this._buildPath(
       `/tasks/${encodeURIComponent(params.taskId)}/pushNotificationConfigs/${encodeURIComponent(
         params.id
@@ -53679,13 +56422,13 @@ var RestTransport = class _RestTransport {
       "GET",
       path4,
       void 0,
-      options,
+      options2,
       void 0,
       TaskPushNotificationConfig
     );
     return response;
   }
-  async listTaskPushNotificationConfig(params, options) {
+  async listTaskPushNotificationConfig(params, options2) {
     const path4 = this._buildPath(
       `/tasks/${encodeURIComponent(params.taskId)}/pushNotificationConfigs`,
       params.tenant
@@ -53694,22 +56437,22 @@ var RestTransport = class _RestTransport {
       "GET",
       path4,
       void 0,
-      options,
+      options2,
       void 0,
       ListTaskPushNotificationConfigsResponse
     );
     return response;
   }
-  async deleteTaskPushNotificationConfig(params, options) {
+  async deleteTaskPushNotificationConfig(params, options2) {
     const path4 = this._buildPath(
       `/tasks/${encodeURIComponent(params.taskId)}/pushNotificationConfigs/${encodeURIComponent(
         params.id
       )}`,
       params.tenant
     );
-    await this._sendRequest("DELETE", path4, void 0, options, void 0, void 0);
+    await this._sendRequest("DELETE", path4, void 0, options2, void 0, void 0);
   }
-  async getTask(params, options) {
+  async getTask(params, options2) {
     const queryParams = new URLSearchParams();
     if (params.historyLength !== void 0) {
       queryParams.set("historyLength", params.historyLength.toString());
@@ -53723,25 +56466,25 @@ var RestTransport = class _RestTransport {
       "GET",
       path4,
       void 0,
-      options,
+      options2,
       void 0,
       Task
     );
     return response;
   }
-  async cancelTask(params, options) {
+  async cancelTask(params, options2) {
     const path4 = this._buildPath(`/tasks/${encodeURIComponent(params.id)}:cancel`, params.tenant);
     const response = await this._sendRequest(
       "POST",
       path4,
       void 0,
-      options,
+      options2,
       void 0,
       Task
     );
     return response;
   }
-  async listTasks(params, options) {
+  async listTasks(params, options2) {
     const queryParams = new URLSearchParams();
     if (params.contextId) queryParams.set("contextId", params.contextId);
     if (params.status !== void 0 && params.status !== 0) {
@@ -53761,18 +56504,18 @@ var RestTransport = class _RestTransport {
       "GET",
       path4,
       void 0,
-      options,
+      options2,
       void 0,
       ListTasksResponse
     );
     return response;
   }
-  async *resubscribeTask(params, options) {
+  async *resubscribeTask(params, options2) {
     const path4 = this._buildPath(
       `/tasks/${encodeURIComponent(params.id)}:subscribe`,
       params.tenant
     );
-    yield* this._sendStreamingRequest(path4, void 0, options);
+    yield* this._sendStreamingRequest(path4, void 0, options2);
   }
   _fetch(...args) {
     if (this.customFetchImpl) {
@@ -53785,19 +56528,19 @@ var RestTransport = class _RestTransport {
       "A `fetch` implementation was not provided and is not available in the global scope. Please provide a `fetchImpl` in the RestTransportOptions."
     );
   }
-  _buildHeaders(options, acceptHeader = A2A_CONTENT_TYPE) {
+  _buildHeaders(options2, acceptHeader = A2A_CONTENT_TYPE) {
     return {
-      ...options?.serviceParameters,
+      ...options2?.serviceParameters,
       "Content-Type": A2A_CONTENT_TYPE,
       Accept: acceptHeader
     };
   }
-  async _sendRequest(method, path4, body, options, requestType, responseType) {
+  async _sendRequest(method, path4, body, options2, requestType, responseType) {
     const url = `${this.endpoint}${path4}`;
     const requestInit = {
       method,
-      headers: this._buildHeaders(options),
-      signal: options?.signal
+      headers: this._buildHeaders(options2),
+      signal: options2?.signal
     };
     if (body !== void 0 && method !== "GET") {
       if (!requestType) {
@@ -53837,12 +56580,12 @@ var RestTransport = class _RestTransport {
       `HTTP error for ${path4}! Status: ${response.status} ${response.statusText}. Response: ${errorBodyText}`
     );
   }
-  async *_sendStreamingRequest(path4, body, options) {
+  async *_sendStreamingRequest(path4, body, options2) {
     const url = `${this.endpoint}${path4}`;
     const requestInit = {
       method: "POST",
-      headers: this._buildHeaders(options, "text/event-stream"),
-      signal: options?.signal
+      headers: this._buildHeaders(options2, "text/event-stream"),
+      signal: options2?.signal
     };
     if (body !== void 0) {
       requestInit.body = JSON.stringify(body);
@@ -53897,8 +56640,8 @@ var RestTransport = class _RestTransport {
   }
 };
 var RestTransportFactory = class {
-  constructor(options) {
-    this.options = options;
+  constructor(options2) {
+    this.options = options2;
   }
   get protocolName() {
     return PROTOCOL_NAME2;
@@ -53949,20 +56692,20 @@ var ClientFactoryOptions = {
   }
 };
 var ClientFactory = class {
-  constructor(options = ClientFactoryOptions.default) {
-    this.options = options;
-    if (!options.transports || options.transports.length === 0) {
+  constructor(options2 = ClientFactoryOptions.default) {
+    this.options = options2;
+    if (!options2.transports || options2.transports.length === 0) {
       throw new Error("No transports provided");
     }
-    this.transportsByName = transportsByName(options.transports);
-    for (const transport of options.preferredTransports ?? []) {
+    this.transportsByName = transportsByName(options2.transports);
+    for (const transport of options2.preferredTransports ?? []) {
       if (!this.transportsByName.has(transport)) {
         throw new Error(
           `Unknown preferred transport: ${transport}, available transports: ${[...this.transportsByName.keys()].join()}`
         );
       }
     }
-    this.agentCardResolver = options.cardResolver ?? AgentCardResolver.default;
+    this.agentCardResolver = options2.cardResolver ?? AgentCardResolver.default;
   }
   transportsByName;
   agentCardResolver;
@@ -54076,13 +56819,13 @@ var THINKING_DELTA_ARTIFACT_ID = "aion:thinking-delta";
 function tokenHex(bytes) {
   return crypto.randomBytes(bytes).toString("hex");
 }
-function generateTaskMetadata(options = {}) {
-  const senderId = options.senderId ?? "aion:user:2244994945";
-  const nodeId = options.nodeId ?? "cli-node-local";
-  const agentName = options.agentName ?? "Test Agent";
-  const agentUsername = options.agentUsername ?? "testagent";
-  const behaviorKey = options.behaviorKey ?? "testGraph";
-  const environmentName = options.environmentName ?? "Development";
+function generateTaskMetadata(options2 = {}) {
+  const senderId = options2.senderId ?? "aion:user:2244994945";
+  const nodeId = options2.nodeId ?? "cli-node-local";
+  const agentName = options2.agentName ?? "Test Agent";
+  const agentUsername = options2.agentUsername ?? "testagent";
+  const behaviorKey = options2.behaviorKey ?? "testGraph";
+  const environmentName = options2.environmentName ?? "Development";
   const traceId = tokenHex(16);
   const spanId = tokenHex(8);
   const orgId = crypto.randomUUID();
@@ -54167,37 +56910,37 @@ function formatProxyPath(agentId, path4 = "") {
   const cleanPath = path4.replace(/^\/+/, "");
   return `/agents/${agentId}/${cleanPath}`;
 }
-function buildEndpointConfig(options) {
-  const direct = buildDirectEndpoints(options.url);
-  if (!options.agentId) {
+function buildEndpointConfig(options2) {
+  const direct = buildDirectEndpoints(options2.url);
+  if (!options2.agentId) {
     return direct;
   }
-  const cardPath = formatProxyPath(options.agentId, AGENT_CARD_PATH2);
+  const cardPath = formatProxyPath(options2.agentId, AGENT_CARD_PATH2);
   return {
     baseUrl: direct.baseUrl,
     cardUrl: `${direct.baseUrl}${cardPath}`,
     cardPath,
-    rpcUrl: `${direct.baseUrl}${formatProxyPath(options.agentId)}`
+    rpcUrl: `${direct.baseUrl}${formatProxyPath(options2.agentId)}`
   };
 }
-async function buildAuthHeaders(options, initHeaders, requestHeaders) {
+async function buildAuthHeaders(options2, initHeaders, requestHeaders) {
   const headers = new Headers(initHeaders ?? requestHeaders);
-  for (const [key, value] of Object.entries(options.headers)) {
+  for (const [key, value] of Object.entries(options2.headers)) {
     headers.set(key, value);
   }
-  const token = options.token ?? await options.tokenProvider?.();
+  const token = options2.token ?? await options2.tokenProvider?.();
   if (token) {
     headers.set("Authorization", `Bearer ${token}`);
   }
   return headers;
 }
-function buildAuthenticatedFetch(options) {
+function buildAuthenticatedFetch(options2) {
   return async (input, init) => {
     const isRequest = input instanceof Request;
     const originalRequest = isRequest ? input : void 0;
     const method = init?.method ?? originalRequest?.method ?? "GET";
     const headers = await buildAuthHeaders(
-      options,
+      options2,
       init?.headers,
       originalRequest?.headers
     );
@@ -54222,14 +56965,14 @@ function buildAuthenticatedFetch(options) {
     });
   };
 }
-function buildFetch(options, endpoints) {
+function buildFetch(options2, endpoints) {
   return async (input, init) => {
     const isRequest = input instanceof Request;
     const originalRequest = isRequest ? input : void 0;
     const method = init?.method ?? originalRequest?.method ?? "GET";
-    const targetUrl = options.agentId && method.toUpperCase() !== "GET" ? endpoints.rpcUrl : isRequest ? input.url : String(input);
+    const targetUrl = options2.agentId && method.toUpperCase() !== "GET" ? endpoints.rpcUrl : isRequest ? input.url : String(input);
     const headers = await buildAuthHeaders(
-      options,
+      options2,
       init?.headers,
       originalRequest?.headers
     );
@@ -54264,12 +57007,12 @@ function rewriteAgentCard(agentCard, endpoints) {
     }))
   };
 }
-async function connectClient(options) {
-  const endpoints = buildEndpointConfig(options);
-  const fetchImpl = buildFetch(options, endpoints);
+async function connectClient(options2) {
+  const endpoints = buildEndpointConfig(options2);
+  const fetchImpl = buildFetch(options2, endpoints);
   const resolver = new DefaultAgentCardResolver({ fetchImpl });
   const resolvedCard = await resolver.resolve(endpoints.baseUrl, endpoints.cardPath);
-  const agentCard = options.agentId ? rewriteAgentCard(resolvedCard, endpoints) : resolvedCard;
+  const agentCard = options2.agentId ? rewriteAgentCard(resolvedCard, endpoints) : resolvedCard;
   const factoryOptions = ClientFactoryOptions.createFrom(ClientFactoryOptions.default, {
     transports: [
       new JsonRpcTransportFactory({ fetchImpl }),
@@ -54442,27 +57185,27 @@ function writeEvent(logger, level, event, data) {
     ...data ? { data: sanitizeLogPayload(data) } : {}
   });
 }
-function createChatSessionLogger(options) {
-  const chatSessionId = options.chatSessionId ?? randomUUID2();
+function createChatSessionLogger(options2) {
+  const chatSessionId = options2.chatSessionId ?? randomUUID2();
   const logFilePath = resolveChatSessionLogFilePath({
-    env: options.env,
-    homeDirectory: options.homeDirectory,
-    now: options.now,
+    env: options2.env,
+    homeDirectory: options2.homeDirectory,
+    now: options2.now,
     chatSessionId
   });
-  const level = logLevelForEnvironment(options.environmentId);
+  const level = logLevelForEnvironment(options2.environmentId);
   try {
     mkdirSync2(path2.dirname(logFilePath), { recursive: true });
     const destination = import_pino.default.destination({
       dest: logFilePath,
-      sync: options.sync ?? false
+      sync: options2.sync ?? false
     });
     const logger = (0, import_pino.default)(
       {
         level,
         base: {
           chatSessionId,
-          environmentId: options.environmentId
+          environmentId: options2.environmentId
         },
         timestamp: import_pino.default.stdTimeFunctions.isoTime,
         formatters: {
@@ -54500,11 +57243,11 @@ function createChatSessionLogger(options) {
 var GraphQLRequestError = class extends Error {
   status;
   errors;
-  constructor(message, options = {}) {
+  constructor(message, options2 = {}) {
     super(message);
     this.name = "GraphQLRequestError";
-    this.status = options.status;
-    this.errors = options.errors;
+    this.status = options2.status;
+    this.errors = options2.errors;
   }
 };
 function formatGraphQLErrors(errors) {
@@ -54531,21 +57274,21 @@ function sanitizeGraphQLVariables(variables) {
   }
   return sanitizeLogPayload(variables);
 }
-async function executeGraphQL(options) {
-  const fetchImpl = options.fetchImpl ?? fetch;
-  const url = options.url ?? getGraphQLHttpUrl(options.environmentId);
-  const operationName = options.operationName ?? inferGraphQLOperationName(options.query);
+async function executeGraphQL(options2) {
+  const fetchImpl = options2.fetchImpl ?? fetch;
+  const url = options2.url ?? getGraphQLHttpUrl(options2.environmentId);
+  const operationName = options2.operationName ?? inferGraphQLOperationName(options2.query);
   const startedAt = Date.now();
   const headers = new Headers({
     "Content-Type": "application/json"
   });
-  if (options.accessToken) {
-    headers.set("Authorization", `Bearer ${options.accessToken}`);
+  if (options2.accessToken) {
+    headers.set("Authorization", `Bearer ${options2.accessToken}`);
   }
-  options.logger?.debug("graphql.request", {
+  options2.logger?.debug("graphql.request", {
     operationName,
     url,
-    variables: sanitizeGraphQLVariables(options.variables)
+    variables: sanitizeGraphQLVariables(options2.variables)
   });
   let response;
   try {
@@ -54553,12 +57296,12 @@ async function executeGraphQL(options) {
       method: "POST",
       headers,
       body: JSON.stringify({
-        query: options.query,
-        variables: options.variables ?? {}
+        query: options2.query,
+        variables: options2.variables ?? {}
       })
     });
   } catch (error) {
-    options.logger?.warn("graphql.request.failed", {
+    options2.logger?.warn("graphql.request.failed", {
       operationName,
       url,
       durationMs: Date.now() - startedAt,
@@ -54567,7 +57310,7 @@ async function executeGraphQL(options) {
     throw error;
   }
   if (!response.ok) {
-    options.logger?.warn("graphql.response.http_error", {
+    options2.logger?.warn("graphql.response.http_error", {
       operationName,
       url,
       status: response.status,
@@ -54583,7 +57326,7 @@ async function executeGraphQL(options) {
   try {
     payload = await response.json();
   } catch (error) {
-    options.logger?.warn("graphql.response.invalid_json", {
+    options2.logger?.warn("graphql.response.invalid_json", {
       operationName,
       url,
       status: response.status,
@@ -54593,7 +57336,7 @@ async function executeGraphQL(options) {
     throw error;
   }
   if (payload.errors && payload.errors.length > 0) {
-    options.logger?.warn("graphql.response.errors", {
+    options2.logger?.warn("graphql.response.errors", {
       operationName,
       url,
       status: response.status,
@@ -54605,7 +57348,7 @@ async function executeGraphQL(options) {
       errors: payload.errors
     });
   }
-  options.logger?.debug("graphql.response", {
+  options2.logger?.debug("graphql.response", {
     operationName,
     url,
     status: response.status,
@@ -54647,16 +57390,16 @@ function normalizeOptionalString(value) {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
 }
-async function runLoginBootstrap(options) {
+async function runLoginBootstrap(options2) {
   const response = await executeGraphQL({
-    environmentId: options.environmentId,
+    environmentId: options2.environmentId,
     operationName: "LoginBootstrap",
     query: LOGIN_BOOTSTRAP_QUERY,
-    variables: { token: options.accessToken },
-    accessToken: options.accessToken,
-    fetchImpl: options.fetchImpl,
-    url: options.graphQLUrl,
-    logger: options.logger
+    variables: { token: options2.accessToken },
+    accessToken: options2.accessToken,
+    fetchImpl: options2.fetchImpl,
+    url: options2.graphQLUrl,
+    logger: options2.logger
   });
   const login = response.data?.login ?? null;
   const route = normalizeNextRoutePath(login?.nextRoute);
@@ -54793,38 +57536,38 @@ function logSkippedIdentity(logger, identity, reason, extra = {}) {
     ...extra
   });
 }
-async function fetchRegistryAgentIdentities(options) {
-  const graphQLUrl = options.graphQLUrl ?? getGraphQLHttpUrl(options.environmentId);
+async function fetchRegistryAgentIdentities(options2) {
+  const graphQLUrl = options2.graphQLUrl ?? getGraphQLHttpUrl(options2.environmentId);
   const bootstrap = await runLoginBootstrap({
-    environmentId: options.environmentId,
-    accessToken: options.accessToken,
-    fetchImpl: options.fetchImpl,
+    environmentId: options2.environmentId,
+    accessToken: options2.accessToken,
+    fetchImpl: options2.fetchImpl,
     graphQLUrl,
-    logger: options.logger
+    logger: options2.logger
   });
-  options.logger?.debug("registry.login_bootstrap.loaded", {
+  options2.logger?.debug("registry.login_bootstrap.loaded", {
     nextRoutePath: bootstrap.nextRoutePath,
     hasLoginEmail: Boolean(bootstrap.loginEmail),
     hasLoginName: Boolean(bootstrap.loginName)
   });
   const currentUser = await executeGraphQL({
-    environmentId: options.environmentId,
+    environmentId: options2.environmentId,
     url: graphQLUrl,
     operationName: "CurrentUser",
     query: CURRENT_USER_QUERY,
     variables: {},
-    accessToken: options.accessToken,
-    fetchImpl: options.fetchImpl,
-    logger: options.logger
+    accessToken: options2.accessToken,
+    fetchImpl: options2.fetchImpl,
+    logger: options2.logger
   });
   const user = currentUser.data?.user;
   if (!user) {
     throw new Error("Aion registry did not return the current user.");
   }
-  options.logger?.debug("registry.current_user.loaded", summarizeCurrentUser(user));
+  options2.logger?.debug("registry.current_user.loaded", summarizeCurrentUser(user));
   const organizationId = user.homeOrganization?.id ?? user.agentIdentity.organizationId;
   const catalog = await executeGraphQL({
-    environmentId: options.environmentId,
+    environmentId: options2.environmentId,
     url: graphQLUrl,
     operationName: "AgentCatalogIdentities",
     query: AGENT_CATALOG_IDENTITIES_QUERY,
@@ -54832,16 +57575,16 @@ async function fetchRegistryAgentIdentities(options) {
       organizationId,
       networkTypes: ["A2A"]
     },
-    accessToken: options.accessToken,
-    fetchImpl: options.fetchImpl,
-    logger: options.logger
+    accessToken: options2.accessToken,
+    fetchImpl: options2.fetchImpl,
+    logger: options2.logger
   });
   const identities = /* @__PURE__ */ new Map();
   const personalIdentity = normalizeIdentity(user.agentIdentity);
   if (personalIdentity) {
     identities.set(personalIdentity.id, personalIdentity);
   } else {
-    logSkippedIdentity(options.logger, user.agentIdentity, "missing_a2a_url", {
+    logSkippedIdentity(options2.logger, user.agentIdentity, "missing_a2a_url", {
       source: "current_user"
     });
   }
@@ -54850,7 +57593,7 @@ async function fetchRegistryAgentIdentities(options) {
     if (identity) {
       identities.set(identity.id, identity);
     } else {
-      logSkippedIdentity(options.logger, detail.identity, "missing_a2a_url", {
+      logSkippedIdentity(options2.logger, detail.identity, "missing_a2a_url", {
         source: "agent_catalog",
         distributionUsages: summarizeDistributionUsagesForLog(
           detail.distributionUsages
@@ -54863,7 +57606,7 @@ async function fetchRegistryAgentIdentities(options) {
       right.atName ?? right.name ?? right.id
     )
   );
-  options.logger?.debug("registry.agent_identities.loaded", {
+  options2.logger?.debug("registry.agent_identities.loaded", {
     organizationId,
     catalogIdentityCount: catalog.data?.agentIdentityDetails?.length ?? 0,
     resolvedIdentityCount: resolvedIdentities.length,
@@ -55143,63 +57886,63 @@ function isRegistryAuthenticationError(error) {
     message
   );
 }
-async function fetchRegistryIdentitiesWithToken(source, accessToken, options) {
+async function fetchRegistryIdentitiesWithToken(source, accessToken, options2) {
   return fetchRegistryAgentIdentities({
-    environmentId: options.environmentId,
+    environmentId: options2.environmentId,
     accessToken,
     graphQLUrl: getGraphQLHttpUrlForBaseUrl(source.url),
-    fetchImpl: options.graphQLFetchImpl ?? fetch,
-    logger: options.logger
+    fetchImpl: options2.graphQLFetchImpl ?? fetch,
+    logger: options2.logger
   });
 }
-async function discoverRegistrySource(source, fetchImpl, now, options) {
+async function discoverRegistrySource(source, fetchImpl, now, options2) {
   let accessToken;
   try {
-    accessToken = await options?.controlPlaneAccessTokenProvider?.();
+    accessToken = await options2?.controlPlaneAccessTokenProvider?.();
   } catch (error) {
-    options?.logger?.warn("registry.auth.token_failed", {
+    options2?.logger?.warn("registry.auth.token_failed", {
       sourceKey: source.sourceKey,
       error
     });
     return registryUnavailableResult(source, now, REGISTRY_AUTH_FAILED_MESSAGE);
   }
-  if (!accessToken || !options) {
-    options?.logger?.warn("registry.auth.token_missing", {
+  if (!accessToken || !options2) {
+    options2?.logger?.warn("registry.auth.token_missing", {
       sourceKey: source.sourceKey
     });
     return registryUnavailableResult(source, now, REGISTRY_LOGIN_REQUIRED_MESSAGE);
   }
   let identities;
   try {
-    options.logger?.debug("registry.identities.requested", {
+    options2.logger?.debug("registry.identities.requested", {
       sourceKey: source.sourceKey,
       graphQLUrl: getGraphQLHttpUrlForBaseUrl(source.url)
     });
     identities = await fetchRegistryIdentitiesWithToken(
       source,
       accessToken,
-      options
+      options2
     );
   } catch (error) {
     if (isRegistryAuthenticationError(error)) {
-      options.logger?.warn("registry.auth.failed", {
+      options2.logger?.warn("registry.auth.failed", {
         sourceKey: source.sourceKey,
         error
       });
       try {
-        options.logger?.debug("registry.auth.refresh_requested", {
+        options2.logger?.debug("registry.auth.refresh_requested", {
           sourceKey: source.sourceKey
         });
-        const refreshedAccessToken = await options.controlPlaneAccessTokenProvider?.({ forceRefresh: true });
+        const refreshedAccessToken = await options2.controlPlaneAccessTokenProvider?.({ forceRefresh: true });
         if (refreshedAccessToken && refreshedAccessToken !== accessToken) {
           identities = await fetchRegistryIdentitiesWithToken(
             source,
             refreshedAccessToken,
-            options
+            options2
           );
         }
       } catch (refreshError) {
-        options.logger?.warn("registry.auth.refresh_failed", {
+        options2.logger?.warn("registry.auth.refresh_failed", {
           sourceKey: source.sourceKey,
           error: refreshError
         });
@@ -55211,7 +57954,7 @@ async function discoverRegistrySource(source, fetchImpl, now, options) {
       }
     }
     if (!identities) {
-      options.logger?.warn("registry.identities.failed", {
+      options2.logger?.warn("registry.identities.failed", {
         sourceKey: source.sourceKey,
         error
       });
@@ -55222,7 +57965,7 @@ async function discoverRegistrySource(source, fetchImpl, now, options) {
       );
     }
   }
-  options.logger?.debug("registry.identities.resolved", {
+  options2.logger?.debug("registry.identities.resolved", {
     sourceKey: source.sourceKey,
     identityCount: identities.length,
     identities: identities.map((identity) => ({
@@ -55243,7 +57986,7 @@ async function discoverRegistrySource(source, fetchImpl, now, options) {
   for (const identity of identities) {
     const agentCardUrl = cardUrlForEndpoint(identity.a2aUrl);
     const agentCard = await fetchJson(agentCardUrl, fetchImpl, {
-      logger: options.logger,
+      logger: options2.logger,
       eventPrefix: "agent_card",
       context: {
         sourceKey: source.sourceKey,
@@ -55275,7 +58018,7 @@ async function discoverRegistrySource(source, fetchImpl, now, options) {
   }
   return { source: resolvedSource, agents };
 }
-async function discoverSource(source, fetchImpl, now, options) {
+async function discoverSource(source, fetchImpl, now, options2) {
   if (!source.enabled) {
     return { source, agents: [] };
   }
@@ -55285,48 +58028,48 @@ async function discoverSource(source, fetchImpl, now, options) {
         source,
         fetchImpl,
         now,
-        options?.logger
+        options2?.logger
       );
     } catch {
       return discoverAgentCardSource(
         source,
         fetchImpl,
         now,
-        options?.logger
+        options2?.logger
       );
     }
   }
   if (source.type === "manifest") {
-    return discoverManifestSource(source, fetchImpl, now, options?.logger);
+    return discoverManifestSource(source, fetchImpl, now, options2?.logger);
   }
   if (source.type === "agentCard") {
-    return discoverAgentCardSource(source, fetchImpl, now, options?.logger);
+    return discoverAgentCardSource(source, fetchImpl, now, options2?.logger);
   }
   if (source.type === "registry") {
-    return discoverRegistrySource(source, fetchImpl, now, options);
+    return discoverRegistrySource(source, fetchImpl, now, options2);
   }
   throw new Error("Registry agent sources are not supported yet.");
 }
-async function discoverAgentSources(sources, fetchImpl = fetch, options) {
+async function discoverAgentSources(sources, fetchImpl = fetch, options2) {
   const now = (/* @__PURE__ */ new Date()).toISOString();
   const resolvedSources = [];
   const agents = [];
   const errors = [];
   for (const source of sources) {
-    options?.logger?.debug("source.discovery.started", summarizeSourceForLog(source));
+    options2?.logger?.debug("source.discovery.started", summarizeSourceForLog(source));
     try {
-      const sourceFetchImpl = options?.sourceFetchImpl?.(source) ?? fetchImpl;
-      const result = await discoverSource(source, sourceFetchImpl, now, options);
+      const sourceFetchImpl = options2?.sourceFetchImpl?.(source) ?? fetchImpl;
+      const result = await discoverSource(source, sourceFetchImpl, now, options2);
       resolvedSources.push(result.source);
       agents.push(...result.agents);
       if (result.error) {
-        options?.logger?.warn("source.discovery.failed", {
+        options2?.logger?.warn("source.discovery.failed", {
           ...summarizeSourceForLog(result.source),
           error: result.error
         });
         errors.push(result);
       } else {
-        options?.logger?.debug("source.discovery.completed", {
+        options2?.logger?.debug("source.discovery.completed", {
           ...summarizeSourceForLog(result.source),
           agentCount: result.agents.length,
           agents: result.agents.map(summarizeAgentForLog)
@@ -55340,7 +58083,7 @@ async function discoverAgentSources(sources, fetchImpl = fetch, options) {
         lastCheckedAt: now,
         lastError: message
       };
-      options?.logger?.warn("source.discovery.failed", {
+      options2?.logger?.warn("source.discovery.failed", {
         ...summarizeSourceForLog(failedSource),
         error,
         message
@@ -55383,21 +58126,21 @@ function toPersistedAgents(agents, existingAgents) {
   }
   return nextAgents;
 }
-function selectDiscoveredAgent(agents, options) {
-  const explicitAgents = options.explicitSourceKey ? agents.filter((agent) => agent.sourceKey === options.explicitSourceKey) : [];
-  const findByRequestedId = (candidates) => candidates.find((agent) => agent.id === options.requestedAgentId);
-  if (options.requestedAgentId) {
+function selectDiscoveredAgent(agents, options2) {
+  const explicitAgents = options2.explicitSourceKey ? agents.filter((agent) => agent.sourceKey === options2.explicitSourceKey) : [];
+  const findByRequestedId = (candidates) => candidates.find((agent) => agent.id === options2.requestedAgentId);
+  if (options2.requestedAgentId) {
     return findByRequestedId(explicitAgents) ?? findByRequestedId(agents);
   }
-  const selectedByKey = options.selectedAgentKey ? agents.find((agent) => agent.agentKey === options.selectedAgentKey) : void 0;
+  const selectedByKey = options2.selectedAgentKey ? agents.find((agent) => agent.agentKey === options2.selectedAgentKey) : void 0;
   if (selectedByKey) {
     return selectedByKey;
   }
-  const selectedByLegacyId = options.selectedAgentId ? agents.find((agent) => agent.id === options.selectedAgentId) : void 0;
+  const selectedByLegacyId = options2.selectedAgentId ? agents.find((agent) => agent.id === options2.selectedAgentId) : void 0;
   if (selectedByLegacyId) {
     return selectedByLegacyId;
   }
-  if (options.autoSelectExplicit) {
+  if (options2.autoSelectExplicit) {
     if (explicitAgents.length === 1) {
       return explicitAgents[0];
     }
@@ -55575,188 +58318,6 @@ function getTaskMessages(task) {
   return statusMessage ? [statusMessage] : [];
 }
 
-// src/lib/transcript.ts
-function createStreamTranscriptState() {
-  return {
-    activeSectionsByTaskAndArtifactId: /* @__PURE__ */ new Map(),
-    lastSectionByTaskId: /* @__PURE__ */ new Map(),
-    nextSectionIndexByTaskId: /* @__PURE__ */ new Map(),
-    bodyByEntryId: /* @__PURE__ */ new Map()
-  };
-}
-function clearStreamTranscriptState(state) {
-  state.activeSectionsByTaskAndArtifactId.clear();
-  state.lastSectionByTaskId.clear();
-  state.nextSectionIndexByTaskId.clear();
-  state.bodyByEntryId.clear();
-}
-function streamTranscriptSectionKey(taskId, artifactId) {
-  return `${taskId}::${artifactId}`;
-}
-function getActiveStreamTranscriptSection(state, taskId, artifactId) {
-  return state.activeSectionsByTaskAndArtifactId.get(
-    streamTranscriptSectionKey(taskId, artifactId)
-  );
-}
-function getLastStreamTranscriptSection(state, taskId) {
-  return state.lastSectionByTaskId.get(taskId);
-}
-function clearActiveStreamTranscriptSection(state, taskId, artifactId) {
-  const activeSection = getActiveStreamTranscriptSection(
-    state,
-    taskId,
-    artifactId
-  );
-  state.activeSectionsByTaskAndArtifactId.delete(
-    streamTranscriptSectionKey(taskId, artifactId)
-  );
-  if (activeSection) {
-    state.bodyByEntryId.delete(activeSection.entryId);
-  }
-  if (activeSection && state.lastSectionByTaskId.get(taskId)?.entryId === activeSection.entryId) {
-    state.lastSectionByTaskId.delete(taskId);
-  }
-}
-function upsertTranscriptEntry(entries, entryId, role, body) {
-  const existingIndex = entries.findIndex((item) => item.id === entryId);
-  if (existingIndex === -1) {
-    return [...entries, { id: entryId, role, body }];
-  }
-  const next = [...entries];
-  next[existingIndex] = {
-    ...next[existingIndex],
-    role,
-    body
-  };
-  return next;
-}
-function replaceTranscriptEntryBody(entries, entryId, role, body) {
-  const existingIndex = entries.findIndex((item) => item.id === entryId);
-  if (existingIndex === -1) {
-    return { entries, replaced: false };
-  }
-  const next = [...entries];
-  next[existingIndex] = {
-    ...next[existingIndex],
-    role,
-    body
-  };
-  return { entries: next, replaced: true };
-}
-function createStreamTranscriptSection({
-  state,
-  taskId,
-  artifactId,
-  kind
-}) {
-  const sectionIndex = (state.nextSectionIndexByTaskId.get(taskId) ?? 0) + 1;
-  state.nextSectionIndexByTaskId.set(taskId, sectionIndex);
-  const section = {
-    taskId,
-    artifactId,
-    kind,
-    entryId: `artifact:${taskId}:${artifactId}:${sectionIndex}`,
-    sectionIndex
-  };
-  const previousLastSection = state.lastSectionByTaskId.get(taskId);
-  state.activeSectionsByTaskAndArtifactId.set(
-    streamTranscriptSectionKey(taskId, artifactId),
-    section
-  );
-  state.lastSectionByTaskId.set(taskId, section);
-  return {
-    section,
-    insertDivider: previousLastSection !== void 0 || sectionIndex > 1
-  };
-}
-function prepareStreamTranscriptDelta({
-  state,
-  taskId,
-  artifactId,
-  kind,
-  body,
-  append,
-  replaceCurrentSection = false
-}) {
-  const sectionKey = streamTranscriptSectionKey(taskId, artifactId);
-  const activeSection = state.activeSectionsByTaskAndArtifactId.get(sectionKey);
-  if (append && activeSection !== void 0) {
-    const nextBody = `${state.bodyByEntryId.get(activeSection.entryId) ?? ""}${body}`;
-    state.bodyByEntryId.set(activeSection.entryId, nextBody);
-    return {
-      section: activeSection,
-      body: nextBody,
-      appendToExistingSection: true,
-      replaceExistingSection: false,
-      insertDivider: false
-    };
-  }
-  if (replaceCurrentSection && activeSection !== void 0) {
-    state.bodyByEntryId.set(activeSection.entryId, body);
-    return {
-      section: activeSection,
-      body,
-      appendToExistingSection: false,
-      replaceExistingSection: true,
-      insertDivider: false
-    };
-  }
-  const { section, insertDivider } = createStreamTranscriptSection({
-    state,
-    taskId,
-    artifactId,
-    kind
-  });
-  state.bodyByEntryId.set(section.entryId, body);
-  return {
-    section,
-    body,
-    appendToExistingSection: false,
-    replaceExistingSection: false,
-    insertDivider
-  };
-}
-function applyPreparedStreamTranscriptDelta({
-  entries,
-  prepared
-}) {
-  if (prepared.appendToExistingSection || prepared.replaceExistingSection) {
-    return {
-      entries: upsertTranscriptEntry(
-        entries,
-        prepared.section.entryId,
-        "agent",
-        prepared.body
-      ),
-      section: prepared.section,
-      body: prepared.body,
-      startedNewSection: false
-    };
-  }
-  let nextEntries = entries;
-  if (prepared.insertDivider) {
-    nextEntries = [
-      ...nextEntries,
-      {
-        id: `artifact-divider:${prepared.section.taskId}:${prepared.section.sectionIndex}`,
-        role: "divider",
-        body: ""
-      }
-    ];
-  }
-  return {
-    entries: upsertTranscriptEntry(
-      nextEntries,
-      prepared.section.entryId,
-      "agent",
-      prepared.body
-    ),
-    section: prepared.section,
-    body: prepared.body,
-    startedNewSection: true
-  };
-}
-
 // src/lib/chatSession.ts
 var NO_TASK_ID = "no-task";
 function getMessageTaskId(message, fallbackTaskId) {
@@ -55874,6 +58435,23 @@ async function startPushNotificationServer(receiverUrl, onEvent) {
       });
     }
   };
+}
+
+// src/lib/terminal.ts
+function requestTerminalClear({
+  isTTY,
+  terminalType,
+  write
+}) {
+  if (!isTTY || terminalType?.toLowerCase() === "dumb") {
+    return false;
+  }
+  try {
+    write(base_exports.clearTerminal);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // src/lib/authConfig.ts
@@ -56259,9 +58837,9 @@ async function refreshSession(environmentId, config, refreshToken, fetchImpl, cr
   accessTokenCache.set(environmentId, session);
   return session;
 }
-async function loginWithWorkOS(environmentId, callbacks = {}, options = {}) {
-  const fetchImpl = options.fetchImpl ?? fetch;
-  const credentialStore = options.credentialStore ?? defaultCredentialStore;
+async function loginWithWorkOS(environmentId, callbacks = {}, options2 = {}) {
+  const fetchImpl = options2.fetchImpl ?? fetch;
+  const credentialStore = options2.credentialStore ?? defaultCredentialStore;
   const config = await fetchCliAuthConfig(environmentId, fetchImpl);
   const deviceAuthorization = await requestDeviceAuthorization(config, fetchImpl);
   await callbacks.onDeviceAuthorization?.({
@@ -56282,13 +58860,13 @@ async function loginWithWorkOS(environmentId, callbacks = {}, options = {}) {
   accessTokenCache.set(environmentId, session);
   return session;
 }
-async function getStoredAccessToken(environmentId, options = {}) {
+async function getStoredAccessToken(environmentId, options2 = {}) {
   const cached = accessTokenCache.get(environmentId);
-  if (!options.forceRefresh && cached && !tokenNeedsRefresh(cached)) {
+  if (!options2.forceRefresh && cached && !tokenNeedsRefresh(cached)) {
     return cached.accessToken;
   }
-  const fetchImpl = options.fetchImpl ?? fetch;
-  const credentialStore = options.credentialStore ?? defaultCredentialStore;
+  const fetchImpl = options2.fetchImpl ?? fetch;
+  const credentialStore = options2.credentialStore ?? defaultCredentialStore;
   const refreshToken = await credentialStore.getRefreshToken(environmentId);
   if (!refreshToken) {
     return void 0;
@@ -56305,18 +58883,18 @@ async function getStoredAccessToken(environmentId, options = {}) {
 }
 
 // src/app.tsx
-var import_jsx_runtime10 = __toESM(require_jsx_runtime(), 1);
+var import_jsx_runtime11 = __toESM(require_jsx_runtime(), 1);
 var NO_AGENT_MESSAGE_NOTICE = "Task completed with no agent message.";
 var NOTIFICATION_TTL_MS = 12e3;
-function summarizeOptionsForLog(options) {
+function summarizeOptionsForLog(options2) {
   return {
-    hasAgentEndpointUrl: Boolean(options.url),
-    agentEndpointUrl: options.url,
-    agentId: options.agentId,
-    pushNotifications: options.pushNotifications,
-    pushReceiverConfigured: Boolean(options.pushReceiver),
-    headers: Object.keys(options.headers ?? {}),
-    hasToken: Boolean(options.token)
+    hasAgentEndpointUrl: Boolean(options2.url),
+    agentEndpointUrl: options2.url,
+    agentId: options2.agentId,
+    pushNotifications: options2.pushNotifications,
+    pushReceiverConfigured: Boolean(options2.pushReceiver),
+    headers: Object.keys(options2.headers ?? {}),
+    hasToken: Boolean(options2.token)
   };
 }
 function summarizePartForLog(part) {
@@ -56456,72 +59034,75 @@ function parseExactSlashCommand(value) {
   }
   return void 0;
 }
-function ChatApp({ options }) {
+function ChatApp({ options: options2 }) {
   const { exit } = use_app_default();
-  const initialSettingsResult = (0, import_react33.useMemo)(() => loadChatSettings(), []);
-  const chatSessionLoggerResult = (0, import_react33.useMemo)(
+  const { stdout, write: writeToStdout } = use_stdout_default();
+  const initialSettingsResult = (0, import_react37.useMemo)(() => loadChatSettings(), []);
+  const chatSessionLoggerResult = (0, import_react37.useMemo)(
     () => createChatSessionLogger({
       environmentId: initialSettingsResult.settings.selectedEnvironment
     }),
     [initialSettingsResult.settings.selectedEnvironment]
   );
   const chatSessionLogger = chatSessionLoggerResult.logger;
-  const [chatSettings, setChatSettings] = (0, import_react33.useState)(
+  const [chatSettings, setChatSettings] = (0, import_react37.useState)(
     initialSettingsResult.settings
   );
-  const [selectedEnvironment, setSelectedEnvironment] = (0, import_react33.useState)(
+  const [selectedEnvironment, setSelectedEnvironment] = (0, import_react37.useState)(
     initialSettingsResult.settings.selectedEnvironment
   );
   const activeEnvironmentSettings = chatSettings.environments[selectedEnvironment];
   const controlPlaneApiBaseUrl = getControlPlaneApiBaseUrl(selectedEnvironment);
-  const agentEndpointUrl = options.url;
-  const [pushLabel, setPushLabel] = (0, import_react33.useState)(
-    options.pushNotifications ? "Starting..." : "Disabled"
+  const agentEndpointUrl = options2.url;
+  const [pushLabel, setPushLabel] = (0, import_react37.useState)(
+    options2.pushNotifications ? "Starting..." : "Disabled"
   );
-  const [streamLabel, setStreamLabel] = (0, import_react33.useState)("Idle");
-  const [draft, setDraft] = (0, import_react33.useState)("");
-  const [entries, setEntries] = (0, import_react33.useState)([]);
-  const [notifications, setNotifications] = (0, import_react33.useState)([]);
-  const [contextId, setContextId] = (0, import_react33.useState)();
-  const [taskId, setTaskId] = (0, import_react33.useState)();
-  const [workingStartedAt, setWorkingStartedAt] = (0, import_react33.useState)();
-  const [clientState, setClientState] = (0, import_react33.useState)();
-  const [pushConfig, setPushConfig] = (0, import_react33.useState)();
-  const [discoveredAgents, setDiscoveredAgents] = (0, import_react33.useState)([]);
-  const [agentSources, setAgentSources] = (0, import_react33.useState)(
+  const [streamLabel, setStreamLabel] = (0, import_react37.useState)("Idle");
+  const [draft, setDraft] = (0, import_react37.useState)("");
+  const [entries, setEntries] = (0, import_react37.useState)([]);
+  const [transcriptGeneration, setTranscriptGeneration] = (0, import_react37.useState)(0);
+  const [notifications, setNotifications] = (0, import_react37.useState)([]);
+  const [contextId, setContextId] = (0, import_react37.useState)();
+  const [taskId, setTaskId] = (0, import_react37.useState)();
+  const [workingStartedAt, setWorkingStartedAt] = (0, import_react37.useState)();
+  const [clientState, setClientState] = (0, import_react37.useState)();
+  const [pushConfig, setPushConfig] = (0, import_react37.useState)();
+  const [discoveredAgents, setDiscoveredAgents] = (0, import_react37.useState)([]);
+  const [agentSources, setAgentSources] = (0, import_react37.useState)(
     activeEnvironmentSettings.agentSources
   );
-  const [selectedAgentKey, setSelectedAgentKey] = (0, import_react33.useState)(
-    options.agentId ? void 0 : activeEnvironmentSettings.selectedAgentKey
+  const [selectedAgentKey, setSelectedAgentKey] = (0, import_react37.useState)(
+    options2.agentId ? void 0 : activeEnvironmentSettings.selectedAgentKey
   );
-  const [selectedAgentId, setSelectedAgentId] = (0, import_react33.useState)(
-    options.agentId ?? activeEnvironmentSettings.selectedAgentId
+  const [selectedAgentId, setSelectedAgentId] = (0, import_react37.useState)(
+    options2.agentId ?? activeEnvironmentSettings.selectedAgentId
   );
-  const [selectedSuggestionIndex, setSelectedSuggestionIndex] = (0, import_react33.useState)(0);
-  const [selectedFileSuggestionIndex, setSelectedFileSuggestionIndex] = (0, import_react33.useState)(0);
-  const [selectedSlashIndex, setSelectedSlashIndex] = (0, import_react33.useState)(0);
-  const [selectedSlashSubmenuIndex, setSelectedSlashSubmenuIndex] = (0, import_react33.useState)(0);
-  const [slashSubmenuId, setSlashSubmenuId] = (0, import_react33.useState)();
-  const [requestMode, setRequestMode] = (0, import_react33.useState)(
+  const [selectedSuggestionIndex, setSelectedSuggestionIndex] = (0, import_react37.useState)(0);
+  const [selectedFileSuggestionIndex, setSelectedFileSuggestionIndex] = (0, import_react37.useState)(0);
+  const [selectedSlashIndex, setSelectedSlashIndex] = (0, import_react37.useState)(0);
+  const [selectedSlashSubmenuIndex, setSelectedSlashSubmenuIndex] = (0, import_react37.useState)(0);
+  const [slashSubmenuId, setSlashSubmenuId] = (0, import_react37.useState)();
+  const [requestMode, setRequestMode] = (0, import_react37.useState)(
     activeEnvironmentSettings.requestMode
   );
-  const [responseMode, setResponseMode] = (0, import_react33.useState)(
+  const [responseMode, setResponseMode] = (0, import_react37.useState)(
     activeEnvironmentSettings.responseMode
   );
-  const [reconnectNonce, setReconnectNonce] = (0, import_react33.useState)(0);
-  const shownMessageKeysRef = (0, import_react33.useRef)(/* @__PURE__ */ new Set());
-  const streamedTaskIdsRef = (0, import_react33.useRef)(/* @__PURE__ */ new Set());
-  const streamTranscriptStateRef = (0, import_react33.useRef)(createStreamTranscriptState());
-  const lastCopyableResponseRef = (0, import_react33.useRef)(void 0);
-  const lastConnectionNoticeRef = (0, import_react33.useRef)(void 0);
-  const notificationTimersRef = (0, import_react33.useRef)([]);
+  const [reconnectNonce, setReconnectNonce] = (0, import_react37.useState)(0);
+  const shownMessageKeysRef = (0, import_react37.useRef)(/* @__PURE__ */ new Set());
+  const streamedTaskIdsRef = (0, import_react37.useRef)(/* @__PURE__ */ new Set());
+  const streamTranscriptStateRef = (0, import_react37.useRef)(createStreamTranscriptState());
+  const lastCopyableResponseRef = (0, import_react37.useRef)(void 0);
+  const lastConnectionNoticeRef = (0, import_react37.useRef)(void 0);
+  const notificationTimersRef = (0, import_react37.useRef)([]);
   const appendEntry = (role, body) => {
     setEntries((current) => [
       ...current,
       {
         id: randomUUID3(),
         role,
-        body
+        body,
+        isFinalized: true
       }
     ]);
   };
@@ -56539,7 +59120,8 @@ function ChatApp({ options }) {
       {
         id,
         role: "system",
-        body
+        body,
+        isFinalized: true
       }
     ]);
     const timer = setTimeout(() => {
@@ -56564,7 +59146,16 @@ function ChatApp({ options }) {
     });
     appendEntry("protocol", formatProtocolPayload(payload));
   };
-  (0, import_react33.useEffect)(() => {
+  const finalizeOpenStreamEntries = (streamTaskId) => {
+    const entryIds = closeStreamTranscriptSections({
+      state: streamTranscriptStateRef.current,
+      taskId: streamTaskId
+    });
+    if (entryIds.size > 0) {
+      setEntries((current) => finalizeTranscriptEntries(current, entryIds));
+    }
+  };
+  (0, import_react37.useEffect)(() => {
     const environmentAtStart = selectedEnvironment;
     chatSessionLogger.info("chat.session.started", {
       mode: "interactive",
@@ -56572,7 +59163,7 @@ function ChatApp({ options }) {
       logFilePath: chatSessionLogger.logFilePath,
       requestMode,
       responseMode,
-      options: summarizeOptionsForLog(options)
+      options: summarizeOptionsForLog(options2)
     });
     if (chatSessionLoggerResult.warning) {
       appendNotification(chatSessionLoggerResult.warning);
@@ -56626,6 +59217,7 @@ function ChatApp({ options }) {
   };
   const clearTranscript = () => {
     setEntries([]);
+    setTranscriptGeneration((current) => current + 1);
     shownMessageKeysRef.current.clear();
     streamedTaskIdsRef.current.clear();
     clearStreamTranscriptState(streamTranscriptStateRef.current);
@@ -56646,28 +59238,28 @@ function ChatApp({ options }) {
     setRequestMode(nextEnvironmentSettings.requestMode);
     setResponseMode(nextEnvironmentSettings.responseMode);
     setAgentSources(nextEnvironmentSettings.agentSources);
-    setSelectedAgentKey(options.agentId ? void 0 : nextEnvironmentSettings.selectedAgentKey);
-    setSelectedAgentId(options.agentId ?? nextEnvironmentSettings.selectedAgentId);
+    setSelectedAgentKey(options2.agentId ? void 0 : nextEnvironmentSettings.selectedAgentKey);
+    setSelectedAgentId(options2.agentId ?? nextEnvironmentSettings.selectedAgentId);
     setDiscoveredAgents([]);
     clearTranscript();
     setClientState(void 0);
     setReconnectNonce((current) => current + 1);
   };
-  (0, import_react33.useEffect)(() => {
+  (0, import_react37.useEffect)(() => {
     if (initialSettingsResult.warning) {
       appendSystem(initialSettingsResult.warning);
     }
   }, [initialSettingsResult.warning]);
-  const slashQuery = (0, import_react33.useMemo)(() => {
+  const slashQuery = (0, import_react37.useMemo)(() => {
     if (slashSubmenuId) {
       return void 0;
     }
     return getLeadingSlashQuery(draft);
   }, [draft, slashSubmenuId]);
-  const slashCommands = (0, import_react33.useMemo)(() => {
+  const slashCommands = (0, import_react37.useMemo)(() => {
     return filterSlashCommands(slashQuery);
   }, [slashQuery]);
-  const slashSubmenu = (0, import_react33.useMemo)(() => {
+  const slashSubmenu = (0, import_react37.useMemo)(() => {
     const command = getSlashCommandById(slashSubmenuId);
     if (!command) {
       return void 0;
@@ -56679,7 +59271,7 @@ function ChatApp({ options }) {
       selectedIndex: selectedSlashSubmenuIndex
     };
   }, [selectedSlashSubmenuIndex, slashSubmenuId]);
-  const agentSuggestions = (0, import_react33.useMemo)(() => {
+  const agentSuggestions = (0, import_react37.useMemo)(() => {
     if (slashQuery !== void 0 || slashSubmenuId) {
       return [];
     }
@@ -56694,7 +59286,7 @@ function ChatApp({ options }) {
       description: agent.agentCard?.description?.trim() ?? ""
     })).slice(0, 6);
   }, [discoveredAgents, draft, slashQuery, slashSubmenuId]);
-  const fileSuggestions = (0, import_react33.useMemo)(() => {
+  const fileSuggestions = (0, import_react37.useMemo)(() => {
     if (slashQuery !== void 0 || slashSubmenuId) {
       return [];
     }
@@ -56702,12 +59294,12 @@ function ChatApp({ options }) {
     if (!match) return [];
     return getFileSuggestions(match.query);
   }, [draft, slashQuery, slashSubmenuId]);
-  const selectedAgent = (0, import_react33.useMemo)(() => {
+  const selectedAgent = (0, import_react37.useMemo)(() => {
     return discoveredAgents.find(
       (agent) => selectedAgentKey ? agent.agentKey === selectedAgentKey : selectedAgentId ? agent.id === selectedAgentId : false
     );
   }, [discoveredAgents, selectedAgentId, selectedAgentKey]);
-  (0, import_react33.useEffect)(() => {
+  (0, import_react37.useEffect)(() => {
     setSelectedSuggestionIndex((current) => {
       if (agentSuggestions.length === 0) {
         return 0;
@@ -56715,13 +59307,13 @@ function ChatApp({ options }) {
       return Math.min(current, agentSuggestions.length - 1);
     });
   }, [agentSuggestions]);
-  (0, import_react33.useEffect)(() => {
+  (0, import_react37.useEffect)(() => {
     setSelectedFileSuggestionIndex((current) => {
       if (fileSuggestions.length === 0) return 0;
       return Math.min(current, fileSuggestions.length - 1);
     });
   }, [fileSuggestions]);
-  (0, import_react33.useEffect)(() => {
+  (0, import_react37.useEffect)(() => {
     setSelectedSlashIndex((current) => {
       if (slashCommands.length === 0) {
         return 0;
@@ -56729,7 +59321,7 @@ function ChatApp({ options }) {
       return Math.min(current, slashCommands.length - 1);
     });
   }, [slashCommands]);
-  (0, import_react33.useEffect)(() => {
+  (0, import_react37.useEffect)(() => {
     const optionCount = getSlashCommandById(slashSubmenuId)?.options.length ?? 0;
     setSelectedSlashSubmenuIndex((current) => {
       if (optionCount === 0) {
@@ -56750,8 +59342,8 @@ function ChatApp({ options }) {
       );
       const explicitSourceKey = agentEndpointUrl ? createExplicitAgentSource(agentEndpointUrl).sourceKey : void 0;
       const explicitSourceFetch = buildAuthenticatedFetch({
-        headers: options.headers,
-        token: options.token
+        headers: options2.headers,
+        token: options2.token
       });
       chatSessionLogger.debug("agent.discovery.refresh.started", {
         environmentId: selectedEnvironment,
@@ -56811,9 +59403,9 @@ function ChatApp({ options }) {
         }
       }
       const nextSelected = selectDiscoveredAgent(discovery.agents, {
-        requestedAgentId: options.agentId,
+        requestedAgentId: options2.agentId,
         selectedAgentKey,
-        selectedAgentId: options.agentId ? void 0 : selectedAgentId,
+        selectedAgentId: options2.agentId ? void 0 : selectedAgentId,
         explicitSourceKey,
         autoSelectExplicit: Boolean(agentEndpointUrl)
       });
@@ -56829,7 +59421,7 @@ function ChatApp({ options }) {
           agents: nextAgents,
           agentSources: persistentSources
         });
-      } else if (selectedAgentKey || !options.agentId && selectedAgentId) {
+      } else if (selectedAgentKey || !options2.agentId && selectedAgentId) {
         setSelectedAgentKey(void 0);
         setSelectedAgentId(void 0);
         setClientState(void 0);
@@ -56860,7 +59452,7 @@ ${message}` : `Agent source discovery failed: ${message}`
       return void 0;
     }
   };
-  (0, import_react33.useEffect)(() => {
+  (0, import_react37.useEffect)(() => {
     let closed = false;
     void refreshAgentDiscovery({ isClosed: () => closed });
     return () => {
@@ -56869,13 +59461,13 @@ ${message}` : `Agent source discovery failed: ${message}`
   }, [
     agentEndpointUrl,
     controlPlaneApiBaseUrl,
-    options.agentId,
-    options.headers,
-    options.token,
+    options2.agentId,
+    options2.headers,
+    options2.token,
     reconnectNonce,
     selectedEnvironment
   ]);
-  (0, import_react33.useEffect)(() => {
+  (0, import_react37.useEffect)(() => {
     let closed = false;
     let closePush;
     const handlePushEvent = (event) => {
@@ -56900,9 +59492,9 @@ ${JSON.stringify(
         return;
       }
       try {
-        if (options.pushNotifications) {
+        if (options2.pushNotifications) {
           const server = await startPushNotificationServer(
-            options.pushReceiver,
+            options2.pushReceiver,
             handlePushEvent
           );
           if (closed) {
@@ -56910,7 +59502,7 @@ ${JSON.stringify(
             return;
           }
           closePush = server.close;
-          setPushConfig(createPushNotificationConfig(options.pushReceiver));
+          setPushConfig(createPushNotificationConfig(options2.pushReceiver));
           setPushLabel(server.callbackUrl);
         }
         setClientState(void 0);
@@ -56924,9 +59516,9 @@ ${JSON.stringify(
           selectedEnvironment
         );
         const connected = await connectClient({
-          ...options,
-          headers: useCliEndpointAuth ? options.headers : {},
-          token: useCliEndpointAuth ? options.token : void 0,
+          ...options2,
+          headers: useCliEndpointAuth ? options2.headers : {},
+          token: useCliEndpointAuth ? options2.token : void 0,
           tokenProvider: useAionRegistryAuth ? () => getStoredAccessToken(selectedEnvironment) : void 0,
           url: selectedAgent.connectionUrl,
           agentId: selectedAgent.connectionAgentId
@@ -56962,7 +59554,7 @@ ${JSON.stringify(
     agentEndpointUrl,
     controlPlaneApiBaseUrl,
     discoveredAgents.length,
-    options,
+    options2,
     reconnectNonce,
     selectedAgent,
     selectedEnvironment
@@ -57073,6 +59665,7 @@ ${JSON.stringify(
     for (const message of messages) {
       renderedAgentOutput = replaceLastResponseStreamSection(message, task.id) || renderAgentResponseBubble(message, task.id) || renderedAgentOutput;
     }
+    finalizeOpenStreamEntries(task.id);
     return renderedAgentOutput;
   };
   const handleStatusUpdate = (event, protocolPayload = event) => {
@@ -57083,22 +59676,26 @@ ${JSON.stringify(
       appendProtocol(protocolPayload);
       return true;
     }
+    let renderedAgentOutput = false;
     if (event.status?.message && (isTerminalTaskState(event.status.state) || isFinalStatusEvent(event)) && replaceLastResponseStreamSection(event.status.message, event.taskId)) {
-      return true;
+      renderedAgentOutput = true;
     }
     const activeStreamSection = getLastStreamTranscriptSection(
       streamTranscriptStateRef.current,
       event.taskId
     );
-    if (shouldRenderLiveStatusMessage({
+    if (!renderedAgentOutput && shouldRenderLiveStatusMessage({
       message: event.status?.message,
       taskId: event.taskId,
       streamedTaskIds: streamedTaskIdsRef.current,
       activeStreamSectionKind: activeStreamSection?.kind
     })) {
-      return event.status?.message ? renderAgentResponseBubble(event.status.message, event.taskId) : false;
+      renderedAgentOutput = event.status?.message ? renderAgentResponseBubble(event.status.message, event.taskId) : false;
     }
-    return false;
+    if (isTerminalTaskState(event.status?.state) || isFinalStatusEvent(event)) {
+      finalizeOpenStreamEntries(event.taskId);
+    }
+    return renderedAgentOutput;
   };
   const handleArtifactUpdate = (event, protocolPayload = event) => {
     setContextId(event.contextId);
@@ -57387,11 +59984,17 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
         )
       );
     }
+    setReconnectNonce((current) => current + 1);
+    const terminalClearRequested = requestTerminalClear({
+      isTTY: stdout.isTTY,
+      terminalType: process.env.TERM,
+      write: writeToStdout
+    });
     chatSessionLogger.info("chat.clear", {
       environmentId: selectedEnvironment,
-      agentKey: selectedContextAgentKey
+      agentKey: selectedContextAgentKey,
+      terminalClearRequested
     });
-    setReconnectNonce((current) => current + 1);
   };
   const runCopySlashCommand = async () => {
     const response = lastCopyableResponseRef.current;
@@ -57495,7 +60098,8 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
       {
         id: randomUUID3(),
         role: "user",
-        body: displayBody
+        body: displayBody,
+        isFinalized: true
       }
     ]);
     const params = buildMessageParams(parts, contextId, taskId, pushConfig);
@@ -57654,6 +60258,9 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
       });
       appendStatus(`Request failed: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
+      if (useStreaming) {
+        finalizeOpenStreamEntries();
+      }
       setWorkingStartedAt(void 0);
     }
   };
@@ -57789,8 +60396,8 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
       setDraft((current) => `${current}${input}`);
     }
   });
-  return /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(Box_default, { flexDirection: "column", height: "100%", children: [
-    /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Box_default, { flexDirection: "column", flexGrow: 1, marginY: 1, children: /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(
+  return /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(Box_default, { flexDirection: "column", height: "100%", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Box_default, { flexDirection: "column", flexGrow: 1, marginY: 1, children: /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
       ChatSession,
       {
         entries,
@@ -57799,11 +60406,12 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
         selectedAgentId,
         requestMode,
         responseMode
-      }
+      },
+      transcriptGeneration
     ) }),
-    /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(SystemNotificationStack, { notifications }),
-    workingStartedAt ? /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Box_default, { marginBottom: 1, children: /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(WorkingIndicator, { startedAt: workingStartedAt }) }) : null,
-    /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(
+    /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(SystemNotificationStack, { notifications }),
+    workingStartedAt ? /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Box_default, { marginBottom: 1, children: /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(WorkingIndicator, { startedAt: workingStartedAt }) }) : null,
+    /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
       ChatComposer,
       {
         draft,
@@ -57853,15 +60461,15 @@ function normalizeGitHubRepositoryUrl(repositoryUrl) {
     return void 0;
   }
 }
-function buildGitHubReleaseNotesUrl(options) {
+function buildGitHubReleaseNotesUrl(options2) {
   const normalizedRepositoryUrl = normalizeGitHubRepositoryUrl(
-    options.repositoryUrl
+    options2.repositoryUrl
   );
   if (!normalizedRepositoryUrl) {
     return void 0;
   }
-  const tag = options.version.startsWith("v") ? options.version : `v${options.version}`;
-  return `${normalizedRepositoryUrl}/releases/tag/${encodeURIComponent(tag)}`;
+  const tag2 = options2.version.startsWith("v") ? options2.version : `v${options2.version}`;
+  return `${normalizedRepositoryUrl}/releases/tag/${encodeURIComponent(tag2)}`;
 }
 function parseVersion(value) {
   const match = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?/u.exec(value);
@@ -57898,14 +60506,14 @@ function comparePackageVersions(left, right) {
 function shouldSkipUpdateCheck(env3 = process.env) {
   return env3.CI === "true" || env3.AION_CHAT_SKIP_UPDATE_CHECK === "1" || env3.AION_CHAT_UPDATE_CHECK === "0";
 }
-async function fetchLatestPackageVersion(options) {
-  const fetchImpl = options.fetchImpl ?? fetch;
+async function fetchLatestPackageVersion(options2) {
+  const fetchImpl = options2.fetchImpl ?? fetch;
   const controller = new AbortController();
   const timeout = setTimeout(() => {
     controller.abort();
-  }, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+  }, options2.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   try {
-    const response = await fetchImpl(buildNpmLatestVersionUrl(options.packageName), {
+    const response = await fetchImpl(buildNpmLatestVersionUrl(options2.packageName), {
       headers: {
         Accept: "application/json"
       },
@@ -57922,26 +60530,26 @@ async function fetchLatestPackageVersion(options) {
     clearTimeout(timeout);
   }
 }
-async function detectPackageUpdate(options = {}) {
-  if (shouldSkipUpdateCheck(options.env)) {
+async function detectPackageUpdate(options2 = {}) {
+  if (shouldSkipUpdateCheck(options2.env)) {
     return void 0;
   }
   const packageInfo = getPackageInfo();
-  const packageName = options.packageName ?? packageInfo.name;
-  const currentVersion = options.currentVersion ?? packageInfo.version;
+  const packageName = options2.packageName ?? packageInfo.name;
+  const currentVersion = options2.currentVersion ?? packageInfo.version;
   const latestVersion = await fetchLatestPackageVersion({
     packageName,
-    fetchImpl: options.fetchImpl,
-    timeoutMs: options.timeoutMs
+    fetchImpl: options2.fetchImpl,
+    timeoutMs: options2.timeoutMs
   });
   if (!latestVersion || comparePackageVersions(latestVersion, currentVersion) <= 0) {
     return void 0;
   }
-  if (options.skippedVersion === latestVersion) {
+  if (options2.skippedVersion === latestVersion) {
     return void 0;
   }
   const releaseNotesUrl = buildGitHubReleaseNotesUrl({
-    repositoryUrl: options.repositoryUrl ?? packageInfo.repositoryUrl,
+    repositoryUrl: options2.repositoryUrl ?? packageInfo.repositoryUrl,
     version: latestVersion
   });
   return {
@@ -57960,23 +60568,23 @@ function getUpdateInstallCommand(choice, packageName) {
 function formatInstallCommand(command) {
   return [command.command, ...command.args].join(" ");
 }
-async function promptForUpdate(options) {
-  const input = options.input ?? process.stdin;
-  const output = options.output ?? process.stdout;
+async function promptForUpdate(options2) {
+  const input = options2.input ?? process.stdin;
+  const output = options2.output ?? process.stdout;
   const updateCommand = getUpdateInstallCommand(
     "global",
-    options.update.packageName
+    options2.update.packageName
   );
   const localCommand = getUpdateInstallCommand(
     "local",
-    options.update.packageName
+    options2.update.packageName
   );
   output.write(
     [
       "",
-      `  \u2728 Update available! ${options.update.currentVersion} -> ${options.update.latestVersion}`,
+      `  \u2728 Update available! ${options2.update.currentVersion} -> ${options2.update.latestVersion}`,
       "",
-      ...options.update.releaseNotesUrl ? [`  Release notes: ${options.update.releaseNotesUrl}`, ""] : [],
+      ...options2.update.releaseNotesUrl ? [`  Release notes: ${options2.update.releaseNotesUrl}`, ""] : [],
       `\u203A 1. Update globally (runs \`${formatInstallCommand(updateCommand)}\`)`,
       `  2. Update in this project (runs \`${formatInstallCommand(localCommand)}\`)`,
       "  3. Skip",
@@ -58128,20 +60736,20 @@ function selectAgentBySelector(agents, selector, explicitSourceKey, discovery, e
   }
   return matches[0];
 }
-function selectHeadlessAgent(discovery, options, selectedAgentKey, selectedAgentId, explicitSourceKey, environmentId) {
+function selectHeadlessAgent(discovery, options2, selectedAgentKey, selectedAgentId, explicitSourceKey, environmentId) {
   const agents = discovery.agents;
-  if (options.agentSelector) {
+  if (options2.agentSelector) {
     return selectAgentBySelector(
       agents,
-      options.agentSelector,
+      options2.agentSelector,
       explicitSourceKey,
       discovery,
       environmentId
     );
   }
-  const shouldIgnoreSavedSelection = Boolean(explicitSourceKey && !options.agentId);
+  const shouldIgnoreSavedSelection = Boolean(explicitSourceKey && !options2.agentId);
   const selected = selectDiscoveredAgent(agents, {
-    requestedAgentId: options.agentId,
+    requestedAgentId: options2.agentId,
     selectedAgentKey: shouldIgnoreSavedSelection ? void 0 : selectedAgentKey,
     selectedAgentId: shouldIgnoreSavedSelection ? void 0 : selectedAgentId,
     explicitSourceKey,
@@ -58336,24 +60944,24 @@ function canStream(agentCard) {
 function isAionControlPlaneRegistryAgent2(selectedAgent, environmentId) {
   return selectedAgent.source.type === "registry" && normalizeSourceUrl(selectedAgent.source.url) === normalizeSourceUrl(getControlPlaneApiBaseUrl(environmentId));
 }
-function getConnectionOptions(options, selectedAgent, environmentId, registryTokenProvider) {
+function getConnectionOptions(options2, selectedAgent, environmentId, registryTokenProvider) {
   const useCliEndpointAuth = isTransientAgentSource(selectedAgent.source);
   const useAionRegistryAuth = isAionControlPlaneRegistryAgent2(
     selectedAgent,
     environmentId
   );
   return {
-    ...options,
+    ...options2,
     url: selectedAgent.connectionUrl,
     agentId: selectedAgent.connectionAgentId,
-    token: useCliEndpointAuth ? options.token : void 0,
+    token: useCliEndpointAuth ? options2.token : void 0,
     tokenProvider: useAionRegistryAuth ? registryTokenProvider : void 0,
-    headers: useCliEndpointAuth ? options.headers : {},
-    pushNotifications: options.pushNotifications,
-    pushReceiver: options.pushReceiver
+    headers: useCliEndpointAuth ? options2.headers : {},
+    pushNotifications: options2.pushNotifications,
+    pushReceiver: options2.pushReceiver
   };
 }
-async function runHeadless(options, dependencies = {}) {
+async function runHeadless(options2, dependencies = {}) {
   const stdout = dependencies.stdout ?? process.stdout;
   const stderr = dependencies.stderr ?? process.stderr;
   const fetchImpl = dependencies.fetchImpl ?? fetch;
@@ -58374,23 +60982,23 @@ async function runHeadless(options, dependencies = {}) {
     stderr
   );
   const environmentSettings = settings.environments[selectedEnvironment];
-  const explicitSourceKey = options.url ? createExplicitAgentSource(options.url).sourceKey : void 0;
+  const explicitSourceKey = options2.url ? createExplicitAgentSource(options2.url).sourceKey : void 0;
   const runtimeSources = mergeAgentSources(
     environmentSettings.agentSources,
     selectedEnvironment,
-    options.url
+    options2.url
   );
   const explicitSourceFetch = buildAuthenticatedFetch({
-    token: options.token,
-    headers: options.headers
+    token: options2.token,
+    headers: options2.headers
   });
   logger.info("headless.run.started", {
     environmentId: selectedEnvironment,
-    requestMode: options.requestMode,
-    responseMode: options.responseMode,
-    agentSelector: options.agentSelector,
-    agentId: options.agentId,
-    hasExplicitUrl: Boolean(options.url),
+    requestMode: options2.requestMode,
+    responseMode: options2.responseMode,
+    agentSelector: options2.agentSelector,
+    agentId: options2.agentId,
+    hasExplicitUrl: Boolean(options2.url),
     sourceCount: runtimeSources.length,
     usesPersistedContext: false
   });
@@ -58410,7 +61018,7 @@ async function runHeadless(options, dependencies = {}) {
     }
     const selectedAgent = selectHeadlessAgent(
       discovery,
-      options,
+      options2,
       environmentSettings.selectedAgentKey,
       environmentSettings.selectedAgentId,
       explicitSourceKey,
@@ -58418,25 +61026,25 @@ async function runHeadless(options, dependencies = {}) {
     );
     const clientState = await connectClientImpl(
       getConnectionOptions(
-        options,
+        options2,
         selectedAgent,
         selectedEnvironment,
         () => getStoredAccessTokenImpl(selectedEnvironment)
       )
     );
-    const parts = await buildMessagePartsImpl(options.message ?? "");
-    const pushConfig = options.pushNotifications ? createPushNotificationConfig(options.pushReceiver) : void 0;
+    const parts = await buildMessagePartsImpl(options2.message ?? "");
+    const pushConfig = options2.pushNotifications ? createPushNotificationConfig(options2.pushReceiver) : void 0;
     const params = buildMessageParams(
       parts,
       void 0,
       void 0,
       pushConfig
     );
-    if (options.requestMode === "streaming-message" && canStream(clientState.agentCard)) {
+    if (options2.requestMode === "streaming-message" && canStream(clientState.agentCard)) {
       await sendStreamingMessage({
         clientState,
         params,
-        responseMode: options.responseMode,
+        responseMode: options2.responseMode,
         stdout,
         stderr
       });
@@ -58445,12 +61053,12 @@ async function runHeadless(options, dependencies = {}) {
         selectedAgentKey: selectedAgent.agentKey,
         selectedAgentId: selectedAgent.agentId,
         selectedAgentHandle: selectedAgent.agentHandle,
-        requestMode: options.requestMode,
-        responseMode: options.responseMode
+        requestMode: options2.requestMode,
+        responseMode: options2.responseMode
       });
       return 0;
     }
-    if (options.requestMode === "streaming-message") {
+    if (options2.requestMode === "streaming-message") {
       writeLine(
         stderr,
         "Request mode fallback: agent does not support streaming, using Send message."
@@ -58459,7 +61067,7 @@ async function runHeadless(options, dependencies = {}) {
     await sendSingleMessage({
       clientState,
       params,
-      responseMode: options.responseMode,
+      responseMode: options2.responseMode,
       stdout,
       stderr
     });
@@ -58468,8 +61076,8 @@ async function runHeadless(options, dependencies = {}) {
       selectedAgentKey: selectedAgent.agentKey,
       selectedAgentId: selectedAgent.agentId,
       selectedAgentHandle: selectedAgent.agentHandle,
-      requestMode: options.requestMode,
-      responseMode: options.responseMode
+      requestMode: options2.requestMode,
+      responseMode: options2.responseMode
     });
     return 0;
   } catch (error) {
@@ -58481,7 +61089,7 @@ async function runHeadless(options, dependencies = {}) {
 }
 
 // src/cli.tsx
-var import_jsx_runtime11 = __toESM(require_jsx_runtime(), 1);
+var import_jsx_runtime12 = __toESM(require_jsx_runtime(), 1);
 async function runLoginCommand() {
   const { settings } = loadChatSettings();
   const environmentId = settings.selectedEnvironment;
@@ -58580,14 +61188,14 @@ async function readStdin() {
   }
   return input;
 }
-async function runHeadlessCommand(options) {
-  const shouldReadStdin = options.readMessageFromStdin || !options.message && !process.stdin.isTTY;
-  const message = shouldReadStdin ? await readStdin() : options.message;
+async function runHeadlessCommand(options2) {
+  const shouldReadStdin = options2.readMessageFromStdin || !options2.message && !process.stdin.isTTY;
+  const message = shouldReadStdin ? await readStdin() : options2.message;
   if (!message?.trim()) {
     throw new Error("Missing message for run command.");
   }
   process.exitCode = await runHeadless({
-    ...options,
+    ...options2,
     message
   });
 }
@@ -58611,7 +61219,7 @@ async function main() {
     if (!await continueAfterUpdateCheck()) {
       return;
     }
-    render_default(/* @__PURE__ */ (0, import_jsx_runtime11.jsx)(ChatApp, { options: command.options }), {
+    render_default(/* @__PURE__ */ (0, import_jsx_runtime12.jsx)(ChatApp, { options: command.options }), {
       exitOnCtrlC: false
     });
   } catch (error) {

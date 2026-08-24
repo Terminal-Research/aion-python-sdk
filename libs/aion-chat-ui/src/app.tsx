@@ -9,7 +9,7 @@ import type {
 } from "@a2a-js/sdk";
 import { roleToJSON } from "@a2a-js/sdk";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Box, useApp, useInput } from "ink";
+import { Box, useApp, useInput, useStdout } from "ink";
 
 import type { ChatCliOptions } from "./args.js";
 import {
@@ -105,7 +105,9 @@ import {
 	applyPreparedStreamTranscriptDelta,
 	clearActiveStreamTranscriptSection,
 	clearStreamTranscriptState,
+	closeStreamTranscriptSections,
 	createStreamTranscriptState,
+	finalizeTranscriptEntries,
 	getActiveStreamTranscriptSection,
 	getLastStreamTranscriptSection,
 	prepareStreamTranscriptDelta,
@@ -142,6 +144,7 @@ import {
 	isTaskContinuationState,
 	isTerminalTaskState
 } from "./lib/taskState.js";
+import { requestTerminalClear } from "./lib/terminal.js";
 import { getStoredAccessToken, loginWithWorkOS } from "./lib/workosAuth.js";
 
 const NO_AGENT_MESSAGE_NOTICE = "Task completed with no agent message.";
@@ -356,6 +359,7 @@ function parseExactSlashCommand(value: string): ExactSlashCommand | undefined {
 
 export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Element {
 	const { exit } = useApp();
+	const { stdout, write: writeToStdout } = useStdout();
 	const initialSettingsResult = useMemo(() => loadChatSettings(), []);
 	const chatSessionLoggerResult = useMemo(
 		() =>
@@ -381,6 +385,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 	const [streamLabel, setStreamLabel] = useState("Idle");
 	const [draft, setDraft] = useState("");
 	const [entries, setEntries] = useState<TranscriptEntry[]>([]);
+	const [transcriptGeneration, setTranscriptGeneration] = useState(0);
 	const [notifications, setNotifications] = useState<TranscriptEntry[]>([]);
 	const [contextId, setContextId] = useState<string>();
 	const [taskId, setTaskId] = useState<string>();
@@ -424,7 +429,8 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			{
 				id: randomUUID(),
 				role,
-				body
+				body,
+				isFinalized: true
 			}
 		]);
 	};
@@ -444,7 +450,8 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			{
 				id,
 				role: "system",
-				body
+				body,
+				isFinalized: true
 			}
 		]);
 		const timer = setTimeout(() => {
@@ -470,6 +477,16 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			payload: json
 		});
 		appendEntry("protocol", formatProtocolPayload(payload));
+	};
+
+	const finalizeOpenStreamEntries = (streamTaskId?: string): void => {
+		const entryIds = closeStreamTranscriptSections({
+			state: streamTranscriptStateRef.current,
+			taskId: streamTaskId
+		});
+		if (entryIds.size > 0) {
+			setEntries((current) => finalizeTranscriptEntries(current, entryIds));
+		}
 	};
 
 	useEffect(() => {
@@ -544,6 +561,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 
 	const clearTranscript = (): void => {
 		setEntries([]);
+		setTranscriptGeneration((current) => current + 1);
 		shownMessageKeysRef.current.clear();
 		streamedTaskIdsRef.current.clear();
 		clearStreamTranscriptState(streamTranscriptStateRef.current);
@@ -1073,6 +1091,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				renderAgentResponseBubble(message, task.id) ||
 				renderedAgentOutput;
 		}
+		finalizeOpenStreamEntries(task.id);
 		return renderedAgentOutput;
 	};
 
@@ -1089,12 +1108,13 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			return true;
 		}
 
+		let renderedAgentOutput = false;
 		if (
 			event.status?.message &&
 			(isTerminalTaskState(event.status.state) || isFinalStatusEvent(event)) &&
 			replaceLastResponseStreamSection(event.status.message, event.taskId)
 		) {
-			return true;
+			renderedAgentOutput = true;
 		}
 
 		const activeStreamSection = getLastStreamTranscriptSection(
@@ -1102,6 +1122,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			event.taskId
 		);
 		if (
+			!renderedAgentOutput &&
 			shouldRenderLiveStatusMessage({
 				message: event.status?.message,
 				taskId: event.taskId,
@@ -1109,11 +1130,14 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				activeStreamSectionKind: activeStreamSection?.kind
 			})
 		) {
-			return event.status?.message
+			renderedAgentOutput = event.status?.message
 				? renderAgentResponseBubble(event.status.message, event.taskId)
 				: false;
 		}
-		return false;
+		if (isTerminalTaskState(event.status?.state) || isFinalStatusEvent(event)) {
+			finalizeOpenStreamEntries(event.taskId);
+		}
+		return renderedAgentOutput;
 	};
 
 	const handleArtifactUpdate = (
@@ -1437,11 +1461,17 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				)
 			);
 		}
+		setReconnectNonce((current) => current + 1);
+		const terminalClearRequested = requestTerminalClear({
+			isTTY: stdout.isTTY,
+			terminalType: process.env.TERM,
+			write: writeToStdout
+		});
 		chatSessionLogger.info("chat.clear", {
 			environmentId: selectedEnvironment,
-			agentKey: selectedContextAgentKey
+			agentKey: selectedContextAgentKey,
+			terminalClearRequested
 		});
-		setReconnectNonce((current) => current + 1);
 	};
 
 	const runCopySlashCommand = async (): Promise<void> => {
@@ -1565,7 +1595,8 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			{
 				id: randomUUID(),
 				role: "user",
-				body: displayBody
+				body: displayBody,
+				isFinalized: true
 			}
 		]);
 
@@ -1736,6 +1767,9 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			});
 			appendStatus(`Request failed: ${error instanceof Error ? error.message : String(error)}`);
 		} finally {
+			if (useStreaming) {
+				finalizeOpenStreamEntries();
+			}
 			setWorkingStartedAt(undefined);
 		}
 	};
@@ -1900,6 +1934,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		<Box flexDirection="column" height="100%">
 			<Box flexDirection="column" flexGrow={1} marginY={1}>
 				<ChatSession
+					key={transcriptGeneration}
 					entries={entries}
 					discoveredCount={discoveredAgents.length}
 					sourceCount={Object.keys(agentSources).length}

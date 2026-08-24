@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
 	applyStreamTranscriptDelta,
 	createStreamTranscriptState,
+	finalizeStreamTranscriptSections,
 	getActiveStreamTranscriptSection,
+	partitionTranscriptEntries,
 	prepareStreamTranscriptDelta,
 	replaceActiveStreamTranscriptSection,
 	type TranscriptEntry
@@ -27,7 +29,11 @@ describe("stream transcript sections", () => {
 
 		expect(result.startedNewSection).toBe(true);
 		expect(entries).toEqual([
-			expect.objectContaining({ role: "agent", body: "hel" })
+			expect.objectContaining({
+				role: "agent",
+				body: "hel",
+				isFinalized: false
+			})
 		]);
 
 		result = applyStreamTranscriptDelta({
@@ -43,7 +49,11 @@ describe("stream transcript sections", () => {
 		expect(result.startedNewSection).toBe(false);
 		expect(result.body).toBe("hello");
 		expect(result.entries).toEqual([
-			expect.objectContaining({ role: "agent", body: "hello" })
+			expect.objectContaining({
+				role: "agent",
+				body: "hello",
+				isFinalized: false
+			})
 		]);
 	});
 
@@ -78,7 +88,9 @@ describe("stream transcript sections", () => {
 			"agent"
 		]);
 		expect(result.entries[0]?.body).toBe("first thought");
+		expect(result.entries[0]?.isFinalized).toBe(true);
 		expect(result.entries[2]?.body).toBe("second thought");
+		expect(result.entries[2]?.isFinalized).toBe(false);
 	});
 
 	it("replaces the active section when explicitly requested", () => {
@@ -108,7 +120,11 @@ describe("stream transcript sections", () => {
 
 		expect(result.startedNewSection).toBe(false);
 		expect(result.entries).toEqual([
-			expect.objectContaining({ role: "agent", body: "final" })
+			expect.objectContaining({
+				role: "agent",
+				body: "final",
+				isFinalized: false
+			})
 		]);
 	});
 
@@ -336,7 +352,11 @@ describe("stream transcript sections", () => {
 
 		expect(result.replaced).toBe(true);
 		expect(result.entries).toEqual([
-			expect.objectContaining({ role: "agent", body: "final" })
+			expect.objectContaining({
+				role: "agent",
+				body: "final",
+				isFinalized: true
+			})
 		]);
 		expect(
 			getActiveStreamTranscriptSection(
@@ -370,5 +390,57 @@ describe("stream transcript sections", () => {
 
 		expect(result.replaced).toBe(false);
 		expect(result.entries).toEqual(entries);
+	});
+
+	it("finalizes every open section for a completed task", () => {
+		const state = createStreamTranscriptState();
+		let entries = applyStreamTranscriptDelta({
+			entries: [],
+			state,
+			taskId: "task-1",
+			artifactId: "aion:thinking-delta",
+			kind: "thinking",
+			body: "thinking",
+			append: false
+		}).entries;
+		entries = applyStreamTranscriptDelta({
+			entries,
+			state,
+			taskId: "task-1",
+			artifactId: "aion:stream-delta",
+			kind: "response",
+			body: "answer",
+			append: false
+		}).entries;
+
+		const finalized = finalizeStreamTranscriptSections({
+			entries,
+			state,
+			taskId: "task-1"
+		});
+
+		expect(finalized.filter((entry) => entry.role === "agent"))
+			.toHaveLength(2);
+		expect(finalized.every((entry) => entry.isFinalized)).toBe(true);
+		expect(
+			getActiveStreamTranscriptSection(
+				state,
+				"task-1",
+				"aion:stream-delta"
+			)
+		).toBeUndefined();
+	});
+
+	it("keeps entries after the first mutable section in the dynamic partition", () => {
+		const entries: TranscriptEntry[] = [
+			{ id: "user", role: "user", body: "question", isFinalized: true },
+			{ id: "stream", role: "agent", body: "partial", isFinalized: false },
+			{ id: "status", role: "status", body: "waiting", isFinalized: true }
+		];
+
+		expect(partitionTranscriptEntries(entries)).toEqual({
+			scrollbackEntries: [entries[0]],
+			dynamicEntries: [entries[1], entries[2]]
+		});
 	});
 });

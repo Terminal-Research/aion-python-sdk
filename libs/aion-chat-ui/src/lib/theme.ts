@@ -53,6 +53,17 @@ export const STATUS_BAR_THEME = {
 } as const;
 
 export const MARKDOWN_THEME = {
+	foreground: AION_THEME.colors.textPrimary,
+	muted: AION_THEME.colors.textMuted,
+	headingPrimary: AION_THEME.colors.brandAccent,
+	headingSecondary: AION_THEME.colors.brandPrimary,
+	headingTertiary: AION_THEME.colors.textStrong,
+	blockquoteBorder: AION_THEME.colors.brandPrimary,
+	listMarker: AION_THEME.colors.brandAccent,
+	inlineCode: "yellow",
 	codeBorder: "yellow",
-	codeText: "yellow"
+	codeText: "yellow",
+	link: AION_THEME.colors.brandAccent,
+	tableBorder: AION_THEME.colors.textMuted,
+	tableHeader: AION_THEME.colors.textStrong
 } as const;

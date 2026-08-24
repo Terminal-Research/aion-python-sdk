@@ -132,7 +132,7 @@ describe("Ink components", () => {
 				slashCommands={[
 					{
 						label: "/clear",
-						description: "Clear the visible transcript and start fresh."
+						description: "Clear terminal output and start a fresh chat context."
 					}
 				]}
 				selectedSlashCommandIndex={0}
@@ -141,7 +141,9 @@ describe("Ink components", () => {
 		);
 
 		expect(app.lastFrame()).toContain("/clear");
-		expect(app.lastFrame()).toContain("Clear the visible transcript and start fresh.");
+		expect(app.lastFrame()).toContain(
+			"Clear terminal output and start a fresh chat context."
+		);
 		expect(app.lastFrame()).not.toContain("Ctrl+C");
 		app.unmount();
 	});
@@ -257,7 +259,14 @@ describe("Ink components", () => {
 	it("renders chat session entries below the inline home screen", () => {
 		const app = render(
 			<ChatSession
-				entries={[{ id: "agent-1", role: "agent", body: "agent reply" }]}
+				entries={[
+					{
+						id: "agent-1",
+						role: "agent",
+						body: "agent reply",
+						isFinalized: false
+					}
+				]}
 				discoveredCount={2}
 				sourceCount={1}
 				selectedAgentId="season-agent"
@@ -271,9 +280,75 @@ describe("Ink components", () => {
 		app.unmount();
 	});
 
+	it("moves finalized entries to scrollback while mutable output stays dynamic", () => {
+		const userEntry = {
+			id: "user-1",
+			role: "user" as const,
+			body: "question",
+			isFinalized: true
+		};
+		const partialAgentEntry = {
+			id: "agent-1",
+			role: "agent" as const,
+			body: "par",
+			isFinalized: false
+		};
+		const renderSession = (entries: Array<typeof userEntry | typeof partialAgentEntry>) => (
+			<ChatSession
+				entries={entries}
+				discoveredCount={1}
+				sourceCount={1}
+				selectedAgentId="season-agent"
+				requestMode="streaming-message"
+				responseMode="message-output"
+			/>
+		);
+		const app = render(renderSession([userEntry, partialAgentEntry]));
+
+		expect(app.frames.join("\n")).toContain("› question");
+		expect(app.lastFrame()).toContain("· par");
+
+		const frameCountAfterInitialRender = app.frames.length;
+		const updatedAgentEntry = {
+			...partialAgentEntry,
+			body: "partial"
+		};
+		const changedFinalizedUserEntry = {
+			...userEntry,
+			body: "changed question"
+		};
+		app.rerender(renderSession([changedFinalizedUserEntry, updatedAgentEntry]));
+		const updateFrames = app.frames.slice(frameCountAfterInitialRender).join("\n");
+
+		expect(updateFrames).toContain("· partial");
+		expect(updateFrames).not.toContain("changed question");
+
+		const frameCountBeforeFinalization = app.frames.length;
+		app.rerender(
+			renderSession([
+				changedFinalizedUserEntry,
+				{ ...updatedAgentEntry, isFinalized: true }
+			])
+		);
+		const finalizationFrames = app.frames
+			.slice(frameCountBeforeFinalization)
+			.join("\n");
+
+		expect(finalizationFrames).toContain("· partial");
+		app.unmount();
+	});
+
 	it("renders user messages with the composer-style chevron", () => {
 		const app = render(
-			<MessageBubble entry={{ id: "user-1", role: "user", body: "hello there" }} />
+			<MessageBubble
+				entry={{
+					id: "user-1",
+					role: "user",
+					body: "hello there",
+					isFinalized: true
+				}}
+				lineWidth={100}
+			/>
 		);
 
 		expect(app.lastFrame()).toContain("› hello there");
@@ -284,7 +359,15 @@ describe("Ink components", () => {
 
 	it("renders agent messages without the old bordered card", () => {
 		const app = render(
-			<MessageBubble entry={{ id: "agent-1", role: "agent", body: "agent reply" }} />
+			<MessageBubble
+				entry={{
+					id: "agent-1",
+					role: "agent",
+					body: "agent reply",
+					isFinalized: true
+				}}
+				lineWidth={100}
+			/>
 		);
 
 		expect(app.lastFrame()).toContain("· agent reply");
@@ -294,7 +377,15 @@ describe("Ink components", () => {
 
 	it("renders muted transcript dividers", () => {
 		const app = render(
-			<MessageBubble entry={{ id: "divider-1", role: "divider", body: "" }} />
+			<MessageBubble
+				entry={{
+					id: "divider-1",
+					role: "divider",
+					body: "",
+					isFinalized: true
+				}}
+				lineWidth={100}
+			/>
 		);
 
 		expect(app.lastFrame()).toContain("--------");
@@ -304,7 +395,15 @@ describe("Ink components", () => {
 
 	it("renders system messages with a title-case label", () => {
 		const app = render(
-			<MessageBubble entry={{ id: "system-1", role: "system", body: "connected" }} />
+			<MessageBubble
+				entry={{
+					id: "system-1",
+					role: "system",
+					body: "connected",
+					isFinalized: true
+				}}
+				lineWidth={100}
+			/>
 		);
 
 		expect(app.lastFrame()).toContain("· System connected");
@@ -319,7 +418,8 @@ describe("Ink components", () => {
 					{
 						id: "notification-1",
 						role: "system",
-						body: "Aion development registry: Auth failed."
+						body: "Aion development registry: Auth failed.",
+						isFinalized: true
 					}
 				]}
 			/>

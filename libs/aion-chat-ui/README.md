@@ -41,6 +41,22 @@ By default, headless mode writes the rendered agent response to stdout and progr
 
 The Python package forwards `aion chat run ...` to the same implementation. Headless runs skip the interactive npm update prompt.
 
+### Interactive Markdown and Scrollback
+
+Interactive agent responses render Markdown with terminal-native styles for
+headings, emphasis, block quotes, lists, fenced code, links, and tables. While
+a response is streaming, its unfinished line remains literal until a newline
+arrives; the complete response is rendered when the stream closes.
+
+Finalized transcript entries are emitted to terminal scrollback and removed
+from Ink's mutable layout. The current streaming exchange remains dynamic so it
+can still be appended to or replaced. `/clear` resets the chat context, requests
+that an interactive terminal erase its visible screen and saved scrollback,
+then remounts the fresh home screen. Terminal support varies; when honored, the
+request clears the terminal's entire buffer, including output from before Aion
+Chat started. Non-interactive output and `TERM=dumb` skip the terminal request
+but still reset the logical transcript and context.
+
 ### Login
 
 ```bash

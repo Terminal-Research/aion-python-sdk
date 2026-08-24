@@ -28,7 +28,7 @@
   "dependencies": {
     "@a2a-js/sdk": "^1.0.0-alpha.0",
     "@napi-rs/keyring": "^1.2.0",
-    "cli-highlight": "^2.1.11",
+    "ansi-escapes": "^7.3.0",
     "ink": "^6.2.3",
     "marked": "^15.0.12",
     "pino": "^10.3.1",
