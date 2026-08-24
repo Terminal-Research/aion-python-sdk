@@ -141,8 +141,9 @@ and are discovered by `aion-server` at runtime.
   release-note links, environment-scoped agent source discovery, local
   session/settings persistence, streaming-aware Marked rendering for agent
   output, immutable transcript offloading to terminal scrollback, TTY-aware
-  terminal clearing for `/clear`, and WorkOS CLI/device login with npm keyring
-  storage or the Python credential helper supplied by `aion-sdk`. Its GraphQL
+  terminal clearing for `/clear`, native terminal cursor positioning in the
+  composer, and WorkOS CLI/device login with npm keyring storage or the Python
+  credential helper supplied by `aion-sdk`. Its GraphQL
   operation types are generated from the restricted chat schema copied from
   `aion-api`; rebuild and run `stage:python` after contract changes. See
   `libs/aion-chat-ui/AGENTS.md` for session-log inspection and package-local

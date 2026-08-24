@@ -1,5 +1,18 @@
-import React, { useEffect, useState } from "react";
-import { Box, Text, useStdout } from "ink";
+import React, {
+	type RefObject,
+	useEffect,
+	useLayoutEffect,
+	useRef,
+	useState
+} from "react";
+import {
+	Box,
+	Text,
+	type CursorPosition,
+	type DOMElement,
+	useCursor,
+	useStdout
+} from "ink";
 
 import { COMPOSER_THEME } from "../lib/theme.js";
 
@@ -72,6 +85,80 @@ function wrapToWidth(value: string, width: number): string[] {
 	return rows;
 }
 
+export function wrapComposerDraft(value: string, width: number): string[] {
+	const safeWidth = Math.max(1, width);
+	const rows = wrapToWidth(value, safeWidth);
+	const finalSourceLine = value.split("\n").at(-1) ?? "";
+
+	if (
+		finalSourceLine.length > 0 &&
+		finalSourceLine.length % safeWidth === 0
+	) {
+		// Keep the insertion point inside the composer after a full row.
+		rows.push("");
+	}
+
+	return rows;
+}
+
+function measureCursorPosition(
+	anchor: DOMElement | null
+): CursorPosition | undefined {
+	if (!anchor?.yogaNode) {
+		return undefined;
+	}
+
+	let current: DOMElement | undefined = anchor;
+	let x = 0;
+	let y = 0;
+
+	while (current?.parentNode) {
+		if (!current.yogaNode) {
+			return undefined;
+		}
+
+		x += current.yogaNode.getComputedLeft();
+		y += current.yogaNode.getComputedTop();
+		current = current.parentNode;
+	}
+
+	return {
+		x: x + anchor.yogaNode.getComputedWidth(),
+		y
+	};
+}
+
+function cursorPositionsMatch(
+	current: CursorPosition | undefined,
+	next: CursorPosition | undefined
+): boolean {
+	return current?.x === next?.x && current?.y === next?.y;
+}
+
+function useComposerCursor(
+	anchorRef: RefObject<DOMElement | null>,
+	enabled: boolean
+): void {
+	const { setCursorPosition } = useCursor();
+	const [measuredPosition, setMeasuredPosition] =
+		useState<CursorPosition>();
+
+	setCursorPosition(enabled ? measuredPosition : undefined);
+
+	useLayoutEffect(() => {
+		// Yoga coordinates are current only after Ink commits the latest layout.
+		const nextPosition = enabled
+			? measureCursorPosition(anchorRef.current)
+			: undefined;
+
+		setMeasuredPosition((currentPosition) =>
+			cursorPositionsMatch(currentPosition, nextPosition)
+				? currentPosition
+				: nextPosition
+		);
+	});
+}
+
 function padLabel(label: string, width: number): string {
 	return `${label}${" ".repeat(Math.max(0, width - label.length))}`;
 }
@@ -138,6 +225,7 @@ export function ChatComposer({
 	slashSubmenu
 }: ChatComposerProps): React.JSX.Element {
 	const { stdout } = useStdout();
+	const cursorAnchorRef = useRef<DOMElement | null>(null);
 	const [viewportWidth, setViewportWidth] = useState(
 		stdout?.columns ?? process.stdout.columns ?? 80
 	);
@@ -147,7 +235,8 @@ export function ChatComposer({
 	}  •  Stream: ${streamState}  •  Push: ${pushState}`;
 	const lineWidth = Math.max(24, viewportWidth);
 	const contentWidth = Math.max(1, lineWidth - 2);
-	const draftLines = draft.length > 0 ? wrapToWidth(draft, contentWidth) : [""];
+	const draftLines =
+		draft.length > 0 ? wrapComposerDraft(draft, contentWidth) : [""];
 	const fillerRow = " ".repeat(lineWidth);
 	const showAgentSuggestions = agentSuggestions.length > 0;
 	const showFileSuggestions = fileSuggestions.length > 0;
@@ -166,6 +255,8 @@ export function ChatComposer({
 		agentSourceWidth + 2,
 		Math.max(0, agentColumnBudget - agentLabelColumnWidth)
 	);
+
+	useComposerCursor(cursorAnchorRef, !slashSubmenu);
 
 	useEffect(() => {
 		const handleResize = (): void => {
@@ -246,14 +337,20 @@ export function ChatComposer({
 					draftLines.map((line, index) => {
 						const prefix = index === 0 ? "› " : "  ";
 						const padding = " ".repeat(Math.max(0, contentWidth - line.length));
+						const isCursorRow = index === draftLines.length - 1;
 						return (
 							<Box key={`draft-${index}`}>
-								<Text backgroundColor={INPUT_BACKGROUND} color={INPUT_ACCENT}>
-									{prefix}
-								</Text>
-								<Text backgroundColor={INPUT_BACKGROUND} color={INPUT_FOREGROUND}>
-									{line}
-								</Text>
+								<Box ref={isCursorRow ? cursorAnchorRef : undefined}>
+									<Text backgroundColor={INPUT_BACKGROUND} color={INPUT_ACCENT}>
+										{prefix}
+									</Text>
+									<Text
+										backgroundColor={INPUT_BACKGROUND}
+										color={INPUT_FOREGROUND}
+									>
+										{line}
+									</Text>
+								</Box>
 								{padding.length > 0 ? (
 									<Text backgroundColor={INPUT_BACKGROUND}>{padding}</Text>
 								) : null}
@@ -262,9 +359,11 @@ export function ChatComposer({
 					})
 				) : (
 					<Box>
-						<Text backgroundColor={INPUT_BACKGROUND} color={INPUT_ACCENT}>
-							›{" "}
-						</Text>
+						<Box ref={cursorAnchorRef}>
+							<Text backgroundColor={INPUT_BACKGROUND} color={INPUT_ACCENT}>
+								›{" "}
+							</Text>
+						</Box>
 						<Text backgroundColor={INPUT_BACKGROUND} color={INPUT_PLACEHOLDER}>
 							Send message
 						</Text>

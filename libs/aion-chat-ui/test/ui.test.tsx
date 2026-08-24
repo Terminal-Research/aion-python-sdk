@@ -1,8 +1,13 @@
+import { PassThrough, Writable } from "node:stream";
 import React from "react";
-import { describe, expect, it } from "vitest";
+import { render as renderInk } from "ink";
 import { render } from "ink-testing-library";
+import { describe, expect, it, vi } from "vitest";
 
-import { ChatComposer } from "../src/components/ChatComposer.js";
+import {
+	ChatComposer,
+	wrapComposerDraft
+} from "../src/components/ChatComposer.js";
 import { ChatSession } from "../src/components/ChatSession.js";
 import { SystemNotificationStack } from "../src/components/SystemNotificationStack.js";
 import { HomeScreen } from "../src/components/HomeScreen.js";
@@ -10,6 +15,23 @@ import {
 	MessageBubble,
 	WorkingIndicator
 } from "../src/components/MessageBubble.js";
+
+class TestTerminal extends Writable {
+	readonly columns = 100;
+	readonly rows = 40;
+	// Avoid cli-cursor's process-exit hook; Ink still emits requested cursor moves.
+	readonly isTTY = false;
+	output = "";
+
+	override _write(
+		chunk: Buffer | string,
+		_encoding: BufferEncoding,
+		callback: (error?: Error | null) => void
+	): void {
+		this.output += chunk.toString();
+		callback();
+	}
+}
 
 describe("Ink components", () => {
 	it("renders the agent picker and hides the footer while the @ menu is open", () => {
@@ -213,6 +235,60 @@ describe("Ink components", () => {
 		expect(app.lastFrame()).not.toContain("Discovered: 2");
 		expect(app.lastFrame()).not.toContain("Ctrl+C exits");
 		app.unmount();
+	});
+
+	it("positions the native terminal cursor at the end of the draft", async () => {
+		const stdout = new TestTerminal();
+		const stderr = new TestTerminal();
+		const stdin = new PassThrough();
+		const renderComposer = (draft: string): React.JSX.Element => (
+			<ChatComposer
+				draft={draft}
+				activeAgentId="command-agent"
+				discoveredCount={1}
+				pushState="Disabled"
+				streamState="Idle"
+				agentSuggestions={[]}
+				selectedSuggestionIndex={0}
+				fileSuggestions={[]}
+				selectedFileSuggestionIndex={0}
+				slashCommands={[]}
+				selectedSlashCommandIndex={0}
+				slashMenuVisible={false}
+			/>
+		);
+		const app = renderInk(renderComposer(""), {
+			stdout: stdout as unknown as NodeJS.WriteStream,
+			stderr: stderr as unknown as NodeJS.WriteStream,
+			stdin: stdin as unknown as NodeJS.ReadStream,
+			exitOnCtrlC: false,
+			patchConsole: false,
+			maxFps: 120
+		});
+
+		try {
+			await vi.waitFor(() => {
+				expect(stdout.output).toContain("\u001B[3G\u001B[?25h");
+			});
+
+			const outputLengthBeforeTyping = stdout.output.length;
+			app.rerender(renderComposer("hello"));
+
+			await vi.waitFor(() => {
+				expect(stdout.output.slice(outputLengthBeforeTyping)).toContain(
+					"\u001B[8G\u001B[?25h"
+				);
+			});
+		} finally {
+			app.unmount();
+			app.cleanup();
+		}
+	});
+
+	it("moves the composer insertion point to a new row at the wrap boundary", () => {
+		expect(wrapComposerDraft("1234", 4)).toEqual(["1234", ""]);
+		expect(wrapComposerDraft("12345", 4)).toEqual(["1234", "5"]);
+		expect(wrapComposerDraft("1234\n", 4)).toEqual(["1234", ""]);
 	});
 
 	it("renders the home screen discovery summary", () => {

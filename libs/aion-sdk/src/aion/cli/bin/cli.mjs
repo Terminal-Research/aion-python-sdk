@@ -48980,6 +48980,21 @@ var import_react27 = __toESM(require_react(), 1);
 
 // node_modules/ink/build/hooks/use-cursor.js
 var import_react28 = __toESM(require_react(), 1);
+var useCursor = () => {
+  const context = (0, import_react28.useContext)(CursorContext_default);
+  const positionRef = (0, import_react28.useRef)(void 0);
+  const setCursorPosition = (0, import_react28.useCallback)((position) => {
+    positionRef.current = position;
+  }, []);
+  (0, import_react28.useInsertionEffect)(() => {
+    context.setCursorPosition(positionRef.current);
+    return () => {
+      context.setCursorPosition(void 0);
+    };
+  });
+  return { setCursorPosition };
+};
+var use_cursor_default = useCursor;
 
 // src/lib/environment.ts
 var AION_ENVIRONMENT_IDS = [
@@ -50864,6 +50879,49 @@ function wrapToWidth(value, width) {
   }
   return rows;
 }
+function wrapComposerDraft(value, width) {
+  const safeWidth = Math.max(1, width);
+  const rows = wrapToWidth(value, safeWidth);
+  const finalSourceLine = value.split("\n").at(-1) ?? "";
+  if (finalSourceLine.length > 0 && finalSourceLine.length % safeWidth === 0) {
+    rows.push("");
+  }
+  return rows;
+}
+function measureCursorPosition(anchor) {
+  if (!anchor?.yogaNode) {
+    return void 0;
+  }
+  let current = anchor;
+  let x = 0;
+  let y = 0;
+  while (current?.parentNode) {
+    if (!current.yogaNode) {
+      return void 0;
+    }
+    x += current.yogaNode.getComputedLeft();
+    y += current.yogaNode.getComputedTop();
+    current = current.parentNode;
+  }
+  return {
+    x: x + anchor.yogaNode.getComputedWidth(),
+    y
+  };
+}
+function cursorPositionsMatch(current, next) {
+  return current?.x === next?.x && current?.y === next?.y;
+}
+function useComposerCursor(anchorRef, enabled) {
+  const { setCursorPosition } = use_cursor_default();
+  const [measuredPosition, setMeasuredPosition] = (0, import_react29.useState)();
+  setCursorPosition(enabled ? measuredPosition : void 0);
+  (0, import_react29.useLayoutEffect)(() => {
+    const nextPosition = enabled ? measureCursorPosition(anchorRef.current) : void 0;
+    setMeasuredPosition(
+      (currentPosition) => cursorPositionsMatch(currentPosition, nextPosition) ? currentPosition : nextPosition
+    );
+  });
+}
 function padLabel(label, width) {
   return `${label}${" ".repeat(Math.max(0, width - label.length))}`;
 }
@@ -50917,6 +50975,7 @@ function ChatComposer({
   slashSubmenu
 }) {
   const { stdout } = use_stdout_default();
+  const cursorAnchorRef = (0, import_react29.useRef)(null);
   const [viewportWidth, setViewportWidth] = (0, import_react29.useState)(
     stdout?.columns ?? process.stdout.columns ?? 80
   );
@@ -50924,7 +50983,7 @@ function ChatComposer({
   const footerLabel = `${activeAgentId ? `@${activeAgentId}` : "@no-agent"}  \u2022  Stream: ${streamState}  \u2022  Push: ${pushState}`;
   const lineWidth = Math.max(24, viewportWidth);
   const contentWidth = Math.max(1, lineWidth - 2);
-  const draftLines = draft.length > 0 ? wrapToWidth(draft, contentWidth) : [""];
+  const draftLines = draft.length > 0 ? wrapComposerDraft(draft, contentWidth) : [""];
   const fillerRow = " ".repeat(lineWidth);
   const showAgentSuggestions = agentSuggestions.length > 0;
   const showFileSuggestions = fileSuggestions.length > 0;
@@ -50943,6 +51002,7 @@ function ChatComposer({
     agentSourceWidth + 2,
     Math.max(0, agentColumnBudget - agentLabelColumnWidth)
   );
+  useComposerCursor(cursorAnchorRef, !slashSubmenu);
   (0, import_react29.useEffect)(() => {
     const handleResize = () => {
       setViewportWidth(stdout?.columns ?? process.stdout.columns ?? 80);
@@ -50990,16 +51050,26 @@ function ChatComposer({
       ] }) : draft.length > 0 ? draftLines.map((line, index) => {
         const prefix = index === 0 ? "\u203A " : "  ";
         const padding = " ".repeat(Math.max(0, contentWidth - line.length));
+        const isCursorRow = index === draftLines.length - 1;
         return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { children: [
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { backgroundColor: INPUT_BACKGROUND, color: INPUT_ACCENT, children: prefix }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { backgroundColor: INPUT_BACKGROUND, color: INPUT_FOREGROUND, children: line }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { ref: isCursorRow ? cursorAnchorRef : void 0, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { backgroundColor: INPUT_BACKGROUND, color: INPUT_ACCENT, children: prefix }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+              Text,
+              {
+                backgroundColor: INPUT_BACKGROUND,
+                color: INPUT_FOREGROUND,
+                children: line
+              }
+            )
+          ] }),
           padding.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { backgroundColor: INPUT_BACKGROUND, children: padding }) : null
         ] }, `draft-${index}`);
       }) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { children: [
-        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { backgroundColor: INPUT_BACKGROUND, color: INPUT_ACCENT, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { ref: cursorAnchorRef, children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { backgroundColor: INPUT_BACKGROUND, color: INPUT_ACCENT, children: [
           "\u203A",
           " "
-        ] }),
+        ] }) }),
         /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { backgroundColor: INPUT_BACKGROUND, color: INPUT_PLACEHOLDER, children: "Send message" }),
         /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { backgroundColor: INPUT_BACKGROUND, children: " ".repeat(Math.max(0, contentWidth - "Send message".length)) })
       ] }),
