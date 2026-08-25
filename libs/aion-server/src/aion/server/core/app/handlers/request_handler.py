@@ -6,8 +6,18 @@ from a2a.server.agent_execution.active_task import ActiveTask
 from a2a.server.context import ServerCallContext
 from a2a.server.events import Event
 from a2a.server.request_handlers import DefaultRequestHandlerV2
-from a2a.types import SendMessageRequest, SubscribeToTaskRequest, Task
-from a2a.utils.errors import InternalError, InvalidParamsError
+from a2a.server.request_handlers.request_handler import validate, validate_request_params
+from a2a.types import (
+    CancelTaskRequest,
+    SendMessageRequest,
+    SubscribeToTaskRequest,
+    Task,
+)
+from a2a.utils.errors import (
+    InternalError,
+    InvalidParamsError,
+    TaskNotFoundError,
+)
 from a2a.utils.task import apply_history_length
 from aion.core.a2a import ContextsList, Conversation, GetContextParams, GetContextsListParams
 from aion.core.runtime import ExtensionActivationError, aion_a2a_extension_registry
@@ -20,6 +30,10 @@ from typing import override
 
 from aion.server.agent.execution import AionActiveTaskRegistry
 from aion.server.tasks import store_manager
+from aion.db.postgres.events import TaskEventKind
+from aion.server.tasks.notifications import TaskEventListener
+from aion.server.tasks.ownership import OwnershipProvider
+from aion.server.tasks.ownership.config import CANCEL_WAIT_SECONDS
 from aion.server.a2a.conversation import ConversationBuilder
 from .request_preprocessors import A2ARequestPreprocessor
 from .terminal_task_projection import TerminalTaskProjection
@@ -46,16 +60,52 @@ def _with_preprocessors(method):
     return wrapper
 
 
+async def _no_events() -> AsyncGenerator[Event]:
+    """An empty event stream, for a subscription with nothing to wait for.
+
+    Handed to ``TerminalTaskProjection``, it produces exactly the stored Task:
+    the projection closes every stream that way, so a settled task needs no
+    separate reply path of its own.
+    """
+    return
+    yield  # pragma: no cover - unreachable, and what makes this a generator
+
+
 class AionRequestHandler(DefaultRequestHandlerV2):
     """Request handler implementation for Aion management operations."""
 
-    def __init__(self, *args, preprocessors: list[A2ARequestPreprocessor] | None = None, **kwargs) -> None:
+    def __init__(
+            self,
+            *args,
+            preprocessors: list[A2ARequestPreprocessor] | None = None,
+            ownership_provider: OwnershipProvider | None = None,
+            event_listener: TaskEventListener | None = None,
+            **kwargs,
+    ) -> None:
+        """Build the handler and hand the registry its ownership provider.
+
+        The provider arrives from the same factory that chose the task store,
+        keeping the pair one decision. Omitted, the registry falls back to the
+        single-process provider, which is what a handler built without a
+        durable store should get.
+
+        ``event_listener`` is threaded in the same way rather than read off
+        the module-level ``store_manager`` singleton at call time: a handler
+        built directly, outside ``AppFactory`` - as every ownership test does
+        - would otherwise reach a singleton nothing ever initialized. ``None``
+        is a legitimate value, not just a not-yet-wired default: it is what an
+        in-memory-backed handler should have, since ``on_cancel_task``'s
+        second branch is unreachable without a durable store to hold the
+        claim it waits on.
+        """
         super().__init__(*args, **kwargs)
         self._active_task_registry = AionActiveTaskRegistry(
             agent_executor=self.agent_executor,
             task_store=self.task_store,
             push_sender=self._push_sender,
+            ownership_provider=ownership_provider,
         )
+        self._event_listener = event_listener
         self._preprocessors = preprocessors or []
 
     @override
@@ -216,16 +266,116 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         async for event in projection.project(super().on_message_send_stream(params, context)):
             yield event
 
+    @validate_request_params
+    async def on_cancel_task(
+            self,
+            params: CancelTaskRequest,
+            context: ServerCallContext,
+    ) -> Task:
+        """Cancel a task, wherever in the process fleet it is actually executing.
+
+        Three branches, tried in order:
+
+        1. This process is executing the task right now
+           (``AionActiveTaskRegistry.cancel_local``). Cancelled through the
+           ordinary A2A executor path - rescue included, for evolution runs -
+           and the resulting terminal task is returned directly with no
+           further waiting.
+        2. Another process holds a live claim
+           (``BaseTaskStore.request_cancellation``). This process cannot run
+           that owner's teardown itself, so it marks the claim and waits,
+           bounded, for the terminal write the owner's own cancellation - now
+           discovered over ``TASK_EVENT_CHANNEL`` rather than only at its next
+           heartbeat renewal - will produce. See ``TaskEventListener`` and
+           ``AionActiveTaskRegistry._on_control_signal``. A wait that outruns
+           the bound answers with the task as currently stored rather than
+           blocking the caller further: the eventual terminal state still
+           reaches the client later, over push or ``tasks/resubscribe``.
+        3. No live claim exists anywhere. There is no owner to ask, so the
+           terminal state is written directly
+           (``BaseTaskStore.cancel_with_ownership_revocation``), exactly as
+           this method used to do unconditionally.
+
+        In every branch, the already-terminal case is reported as an error
+        rather than inferred from the returned state: a successful
+        cancellation is itself terminal, so afterwards the two would be
+        indistinguishable.
+        """
+        task_id = params.id
+
+        local = await self._active_task_registry.cancel_local(task_id, context)
+        if local is not None:
+            return local
+
+        # Registered before request_cancellation's transaction commits, not
+        # after: the owner's own CANCEL_RESOLVED notification can only follow
+        # that commit, but nothing stops it from arriving almost immediately -
+        # registering any later would race that notification and could miss
+        # it. See TaskEventListener.register / Waiter.
+        waiter = (
+            self._event_listener.register(TaskEventKind.CANCEL_RESOLVED, task_id)
+            if self._event_listener
+            else None
+        )
+        try:
+            marked = await self.task_store.request_cancellation(task_id, context)
+            if marked is None:
+                raise TaskNotFoundError
+
+            if marked:
+                if waiter is not None:
+                    await waiter.wait(timeout=CANCEL_WAIT_SECONDS)
+                # Read regardless of whether the wait was woken or timed out:
+                # a woken wait still needs the settled row, and a timed-out
+                # one may have missed a notification lost to a listener
+                # reconnect rather than a cancellation that never happened.
+                task = await self.task_store.get(task_id, context)
+                if task is None:
+                    raise TaskNotFoundError
+                return task
+        finally:
+            if waiter is not None:
+                waiter.release()
+
+        task = await self.task_store.cancel_with_ownership_revocation(
+            task_id,
+            context,
+        )
+        if task is None:
+            raise TaskNotFoundError
+        return task
+
+    @validate_request_params
+    @validate(
+        lambda self: self._agent_card.capabilities.streaming,
+        'Streaming is not supported by the agent',
+    )
     async def on_subscribe_to_task(
             self,
             params: SubscribeToTaskRequest,
             context: ServerCallContext,
     ) -> AsyncGenerator[Event]:
-        """Resubscribe handler applying the same terminal-Task projection."""
+        """Resubscribe handler applying the same terminal-Task projection.
+
+        A task that already has an outcome has no execution to join, and the
+        SDK will not start one for it. Its stream is empty and the projection
+        closes it with the stored Task - which is the answer the client asked
+        for, and the reason the reaper settles a task rather than deleting it.
+        """
+        active_task = await self._active_task_registry.get_for_attach(
+            params.id,
+            context,
+        )
         projection = TerminalTaskProjection(
             task_store=self.task_store,
             call_context=context,
             task_id=params.id,
         )
-        async for event in projection.project(super().on_subscribe_to_task(params, context)):
+        source = (
+            active_task.subscribe(include_initial_task=True)
+            if active_task is not None
+            else _no_events()
+        )
+
+        async for event in projection.project(source):
             yield event

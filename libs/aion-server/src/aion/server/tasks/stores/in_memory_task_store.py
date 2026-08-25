@@ -2,19 +2,29 @@
 
 import logging
 import asyncio
+from datetime import datetime, timezone
 from a2a.server.context import ServerCallContext
 from a2a.server.owner_resolver import OwnerResolver, resolve_user_scope
-from a2a.types import a2a_pb2
+from a2a.types import TaskState, a2a_pb2
 from a2a.types.a2a_pb2 import Task
 from a2a.utils.constants import DEFAULT_LIST_TASKS_PAGE_SIZE
-from a2a.utils.errors import InvalidParamsError
+from a2a.utils.errors import InvalidParamsError, TaskNotCancelableError
 from a2a.utils.task import decode_page_token, encode_page_token
 from typing import Iterator, Optional, List
 
-from aion.server.a2a.constants import ACTIVE_TASK_STATES
+from aion.server.a2a.constants import ACTIVE_TASK_STATES, TERMINAL_TASK_STATES
+from aion.server.tasks.ownership import DegenerateOwnershipProvider
 from .base_task_store import BaseTaskStore
 
 logger = logging.getLogger(__name__)
+_MIN_TIMESTAMP = datetime.min.replace(tzinfo=timezone.utc)
+
+
+def _status_timestamp(task: Task) -> datetime | None:
+    """Return a task timestamp as an aware datetime, if it has one."""
+    if not task.HasField('status') or not task.status.HasField('timestamp'):
+        return None
+    return task.status.timestamp.ToDatetime(tzinfo=timezone.utc)
 
 
 class InMemoryTaskStore(BaseTaskStore):
@@ -32,6 +42,7 @@ class InMemoryTaskStore(BaseTaskStore):
         self.tasks: dict[str, dict[str, Task]] = {}
         self.lock = asyncio.Lock()
         self.owner_resolver = owner_resolver
+        self.ownership_provider = DegenerateOwnershipProvider()
 
     def _get_owner_tasks(self, owner: str) -> dict[str, Task]:
         return self.tasks.get(owner, {})
@@ -103,29 +114,23 @@ class InMemoryTaskStore(BaseTaskStore):
                 task for task in tasks if task.status.state == params.status
             ]
         if params.HasField('status_timestamp_after'):
-            last_updated_after_iso = (
-                params.status_timestamp_after.ToJsonString()
+            last_updated_after = params.status_timestamp_after.ToDatetime(
+                tzinfo=timezone.utc
             )
             tasks = [
                 task
                 for task in tasks
                 if (
-                        task.HasField('status')
-                        and task.status.HasField('timestamp')
-                        and task.status.timestamp.ToJsonString()
-                        >= last_updated_after_iso
+                    (timestamp := _status_timestamp(task)) is not None
+                    and timestamp >= last_updated_after
                 )
             ]
 
         # Order tasks by last update time. To ensure stable sorting, in cases where timestamps are null or not unique, do a second order comparison of IDs.
         tasks.sort(
             key=lambda task: (
-                task.status.HasField('timestamp')
-                if task.HasField('status')
-                else False,
-                task.status.timestamp.ToJsonString()
-                if task.HasField('status') and task.status.HasField('timestamp')
-                else '',
+                (timestamp := _status_timestamp(task)) is not None,
+                timestamp or _MIN_TIMESTAMP,
                 task.id,
             ),
             reverse=True,
@@ -190,6 +195,64 @@ class InMemoryTaskStore(BaseTaskStore):
             if not owner_tasks:
                 del self.tasks[owner]
                 logger.debug('Removed empty owner %s from store.', owner)
+
+    async def cancel_with_ownership_revocation(
+            self, task_id: str, context: ServerCallContext | None = None
+    ) -> Task | None:
+        """Cancel a task in the local store without ownership state.
+
+        Mirrors the durable store's contract, including reporting the
+        already-terminal case as an error rather than leaving the caller to
+        infer it from a state that a successful cancellation also produces.
+
+        Returns:
+            The canceled task, or ``None`` when no such task exists.
+
+        Raises:
+            TaskNotCancelableError: If the task already has an outcome.
+        """
+        owner = self.owner_resolver(context)
+        async with self.lock:
+            task = self._get_owner_tasks(owner).get(task_id)
+            if task is None:
+                return None
+            if task.status.state in TERMINAL_TASK_STATES:
+                raise TaskNotCancelableError(
+                    message=(
+                        "Task cannot be canceled - current state: "
+                        f"{TaskState.Name(task.status.state)}"
+                    )
+                )
+            task.status.state = TaskState.TASK_STATE_CANCELED
+            return task
+
+    async def request_cancellation(
+            self, task_id: str, context: ServerCallContext | None = None
+    ) -> bool | None:
+        """Report "no live claim" for any cancelable task.
+
+        A single-process store has no distributed claim to mark: the
+        in-process ``ActiveTaskRegistry`` already gives mutual exclusion
+        stricter than a lease, so ``on_cancel_task`` finds and cancels the
+        local execution directly and never needs this path to signal
+        anything - see its first branch, tried before this one. When it is
+        reached anyway, always answering ``False`` sends the caller straight
+        to :meth:`cancel_with_ownership_revocation`, the correct single-writer
+        outcome here.
+        """
+        owner = self.owner_resolver(context)
+        async with self.lock:
+            task = self._get_owner_tasks(owner).get(task_id)
+            if task is None:
+                return None
+            if task.status.state in TERMINAL_TASK_STATES:
+                raise TaskNotCancelableError(
+                    message=(
+                        "Task cannot be canceled - current state: "
+                        f"{TaskState.Name(task.status.state)}"
+                    )
+                )
+            return False
 
     async def get_context_ids(
             self,

@@ -76,13 +76,19 @@ class TaskSettlementReason(str, Enum):
     produced no outcome — is left alone: the execution outlives the subscriber
     and records the truth itself.
 
-    Every reason settles the task as `FAILED`. The run stopped without an
-    outcome and nothing can carry it on, and a non-terminal state would claim
-    the opposite: the server auto-adopts the last interrupted task of a context
-    for a message that arrives without a task id, so such a task would swallow
+    Every reason settles the task terminally — never with a resumable state.
+    A non-terminal state would claim the opposite of what happened: the
+    server auto-adopts the last interrupted task of a context for a message
+    that arrives without a task id, so a resumable settlement would swallow
     the next message of the conversation as the answer to a question no agent
     asked. The conversation continues regardless — the context keeps the
     history and the next message opens a fresh task on it.
+
+    Most reasons settle as `FAILED`: the run stopped without an outcome and
+    nothing can carry it on. `CANCEL_REQUESTED` and `CANCEL_TIMEOUT` are the
+    exception — they settle as `CANCELED`, because a cancellation someone
+    asked for is not a failure, it is the outcome that was requested; see
+    `aion.server.tasks.settlement.settled_task`.
     """
 
     SERVER_SHUTDOWN = "server_shutdown"
@@ -100,6 +106,37 @@ class TaskSettlementReason(str, Enum):
     active state it had with nothing alive to advance it. The next start finds
     it in the store and settles it as a graceful shutdown would have; only the
     reason tells the two apart.
+    """
+
+    LEASE_EXPIRED = "lease_expired"
+    """This task's ownership lease expired before it was renewed.
+
+    Reported when a task is reclaimed by timeout rather than found gone at
+    startup, so it carries a weaker guarantee than `SERVER_RESTART`: the
+    previous owner is presumed gone, not confirmed gone.
+    """
+
+    CANCEL_REQUESTED = "cancel_requested"
+    """A cancellation was requested and the owner's lease expired before it acted on it.
+
+    The mark left by `BaseTaskStore.request_cancellation` -
+    `task_claims.cancel_requested_at` - outlives the owner only for as long as
+    the claim itself does. When the reaper reclaims an expired lease that
+    still carries the mark, the request survives it by exactly this one
+    settlement: closing the task as `CANCELED`, honoring what was asked,
+    rather than `FAILED`, which would report an ordinary lost-owner outcome
+    for a task whose owner may simply have died mid-cancellation.
+    """
+
+    CANCEL_TIMEOUT = "cancel_timeout"
+    """A cancellation was requested, but the owner did not honor it in time.
+
+    Distinct from `CANCEL_REQUESTED`: here the owner's lease never expired -
+    it kept renewing normally, meaning the process is alive but its
+    cancellation handling is stuck unwinding past its own grace period. The
+    reaper forces the task closed regardless of the live lease so the request
+    cannot hang forever; see `ClaimReaper` and
+    `aion.server.tasks.ownership.config.LeaseSettings.cancel_grace_seconds`.
     """
 
 

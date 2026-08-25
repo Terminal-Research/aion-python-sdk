@@ -21,6 +21,9 @@ pytest-asyncio = ">=0.24"
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "integration: needs a real service or real processes; slower than a unit test",
+]
 
 [build-system]
 requires = ["poetry-core"]

@@ -15,6 +15,14 @@ from aion.db.settings import db_settings
 from aion.db.postgres.utils import convert_pg_url
 from aion.db.postgres.constants import AION_SCHEMA
 
+
+# One stable lock namespace for all Aion database migration runners. The lock is
+# session-scoped so that it also covers ``CREATE SCHEMA IF NOT EXISTS``, which
+# runs before Alembic's own transaction and is itself racy: concurrent runners
+# hit a unique violation on ``pg_namespace``. PostgreSQL releases the lock when
+# the connection closes.
+MIGRATION_ADVISORY_LOCK_KEY = 7_382_194_611
+
 # ``alembic.context`` exposes ``config`` only when executed via Alembic's
 # command line utilities. When this module is imported directly (e.g. during
 # server startup), the attribute is missing. Create a basic ``Config`` object in
@@ -62,17 +70,39 @@ def run_migrations() -> None:
     """Run Alembic migrations."""
     engine = _get_engine()
 
-    with engine.connect() as connection:
-        connection.execute(text(f"CREATE SCHEMA IF NOT EXISTS {AION_SCHEMA}"))
-        connection.execute(text(f"SET search_path TO {AION_SCHEMA}"))
-        connection.commit()
-        context.configure(
-            connection=connection,
-            process_revision_directives=_log_revision_start,
-            on_version_apply=_log_revision_end,
-        )
-        with context.begin_transaction():
-            context.run_migrations()
+    try:
+        with engine.connect() as connection:
+            connection.execute(
+                text("SELECT pg_advisory_lock(CAST(:lock_key AS BIGINT))"),
+                {"lock_key": MIGRATION_ADVISORY_LOCK_KEY},
+            )
+            try:
+                connection.execute(text(f"CREATE SCHEMA IF NOT EXISTS {AION_SCHEMA}"))
+                connection.execute(text(f"SET search_path TO {AION_SCHEMA}"))
+                connection.commit()
+                context.configure(
+                    connection=connection,
+                    process_revision_directives=_log_revision_start,
+                    on_version_apply=_log_revision_end,
+                )
+                with context.begin_transaction():
+                    context.run_migrations()
+            finally:
+                # The lock is session-scoped, so it outlives this call unless
+                # unlocked explicitly: the connection returns to the engine's
+                # pool rather than closing, and the session - and its lock -
+                # lives on until the pool eventually garbage-collects it. A
+                # second runner would then queue behind a lock nothing is
+                # going to release in any bounded time.
+                connection.execute(
+                    text("SELECT pg_advisory_unlock(CAST(:lock_key AS BIGINT))"),
+                    {"lock_key": MIGRATION_ADVISORY_LOCK_KEY},
+                )
+                connection.commit()
+    finally:
+        # Belt and suspenders: dispose the pool so no connection carrying a
+        # (theoretically already-released) session lock survives this call.
+        engine.dispose()
 
 
 def run_offline_migrations() -> None:

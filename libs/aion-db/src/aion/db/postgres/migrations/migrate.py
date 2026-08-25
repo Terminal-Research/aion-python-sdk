@@ -20,8 +20,8 @@ async def upgrade_to_head() -> None:
     """Upgrade the database schema to the latest revision.
 
     This method is idempotent and safe to call from multiple agents simultaneously.
-    When agents start in parallel, they may race to apply migrations. UniqueViolation
-    errors are expected and ignored in this scenario.
+    The migration environment serializes concurrent runners with a transaction-level
+    advisory lock on the migration connection.
 
     TODO: Infrastructure setup (migrations, DB init) should be moved to a higher level
     and run once before agent startup (e.g., init container in K8s, separate CLI command/execution).
@@ -53,22 +53,7 @@ async def upgrade_to_head() -> None:
 def _run_migrations() -> None:
     """Run Alembic migrations to upgrade database schema.
 
-    When multiple agents start simultaneously, they may race to apply migrations.
-    UniqueViolation errors indicate that another agent has already created the
-    database object, which is expected and safe to ignore.
+    Concurrent runners are serialized by ``env.run_migrations``. Any migration
+    failure is propagated so callers cannot mistake a partial schema for success.
     """
-    import psycopg.errors
-    from sqlalchemy.exc import IntegrityError
-
-    try:
-        command.upgrade(config, "head")
-    except IntegrityError as e:
-        # SQLAlchemy wraps psycopg errors in IntegrityError
-        # Check if the underlying cause is UniqueViolation
-        if isinstance(e.orig, psycopg.errors.UniqueViolation):
-            # This happens when multiple agents start simultaneously and race
-            # to apply migrations. The error indicates another agent already
-            # created the database object (table, index, constraint, etc.).
-            logger.debug(f"Migration object already exists (parallel startup): {e.orig}")
-        else:
-            raise
+    command.upgrade(config, "head")

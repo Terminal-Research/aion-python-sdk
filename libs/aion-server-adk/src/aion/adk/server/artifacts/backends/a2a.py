@@ -376,13 +376,26 @@ class A2AArtifactService(BaseArtifactService):
             session_id: str,
             filename: str,
             version: Optional[int] = None,
+            latest_only: bool = False,
     ) -> List[Artifact]:
-        """Fetches artifact records from DB. Returns empty list on any failure."""
+        """Fetches artifact records from DB. Returns empty list on any failure.
+
+        ``latest_only`` is for a caller that only ever reads the newest
+        version back out: it lets the repository stop at the first matching
+        task row instead of loading the named artifact's full history. Ignored
+        when ``version`` already pins a specific one - a caller asking for
+        version 3 is not asking for the latest.
+        """
         if not self._is_db_available():
             return []
         assert self._db_manager is not None
         try:
-            artifact_version = str(version) if version is not None else None
+            if version is not None:
+                artifact_version = str(version)
+            elif latest_only:
+                artifact_version = "-1"
+            else:
+                artifact_version = None
             async with self._db_manager.get_session() as db_session:
                 repo = TasksRepository(db_session)
                 return await repo.find_artifacts(
@@ -421,7 +434,7 @@ class A2AArtifactService(BaseArtifactService):
         if not session_id:
             return None
         artifacts = await self._fetch_db_artifacts(
-            session_id=session_id, filename=filename, version=version
+            session_id=session_id, filename=filename, version=version, latest_only=True
         )
         if not artifacts:
             return None
@@ -466,7 +479,7 @@ class A2AArtifactService(BaseArtifactService):
         if not session_id:
             return None
         artifacts = await self._fetch_db_artifacts(
-            session_id=session_id, filename=filename, version=version
+            session_id=session_id, filename=filename, version=version, latest_only=True
         )
         if not artifacts:
             return None

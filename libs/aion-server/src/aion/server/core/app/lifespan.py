@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+import logging
 from typing import TYPE_CHECKING, AsyncGenerator
 
 from aion.core.runtime.context.registry import AionRuntimeContextRegistry
@@ -12,6 +13,8 @@ from fastapi import FastAPI
 
 if TYPE_CHECKING:
     from aion.server.core.app import AppFactory
+
+logger = logging.getLogger(__name__)
 
 class AppLifespan:
     """Manages the lifecycle of the FastAPI application.
@@ -51,33 +54,50 @@ class AppLifespan:
         # SETUP OPEN-TELEMETRY
         init_tracing()
 
-        # Startup settlement is intentionally disabled. The durable task store
-        # is shared by multiple agent processes, so this process cannot safely
-        # distinguish its predecessor's orphaned work from work another agent
-        # is still executing.
+        # Safe to run now that a process can tell its predecessor's abandoned
+        # work from work another instance is still executing: an unexpired
+        # lease says the task has a live owner. It is a no-op until the reaper
+        # switch is on.
         await self._settle_orphaned_tasks()
+        self._start_event_listener()
+
+    def _start_event_listener(self):
+        """Start the cross-pod task-event listener, if this store has one.
+
+        ``None`` for the in-memory backend - see ``StoreManager.initialize``.
+        Started here rather than by the store manager itself because it needs
+        a running event loop, which does not exist yet when stores are built.
+        Any provider subscription made before this point (see
+        ``PostgresOwnershipProvider``'s ``event_listener`` argument) is
+        unaffected: subscribing only touches the listener's local maps, not
+        its connection.
+        """
+        listener = self.app_factory.store_manager.get_event_listener()
+        if listener is not None:
+            listener.start()
 
     async def _settle_orphaned_tasks(self):
-        """Close out tasks a killed predecessor left running in the store.
+        """Run the ownership reconciler once before the server accepts work.
 
-        Runs here, in startup, because it must happen before the process serves
-        anything: while such a task is still active, a client polling it cannot
-        tell a dead run from a live one, and this process may hand it back as
-        the resumable task of its context.
-
-        A store that cannot answer only costs the reap. Failing the startup
-        instead would take the agent down over tasks that are already stale,
-        and the same store is about to report its condition on the first
-        request anyway.
+        The reconciler distinguishes an expired claim from a live one and also
+        covers the older active-task-without-claim anomaly. It does nothing
+        unless the reaper is enabled, which is a separate deployment from the
+        heartbeat it depends on. A cleanup failure must not make a healthy
+        process fail startup; the periodic pass and the next process start
+        remain available as fallbacks.
         """
-        # try:
-        #     await settle_orphaned_tasks(self.app_factory.store_manager.get_store())
-        # except Exception as exc:
-        #     logger.error(
-        #         "Failed to settle tasks left by a previous process", exc_info=exc
-        #     )
-        pass
+        provider = self.app_factory.store_manager.get_ownership_provider()
+        try:
+            settled = await provider.reconcile()
+        except Exception:
+            logger.warning("Failed to reconcile task ownership during startup", exc_info=True)
+            return
+        if settled:
+            logger.info("Settled %d orphaned task(s) during startup", settled)
 
     async def shutdown(self):
         """Handle application shutdown events."""
+        listener = self.app_factory.store_manager.get_event_listener()
+        if listener is not None:
+            await listener.stop()
         await self.app_factory.shutdown()

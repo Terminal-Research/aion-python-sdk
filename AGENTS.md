@@ -51,11 +51,11 @@ and are discovered by `aion-server` at runtime.
   OpenAI-compatible `model_service_client` with request-scoped
   model-service principal header injection.
 - **aion-db** — centralized DB management layer under the `aion.db.postgres`
-  namespace: `DbManager`, `DbFactory`, task records/models, repositories,
-  Alembic migrations, custom fields/types, and utilities (`convert_pg_url`,
-  `verify_connection`, `validate_permissions`). Structured so sibling
-  namespaces (`aion.db.redis`, …) can be added later. Used by `aion-server`
-  and server-side framework packages.
+  namespace: `DbManager`, `DbFactory`, task records/models, fenced task-claim
+  records, repositories, Alembic migrations, custom fields/types, and utilities
+  (`convert_pg_url`, `verify_connection`, `validate_permissions`). Structured so
+  sibling namespaces (`aion.db.redis`, …) can be added later. Used by
+  `aion-server` and server-side framework packages.
 - **aion-mcp** — MCP integration utilities: an ASGI proxy for a local MCP
   server declared in `aion.yaml` (`proxy.py`) and authenticated remote Aion
   MCP endpoint builders (`endpoints.py`) for direct capability servers and the
@@ -68,7 +68,8 @@ and are discovered by `aion-server` at runtime.
   factory, lifespan and route registry (`core/app`), middlewares, the
   platform websocket link (`core/platform`), the agent card/factory and
   execution adapters (`agent/`), the plugin registry and factory
-  (`plugins/`), task stores, task manager, event deduplicator and push
+  (`plugins/`), fenced task stores, expiring task ownership supervision, task
+  manager, event deduplicator and push
   notification senders (`tasks/`), file storage and A2A file handling
   (`files/`), Aion auth manager and websocket connection services
   (`services/aion`), OpenTelemetry wiring, logging setup with stream and
@@ -92,7 +93,8 @@ and are discovered by `aion-server` at runtime.
   as `FAILED` with `aion:settledReason` naming the cause — `server_shutdown`
   when the shutdown itself cancelled the execution, `server_restart` when the
   next start found them still active after a hard kill. DB management is
-  delegated to `aion-db`.
+  delegated to `aion-db`. PostgreSQL task claims record the deployment-provided
+  `HOST_NAME` as their optional diagnostic owner instance identity.
 - **aion-server-langgraph** — server-side LangGraph integration under
   `aion.langgraph.server`. Implements `AgentPluginProtocol`/`AgentAdapter`,
   adapts inbound A2A requests into `graph.astream()` invocations and maps
@@ -151,7 +153,21 @@ and are discovered by `aion-server` at runtime.
 
 ## Repo tooling
 
-- `make help` lists all targets. `make tests` runs `scripts/tests.py`, which
+- `make help` lists all targets. `make tests` runs the unit suite;
+  `make tests-integration` runs the integration suite and
+  `make tests-all` runs both. A test marked `integration` needs a real
+  PostgreSQL or real child processes and waits for real timeouts, so it is not
+  what you run between two edits - run it before you commit. The database is
+  handled for you: both integration targets start a disposable container,
+  run the suite, and stop the container again, carrying the suite's exit
+  status across the teardown. `PG_TEST_KEEP=1` leaves it up between runs while
+  you debug one, and `make pg-test-up` / `make pg-test-down` drive it by hand.
+  Setting `POSTGRES_TEST_URL` yourself - in CI, or at a PostgreSQL of your own
+  - takes over completely and nothing touches Docker. That variable is named
+  apart from the ordinary connection setting on purpose: these tests migrate
+  and truncate what they are pointed at. Without it `scripts/tests.py
+  --integration` refuses to run rather than reporting a pass for a suite that
+  skipped itself. `scripts/tests.py`
   discovers every `libs/aion-*` package with a `tests/` directory and runs its
   suite (libs without tests are skipped). Prefer it over calling `pytest` by
   hand: the whole repo takes under three seconds, because the libs run

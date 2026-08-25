@@ -76,6 +76,7 @@ class AppFactory:
         self.fastapi_app: Optional[FastAPI] = None
         self._executor: Optional[AionAgentRequestExecutor] = None
         self._request_handler: Optional[AionRequestHandler] = None
+        self._push_sender = None
 
     async def initialize(self):
         """Initialize the application factory.
@@ -147,7 +148,7 @@ class AppFactory:
 
     async def _create_request_handler(self) -> AionRequestHandler:
         """Create and configure the request handler with task store and agent executor."""
-        self.store_manager.initialize()
+        self.store_manager.initialize(agent_id=self.aion_agent.id)
         task_store = self.store_manager.get_store()
 
         self._executor = await AionAgentRequestExecutor.create(
@@ -156,10 +157,13 @@ class AppFactory:
         )
 
         push_config_store, push_sender = PushNotificationFactory.create(self.db_factory.db_manager)
+        self._push_sender = push_sender
 
         return AionRequestHandler(
             agent_executor=self._executor,
             task_store=task_store,
+            ownership_provider=self.store_manager.get_ownership_provider(),
+            event_listener=self.store_manager.get_event_listener(),
             push_config_store=push_config_store,
             push_sender=push_sender,
             agent_card=self.aion_agent.card,
@@ -197,6 +201,13 @@ class AppFactory:
                 await self._executor.drain()
             except Exception as exc:
                 logger.error("Error draining uploads", exc_info=exc)
+
+        if self._push_sender is not None:
+            try:
+                await self._push_sender.aclose()
+                logger.info("Push notification client closed")
+            except Exception as exc:
+                logger.error("Error closing push notification client", exc_info=exc)
 
         if self.plugin_factory.is_initialized():
             try:

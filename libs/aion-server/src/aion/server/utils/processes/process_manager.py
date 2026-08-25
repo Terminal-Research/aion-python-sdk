@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import logging
 import multiprocessing
+import os
+import signal
 import time
 from dataclasses import dataclass
 from enum import Enum
 from multiprocessing.connection import Connection
+from functools import partial
 from typing import Dict, Callable, Any, Optional, Tuple, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -20,6 +23,19 @@ class ProcessStatus(Enum):
     STOPPED = "stopped"
     ERROR = "error"
     TERMINATED = "terminated"
+
+
+def _run_in_process_group(target_function: Callable, *args, **kwargs):
+    """Run a managed target as the leader of its own POSIX process group."""
+    if os.name == "posix":
+        try:
+            os.setsid()
+        except OSError:
+            # The target still has the normal multiprocessing lifecycle if a
+            # platform refuses a new session.  Termination falls back to the
+            # Process API when no group id was recorded.
+            pass
+    return target_function(*args, **kwargs)
 
 
 @dataclass
@@ -43,6 +59,8 @@ class ProcessInfo:
     ``conn``: the connection belongs to one process generation, and reusing a
     terminated process's (closed) end would hand the replacement a dead pipe.
     """
+    process_group_id: Optional[int] = None
+    """POSIX process-group id, when the child was launched in its own session."""
 
 
 class ProcessManager:
@@ -106,7 +124,7 @@ class ProcessManager:
 
             # Create new process
             process = multiprocessing.Process(
-                target=func,
+                target=partial(_run_in_process_group, func),
                 args=func_args,
                 kwargs=process_kwargs,
                 name=f"{key}"
@@ -114,6 +132,10 @@ class ProcessManager:
 
             # Start the process
             process.start()
+
+            if child_conn is not None:
+                # Closes our duplicate fd so poll() sees EOF right after the child dies.
+                child_conn.close()
 
             # Store process information
             process_info = ProcessInfo(
@@ -127,7 +149,10 @@ class ProcessManager:
                 pid=process.pid,
                 parent_conn=parent_conn,
                 child_conn=child_conn,
-                use_pipe=use_pipe
+                use_pipe=use_pipe,
+                # ``_run_in_process_group`` makes the child a session leader,
+                # so its own pid is the group id of everything it spawns.
+                process_group_id=process.pid if os.name == "posix" else None,
             )
 
             self.processes[key] = process_info
@@ -165,13 +190,31 @@ class ProcessManager:
             return True
 
         try:
-            # Try graceful termination first
-            process.terminate()
+            # Signal the whole child tree before waiting. A child process can
+            # outlive the multiprocessing leader after spawning work of its
+            # own; waiting first would leave that tree running.
+            signalled = False
+            if process_info.process_group_id is not None and os.name == "posix":
+                try:
+                    os.killpg(process_info.process_group_id, signal.SIGTERM)
+                    signalled = True
+                except (ProcessLookupError, PermissionError):
+                    # No group under that id: the child may have died already,
+                    # or may not have reached setsid yet. Either way the
+                    # process API is still a correct way to ask it to stop.
+                    pass
+            if not signalled:
+                process.terminate()
             process.join(timeout=timeout)
 
             # If still alive, force kill
             if process.is_alive():
                 self.logger.warning(f"Force killing process '{key}'")
+                if process_info.process_group_id is not None and os.name == "posix":
+                    try:
+                        os.killpg(process_info.process_group_id, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
                 process.kill()
                 process.join()
 

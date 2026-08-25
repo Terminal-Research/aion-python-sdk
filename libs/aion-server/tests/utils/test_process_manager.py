@@ -17,6 +17,7 @@ Focus areas:
 import time
 from contextlib import contextmanager
 from multiprocessing.connection import Connection
+import signal
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock, patch, call
@@ -546,3 +547,59 @@ class TestContextManager:
             pass
 
         mgr.shutdown_all.assert_called_once()
+
+
+class TestProcessGroupTermination:
+    """A managed child leads its own session, so stopping it stops its tree.
+
+    Cancelling the parent is not enough: work the child spawned outlives it,
+    and an agent that keeps running after its lease is gone is exactly what
+    ownership is meant to prevent.
+    """
+
+    def _managed(self, alive_after_join: bool = False):
+        """Build a manager holding one process that leads a group."""
+        mgr = _manager()
+        process = _mock_process()
+        process.is_alive.side_effect = (
+            [True, True, False] if alive_after_join else [True, False]
+        )
+        info = _make_process_info("p1")
+        info.process = process
+        info.process_group_id = 4321
+        mgr.processes["p1"] = info
+        return mgr, process
+
+    def test_group_is_signalled_before_the_wait(self):
+        """Signal first, then wait: waiting first leaves the tree running."""
+        mgr, process = self._managed()
+        with patch("os.killpg") as killpg, patch("os.name", "posix"):
+            assert mgr.terminate_process("p1") is True
+
+        killpg.assert_called_once_with(4321, signal.SIGTERM)
+        process.terminate.assert_not_called()
+        assert killpg.call_args_list[0] == call(4321, signal.SIGTERM)
+
+    def test_a_surviving_group_is_killed(self):
+        """A group still alive after the grace period is killed outright."""
+        mgr, process = self._managed(alive_after_join=True)
+        with patch("os.killpg") as killpg, patch("os.name", "posix"):
+            assert mgr.terminate_process("p1") is True
+
+        assert killpg.call_args_list == [
+            call(4321, signal.SIGTERM),
+            call(4321, signal.SIGKILL),
+        ]
+        process.kill.assert_called_once()
+
+    def test_a_vanished_group_falls_back_to_the_process_api(self):
+        """No group under that id: ask the process itself to stop.
+
+        The child may have died already, or may not have reached ``setsid``
+        yet; neither is a reason to skip termination.
+        """
+        mgr, process = self._managed()
+        with patch("os.killpg", side_effect=ProcessLookupError), patch("os.name", "posix"):
+            assert mgr.terminate_process("p1") is True
+
+        process.terminate.assert_called_once()

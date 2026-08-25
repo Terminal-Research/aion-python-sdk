@@ -93,6 +93,48 @@ class TestSettledTask:
         ) is not None
 
 
+class TestSettledTaskChoosesStateByReason:
+    """Most reasons report a failure; a requested cancellation is not one."""
+
+    @pytest.mark.parametrize(
+        "reason",
+        [
+            TaskSettlementReason.SERVER_SHUTDOWN,
+            TaskSettlementReason.SERVER_RESTART,
+            TaskSettlementReason.LEASE_EXPIRED,
+        ],
+    )
+    def test_ordinary_reasons_settle_as_failed(self, reason):
+        """The run stopped without an outcome; nothing asked for this ending."""
+        settled = settled_task(_task("task-1", TaskState.TASK_STATE_WORKING), reason)
+
+        assert settled.status.state == TaskState.TASK_STATE_FAILED
+
+    @pytest.mark.parametrize(
+        "reason",
+        [
+            TaskSettlementReason.CANCEL_REQUESTED,
+            TaskSettlementReason.CANCEL_TIMEOUT,
+        ],
+    )
+    def test_cancellation_reasons_settle_as_canceled(self, reason):
+        """Someone asked for exactly this outcome; it is not a failure to report."""
+        settled = settled_task(_task("task-1", TaskState.TASK_STATE_WORKING), reason)
+
+        assert settled.status.state == TaskState.TASK_STATE_CANCELED
+
+    def test_the_reason_is_still_recorded_in_metadata(self):
+        """A client must still be able to tell this apart from an agent's own CANCELED."""
+        settled = settled_task(
+            _task("task-1", TaskState.TASK_STATE_WORKING),
+            TaskSettlementReason.CANCEL_TIMEOUT,
+        )
+
+        assert settled.metadata[A2AMetadataKey.SETTLED_REASON.value] == (
+            TaskSettlementReason.CANCEL_TIMEOUT.value
+        )
+
+
 class TestSettleOrphanedTasks:
     async def test_writes_the_settled_task_back(self, store):
         await settle_orphaned_tasks(store)

@@ -7,6 +7,9 @@ Complete reference for all environment variables available in the Aion Agent SDK
 ```bash
 # Database Configuration
 POSTGRES_URL=postgresql://your_username:your_password@localhost:5432/your_database_name
+POSTGRES_POOL_MIN_SIZE=2
+POSTGRES_POOL_MAX_SIZE=10
+TASK_OWNERSHIP_REAPER=false
 
 # Application Settings
 LOG_LEVEL=INFO
@@ -24,7 +27,6 @@ AION_API_HOST=https://api.aion.to
 AION_API_KEEP_ALIVE=60
 ```
 
-
 ## Detailed Variable Reference
 
 ### Database Configuration
@@ -34,6 +36,31 @@ AION_API_KEEP_ALIVE=60
 - PostgreSQL connection string in format: `postgresql://username:password@host:port/database`
 - If not provided, the system automatically creates and uses in-memory storage when the agent starts
 - Example: `postgresql://user:password@localhost:5432/aion_db`
+
+**`TASK_OWNERSHIP_REAPER`**
+- Type: `boolean` (optional, default `true`)
+- Set to `0`, `false`, `no`, or `off` to disable
+- Lets this process close out tasks whose execution lease expired, and tasks
+  left active with no lease at all
+- Only meaningful with `POSTGRES_URL` set: without a shared database there are
+  no leases to reclaim
+- Enable it only once every instance writing to that database renews its
+  leases. A deployment where some instances still predate lease renewal would
+  have their live work reclaimed as abandoned, so this is turned on in a later
+  deployment than the one that introduces it
+
+**`POSTGRES_POOL_MIN_SIZE`** / **`POSTGRES_POOL_MAX_SIZE`**
+- Type: `integer` (optional)
+- Defaults: `2` / `10`
+- Two pools sit in front of one PostgreSQL: SQLAlchemy serves `tasks` and
+  ADK, raw psycopg serves the LangGraph saver. Both are sized from these two
+  values, so size the connection budget `pods x processes x pools` checked
+  against the database's `max_connections`, not from the defaults
+- For the SQLAlchemy pool, `POSTGRES_POOL_MIN_SIZE` becomes the base pool
+  size and `POSTGRES_POOL_MAX_SIZE - POSTGRES_POOL_MIN_SIZE` becomes the
+  allowed overflow above it
+- Checkout timeout, queue depth, and pre-ping behavior are fixed internally
+  and not exposed as separate variables
 
 ### Application Settings
 
