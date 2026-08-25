@@ -30,7 +30,8 @@ from typing import override
 
 from aion.server.agent.execution import AionActiveTaskRegistry
 from aion.server.tasks import store_manager
-from aion.server.tasks.notifications import TaskTerminalListener
+from aion.db.postgres.events import TaskEventKind
+from aion.server.tasks.notifications import TaskEventListener
 from aion.server.tasks.ownership import OwnershipProvider
 from aion.server.tasks.ownership.config import CANCEL_WAIT_SECONDS
 from aion.server.a2a.conversation import ConversationBuilder
@@ -78,7 +79,7 @@ class AionRequestHandler(DefaultRequestHandlerV2):
             *args,
             preprocessors: list[A2ARequestPreprocessor] | None = None,
             ownership_provider: OwnershipProvider | None = None,
-            terminal_listener: TaskTerminalListener | None = None,
+            event_listener: TaskEventListener | None = None,
             **kwargs,
     ) -> None:
         """Build the handler and hand the registry its ownership provider.
@@ -88,7 +89,7 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         single-process provider, which is what a handler built without a
         durable store should get.
 
-        ``terminal_listener`` is threaded in the same way rather than read off
+        ``event_listener`` is threaded in the same way rather than read off
         the module-level ``store_manager`` singleton at call time: a handler
         built directly, outside ``AppFactory`` - as every ownership test does
         - would otherwise reach a singleton nothing ever initialized. ``None``
@@ -104,7 +105,7 @@ class AionRequestHandler(DefaultRequestHandlerV2):
             push_sender=self._push_sender,
             ownership_provider=ownership_provider,
         )
-        self._terminal_listener = terminal_listener
+        self._event_listener = event_listener
         self._preprocessors = preprocessors or []
 
     @override
@@ -283,8 +284,9 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         2. Another process holds a live claim
            (``BaseTaskStore.request_cancellation``). This process cannot run
            that owner's teardown itself, so it marks the claim and waits,
-           bounded, for the terminal write the owner's own heartbeat-driven
-           cancellation will produce - see ``TaskTerminalListener`` and
+           bounded, for the terminal write the owner's own cancellation - now
+           discovered over ``TASK_EVENT_CHANNEL`` rather than only at its next
+           heartbeat renewal - will produce. See ``TaskEventListener`` and
            ``AionActiveTaskRegistry._on_control_signal``. A wait that outruns
            the bound answers with the task as currently stored rather than
            blocking the caller further: the eventual terminal state still
@@ -306,11 +308,15 @@ class AionRequestHandler(DefaultRequestHandlerV2):
             return local
 
         # Registered before request_cancellation's transaction commits, not
-        # after: the owner's own notification can only follow that commit,
-        # but nothing stops it from arriving within a heartbeat tick of it -
+        # after: the owner's own CANCEL_RESOLVED notification can only follow
+        # that commit, but nothing stops it from arriving almost immediately -
         # registering any later would race that notification and could miss
-        # it. See TaskTerminalListener.register / Waiter.
-        waiter = self._terminal_listener.register(task_id) if self._terminal_listener else None
+        # it. See TaskEventListener.register / Waiter.
+        waiter = (
+            self._event_listener.register(TaskEventKind.CANCEL_RESOLVED, task_id)
+            if self._event_listener
+            else None
+        )
         try:
             marked = await self.task_store.request_cancellation(task_id, context)
             if marked is None:

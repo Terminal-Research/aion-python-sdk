@@ -342,7 +342,7 @@ class ClaimReaper:
         # Before the claim goes: a pod waiting on this task's cancellation
         # only hears about it if it actually asked, and by the time the
         # claim is gone the exists-check this reads would find nothing.
-        await TaskClaimsRepository(session).notify_terminal_if_cancel_requested(task_uuid)
+        await TaskClaimsRepository(session).notify_cancel_resolved(task_uuid)
         await self._delete_claim(session, task_uuid, token)
         return True
 
@@ -388,7 +388,7 @@ class ClaimReaper:
                     # nothing left here to force.
                     return False
 
-                await claims.notify_terminal_if_cancel_requested(task_uuid)
+                await claims.notify_cancel_resolved(task_uuid)
                 await claims.revoke_unconditionally(task_uuid, entity.agent_id)
                 return True
 

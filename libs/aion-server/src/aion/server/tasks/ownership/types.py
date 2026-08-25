@@ -17,6 +17,8 @@ from typing import Callable
 
 from a2a.utils.errors import A2AError
 
+from aion.server.core.errors import register_aion_error
+
 __all__ = [
     "Claim",
     "Busy",
@@ -41,17 +43,19 @@ class TaskOwnershipLost(RuntimeError):
 
 
 class TaskOwnershipBusy(A2AError):
-    """A retryable A2A error for a task owned by another process.
+    """An A2A error for a task owned by another process, right now.
 
     Deliberately not an ``InvalidParamsError``: the request is well formed and
-    the client has nothing to correct. Being absent from
-    ``JSON_RPC_ERROR_CODE_MAP`` it is reported as -32603 with HTTP 500, the
-    server-side class of failure a client may retry, rather than -32602, which
-    tells the caller its own parameters were wrong.
+    the client has nothing to correct — the condition is retryable on its own,
+    which is why it gets its own JSON-RPC code (``TASK_OWNERSHIP_BUSY_CODE``,
+    registered into a2a-sdk's error maps below) rather than reusing the
+    generic -32603 an unmapped ``A2AError`` would otherwise fall back to. A
+    client can treat the code itself as the "retry me" signal instead of
+    parsing a ``data`` flag for it.
     """
 
     def __init__(self, task_id: str, owner_instance_id: str | None = None) -> None:
-        """Create the public busy response and mark it retryable.
+        """Create the public busy response.
 
         Args:
             task_id: Identifier of the task that could not be processed.
@@ -63,15 +67,31 @@ class TaskOwnershipBusy(A2AError):
                 does not depend on this value: it may already be stale by the
                 time it is read.
         """
-        data = {"retryable": True, "task_id": task_id}
+        data = {"task_id": task_id}
         if owner_instance_id is not None:
             data["owner_instance_id"] = owner_instance_id
         super().__init__(
-            message="I cannot process this task because it is owned by another server; retry later.",
+            message="Task is owned by another server",
             data=data,
         )
         self.task_id = task_id
         self.owner_instance_id = owner_instance_id
+
+
+# Registered right beside the class it describes, so the patch cannot drift
+# out of sync with it. See aion.server.core.errors for why this patches
+# a2a-sdk's own maps instead of using some aion-owned extension point (there
+# isn't one) and why -32050 - the bottom of Aion's reserved block - rather
+# than the next free slot after a2a-sdk's own codes.
+TASK_OWNERSHIP_BUSY_CODE = -32050
+
+register_aion_error(
+    TaskOwnershipBusy,
+    TASK_OWNERSHIP_BUSY_CODE,
+    http_status=409,
+    grpc_status="ABORTED",
+    reason="TASK_OWNERSHIP_BUSY",
+)
 
 
 @dataclass(frozen=True, slots=True)

@@ -9,7 +9,8 @@ from typing import Optional, Type
 from sqlalchemy import CTE, delete, exists, func, literal, select, tuple_, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from aion.db.postgres.constants import TASK_TERMINAL_CHANNEL
+from aion.db.postgres.constants import TASK_EVENT_CHANNEL
+from aion.db.postgres.events import TaskEvent, TaskEventKind
 from aion.db.postgres.models import TaskClaimModel
 from aion.db.postgres.records import TaskClaimRecord
 from aion.db.postgres.repositories.base import BaseRepository
@@ -204,10 +205,20 @@ class TaskClaimsRepository(BaseRepository[TaskClaimModel, TaskClaimRecord]):
 
         This is the control-plane channel for a pod that does not hold the
         claim: it cannot run the owner's teardown itself, so it leaves a mark
-        the owner discovers on its next heartbeat renewal and acts on
-        locally. ``COALESCE`` makes a repeated request idempotent - it never
-        pushes the timestamp forward, so a retried ``tasks/cancel`` does not
-        reset whatever grace period is measured from it.
+        the owner discovers on its next heartbeat renewal - or sooner, over
+        ``TASK_EVENT_CHANNEL``, see below - and acts on it locally.
+        ``COALESCE`` makes a repeated request idempotent - it never pushes
+        the timestamp forward, so a retried ``tasks/cancel`` does not reset
+        whatever grace period is measured from it.
+
+        A ``CANCEL_REQUESTED`` event is only emitted when this UPDATE
+        actually touched a row - a repeated request that finds the mark
+        already set re-runs the same WHERE and still returns that row, so
+        gating strictly on "no prior mark" would silently stop notifying on
+        a retry. Every live-claim outcome renotifies; only "no such claim"
+        (``row is None``) skips it, since there is no owner left to wake.
+        This trades one redundant heartbeat-cadence duplicate notification
+        for never under-notifying a retried request.
 
         Returns:
             The updated claim, or ``None`` when no live claim exists for this
@@ -229,7 +240,10 @@ class TaskClaimsRepository(BaseRepository[TaskClaimModel, TaskClaimRecord]):
         )
         result = await self._session.execute(stmt)
         row = result.mappings().first()
-        return TaskClaimRecord(**row) if row is not None else None
+        if row is None:
+            return None
+        await self._notify(TaskEventKind.CANCEL_REQUESTED, task_id)
+        return TaskClaimRecord(**row)
 
     async def find_cancel_overdue(self, grace: timedelta) -> list[TaskClaimRecord]:
         """Read claims whose cancellation request has outlived its grace period.
@@ -251,7 +265,7 @@ class TaskClaimsRepository(BaseRepository[TaskClaimModel, TaskClaimRecord]):
         result = await self._session.execute(stmt)
         return [TaskClaimRecord(**row) for row in result.mappings().all()]
 
-    async def notify_terminal_if_cancel_requested(self, task_id: uuid.UUID) -> None:
+    async def notify_cancel_resolved(self, task_id: uuid.UUID) -> None:
         """Wake a pod waiting on this task's cancellation, if one is waiting.
 
         Call this in the same transaction as the terminal write it announces,
@@ -264,9 +278,17 @@ class TaskClaimsRepository(BaseRepository[TaskClaimModel, TaskClaimRecord]):
         terminal write. Only a task whose claim was marked by
         :meth:`request_cancel` has anyone listening for it at all; every
         other terminal write pays for one indexed existence check and
-        notifies nobody.
+        notifies nobody. This fires on any terminal outcome, not only
+        ``CANCELED`` - a task that reached its own outcome in the race with
+        the request still resolves the wait, just not with the outcome the
+        requester asked for.
         """
-        stmt = select(func.pg_notify(literal(TASK_TERMINAL_CHANNEL), literal(str(task_id)))).where(
+        stmt = select(
+            func.pg_notify(
+                literal(TASK_EVENT_CHANNEL),
+                literal(TaskEvent(kind=TaskEventKind.CANCEL_RESOLVED, task_id=str(task_id)).model_dump_json()),
+            )
+        ).where(
             exists(
                 select(1).where(
                     TaskClaimModel.task_id == task_id,
@@ -275,6 +297,20 @@ class TaskClaimsRepository(BaseRepository[TaskClaimModel, TaskClaimRecord]):
             )
         )
         await self._session.execute(stmt)
+
+    async def _notify(self, kind: TaskEventKind, task_id: uuid.UUID) -> None:
+        """Emit one ``TASK_EVENT_CHANNEL`` notification, unconditionally.
+
+        Unconditional on purpose: unlike :meth:`notify_cancel_resolved`, the
+        one caller here (:meth:`request_cancel`) already only reaches this
+        after confirming - via its own UPDATE's ``returning`` - that there is
+        a live claim to notify about, so a second existence check would be
+        redundant.
+        """
+        payload = TaskEvent(kind=kind, task_id=str(task_id)).model_dump_json()
+        await self._session.execute(
+            select(func.pg_notify(literal(TASK_EVENT_CHANNEL), literal(payload)))
+        )
 
     async def find_by_task_id(self, task_id: uuid.UUID, agent_id: str) -> Optional[TaskClaimRecord]:
         """Read a claim row unconditionally, for diagnostics only.

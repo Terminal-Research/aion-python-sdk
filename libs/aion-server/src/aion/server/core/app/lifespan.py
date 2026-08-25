@@ -59,16 +59,20 @@ class AppLifespan:
         # lease says the task has a live owner. It is a no-op until the reaper
         # switch is on.
         await self._settle_orphaned_tasks()
-        self._start_terminal_listener()
+        self._start_event_listener()
 
-    def _start_terminal_listener(self):
-        """Start the cross-pod cancellation-wakeup listener, if this store has one.
+    def _start_event_listener(self):
+        """Start the cross-pod task-event listener, if this store has one.
 
         ``None`` for the in-memory backend - see ``StoreManager.initialize``.
         Started here rather than by the store manager itself because it needs
         a running event loop, which does not exist yet when stores are built.
+        Any provider subscription made before this point (see
+        ``PostgresOwnershipProvider``'s ``event_listener`` argument) is
+        unaffected: subscribing only touches the listener's local maps, not
+        its connection.
         """
-        listener = self.app_factory.store_manager.get_terminal_listener()
+        listener = self.app_factory.store_manager.get_event_listener()
         if listener is not None:
             listener.start()
 
@@ -93,7 +97,7 @@ class AppLifespan:
 
     async def shutdown(self):
         """Handle application shutdown events."""
-        listener = self.app_factory.store_manager.get_terminal_listener()
+        listener = self.app_factory.store_manager.get_event_listener()
         if listener is not None:
             await listener.stop()
         await self.app_factory.shutdown()

@@ -15,10 +15,12 @@ from datetime import timedelta
 from sqlalchemy import BigInteger, func, literal, select
 
 from aion.db.postgres import db_manager as default_db_manager
+from aion.db.postgres.events import TaskEventKind
 from aion.db.postgres.manager import DbManager
 from aion.db.postgres.models import TaskRecordModel
 from aion.db.postgres.repositories import TaskClaimsRepository
 from aion.server.tasks.identifiers import require_task_uuid
+from aion.server.tasks.notifications import Subscription, TaskEventListener
 
 from .config import (
     LeaseSettings,
@@ -64,6 +66,7 @@ class PostgresOwnershipProvider:
         owner_instance_id: str | None = None,
         settings: LeaseSettings | None = None,
         reconciler_enabled: bool | None = None,
+        event_listener: TaskEventListener | None = None,
     ) -> None:
         """Initialize a provider without opening a database connection.
 
@@ -80,6 +83,14 @@ class PostgresOwnershipProvider:
             reconciler_enabled: Whether this process reclaims expired leases.
                 Defaults to the ``TASK_OWNERSHIP_REAPER`` switch, which is
                 on unless explicitly disabled.
+            event_listener: Cross-pod ``CANCEL_REQUESTED`` fast path. When
+                given, this provider subscribes immediately - subscribing is
+                synchronous and side-effect-free, like ``register()`` on the
+                same listener, so it needs no running event loop and can
+                happen right here rather than waiting for :meth:`start`.
+                ``None`` leaves cancellation discovery to the heartbeat
+                alone, which is what the in-memory backend already gets
+                since it has no listener to give.
         """
         self.agent_id = agent_id
         self._db_manager = db_manager
@@ -124,6 +135,11 @@ class PostgresOwnershipProvider:
             settings=self.settings,
             owner_instance_id=self.owner_instance_id,
         )
+        self._event_subscription: Subscription | None = None
+        if event_listener is not None:
+            self._event_subscription = event_listener.subscribe(
+                (TaskEventKind.CANCEL_REQUESTED,), self._on_task_event
+            )
 
     @property
     def claims(self) -> dict[str, Claim]:
@@ -431,6 +447,35 @@ class PostgresOwnershipProvider:
         except Exception:
             logger.exception("Ownership-loss callback failed for %s", task_id)
 
+    def _on_task_event(self, kind: TaskEventKind, task_id: str) -> None:
+        """React to a ``CANCEL_REQUESTED`` event on ``TASK_EVENT_CHANNEL``.
+
+        Called synchronously from ``TaskEventListener``'s own dispatch loop,
+        for every ``CANCEL_REQUESTED`` event this process observes - the
+        channel is process-wide, not scoped to what this provider holds, so
+        most calls here are about a task some other process on this host (a
+        different agent's provider) or a different process entirely owns.
+        ``claim_for`` is the filter: a task this provider does not hold a
+        claim for is silently not its concern, exactly as ``_on_control_signal``
+        already treats a signal naming a task it is not executing.
+
+        This is the latency shortcut over ``TASK_EVENT_CHANNEL``, not a
+        second mechanism: it converges on the exact same call
+        (:meth:`_notify_control_signal_once`) that the heartbeat's own
+        ``renew``/``renew_batch`` reads reach on discovering
+        ``cancel_requested_at`` - so the dedup keyed on
+        ``(task_id, owner_token)`` there is what keeps this event and the
+        next heartbeat tick from delivering the same cancellation twice, and
+        a listener reconnect that drops this event costs nothing beyond
+        falling back to that same heartbeat cadence.
+        """
+        if kind is not TaskEventKind.CANCEL_REQUESTED:
+            return
+        claim = self.claim_for(task_id)
+        if claim is None:
+            return
+        self._notify_control_signal_once(task_id, claim.owner_token, ControlSignal.CANCEL)
+
     def _notify_control_signal_once(
         self, task_id: str, owner_token: uuid.UUID, signal: ControlSignal
     ) -> None:
@@ -548,6 +593,9 @@ class PostgresOwnershipProvider:
 
     async def stop(self) -> None:
         """Cancel and await the heartbeat and reconciler tasks."""
+        if self._event_subscription is not None:
+            self._event_subscription.cancel()
+            self._event_subscription = None
         tasks = [
             task
             for task in (self._heartbeat_task, self._reconciler_task)

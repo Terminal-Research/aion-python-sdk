@@ -222,8 +222,8 @@ class PostgresTaskStore(BaseTaskStore):
                 # layer up, in AionTaskManager._save_task, only after this
                 # write returns successfully. A pod waiting on this task's
                 # cancellation is only woken if it actually asked; see
-                # notify_terminal_if_cancel_requested.
-                await TaskClaimsRepository(session).notify_terminal_if_cancel_requested(entity.id)
+                # notify_cancel_resolved.
+                await TaskClaimsRepository(session).notify_cancel_resolved(entity.id)
             await session.commit()
 
     async def cancel_with_ownership_revocation(
