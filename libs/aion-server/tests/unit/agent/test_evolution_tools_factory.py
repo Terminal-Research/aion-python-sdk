@@ -13,16 +13,25 @@ pytest.importorskip("aion.toolkits.behaviour_evolution")
 
 from aion.core.a2a.extensions.behaviour_evolution import (  # noqa: E402
     EvolutionDirectiveEventPayload,
+    ModelPreferences,
+    RunLimits,
     TargetContext,
 )
 from aion.server.agent.execution.extensions.evolution.directive import ParsedDirective  # noqa: E402
 from aion.server.agent.execution.extensions.evolution.errors import ExtensionSetupError  # noqa: E402
 from aion.server.agent.execution.extensions.evolution.tools_factory import build_worker  # noqa: E402
+from aion.toolkits.behaviour_evolution import LocalAccess, RemoteAccess  # noqa: E402
 
 REPO_URL = "https://github.com/acme/target-agent.git"
 
 
-def _parsed(kind: str = "feature", mode: str = "advisory") -> ParsedDirective:
+def _parsed(
+    kind: str = "feature",
+    mode: str = "advisory",
+    model: ModelPreferences | None = None,
+    branch_strategy: str | None = None,
+    limits: RunLimits | None = None,
+) -> ParsedDirective:
     return ParsedDirective(
         instruction="Append a friendly sentence to README.md.",
         context_id="ctx-456",
@@ -30,6 +39,9 @@ def _parsed(kind: str = "feature", mode: str = "advisory") -> ParsedDirective:
             target=TargetContext(repo_url=REPO_URL, base_ref="HEAD"),
             kind=kind,
             mode=mode,
+            model=model,
+            branch_strategy=branch_strategy,
+            limits=limits,
         ),
     )
 
@@ -60,18 +72,14 @@ def _set_env(monkeypatch, **overrides):
     values.update(overrides)
     for key in (
         "CODEX_BASE_URL",
-        "CODEX_MODEL",
-        "CODEX_MODEL_CONTEXT_WINDOW",
+        "CODEX_MODEL_CATALOG_JSON",
+        "CODEX_BIN",
         "GITHUB_TOKEN",
-        "EVOLUTION_BRANCH_STRATEGY",
         "EVOLUTION_SPECS_ROOT",
         "EVOLUTION_EXECUTOR_NETWORK",
-        "EVOLUTION_OP_TIMEOUT_S",
-        "EVOLUTION_NETWORK_TIMEOUT_S",
-        "EVOLUTION_CODEX_TIMEOUT_S",
-        "EVOLUTION_MAX_TOTAL_TOKENS",
+        "EVOLUTION_WORKDIR_ROOT",
         "EVOLUTION_SETUP_COMMAND",
-        "EVOLUTION_SETUP_TIMEOUT_S",
+        "EVOLUTION_SETUP_TIMEOUT",
     ):
         monkeypatch.delenv(key, raising=False)
     for key, value in values.items():
@@ -93,7 +101,6 @@ class TestBuildWorker:
 
         assert isinstance(worker, EvolutionWorker)
         assert worker._directive.context_id == "ctx-456"
-
 
     def test_specs_root_from_env_override(self, monkeypatch):
         _set_env(monkeypatch, EVOLUTION_SPECS_ROOT=".evolution-specs")
@@ -121,48 +128,42 @@ class TestBuildWorker:
         assert worker._config.executor_network is True
         assert worker._tools.codex.config.network_access is True
 
-    def test_operator_knobs_default_to_toolkit_defaults(self, monkeypatch):
-        """Unset, none of the new knobs override the toolkit's own defaults."""
+    def test_codex_base_url_local_uses_local_access(self, monkeypatch):
+        """CODEX_BASE_URL="local" resolves to a `LocalAccess`, not any
+        `RemoteAccess`/credentials_provider, in favor of the operator's own
+        logged-in Codex CLI session."""
+        _set_env(monkeypatch, CODEX_BASE_URL="local")
+        worker = build_worker(_parsed(model=ModelPreferences(name="gpt-5.1-codex")), _daemon())
+        codex = worker._tools.codex
+        assert codex.config.model_access == LocalAccess()
+        assert codex.config.model == "gpt-5.1-codex"
+        assert codex._credentials_provider is None
+
+    def test_codex_base_url_local_is_case_insensitive(self, monkeypatch):
+        _set_env(monkeypatch, CODEX_BASE_URL="Local")
+        worker = build_worker(_parsed(), _daemon())
+        assert worker._tools.codex.config.model_access == LocalAccess()
+
+    def test_limits_default_to_toolkit_defaults_when_absent(self, monkeypatch):
+        """A directive with no `limits` leaves every ceiling unset — the
+        toolkit's own defaults (no limit) apply."""
         _set_env(monkeypatch)
         worker = build_worker(_parsed(), _daemon())
         config = worker._config
-        assert config.op_timeout_s is None
-        assert config.network_timeout_s is None
-        assert config.codex_timeout_s is None
+        assert config.op_timeout is None
+        assert config.network_timeout is None
+        assert config.codex_timeout is None
         assert config.setup_command is None
-        assert config.setup_timeout_s is None
+        assert config.setup_timeout is None
         assert worker._tools.codex.config.max_total_tokens is None
         # No timeouts set -> codex client runs unbounded.
         assert worker._tools.codex._timeout is None
-
-    def test_timeout_and_budget_knobs_from_env(self, monkeypatch):
-        _set_env(
-            monkeypatch,
-            EVOLUTION_OP_TIMEOUT_S="30",
-            EVOLUTION_NETWORK_TIMEOUT_S="45.5",
-            EVOLUTION_CODEX_TIMEOUT_S="600",
-            EVOLUTION_MAX_TOTAL_TOKENS="120000",
-        )
-        worker = build_worker(_parsed(), _daemon())
-        config = worker._config
-        assert config.op_timeout_s == 30.0
-        assert config.network_timeout_s == 45.5
-        assert config.codex_timeout_s == 600.0
-        assert worker._tools.codex.config.max_total_tokens == 120000
-        # build_tools wires codex_timeout_s (falling back to op_timeout_s) as the
-        # CodexClient wall-clock ceiling.
-        assert worker._tools.codex._timeout == 600.0
-
-    def test_codex_timeout_falls_back_to_op_timeout(self, monkeypatch):
-        _set_env(monkeypatch, EVOLUTION_OP_TIMEOUT_S="90")
-        worker = build_worker(_parsed(), _daemon())
-        assert worker._tools.codex._timeout == 90.0
 
     def test_setup_command_is_shlex_split(self, monkeypatch):
         _set_env(
             monkeypatch,
             EVOLUTION_SETUP_COMMAND=".venv/bin/pip install -e . --no-deps",
-            EVOLUTION_SETUP_TIMEOUT_S="120",
+            EVOLUTION_SETUP_TIMEOUT="120",
         )
         worker = build_worker(_parsed(), _daemon())
         assert worker._config.setup_command == [
@@ -172,16 +173,11 @@ class TestBuildWorker:
             ".",
             "--no-deps",
         ]
-        assert worker._config.setup_timeout_s == 120.0
+        assert worker._config.setup_timeout == 120.0
 
-    def test_malformed_timeout_raises_setup_error(self, monkeypatch):
-        _set_env(monkeypatch, EVOLUTION_CODEX_TIMEOUT_S="soon")
-        with pytest.raises(ExtensionSetupError, match="EVOLUTION_CODEX_TIMEOUT_S"):
-            build_worker(_parsed(), _daemon())
-
-    def test_malformed_token_budget_raises_setup_error(self, monkeypatch):
-        _set_env(monkeypatch, EVOLUTION_MAX_TOTAL_TOKENS="lots")
-        with pytest.raises(ExtensionSetupError, match="EVOLUTION_MAX_TOTAL_TOKENS"):
+    def test_malformed_setup_timeout_raises_setup_error(self, monkeypatch):
+        _set_env(monkeypatch, EVOLUTION_SETUP_TIMEOUT="soon")
+        with pytest.raises(ExtensionSetupError, match="EVOLUTION_SETUP_TIMEOUT"):
             build_worker(_parsed(), _daemon())
 
     def test_overridden_endpoint_attaches_no_token_resolver(self, monkeypatch):
@@ -192,20 +188,14 @@ class TestBuildWorker:
         worker = build_worker(_parsed(), _daemon(identity_id=None))
 
         codex = worker._tools.codex
-        assert codex.config.base_url == "http://127.0.0.1:11434/v1"
+        assert codex.config.model_access == RemoteAccess(base_url="http://127.0.0.1:11434/v1")
         assert codex._credentials_provider is None
 
-    def test_daemon_llm_variable_picks_model_when_env_unset(self, monkeypatch):
+    def test_daemon_llm_variable_picks_model_when_directive_omits_it(self, monkeypatch):
         _set_env(monkeypatch)
         worker = build_worker(_parsed(), _daemon(llm="qwen"))
 
         assert worker._tools.codex.config.model == "qwen"
-
-    def test_env_model_overrides_daemon_variable(self, monkeypatch):
-        _set_env(monkeypatch, CODEX_MODEL="gpt-oss:20b")
-        worker = build_worker(_parsed(), _daemon(llm="qwen"))
-
-        assert worker._tools.codex.config.model == "gpt-oss:20b"
 
     def test_defaults_to_aion_model_service_with_token_resolver(self, monkeypatch):
         from aion.api.control_plane import AION_PRINCIPAL_SELECTOR_HEADER
@@ -218,9 +208,11 @@ class TestBuildWorker:
         worker = build_worker(_parsed(), _daemon(llm="qwen"))
 
         codex = worker._tools.codex
-        assert codex.config.base_url == "https://api.aion.example/v1"
+        assert codex.config.model_access == RemoteAccess(
+            base_url="https://api.aion.example/v1",
+            principal_header=AION_PRINCIPAL_SELECTOR_HEADER,
+        )
         assert codex.config.model == "qwen"
-        assert codex.config.principal_header == AION_PRINCIPAL_SELECTOR_HEADER
         assert codex._credentials_provider is not None
 
     def test_aion_mode_requires_daemon_identity(self, monkeypatch):
@@ -229,27 +221,6 @@ class TestBuildWorker:
         _set_env(monkeypatch, CODEX_BASE_URL=None)
         with pytest.raises(ExtensionSetupError, match="daemonAgentIdentityId"):
             build_worker(_parsed(), _daemon(identity_id=None))
-
-    def test_branch_strategy_from_daemon_config_var(self, monkeypatch):
-        """The forge client is now built lazily by deliver() from
-        `Tools.forge_factory` (always wired), so branch strategy is only
-        observable through `EvolutionConfig.branch_strategy` itself."""
-        _set_env(monkeypatch)
-        worker = build_worker(_parsed(), _daemon(branch_strategy="pull-request"))
-        assert worker._config.branch_strategy == "pull-request"
-
-        worker = build_worker(_parsed(), _daemon())  # default beta-branch
-        assert worker._config.branch_strategy == "beta-branch"
-
-    def test_env_branch_strategy_overrides_daemon_variable(self, monkeypatch):
-        _set_env(monkeypatch, EVOLUTION_BRANCH_STRATEGY="pull-request")
-        worker = build_worker(_parsed(), _daemon(branch_strategy="beta-branch"))
-        assert worker._config.branch_strategy == "pull-request"
-
-    def test_unknown_branch_strategy_raises_setup_error(self, monkeypatch):
-        _set_env(monkeypatch)
-        with pytest.raises(ExtensionSetupError, match="unsupported evolution branch strategy"):
-            build_worker(_parsed(), _daemon(branch_strategy="direct-push"))
 
     def test_unsupported_directive_values_surface_as_setup_error(self, monkeypatch):
         """The core payload allows kind/mode values the installed toolkit may
@@ -288,3 +259,133 @@ class TestBuildWorker:
         assert "mode='directive'" in message
         assert "advisory" in message
         assert "validation error for EvolutionDirective" not in message
+
+
+class TestDirectiveModelPreferences:
+    """Per-run model tuning from the directive's `model` field. Priority is
+    directive -> `llm` config var -> toolkit default - there is no env
+    override any more (see the tools_factory module docstring)."""
+
+    def test_directive_name_used_when_config_var_unset(self, monkeypatch):
+        _set_env(monkeypatch)
+        daemon = _daemon(llm=None)
+        worker = build_worker(_parsed(model=ModelPreferences(name="gpt-5.1-codex")), daemon)
+        assert worker._tools.codex.config.model == "gpt-5.1-codex"
+
+    def test_directive_name_overrides_daemon_llm_config_var(self, monkeypatch):
+        _set_env(monkeypatch)
+        worker = build_worker(
+            _parsed(model=ModelPreferences(name="gpt-5.1-codex")), _daemon(llm="qwen")
+        )
+        assert worker._tools.codex.config.model == "gpt-5.1-codex"
+
+    def test_no_directive_model_falls_back_to_daemon_llm_config_var(self, monkeypatch):
+        """Regression: directives that omit `model` keep today's behaviour."""
+        _set_env(monkeypatch)
+        worker = build_worker(_parsed(model=None), _daemon(llm="qwen"))
+        assert worker._tools.codex.config.model == "qwen"
+
+    def test_directive_reasoning_effort_used(self, monkeypatch):
+        _set_env(monkeypatch)
+        worker = build_worker(_parsed(model=ModelPreferences(reasoning_effort="high")), _daemon())
+        assert worker._tools.codex.config.model_reasoning_effort == "high"
+
+    def test_directive_context_window_used(self, monkeypatch):
+        _set_env(monkeypatch)
+        worker = build_worker(_parsed(model=ModelPreferences(context_window=64000)), _daemon())
+        assert worker._tools.codex.config.model_context_window == 64000
+
+    def test_directive_model_cannot_touch_trust_boundary_fields(self, monkeypatch):
+        """The directive's `model` preferences must never reach model_access,
+        model_catalog_json, or codex_bin - those decide whose credentials/quota
+        pay and what gets exec'd, which stays a deployment-operator decision."""
+        _set_env(monkeypatch, CODEX_MODEL_CATALOG_JSON="/etc/aion/catalog.json")
+        worker = build_worker(
+            _parsed(
+                model=ModelPreferences(
+                    name="gpt-5.1-codex", reasoning_effort="high", context_window=64000
+                )
+            ),
+            _daemon(),
+        )
+        codex_config = worker._tools.codex.config
+        assert codex_config.model_access == RemoteAccess(base_url="http://127.0.0.1:11434/v1")
+        assert codex_config.model_catalog_json == "/etc/aion/catalog.json"
+        assert codex_config.codex_bin == "codex"
+
+
+class TestDirectiveBranchStrategy:
+    """Branch strategy from the directive's own `branch_strategy` field.
+    Priority is directive -> daemon config var (kept only for directives that
+    predate this field) -> "beta-branch" default - no env override any more."""
+
+    def test_directive_value_used(self, monkeypatch):
+        _set_env(monkeypatch)
+        worker = build_worker(_parsed(branch_strategy="pull-request"), _daemon())
+        assert worker._config.branch_strategy == "pull-request"
+
+    def test_directive_overrides_daemon_config_var(self, monkeypatch):
+        _set_env(monkeypatch)
+        worker = build_worker(
+            _parsed(branch_strategy="pull-request"),
+            _daemon(branch_strategy="beta-branch"),
+        )
+        assert worker._config.branch_strategy == "pull-request"
+
+    def test_no_directive_value_falls_back_to_daemon_config_var(self, monkeypatch):
+        _set_env(monkeypatch)
+        worker = build_worker(_parsed(), _daemon(branch_strategy="pull-request"))
+        assert worker._config.branch_strategy == "pull-request"
+
+    def test_defaults_to_beta_branch(self, monkeypatch):
+        _set_env(monkeypatch)
+        worker = build_worker(_parsed(), _daemon())
+        assert worker._config.branch_strategy == "beta-branch"
+
+    def test_unknown_daemon_config_var_value_raises_setup_error(self, monkeypatch):
+        """The directive's own `branch_strategy` is a pydantic Literal, so an
+        unknown value never reaches this deployment at all; the daemon config
+        var fallback has no such type check, so it still needs one here."""
+        _set_env(monkeypatch)
+        with pytest.raises(ExtensionSetupError, match="unsupported evolution branch strategy"):
+            build_worker(_parsed(), _daemon(branch_strategy="direct-push"))
+
+
+class TestDirectiveRunLimits:
+    """Resource ceilings from the directive's `limits` field. Unlike `model`,
+    there is no deployment-side value to fall back to or clamp against - the
+    caller sets these purely to protect its own run."""
+
+    def test_max_total_tokens_reaches_codex_config(self, monkeypatch):
+        _set_env(monkeypatch)
+        worker = build_worker(_parsed(limits=RunLimits(max_total_tokens=120000)), _daemon())
+        assert worker._tools.codex.config.max_total_tokens == 120000
+
+    def test_timeouts_reach_evolution_config(self, monkeypatch):
+        _set_env(monkeypatch)
+        worker = build_worker(
+            _parsed(
+                limits=RunLimits(
+                    op_timeout=30.0, network_timeout=45.5, codex_timeout=600.0
+                )
+            ),
+            _daemon(),
+        )
+        config = worker._config
+        assert config.op_timeout == 30.0
+        assert config.network_timeout == 45.5
+        assert config.codex_timeout == 600.0
+        # build_tools wires codex_timeout (falling back to op_timeout) as the
+        # CodexClient wall-clock ceiling.
+        assert worker._tools.codex._timeout == 600.0
+
+    def test_codex_timeout_falls_back_to_op_timeout(self, monkeypatch):
+        _set_env(monkeypatch)
+        worker = build_worker(_parsed(limits=RunLimits(op_timeout=90.0)), _daemon())
+        assert worker._tools.codex._timeout == 90.0
+
+    def test_no_directive_limits_leaves_everything_unbounded(self, monkeypatch):
+        _set_env(monkeypatch)
+        worker = build_worker(_parsed(limits=None), _daemon())
+        assert worker._config.op_timeout is None
+        assert worker._tools.codex.config.max_total_tokens is None

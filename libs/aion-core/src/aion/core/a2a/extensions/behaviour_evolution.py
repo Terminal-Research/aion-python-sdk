@@ -29,6 +29,8 @@ __all__ = [
     "EVOLUTION_VIEW_ACTIVITY",
     "EVOLUTION_VIEW_MILESTONES",
     "TargetContext",
+    "ModelPreferences",
+    "RunLimits",
     "EvolutionUsage",
     "EvolutionDirectiveEventPayload",
     "EvolutionVerdictEventPayload",
@@ -81,6 +83,79 @@ class TargetContext(A2ABaseModel):
     )
 
 
+class ModelPreferences(A2ABaseModel):
+    """What the caller would like this run's executor model to be.
+
+    Preferences, not guarantees. The deployment owns the trust boundary - which
+    endpoint is reached and whose credentials pay for it - and may pin any field
+    here from its own environment, in which case what the caller asked for is
+    ignored. What this does give the caller is per-run tuning without touching
+    the deployment: a `scope="plan"` run and a `scope="implement"` run of the
+    same evolution can ask for different models or different reasoning effort.
+
+    Every field is optional and independent; unset means "whatever the
+    deployment already resolves to".
+    """
+
+    name: Optional[str] = Field(
+        default=None,
+        description=(
+            "Executor model to run this evolution with. Not validated here: a "
+            "name the deployment's configured endpoint cannot serve surfaces as "
+            "an executor failure during the run, not as a directive rejection."
+        ),
+    )
+    reasoning_effort: Optional[str] = Field(
+        default=None,
+        description=(
+            "Reasoning effort passed to the executor model, for models that "
+            "support it. Interpreted by the engine, not by this contract."
+        ),
+    )
+    context_window: Optional[int] = Field(
+        default=None,
+        description=(
+            "Context window in tokens to declare for the executor model. Only "
+            "needed for models the engine has no built-in knowledge of."
+        ),
+    )
+
+
+class RunLimits(A2ABaseModel):
+    """Resource ceilings the caller sets for this run's own protection.
+
+    Not a deployment-enforced maximum - the deployment has no separate ceiling
+    to fall back to or clamp against; see ModelPreferences for the analogous
+    per-run vs. deployment split on model choice, where the deployment *does*
+    keep a say. Every field is optional; unset means the run has no ceiling on
+    that axis at all, not that a deployment default kicks in.
+    """
+
+    max_total_tokens: Optional[int] = Field(
+        default=None,
+        description=(
+            "Token budget for the run. On reaching it, the executor stops "
+            "gracefully at the next turn boundary and the run still delivers "
+            "what was already committed (COMPLETED, not FAILED)."
+        ),
+    )
+    op_timeout: Optional[float] = Field(
+        default=None,
+        description="Per-subprocess-operation timeout, in seconds.",
+    )
+    network_timeout: Optional[float] = Field(
+        default=None,
+        description="Timeout for network git operations, in seconds.",
+    )
+    codex_timeout: Optional[float] = Field(
+        default=None,
+        description=(
+            "Wall-clock ceiling for one whole executor call, in seconds. Falls "
+            "back to `op_timeout` when unset."
+        ),
+    )
+
+
 class EvolutionDirectiveEventPayload(A2ABaseModel):
     """Inbound improvement command from the control plane to the improver.
 
@@ -113,6 +188,30 @@ class EvolutionDirectiveEventPayload(A2ABaseModel):
             "improver reports as the run moves through preparing, executing, "
             "delivering and reporting: this is what was asked for, that is "
             "where the run stands."
+        ),
+    )
+    model: Optional[ModelPreferences] = Field(
+        default=None,
+        description=(
+            "Per-run executor model tuning. Omit to use whatever the deployment "
+            "resolves on its own. The deployment's own environment overrides "
+            "anything set here - see ModelPreferences."
+        ),
+    )
+    branch_strategy: Optional[Literal["beta-branch", "pull-request"]] = Field(
+        default=None,
+        description=(
+            "Delivery strategy for this run: push only ('beta-branch') or also "
+            "open/reuse a pull request ('pull-request'). Omit to use the "
+            "deployment's aion.yaml default."
+        ),
+    )
+    limits: Optional[RunLimits] = Field(
+        default=None,
+        description=(
+            "Resource ceilings this run's caller sets for its own protection. "
+            "See RunLimits - unlike `model`, the deployment has no separate "
+            "ceiling to fall back to here."
         ),
     )
     view: Literal["full", "activity", "milestones"] = Field(
