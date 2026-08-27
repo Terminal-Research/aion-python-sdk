@@ -116,7 +116,6 @@ def _result(outcome: str = "succeeded", **overrides):
         "outcome": outcome,
         "branch": "evolution/ctx-1",
         "commit_sha": "abc1234",
-        "diff_summary": "1 file changed",
         "error": None,
         "resumed": False,
         "commit_count": 3,
@@ -471,11 +470,25 @@ class TestResultEvents:
         assert _text(out[1]) == "Done — ready for review: https://github.com/acme/x/pull/7"
         assert "evolution/ctx-1" not in _text(out[1])
 
+    def test_executor_summary_precedes_the_location_line(self):
+        out = _result_events(
+            _task(),
+            _result(
+                "succeeded",
+                pr_url="https://github.com/acme/x/pull/7",
+                summary="Added a /test command node and wired it into the graph.",
+            ),
+        )
+        assert _text(out[1]) == (
+            "Added a /test command node and wired it into the graph.\n\n"
+            "Done — ready for review: https://github.com/acme/x/pull/7"
+        )
+
     def test_no_change_completes_with_explanation(self):
         out = _result_events(
             _task(),
             _result(
-                "no_change", branch=None, commit_sha=None, diff_summary=None, commit_count=0,
+                "no_change", branch=None, commit_sha=None, commit_count=0,
                 spec_path=None,
             ),
         )
@@ -492,7 +505,6 @@ class TestResultEvents:
                 "failed",
                 branch=None,
                 commit_sha=None,
-                diff_summary=None,
                 error="push denied",
                 commit_count=None,
                 spec_path=None,

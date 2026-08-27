@@ -173,7 +173,6 @@ def _result(outcome: str = "succeeded", **overrides):
         "outcome": outcome,
         "branch": "evolution/ctx-456",
         "commit_sha": "abc1234",
-        "diff_summary": "1 file changed",
         "error": None,
         "resumed": False,
         "commit_count": 1,

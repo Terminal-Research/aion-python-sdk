@@ -306,11 +306,11 @@ class EvolutionResultActionPayload(A2ABaseModel):
     commit_sha: Optional[str] = Field(
         default=None, description="Exact commit pinning the beta artifact."
     )
-    diff_summary: Optional[str] = Field(
-        default=None, description="Summary of what changed, for verifier/director context."
-    )
     error: Optional[str] = Field(
         default=None, description="Error description; populated when outcome is 'failed'."
+    )
+    summary: Optional[str] = Field(
+        default=None, description="The executor's own closing summary of what it did, if any."
     )
     resumed: bool = Field(
         default=False,

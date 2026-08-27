@@ -662,8 +662,8 @@ def _result_payload(result: "EvolutionResult") -> EvolutionResultActionPayload:
         outcome=result.outcome,
         branch=result.branch,
         commit_sha=result.commit_sha,
-        diff_summary=result.diff_summary,
         error=result.error,
+        summary=getattr(result, "summary", None),
         resumed=getattr(result, "resumed", False),
         commit_count=getattr(result, "commit_count", None),
         pr_url=getattr(result, "pr_url", None),
@@ -740,6 +740,21 @@ def cancel_result_message(task: Task, result: "EvolutionResult") -> Message:
     )
 
 
+def _terminal_text(result: "EvolutionResult", location: str) -> str:
+    """The terminal message: the executor's own summary, then where to look.
+
+    `location` is the toolkit-facts line (PR link, branch name, or "No
+    changes were needed") — always present. `result.summary` is the
+    executor's closing explanation of what it did, when it produced one; it
+    reads as the answer to "what happened", with `location` as the follow-up
+    "and here's where to find it".
+    """
+    summary = getattr(result, "summary", None)
+    if summary:
+        return f"{summary}\n\n{location}"
+    return location
+
+
 def result_events(
     task: Task,
     result: "EvolutionResult",
@@ -780,7 +795,7 @@ def result_events(
         terminal = status_event(
             task,
             state=TaskState.TASK_STATE_COMPLETED,
-            text="No changes were needed",
+            text=_terminal_text(result, "No changes were needed"),
             progress=terminal_progress,
         )
     else:
@@ -791,15 +806,15 @@ def result_events(
         # the artifact already carries it.
         pr_url = getattr(result, "pr_url", None)
         if pr_url:
-            text = f"Done — ready for review: {pr_url}"
+            location = f"Done — ready for review: {pr_url}"
         elif result.branch:
-            text = f"Done — changes are on branch {result.branch}"
+            location = f"Done — changes are on branch {result.branch}"
         else:
-            text = "Done"
+            location = "Done"
         terminal = status_event(
             task,
             state=TaskState.TASK_STATE_COMPLETED,
-            text=text,
+            text=_terminal_text(result, location),
             progress=terminal_progress,
         )
     return [artifact_event, terminal]
