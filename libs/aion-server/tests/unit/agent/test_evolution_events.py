@@ -420,9 +420,9 @@ class TestEventKindDriftGuard:
 
 class TestFailedEvent:
     def test_failed_state_and_message(self):
-        event = events.failed_event(_task(), error="CODEX_BASE_URL is not set")
+        event = events.failed_event(_task(), error="CODEX_PROVIDER is not set")
         assert event.status.state == TaskState.TASK_STATE_FAILED
-        assert _text(event) == "CODEX_BASE_URL is not set"
+        assert _text(event) == "CODEX_PROVIDER is not set"
 
 
 class TestResultEvents:

@@ -80,7 +80,16 @@ class AionModelClientConfig:
 
 
 def aion_model_base_url() -> str:
-    """Return the Aion OpenAI-compatible model API base URL."""
+    """Return the Aion OpenAI-compatible model API base URL.
+
+    TODO(2026-08-27): this reuses AION_API_HOST as-is - the same host the rest
+    of the platform (GraphQL, WS) talks to - with no dedicated endpoint for
+    model traffic. No AION_API_HOST has been provisioned/agreed for a real
+    deployment yet, so callers relying on this (see aion-server's
+    tools_factory.py CODEX_PROVIDER=aion) have nothing to reach until it is.
+    Open question: keep sharing AION_API_HOST, or carve out a separate host
+    for Codex/model-service traffic.
+    """
     base_url = api_settings.http_url.rstrip("/")
     return f"{base_url}/v1"
 

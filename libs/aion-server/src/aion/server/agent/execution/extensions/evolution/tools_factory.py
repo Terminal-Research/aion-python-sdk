@@ -6,14 +6,35 @@ lazily inside stream(), so aion-server keeps no hard dependency on the
 toolkit.
 
 Codex credentials follow the toolkit's own DI: ``credentials_provider`` is
-optional, and this wrapper decides whether to attach one. By default Codex
-goes to the Aion model service (aion-api-client's ``aion_model_base_url()``)
-with a token resolver that mints a fresh short-lived Aion JWT per call plus
-the agent's daemon-identity principal (``Aion-Principal-Selector`` header,
-from the request's ``environment.daemon_agent_identity_id``) - secret and
-principal travel per-call and are never stored. Setting CODEX_BASE_URL
-points Codex at any OpenAI-compatible server (e.g. local ollama) instead,
-with no token resolver at all.
+optional, and this wrapper decides whether to attach one, based on the
+required ``CODEX_PROVIDER``:
+
+  * ``aion`` - the Aion model service (aion-api-client's
+    ``aion_model_base_url()``) with a token resolver that mints a fresh
+    short-lived Aion JWT per call plus the agent's daemon-identity principal
+    (``Aion-Principal-Selector`` header, from the request's
+    ``environment.daemon_agent_identity_id``) - secret and principal travel
+    per-call and are never stored.
+
+    NOT YET DEPLOYABLE (2026-08-27): ``aion_model_base_url()`` resolves to
+    ``AION_API_HOST`` - the same host used for the platform's GraphQL/WS
+    traffic, with no endpoint of its own carved out for Codex model calls -
+    and no ``AION_API_HOST`` has been provisioned/agreed for this deployment
+    yet. Until that URL exists (and it's decided whether Codex gets a
+    dedicated model-service endpoint or shares the platform host as-is),
+    ``CODEX_PROVIDER=aion`` has nothing to talk to. Use ``local_session`` or
+    ``custom`` until this is resolved.
+  * ``local_session`` - the operator's own logged-in Codex CLI session
+    (``~/.codex/auth.json``, or ``CODEX_HOME``) - usage counts against their
+    personal subscription limits, not this deployment's Aion model service
+    quota or any API key.
+  * ``custom`` - any OpenAI-Responses-compatible endpoint at ``CODEX_BASE_URL``,
+    optionally authenticated with a static ``CODEX_API_KEY`` sent as
+    ``Authorization: Bearer`` - no principal, nothing to attribute usage to.
+
+There is no default provider - see `_codex_access`/`resolve_provider`: an
+unset or unknown ``CODEX_PROVIDER`` fails the run rather than silently
+guessing whose quota pays for it.
 
 Behavior configuration is request-bound: the daemon environment's
 configuration variables (aion.yaml config fields, parameterized back by the
@@ -41,14 +62,26 @@ there is no env-style manual parsing/ExtensionSetupError step for `model`,
 `branch_strategy`, or `limits`.
 
 Env:
-    CODEX_BASE_URL                      optional endpoint override (e.g. ollama);
-                                        set = no Aion token resolver attached;
-                                        the literal value "local" (case-insensitive)
-                                        instead uses the operator's own logged-in
-                                        Codex CLI session (~/.codex/auth.json) -
-                                        usage counts against their personal
-                                        subscription limits, not this deployment's
-                                        Aion model service quota or any API key
+    CODEX_PROVIDER                      required, one of aion | local_session |
+                                        custom - decides whose credentials and
+                                        quota pay for the model calls; no
+                                        default, an unset value fails the run.
+                                        NOT YET DEPLOYABLE: no AION_API_HOST has
+                                        been provisioned for this deployment, so
+                                        aion has nothing to talk to yet - see the
+                                        module docstring's `aion` bullet
+    CODEX_BASE_URL                      required by CODEX_PROVIDER=custom,
+                                        ignored otherwise - the OpenAI-Responses
+                                        -compatible endpoint to call
+    CODEX_API_KEY                       optional under CODEX_PROVIDER=custom,
+                                        ignored otherwise - sent as
+                                        Authorization: Bearer; omit it for an
+                                        unauthenticated endpoint (e.g. ollama)
+    CODEX_HOME                          optional under CODEX_PROVIDER=local_session,
+                                        ignored otherwise - the real CODEX_HOME
+                                        to source auth.json from (default ~/.codex);
+                                        usage counts against the operator's
+                                        personal subscription limits
     CODEX_MODEL_CATALOG_JSON            optional catalog for local models;
                                         deployment env only, never the request -
                                         it names a path on the host filesystem
@@ -94,14 +127,15 @@ from aion.toolkits.behaviour_evolution import (
     EvolutionDirective,
     EvolutionWorker,
     LocalAccess,
-    ModelServiceCredentials,
     RemoteAccess,
+    RemoteCredentials,
     TargetContext,
     build_tools,
 )
 
 from .directive import ParsedDirective
 from .errors import ExtensionSetupError, UnsupportedDirectiveError
+from .provider import CUSTOM, LOCAL_SESSION, resolve_provider, warn_ignored_keys
 
 if TYPE_CHECKING:
     from aion.core.a2a.extensions.behaviour_evolution import ModelPreferences, RunLimits
@@ -257,13 +291,24 @@ def _unsupported_directive_message(ex: ValidationError) -> str:
 
 
 def _codex_access(daemon, prefs: Optional["ModelPreferences"], limits: Optional["RunLimits"]):
-    """Resolve the Codex model_access/model and, for the Aion model service,
-    a token resolver; an overridden endpoint gets no resolver at all.
+    """Resolve the Codex model_access/model and, when the provider authenticates,
+    a credentials resolver.
 
-    CODEX_BASE_URL="local" (case-insensitive) is a third mode, checked first:
-    it resolves to a `LocalAccess` instead of any `RemoteAccess`, in favor of
-    the operator's own logged-in Codex CLI session - no Aion JWT, no API key,
-    no control-plane import at all.
+    `CODEX_PROVIDER` picks one of three mutually exclusive modes:
+
+      * `aion` - the Aion model service. Endpoint comes from api settings, a
+        fresh short-lived JWT is minted per call, and the daemon identity is
+        attached as the principal so usage is attributed. Takes no operator
+        knobs at all.
+      * `local_session` - the operator's own logged-in Codex CLI session
+        (`auth.json`, optionally from `CODEX_HOME`). No endpoint, no key; usage
+        counts against their personal subscription.
+      * `custom` - any OpenAI-Responses-compatible endpoint. `CODEX_BASE_URL`
+        is required; `CODEX_API_KEY` is optional - present means the secret
+        rides `Authorization: Bearer`, absent means an unauthenticated endpoint
+        (e.g. a local Ollama server). No principal either way.
+
+    There is no default provider: see `resolve_provider`.
 
     `prefs` is the directive's optional `model` field: per-run tuning for
     `model`/`model_reasoning_effort`/`model_context_window`, resolved as
@@ -271,18 +316,37 @@ def _codex_access(daemon, prefs: Optional["ModelPreferences"], limits: Optional[
     is the caller's own token budget for the run, taken as-is - there is no
     deployment-side ceiling to fall back to or clamp against here (unlike
     `model_catalog_json`/`codex_bin` below, which stay env-only because they
-    name a host filesystem path and an executable, and `CODEX_BASE_URL`/mode
-    selection, which decides whose credentials and quota pay for the call -
-    all deployment-operator decisions, not directive-author ones).
+    name a host filesystem path and an executable, and provider selection,
+    which decides whose credentials and quota pay for the call - all
+    deployment-operator decisions, not directive-author ones).
     """
-    raw_base_url = os.environ.get("CODEX_BASE_URL")
+    provider = resolve_provider()
+    warn_ignored_keys(provider)
     credentials_provider = None
 
-    if raw_base_url and raw_base_url.strip().lower() == "local":
-        model_access = LocalAccess()
-    elif not raw_base_url:
-        # Aion model service. Imported lazily: an overridden endpoint never
-        # touches api settings/JWT infrastructure.
+    if provider == LOCAL_SESSION:
+        model_access = LocalAccess(home=os.environ.get("CODEX_HOME"))
+
+    elif provider == CUSTOM:
+        base_url = os.environ.get("CODEX_BASE_URL")
+        if not base_url:
+            raise ExtensionSetupError(
+                "CODEX_BASE_URL is not set - required by CODEX_PROVIDER=custom"
+            )
+        model_access = RemoteAccess(base_url=base_url)
+        api_key = os.environ.get("CODEX_API_KEY")
+        if api_key:
+            # No principal: a plain API-key endpoint has nothing to attribute
+            # usage to, so no attribution header is emitted (see the toolkit's
+            # RemoteAccess.principal_header). Unlike the Aion JWT this secret is
+            # long-lived by nature - it is read once here and only ever reaches
+            # the Codex subprocess environment, never the parent's.
+            async def credentials_provider() -> RemoteCredentials:
+                return RemoteCredentials(secret=api_key)
+
+    else:  # AION
+        # Imported lazily: the other providers never touch api settings/JWT
+        # infrastructure.
         from aion.api.control_plane import AION_PRINCIPAL_SELECTOR_HEADER
         from aion.api.model_service_client import aion_jwt_api_key, aion_model_base_url
 
@@ -293,19 +357,23 @@ def _codex_access(daemon, prefs: Optional["ModelPreferences"], limits: Optional[
                 "model usage cannot be attributed to a principal"
             )
 
+        # TODO(2026-08-27): aion_model_base_url() resolves to AION_API_HOST,
+        # the same host used for the platform's GraphQL/WS traffic - there is
+        # no endpoint of its own carved out for Codex model calls yet, and no
+        # AION_API_HOST has been provisioned/agreed for this deployment. This
+        # provider has nothing to talk to until that's resolved - see the
+        # module docstring. Not a code bug: the wiring below is correct once
+        # the URL exists.
         model_access = RemoteAccess(
             base_url=aion_model_base_url(),
             principal_header=AION_PRINCIPAL_SELECTOR_HEADER,
         )
 
-        async def credentials_provider() -> ModelServiceCredentials:
+        async def credentials_provider() -> RemoteCredentials:
             # Secret is minted per Codex call and never stored; principal
             # attributes the usage to the agent's daemon identity (policy
             # enforcement lands on the service side later).
-            return ModelServiceCredentials(secret=await aion_jwt_api_key(), principal=principal)
-
-    else:
-        model_access = RemoteAccess(base_url=raw_base_url)
+            return RemoteCredentials(secret=await aion_jwt_api_key(), principal=principal)
 
     codex_config = CodexConfig(
         model_access=model_access,

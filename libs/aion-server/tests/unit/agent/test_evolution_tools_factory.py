@@ -66,12 +66,16 @@ def _daemon(
 
 def _set_env(monkeypatch, **overrides):
     values = {
+        "CODEX_PROVIDER": "custom",
         "CODEX_BASE_URL": "http://127.0.0.1:11434/v1",
         "GITHUB_TOKEN": "test-token",
     }
     values.update(overrides)
     for key in (
+        "CODEX_PROVIDER",
         "CODEX_BASE_URL",
+        "CODEX_API_KEY",
+        "CODEX_HOME",
         "CODEX_MODEL_CATALOG_JSON",
         "CODEX_BIN",
         "GITHUB_TOKEN",
@@ -128,21 +132,31 @@ class TestBuildWorker:
         assert worker._config.executor_network is True
         assert worker._tools.codex.config.network_access is True
 
-    def test_codex_base_url_local_uses_local_access(self, monkeypatch):
-        """CODEX_BASE_URL="local" resolves to a `LocalAccess`, not any
+    def test_local_session_provider_uses_local_access(self, monkeypatch):
+        """CODEX_PROVIDER=local_session resolves to a `LocalAccess`, not any
         `RemoteAccess`/credentials_provider, in favor of the operator's own
         logged-in Codex CLI session."""
-        _set_env(monkeypatch, CODEX_BASE_URL="local")
+        _set_env(monkeypatch, CODEX_PROVIDER="local_session", CODEX_BASE_URL=None)
         worker = build_worker(_parsed(model=ModelPreferences(name="gpt-5.1-codex")), _daemon())
         codex = worker._tools.codex
         assert codex.config.model_access == LocalAccess()
         assert codex.config.model == "gpt-5.1-codex"
         assert codex._credentials_provider is None
 
-    def test_codex_base_url_local_is_case_insensitive(self, monkeypatch):
-        _set_env(monkeypatch, CODEX_BASE_URL="Local")
+    def test_provider_value_is_case_insensitive(self, monkeypatch):
+        _set_env(monkeypatch, CODEX_PROVIDER="Local_Session", CODEX_BASE_URL=None)
         worker = build_worker(_parsed(), _daemon())
         assert worker._tools.codex.config.model_access == LocalAccess()
+
+    def test_local_session_reads_codex_home(self, monkeypatch):
+        _set_env(
+            monkeypatch,
+            CODEX_PROVIDER="local_session",
+            CODEX_BASE_URL=None,
+            CODEX_HOME="/home/op/.codex-alt",
+        )
+        worker = build_worker(_parsed(), _daemon())
+        assert worker._tools.codex.config.model_access == LocalAccess(home="/home/op/.codex-alt")
 
     def test_limits_default_to_toolkit_defaults_when_absent(self, monkeypatch):
         """A directive with no `limits` leaves every ceiling unset — the
@@ -180,10 +194,10 @@ class TestBuildWorker:
         with pytest.raises(ExtensionSetupError, match="EVOLUTION_SETUP_TIMEOUT"):
             build_worker(_parsed(), _daemon())
 
-    def test_overridden_endpoint_attaches_no_token_resolver(self, monkeypatch):
-        """The wrapper chooses the mode: an explicit CODEX_BASE_URL means a
-        local/foreign endpoint, so no Aion credentials provider is wired and
-        no daemon identity is required."""
+    def test_custom_provider_without_api_key_attaches_no_credentials(self, monkeypatch):
+        """`custom` with no CODEX_API_KEY means an unauthenticated endpoint
+        (e.g. local Ollama): no credentials provider is wired and no daemon
+        identity is required."""
         _set_env(monkeypatch)
         worker = build_worker(_parsed(), _daemon(identity_id=None))
 
@@ -191,16 +205,40 @@ class TestBuildWorker:
         assert codex.config.model_access == RemoteAccess(base_url="http://127.0.0.1:11434/v1")
         assert codex._credentials_provider is None
 
+    def test_custom_provider_without_base_url_raises_setup_error(self, monkeypatch):
+        _set_env(monkeypatch, CODEX_BASE_URL=None)
+        with pytest.raises(ExtensionSetupError, match="CODEX_BASE_URL"):
+            build_worker(_parsed(), _daemon())
+
+    async def test_custom_provider_with_api_key_attaches_static_credentials(self, monkeypatch):
+        """An API key makes the endpoint authenticated: the secret rides the
+        credentials provider, and no principal is attached - there is nothing
+        to attribute usage to on a plain API-key remote."""
+        _set_env(
+            monkeypatch,
+            CODEX_BASE_URL="https://api.openai.com/v1",
+            CODEX_API_KEY="sk-test",
+        )
+        worker = build_worker(_parsed(), _daemon(identity_id=None))
+
+        codex = worker._tools.codex
+        assert codex.config.model_access == RemoteAccess(base_url="https://api.openai.com/v1")
+        assert codex.config.model_access.principal_header is None
+        assert codex._credentials_provider is not None
+        creds = await codex._credentials_provider()
+        assert creds.secret == "sk-test"
+        assert creds.principal is None
+
     def test_daemon_llm_variable_picks_model_when_directive_omits_it(self, monkeypatch):
         _set_env(monkeypatch)
         worker = build_worker(_parsed(), _daemon(llm="qwen"))
 
         assert worker._tools.codex.config.model == "qwen"
 
-    def test_defaults_to_aion_model_service_with_token_resolver(self, monkeypatch):
+    def test_aion_provider_uses_model_service_with_token_resolver(self, monkeypatch):
         from aion.api.control_plane import AION_PRINCIPAL_SELECTOR_HEADER
 
-        _set_env(monkeypatch, CODEX_BASE_URL=None)
+        _set_env(monkeypatch, CODEX_PROVIDER="aion", CODEX_BASE_URL=None)
         monkeypatch.setattr(
             "aion.api.model_service_client.aion_model_base_url",
             lambda: "https://api.aion.example/v1",
@@ -218,9 +256,37 @@ class TestBuildWorker:
     def test_aion_mode_requires_daemon_identity(self, monkeypatch):
         """Going to the model service without a principal would leave usage
         unattributed - reject before the run starts."""
-        _set_env(monkeypatch, CODEX_BASE_URL=None)
+        _set_env(monkeypatch, CODEX_PROVIDER="aion", CODEX_BASE_URL=None)
         with pytest.raises(ExtensionSetupError, match="daemonAgentIdentityId"):
             build_worker(_parsed(), _daemon(identity_id=None))
+
+    def test_missing_provider_raises_setup_error(self, monkeypatch):
+        _set_env(monkeypatch, CODEX_PROVIDER=None)
+        with pytest.raises(ExtensionSetupError, match="CODEX_PROVIDER"):
+            build_worker(_parsed(), _daemon())
+
+    def test_unknown_provider_raises_setup_error(self, monkeypatch):
+        _set_env(monkeypatch, CODEX_PROVIDER="openai")
+        with pytest.raises(ExtensionSetupError, match="CODEX_PROVIDER"):
+            build_worker(_parsed(), _daemon())
+
+    def test_irrelevant_key_is_ignored_with_warning(self, monkeypatch, caplog):
+        """A leftover variable must not fail the deployment, but silently
+        paying with the wrong quota must not be silent either."""
+        _set_env(
+            monkeypatch,
+            CODEX_PROVIDER="aion",
+            CODEX_BASE_URL=None,
+            CODEX_API_KEY="sk-leftover",
+        )
+        monkeypatch.setattr(
+            "aion.api.model_service_client.aion_model_base_url",
+            lambda: "https://api.aion.example/v1",
+        )
+        with caplog.at_level("WARNING"):
+            worker = build_worker(_parsed(), _daemon())
+        assert "CODEX_API_KEY" in caplog.text
+        assert worker._tools.codex.config.model_access.base_url == "https://api.aion.example/v1"
 
     def test_unsupported_directive_values_surface_as_setup_error(self, monkeypatch):
         """The core payload allows kind/mode values the installed toolkit may

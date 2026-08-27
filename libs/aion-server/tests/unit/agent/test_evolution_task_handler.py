@@ -273,7 +273,8 @@ class TestAvailability:
         assert result.available is False
 
     @pytest.mark.anyio
-    async def test_available_when_enabled_and_worker_factory_injected(self):
+    async def test_available_when_enabled_and_worker_factory_injected(self, monkeypatch):
+        monkeypatch.setenv("CODEX_PROVIDER", "custom")
         handler = _handler(worker=FakeWorker(_result()))
         config = SimpleNamespace(enabled_extensions=[EvolutionTaskHandler.uri])
 
@@ -297,6 +298,31 @@ class TestAvailability:
         assert result.available is False
         assert "behaviour-evolution toolkit" in result.reason
 
+    @pytest.mark.anyio
+    async def test_unavailable_when_codex_provider_unset(self, monkeypatch):
+        """A worker factory being injected (DI seam for tests) does not skip
+        the CODEX_PROVIDER pre-flight - a real deployment with no build_worker
+        override would otherwise fail only on the first request."""
+        monkeypatch.delenv("CODEX_PROVIDER", raising=False)
+        handler = _handler(worker=FakeWorker(_result()))
+        config = SimpleNamespace(enabled_extensions=[EvolutionTaskHandler.uri])
+
+        result = await handler.availability(config)
+
+        assert result.available is False
+        assert "CODEX_PROVIDER" in result.reason
+
+    @pytest.mark.anyio
+    async def test_unavailable_when_codex_provider_unknown(self, monkeypatch):
+        monkeypatch.setenv("CODEX_PROVIDER", "openai")
+        handler = _handler(worker=FakeWorker(_result()))
+        config = SimpleNamespace(enabled_extensions=[EvolutionTaskHandler.uri])
+
+        result = await handler.availability(config)
+
+        assert result.available is False
+        assert "CODEX_PROVIDER" in result.reason
+
 
 class TestEventKindDriftAtBindTime:
     """availability() is where the server and the installed toolkit are bound
@@ -304,7 +330,8 @@ class TestEventKindDriftAtBindTime:
     is where their event vocabularies get compared."""
 
     @staticmethod
-    async def _availability(kinds, caplog):
+    async def _availability(kinds, caplog, monkeypatch):
+        monkeypatch.setenv("CODEX_PROVIDER", "custom")
         handler = _handler(worker=FakeWorker(_result()))
         config = SimpleNamespace(enabled_extensions=[EvolutionTaskHandler.uri])
         with patch(
@@ -317,27 +344,27 @@ class TestEventKindDriftAtBindTime:
             return await handler.availability(config)
 
     @pytest.mark.anyio
-    async def test_drift_is_reported_but_the_extension_keeps_serving(self, caplog):
+    async def test_drift_is_reported_but_the_extension_keeps_serving(self, caplog, monkeypatch):
         """Drift degrades progress; it does not break a run - the result and the
         terminal status come off worker.result, not off the stream. Refusing to
         serve would cost the caller more than the mismatch being reported."""
-        result = await self._availability({"PhaseStarted", "CheckpointReached"}, caplog)
+        result = await self._availability({"PhaseStarted", "CheckpointReached"}, caplog, monkeypatch)
 
         assert result.available is True
         assert "CheckpointReached" in caplog.text
 
     @pytest.mark.anyio
-    async def test_agreement_is_silent(self, caplog):
-        result = await self._availability(set(evolution_events._KNOWN_EVENT_KINDS), caplog)
+    async def test_agreement_is_silent(self, caplog, monkeypatch):
+        result = await self._availability(set(evolution_events._KNOWN_EVENT_KINDS), caplog, monkeypatch)
 
         assert result.available is True
         assert caplog.text == ""
 
     @pytest.mark.anyio
-    async def test_unreadable_kinds_are_not_reported_as_drift(self, caplog):
+    async def test_unreadable_kinds_are_not_reported_as_drift(self, caplog, monkeypatch):
         """None means 'nothing to compare against' - a toolkit that no longer
         exports the union must not read as though every kind had vanished."""
-        result = await self._availability(None, caplog)
+        result = await self._availability(None, caplog, monkeypatch)
 
         assert result.available is True
         assert caplog.text == ""
@@ -477,7 +504,7 @@ class TestStream:
         caller's: they get a stable code, not the name of an env var."""
 
         def _raise(parsed, daemon):
-            raise ExtensionSetupError("CODEX_BASE_URL is not set")
+            raise ExtensionSetupError("CODEX_PROVIDER is not set")
 
         handler = _handler(build_worker=_raise)
         ctx = _make_context()
@@ -487,7 +514,7 @@ class TestStream:
 
         assert len(out) == 1
         assert out[0].status.state == TaskState.TASK_STATE_FAILED
-        assert "CODEX_BASE_URL" not in out[0].status.message.parts[0].text
+        assert "CODEX_PROVIDER" not in out[0].status.message.parts[0].text
         assert _progress(out[0])["errorCode"] == "misconfigured_deployment"
 
     @pytest.mark.anyio

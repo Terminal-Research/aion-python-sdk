@@ -42,6 +42,7 @@ from .errors import (
     EvolutionHandlerError,
     ExtensionSetupError,
 )
+from .provider import resolve_provider
 
 if TYPE_CHECKING:
     from a2a.server.agent_execution import RequestContext
@@ -180,6 +181,10 @@ class EvolutionTaskHandler:
                 "but the behaviour-evolution toolkit package is "
                 "not installed on this deployment"
             )
+        try:
+            resolve_provider()
+        except ExtensionSetupError as ex:
+            return ExtensionAvailability.unavailable(str(ex))
         _warn_on_event_kind_drift()
         return ExtensionAvailability.ok()
 
