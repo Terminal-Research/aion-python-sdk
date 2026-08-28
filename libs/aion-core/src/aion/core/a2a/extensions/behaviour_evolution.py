@@ -32,6 +32,7 @@ __all__ = [
     "ModelPreferences",
     "RunLimits",
     "EvolutionUsage",
+    "EvolutionError",
     "EvolutionDirectiveEventPayload",
     "EvolutionVerdictEventPayload",
     "EvolutionResultActionPayload",
@@ -288,6 +289,33 @@ class EvolutionUsage(A2ABaseModel):
     )
 
 
+class EvolutionError(A2ABaseModel):
+    """Why a run failed, as two axes rather than two unrelated fields.
+
+    Grouped under one `error` object — like the terminal status event's
+    `error.code` — so a future field (e.g. a stable code paralleling that
+    one) has an obvious home instead of becoming a third top-level
+    `error*` field on the result payload.
+    """
+
+    details: str = Field(
+        description=(
+            "Full diagnostic string: argv, stderr, paths - whatever the failing "
+            "step captured. For whoever debugs the run, not for display to "
+            "whoever asked for the change."
+        )
+    )
+    reason: Optional[str] = Field(
+        default=None,
+        description=(
+            "Short, human-safe explanation of the failure, set only when the "
+            "failing tool itself supplied one. Unlike `details`, this never "
+            "carries paths, argv, or stderr, so a UI can show it to whoever asked "
+            "for the change."
+        ),
+    )
+
+
 class EvolutionResultActionPayload(A2ABaseModel):
     """Outbound run result reported by the improver once a run completes."""
 
@@ -306,8 +334,8 @@ class EvolutionResultActionPayload(A2ABaseModel):
     commit_sha: Optional[str] = Field(
         default=None, description="Exact commit pinning the beta artifact."
     )
-    error: Optional[str] = Field(
-        default=None, description="Error description; populated when outcome is 'failed'."
+    error: Optional[EvolutionError] = Field(
+        default=None, description="Why the run failed; populated when outcome is 'failed'."
     )
     summary: Optional[str] = Field(
         default=None, description="The executor's own closing summary of what it did, if any."

@@ -87,6 +87,7 @@ from aion.core.a2a.extensions.behaviour_evolution import (
     EvolutionAgentMessagePayload,
     EvolutionCommandCompletedPayload,
     EvolutionCommandStartedPayload,
+    EvolutionError,
     EvolutionResultActionPayload,
     EvolutionUsage,
 )
@@ -202,13 +203,42 @@ _PHASE_TEXT = {
     "delivering": "Saving the result",
 }
 
-# What the user reads when a run fails. Fixed and short by design: the toolkit
-# reports failures as the exception string (`ctx.fail(str(exc))`), which for an
-# executor failure carries the CLI flags it was invoked with and up to 1500
-# characters of its stderr. That belongs to whoever is debugging the deployment,
-# and reaches them intact on the result artifact's `error` field — not to the
-# person who asked for a change.
-_RUN_FAILED_TEXT = "The run could not be completed. See the run result for details."
+def _failed_text(result: "EvolutionResult") -> str:
+    """The terminal message for a failed run.
+
+    Leads with `error_reason` when the failing tool supplied one — a short,
+    human-safe explanation (e.g. an unsupported model for the account) —
+    then states what became of any work in progress, mirroring
+    `cancel_result_message`'s rescue branching. `result.error` itself never
+    appears here: it is the raw exception string, which for an executor
+    failure carries the CLI flags it was invoked with and up to 1500
+    characters of its stderr. That belongs to whoever is debugging the
+    deployment, and reaches them intact on the result artifact's `error`
+    field, not here.
+    """
+    reason = getattr(result, "error_reason", None)
+    rescue_pushed = bool(getattr(result, "rescue_pushed", False))
+    rescue_path = getattr(result, "rescue_path", None)
+    branch = getattr(result, "branch", None)
+
+    # Mutually exclusive: whether anything survived the failure, independent
+    # of whether we also know *why* it failed.
+    if rescue_pushed and branch:
+        outcome_fact = f"Work completed so far is preserved on branch {branch}."
+    elif rescue_path:
+        # Deliberately not naming the bundle path in prose: see the identical
+        # note in `cancel_result_message`.
+        outcome_fact = (
+            "Work completed so far was saved on the improver and needs an "
+            "operator to restore it."
+        )
+    else:
+        outcome_fact = "No changes were made."
+
+    if reason:
+        cause = reason if reason.endswith((".", "!", "?")) else f"{reason}."
+        return f"Failed — {cause} {outcome_fact}"
+    return f"Failed — {outcome_fact}"
 
 
 class RunProgress:
@@ -357,13 +387,17 @@ def failed_event(
     """Terminal FAILED update carrying the user-facing error message.
 
     `code` is the stable machine-readable reason (see errors.py) and rides the
-    progress struct as `errorCode`, so a caller branches on it instead of
-    matching prose that is free to change. The rejections that happen before a
-    run starts carry no accumulated progress, hence `progress` is optional.
+    progress struct as `error.code`, so a caller branches on it instead of
+    matching prose that is free to change. Nested under `error` rather than a
+    flat `errorCode` key: it is terminal-only, unlike the rest of the struct's
+    accumulated run progress, and nesting leaves room for sibling fields
+    (e.g. a future `error.retryable`) without crowding the progress
+    namespace. The rejections that happen before a run starts carry no
+    accumulated progress, hence `progress` is optional.
     """
     merged = dict(progress or {})
     if code:
-        merged["errorCode"] = code
+        merged["error"] = {"code": code}
     return status_event(
         task,
         state=TaskState.TASK_STATE_FAILED,
@@ -658,11 +692,16 @@ def spec_artifact_event(task: Task, *, path: str, content: str) -> TaskArtifactU
 
 def _result_payload(result: "EvolutionResult") -> EvolutionResultActionPayload:
     """The run result as the extension's published wire payload."""
+    error = (
+        EvolutionError(details=result.error, reason=getattr(result, "error_reason", None))
+        if result.error
+        else None
+    )
     return EvolutionResultActionPayload(
         outcome=result.outcome,
         branch=result.branch,
         commit_sha=result.commit_sha,
-        error=result.error,
+        error=error,
         summary=getattr(result, "summary", None),
         resumed=getattr(result, "resumed", False),
         commit_count=getattr(result, "commit_count", None),
@@ -713,17 +752,18 @@ def cancel_result_message(task: Task, result: "EvolutionResult") -> Message:
     branch = getattr(result, "branch", None)
     if rescue_pushed and branch:
         # The one thing worth saying: the work is not lost, and where it is.
-        text = f"Cancelled — work completed so far is preserved on branch {branch}"
+        fact = f"Cancelled — work completed so far is preserved on branch {branch}."
     elif rescue_path:
         # Deliberately not naming the bundle path in prose: it is a filesystem
         # location on the improver's own machine, actionable by an operator and
         # nobody else. It rides the payload, where that operator reads it.
-        text = (
+        fact = (
             "Cancelled — work completed so far was saved on the improver and "
-            "needs an operator to restore it"
+            "needs an operator to restore it."
         )
     else:
-        text = "Cancelled"
+        fact = "Cancelled."
+    text = fact
 
     data_part = new_data_part(
         _result_payload(result).model_dump(mode="json", by_alias=True, exclude_none=True)
@@ -749,6 +789,7 @@ def _terminal_text(result: "EvolutionResult", location: str) -> str:
     reads as the answer to "what happened", with `location` as the follow-up
     "and here's where to find it".
     """
+    location = f"{location}." if not location.endswith((".", "!", "?")) else location
     summary = getattr(result, "summary", None)
     if summary:
         return f"{summary}\n\n{location}"
@@ -789,8 +830,7 @@ def result_events(
 
     artifact_event = _result_artifact_event(task, result)
     if result.outcome == "failed":
-        # `result.error` rides the artifact above, where an operator reads it.
-        terminal = failed_event(task, error=_RUN_FAILED_TEXT, progress=terminal_progress)
+        terminal = failed_event(task, error=_failed_text(result), progress=terminal_progress)
     elif result.outcome == "no_change":
         terminal = status_event(
             task,

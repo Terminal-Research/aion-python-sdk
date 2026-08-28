@@ -7,8 +7,9 @@ surface (stream/cancel). Stream-event stand-ins carry the toolkit's class
 names, since the event mapper discriminates by name."""
 
 import asyncio
+import sys
 from dataclasses import dataclass
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 from typing import Optional
 from unittest.mock import AsyncMock, patch
 
@@ -45,6 +46,7 @@ from aion.core.runtime.context.registry import AionRuntimeContextRegistry
 from aion.server.a2a.utils import is_ephemeral_status_event
 from aion.server.agent.execution.extensions.evolution import EvolutionTaskHandler
 from aion.server.agent.execution.extensions.evolution import events as evolution_events
+from aion.server.agent.execution.extensions.errors import ExtensionPreflightError
 from aion.server.agent.execution.extensions.evolution.errors import (
     ExtensionSetupError,
     UnsupportedDirectiveError,
@@ -298,29 +300,82 @@ class TestAvailability:
         assert "behaviour-evolution toolkit" in result.reason
 
     @pytest.mark.anyio
-    async def test_unavailable_when_codex_provider_unset(self, monkeypatch):
-        """A worker factory being injected (DI seam for tests) does not skip
-        the CODEX_PROVIDER pre-flight - a real deployment with no build_worker
-        override would otherwise fail only on the first request."""
+    async def test_available_regardless_of_codex_provider(self, monkeypatch):
+        """CODEX_PROVIDER is runtime config, not an install-time fact: some
+        deployments set it onto an already-running pod after startup, and
+        availability()'s result is cached for the executor's whole process
+        lifetime (see request_executor.create's mark_unavailable). Caching a
+        missing/unknown CODEX_PROVIDER here would wedge such a deployment as
+        permanently unavailable until a restart. It is instead validated per
+        request in build_worker(), which always sees the live environment."""
         monkeypatch.delenv("CODEX_PROVIDER", raising=False)
         handler = _handler(worker=FakeWorker(_result()))
         config = SimpleNamespace(enabled_extensions=[EvolutionTaskHandler.uri])
 
         result = await handler.availability(config)
 
-        assert result.available is False
-        assert "CODEX_PROVIDER" in result.reason
+        assert result.available is True
+
+
+class TestPreflight:
+    @pytest.mark.anyio
+    async def test_noop_when_build_worker_injected(self):
+        """The build_worker DI seam (tests) bypasses the real toolkit
+        entirely, so there is no real env to check - preflight must not
+        pretend otherwise."""
+        handler = _handler(worker=FakeWorker(_result()))
+        ctx = _make_context()
+
+        await handler.preflight(ctx)  # must not raise
 
     @pytest.mark.anyio
-    async def test_unavailable_when_codex_provider_unknown(self, monkeypatch):
-        monkeypatch.setenv("CODEX_PROVIDER", "openai")
-        handler = _handler(worker=FakeWorker(_result()))
-        config = SimpleNamespace(enabled_extensions=[EvolutionTaskHandler.uri])
+    async def test_noop_when_toolkit_not_installed(self, monkeypatch):
+        """When the optional toolkit is absent, `from .tools_factory import
+        ...` fails - preflight must fail open here, the same way
+        availability() already treats a missing toolkit as its own, separate
+        rejection rather than raising out of an unrelated check. Forced via
+        the `sys.modules[name] = None` sentinel (CPython raises
+        ModuleNotFoundError for it) since the toolkit is actually installed
+        in this repo's dev environment (editable install of the sibling
+        aion-toolkit-behaviour-evolution-python checkout)."""
+        monkeypatch.setitem(
+            sys.modules,
+            "aion.server.agent.execution.extensions.evolution.tools_factory",
+            None,
+        )
+        handler = EvolutionTaskHandler()
+        ctx = _make_context()
 
-        result = await handler.availability(config)
+        await handler.preflight(ctx)  # must not raise
 
-        assert result.available is False
-        assert "CODEX_PROVIDER" in result.reason
+    @pytest.mark.anyio
+    async def test_raises_extension_preflight_error_on_setup_error(self, monkeypatch):
+        """A deployment env problem (e.g. missing GITHUB_TOKEN) must reject
+        the request as ExtensionPreflightError - the executor turns that into
+        a JSON-RPC error before any task is created (see request_executor).
+        The toolkit isn't installed in this test env, so tools_factory is
+        stood in via sys.modules rather than exercising the real one (that
+        happens in test_evolution_tools_factory.py, gated on the toolkit)."""
+        fake_tools_factory = ModuleType(
+            "aion.server.agent.execution.extensions.evolution.tools_factory"
+        )
+
+        def _check_environment(daemon):
+            raise ExtensionSetupError("GITHUB_TOKEN is not set - required to push the evolution branch")
+
+        fake_tools_factory.check_environment = _check_environment
+        monkeypatch.setitem(
+            sys.modules,
+            "aion.server.agent.execution.extensions.evolution.tools_factory",
+            fake_tools_factory,
+        )
+
+        handler = EvolutionTaskHandler()
+        ctx = _make_context()
+
+        with _patch_runtime(_runtime_ctx(with_directive=False)):
+            with pytest.raises(ExtensionPreflightError, match="GITHUB_TOKEN"):
+                await handler.preflight(ctx)
 
 
 class TestEventKindDriftAtBindTime:
@@ -498,9 +553,11 @@ class TestStream:
         assert captured["scope"] == "implement"
 
     @pytest.mark.anyio
-    async def test_setup_error_hides_deployment_detail_behind_a_code(self):
-        """A misconfigured deployment is the operator's problem, not the
-        caller's: they get a stable code, not the name of an env var."""
+    async def test_setup_error_carries_the_reason_and_a_stable_code(self):
+        """The caller is this deployment's own trusted control plane, so a
+        setup failure names the reason (env var, missing value) rather than
+        hiding it behind a generic string — the code stays stable for
+        callers that branch on it programmatically."""
 
         def _raise(parsed, daemon):
             raise ExtensionSetupError("CODEX_PROVIDER is not set")
@@ -513,8 +570,8 @@ class TestStream:
 
         assert len(out) == 1
         assert out[0].status.state == TaskState.TASK_STATE_FAILED
-        assert "CODEX_PROVIDER" not in out[0].status.message.parts[0].text
-        assert _progress(out[0])["errorCode"] == "misconfigured_deployment"
+        assert "CODEX_PROVIDER" in out[0].status.message.parts[0].text
+        assert _progress(out[0])["error"]["code"] == "misconfigured_deployment"
 
     @pytest.mark.anyio
     async def test_unsupported_directive_keeps_its_detail(self):
@@ -532,7 +589,7 @@ class TestStream:
 
         text = out[0].status.message.parts[0].text
         assert "mode='directive'" in text
-        assert _progress(out[0])["errorCode"] == "unsupported_directive"
+        assert _progress(out[0])["error"]["code"] == "unsupported_directive"
 
     @pytest.mark.anyio
     async def test_worker_crash_fails_task(self):
@@ -545,7 +602,7 @@ class TestStream:
         assert out[-1].status.state == TaskState.TASK_STATE_FAILED
         # A wiring bug's text is a traceback fragment; the caller gets a code.
         assert "boom" not in out[-1].status.message.parts[0].text
-        assert _progress(out[-1])["errorCode"] == "internal_error"
+        assert _progress(out[-1])["error"]["code"] == "internal_error"
         assert handler._running == {}
 
     @pytest.mark.anyio

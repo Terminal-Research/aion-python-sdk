@@ -34,6 +34,7 @@ from aion.core.runtime.context.registry import AionRuntimeContextRegistry
 from aion.server.a2a.utils import is_ephemeral_status_event
 
 from ..availability import ExtensionAvailability
+from ..errors import ExtensionPreflightError
 from . import events
 from .directive import ParsedDirective, parse_directive
 from .errors import (
@@ -42,8 +43,6 @@ from .errors import (
     EvolutionHandlerError,
     ExtensionSetupError,
 )
-from .provider import resolve_provider
-
 if TYPE_CHECKING:
     from a2a.server.agent_execution import RequestContext
     from aion.core.a2a.extensions.daemon import DaemonExtensionPayload
@@ -169,6 +168,19 @@ class EvolutionTaskHandler:
         self._running: dict[str, _RunHandle] = {}
 
     async def availability(self, config: "AgentConfig") -> ExtensionAvailability:
+        """Static capability check only — install-time facts that cannot change
+        without a redeploy, never runtime env config.
+
+        Deliberately excludes `resolve_provider()`/`CODEX_PROVIDER` and every
+        other env var checked in tools_factory.py: this result is cached for
+        the executor's whole process lifetime (see request_executor.create's
+        mark_unavailable), but some deployments configure secrets onto an
+        already-running pod after startup. Caching a runtime-config check
+        here would wedge such a deployment as permanently "unavailable" until
+        a restart, even after the operator fixes it. Runtime config is
+        instead validated per request in build_worker(), which always sees
+        the live environment — see ExtensionSetupError's raise sites.
+        """
         enabled = getattr(config, "enabled_extensions", None) or ()
         if self.uri not in enabled:
             return ExtensionAvailability.unavailable(
@@ -181,12 +193,33 @@ class EvolutionTaskHandler:
                 "but the behaviour-evolution toolkit package is "
                 "not installed on this deployment"
             )
-        try:
-            resolve_provider()
-        except ExtensionSetupError as ex:
-            return ExtensionAvailability.unavailable(str(ex))
         _warn_on_event_kind_drift()
         return ExtensionAvailability.ok()
+
+    async def preflight(self, context: "RequestContext") -> None:
+        """Reject a request whose deployment environment cannot serve it,
+        before its task is created - see ExtensionPreflightError.
+
+        Runs only tools_factory.check_environment()'s checks - the subset of
+        build_worker()'s that need just `daemon`, not a parsed directive.
+        Directive validity itself is still discovered in stream(), which
+        already reports it as a FAILED task naming the offending request
+        field: that's the caller's request being wrong, not the deployment,
+        so there's no reason to preflight it here.
+        """
+        if self._build_worker is not None:
+            return  # DI seam for tests - no real toolkit env to check
+        try:
+            from .tools_factory import check_environment
+        except ModuleNotFoundError:
+            return  # availability() already rejects an enabled-but-missing toolkit
+        runtime_context = await AionRuntimeContextRegistry.aget_current_context()
+        daemon = runtime_context.get_daemon() if runtime_context is not None else None
+        try:
+            check_environment(daemon)
+        except ExtensionSetupError as ex:
+            logger.warning("evolution preflight rejected [%s]: %s", ex.code, ex)
+            raise ExtensionPreflightError(ex.client_text) from ex
 
     async def stream(
         self, context: "RequestContext"
@@ -343,5 +376,7 @@ class EvolutionTaskHandler:
         try:
             from .tools_factory import build_worker
         except ModuleNotFoundError as ex:
-            raise ExtensionSetupError(f"behaviour-evolution toolkit is not installed: {ex}") from ex
+            raise ExtensionSetupError(
+                f"behaviour-evolution toolkit is not installed: missing module {ex.name!r}"
+            ) from ex
         return build_worker(parsed, daemon)

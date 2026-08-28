@@ -17,16 +17,16 @@ Each error carries two things the handler needs to keep apart:
   progress struct, so the caller can branch on *why* without parsing prose.
   Adding a code is a contract change; changing an existing one breaks callers.
 - `client_text` — what the caller is actually told. It defaults to the
-  exception message and is narrowed only where that message describes the
-  deployment rather than the request: the improver's environment (which env
-  vars are missing, which binary is absent) is the operator's business, and
-  the caller is a client on the other side of an A2A boundary. The full
-  message always reaches the logs, which is where whoever owns the
-  deployment is looking.
+  exception message and is narrowed only where a raise site cannot guarantee
+  its message is free of host/deployment detail (see UnsupportedDirectiveError
+  vs ExtensionSetupError below) — not by whose fault the failure is. The full
+  message (via `from ex` chaining) always reaches the logs too.
 
-The split is drawn by *whose fault it is*, not by severity. A caller who sent
-a directive this deployment cannot serve gets the detail, because only that
-detail tells them what to send instead.
+The caller on the other side of the A2A boundary is this deployment's own
+trusted control plane — the same party that operates the deployment — so
+there is no confidentiality boundary to defend by default; the bar for
+narrowing a message is "can this leak something host-specific", not "is this
+the deployment's fault".
 """
 
 from __future__ import annotations
@@ -74,19 +74,19 @@ class DirectiveError(EvolutionHandlerError):
 class ExtensionSetupError(EvolutionHandlerError):
     """The evolution extension is enabled but its environment is not usable.
 
-    Narrowed on the way out: the message names deployment internals (env var
-    names, binaries, endpoints) that a caller can neither act on nor should
-    learn from an error string.
+    Not narrowed: every raise site in tools_factory.py/provider.py/handler.py
+    builds its message from known, non-secret parts (env var names, accepted
+    values, a missing module's `.name`) — never a bare `str(exception)` from a
+    third party that could carry a filesystem path or similar host detail. As
+    long as that invariant holds, the message is safe to hand to the caller,
+    and doing so is what lets a FAILED task actually say why: the caller is
+    the trusted control plane calling its own deployment, i.e. the operator
+    with the full picture, not an untrusted third party being told to go ask
+    someone else. Secrets (tokens, keys) never appear in these messages by
+    construction — only their *names* and whether they're set.
     """
 
     code = "misconfigured_deployment"
-
-    @property
-    def client_text(self) -> str:
-        return (
-            "This deployment is not configured to run evolutions. "
-            "The improver's operator has the details."
-        )
 
 
 class UnsupportedDirectiveError(ExtensionSetupError):

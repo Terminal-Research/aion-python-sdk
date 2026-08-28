@@ -451,7 +451,9 @@ class TestResultEvents:
         assert terminal.status.state == TaskState.TASK_STATE_COMPLETED
         # Without a pull request the branch is the user's only pointer to the
         # work, so it is named — but the commit sha stays on the artifact.
-        assert _text(terminal) == "Done — changes are on branch evolution/ctx-1"
+        assert _text(terminal) == (
+            "Done — changes are on branch evolution/ctx-1."
+        )
         assert "abc1234" not in _text(terminal)
 
     def test_resumed_run_reports_resumed_flag(self):
@@ -467,7 +469,9 @@ class TestResultEvents:
         assert data["prUrl"] == "https://github.com/acme/x/pull/7"
         # A pull request is somewhere the user can go, so it replaces the
         # branch name rather than joining it.
-        assert _text(out[1]) == "Done — ready for review: https://github.com/acme/x/pull/7"
+        assert _text(out[1]) == (
+            "Done — ready for review: https://github.com/acme/x/pull/7."
+        )
         assert "evolution/ctx-1" not in _text(out[1])
 
     def test_executor_summary_precedes_the_location_line(self):
@@ -481,7 +485,7 @@ class TestResultEvents:
         )
         assert _text(out[1]) == (
             "Added a /test command node and wired it into the graph.\n\n"
-            "Done — ready for review: https://github.com/acme/x/pull/7"
+            "Done — ready for review: https://github.com/acme/x/pull/7."
         )
 
     def test_no_change_completes_with_explanation(self):
@@ -496,7 +500,9 @@ class TestResultEvents:
         artifact_event, terminal = out
         assert MessageToDict(artifact_event.artifact.parts[0].data)["outcome"] == "no_change"
         assert terminal.status.state == TaskState.TASK_STATE_COMPLETED
-        assert _text(terminal) == "No changes were needed"
+        assert _text(terminal) == (
+            "No changes were needed."
+        )
 
     def test_failed_reports_error_in_artifact_and_status(self):
         out = _result_events(
@@ -513,13 +519,117 @@ class TestResultEvents:
 
         artifact_event, terminal = out
         # The diagnostic reaches the operator on the artifact...
-        assert MessageToDict(artifact_event.artifact.parts[0].data)["error"] == "push denied"
+        assert (
+            MessageToDict(artifact_event.artifact.parts[0].data)["error"]["details"]
+            == "push denied"
+        )
         assert terminal.status.state == TaskState.TASK_STATE_FAILED
-        # ...while the person who asked for the change reads a fixed sentence.
-        # A toolkit failure is `str(exc)`, which for an executor error carries
-        # CLI flags and a stderr tail.
-        assert _text(terminal) == events._RUN_FAILED_TEXT
+        # ...while the person who asked for the change reads a short, safe
+        # statement of what was (not) obtained. A toolkit failure is
+        # `str(exc)`, which for an executor error carries CLI flags and a
+        # stderr tail, so it never lands in this text.
+        assert _text(terminal) == (
+            "Failed — No changes were made."
+        )
         assert "push denied" not in _text(terminal)
+
+    def test_failed_with_rescued_branch_names_it(self):
+        out = _result_events(
+            _task(),
+            _result(
+                "failed",
+                branch="evolution/ctx-1",
+                commit_sha=None,
+                error="push denied",
+                commit_count=None,
+                spec_path=None,
+                rescue_pushed=True,
+            ),
+        )
+        _, terminal = out
+        assert _text(terminal) == (
+            "Failed — Work completed so far is preserved on branch "
+            "evolution/ctx-1."
+        )
+
+    def test_failed_with_rescue_bundle_points_to_operator(self):
+        out = _result_events(
+            _task(),
+            _result(
+                "failed",
+                branch=None,
+                commit_sha=None,
+                error="push denied",
+                commit_count=None,
+                spec_path=None,
+                rescue_path="/var/aion/rescue/ctx-1.bundle",
+            ),
+        )
+        _, terminal = out
+        assert _text(terminal) == (
+            "Failed — Work completed so far was saved on the improver and "
+            "needs an operator to restore it."
+        )
+
+    def test_failed_leads_with_error_reason_when_present(self):
+        """The tool's own short, safe explanation — e.g. an unsupported
+        model for the account — is worth more to the requester than a
+        content-free 'the run could not be completed'."""
+        out = _result_events(
+            _task(),
+            _result(
+                "failed",
+                branch=None,
+                commit_sha=None,
+                error=(
+                    "codex exec ... failed (1): ... — codex reported: The "
+                    "'gpt-5.6-lunsa' model is not supported when using Codex "
+                    "with a ChatGPT account."
+                ),
+                error_reason=(
+                    "The 'gpt-5.6-lunsa' model is not supported when using "
+                    "Codex with a ChatGPT account."
+                ),
+                commit_count=None,
+                spec_path=None,
+            ),
+        )
+        artifact_event, terminal = out
+        assert _text(terminal) == (
+            "Failed — The 'gpt-5.6-lunsa' model is not supported when using "
+            "Codex with a ChatGPT account. No changes were made."
+        )
+        # The raw diagnostic (CLI invocation, stderr) never lands in the
+        # chat-facing text, even when a reason is available.
+        assert "codex exec" not in _text(terminal)
+        # ...while the full diagnostic and the reason both ride the artifact,
+        # grouped under one `error` object.
+        data = MessageToDict(artifact_event.artifact.parts[0].data)
+        assert "codex exec" in data["error"]["details"]
+        assert data["error"]["reason"] == (
+            "The 'gpt-5.6-lunsa' model is not supported when using Codex "
+            "with a ChatGPT account."
+        )
+
+    def test_failed_combines_reason_and_rescued_branch(self):
+        out = _result_events(
+            _task(),
+            _result(
+                "failed",
+                branch="evolution/ctx-1",
+                commit_sha=None,
+                error="push denied — remote: protected branch",
+                error_reason="The remote rejected the push: branch is protected.",
+                commit_count=None,
+                spec_path=None,
+                rescue_pushed=True,
+            ),
+        )
+        _, terminal = out
+        assert _text(terminal) == (
+            "Failed — The remote rejected the push: branch is protected. "
+            "Work completed so far is preserved on branch evolution/ctx-1."
+        )
 
     def test_cancelled_emits_nothing(self):
         """The A2A cancel flow owns the terminal CANCELED event; a cancelled
@@ -770,7 +880,7 @@ class TestCancelResultMessage:
 
     def test_nothing_to_rescue_still_reports_the_outcome(self):
         message = events.cancel_result_message(_task(), _result("cancelled", branch=None))
-        assert message.parts[0].text == "Cancelled"
+        assert message.parts[0].text == "Cancelled."
         assert MessageToDict(message.parts[1].data)["outcome"] == "cancelled"
 
 

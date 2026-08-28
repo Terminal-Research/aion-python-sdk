@@ -19,7 +19,10 @@ from aion.core.a2a.extensions.behaviour_evolution import (  # noqa: E402
 )
 from aion.server.agent.execution.extensions.evolution.directive import ParsedDirective  # noqa: E402
 from aion.server.agent.execution.extensions.evolution.errors import ExtensionSetupError  # noqa: E402
-from aion.server.agent.execution.extensions.evolution.tools_factory import build_worker  # noqa: E402
+from aion.server.agent.execution.extensions.evolution.tools_factory import (  # noqa: E402
+    build_worker,
+    check_environment,
+)
 from aion.toolkits.behaviour_evolution import LocalAccess, RemoteAccess  # noqa: E402
 
 REPO_URL = "https://github.com/acme/target-agent.git"
@@ -89,6 +92,44 @@ def _set_env(monkeypatch, **overrides):
     for key, value in values.items():
         if value is not None:
             monkeypatch.setenv(key, value)
+
+
+class TestCheckEnvironment:
+    """check_environment() is build_worker()'s per-request preflight subset
+    (see EvolutionTaskHandler.preflight) - only the checks that need just
+    `daemon`, not a parsed directive."""
+
+    def test_passes_with_valid_environment(self, monkeypatch):
+        _set_env(monkeypatch)
+        check_environment(_daemon())  # must not raise
+
+    def test_missing_github_token_raises_setup_error(self, monkeypatch):
+        _set_env(monkeypatch, GITHUB_TOKEN=None)
+        with pytest.raises(ExtensionSetupError, match="GITHUB_TOKEN"):
+            check_environment(_daemon())
+
+    def test_missing_codex_provider_raises_setup_error(self, monkeypatch):
+        _set_env(monkeypatch, CODEX_PROVIDER=None)
+        with pytest.raises(ExtensionSetupError, match="CODEX_PROVIDER"):
+            check_environment(_daemon())
+
+    def test_custom_provider_without_base_url_raises_setup_error(self, monkeypatch):
+        _set_env(monkeypatch, CODEX_BASE_URL=None)
+        with pytest.raises(ExtensionSetupError, match="CODEX_BASE_URL"):
+            check_environment(_daemon())
+
+    def test_aion_provider_without_daemon_identity_raises_setup_error(self, monkeypatch):
+        _set_env(monkeypatch, CODEX_PROVIDER="aion", CODEX_BASE_URL=None)
+        with pytest.raises(ExtensionSetupError, match="daemonAgentIdentityId"):
+            check_environment(_daemon(identity_id=None))
+
+    def test_aion_provider_with_daemon_identity_passes(self, monkeypatch):
+        _set_env(monkeypatch, CODEX_PROVIDER="aion", CODEX_BASE_URL=None)
+        check_environment(_daemon(identity_id="daemon-1"))  # must not raise
+
+    def test_local_session_provider_needs_no_daemon(self, monkeypatch):
+        _set_env(monkeypatch, CODEX_PROVIDER="local_session", CODEX_BASE_URL=None)
+        check_environment(None)  # must not raise
 
 
 class TestBuildWorker:

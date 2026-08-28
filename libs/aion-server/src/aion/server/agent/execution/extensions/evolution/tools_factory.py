@@ -145,6 +145,7 @@ __all__ = [
     "LLM_CONFIG_KEY",
     "SPECS_ROOT_CONFIG_KEY",
     "build_worker",
+    "check_environment",
 ]
 
 # aion.yaml configuration fields; the control plane parameterizes them back
@@ -157,6 +158,33 @@ SPECS_ROOT_CONFIG_KEY = "evolution_specs_root"
 # on the payload; new callers set the field directly. Not exported: nothing
 # outside this module resolves branch strategy from a daemon config var anymore.
 _BRANCH_STRATEGY_CONFIG_KEY = "evolution_branch_strategy"
+
+
+def check_environment(daemon: Optional["DaemonExtensionPayload"]) -> None:
+    """The subset of build_worker()'s checks that need only `daemon`, not a
+    parsed directive - safe to run as a per-request preflight before a task
+    exists (see EvolutionTaskHandler.preflight). Deliberately duplicated
+    rather than factored out of build_worker(): build_worker() still runs its
+    own copy of each check regardless, since not every caller goes through
+    preflight first (a resumed task, a test calling build_worker directly),
+    and re-checking is cheap and closes the race where env changes between
+    the two calls.
+
+    Raises:
+        ExtensionSetupError: same conditions as build_worker() for the parts
+            that do not depend on the directive.
+    """
+    if not os.environ.get("GITHUB_TOKEN"):
+        raise ExtensionSetupError("GITHUB_TOKEN is not set - required to push the evolution branch")
+
+    provider = resolve_provider()
+    if provider == CUSTOM and not os.environ.get("CODEX_BASE_URL"):
+        raise ExtensionSetupError("CODEX_BASE_URL is not set - required by CODEX_PROVIDER=custom")
+    if provider not in (LOCAL_SESSION, CUSTOM) and _daemon_principal_selector(daemon) is None:
+        raise ExtensionSetupError(
+            "daemon request carries no environment.daemonAgentIdentityId - "
+            "model usage cannot be attributed to a principal"
+        )
 
 
 def build_worker(

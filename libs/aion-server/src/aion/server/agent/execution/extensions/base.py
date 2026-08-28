@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Optional, Protocol
 from a2a.types import Message, TaskArtifactUpdateEvent, TaskStatusUpdateEvent
 
 from .availability import ExtensionAvailability
+from .errors import ExtensionPreflightError
 from .evolution import EvolutionTaskHandler
 
 if TYPE_CHECKING:
@@ -23,6 +24,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "ExtensionAvailability",
+    "ExtensionPreflightError",
     "ExtensionTaskHandler",
     "discover_extension_task_handlers",
     "ROUTED_EXTENSION_METADATA_KEY",
@@ -60,6 +62,18 @@ class ExtensionTaskHandler(Protocol):
         declare this extension - make it actionable.
         """
         ...
+
+    async def preflight(self, context: "RequestContext") -> None:
+        """Reject this specific request before its task is created.
+
+        Called once per request, after routing but before the task is
+        persisted - see ExtensionPreflightError. Raise it (or a subclass) to
+        reject; anything else is treated as success. The default is a no-op:
+        a handler with nothing to check per-request need not implement this
+        at all - the executor calls it via `getattr(handler, "preflight",
+        None)`, so an absent override is the same as one that always passes.
+        """
+        return None
 
     def stream(
         self, context: "RequestContext"
