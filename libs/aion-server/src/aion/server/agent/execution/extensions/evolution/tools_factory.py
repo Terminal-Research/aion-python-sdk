@@ -114,6 +114,7 @@ ExtensionSetupError rather than a raw ValueError from inside the toolkit.
 
 from __future__ import annotations
 
+import logging
 import os
 import shlex
 from typing import TYPE_CHECKING, Optional
@@ -136,6 +137,8 @@ from aion.toolkits.behaviour_evolution import (
 from .directive import ParsedDirective
 from .errors import ExtensionSetupError, UnsupportedDirectiveError
 from .provider import CUSTOM, LOCAL_SESSION, resolve_provider, warn_ignored_keys
+
+log = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from aion.core.a2a.extensions.behaviour_evolution import ModelPreferences, RunLimits
@@ -453,9 +456,29 @@ def _branch_strategy(daemon, requested: Optional[str]) -> str:
     return value
 
 
+_TRUTHY = ("1", "true", "yes", "on")
+_FALSY = ("0", "false", "no", "off")
+
+
 def _env_flag(name: str) -> bool:
-    """A boolean deployment env var: "1"/"true"/"yes"/"on" (any case) is True."""
-    return (os.environ.get(name) or "").strip().lower() in ("1", "true", "yes", "on")
+    """A boolean deployment env var: "1"/"true"/"yes"/"on" (any case) is True.
+
+    A non-empty value that is neither truthy nor a recognized falsy spelling
+    (e.g. a typo) is treated as False, same as unset — but logged, so a
+    misspelled flag does not silently disable what the operator meant to
+    enable.
+    """
+    raw = (os.environ.get(name) or "").strip().lower()
+    if raw in _TRUTHY:
+        return True
+    if raw and raw not in _FALSY:
+        log.warning(
+            "%s=%r is not a recognized boolean value (expected one of %s) - treating as false",
+            name,
+            os.environ.get(name),
+            ", ".join(_TRUTHY),
+        )
+    return False
 
 
 def _env_float(name: str) -> Optional[float]:
