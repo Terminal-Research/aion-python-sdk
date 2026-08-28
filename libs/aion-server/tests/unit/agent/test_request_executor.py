@@ -235,7 +235,7 @@ class TestCancel:
 
             await executor.cancel(ctx, event_queue)
 
-            agent.cancel.assert_awaited_once_with(context=ctx)
+            agent.cancel.assert_awaited_once_with(context=ctx, event_queue=event_queue)
             MockUpdater.assert_called_once_with(event_queue, task.id, task.context_id)
             updater_instance.cancel.assert_awaited_once()
 
@@ -254,7 +254,7 @@ class TestCancel:
 
             await executor.cancel(ctx, event_queue)
 
-            agent.cancel.assert_awaited_once_with(context=ctx)
+            agent.cancel.assert_awaited_once_with(context=ctx, event_queue=event_queue)
             updater_instance.cancel.assert_awaited_once()
 
     @pytest.mark.anyio
@@ -271,7 +271,7 @@ class TestCancel:
 
             await executor.cancel(ctx, event_queue)
 
-            agent.cancel.assert_awaited_once_with(context=ctx)
+            agent.cancel.assert_awaited_once_with(context=ctx, event_queue=event_queue)
             updater_instance.cancel.assert_awaited_once()
 
     @pytest.mark.anyio
@@ -292,7 +292,7 @@ class TestCancel:
 
             await executor.cancel(ctx, event_queue)
 
-            handler.cancel.assert_awaited_once_with(context=ctx)
+            handler.cancel.assert_awaited_once_with(context=ctx, event_queue=event_queue)
             agent.cancel.assert_not_awaited()
             updater_instance.cancel.assert_awaited_once()
 
@@ -315,7 +315,7 @@ class TestCancel:
 
             await executor.cancel(ctx, event_queue)
 
-            handler.cancel.assert_awaited_once_with(context=ctx)
+            handler.cancel.assert_awaited_once_with(context=ctx, event_queue=event_queue)
             agent.cancel.assert_not_awaited()
             updater_instance.cancel.assert_awaited_once()
 

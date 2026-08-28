@@ -20,6 +20,7 @@ from .evolution import EvolutionTaskHandler
 
 if TYPE_CHECKING:
     from a2a.server.agent_execution import RequestContext
+    from a2a.server.events import EventQueue
     from aion.core.config.models import AgentConfig
 
 __all__ = [
@@ -87,7 +88,9 @@ class ExtensionTaskHandler(Protocol):
         """Resume an interrupted task previously routed to this extension."""
         ...
 
-    async def cancel(self, context: "RequestContext") -> Optional["Message"]:
+    async def cancel(
+        self, context: "RequestContext", event_queue: "EventQueue"
+    ) -> Optional["Message"]:
         """Cancel a task previously routed to this extension.
 
         Called in place of the agent's framework-adapter cancel hook when the
@@ -96,12 +99,15 @@ class ExtensionTaskHandler(Protocol):
         not support cancellation - the executor still emits the terminal A2A
         CANCELED state either way.
 
-        May return a message for the executor to attach to that terminal
-        CANCELED. It is the only way a handler can report anything about a
-        cancelled task: the event consumer shuts down on the first terminal
-        state, so an event published after the CANCELED is dropped rather than
-        delivered late. A handler with nothing to add returns None, leaving the
-        CANCELED bare.
+        `event_queue` is the same queue `stream()`/`resume()` publish to: a
+        handler with something substantial to hand back (e.g. undelivered
+        work recovered as a downloadable artifact) enqueues it here, before
+        returning - the event consumer shuts down on the first terminal
+        state, so anything queued after the executor calls
+        `task_updater.cancel()` below would be dropped rather than delivered
+        late. Small closing text/data instead rides the return value: it
+        becomes the message attached to that terminal CANCELED itself. A
+        handler with nothing to add returns None, leaving the CANCELED bare.
         """
         ...
 

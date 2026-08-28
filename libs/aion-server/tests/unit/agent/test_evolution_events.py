@@ -424,6 +424,33 @@ class TestFailedEvent:
         assert _text(event) == "CODEX_PROVIDER is not set"
 
 
+class TestInternalErrorText:
+    """The crash path's message. It cannot name a cause — the cause is a
+    traceback — so what it owes the requester is the fate of their change."""
+
+    def test_names_the_stage_and_what_was_lost(self):
+        assert events.internal_error_text({"stage": "preparing"}) == (
+            "Failed — The improver hit an internal error while preparing to work "
+            "on your project. No changes were made. "
+            "The details are in the deployment's logs."
+        )
+
+    def test_delivering_crash_warns_that_work_may_be_stranded(self):
+        """The one stage where "no changes were made" would be a lie: the
+        change is written by then, only its delivery is unfinished."""
+        text = events.internal_error_text({"stage": "delivering"})
+        assert "may have been made but was not delivered" in text
+        assert "an operator can recover it" in text
+
+    def test_unknown_stage_still_states_the_outcome(self):
+        """A crash before the first phase event, or in a stage this extension
+        does not publish — the message degrades, it does not disappear."""
+        for progress in ({}, None, {"stage": "reporting"}):
+            text = events.internal_error_text(progress)
+            assert text.startswith("Failed — The improver hit an internal error.")
+            assert "No changes were delivered." in text
+
+
 class TestResultEvents:
     def test_succeeded_emits_schema_tagged_artifact_then_completed(self):
         out = _result_events(_task(), _result("succeeded"))
@@ -552,7 +579,11 @@ class TestResultEvents:
             "evolution/ctx-1."
         )
 
-    def test_failed_with_rescue_bundle_points_to_operator(self):
+    def test_failed_with_bundle_over_the_cap_says_the_work_was_lost(self):
+        """A bundle was created (real work existed) but exceeded the size the
+        improver can hand off — no path, no operator to name, so the text
+        says plainly that it was lost rather than implying a recovery
+        nothing downstream can perform."""
         out = _result_events(
             _task(),
             _result(
@@ -562,13 +593,13 @@ class TestResultEvents:
                 error="push denied",
                 commit_count=None,
                 spec_path=None,
-                rescue_path="/var/aion/rescue/ctx-1.bundle",
+                rescue_bundle_created=True,
             ),
         )
         _, terminal = out
         assert _text(terminal) == (
-            "Failed — Work completed so far was saved on the improver and "
-            "needs an operator to restore it."
+            "Failed — Work completed so far exceeded the size that could be "
+            "preserved and was lost."
         )
 
     def test_failed_leads_with_error_reason_when_present(self):
@@ -639,20 +670,20 @@ class TestResultEvents:
     def test_failed_with_rescue_reports_rescue_fields(self):
         """A failed run's rescue state travels on the result artifact: the
         client learns whether undelivered work was pushed to the evolution
-        branch (durable, resume picks it up) or fell back to a pod-local
-        bundle an operator must restore promptly."""
+        branch (durable, resume picks it up), survived as a bundle too large
+        to attach, or was pushed and needs nothing further."""
         out = _result_events(
             _task(),
             _result(
                 "failed",
                 error="the remote end hung up",
                 rescue_pushed=False,
-                rescue_path="/data/rescue-ctx-1.bundle",
+                rescue_bundle_created=True,
             ),
         )
 
         data = MessageToDict(out[0].artifact.parts[0].data)
-        assert data["rescuePath"] == "/data/rescue-ctx-1.bundle"
+        assert data["rescueBundleCreated"] is True
         assert "rescuePushed" not in data or data["rescuePushed"] is False
 
         out = _result_events(
@@ -660,14 +691,74 @@ class TestResultEvents:
         )
         data = MessageToDict(out[0].artifact.parts[0].data)
         assert data["rescuePushed"] is True
-        assert "rescuePath" not in data
+        assert "rescueBundleCreated" not in data or data["rescueBundleCreated"] is False
 
     def test_result_without_rescue_fields_still_maps(self):
         """An older toolkit's result object has no rescue fields — the mapping
         must degrade to defaults instead of raising."""
         out = _result_events(_task(), _result("failed", error="boom"))
         data = MessageToDict(out[0].artifact.parts[0].data)
-        assert "rescuePath" not in data
+        # Bools default to False and round-trip through the JSON mapping
+        # regardless (unlike an Optional field, `exclude_none` does not drop
+        # them) — same as `rescuePushed` right beside it.
+        assert data["rescueBundleCreated"] is False
+
+    def test_failed_with_rescue_bundle_attaches_it_and_says_so(self):
+        """A bundle read back under the size cap rides as its own artifact —
+        the terminal text points at it instead of claiming it was lost."""
+        out = _result_events(
+            _task(),
+            _result(
+                "failed",
+                branch=None,
+                commit_sha=None,
+                error="push denied",
+                commit_count=None,
+                spec_path=None,
+                rescue_bundle_created=True,
+                rescue_bundle=b"PACK-git-bundle-bytes",
+            ),
+        )
+        result_artifact, bundle_event, terminal = out
+        assert _text(terminal) == (
+            "Failed — Work completed so far was saved and is attached to "
+            "this task as a downloadable bundle."
+        )
+        assert isinstance(bundle_event, TaskArtifactUpdateEvent)
+        assert bundle_event.artifact.parts[0].raw == b"PACK-git-bundle-bytes"
+        assert bundle_event.artifact.parts[0].media_type == events.RESCUE_BUNDLE_MEDIA_TYPE
+        assert bundle_event.artifact.parts[0].filename == "rescue-ctx-1.bundle"
+        assert bundle_event.artifact.name == events.RESCUE_BUNDLE_ARTIFACT_NAME
+        # Emitted before the terminal status, never after — an event
+        # published once the terminal lands is dropped by the consumer.
+        assert out.index(bundle_event) < out.index(terminal)
+        # The bytes never get duplicated into the JSON result payload.
+        data = MessageToDict(result_artifact.artifact.parts[0].data)
+        assert "rescueBundle" not in data
+
+    def test_failed_without_bundle_bytes_says_the_work_was_lost(self):
+        """Over the size cap (or the read-back failed): `rescue_bundle_created`
+        alone, no bundle artifact — and the text is honest about the loss
+        rather than pointing at an operator nobody can reach."""
+        out = _result_events(
+            _task(),
+            _result(
+                "failed",
+                branch=None,
+                commit_sha=None,
+                error="push denied",
+                commit_count=None,
+                spec_path=None,
+                rescue_bundle_created=True,
+                rescue_bundle=None,
+            ),
+        )
+        assert len(out) == 2  # no bundle artifact in between
+        _, terminal = out
+        assert _text(terminal) == (
+            "Failed — Work completed so far exceeded the size that could be "
+            "preserved and was lost."
+        )
 
 
 class TestDurableEventsAreNeverEphemeral:
@@ -868,20 +959,64 @@ class TestCancelResultMessage:
         schema = MessageToDict(message.parts[1].metadata)[EVENT_EXTENSION_URI_V1]["schema"]
         assert schema == BEHAVIOUR_EVOLUTION_RESULT_ACTION_PAYLOAD_SCHEMA_V1
 
-    def test_bundle_path_stays_out_of_the_prose(self):
-        """The bundle is a path on the improver's own filesystem: an operator
-        acts on it, the caller cannot, so it rides the payload only."""
+    def test_bundle_over_the_cap_says_the_work_was_lost(self):
+        """A bundle existed (real work) but exceeded what could be handed
+        off, and there is no path or operator to point at instead."""
         message = events.cancel_result_message(
             _task(),
-            _result("cancelled", rescue_pushed=False, branch=None, rescue_path="/tmp/rescue.bundle"),
+            _result("cancelled", rescue_pushed=False, branch=None, rescue_bundle_created=True),
         )
-        assert "/tmp/rescue.bundle" not in message.parts[0].text
-        assert MessageToDict(message.parts[1].data)["rescuePath"] == "/tmp/rescue.bundle"
+        assert message.parts[0].text == (
+            "Cancelled — work completed so far exceeded the size that could "
+            "be preserved and was lost."
+        )
+        assert MessageToDict(message.parts[1].data)["rescueBundleCreated"] is True
 
     def test_nothing_to_rescue_still_reports_the_outcome(self):
         message = events.cancel_result_message(_task(), _result("cancelled", branch=None))
         assert message.parts[0].text == "Cancelled."
         assert MessageToDict(message.parts[1].data)["outcome"] == "cancelled"
+
+    def test_bundle_under_the_cap_names_it_but_carries_no_bytes(self):
+        """The message text says a bundle is attached, but the bytes
+        themselves never ride this message — `EvolutionTaskHandler.cancel()`
+        publishes them as their own artifact via `rescue_bundle_artifact_event`
+        before this message lands, same shape as the failed/completed path
+        (see `test_bundle_under_the_cap_matches_the_result_events_shape`)."""
+        message = events.cancel_result_message(
+            _task(),
+            _result(
+                "cancelled",
+                rescue_pushed=False,
+                branch=None,
+                rescue_bundle_created=True,
+                rescue_bundle=b"PACK-git-bundle-bytes",
+            ),
+        )
+        assert message.parts[0].text == (
+            "Cancelled — work completed so far was saved and is attached to "
+            "this task as a downloadable bundle."
+        )
+        assert len(message.parts) == 2
+        assert not any(hasattr(p, "raw") and p.raw for p in message.parts)
+
+    def test_bundle_under_the_cap_matches_the_result_events_shape(self):
+        """The cancel path's bundle artifact is produced by the exact same
+        function as the failed/completed path — one artifact shape for every
+        outcome, never a bundle-as-message-part special case."""
+        result = _result(
+            "cancelled",
+            rescue_pushed=False,
+            branch=None,
+            rescue_bundle_created=True,
+            rescue_bundle=b"PACK-git-bundle-bytes",
+        )
+        bundle_event = events.rescue_bundle_artifact_event(_task(), result)
+        assert bundle_event is not None
+        assert bundle_event.artifact.name == events.RESCUE_BUNDLE_ARTIFACT_NAME
+        assert bundle_event.artifact.parts[0].raw == b"PACK-git-bundle-bytes"
+        assert bundle_event.artifact.parts[0].media_type == events.RESCUE_BUNDLE_MEDIA_TYPE
+        assert bundle_event.artifact.parts[0].filename == "rescue-ctx-1.bundle"
 
 
 class TestStageIsOurVocabularyNotTheToolkitEnum:

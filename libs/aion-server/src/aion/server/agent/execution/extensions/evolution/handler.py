@@ -39,12 +39,12 @@ from . import events
 from .directive import ParsedDirective, parse_directive
 from .errors import (
     INTERNAL_ERROR_CODE,
-    INTERNAL_ERROR_TEXT,
     EvolutionHandlerError,
     ExtensionSetupError,
 )
 if TYPE_CHECKING:
     from a2a.server.agent_execution import RequestContext
+    from a2a.server.events import EventQueue
     from aion.core.a2a.extensions.daemon import DaemonExtensionPayload
     from aion.core.config.models import AgentConfig
     from aion.toolkits.behaviour_evolution import EvolutionResult, EvolutionWorker
@@ -56,7 +56,7 @@ _TOOLKIT_MODULE = "aion.toolkits.behaviour_evolution"
 # How long cancel() waits for a cancelled run to finish unwinding before giving
 # up on reporting its result. The wait exists because the toolkit's rescue -
 # pushing whatever the run had already committed - happens during that unwind,
-# and `rescue_pushed`/`rescue_path` are the caller's only word on whether the
+# and `rescue_pushed`/`rescue_bundle` are the caller's only word on whether the
 # work survived. Bounded because cancel() is a request someone is waiting on:
 # on timeout the terminal CANCELED still goes out, just without the result.
 _CANCEL_DRAIN_TIMEOUT_S = 60.0
@@ -291,12 +291,13 @@ class EvolutionTaskHandler:
         except Exception as ex:
             # Operational errors never escape the worker's stream (they land
             # in result.outcome/error); anything raised here is a wiring bug.
-            # Its text is a traceback fragment, so the caller gets the generic
-            # internal-error wording and the detail stays in the log above.
+            # Its text is a traceback fragment, so the caller is told what the
+            # run had reached rather than what threw — the accumulated progress
+            # is the only usable fact here — and the detail stays in the log.
             logger.exception("evolution run for task %s crashed: %s", task.id, ex)
             yield events.failed_event(
                 task,
-                error=INTERNAL_ERROR_TEXT,
+                error=events.internal_error_text(progress.snapshot()),
                 code=INTERNAL_ERROR_CODE,
                 progress=progress.snapshot(),
             )
@@ -326,16 +327,21 @@ class EvolutionTaskHandler:
             for event in events.result_events(task, result, progress=progress):
                 yield event
 
-    async def cancel(self, context: "RequestContext") -> Optional[Message]:
+    async def cancel(
+        self, context: "RequestContext", event_queue: "EventQueue"
+    ) -> Optional[Message]:
         """Cancel the run and report what became of the work it had done.
 
         Returns the message the executor attaches to the terminal CANCELED, or
         None when there is nothing to report. Waiting for the unwind before
         returning is the point: the toolkit rescues undelivered commits during
-        it, and a result published after the terminal CANCELED would be dropped
-        by the event consumer, which shuts its queue down on any terminal
-        state. Waiting here puts the report *on* that terminal instead of
-        racing it.
+        it, and anything published after the terminal CANCELED would be
+        dropped by the event consumer, which shuts its queue down on any
+        terminal state. A rescued bundle is published as its own artifact on
+        `event_queue` here, before that terminal lands - the same artifact
+        shape `result_events()` uses on the failed path, so a client sees one
+        consistent thing regardless of how the run ended. The returned
+        message carries only the closing text/data for the terminal itself.
         """
         task = context.current_task
         handle = self._running.get(task.id) if task is not None else None
@@ -361,6 +367,9 @@ class EvolutionTaskHandler:
             # and _drive already reported it. Saying anything more here would
             # contradict a result the caller has in hand.
             return None
+        bundle_event = events.rescue_bundle_artifact_event(task, result)
+        if bundle_event is not None:
+            await event_queue.enqueue_event(bundle_event)
         return events.cancel_result_message(task, result)
 
     async def _make_worker(self, parsed: ParsedDirective) -> "EvolutionWorker":

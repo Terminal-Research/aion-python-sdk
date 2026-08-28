@@ -606,6 +606,31 @@ class TestStream:
         assert handler._running == {}
 
     @pytest.mark.anyio
+    async def test_worker_crash_text_says_where_the_run_had_got_to(self):
+        """The traceback cannot be shown, but the run's own progress can: a
+        crash after the executor started means work may have been done, and
+        the requester is told that instead of a bare "internal error"."""
+
+        class CrashMidRun(FakeWorker):
+            async def stream(self):
+                yield _phase("executing")
+                raise RuntimeError("boom")
+
+        handler = _handler(worker=CrashMidRun(_result()))
+        ctx = _make_context()
+
+        with _patch_runtime(_runtime_ctx()):
+            out = [event async for event in handler.stream(ctx)]
+
+        text = out[-1].status.message.parts[0].text
+        assert text == (
+            "Failed — The improver hit an internal error while making the change. "
+            "Any work in progress was lost; no changes were delivered. "
+            "The details are in the deployment's logs."
+        )
+        assert _progress(out[-1])["stage"] == "executing"
+
+    @pytest.mark.anyio
     async def test_cancelled_outcome_emits_no_terminal(self):
         """The A2A cancel flow (executor's TaskUpdater.cancel) owns the
         terminal CANCELED event - the stream must not race it."""
@@ -746,6 +771,17 @@ class TestResume:
         assert out[-1].status.state == TaskState.TASK_STATE_COMPLETED
 
 
+class _FakeEventQueue:
+    """Collects whatever `cancel()` enqueues, standing in for the real
+    a2a-sdk `EventQueue` the executor hands the handler."""
+
+    def __init__(self):
+        self.events = []
+
+    async def enqueue_event(self, event):
+        self.events.append(event)
+
+
 def _inflight(handler, result=None, *, finished=True) -> FakeWorker:
     """Register a run as in flight on `handler`, as _drive would.
 
@@ -767,7 +803,7 @@ class TestCancel:
         handler = _handler(worker=FakeWorker(_result()))
         worker = _inflight(handler, _result("cancelled"))
 
-        await handler.cancel(_make_context())
+        await handler.cancel(_make_context(), _FakeEventQueue())
 
         assert worker.cancel_called is True
 
@@ -782,7 +818,7 @@ class TestCancel:
             _result("cancelled", rescue_pushed=True, branch="evolution/ctx-456"),
         )
 
-        message = await handler.cancel(_make_context())
+        message = await handler.cancel(_make_context(), _FakeEventQueue())
 
         assert isinstance(message, Message)
         assert "evolution/ctx-456" in message.parts[0].text
@@ -791,13 +827,41 @@ class TestCancel:
         assert payload["rescuePushed"] is True
 
     @pytest.mark.anyio
+    async def test_cancel_publishes_the_rescue_bundle_as_an_artifact(self):
+        """Unified with the failed/completed path: the bundle rides on
+        `event_queue` as its own artifact, published before the terminal
+        message is returned — not as bytes riding the message itself."""
+        handler = _handler(worker=FakeWorker(_result()))
+        _inflight(
+            handler,
+            _result(
+                "cancelled",
+                rescue_pushed=False,
+                branch=None,
+                rescue_bundle_created=True,
+                rescue_bundle=b"PACK-git-bundle-bytes",
+            ),
+        )
+        queue = _FakeEventQueue()
+
+        message = await handler.cancel(_make_context(), queue)
+
+        assert len(queue.events) == 1
+        bundle_event = queue.events[0]
+        assert bundle_event.artifact.name == evolution_events.RESCUE_BUNDLE_ARTIFACT_NAME
+        assert bundle_event.artifact.parts[0].raw == b"PACK-git-bundle-bytes"
+        # No raw bytes on the terminal message itself — the artifact already
+        # carries them.
+        assert not any(hasattr(p, "raw") and p.raw for p in message.parts)
+
+    @pytest.mark.anyio
     async def test_cancel_says_nothing_when_the_run_already_finished(self):
         """The run reached its own outcome inside the race window and _drive
         already reported it; a second report here would contradict it."""
         handler = _handler(worker=FakeWorker(_result()))
         _inflight(handler, _result("succeeded"))
 
-        assert await handler.cancel(_make_context()) is None
+        assert await handler.cancel(_make_context(), _FakeEventQueue()) is None
 
     @pytest.mark.anyio
     async def test_cancel_gives_up_reporting_rather_than_hanging(self, monkeypatch):
@@ -807,11 +871,11 @@ class TestCancel:
         handler = _handler(worker=FakeWorker(_result()))
         worker = _inflight(handler, _result("cancelled"), finished=False)
 
-        assert await handler.cancel(_make_context()) is None
+        assert await handler.cancel(_make_context(), _FakeEventQueue()) is None
         assert worker.cancel_called is True
 
     @pytest.mark.anyio
     async def test_cancel_without_inflight_run_raises_unsupported(self):
         handler = _handler(worker=FakeWorker(_result()))
         with pytest.raises(UnsupportedOperationError):
-            await handler.cancel(_make_context())
+            await handler.cancel(_make_context(), _FakeEventQueue())

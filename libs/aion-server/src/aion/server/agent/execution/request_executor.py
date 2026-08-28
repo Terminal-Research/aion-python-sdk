@@ -220,15 +220,19 @@ class AionAgentRequestExecutor(AgentExecutor):
         cancel = await self._resolve(task, "cancel")
         cancel_message = None
         try:
-            cancel_message = await cancel(context=context)
+            cancel_message = await cancel(context=context, event_queue=event_queue)
         except UnsupportedOperationError:
             logger.debug("Handler does not support cancellation, proceeding with A2A cancel")
 
-        # An extension handler may hand back a closing message to carry on the
-        # terminal event - the only channel it has, since the event consumer
-        # stops accepting events the moment a terminal state lands. Framework
-        # adapters return None, so this is inert for them; anything that is not
-        # a Message is ignored rather than trusted into the A2A event.
+        # `event_queue` was already handed to the extension handler above, so
+        # any artifact it needed to publish (e.g. undelivered work rescued as
+        # a bundle) went out before this point - the event consumer stops
+        # accepting events the moment a terminal state lands, so anything
+        # queued after `task_updater.cancel()` below would be dropped.
+        # The returned message is the closing text/data for that terminal
+        # event itself. Framework adapters return None, so this is inert for
+        # them; anything that is not a Message is ignored rather than trusted
+        # into the A2A event.
         if not isinstance(cancel_message, Message):
             cancel_message = None
 

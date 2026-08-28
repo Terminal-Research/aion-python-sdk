@@ -20,7 +20,7 @@ class _FakeHandler:
     def resume(self, context):
         raise NotImplementedError
 
-    async def cancel(self, context):
+    async def cancel(self, context, event_queue):
         raise NotImplementedError
 
 

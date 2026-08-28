@@ -363,13 +363,22 @@ class EvolutionResultActionPayload(A2ABaseModel):
             "the next run of this context resumes on it automatically."
         ),
     )
-    rescue_path: Optional[str] = Field(
-        default=None,
+    # No `rescue_path` field: a rescue that could not be delivered by pushing
+    # falls back to a git bundle, but that bundle is written to a temp file on
+    # the improver's own ephemeral disk — a location nothing outside that
+    # process's lifetime could ever reach, so a path naming it would be dead
+    # information from the moment it is read. When the bundle is small enough
+    # (see the improver's own size ceiling), it instead rides the task as its
+    # own artifact, named `rescue-{context_id}.bundle` — that artifact's
+    # presence is the signal a consumer acts on, not a field here.
+    rescue_bundle_created: bool = Field(
+        default=False,
         description=(
-            "Path of a git bundle holding committed-but-undelivered work — the rescue "
-            "fallback when even the rescue push failed. The path is local to the "
-            "improver's machine (lost with an ephemeral filesystem): an operator "
-            "restores it promptly with `git fetch <bundle> <branch>` in any clone."
+            "True as soon as the rescue fallback produced a git bundle, whether or "
+            "not it was small enough to attach as the `rescue-{context_id}.bundle` "
+            "artifact. Distinguishes 'nothing survived the failure' (False) from "
+            "'work survived but could not be handed off' (True, with no matching "
+            "artifact — the bundle exceeded the improver's size ceiling)."
         ),
     )
     usage: Optional[EvolutionUsage] = Field(

@@ -37,14 +37,13 @@ __all__ = [
     "ExtensionSetupError",
     "UnsupportedDirectiveError",
     "INTERNAL_ERROR_CODE",
-    "INTERNAL_ERROR_TEXT",
 ]
 
 # The crash path has no exception class of its own: anything escaping the
 # worker's stream is a wiring bug, and its text is a traceback fragment that
-# says nothing to a caller.
+# says nothing to a caller. The message the caller does get is built from the
+# run's accumulated progress instead — see `events.internal_error_text`.
 INTERNAL_ERROR_CODE = "internal_error"
-INTERNAL_ERROR_TEXT = "The evolution could not be started because of an internal error."
 
 
 class EvolutionHandlerError(Exception):

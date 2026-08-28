@@ -139,6 +139,49 @@ class TaskSettlementReason(str, Enum):
     `aion.server.tasks.ownership.config.LeaseSettings.cancel_grace_seconds`.
     """
 
+    @property
+    def description(self) -> str:
+        """A one-sentence, human-readable statement of this reason.
+
+        Provided so a client rendering a settled task does not have to invent
+        its own wording for a token this package defines — and so the prose
+        has exactly one home, next to the token it explains, rather than one
+        copy per surface that displays it.
+
+        Deliberately *not* written into `status.message` by the settlement
+        itself: a status message is promoted into task history on the next
+        turn, which would show a resumed agent words it never produced (see
+        this class's docstring). Whoever displays the task is free to show
+        this; the task record stays a record of what the agent said.
+        """
+        return _SETTLEMENT_DESCRIPTIONS[self]
+
+
+# Kept beside the enum rather than inside it: a plain dict attribute in an Enum
+# body would be taken for another member.
+_SETTLEMENT_DESCRIPTIONS = {
+    TaskSettlementReason.SERVER_SHUTDOWN: (
+        "The server was shut down while this task was still running, so the "
+        "task was stopped without finishing."
+    ),
+    TaskSettlementReason.SERVER_RESTART: (
+        "The server process running this task stopped unexpectedly, so the "
+        "task was stopped without finishing."
+    ),
+    TaskSettlementReason.LEASE_EXPIRED: (
+        "The worker running this task stopped reporting, so the task was "
+        "closed without finishing."
+    ),
+    TaskSettlementReason.CANCEL_REQUESTED: (
+        "This task was cancelled as requested; the worker running it stopped "
+        "before it could report the cancellation itself."
+    ),
+    TaskSettlementReason.CANCEL_TIMEOUT: (
+        "This task was cancelled as requested; the worker running it did not "
+        "stop in time and was closed out."
+    ),
+}
+
 
 class ArtifactStreamingStatus(str, Enum):
     """Enumeration representing the current status of artifact streaming."""
