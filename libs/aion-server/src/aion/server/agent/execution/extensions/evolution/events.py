@@ -135,6 +135,21 @@ RESCUE_BUNDLE_MEDIA_TYPE = "application/x-git-bundle"
 # metadata producers.
 PROGRESS_METADATA_KEY = BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1
 
+# Keys this module writes into the progress struct itself. A toolkit's
+# free-form run metadata may not overwrite them (see `result_events`).
+_RESERVED_PROGRESS_KEYS = frozenset(
+    {
+        "scope",
+        "stage",
+        "outcome",
+        "usage",
+        "branch",
+        "resumed",
+        "priorCommits",
+        "stoppedEarly",
+    }
+)
+
 # Bound on the command output tail carried on the completed-command payload and
 # progress metadata, so a chatty command can't bloat a status event. Head+tail
 # would need parsing; the tail alone is what shows a failure's cause.
@@ -391,15 +406,26 @@ def _usage_payload(result: object) -> Optional[EvolutionUsage]:
     Read duck-typed like every other toolkit field here. A toolkit that reports
     no usage at all maps to None (the field then drops out of the payload
     entirely) rather than to a row of zeros, which would claim the run was free.
+
+    `model_turns` is the one axis carried through without an `or 0` fallback:
+    on the wire, null means "the engine could not tell" and 0 is a
+    measurement, so a toolkit too old to have the field, or one whose engine
+    reported only an aggregate, must arrive as null rather than as a confident
+    zero. `resumed` is deliberately absent here - it is a property of the run,
+    not of what the run consumed, and it already travels as a top-level field
+    of the result payload; a second copy is a second thing to keep true.
     """
     usage = getattr(result, "usage", None)
     if usage is None:
         return None
     input_tokens = getattr(usage, "input_tokens", 0) or 0
     output_tokens = getattr(usage, "output_tokens", 0) or 0
+    model_turns = getattr(usage, "model_turns", None)
     return EvolutionUsage(
         input_tokens=input_tokens,
         output_tokens=output_tokens,
+        cached_input_tokens=getattr(usage, "cached_input_tokens", 0) or 0,
+        model_turns=model_turns if isinstance(model_turns, int) else None,
         # Recomputed rather than read off the toolkit's `total_tokens`
         # property, so the sum always agrees with the two fields beside it.
         total_tokens=input_tokens + output_tokens,
@@ -756,6 +782,19 @@ def spec_artifact_event(task: Task, *, path: str, content: str) -> TaskArtifactU
     return event
 
 
+def _stopped_early(result: "EvolutionResult") -> bool:
+    """Whether the run was cut short by its token budget.
+
+    Read duck-typed with a False default, like every other toolkit field here:
+    an improver too old to report the fact is not thereby claiming its runs
+    were partial. Distinct from the `budgetExceeded` observation a toolkit may
+    put in its free-form run metadata — that one is after-the-fact telemetry
+    ("this run cost more than the budget allowed") and is written for finished
+    runs too, so it cannot stand in for the early stop.
+    """
+    return bool(getattr(result, "stopped_early", False))
+
+
 def _result_payload(result: "EvolutionResult") -> EvolutionResultActionPayload:
     """The run result as the extension's published wire payload."""
     error = (
@@ -770,6 +809,7 @@ def _result_payload(result: "EvolutionResult") -> EvolutionResultActionPayload:
         error=error,
         summary=getattr(result, "summary", None),
         resumed=getattr(result, "resumed", False),
+        stopped_early=_stopped_early(result),
         commit_count=getattr(result, "commit_count", None),
         pr_url=getattr(result, "pr_url", None),
         spec_path=getattr(result, "spec_path", None),
@@ -958,23 +998,61 @@ def result_events(
     # PhaseStarted for it, so nothing else would ever move `stage` off the last
     # phase the run announced. Stated here so a finished run does not read as
     # though it were still delivering.
-    progress.remember(stage=_TERMINAL_STAGE, outcome=result.outcome)
+    stopped_early = _stopped_early(result)
+    # `stoppedEarly` alongside `outcome`, because it qualifies it: a
+    # budget-stopped run still reports 'succeeded'/'no_change', and this is what
+    # tells a consumer reading `task.metadata` that the result is a partial one.
+    progress.remember(
+        stage=_TERMINAL_STAGE, outcome=result.outcome, stoppedEarly=stopped_early
+    )
     usage = _usage_payload(result)
     if usage is not None:
         # Also on the progress struct, not only on the artifact: this is the
         # one struct that reaches `task.metadata`, so an operator auditing cost
         # finds it on the task without having to open the artifact.
         progress.remember(usage=usage.model_dump(mode="json", by_alias=True))
+    run_metadata = getattr(result, "metadata", None)
+    if isinstance(run_metadata, dict) and run_metadata:
+        # The struct is shared with fields this mapper owns, and a toolkit key
+        # that happened to collide would silently replace one of them - the
+        # usage block above most of all. Collisions are dropped, not merged:
+        # this bag is diagnostics, and a wrong `usage` is worse than a missing
+        # observation.
+        clashing = set(run_metadata) & _RESERVED_PROGRESS_KEYS
+        if clashing:
+            logger.warning(
+                "evolution: ignoring toolkit metadata key(s) %s - reserved by the "
+                "progress struct",
+                ", ".join(sorted(clashing)),
+            )
+            run_metadata = {k: v for k, v in run_metadata.items() if k not in clashing}
+        # Observations about how the run went rather than what it delivered -
+        # the depth it was worked at, a token budget it blew. Free-form on
+        # purpose: these are things an operator looks at, not things a client
+        # branches on, so they ride the progress struct (which reaches
+        # `task.metadata`) instead of growing typed fields on the result
+        # payload. Unknown keys from a newer toolkit pass straight through.
+        progress.remember(**run_metadata)
     terminal_progress = progress.snapshot()
 
     artifact_event = _result_artifact_event(task, result)
     if result.outcome == "failed":
         terminal = failed_event(task, error=_failed_text(result), progress=terminal_progress)
     elif result.outcome == "no_change":
+        # "No changes were needed" is a verdict about the work; a run that ran
+        # out of budget before committing anything never reached one, so it
+        # gets the other sentence — what happened, and that the context can be
+        # resumed to continue.
+        no_change_text = (
+            "Nothing was finished before the token budget ran out — "
+            "the work continues on the next run"
+            if stopped_early
+            else "No changes were needed"
+        )
         terminal = status_event(
             task,
             state=TaskState.TASK_STATE_COMPLETED,
-            text=_terminal_text(result, "No changes were needed"),
+            text=_terminal_text(result, no_change_text),
             progress=terminal_progress,
         )
     else:
@@ -990,6 +1068,16 @@ def result_events(
             location = f"Done — changes are on branch {result.branch}"
         else:
             location = "Done"
+        if stopped_early:
+            # The delivered work is real and its location above is accurate —
+            # what changes is that it is only part of what was asked for. Said
+            # here rather than left to the machine-readable channels because it
+            # is the one thing the requester has to act on: look at what landed,
+            # then run the evolution again for the rest.
+            location = (
+                f"{location}. The run stopped early on its token budget — "
+                "remaining work continues on the next run"
+            )
         terminal = status_event(
             task,
             state=TaskState.TASK_STATE_COMPLETED,

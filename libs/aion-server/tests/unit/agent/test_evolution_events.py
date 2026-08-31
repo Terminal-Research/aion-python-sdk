@@ -889,7 +889,14 @@ class TestProgressAccumulates:
 
 class TestUsageReachesTheCaller:
     def _usage(self, **overrides):
-        values = {"input_tokens": 1200, "output_tokens": 300, "requests": 2, "wall_clock_s": 4.5}
+        values = {
+            "input_tokens": 1200,
+            "output_tokens": 300,
+            "cached_input_tokens": 900,
+            "model_turns": 6,
+            "requests": 2,
+            "wall_clock_s": 4.5,
+        }
         values.update(overrides)
         return SimpleNamespace(**values)
 
@@ -912,12 +919,124 @@ class TestUsageReachesTheCaller:
 
         assert _progress(terminal)["usage"]["totalTokens"] == 1500
 
+    def test_turns_and_cache_split_reach_the_caller(self):
+        """The two axes that say *why* a run was expensive: how many times it
+        went to the model, and how much of its input the provider had already
+        seen."""
+        out = _result_events(_task(), _result("succeeded", usage=self._usage()))
+        artifact = [e for e in out if isinstance(e, TaskArtifactUpdateEvent)][0]
+        usage = MessageToDict(artifact.artifact.parts[0].data)["usage"]
+
+        assert usage["modelTurns"] == 6
+        assert usage["cachedInputTokens"] == 900
+        # cached is a slice of input, not an addition to it
+        assert usage["totalTokens"] == 1500
+
+    def test_unmeasured_turns_are_null_not_zero(self):
+        """A toolkit whose engine reported only an aggregate — or one too old
+        to have the field — must not arrive as a confident '0 turns'."""
+        out = _result_events(_task(), _result("succeeded", usage=self._usage(model_turns=None)))
+        artifact = [e for e in out if isinstance(e, TaskArtifactUpdateEvent)][0]
+        usage = MessageToDict(artifact.artifact.parts[0].data)["usage"]
+
+        assert usage.get("modelTurns") is None
+        assert usage["inputTokens"] == 1200  # the rest still lands
+
+    def test_resumed_is_not_duplicated_into_usage(self):
+        """`resumed` is a property of the run, not of what it consumed, and it
+        already travels as a top-level result field — two copies would be two
+        things to keep true."""
+        out = _result_events(_task(), _result("succeeded", usage=self._usage()))
+        artifact = [e for e in out if isinstance(e, TaskArtifactUpdateEvent)][0]
+        data = MessageToDict(artifact.artifact.parts[0].data)
+
+        assert "resumed" not in data["usage"]
+
+    def test_run_metadata_rides_the_progress_struct(self):
+        """How the run went — the depth it was worked at, a budget it blew —
+        reaches `task.metadata` without growing typed result fields for things
+        no client branches on."""
+        result = _result("succeeded", usage=self._usage())
+        result.metadata = {"execution_tier": {"tier": "light", "source": "declared"}}
+        out = _result_events(_task(), result)
+        terminal = [e for e in out if isinstance(e, TaskStatusUpdateEvent)][-1]
+
+        assert _progress(terminal)["execution_tier"] == {"tier": "light", "source": "declared"}
+
+    def test_toolkit_metadata_cannot_overwrite_the_structs_own_fields(self):
+        """A colliding key would silently replace a field this mapper owns —
+        `usage` above all. Dropped rather than merged: a wrong cost number is
+        worse than a missing observation."""
+        result = _result("succeeded", usage=self._usage())
+        result.metadata = {"usage": {"inputTokens": 1}, "execution_tier": {"tier": "light"}}
+        out = _result_events(_task(), result)
+        terminal = [e for e in out if isinstance(e, TaskStatusUpdateEvent)][-1]
+
+        assert _progress(terminal)["usage"]["totalTokens"] == 1500  # the real one
+        assert _progress(terminal)["execution_tier"] == {"tier": "light"}
+
     def test_unreported_usage_is_absent_rather_than_zero(self):
         """A row of zeros would claim the run was free; absence says unknown."""
         out = _result_events(_task(), _result("succeeded"))
         artifact = [e for e in out if isinstance(e, TaskArtifactUpdateEvent)][0]
 
         assert "usage" not in MessageToDict(artifact.artifact.parts[0].data)
+
+
+class TestBudgetStopIsVisible:
+    """A run cut short by its token budget still completes, so nothing else in
+    the terminal event says the result is only part of what was asked for."""
+
+    def test_completed_run_says_the_work_continues(self):
+        out = _result_events(_task(), _result("succeeded", stopped_early=True))
+        artifact, terminal = out[0], out[-1]
+
+        # The location stays accurate — what lands is real work — and the
+        # early stop is appended to it.
+        assert _text(terminal) == (
+            "Done — changes are on branch evolution/ctx-1. The run stopped early "
+            "on its token budget — remaining work continues on the next run."
+        )
+        assert MessageToDict(artifact.artifact.parts[0].data)["stoppedEarly"] is True
+        assert _progress(terminal)["stoppedEarly"] is True
+
+    def test_no_change_does_not_claim_no_changes_were_needed(self):
+        """Nothing was committed because the budget ran out, not because the
+        change turned out to be unnecessary."""
+        out = _result_events(
+            _task(),
+            _result(
+                "no_change", branch=None, commit_sha=None, commit_count=0,
+                spec_path=None, stopped_early=True,
+            ),
+        )
+        terminal = out[-1]
+
+        assert _text(terminal) == (
+            "Nothing was finished before the token budget ran out — the work "
+            "continues on the next run."
+        )
+        assert "No changes were needed" not in _text(terminal)
+
+    def test_a_toolkit_without_the_field_reads_as_a_complete_run(self):
+        """Duck-typed with a False default: an improver too old to report the
+        fact is not thereby claiming its runs were partial."""
+        out = _result_events(_task(), _result("succeeded"))
+        artifact, terminal = out[0], out[-1]
+
+        assert _text(terminal) == "Done — changes are on branch evolution/ctx-1."
+        assert MessageToDict(artifact.artifact.parts[0].data)["stoppedEarly"] is False
+        assert _progress(terminal)["stoppedEarly"] is False
+
+    def test_run_metadata_cannot_forge_the_flag(self):
+        """`stoppedEarly` is a typed fact this mapper owns; the toolkit's
+        free-form observation bag may not overwrite it."""
+        result = _result("succeeded", stopped_early=True)
+        result.metadata = {"stoppedEarly": False, "budget_exceeded": True}
+        terminal = _result_events(_task(), result)[-1]
+
+        assert _progress(terminal)["stoppedEarly"] is True
+        assert _progress(terminal)["budget_exceeded"] is True
 
 
 class TestArtifactIdsAreStable:
