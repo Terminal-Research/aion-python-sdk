@@ -28,6 +28,7 @@ from typing import Literal, Optional, Tuple
 
 from .event_pipeline import AionEventPipeline
 from .extensions import (
+    ExtensionPreflightError,
     ExtensionTaskHandler,
     ROUTED_EXTENSION_METADATA_KEY,
     discover_extension_task_handlers,
@@ -122,7 +123,10 @@ class AionAgentRequestExecutor(AgentExecutor):
             raise InvalidParamsError(message=str(ex)) from ex
 
         operation: Literal["stream", "resume"] = "stream" if is_new_task else "resume"
-        produce_events = await self._resolve(task, operation)
+        try:
+            produce_events = await self._resolve(task, operation, context)
+        except ExtensionPreflightError as ex:
+            raise InvalidParamsError(message=str(ex)) from ex
 
         if is_new_task:
             logger.info("Created task")
@@ -216,15 +220,19 @@ class AionAgentRequestExecutor(AgentExecutor):
         cancel = await self._resolve(task, "cancel")
         cancel_message = None
         try:
-            cancel_message = await cancel(context=context)
+            cancel_message = await cancel(context=context, event_queue=event_queue)
         except UnsupportedOperationError:
             logger.debug("Handler does not support cancellation, proceeding with A2A cancel")
 
-        # An extension handler may hand back a closing message to carry on the
-        # terminal event - the only channel it has, since the event consumer
-        # stops accepting events the moment a terminal state lands. Framework
-        # adapters return None, so this is inert for them; anything that is not
-        # a Message is ignored rather than trusted into the A2A event.
+        # `event_queue` was already handed to the extension handler above, so
+        # any artifact it needed to publish (e.g. undelivered work rescued as
+        # a bundle) went out before this point - the event consumer stops
+        # accepting events the moment a terminal state lands, so anything
+        # queued after `task_updater.cancel()` below would be dropped.
+        # The returned message is the closing text/data for that terminal
+        # event itself. Framework adapters return None, so this is inert for
+        # them; anything that is not a Message is ignored rather than trusted
+        # into the A2A event.
         if not isinstance(cancel_message, Message):
             cancel_message = None
 
@@ -242,6 +250,7 @@ class AionAgentRequestExecutor(AgentExecutor):
             self,
             task: Task,
             operation: Literal["stream", "resume", "cancel"],
+            context: Optional[RequestContext] = None,
     ) -> Callable:
         """Resolve the callable for an operation on the task's routed handler.
 
@@ -257,6 +266,13 @@ class AionAgentRequestExecutor(AgentExecutor):
         collected and verified (schema + co-activation requirements) during
         data prep in AionRuntimeContextBuilder. No activation or validation
         logic lives here.
+
+        For "stream"/"resume" routed to an extension handler, this also runs
+        that handler's per-request preflight (see ExtensionPreflightError) -
+        here, not in execute(), because this is where `handler` is known, and
+        it still runs before the task is persisted/enqueued (see execute()).
+        `context` is required for those two operations; "cancel" passes none,
+        since a cancelled task already exists and has nothing left to preflight.
         """
         handler = self.agent
         if operation == "stream":
@@ -273,6 +289,11 @@ class AionAgentRequestExecutor(AgentExecutor):
 
         elif task.HasField("metadata") and ROUTED_EXTENSION_METADATA_KEY in task.metadata:
             handler = self._extension_handlers.get(task.metadata[ROUTED_EXTENSION_METADATA_KEY], self.agent)
+
+        if operation in ("stream", "resume") and handler is not self.agent:
+            preflight = getattr(handler, "preflight", None)
+            if preflight is not None:
+                await preflight(context)
         return getattr(handler, operation)
 
     @staticmethod

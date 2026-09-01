@@ -29,7 +29,10 @@ __all__ = [
     "EVOLUTION_VIEW_ACTIVITY",
     "EVOLUTION_VIEW_MILESTONES",
     "TargetContext",
+    "ModelPreferences",
+    "RunLimits",
     "EvolutionUsage",
+    "EvolutionError",
     "EvolutionDirectiveEventPayload",
     "EvolutionVerdictEventPayload",
     "EvolutionResultActionPayload",
@@ -81,6 +84,79 @@ class TargetContext(A2ABaseModel):
     )
 
 
+class ModelPreferences(A2ABaseModel):
+    """What the caller would like this run's executor model to be.
+
+    Preferences, not guarantees. The deployment owns the trust boundary - which
+    endpoint is reached and whose credentials pay for it - and may pin any field
+    here from its own environment, in which case what the caller asked for is
+    ignored. What this does give the caller is per-run tuning without touching
+    the deployment: a `scope="plan"` run and a `scope="implement"` run of the
+    same evolution can ask for different models or different reasoning effort.
+
+    Every field is optional and independent; unset means "whatever the
+    deployment already resolves to".
+    """
+
+    name: Optional[str] = Field(
+        default=None,
+        description=(
+            "Executor model to run this evolution with. Not validated here: a "
+            "name the deployment's configured endpoint cannot serve surfaces as "
+            "an executor failure during the run, not as a directive rejection."
+        ),
+    )
+    reasoning_effort: Optional[str] = Field(
+        default=None,
+        description=(
+            "Reasoning effort passed to the executor model, for models that "
+            "support it. Interpreted by the engine, not by this contract."
+        ),
+    )
+    context_window: Optional[int] = Field(
+        default=None,
+        description=(
+            "Context window in tokens to declare for the executor model. Only "
+            "needed for models the engine has no built-in knowledge of."
+        ),
+    )
+
+
+class RunLimits(A2ABaseModel):
+    """Resource ceilings the caller sets for this run's own protection.
+
+    Not a deployment-enforced maximum - the deployment has no separate ceiling
+    to fall back to or clamp against; see ModelPreferences for the analogous
+    per-run vs. deployment split on model choice, where the deployment *does*
+    keep a say. Every field is optional; unset means the run has no ceiling on
+    that axis at all, not that a deployment default kicks in.
+    """
+
+    max_total_tokens: Optional[int] = Field(
+        default=None,
+        description=(
+            "Token budget for the run. On reaching it, the executor stops "
+            "gracefully at the next turn boundary and the run still delivers "
+            "what was already committed (COMPLETED, not FAILED)."
+        ),
+    )
+    op_timeout: Optional[float] = Field(
+        default=None,
+        description="Per-subprocess-operation timeout, in seconds.",
+    )
+    network_timeout: Optional[float] = Field(
+        default=None,
+        description="Timeout for network git operations, in seconds.",
+    )
+    codex_timeout: Optional[float] = Field(
+        default=None,
+        description=(
+            "Wall-clock ceiling for one whole executor call, in seconds. Falls "
+            "back to `op_timeout` when unset."
+        ),
+    )
+
+
 class EvolutionDirectiveEventPayload(A2ABaseModel):
     """Inbound improvement command from the control plane to the improver.
 
@@ -113,6 +189,30 @@ class EvolutionDirectiveEventPayload(A2ABaseModel):
             "improver reports as the run moves through preparing, executing, "
             "delivering and reporting: this is what was asked for, that is "
             "where the run stands."
+        ),
+    )
+    model: Optional[ModelPreferences] = Field(
+        default=None,
+        description=(
+            "Per-run executor model tuning. Omit to use whatever the deployment "
+            "resolves on its own. The deployment's own environment overrides "
+            "anything set here - see ModelPreferences."
+        ),
+    )
+    branch_strategy: Optional[Literal["beta-branch", "pull-request"]] = Field(
+        default=None,
+        description=(
+            "Delivery strategy for this run: push only ('beta-branch') or also "
+            "open/reuse a pull request ('pull-request'). Omit to use the "
+            "deployment's aion.yaml default."
+        ),
+    )
+    limits: Optional[RunLimits] = Field(
+        default=None,
+        description=(
+            "Resource ceilings this run's caller sets for its own protection. "
+            "See RunLimits - unlike `model`, the deployment has no separate "
+            "ceiling to fall back to here."
         ),
     )
     view: Literal["full", "activity", "milestones"] = Field(
@@ -164,14 +264,41 @@ class EvolutionUsage(A2ABaseModel):
     A caller aggregating an evolution's cost sums this across the runs of a
     context.
 
-    All axes default to zero because engines report different subsets. Zero is
-    not distinguishable from unmeasured: a run that failed before invoking the
-    executor and a run whose engine reported no usage both read as zeros. Treat
-    these as "what the improver was able to account for", not as a bill.
+    Token axes default to zero because engines report different subsets. Zero
+    is not distinguishable from unmeasured there: a run that failed before
+    invoking the executor and a run whose engine reported no usage both read as
+    zeros. Treat these as "what the improver was able to account for", not as a
+    bill. `model_turns` is the exception and says so explicitly - see its
+    description.
     """
 
     input_tokens: int = Field(default=0, description="Tokens fed into the model across the run.")
     output_tokens: int = Field(default=0, description="Tokens generated by the model across the run.")
+    cached_input_tokens: int = Field(
+        default=0,
+        description=(
+            "The part of `inputTokens` the provider served from its prefix "
+            "cache - a sub-count, never an addition: `inputTokens` stays the "
+            "whole number fed to the model and `totalTokens` ignores this one. "
+            "The uncached remainder is what the run actually made the provider "
+            "process, so a run that is large but mostly cached and one that is "
+            "large and entirely fresh cost very differently while reporting "
+            "the same `inputTokens`."
+        ),
+    )
+    model_turns: Optional[int] = Field(
+        default=None,
+        description=(
+            "How many times the run went to the model, across all executor "
+            "invocations - the axis cost is linear in, since every turn "
+            "re-sends the conversation so far and so pays for a full preamble. "
+            "Unlike the token axes, this one distinguishes unmeasured from "
+            "zero: null (or absent) means the engine reported only an "
+            "aggregate and the count is unknown, while 0 is a measurement. "
+            "Nothing writes 0 to mean unknown, so a number here may be treated "
+            "as fact."
+        ),
+    )
     total_tokens: int = Field(
         default=0,
         description=(
@@ -186,6 +313,33 @@ class EvolutionUsage(A2ABaseModel):
     )
     wall_clock_seconds: float = Field(
         default=0.0, description="Elapsed time spent inside executor calls, in seconds."
+    )
+
+
+class EvolutionError(A2ABaseModel):
+    """Why a run failed, as two axes rather than two unrelated fields.
+
+    Grouped under one `error` object — like the terminal status event's
+    `error.code` — so a future field (e.g. a stable code paralleling that
+    one) has an obvious home instead of becoming a third top-level
+    `error*` field on the result payload.
+    """
+
+    details: str = Field(
+        description=(
+            "Full diagnostic string: argv, stderr, paths - whatever the failing "
+            "step captured. For whoever debugs the run, not for display to "
+            "whoever asked for the change."
+        )
+    )
+    reason: Optional[str] = Field(
+        default=None,
+        description=(
+            "Short, human-safe explanation of the failure, set only when the "
+            "failing tool itself supplied one. Unlike `details`, this never "
+            "carries paths, argv, or stderr, so a UI can show it to whoever asked "
+            "for the change."
+        ),
     )
 
 
@@ -207,15 +361,26 @@ class EvolutionResultActionPayload(A2ABaseModel):
     commit_sha: Optional[str] = Field(
         default=None, description="Exact commit pinning the beta artifact."
     )
-    diff_summary: Optional[str] = Field(
-        default=None, description="Summary of what changed, for verifier/director context."
+    error: Optional[EvolutionError] = Field(
+        default=None, description="Why the run failed; populated when outcome is 'failed'."
     )
-    error: Optional[str] = Field(
-        default=None, description="Error description; populated when outcome is 'failed'."
+    summary: Optional[str] = Field(
+        default=None, description="The executor's own closing summary of what it did, if any."
     )
     resumed: bool = Field(
         default=False,
         description="True when this run continued the evolution's existing branch.",
+    )
+    stopped_early: bool = Field(
+        default=False,
+        description=(
+            "True when the run was cut short by its token budget rather than by "
+            "finishing the work. Everything committed before the stop is "
+            "delivered as usual - the outcome is still 'succeeded' (or "
+            "'no_change' when nothing had been committed yet) - so this is the "
+            "only signal that the result is partial and that resuming the "
+            "context continues the unfinished remainder."
+        ),
     )
     commit_count: Optional[int] = Field(
         default=None,
@@ -236,13 +401,22 @@ class EvolutionResultActionPayload(A2ABaseModel):
             "the next run of this context resumes on it automatically."
         ),
     )
-    rescue_path: Optional[str] = Field(
-        default=None,
+    # No `rescue_path` field: a rescue that could not be delivered by pushing
+    # falls back to a git bundle, but that bundle is written to a temp file on
+    # the improver's own ephemeral disk — a location nothing outside that
+    # process's lifetime could ever reach, so a path naming it would be dead
+    # information from the moment it is read. When the bundle is small enough
+    # (see the improver's own size ceiling), it instead rides the task as its
+    # own artifact, named `rescue-{context_id}.bundle` — that artifact's
+    # presence is the signal a consumer acts on, not a field here.
+    rescue_bundle_created: bool = Field(
+        default=False,
         description=(
-            "Path of a git bundle holding committed-but-undelivered work — the rescue "
-            "fallback when even the rescue push failed. The path is local to the "
-            "improver's machine (lost with an ephemeral filesystem): an operator "
-            "restores it promptly with `git fetch <bundle> <branch>` in any clone."
+            "True as soon as the rescue fallback produced a git bundle, whether or "
+            "not it was small enough to attach as the `rescue-{context_id}.bundle` "
+            "artifact. Distinguishes 'nothing survived the failure' (False) from "
+            "'work survived but could not be handed off' (True, with no matching "
+            "artifact — the bundle exceeded the improver's size ceiling)."
         ),
     )
     usage: Optional[EvolutionUsage] = Field(

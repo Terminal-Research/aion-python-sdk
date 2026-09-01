@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Optional, Protocol, Type
 
+from pydantic import ValidationError
+
 from aion.core.a2a import A2ABaseModel
 from aion.core.a2a.extensions.event import EventMessageMetadataV1, EventPartMetadataV1
 from aion.core.a2a.extensions.messaging import SourceSystemEventPayload
@@ -49,6 +51,17 @@ class ExtensionActivationError(Exception):
         else:
             message = f"Extension '{uri}' cannot be activated: {reason}"
         super().__init__(message)
+
+
+def _format_validation_error(error: ValidationError) -> str:
+    """Render a pydantic ValidationError as one line per field, dropping the
+    "N validation errors for X" header and "For further information visit ..."
+    footer that make the raw str() unreadable to an API caller."""
+    fields = []
+    for err in error.errors():
+        location = ".".join(str(loc) for loc in err["loc"]) or "<root>"
+        fields.append(f"'{location}': {err['msg']}")
+    return "; ".join(fields)
 
 
 class ExtensionPayloadCollector(Protocol):
@@ -112,6 +125,8 @@ class TaskMetadataCollector:
             )
         try:
             return self.payload_model.model_validate(proto_to_dict(payload))
+        except ValidationError as ex:
+            raise ExtensionActivationError(uri, reason=_format_validation_error(ex)) from ex
         except Exception as ex:
             raise ExtensionActivationError(uri, reason=str(ex)) from ex
 
@@ -206,11 +221,16 @@ class MessagesCollector:
                 # validation") rather than returning None, which downstream reads
                 # as "no event on the request at all" — a misleading diagnostic
                 # for what is really a sender-side payload bug.
+                formatted_error = (
+                    _format_validation_error(payload_error)
+                    if isinstance(payload_error, ValidationError)
+                    else str(payload_error)
+                )
                 raise ExtensionActivationError(
                     uri,
                     reason=(
                         "a message part declared a known event schema but its "
-                        f"payload failed validation: {payload_error}"
+                        f"payload failed validation: {formatted_error}"
                     ),
                 )
             return None

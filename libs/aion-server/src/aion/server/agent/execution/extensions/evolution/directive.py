@@ -18,8 +18,13 @@ evolution into plan-then-implement is the distributor's policy, expressed as
 two separate tasks in the same context.
 
 No secrets are ever accepted from the directive: the payload model carries
-repo coordinates only, and credentials come exclusively from the handler's
-own environment (see tools_factory).
+repo coordinates, run intent (kind/mode/scope/view), branch strategy, and
+optional per-run tuning (`model`, `limits`) only. Credentials, host
+filesystem paths, executables, and sandbox/network grants come exclusively
+from the handler's own environment and always win over what the directive
+asks for; `limits` has no such deployment-side counterpart to win against - it
+is the caller protecting its own run, not a boundary the deployment enforces
+(see tools_factory's `_codex_access`).
 """
 
 from __future__ import annotations

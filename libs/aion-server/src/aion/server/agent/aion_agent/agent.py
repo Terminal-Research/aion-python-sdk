@@ -27,6 +27,7 @@ from .models import AgentMetadata
 if TYPE_CHECKING:
     from aion.core.logging.base import AionLogger
     from a2a.server.agent_execution import RequestContext
+    from a2a.server.events import EventQueue
 
 
 
@@ -280,11 +281,16 @@ class AionAgent:
         async for event in self._executor.resume(context, config):
             yield event
 
-    async def cancel(self, context: "RequestContext") -> None:
+    async def cancel(
+        self, context: "RequestContext", event_queue: Optional["EventQueue"] = None
+    ) -> None:
         """Notify the framework executor to cancel an active task.
 
         Args:
             context: A2A request context identifying the task to cancel
+            event_queue: Unused here - accepted only to match
+                `ExtensionTaskHandler.cancel`'s signature, since the executor
+                calls whichever handler a task is routed to the same way.
 
         Raises:
             RuntimeError: If agent is not built yet

@@ -7,8 +7,9 @@ surface (stream/cancel). Stream-event stand-ins carry the toolkit's class
 names, since the event mapper discriminates by name."""
 
 import asyncio
+import sys
 from dataclasses import dataclass
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 from typing import Optional
 from unittest.mock import AsyncMock, patch
 
@@ -45,6 +46,7 @@ from aion.core.runtime.context.registry import AionRuntimeContextRegistry
 from aion.server.a2a.utils import is_ephemeral_status_event
 from aion.server.agent.execution.extensions.evolution import EvolutionTaskHandler
 from aion.server.agent.execution.extensions.evolution import events as evolution_events
+from aion.server.agent.execution.extensions.errors import ExtensionPreflightError
 from aion.server.agent.execution.extensions.evolution.errors import (
     ExtensionSetupError,
     UnsupportedDirectiveError,
@@ -173,7 +175,6 @@ def _result(outcome: str = "succeeded", **overrides):
         "outcome": outcome,
         "branch": "evolution/ctx-456",
         "commit_sha": "abc1234",
-        "diff_summary": "1 file changed",
         "error": None,
         "resumed": False,
         "commit_count": 1,
@@ -273,7 +274,8 @@ class TestAvailability:
         assert result.available is False
 
     @pytest.mark.anyio
-    async def test_available_when_enabled_and_worker_factory_injected(self):
+    async def test_available_when_enabled_and_worker_factory_injected(self, monkeypatch):
+        monkeypatch.setenv("CODEX_PROVIDER", "custom")
         handler = _handler(worker=FakeWorker(_result()))
         config = SimpleNamespace(enabled_extensions=[EvolutionTaskHandler.uri])
 
@@ -297,6 +299,84 @@ class TestAvailability:
         assert result.available is False
         assert "behaviour-evolution toolkit" in result.reason
 
+    @pytest.mark.anyio
+    async def test_available_regardless_of_codex_provider(self, monkeypatch):
+        """CODEX_PROVIDER is runtime config, not an install-time fact: some
+        deployments set it onto an already-running pod after startup, and
+        availability()'s result is cached for the executor's whole process
+        lifetime (see request_executor.create's mark_unavailable). Caching a
+        missing/unknown CODEX_PROVIDER here would wedge such a deployment as
+        permanently unavailable until a restart. It is instead validated per
+        request in build_worker(), which always sees the live environment."""
+        monkeypatch.delenv("CODEX_PROVIDER", raising=False)
+        handler = _handler(worker=FakeWorker(_result()))
+        config = SimpleNamespace(enabled_extensions=[EvolutionTaskHandler.uri])
+
+        result = await handler.availability(config)
+
+        assert result.available is True
+
+
+class TestPreflight:
+    @pytest.mark.anyio
+    async def test_noop_when_build_worker_injected(self):
+        """The build_worker DI seam (tests) bypasses the real toolkit
+        entirely, so there is no real env to check - preflight must not
+        pretend otherwise."""
+        handler = _handler(worker=FakeWorker(_result()))
+        ctx = _make_context()
+
+        await handler.preflight(ctx)  # must not raise
+
+    @pytest.mark.anyio
+    async def test_noop_when_toolkit_not_installed(self, monkeypatch):
+        """When the optional toolkit is absent, `from .tools_factory import
+        ...` fails - preflight must fail open here, the same way
+        availability() already treats a missing toolkit as its own, separate
+        rejection rather than raising out of an unrelated check. Forced via
+        the `sys.modules[name] = None` sentinel (CPython raises
+        ModuleNotFoundError for it) since the toolkit is actually installed
+        in this repo's dev environment (editable install of the sibling
+        aion-toolkit-behaviour-evolution-python checkout)."""
+        monkeypatch.setitem(
+            sys.modules,
+            "aion.server.agent.execution.extensions.evolution.tools_factory",
+            None,
+        )
+        handler = EvolutionTaskHandler()
+        ctx = _make_context()
+
+        await handler.preflight(ctx)  # must not raise
+
+    @pytest.mark.anyio
+    async def test_raises_extension_preflight_error_on_setup_error(self, monkeypatch):
+        """A deployment env problem (e.g. missing GITHUB_TOKEN) must reject
+        the request as ExtensionPreflightError - the executor turns that into
+        a JSON-RPC error before any task is created (see request_executor).
+        The toolkit isn't installed in this test env, so tools_factory is
+        stood in via sys.modules rather than exercising the real one (that
+        happens in test_evolution_tools_factory.py, gated on the toolkit)."""
+        fake_tools_factory = ModuleType(
+            "aion.server.agent.execution.extensions.evolution.tools_factory"
+        )
+
+        def _check_environment(daemon):
+            raise ExtensionSetupError("GITHUB_TOKEN is not set - required to push the evolution branch")
+
+        fake_tools_factory.check_environment = _check_environment
+        monkeypatch.setitem(
+            sys.modules,
+            "aion.server.agent.execution.extensions.evolution.tools_factory",
+            fake_tools_factory,
+        )
+
+        handler = EvolutionTaskHandler()
+        ctx = _make_context()
+
+        with _patch_runtime(_runtime_ctx(with_directive=False)):
+            with pytest.raises(ExtensionPreflightError, match="GITHUB_TOKEN"):
+                await handler.preflight(ctx)
+
 
 class TestEventKindDriftAtBindTime:
     """availability() is where the server and the installed toolkit are bound
@@ -304,7 +384,8 @@ class TestEventKindDriftAtBindTime:
     is where their event vocabularies get compared."""
 
     @staticmethod
-    async def _availability(kinds, caplog):
+    async def _availability(kinds, caplog, monkeypatch):
+        monkeypatch.setenv("CODEX_PROVIDER", "custom")
         handler = _handler(worker=FakeWorker(_result()))
         config = SimpleNamespace(enabled_extensions=[EvolutionTaskHandler.uri])
         with patch(
@@ -317,27 +398,27 @@ class TestEventKindDriftAtBindTime:
             return await handler.availability(config)
 
     @pytest.mark.anyio
-    async def test_drift_is_reported_but_the_extension_keeps_serving(self, caplog):
+    async def test_drift_is_reported_but_the_extension_keeps_serving(self, caplog, monkeypatch):
         """Drift degrades progress; it does not break a run - the result and the
         terminal status come off worker.result, not off the stream. Refusing to
         serve would cost the caller more than the mismatch being reported."""
-        result = await self._availability({"PhaseStarted", "CheckpointReached"}, caplog)
+        result = await self._availability({"PhaseStarted", "CheckpointReached"}, caplog, monkeypatch)
 
         assert result.available is True
         assert "CheckpointReached" in caplog.text
 
     @pytest.mark.anyio
-    async def test_agreement_is_silent(self, caplog):
-        result = await self._availability(set(evolution_events._KNOWN_EVENT_KINDS), caplog)
+    async def test_agreement_is_silent(self, caplog, monkeypatch):
+        result = await self._availability(set(evolution_events._KNOWN_EVENT_KINDS), caplog, monkeypatch)
 
         assert result.available is True
         assert caplog.text == ""
 
     @pytest.mark.anyio
-    async def test_unreadable_kinds_are_not_reported_as_drift(self, caplog):
+    async def test_unreadable_kinds_are_not_reported_as_drift(self, caplog, monkeypatch):
         """None means 'nothing to compare against' - a toolkit that no longer
         exports the union must not read as though every kind had vanished."""
-        result = await self._availability(None, caplog)
+        result = await self._availability(None, caplog, monkeypatch)
 
         assert result.available is True
         assert caplog.text == ""
@@ -472,12 +553,14 @@ class TestStream:
         assert captured["scope"] == "implement"
 
     @pytest.mark.anyio
-    async def test_setup_error_hides_deployment_detail_behind_a_code(self):
-        """A misconfigured deployment is the operator's problem, not the
-        caller's: they get a stable code, not the name of an env var."""
+    async def test_setup_error_carries_the_reason_and_a_stable_code(self):
+        """The caller is this deployment's own trusted control plane, so a
+        setup failure names the reason (env var, missing value) rather than
+        hiding it behind a generic string — the code stays stable for
+        callers that branch on it programmatically."""
 
         def _raise(parsed, daemon):
-            raise ExtensionSetupError("CODEX_BASE_URL is not set")
+            raise ExtensionSetupError("CODEX_PROVIDER is not set")
 
         handler = _handler(build_worker=_raise)
         ctx = _make_context()
@@ -487,8 +570,8 @@ class TestStream:
 
         assert len(out) == 1
         assert out[0].status.state == TaskState.TASK_STATE_FAILED
-        assert "CODEX_BASE_URL" not in out[0].status.message.parts[0].text
-        assert _progress(out[0])["errorCode"] == "misconfigured_deployment"
+        assert "CODEX_PROVIDER" in out[0].status.message.parts[0].text
+        assert _progress(out[0])["error"]["code"] == "misconfigured_deployment"
 
     @pytest.mark.anyio
     async def test_unsupported_directive_keeps_its_detail(self):
@@ -506,7 +589,7 @@ class TestStream:
 
         text = out[0].status.message.parts[0].text
         assert "mode='directive'" in text
-        assert _progress(out[0])["errorCode"] == "unsupported_directive"
+        assert _progress(out[0])["error"]["code"] == "unsupported_directive"
 
     @pytest.mark.anyio
     async def test_worker_crash_fails_task(self):
@@ -519,8 +602,33 @@ class TestStream:
         assert out[-1].status.state == TaskState.TASK_STATE_FAILED
         # A wiring bug's text is a traceback fragment; the caller gets a code.
         assert "boom" not in out[-1].status.message.parts[0].text
-        assert _progress(out[-1])["errorCode"] == "internal_error"
+        assert _progress(out[-1])["error"]["code"] == "internal_error"
         assert handler._running == {}
+
+    @pytest.mark.anyio
+    async def test_worker_crash_text_says_where_the_run_had_got_to(self):
+        """The traceback cannot be shown, but the run's own progress can: a
+        crash after the executor started means work may have been done, and
+        the requester is told that instead of a bare "internal error"."""
+
+        class CrashMidRun(FakeWorker):
+            async def stream(self):
+                yield _phase("executing")
+                raise RuntimeError("boom")
+
+        handler = _handler(worker=CrashMidRun(_result()))
+        ctx = _make_context()
+
+        with _patch_runtime(_runtime_ctx()):
+            out = [event async for event in handler.stream(ctx)]
+
+        text = out[-1].status.message.parts[0].text
+        assert text == (
+            "Failed — The improver hit an internal error while making the change. "
+            "Any work in progress was lost; no changes were delivered. "
+            "The details are in the deployment's logs."
+        )
+        assert _progress(out[-1])["stage"] == "executing"
 
     @pytest.mark.anyio
     async def test_cancelled_outcome_emits_no_terminal(self):
@@ -663,6 +771,17 @@ class TestResume:
         assert out[-1].status.state == TaskState.TASK_STATE_COMPLETED
 
 
+class _FakeEventQueue:
+    """Collects whatever `cancel()` enqueues, standing in for the real
+    a2a-sdk `EventQueue` the executor hands the handler."""
+
+    def __init__(self):
+        self.events = []
+
+    async def enqueue_event(self, event):
+        self.events.append(event)
+
+
 def _inflight(handler, result=None, *, finished=True) -> FakeWorker:
     """Register a run as in flight on `handler`, as _drive would.
 
@@ -684,7 +803,7 @@ class TestCancel:
         handler = _handler(worker=FakeWorker(_result()))
         worker = _inflight(handler, _result("cancelled"))
 
-        await handler.cancel(_make_context())
+        await handler.cancel(_make_context(), _FakeEventQueue())
 
         assert worker.cancel_called is True
 
@@ -699,7 +818,7 @@ class TestCancel:
             _result("cancelled", rescue_pushed=True, branch="evolution/ctx-456"),
         )
 
-        message = await handler.cancel(_make_context())
+        message = await handler.cancel(_make_context(), _FakeEventQueue())
 
         assert isinstance(message, Message)
         assert "evolution/ctx-456" in message.parts[0].text
@@ -708,13 +827,41 @@ class TestCancel:
         assert payload["rescuePushed"] is True
 
     @pytest.mark.anyio
+    async def test_cancel_publishes_the_rescue_bundle_as_an_artifact(self):
+        """Unified with the failed/completed path: the bundle rides on
+        `event_queue` as its own artifact, published before the terminal
+        message is returned — not as bytes riding the message itself."""
+        handler = _handler(worker=FakeWorker(_result()))
+        _inflight(
+            handler,
+            _result(
+                "cancelled",
+                rescue_pushed=False,
+                branch=None,
+                rescue_bundle_created=True,
+                rescue_bundle=b"PACK-git-bundle-bytes",
+            ),
+        )
+        queue = _FakeEventQueue()
+
+        message = await handler.cancel(_make_context(), queue)
+
+        assert len(queue.events) == 1
+        bundle_event = queue.events[0]
+        assert bundle_event.artifact.name == evolution_events.RESCUE_BUNDLE_ARTIFACT_NAME
+        assert bundle_event.artifact.parts[0].raw == b"PACK-git-bundle-bytes"
+        # No raw bytes on the terminal message itself — the artifact already
+        # carries them.
+        assert not any(hasattr(p, "raw") and p.raw for p in message.parts)
+
+    @pytest.mark.anyio
     async def test_cancel_says_nothing_when_the_run_already_finished(self):
         """The run reached its own outcome inside the race window and _drive
         already reported it; a second report here would contradict it."""
         handler = _handler(worker=FakeWorker(_result()))
         _inflight(handler, _result("succeeded"))
 
-        assert await handler.cancel(_make_context()) is None
+        assert await handler.cancel(_make_context(), _FakeEventQueue()) is None
 
     @pytest.mark.anyio
     async def test_cancel_gives_up_reporting_rather_than_hanging(self, monkeypatch):
@@ -724,11 +871,11 @@ class TestCancel:
         handler = _handler(worker=FakeWorker(_result()))
         worker = _inflight(handler, _result("cancelled"), finished=False)
 
-        assert await handler.cancel(_make_context()) is None
+        assert await handler.cancel(_make_context(), _FakeEventQueue()) is None
         assert worker.cancel_called is True
 
     @pytest.mark.anyio
     async def test_cancel_without_inflight_run_raises_unsupported(self):
         handler = _handler(worker=FakeWorker(_result()))
         with pytest.raises(UnsupportedOperationError):
-            await handler.cancel(_make_context())
+            await handler.cancel(_make_context(), _FakeEventQueue())

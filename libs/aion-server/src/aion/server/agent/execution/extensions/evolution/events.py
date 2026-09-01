@@ -57,9 +57,14 @@ only when the id matches. A random id per emission would make a re-emitted
 spec accumulate as duplicate entries instead of superseding the previous one.
 
 A cancelled run reports through `cancel_result_message` rather than through
-`result_events`: its result has to ride the terminal CANCELED status the A2A
-cancel flow already owns, since anything published after a terminal state is
-dropped by the event consumer.
+`result_events`: its closing text/data has to ride the terminal CANCELED
+status the A2A cancel flow already owns, since anything published after a
+terminal state is dropped by the event consumer. A rescue bundle is the
+exception carved out of that constraint, not an example of it: the handler
+publishes it via `rescue_bundle_artifact_event` on the live event queue
+*before* the cancel flow closes the task, so it lands as the same kind of
+artifact the failed/completed path uses — never a bytes-carrying message part
+unique to cancellation.
 """
 
 from __future__ import annotations
@@ -87,6 +92,7 @@ from aion.core.a2a.extensions.behaviour_evolution import (
     EvolutionAgentMessagePayload,
     EvolutionCommandCompletedPayload,
     EvolutionCommandStartedPayload,
+    EvolutionError,
     EvolutionResultActionPayload,
     EvolutionUsage,
 )
@@ -112,18 +118,37 @@ __all__ = [
     "cancel_result_message",
     "event_kind_drift",
     "failed_event",
+    "internal_error_text",
     "map_stream_event",
+    "rescue_bundle_artifact_event",
     "result_events",
     "status_event",
 ]
 
 RESULT_ARTIFACT_NAME = "evolution-result"
 SPEC_ARTIFACT_NAME = "evolution-spec"
+RESCUE_BUNDLE_ARTIFACT_NAME = "evolution-rescue-bundle"
+RESCUE_BUNDLE_MEDIA_TYPE = "application/x-git-bundle"
 
 # Key in TaskStatusUpdateEvent.metadata carrying the machine-readable progress
 # struct. Namespaced by the extension URI so it can't collide with other
 # metadata producers.
 PROGRESS_METADATA_KEY = BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1
+
+# Keys this module writes into the progress struct itself. A toolkit's
+# free-form run metadata may not overwrite them (see `result_events`).
+_RESERVED_PROGRESS_KEYS = frozenset(
+    {
+        "scope",
+        "stage",
+        "outcome",
+        "usage",
+        "branch",
+        "resumed",
+        "priorCommits",
+        "stoppedEarly",
+    }
+)
 
 # Bound on the command output tail carried on the completed-command payload and
 # progress metadata, so a chatty command can't bloat a status event. Head+tail
@@ -202,13 +227,99 @@ _PHASE_TEXT = {
     "delivering": "Saving the result",
 }
 
-# What the user reads when a run fails. Fixed and short by design: the toolkit
-# reports failures as the exception string (`ctx.fail(str(exc))`), which for an
-# executor failure carries the CLI flags it was invoked with and up to 1500
-# characters of its stderr. That belongs to whoever is debugging the deployment,
-# and reaches them intact on the result artifact's `error` field — not to the
-# person who asked for a change.
-_RUN_FAILED_TEXT = "The run could not be completed. See the run result for details."
+# What a crash inside the extension leaves behind, per stage the run had
+# reached. A crash has no `EvolutionResult` to read — anything escaping the
+# worker's stream is a wiring bug and its text is a traceback fragment (see
+# handler._drive) — so the stage is the only fact available, and it is the one
+# that matters to the requester: whether their change was attempted at all,
+# and whether anything may be left stranded.
+#
+# Phrased separately from `_PHASE_TEXT`, whose entries are progress headlines
+# ("Working on the change — planning, editing, and checking the result") that
+# do not read as a subordinate clause.
+_INTERNAL_ERROR_WHERE = {
+    "preparing": " while preparing to work on your project",
+    "executing": " while making the change",
+    "delivering": " while saving the result",
+}
+_INTERNAL_ERROR_BY_STAGE = {
+    "preparing": "No changes were made.",
+    "executing": "Any work in progress was lost; no changes were delivered.",
+    "delivering": (
+        "The change may have been made but was not delivered — an operator can "
+        "recover it from the run's workspace."
+    ),
+}
+_INTERNAL_ERROR_UNKNOWN_STAGE = "No changes were delivered."
+
+
+def internal_error_text(progress: Optional[dict] = None) -> str:
+    """The terminal message for a crash inside the extension itself.
+
+    Shaped like `_failed_text`: what went wrong, then what became of the work.
+    The cause cannot be quoted — it is a traceback, which reaches the log and
+    nothing else — so the message says plainly that the fault is the
+    improver's own, and locates it in the run rather than claiming (as its
+    predecessor did) that the run "could not be started": this path also fires
+    mid-run, after a change may already have been written.
+    """
+    stage = (progress or {}).get("stage")
+    outcome_fact = _INTERNAL_ERROR_BY_STAGE.get(stage, _INTERNAL_ERROR_UNKNOWN_STAGE)
+    where = _INTERNAL_ERROR_WHERE.get(stage, "")
+    return (
+        f"Failed — The improver hit an internal error{where}. {outcome_fact} "
+        "The details are in the deployment's logs."
+    )
+
+
+def _failed_text(result: "EvolutionResult") -> str:
+    """The terminal message for a failed run.
+
+    Leads with `error_reason` when the failing tool supplied one — a short,
+    human-safe explanation (e.g. an unsupported model for the account) —
+    then states what became of any work in progress, mirroring
+    `cancel_result_message`'s rescue branching. `result.error` itself never
+    appears here: it is the raw exception string, which for an executor
+    failure carries the CLI flags it was invoked with and up to 1500
+    characters of its stderr. That belongs to whoever is debugging the
+    deployment, and reaches them intact on the result artifact's `error`
+    field, not here.
+    """
+    reason = getattr(result, "error_reason", None)
+    rescue_pushed = bool(getattr(result, "rescue_pushed", False))
+    rescue_bundle = getattr(result, "rescue_bundle", None)
+    rescue_bundle_created = bool(getattr(result, "rescue_bundle_created", False))
+    branch = getattr(result, "branch", None)
+
+    # Mutually exclusive: whether anything survived the failure, independent
+    # of whether we also know *why* it failed.
+    if rescue_pushed and branch:
+        outcome_fact = f"Work completed so far is preserved on branch {branch}."
+    elif rescue_bundle:
+        # The bundle rides this same result as its own artifact (see
+        # `rescue_bundle_artifact_event`) — actionable by whoever reads this
+        # task, not only an operator with host access.
+        outcome_fact = (
+            "Work completed so far was saved and is attached to this task as "
+            "a downloadable bundle."
+        )
+    elif rescue_bundle_created:
+        # A bundle existed — the work was real — but it exceeded the size
+        # this improver can safely hand off, and there is no path or other
+        # channel to point at instead: the file lived only on the improver's
+        # own ephemeral disk. Saying so plainly beats implying a recovery
+        # that nothing downstream of this task can perform.
+        outcome_fact = (
+            "Work completed so far exceeded the size that could be preserved "
+            "and was lost."
+        )
+    else:
+        outcome_fact = "No changes were made."
+
+    if reason:
+        cause = reason if reason.endswith((".", "!", "?")) else f"{reason}."
+        return f"Failed — {cause} {outcome_fact}"
+    return f"Failed — {outcome_fact}"
 
 
 class RunProgress:
@@ -295,15 +406,26 @@ def _usage_payload(result: object) -> Optional[EvolutionUsage]:
     Read duck-typed like every other toolkit field here. A toolkit that reports
     no usage at all maps to None (the field then drops out of the payload
     entirely) rather than to a row of zeros, which would claim the run was free.
+
+    `model_turns` is the one axis carried through without an `or 0` fallback:
+    on the wire, null means "the engine could not tell" and 0 is a
+    measurement, so a toolkit too old to have the field, or one whose engine
+    reported only an aggregate, must arrive as null rather than as a confident
+    zero. `resumed` is deliberately absent here - it is a property of the run,
+    not of what the run consumed, and it already travels as a top-level field
+    of the result payload; a second copy is a second thing to keep true.
     """
     usage = getattr(result, "usage", None)
     if usage is None:
         return None
     input_tokens = getattr(usage, "input_tokens", 0) or 0
     output_tokens = getattr(usage, "output_tokens", 0) or 0
+    model_turns = getattr(usage, "model_turns", None)
     return EvolutionUsage(
         input_tokens=input_tokens,
         output_tokens=output_tokens,
+        cached_input_tokens=getattr(usage, "cached_input_tokens", 0) or 0,
+        model_turns=model_turns if isinstance(model_turns, int) else None,
         # Recomputed rather than read off the toolkit's `total_tokens`
         # property, so the sum always agrees with the two fields beside it.
         total_tokens=input_tokens + output_tokens,
@@ -357,13 +479,17 @@ def failed_event(
     """Terminal FAILED update carrying the user-facing error message.
 
     `code` is the stable machine-readable reason (see errors.py) and rides the
-    progress struct as `errorCode`, so a caller branches on it instead of
-    matching prose that is free to change. The rejections that happen before a
-    run starts carry no accumulated progress, hence `progress` is optional.
+    progress struct as `error.code`, so a caller branches on it instead of
+    matching prose that is free to change. Nested under `error` rather than a
+    flat `errorCode` key: it is terminal-only, unlike the rest of the struct's
+    accumulated run progress, and nesting leaves room for sibling fields
+    (e.g. a future `error.retryable`) without crowding the progress
+    namespace. The rejections that happen before a run starts carry no
+    accumulated progress, hence `progress` is optional.
     """
     merged = dict(progress or {})
     if code:
-        merged["errorCode"] = code
+        merged["error"] = {"code": code}
     return status_event(
         task,
         state=TaskState.TASK_STATE_FAILED,
@@ -656,20 +782,39 @@ def spec_artifact_event(task: Task, *, path: str, content: str) -> TaskArtifactU
     return event
 
 
+def _stopped_early(result: "EvolutionResult") -> bool:
+    """Whether the run was cut short by its token budget.
+
+    Read duck-typed with a False default, like every other toolkit field here:
+    an improver too old to report the fact is not thereby claiming its runs
+    were partial. Distinct from the `budgetExceeded` observation a toolkit may
+    put in its free-form run metadata — that one is after-the-fact telemetry
+    ("this run cost more than the budget allowed") and is written for finished
+    runs too, so it cannot stand in for the early stop.
+    """
+    return bool(getattr(result, "stopped_early", False))
+
+
 def _result_payload(result: "EvolutionResult") -> EvolutionResultActionPayload:
     """The run result as the extension's published wire payload."""
+    error = (
+        EvolutionError(details=result.error, reason=getattr(result, "error_reason", None))
+        if result.error
+        else None
+    )
     return EvolutionResultActionPayload(
         outcome=result.outcome,
         branch=result.branch,
         commit_sha=result.commit_sha,
-        diff_summary=result.diff_summary,
-        error=result.error,
+        error=error,
+        summary=getattr(result, "summary", None),
         resumed=getattr(result, "resumed", False),
+        stopped_early=_stopped_early(result),
         commit_count=getattr(result, "commit_count", None),
         pr_url=getattr(result, "pr_url", None),
         spec_path=getattr(result, "spec_path", None),
         rescue_pushed=getattr(result, "rescue_pushed", False),
-        rescue_path=getattr(result, "rescue_path", None),
+        rescue_bundle_created=getattr(result, "rescue_bundle_created", False),
         usage=_usage_payload(result),
     )
 
@@ -692,38 +837,111 @@ def _result_artifact_event(task: Task, result: "EvolutionResult") -> TaskArtifac
     return artifact_event
 
 
+def rescue_bundle_artifact_event(
+    task: Task, result: "EvolutionResult"
+) -> Optional[TaskArtifactUpdateEvent]:
+    """The rescue bundle as its own downloadable artifact, or None.
+
+    Only produced when the toolkit read the bundle's own bytes back (see
+    `EvolutionResult.rescue_bundle`) — a bundle over `rescue_bundle_max_bytes`
+    leaves only `rescue_bundle_created=True` with no artifact to match, and
+    the terminal text says the work was lost instead (see `_failed_text`/
+    `cancel_result_message`).
+
+    Shared by both terminal paths: `result_events()` publishes it before the
+    failed/completed status, and `EvolutionTaskHandler.cancel()` (see
+    handler.py) publishes it directly on `event_queue` before the executor's
+    terminal CANCELED lands — a client sees the same artifact shape either
+    way, never a bundle riding as a message part on one path and an artifact
+    on the other. Public (no leading underscore) precisely because that
+    second caller lives in a different module.
+
+    A separate artifact from the result payload, same as `SPEC_ARTIFACT_NAME`:
+    different content type (binary vs. schema-tagged JSON), different
+    lifecycle. `Part(raw=...)` is exactly what `A2AFileTransformer` looks for
+    to offload to blob storage and rewrite into a URL part, once a real
+    storage backend exists — nothing here has to change for that upgrade.
+
+    `artifact.name` is the fixed `RESCUE_BUNDLE_ARTIFACT_NAME`, matching
+    `RESULT_ARTIFACT_NAME`/`SPEC_ARTIFACT_NAME` — a consumer switches on it to
+    recognize "this is the rescue bundle" the same way it does for the other
+    two. The human-facing filename is per-run (carries `context_id`), so it
+    goes on `Part.filename` instead, where it can vary without disturbing
+    that lookup.
+    """
+    data = getattr(result, "rescue_bundle", None)
+    if not data:
+        return None
+    return TaskArtifactUpdateEvent(
+        task_id=task.id,
+        context_id=task.context_id,
+        artifact=Artifact(
+            artifact_id=_stable_artifact_id(task, RESCUE_BUNDLE_ARTIFACT_NAME),
+            name=RESCUE_BUNDLE_ARTIFACT_NAME,
+            description="Committed-but-undelivered work, as a git bundle. Restore with "
+            "`git fetch <this file> <branch>` in any clone of the target.",
+            parts=[
+                Part(
+                    raw=data,
+                    media_type=RESCUE_BUNDLE_MEDIA_TYPE,
+                    filename=f"rescue-{task.context_id}.bundle",
+                )
+            ],
+        ),
+        last_chunk=True,
+    )
+
+
 def cancel_result_message(task: Task, result: "EvolutionResult") -> Message:
     """The cancelled run's result, shaped for the terminal CANCELED status.
 
-    Cancellation is the one outcome this module cannot report as an event of
-    its own. The A2A cancel flow owns the terminal CANCELED, and the event
-    consumer shuts its queue down the moment a terminal state lands - so an
-    artifact published afterwards is dropped, not merely late. Instead the
-    handler hands this message to the cancel flow, which attaches it to that
-    terminal status. CANCELED is a non-COMPLETED terminal state, so the task
-    manager also folds the message into task history: the rescue outcome
+    Cancellation is the one *status* this module cannot report as an event of
+    its own: the A2A cancel flow owns the terminal CANCELED, and the event
+    consumer shuts its queue down the moment a terminal state lands, so
+    anything published afterwards is dropped, not merely late. This message
+    is the handler's one channel for that terminal's own text/data — attached
+    to it by the cancel flow. CANCELED is a non-COMPLETED terminal state, so
+    the task manager also folds the message into task history: the outcome
     becomes part of the durable record rather than something only a live
     subscriber saw.
+
+    The rescue bundle itself is not on this message: `EvolutionTaskHandler.
+    cancel()` (handler.py) publishes it as its own artifact via
+    `rescue_bundle_artifact_event()` on `event_queue`, *before* calling into
+    the A2A cancel flow that lands this message — so it is already on the
+    task by the time this terminal status arrives. Same artifact shape as the
+    failed/completed path, not message-part-only cargo unique to cancellation.
 
     Carries the same schema-tagged payload the result artifact would have, so
     a consumer reads one shape for every outcome.
     """
     rescue_pushed = bool(getattr(result, "rescue_pushed", False))
-    rescue_path = getattr(result, "rescue_path", None)
+    rescue_bundle = getattr(result, "rescue_bundle", None)
+    rescue_bundle_created = bool(getattr(result, "rescue_bundle_created", False))
     branch = getattr(result, "branch", None)
     if rescue_pushed and branch:
         # The one thing worth saying: the work is not lost, and where it is.
-        text = f"Cancelled — work completed so far is preserved on branch {branch}"
-    elif rescue_path:
-        # Deliberately not naming the bundle path in prose: it is a filesystem
-        # location on the improver's own machine, actionable by an operator and
-        # nobody else. It rides the payload, where that operator reads it.
-        text = (
-            "Cancelled — work completed so far was saved on the improver and "
-            "needs an operator to restore it"
+        fact = f"Cancelled — work completed so far is preserved on branch {branch}."
+    elif rescue_bundle:
+        # The bundle rides as its own artifact, published by the caller
+        # before this message lands (see this function's docstring) —
+        # actionable by whoever reads this task, not only an operator with
+        # host access. Mirrors `_failed_text`'s equivalent branch.
+        fact = (
+            "Cancelled — work completed so far was saved and is attached to "
+            "this task as a downloadable bundle."
+        )
+    elif rescue_bundle_created:
+        # A bundle existed but exceeded what could be handed off, and there
+        # is no other channel to point at — same honesty as `_failed_text`'s
+        # equivalent branch, for the same reason.
+        fact = (
+            "Cancelled — work completed so far exceeded the size that could "
+            "be preserved and was lost."
         )
     else:
-        text = "Cancelled"
+        fact = "Cancelled."
+    text = fact
 
     data_part = new_data_part(
         _result_payload(result).model_dump(mode="json", by_alias=True, exclude_none=True)
@@ -731,13 +949,30 @@ def cancel_result_message(task: Task, result: "EvolutionResult") -> Message:
     data_part.metadata.get_or_create_struct(EVENT_EXTENSION_URI_V1).update(
         {"schema": EvolutionResultActionPayload.SCHEMA_URI}
     )
+    parts = [Part(text=text), data_part]
     return Message(
         context_id=task.context_id,
         task_id=task.id,
         message_id=str(uuid.uuid4()),
         role=Role.ROLE_AGENT,
-        parts=[Part(text=text), data_part],
+        parts=parts,
     )
+
+
+def _terminal_text(result: "EvolutionResult", location: str) -> str:
+    """The terminal message: the executor's own summary, then where to look.
+
+    `location` is the toolkit-facts line (PR link, branch name, or "No
+    changes were needed") — always present. `result.summary` is the
+    executor's closing explanation of what it did, when it produced one; it
+    reads as the answer to "what happened", with `location` as the follow-up
+    "and here's where to find it".
+    """
+    location = f"{location}." if not location.endswith((".", "!", "?")) else location
+    summary = getattr(result, "summary", None)
+    if summary:
+        return f"{summary}\n\n{location}"
+    return location
 
 
 def result_events(
@@ -763,24 +998,61 @@ def result_events(
     # PhaseStarted for it, so nothing else would ever move `stage` off the last
     # phase the run announced. Stated here so a finished run does not read as
     # though it were still delivering.
-    progress.remember(stage=_TERMINAL_STAGE, outcome=result.outcome)
+    stopped_early = _stopped_early(result)
+    # `stoppedEarly` alongside `outcome`, because it qualifies it: a
+    # budget-stopped run still reports 'succeeded'/'no_change', and this is what
+    # tells a consumer reading `task.metadata` that the result is a partial one.
+    progress.remember(
+        stage=_TERMINAL_STAGE, outcome=result.outcome, stoppedEarly=stopped_early
+    )
     usage = _usage_payload(result)
     if usage is not None:
         # Also on the progress struct, not only on the artifact: this is the
         # one struct that reaches `task.metadata`, so an operator auditing cost
         # finds it on the task without having to open the artifact.
         progress.remember(usage=usage.model_dump(mode="json", by_alias=True))
+    run_metadata = getattr(result, "metadata", None)
+    if isinstance(run_metadata, dict) and run_metadata:
+        # The struct is shared with fields this mapper owns, and a toolkit key
+        # that happened to collide would silently replace one of them - the
+        # usage block above most of all. Collisions are dropped, not merged:
+        # this bag is diagnostics, and a wrong `usage` is worse than a missing
+        # observation.
+        clashing = set(run_metadata) & _RESERVED_PROGRESS_KEYS
+        if clashing:
+            logger.warning(
+                "evolution: ignoring toolkit metadata key(s) %s - reserved by the "
+                "progress struct",
+                ", ".join(sorted(clashing)),
+            )
+            run_metadata = {k: v for k, v in run_metadata.items() if k not in clashing}
+        # Observations about how the run went rather than what it delivered -
+        # the depth it was worked at, a token budget it blew. Free-form on
+        # purpose: these are things an operator looks at, not things a client
+        # branches on, so they ride the progress struct (which reaches
+        # `task.metadata`) instead of growing typed fields on the result
+        # payload. Unknown keys from a newer toolkit pass straight through.
+        progress.remember(**run_metadata)
     terminal_progress = progress.snapshot()
 
     artifact_event = _result_artifact_event(task, result)
     if result.outcome == "failed":
-        # `result.error` rides the artifact above, where an operator reads it.
-        terminal = failed_event(task, error=_RUN_FAILED_TEXT, progress=terminal_progress)
+        terminal = failed_event(task, error=_failed_text(result), progress=terminal_progress)
     elif result.outcome == "no_change":
+        # "No changes were needed" is a verdict about the work; a run that ran
+        # out of budget before committing anything never reached one, so it
+        # gets the other sentence — what happened, and that the context can be
+        # resumed to continue.
+        no_change_text = (
+            "Nothing was finished before the token budget ran out — "
+            "the work continues on the next run"
+            if stopped_early
+            else "No changes were needed"
+        )
         terminal = status_event(
             task,
             state=TaskState.TASK_STATE_COMPLETED,
-            text="No changes were needed",
+            text=_terminal_text(result, no_change_text),
             progress=terminal_progress,
         )
     else:
@@ -791,15 +1063,33 @@ def result_events(
         # the artifact already carries it.
         pr_url = getattr(result, "pr_url", None)
         if pr_url:
-            text = f"Done — ready for review: {pr_url}"
+            location = f"Done — ready for review: {pr_url}"
         elif result.branch:
-            text = f"Done — changes are on branch {result.branch}"
+            location = f"Done — changes are on branch {result.branch}"
         else:
-            text = "Done"
+            location = "Done"
+        if stopped_early:
+            # The delivered work is real and its location above is accurate —
+            # what changes is that it is only part of what was asked for. Said
+            # here rather than left to the machine-readable channels because it
+            # is the one thing the requester has to act on: look at what landed,
+            # then run the evolution again for the rest.
+            location = (
+                f"{location}. The run stopped early on its token budget — "
+                "remaining work continues on the next run"
+            )
         terminal = status_event(
             task,
             state=TaskState.TASK_STATE_COMPLETED,
-            text=text,
+            text=_terminal_text(result, location),
             progress=terminal_progress,
         )
-    return [artifact_event, terminal]
+    events_out = [artifact_event]
+    bundle_event = rescue_bundle_artifact_event(task, result)
+    if bundle_event is not None:
+        # Before `terminal`, not after: anything published once the terminal
+        # status lands is dropped by the event consumer (same rule that
+        # keeps the cancel path off a separate artifact entirely).
+        events_out.append(bundle_event)
+    events_out.append(terminal)
+    return events_out

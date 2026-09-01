@@ -8,9 +8,11 @@ from .base import (
     ExtensionTaskHandler,
     discover_extension_task_handlers,
 )
+from .errors import ExtensionPreflightError
 
 __all__ = [
     "ExtensionAvailability",
+    "ExtensionPreflightError",
     "ExtensionTaskHandler",
     "discover_extension_task_handlers",
     "ROUTED_EXTENSION_METADATA_KEY",

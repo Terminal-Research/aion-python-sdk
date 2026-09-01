@@ -5,6 +5,7 @@ from a2a.server.events import EventQueue
 from a2a.types import Task, TaskState, TaskStatus
 from a2a.utils.errors import (
     InternalError,
+    InvalidParamsError,
     TaskNotCancelableError,
     TaskNotFoundError,
     UnsupportedOperationError,
@@ -12,6 +13,7 @@ from a2a.utils.errors import (
 
 from aion.server.agent.execution import AionAgentRequestExecutor
 from aion.server.agent.execution.extensions.base import ROUTED_EXTENSION_METADATA_KEY
+from aion.server.agent.execution.extensions.errors import ExtensionPreflightError
 from aion.server.agent.execution.scope import init_execution_scope
 
 
@@ -233,7 +235,7 @@ class TestCancel:
 
             await executor.cancel(ctx, event_queue)
 
-            agent.cancel.assert_awaited_once_with(context=ctx)
+            agent.cancel.assert_awaited_once_with(context=ctx, event_queue=event_queue)
             MockUpdater.assert_called_once_with(event_queue, task.id, task.context_id)
             updater_instance.cancel.assert_awaited_once()
 
@@ -252,7 +254,7 @@ class TestCancel:
 
             await executor.cancel(ctx, event_queue)
 
-            agent.cancel.assert_awaited_once_with(context=ctx)
+            agent.cancel.assert_awaited_once_with(context=ctx, event_queue=event_queue)
             updater_instance.cancel.assert_awaited_once()
 
     @pytest.mark.anyio
@@ -269,7 +271,7 @@ class TestCancel:
 
             await executor.cancel(ctx, event_queue)
 
-            agent.cancel.assert_awaited_once_with(context=ctx)
+            agent.cancel.assert_awaited_once_with(context=ctx, event_queue=event_queue)
             updater_instance.cancel.assert_awaited_once()
 
     @pytest.mark.anyio
@@ -290,7 +292,7 @@ class TestCancel:
 
             await executor.cancel(ctx, event_queue)
 
-            handler.cancel.assert_awaited_once_with(context=ctx)
+            handler.cancel.assert_awaited_once_with(context=ctx, event_queue=event_queue)
             agent.cancel.assert_not_awaited()
             updater_instance.cancel.assert_awaited_once()
 
@@ -313,7 +315,7 @@ class TestCancel:
 
             await executor.cancel(ctx, event_queue)
 
-            handler.cancel.assert_awaited_once_with(context=ctx)
+            handler.cancel.assert_awaited_once_with(context=ctx, event_queue=event_queue)
             agent.cancel.assert_not_awaited()
             updater_instance.cancel.assert_awaited_once()
 
@@ -335,6 +337,7 @@ def _make_handler(uri="https://docs.aion.to/a2a/extensions/aion/fake/1.0.0"):
     handler.stream = MagicMock(name="stream")
     handler.resume = MagicMock(name="resume")
     handler.cancel = AsyncMock(name="cancel")
+    handler.preflight = AsyncMock(name="preflight", return_value=None)
     return handler
 
 
@@ -376,6 +379,52 @@ class TestResolve:
         resolved = await executor._resolve(task, "resume")
 
         assert resolved is handler.resume
+
+    @pytest.mark.anyio
+    async def test_resolve_stream_runs_matched_handlers_preflight(self):
+        """preflight() must see the live request context, not a cached one -
+        that's the whole point of running it per request instead of once at
+        executor startup (see ExtensionPreflightError)."""
+        handler = _make_handler(uri="https://docs.aion.to/a2a/extensions/aion/evolution/1.0.0")
+        executor = AionAgentRequestExecutor(aion_agent=_make_agent(), extension_handlers=[handler])
+        task = _make_real_task()
+        context = MagicMock(spec=RequestContext)
+
+        mock_runtime_context = MagicMock()
+        mock_runtime_context.extensions = {handler.uri: None}
+
+        with patch(
+            "aion.server.agent.execution.request_executor.AionRuntimeContextRegistry"
+        ) as MockRegistry:
+            MockRegistry.aget_current_context = AsyncMock(return_value=mock_runtime_context)
+            await executor._resolve(task, "stream", context)
+
+        handler.preflight.assert_awaited_once_with(context)
+
+    @pytest.mark.anyio
+    async def test_resolve_cancel_does_not_run_preflight(self):
+        """A cancelled task already exists - there is nothing left to gate
+        before task creation, so cancel must not require preflight at all."""
+        handler = _make_handler(uri="https://docs.aion.to/a2a/extensions/aion/evolution/1.0.0")
+        executor = AionAgentRequestExecutor(aion_agent=_make_agent(), extension_handlers=[handler])
+        task = _make_real_task(metadata={ROUTED_EXTENSION_METADATA_KEY: handler.uri})
+
+        await executor._resolve(task, "cancel")
+
+        handler.preflight.assert_not_called()
+
+    @pytest.mark.anyio
+    async def test_resolve_stream_falls_back_to_agent_skips_preflight(self):
+        """The plain framework adapter (`self.agent`) has no preflight - the
+        executor must not assume every routed callable is an extension
+        handler."""
+        agent = _make_agent()
+        executor = AionAgentRequestExecutor(aion_agent=agent, extension_handlers=[])
+        task = _make_real_task()
+
+        resolved = await executor._resolve(task, "stream", MagicMock(spec=RequestContext))
+
+        assert resolved is agent.stream
 
     @pytest.mark.anyio
     async def test_resolve_cancel_falls_back_to_agent_without_routing(self):
@@ -494,6 +543,47 @@ class TestExecuteViaResolve:
         assert resume_called_with.get("context") is ctx
         enqueued = [call.args[0] for call in event_queue.enqueue_event.await_args_list]
         assert task not in enqueued
+
+    @pytest.mark.anyio
+    async def test_execute_rejects_via_preflight_before_task_is_persisted(self):
+        """A handler that rejects a request in preflight() must stop the
+        request at the JSON-RPC level - no task ever reaches the event
+        queue, so no FAILED task is left behind for a deployment-config
+        problem (see ExtensionPreflightError)."""
+        agent = _make_agent()
+        handler = _make_handler(uri="https://docs.aion.to/a2a/extensions/aion/evolution/1.0.0")
+        handler.preflight = AsyncMock(side_effect=ExtensionPreflightError("GITHUB_TOKEN is not set"))
+
+        executor = AionAgentRequestExecutor(aion_agent=agent, extension_handlers=[handler])
+        task = _make_real_task()
+        ctx = _make_context(task=None)
+        ctx.current_task = None
+        ctx.message = MagicMock()
+        ctx.metadata = None
+        event_queue = AsyncMock(spec=EventQueue)
+
+        init_execution_scope()
+
+        mock_runtime_context = MagicMock()
+        mock_runtime_context.extensions = {handler.uri: None}
+
+        with patch(
+            "aion.server.agent.execution.request_executor.new_task_from_user_message",
+            return_value=task,
+        ):
+            with patch(
+                "aion.server.agent.execution.request_executor.AionRuntimeContextBuilder"
+            ) as MockBuilder:
+                MockBuilder.from_request_context.return_value = MagicMock()
+                with patch(
+                    "aion.server.agent.execution.request_executor.AionRuntimeContextRegistry"
+                ) as MockRegistry:
+                    MockRegistry.aset_current_context = AsyncMock()
+                    MockRegistry.aget_current_context = AsyncMock(return_value=mock_runtime_context)
+                    with pytest.raises(InvalidParamsError):
+                        await executor.execute(ctx, event_queue)
+
+        event_queue.enqueue_event.assert_not_awaited()
 
 
 class TestCreateFactory:
