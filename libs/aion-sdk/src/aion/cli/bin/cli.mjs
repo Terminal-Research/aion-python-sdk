@@ -51003,18 +51003,8 @@ function deleteComposerTextBackward(state) {
     previousCursor
   );
 }
-function deleteComposerTextForward(state) {
-  const cursor = normalizeCursor(state.draft, state.cursor);
-  const nextCursor = getGraphemeBoundaries(state.draft).find(
-    (boundary) => boundary > cursor
-  );
-  if (nextCursor === void 0) {
-    return resetPreferredColumn(state, cursor);
-  }
-  return createComposerInputState(
-    `${state.draft.slice(0, cursor)}${state.draft.slice(nextCursor)}`,
-    cursor
-  );
+function isComposerBackwardDeleteKey(key) {
+  return key.backspace || key.delete;
 }
 function moveComposerCursorHorizontally(state, direction) {
   const cursor = normalizeCursor(state.draft, state.cursor);
@@ -60736,18 +60726,11 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
       }
       return;
     }
-    if (key.backspace) {
+    if (isComposerBackwardDeleteKey(key)) {
       if (isSlashSubmenuOpen) {
         return;
       }
       setComposerInput(deleteComposerTextBackward);
-      return;
-    }
-    if (key.delete) {
-      if (isSlashSubmenuOpen) {
-        return;
-      }
-      setComposerInput(deleteComposerTextForward);
       return;
     }
     if (key.return) {

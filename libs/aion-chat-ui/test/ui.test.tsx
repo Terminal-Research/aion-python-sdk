@@ -1,6 +1,6 @@
 import { PassThrough, Writable } from "node:stream";
-import React from "react";
-import { render as renderInk } from "ink";
+import React, { useState } from "react";
+import { render as renderInk, Text, useInput } from "ink";
 import { render } from "ink-testing-library";
 import { describe, expect, it, vi } from "vitest";
 
@@ -15,6 +15,25 @@ import {
 	MessageBubble,
 	WorkingIndicator
 } from "../src/components/MessageBubble.js";
+import {
+	createComposerInputState,
+	deleteComposerTextBackward,
+	isComposerBackwardDeleteKey
+} from "../src/lib/input/composer.js";
+
+function ComposerBackspaceHarness(): React.JSX.Element {
+	const [composerInput, setComposerInput] = useState(() =>
+		createComposerInputState("abcd", 2)
+	);
+
+	useInput((_input, key) => {
+		if (isComposerBackwardDeleteKey(key)) {
+			setComposerInput(deleteComposerTextBackward);
+		}
+	});
+
+	return <Text>{`${composerInput.draft}|${composerInput.cursor}`}</Text>;
+}
 
 class TestTerminal extends Writable {
 	readonly columns = 100;
@@ -34,6 +53,17 @@ class TestTerminal extends Writable {
 }
 
 describe("Ink components", () => {
+	it("treats the terminal DEL byte as Backspace", async () => {
+		const app = render(<ComposerBackspaceHarness />);
+
+		expect(app.lastFrame()).toBe("abcd|2");
+		app.stdin.write("\u007f");
+		await vi.waitFor(() => {
+			expect(app.lastFrame()).toBe("acd|1");
+		});
+		app.unmount();
+	});
+
 	it("renders the agent picker and hides the footer while the @ menu is open", () => {
 		const app = render(
 			<ChatComposer

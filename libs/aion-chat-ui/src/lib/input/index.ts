@@ -17,6 +17,7 @@ export {
 	getComposerCursorRowIndex,
 	getComposerDraftRows,
 	insertComposerText,
+	isComposerBackwardDeleteKey,
 	moveComposerCursorHorizontally,
 	moveComposerCursorToRowBoundary,
 	moveComposerCursorVertically,

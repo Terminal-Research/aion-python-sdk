@@ -41,11 +41,11 @@ import {
 	clearFileMention,
 	createComposerInputState,
 	deleteComposerTextBackward,
-	deleteComposerTextForward,
 	getFileMentionMatch,
 	getFileSuggestions,
 	getComposerContentWidth,
 	insertComposerText,
+	isComposerBackwardDeleteKey,
 	moveComposerCursorHorizontally,
 	moveComposerCursorToRowBoundary,
 	moveComposerCursorVertically,
@@ -1942,21 +1942,12 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			return;
 		}
 
-		if (key.backspace) {
+		if (isComposerBackwardDeleteKey(key)) {
 			if (isSlashSubmenuOpen) {
 				return;
 			}
 
 			setComposerInput(deleteComposerTextBackward);
-			return;
-		}
-
-		if (key.delete) {
-			if (isSlashSubmenuOpen) {
-				return;
-			}
-
-			setComposerInput(deleteComposerTextForward);
 			return;
 		}
 

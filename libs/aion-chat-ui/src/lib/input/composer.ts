@@ -248,6 +248,15 @@ export function deleteComposerTextForward(
 	);
 }
 
+export function isComposerBackwardDeleteKey(key: {
+	backspace: boolean;
+	delete: boolean;
+}): boolean {
+	// Ink 6 reports the DEL byte emitted by most Backspace keys as `delete`.
+	// Its public key object cannot distinguish that byte from forward Delete.
+	return key.backspace || key.delete;
+}
+
 export function moveComposerCursorHorizontally(
 	state: ComposerInputState,
 	direction: -1 | 1
