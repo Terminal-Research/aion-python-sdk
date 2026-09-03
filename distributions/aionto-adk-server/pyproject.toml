@@ -1,0 +1,37 @@
+[project]
+name = "aionto-adk-server"
+dynamic = ["version"]
+description = "Aion server-side Google ADK integration — the ADK plugin for the Aion A2A server"
+readme = "README.md"
+license = "MIT"
+authors = [{ name = "Terminal Research Team", email = "support@terminal.exchange" }]
+requires-python = ">=3.12"
+keywords = ["aion", "agents", "a2a", "google-adk"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries",
+]
+dependencies = [
+    "aionto-adk-authoring",
+    "google-adk>=1.20.0,<2.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/Terminal-Research/aion-python-sdk"
+Documentation = "https://docs.aion.to/sdk/python"
+Repository = "https://github.com/Terminal-Research/aion-python-sdk"
+Issues = "https://github.com/Terminal-Research/aion-python-sdk/issues"
+
+[tool.poetry]
+packages = [{ include = "aion", from = "src" }]
+
+[tool.aion-dist]
+bundles = ["aion-server-adk"]
+
+[build-system]
+requires = ["poetry-core>=2.0.0"]
+build-backend = "poetry.core.masonry.api"

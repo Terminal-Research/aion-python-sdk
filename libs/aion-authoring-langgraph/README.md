@@ -1,4 +1,4 @@
-# aion-authoring-langgraph
+# aionto-langgraph-authoring
 
 LangGraph authoring toolkit for Aion. Provides state helpers, streaming utilities, and event-routing primitives that graph authors import directly. Safe to install without pulling in any server or plugin machinery.
 
@@ -7,13 +7,7 @@ LangGraph authoring toolkit for Aion. Provides state helpers, streaming utilitie
 ## Installation
 
 ```bash
-pip install aion-authoring-langgraph
-```
-
-Or, if you are serving the agent with Aion:
-
-```bash
-pip install aion-sdk[langgraph]
+pip install "aionto-sdk[langgraph-authoring]"
 ```
 
 ---
@@ -198,7 +192,7 @@ async def handle_message(message: Message):
 
 Use these inside any graph node that receives a `StreamWriter`. They emit events directly to the client during execution.
 
-> **Note:** `emit_*` helpers and custom event models emit typed events into the LangGraph `custom` stream. These events are understood and converted to A2A protocol events only when the graph is served via `aion-server` (i.e. with `aion-server-langgraph` installed). When running standalone — for example via `langgraph dev` or in unit tests — the events appear as raw objects in the stream, which is useful for debugging but produces no A2A output.
+> **Note:** `emit_*` helpers and custom event models emit typed events into the LangGraph `custom` stream. These events are understood and converted to A2A protocol events only when the graph is served by the Aion server (i.e. with `aionto-langgraph-server` installed). When running standalone — for example via `langgraph dev` or in unit tests — the events appear as raw objects in the stream, which is useful for debugging but produces no A2A output.
 
 ```python
 from langgraph.types import StreamWriter

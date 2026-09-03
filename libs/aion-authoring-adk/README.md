@@ -1,23 +1,15 @@
-# aion-authoring-adk
+# aionto-adk-authoring
 
-Google ADK authoring helpers for Aion MCP access. This package contains the
-framework-specific MCP toolset bindings that agent authors import directly.
-
-The existing `aion-adk` package contains Aion-backed Google ADK model helpers.
-The Aion Server control-plane plugin lives in `aion-plugin-adk`.
+Google ADK authoring helpers for Aion: MCP toolset bindings and model helpers
+that agent authors import directly, all under `aion.adk.authoring`.
+The Aion Server plugin that runs ADK agents lives in `aionto-adk-server`.
 
 ---
 
 ## Installation
 
 ```bash
-pip install aion-authoring-adk
-```
-
-Or, when installing through the umbrella SDK package:
-
-```bash
-pip install "aion-sdk[adk-authoring]"
+pip install "aionto-sdk[adk-authoring]"
 ```
 
 ---
@@ -34,8 +26,7 @@ from aion.api import (
     CapabilitySubjectSource,
     RuntimeCapabilityReference,
 )
-from aion.adk.mcp import aion_adk_mcp_toolset
-from aion.adk.models import aion_lite_llm
+from aion.adk.authoring import aion_adk_mcp_toolset, aion_lite_llm
 
 agent = Agent(
     name="research_agent",

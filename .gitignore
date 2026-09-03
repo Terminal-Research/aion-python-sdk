@@ -7,6 +7,9 @@ __pycache__/
 build/
 develop-eggs/
 dist/
+# `dist/` above matches any directory of that name, including the packaging
+# scripts in scripts/dist/, which are source and must be tracked.
+!scripts/dist/
 downloads/
 eggs/
 .eggs/

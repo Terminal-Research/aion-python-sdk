@@ -24,7 +24,7 @@ POSTGRES_TEST_URL ?= $(PG_TEST_URL)
 # where the only binding in scope is still the real one.
 POSTGRES_TEST_URL_IS_EXTERNAL := $(filter environment command line,$(origin POSTGRES_TEST_URL))
 
-.PHONY: help tests tests-integration tests-all pg-test-up pg-test-down deps-install deps-lock deps-lock-regenerate deps-sync deps-set-branch deps-set-local deps-set-local-revert deps-use-local deps-use-remote deps-verify deps-verify-clean
+.PHONY: help tests tests-integration tests-all pg-test-up pg-test-down dist-build dist-verify dist-verify-sdist dist-clean deps-install deps-lock deps-lock-regenerate deps-sync deps-set-branch deps-set-local deps-set-local-revert deps-use-local deps-use-remote deps-verify deps-verify-clean
 
 help: ## Show available commands
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -137,3 +137,17 @@ deps-verify: ## Check that packages resolve to the working tree as declared
 
 deps-verify-clean: ## Same as deps-verify, plus delete leftover .venv/src clones
 	./scripts/deps/verify.py --clean
+
+# The published `aionto-*` distributions. They are built out of tree - see
+# scripts/dist/build.py for why - and land in dist/, which is git-ignored.
+dist-build: ## Build all aionto-* distributions into dist/
+	./scripts/dist/build.py --all
+
+dist-verify: ## Check the built artifacts and smoke-test them in fresh venvs
+	./scripts/dist/verify.py
+
+dist-verify-sdist: ## Same as dist-verify, plus an install from the sdists
+	./scripts/dist/verify.py --sdist
+
+dist-clean: ## Remove the built artifacts
+	rm -rf dist/

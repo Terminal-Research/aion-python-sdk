@@ -6,7 +6,7 @@ Command-line interface for the Aion Python SDK.
 
 ### `aion serve`
 
-Starts all configured AION agents and a proxy server that wraps your LangGraph agents with the A2A (Agent-to-Agent) protocol.
+Starts all configured AION agents and a proxy server that serves your agents over the A2A (Agent-to-Agent) protocol.
 
 **Usage:**
 

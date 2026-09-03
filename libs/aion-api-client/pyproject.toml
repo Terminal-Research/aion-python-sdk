@@ -10,7 +10,6 @@ packages = [{ include = "aion", from = "src" }]
 [tool.poetry.dependencies]
 python = "^3.12.0"
 gql = ">=3.4.1,<4.0.0"
-ariadne-codegen = { version = "==0.18.0", extras = ["subscriptions"] }
 PyJWT = "^2.9.0"
 httpx = "^0.28.1"
 websockets = ">=15.0.1,<16.0.0"
@@ -20,6 +19,10 @@ aion-core = { git = "https://github.com/Terminal-Research/aion-python-sdk", bran
 [tool.poetry.group.dev.dependencies]
 pytest = ">=8.0.0"
 pytest-asyncio = ">=0.24"
+# Generates the GraphQL client under src/aion/api/gql/generated/, which is
+# committed. Nothing imports it at runtime, so it is a development tool and
+# must not be a requirement of the published distribution.
+ariadne-codegen = { version = "==0.18.0", extras = ["subscriptions"] }
 
 [tool.ariadne-codegen]
 schema_path = "gql/schema.graphql"

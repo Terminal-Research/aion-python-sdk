@@ -1,0 +1,38 @@
+[project]
+name = "aionto-langgraph-authoring"
+dynamic = ["version"]
+description = "Aion LangGraph authoring toolkit — model helpers, state and streaming utilities for LangGraph agents on Aion"
+readme = "README.md"
+license = "MIT"
+authors = [{ name = "Terminal Research Team", email = "support@terminal.exchange" }]
+requires-python = ">=3.12"
+keywords = ["aion", "agents", "a2a", "langgraph"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries",
+]
+dependencies = [
+    "aionto-sdk",
+    "langgraph>=0.6.0,<=1.0.5",
+    "langchain-mcp-adapters>=0.1.0,<0.3.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/Terminal-Research/aion-python-sdk"
+Documentation = "https://docs.aion.to/sdk/python"
+Repository = "https://github.com/Terminal-Research/aion-python-sdk"
+Issues = "https://github.com/Terminal-Research/aion-python-sdk/issues"
+
+[tool.poetry]
+packages = [{ include = "aion", from = "src" }]
+
+[tool.aion-dist]
+bundles = ["aion-authoring-langgraph"]
+
+[build-system]
+requires = ["poetry-core>=2.0.0"]
+build-backend = "poetry.core.masonry.api"

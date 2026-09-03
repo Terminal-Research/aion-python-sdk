@@ -1,105 +1,148 @@
-# Aion Agent SDK
+# Aion Python SDK
 
-A Python SDK for integrating LangGraph agents with the Agent-to-Agent (A2A) protocol.
+[![PyPI](https://img.shields.io/pypi/v/aionto-sdk)](https://pypi.org/project/aionto-sdk/)
+[![Python](https://img.shields.io/pypi/pyversions/aionto-sdk)](https://pypi.org/project/aionto-sdk/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-## Installation
+A Python library for serving agents over the Agent-to-Agent (A2A) protocol and
+running them on the [Aion platform](https://www.aion.to/).
 
-```bash
-pip install aion-sdk
+Write an agent with LangGraph or Google ADK, describe it in an `aion.yaml`, and
+run `aion serve`. You get an A2A endpoint with an agent card, streaming, and
+conversation state — plus a chat client to try it out.
+
+> [!IMPORTANT]
+> The `aionto-*` packages are released together at one version and pin each
+> other exactly. Upgrade with the same extras you installed:
+> `pip install -U "aionto-sdk[langgraph-server]"`.
+
+## ✨ Features
+
+- **Framework agnostic**: write agents with LangGraph or Google ADK — the same
+  configuration and the same A2A surface either way.
+- **A2A protocol compliant**: an agent card, streaming, and conversation state
+  without writing protocol code.
+- **Configuration driven**: agents are declared in `aion.yaml`; `aion serve`
+  runs them.
+- **Chat client included**: `aion chat` talks to a running agent from the
+  terminal.
+- **Local or connected**: runs with no account at all, or add credentials and
+  reach the Aion model service and MCP tools.
+- **Multi-agent**: a built-in proxy fronts several agents behind one endpoint.
+
+## 🧩 Framework support
+
+| Framework | Authoring toolkit | Server runtime |
+|---|---|---|
+| LangGraph | ✅ `langgraph-authoring` | ✅ `langgraph-server` |
+| Google ADK | ✅ `adk-authoring` | ✅ `adk-server` |
+
+## 🔧 Installation
+
+### Prerequisites
+
+- Python 3.12+
+- Node.js 22+ — only for the bundled `aion chat` client
+
+### Install
+
+| What you get | uv | pip |
+|---|---|---|
+| Running LangGraph agents | `uv add "aionto-sdk[langgraph-server]"` | `pip install "aionto-sdk[langgraph-server]"` |
+| Running Google ADK agents | `uv add "aionto-sdk[adk-server]"` | `pip install "aionto-sdk[adk-server]"` |
+| Aion models, tools and messaging in LangGraph agents | `uv add "aionto-sdk[langgraph-authoring]"` | `pip install "aionto-sdk[langgraph-authoring]"` |
+| Aion models, tools and messaging in ADK agents | `uv add "aionto-sdk[adk-authoring]"` | `pip install "aionto-sdk[adk-authoring]"` |
+| The CLI, server and proxy, no framework | `uv add aionto-sdk` | `pip install aionto-sdk` |
+| Everything | `uv add "aionto-sdk[all]"` | `pip install "aionto-sdk[all]"` |
+
+Each server extra already includes the matching authoring toolkit — install an
+authoring extra on its own only when something else runs the agent.
+
+## 🚀 Quickstart
+
+This example uses LangGraph. For Google ADK, follow the
+[ADK quickstart](https://docs.aion.to/sdk/google-adk/quickstart).
+
+Write an agent in `agent.py`:
+
+```python
+from typing import Annotated, TypedDict
+
+from langchain_core.messages import AIMessage, AnyMessage
+from langgraph.graph import END, START, StateGraph
+from langgraph.graph.message import add_messages
+
+
+class State(TypedDict):
+    messages: Annotated[list[AnyMessage], add_messages]
+
+
+def reply(state: State) -> dict:
+    inbound = state["messages"][-1]
+    return {"messages": [AIMessage(content=f"Echo: {inbound.content}")]}
+
+
+def build_graph():
+    graph = StateGraph(State)
+    graph.add_node("reply", reply)
+    graph.add_edge(START, "reply")
+    graph.add_edge("reply", END)
+    return graph
 ```
 
-| Extra | Framework | Authoring | Server |
-|---|---|:---:|:---:|
-| `aion-sdk[langgraph-authoring]` | LangGraph | ✅ | |
-| `aion-sdk[langgraph-server]` | LangGraph | ✅ | ✅ |
-| `aion-sdk[adk-authoring]` | ADK | ✅ | |
-| `aion-sdk[adk-server]` | ADK | ✅ | ✅ |
-| `aion-sdk[all]` | All | ✅ | ✅ |
-
-## Environment Configuration
-
-Create a `.env` file in your project root with required credentials:``
-
-```bash
-AION_CLIENT_ID=your_client_id
-AION_CLIENT_SECRET=your_client_secret
-```
-
-For all available environment variables and optional configuration, see the **[Environment Variables Guide](docs/environment-variables.md)**.
-
-## Basic Configuration
-
-Create a minimal `aion.yaml` configuration file:
+Point Aion at it in `aion.yaml`:
 
 ```yaml
 aion:
   agents:
-    your_agent_id:
-      path: "./agent.py:chat_agent"
+    support:
+      path: "./agent.py:build_graph"
+      name: "Support Agent"
 ```
 
-Ports are assigned automatically for all agents and the proxy server, or can be specified via CLI options.
-
-For extended configuration options including skills and capabilities, see the **[Complete Configuration Guide](docs/aion-yaml-config.md)**.
-
-## Running the Agent
-
-Start the A2A server with proxy and agents:
+Serve it:
 
 ```bash
-# Start with automatic port assignment (default: ports from 8000-9000)
-poetry run aion serve
-
-# Start proxy on specific port (agents will use sequential ports)
-poetry run aion serve --port 10000
-
-# Start with custom port range for all services
-poetry run aion serve --port-range-start 7000 --port-range-end 8000
+aion serve
 ```
 
-**Available Options:**
-* `--port` - Specify proxy server port (agents will use ports starting from proxy_port + 1)
-* `--port-range-start` - Starting port for automatic assignment
-* `--port-range-end` - Ending port for automatic assignment
-
-The server will automatically:
-
-* Load your `aion.yaml` configuration
-* Load environment variables from `.env` file
-* Assign available ports to proxy server and agents (or use specified ports)
-* Make your agents available via the A2A protocol
-
-## Testing
-
-Test your agents with interactive chat in a separate terminal:
+And talk to it from another terminal:
 
 ```bash
-poetry run aion chat
+aion chat
 ```
 
-This provides a convenient way to test your agents locally before deployment.
+That is a complete local run — no account and no credentials required. To
+connect the agent to the platform, add `AION_CLIENT_ID` and
+`AION_CLIENT_SECRET` to a `.env` beside the configuration; without them the
+agents simply serve locally.
 
-For all available CLI commands and options, see the **[CLI Reference](libs/aion-sdk/README.md)**.
+## 📚 Documentation
 
-For running multiple agents with a proxy server, see the **[Multiple Agents Guide](docs/multiple-agents.md)**.
+Full documentation lives at [docs.aion.to](https://docs.aion.to/sdk/python):
 
-## Agent Customization
+- [Introduction](https://docs.aion.to/sdk/python) — what the SDK runs and how
+- [Installation](https://docs.aion.to/sdk/python/installation)
+- [LangGraph quickstart](https://docs.aion.to/sdk/langgraph/quickstart) ·
+  [Google ADK quickstart](https://docs.aion.to/sdk/google-adk/quickstart)
+- [`aion.yaml` reference](https://docs.aion.to/sdk/python/configuration/aion-yaml) ·
+  [Environment variables](https://docs.aion.to/sdk/python/configuration/environment-variables)
+- [CLI reference](https://docs.aion.to/sdk/python/running/cli) ·
+  [Multiple agents and the proxy](https://docs.aion.to/sdk/python/running/multi-agent-proxy)
+- [Troubleshooting](https://docs.aion.to/sdk/python/troubleshooting)
 
-The AION SDK supports custom agent extensions like adding custom API routes. For complete details, see the **[AppRegistry Guide](docs/app-registry.md)**.
+In this repository, covering what the documentation site does not:
 
-## Documentation
+- [Development Guide](docs/development/README.md) — working on the monorepo itself
+- [Publishing to PyPI](docs/publishing-pypi.md) — how the packages are built and released
 
-* **[Environment Variables Guide](docs/environment-variables.md)** - All configuration variables
-* **[Complete Configuration Guide](docs/aion-yaml-config.md)** - Full YAML options, skills, capabilities
-* **[Multiple Agents Guide](docs/multiple-agents.md)** - Running multiple agents with proxy
-* **[AppRegistry Guide](docs/app-registry.md)** - Custom router registration and agent customization
-* **[HTTP Endpoints](docs/http_endpoints.md)** - Agent and Proxy Server HTTP endpoints reference
-* **[A2A Protocol Extensions](docs/a2a_extensions/main.md)** - Streaming, context management, JSON-RPC methods
-* **[API Client](libs/aion-api-client/README.md)** - GraphQL client for integration
-* **[CLI Reference](libs/aion-sdk/README.md)** - Command-line interface and all available commands
+## 🤝 Contributing
 
----
+Contributions are welcome. For development setup, working with local
+dependencies, and testing feature branches, see the
+[Development Guide](docs/development/README.md).
 
-## Contributing
+## 📄 License
 
-For development setup, working with local dependencies, and testing feature branches, see the **[Development Guide](docs/development/README.md)**.
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file
+for more details.

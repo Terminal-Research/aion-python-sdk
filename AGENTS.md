@@ -100,9 +100,9 @@ and are discovered by `aion-server` at runtime.
   adapts inbound A2A requests into `graph.astream()` invocations and maps
   graph output back into A2A messages, tasks and streaming events. Includes
   execution, checkpointing, state handling, converters, and A2A extension
-  support. Selected with `framework: "langgraph"` in `aion.yaml`; the agent
-  path must resolve to a `StateGraph`, a compiled `Pregel`, or a callable
-  returning one.
+  support. The agent path in `aion.yaml` must resolve to a `StateGraph`, a
+  compiled `Pregel`, or a callable returning one; the runtime detects the
+  installed framework adapter from the loaded object.
 - **aion-server-adk** — server-side Google ADK integration under
   `aion.adk.server`: `ADKPlugin`/`ADKAdapter`, `ADKExecutor` and
   `ADKStreamExecutor`, session services (memory and PostgreSQL) via
@@ -190,15 +190,34 @@ and are discovered by `aion-server` at runtime.
   and `make deps-use-remote` to return. `make deps-set-branch BRANCH=...`
   repoints git references at a feature branch. `poetry.lock` files are not
   committed.
+- `distributions/` holds the five fat `aionto-*` distributions published to
+  PyPI: `aionto-sdk`, `aionto-langgraph-authoring`, `aionto-langgraph-server`,
+  `aionto-adk-authoring`, `aionto-adk-server`. Each is a `pyproject.toml` and
+  nothing else - the sources it ships are the `src/aion` trees of the `libs/`
+  packages it names in `[tool.aion-dist] bundles`, copied in at build time, and
+  its PyPI page is the README of the single library it bundles (`aionto-sdk`
+  bundles six, so it names the repository README via `[tool.aion-dist] readme`).
+  `make dist-build` builds all ten artifacts into `dist/` and
+  `make dist-verify` runs `twine check` plus a smoke install of each framework
+  stack in a fresh venv. None of them declares a version: all five take the
+  version of `libs/aion-sdk`, so a release is prepared by bumping that one
+  file. The five are released in lockstep, and the build writes the `==`
+  cross-pins into the staged copy once the version is known. The build stages each
+  distribution *outside* the working tree because poetry-core drops
+  git-ignored files from its archives. See `docs/publishing-pypi.md` and
+  `scripts/dist/`.
 - `.github/workflows/publish-aion.yml` publishes the `aion-chat-ui` npm
-  package on GitHub release.
+  package on GitHub release (`v*` tags);
+  `.github/workflows/publish-python.yml` publishes the `aionto-*`
+  distributions on a `py-v*` release, through PyPI trusted publishing.
 
 ## Documentation
 
 User-facing docs live in `docs/`: `environment-variables.md`,
 `aion-yaml-config.md`, `multiple-agents.md`, `app-registry.md`,
-`http_endpoints.md`, `a2a_extensions/`, and `development/` (environment and
-dependency workflows). Keep them in sync with behavioural changes.
+`http_endpoints.md`, `publishing-pypi.md`, `a2a_extensions/`, and
+`development/` (environment and dependency workflows). Keep them in sync with
+behavioural changes.
 
 ## Additional guidelines
 

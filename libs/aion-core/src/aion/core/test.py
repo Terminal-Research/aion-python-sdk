@@ -1,0 +1,1 @@
+from a2a.server.routes import fastapi_routes

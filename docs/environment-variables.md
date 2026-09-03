@@ -133,6 +133,6 @@ AION_API_KEEP_ALIVE=60
 ## Usage Notes
 
 - Variables are case-insensitive
-- The `.env` file is automatically loaded when running `poetry run aion serve`
+- The `.env` file is automatically loaded when running `aion serve`
 - Undefined optional variables will use their default values or be set to `None`
 - The system validates required variables on startup

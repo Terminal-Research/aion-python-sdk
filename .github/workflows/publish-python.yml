@@ -1,0 +1,85 @@
+name: Publish Aion Python packages
+
+# The npm workflow in publish-aion.yml watches the same event; the two are
+# kept apart by the release tag, `py-v*` here and `v*` there.
+on:
+  release:
+    types:
+      - published
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'py-v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tooling
+        run: |
+          pipx install poetry==2.4.1
+          pipx install twine
+
+      - name: Verify release tag matches distribution versions
+        if: github.event_name == 'release'
+        run: |
+          set -euo pipefail
+          VERSION=$(python - <<'PY'
+          import sys
+
+          sys.path.insert(0, "scripts/dist")
+          from config import find_distributions, get_version
+
+          # The version of libs/aion-sdk, read the same way the build reads it.
+          print(get_version(find_distributions()))
+          PY
+          )
+          RELEASE_TAG="${{ github.event.release.tag_name }}"
+          EXPECTED_TAG="py-v${VERSION}"
+
+          if [ "$RELEASE_TAG" != "$EXPECTED_TAG" ]; then
+            echo "Release tag $RELEASE_TAG does not match distribution version $EXPECTED_TAG" >&2
+            exit 1
+          fi
+
+      - name: Build all distributions
+        run: ./scripts/dist/build.py --all
+
+      - name: Verify artifacts
+        run: ./scripts/dist/verify.py
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-dists
+          path: dist/
+
+  # Split from the build so that the job holding the publishing identity does
+  # nothing but upload what the build produced.
+  publish:
+    if: github.event_name == 'release' && startsWith(github.event.release.tag_name, 'py-v')
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: python-dists
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/

@@ -1,0 +1,73 @@
+[project]
+name = "aionto-sdk"
+dynamic = ["version"]
+description = "Aion Python SDK — core types, API client, DB layer, MCP utilities, A2A server, and the aion CLI"
+readme = "README.md"
+license = "MIT"
+authors = [{ name = "Terminal Research Team", email = "support@terminal.exchange" }]
+requires-python = ">=3.12"
+keywords = ["aion", "agents", "a2a", "sdk"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries",
+]
+dependencies = [
+    "pydantic>=2.11.3",
+    "pydantic-settings>=2.3.4",
+    "python-dotenv>=1.0.1",
+    "PyYAML>=6.0.0,<7.0.0",
+    "a2a-sdk[http-server,telemetry,encryption]>=1.1.2,<1.2.0",
+    "gql>=3.4.1,<4.0.0",
+    "PyJWT>=2.9.0,<3.0.0",
+    "httpx>=0.28.1,<0.29.0",
+    "websockets>=15.0.1,<16.0.0",
+    "SQLAlchemy>=2.0.0,<3.0.0",
+    "alembic>=1.13.0,<2.0.0",
+    "psycopg[binary,pool]>=3.1.12,<4.0.0",
+    "greenlet>=3.0.3,<4.0.0",
+    "asgi-proxy-lib==0.2a0",
+    "uvicorn>=0.23.2",
+    "fastapi>=0.115.2",
+    "python-logstash-async>=4.0.1,<5.0.0",
+    "asyncclick>=8.0.1.2,<9.0.0",
+    "keyring>=25.0.0",
+]
+
+[project.optional-dependencies]
+langgraph-authoring = ["aionto-langgraph-authoring"]
+langgraph-server = ["aionto-langgraph-server"]
+adk-authoring = ["aionto-adk-authoring"]
+adk-server = ["aionto-adk-server"]
+all = [
+    "aionto-langgraph-authoring",
+    "aionto-langgraph-server",
+    "aionto-adk-authoring",
+    "aionto-adk-server",
+]
+
+[project.scripts]
+aion = "aion.cli.cli:cli"
+
+[project.urls]
+Homepage = "https://github.com/Terminal-Research/aion-python-sdk"
+Documentation = "https://docs.aion.to/sdk/python"
+Repository = "https://github.com/Terminal-Research/aion-python-sdk"
+Issues = "https://github.com/Terminal-Research/aion-python-sdk/issues"
+
+[tool.poetry]
+packages = [{ include = "aion", from = "src" }]
+include = [{ path = "src/aion/cli/bin/*", format = ["sdist", "wheel"] }]
+
+[tool.aion-dist]
+# The whole SDK is what this package installs, so its page is the project
+# README rather than the one describing aion-sdk, the CLI library alone.
+readme = "README.md"
+bundles = ["aion-core", "aion-api-client", "aion-db", "aion-mcp", "aion-server", "aion-sdk"]
+
+[build-system]
+requires = ["poetry-core>=2.0.0"]
+build-backend = "poetry.core.masonry.api"

@@ -11,7 +11,7 @@ All other Aion packages depend on this one; it has no internal Aion dependencies
 |---|---|
 | `aion.core.types` | A2A protocol models, enums, request/response types, extension payloads |
 | `aion.core.constants` | Shared A2A extension URI constants |
-| `aion.core.runtime` | `AionContext` — invocation-scoped context carrier for LangGraph |
+| `aion.core.runtime` | `AionContext` — invocation-scoped context carrier available to any framework |
 | `aion.core.logging` | `get_logger()` — returns `AionLogger` when `aion-server` is installed, stdlib `Logger` otherwise |
 | `aion.core.settings` | `BaseEnvSettings`, `ApiSettings`, `api_settings` |
 | `aion.core.db` | `DbManagerProtocol` — interface for database manager implementations |
@@ -23,5 +23,10 @@ All other Aion packages depend on this one; it has no internal Aion dependencies
 ```bash
 cd libs/aion-core
 poetry install
-poetry run pytest
+```
+
+Run tests from the repository root:
+
+```bash
+make tests ARGS="aion-core"
 ```

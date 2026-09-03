@@ -1,19 +1,20 @@
-# aion-server-langgraph
+# aionto-langgraph-server
 
-Server-side LangGraph integration for Aion. Implements `AgentPluginProtocol` — adapts inbound A2A requests into LangGraph `graph.astream()` invocations and maps graph outputs back into A2A Messages, Tasks, and streaming events. Discovered automatically by `aion-server` when installed.
+Server-side LangGraph integration for Aion. Implements `AgentPluginProtocol` — adapts inbound A2A requests into LangGraph `graph.astream()` invocations and maps graph outputs back into A2A Messages, Tasks, and streaming events. Discovered automatically by the Aion server when installed.
 
 ---
 
 ## Setup
 
-Add `framework: "langgraph"` to any agent in `aion.yaml`. The path must resolve to a `StateGraph` instance, a compiled `Pregel`, or a callable that returns one:
+Install the LangGraph server package and point `aion.yaml` at a `StateGraph`
+instance, a compiled `Pregel`, or a callable that returns one. Aion detects the
+framework from the loaded object:
 
 ```yaml
 aion:
   agents:
     my_agent:
       path: "./agent.py:build_graph"
-      framework: "langgraph"
 ```
 
 See [Quickstart](https://docs.aion.to/sdk/python/quickstart-langgraph) for a full working example.
@@ -42,7 +43,7 @@ The full A2A context is passed to the graph via LangGraph's native runtime conte
 accessible through `AionRuntimeContext`. This includes the raw inbox, optional typed event, and
 parsed `distribution_extension_payload` with distribution, behavior, environment, principal identity,
 and service identity accessors. The recommended way to consume Aion events is to add a
-`create_event_router` node from `aion-authoring-langgraph`, which handles injection automatically
+`create_event_router` node from `aionto-langgraph-authoring`, which handles injection automatically
 while leaving graph edges explicit:
 
 ```python
@@ -57,7 +58,7 @@ builder.add_edge(START, "aion_events")
 builder.add_edge("aion_events", END)
 ```
 
-For lower-level access, declare `runtime` or `context` in a handler signature — see [aion-authoring-langgraph](../aion-authoring-langgraph/README.md) for the full list of injectable parameters.
+For lower-level access, declare `runtime` or `context` in a handler signature — see [aionto-langgraph-authoring](../aion-authoring-langgraph/README.md) for the full list of injectable parameters.
 
 ---
 
@@ -90,7 +91,7 @@ For full outbound precedence rules, see [Message Mapping](https://docs.aion.to/s
 
 The plugin configures the graph checkpointer automatically:
 
-- **PostgreSQL** — used when `aion-db` has an active pool. Runs in a dedicated schema (`aion_langgraph`) to avoid collisions with application tables.
+- **PostgreSQL** — used when `aion.db` has an active pool. Runs in a dedicated schema (`aion_langgraph`) to avoid collisions with application tables.
 - **In-memory** — fallback when no database is available (state is lost on process restart).
 
 No configuration is required. Schema setup and migrations run on first startup.
@@ -114,22 +115,22 @@ def review_node(state: State) -> State:
 
 ## Plugin Discovery
 
-`aion-server` discovers this plugin at startup via dynamic import:
+The Aion server discovers this plugin at startup via dynamic import:
 
 ```python
-# aion-server resolves this automatically when aion-server-langgraph is installed
+# resolved automatically when aionto-langgraph-server is installed
 "aion.server_langgraph.LangGraphPlugin"
 ```
 
-If `aion-server-langgraph` is not installed, the import is silently skipped and LangGraph support is unavailable. No configuration or registration is required.
+If `aionto-langgraph-server` is not installed, the import is silently skipped and LangGraph support is unavailable. No configuration or registration is required.
 
 ---
 
 ## Architecture
 
 ```
-aion-server
-  └── discovers LangGraphPlugin (aion-server-langgraph)
+Aion server
+  └── discovers LangGraphPlugin (aionto-langgraph-server)
         ├── LangGraphAdapter       — compiles graphs, creates executors
         ├── LangGraphExecutor      — orchestrates stream / resume lifecycle
         │   ├── StreamExecutor     — calls graph.astream(), yields A2A events
