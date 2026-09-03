@@ -7,7 +7,7 @@ readme = "README.md"
 packages = [{include = "aion", from = "src"}]
 
 [tool.poetry.dependencies]
-python = "^3.12.0"
+python = ">=3.12,<3.15"
 aion-api-client = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-api-client" }
 asgi-proxy-lib = "*"
 PyYAML = "*"

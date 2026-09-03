@@ -123,7 +123,8 @@ and are discovered by `aion-server` at runtime.
 - **aion-authoring-adk** — Google ADK authoring toolkit under
   `aion.adk.authoring`: MCP toolset bindings, request-scoped Aion model
   helpers, invocation helpers and transformers, without pulling in server
-  plugin machinery.
+  plugin machinery. Owns the `litellm` dependency, since `aion_lite_llm()`
+  builds on ADK's `LiteLlm`; agent packages must not declare it themselves.
 
 ### Entry points
 
