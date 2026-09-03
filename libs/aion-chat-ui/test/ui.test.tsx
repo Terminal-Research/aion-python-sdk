@@ -38,6 +38,7 @@ describe("Ink components", () => {
 		const app = render(
 			<ChatComposer
 				draft=""
+				cursorOffset={0}
 				activeAgentId={undefined}
 				discoveredCount={2}
 				pushState="Disabled"
@@ -82,6 +83,7 @@ describe("Ink components", () => {
 		const app = render(
 			<ChatComposer
 				draft=""
+				cursorOffset={0}
 				activeAgentId={undefined}
 				discoveredCount={1}
 				pushState="Disabled"
@@ -112,6 +114,7 @@ describe("Ink components", () => {
 		const app = render(
 			<ChatComposer
 				draft="/re"
+				cursorOffset={3}
 				activeAgentId="command-agent"
 				discoveredCount={2}
 				pushState="Disabled"
@@ -145,6 +148,7 @@ describe("Ink components", () => {
 		const app = render(
 			<ChatComposer
 				draft="/c"
+				cursorOffset={2}
 				activeAgentId="command-agent"
 				discoveredCount={2}
 				pushState="Disabled"
@@ -174,6 +178,7 @@ describe("Ink components", () => {
 		const app = render(
 			<ChatComposer
 				draft=""
+				cursorOffset={0}
 				activeAgentId="command-agent"
 				discoveredCount={2}
 				pushState="Disabled"
@@ -213,6 +218,7 @@ describe("Ink components", () => {
 		const app = render(
 			<ChatComposer
 				draft="hello"
+				cursorOffset={5}
 				activeAgentId="command-agent"
 				discoveredCount={2}
 				pushState="Disabled"
@@ -237,13 +243,17 @@ describe("Ink components", () => {
 		app.unmount();
 	});
 
-	it("positions the native terminal cursor at the end of the draft", async () => {
+	it("positions the native terminal cursor at the logical draft cursor", async () => {
 		const stdout = new TestTerminal();
 		const stderr = new TestTerminal();
 		const stdin = new PassThrough();
-		const renderComposer = (draft: string): React.JSX.Element => (
+		const renderComposer = (
+			draft: string,
+			cursorOffset = draft.length
+		): React.JSX.Element => (
 			<ChatComposer
 				draft={draft}
+				cursorOffset={cursorOffset}
 				activeAgentId="command-agent"
 				discoveredCount={1}
 				pushState="Disabled"
@@ -272,10 +282,19 @@ describe("Ink components", () => {
 			});
 
 			const outputLengthBeforeTyping = stdout.output.length;
-			app.rerender(renderComposer("hello"));
+			app.rerender(renderComposer("hello", 2));
 
 			await vi.waitFor(() => {
 				expect(stdout.output.slice(outputLengthBeforeTyping)).toContain(
+					"\u001B[5G\u001B[?25h"
+				);
+			});
+
+			const outputLengthBeforeMovingToEnd = stdout.output.length;
+			app.rerender(renderComposer("hello"));
+
+			await vi.waitFor(() => {
+				expect(stdout.output.slice(outputLengthBeforeMovingToEnd)).toContain(
 					"\u001B[8G\u001B[?25h"
 				);
 			});

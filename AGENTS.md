@@ -147,7 +147,7 @@ and are discovered by `aion-server` at runtime.
   session/settings persistence, streaming-aware Marked rendering for agent
   output, immutable transcript offloading to terminal scrollback, TTY-aware
   terminal clearing for `/clear`, a brand-themed composer prompt with native
-  terminal cursor positioning, and WorkOS CLI/device login with npm keyring
+  cursor-aware multiline editing, and WorkOS CLI/device login with npm keyring
   storage or the Python credential helper supplied by `aion-sdk`. Its GraphQL
   operation types are generated from the restricted chat schema copied from
   `aion-api`; rebuild and run `stage:python` after contract changes. See

@@ -14,6 +14,11 @@ import {
 	useStdout
 } from "ink";
 
+import {
+	getComposerContentWidth,
+	getComposerCursorRowIndex,
+	getComposerDraftRows
+} from "../lib/input/composer.js";
 import { COMPOSER_THEME } from "../lib/theme.js";
 
 const INPUT_BACKGROUND = COMPOSER_THEME.background;
@@ -47,6 +52,7 @@ export interface SlashSubmenuView {
 
 export interface ChatComposerProps {
 	draft: string;
+	cursorOffset: number;
 	activeAgentId?: string;
 	discoveredCount: number;
 	pushState: string;
@@ -67,39 +73,8 @@ function buildControls(hasDraft: boolean): string[] {
 	return controls;
 }
 
-function wrapToWidth(value: string, width: number): string[] {
-	const safeWidth = Math.max(1, width);
-	const sourceLines = value.split("\n");
-	const rows: string[] = [];
-
-	for (const line of sourceLines) {
-		if (line.length === 0) {
-			rows.push("");
-			continue;
-		}
-
-		for (let index = 0; index < line.length; index += safeWidth) {
-			rows.push(line.slice(index, index + safeWidth));
-		}
-	}
-
-	return rows;
-}
-
 export function wrapComposerDraft(value: string, width: number): string[] {
-	const safeWidth = Math.max(1, width);
-	const rows = wrapToWidth(value, safeWidth);
-	const finalSourceLine = value.split("\n").at(-1) ?? "";
-
-	if (
-		finalSourceLine.length > 0 &&
-		finalSourceLine.length % safeWidth === 0
-	) {
-		// Keep the insertion point inside the composer after a full row.
-		rows.push("");
-	}
-
-	return rows;
+	return getComposerDraftRows(value, width).map((row) => row.text);
 }
 
 function measureCursorPosition(
@@ -212,6 +187,7 @@ function getAgentSuggestionSourceWidth(
 
 export function ChatComposer({
 	draft,
+	cursorOffset,
 	activeAgentId,
 	discoveredCount,
 	pushState,
@@ -235,9 +211,13 @@ export function ChatComposer({
 		activeAgentId ? `@${activeAgentId}` : "@no-agent"
 	}  •  Stream: ${streamState}  •  Push: ${pushState}`;
 	const lineWidth = Math.max(24, viewportWidth);
-	const contentWidth = Math.max(1, lineWidth - 2);
-	const draftLines =
-		draft.length > 0 ? wrapComposerDraft(draft, contentWidth) : [""];
+	const contentWidth = getComposerContentWidth(viewportWidth);
+	const draftRows = getComposerDraftRows(draft, contentWidth);
+	const safeCursorOffset = Math.max(0, Math.min(draft.length, cursorOffset));
+	const cursorRowIndex = getComposerCursorRowIndex(
+		draftRows,
+		safeCursorOffset
+	);
 	const fillerRow = " ".repeat(lineWidth);
 	const showAgentSuggestions = agentSuggestions.length > 0;
 	const showFileSuggestions = fileSuggestions.length > 0;
@@ -335,10 +315,16 @@ export function ChatComposer({
 						})}
 					</>
 				) : draft.length > 0 ? (
-					draftLines.map((line, index) => {
+					draftRows.map((row, index) => {
+						const line = row.text;
 						const prefix = index === 0 ? "› " : "  ";
-						const padding = " ".repeat(Math.max(0, contentWidth - line.length));
-						const isCursorRow = index === draftLines.length - 1;
+						const padding = " ".repeat(Math.max(0, contentWidth - row.width));
+						const isCursorRow = index === cursorRowIndex;
+						const cursorIndexInLine = isCursorRow
+							? Math.max(0, Math.min(line.length, safeCursorOffset - row.start))
+							: line.length;
+						const leadingLine = line.slice(0, cursorIndexInLine);
+						const trailingLine = line.slice(cursorIndexInLine);
 						return (
 							<Box key={`draft-${index}`}>
 								<Box ref={isCursorRow ? cursorAnchorRef : undefined}>
@@ -349,9 +335,17 @@ export function ChatComposer({
 										backgroundColor={INPUT_BACKGROUND}
 										color={INPUT_FOREGROUND}
 									>
-										{line}
+										{leadingLine}
 									</Text>
 								</Box>
+								{trailingLine.length > 0 ? (
+									<Text
+										backgroundColor={INPUT_BACKGROUND}
+										color={INPUT_FOREGROUND}
+									>
+										{trailingLine}
+									</Text>
+								) : null}
 								{padding.length > 0 ? (
 									<Text backgroundColor={INPUT_BACKGROUND}>{padding}</Text>
 								) : null}

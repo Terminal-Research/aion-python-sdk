@@ -64,6 +64,8 @@ Options:
 Composer controls:
   Enter          Send message or select the active menu item
   Shift+Enter    Insert newline
+  Arrow keys     Move the cursor or navigate an open menu
+  Home/End       Move to the start/end of the current composer row
   @              Open the agent picker
   /              Open the slash command picker
   Esc            Dismiss the active menu or clear the draft

@@ -43007,8 +43007,9 @@ var import_react = __toESM(require_react(), 1);
 
 // node_modules/string-width/index.js
 var segmenter2 = new Intl.Segmenter();
-var zeroWidthClusterRegex = new RegExp("^(?:\\p{Default_Ignorable_Code_Point}|\\p{Control}|\\p{Format}|\\p{Mark}|\\p{Surrogate})+$", "v");
-var leadingNonPrintingRegex = new RegExp("^[\\p{Default_Ignorable_Code_Point}\\p{Control}\\p{Format}\\p{Mark}\\p{Surrogate}]+", "v");
+var zeroWidthClusterRegex = new RegExp("^(?:\\p{Default_Ignorable_Code_Point}|\\p{Control}|\\p{Format}|\\p{Nonspacing_Mark}|\\p{Enclosing_Mark}|\\p{Surrogate})+$", "v");
+var leadingNonPrintingRegex = new RegExp("^[\\p{Default_Ignorable_Code_Point}\\p{Control}\\p{Format}\\p{Nonspacing_Mark}\\p{Enclosing_Mark}\\p{Surrogate}]+", "v");
+var spacingMarkRegex = new RegExp("\\p{Spacing_Mark}", "v");
 var rgiEmojiRegex = new RegExp("^\\p{RGI_Emoji}$", "v");
 var unqualifiedKeycapRegex = /^[\d#*]\u20E3$/;
 var extendedPictographicRegex = new RegExp("\\p{Extended_Pictographic}", "gu");
@@ -43031,13 +43032,60 @@ function baseVisible(segment) {
 function isZeroWidthCluster(segment) {
   return zeroWidthClusterRegex.test(segment);
 }
-function trailingHalfwidthWidth(segment, eastAsianWidthOptions) {
-  let extra = 0;
-  if (segment.length > 1) {
-    for (const char of segment.slice(1)) {
-      if (char >= "\uFF00" && char <= "\uFFEF") {
-        extra += eastAsianWidth(char.codePointAt(0), eastAsianWidthOptions);
+function isHangulLeadingJamo(codePoint) {
+  return codePoint >= 4352 && codePoint <= 4447 || codePoint >= 43360 && codePoint <= 43388;
+}
+function isHangulVowelJamo(codePoint) {
+  return codePoint >= 4448 && codePoint <= 4519 || codePoint >= 55216 && codePoint <= 55238;
+}
+function isHangulTrailingJamo(codePoint) {
+  return codePoint >= 4520 && codePoint <= 4607 || codePoint >= 55243 && codePoint <= 55291;
+}
+function isHangulJamo(codePoint) {
+  return isHangulLeadingJamo(codePoint) || isHangulVowelJamo(codePoint) || isHangulTrailingJamo(codePoint);
+}
+function hangulClusterWidth(visibleSegment, eastAsianWidthOptions) {
+  const codePoints = [];
+  for (const character of visibleSegment) {
+    if (zeroWidthClusterRegex.test(character)) {
+      continue;
+    }
+    codePoints.push(character.codePointAt(0));
+  }
+  if (codePoints.length === 0) {
+    return void 0;
+  }
+  let width = 0;
+  for (let index = 0; index < codePoints.length; index++) {
+    const codePoint = codePoints[index];
+    if (!isHangulJamo(codePoint)) {
+      if (width === 0) {
+        return void 0;
       }
+      for (let remaining = index; remaining < codePoints.length; remaining++) {
+        width += eastAsianWidth(codePoints[remaining], eastAsianWidthOptions);
+      }
+      return width;
+    }
+    if (isHangulLeadingJamo(codePoint) && isHangulVowelJamo(codePoints[index + 1])) {
+      width += 2;
+      index += isHangulTrailingJamo(codePoints[index + 2]) ? 2 : 1;
+      continue;
+    }
+    width += eastAsianWidth(codePoint, eastAsianWidthOptions);
+  }
+  return width;
+}
+function trailingWidth(visibleSegment, eastAsianWidthOptions) {
+  let extra = 0;
+  let first = true;
+  for (const character of visibleSegment) {
+    if (first) {
+      first = false;
+      continue;
+    }
+    if (spacingMarkRegex.test(character) || character >= "\uFF00" && character <= "\uFFEF") {
+      extra += eastAsianWidth(character.codePointAt(0), eastAsianWidthOptions);
     }
   }
   return extra;
@@ -43070,9 +43118,15 @@ function stringWidth2(input, options2 = {}) {
       width += 2;
       continue;
     }
-    const codePoint = baseVisible(segment).codePointAt(0);
+    const visibleSegment = baseVisible(segment);
+    const hangulWidth = hangulClusterWidth(visibleSegment, eastAsianWidthOptions);
+    if (hangulWidth !== void 0) {
+      width += hangulWidth;
+      continue;
+    }
+    const codePoint = visibleSegment.codePointAt(0);
     width += eastAsianWidth(codePoint, eastAsianWidthOptions);
-    width += trailingHalfwidthWidth(segment, eastAsianWidthOptions);
+    width += trailingWidth(visibleSegment, eastAsianWidthOptions);
   }
   return width;
 }
@@ -49082,6 +49136,7 @@ var package_default = {
     marked: "^15.0.12",
     pino: "^10.3.1",
     react: "^19.0.0",
+    "string-width": "^8.2.2",
     uuid: "^11.1.0",
     yaml: "^2.8.3"
   },
@@ -49153,6 +49208,8 @@ Options:
 Composer controls:
   Enter          Send message or select the active menu item
   Shift+Enter    Insert newline
+  Arrow keys     Move the cursor or navigate an open menu
+  Home/End       Move to the start/end of the current composer row
   @              Open the agent picker
   /              Open the slash command picker
   Esc            Dismiss the active menu or clear the draft
@@ -50792,6 +50849,219 @@ var import_react37 = __toESM(require_react(), 1);
 // src/components/ChatComposer.tsx
 var import_react29 = __toESM(require_react(), 1);
 
+// src/lib/input/composer.ts
+var GRAPHEME_SEGMENTER2 = new Intl.Segmenter(void 0, {
+  granularity: "grapheme"
+});
+function getGraphemeSegments(value) {
+  return Array.from(
+    GRAPHEME_SEGMENTER2.segment(value),
+    ({ segment, index }) => ({ segment, index })
+  );
+}
+function getGraphemeBoundaries(value) {
+  return [
+    0,
+    ...getGraphemeSegments(value).map(
+      ({ segment, index }) => index + segment.length
+    )
+  ];
+}
+function normalizeCursor(draft, cursor) {
+  const clampedCursor = Math.max(0, Math.min(draft.length, cursor));
+  let normalizedCursor = 0;
+  for (const boundary of getGraphemeBoundaries(draft)) {
+    if (boundary > clampedCursor) {
+      break;
+    }
+    normalizedCursor = boundary;
+  }
+  return normalizedCursor;
+}
+function resetPreferredColumn(state, cursor) {
+  if (state.cursor === cursor && state.preferredColumn === void 0) {
+    return state;
+  }
+  return {
+    draft: state.draft,
+    cursor
+  };
+}
+function getCursorAtColumn(row, column) {
+  let cursor = row.start;
+  let currentColumn = 0;
+  for (const { segment, index } of getGraphemeSegments(row.text)) {
+    const nextColumn = currentColumn + stringWidth2(segment);
+    if (nextColumn > column) {
+      break;
+    }
+    currentColumn = nextColumn;
+    cursor = row.start + index + segment.length;
+  }
+  return cursor;
+}
+function getComposerContentWidth(viewportWidth) {
+  return Math.max(1, Math.max(24, viewportWidth) - 2);
+}
+function getComposerDraftRows(draft, width) {
+  const safeWidth = Math.max(1, width);
+  const sourceLines = draft.split("\n");
+  const rows = [];
+  let sourceOffset = 0;
+  for (const [lineIndex, line] of sourceLines.entries()) {
+    const graphemes = getGraphemeSegments(line);
+    if (graphemes.length === 0) {
+      rows.push({
+        text: "",
+        start: sourceOffset,
+        end: sourceOffset,
+        width: 0
+      });
+    } else {
+      let rowStart = 0;
+      let rowEnd = 0;
+      let rowWidth = 0;
+      for (const { segment, index } of graphemes) {
+        const graphemeWidth = stringWidth2(segment);
+        if (rowEnd > rowStart && rowWidth + graphemeWidth > safeWidth) {
+          rows.push({
+            text: line.slice(rowStart, rowEnd),
+            start: sourceOffset + rowStart,
+            end: sourceOffset + rowEnd,
+            width: rowWidth
+          });
+          rowStart = index;
+          rowWidth = 0;
+        }
+        rowWidth += graphemeWidth;
+        rowEnd = index + segment.length;
+      }
+      rows.push({
+        text: line.slice(rowStart, rowEnd),
+        start: sourceOffset + rowStart,
+        end: sourceOffset + rowEnd,
+        width: rowWidth
+      });
+    }
+    sourceOffset += line.length;
+    if (lineIndex < sourceLines.length - 1) {
+      sourceOffset += 1;
+    }
+  }
+  const finalRow = rows.at(-1);
+  const finalSourceLine = sourceLines.at(-1) ?? "";
+  if (finalSourceLine.length > 0 && finalRow?.end === draft.length && finalRow.width === safeWidth) {
+    rows.push({
+      text: "",
+      start: draft.length,
+      end: draft.length,
+      width: 0
+    });
+  }
+  return rows;
+}
+function getComposerCursorRowIndex(rows, cursor) {
+  let cursorRowIndex = 0;
+  for (const [index, row] of rows.entries()) {
+    if (cursor < row.start) {
+      break;
+    }
+    if (cursor <= row.end) {
+      cursorRowIndex = index;
+    }
+  }
+  return cursorRowIndex;
+}
+function createComposerInputState(draft = "", cursor = draft.length) {
+  return {
+    draft,
+    cursor: normalizeCursor(draft, cursor)
+  };
+}
+function replaceComposerDraft(state, update) {
+  const draft = typeof update === "function" ? update(state.draft) : update;
+  return createComposerInputState(draft);
+}
+function insertComposerText(state, text) {
+  if (text.length === 0) {
+    return state;
+  }
+  const cursor = normalizeCursor(state.draft, state.cursor);
+  return createComposerInputState(
+    `${state.draft.slice(0, cursor)}${text}${state.draft.slice(cursor)}`,
+    cursor + text.length
+  );
+}
+function deleteComposerTextBackward(state) {
+  const cursor = normalizeCursor(state.draft, state.cursor);
+  const previousCursor = getGraphemeBoundaries(state.draft).filter((boundary) => boundary < cursor).at(-1);
+  if (previousCursor === void 0) {
+    return resetPreferredColumn(state, cursor);
+  }
+  return createComposerInputState(
+    `${state.draft.slice(0, previousCursor)}${state.draft.slice(cursor)}`,
+    previousCursor
+  );
+}
+function deleteComposerTextForward(state) {
+  const cursor = normalizeCursor(state.draft, state.cursor);
+  const nextCursor = getGraphemeBoundaries(state.draft).find(
+    (boundary) => boundary > cursor
+  );
+  if (nextCursor === void 0) {
+    return resetPreferredColumn(state, cursor);
+  }
+  return createComposerInputState(
+    `${state.draft.slice(0, cursor)}${state.draft.slice(nextCursor)}`,
+    cursor
+  );
+}
+function moveComposerCursorHorizontally(state, direction) {
+  const cursor = normalizeCursor(state.draft, state.cursor);
+  const boundaries = getGraphemeBoundaries(state.draft);
+  const cursorBoundaryIndex = boundaries.indexOf(cursor);
+  const nextBoundaryIndex = Math.max(
+    0,
+    Math.min(boundaries.length - 1, cursorBoundaryIndex + direction)
+  );
+  return resetPreferredColumn(state, boundaries[nextBoundaryIndex] ?? cursor);
+}
+function moveComposerCursorToRowBoundary(state, boundary, width) {
+  const cursor = normalizeCursor(state.draft, state.cursor);
+  const rows = getComposerDraftRows(state.draft, width);
+  const row = rows[getComposerCursorRowIndex(rows, cursor)];
+  if (!row) {
+    return resetPreferredColumn(state, cursor);
+  }
+  return resetPreferredColumn(
+    state,
+    boundary === "start" ? row.start : row.end
+  );
+}
+function moveComposerCursorVertically(state, direction, width) {
+  const cursor = normalizeCursor(state.draft, state.cursor);
+  const rows = getComposerDraftRows(state.draft, width);
+  const currentRowIndex = getComposerCursorRowIndex(rows, cursor);
+  const targetRowIndex = Math.max(
+    0,
+    Math.min(rows.length - 1, currentRowIndex + direction)
+  );
+  if (targetRowIndex === currentRowIndex) {
+    return state;
+  }
+  const currentRow = rows[currentRowIndex];
+  const targetRow = rows[targetRowIndex];
+  if (!currentRow || !targetRow) {
+    return state;
+  }
+  const preferredColumn = state.preferredColumn ?? stringWidth2(state.draft.slice(currentRow.start, cursor));
+  return {
+    draft: state.draft,
+    cursor: getCursorAtColumn(targetRow, preferredColumn),
+    preferredColumn
+  };
+}
+
 // src/lib/theme.ts
 var AION_THEME = {
   colors: {
@@ -50866,30 +51136,6 @@ function buildControls(hasDraft) {
   controls.push(hasDraft ? "Ctrl+C clears" : "Ctrl+C exits");
   return controls;
 }
-function wrapToWidth(value, width) {
-  const safeWidth = Math.max(1, width);
-  const sourceLines = value.split("\n");
-  const rows = [];
-  for (const line of sourceLines) {
-    if (line.length === 0) {
-      rows.push("");
-      continue;
-    }
-    for (let index = 0; index < line.length; index += safeWidth) {
-      rows.push(line.slice(index, index + safeWidth));
-    }
-  }
-  return rows;
-}
-function wrapComposerDraft(value, width) {
-  const safeWidth = Math.max(1, width);
-  const rows = wrapToWidth(value, safeWidth);
-  const finalSourceLine = value.split("\n").at(-1) ?? "";
-  if (finalSourceLine.length > 0 && finalSourceLine.length % safeWidth === 0) {
-    rows.push("");
-  }
-  return rows;
-}
 function measureCursorPosition(anchor) {
   if (!anchor?.yogaNode) {
     return void 0;
@@ -50963,6 +51209,7 @@ function getAgentSuggestionSourceWidth(items) {
 }
 function ChatComposer({
   draft,
+  cursorOffset,
   activeAgentId,
   discoveredCount,
   pushState,
@@ -50984,8 +51231,13 @@ function ChatComposer({
   const controls = buildControls(draft.length > 0).join("  \u2022  ");
   const footerLabel = `${activeAgentId ? `@${activeAgentId}` : "@no-agent"}  \u2022  Stream: ${streamState}  \u2022  Push: ${pushState}`;
   const lineWidth = Math.max(24, viewportWidth);
-  const contentWidth = Math.max(1, lineWidth - 2);
-  const draftLines = draft.length > 0 ? wrapComposerDraft(draft, contentWidth) : [""];
+  const contentWidth = getComposerContentWidth(viewportWidth);
+  const draftRows = getComposerDraftRows(draft, contentWidth);
+  const safeCursorOffset = Math.max(0, Math.min(draft.length, cursorOffset));
+  const cursorRowIndex = getComposerCursorRowIndex(
+    draftRows,
+    safeCursorOffset
+  );
   const fillerRow = " ".repeat(lineWidth);
   const showAgentSuggestions = agentSuggestions.length > 0;
   const showFileSuggestions = fileSuggestions.length > 0;
@@ -51049,10 +51301,14 @@ function ChatComposer({
             /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { backgroundColor: INPUT_BACKGROUND, children: " ".repeat(remainingWidth) })
           ] }, option.label);
         })
-      ] }) : draft.length > 0 ? draftLines.map((line, index) => {
+      ] }) : draft.length > 0 ? draftRows.map((row, index) => {
+        const line = row.text;
         const prefix = index === 0 ? "\u203A " : "  ";
-        const padding = " ".repeat(Math.max(0, contentWidth - line.length));
-        const isCursorRow = index === draftLines.length - 1;
+        const padding = " ".repeat(Math.max(0, contentWidth - row.width));
+        const isCursorRow = index === cursorRowIndex;
+        const cursorIndexInLine = isCursorRow ? Math.max(0, Math.min(line.length, safeCursorOffset - row.start)) : line.length;
+        const leadingLine = line.slice(0, cursorIndexInLine);
+        const trailingLine = line.slice(cursorIndexInLine);
         return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { children: [
           /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { ref: isCursorRow ? cursorAnchorRef : void 0, children: [
             /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { backgroundColor: INPUT_BACKGROUND, color: INPUT_PRIMARY, children: prefix }),
@@ -51061,10 +51317,18 @@ function ChatComposer({
               {
                 backgroundColor: INPUT_BACKGROUND,
                 color: INPUT_FOREGROUND,
-                children: line
+                children: leadingLine
               }
             )
           ] }),
+          trailingLine.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+            Text,
+            {
+              backgroundColor: INPUT_BACKGROUND,
+              color: INPUT_FOREGROUND,
+              children: trailingLine
+            }
+          ) : null,
           padding.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { backgroundColor: INPUT_BACKGROUND, children: padding }) : null
         ] }, `draft-${index}`);
       }) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { children: [
@@ -54238,7 +54502,7 @@ function wrapLineToWidth(value, width) {
   rows.push(remaining);
   return rows;
 }
-function wrapToWidth2(value, width) {
+function wrapToWidth(value, width) {
   const safeWidth = Math.max(1, width);
   const sourceLines = value.split("\n");
   const rows = [];
@@ -54309,7 +54573,7 @@ function SystemMessageBubble({
   const marker = `\xB7 ${labelForKind(kind)} `;
   const markerWidth = marker.length;
   const contentWidth = Math.max(1, lineWidth - markerWidth);
-  const lines = wrapToWidth2(body, contentWidth);
+  const lines = wrapToWidth(body, contentWidth);
   return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { flexDirection: "column", width: lineWidth, children: lines.map((line, index) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { children: [
     index === 0 ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { color: MESSAGE_THEME.labelAccent, children: marker }) : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { children: " ".repeat(markerWidth) }),
     renderSystemLine(line)
@@ -54323,7 +54587,7 @@ function UserMessageBubble({
   lineWidth
 }) {
   const contentWidth = Math.max(1, lineWidth - 2);
-  const lines = wrapToWidth2(body, contentWidth);
+  const lines = wrapToWidth(body, contentWidth);
   const fillerRow = " ".repeat(lineWidth);
   return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Box_default, { flexDirection: "column", width: lineWidth, children: [
     /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { backgroundColor: MESSAGE_THEME.background, children: fillerRow }),
@@ -59130,7 +59394,13 @@ function ChatApp({ options: options2 }) {
     options2.pushNotifications ? "Starting..." : "Disabled"
   );
   const [streamLabel, setStreamLabel] = (0, import_react37.useState)("Idle");
-  const [draft, setDraft] = (0, import_react37.useState)("");
+  const [composerInput, setComposerInput] = (0, import_react37.useState)(
+    createComposerInputState
+  );
+  const { draft, cursor: draftCursor } = composerInput;
+  const replaceDraft = (update) => {
+    setComposerInput((current) => replaceComposerDraft(current, update));
+  };
   const [entries, setEntries] = (0, import_react37.useState)([]);
   const [transcriptGeneration, setTranscriptGeneration] = (0, import_react37.useState)(0);
   const [notifications, setNotifications] = (0, import_react37.useState)([]);
@@ -59322,12 +59592,13 @@ function ChatApp({ options: options2 }) {
       appendSystem(initialSettingsResult.warning);
     }
   }, [initialSettingsResult.warning]);
+  const isCursorAtDraftEnd = draftCursor === draft.length;
   const slashQuery = (0, import_react37.useMemo)(() => {
-    if (slashSubmenuId) {
+    if (slashSubmenuId || !isCursorAtDraftEnd) {
       return void 0;
     }
     return getLeadingSlashQuery(draft);
-  }, [draft, slashSubmenuId]);
+  }, [draft, isCursorAtDraftEnd, slashSubmenuId]);
   const slashCommands = (0, import_react37.useMemo)(() => {
     return filterSlashCommands(slashQuery);
   }, [slashQuery]);
@@ -59344,7 +59615,7 @@ function ChatApp({ options: options2 }) {
     };
   }, [selectedSlashSubmenuIndex, slashSubmenuId]);
   const agentSuggestions = (0, import_react37.useMemo)(() => {
-    if (slashQuery !== void 0 || slashSubmenuId) {
+    if (slashQuery !== void 0 || slashSubmenuId || !isCursorAtDraftEnd) {
       return [];
     }
     const mentionMatch = getAgentMentionMatch(draft);
@@ -59357,15 +59628,15 @@ function ChatApp({ options: options2 }) {
       sourceName: agent.source.sourceKey,
       description: agent.agentCard?.description?.trim() ?? ""
     })).slice(0, 6);
-  }, [discoveredAgents, draft, slashQuery, slashSubmenuId]);
+  }, [discoveredAgents, draft, isCursorAtDraftEnd, slashQuery, slashSubmenuId]);
   const fileSuggestions = (0, import_react37.useMemo)(() => {
-    if (slashQuery !== void 0 || slashSubmenuId) {
+    if (slashQuery !== void 0 || slashSubmenuId || !isCursorAtDraftEnd) {
       return [];
     }
     const match = getFileMentionMatch(draft);
     if (!match) return [];
     return getFileSuggestions(match.query);
-  }, [draft, slashQuery, slashSubmenuId]);
+  }, [draft, isCursorAtDraftEnd, slashQuery, slashSubmenuId]);
   const selectedAgent = (0, import_react37.useMemo)(() => {
     return discoveredAgents.find(
       (agent) => selectedAgentKey ? agent.agentKey === selectedAgentKey : selectedAgentId ? agent.id === selectedAgentId : false
@@ -59840,7 +60111,7 @@ ${JSON.stringify(
   const applySelectedFileSuggestion = () => {
     const suggestion = fileSuggestions[selectedFileSuggestionIndex];
     if (!suggestion) return;
-    setDraft((current) => applyFileSuggestion(current, suggestion));
+    replaceDraft((current) => applyFileSuggestion(current, suggestion));
     setSelectedFileSuggestionIndex(0);
   };
   const persistCompletedExchange = (nextContextId, messages, nextTaskId) => {
@@ -59913,7 +60184,7 @@ ${JSON.stringify(
     );
     const selectedId = agent?.id ?? suggestion.id;
     const selectedKey = agent?.agentKey ?? suggestion.agentKey;
-    setDraft((current) => clearAgentMention(current));
+    replaceDraft((current) => clearAgentMention(current));
     if (selectedAgentId !== selectedId || selectedAgentKey !== selectedKey) {
       setSelectedAgentId(selectedId);
       setSelectedAgentKey(selectedKey);
@@ -59929,13 +60200,13 @@ ${JSON.stringify(
     setSlashSubmenuId(void 0);
     setSelectedSlashIndex(0);
     setSelectedSlashSubmenuIndex(0);
-    setDraft((current) => clearLeadingSlashDraft(current));
+    replaceDraft((current) => clearLeadingSlashDraft(current));
   };
   const resetSlashSelection = () => {
     setSlashSubmenuId(void 0);
     setSelectedSlashIndex(0);
     setSelectedSlashSubmenuIndex(0);
-    setDraft("");
+    replaceDraft("");
   };
   const openSelectedSlashCommand = () => {
     const command = slashCommands[selectedSlashIndex];
@@ -59968,7 +60239,7 @@ ${JSON.stringify(
     }
     setSlashSubmenuId(command.id);
     setSelectedSlashSubmenuIndex(0);
-    setDraft("");
+    replaceDraft("");
   };
   const runLoginSlashCommand = async () => {
     appendSystem(`Starting Aion login for ${selectedEnvironment}.`);
@@ -60152,14 +60423,14 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
     }
     const trimmed = selection.message.trim();
     if (!trimmed) {
-      setDraft("");
+      replaceDraft("");
       return;
     }
     if (!clientState) {
       appendStatus("No agent connection is active yet.");
       return;
     }
-    setDraft("");
+    replaceDraft("");
     const parts = await buildMessageParts2(trimmed);
     const attachedFiles = parts.filter((part) => part.content?.$case === "raw" || part.content?.$case === "url").map((part) => part.filename || "unnamed");
     const displayBody = attachedFiles.length > 0 ? `${trimmed}
@@ -60339,9 +60610,12 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
   use_input_default((input, key) => {
     const isSlashSubmenuOpen = Boolean(slashSubmenuId);
     const isSlashMenuOpen = slashQuery !== void 0 && !slashSubmenuId;
+    const composerContentWidth = getComposerContentWidth(
+      stdout?.columns ?? process.stdout.columns ?? 80
+    );
     if (key.ctrl && input === "c") {
       if (draft.length > 0) {
-        setDraft("");
+        replaceDraft("");
         setSlashSubmenuId(void 0);
         return;
       }
@@ -60406,16 +60680,52 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
       );
       return;
     }
+    if (!isSlashSubmenuOpen && key.leftArrow) {
+      setComposerInput(
+        (current) => moveComposerCursorHorizontally(current, -1)
+      );
+      return;
+    }
+    if (!isSlashSubmenuOpen && key.rightArrow) {
+      setComposerInput(
+        (current) => moveComposerCursorHorizontally(current, 1)
+      );
+      return;
+    }
+    if (!isSlashSubmenuOpen && key.upArrow) {
+      setComposerInput(
+        (current) => moveComposerCursorVertically(current, -1, composerContentWidth)
+      );
+      return;
+    }
+    if (!isSlashSubmenuOpen && key.downArrow) {
+      setComposerInput(
+        (current) => moveComposerCursorVertically(current, 1, composerContentWidth)
+      );
+      return;
+    }
+    if (!isSlashSubmenuOpen && key.home) {
+      setComposerInput(
+        (current) => moveComposerCursorToRowBoundary(current, "start", composerContentWidth)
+      );
+      return;
+    }
+    if (!isSlashSubmenuOpen && key.end) {
+      setComposerInput(
+        (current) => moveComposerCursorToRowBoundary(current, "end", composerContentWidth)
+      );
+      return;
+    }
     if (key.escape) {
       if (isSlashSubmenuOpen || isSlashMenuOpen) {
         dismissSlashDialog();
         return;
       }
       if (fileSuggestions.length > 0) {
-        setDraft((current) => clearFileMention(current));
+        replaceDraft((current) => clearFileMention(current));
         return;
       }
-      setDraft("");
+      replaceDraft("");
       return;
     }
     if (isSlashSubmenuOpen && input >= "1" && input <= "9") {
@@ -60426,11 +60736,18 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
       }
       return;
     }
-    if (key.backspace || key.delete) {
+    if (key.backspace) {
       if (isSlashSubmenuOpen) {
         return;
       }
-      setDraft((current) => current.slice(0, -1));
+      setComposerInput(deleteComposerTextBackward);
+      return;
+    }
+    if (key.delete) {
+      if (isSlashSubmenuOpen) {
+        return;
+      }
+      setComposerInput(deleteComposerTextForward);
       return;
     }
     if (key.return) {
@@ -60446,8 +60763,7 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
         return;
       }
       if (key.shift) {
-        setDraft((current) => `${current}
-`);
+        setComposerInput((current) => insertComposerText(current, "\n"));
         return;
       }
       if (agentSuggestions.length > 0) {
@@ -60465,7 +60781,7 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
       return;
     }
     if (!key.ctrl && !key.meta && input) {
-      setDraft((current) => `${current}${input}`);
+      setComposerInput((current) => insertComposerText(current, input));
     }
   });
   return /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(Box_default, { flexDirection: "column", height: "100%", children: [
@@ -60487,6 +60803,7 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
       ChatComposer,
       {
         draft,
+        cursorOffset: draftCursor,
         activeAgentId: selectedAgentId,
         discoveredCount: discoveredAgents.length,
         pushState: pushLabel,

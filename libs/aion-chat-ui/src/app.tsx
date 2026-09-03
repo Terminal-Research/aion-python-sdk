@@ -39,8 +39,18 @@ import {
 	applyFileSuggestion,
 	buildMessageParts,
 	clearFileMention,
+	createComposerInputState,
+	deleteComposerTextBackward,
+	deleteComposerTextForward,
 	getFileMentionMatch,
 	getFileSuggestions,
+	getComposerContentWidth,
+	insertComposerText,
+	moveComposerCursorHorizontally,
+	moveComposerCursorToRowBoundary,
+	moveComposerCursorVertically,
+	replaceComposerDraft,
+	type ComposerDraftUpdate,
 	type FileSuggestion
 } from "./lib/input";
 import { loadChatModeSettings, saveChatModeSettings } from "./lib/chatSettings.js";
@@ -383,7 +393,13 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		options.pushNotifications ? "Starting..." : "Disabled"
 	);
 	const [streamLabel, setStreamLabel] = useState("Idle");
-	const [draft, setDraft] = useState("");
+	const [composerInput, setComposerInput] = useState(
+		createComposerInputState
+	);
+	const { draft, cursor: draftCursor } = composerInput;
+	const replaceDraft = (update: ComposerDraftUpdate): void => {
+		setComposerInput((current) => replaceComposerDraft(current, update));
+	};
 	const [entries, setEntries] = useState<TranscriptEntry[]>([]);
 	const [transcriptGeneration, setTranscriptGeneration] = useState(0);
 	const [notifications, setNotifications] = useState<TranscriptEntry[]>([]);
@@ -597,13 +613,15 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		}
 	}, [initialSettingsResult.warning]);
 
+	const isCursorAtDraftEnd = draftCursor === draft.length;
+
 	const slashQuery = useMemo(() => {
-		if (slashSubmenuId) {
+		if (slashSubmenuId || !isCursorAtDraftEnd) {
 			return undefined;
 		}
 
 		return getLeadingSlashQuery(draft);
-	}, [draft, slashSubmenuId]);
+	}, [draft, isCursorAtDraftEnd, slashSubmenuId]);
 
 	const slashCommands = useMemo(() => {
 		return filterSlashCommands(slashQuery);
@@ -624,7 +642,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 	}, [selectedSlashSubmenuIndex, slashSubmenuId]);
 
 	const agentSuggestions = useMemo<AgentSuggestionView[]>(() => {
-		if (slashQuery !== undefined || slashSubmenuId) {
+		if (slashQuery !== undefined || slashSubmenuId || !isCursorAtDraftEnd) {
 			return [];
 		}
 
@@ -642,10 +660,10 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				description: agent.agentCard?.description?.trim() ?? ""
 			}))
 			.slice(0, 6);
-	}, [discoveredAgents, draft, slashQuery, slashSubmenuId]);
+	}, [discoveredAgents, draft, isCursorAtDraftEnd, slashQuery, slashSubmenuId]);
 
 	const fileSuggestions = useMemo((): FileSuggestion[] => {
-		if (slashQuery !== undefined || slashSubmenuId) {
+		if (slashQuery !== undefined || slashSubmenuId || !isCursorAtDraftEnd) {
 			return [];
 		}
 
@@ -653,7 +671,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		if (!match) return [];
 
 		return getFileSuggestions(match.query);
-	}, [draft, slashQuery, slashSubmenuId]);
+	}, [draft, isCursorAtDraftEnd, slashQuery, slashSubmenuId]);
 
 	const selectedAgent = useMemo(() => {
 		return discoveredAgents.find((agent) =>
@@ -1223,7 +1241,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 	const applySelectedFileSuggestion = (): void => {
 		const suggestion = fileSuggestions[selectedFileSuggestionIndex];
 		if (!suggestion) return;
-		setDraft((current) => applyFileSuggestion(current, suggestion));
+		replaceDraft((current) => applyFileSuggestion(current, suggestion));
 		setSelectedFileSuggestionIndex(0);
 	};
 
@@ -1311,7 +1329,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		const selectedId = agent?.id ?? suggestion.id;
 		const selectedKey = agent?.agentKey ?? suggestion.agentKey;
 
-		setDraft((current) => clearAgentMention(current));
+		replaceDraft((current) => clearAgentMention(current));
 		if (selectedAgentId !== selectedId || selectedAgentKey !== selectedKey) {
 			setSelectedAgentId(selectedId);
 			setSelectedAgentKey(selectedKey);
@@ -1328,14 +1346,14 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		setSlashSubmenuId(undefined);
 		setSelectedSlashIndex(0);
 		setSelectedSlashSubmenuIndex(0);
-		setDraft((current) => clearLeadingSlashDraft(current));
+		replaceDraft((current) => clearLeadingSlashDraft(current));
 	};
 
 	const resetSlashSelection = (): void => {
 		setSlashSubmenuId(undefined);
 		setSelectedSlashIndex(0);
 		setSelectedSlashSubmenuIndex(0);
-		setDraft("");
+		replaceDraft("");
 	};
 
 	const openSelectedSlashCommand = (): void => {
@@ -1372,7 +1390,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 
 		setSlashSubmenuId(command.id as SlashCommandId);
 		setSelectedSlashSubmenuIndex(0);
-		setDraft("");
+		replaceDraft("");
 	};
 
 	const runLoginSlashCommand = async (): Promise<void> => {
@@ -1571,7 +1589,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 
 		const trimmed = selection.message.trim();
 		if (!trimmed) {
-			setDraft("");
+			replaceDraft("");
 			return;
 		}
 		if (!clientState) {
@@ -1579,7 +1597,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			return;
 		}
 
-		setDraft("");
+		replaceDraft("");
 
 		const parts = await buildMessageParts(trimmed);
 		const attachedFiles = parts
@@ -1777,10 +1795,13 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 	useInput((input, key) => {
 		const isSlashSubmenuOpen = Boolean(slashSubmenuId);
 		const isSlashMenuOpen = slashQuery !== undefined && !slashSubmenuId;
+		const composerContentWidth = getComposerContentWidth(
+			stdout?.columns ?? process.stdout.columns ?? 80
+		);
 
 		if (key.ctrl && input === "c") {
 			if (draft.length > 0) {
-				setDraft("");
+				replaceDraft("");
 				setSlashSubmenuId(undefined);
 				return;
 			}
@@ -1855,6 +1876,48 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			return;
 		}
 
+		if (!isSlashSubmenuOpen && key.leftArrow) {
+			setComposerInput((current) =>
+				moveComposerCursorHorizontally(current, -1)
+			);
+			return;
+		}
+
+		if (!isSlashSubmenuOpen && key.rightArrow) {
+			setComposerInput((current) =>
+				moveComposerCursorHorizontally(current, 1)
+			);
+			return;
+		}
+
+		if (!isSlashSubmenuOpen && key.upArrow) {
+			setComposerInput((current) =>
+				moveComposerCursorVertically(current, -1, composerContentWidth)
+			);
+			return;
+		}
+
+		if (!isSlashSubmenuOpen && key.downArrow) {
+			setComposerInput((current) =>
+				moveComposerCursorVertically(current, 1, composerContentWidth)
+			);
+			return;
+		}
+
+		if (!isSlashSubmenuOpen && key.home) {
+			setComposerInput((current) =>
+				moveComposerCursorToRowBoundary(current, "start", composerContentWidth)
+			);
+			return;
+		}
+
+		if (!isSlashSubmenuOpen && key.end) {
+			setComposerInput((current) =>
+				moveComposerCursorToRowBoundary(current, "end", composerContentWidth)
+			);
+			return;
+		}
+
 		if (key.escape) {
 			if (isSlashSubmenuOpen || isSlashMenuOpen) {
 				dismissSlashDialog();
@@ -1862,11 +1925,11 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			}
 
 			if (fileSuggestions.length > 0) {
-				setDraft((current) => clearFileMention(current));
+				replaceDraft((current) => clearFileMention(current));
 				return;
 			}
 
-			setDraft("");
+			replaceDraft("");
 			return;
 		}
 
@@ -1879,12 +1942,21 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			return;
 		}
 
-		if (key.backspace || key.delete) {
+		if (key.backspace) {
 			if (isSlashSubmenuOpen) {
 				return;
 			}
 
-			setDraft((current) => current.slice(0, -1));
+			setComposerInput(deleteComposerTextBackward);
+			return;
+		}
+
+		if (key.delete) {
+			if (isSlashSubmenuOpen) {
+				return;
+			}
+
+			setComposerInput(deleteComposerTextForward);
 			return;
 		}
 
@@ -1903,7 +1975,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			}
 
 			if (key.shift) {
-				setDraft((current) => `${current}\n`);
+				setComposerInput((current) => insertComposerText(current, "\n"));
 				return;
 			}
 
@@ -1926,7 +1998,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		}
 
 		if (!key.ctrl && !key.meta && input) {
-			setDraft((current) => `${current}${input}`);
+			setComposerInput((current) => insertComposerText(current, input));
 		}
 	});
 
@@ -1951,6 +2023,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			) : null}
 			<ChatComposer
 				draft={draft}
+				cursorOffset={draftCursor}
 				activeAgentId={selectedAgentId}
 				discoveredCount={discoveredAgents.length}
 				pushState={pushLabel}
