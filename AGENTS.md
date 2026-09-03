@@ -119,7 +119,9 @@ and are discovered by `aion-server` at runtime.
   helpers, event-routing utilities, invocation helpers, MCP tool loading, and
   provider-neutral immediate context and direct-reply routing. Includes
   tested Slack distribution examples that resolve provider tools from the
-  incoming runtime capability.
+  incoming runtime capability. Owns the `langchain` dependency because
+  `aion_chat_model()` imports LangChain's model factory directly; agent
+  packages must not declare it themselves.
 - **aion-authoring-adk** — Google ADK authoring toolkit under
   `aion.adk.authoring`: MCP toolset bindings, request-scoped Aion model
   helpers, invocation helpers and transformers, without pulling in server
