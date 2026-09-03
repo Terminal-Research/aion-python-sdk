@@ -2004,7 +2004,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 
 	return (
 		<Box flexDirection="column" height="100%">
-			<Box flexDirection="column" flexGrow={1} marginY={1}>
+			<Box flexDirection="column" flexGrow={1}>
 				<ChatSession
 					key={transcriptGeneration}
 					entries={entries}

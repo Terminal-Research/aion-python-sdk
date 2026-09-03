@@ -60785,7 +60785,7 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
     }
   });
   return /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(Box_default, { flexDirection: "column", height: "100%", children: [
-    /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Box_default, { flexDirection: "column", flexGrow: 1, marginY: 1, children: /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+    /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Box_default, { flexDirection: "column", flexGrow: 1, children: /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
       ChatSession,
       {
         entries,
