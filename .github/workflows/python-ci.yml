@@ -45,6 +45,13 @@ jobs:
       - name: Install the project
         run: poetry install -E langgraph-server -E adk-server --with dev
 
+      # Right after the install, because what it looks for is an install that
+      # went wrong quietly: two versions of one package unpacked over each
+      # other. Nothing further down would report that as anything but a strange
+      # failure somewhere else.
+      - name: Check the installed environment
+        run: make check-env
+
       - name: Run unit tests
         run: make tests
 
@@ -93,6 +100,9 @@ jobs:
 
       - name: Install the project
         run: poetry install -E langgraph-server -E adk-server --with dev
+
+      - name: Check the installed environment
+        run: make check-env
 
       - name: Run integration tests
         run: make tests-integration
