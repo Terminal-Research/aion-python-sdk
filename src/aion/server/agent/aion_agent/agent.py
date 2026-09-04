@@ -459,12 +459,19 @@ class AionAgent:
                 errors.append(f"{adapter.framework_name()}: {ex}")
                 continue
 
-        # No adapter could handle the agent
+        # No adapter could handle the agent. Imported here, not at module
+        # level: aion.server.plugins imports this module through the factory.
+        from aion.server.agent.exceptions import NoAdapterFoundError
+        from aion.server.plugins.registry import plugin_registry
+
         available_frameworks = [_adap.framework_name() for _adap in adapter_registry.list_adapters()]
-        error_msg = f"No adapter found for agent '{self._id}' in module '{self._config.path}'.\n"
-        error_msg += f"Available frameworks: {available_frameworks}\n"
-        error_msg += f"Errors encountered:\n" + "\n".join(f"  - {err}" for err in errors)
-        raise ValueError(error_msg)
+        raise NoAdapterFoundError(
+            agent_id=self._id,
+            module_path=self._config.path,
+            available_frameworks=available_frameworks,
+            errors=errors,
+            skipped_plugins=plugin_registry.get_skipped(),
+        )
 
     def get_native_agent(self) -> Any:
         """Get the native framework agent object.

@@ -4,11 +4,42 @@ This module provides a lightweight registry for storing and accessing plugins.
 It does NOT contain business logic - that belongs in the server's PluginManager.
 """
 
+from dataclasses import dataclass
 from typing import Optional, Type, TypeVar
+
+from aion.core.utils.optional_deps import DISTRIBUTION
 
 from .base import BasePluginProtocol
 
 T = TypeVar('T', bound=BasePluginProtocol)
+
+
+@dataclass(frozen=True)
+class SkippedPlugin:
+    """A plugin that was not loaded because its libraries are not installed.
+
+    Every plugin module ships in every wheel, so this is never about missing
+    Aion code - it is about an extra the installation does not have. Kept
+    because the fact is needed far from where it is discovered: when an agent
+    later finds no adapter that can run it, the reason is usually right here.
+    """
+
+    name: str
+    """Human-readable plugin name, as used in log lines."""
+
+    module: str
+    """The plugin module that could not be imported."""
+
+    extra: str
+    """The install extra that would make it importable."""
+
+    missing_module: Optional[str] = None
+    """The third-party module that was actually missing, when known."""
+
+    def describe(self) -> str:
+        """One line naming the plugin, what it lacked and how to install it."""
+        missing = f" needs {self.missing_module}," if self.missing_module else ""
+        return f'{self.name}{missing} install it with: pip install "{DISTRIBUTION}[{self.extra}]"'
 
 
 class PluginRegistry:
@@ -27,6 +58,7 @@ class PluginRegistry:
     def __init__(self):
         """Initialize an empty plugin registry."""
         self._plugins: dict[str, BasePluginProtocol] = {}
+        self._skipped: dict[str, SkippedPlugin] = {}
 
     def register(self, plugin: BasePluginProtocol) -> None:
         """Register a plugin in the registry.
@@ -97,6 +129,22 @@ class PluginRegistry:
             if isinstance(plugin, plugin_type)
         ]
 
+    def record_skipped(self, skipped: SkippedPlugin) -> None:
+        """Remember a plugin that could not be loaded for want of an extra.
+
+        Args:
+            skipped: What was not loaded, and which extra would supply it
+        """
+        self._skipped[skipped.module] = skipped
+
+    def get_skipped(self) -> list["SkippedPlugin"]:
+        """Get the plugins that were skipped for want of an install extra.
+
+        Returns:
+            list[SkippedPlugin]: One entry per plugin, in discovery order
+        """
+        return list(self._skipped.values())
+
     def has(self, name: str) -> bool:
         """Check if a plugin is registered.
 
@@ -115,6 +163,7 @@ class PluginRegistry:
         for proper lifecycle management.
         """
         self._plugins.clear()
+        self._skipped.clear()
 
     def list_names(self) -> list[str]:
         """Get list of all registered plugin names.

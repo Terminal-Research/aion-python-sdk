@@ -14,7 +14,8 @@ from aion.core.db import DbManagerProtocol
 from aion.core.logging import AionLogger
 from aion.server.plugins.agent import AgentPluginProtocol
 from aion.server.plugins.base import BasePluginProtocol
-from aion.server.plugins.registry import PluginRegistry, plugin_registry
+from aion.server.plugins.registry import PluginRegistry, SkippedPlugin, plugin_registry
+from aion.core.utils.optional_deps import is_own_module
 from fastapi import FastAPI
 
 
@@ -44,7 +45,10 @@ class PluginFactory:
             registry: Plugin registry to use (defaults to global plugin_registry)
         """
         self._db_manager = db_manager
-        self._registry = registry or plugin_registry
+        # `registry or plugin_registry` would reach for the global one whenever
+        # the registry passed in is empty: PluginRegistry defines __len__, and
+        # an empty one is falsy.
+        self._registry = registry if registry is not None else plugin_registry
         self._initialized = False
         self._logger: Optional[AionLogger] = None
 
@@ -164,18 +168,24 @@ class PluginFactory:
             self,
             module_name: str,
             class_name: str,
-            display_name: str
+            display_name: str,
+            extra: str
     ) -> Optional[BasePluginProtocol]:
         """Try to load a single plugin by dynamic import.
 
-        Attempts to import and instantiate a plugin class from the specified module.
-        If the module is not installed (ImportError), returns None silently.
-        For other errors, logs a warning and returns None.
+        A ModuleNotFoundError here means one of two things, and they are not
+        interchangeable. Every plugin module ships in every wheel, so a missing
+        aion.* module is a broken installation: logged as an error and raised,
+        because no extra repairs it. A missing third-party module is the
+        ordinary case - the framework's extra is not installed - and the plugin
+        is skipped, recorded, and mentioned again later if an agent turns out to
+        need it.
 
         Args:
-            module_name: Full module path (e.g., "aion.langgraph")
+            module_name: Full module path (e.g., "aion.langgraph.server")
             class_name: Plugin class name to import (e.g., "LangGraphPlugin")
             display_name: Human-readable name for logging (e.g., "LangGraph")
+            extra: Install extra that provides this plugin's libraries
 
         Returns:
             Optional[BasePluginProtocol]: Plugin instance if successful, None otherwise
@@ -185,7 +195,25 @@ class PluginFactory:
             plugin_class = getattr(module, class_name)
             return plugin_class()
 
-        except ModuleNotFoundError:
+        except ModuleNotFoundError as e:
+            if is_own_module(e.name):
+                self.logger.error(
+                    f"Plugin '{module_name}' could not be imported because "
+                    f"'{e.name}' is missing. Every aion module ships in the same "
+                    f"distribution, so this is an incomplete installation and not "
+                    f"a missing extra.",
+                    exc_info=True
+                )
+                raise
+
+            skipped = SkippedPlugin(
+                name=display_name,
+                module=module_name,
+                extra=extra,
+                missing_module=e.name
+            )
+            self._registry.record_skipped(skipped)
+            self.logger.debug(f"Skipping plugin: {skipped.describe()}")
             return None
 
         except ImportError as e:
@@ -199,13 +227,15 @@ class PluginFactory:
     async def _discover_plugins(self) -> list[BasePluginProtocol]:
         """Discover available plugins by attempting imports."""
         plugin_configs = [
-            ("aion.langgraph.server", "LangGraphPlugin", "LangGraph"),
-            ("aion.adk.server", "ADKPlugin", "ADK"),
+            ("aion.langgraph.server", "LangGraphPlugin", "LangGraph", "langgraph-server"),
+            ("aion.adk.server", "ADKPlugin", "ADK", "adk-server"),
         ]
 
         plugins = []
-        for module_name, class_name, display_name in plugin_configs:
-            plugin = await self._try_load_plugin(module_name, class_name, display_name)
+        for module_name, class_name, display_name, extra in plugin_configs:
+            plugin = await self._try_load_plugin(
+                module_name, class_name, display_name, extra
+            )
             if plugin:
                 plugins.append(plugin)
 
