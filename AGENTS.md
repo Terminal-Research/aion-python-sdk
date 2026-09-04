@@ -60,9 +60,11 @@ and are discovered by `aion.server` at runtime.
   invocation abstractions (`card`, `message`, `thread`), the runtime context
   hierarchy (builder, registry, context extensions), settings
   (`BaseEnvSettings`, `ApiSettings`), the `DbManagerProtocol` interface,
-  singleton metaclasses, `get_logger()`, the `MissingOptionalDependency`
-  helper that names the extra a missing library belongs to
-  (`utils/optional_deps.py`), and pydantic/text/url/path utilities.
+  singleton metaclasses, the `AionLogger` / `AionLogRecord` logger class
+  every Aion logger is created from (its context fields are filled in by
+  `aion.server`), the `MissingOptionalDependency` helper that names the
+  extra a missing library belongs to (`utils/optional_deps.py`), and
+  pydantic/text/url/path utilities.
   Owns the provider-neutral Distribution/Messaging context hierarchy, the
   reply contract, and the provider payload fixtures that verify it.
 - **`aion.api`** — low-level Aion control-plane access: a websocket
