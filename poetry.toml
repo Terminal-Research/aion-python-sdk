@@ -1,2 +1,22 @@
 [virtualenvs]
 in-project = true
+
+# Poetry 2.3.0 made `installer.re-resolve = false` the default: `poetry install`
+# no longer solves, it picks packages straight out of the lock file by marker.
+# That breaks here, because the extras of this project constrain the same
+# packages differently - google-adk holds opentelemetry <= 1.41.1 and mcp < 2,
+# litellm holds openai < 3, while the base install and the langgraph branch have
+# no ceiling at all. The lock then carries two entries for such a package with
+# overlapping markers (google-api-core gets two entries with no markers at all),
+# marker selection takes both, and the installer unpacks two versions of one
+# distribution into the same site-packages: two *.dist-info directories, and
+# files from either version written over each other. What comes out is an
+# environment that imports the wrong halves of a package - see
+# python-poetry/poetry#10971.
+#
+# Re-resolving on install costs a few seconds and yields one version per
+# package. Remove this section once the fix for that issue ships (PR #10976 is
+# in draft) and a plain `poetry install` stops producing duplicate dist-info
+# directories - `make check-env` is what tells you.
+[installer]
+re-resolve = true
