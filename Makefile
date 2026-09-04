@@ -24,13 +24,16 @@ POSTGRES_TEST_URL ?= $(PG_TEST_URL)
 # where the only binding in scope is still the real one.
 POSTGRES_TEST_URL_IS_EXTERNAL := $(filter environment command line,$(origin POSTGRES_TEST_URL))
 
-.PHONY: help tests tests-integration tests-all pg-test-up pg-test-down
+.PHONY: help tests tests-integration tests-all lint-imports pg-test-up pg-test-down
 
 help: ## Show available commands
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
 tests: ## Run unit tests (make tests ARGS="-k platform_link")
 	poetry run pytest -m "not integration" $(ARGS)
+
+lint-imports: ## Check the layer contract between the aion.* subpackages
+	poetry run lint-imports
 
 # Run a command with a database under it, and take the database away again.
 #

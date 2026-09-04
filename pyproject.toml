@@ -169,6 +169,46 @@ import-linter = ">=2.0"
 ariadne-codegen = { version = "==0.18.0", extras = ["subscriptions"] }
 twine = ">=6.0.0"
 
+# The ten libs used to keep the layers apart by accident: a lib's venv simply
+# had no code from the layers above it. One project, one venv, so the rule has
+# to be written down and checked. The order below is the one the code already
+# has - it was read off the imports, not imposed on them.
+[tool.importlinter]
+root_package = "aion"
+
+[[tool.importlinter.contracts]]
+name = "Layers"
+type = "layers"
+# Top to bottom: each layer may import the layers under it and nothing above.
+# Names joined by "|" share a rank and, by the same rule, may not import each
+# other - that is what keeps the LangGraph and ADK sides from growing a
+# dependency on one another.
+#
+# aion.proxy sits above aion.server rather than beside it: the proxy reads the
+# server's settings and its port reservations. aion.db sits above the authoring
+# packages so that "authoring never touches the database" is a layer fact and
+# not only the forbidden contract below.
+layers = [
+    "aion.cli",
+    "aion.langgraph.server | aion.adk.server",
+    "aion.proxy",
+    "aion.server",
+    "aion.db",
+    "aion.langgraph.authoring | aion.adk.authoring",
+    "aion.mcp",
+    "aion.api",
+    "aion.core",
+]
+
+[[tool.importlinter.contracts]]
+name = "Authoring never imports server machinery"
+type = "forbidden"
+# Implied by the layer order above, and stated separately anyway: this is the
+# property published wheels are sold on - an authoring extra installs without a
+# database, an ASGI stack or the CLI - and it should fail by name when broken.
+source_modules = ["aion.langgraph.authoring", "aion.adk.authoring"]
+forbidden_modules = ["aion.server", "aion.proxy", "aion.db", "aion.cli"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
