@@ -40,21 +40,18 @@ def _account_name(environment_id: str) -> str:
 
 
 def _load_keyring() -> Any:
-    """Import the Python keyring dependency with a targeted error message.
+    """Import the dependency the operating-system keychain is reached through.
+
+    A function rather than a module-level import: ``keyring`` is a base
+    dependency, so it is always installed, but importing it loads a platform
+    backend that ``aion chat`` has no use for until a credential is asked for.
+    The tests replace this to keep the real keychain out of the way.
 
     Returns:
         Imported ``keyring`` module.
-
-    Raises:
-        CredentialHelperError: If the Python package was installed without the
-            runtime dependency needed to access the operating-system keychain.
     """
-    try:
-        import keyring
-    except ImportError as exc:
-        raise CredentialHelperError(
-            "The Python keyring package is required for aion chat credentials."
-        ) from exc
+    import keyring
+
     return keyring
 
 
@@ -120,7 +117,6 @@ def _handle_request(request: dict[str, Any]) -> dict[str, str | None]:
         stored; ``set`` and ``delete`` return an empty object.
 
     Raises:
-        CredentialHelperError: If the Python keyring dependency is unavailable.
         Exception: If the configured Python keyring backend fails.
     """
     action = request["action"]

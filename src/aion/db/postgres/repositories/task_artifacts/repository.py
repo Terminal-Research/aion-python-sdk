@@ -8,10 +8,7 @@ from typing import Dict, List, Sequence, Type
 from sqlalchemy import asc, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-try:
-    from a2a.types import Artifact
-except Exception as exc:
-    raise ImportError("The 'a2a-sdk' package is required to use this repository") from exc
+from a2a.types import Artifact
 
 from aion.db.postgres.models import TaskArtifactModel
 from aion.db.postgres.records import TaskArtifactRecord

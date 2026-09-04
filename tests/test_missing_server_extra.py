@@ -108,3 +108,42 @@ def test_a_missing_aion_module_is_not_reported_as_an_extra(
     assert result.returncode == 0, result.stderr
     assert result.stdout.startswith("ModuleNotFoundError")
     assert "pip install" not in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("package", "inner"),
+    [
+        # aion.server reaches aion.db.postgres, whose guard fires first when
+        # only the database libraries are missing.
+        ("aion.server", "aion.db.postgres"),
+        # aion.proxy reads the server's settings, so aion.server's guard fires.
+        ("aion.proxy", "aion.server"),
+    ],
+)
+def test_import_is_reported_under_the_package_that_was_imported(
+    package: str, inner: str, run_python_without
+) -> None:
+    """A guard tripped further down is re-raised under the name the reader used.
+
+    Only sqlalchemy is blocked, so the first failure is inside the inner
+    package's guard rather than in ``package``'s own imports. The extras are
+    the same either way; the feature name must be the one that was imported.
+    """
+    result = run_python_without(
+        ("sqlalchemy",),
+        f"""
+        try:
+            import {package}
+        except ImportError as exc:
+            print(type(exc).__name__)
+            print(exc)
+            print("cause:", type(exc.__cause__).__name__, exc.__cause__.name)
+        """,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "MissingOptionalDependency" in result.stdout
+    assert f"{package} requires optional dependencies." in result.stdout
+    assert f"{inner} requires optional dependencies." not in result.stdout
+    # The wrapping keeps the missing library's name reachable.
+    assert "cause: MissingOptionalDependency sqlalchemy" in result.stdout

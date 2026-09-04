@@ -8,10 +8,7 @@ from typing import Dict, List, Optional, Sequence, Type
 from sqlalchemy import asc, desc, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-try:
-    from a2a.types import Message
-except Exception as exc:
-    raise ImportError("The 'a2a-sdk' package is required to use this repository") from exc
+from a2a.types import Message
 
 from aion.db.postgres.models import TaskMessageModel
 from aion.db.postgres.records import TaskMessageRecord

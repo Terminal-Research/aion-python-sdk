@@ -48,24 +48,34 @@ def probe_imports(*modules: str) -> str:
     return "\n".join(lines)
 
 
-def probe_needs_extra(module: str, extra: str) -> str:
-    """Code asserting that importing ``module`` asks for ``extra`` by name.
+def probe_needs_extra(module: str, *extras: str) -> str:
+    """Code asserting that importing ``module`` asks for ``extras`` by name.
 
     The failure this replaces is an ImportError from somewhere inside a
     third-party package, naming a module the person who wrote the agent has
     never heard of.
+
+    More than one extra where no single one is the answer: below the authoring
+    toolkits nothing knows which framework the agent uses, so both server
+    extras are offered. ``[server]`` is asserted absent there - it exists for
+    the checks in this directory and installs a server with no framework
+    behind it, which is never what the reader wants next.
     """
     return f"""
 from aion.core.utils.optional_deps import MissingOptionalDependency
 
+wanted = {list(extras)!r}
 try:
     import {module}
 except MissingOptionalDependency as exc:
-    hint = 'pip install "aionto-sdk[{extra}]"'
-    assert hint in str(exc), str(exc)
-    print('asks for [{extra}]')
+    message = str(exc)
+    for extra in wanted:
+        hint = 'pip install "aionto-sdk[' + extra + ']"'
+        assert hint in message, message
+    assert '[server]' not in message, message
+    print('asks for', wanted)
 else:
-    raise AssertionError('{module} imported in an installation without [{extra}]')
+    raise AssertionError('{module} imported in an installation without ' + repr(wanted))
 """
 
 
@@ -187,6 +197,13 @@ ENVIRONMENTS = (
             Step(
                 "aion.adk.authoring names its extra",
                 code=probe_needs_extra("aion.adk.authoring", "adk-authoring"),
+            ),
+            *(
+                Step(
+                    f"{module} names the server extras",
+                    code=probe_needs_extra(module, "langgraph-server", "adk-server"),
+                )
+                for module in ("aion.server", "aion.db.postgres", "aion.proxy")
             ),
             Step(
                 "no framework or server libraries",

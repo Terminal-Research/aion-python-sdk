@@ -5,6 +5,7 @@ from typing import Literal, Optional
 from pydantic import Field, field_validator
 
 from aion.core.settings import BaseEnvSettings
+from aion.core.utils.optional_deps import server_extras_hint
 
 __all__ = ["AppSettings", "app_settings"]
 
@@ -118,8 +119,8 @@ class AppSettings(BaseEnvSettings):
             from cryptography.fernet import Fernet
         except ImportError as error:
             raise ValueError(
-                "ENCRYPTION_KEY is set but the 'cryptography' package is not "
-                "installed. Install a2a-sdk with its 'encryption' extra."
+                "ENCRYPTION_KEY is set but the 'cryptography' package that "
+                "reads it is not installed.\n" + server_extras_hint()
             ) from error
 
         try:

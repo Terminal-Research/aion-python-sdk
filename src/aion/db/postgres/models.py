@@ -7,18 +7,10 @@ from sqlalchemy import BigInteger, Column, Computed, DateTime, ForeignKey, Strin
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import declarative_base
 from google.protobuf.struct_pb2 import Struct
+from a2a.types import Artifact, Message, TaskStatus
 
 from .constants import TASK_ARTIFACTS_TABLE, TASK_CLAIMS_TABLE, TASK_MESSAGES_TABLE, TASKS_TABLE
 from .fields import ProtobufType
-
-
-try:  # pragma: no cover - optional dependency
-    from a2a.types import Artifact, Message, TaskStatus
-except Exception as exc:  # pragma: no cover - explicit failure if missing
-    raise ImportError(
-        "The 'a2a-sdk' package is required to use these models"
-    ) from exc
-
 
 __all__ = [
     "BaseModel",

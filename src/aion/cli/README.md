@@ -4,7 +4,7 @@ Command-line interface for the Aion Python SDK — the `aion` console script.
 
 Always installed: it is part of the base `pip install aionto-sdk`, so `aion`
 and `aion chat` work without any extra. `aion serve` needs the server behind
-it and asks for the `[server]` extra by name when it is missing.
+it and names the agent server extras when it is missing.
 
 ## Commands
 
@@ -242,7 +242,7 @@ aion serve --port 5000 --port-range-start 8000 --port-range-end 9000
 
 **Server won't start:**
 
-* Ensure the `[server]` extra is installed (`pip install "aionto-sdk[server]"`) — `aion serve` says so by name when it is not
+* Ensure an agent server extra is installed (`pip install "aionto-sdk[langgraph-server]"` or `pip install "aionto-sdk[adk-server]"`) — `aion serve` names both when neither is
 * Check that your `aion.yaml` configuration is valid and contains at least one agent
 * Verify that ports in the specified range are available
 * Try specifying a different port range with `--port-range-start` and `--port-range-end`

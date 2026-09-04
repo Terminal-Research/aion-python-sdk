@@ -5,9 +5,11 @@ from __future__ import annotations
 import pytest
 
 from aion.core.utils.optional_deps import (
+    SERVER_EXTRAS,
     MissingOptionalDependency,
     is_own_module,
     missing_extra_error,
+    missing_server_extra_error,
 )
 
 
@@ -45,3 +47,28 @@ def test_missing_extra_error_carries_the_missing_module_name() -> None:
     error = missing_extra_error("LangGraph authoring", "langgraph-authoring", cause)
 
     assert error.name == "langgraph"
+
+
+def test_missing_server_extra_error_names_every_server_extra() -> None:
+    """No single extra is the answer below the authoring toolkits."""
+    error = missing_server_extra_error("aion.server", None)
+
+    assert isinstance(error, MissingOptionalDependency)
+    assert str(error).startswith("aion.server requires optional dependencies.")
+    for extra in SERVER_EXTRAS:
+        assert f'pip install "aionto-sdk[{extra}]"' in str(error)
+
+
+def test_missing_server_extra_error_never_names_the_internal_extra() -> None:
+    """[server] exists for the packaging checks, and buys a server with no framework."""
+    assert "[server]" not in str(missing_server_extra_error("aion.server", None))
+    assert "server" not in SERVER_EXTRAS
+
+
+def test_missing_server_extra_error_carries_the_missing_module_name() -> None:
+    """`exc.name` is what a caller inspects to tell one absence from another."""
+    cause = ModuleNotFoundError("No module named 'fastapi'", name="fastapi")
+
+    error = missing_server_extra_error("aion.server", cause)
+
+    assert error.name == "fastapi"

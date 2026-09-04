@@ -11,10 +11,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Select
 
-try:
-    from a2a.types import Artifact, TaskStatus
-except Exception as exc:
-    raise ImportError("The 'a2a-sdk' package is required to use this repository") from exc
+from a2a.types import Artifact, TaskStatus
 
 from aion.db.postgres.records import TaskRecord, resolve_status_timestamp
 from aion.db.postgres.repositories.base import BaseRepository

@@ -4,10 +4,7 @@ from __future__ import annotations
 
 from typing import List, Optional, Sequence
 
-try:
-    from a2a.types import Artifact
-except Exception as exc:
-    raise ImportError("The 'a2a-sdk' package is required to use these selectors") from exc
+from a2a.types import Artifact
 
 
 def latest_artifacts(

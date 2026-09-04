@@ -10,24 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-
-# Top-level import names of the third-party libraries the [server] extra
-# installs. Blocking them turns this environment into a base install for the
-# duration of one subprocess.
-SERVER_LIBRARIES = (
-    "fastapi",
-    "uvicorn",
-    "sqlalchemy",
-    "alembic",
-    "psycopg",
-    "greenlet",
-    "starlette",
-    "sse_starlette",
-    "opentelemetry",
-    "cryptography",
-    "asgi_proxy_lib",
-    "logstash_async",
-)
+from tests.conftest import SERVER_LIBRARIES
 
 
 def test_cli_module_imports_without_the_server_extra(run_python_without) -> None:
@@ -87,7 +70,11 @@ def test_serve_asks_for_the_server_extra(run_python_without) -> None:
     assert result.returncode == 0, result.stderr
     assert not result.stdout.startswith("0\n")
     assert "aion serve requires optional dependencies." in result.stdout
-    assert 'pip install "aionto-sdk[server]"' in result.stdout
+    # Both, because nothing here knows which framework the agents use - and
+    # never [server], which would install a server with no framework behind it.
+    assert 'pip install "aionto-sdk[langgraph-server]"' in result.stdout
+    assert 'pip install "aionto-sdk[adk-server]"' in result.stdout
+    assert "[server]" not in result.stdout
 
 
 def test_serve_does_not_hide_a_missing_aion_module(run_python_without) -> None:

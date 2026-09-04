@@ -8,8 +8,8 @@ The subpackage can:
 - build authenticated remote MCP endpoint configs for Aion servers
 
 The endpoint helpers are part of the base `pip install aionto-sdk`. The local
-proxy is the exception: the ASGI proxy libraries it runs on arrive with the
-`[server]` extra, and it is imported only when `load_proxy` is called.
+proxy is the exception: the ASGI proxy libraries it runs on arrive with an
+agent server extra, and it is imported only when `load_proxy` is called.
 
 ## Remote endpoints
 
@@ -66,4 +66,4 @@ connected.
 `load_proxy` reads `aion.yaml` using PyYAML and returns an ASGI proxy when
 `aion.mcp.port` is configured. It imports its ASGI dependencies at the moment
 it is called, so importing `aion.mcp` in a base install stays cheap and never
-asks for the `[server]` extra.
+asks for a server extra.

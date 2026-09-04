@@ -3,9 +3,11 @@
 Implementation of an A2A protocol server that wraps an agent written with a
 supported framework.
 
-Installed with the `[server]` extra: `pip install "aionto-sdk[server]"`. The
-subpackage itself ships in every installation; the extra is what brings the
-`a2a-sdk` server stack, Starlette and FastAPI it is built on.
+Installed with one of the agent server extras — `pip install
+"aionto-sdk[langgraph-server]"` or `pip install "aionto-sdk[adk-server]"`,
+depending on the framework the agents are written with. The subpackage itself
+ships in every installation; the extra is what brings the `a2a-sdk` server
+stack, Starlette and FastAPI it is built on.
 
 This subpackage exposes an `AppFactory` that assembles the agent application on
 top of the Google `a2a-sdk` and Starlette.

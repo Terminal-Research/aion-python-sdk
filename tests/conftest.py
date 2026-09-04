@@ -12,6 +12,25 @@ from pathlib import Path
 import pytest
 
 
+# Top-level import names of the third-party libraries the server extras
+# install. Blocking them turns this environment into a base install for the
+# duration of one subprocess.
+SERVER_LIBRARIES = (
+    "fastapi",
+    "uvicorn",
+    "sqlalchemy",
+    "alembic",
+    "psycopg",
+    "greenlet",
+    "starlette",
+    "sse_starlette",
+    "opentelemetry",
+    "cryptography",
+    "asgi_proxy_lib",
+    "logstash_async",
+)
+
+
 # Installed in the child interpreter through sitecustomize, before anything
 # else imports: a meta path finder that refuses the named modules the way an
 # absent installation would.

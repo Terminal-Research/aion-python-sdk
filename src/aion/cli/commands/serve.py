@@ -2,7 +2,11 @@
 import logging
 import asyncclick as click
 from aion.core.config.reader import ConfigurationError, AionConfigReader
-from aion.core.utils.optional_deps import is_own_module, missing_extra_error
+from aion.core.utils.optional_deps import (
+    MissingOptionalDependency,
+    is_own_module,
+    missing_server_extra_error,
+)
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
@@ -107,6 +111,13 @@ async def serve(
         from aion.server.logging import setup_root_logger
 
         from aion.cli.handlers.serve import ServeHandler
+    except MissingOptionalDependency as ex:
+        # aion.server has already worked out that a library is missing and
+        # said which extras bring it. Only the name of the command that needed
+        # them is added here, so the line starts where the user did.
+        raise click.ClickException(
+            str(missing_server_extra_error("aion serve", ex))
+        ) from ex
     except ModuleNotFoundError as ex:
         if is_own_module(ex.name):
             # Our own code is missing from an installation that has it by
@@ -114,7 +125,7 @@ async def serve(
             # travel with its traceback.
             raise
         raise click.ClickException(
-            str(missing_extra_error("aion serve", "server", ex))
+            str(missing_server_extra_error("aion serve", ex))
         ) from ex
 
     set_process_role("CLI")
