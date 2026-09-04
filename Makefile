@@ -25,7 +25,7 @@ POSTGRES_TEST_URL ?= $(PG_TEST_URL)
 POSTGRES_TEST_URL_IS_EXTERNAL := $(filter environment command line,$(origin POSTGRES_TEST_URL))
 
 .PHONY: help tests tests-integration tests-all lint-imports \
-	dist-build dist-check dist-clean pg-test-up pg-test-down
+	dist-build dist-check dist-smoke dist-clean pg-test-up pg-test-down
 
 help: ## Show available commands
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -44,6 +44,12 @@ dist-build: dist-clean ## Build the wheel and the sdist into dist/
 
 dist-check: ## Check the built distributions against the packaging contract
 	poetry run ./scripts/packaging/check.py
+
+# Not `poetry run`: the point is a clean environment, and the venvs the script
+# builds must inherit nothing from this project's. SMOKE_ARGS is where the
+# interpreter goes - `make dist-smoke SMOKE_ARGS="--python 3.12"`.
+dist-smoke: ## Install the built distributions into clean venvs and use them
+	./scripts/packaging/smoke.py $(SMOKE_ARGS)
 
 dist-clean: ## Remove built distributions
 	rm -rf dist
