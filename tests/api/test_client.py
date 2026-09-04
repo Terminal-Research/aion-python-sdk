@@ -136,10 +136,12 @@ async def test_a2a_stream_calls_gql(monkeypatch) -> None:
         *,
         request: A2AJsonRpcRequestGQLInput,
         target: CapabilitySubjectGQLInput,
+        service_parameters=None,
         principal=None,
     ):
         assert request == request_model
         assert target == CapabilitySubjectGQLInput(distribution_id="dist1")
+        assert service_parameters is None
         assert principal is None
         yield {"result": 1}
 

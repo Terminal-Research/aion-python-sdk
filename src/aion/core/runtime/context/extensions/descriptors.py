@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Optional, Protocol, Type
 
@@ -20,6 +21,7 @@ __all__ = [
     "ExtensionActivationError",
     "ExtensionPayloadCollector",
     "MarkerCollector",
+    "HeaderCollector",
     "TaskMetadataCollector",
     "MessagesCollector",
     "ExtensionDescriptor",
@@ -100,6 +102,56 @@ class MarkerCollector:
     """
 
     def collect(self, uri: str, request_context: "RequestContext") -> None:
+        return None
+
+
+class HeaderCollector:
+    """Collector for opaque extension values carried in one HTTP header."""
+
+    def __init__(self, header_name: str) -> None:
+        """Create a collector for a case-insensitive transport header.
+
+        Args:
+            header_name: Canonical header name advertised by the extension.
+        """
+        self._header_name = header_name
+
+    def collect(self, uri: str, request_context: "RequestContext") -> str:
+        """Return one non-empty opaque header value.
+
+        Args:
+            uri: Extension URI associated with the transport header.
+            request_context: Inbound A2A request context.
+
+        Returns:
+            The header value exactly as received except for surrounding
+            whitespace.
+
+        Raises:
+            ExtensionActivationError: If the declared extension has no value.
+        """
+        call_context = getattr(request_context, "call_context", None)
+        state = getattr(call_context, "state", None)
+        headers = state.get("headers") if isinstance(state, Mapping) else None
+        value = self._value(headers)
+        if value is None:
+            raise ExtensionActivationError(
+                uri,
+                reason=(
+                    f"the extension was declared active but "
+                    f"{self._header_name} is missing or empty"
+                ),
+            )
+        return value
+
+    def _value(self, headers: object) -> Optional[str]:
+        if not isinstance(headers, Mapping):
+            return None
+        expected = self._header_name.casefold()
+        for name, raw_value in headers.items():
+            if str(name).casefold() == expected:
+                value = str(raw_value).strip()
+                return value or None
         return None
 
 

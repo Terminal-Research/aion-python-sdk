@@ -211,6 +211,52 @@ def test_model_request_headers_rejects_invalid_principal():
     assert "not a valid Aion selector" in str(excinfo.value)
 
 
+def test_model_request_headers_adds_usage_attribution_from_provider():
+    """A signed carrier supplements, rather than replaces, the principal."""
+    headers = model_service_client.aion_model_request_headers(
+        principal_selector_provider=lambda: "aion://agent/identity/identity-id",
+        usage_attribution_provider=lambda: "signed-token",
+    )
+
+    assert headers == {
+        model_service_client.AION_PRINCIPAL_SELECTOR_HEADER: (
+            "aion://agent/identity/identity-id"
+        ),
+        model_service_client.AION_USAGE_ATTRIBUTION_HEADER: "signed-token"
+    }
+
+
+@pytest.mark.parametrize("header_name", [
+    model_service_client.AION_USAGE_ATTRIBUTION_HEADER,
+    model_service_client.AION_USAGE_ATTRIBUTION_HEADER.lower(),
+])
+def test_model_request_headers_preserves_explicit_usage_attribution(header_name):
+    """Case-insensitive explicit usage headers override the runtime carrier."""
+    headers = model_service_client.aion_model_request_headers(
+        {header_name: "explicit-token"},
+        principal_selector_provider=lambda: "aion://agent/identity/identity-id",
+        usage_attribution_provider=lambda: "context-token",
+    )
+
+    assert headers[model_service_client.AION_USAGE_ATTRIBUTION_HEADER] == (
+        "explicit-token"
+    )
+
+
+@pytest.mark.parametrize("selector", [
+    None,
+    "aion://agent/environment/env-id",
+    "not-a-selector",
+])
+def test_usage_attribution_does_not_bypass_principal_validation(selector):
+    """A billing carrier never authorizes an otherwise invalid model call."""
+    with pytest.raises(AionModelPrincipalError):
+        model_service_client.aion_model_request_headers(
+            principal_selector_provider=lambda: selector,
+            usage_attribution_provider=lambda: "signed-token",
+        )
+
+
 def test_model_principal_selector_value_stays_lenient_by_default(caplog):
     """Non-strict callers still normalize rather than raise."""
     caplog.set_level(logging.ERROR, logger="aion.api.model_service_client")
@@ -305,10 +351,14 @@ def test_model_request_hook_resolves_principal_at_request_time(monkeypatch):
 
 
 def test_model_request_hook_preserves_explicit_principal(monkeypatch):
+    """An explicit principal must not skip request-scoped usage forwarding."""
     monkeypatch.setattr(
         model_service_client,
         "aion_principal_selector",
         lambda: "aion://agent/environment/fresh-env",
+    )
+    monkeypatch.setattr(
+        model_service_client, "aion_usage_attribution", lambda: "signed-token"
     )
     request = httpx.Request(
         "POST",
@@ -325,6 +375,10 @@ def test_model_request_hook_preserves_explicit_principal(monkeypatch):
     assert (
         request.headers[model_service_client.AION_PRINCIPAL_SELECTOR_HEADER]
         == "aion://agent/identity/explicit-identity"
+    )
+    assert (
+        request.headers[model_service_client.AION_USAGE_ATTRIBUTION_HEADER]
+        == "signed-token"
     )
 
 

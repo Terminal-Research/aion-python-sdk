@@ -24,6 +24,7 @@ from .base_operation import GraphQLField
 from .chat_completion_stream import ChatCompletionStream
 from .input_types import (
     A2AJsonRpcRequestGQLInput,
+    A2AServiceParametersGQLInput,
     CapabilitySubjectGQLInput,
     ChatCompletionRequestInput,
 )
@@ -55,12 +56,16 @@ class GqlClient(AsyncBaseClientOpenTelemetry):
         self,
         request: A2AJsonRpcRequestGQLInput,
         target: CapabilitySubjectGQLInput,
+        service_parameters: Union[
+            Optional[A2AServiceParametersGQLInput], UnsetType
+        ] = UNSET,
         principal: Union[Optional[str], UnsetType] = UNSET,
         **kwargs: Any,
     ) -> AsyncIterator[A2AStream]:
         variables: dict[str, object] = {
             "request": request,
             "target": target,
+            "serviceParameters": service_parameters,
             "principal": principal,
         }
         async for data in self.execute_ws(

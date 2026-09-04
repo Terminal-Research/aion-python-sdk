@@ -19,10 +19,12 @@ from aion.api.http.jwt_manager import (
     AionRefreshingJWTManager,
     aion_jwt_manager,
 )
+from aion.core.constants import AION_USAGE_ATTRIBUTION_HEADER
 from aion.core.runtime.context import get_aion_runtime_context
 from aion.core.settings import api_settings
 
 PrincipalSelectorProvider = Callable[[], str | None]
+UsageAttributionProvider = Callable[[], str | None]
 ModelApiKeyProvider = Callable[[], str]
 
 logger = logging.getLogger(__name__)
@@ -167,21 +169,37 @@ def aion_principal_selector() -> str | None:
     return context.get_principal_selector()
 
 
+def aion_usage_attribution() -> str | None:
+    """Return the current opaque usage-attribution carrier, if available.
+
+    Returns:
+        The request-local token supplied by an Aion-managed runtime dispatch,
+        or ``None`` outside an attributed runtime request.
+    """
+    context = get_aion_runtime_context()
+    if context is None:
+        return None
+    return context.get_usage_attribution()
+
+
 def aion_model_request_headers(
         existing: Mapping[str, str] | None = None,
         *,
         principal_selector_provider: PrincipalSelectorProvider | None = None,
+        usage_attribution_provider: UsageAttributionProvider | None = None,
 ) -> dict[str, str]:
-    """Return per-request headers for an Aion model-service call.
+    """Return validated principal and usage headers for a model-service call.
 
     Args:
         existing: Headers to extend. An explicit principal selector here is
             validated the same way as a resolved one.
         principal_selector_provider: Source of the principal selector.
             Defaults to the active Aion runtime context.
+        usage_attribution_provider: Optional request-scoped opaque carrier
+            source. An explicit usage header takes precedence.
 
     Returns:
-        The headers, carrying a principal selector the model service accepts.
+        The headers, carrying an accepted principal and any usage attribution.
 
     Raises:
         AionModelPrincipalError: When no such principal is available. The
@@ -191,28 +209,29 @@ def aion_model_request_headers(
     headers = dict(existing or {})
     # Header names are case-insensitive, and httpx hands them over lower-cased,
     # so an explicit selector is found by name rather than by exact key.
-    supplied = next(
-        (
-            key
-            for key in headers
-            if key.lower() == AION_PRINCIPAL_SELECTOR_HEADER.lower()
-        ),
-        None,
-    )
+    supplied = _matching_header_key(headers, AION_PRINCIPAL_SELECTOR_HEADER)
     if supplied is not None:
         headers[supplied] = aion_model_principal_selector_value(
             headers[supplied], strict=True
         )
-        return headers
+    else:
+        provider = principal_selector_provider or aion_principal_selector
+        selector = provider()
+        if not selector:
+            raise AionModelPrincipalError(NO_PRINCIPAL_MESSAGE)
 
-    provider = principal_selector_provider or aion_principal_selector
-    selector = provider()
-    if not selector:
-        raise AionModelPrincipalError(NO_PRINCIPAL_MESSAGE)
+        headers[AION_PRINCIPAL_SELECTOR_HEADER] = aion_model_principal_selector_value(
+            selector, strict=True
+        )
 
-    headers[AION_PRINCIPAL_SELECTOR_HEADER] = aion_model_principal_selector_value(
-        selector, strict=True
-    )
+    usage_key = _matching_header_key(headers, AION_USAGE_ATTRIBUTION_HEADER)
+    if usage_key is None:
+        provider = usage_attribution_provider or aion_usage_attribution
+        carrier = provider()
+        if carrier:
+            headers[AION_USAGE_ATTRIBUTION_HEADER] = carrier
+    elif usage_key != AION_USAGE_ATTRIBUTION_HEADER:
+        headers[AION_USAGE_ATTRIBUTION_HEADER] = headers.pop(usage_key)
     return headers
 
 
@@ -275,7 +294,7 @@ def aion_model_principal_selector_value(
 
 
 def aion_model_request_hook(request: httpx.Request) -> None:
-    """Inject the current principal selector into an outgoing model request.
+    """Inject current principal and usage headers into an outgoing model request.
 
     Raises:
         AionModelPrincipalError: When the request has no principal the model
@@ -283,6 +302,18 @@ def aion_model_request_hook(request: httpx.Request) -> None:
             at the call site that asked for the completion.
     """
     request.headers.update(aion_model_request_headers(request.headers))
+
+
+def _matching_header_key(
+        headers: Mapping[str, str],
+        expected: str,
+) -> str | None:
+    """Return the actual key for one case-insensitive HTTP header."""
+    expected_casefold = expected.casefold()
+    return next(
+        (key for key in headers if key.casefold() == expected_casefold),
+        None,
+    )
 
 
 def aion_openai_config() -> AionModelClientConfig:
@@ -337,9 +368,11 @@ def _async_model_request_hook(
 
 __all__ = [
     "AION_PRINCIPAL_SELECTOR_HEADER",
+    "AION_USAGE_ATTRIBUTION_HEADER",
     "AionModelClientConfig",
     "ModelApiKeyProvider",
     "PrincipalSelectorProvider",
+    "UsageAttributionProvider",
     "aion_jwt_api_key",
     "aion_model_api_key",
     "aion_model_api_key_provider",
@@ -349,4 +382,5 @@ __all__ = [
     "aion_model_base_url",
     "aion_openai_config",
     "aion_principal_selector",
+    "aion_usage_attribution",
 ]

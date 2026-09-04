@@ -30,6 +30,9 @@ __all__ = [
     "STREAM_DELTA_PAYLOAD_SCHEMA_V1",
     # Traceability extension
     "TRACEABILITY_EXTENSION_URI_V1",
+    # Usage attribution extension
+    "USAGE_ATTRIBUTION_EXTENSION_URI_V1",
+    "AION_USAGE_ATTRIBUTION_HEADER",
     # Reflection extension (behaviour evolution)
     "BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1",
     "BEHAVIOUR_EVOLUTION_DIRECTIVE_EVENT_TYPE_V1",
@@ -82,6 +85,12 @@ STREAM_DELTA_PAYLOAD_SCHEMA_V1 = f"{MESSAGING_EXTENSION_URI_V1}#StreamDeltaPaylo
 # Traceability extension (W3C trace context)
 # See: https://docs.aion.to/a2a/extensions/aion/traceability/1.0.0
 TRACEABILITY_EXTENSION_URI_V1 = "https://docs.aion.to/a2a/extensions/aion/traceability/1.0.0"
+
+# Opaque signed usage attribution propagated by Aion-managed runtimes.
+USAGE_ATTRIBUTION_EXTENSION_URI_V1 = (
+    "https://docs.aion.to/a2a/extensions/aion/usage-attribution/1.0.0"
+)
+AION_USAGE_ATTRIBUTION_HEADER = "Aion-Usage-Attribution"
 
 # Reflection extension (behaviour evolution: improver directive/verdict/result payloads)
 # See: https://docs.aion.to/a2a/extensions/aion/behaviour/evolution/1.0.0

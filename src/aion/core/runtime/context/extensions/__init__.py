@@ -1,6 +1,7 @@
 from .descriptors import (
     ExtensionActivationError,
     ExtensionPayloadCollector,
+    HeaderCollector,
     MarkerCollector,
     TaskMetadataCollector,
     MessagesCollector,
@@ -12,6 +13,7 @@ from .registry import AionA2AExtensionRegistry, aion_a2a_extension_registry
 __all__ = [
     "ExtensionActivationError",
     "ExtensionPayloadCollector",
+    "HeaderCollector",
     "MarkerCollector",
     "TaskMetadataCollector",
     "MessagesCollector",

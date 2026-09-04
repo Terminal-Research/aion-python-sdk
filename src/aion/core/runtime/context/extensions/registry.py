@@ -19,6 +19,7 @@ from aion.core.a2a.extensions.messaging import (
 )
 from aion.core.a2a.extensions.traceability import TraceabilityExtensionV1
 from aion.core.constants.a2a import (
+    AION_USAGE_ATTRIBUTION_HEADER,
     CARDS_EXTENSION_URI_V1,
     DAEMON_EXTENSION_URI_V1,
     DISTRIBUTION_EXTENSION_URI_V1,
@@ -28,10 +29,16 @@ from aion.core.constants.a2a import (
     GET_CONTEXT_EXTENSION_URI_V1,
     GET_CONTEXTS_LIST_EXTENSION_URI_V1,
     TRACEABILITY_EXTENSION_URI_V1,
+    USAGE_ATTRIBUTION_EXTENSION_URI_V1,
 )
 from aion.core.metaclasses import Singleton
 
-from .descriptors import ExtensionDescriptor, MessagesCollector, TaskMetadataCollector
+from .descriptors import (
+    ExtensionDescriptor,
+    HeaderCollector,
+    MessagesCollector,
+    TaskMetadataCollector,
+)
 
 __all__ = [
     "AionA2AExtensionRegistry",
@@ -113,6 +120,17 @@ class AionA2AExtensionRegistry(metaclass=Singleton):
 
 
 aion_a2a_extension_registry = AionA2AExtensionRegistry()
+
+aion_a2a_extension_registry.register(
+    ExtensionDescriptor(
+        uri=USAGE_ATTRIBUTION_EXTENSION_URI_V1,
+        collector=HeaderCollector(AION_USAGE_ATTRIBUTION_HEADER),
+        description=(
+            "Opaque Aion-issued usage attribution propagated across managed "
+            "runtime calls."
+        ),
+    )
+)
 
 aion_a2a_extension_registry.register(
     ExtensionDescriptor(

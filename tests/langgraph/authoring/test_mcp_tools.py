@@ -49,6 +49,10 @@ class FakeRuntimeContext:
         """Return the derived principal selector."""
         return "aion://agent/environment/env-id"
 
+    def get_usage_attribution(self) -> None:
+        """Return no request-scoped attribution for this generic fixture."""
+        return None
+
 
 def test_langgraph_mcp_server_config_sync_uses_runtime_context() -> None:
     """Verify LangGraph config includes control-plane and capability endpoints."""

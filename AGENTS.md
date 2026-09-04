@@ -55,7 +55,8 @@ and are discovered by `aion.server` at runtime.
 - **`aion.core`** — foundation layer with no internal Aion dependencies:
   A2A protocol models, enums, request/response and artifact types, A2A
   extension payloads (`cards`, `distribution`, `messaging`, `event`,
-  `traceability`), shared extension URI constants, `aion.yaml` configuration
+  `traceability`), opaque usage-attribution extension collection, shared
+  extension URI/header constants, `aion.yaml` configuration
   parsing and publication collectors (including dedicated secret fields),
   invocation abstractions (`card`, `message`, `thread`), the runtime context
   hierarchy (builder, registry, context extensions), settings
@@ -76,8 +77,9 @@ and are discovered by `aion.server` at runtime.
   from the token's `sub`/`sub_type` claims), typed control-plane addressing
   (`aion.api.control_plane`: `CapabilityReference`, `CapabilitySubject`,
   `PrincipalSelector`, path helpers), and the OpenAI-compatible
-  `model_service_client` with request-scoped model-service principal header
-  injection. The generated client is committed; regenerate it from
+  `model_service_client` with strict request-scoped principal validation and
+  opaque usage-attribution forwarding, plus nested GraphQL A2A propagation.
+  The generated client is committed; regenerate it from
   `graphql/schema.graphql` and `graphql/queries.graphql`
   (`[tool.ariadne-codegen]` in the root manifest).
 - **`aion.db`** — centralized DB management layer under the `aion.db.postgres`
@@ -90,7 +92,8 @@ and are discovered by `aion.server` at runtime.
 - **`aion.mcp`** — MCP integration utilities: an ASGI proxy for a local MCP
   server declared in `aion.yaml` (`proxy.py`) and authenticated remote Aion
   MCP endpoint builders (`endpoints.py`) for direct capability servers and the
-  control-plane MCP server. `endpoints.py` works in a base install, so
+  control-plane MCP server, including request-scoped opaque usage-attribution
+  forwarding. `endpoints.py` works in a base install, so
   `import aion.mcp` must not reach the proxy: `load_proxy()` imports
   `proxy.py`, and with it the ASGI proxy libraries from the `server` extra,
   only when it is called.

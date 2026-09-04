@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from aion.core.constants import (
+    AION_USAGE_ATTRIBUTION_HEADER,
+    USAGE_ATTRIBUTION_EXTENSION_URI_V1,
+)
 from aion.core.settings import api_settings as aion_api_settings
 
 
@@ -245,6 +249,59 @@ async def test_a2a_stream_accepts_typed_target_and_principal(dummy_jwt_manager) 
     call = generated_client.calls[0]
     assert call["target"].agent_environment_id == "env-id"
     assert call["principal"] == "aion://agent/environment/env-id"
+
+
+@pytest.mark.anyio("asyncio")
+async def test_a2a_stream_forwards_request_scoped_usage_attribution(
+    dummy_jwt_manager,
+    monkeypatch,
+) -> None:
+    """Nested A2A calls should return the opaque carrier to Aion unchanged."""
+
+    class FakeGeneratedClient:
+        def __init__(self) -> None:
+            self.calls = []
+
+        async def a_2_a_stream(self, **kwargs):
+            self.calls.append(kwargs)
+            yield "chunk"
+
+    generated_client = FakeGeneratedClient()
+    client = AionGqlClient(
+        client_id="test-id",
+        client_secret="test-secret",
+        jwt_manager=dummy_jwt_manager,
+        gql_url=aion_api_settings.gql_url,
+        ws_url=aion_api_settings.ws_gql_url,
+    )
+    client.client = generated_client
+    client._is_initialized = True
+    monkeypatch.setattr(
+        gql_client_module,
+        "get_aion_runtime_context",
+        lambda: type(
+            "RuntimeContext",
+            (),
+            {"get_usage_attribution": lambda self: "signed-token"},
+        )(),
+    )
+
+    chunks = [
+        chunk
+        async for chunk in client.a2a_stream(
+            A2AJsonRpcRequestGQLInput(jsonrpc="2.0", method="message/send"),
+            target=CapabilitySubject.environment("env-id"),
+        )
+    ]
+
+    assert chunks == ["chunk"]
+    service_parameters = generated_client.calls[0]["service_parameters"]
+    assert service_parameters.extensions == [
+        USAGE_ATTRIBUTION_EXTENSION_URI_V1
+    ]
+    assert [(item.key, item.value) for item in service_parameters.additional] == [
+        (AION_USAGE_ATTRIBUTION_HEADER, "signed-token")
+    ]
 
 
 @pytest.mark.anyio("asyncio")

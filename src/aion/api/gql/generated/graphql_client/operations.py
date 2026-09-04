@@ -30,8 +30,8 @@ subscription ChatCompletionStream($request: ChatCompletionRequestInput!, $princi
 """
 
 A_2_A_STREAM_GQL = """
-subscription A2AStream($request: A2AJsonRpcRequestGQLInput!, $target: CapabilitySubjectGQLInput!, $principal: String) {
-  a2aRpc(request: $request, target: $target, principal: $principal) {
+subscription A2AStream($request: A2AJsonRpcRequestGQLInput!, $target: CapabilitySubjectGQLInput!, $serviceParameters: A2AServiceParametersGQLInput, $principal: String) {
+  a2aRpc(request: $request, target: $target, serviceParameters: $serviceParameters, principal: $principal) {
     __typename
     ... on A2AJsonRpcSuccessResponseGQL {
       id

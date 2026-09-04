@@ -22,6 +22,7 @@ from aion.core.constants.a2a import (
     REACTION_EVENT_TYPE_V1,
     BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1,
     TRACEABILITY_EXTENSION_URI_V1,
+    USAGE_ATTRIBUTION_EXTENSION_URI_V1,
 )
 from aion.core.a2a import A2AInbox
 from aion.core.a2a.extensions import (
@@ -221,6 +222,19 @@ class AionRuntimeContext:
             request does not carry W3C trace context propagation.
         """
         return self.extensions.get(TRACEABILITY_EXTENSION_URI_V1)
+
+    def get_usage_attribution(self) -> Optional[str]:
+        """Return the opaque signed usage-attribution carrier.
+
+        The SDK deliberately does not inspect this token. Downstream Aion
+        clients forward it unchanged so the control plane can verify and
+        restore the trusted payer and principal roles.
+
+        Returns:
+            The request-scoped carrier, or ``None`` when this invocation did
+            not receive the usage-attribution extension.
+        """
+        return self.extensions.get(USAGE_ATTRIBUTION_EXTENSION_URI_V1)
 
     def get_environment(self) -> Optional[Environment]:
         """Return the environment model from the Aion distribution payload.

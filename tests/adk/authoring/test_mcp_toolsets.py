@@ -52,6 +52,10 @@ class FakeRuntimeContext:
         """Return the derived principal selector."""
         return "aion://agent/environment/env-id"
 
+    def get_usage_attribution(self) -> None:
+        """Return no request-scoped attribution for this generic fixture."""
+        return None
+
 
 def install_fake_google_adk(monkeypatch):
     """Install minimal Google ADK modules for lazy-import tests."""

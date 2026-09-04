@@ -17,6 +17,7 @@ from aion.core.constants.a2a import (
     REACTION_EVENT_TYPE_V1,
     REACTION_EVENT_PAYLOAD_SCHEMA_V1,
     TRACEABILITY_EXTENSION_URI_V1,
+    USAGE_ATTRIBUTION_EXTENSION_URI_V1,
 )
 from aion.core.runtime.context.builder import AionRuntimeContextBuilder
 from aion.core.runtime.context.extensions import (
@@ -208,6 +209,15 @@ class TestExtractEventSuccess:
 
 
 class TestAionRuntimeContextDistributionPayload:
+    def test_usage_attribution_returns_verified_opaque_value(self):
+        context = AionRuntimeContext(
+            extensions=AionRuntimeExtensions(
+                {USAGE_ATTRIBUTION_EXTENSION_URI_V1: "signed-token"}
+            )
+        )
+
+        assert context.get_usage_attribution() == "signed-token"
+
     def test_distribution_extension_payload_stored(self):
         """Verify that the raw distribution extension payload is stored."""
         dist = _make_distribution_ext(agent_id="agent-abc", behavior_key="main", version_id="v-3")

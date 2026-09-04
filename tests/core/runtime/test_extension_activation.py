@@ -1,6 +1,8 @@
 """Tests for A2A extension collection, verification, and the registry's
 per-agent activation state."""
 
+from types import SimpleNamespace
+
 import pytest
 from a2a.types import Message, Role
 from google.protobuf.json_format import ParseDict
@@ -10,6 +12,7 @@ from aion.core.a2a import A2ABaseModel
 from aion.core.runtime.context.extensions.descriptors import (
     ExtensionActivationError,
     ExtensionDescriptor,
+    HeaderCollector,
     TaskMetadataCollector,
 )
 from aion.core.runtime.context.extensions.pipeline import (
@@ -38,10 +41,17 @@ class _FakeRequestContext:
     """Duck-types the subset of a2a.server.agent_execution.RequestContext
     the collector reads: .message, .metadata, .requested_extensions."""
 
-    def __init__(self, message=None, metadata=None, requested_extensions=frozenset()):
+    def __init__(
+        self,
+        message=None,
+        metadata=None,
+        requested_extensions=frozenset(),
+        headers=None,
+    ):
         self.message = message
         self.metadata = metadata or {}
         self.requested_extensions = requested_extensions
+        self.call_context = SimpleNamespace(state={"headers": headers or {}})
 
 
 class TestCollect:
@@ -117,6 +127,35 @@ class TestVerify:
         )
 
         assert verified[PAYLOAD_URI].value == "hello"
+
+    def test_header_extension_preserves_opaque_value(self):
+        descriptor = ExtensionDescriptor(
+            uri=PAYLOAD_URI,
+            collector=HeaderCollector("Aion-Usage-Attribution"),
+        )
+
+        verified = _verify(
+            frozenset({PAYLOAD_URI}),
+            _FakeRequestContext(
+                headers={"aion-usage-attribution": "  signed-token  "}
+            ),
+            [descriptor],
+        )
+
+        assert verified[PAYLOAD_URI] == "signed-token"
+
+    def test_header_extension_rejects_missing_value(self):
+        descriptor = ExtensionDescriptor(
+            uri=PAYLOAD_URI,
+            collector=HeaderCollector("Aion-Usage-Attribution"),
+        )
+
+        with pytest.raises(ExtensionActivationError, match="is missing or empty"):
+            _verify(
+                frozenset({PAYLOAD_URI}),
+                _FakeRequestContext(),
+                [descriptor],
+            )
 
     def test_active_payload_extension_missing_metadata_raises(self):
         descriptor = ExtensionDescriptor(uri=PAYLOAD_URI, collector=TaskMetadataCollector(_Payload))

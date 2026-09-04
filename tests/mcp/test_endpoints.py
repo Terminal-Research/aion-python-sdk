@@ -19,6 +19,7 @@ from aion.api.control_plane import (
     RuntimeCapabilityReference,
 )
 from aion.api.exceptions import AionAuthenticationError
+from aion.core.constants import AION_USAGE_ATTRIBUTION_HEADER
 from aion.mcp import (
     AionMcpEndpoint,
     aion_mcp_endpoint,
@@ -65,6 +66,10 @@ class FakeRuntimeContext:
         """Return the derived principal selector."""
         return "aion://agent/environment/env-id"
 
+    def get_usage_attribution(self) -> str:
+        """Return a fake request-scoped attribution carrier."""
+        return "signed-token"
+
 
 def test_endpoint_returns_langchain_multi_server_config() -> None:
     endpoint = AionMcpEndpoint(
@@ -97,6 +102,18 @@ def test_authorization_headers_include_principal_selector() -> None:
     assert headers == {
         "Authorization": "Bearer jwt-token",
         AION_PRINCIPAL_SELECTOR_HEADER: "aion://agent/environment/env-id",
+    }
+
+
+def test_authorization_headers_include_usage_attribution() -> None:
+    headers = aion_mcp_authorization_headers(
+        "jwt-token",
+        usage_attribution="signed-token",
+    )
+
+    assert headers == {
+        "Authorization": "Bearer jwt-token",
+        AION_USAGE_ATTRIBUTION_HEADER: "signed-token",
     }
 
 
@@ -274,6 +291,10 @@ def test_runtime_context_sync_endpoints_use_global_reference_and_capability() ->
     assert all(
         endpoint.headers[AION_PRINCIPAL_SELECTOR_HEADER]
         == "aion://agent/environment/env-id"
+        for endpoint in endpoints
+    )
+    assert all(
+        endpoint.headers[AION_USAGE_ATTRIBUTION_HEADER] == "signed-token"
         for endpoint in endpoints
     )
 
