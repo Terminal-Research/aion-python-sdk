@@ -6,7 +6,8 @@ from types import ModuleType
 import pytest
 
 
-_MODELS_PATH = Path(__file__).parents[1] / "src/aion/langgraph/authoring/models.py"
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_MODELS_PATH = _REPO_ROOT / "src/aion/langgraph/authoring/models.py"
 _SPEC = spec_from_file_location("aion_langgraph_models", _MODELS_PATH)
 assert _SPEC is not None and _SPEC.loader is not None
 _MODULE = module_from_spec(_SPEC)

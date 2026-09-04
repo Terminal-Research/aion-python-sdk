@@ -57,7 +57,7 @@ def _load_serve_module():
                 setattr(module, attribute, value)
             sys.modules[name] = module
 
-        path = Path(__file__).resolve().parents[1] / "src/aion/cli/handlers/serve.py"
+        path = Path(__file__).resolve().parents[2] / "src/aion/cli/handlers/serve.py"
         spec = importlib.util.spec_from_file_location("serve_under_test", path)
         module = importlib.util.module_from_spec(spec)
         sys.modules[spec.name] = module

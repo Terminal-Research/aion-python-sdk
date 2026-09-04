@@ -18,10 +18,10 @@ from aion.langgraph.authoring.events.custom_events import (
     ReactionCustomEvent,
 )
 from aion.langgraph.authoring.invocation.thread import Thread
-from examples import slack_distribution
+from examples.langgraph import slack_distribution
 from langchain_core.messages import AIMessage, HumanMessage
 
-from tests.helpers import make_mock_distribution_extension, make_mock_runtime
+from .helpers import make_mock_distribution_extension, make_mock_runtime
 
 _GET_STREAM_WRITER = (
     "aion.langgraph.authoring.invocation.thread.get_stream_writer"

@@ -6,7 +6,7 @@ from aion.langgraph.authoring.invocation.thread import Thread
 from aion.langgraph.authoring.invocation.message import Message
 from aion.langgraph.authoring.events.custom_events import ArtifactCustomEvent, CardCustomEvent, MessageCustomEvent
 
-from tests.helpers import (
+from .helpers import (
     make_mock_context,
     make_mock_event,
     make_mock_inbox,

@@ -1,0 +1,192 @@
+[project]
+name = "aionto-sdk"
+version = "0.1.0"
+description = "Aion Python SDK — A2A server, authoring toolkits and the aion CLI"
+readme = "README.md"
+license = "MIT"
+authors = [{ name = "Terminal Research Team", email = "support@terminal.exchange" }]
+requires-python = ">=3.12,<3.15"
+
+# The base install: aion.core, aion.api, aion.mcp endpoints and the CLI shell.
+# Everything the server needs to breathe - a database, an ASGI stack, the
+# a2a-sdk server extras - lives in [server] instead, so `pip install aionto-sdk`
+# stays small enough to be worth doing.
+#
+# asyncclick and keyring are here rather than in [server] because `aion --help`
+# has to work in a base install: without a console entry point there is nothing
+# left to print the hint about which extra to install.
+dependencies = [
+    "pydantic>=2.11.3",
+    "pydantic-settings>=2.3.4",
+    "python-dotenv>=1.0.1",
+    "PyYAML>=6.0.0,<7.0.0",
+    # The libs pinned ==1.1.2. Published, an exact pin conflicts with whatever
+    # the installing project already has; the upper bound stays on the minor
+    # because aion.server reaches into a2a-sdk's internals.
+    "a2a-sdk>=1.1.2,<1.2.0",
+    "gql>=3.4.1,<4.0.0",
+    "PyJWT>=2.9.0,<3.0.0",
+    "httpx>=0.28.1,<0.29.0",
+    "websockets>=15.0.1,<16.0.0",
+    "asyncclick>=8.0.1.2,<9.0.0",
+    "keyring>=25.0.0",
+]
+
+[project.optional-dependencies]
+server = [
+    "SQLAlchemy>=2.0.0,<3.0.0",
+    "alembic>=1.13.0,<2.0.0",
+    "psycopg[binary,pool]>=3.1.12,<4.0.0",
+    "greenlet>=3.0.3,<4.0.0",
+    "uvicorn>=0.23.2",
+    "fastapi>=0.115.2",
+    "python-logstash-async>=4.0.1,<5.0.0",
+    # The only release of asgi-proxy-lib is a pre-release, and pip will not
+    # pick one up from an unbounded specifier - hence the exact pin.
+    "asgi-proxy-lib==0.2a0",
+    # This block is "a2a-sdk[http-server,telemetry,encryption]", written out.
+    # It cannot be written that way: Poetry's solver (2.4.1) fails on a package
+    # that appears plain in [project.dependencies] and bracketed in more than
+    # one extra, and a2a-sdk is exactly that - base, because aion.core builds on
+    # its types, and extras-carrying, because aion.server needs its server side.
+    # These five are what those three extras of a2a-sdk 1.1.x pull in; they are
+    # pinned to a2a-sdk's own constraints and held in place by the <1.2.0 bound
+    # on a2a-sdk itself.
+    "starlette",
+    "sse-starlette",
+    "opentelemetry-api>=1.33.0",
+    "opentelemetry-sdk>=1.33.0",
+    "cryptography>=43.0.0",
+]
+langgraph-authoring = [
+    "langgraph>=0.6.0,<=1.0.5",
+    "langchain>=1.0.0,<2.0.0",
+    "langchain-mcp-adapters>=0.1.0,<0.3.0",
+    "langchain-openai>=1.1.7,<2.0.0",
+]
+adk-authoring = [
+    "google-adk>=1.20.0,<2.0.0",
+    # aion_lite_llm() builds on ADK's LiteLlm, which imports litellm directly.
+    "litellm>=1.93,<2.0",
+]
+
+# The composite extras below are written out in full rather than as
+# self-references ("aionto-sdk[langgraph-authoring,server]"). poetry-core emits
+# a self-reference correctly and pip resolves it, but Poetry's own solver
+# (2.4.1) asserts on any self-referential extra of the root project, which
+# takes `poetry install -E ...` - the way this repository is developed - off
+# the table. The cost is that a dependency added to a component extra has to be
+# added to the composites too; scripts/packaging/check.py is where that drift
+# gets caught, by asserting the set relations these unions are supposed to have.
+langgraph-server = [
+    # aionto-sdk[langgraph-authoring]
+    "langgraph>=0.6.0,<=1.0.5",
+    "langchain>=1.0.0,<2.0.0",
+    "langchain-mcp-adapters>=0.1.0,<0.3.0",
+    "langchain-openai>=1.1.7,<2.0.0",
+    # aionto-sdk[server]
+    "SQLAlchemy>=2.0.0,<3.0.0",
+    "alembic>=1.13.0,<2.0.0",
+    "psycopg[binary,pool]>=3.1.12,<4.0.0",
+    "greenlet>=3.0.3,<4.0.0",
+    "uvicorn>=0.23.2",
+    "fastapi>=0.115.2",
+    "python-logstash-async>=4.0.1,<5.0.0",
+    "asgi-proxy-lib==0.2a0",
+    "starlette",
+    "sse-starlette",
+    "opentelemetry-api>=1.33.0",
+    "opentelemetry-sdk>=1.33.0",
+    "cryptography>=43.0.0",
+    # its own
+    "langgraph-checkpoint-postgres>=2.0.0,<=3.0.2",
+]
+# No external dependencies of its own beyond the union: an alias, so the four
+# framework extras read the same way at the install line.
+adk-server = [
+    # aionto-sdk[adk-authoring]
+    "google-adk>=1.20.0,<2.0.0",
+    "litellm>=1.93,<2.0",
+    # aionto-sdk[server]
+    "SQLAlchemy>=2.0.0,<3.0.0",
+    "alembic>=1.13.0,<2.0.0",
+    "psycopg[binary,pool]>=3.1.12,<4.0.0",
+    "greenlet>=3.0.3,<4.0.0",
+    "uvicorn>=0.23.2",
+    "fastapi>=0.115.2",
+    "python-logstash-async>=4.0.1,<5.0.0",
+    "asgi-proxy-lib==0.2a0",
+    "starlette",
+    "sse-starlette",
+    "opentelemetry-api>=1.33.0",
+    "opentelemetry-sdk>=1.33.0",
+    "cryptography>=43.0.0",
+]
+all = [
+    # aionto-sdk[langgraph-server]
+    "langgraph>=0.6.0,<=1.0.5",
+    "langchain>=1.0.0,<2.0.0",
+    "langchain-mcp-adapters>=0.1.0,<0.3.0",
+    "langchain-openai>=1.1.7,<2.0.0",
+    "langgraph-checkpoint-postgres>=2.0.0,<=3.0.2",
+    # aionto-sdk[adk-server]
+    "google-adk>=1.20.0,<2.0.0",
+    "litellm>=1.93,<2.0",
+    # aionto-sdk[server]
+    "SQLAlchemy>=2.0.0,<3.0.0",
+    "alembic>=1.13.0,<2.0.0",
+    "psycopg[binary,pool]>=3.1.12,<4.0.0",
+    "greenlet>=3.0.3,<4.0.0",
+    "uvicorn>=0.23.2",
+    "fastapi>=0.115.2",
+    "python-logstash-async>=4.0.1,<5.0.0",
+    "asgi-proxy-lib==0.2a0",
+    "starlette",
+    "sse-starlette",
+    "opentelemetry-api>=1.33.0",
+    "opentelemetry-sdk>=1.33.0",
+    "cryptography>=43.0.0",
+]
+
+[project.scripts]
+aion = "aion.cli.cli:cli"
+
+[project.urls]
+Homepage = "https://github.com/Terminal-Research/aion-python-sdk"
+Repository = "https://github.com/Terminal-Research/aion-python-sdk"
+
+[tool.poetry]
+packages = [{ include = "aion", from = "src" }]
+include = ["src/aion/cli/bin/*"]
+
+[tool.poetry.group.dev.dependencies]
+pytest = ">=8.0.0"
+pytest-asyncio = ">=0.24"
+pytest-cov = ">=7.1.0"
+import-linter = ">=2.0"
+# Development-only: the generated GraphQL client is committed, so nothing at
+# install time needs the code generator.
+ariadne-codegen = { version = "==0.18.0", extras = ["subscriptions"] }
+twine = ">=6.0.0"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning"]
+markers = [
+    "integration: needs a real service or real processes; slower than a unit test",
+]
+
+[tool.ariadne-codegen]
+schema_path = "graphql/schema.graphql"
+queries_path = "graphql/queries.graphql"
+target_package_path = "src/aion/api/gql/generated"
+client_name = "GqlClient"
+async_client = true
+enable_custom_operations = true
+opentelemetry_client = true
+plugins = ["ariadne_codegen.contrib.extract_operations.ExtractOperationsPlugin"]
+
+[build-system]
+requires = ["poetry-core>=2.0.0"]
+build-backend = "poetry.core.masonry.api"

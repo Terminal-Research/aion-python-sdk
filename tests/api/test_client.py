@@ -2,11 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
-import sys
 
-sys.path.insert(
-    0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src"))
-)
 
 os.environ.setdefault("AION_CLIENT_ID", "test-client")
 os.environ.setdefault("AION_CLIENT_SECRET", "test-secret")

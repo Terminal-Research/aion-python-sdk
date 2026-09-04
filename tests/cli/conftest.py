@@ -2,16 +2,8 @@
 
 from __future__ import annotations
 
-import logging
-import os
 import sys
 import types
-
-
-SRC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src"))
-
-if SRC_DIR not in sys.path:
-    sys.path.insert(0, SRC_DIR)
 
 
 def _install_test_stubs() -> None:

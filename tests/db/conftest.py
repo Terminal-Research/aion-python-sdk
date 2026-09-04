@@ -1,15 +1,8 @@
 import os
-import sys
-from pathlib import Path
 
 import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-src_path = PROJECT_ROOT / "src"
-if str(src_path) not in sys.path:
-    sys.path.insert(0, str(src_path))
 
 # ``aion.db.settings.db_settings`` is intentionally a singleton created during
 # import. Point it at the explicitly opt-in integration-test database before
