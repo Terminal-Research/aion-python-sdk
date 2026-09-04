@@ -229,7 +229,8 @@ and are discovered by `aion.server` at runtime.
   (`make dist-smoke`) installs them into six clean virtual environments and
   uses each one. Neither runs through `poetry run`: the point is an environment
   that inherits nothing from this project's. `make dist-build` empties `dist/`
-  and builds. See `docs/publishing-pypi.md`.
+  and builds. `RELEASE.md` at the root is the whole release procedure:
+  commands, version rules, the worked example and the one-time PyPI setup.
 - `.github/workflows/python-ci.yml` runs the unit suite on 3.12 and 3.13, the
   layer contract, and build + check on every pull request, plus an integration
   job against a `postgres:16` service container.
@@ -243,10 +244,10 @@ and are discovered by `aion.server` at runtime.
 
 User-facing docs live in `docs/`: `environment-variables.md`,
 `aion-yaml-config.md`, `multiple-agents.md`, `app-registry.md`,
-`http_endpoints.md`, `a2a_extensions/` and `development/`.
-`docs/publishing-pypi.md` is for maintainers. Every subpackage has a `README.md`
-of its own beside the code, in `src/aion/<subpackage>/`; those are for whoever
-opens the directory and are excluded from the wheel and the sdist. The root
+`http_endpoints.md`, `a2a_extensions/` and `development/`. `RELEASE.md` at the
+root is for maintainers. Every subpackage has a `README.md` of its own beside
+the code, in `src/aion/<subpackage>/`; those are for whoever opens the
+directory and are excluded from the wheel and the sdist. The root
 `README.md` is the PyPI page — keep it short, and keep every link in it
 absolute, since relative links do not resolve on PyPI. Keep all of them in sync
 with behavioural changes.

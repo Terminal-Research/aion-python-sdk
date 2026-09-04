@@ -96,4 +96,5 @@ make dist-check
 make dist-smoke
 ```
 
-See [Publishing to PyPI](../publishing-pypi.md) for what those three do.
+See [RELEASE.md](../../RELEASE.md) for what those three do and how a release
+is cut.
