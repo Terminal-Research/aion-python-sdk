@@ -4,7 +4,7 @@ The repository is one Python project. `poetry build` at the root produces one
 wheel and one sdist of **`aionto-sdk`**, and those two files are the whole
 release: every `aion.*` subpackage is inside the wheel, and the extras
 (`server`, `langgraph-authoring`, `langgraph-server`, `adk-authoring`,
-`adk-server`, `all`) install third-party libraries, never Aion code.
+`adk-server`) install third-party libraries, never Aion code.
 
 The version lives in one place, `[project].version` of the root
 `pyproject.toml`. There is no second copy to drift from the first, and the
@@ -125,7 +125,7 @@ uploaded:
 
 `scripts/packaging/smoke.py` (`make dist-smoke`) then installs the built files
 into six clean virtual environments — base, `[server]`, `[langgraph-server]`,
-`[adk-server]`, `[all]`, and one from the sdist — and uses each one: imports
+`[adk-server]`, `[langgraph-server,adk-server]`, and one from the sdist — and uses each one: imports
 the subpackages that environment should have, runs `aion --help`, asks plugin
 discovery which frameworks loaded, and asserts that the libraries the extra did
 *not* buy are absent. The negative checks are the point: a base install that

@@ -248,10 +248,12 @@ ENVIRONMENTS = (
             Step("no LangGraph libraries", code=probe_absent("langgraph")),
         ),
     ),
+    # Both framework extras at once: the resolver has to accept the union, and
+    # there is no [all] extra to name it - the install line names both.
     Environment(
-        name="all",
+        name="both",
         artifact="wheel",
-        extras=("all",),
+        extras=("langgraph-server", "adk-server"),
         steps=(
             Step(
                 "every subpackage imports",

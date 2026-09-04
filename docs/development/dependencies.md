@@ -5,10 +5,10 @@ The repository is one Python project, `aionto-sdk`, with one environment.
 ## Install
 
 ```bash
-poetry install -E all --with dev
+poetry install -E langgraph-server -E adk-server --with dev
 ```
 
-`-E all` brings every optional dependency — LangGraph, Google ADK, the server
+The two server extras between them bring every optional dependency — LangGraph, Google ADK, the server
 stack — and `--with dev` brings pytest, import-linter, the GraphQL code
 generator and twine. The project itself is installed editable, so every
 `aion.*` import resolves to `src/` in the working tree and nothing has to be
@@ -29,7 +29,7 @@ make help
    that owns it — `server`, `langgraph-authoring`, `adk-authoring` — or to
    `[project.dependencies]` if the base install needs it. A tool used only
    while developing belongs in `[tool.poetry.group.dev.dependencies]`.
-2. The composite extras `langgraph-server`, `adk-server` and `all` are written
+2. The composite extras `langgraph-server` and `adk-server` are written
    out in full rather than referring to their parts, so a dependency added to a
    component extra has to be added to them too. `make dist-check` is what
    catches the copy you forgot — run it after touching extras:
@@ -41,7 +41,7 @@ make help
 3. Re-resolve the environment:
 
    ```bash
-   poetry install -E all --with dev
+   poetry install -E langgraph-server -E adk-server --with dev
    ```
 
 ## Testing changes from a feature branch

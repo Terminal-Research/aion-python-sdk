@@ -48,13 +48,14 @@ conversation state — plus a chat client to try it out.
 | Aion models, tools and messaging in LangGraph agents | `uv add "aionto-sdk[langgraph-authoring]"` | `pip install "aionto-sdk[langgraph-authoring]"` |
 | Aion models, tools and messaging in ADK agents | `uv add "aionto-sdk[adk-authoring]"` | `pip install "aionto-sdk[adk-authoring]"` |
 | The A2A server and proxy, no agent framework | `uv add "aionto-sdk[server]"` | `pip install "aionto-sdk[server]"` |
-| Everything | `uv add "aionto-sdk[all]"` | `pip install "aionto-sdk[all]"` |
 | The `aion` CLI and the client libraries only | `uv add aionto-sdk` | `pip install aionto-sdk` |
 
 Each server extra already includes the matching authoring toolkit and the
 server itself — install an authoring extra on its own only when something else
-runs the agent. A plain `aionto-sdk` gives you the `aion` command and the
-client libraries; `aion serve` asks for `[server]` when it is missing, by name.
+runs the agent. Extras combine: `aionto-sdk[langgraph-server,adk-server]`
+serves both frameworks from one installation. A plain `aionto-sdk` gives you
+the `aion` command and the client libraries; `aion serve` asks for `[server]`
+when it is missing, by name.
 
 ## 🚀 Quickstart
 

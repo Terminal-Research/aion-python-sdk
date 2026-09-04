@@ -68,7 +68,6 @@ EXPECTED_EXTRAS = frozenset(
         "langgraph-server",
         "adk-authoring",
         "adk-server",
-        "all",
     }
 )
 
@@ -77,7 +76,6 @@ EXPECTED_EXTRAS = frozenset(
 EXTRA_UNIONS = (
     ("langgraph-server", ("langgraph-authoring", "server")),
     ("adk-server", ("adk-authoring", "server")),
-    ("all", ("langgraph-server", "adk-server")),
 )
 
 # "a2a-sdk[http-server,telemetry,encryption]", written out - see pyproject.toml.

@@ -194,7 +194,8 @@ and are discovered by `aion.server` at runtime.
 
 ## Repo tooling
 
-- One project, one environment: `poetry install -E all --with dev` at the root.
+- One project, one environment: `poetry install -E langgraph-server -E adk-server --with dev`
+  at the root.
   Every `aion.*` import then resolves to the working tree, and there is nothing
   to switch between local and remote. `poetry.lock` is not committed.
 - `make help` lists all targets. `make tests` runs the unit suite;
@@ -259,6 +260,6 @@ with behavioural changes.
    dependencies, and model helpers belong in the authoring subpackage for their
    framework rather than in the server plugin.
 6. A new third-party dependency goes into the extra that owns it, and into the
-   composite extras that include it — `langgraph-server`, `adk-server` and
-   `all` are written out in full, and `make dist-check` is what catches the
-   copy you forgot.
+   composite extras that include it — `langgraph-server` and `adk-server`
+   are written out in full, and `make dist-check` is what catches the copy
+   you forgot.

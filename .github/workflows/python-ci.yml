@@ -43,7 +43,7 @@ jobs:
       # that describes the resolution, and a cache keyed on anything looser
       # would install something other than what the manifest resolves to today.
       - name: Install the project
-        run: poetry install -E all --with dev
+        run: poetry install -E langgraph-server -E adk-server --with dev
 
       - name: Run unit tests
         run: make tests
@@ -92,7 +92,7 @@ jobs:
         run: pipx install poetry==${{ env.POETRY_VERSION }}
 
       - name: Install the project
-        run: poetry install -E all --with dev
+        run: poetry install -E langgraph-server -E adk-server --with dev
 
       - name: Run integration tests
         run: make tests-integration
