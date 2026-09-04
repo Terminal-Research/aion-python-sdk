@@ -26,16 +26,24 @@ holds no PyPI credentials at all.
 
    A pending publisher is what claims a name that has never been uploaded to;
    it becomes an ordinary publisher on the first successful upload. The
-   workflow file name and the environment name are matched literally — a
-   publisher registered against `(Any)` environment, or against a differently
-   named workflow, refuses the OIDC exchange.
+   workflow file name is matched literally: a publisher registered against a
+   differently named workflow refuses the OIDC exchange. The environment field
+   works the other way round — left empty, shown as `(Any)`, it refuses
+   nothing and accepts a token minted in any environment of that workflow.
+   Naming `pypi` there is what makes the environment below, the one with the
+   reviewers, the only place an upload can come from.
 
 2. In the GitHub repository, under **Settings → Environments**, create an
-   environment named `pypi`. Required reviewers on it are recommended: the
-   publish job then waits for a human before the upload, and every upload is
-   final — PyPI does not allow re-uploading a filename, even after a delete.
+   environment named `pypi` and give it required reviewers: the publish job
+   then waits for a human before the upload, and every upload is final — PyPI
+   does not allow re-uploading a filename, even after a delete.
 
-Until that environment exists, the `publish` job fails at its start.
+Create the environment, reviewers and all, before the first release rather than
+after it. A missing environment does not hold the job back: GitHub creates an
+environment the first time a workflow names one, with no protection rules on
+it, and the upload goes through with no reviewer asked. The gate exists only if
+the environment was there, with its reviewers, before the release that first
+uses it.
 
 ## Releasing
 
@@ -71,6 +79,16 @@ Until that environment exists, the `publish` job fails at its start.
    `py-v0.2.0`. The `py-` prefix is what separates this workflow from the npm
    one in `publish-aion.yml`, which publishes `@terminal-research/aion` on
    `v*` tags; each of the two skips the other's tags by that prefix.
+
+   A pre-release goes out the same way. The tag carries the PEP 440 suffix the
+   version has — `py-v0.1.0rc1` for `0.1.0rc1` — and the GitHub release is
+   marked as a pre-release; the workflow does not read that flag and behaves
+   exactly as it does for a final version, tag-against-version check included.
+   What does change is what installers do with the result: while the project
+   has no final version on PyPI at all, `pip install aionto-sdk` and
+   `uv add aionto-sdk` both resolve to the release candidate without being
+   asked for `--pre`, because there is nothing else to resolve to. Once a final
+   version exists, pre-releases become opt-in again.
 
 6. Check the result from a machine that has never seen the repository:
 
