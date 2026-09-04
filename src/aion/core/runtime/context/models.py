@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Dict, Optional, Union, cast
+from typing import Any, Dict, Optional, Union, cast
 
 from aion.core.constants.a2a import (
     CARD_ACTION_EVENT_TYPE_V1,
@@ -41,8 +41,7 @@ from aion.core.a2a.extensions import (
     SourceSystemEventPayload,
     TraceabilityExtensionV1,
 )
-if TYPE_CHECKING:
-    from .extensions import AionRuntimeExtensions
+from .extensions import AionRuntimeExtensions
 
 
 class EventKind(str, Enum):
@@ -160,8 +159,7 @@ class AionRuntimeContext:
         object.__setattr__(self, "event", event)
         object.__setattr__(self, "distribution_extension_payload", distribution_extension_payload)
         if extensions is None:
-            from .extensions import AionRuntimeExtensions as _AE
-            extensions = _AE({})
+            extensions = AionRuntimeExtensions({})
         object.__setattr__(self, "extensions", extensions)
         object.__setattr__(self, "graph_kwargs", graph_kwargs)
 
