@@ -24,13 +24,40 @@ POSTGRES_TEST_URL ?= $(PG_TEST_URL)
 # where the only binding in scope is still the real one.
 POSTGRES_TEST_URL_IS_EXTERNAL := $(filter environment command line,$(origin POSTGRES_TEST_URL))
 
-.PHONY: help tests tests-integration tests-all pg-test-up pg-test-down deps-install deps-lock deps-lock-regenerate deps-sync deps-set-branch deps-set-local deps-set-local-revert deps-use-local deps-use-remote deps-verify deps-verify-clean
+.PHONY: help tests tests-integration tests-all lint-imports check-env \
+	dist-build dist-check dist-smoke dist-clean pg-test-up pg-test-down
 
 help: ## Show available commands
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
-tests: ## Run unit tests for all libs (make tests ARGS="aion-sdk -- -k platform_link")
-	./scripts/tests.py $(ARGS)
+tests: ## Run unit tests (make tests ARGS="-k platform_link")
+	poetry run pytest -m "not integration" $(ARGS)
+
+lint-imports: ## Check the layer contract between the aion.* subpackages
+	poetry run lint-imports
+
+# `poetry run`, because the environment under inspection is the project's own -
+# the script reports on whichever interpreter runs it.
+check-env: ## Check the installed environment for duplicate or broken packages
+	poetry run ./scripts/packaging/envcheck.py
+
+# Build into an empty dist/. check.py insists on finding exactly one wheel and
+# one sdist there, and a stale artifact from an earlier version - or from the
+# five-package layout this repository used to build - would trip it.
+dist-build: dist-clean ## Build the wheel and the sdist into dist/
+	poetry build
+
+dist-check: ## Check the built distributions against the packaging contract
+	poetry run ./scripts/packaging/check.py
+
+# Not `poetry run`: the point is a clean environment, and the venvs the script
+# builds must inherit nothing from this project's. SMOKE_ARGS is where the
+# interpreter goes - `make dist-smoke SMOKE_ARGS="--python 3.12"`.
+dist-smoke: ## Install the built distributions into clean venvs and use them
+	./scripts/packaging/smoke.py $(SMOKE_ARGS)
+
+dist-clean: ## Remove built distributions
+	rm -rf dist
 
 # Run a command with a database under it, and take the database away again.
 #
@@ -63,15 +90,15 @@ endef
 # The variable is exported only for the two targets that run against it. A
 # global export would hand the default container's address to plain `make
 # tests`, and a test module that checks the variable's presence rather than
-# asking scripts/tests.py's marker filter - the belt to that suite's braces -
-# would see a database that was never started.
+# asking pytest's marker filter - the belt to that suite's braces - would see
+# a database that was never started.
 tests-integration: export POSTGRES_TEST_URL := $(POSTGRES_TEST_URL)
 tests-integration: ## Run integration tests; run before you commit
-	@$(call with_pg_test,./scripts/tests.py --integration $(ARGS))
+	@$(call with_pg_test,poetry run pytest -m integration $(ARGS))
 
 tests-all: export POSTGRES_TEST_URL := $(POSTGRES_TEST_URL)
 tests-all: ## Run unit and integration tests together
-	@$(call with_pg_test,./scripts/tests.py --all $(ARGS))
+	@$(call with_pg_test,poetry run pytest $(ARGS))
 
 pg-test-up: ## Start the disposable PostgreSQL and wait for it
 	@if docker exec $(PG_TEST_CONTAINER) pg_isready -U postgres >/dev/null 2>&1; then \
@@ -93,47 +120,3 @@ pg-test-down: ## Stop the disposable PostgreSQL
 	@docker stop $(PG_TEST_CONTAINER) >/dev/null 2>&1 \
 		&& echo "[pg] $(PG_TEST_CONTAINER) stopped" \
 		|| echo "[pg] $(PG_TEST_CONTAINER) was not running"
-
-deps-install: ## Install dependencies from lock files for all packages
-	./scripts/deps/install.py
-
-deps-lock: ## Update lock files for all packages (incremental)
-	./scripts/deps/lock.py
-
-deps-lock-regenerate: ## Regenerate lock files from scratch (ignores existing locks)
-	./scripts/deps/lock.py --regenerate
-
-deps-sync: ## Sync dependencies with lock files (removes unlocked packages)
-	./scripts/deps/sync.py
-
-deps-set-branch: ## Update git branch references (usage: make deps-set-branch BRANCH=features/my-branch)
-	@if [ -z "$(BRANCH)" ]; then \
-		echo "Error: BRANCH variable is required"; \
-		echo "Usage: make deps-set-branch BRANCH=features/my-branch"; \
-		exit 1; \
-	fi
-	./scripts/deps/set-branch.py $(BRANCH)
-
-deps-set-local: ## Switch to local path dependencies (edits pyproject.toml only)
-	./scripts/deps/set-local.py apply
-
-deps-set-local-revert: ## Revert to original dependencies (edits pyproject.toml only)
-	./scripts/deps/set-local.py revert
-
-deps-use-local: ## Develop locally: switch to local paths, then lock, sync and verify
-	./scripts/deps/set-local.py apply
-	./scripts/deps/lock.py
-	./scripts/deps/sync.py
-	./scripts/deps/verify.py --clean
-
-deps-use-remote: ## Return to git dependencies: revert, then lock, sync and verify
-	./scripts/deps/set-local.py revert
-	./scripts/deps/lock.py
-	./scripts/deps/sync.py
-	./scripts/deps/verify.py
-
-deps-verify: ## Check that packages resolve to the working tree as declared
-	./scripts/deps/verify.py
-
-deps-verify-clean: ## Same as deps-verify, plus delete leftover .venv/src clones
-	./scripts/deps/verify.py --clean

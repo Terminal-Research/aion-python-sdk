@@ -1,0 +1,108 @@
+name: Python CI
+
+# Every pull request, and main after the merge - the second is what makes a
+# green branch protection rule mean something once several have landed.
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+env:
+  POETRY_VERSION: 2.4.1
+
+jobs:
+  test:
+    name: Unit tests, layers and build (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      # One version failing is a fact worth having about the other, so let the
+      # sibling finish rather than cancelling it.
+      fail-fast: false
+      matrix:
+        # The ends of requires-python (>=3.12,<3.15). 3.14 is not here yet: it
+        # is what the repository is developed on, and CI is for the versions
+        # nobody would otherwise run.
+        python-version: ["3.12", "3.13"]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install Poetry
+        run: pipx install poetry==${{ env.POETRY_VERSION }}
+
+      # No cache: poetry.lock is deliberately not committed, so there is no key
+      # that describes the resolution, and a cache keyed on anything looser
+      # would install something other than what the manifest resolves to today.
+      - name: Install the project
+        run: poetry install -E langgraph-server -E adk-server --with dev
+
+      # Right after the install, because what it looks for is an install that
+      # went wrong quietly: two versions of one package unpacked over each
+      # other. Nothing further down would report that as anything but a strange
+      # failure somewhere else.
+      - name: Check the installed environment
+        run: make check-env
+
+      - name: Run unit tests
+        run: make tests
+
+      - name: Check the layer contract
+        run: make lint-imports
+
+      - name: Build the distributions
+        run: make dist-build
+
+      - name: Check the distributions
+        run: make dist-check
+
+  integration:
+    name: Integration tests
+    runs-on: ubuntu-latest
+    services:
+      # The Makefile starts a disposable PostgreSQL of its own on a nonstandard
+      # port, because these tests wipe what they find and a developer's 5432
+      # must never be it. Here the container is the runner's and dies with it,
+      # so the ordinary port is safe - and POSTGRES_TEST_URL coming from the
+      # environment tells the Makefile not to reach for Docker at all.
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      POSTGRES_TEST_URL: postgresql://postgres:postgres@localhost:5432/postgres
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Poetry
+        run: pipx install poetry==${{ env.POETRY_VERSION }}
+
+      - name: Install the project
+        run: poetry install -E langgraph-server -E adk-server --with dev
+
+      - name: Check the installed environment
+        run: make check-env
+
+      - name: Run integration tests
+        run: make tests-integration

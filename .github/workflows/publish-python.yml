@@ -1,0 +1,109 @@
+name: Publish Aion Python package
+
+# One PyPI project, aionto-sdk: one wheel and one sdist from one commit. The
+# npm workflow in publish-aion.yml watches the same event; the two are kept
+# apart by the release tag, `py-v*` here and `v*` there.
+on:
+  release:
+    types:
+      - published
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and check
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'py-v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      # The lowest version the project supports: a wheel is pure Python and
+      # the same either way, but what builds it should be what the floor of
+      # requires-python is.
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Poetry
+        run: pipx install poetry==2.4.1
+
+      # twine, because check.py runs `twine check` through this interpreter;
+      # a2a-sdk, because it compares the manifest's written-out copy of
+      # a2a-sdk[http-server,telemetry,encryption] with a2a-sdk's own metadata
+      # and skips that check when the package is absent. A release is exactly
+      # when that must not be skipped.
+      - name: Install the checking tools
+        run: python -m pip install twine "a2a-sdk>=1.1.2,<1.2.0"
+
+      - name: Verify the release tag matches the version in the manifest
+        if: github.event_name == 'release'
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          python - <<'PY'
+          import os
+          import sys
+          import tomllib
+
+          with open("pyproject.toml", "rb") as manifest:
+              version = tomllib.load(manifest)["project"]["version"]
+
+          expected = f"py-v{version}"
+          tag = os.environ["RELEASE_TAG"]
+          if tag != expected:
+              sys.exit(
+                  f"Release tag {tag} does not match [project].version {version} "
+                  f"(expected {expected})"
+              )
+          print(f"{tag} matches [project].version {version}")
+          PY
+
+      - name: Build the distributions
+        run: poetry build
+
+      - name: Check the distributions
+        run: python scripts/packaging/check.py
+
+      # Installs each extra into a clean venv and uses it. Slow, and the last
+      # moment at which "the wheel is well formed" can still turn out not to
+      # mean "the wheel installs and runs".
+      - name: Smoke test the distributions
+        run: python scripts/packaging/smoke.py
+
+      - name: Upload the distributions
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-dist
+          path: dist/
+          if-no-files-found: error
+
+  # Split from the build so the job holding the publishing identity does
+  # nothing but upload what the build already produced and checked.
+  publish:
+    name: Publish to PyPI
+    if: github.event_name == 'release' && startsWith(github.event.release.tag_name, 'py-v')
+    needs: build
+    runs-on: ubuntu-latest
+    # Trusted publishing: PyPI's pending publisher for aionto-sdk names this
+    # repository, this workflow file and this environment, and the environment
+    # is where the required reviewers sit. No token is stored anywhere.
+    environment: pypi
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Download the distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: python-dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/

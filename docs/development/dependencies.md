@@ -1,140 +1,100 @@
-# Local Dependencies Management
+# Dependencies Management
 
-Guide for working with local packages in the `libs/` directory.
+The repository is one Python project, `aionto-sdk`, with one environment.
 
-## Quick Reference
+## Install
+
+```bash
+poetry install -E langgraph-server -E adk-server --with dev
+```
+
+The two server extras between them bring every optional dependency — LangGraph, Google ADK, the server
+stack — and `--with dev` brings pytest, import-linter, the GraphQL code
+generator and twine. The project itself is installed editable, so every
+`aion.*` import resolves to `src/` in the working tree and nothing has to be
+reinstalled after an edit.
+
+`poetry.lock` is not committed: what a fresh install resolves is what the
+manifest says today.
+
+The project's `poetry.toml` turns `installer.re-resolve` back on. Since Poetry
+2.3.0 the default is off, and `poetry install` then picks packages out of the
+lock file by marker instead of solving. That does not work here: the extras
+constrain the same packages differently — Google ADK holds `opentelemetry` and
+`mcp` down, LiteLLM holds `openai` down, the base install and the LangGraph
+branch hold nothing down — so the lock carries two entries with overlapping
+markers for each of those packages, and the installer takes both. Two versions
+of one distribution end up unpacked into the same `site-packages`, files on
+top of each other. Re-resolving costs a few seconds and gives one version per
+package. See [python-poetry/poetry#10971](https://github.com/python-poetry/poetry/issues/10971).
+
+`make check-env` is what says whether the environment came out whole — no
+package installed twice, and `pip check` clean:
+
+```bash
+make check-env
+```
+
+If an install ever leaves a strange environment behind — an import error from
+inside a third-party package, a version nothing asked for — do not pick at it
+by hand. Delete `.venv` and install again; a half-overwritten package cannot be
+repaired in place, and reinstalling one distribution over it leaves the other
+one's files where they were.
 
 To see all available commands:
+
 ```bash
-make
-# or
 make help
 ```
 
-## Commands
+## Changing dependencies
 
-### Install local dependencies for development
-```bash
-make deps-install-dev
-```
-Installs packages from `libs/` in editable mode using `poetry run pip install -e`. Changes to local packages are immediately reflected without reinstallation.
+1. Edit the root `pyproject.toml`. A runtime dependency belongs to the extra
+   that owns it — `server`, `langgraph-authoring`, `adk-authoring` — or to
+   `[project.dependencies]` if the base install needs it. A tool used only
+   while developing belongs in `[tool.poetry.group.dev.dependencies]`.
+2. The composite extras `langgraph-server` and `adk-server` are written
+   out in full rather than referring to their parts, so a dependency added to a
+   component extra has to be added to them too. `make dist-check` is what
+   catches the copy you forgot — run it after touching extras:
 
-**Use case**: Active development across multiple packages in the monorepo.
-
-### Install dependencies from lock files
-```bash
-make deps-install
-```
-Installs dependencies from existing lock files for all packages (runs `poetry install`).
-
-**Note:** This installs packages from PyPI according to lock files, replacing any editable installations.
-
-### Sync dependencies with lock files
-```bash
-make deps-sync
-```
-Synchronizes environments with lock files by running `poetry sync`. This removes any packages not specified in `poetry.lock`.
-
-**Use case**: Clean up environment after removing dependencies or switching branches.
-
-### Update lock files (incremental)
-```bash
-make deps-lock
-```
-Updates `poetry.lock` files for all packages by running `poetry lock`.
-
-**Behavior**: Performs incremental update, preserving existing locked versions that still satisfy constraints in `pyproject.toml`.
-
-**Use case**: After adding or modifying dependencies in `pyproject.toml`.
-
-### Regenerate lock files from scratch
-```bash
-make deps-lock-regenerate
-```
-Completely regenerates `poetry.lock` files from scratch using `poetry lock --regenerate`.
-
-**Behavior**: Ignores existing lock files and resolves all dependencies anew.
-
-**Use case**: Resolving dependency conflicts or forcing update to latest compatible versions.
-
-## Workflows
-
-### Development with local packages
-1. **Start development**:
    ```bash
-   make deps-install-dev
-   ```
-2. **Edit files** in `libs/` directories - changes are live immediately
-3. **Test changes** without reinstalling
-4. **When done**, restore PyPI versions:
-   ```bash
-   make deps-install
+   make dist-build && make dist-check
    ```
 
-### Add or update dependencies
-1. **Edit** `pyproject.toml` in the package directory
-2. **Update lock files** (incremental):
+3. Re-resolve the environment:
+
    ```bash
-   make deps-lock
-   ```
-3. **Install updated dependencies**:
-   ```bash
-   make deps-install
+   poetry install -E langgraph-server -E adk-server --with dev
    ```
 
-Or combine both:
-```bash
-make deps-lock && make deps-install
+## Testing changes from a feature branch
+
+Consumers depend on the SDK by git reference:
+
+```toml
+aionto-sdk = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", extras = ["langgraph-server"] }
 ```
 
-### Clean up environment
-After removing dependencies or switching branches:
-```bash
-make deps-sync
-```
-This removes packages not in lock files.
+To try a branch before it merges, point that reference at it, push the branch
+first, and remember to put `branch = "main"` back before merging:
 
-### Resolve dependency conflicts
-If you encounter dependency conflicts:
-```bash
-make deps-lock-regenerate  # Rebuild locks from scratch
-make deps-sync              # Clean install
+```toml
+aionto-sdk = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "features/my-feature", extras = ["langgraph-server"] }
 ```
 
-### Testing changes in feature branches
+There is one reference to change, not ten: the SDK is a single package, so a
+branch install cannot pull half of itself from `main`.
 
-When working on feature branches and need to test git installation before merging to main:
-
-**Problem**: Installing packages from a feature branch pulls transitive dependencies from `main` branch, preventing proper testing.
-
-**Solution**: Update all branch references to your feature branch:
+To check what an installed release actually gives you — rather than what the
+working tree gives you — build and install the distributions into clean
+environments:
 
 ```bash
-# 1. Update branch references
-make deps-set-branch BRANCH=features/my-feature
-
-# 2. Commit and push changes
-git add libs/*/pyproject.toml
-git commit -m "chore: update branches for testing"
-git push
-
-# 3. Test installation in another project
-# 4. Test with optional dependencies (e.g., langgraph)
+make dist-build
+make dist-check
+make dist-smoke
 ```
 
-**Before merging to main**:
-```bash
-# Restore all branch references
-make deps-set-branch BRANCH=main
-git add libs/*/pyproject.toml
-git commit -m "chore: restore branches to main"
-```
-
-**How it works**:
-- The script updates all `branch = "main"` references in git dependencies to your feature branch
-- This ensures all internal dependencies resolve to the same branch when installed from git
-- Enables proper testing of changes across multiple packages before merging
-
-## Configuration
-
-To modify which packages are processed or change dependency mappings, edit `scripts/deps/config.py`.
+See [RELEASE.md](../../RELEASE.md) for what those three do and how a release
+is cut.
