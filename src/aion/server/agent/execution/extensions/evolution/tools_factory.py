@@ -2,14 +2,14 @@
 
 The only module in the evolution package that imports the optional
 aion-toolkit-behaviour-evolution-python distribution - handler.py imports it
-lazily inside stream(), so aion-server keeps no hard dependency on the
-toolkit.
+lazily inside stream(), so nothing in aion.server needs the toolkit installed
+until an evolution request arrives.
 
 Codex credentials follow the toolkit's own DI: ``credentials_provider`` is
 optional, and this wrapper decides whether to attach one, based on the
 required ``CODEX_PROVIDER``:
 
-  * ``aion`` - the Aion model service (aion-api-client's
+  * ``aion`` - the Aion model service (aion.api's
     ``aion_model_base_url()``) with a token resolver that mints a fresh
     short-lived Aion JWT per call plus the agent's daemon-identity principal
     (``Aion-Principal-Selector`` header, from the request's
@@ -224,7 +224,7 @@ def build_worker(
             ),
         )
     except ValidationError as ex:
-        # aion-core's directive contract can advertise kind/mode/scope values
+        # aion.core's directive contract can advertise kind/mode/scope values
         # (e.g. mode="directive", kind="bugfix") ahead of the installed toolkit
         # version that actually implements them. Reconcile that capability gap
         # here with a message naming the field, the requested value, and what

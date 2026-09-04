@@ -2,7 +2,7 @@
 
 Provides per-invocation callables that authoring code (Thread, Message, emit_*)
 uses without direct access to the ADK stream executor. Both are set up by
-aion-server-adk's ADKStreamExecutor before agent.run_async() begins and
+aion.adk.server's ADKStreamExecutor before agent.run_async() begins and
 reset on exit.
 """
 

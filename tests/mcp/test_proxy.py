@@ -1,4 +1,4 @@
-"""Tests for the aion-mcp proxy loader."""
+"""Tests for the aion.mcp proxy loader."""
 
 from __future__ import annotations
 

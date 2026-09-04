@@ -1,7 +1,7 @@
 """Tests for the request/env -> EvolutionWorker factory.
 
 Auto-skipped when the optional aion-toolkit-behaviour-evolution-python
-distribution is not installed (it is not a dependency of aion-server); run
+distribution is not installed (no extra of this package pulls it in); run
 them in an e2e-capable environment with the toolkit pip-installed.
 """
 
@@ -351,7 +351,7 @@ class TestBuildWorker:
         assert "validation error for EvolutionDirective" not in message
 
     def test_unsupported_mode_surfaces_as_setup_error(self, monkeypatch):
-        """Same capability-gap handling for mode: aion-core advertises
+        """Same capability-gap handling for mode: aion.core advertises
         mode='directive', the installed toolkit accepts only 'advisory'."""
         from aion.toolkits.behaviour_evolution import Mode
 

@@ -1,7 +1,7 @@
 """Handler-level errors for the evolution extension.
 
 Kept toolkit-free so handler.py can catch them without importing the
-optional toolkit: DirectiveError is raised by directive.py (pure aion-core
+optional toolkit: DirectiveError is raised by directive.py (pure aion.core
 parsing), ExtensionSetupError by tools_factory.py (behind the lazy import
 boundary). Both terminate the routed task with a FAILED status carrying the
 message.

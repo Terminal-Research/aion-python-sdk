@@ -15,7 +15,7 @@ class AionLogRecord(logging.LogRecord):
     Custom LogRecord for Aion logging.
 
     Declares all context attributes — initialized to None.
-    Attributes are populated by ServerAionContextFilter (aion-server) before
+    Attributes are populated by ServerAionContextFilter (aion.server) before
     records reach any handler.
 
     Attributes:

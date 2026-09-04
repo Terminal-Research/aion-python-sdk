@@ -20,7 +20,7 @@ class ExtensionPreflightError(Exception):
     here rejects the request at the JSON-RPC level (no FAILED task left
     behind), same as ExtensionActivationError one step earlier in the same
     pipeline, but for handler-owned checks (e.g. deployment env config)
-    rather than aion-core's schema/co-activation checks.
+    rather than aion.core's schema/co-activation checks.
 
     Unlike `availability()` - checked once at executor startup and cached for
     the process's lifetime - `preflight()` runs fresh on every request, so it

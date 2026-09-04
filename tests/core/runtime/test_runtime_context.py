@@ -588,7 +588,7 @@ def _make_daemon_struct() -> Struct:
 
 class TestBuilderExtensionPipeline:
     """Covers the collector/verifier pipeline wired into from_request_context,
-    using the DAEMON descriptor aion-core registers for itself."""
+    using the DAEMON descriptor aion.core registers for itself."""
 
     def test_daemon_payload_parsed_into_extensions_and_get_daemon(self):
         # Daemon defaults inactive - opt it in the way AgentManager does from

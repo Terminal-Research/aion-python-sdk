@@ -23,7 +23,7 @@ Three axes govern how an event crosses to A2A:
 
 - *Typing.* The executor-stream events (`CommandStarted`, `CommandCompleted`,
   `AgentMessage`) are carried as schema-tagged data parts on the status
-  message, using aion-core's published payload models — the same
+  message, using aion.core's published payload models — the same
   schema-tagging as the result artifact, so a programmatic consumer reads a
   typed part rather than parsing text. Every progress status also carries a
   machine-readable struct in the event `metadata` under `PROGRESS_METADATA_KEY`
@@ -45,7 +45,7 @@ Three axes govern how an event crosses to A2A:
   this module already flagged ephemeral, so the reduced view cannot drift from
   what the task record keeps.
 
-The result artifact reuses aion-core's EvolutionResultActionPayload so the
+The result artifact reuses aion.core's EvolutionResultActionPayload so the
 outbound shape is the one the extension spec already defines, schema-tagged on
 the part the same way inbound event parts are. The captured spec document
 ships as its own markdown artifact (`SPEC_ARTIFACT_NAME`) — it is the durable

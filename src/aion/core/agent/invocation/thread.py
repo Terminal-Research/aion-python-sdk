@@ -146,6 +146,6 @@ class BaseThread(ABC):
         logger.warning(
             "Thread.history() is not yet implemented. "
             "Returning empty list. "
-            "TODO: implement via aion-api-client control plane API."
+            "TODO: implement via aion.api control plane API."
         )
         return []

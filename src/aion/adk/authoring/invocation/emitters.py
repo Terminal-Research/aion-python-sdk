@@ -4,7 +4,7 @@ This module provides helper functions to emit events during ADK agent execution.
 All events are emitted via the ContextVar-based ADK event emitter set up by ADKStreamExecutor.
 
 Architecture (see thread_message_concept.md):
-  Builders (aion-core)  →  emit_* (here, explicit params)  →  Thread (magic wrapper)
+  Builders (aion.core)  →  emit_* (here, explicit params)  →  Thread (magic wrapper)
 
 All emit_* functions follow the same pattern:
   - actual data goes in event.content (native ADK)

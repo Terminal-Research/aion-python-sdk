@@ -1,4 +1,4 @@
-"""A2A ↔ GenAI part conversion utilities shared across aion-authoring-adk and aion-server-adk."""
+"""A2A ↔ GenAI part conversion utilities shared across aion.adk.authoring and aion.adk.server."""
 
 import logging
 from a2a import types as a2a_types
@@ -8,7 +8,7 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-# Wire-format constants shared with genai_part_to_a2a_part in aion-server-adk.
+# Wire-format constants shared with genai_part_to_a2a_part in aion.adk.server.
 # Changing these values is a breaking protocol change.
 MIME_TYPE_DATA_PART = "text/plain"
 """MIME type for generic data parts encoded with JSON wrapper tags."""

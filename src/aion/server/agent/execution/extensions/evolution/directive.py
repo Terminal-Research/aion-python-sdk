@@ -4,7 +4,7 @@ The directive arrives via the event extension: the message's text part is the
 free-form NL instruction, and a schema-tagged data part carries the typed
 EvolutionDirectiveEventPayload (parsed upstream by the behaviour-evolution
 descriptor's MessagesCollector into runtime_context.extensions). This module
-is deliberately toolkit-free - it validates against aion-core models only, so
+is deliberately toolkit-free - it validates against aion.core models only, so
 parsing stays unit-testable without the optional toolkit installed. Mapping
 to toolkit domain models lives in tools_factory, behind the lazy import
 boundary.

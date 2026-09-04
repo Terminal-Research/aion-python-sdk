@@ -46,7 +46,7 @@ if TYPE_CHECKING:
 
 
 class EventKind(str, Enum):
-    """Named constants for the CloudEvents `type` values aion-core's own
+    """Named constants for the CloudEvents `type` values aion.core's own
     extensions (messaging, cards) declare via ExtensionDescriptor.event_payloads
     (see registry.py) - convenience imports for comparing against Event.kind,
     not an exhaustive list. Event.kind itself is a plain str: other
@@ -247,7 +247,7 @@ class AionRuntimeContext:
         the request as the broader authenticated subject and deny requests that
         would be authorized for the runtime daemon or environment.
 
-        Typed selector objects live in ``aion-api-client``.
+        Typed selector objects live in ``aion.api``.
 
         Returns:
             A header-ready ``aion://agent/identity/<id>`` selector when the active

@@ -47,8 +47,8 @@ class AppLifespan:
 
     async def startup(self):
         """Handle application startup events."""
-        # Register runtime context provider so aion-api-client can resolve
-        # the active principal selector without depending on aion-server.
+        # Register runtime context provider so aion.api can resolve
+        # the active principal selector without importing aion.server.
         AionRuntimeContextRegistry.set_provider(RequestScopeRuntimeContextProvider())
 
         # SETUP OPEN-TELEMETRY

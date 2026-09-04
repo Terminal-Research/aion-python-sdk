@@ -85,7 +85,7 @@ def aion_model_base_url() -> str:
     TODO(2026-08-27): this reuses AION_API_HOST as-is - the same host the rest
     of the platform (GraphQL, WS) talks to - with no dedicated endpoint for
     model traffic. No AION_API_HOST has been provisioned/agreed for a real
-    deployment yet, so callers relying on this (see aion-server's
+    deployment yet, so callers relying on this (see aion.server's
     tools_factory.py CODEX_PROVIDER=aion) have nothing to reach until it is.
     Open question: keep sharing AION_API_HOST, or carve out a separate host
     for Codex/model-service traffic.
@@ -127,7 +127,7 @@ def aion_principal_selector() -> str | None:
     """Return the current model-service principal selector, if available.
 
     Reads the active AionRuntimeContext via AionRuntimeContextRegistry, which is
-    populated by aion-server at request entry. Returns None when called outside
+    populated by aion.server at request entry. Returns None when called outside
     a server context (e.g. during local development or direct script use).
 
     The returned value is used as the ``Aion-Principal-Selector`` header.

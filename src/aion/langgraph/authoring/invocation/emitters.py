@@ -4,7 +4,7 @@ This module provides helper functions to emit custom events during graph executi
 All events are emitted via LangGraph's custom stream mode.
 
 Architecture (see thread_message_concept.md):
-  Builders (aion-core)  →  emit_* (here, explicit params)  →  Thread (magic wrapper)
+  Builders (aion.core)  →  emit_* (here, explicit params)  →  Thread (magic wrapper)
 """
 
 from a2a.types import Artifact

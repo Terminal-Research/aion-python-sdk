@@ -244,7 +244,7 @@ class TestRegistration:
 
     def test_registers_descriptor_requiring_daemon(self):
         """Evolution is daemon-driven only — its descriptor requires the daemon
-        extension to also be active. Registered centrally in aion-core registry."""
+        extension to also be active. Registered centrally in aion.core registry."""
         descriptors = {d.uri: d for d in aion_a2a_extension_registry.get_all()}
         assert BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1 in descriptors
         assert descriptors[BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1].requires == (DAEMON_EXTENSION_URI_V1,)

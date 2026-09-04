@@ -280,7 +280,7 @@ class TestSaveNormalization:
         """A retried or duplicate save of the same status must hand
         ``append_new`` the identical effective list both times - that
         determinism is what lets its own position-based diff (proven in
-        ``aion-db``'s ``test_append_new_inserts_only_the_new_tail``) recognize
+        ``aion.db``'s ``test_append_new_inserts_only_the_new_tail``) recognize
         the message as already stored instead of appending it twice."""
         status_message = Message(message_id="m1")
         task = _make_task()
@@ -442,7 +442,7 @@ class TestActiveTasks:
 class TestList:
     """``list`` delegates ordering, counting, and page position to the
     repository (``count`` / ``find_page``); the keyset predicate itself is
-    exercised against a real database in ``aion-db``'s
+    exercised against a real database in ``aion.db``'s
     ``test_postgres_tasks.py``.
     """
 
