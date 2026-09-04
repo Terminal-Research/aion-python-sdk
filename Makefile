@@ -24,7 +24,7 @@ POSTGRES_TEST_URL ?= $(PG_TEST_URL)
 # where the only binding in scope is still the real one.
 POSTGRES_TEST_URL_IS_EXTERNAL := $(filter environment command line,$(origin POSTGRES_TEST_URL))
 
-.PHONY: help tests tests-integration tests-all lint-imports \
+.PHONY: help tests tests-integration tests-all lint-imports check-env \
 	dist-build dist-check dist-smoke dist-clean pg-test-up pg-test-down
 
 help: ## Show available commands
@@ -35,6 +35,11 @@ tests: ## Run unit tests (make tests ARGS="-k platform_link")
 
 lint-imports: ## Check the layer contract between the aion.* subpackages
 	poetry run lint-imports
+
+# `poetry run`, because the environment under inspection is the project's own -
+# the script reports on whichever interpreter runs it.
+check-env: ## Check the installed environment for duplicate or broken packages
+	poetry run ./scripts/packaging/envcheck.py
 
 # Build into an empty dist/. check.py insists on finding exactly one wheel and
 # one sdist there, and a stale artifact from an earlier version - or from the
