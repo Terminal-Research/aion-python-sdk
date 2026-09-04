@@ -8,19 +8,31 @@ Provides abstractions for building Aion-powered LangGraph agents:
 - MCP tools: LangGraph-native MCP resolver and client factory
 """
 
-from .handlers import AionEventRouter, create_event_router
-from .mcp import (
-    AionLangGraphMcpResolver,
-    aion_langgraph_mcp_client,
-    load_aion_mcp_tools,
-)
-from .models import aion_chat_model, aion_chat_openai
-from .invocation import Message, Thread
-from .invocation.emitters import (
-    emit_artifact,
-    emit_card,
-    emit_message,
-)
+from aion.core.utils.optional_deps import is_own_module, missing_extra_error
+
+# This package ships in every wheel, but LangGraph and LangChain only arrive
+# with the extra. Without them the import fails deep inside a third-party
+# module, on a name that means nothing to whoever wrote the agent.
+try:
+    from .handlers import AionEventRouter, create_event_router
+    from .mcp import (
+        AionLangGraphMcpResolver,
+        aion_langgraph_mcp_client,
+        load_aion_mcp_tools,
+    )
+    from .models import aion_chat_model, aion_chat_openai
+    from .invocation import Message, Thread
+    from .invocation.emitters import (
+        emit_artifact,
+        emit_card,
+        emit_message,
+    )
+except ModuleNotFoundError as exc:
+    if is_own_module(exc.name):
+        raise
+    raise missing_extra_error(
+        "LangGraph authoring", "langgraph-authoring", exc
+    ) from exc
 
 __all__ = [
     "AionEventRouter",
