@@ -1,6 +1,6 @@
 [project]
 name = "aionto-sdk"
-version = "0.1.0"
+version = "0.1.0rc1"
 description = "Aion Python SDK — A2A server, authoring toolkits and the aion CLI"
 readme = "README.md"
 license = "MIT"
