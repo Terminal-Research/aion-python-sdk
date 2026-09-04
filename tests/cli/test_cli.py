@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import importlib
 import asyncio
+import importlib
+from importlib import metadata
 from threading import Event, Thread
 
 from asyncclick.testing import CliRunner
@@ -20,6 +21,26 @@ async def test_version() -> None:
 
     assert result.exit_code == 0
     assert __version__ in result.output
+
+
+def test_version_comes_from_the_installed_distribution() -> None:
+    """One version, recorded in the manifest and read back from the install."""
+    assert __version__ == metadata.version("aionto-sdk")
+
+
+def test_version_falls_back_outside_an_installation(monkeypatch) -> None:
+    """A checkout that was never installed still has a runnable CLI."""
+
+    def not_installed(_name: str) -> str:
+        raise metadata.PackageNotFoundError("aionto-sdk")
+
+    monkeypatch.setattr(metadata, "version", not_installed)
+    cli_module = importlib.reload(importlib.import_module("aion.cli.cli"))
+    try:
+        assert cli_module.__version__ == "0.0.0+dev"
+    finally:
+        monkeypatch.undo()
+        importlib.reload(cli_module)
 
 
 async def test_help_lists_chat_command() -> None:

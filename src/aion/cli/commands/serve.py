@@ -2,6 +2,7 @@
 import logging
 import asyncclick as click
 from aion.core.config.reader import ConfigurationError, AionConfigReader
+from aion.core.utils.optional_deps import is_own_module, missing_extra_error
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
@@ -98,22 +99,26 @@ async def serve(
         startup_timeout: int
 ) -> None:
     """Run all configured AION agents and proxy server in separate processes"""
+    # Imported here rather than at module level: `aion serve` is the one
+    # command that needs the server, and `aion --help` has to work in a base
+    # install - it is where the hint below gets read.
     try:
-        import aion.server  # noqa: F401
-    except ImportError as ex:
-        if ex.name != "aion.server":
+        from aion.core.logging import set_process_role
+        from aion.server.logging import setup_root_logger
+
+        from aion.cli.handlers.serve import ServeHandler
+    except ModuleNotFoundError as ex:
+        if is_own_module(ex.name):
+            # Our own code is missing from an installation that has it by
+            # construction. Nothing the user installs fixes that, so let it
+            # travel with its traceback.
             raise
         raise click.ClickException(
-            "Server dependencies are not installed. "
-            "Please refer to the documentation for the required server extras."
-        )
+            str(missing_extra_error("aion serve", "server", ex))
+        ) from ex
 
-    from aion.core.logging import set_process_role
-    from aion.server.logging import setup_root_logger
     set_process_role("CLI")
     setup_root_logger()
-
-    from aion.cli.handlers.serve import ServeHandler
 
     try:
         # Load configuration

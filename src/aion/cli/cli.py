@@ -1,11 +1,21 @@
 """Main CLI entry point for Aion SDK"""
 
+from importlib.metadata import PackageNotFoundError, version
+
 import asyncclick as click
+
+from aion.core.utils.optional_deps import DISTRIBUTION
 
 from . import commands
 
 
-__version__ = "0.1.0"
+try:
+    __version__ = version(DISTRIBUTION)
+except PackageNotFoundError:
+    # Running from a source tree that was never installed - a checkout on
+    # sys.path, or a build environment. Report something ordered below every
+    # real release rather than a number that would look like one.
+    __version__ = "0.0.0+dev"
 
 
 @click.group()
