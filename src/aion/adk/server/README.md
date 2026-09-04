@@ -1,10 +1,10 @@
-# aion-server-adk
+# aion.adk.server
 
 Aion server-side Google ADK integration — implements `AgentPluginProtocol` for the Aion Server runtime.
 
 ## Overview
 
-This package provides the server-side plugin for running Google ADK agents within the Aion platform. It handles:
+This subpackage provides the server-side plugin for running Google ADK agents within the Aion platform. It handles:
 
 - **Plugin & Adapter** — `ADKPlugin` / `ADKAdapter` implementing `AgentPluginProtocol` / `AgentAdapter`
 - **Execution** — `ADKExecutor` / `ADKStreamExecutor` for streaming ADK agent runs
@@ -13,12 +13,10 @@ This package provides the server-side plugin for running Google ADK agents withi
 - **State conversion** — `StateConverter` mapping ADK session state to `ExecutionSnapshot`
 - **Transformers** — Bidirectional A2A ↔ ADK format conversion
 
-## Namespace
-
-`aion.adk.server`
-
 ## Installation
 
-```toml
-aion-server-adk = { git = "https://github.com/Terminal-Research/aion-python-sdk", branch = "main", subdirectory = "libs/aion-server-adk" }
+```bash
+pip install "aionto-sdk[adk-server]"
 ```
+
+The extra brings Google ADK, the authoring toolkit (`aion.adk.authoring`) and the server. `aion.server` finds this plugin on its own; without the extra it is skipped, and the skip names the extra to install.

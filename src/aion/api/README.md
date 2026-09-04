@@ -1,10 +1,12 @@
-# Aion API Client
+# aion.api
 
-This library provides low-level Aion control-plane API access. It includes a
-websocket GraphQL client generated with
-[gql](https://gql.readthedocs.io/) and
+Low-level Aion control-plane API access. It includes a websocket GraphQL client
+generated with [gql](https://gql.readthedocs.io/) and
 [ariadne-codegen](https://ariadnegraphql.org/docs/ariadne-codegen), plus REST
-configuration helpers used by higher-level Aion framework packages.
+configuration helpers used by the subpackages above it.
+
+Always installed: it is part of the base `pip install aionto-sdk`, and no extra
+adds anything to it.
 
 Settings are managed by
 [Pydantic Settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/)
@@ -94,12 +96,11 @@ them to their canonical resource URI strings before sending requests.
 
 ## Development
 
-Install the project using Poetry and run the tests with `pytest`:
+Install the project from the repository root and run this subpackage's tests:
 
 ```bash
-cd libs/aion-api-client
-poetry install
-poetry run pytest
+poetry install -E langgraph-server -E adk-server --with dev
+make tests ARGS="tests/api"
 ```
 
 To regenerate the Python classes for the GraphQL API run:

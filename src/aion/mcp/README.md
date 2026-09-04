@@ -1,11 +1,15 @@
-# aion-mcp
+# aion.mcp
 
 Utilities for Aion MCP integrations.
 
-The library can:
+The subpackage can:
 
 - proxy a local MCP server configured in `aion.yaml`
 - build authenticated remote MCP endpoint configs for Aion servers
+
+The endpoint helpers are part of the base `pip install aionto-sdk`. The local
+proxy is the exception: the ASGI proxy libraries it runs on arrive with the
+`[server]` extra, and it is imported only when `load_proxy` is called.
 
 ## Remote endpoints
 
@@ -60,4 +64,6 @@ connected.
 ## Local proxy
 
 `load_proxy` reads `aion.yaml` using PyYAML and returns an ASGI proxy when
-`aion.mcp.port` is configured.
+`aion.mcp.port` is configured. It imports its ASGI dependencies at the moment
+it is called, so importing `aion.mcp` in a base install stays cheap and never
+asks for the `[server]` extra.

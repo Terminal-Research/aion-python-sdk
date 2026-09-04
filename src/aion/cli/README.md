@@ -1,12 +1,16 @@
-# Aion Agent CLI
+# aion.cli
 
-Command-line interface for the Aion Python SDK.
+Command-line interface for the Aion Python SDK — the `aion` console script.
+
+Always installed: it is part of the base `pip install aionto-sdk`, so `aion`
+and `aion chat` work without any extra. `aion serve` needs the server behind
+it and asks for the `[server]` extra by name when it is missing.
 
 ## Commands
 
 ### `aion serve`
 
-Starts all configured AION agents and a proxy server that wraps your LangGraph agents with the A2A (Agent-to-Agent) protocol.
+Starts all configured AION agents and a proxy server that wraps them with the A2A (Agent-to-Agent) protocol.
 
 **Usage:**
 
@@ -140,7 +144,7 @@ poetry run aion chat \
   --agent-id hello-world \
   --token mytoken \
   --push-notifications \
-  --header "X-Client=aion-sdk"
+  --header "X-Client=aionto-sdk"
 ```
 
 **Push Notifications:**
@@ -238,7 +242,7 @@ aion serve --port 5000 --port-range-start 8000 --port-range-end 9000
 
 **Server won't start:**
 
-* Ensure `aion-server` is installed
+* Ensure the `[server]` extra is installed (`pip install "aionto-sdk[server]"`) — `aion serve` says so by name when it is not
 * Check that your `aion.yaml` configuration is valid and contains at least one agent
 * Verify that ports in the specified range are available
 * Try specifying a different port range with `--port-range-start` and `--port-range-end`
@@ -256,7 +260,7 @@ aion serve --port 5000 --port-range-start 8000 --port-range-end 9000
 * Ensure the proxy server is running
 * Verify the proxy URL is correct (check the welcome message for the actual port)
 * Check authentication token if required
-* If using `--agent_id`, ensure the agent ID exists in your configuration
+* If using `--agent-id`, ensure the agent ID exists in your configuration
 
 **Port conflicts:**
 

@@ -1,27 +1,29 @@
-# aion-core
+# aion.core
 
 Foundation layer for the Aion Python SDK. Contains types, constants, protocols,
 and utilities — usable in any context without server infrastructure.
 
-All other Aion packages depend on this one; it has no internal Aion dependencies.
+Always installed: it is part of the base `pip install aionto-sdk`, and no extra
+adds anything to it.
+
+All other Aion subpackages depend on this one; it has no internal Aion dependencies.
 
 ## What's inside
 
 | Module | Contents |
 |---|---|
-| `aion.core.types` | A2A protocol models, enums, request/response types, extension payloads |
+| `aion.core.a2a` | A2A protocol models, enums, request/response types, extension payloads |
 | `aion.core.constants` | Shared A2A extension URI constants |
-| `aion.core.runtime` | `AionContext` — invocation-scoped context carrier for LangGraph |
-| `aion.core.logging` | `get_logger()` — returns `AionLogger` when `aion-server` is installed, stdlib `Logger` otherwise |
+| `aion.core.runtime` | `AionRuntimeContext` — invocation-scoped context carrier |
+| `aion.core.logging` | `AionLogger` / `AionLogRecord` — the logger class every Aion logger is created from, carrying the context fields `aion.server` fills in |
 | `aion.core.settings` | `BaseEnvSettings`, `ApiSettings`, `api_settings` |
 | `aion.core.db` | `DbManagerProtocol` — interface for database manager implementations |
 | `aion.core.metaclasses` | `Singleton`, `SingletonABCMeta` |
-| `aion.core.utils` | Pydantic, text, and URL helpers |
+| `aion.core.utils` | Pydantic, text, and URL helpers, plus `missing_extra_error`, which names the extra a missing library belongs to |
 
 ## Development
 
 ```bash
-cd libs/aion-core
-poetry install
-poetry run pytest
+poetry install -E langgraph-server -E adk-server --with dev
+make tests ARGS="tests/core"
 ```

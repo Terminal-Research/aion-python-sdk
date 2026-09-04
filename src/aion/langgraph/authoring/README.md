@@ -1,20 +1,22 @@
-# aion-authoring-langgraph
+# aion.langgraph.authoring
 
-LangGraph authoring toolkit for Aion. Provides state helpers, streaming utilities, and event-routing primitives that graph authors import directly. Safe to install without pulling in any server or plugin machinery.
+LangGraph authoring toolkit for Aion. Provides state helpers, streaming utilities, and event-routing primitives that graph authors import directly. It never reaches into server or plugin machinery — that is a checked layering contract, not a convention.
 
 ---
 
 ## Installation
 
 ```bash
-pip install aion-authoring-langgraph
+pip install "aionto-sdk[langgraph-authoring]"
 ```
 
 Or, if you are serving the agent with Aion:
 
 ```bash
-pip install aion-sdk[langgraph]
+pip install "aionto-sdk[langgraph-server]"
 ```
+
+The server extra already includes this one — install `[langgraph-authoring]` on its own only when something else runs the graph.
 
 ---
 
@@ -76,7 +78,7 @@ settings across invocations.
 
 ### Slack distributions
 
-The tested [Slack distribution example](examples/slack_distribution.py) shows
+The tested [Slack distribution example](../../../../examples/langgraph/slack_distribution.py) shows
 three compatible authoring levels: ordinary LangGraph messages, an explicit
 `A2AInbox`/`A2AOutbox` hybrid, and SDK-aware event handlers. It also maps the
 normalized Messaging context and parent context to Slack history calls loaded
@@ -198,28 +200,29 @@ async def handle_message(message: Message):
 
 Use these inside any graph node that receives a `StreamWriter`. They emit events directly to the client during execution.
 
-> **Note:** `emit_*` helpers and custom event models emit typed events into the LangGraph `custom` stream. These events are understood and converted to A2A protocol events only when the graph is served via `aion-server` (i.e. with `aion-server-langgraph` installed). When running standalone — for example via `langgraph dev` or in unit tests — the events appear as raw objects in the stream, which is useful for debugging but produces no A2A output.
+> **Note:** `emit_*` helpers and custom event models emit typed events into the LangGraph `custom` stream. These events are understood and converted to A2A protocol events only when the graph is served by `aion serve` with the `[langgraph-server]` extra installed. When running standalone — for example via `langgraph dev` or in unit tests — the events appear as raw objects in the stream, which is useful for debugging but produces no A2A output.
 
 ```python
 from langgraph.types import StreamWriter
 from langchain_core.messages import AIMessage, AIMessageChunk
-from aion.langgraph.authoring import emit_message, emit_task_update, emit_file_artifact, emit_data_artifact
+from aion.core.a2a import data_artifact, file_artifact, url_artifact
+from aion.langgraph.authoring import emit_artifact, emit_message
 
 def my_node(state: dict, writer: StreamWriter):
     # Ephemeral notification — reaches client, not saved in task history
     emit_message(writer, AIMessage(content="Searching knowledge base..."), ephemeral=True)
 
     # Structured data artifact
-    emit_data_artifact(writer, {"status": "success", "results": [...]}, name="analysis")
+    emit_artifact(writer, data_artifact({"status": "success", "results": [...]}, name="analysis"))
 
     # File artifact by URL
-    emit_file_artifact(writer, url="https://example.com/report.pdf", mime_type="application/pdf")
+    emit_artifact(writer, url_artifact("https://example.com/report.pdf", mime_type="application/pdf"))
 
     # File artifact by raw bytes
-    emit_file_artifact(writer, data=pdf_bytes, mime_type="application/pdf", name="report.pdf")
+    emit_artifact(writer, file_artifact(pdf_bytes, mime_type="application/pdf", name="report.pdf"))
 
     # Message + metadata in one event
-    emit_task_update(writer, message=AIMessage(content="Done"), metadata={"progress": 100})
+    emit_message(writer, AIMessage(content="Done"), metadata={"progress": 100})
 
     return state
 ```
@@ -245,8 +248,8 @@ def streaming_node(state: dict, writer: StreamWriter):
 | `emit_message(AIMessage)` | `TaskStatusUpdateEvent(working, message=...)` |
 | `emit_message(AIMessage, ephemeral=True)` | `TaskArtifactUpdateEvent(EPHEMERAL_MESSAGE)` |
 | `emit_message(AIMessageChunk)` | `TaskArtifactUpdateEvent(aion:stream-delta)` |
-| `emit_task_update` | `TaskStatusUpdateEvent(working, message=..., metadata=...)` |
-| `emit_file_artifact` / `emit_data_artifact` | `TaskArtifactUpdateEvent` |
+| `emit_message(AIMessage, metadata=...)` | `TaskStatusUpdateEvent(working, message=..., metadata=...)` |
+| `emit_artifact(url_artifact(...))` / `emit_artifact(data_artifact(...))` | `TaskArtifactUpdateEvent` |
 | `thread.reply` / `thread.post` | `TaskStatusUpdateEvent(working, message=...)` |
 
 For the complete mapping reference, see [Message Mapping](https://docs.aion.to/sdk/python/frameworks/langgraph/message-mapping).
