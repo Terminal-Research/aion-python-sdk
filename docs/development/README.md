@@ -5,21 +5,22 @@ Everything you need to start contributing to the Aion Python SDK.
 ## Contents
 
 - **[Environment Setup](environment.md)** — Python version requirements and environment configuration
-- **[Dependencies Management](dependencies.md)** — Working with local packages, lock files, and feature branch testing
+- **[Dependencies Management](dependencies.md)** — Installing the project, changing dependencies, and feature branch testing
 
 ## Testing
 
-The test runner automatically discovers all `libs/aion-*` packages and runs `pytest` in each one that has a `tests/` directory. Libs without tests are silently skipped.
+The whole suite lives in `tests/`, mirroring `src/aion/`, and runs as one
+`pytest` invocation. Anything after `ARGS=` is passed to pytest untouched.
 
 ```bash
-# Run the unit suite for all libs
+# Run the unit suite
 make tests
 
-# Run specific libs
-python scripts/tests.py aion-core aion-db
+# Run one subpackage's tests
+make tests ARGS="tests/core tests/db"
 
 # Stop on first failure
-python scripts/tests.py --fail-fast
+make tests ARGS="-x"
 ```
 
 ### Unit tests and integration tests
@@ -60,11 +61,20 @@ POSTGRES_TEST_URL=postgresql://user:pass@host:5432/db make tests-integration
 
 The variable is deliberately not the ordinary `POSTGRES_URL`: these tests
 migrate and truncate whatever they are pointed at, so an address has to be
-given that meaning explicitly. `python scripts/tests.py --integration` without
-it is an error rather than a skip, so a suite that ran nothing can never be
-read as a pass.
+given that meaning explicitly.
 
 Mark a new test with `@pytest.mark.integration` whenever it needs something the
 developer machine does not have by default.
 
-Each lib runs `poetry run pytest` in its own directory, so dependencies are isolated per package.
+## The layer contract
+
+`src/aion/` is layered, and the layers are a contract in the root
+`pyproject.toml` rather than a convention:
+
+```bash
+make lint-imports
+```
+
+Run it after moving code between subpackages. The layers, and the separate rule
+that authoring subpackages never import server machinery, are described in
+`AGENTS.md`.
