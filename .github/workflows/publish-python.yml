@@ -76,7 +76,7 @@ jobs:
         run: python scripts/packaging/smoke.py
 
       - name: Upload the distributions
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: python-dist
           path: dist/
@@ -98,7 +98,7 @@ jobs:
       id-token: write
     steps:
       - name: Download the distributions
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v7
         with:
           name: python-dist
           path: dist/
