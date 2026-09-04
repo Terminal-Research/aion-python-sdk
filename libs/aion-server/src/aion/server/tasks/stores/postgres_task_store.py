@@ -7,6 +7,7 @@ from datetime import timezone
 from typing import Optional, List
 
 from a2a.server.context import ServerCallContext
+from a2a.server.owner_resolver import OwnerResolver, resolve_user_scope
 from a2a.types import Message, Task, TaskState, TaskStatus
 from a2a.types import a2a_pb2
 from a2a.utils.constants import DEFAULT_LIST_TASKS_PAGE_SIZE, MAX_LIST_TASKS_PAGE_SIZE
@@ -60,7 +61,12 @@ class PostgresTaskStore(BaseTaskStore):
       ``READ COMMITTED`` statements happened to see.
     """
 
-    def __init__(self, agent_id: str, ownership_provider: OwnershipProvider) -> None:
+    def __init__(
+            self,
+            agent_id: str,
+            ownership_provider: OwnershipProvider,
+            owner_resolver: OwnerResolver = resolve_user_scope,
+    ) -> None:
         """Initialize the store with its agent identity and ownership provider.
 
         The provider is required rather than optional: an instance without one
@@ -73,6 +79,8 @@ class PostgresTaskStore(BaseTaskStore):
                 one database without ever seeing each other's tasks.
             ownership_provider: Fences writes against a concurrently running
                 incarnation of the same task.
+            owner_resolver: Resolves the effective caller into the stable scope
+                persisted with each task.
         """
         if not agent_id:
             raise ValueError("PostgresTaskStore requires a non-empty agent_id")
@@ -80,6 +88,11 @@ class PostgresTaskStore(BaseTaskStore):
             raise ValueError("PostgresTaskStore requires an ownership provider")
         self.agent_id = agent_id
         self.ownership_provider = ownership_provider
+        self.owner_resolver = owner_resolver
+
+    def _owner_scope(self, context: ServerCallContext | None) -> str:
+        """Resolve the durable owner scope for one server call."""
+        return self.owner_resolver(context) if context is not None else ""
 
     @staticmethod
     async def _repeatable_read(session: AsyncSession) -> None:
@@ -203,7 +216,11 @@ class PostgresTaskStore(BaseTaskStore):
             ValueError: If ``task.id`` is not a UUID (see
                 :meth:`TaskRecord.from_task`).
         """
-        entity = TaskRecord.from_task(task, self.agent_id)
+        entity = TaskRecord.from_task(
+            task,
+            self.agent_id,
+            self._owner_scope(context),
+        )
 
         claim = self.ownership_provider.claim_for(task.id)
         if claim is None:
@@ -500,7 +517,8 @@ class PostgresTaskStore(BaseTaskStore):
     async def get_context_ids(
             self,
             offset: Optional[int] = None,
-            limit: Optional[int] = None
+            limit: Optional[int] = None,
+            context: ServerCallContext | None = None,
     ) -> List[str]:
         """Retrieve unique context IDs, capped even when the caller asks for everything.
 
@@ -513,14 +531,17 @@ class PostgresTaskStore(BaseTaskStore):
         async with db_manager.get_session() as session:
             repository = TasksRepository(session)
             return await repository.find_unique_context_ids(
-                agent_id=self.agent_id, pagination=Pagination(limit=limit, offset=offset)
+                agent_id=self.agent_id,
+                owner_scope=self._owner_scope(context),
+                pagination=Pagination(limit=limit, offset=offset),
             )
 
     async def get_context_tasks(
             self,
             context_id: str,
             offset: Optional[int] = None,
-            limit: Optional[int] = None
+            limit: Optional[int] = None,
+            context: ServerCallContext | None = None,
     ) -> List[Task]:
         """Retrieve tasks for a specific context, capped even when the caller asks for everything.
 
@@ -536,6 +557,7 @@ class PostgresTaskStore(BaseTaskStore):
                 repository = TasksRepository(session)
                 records = await repository.find(
                     agent_id=self.agent_id,
+                    owner_scope=self._owner_scope(context),
                     context_id=context_id,
                     pagination=Pagination(limit=limit, offset=offset),
                     sorting=Sorting(SortKey(column="created_at")),
@@ -573,7 +595,11 @@ class PostgresTaskStore(BaseTaskStore):
 
         return [r.to_task(str(r.id)) for r in records]
 
-    async def get_context_last_task(self, context_id: str) -> Optional[Task]:
+    async def get_context_last_task(
+            self,
+            context_id: str,
+            context: ServerCallContext | None = None,
+    ) -> Optional[Task]:
         """Retrieve the most recent task for a specific context.
 
         Only an empty context yields ``None``. Database failures propagate:
@@ -588,5 +614,9 @@ class PostgresTaskStore(BaseTaskStore):
             The most recently created task of the context, or ``None`` when the
             context holds no tasks.
         """
-        tasks = await self.get_context_tasks(context_id=context_id, limit=1)
+        tasks = await self.get_context_tasks(
+            context_id=context_id,
+            limit=1,
+            context=context,
+        )
         return tasks[0] if tasks else None

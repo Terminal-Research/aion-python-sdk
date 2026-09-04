@@ -107,6 +107,11 @@ class TaskRecordModel(BaseModel):
         index=True,
         doc="Identity of the agent this task belongs to, scoping every query.")
 
+    owner_scope = Column(
+        Text,
+        nullable=False,
+        doc="Stable effective-caller scope that owns this task's context.")
+
     context_id = Column(
         String,
         nullable=False,

@@ -258,14 +258,19 @@ class InMemoryTaskStore(BaseTaskStore):
             self,
             offset: Optional[int] = None,
             limit: Optional[int] = None,
+            context: ServerCallContext | None = None,
     ) -> List[str]:
-        """Retrieve unique context IDs with pagination support."""
+        """Retrieve the resolved owner's unique context IDs."""
+        owner = self.owner_resolver(context)
         offset = offset or 0
         context_ids = []
         seen = set()
         skipped = 0
 
-        for task in reversed(list(self._all_tasks())):
+        async with self.lock:
+            tasks = list(self._get_owner_tasks(owner).values())
+
+        for task in reversed(tasks):
             if not task.context_id:
                 continue
             if task.context_id in seen:
@@ -286,13 +291,18 @@ class InMemoryTaskStore(BaseTaskStore):
             context_id: str,
             offset: Optional[int] = None,
             limit: Optional[int] = None,
+            context: ServerCallContext | None = None,
     ) -> List[Task]:
-        """Retrieve tasks for a specific context with pagination support."""
+        """Retrieve the resolved owner's tasks for a specific context."""
+        owner = self.owner_resolver(context)
         offset = offset or 0
         matching_tasks = []
         skipped = 0
 
-        for task in reversed(list(self._all_tasks())):
+        async with self.lock:
+            tasks = list(self._get_owner_tasks(owner).values())
+
+        for task in reversed(tasks):
             if task.context_id != context_id:
                 continue
             if skipped < offset:
@@ -321,9 +331,15 @@ class InMemoryTaskStore(BaseTaskStore):
                 if task.status.state in ACTIVE_TASK_STATES
             ]
 
-    async def get_context_last_task(self, context_id: str) -> Optional[Task]:
-        """Retrieve the most recent task for a specific context."""
-        for task in reversed(list(self._all_tasks())):
-            if task.context_id == context_id:
-                return task
-        return None
+    async def get_context_last_task(
+            self,
+            context_id: str,
+            context: ServerCallContext | None = None,
+    ) -> Optional[Task]:
+        """Retrieve the resolved owner's most recent task for a context."""
+        tasks = await self.get_context_tasks(
+            context_id=context_id,
+            limit=1,
+            context=context,
+        )
+        return tasks[0] if tasks else None

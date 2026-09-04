@@ -56,7 +56,7 @@ class AionRequestContextBuilder(RequestContextBuilder):
             and potentially a list of related tasks.
         """
         if not task_id and self._auto_discover_interrupted_task and context_id:
-            discovered = await self._find_interrupted_task(context_id)
+            discovered = await self._find_interrupted_task(context_id, context)
             if discovered:
                 task_id = discovered.id
                 task = discovered
@@ -72,12 +72,19 @@ class AionRequestContextBuilder(RequestContextBuilder):
             context_id_generator=self._context_id_generator,
         )
 
-    async def _find_interrupted_task(self, context_id: str) -> Task | None:
-        """Returns the last interrupted task for the given context, or None."""
-        if not self._task_store:
+    async def _find_interrupted_task(
+            self,
+            context_id: str,
+            context: ServerCallContext,
+    ) -> Task | None:
+        """Return the caller-owned interrupted task for a context, if any."""
+        if not self._task_store or not context.user.is_authenticated:
             return None
 
-        last_task = await self._task_store.get_context_last_task(context_id=context_id)
+        last_task = await self._task_store.get_context_last_task(
+            context_id=context_id,
+            context=context,
+        )
         if last_task is None:
             return None
 

@@ -55,6 +55,8 @@ class TaskRecord(BaseModel):
     """Auto-generated UUID primary key."""
     agent_id: str
     """Identity of the agent this task belongs to, scoping every query."""
+    owner_scope: str
+    """Stable effective-caller scope that owns this task's context."""
     context_id: str
     """A2A context ID that groups related tasks together."""
     status: TaskStatus
@@ -85,7 +87,12 @@ class TaskRecord(BaseModel):
         return self
 
     @classmethod
-    def from_task(cls, task: Task, agent_id: str) -> TaskRecord:
+    def from_task(
+        cls,
+        task: Task,
+        agent_id: str,
+        owner_scope: str,
+    ) -> TaskRecord:
         """Build a database record from an A2A ``Task``.
 
         The counterpart of :meth:`to_task`. Kept here so that every writer
@@ -97,6 +104,7 @@ class TaskRecord(BaseModel):
             agent_id: Identity of the agent process persisting this task.
                 A2A's ``Task`` carries no such identity itself, so the caller
                 must name it explicitly.
+            owner_scope: Stable effective-caller scope that owns the task.
 
         Returns:
             A record ready to hand to :class:`TasksRepository`.
@@ -107,6 +115,7 @@ class TaskRecord(BaseModel):
         return cls(
             id=uuid.UUID(task.id),
             agent_id=agent_id,
+            owner_scope=owner_scope,
             context_id=task.context_id,
             status=task.status,
             task_metadata=task.metadata if task.HasField("metadata") else None,

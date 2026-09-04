@@ -50,6 +50,7 @@ async def _make_task(postgres_session) -> uuid.UUID:
     entity = TaskRecord(
         id=uuid.uuid4(),
         agent_id=AGENT_ID,
+        owner_scope="test-owner",
         context_id="ctx-1",
         status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
     )

@@ -82,7 +82,8 @@ class BaseTaskStore(TaskStore):
     async def get_context_ids(
             self,
             offset: Optional[int] = None,
-            limit: Optional[int] = None
+            limit: Optional[int] = None,
+            context: Optional[ServerCallContext] = None,
     ) -> List[str]:
         """
        Retrieve a list of context IDs with optional pagination.
@@ -90,6 +91,7 @@ class BaseTaskStore(TaskStore):
        Args:
            offset: Number of records to skip (for pagination)
            limit: Maximum number of records to return
+           context: Server call context used to resolve the exact owner
 
        Returns:
            List of context ID strings
@@ -101,7 +103,8 @@ class BaseTaskStore(TaskStore):
             self,
             context_id: str,
             offset: Optional[int] = None,
-            limit: Optional[int] = None
+            limit: Optional[int] = None,
+            context: Optional[ServerCallContext] = None,
     ) -> List[Task]:
         """
         Retrieve tasks associated with a specific context.
@@ -110,6 +113,7 @@ class BaseTaskStore(TaskStore):
             context_id: The context identifier to filter tasks by
             offset: Number of records to skip (for pagination)
             limit: Maximum number of records to return
+            context: Server call context used to resolve the exact owner
 
         Returns:
             List of Task objects belonging to the specified context
@@ -132,12 +136,17 @@ class BaseTaskStore(TaskStore):
         pass
 
     @abstractmethod
-    async def get_context_last_task(self, context_id: str) -> Optional[Task]:
+    async def get_context_last_task(
+            self,
+            context_id: str,
+            context: Optional[ServerCallContext] = None,
+    ) -> Optional[Task]:
         """
         Retrieve the most recent task for a specific context.
 
         Args:
             context_id: The context identifier to get the last task for
+            context: Server call context used to resolve the exact owner
 
         Returns:
             The most recent Task object for the context, or None if no tasks exist

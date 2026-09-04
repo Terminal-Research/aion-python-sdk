@@ -36,3 +36,30 @@ async def test_timestamp_filter_and_sorting_use_datetime_order():
     after.status_timestamp_after.FromDatetime(base + timedelta(milliseconds=123))
     response = await store.list(after)
     assert [task.id for task in response.tasks] == ["at-second", "fractional"]
+
+
+async def test_context_directory_isolated_by_resolved_owner():
+    """The same context ID must not merge two callers' tasks."""
+    store = InMemoryTaskStore(owner_resolver=lambda context: context)
+    base = datetime(2026, 8, 14, 12, 0, tzinfo=timezone.utc)
+    alice_old = _task("alice-old", base)
+    alice_new = _task("alice-new", base + timedelta(seconds=2))
+    alice_new.context_id = "alice-second-context"
+    bob = _task("bob", base + timedelta(seconds=1))
+
+    await store.save(alice_old, "alice")
+    await store.save(bob, "bob")
+    await store.save(alice_new, "alice")
+
+    assert await store.get_context_ids(context="alice") == [
+        "alice-second-context",
+        "ctx-1",
+    ]
+    assert [
+        task.id
+        for task in await store.get_context_tasks("ctx-1", context="alice")
+    ] == ["alice-old"]
+    assert [
+        task.id
+        for task in await store.get_context_tasks("ctx-1", context="bob")
+    ] == ["bob"]

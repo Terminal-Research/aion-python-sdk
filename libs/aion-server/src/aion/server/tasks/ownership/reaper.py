@@ -336,7 +336,12 @@ class ClaimReaper:
         # the fenced upsert does not need to lock it a second time. agent_id
         # is carried over from the row just read, never reassigned here.
         if not await repository.save_owned_locked(
-            TaskRecord.from_task(settled, entity.agent_id), token
+            TaskRecord.from_task(
+                settled,
+                entity.agent_id,
+                entity.owner_scope,
+            ),
+            token,
         ):
             raise _ReconcileAbort
         # Before the claim goes: a pod waiting on this task's cancellation
@@ -381,7 +386,12 @@ class ClaimReaper:
                     return False
 
                 if not await repository.save_owned_locked(
-                    TaskRecord.from_task(settled, entity.agent_id), claim.owner_token
+                    TaskRecord.from_task(
+                        settled,
+                        entity.agent_id,
+                        entity.owner_scope,
+                    ),
+                    claim.owner_token,
                 ):
                     # The owner finished on its own between the recheck above
                     # and this write; its outcome stands, and there is

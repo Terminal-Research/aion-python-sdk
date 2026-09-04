@@ -85,6 +85,7 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
             self,
             stmt,
             agent_id: str,
+            owner_scope: Optional[str] = None,
             task_id: Optional[str] = None,
             context_id: Optional[str] = None,
             status_state: Optional[str] = None,
@@ -97,6 +98,8 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
         support the way there is for ``task_id`` or ``context_id``.
         """
         stmt = stmt.where(self.model_class.agent_id == agent_id)
+        if owner_scope is not None:
+            stmt = stmt.where(self.model_class.owner_scope == owner_scope)
         if task_id is not None:
             stmt = stmt.where(self.model_class.id == task_id)
         if context_id is not None:
@@ -270,6 +273,7 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
         stmt = insert(self.model_class).values(
             id=entity.id,
             agent_id=entity.agent_id,
+            owner_scope=entity.owner_scope,
             context_id=entity.context_id,
             status=entity.status,
             status_timestamp=entity.status_timestamp,
@@ -339,6 +343,7 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
         source = select(
             literal(entity.id, type_=self.model_class.id.type),
             literal(entity.agent_id, type_=self.model_class.agent_id.type),
+            literal(entity.owner_scope, type_=self.model_class.owner_scope.type),
             literal(entity.context_id, type_=self.model_class.context_id.type),
             literal(entity.status, type_=self.model_class.status.type),
             literal(entity.status_timestamp, type_=self.model_class.status_timestamp.type),
@@ -346,7 +351,15 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
         ).select_from(owned)
 
         insert_stmt = insert(self.model_class).from_select(
-            ["id", "agent_id", "context_id", "status", "status_timestamp", "metadata"],
+            [
+                "id",
+                "agent_id",
+                "owner_scope",
+                "context_id",
+                "status",
+                "status_timestamp",
+                "metadata",
+            ],
             source,
         )
         stmt = insert_stmt.on_conflict_do_update(
@@ -424,6 +437,7 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
     async def find(
             self,
             agent_id: str,
+            owner_scope: Optional[str] = None,
             task_id: Optional[str] = None,
             context_id: Optional[str] = None,
             status_state: Optional[str] = None,
@@ -436,6 +450,7 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
         stmt = self._apply_filter(
             stmt,
             agent_id=agent_id,
+            owner_scope=owner_scope,
             task_id=task_id,
             context_id=context_id,
             status_state=status_state,
@@ -452,14 +467,21 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
     async def find_unique_context_ids(
             self,
             agent_id: str,
+            owner_scope: str,
             pagination: Optional[Pagination] = None,
     ) -> List[str]:
         """Find all unique context_id values ordered by latest task creation."""
         stmt = (
             select(self.model_class.context_id)
-            .where(self.model_class.agent_id == agent_id)
+            .where(
+                self.model_class.agent_id == agent_id,
+                self.model_class.owner_scope == owner_scope,
+            )
             .group_by(self.model_class.context_id)
-            .order_by(desc(func.max(self.model_class.created_at)))
+            .order_by(
+                desc(func.max(self.model_class.created_at)),
+                desc(self.model_class.context_id),
+            )
         )
 
         if pagination is not None:

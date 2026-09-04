@@ -37,6 +37,7 @@ pytestmark = [
 
 
 AGENT_ID = "test-agent"
+OWNER_SCOPE = "test-owner"
 
 
 def _status(timestamp: datetime | None = None, state=TaskState.TASK_STATE_WORKING):
@@ -52,10 +53,12 @@ def _record(
     timestamp: datetime | None = None,
     context_id: str = "ctx-1",
     agent_id: str = AGENT_ID,
+    owner_scope: str = OWNER_SCOPE,
 ) -> TaskRecord:
     return TaskRecord(
         id=task_id or uuid.uuid4(),
         agent_id=agent_id,
+        owner_scope=owner_scope,
         context_id=context_id,
         status=_status(timestamp),
     )
@@ -125,6 +128,7 @@ async def test_generated_state_column_drives_state_filter(postgres_session):
     completed = TaskRecord(
         id=uuid.uuid4(),
         agent_id=AGENT_ID,
+        owner_scope=OWNER_SCOPE,
         context_id="ctx-1",
         status=_status(state=TaskState.TASK_STATE_COMPLETED),
     )
@@ -226,6 +230,45 @@ async def test_count_matches_the_filtered_result_size(postgres_session):
     assert await repository.count(agent_id=AGENT_ID) == 4
 
 
+async def test_context_queries_are_scoped_to_the_exact_owner(postgres_session):
+    repository = TasksRepository(postgres_session)
+    alice_shared = _record(context_id="shared", owner_scope="alice")
+    bob_shared = _record(context_id="shared", owner_scope="bob")
+    await repository.save(alice_shared)
+    await repository.save(bob_shared)
+    await postgres_session.commit()
+    await asyncio.sleep(0.01)
+
+    alice_recent = _record(context_id="alice-recent", owner_scope="alice")
+    await repository.save(alice_recent)
+    await postgres_session.commit()
+
+    assert await repository.find_unique_context_ids(
+        agent_id=AGENT_ID,
+        owner_scope="alice",
+    ) == ["alice-recent", "shared"]
+    alice_tasks = await repository.find(
+        agent_id=AGENT_ID,
+        owner_scope="alice",
+        context_id="shared",
+    )
+    assert [task.id for task in alice_tasks] == [alice_shared.id]
+
+
+async def test_upsert_does_not_transfer_context_ownership(postgres_session):
+    repository = TasksRepository(postgres_session)
+    task_id = uuid.uuid4()
+    await repository.save(_record(task_id, owner_scope="alice"))
+    await postgres_session.commit()
+
+    await repository.save(_record(task_id, owner_scope="bob"))
+    await postgres_session.commit()
+
+    reloaded = await repository.find_by_id(task_id, AGENT_ID)
+    assert reloaded is not None
+    assert reloaded.owner_scope == "alice"
+
+
 async def test_find_page_walks_the_same_order_as_an_unbounded_find_ids(
     postgres_session,
 ):
@@ -296,13 +339,25 @@ async def test_find_artifacts_latest_only_returns_the_newest_task_s_version(
         meta.update({"version": version})
         return Artifact(name="report", artifact_id=f"report-v{version}", metadata=meta)
 
-    older = TaskRecord(id=uuid.uuid4(), agent_id=AGENT_ID, context_id="ctx-artifacts", status=_status())
+    older = TaskRecord(
+        id=uuid.uuid4(),
+        agent_id=AGENT_ID,
+        owner_scope=OWNER_SCOPE,
+        context_id="ctx-artifacts",
+        status=_status(),
+    )
     await repository.save(older)
     await artifacts_repository.upsert_batch(older.id, [_artifact("1")])
     await postgres_session.commit()
     await asyncio.sleep(0.01)
 
-    newer = TaskRecord(id=uuid.uuid4(), agent_id=AGENT_ID, context_id="ctx-artifacts", status=_status())
+    newer = TaskRecord(
+        id=uuid.uuid4(),
+        agent_id=AGENT_ID,
+        owner_scope=OWNER_SCOPE,
+        context_id="ctx-artifacts",
+        status=_status(),
+    )
     await repository.save(newer)
     await artifacts_repository.upsert_batch(newer.id, [_artifact("2")])
     await postgres_session.commit()

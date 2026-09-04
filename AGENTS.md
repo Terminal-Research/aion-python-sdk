@@ -52,10 +52,11 @@ and are discovered by `aion-server` at runtime.
   model-service principal header injection.
 - **aion-db** — centralized DB management layer under the `aion.db.postgres`
   namespace: `DbManager`, `DbFactory`, task records/models, fenced task-claim
-  records, repositories, Alembic migrations, custom fields/types, and utilities
-  (`convert_pg_url`, `verify_connection`, `validate_permissions`). Structured so
-  sibling namespaces (`aion.db.redis`, …) can be added later. Used by
-  `aion-server` and server-side framework packages.
+  records, durable caller ownership for task contexts, repositories, Alembic
+  migrations, custom fields/types, and utilities (`convert_pg_url`,
+  `verify_connection`, `validate_permissions`). Structured so sibling
+  namespaces (`aion.db.redis`, …) can be added later. Used by `aion-server`
+  and server-side framework packages.
 - **aion-mcp** — MCP integration utilities: an ASGI proxy for a local MCP
   server declared in `aion.yaml` (`proxy.py`) and authenticated remote Aion
   MCP endpoint builders (`endpoints.py`) for direct capability servers and the
@@ -81,6 +82,9 @@ and are discovered by `aion-server` at runtime.
   downstream transfer framing rather than buffering agent SSE output;
   contract tests cover published configuration schemas, including compact
   discovery documents that omit null field metadata.
+  Aion context-directory extensions resolve history through the same effective
+  caller scope used when tasks are saved; anonymous callers receive empty
+  context projections rather than access to shared history.
   Push notifications authenticate against external callbacks using the
   credentials in `taskPushNotificationConfig.authentication` (the a2a-sdk
   base sender ignores them); delivery timeouts come from

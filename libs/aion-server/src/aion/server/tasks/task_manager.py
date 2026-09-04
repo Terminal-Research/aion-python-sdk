@@ -210,8 +210,13 @@ class AionTaskManager(TaskManager):
         if self.task_id:
             logger.warning("Task ID already assigned, ignoring")
             return None
+        if not self._call_context.user.is_authenticated:
+            return None
 
-        last_task = await store_manager.get_store().get_context_last_task(context_id=self.context_id)
+        last_task = await store_manager.get_store().get_context_last_task(
+            context_id=self.context_id,
+            context=self._call_context,
+        )
         if last_task is None:
             return None
 

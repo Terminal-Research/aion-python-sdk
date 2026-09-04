@@ -74,7 +74,13 @@ def _make_entity(
     """A real head-only entity: ``to_task`` is the production code, not a stub."""
     status = TaskStatus(state=state)
     status.timestamp.FromDatetime(status_timestamp)
-    return TaskRecord(id=uuid.UUID(task_id), agent_id=agent_id, context_id=context_id, status=status)
+    return TaskRecord(
+        id=uuid.UUID(task_id),
+        agent_id=agent_id,
+        owner_scope="test-owner",
+        context_id=context_id,
+        status=status,
+    )
 
 
 @pytest.fixture
@@ -199,6 +205,15 @@ class TestSaveIdentity:
 
         entity = repository.save_owned.await_args.args[0]
         assert str(entity.id) == TASK_UUID
+
+    async def test_save_persists_the_resolved_owner(self, store, repository):
+        context = MagicMock()
+        context.user.user_name = "caller-123"
+
+        await store.save(_make_task(), context)
+
+        entity = repository.save_owned.await_args.args[0]
+        assert entity.owner_scope == "caller-123"
 
     @pytest.mark.parametrize("task_id", ["not-a-uuid", "", "evo-test-e1907a4c"])
     async def test_save_refuses_an_unaddressable_identifier(
@@ -620,10 +635,14 @@ class TestContextPaginationDefaults:
     async def test_context_tasks_default_when_limit_is_omitted(
         self, store, repository
     ):
-        await store.get_context_tasks(context_id="ctx-1")
+        context = MagicMock()
+        context.user.user_name = "caller-123"
+        await store.get_context_tasks(context_id="ctx-1", context=context)
 
-        pagination = repository.find.await_args.kwargs["pagination"]
+        kwargs = repository.find.await_args.kwargs
+        pagination = kwargs["pagination"]
         assert pagination.limit == DEFAULT_LIST_TASKS_PAGE_SIZE
+        assert kwargs["owner_scope"] == "caller-123"
 
     async def test_context_tasks_caps_an_oversized_limit(self, store, repository):
         await store.get_context_tasks(
@@ -636,10 +655,14 @@ class TestContextPaginationDefaults:
     async def test_context_ids_default_when_limit_is_omitted(
         self, store, repository
     ):
-        await store.get_context_ids()
+        context = MagicMock()
+        context.user.user_name = "caller-123"
+        await store.get_context_ids(context=context)
 
-        pagination = repository.find_unique_context_ids.await_args.kwargs["pagination"]
+        kwargs = repository.find_unique_context_ids.await_args.kwargs
+        pagination = kwargs["pagination"]
         assert pagination.limit == DEFAULT_LIST_TASKS_PAGE_SIZE
+        assert kwargs["owner_scope"] == "caller-123"
 
     async def test_context_ids_caps_an_oversized_limit(self, store, repository):
         await store.get_context_ids(limit=MAX_LIST_TASKS_PAGE_SIZE + 50)

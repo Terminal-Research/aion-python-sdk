@@ -1,6 +1,6 @@
 import pytest
+from types import SimpleNamespace
 from unittest.mock import Mock, AsyncMock, patch
-from a2a.server.context import ServerCallContext
 from a2a.types import TaskState
 
 from aion.server.core.app.handlers.request_handler import AionRequestHandler
@@ -42,7 +42,7 @@ def create_test_tasks(count=2):
 @pytest.fixture
 def mock_context():
     """Create mock server call context."""
-    return Mock(spec=ServerCallContext)
+    return SimpleNamespace(user=SimpleNamespace(is_authenticated=True))
 
 
 @pytest.fixture
@@ -130,7 +130,8 @@ class TestAionRequestHandler:
         scenario['task_store'].get_context_tasks.assert_called_once_with(
             context_id=params.context_id,
             limit=params.history_length,
-            offset=params.history_offset
+            offset=params.history_offset,
+            context=mock_context,
         )
         scenario['conversation_builder'].build_from_tasks.assert_called_once_with(
             context_id=params.context_id,
@@ -167,7 +168,8 @@ class TestAionRequestHandler:
         scenario['task_store'].get_context_tasks.assert_called_once_with(
             context_id="test_context_456",
             limit=history_length,
-            offset=history_offset
+            offset=history_offset,
+            context=mock_context,
         )
 
     @pytest.mark.anyio
@@ -188,8 +190,35 @@ class TestAionRequestHandler:
         assert result.root == mock_context_ids_data
         mock_task_store.get_context_ids.assert_called_once_with(
             limit=params.history_length,
-            offset=params.history_offset
+            offset=params.history_offset,
+            context=mock_context,
         )
+
+    @pytest.mark.anyio
+    async def test_anonymous_context_reads_are_indistinguishable_from_missing(
+        self,
+        request_handler,
+        mock_store_manager,
+    ):
+        """Anonymous callers cannot enumerate or hydrate persisted history."""
+        context = SimpleNamespace(
+            user=SimpleNamespace(is_authenticated=False),
+        )
+
+        conversation = await request_handler.on_get_context(
+            GetContextParams(context_id="private-context"),
+            context,
+        )
+        contexts = await request_handler.on_get_contexts_list(
+            GetContextsListParams(),
+            context,
+        )
+
+        assert conversation.context_id == "private-context"
+        assert conversation.history == []
+        assert conversation.artifacts == []
+        assert contexts.root == []
+        mock_store_manager.get_store.assert_not_called()
 
     @pytest.mark.parametrize("exception_msg,method_name", [
         ("Database error", "get_context_tasks"),
