@@ -68,6 +68,14 @@ adk-authoring = [
     "google-adk>=1.20.0,<2.0.0",
     # aion_lite_llm() builds on ADK's LiteLlm, which imports litellm directly.
     "litellm>=1.93,<2.0",
+    # Not our dependency: mcp is pulled in by google-adk, and pinned here
+    # because google-adk imports a name mcp no longer exports. mcp 1.29.1
+    # renamed McpError to MCPError; google-adk still does
+    # `from mcp.shared.exceptions import McpError` (checked up to 2.8.0, the
+    # newest release there is) and asks for `mcp>=1.24,<2`, so a fresh resolve
+    # takes 1.29.1 and importing google.adk.tools.mcp_tool raises ImportError.
+    # Drop this line as soon as a google-adk release we allow imports MCPError.
+    "mcp<1.29.1",
 ]
 
 # The composite extras below are written out in full rather than as
@@ -107,6 +115,8 @@ adk-server = [
     # aionto-sdk[adk-authoring]
     "google-adk>=1.20.0,<2.0.0",
     "litellm>=1.93,<2.0",
+    # See [adk-authoring]: google-adk still imports mcp's pre-1.29.1 name.
+    "mcp<1.29.1",
     # aionto-sdk[server]
     "SQLAlchemy>=2.0.0,<3.0.0",
     "alembic>=1.13.0,<2.0.0",
@@ -132,6 +142,8 @@ all = [
     # aionto-sdk[adk-server]
     "google-adk>=1.20.0,<2.0.0",
     "litellm>=1.93,<2.0",
+    # See [adk-authoring]: google-adk still imports mcp's pre-1.29.1 name.
+    "mcp<1.29.1",
     # aionto-sdk[server]
     "SQLAlchemy>=2.0.0,<3.0.0",
     "alembic>=1.13.0,<2.0.0",
