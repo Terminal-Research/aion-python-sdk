@@ -198,6 +198,12 @@ and are discovered by `aion.server` at runtime.
   at the root.
   Every `aion.*` import then resolves to the working tree, and there is nothing
   to switch between local and remote. `poetry.lock` is not committed.
+- `installer.re-resolve = true` in `poetry.toml` is what makes that install
+  correct: with Poetry's own default the installer picks packages out of the
+  lock by marker and puts two versions of the same package into one
+  site-packages. `make check-env` is the check for it — one dist-info per
+  package and a clean `pip check` — and CI runs it right after installing.
+  The comment in `poetry.toml` says when the setting can go away.
 - `make help` lists all targets. `make tests` runs the unit suite;
   `make tests-integration` runs the integration suite and
   `make tests-all` runs both. All three are plain `pytest` over `tests/` with

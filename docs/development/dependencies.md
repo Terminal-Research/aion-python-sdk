@@ -17,6 +17,30 @@ reinstalled after an edit.
 `poetry.lock` is not committed: what a fresh install resolves is what the
 manifest says today.
 
+The project's `poetry.toml` turns `installer.re-resolve` back on. Since Poetry
+2.3.0 the default is off, and `poetry install` then picks packages out of the
+lock file by marker instead of solving. That does not work here: the extras
+constrain the same packages differently — Google ADK holds `opentelemetry` and
+`mcp` down, LiteLLM holds `openai` down, the base install and the LangGraph
+branch hold nothing down — so the lock carries two entries with overlapping
+markers for each of those packages, and the installer takes both. Two versions
+of one distribution end up unpacked into the same `site-packages`, files on
+top of each other. Re-resolving costs a few seconds and gives one version per
+package. See [python-poetry/poetry#10971](https://github.com/python-poetry/poetry/issues/10971).
+
+`make check-env` is what says whether the environment came out whole — no
+package installed twice, and `pip check` clean:
+
+```bash
+make check-env
+```
+
+If an install ever leaves a strange environment behind — an import error from
+inside a third-party package, a version nothing asked for — do not pick at it
+by hand. Delete `.venv` and install again; a half-overwritten package cannot be
+repaired in place, and reinstalling one distribution over it leaves the other
+one's files where they were.
+
 To see all available commands:
 
 ```bash
