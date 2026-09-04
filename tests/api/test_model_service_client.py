@@ -5,7 +5,7 @@ import httpx
 import pytest
 
 from aion.api import aion_openai_config
-from aion.api.exceptions import AionAuthenticationError
+from aion.api.exceptions import AionAuthenticationError, AionModelPrincipalError
 from aion.api.http.jwt_manager import AionRefreshingJWTManager
 import aion.api.model_service_client as model_service_client
 
@@ -180,14 +180,46 @@ def test_model_request_headers_adds_principal_from_provider():
     }
 
 
-def test_model_request_headers_omits_environment_principal(caplog):
+def test_model_request_headers_rejects_environment_principal():
+    """An environment principal is refused by the model service, so it never goes out."""
+    with pytest.raises(AionModelPrincipalError) as excinfo:
+        model_service_client.aion_model_request_headers(
+            principal_selector_provider=lambda: "aion://agent/environment/env-id"
+        )
+
+    assert excinfo.value.selector == "aion://agent/environment/env-id"
+    assert "Daemon Identity" in str(excinfo.value)
+
+
+def test_model_request_headers_rejects_missing_principal():
+    """No principal at all means the call is attributed to the agent version."""
+    with pytest.raises(AionModelPrincipalError) as excinfo:
+        model_service_client.aion_model_request_headers(
+            principal_selector_provider=lambda: None
+        )
+
+    assert excinfo.value.selector is None
+    assert "Daemon Identity" in str(excinfo.value)
+
+
+def test_model_request_headers_rejects_invalid_principal():
+    with pytest.raises(AionModelPrincipalError) as excinfo:
+        model_service_client.aion_model_request_headers(
+            principal_selector_provider=lambda: "not-a-selector"
+        )
+
+    assert "not a valid Aion selector" in str(excinfo.value)
+
+
+def test_model_principal_selector_value_stays_lenient_by_default(caplog):
+    """Non-strict callers still normalize rather than raise."""
     caplog.set_level(logging.ERROR, logger="aion.api.model_service_client")
 
-    headers = model_service_client.aion_model_request_headers(
-        principal_selector_provider=lambda: "aion://agent/environment/env-id"
+    value = model_service_client.aion_model_principal_selector_value(
+        "aion://agent/environment/env-id"
     )
 
-    assert model_service_client.AION_PRINCIPAL_SELECTOR_HEADER not in headers
+    assert value is None
     assert "environment selector will not be sent" in caplog.text
 
 
@@ -226,23 +258,22 @@ def test_model_request_headers_preserves_existing_principal(caplog):
     assert "without principal attribution" not in caplog.text
 
 
-def test_model_request_headers_omits_existing_environment_principal(caplog):
-    caplog.set_level(logging.ERROR, logger="aion.api.model_service_client")
+def test_model_request_headers_rejects_existing_environment_principal():
+    """An explicitly supplied environment selector is refused the same way."""
     existing = {
         model_service_client.AION_PRINCIPAL_SELECTOR_HEADER: (
             "aion://agent/environment/env-id"
         )
     }
 
-    headers = model_service_client.aion_model_request_headers(existing)
+    with pytest.raises(AionModelPrincipalError):
+        model_service_client.aion_model_request_headers(existing)
 
     assert existing == {
         model_service_client.AION_PRINCIPAL_SELECTOR_HEADER: (
             "aion://agent/environment/env-id"
         )
     }
-    assert model_service_client.AION_PRINCIPAL_SELECTOR_HEADER not in headers
-    assert "environment selector will not be sent" in caplog.text
 
 
 def test_model_request_hook_resolves_principal_at_request_time(monkeypatch):
@@ -297,8 +328,8 @@ def test_model_request_hook_preserves_explicit_principal(monkeypatch):
     )
 
 
-def test_model_request_hook_omits_explicit_environment_principal(caplog):
-    caplog.set_level(logging.ERROR, logger="aion.api.model_service_client")
+def test_model_request_hook_rejects_explicit_environment_principal():
+    """The hook fails the request instead of sending one that will be refused."""
     request = httpx.Request(
         "POST",
         "https://api.example.test/v1/chat/completions",
@@ -309,10 +340,8 @@ def test_model_request_hook_omits_explicit_environment_principal(caplog):
         },
     )
 
-    model_service_client.aion_model_request_hook(request)
-
-    assert model_service_client.AION_PRINCIPAL_SELECTOR_HEADER not in request.headers
-    assert "environment selector will not be sent" in caplog.text
+    with pytest.raises(AionModelPrincipalError):
+        model_service_client.aion_model_request_hook(request)
 
 
 def test_model_http_client_refreshes_api_key_per_request(monkeypatch):

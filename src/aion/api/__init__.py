@@ -13,6 +13,7 @@ from .control_plane import (
     PrincipalSelectorKind,
     RuntimeCapabilityReference,
 )
+from .exceptions import AionAuthenticationError, AionException, AionModelPrincipalError
 from .gql import AionGqlClient, generated
 from .http import AionHttpClient
 from .model_service_client import aion_openai_config
@@ -21,8 +22,11 @@ __all__ = [
     "AION_METATOOLS_MCP_CAPABILITY_KEY",
     "AION_PRINCIPAL_SELECTOR_HEADER",
     "AION_RESOURCE_URI_SCHEME",
+    "AionAuthenticationError",
+    "AionException",
     "AionGqlClient",
     "AionHttpClient",
+    "AionModelPrincipalError",
     "AionControlPlanePaths",
     "CapabilityKey",
     "CapabilityKind",

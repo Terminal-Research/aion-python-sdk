@@ -13,7 +13,7 @@ from aion.api.control_plane import (
     PrincipalSelector,
     PrincipalSelectorKind,
 )
-from aion.api.exceptions import AionAuthenticationError
+from aion.api.exceptions import AionAuthenticationError, AionModelPrincipalError
 from aion.api.http.jwt_manager import (
     AionJWTManager,
     AionRefreshingJWTManager,
@@ -28,6 +28,31 @@ ModelApiKeyProvider = Callable[[], str]
 logger = logging.getLogger(__name__)
 
 _AION_OPENAI_API_KEY_PLACEHOLDER = "aion-runtime-token"
+
+_IDENTITY_DOCS_URL = "https://docs.aion.to/docs/concepts/identities"
+
+NO_PRINCIPAL_MESSAGE = (
+    "This model call carries no Aion principal. Deployment credentials "
+    "authenticate the agent version, and the model service does not run work "
+    "for a version - it needs the environment's Daemon Identity, which arrives "
+    "with an invocation the platform delivers. A direct A2A call to a locally "
+    "served agent carries no environment, so a model cannot be reached from "
+    f"one. See {_IDENTITY_DOCS_URL}."
+)
+
+ENVIRONMENT_PRINCIPAL_MESSAGE = (
+    "This invocation's environment has no Daemon Identity, so the only "
+    "principal available is the environment itself ({selector}). The model "
+    "service accepts a user or an agent identity and never an agent "
+    "environment, so the request would be attributed to the agent version and "
+    "refused. Assign a Daemon Identity to this environment in the control "
+    f"plane. See {_IDENTITY_DOCS_URL}."
+)
+
+INVALID_PRINCIPAL_MESSAGE = (
+    "Principal selector {selector!r} is not a valid Aion selector, so this "
+    "model call cannot be attributed: {reason}"
+)
 
 
 @dataclass(frozen=True)
@@ -146,54 +171,84 @@ def aion_model_request_headers(
         existing: Mapping[str, str] | None = None,
         *,
         principal_selector_provider: PrincipalSelectorProvider | None = None,
-        warn_on_missing: bool = True,
 ) -> dict[str, str]:
-    """Return per-request headers for an Aion model-service call."""
+    """Return per-request headers for an Aion model-service call.
+
+    Args:
+        existing: Headers to extend. An explicit principal selector here is
+            validated the same way as a resolved one.
+        principal_selector_provider: Source of the principal selector.
+            Defaults to the active Aion runtime context.
+
+    Returns:
+        The headers, carrying a principal selector the model service accepts.
+
+    Raises:
+        AionModelPrincipalError: When no such principal is available. The
+            request is refused server-side in exactly these cases, so it is
+            not sent.
+    """
     headers = dict(existing or {})
-    if AION_PRINCIPAL_SELECTOR_HEADER in headers:
-        selector = aion_model_principal_selector_value(
-            headers[AION_PRINCIPAL_SELECTOR_HEADER]
+    # Header names are case-insensitive, and httpx hands them over lower-cased,
+    # so an explicit selector is found by name rather than by exact key.
+    supplied = next(
+        (
+            key
+            for key in headers
+            if key.lower() == AION_PRINCIPAL_SELECTOR_HEADER.lower()
+        ),
+        None,
+    )
+    if supplied is not None:
+        headers[supplied] = aion_model_principal_selector_value(
+            headers[supplied], strict=True
         )
-        if selector:
-            headers[AION_PRINCIPAL_SELECTOR_HEADER] = selector
-        else:
-            headers.pop(AION_PRINCIPAL_SELECTOR_HEADER, None)
         return headers
 
     provider = principal_selector_provider or aion_principal_selector
     selector = provider()
-    if selector:
-        model_selector = aion_model_principal_selector_value(selector)
-        if model_selector:
-            headers[AION_PRINCIPAL_SELECTOR_HEADER] = model_selector
-    elif warn_on_missing:
-        logger.warning(
-            "Aion model service was called without principal attribution; "
-            "control plane policies for a specific agent principal may not "
-            "be enforced for this request."
-        )
+    if not selector:
+        raise AionModelPrincipalError(NO_PRINCIPAL_MESSAGE)
+
+    headers[AION_PRINCIPAL_SELECTOR_HEADER] = aion_model_principal_selector_value(
+        selector, strict=True
+    )
     return headers
 
 
-def aion_model_principal_selector_value(selector: str) -> str | None:
+def aion_model_principal_selector_value(
+        selector: str,
+        *,
+        strict: bool = False,
+) -> str | None:
     """Return a model-service-safe principal selector value.
 
     Model invocation may run as the authenticated user or as an agent identity.
-    The Python SDK intentionally does not send agent-environment selectors to
-    the model service. When a runtime context falls back to an environment
-    selector, the request proceeds without the selector so the JWT can still be
-    evaluated by the server.
+    The Python SDK does not send agent-environment selectors to the model
+    service, which does not accept them.
 
     Args:
         selector: Candidate Aion principal selector URI.
+        strict: Raise instead of returning ``None`` when the selector cannot be
+            sent. Callers building a request that is about to go out use this;
+            callers merely normalizing a value do not.
 
     Returns:
         A canonical selector URI when it is valid for model-service requests,
         otherwise ``None``.
+
+    Raises:
+        AionModelPrincipalError: When ``strict`` and the selector is invalid or
+            names an agent environment.
     """
     try:
         principal = PrincipalSelector.from_header_value(selector)
     except ValueError as exc:
+        if strict:
+            raise AionModelPrincipalError(
+                INVALID_PRINCIPAL_MESSAGE.format(selector=selector, reason=exc),
+                selector=selector,
+            ) from exc
         logger.error(
             "Aion model service principal selector %r is invalid and will not "
             "be sent: %s",
@@ -203,6 +258,11 @@ def aion_model_principal_selector_value(selector: str) -> str | None:
         return None
 
     if principal.kind == PrincipalSelectorKind.AGENT_ENVIRONMENT:
+        if strict:
+            raise AionModelPrincipalError(
+                ENVIRONMENT_PRINCIPAL_MESSAGE.format(selector=selector),
+                selector=selector,
+            )
         logger.error(
             "Aion model service resolved agent environment principal selector "
             "%r. Model-service requests require user credentials or an agent "
@@ -215,16 +275,13 @@ def aion_model_principal_selector_value(selector: str) -> str | None:
 
 
 def aion_model_request_hook(request: httpx.Request) -> None:
-    """Inject the current principal selector into an outgoing model request."""
-    if AION_PRINCIPAL_SELECTOR_HEADER in request.headers:
-        selector = aion_model_principal_selector_value(
-            request.headers[AION_PRINCIPAL_SELECTOR_HEADER]
-        )
-        if selector:
-            request.headers[AION_PRINCIPAL_SELECTOR_HEADER] = selector
-        else:
-            del request.headers[AION_PRINCIPAL_SELECTOR_HEADER]
-        return
+    """Inject the current principal selector into an outgoing model request.
+
+    Raises:
+        AionModelPrincipalError: When the request has no principal the model
+            service accepts. Raised from the httpx event hook, so it surfaces
+            at the call site that asked for the completion.
+    """
     request.headers.update(aion_model_request_headers(request.headers))
 
 
