@@ -12,6 +12,10 @@ permissions:
 
 jobs:
   publish:
+    # Releases of the Python distribution are tagged `py-v*` and are handled by
+    # publish-python.yml. Without this guard they would run this job too, which
+    # then fails on a tag that was never meant to match the npm version.
+    if: github.event_name == 'workflow_dispatch' || !startsWith(github.event.release.tag_name, 'py-v')
     runs-on: ubuntu-latest
     defaults:
       run:
