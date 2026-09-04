@@ -101,9 +101,7 @@ def test_version_logs_subscription_is_generated():
 
     assert VersionLogs is not None
     assert hasattr(GqlClient, "version_logs")
-    assert "subscription VersionLogs($startTime: OffsetDateTime!)" in (
-        VERSION_LOGS_GQL
-    )
+    assert "subscription VersionLogs($startTime: OffsetDateTime!)" in (VERSION_LOGS_GQL)
     assert "versionLogs(startTime: $startTime)" in VERSION_LOGS_GQL
     assert "level" in VERSION_LOGS_GQL
     assert "level_value" in VERSION_LOGS_GQL
@@ -114,3 +112,62 @@ def test_version_logs_subscription_is_generated():
     assert "value" in VERSION_LOGS_GQL
     assert "versionId" not in VERSION_LOGS_GQL
     assert "organizationId" not in VERSION_LOGS_GQL
+
+
+def test_agent_mail_setup_inputs_use_server_field_names():
+    """AgentMail setup inputs serialize with the backend GraphQL aliases."""
+    from aion.api.gql.generated.graphql_client import (
+        AgentMailServiceAccountSetupStartInput,
+        ServiceAccountSetupProfileInput,
+        ServiceAccountSetupStartInput,
+    )
+
+    setup = ServiceAccountSetupStartInput(
+        strategy_key="provision-inbox",
+        idempotency_key="operation-1",
+        desired_profile=ServiceAccountSetupProfileInput(
+            display_name="support",
+            description="Aion-managed email inbox",
+        ),
+        agent_mail=AgentMailServiceAccountSetupStartInput(local_part="support"),
+    )
+
+    assert setup.model_dump(by_alias=True, exclude_none=True) == {
+        "strategyKey": "provision-inbox",
+        "idempotencyKey": "operation-1",
+        "desiredProfile": {
+            "displayName": "support",
+            "description": "Aion-managed email inbox",
+        },
+        "agentMail": {"localPart": "support"},
+    }
+
+
+def test_agent_mail_generated_operations_match_the_server_contract():
+    """Generated AgentMail setup and lifecycle operations stay typed."""
+    from aion.api.gql.generated.graphql_client import (
+        AGENT_MAIL_SERVICE_ACCOUNT_OPTIONS_GQL,
+        START_AGENT_MAIL_INBOX_SETUP_GQL,
+        AuthenticationMechanism,
+        IdentityNetworkGQL,
+        NetworkTypeGQL,
+        ServiceIntegrationTypeGQL,
+    )
+    from aion.api.gql.generated.graphql_client.client import GqlClient
+
+    assert AuthenticationMechanism.AionManagedProvisionedCredential.value == (
+        "AionManagedProvisionedCredential"
+    )
+    assert IdentityNetworkGQL.AgentMail.value == "AgentMail"
+    assert NetworkTypeGQL.AgentMail.value == "AgentMail"
+    assert ServiceIntegrationTypeGQL.AgentMail.value == "AgentMail"
+    assert hasattr(GqlClient, "start_agent_mail_inbox_setup")
+    assert hasattr(GqlClient, "agent_mail_service_account_options")
+    assert "$setup: ServiceAccountSetupStartInput!" in (
+        START_AGENT_MAIL_INBOX_SETUP_GQL
+    )
+    assert "setup: $setup" in START_AGENT_MAIL_INBOX_SETUP_GQL
+    assert "identityNetwork: AgentMail" in AGENT_MAIL_SERVICE_ACCOUNT_OPTIONS_GQL
+    assert 'identityKinds: ["Inbox"]' in AGENT_MAIL_SERVICE_ACCOUNT_OPTIONS_GQL
+    assert "addressDomain" in AGENT_MAIL_SERVICE_ACCOUNT_OPTIONS_GQL
+    assert "emailAddress" in AGENT_MAIL_SERVICE_ACCOUNT_OPTIONS_GQL

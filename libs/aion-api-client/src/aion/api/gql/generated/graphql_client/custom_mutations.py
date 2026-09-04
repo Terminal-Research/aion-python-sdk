@@ -2,10 +2,36 @@
 
 from typing import Any, Optional
 
-from .custom_fields import AgentBehaviorFields
+from .custom_fields import AgentBehaviorFields, AuthenticationStartResultFields
+from .input_types import ServiceAccountSetupStartInput
 
 
 class Mutation:
+    @classmethod
+    def start_authentication(
+        cls,
+        organization_id: str,
+        target_id: str,
+        method_key: str,
+        operation_key: str,
+        *,
+        setup: Optional[ServiceAccountSetupStartInput] = None,
+    ) -> AuthenticationStartResultFields:
+        """Starts one exact new authentication connection."""
+        arguments: dict[str, dict[str, Any]] = {
+            "organizationId": {"type": "ID!", "value": organization_id},
+            "targetId": {"type": "ID!", "value": target_id},
+            "methodKey": {"type": "String!", "value": method_key},
+            "operationKey": {"type": "ID!", "value": operation_key},
+            "setup": {"type": "ServiceAccountSetupStartInput", "value": setup},
+        }
+        cleared_arguments = {
+            key: value for key, value in arguments.items() if value["value"] is not None
+        }
+        return AuthenticationStartResultFields(
+            field_name="startAuthentication", arguments=cleared_arguments
+        )
+
     @classmethod
     def register_version(
         cls, *, version_id: Optional[str] = None

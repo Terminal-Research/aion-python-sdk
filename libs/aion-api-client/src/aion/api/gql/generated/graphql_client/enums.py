@@ -11,7 +11,81 @@ class AgentBehaviorKind(str, Enum):
     System = "System"
 
 
+class AuthenticationMechanism(str, Enum):
+    AionManagedProvisionedCredential = "AionManagedProvisionedCredential"
+    AionOAuth = "AionOAuth"
+    ProviderHostedCredential = "ProviderHostedCredential"
+    ProviderManagedAuthorization = "ProviderManagedAuthorization"
+
+
+class AuthenticationStartOutcome(str, Enum):
+    AuthorizationStarted = "AuthorizationStarted"
+    Completed = "Completed"
+    RecoveryRequired = "RecoveryRequired"
+    Rejected = "Rejected"
+    SetupStarted = "SetupStarted"
+
+
 class CapabilityKind(str, Enum):
     A2AEndpoint = "A2AEndpoint"
     EventEmitter = "EventEmitter"
     McpServer = "McpServer"
+
+
+class IdentityNetworkGQL(str, Enum):
+    A2A = "A2A"
+    AgentMail = "AgentMail"
+    Aion = "Aion"
+    Composio = "Composio"
+    GitHub = "GitHub"
+    Google = "Google"
+    Slack = "Slack"
+    Telegram = "Telegram"
+    Twilio = "Twilio"
+    Twitter = "Twitter"
+
+
+class NetworkTypeGQL(str, Enum):
+    A2A = "A2A"
+    AgentMail = "AgentMail"
+    Aion = "Aion"
+    GitHub = "GitHub"
+    Meet = "Meet"
+    Playground = "Playground"
+    Slack = "Slack"
+    Telegram = "Telegram"
+    Twitter = "Twitter"
+    Voice = "Voice"
+
+
+class ServiceAccountSetupAction(str, Enum):
+    Begin = "Begin"
+    Cancel = "Cancel"
+    ConfirmProviderAction = "ConfirmProviderAction"
+    Delete = "Delete"
+    RestartAuthorization = "RestartAuthorization"
+    Resume = "Resume"
+    Retry = "Retry"
+
+
+class ServiceAccountSetupLifecycle(str, Enum):
+    AdminApprovalPending = "AdminApprovalPending"
+    AwaitingAuthorization = "AwaitingAuthorization"
+    AwaitingInstall = "AwaitingInstall"
+    Cancelled = "Cancelled"
+    Completed = "Completed"
+    Failed = "Failed"
+    Orphaned = "Orphaned"
+    Pending = "Pending"
+    Provisioning = "Provisioning"
+
+
+class ServiceIntegrationTypeGQL(str, Enum):
+    AgentMail = "AgentMail"
+    Composio = "Composio"
+    GitHub = "GitHub"
+    Google = "Google"
+    Slack = "Slack"
+    Telegram = "Telegram"
+    Twilio = "Twilio"
+    Twitter = "Twitter"

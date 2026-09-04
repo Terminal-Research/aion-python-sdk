@@ -49,7 +49,8 @@ and are discovered by `aion-server` at runtime.
   control-plane addressing (`aion.api.control_plane`: `CapabilityReference`,
   `CapabilitySubject`, `PrincipalSelector`, path helpers), and the
   OpenAI-compatible `model_service_client` with request-scoped
-  model-service principal header injection.
+  model-service principal header injection. Its generated user-control-plane
+  surface also includes AgentMail inbox setup and lifecycle status models.
 - **aion-db** — centralized DB management layer under the `aion.db.postgres`
   namespace: `DbManager`, `DbFactory`, task records/models, fenced task-claim
   records, durable caller ownership for task contexts, repositories, Alembic
