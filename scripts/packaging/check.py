@@ -186,6 +186,15 @@ def check_wheel_contents(wheel: Path, report: Report) -> list[str]:
             f"{data_file} is missing from the wheel",
         )
 
+    # The subpackage READMEs live beside the code and are excluded from the
+    # build; the package page is the root README, which travels in METADATA.
+    markdown = sorted(n for n in names if n.endswith(".md"))
+    report.check(
+        not markdown,
+        "no Markdown files in the wheel",
+        f"the wheel ships Markdown: {', '.join(markdown)}",
+    )
+
     return names
 
 

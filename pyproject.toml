@@ -143,6 +143,10 @@ Repository = "https://github.com/Terminal-Research/aion-python-sdk"
 [tool.poetry]
 packages = [{ include = "aion", from = "src" }]
 include = ["src/aion/cli/bin/*"]
+# Every subpackage carries its README beside the code, for whoever reads the
+# repository. A distribution is not that reader: the package page is the root
+# README, and these ten would just be files nobody opens inside site-packages.
+exclude = ["src/aion/**/README.md"]
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=8.0.0"
