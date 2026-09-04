@@ -241,8 +241,10 @@ and are discovered by `aion.server` at runtime.
 
 User-facing docs live in `docs/`: `environment-variables.md`,
 `aion-yaml-config.md`, `multiple-agents.md`, `app-registry.md`,
-`http_endpoints.md`, `a2a_extensions/`, `modules/` (one page per subpackage),
-and `development/`. `docs/publishing-pypi.md` is for maintainers. The root
+`http_endpoints.md`, `a2a_extensions/` and `development/`.
+`docs/publishing-pypi.md` is for maintainers. Every subpackage has a `README.md`
+of its own beside the code, in `src/aion/<subpackage>/`; those are for whoever
+opens the directory and are excluded from the wheel and the sdist. The root
 `README.md` is the PyPI page — keep it short, and keep every link in it
 absolute, since relative links do not resolve on PyPI. Keep all of them in sync
 with behavioural changes.
