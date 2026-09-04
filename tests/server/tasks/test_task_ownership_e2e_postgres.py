@@ -35,6 +35,7 @@ from .postgres_support import (
     write_task,
 )
 
+from a2a.server.context import ServerCallContext
 from a2a.server.tasks import TaskUpdater
 from a2a.types import CancelTaskRequest, SubscribeToTaskRequest, Task, TaskState
 from a2a.utils.errors import TaskNotCancelableError
@@ -54,6 +55,19 @@ from .postgres_support import db_manager as _db_manager
 
 STREAM_TIMEOUT_SECONDS = 10.0
 """How long a resubscribe may take before the test calls it a hang."""
+
+
+def call_context() -> ServerCallContext:
+    """The context a request carries into the handler and the registry.
+
+    A ``Mock`` will not do here the way it does for the agent card: the store
+    resolves the owner scope it persists out of ``context.user.user_name``,
+    and a mock answers that with another mock, which is not a string the
+    ``tasks`` row can hold. Unauthenticated, so the scope is the empty string
+    - the same one ``write_task`` writes with no context at all, which is
+    what keeps the two writers in this module owning the same rows.
+    """
+    return ServerCallContext()
 
 
 class _GracefulAgentExecutor:
@@ -118,7 +132,7 @@ class _Instance:
         init_execution_scope()
         return await self.registry.get_or_create(
             task_id,
-            call_context=Mock(),
+            call_context=call_context(),
             create_task_if_missing=True,
         )
 
@@ -138,7 +152,7 @@ class _Instance:
                 event
                 async for event in self.handler.on_subscribe_to_task(
                     SubscribeToTaskRequest(id=task_id),
-                    Mock(),
+                    call_context(),
                 )
             ]
 
@@ -148,7 +162,7 @@ class _Instance:
         """Cancel the task, the way a control request does."""
         return await self.handler.on_cancel_task(
             CancelTaskRequest(id=task_id),
-            Mock(),
+            call_context(),
         )
 
     async def aclose(self) -> None:

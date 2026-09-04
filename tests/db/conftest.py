@@ -12,7 +12,9 @@ if os.getenv("POSTGRES_TEST_URL"):
 
 from aion.db.postgres.constants import AION_SCHEMA, TASK_CLAIMS_TABLE, TASKS_TABLE
 from aion.db.postgres.migrations import upgrade_to_head
+from aion.db.postgres.migrations.env import config as alembic_config
 from aion.db.postgres.utils import convert_pg_url
+from aion.db.settings import db_settings
 
 
 @pytest.fixture(scope="session")
@@ -22,6 +24,16 @@ async def postgres_engine():
     if not test_url:
         pytest.skip("POSTGRES_TEST_URL is not set")
 
+    # Assigned rather than left to the environment variable set above. Both
+    # the settings object and the Alembic config read the URL when they are
+    # first imported, and in a whole-suite run that happens - by way of some
+    # other test module's imports - before this conftest is read at all, so
+    # the environment alone leaves the migration pointed at nothing.
+    db_settings.pg_url = test_url
+    alembic_config.set_main_option(
+        "sqlalchemy.url",
+        convert_pg_url(test_url, driver="psycopg"),
+    )
     await upgrade_to_head()
     engine = create_async_engine(
         convert_pg_url(test_url, driver="psycopg"),
