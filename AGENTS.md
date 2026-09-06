@@ -79,6 +79,8 @@ and are discovered by `aion.server` at runtime.
   `PrincipalSelector`, path helpers), and the OpenAI-compatible
   `model_service_client` with strict request-scoped principal validation and
   opaque usage-attribution forwarding, plus nested GraphQL A2A propagation.
+  The immutable Files client forwards the same request-scoped principal and
+  usage attribution for create and revision-fenced replace calls.
   The generated client is committed; regenerate it from
   `graphql/schema.graphql` and `graphql/queries.graphql`
   (`[tool.ariadne-codegen]` in the root manifest).

@@ -50,6 +50,27 @@ The REST helpers target these control-plane endpoints:
 | `GET /v1/models` | Lists model-service catalog entries available through Aion. |
 | `GET /v1/models/{model}` | Retrieves one model-service catalog entry. |
 | `POST /v1/chat/completions` | Creates a model-service chat completion, including streaming responses when requested. |
+| `POST /files` | Creates an immutable File version. |
+| `PUT /files/{fileId}` | Replaces a File under an exact version/revision fence. |
+
+### Files
+
+`AionFileClient` obtains a current bearer token and, inside an Aion runtime
+request, forwards its effective principal selector and opaque usage-attribution
+carrier. The server still authorizes the selected principal independently.
+
+```python
+from aion.api import AionFileClient
+
+async with AionFileClient() as files:
+    uploaded = await files.create(
+        b"message attachment",
+        organization_id="organization-id",
+        purpose="MessagingMedia",
+        file_name="message.txt",
+        media_type="text/plain",
+    )
+```
 
 ## Control-plane addressing
 

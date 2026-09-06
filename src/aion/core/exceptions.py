@@ -43,6 +43,7 @@ __all__ = [
     "MissingOptionalDependency",
     "ConfigurationError",
     "AionAuthenticationError",
+    "AionFileValidationError",
     "AionModelPrincipalError",
 ]
 
@@ -96,6 +97,14 @@ class AionAuthenticationError(AionError):
     def __init__(self, message: str, status_code: Optional[int] = None) -> None:
         super().__init__(message)
         self.status_code = status_code
+
+
+class AionFileValidationError(AionError, ValueError):
+    """Invalid Files API arguments rejected before sending a request.
+
+    Also a ValueError so callers that already catch invalid argument errors
+    continue to work while SDK-wide handlers can catch AionError.
+    """
 
 
 class AionModelPrincipalError(AionAuthenticationError):

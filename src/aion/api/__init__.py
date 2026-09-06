@@ -13,7 +13,13 @@ from .control_plane import (
     PrincipalSelectorKind,
     RuntimeCapabilityReference,
 )
-from .exceptions import AionAuthenticationError, AionError, AionModelPrincipalError
+from .exceptions import (
+    AionAuthenticationError,
+    AionError,
+    AionFileValidationError,
+    AionModelPrincipalError,
+)
+from .file_service_client import AionFileClient
 from .gql import AionGqlClient, generated
 from .http import AionHttpClient
 from .model_service_client import aion_openai_config
@@ -28,6 +34,8 @@ __all__ = [
     "AionHttpClient",
     "AionModelPrincipalError",
     "AionControlPlanePaths",
+    "AionFileClient",
+    "AionFileValidationError",
     "CapabilityKey",
     "CapabilityKind",
     "CapabilityReference",
