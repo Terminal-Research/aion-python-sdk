@@ -31,19 +31,18 @@ class CheckpointerFactory:
             A checkpointer instance ready for use.
         """
         if db_manager:
-            checkpointer = await cls._create_postgres(db_manager)
-            if checkpointer is not None:
-                return checkpointer
+            backend = PostgresBackend(db_manager)
+            if backend.is_available():
+                checkpointer = await cls._create_postgres(backend)
+                if checkpointer is not None:
+                    return checkpointer
+            else:
+                logger.debug("PostgreSQL not configured, using in-memory checkpointer")
 
         return await MemoryBackend().create()
 
     @staticmethod
-    async def _create_postgres(db_manager: DbManagerProtocol) -> Any:
-        backend = PostgresBackend(db_manager)
-        if not backend.is_available():
-            logger.warning("PostgreSQL backend unavailable, falling back to memory")
-            return None
-
+    async def _create_postgres(backend: PostgresBackend) -> Any:
         checkpointer = await backend.create()
         if checkpointer is None:
             logger.warning("Failed to create PostgreSQL checkpointer, falling back to memory")

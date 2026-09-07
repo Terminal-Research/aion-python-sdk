@@ -17,37 +17,44 @@ class TestCheckpointerFactory:
         assert isinstance(result, InMemorySaver)
 
     async def test_available_postgres_backend_is_returned(self):
-        """When db_manager yields a postgres checkpointer, it is used directly."""
+        """When the backend is available and yields a checkpointer, it is used directly."""
         fake_cp = Mock()
+        db = Mock()
+        db.is_initialized = True
         with patch.object(CheckpointerFactory, "_create_postgres", new=AsyncMock(return_value=fake_cp)):
-            result = await CheckpointerFactory.create(db_manager=Mock())
+            result = await CheckpointerFactory.create(db_manager=db)
         assert result is fake_cp
 
-    async def test_unavailable_postgres_falls_back_to_memory(self):
+    async def test_unavailable_backend_falls_back_to_memory_without_creating(self):
+        """When db_manager is not initialized, postgres is never attempted."""
+        db = Mock()
+        db.is_initialized = False
+        with patch.object(CheckpointerFactory, "_create_postgres", new=AsyncMock()) as mock_create:
+            result = await CheckpointerFactory.create(db_manager=db)
+        assert isinstance(result, InMemorySaver)
+        mock_create.assert_not_called()
+
+    async def test_failed_postgres_creation_falls_back_to_memory(self):
         """When _create_postgres returns None, factory falls back to InMemorySaver."""
+        db = Mock()
+        db.is_initialized = True
         with patch.object(CheckpointerFactory, "_create_postgres", new=AsyncMock(return_value=None)):
-            result = await CheckpointerFactory.create(db_manager=Mock())
+            result = await CheckpointerFactory.create(db_manager=db)
         assert isinstance(result, InMemorySaver)
 
-    async def test_create_postgres_returns_none_when_backend_unavailable(self):
-        """_create_postgres returns None when PostgresBackend.is_available() is False."""
-        with patch.object(PostgresBackend, "is_available", return_value=False):
-            result = await CheckpointerFactory._create_postgres(Mock())
-        assert result is None
-
-    async def test_create_postgres_returns_none_when_backend_create_returns_none(self):
+    async def test_create_postgres_propagates_none_from_backend(self):
         """_create_postgres propagates None from PostgresBackend.create()."""
-        with patch.object(PostgresBackend, "is_available", return_value=True), \
-             patch.object(PostgresBackend, "create", new=AsyncMock(return_value=None)):
-            result = await CheckpointerFactory._create_postgres(Mock())
+        backend = Mock(spec=PostgresBackend)
+        backend.create = AsyncMock(return_value=None)
+        result = await CheckpointerFactory._create_postgres(backend)
         assert result is None
 
-    async def test_create_postgres_returns_checkpointer_when_available(self):
+    async def test_create_postgres_returns_checkpointer_from_backend(self):
         """_create_postgres returns the checkpointer from PostgresBackend.create()."""
         fake_cp = Mock()
-        with patch.object(PostgresBackend, "is_available", return_value=True), \
-             patch.object(PostgresBackend, "create", new=AsyncMock(return_value=fake_cp)):
-            result = await CheckpointerFactory._create_postgres(Mock())
+        backend = Mock(spec=PostgresBackend)
+        backend.create = AsyncMock(return_value=fake_cp)
+        result = await CheckpointerFactory._create_postgres(backend)
         assert result is fake_cp
 
 
