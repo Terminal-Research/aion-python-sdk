@@ -1,4 +1,4 @@
-# aion-db tests
+# aion.db tests
 
 ## PostgreSQL integration tests
 

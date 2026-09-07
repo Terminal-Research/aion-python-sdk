@@ -26,7 +26,7 @@ SERVER_LIBRARIES = (
     "sse_starlette",
     "opentelemetry",
     "cryptography",
-    "asgi_proxy_lib",
+    "asgi_proxy",
     "logstash_async",
 )
 

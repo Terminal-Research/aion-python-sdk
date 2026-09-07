@@ -9,10 +9,11 @@ from typing import Any
 
 import yaml
 
-try:
-    from asgi_proxy_lib import ASGIProxy
-except ImportError:
-    from asgi_proxy import asgi_proxy as ASGIProxy
+# The distribution is asgi-proxy-lib; the module it installs is asgi_proxy,
+# and asgi_proxy() is a factory returning an ASGI application, not a class.
+# Unguarded: this module is imported only from aion.mcp.load_proxy(), whose
+# wrapper turns the missing library into a named extra.
+from asgi_proxy import asgi_proxy
 
 logger = logging.getLogger(__name__)
 
@@ -39,4 +40,4 @@ def load_proxy(config_path: str | Path = "aion.yaml") -> Any | None:
         return None
 
     logger.info("Creating MCP proxy for port %s", port)
-    return ASGIProxy(f"http://localhost:{port}")
+    return asgi_proxy(f"http://localhost:{port}")

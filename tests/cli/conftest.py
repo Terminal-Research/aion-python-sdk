@@ -1,4 +1,4 @@
-"""Pytest configuration for the ``aion-cli`` test suite."""
+"""Pytest configuration for the ``aion.cli`` test suite."""
 
 from __future__ import annotations
 
@@ -7,11 +7,11 @@ import types
 
 
 def _install_test_stubs() -> None:
-    """Install lightweight module stubs for dependencies outside ``aion-cli``.
+    """Install lightweight module stubs for dependencies outside ``aion.cli``.
 
     The CLI package imports serve/chat commands at module import time, which in turn
     depend on sibling packages that are not installed in this isolated test
-    environment. These stubs keep the tests focused on ``aion-cli`` behavior.
+    environment. These stubs keep the tests focused on ``aion.cli`` behavior.
     """
 
     import asyncclick as click

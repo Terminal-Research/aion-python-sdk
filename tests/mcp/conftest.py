@@ -22,8 +22,10 @@ def stub_yaml(monkeypatch):
         return {"aion": {"mcp": {"port": port}}}
 
     monkeypatch.setitem(sys.modules, "yaml", types.SimpleNamespace(safe_load=safe_load))
+    # asgi-proxy-lib installs the module ``asgi_proxy``, whose ``asgi_proxy()``
+    # is a factory for an ASGI application rather than a class.
     monkeypatch.setitem(
         sys.modules,
-        "asgi_proxy_lib",
-        types.SimpleNamespace(ASGIProxy=type("Proxy", (), {"__init__": lambda self, url: None})),
+        "asgi_proxy",
+        types.SimpleNamespace(asgi_proxy=lambda backend: object()),
     )

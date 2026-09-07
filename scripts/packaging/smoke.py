@@ -7,7 +7,7 @@ the installation a user gets - not the working tree, and not the development
 environment, both of which have every library present and would hide the one
 property the extras exist for.
 
-The six environments below are one table in the plan and one idea: each extra
+The nine environments below are one table in the plan and one idea: each extra
 has to bring exactly what it advertises, and a base install has to stay usable
 without any of them. So the negative checks matter as much as the positive
 ones - a base install that quietly has ``fastapi`` in it proves nothing.
@@ -79,6 +79,57 @@ else:
 """
 
 
+def probe_load_proxy_needs_extra(*extras: str) -> str:
+    """Code asserting that calling aion.mcp.load_proxy() asks for ``extras``.
+
+    Its own probe because aion.mcp imports fine in a base install - the ASGI
+    proxy library is reached only when the proxy is built, and only for a
+    configuration that asks for one. So the config has to exist before the
+    question can be asked at all.
+    """
+    return f"""
+import tempfile
+from pathlib import Path
+
+from aion.core.utils.optional_deps import MissingOptionalDependency
+import aion.mcp
+
+wanted = {list(extras)!r}
+with tempfile.TemporaryDirectory() as directory:
+    config = Path(directory) / 'aion.yaml'
+    config.write_text('aion:\\n  mcp:\\n    port: 9999\\n', encoding='utf-8')
+    try:
+        aion.mcp.load_proxy(config)
+    except MissingOptionalDependency as exc:
+        message = str(exc)
+        for extra in wanted:
+            hint = 'pip install "aionto-sdk[' + extra + ']"'
+            assert hint in message, message
+        assert '[server]' not in message, message
+        print('asks for', wanted)
+    else:
+        raise AssertionError('load_proxy worked in an installation without ' + repr(wanted))
+"""
+
+
+def probe_load_proxy_works() -> str:
+    """Code asserting that a configured proxy is actually built."""
+    return """
+import tempfile
+from pathlib import Path
+
+import aion.mcp
+
+with tempfile.TemporaryDirectory() as directory:
+    config = Path(directory) / 'aion.yaml'
+    config.write_text('aion:\\n  mcp:\\n    port: 9999\\n', encoding='utf-8')
+    proxy = aion.mcp.load_proxy(config)
+
+assert proxy is not None, 'load_proxy returned None for a configured port'
+print('proxy', type(proxy).__name__)
+"""
+
+
 def probe_absent(*modules: str) -> str:
     """Code asserting that none of ``modules`` can be imported.
 
@@ -105,13 +156,23 @@ print('absent:', wanted_absent)
 """
 
 
-def probe_discovery(loaded: tuple[str, ...], skipped: tuple[str, ...]) -> str:
+def probe_discovery(
+    loaded: tuple[str, ...],
+    skipped: tuple[str, ...],
+    missing: dict[str, str] | None = None,
+) -> str:
     """Code checking which framework plugins this installation can load.
 
     Discovery is asked directly, and then the message an operator would
     actually meet is built from what discovery recorded: a skipped plugin is
     only useful if the reason survives to the point where an agent cannot be
     built.
+
+    ``missing`` maps an extra to the third-party module discovery is expected
+    to have tripped over. Worth stating where an installation is one library
+    short of the extra it almost has - the install command alone reads like an
+    accusation that nothing is installed, and the module name is what tells
+    the reader otherwise.
     """
     return f"""
 import asyncio
@@ -122,6 +183,7 @@ from aion.server.plugins.registry import PluginRegistry
 
 expected_loaded = {sorted(loaded)!r}
 expected_skipped = {sorted(skipped)!r}
+expected_missing = {dict(missing or {})!r}
 
 # The private method, as the discovery tests call it: initialize() would go on
 # to set the plugins up, which needs a database.
@@ -146,6 +208,11 @@ message = str(
 for extra in expected_skipped:
     hint = 'pip install "aionto-sdk[' + extra + ']"'
     assert hint in message, message
+
+for extra, module in expected_missing.items():
+    found = [entry.missing_module for entry in skipped if entry.extra == extra]
+    assert found == [module], extra + ' tripped over ' + repr(found) + ', expected ' + module
+    assert module in message, message
 
 print('loaded', names, 'skipped', extras)
 """
@@ -206,6 +273,10 @@ ENVIRONMENTS = (
                 for module in ("aion.server", "aion.db.postgres", "aion.proxy")
             ),
             Step(
+                "aion.mcp.load_proxy names the server extras",
+                code=probe_load_proxy_needs_extra("langgraph-server", "adk-server"),
+            ),
+            Step(
                 "no framework or server libraries",
                 code=probe_absent("langgraph", "google.adk", "fastapi"),
             ),
@@ -221,6 +292,7 @@ ENVIRONMENTS = (
                 code=probe_imports("aion.server", "aion.proxy", "aion.db.postgres"),
             ),
             Step("aion serve --help", argv=("aion", "serve", "--help")),
+            Step("aion.mcp.load_proxy builds a proxy", code=probe_load_proxy_works()),
             Step(
                 "discovery skips both frameworks with hints",
                 code=probe_discovery(loaded=(), skipped=("langgraph-server", "adk-server")),
@@ -291,6 +363,78 @@ ENVIRONMENTS = (
             Step(
                 "discovery loads both frameworks",
                 code=probe_discovery(loaded=("ADKPlugin", "LangGraphPlugin"), skipped=()),
+            ),
+        ),
+    ),
+    # The three below are combinations nobody publishes an install line for and
+    # somebody will nevertheless assemble: an authoring toolkit bolted onto
+    # [server], and the two toolkits with no server under them. None of them is
+    # wrong, and each has to say what it is short of rather than fail obscurely.
+    Environment(
+        name="server+langgraph-authoring",
+        artifact="wheel",
+        extras=("server", "langgraph-authoring"),
+        steps=(
+            Step(
+                "the LangGraph authoring and server subpackages import",
+                code=probe_imports("aion.langgraph.authoring", "aion.server"),
+            ),
+            # One library short of [langgraph-server]: everything LangGraph
+            # needs to be written is here, and the checkpointer that lets the
+            # server run it is not. Discovery has to name that library, or the
+            # install hint reads as if langgraph were missing entirely.
+            Step(
+                "discovery skips LangGraph naming the checkpointer",
+                code=probe_discovery(
+                    loaded=(),
+                    skipped=("adk-server", "langgraph-server"),
+                    missing={"langgraph-server": "langgraph.checkpoint.postgres"},
+                ),
+            ),
+            Step("no ADK libraries", code=probe_absent("google.adk")),
+        ),
+    ),
+    # [adk-server] is an alias with no dependencies of its own, so this is the
+    # same installation reached by a different install line - and the check is
+    # that it behaves like one.
+    Environment(
+        name="server+adk-authoring",
+        artifact="wheel",
+        extras=("server", "adk-authoring"),
+        steps=(
+            Step(
+                "the ADK subpackages import",
+                code=probe_imports("aion.adk.authoring", "aion.adk.server", "aion.server"),
+            ),
+            Step(
+                "discovery loads ADK and skips LangGraph with a hint",
+                code=probe_discovery(loaded=("ADKPlugin",), skipped=("langgraph-server",)),
+            ),
+            Step("no LangGraph libraries", code=probe_absent("langgraph")),
+        ),
+    ),
+    # Both toolkits, no server: the shape of a machine that writes agents and
+    # never runs them.
+    Environment(
+        name="langgraph-authoring+adk-authoring",
+        artifact="wheel",
+        extras=("langgraph-authoring", "adk-authoring"),
+        steps=(
+            Step(
+                "both authoring toolkits import",
+                code=probe_imports("aion.langgraph.authoring", "aion.adk.authoring"),
+            ),
+            Step(
+                "aion.server names the server extras",
+                code=probe_needs_extra("aion.server", "langgraph-server", "adk-server"),
+            ),
+            # Not fastapi, uvicorn, starlette or sqlalchemy: google-adk depends
+            # on all four, so their presence here says nothing about [server].
+            # These three are what only [server] brings, and the database
+            # driver is what aion.server's guard actually trips over.
+            Step(
+                "no server-only libraries",
+                code=probe_absent("psycopg", "asgi_proxy", "logstash_async"),
             ),
         ),
     ),

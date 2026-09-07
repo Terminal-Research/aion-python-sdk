@@ -19,7 +19,7 @@ repository holds no PyPI credentials.
 | `make lint-imports` | The layer contract between subpackages. |
 | `make dist-build` | Empties `dist/`, builds the wheel and the sdist. |
 | `make dist-check` | Reads `dist/` against the packaging contract, then `twine check`. |
-| `make dist-smoke` | Installs the built files into six clean venvs and uses each one. |
+| `make dist-smoke` | Installs the built files into nine clean venvs and uses each one. |
 | `gh release create py-v0.2.0 --target main --title py-v0.2.0 --generate-notes` | Publishes the release, which starts the workflow. |
 
 The last three are what the release workflow itself runs. Green here means the
@@ -68,7 +68,7 @@ make check-env && make tests && make lint-imports
 make dist-build && make dist-check && make dist-smoke
 ```
 
-`dist-check` ends with `all checks passed`, `dist-smoke` with six environments
+`dist-check` ends with `all checks passed`, `dist-smoke` with nine environments
 reported `ok`. Anything else stops the release here.
 
 **3. Commit the version and get it on `main`.**
@@ -138,14 +138,17 @@ bad `0.2.0`, there is no second `0.2.0`.
   regular package there would hide the subpackages of anything else sharing the
   namespace), the bundled `cli.mjs` chat client present, the composite extras
   still being the unions they claim to be, and `twine check` over both files.
-- **`dist-smoke`** installs into six clean environments — base, `[server]`,
-  `[langgraph-server]`, `[adk-server]`, both together, and one from the sdist —
-  and uses each: imports what should be there, runs `aion --help`, asks plugin
+- **`dist-smoke`** installs into nine clean environments — base, `[server]`,
+  `[langgraph-server]`, `[adk-server]`, both together, three partial
+  combinations nobody publishes an install line for but somebody will assemble
+  (`[server,langgraph-authoring]`, `[server,adk-authoring]` and the two
+  authoring toolkits with no server under them), and one from the sdist — and
+  uses each: imports what should be there, runs `aion --help`, asks plugin
   discovery which frameworks loaded, and asserts the libraries that extra did
   *not* buy are absent. The negative half is the point: a base install that
   quietly carries `fastapi` proves nothing.
 
 TestPyPI is deliberately not part of this. Several dependencies (`a2a-sdk`,
 `google-adk`, `asgi-proxy-lib`) do not exist there, so an install would need
-mixed indexes and a second publisher, and would prove less than the six local
+mixed indexes and a second publisher, and would prove less than the nine local
 environments already do.
