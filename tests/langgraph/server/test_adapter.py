@@ -2,7 +2,7 @@ import inspect
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
-from aion.server.agent.exceptions import ConfigurationError
+from aion.server.agent.exceptions import AdapterConfigurationError
 from langgraph.graph import StateGraph
 from langgraph.pregel import Pregel
 
@@ -205,10 +205,10 @@ class TestValidateConfig:
         self.adapter = LangGraphAdapter()
 
     def test_config_without_path_raises_configuration_error(self):
-        """Missing path raises ConfigurationError."""
+        """Missing path raises AdapterConfigurationError."""
         config = Mock()
         config.path = None
-        with pytest.raises(ConfigurationError):
+        with pytest.raises(AdapterConfigurationError):
             self.adapter.validate_config(config)
 
     def test_config_with_path_does_not_raise(self):

@@ -13,8 +13,12 @@ import subprocess
 import sys
 from typing import Callable, Optional
 
+from aion.core.exceptions import AionError
 
-class BinaryResolutionError(RuntimeError):
+
+# RuntimeError stays a base: this was one before the SDK grew a common
+# root, and code outside this repository may still catch it as one.
+class BinaryResolutionError(AionError, RuntimeError):
     """Raised when the standalone chat UI entrypoint cannot be located."""
 
 

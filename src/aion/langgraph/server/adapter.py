@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from aion.server.agent.adapters import AgentAdapter, ExecutorAdapter
-from aion.server.agent.exceptions import ConfigurationError
+from aion.server.agent.exceptions import AdapterConfigurationError
 from aion.core.config.models import AgentConfig
 from aion.core.db import DbManagerProtocol
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -110,9 +110,9 @@ class LangGraphAdapter(AgentAdapter):
         return LangGraphExecutor(agent, config)
 
     def validate_config(self, config: AgentConfig) -> None:
-        """Raise ConfigurationError if required LangGraph config fields are absent."""
+        """Raise AdapterConfigurationError if required LangGraph config fields are absent."""
         if not config.path:
-            raise ConfigurationError("Agent path is required for LangGraph adapter")
+            raise AdapterConfigurationError("Agent path is required for LangGraph adapter")
         logger.debug(f"Configuration validated for agent by LangGraph adapter")
 
     async def _compile_graph(

@@ -20,10 +20,14 @@ import json
 import sys
 from typing import Any, TextIO
 
+from aion.core.exceptions import AionError
+
 SERVICE_NAME = "aion-chat-python"
 
 
-class CredentialHelperError(RuntimeError):
+# RuntimeError stays a base: this was one before the SDK grew a common
+# root, and code outside this repository may still catch it as one.
+class CredentialHelperError(AionError, RuntimeError):
     """Error raised when the one-shot credential helper cannot complete."""
 
 

@@ -11,17 +11,29 @@ means one of two very different things, and the caller has to say which:
   ordinary, and the fix is an install command, which
   :func:`missing_extra_error` and :func:`missing_server_extra_error`
   write out.
+
+The exception itself is defined in :mod:`aion.core.exceptions`, with the rest
+of the SDK's public hierarchy; it is re-exported here because this is where
+the rules for raising it are written down.
 """
 
 from __future__ import annotations
 
+from aion.core.exceptions import MissingOptionalDependency
+
+__all__ = [
+    "DISTRIBUTION",
+    "SERVER_EXTRAS",
+    "MissingOptionalDependency",
+    "is_own_module",
+    "missing_extra_error",
+    "missing_server_extra_error",
+    "server_extras_hint",
+]
+
 # The name on PyPI, not the import namespace: it is what goes after `pip
 # install`, and the two do not match.
 DISTRIBUTION = "aionto-sdk"
-
-
-class MissingOptionalDependency(ImportError):
-    """An optional extra of this distribution is not installed."""
 
 
 def is_own_module(name: str | None) -> bool:

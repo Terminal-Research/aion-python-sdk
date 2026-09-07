@@ -3,11 +3,13 @@
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
+from aion.core.exceptions import AionError
+
 if TYPE_CHECKING:
     from aion.server.plugins.registry import SkippedPlugin
 
 
-class AdapterError(Exception):
+class AdapterError(AionError):
     """Base class for all agent adapter errors."""
 
 
@@ -73,8 +75,14 @@ class MessageConversionError(AdapterError):
     """Raised when converting messages between A2A and framework formats fails."""
 
 
-class ConfigurationError(AdapterError):
-    """Raised when the agent configuration is invalid or missing required fields."""
+class AdapterConfigurationError(AdapterError):
+    """Raised when the agent configuration is invalid or missing required fields.
+
+    Not ``ConfigurationError``: that name belongs to
+    ``aion.core.exceptions``, which is about ``aion.yaml``, and an adapter
+    module can have both in scope. One name over two unrelated branches of
+    the hierarchy is an ``except`` clause waiting to catch the wrong thing.
+    """
 
 
 class UnsupportedOperationError(AdapterError):
