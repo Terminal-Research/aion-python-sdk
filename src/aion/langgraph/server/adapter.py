@@ -37,7 +37,9 @@ class LangGraphAdapter(AgentAdapter):
         Args:
             base_path: Base path for agent files (defaults to current directory)
             db_manager: Database manager instance for PostgreSQL checkpointer support.
-                       If None, only memory checkpointers will be available.
+                       If None, an in-memory checkpointer is used. If an initialized
+                       manager is given, PostgreSQL is required and a failure to
+                       initialize it stops startup.
         """
         self.base_path = base_path or Path.cwd()
         self._db_manager = db_manager
@@ -146,18 +148,17 @@ class LangGraphAdapter(AgentAdapter):
             logger.debug(f"Graph doesn't require compilation")
             return graph
 
-    async def _get_checkpointer(self) -> Optional[BaseCheckpointSaver]:
+    async def _get_checkpointer(self) -> BaseCheckpointSaver:
         """Get checkpointer based on configuration.
 
-        Uses PostgreSQL if available, otherwise falls back to in-memory.
-
         Returns:
-            Checkpointer instance or None if creation fails
+            Checkpointer instance
+
+        Raises:
+            RuntimeError: A configured PostgreSQL checkpointer failed to
+                initialize; startup stops instead of degrading to in-memory.
         """
-        try:
-            return await CheckpointerFactory.create(db_manager=self._db_manager)
-        except Exception as ex:
-            logger.warning(f"Failed to create checkpointer: {ex}")
+        return await CheckpointerFactory.create(db_manager=self._db_manager)
 
     @staticmethod
     def _is_graph_instance(obj: Any) -> bool:

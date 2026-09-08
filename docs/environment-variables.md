@@ -35,6 +35,8 @@ AION_API_KEEP_ALIVE=60
 - Type: `string` (optional)
 - PostgreSQL connection string in format: `postgresql://username:password@host:port/database`
 - If not provided, the system automatically creates and uses in-memory storage when the agent starts
+- If provided but unreachable, or if a store built on it (task database, ADK session
+  service, LangGraph checkpointer) fails to initialize, startup fails
 - Example: `postgresql://user:password@localhost:5432/aion_db`
 
 **`TASK_OWNERSHIP_REAPER`**

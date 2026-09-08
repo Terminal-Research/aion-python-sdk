@@ -2,7 +2,7 @@
 
 import logging
 from contextlib import asynccontextmanager
-from typing import Any, Optional
+from typing import Any
 
 from psycopg import AsyncConnection, AsyncCursor, sql
 from psycopg_pool import AsyncConnectionPool
@@ -96,19 +96,21 @@ class PostgresBackend(CheckpointerBackend):
         """Return True if the database manager is initialized and the pool is ready."""
         return self._db_manager is not None and self._db_manager.is_initialized
 
-    async def create(self) -> Optional[AionAsyncPostgresSaver]:
+    async def create(self) -> AionAsyncPostgresSaver:
         """Initialize and return a configured AionAsyncPostgresSaver.
 
         Runs LangGraph migrations in the target schema on first call,
         then returns a checkpointer bound to the shared pool.
 
         Returns:
-            AionAsyncPostgresSaver instance, or None if the pool is unavailable.
+            AionAsyncPostgresSaver instance bound to the shared pool.
+
+        Raises:
+            Exception: Propagated from pool acquisition or the migration run.
+                A configured PostgreSQL that fails here must stop startup
+                rather than silently degrade to an in-memory store.
         """
         pool = self._db_manager.get_pool()
-        if not pool:
-            logger.warning("Database pool not available")
-            return None
 
         checkpointer = AionAsyncPostgresSaver(
             conn=pool,

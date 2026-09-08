@@ -2,7 +2,6 @@
 
 import logging
 import asyncio
-from typing import Optional
 
 from aion.core.db import DbManagerProtocol
 from sqlalchemy import text
@@ -75,20 +74,21 @@ class PostgresBackend(SessionServiceBackend):
         self._db_manager = db_manager
         self._schema = schema
 
-    async def create(self) -> Optional[AionADKSessionService]:
-        try:
-            if not self._db_manager or not self._db_manager.is_initialized:
-                logger.warning("Database manager not initialized")
-                return None
+    async def create(self) -> AionADKSessionService:
+        """Create a session service bound to the shared engine.
 
-            engine = self._db_manager.get_engine()
-            service = AionADKSessionService(engine=engine, schema=self._schema)
-            await service.setup()
-            return service
+        Returns:
+            AionADKSessionService with its tables prepared.
 
-        except Exception as ex:
-            logger.error(f"Failed to create AionADKSessionService: {ex}")
-            return None
+        Raises:
+            Exception: Propagated from engine acquisition or table setup.
+                A configured PostgreSQL that fails here must stop startup
+                rather than silently degrade to an in-memory store.
+        """
+        engine = self._db_manager.get_engine()
+        service = AionADKSessionService(engine=engine, schema=self._schema)
+        await service.setup()
+        return service
 
     def is_available(self) -> bool:
         return (

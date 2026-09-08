@@ -21,41 +21,38 @@ class TestCheckpointerFactory:
         fake_cp = Mock()
         db = Mock()
         db.is_initialized = True
-        with patch.object(CheckpointerFactory, "_create_postgres", new=AsyncMock(return_value=fake_cp)):
+        with patch.object(PostgresBackend, "create", new=AsyncMock(return_value=fake_cp)):
             result = await CheckpointerFactory.create(db_manager=db)
         assert result is fake_cp
 
-    async def test_unavailable_backend_falls_back_to_memory_without_creating(self):
+    async def test_unavailable_backend_uses_memory_without_creating(self):
         """When db_manager is not initialized, postgres is never attempted."""
         db = Mock()
         db.is_initialized = False
-        with patch.object(CheckpointerFactory, "_create_postgres", new=AsyncMock()) as mock_create:
+        with patch.object(PostgresBackend, "create", new=AsyncMock()) as mock_create:
             result = await CheckpointerFactory.create(db_manager=db)
         assert isinstance(result, InMemorySaver)
         mock_create.assert_not_called()
 
-    async def test_failed_postgres_creation_falls_back_to_memory(self):
-        """When _create_postgres returns None, factory falls back to InMemorySaver."""
+    async def test_postgres_setup_failure_raises_runtime_error(self):
+        """A configured postgres checkpointer that fails setup stops startup."""
         db = Mock()
         db.is_initialized = True
-        with patch.object(CheckpointerFactory, "_create_postgres", new=AsyncMock(return_value=None)):
-            result = await CheckpointerFactory.create(db_manager=db)
-        assert isinstance(result, InMemorySaver)
+        db.get_pool.return_value = Mock()
+        failure = RuntimeError("setup failed")
+        with patch.object(AionAsyncPostgresSaver, "setup", new=AsyncMock(side_effect=failure)):
+            with pytest.raises(RuntimeError) as exc_info:
+                await CheckpointerFactory.create(db_manager=db)
+        assert "refusing to fall back" in str(exc_info.value)
+        assert exc_info.value.__cause__ is failure
 
-    async def test_create_postgres_propagates_none_from_backend(self):
-        """_create_postgres propagates None from PostgresBackend.create()."""
-        backend = Mock(spec=PostgresBackend)
-        backend.create = AsyncMock(return_value=None)
-        result = await CheckpointerFactory._create_postgres(backend)
-        assert result is None
-
-    async def test_create_postgres_returns_checkpointer_from_backend(self):
-        """_create_postgres returns the checkpointer from PostgresBackend.create()."""
-        fake_cp = Mock()
-        backend = Mock(spec=PostgresBackend)
-        backend.create = AsyncMock(return_value=fake_cp)
-        result = await CheckpointerFactory._create_postgres(backend)
-        assert result is fake_cp
+    async def test_postgres_failure_does_not_return_memory_saver(self):
+        """A postgres failure never degrades to an in-memory checkpointer."""
+        db = Mock()
+        db.is_initialized = True
+        with patch.object(PostgresBackend, "create", new=AsyncMock(side_effect=RuntimeError("db down"))):
+            with pytest.raises(RuntimeError):
+                await CheckpointerFactory.create(db_manager=db)
 
 
 class TestMemoryBackend:
@@ -86,12 +83,12 @@ class TestPostgresBackend:
         db.is_initialized = True
         assert PostgresBackend(db).is_available() is True
 
-    async def test_create_returns_none_when_pool_not_available(self):
-        """create() returns None when db_manager has no active pool."""
+    async def test_create_propagates_pool_failure(self):
+        """create() propagates the error raised when no pool is available."""
         db = Mock()
-        db.get_pool.return_value = None
-        result = await PostgresBackend(db).create()
-        assert result is None
+        db.get_pool.side_effect = RuntimeError("Pool not initialized")
+        with pytest.raises(RuntimeError, match="Pool not initialized"):
+            await PostgresBackend(db).create()
 
     async def test_create_returns_postgres_saver_when_pool_available(self):
         """create() returns AionAsyncPostgresSaver when pool is ready."""

@@ -19,7 +19,8 @@ class ArtifactServiceFactory:
     """Factory for creating ADK artifact service instances.
 
     When a db_manager is provided, returns A2AArtifactService with DB fallback
-    and TTL memory eviction. Otherwise falls back to plain InMemoryArtifactService.
+    and TTL memory eviction. Uses a plain InMemoryArtifactService when no
+    database is configured.
     """
 
     @classmethod

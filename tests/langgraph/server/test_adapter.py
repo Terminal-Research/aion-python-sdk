@@ -183,19 +183,31 @@ class TestCreateExecutor:
 
 
 class TestGetCheckpointer:
-    """_get_checkpointer falls back to None when factory raises."""
+    """_get_checkpointer propagates factory failures instead of degrading."""
 
     def setup_method(self):
         self.adapter = LangGraphAdapter()
 
-    async def test_exception_in_factory_returns_none(self):
-        """If CheckpointerFactory.create raises, _get_checkpointer logs and returns None."""
+    async def test_exception_in_factory_propagates(self):
+        """If CheckpointerFactory.create raises, _get_checkpointer lets it through."""
         with patch(
             "aion.langgraph.server.adapter.CheckpointerFactory.create",
             new=AsyncMock(side_effect=RuntimeError("db down")),
         ):
-            result = await self.adapter._get_checkpointer()
-        assert result is None
+            with pytest.raises(RuntimeError, match="db down"):
+                await self.adapter._get_checkpointer()
+
+    async def test_checkpointer_failure_aborts_graph_compilation(self):
+        """A failing checkpointer stops initialize_agent before the graph is compiled."""
+        graph = Mock(spec=StateGraph)
+        graph.compile = Mock()
+        with patch(
+            "aion.langgraph.server.adapter.CheckpointerFactory.create",
+            new=AsyncMock(side_effect=RuntimeError("db down")),
+        ):
+            with pytest.raises(RuntimeError, match="db down"):
+                await self.adapter.initialize_agent(graph, Mock())
+        graph.compile.assert_not_called()
 
 
 class TestValidateConfig:

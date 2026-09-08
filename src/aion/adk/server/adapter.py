@@ -33,7 +33,9 @@ class ADKAdapter(AgentAdapter):
         Args:
             base_path: Base path for agent files (defaults to current directory)
             db_manager: Database manager instance for DatabaseSessionService support.
-                       If None, InMemorySessionService will be used.
+                       If None, InMemorySessionService is used. If an initialized
+                       manager is given, PostgreSQL is required and a failure to
+                       initialize it stops startup.
             file_uploader: Optional upload manager for converting inline artifact
                            data to URI references on save.
         """
