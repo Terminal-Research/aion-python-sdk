@@ -14,20 +14,47 @@ repository holds no PyPI credentials.
 | Command | What it does |
 |---|---|
 | `poetry version 0.2.0` | Sets `[project].version`. The only place a version lives. |
-| `make check-env` | Says the working environment is not half-installed. |
-| `make tests` | Unit suite. |
-| `make lint-imports` | The layer contract between subpackages. |
-| `make dist-build` | Empties `dist/`, builds the wheel and the sdist. |
-| `make dist-check` | Reads `dist/` against the packaging contract, then `twine check`. |
-| `make dist-smoke` | Installs the built files into nine clean venvs and uses each one. |
-| `gh release create py-v0.2.0 --target main --title py-v0.2.0 --generate-notes` | Publishes the release, which starts the workflow. |
+| `make release-check` | Every check a release has to pass, in order. Publishes nothing. |
+| `make release` | The same checks after a preflight, then a question, then the release. |
 
-The last three are what the release workflow itself runs. Green here means the
-release is proven except for the upload.
+Both read the version from `pyproject.toml` and take none. They run
+`scripts/release.py`, which `make release` drives like this:
+
+1. **Preflight.** `gh` is logged in; the working tree is clean, on `main`, and
+   `HEAD` is `origin/main`; the tag `py-v<version>` exists neither locally nor
+   on origin; no GitHub Release has that name; PyPI does not have the version.
+2. **The checks**, one Makefile target each, so any one can be run on its own:
+
+   | Target | What it does |
+   |---|---|
+   | `make check-env` | Says the working environment is not half-installed. |
+   | `make tests` | Unit suite. |
+   | `make lint-imports` | The layer contract between subpackages. |
+   | `make dist-build` | Empties `dist/`, builds the wheel and the sdist. |
+   | `make dist-check` | Reads `dist/` against the packaging contract, then `twine check`. |
+   | `make dist-smoke` | Installs the built files into nine clean venvs and uses each one. |
+
+3. **The question.** `Release aionto-sdk 0.2.0 as py-v0.2.0 (final release).
+   Are you sure? [y/N]`. Anything but `y` stops here. `make release YES=1`
+   answers it, for a run without a terminal; without `YES=1` a run that has no
+   terminal to ask on stops instead of assuming.
+4. **The release.** `gh release create py-v0.2.0 --target main --generate-notes`,
+   with `--prerelease` added by itself when the version is one. That starts the
+   workflow.
+
+The release is the last thing it does. A failure anywhere before it stops the
+run with the failing step named, and nothing has been spent: no tag, no
+release, no version number.
+
+`make release-check` is step 2 alone. It is the rehearsal, and what to run on
+a branch before the release pull request: the last three targets are what the
+release workflow itself runs, so green here means the release is proven except
+for the upload.
 
 `dist-smoke` takes a minute or two and uses whatever `python3` is on the path.
 Pin it to the version the release is built with:
-`make dist-smoke SMOKE_ARGS="--python 3.12"`.
+`make release-check RELEASE_ARGS="--python 3.12"` (`make release` takes the
+same), or `make dist-smoke SMOKE_ARGS="--python 3.12"` on its own.
 
 ## Version rules
 
@@ -35,15 +62,22 @@ The version lives in `[project].version` of the root `pyproject.toml`, and the
 tag is that version with a `py-v` prefix. The workflow refuses to build when
 the two disagree.
 
-| Version | Tag |
-|---|---|
-| `0.2.0` | `py-v0.2.0` |
-| `0.2.0rc1` | `py-v0.2.0rc1` |
+| Version | Tag | GitHub Release |
+|---|---|---|
+| `0.2.0` | `py-v0.2.0` | release |
+| `0.2.0rc1` | `py-v0.2.0rc1` | pre-release |
 
 Versions follow [PEP 440](https://peps.python.org/pep-0440/): a pre-release is
 `rc1`, `b1` or `a1` with no separator. `0.2.0-rc1` and `0.2.0pr1` are not
 versions, and Poetry silently rewrites what it can, after which the tag no
-longer matches.
+longer matches - `make release` refuses anything that is not the canonical
+spelling before it runs a single check.
+
+Whether a version is a release or a pre-release is read off the version, and
+nothing else: an `a`, `b`, `rc` or `.dev` segment makes it a pre-release, the
+GitHub Release is marked as one, and `pip install aionto-sdk` without `--pre`
+skips it once a final version exists. There is no separate pre-release flow;
+the same two commands cut both.
 
 The `py-` prefix separates this workflow from the npm one in
 `publish-aion.yml`, which publishes the chat UI on `v*` tags. Each skips the
@@ -64,12 +98,12 @@ git diff pyproject.toml
 **2. Run the checks.**
 
 ```bash
-make check-env && make tests && make lint-imports
-make dist-build && make dist-check && make dist-smoke
+make release-check
 ```
 
-`dist-check` ends with `all checks passed`, `dist-smoke` with nine environments
-reported `ok`. Anything else stops the release here.
+It ends with `release check passed for 0.1.0rc1; nothing was published`, after
+`dist-check` has said `all checks passed` and `dist-smoke` has reported nine
+environments `ok`. Anything else stops the release here.
 
 **3. Commit the version and get it on `main`.**
 
@@ -92,11 +126,22 @@ number is spent.
 
 ```bash
 git checkout main && git pull
-gh release create py-v0.1.0rc1 --target main --title py-v0.1.0rc1 --generate-notes --prerelease
+make release
 ```
 
-Drop `--prerelease` for a final version. The same thing in the UI: Releases →
-Draft a new release → tag `py-v0.1.0rc1`, target `main`, publish.
+The preflight confirms this is a clean `main` at `origin/main` with the tag
+and the version both unspent, the checks run once more against the merged
+commit, and then:
+
+```text
+Release aionto-sdk 0.1.0rc1 as py-v0.1.0rc1 (pre-release). Are you sure? [y/N]
+```
+
+`y` creates the GitHub Release; the tag and the pre-release flag come from the
+version. The same thing by hand, if ever needed: `gh release create
+py-v0.1.0rc1 --target main --title py-v0.1.0rc1 --generate-notes --prerelease`,
+or in the UI: Releases → Draft a new release → tag `py-v0.1.0rc1`, target
+`main`, publish.
 
 **6. Approve the upload.** The `build` job runs first. The `publish` job then
 waits in the `pypi` environment. Open the run, **Review deployments**, approve.
@@ -118,7 +163,8 @@ is out, pre-releases need `pip install --pre aionto-sdk`.
 
 ## When a release goes wrong
 
-**A check fails locally.** Nothing has been spent. Fix it and re-run.
+**A check fails locally**, or `make release` stops in its preflight or at the
+question. Nothing has been spent. Fix it and re-run.
 
 **The build job fails on the release.** No upload happened. Delete the release
 and its tag, fix, release again with the same version.

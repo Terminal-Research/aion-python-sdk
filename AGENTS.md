@@ -230,8 +230,15 @@ and are discovered by `aion.server` at runtime.
   (`make dist-smoke`) installs them into nine clean virtual environments and
   uses each one. Neither runs through `poetry run`: the point is an environment
   that inherits nothing from this project's. `make dist-build` empties `dist/`
-  and builds. `RELEASE.md` at the root is the whole release procedure:
-  commands, version rules, the worked example and the one-time PyPI setup.
+  and builds. `scripts/release.py` strings those together: `make release-check`
+  runs environment, unit tests, layer contract, build, packaging contract and
+  smoke in order and publishes nothing; `make release` runs the same after a
+  preflight over git, GitHub and PyPI, asks `Are you sure? [y/N]`, and creates
+  the `py-v*` GitHub Release that starts the publishing workflow. The version,
+  the tag and the pre-release flag all come from `[project].version`; nothing
+  takes a version on the command line. `RELEASE.md` at the root is the whole
+  release procedure: commands, version rules, the worked example and the
+  one-time PyPI setup.
 - `.github/workflows/python-ci.yml` runs the unit suite on 3.12 and 3.13, the
   layer contract, and build + check on every pull request, plus an integration
   job against a `postgres:16` service container.

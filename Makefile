@@ -24,40 +24,20 @@ POSTGRES_TEST_URL ?= $(PG_TEST_URL)
 # where the only binding in scope is still the real one.
 POSTGRES_TEST_URL_IS_EXTERNAL := $(filter environment command line,$(origin POSTGRES_TEST_URL))
 
-.PHONY: help tests tests-integration tests-all lint-imports check-env \
-	dist-build dist-check dist-smoke dist-clean pg-test-up pg-test-down
+.PHONY: help tests tests-integration tests-all lint-imports release-check \
+	release check-env dist-build dist-check dist-smoke pg-test-up pg-test-down
 
+# `make help` lists targets in file order, under the `##@` heading above them.
+# A new target goes under the heading it belongs to.
 help: ## Show available commands
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-18s\033[0m %s\n", $$1, $$2}'
+	@awk 'BEGIN {FS = ":.*## "} \
+		/^##@ / {printf "\n\033[1m%s\033[0m\n", substr($$0, 5); next} \
+		/^[a-zA-Z_-]+:.*## / {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+
+##@ Tests
 
 tests: ## Run unit tests (make tests ARGS="-k platform_link")
 	poetry run pytest -m "not integration" $(ARGS)
-
-lint-imports: ## Check the layer contract between the aion.* subpackages
-	poetry run lint-imports
-
-# `poetry run`, because the environment under inspection is the project's own -
-# the script reports on whichever interpreter runs it.
-check-env: ## Check the installed environment for duplicate or broken packages
-	poetry run ./scripts/packaging/envcheck.py
-
-# Build into an empty dist/. check.py insists on finding exactly one wheel and
-# one sdist there, and a stale artifact from an earlier version - or from the
-# five-package layout this repository used to build - would trip it.
-dist-build: dist-clean ## Build the wheel and the sdist into dist/
-	poetry build
-
-dist-check: ## Check the built distributions against the packaging contract
-	poetry run ./scripts/packaging/check.py
-
-# Not `poetry run`: the point is a clean environment, and the venvs the script
-# builds must inherit nothing from this project's. SMOKE_ARGS is where the
-# interpreter goes - `make dist-smoke SMOKE_ARGS="--python 3.12"`.
-dist-smoke: ## Install the built distributions into clean venvs and use them
-	./scripts/packaging/smoke.py $(SMOKE_ARGS)
-
-dist-clean: ## Remove built distributions
-	rm -rf dist
 
 # Run a command with a database under it, and take the database away again.
 #
@@ -99,6 +79,52 @@ tests-integration: ## Run integration tests; run before you commit
 tests-all: export POSTGRES_TEST_URL := $(POSTGRES_TEST_URL)
 tests-all: ## Run unit and integration tests together
 	@$(call with_pg_test,poetry run pytest $(ARGS))
+
+##@ Checks
+
+lint-imports: ## Check the layer contract between the aion.* subpackages
+	poetry run lint-imports
+
+# `poetry run`, because the environment under inspection is the project's own -
+# the script reports on whichever interpreter runs it.
+check-env: ## Check the installed environment for duplicate or broken packages
+	poetry run ./scripts/packaging/envcheck.py
+
+##@ Distribution
+
+# Into an emptied dist/. check.py insists on finding exactly one wheel and one
+# sdist there, and a stale artifact from an earlier version - or from the
+# five-package layout this repository used to build - would trip it.
+dist-build: ## Empty dist/ and build the wheel and the sdist into it
+	rm -rf dist
+	poetry build
+
+dist-check: ## Check the built distributions against the packaging contract
+	poetry run ./scripts/packaging/check.py
+
+# Not `poetry run`: the point is a clean environment, and the venvs the script
+# builds must inherit nothing from this project's. SMOKE_ARGS is where the
+# interpreter goes - `make dist-smoke SMOKE_ARGS="--python 3.12"`.
+dist-smoke: ## Install the built distributions into clean venvs and use them
+	./scripts/packaging/smoke.py $(SMOKE_ARGS)
+
+##@ Release
+
+# Two commands that both read the version from pyproject.toml and take none.
+# `release-check` runs check-env, tests, lint-imports, dist-build, dist-check
+# and dist-smoke in that order and publishes nothing. `release` runs the same
+# gate after a preflight over git, GitHub and PyPI, asks, and creates the
+# py-v* GitHub Release that starts publish-python.yml - the upload itself
+# happens there, behind the reviewer of the `pypi` environment. RELEASE_ARGS
+# goes to the script (`--python 3.12` picks the smoke interpreter); YES=1
+# answers the prompt for a run without a terminal.
+release-check: ## Run every release check without publishing anything
+	./scripts/release.py check $(RELEASE_ARGS)
+
+release: ## Check, confirm, and publish the version in pyproject.toml
+	./scripts/release.py publish $(if $(YES),--yes) $(RELEASE_ARGS)
+
+##@ PostgreSQL
 
 pg-test-up: ## Start the disposable PostgreSQL and wait for it
 	@if docker exec $(PG_TEST_CONTAINER) pg_isready -U postgres >/dev/null 2>&1; then \

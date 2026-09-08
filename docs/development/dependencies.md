@@ -96,5 +96,6 @@ make dist-check
 make dist-smoke
 ```
 
-See [RELEASE.md](../../RELEASE.md) for what those three do and how a release
-is cut.
+`make release-check` runs those three after the environment check, the unit
+suite and the layer contract, which is the whole gate a release has to pass.
+See [RELEASE.md](../../RELEASE.md) for what each does and how a release is cut.
