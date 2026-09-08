@@ -56,7 +56,6 @@ class ADKToA2AEventConverter:
         self._ctx = ctx
         self._file_uploader = file_uploader
         self._streaming_started = False
-        self._stream_user_metadata: dict | None = None
 
     async def convert(self, adk_event: Event) -> list[AgentEvent]:
         """Convert an ADK event to zero or more A2A events.
@@ -81,8 +80,9 @@ class ADKToA2AEventConverter:
         """Emit a STREAM_DELTA artifact update for a partial (streaming) ADK event.
 
         The first chunk opens the artifact (append=False); subsequent chunks
-        use append=True. All partial events carry last_chunk=False because the
-        stream is only closed when the final non-partial event arrives.
+        use append=True. All partial events carry last_chunk=False; the sequence
+        ends with the durable message emitted for the next non-partial event or
+        with the terminal task status.
         User metadata from custom_metadata is merged into the artifact metadata
         so the UI can filter or route individual chunks.
         """
@@ -93,10 +93,6 @@ class ADKToA2AEventConverter:
         append = self._streaming_started
         if not self._streaming_started:
             self._streaming_started = True
-
-        user_meta = get_aion_user_metadata(adk_event)
-        if user_meta:
-            self._stream_user_metadata = user_meta
 
         artifact_metadata = {"status": "active", "status_reason": "chunk_streaming"}
         user_meta = get_aion_user_metadata(adk_event)
@@ -116,33 +112,15 @@ class ADKToA2AEventConverter:
             last_chunk=False,
         )]
 
-    def _close_stream_delta(self) -> TaskArtifactUpdateEvent | None:
-        """Close the open STREAM_DELTA artifact if streaming was active.
+    def _end_stream_delta(self) -> None:
+        """Forget the open STREAM_DELTA section so the next partial event opens a new one.
 
-        User metadata captured from the first chunk is forwarded to the
-        close event so consumers can correlate it with the stream they opened.
+        The next partial event starts a fresh section with append=False. Every
+        STREAM_DELTA update carries content (an Artifact requires at least one
+        Part); the sequence itself ends with the durable message or the terminal
+        task status.
         """
-        if not self._streaming_started:
-            return None
-
         self._streaming_started = False
-        close_metadata: dict = {"status": "completed"}
-        if self._stream_user_metadata:
-            close_metadata.update(self._stream_user_metadata)
-        self._stream_user_metadata = None
-
-        return TaskArtifactUpdateEvent(
-            task_id=self._task_id,
-            context_id=self._context_id,
-            artifact=Artifact(
-                artifact_id=ArtifactId.STREAM_DELTA.value,
-                name=ArtifactName.STREAM_DELTA.value,
-                parts=[],
-                metadata=close_metadata,
-            ),
-            append=True,
-            last_chunk=True,
-        )
 
     @staticmethod
     def _build_extension_part(data: dict, schema_uri: str) -> Part:
@@ -175,8 +153,8 @@ class ADKToA2AEventConverter:
         If the event carries an aion:output hint, routes to the specified
         artifact type instead of the default durable message path.
 
-        If streaming was active, the STREAM_DELTA is closed first with an
-        empty last_chunk=True event. Each file part is then emitted as a
+        If streaming was active, the open STREAM_DELTA section is ended so a
+        later partial event opens a new one. Each file part is then emitted as a
         standalone TaskArtifactUpdateEvent with a unique artifact id. All
         remaining text parts are grouped into a single TaskStatusUpdateEvent
         (state=working) so the client receives the durable message while the
@@ -222,8 +200,7 @@ class ADKToA2AEventConverter:
                 ))
             return results
 
-        if close_event := self._close_stream_delta():
-            results.append(close_event)
+        self._end_stream_delta()
 
         if adk_event.content:
             content_parts = A2ATransformer.transform_content(adk_event.content)
@@ -320,7 +297,7 @@ class ADKToA2AEventConverter:
         return results
 
     def finalize_stream(self, delta_text: str) -> list[AgentEvent]:
-        """Close any open STREAM_DELTA and emit accumulated text as working status.
+        """End any open STREAM_DELTA and emit accumulated text as working status.
 
         Called when the agent stream ends with active streaming — partial events
         arrived but no closing non-partial event followed. Handles the edge case
@@ -329,8 +306,7 @@ class ADKToA2AEventConverter:
         """
         results: list[AgentEvent] = []
 
-        if close_event := self._close_stream_delta():
-            results.append(close_event)
+        self._end_stream_delta()
 
         if delta_text:
             msg = Message(
