@@ -239,9 +239,9 @@ and are discovered by `aion.server` at runtime.
   takes a version on the command line. `RELEASE.md` at the root is the whole
   release procedure: commands, version rules, the worked example and the
   one-time PyPI setup.
-- `.github/workflows/python-ci.yml` runs the unit suite on 3.12 and 3.13, the
-  layer contract, and build + check on every pull request, plus an integration
-  job against a `postgres:16` service container.
+- `.github/workflows/python-ci.yml` runs the unit suite on 3.12, 3.13 and
+  3.14, the layer contract, and build + check on every pull request, plus an
+  integration job against a `postgres:16` service container.
   `.github/workflows/publish-python.yml` builds, checks, smokes and publishes
   `aionto-sdk` to PyPI on a `py-v*` release, through trusted publishing and the
   `pypi` environment. `.github/workflows/publish-aion.yml` publishes the

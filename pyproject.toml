@@ -5,7 +5,7 @@ description = "Aion Python SDK — A2A server, authoring toolkits and the aion C
 readme = "README.md"
 license = "MIT"
 authors = [{ name = "Terminal Research Team", email = "support@terminal.exchange" }]
-requires-python = ">=3.12,<3.15"
+requires-python = ">=3.12"
 
 # The base install: aion.core, aion.api, aion.mcp endpoints and the CLI shell.
 # Everything the server needs to breathe - a database, an ASGI stack, the
@@ -147,6 +147,13 @@ include = ["src/aion/cli/bin/*"]
 # repository. A distribution is not that reader: the package page is the root
 # README, and these ten would just be files nobody opens inside site-packages.
 exclude = ["src/aion/**/README.md"]
+
+# The range this repository's own lock resolves under - not published. litellm
+# (the ADK extras) declares <3.15 in every release we allow, and Poetry will
+# not lock a project whose Python range exceeds a dependency's. Drop the upper
+# bound as soon as litellm supports 3.15.
+[tool.poetry.dependencies]
+python = ">=3.12,<3.15"
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=8.0.0"
