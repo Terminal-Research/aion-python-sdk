@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from aion.server.agent.adapters import AgentAdapter, ExecutorAdapter
-from aion.server.agent.exceptions import ConfigurationError
+from aion.server.agent.exceptions import AdapterConfigurationError
 from aion.core.config.models import AgentConfig
 from aion.core.db import DbManagerProtocol
 from aion.server.files.storage import FileUploadManager
@@ -33,7 +33,9 @@ class ADKAdapter(AgentAdapter):
         Args:
             base_path: Base path for agent files (defaults to current directory)
             db_manager: Database manager instance for DatabaseSessionService support.
-                       If None, InMemorySessionService will be used.
+                       If None, InMemorySessionService is used. If an initialized
+                       manager is given, PostgreSQL is required and a failure to
+                       initialize it stops startup.
             file_uploader: Optional upload manager for converting inline artifact
                            data to URI references on save.
         """
@@ -101,9 +103,9 @@ class ADKAdapter(AgentAdapter):
         return ADKExecutor(agent, config, session_service=session_service, artifact_service=artifact_service, file_uploader=self.file_uploader)
 
     def validate_config(self, config: AgentConfig) -> None:
-        """Raise ConfigurationError if required ADK config fields are absent."""
+        """Raise AdapterConfigurationError if required ADK config fields are absent."""
         if not config.path:
-            raise ConfigurationError("Agent path is required for ADK adapter")
+            raise AdapterConfigurationError("Agent path is required for ADK adapter")
         logger.debug(f"Configuration validated for agent by ADK adapter")
 
     @staticmethod

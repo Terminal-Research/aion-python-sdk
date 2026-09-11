@@ -9,6 +9,7 @@ from aion.core.a2a import A2ABaseModel
 from aion.core.a2a.extensions.event import EventMessageMetadataV1, EventPartMetadataV1
 from aion.core.a2a.extensions.messaging import SourceSystemEventPayload
 from aion.core.constants.a2a import EVENT_EXTENSION_URI_V1, SOURCE_SYSTEM_EVENT_PAYLOAD_SCHEMA_V1
+from aion.core.exceptions import AionError
 from aion.core.utils.protobuf import proto_to_dict
 
 if TYPE_CHECKING:
@@ -25,7 +26,7 @@ __all__ = [
 ]
 
 
-class ExtensionActivationError(Exception):
+class ExtensionActivationError(AionError):
     """An active A2A extension is malformed or missing a required co-activated extension.
 
     Raised during data preparation (AionRuntimeContextBuilder), before the

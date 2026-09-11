@@ -31,6 +31,8 @@ the deployment's fault".
 
 from __future__ import annotations
 
+from aion.core.exceptions import AionError
+
 __all__ = [
     "EvolutionHandlerError",
     "DirectiveError",
@@ -46,7 +48,7 @@ __all__ = [
 INTERNAL_ERROR_CODE = "internal_error"
 
 
-class EvolutionHandlerError(Exception):
+class EvolutionHandlerError(AionError):
     """A routed evolution task cannot start.
 
     `str(self)` is the operator-facing detail (logged); `client_text` is what

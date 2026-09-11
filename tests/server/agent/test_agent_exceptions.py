@@ -3,10 +3,10 @@
 import pytest
 
 from aion.server.agent.exceptions import (
+    AdapterConfigurationError,
     AdapterError,
     AdapterNotFoundError,
     AdapterRegistrationError,
-    ConfigurationError,
     ExecutionError,
     MessageConversionError,
     StateRetrievalError,
@@ -27,7 +27,7 @@ class TestHierarchy:
             ExecutionError,
             StateRetrievalError,
             MessageConversionError,
-            ConfigurationError,
+            AdapterConfigurationError,
             UnsupportedOperationError,
         ):
             assert issubclass(cls, AdapterError), f"{cls.__name__} must inherit AdapterError"
@@ -40,7 +40,7 @@ class TestHierarchy:
             ExecutionError("msg"),
             StateRetrievalError("msg"),
             MessageConversionError("msg"),
-            ConfigurationError("msg"),
+            AdapterConfigurationError("msg"),
             UnsupportedOperationError("op", "fw"),
         ]
         for exc in errors:
@@ -92,7 +92,7 @@ class TestSimpleExceptions:
         ExecutionError,
         StateRetrievalError,
         MessageConversionError,
-        ConfigurationError,
+        AdapterConfigurationError,
     ])
     def test_message_stored(self, cls):
         """Simple adapter exceptions preserve the message string passed at construction."""
@@ -104,7 +104,7 @@ class TestSimpleExceptions:
         ExecutionError,
         StateRetrievalError,
         MessageConversionError,
-        ConfigurationError,
+        AdapterConfigurationError,
     ])
     def test_can_be_raised_and_caught(self, cls):
         """Simple adapter exceptions can be raised and caught by their own type."""

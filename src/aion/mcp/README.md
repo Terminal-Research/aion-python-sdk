@@ -9,7 +9,9 @@ The subpackage can:
 
 The endpoint helpers are part of the base `pip install aionto-sdk`. The local
 proxy is the exception: the ASGI proxy libraries it runs on arrive with an
-agent server extra, and it is imported only when `load_proxy` is called.
+agent server extra, and it is imported only when `load_proxy` is called. In a
+base install the call raises `MissingOptionalDependency` naming the install
+commands; importing `aion.mcp` still works.
 
 ## Remote endpoints
 
@@ -67,3 +69,13 @@ connected.
 `aion.mcp.port` is configured. It imports its ASGI dependencies at the moment
 it is called, so importing `aion.mcp` in a base install stays cheap and never
 asks for a server extra.
+
+Calling it there is what needs one. Without an agent server extra the call
+raises `aion.core.utils.optional_deps.MissingOptionalDependency`:
+
+```
+aion.mcp.load_proxy requires optional dependencies.
+Install one of the agent server extras:
+  pip install "aionto-sdk[langgraph-server]"  # LangGraph agents
+  pip install "aionto-sdk[adk-server]"        # Google ADK agents
+```

@@ -92,9 +92,9 @@ For full outbound precedence rules, see [Message Mapping](https://docs.aion.to/s
 The plugin configures the graph checkpointer automatically:
 
 - **PostgreSQL** — used when `aion.db` has an active pool. Runs in a dedicated schema (`aion_langgraph`) to avoid collisions with application tables.
-- **In-memory** — fallback when no database is available (state is lost on process restart).
+- **In-memory** — used when no database is configured (state is lost on process restart).
 
-No configuration is required. Schema setup and migrations run on first startup.
+No configuration is required. Schema setup and migrations run on first startup. If `POSTGRES_URL` is set but the checkpointer cannot be initialized, startup fails.
 
 ---
 

@@ -8,10 +8,12 @@ acyclic.
 
 from __future__ import annotations
 
+from aion.core.exceptions import AionError
+
 __all__ = ["ExtensionPreflightError"]
 
 
-class ExtensionPreflightError(Exception):
+class ExtensionPreflightError(AionError):
     """A specific request cannot be served, discovered before its task exists.
 
     Raised from `ExtensionTaskHandler.preflight()`, which the executor calls

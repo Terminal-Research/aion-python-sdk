@@ -72,13 +72,21 @@ class TestConvertStreamingChunk:
             events = converter._convert_streaming_chunk(chunk)
         assert events == []
 
-    def test_empty_last_chunk_is_emitted(self, converter):
-        """Empty last chunk (chunk_position='last') is still emitted to close the stream."""
+    def test_empty_last_chunk_produces_no_event(self, converter):
+        """A chunk_position='last' chunk without content yields nothing: every update carries a Part."""
         chunk = make_mock_chunk(chunk_position="last")
         with patch(LC_CONVERTER_PATH, return_value=[]):
             events = converter._convert_streaming_chunk(chunk)
+        assert events == []
+
+    def test_content_last_chunk_carries_last_chunk_flag(self, converter):
+        """A content-bearing chunk the provider marked as last keeps last_chunk=True."""
+        chunk = make_mock_chunk(chunk_position="last")
+        with patch(LC_CONVERTER_PATH, return_value=[Part(text="World!")]):
+            events = converter._convert_streaming_chunk(chunk)
         assert len(events) == 1
         assert events[0].last_chunk is True
+        assert [p.text for p in events[0].artifact.parts] == ["World!"]
 
 
 class TestConvertFullMessage:

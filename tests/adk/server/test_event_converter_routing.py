@@ -231,8 +231,8 @@ class TestArtifactOutput:
         assert results[0].last_chunk is True
         assert results[0].append is False
 
-    async def test_artifact_event_closes_open_stream_delta(self):
-        """If streaming was active, STREAM_DELTA is closed before emitting artifact."""
+    async def test_artifact_event_ends_open_stream_delta(self):
+        """An artifact event during streaming ends the open STREAM_DELTA section and emits only the artifact."""
         artifact = url_artifact("https://example.com/f.pdf", mime_type="application/pdf", name="doc")
         loaded_part = types.Part(file_data=types.FileData(file_uri="https://example.com/f.pdf", mime_type="application/pdf"))
         event, svc = make_artifact_delta_event(artifact, loaded_part)
@@ -248,7 +248,7 @@ class TestArtifactOutput:
 
         results = await converter.convert(event)
 
-        assert len(results) == 2
-        assert results[0].last_chunk is True   # stream delta close
-        assert isinstance(results[1], TaskArtifactUpdateEvent)
-        assert results[1].artifact.name == "doc"
+        assert len(results) == 1
+        assert isinstance(results[0], TaskArtifactUpdateEvent)
+        assert results[0].artifact.name == "doc"
+        assert converter._streaming_started is False

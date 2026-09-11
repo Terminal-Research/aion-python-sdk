@@ -13,7 +13,7 @@ updates:
 |---|---|
 | `artifact.artifactId` | `aion:stream-delta` |
 | `artifact.name` | `Stream Delta` |
-| `artifact.metadata.status` | `active` while streaming, `finalized` when closed |
+| `artifact.metadata.status` | `active` while streaming; `finalized` only on a producer-sent full-value reconstruction |
 | `artifact.metadata.status_reason` | `chunk_streaming`, `complete_message`, `complete_task`, or `interrupted` |
 
 LangGraph and ADK adapters emit stream deltas from partial model output. For
@@ -69,27 +69,31 @@ A streaming chunk is delivered as a `TaskArtifactUpdateEvent`:
 
   An artifact must be opened before it can be appended to. Sending `append: true`
   for an `artifactId` that has no previously sent artifact is a protocol
-  violation, and since a2a-sdk 1.1.2 it fails the task with
-  `InvalidAgentResponseError`. Earlier versions logged a warning and silently
-  dropped the chunk, so a graph that emits artifacts in this order used to
-  appear to work while losing content. The built-in LangGraph and ADK adapters
-  always open with `append: false` and are unaffected; this applies to artifacts
-  emitted directly from graph code, for example via `emit_artifact`, which
-  defaults to `append=False`.
+  violation and fails the task with `InvalidAgentResponseError`. The built-in
+  LangGraph and ADK adapters always open with `append: false`; artifacts emitted
+  directly from graph code, for example via `emit_artifact`, default to
+  `append=False` as well.
 
 - **`lastChunk`**:
-  - `false` while more stream events may follow.
-  - `true` when the adapter is closing this stream-delta sequence.
+  - `false` on adapter-generated stream deltas. Every stream-delta update
+    carries content, and the sequence ends with the next durable message (a
+    `TaskStatusUpdateEvent` carrying the full text) or with the terminal task
+    status.
+  - `true` when the producer marks a content-bearing chunk as the final one,
+    for example `emit_artifact(..., is_last_chunk=True)` from graph code or a
+    model integration that flags its last content chunk.
 
 - **`artifact.metadata.status`**:
-  - `active` - Streaming is in progress.
-  - `finalized` - The stream-delta artifact has been closed.
+  - `active` - Streaming is in progress. This is the only value the built-in
+    adapters emit.
+  - `finalized` - A producer sent a full-value reconstruction of the section
+    (see Section Resets). Clients replace the streamed text instead of
+    rendering a duplicate.
 
 - **`artifact.metadata.status_reason`**:
   - `chunk_streaming` - The artifact contains an incremental content chunk.
-  - `complete_message` - Streaming completed with a final message.
-  - `complete_task` - Streaming completed with a terminal task update.
-  - `interrupted` - Streaming was interrupted before completion.
+  - `complete_message`, `complete_task`, `interrupted` - Reserved for
+    producer-sent reconstructions.
 
 ## Streaming Example
 
@@ -149,27 +153,11 @@ This is the event sequence for streaming `Hello World!`.
 }
 ```
 
-### 3. Closed Stream
+### 3. End of the Sequence
 
-Adapters may close an open stream-delta artifact when the task reaches a final
-message or terminal task state:
-
-```json
-{
-  "kind": "artifact-update",
-  "append": true,
-  "lastChunk": true,
-  "artifact": {
-    "artifactId": "aion:stream-delta",
-    "name": "Stream Delta",
-    "metadata": {
-      "status": "finalized",
-      "status_reason": "complete_message"
-    },
-    "parts": []
-  }
-}
-```
+The sequence ends when the adapter emits the durable message with the full
+text as a `TaskStatusUpdateEvent(working)`, or when the task reaches a terminal
+state. Clients finalize the open section on either signal.
 
 ## Section Resets
 

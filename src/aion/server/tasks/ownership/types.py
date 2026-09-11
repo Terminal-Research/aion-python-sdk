@@ -17,6 +17,7 @@ from typing import Callable
 
 from a2a.utils.errors import A2AError
 
+from aion.core.exceptions import AionError
 from aion.server.core.errors import register_aion_error
 
 __all__ = [
@@ -33,7 +34,9 @@ __all__ = [
 ]
 
 
-class TaskOwnershipLost(RuntimeError):
+# RuntimeError stays a base: this was one before the SDK grew a common
+# root, and code outside this repository may still catch it as one.
+class TaskOwnershipLost(AionError, RuntimeError):
     """Raised when a fenced task write no longer proves ownership."""
 
     def __init__(self, task_id: str) -> None:

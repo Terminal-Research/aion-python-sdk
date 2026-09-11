@@ -6,6 +6,7 @@ import os
 import sys
 import uvicorn
 from aion.core.config import AgentConfig
+from aion.core.exceptions import AionError
 from aion.db.postgres import DbFactory, db_manager
 from aion.server.agent import AgentFactory
 from aion.server.agent import agent_manager
@@ -20,7 +21,7 @@ logger = logging.getLogger(__name__)
 dotenv_path = load_dotenv(dotenv_path=os.path.join(os.getcwd(), '.env'), verbose=True)
 
 
-class MissingAPIKeyError(Exception):
+class MissingAPIKeyError(AionError):
     """Exception for missing API key."""
 
 

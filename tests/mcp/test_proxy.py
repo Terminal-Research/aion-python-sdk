@@ -30,8 +30,8 @@ def test_load_proxy_returns_proxy_when_configured(tmp_path, monkeypatch) -> None
         def __init__(self, url: str) -> None:
             self.url = url
 
-    dummy_mod = types.SimpleNamespace(ASGIProxy=DummyProxy)
-    monkeypatch.setitem(sys.modules, "asgi_proxy_lib", dummy_mod)
+    dummy_mod = types.SimpleNamespace(asgi_proxy=DummyProxy)
+    monkeypatch.setitem(sys.modules, "asgi_proxy", dummy_mod)
 
     proxy_mod = reload_module()
 
@@ -54,7 +54,7 @@ def test_load_proxy_uses_pyyaml_when_available(tmp_path, monkeypatch) -> None:
 
     dummy_yaml = types.SimpleNamespace(safe_load=safe_load)
     monkeypatch.setitem(sys.modules, "yaml", dummy_yaml)
-    monkeypatch.setitem(sys.modules, "asgi_proxy_lib", types.SimpleNamespace(ASGIProxy=DummyProxy))
+    monkeypatch.setitem(sys.modules, "asgi_proxy", types.SimpleNamespace(asgi_proxy=DummyProxy))
 
     proxy_mod = reload_module()
 

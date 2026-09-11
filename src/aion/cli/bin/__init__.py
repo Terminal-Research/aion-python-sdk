@@ -1,1 +1,1 @@
-"""Packaged standalone binaries for ``aion-cli``."""
+"""Packaged standalone binaries for ``aion.cli``."""

@@ -88,13 +88,16 @@ class LangGraphA2AConverter:
     def _convert_streaming_chunk(self, message: AIMessageChunk, metadata: dict | None = None) -> list[A2AAgentEvent]:
         """Emit a stream-delta artifact event for a single AIMessageChunk.
 
-        Empty intermediate chunks are skipped. The first chunk sets append=False
-        to open the artifact; subsequent chunks use append=True. The last chunk
-        carries last_chunk=True so the client can close the stream.
+        Chunks without content produce no event, so every emitted update carries
+        at least one Part (langchain-core ends a stream with an empty
+        chunk_position="last" chunk). The first chunk sets append=False to open
+        the artifact; subsequent chunks use append=True. A content-bearing chunk
+        with chunk_position="last" carries last_chunk=True. The sequence ends
+        with the durable message or the terminal task status.
         """
         is_last_chunk = message.chunk_position == "last"
         parts = LcToA2AConverter.from_message(message)
-        if not parts and not is_last_chunk:
+        if not parts:
             return []
 
         append = self._streaming_started

@@ -62,9 +62,10 @@ and are discovered by `aion.server` at runtime.
   (`BaseEnvSettings`, `ApiSettings`), the `DbManagerProtocol` interface,
   singleton metaclasses, the `AionLogger` / `AionLogRecord` logger class
   every Aion logger is created from (its context fields are filled in by
-  `aion.server`), the `MissingOptionalDependency` helper that names the
-  extra a missing library belongs to (`utils/optional_deps.py`), and
-  pydantic/text/url/path utilities.
+  `aion.server`), the SDK-wide exception hierarchy rooted at `AionError`
+  (`exceptions.py`), the factories that raise its `MissingOptionalDependency`
+  with the name of the extra a missing library belongs to
+  (`utils/optional_deps.py`), and pydantic/text/url/path utilities.
   Owns the provider-neutral Distribution/Messaging context hierarchy, the
   reply contract, and the provider payload fixtures that verify it.
 - **`aion.api`** — low-level Aion control-plane access: a websocket
@@ -190,7 +191,7 @@ and are discovered by `aion.server` at runtime.
   cursor-aware multiline editing, and WorkOS CLI/device login with npm keyring
   storage or the Python credential helper supplied by the SDK. Its GraphQL
   operation types are generated from the restricted chat schema copied from
-  `aion-api`; rebuild and run `stage:python` after contract changes. See
+  `aion.api`; rebuild and run `stage:python` after contract changes. See
   `libs/aion-chat-ui/AGENTS.md` for session-log inspection and package-local
   conventions.
 
@@ -226,11 +227,18 @@ and are discovered by `aion.server` at runtime.
   moving code between subpackages; a new import that crosses a layer fails it.
 - `scripts/packaging/check.py` (`make dist-check`) reads the built wheel and
   sdist against the packaging contract; `scripts/packaging/smoke.py`
-  (`make dist-smoke`) installs them into six clean virtual environments and
+  (`make dist-smoke`) installs them into nine clean virtual environments and
   uses each one. Neither runs through `poetry run`: the point is an environment
   that inherits nothing from this project's. `make dist-build` empties `dist/`
-  and builds. `RELEASE.md` at the root is the whole release procedure:
-  commands, version rules, the worked example and the one-time PyPI setup.
+  and builds. `scripts/release.py` strings those together: `make release-check`
+  runs environment, unit tests, layer contract, build, packaging contract and
+  smoke in order and publishes nothing; `make release` runs the same after a
+  preflight over git, GitHub and PyPI, asks `Are you sure? [y/N]`, and creates
+  the `py-v*` GitHub Release that starts the publishing workflow. The version,
+  the tag and the pre-release flag all come from `[project].version`; nothing
+  takes a version on the command line. `RELEASE.md` at the root is the whole
+  release procedure: commands, version rules, the worked example and the
+  one-time PyPI setup.
 - `.github/workflows/python-ci.yml` runs the unit suite on 3.12 and 3.13, the
   layer contract, and build + check on every pull request, plus an integration
   job against a `postgres:16` service container.
@@ -274,3 +282,10 @@ with behavioural changes.
    composite extras that include it — `langgraph-server` and `adk-server`
    are written out in full, and `make dist-check` is what catches the copy
    you forgot.
+7. Every exception the SDK raises on its own behalf subclasses
+   `aion.core.exceptions.AionError`. That module holds the *public* ones — the
+   ones an agent author or an `aion.api` caller catches from their own code;
+   internal errors stay in the module that raises them and only take the shared
+   base. An exception that used to be an `ImportError` or a `RuntimeError` keeps
+   it as a second base (`class X(AionError, ImportError)`), and `A2AError`
+   subclasses stay outside the hierarchy — they are a2a-sdk's vocabulary.
