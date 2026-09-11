@@ -10,11 +10,21 @@ object is never resumed and never finished either.
 from __future__ import annotations
 
 import asyncio
+import logging
 import uuid
 from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pytest
-from a2a.types import Task, TaskState, TaskStatus, TaskStatusUpdateEvent
+from a2a.types import (
+    Message,
+    Part,
+    Role,
+    SendMessageRequest,
+    Task,
+    TaskState,
+    TaskStatus,
+    TaskStatusUpdateEvent,
+)
 
 from a2a.server.agent_execution import RequestContext
 
@@ -370,3 +380,177 @@ async def test_attaching_to_an_interrupted_task_leaves_nothing_behind() -> None:
     assert registry._active_tasks == {}
     assert registry._task_managers == {}
     assert _background_tasks_for(task_id) == []
+
+
+class _AskThenAnswerAgent:
+    """An agent that asks a question on one turn and answers it on the next.
+
+    The two turns are what the server actually produces: the first opens the
+    task and stops at INPUT_REQUIRED, the second is a resume, which the request
+    executor acknowledges with a bare WORKING status before the agent speaks.
+    """
+
+    def __init__(self, task_id: str) -> None:
+        """Bind the agent to the task it will announce."""
+        self.task_id = task_id
+        self.turns = 0
+
+    async def execute(self, context, event_queue) -> None:
+        """Ask on the first turn, answer on the second."""
+        self.turns += 1
+        if self.turns == 1:
+            opened = Task(
+                id=self.task_id,
+                context_id=CONTEXT_ID,
+                status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
+            )
+            opened.history.append(context.message)
+            await event_queue.enqueue_event(opened)
+            await event_queue.enqueue_event(
+                _status_event(
+                    self.task_id,
+                    TaskState.TASK_STATE_INPUT_REQUIRED,
+                    _text_message("question", Role.ROLE_AGENT, "Which environment?"),
+                )
+            )
+            return
+
+        await event_queue.enqueue_event(
+            _status_event(self.task_id, TaskState.TASK_STATE_WORKING)
+        )
+        await event_queue.enqueue_event(
+            _status_event(
+                self.task_id,
+                TaskState.TASK_STATE_COMPLETED,
+                _text_message("answer", Role.ROLE_AGENT, "Got it - staging."),
+            )
+        )
+
+    async def cancel(self, context, event_queue) -> None:
+        """Nothing to cancel in this agent."""
+
+
+def _text_message(message_id: str, role: Role, text: str) -> Message:
+    """Build a message carrying a single text part."""
+    return Message(
+        message_id=message_id,
+        context_id=CONTEXT_ID,
+        role=role,
+        parts=[Part(text=text)],
+    )
+
+
+def _status_event(
+    task_id: str, state: TaskState, message: Message | None = None
+) -> TaskStatusUpdateEvent:
+    """Build a status event for the task under test."""
+    status = TaskStatus(state=state)
+    if message is not None:
+        status.message.CopyFrom(message)
+    return TaskStatusUpdateEvent(task_id=task_id, context_id=CONTEXT_ID, status=status)
+
+
+async def _run_turn(
+    registry: AionActiveTaskRegistry,
+    task_id: str,
+    call_context,
+    message: Message,
+):
+    """Drive one turn end to end, returning the object and what it streamed."""
+    active_task = await registry.get_or_create(
+        task_id,
+        call_context=call_context,
+        context_id=CONTEXT_ID,
+        create_task_if_missing=True,
+        initial_message=message,
+    )
+    request = RequestContext(
+        call_context=call_context,
+        request=SendMessageRequest(message=message),
+        task_id=task_id,
+        context_id=CONTEXT_ID,
+    )
+    events = [event async for event in active_task.subscribe(request=request)]
+    await _drain_pending()
+    return active_task, events
+
+
+def _message_texts(messages) -> list[str]:
+    """Flatten the text parts of each message."""
+    return ["".join(part.text for part in message.parts) for message in messages]
+
+
+@pytest.mark.anyio
+async def test_resuming_an_interrupted_task_delivers_the_answer(caplog) -> None:
+    """The turn after INPUT_REQUIRED runs to COMPLETED with its answer.
+
+    A resume saves the incoming user message before the first event of the new
+    turn is applied, so the task is written once more in the state it was
+    resumed from. That write must not be read as a fresh interrupt: closing the
+    ActiveTask here would shut the queues under the turn that just started, and
+    the agent's answer and its terminal state would be dropped.
+    """
+    caplog.set_level(logging.WARNING)
+    task_id = str(uuid.uuid4())
+    store = InMemoryTaskStore(owner_resolver=lambda _context: "owner")
+    agent = _AskThenAnswerAgent(task_id)
+    registry = AionActiveTaskRegistry(
+        agent_executor=agent,
+        task_store=store,
+        push_sender=None,
+    )
+    init_execution_scope()
+    call_context = Mock()
+
+    await _run_turn(
+        registry,
+        task_id,
+        call_context,
+        _text_message("ask", Role.ROLE_USER, "ask"),
+    )
+    asked = await store.get(task_id, call_context)
+    assert asked.status.state == TaskState.TASK_STATE_INPUT_REQUIRED
+
+    resumed_task, streamed = await _run_turn(
+        registry,
+        task_id,
+        call_context,
+        _text_message("reply", Role.ROLE_USER, "staging please"),
+    )
+
+    stored = await store.get(task_id, call_context)
+    assert stored.status.state == TaskState.TASK_STATE_COMPLETED
+    assert _message_texts([stored.status.message]) == ["Got it - staging."]
+    assert _message_texts(stored.history) == [
+        "ask",
+        "Which environment?",
+        "staging please",
+    ]
+    assert agent.turns == 2
+
+    assert registry._active_tasks == {}
+    assert registry._task_managers == {}
+    assert registry._interruption_tasks_by_id == {}
+    assert resumed_task._is_finished.is_set()
+    assert _background_tasks_for(task_id) == []
+    # The events of the resumed turn reached the subscriber rather than a
+    # queue that had already been shut: this is what the live failure loses.
+    assert [event.status.state for event in streamed] == [
+        TaskState.TASK_STATE_WORKING,
+        TaskState.TASK_STATE_COMPLETED,
+    ]
+    assert _dropped_event_warnings(caplog) == []
+
+
+def _dropped_event_warnings(caplog) -> list[str]:
+    """Return the SDK's reports of events it could not enqueue.
+
+    The live symptom of a queue shut under a running turn: the agent's answer
+    and its terminal state are refused by the closed queue and logged as
+    dropped instead of reaching anyone.
+    """
+    return [
+        record.getMessage()
+        for record in caplog.records
+        if record.levelno >= logging.WARNING and "Event dropped" in record.getMessage()
+    ]
