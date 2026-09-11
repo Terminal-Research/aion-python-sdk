@@ -49,6 +49,40 @@ class AionTaskManager(TaskManager):
         super().__init__(*args, **kwargs)
         self._on_interrupted = on_interrupted
         self._ownership_provider = ownership_provider
+        # The state the store last held, kept as a scalar rather than read off
+        # ``_current_task``: that object is mutable and the base class applies
+        # the new status to it before it asks for the write, so by the time
+        # ``_save_task`` runs there is nothing left to compare against.
+        # ``None`` means nothing has been read or written yet, so the first
+        # write of a non-active state counts as a transition.
+        self._persisted_state: TaskState | None = None
+
+    @override
+    async def get_task(self) -> Task | None:
+        """Return the task, recording the state a store read brought back."""
+        task = await super().get_task()
+        self._remember_loaded_state(task)
+        return task
+
+    @override
+    async def ensure_task_id(self, task_id: str, context_id: str) -> Task:
+        """Return the task for an event, recording a state read from the store.
+
+        A task the base class creates here is persisted by that call, so its
+        state is recorded by the write instead.
+        """
+        task = await super().ensure_task_id(task_id, context_id)
+        self._remember_loaded_state(task)
+        return task
+
+    def _remember_loaded_state(self, task: Task | None) -> None:
+        """Adopt a loaded task's state as the baseline, once.
+
+        Only the first observation counts: later reads see the manager's own
+        cache, which already carries whatever this turn has written.
+        """
+        if task is not None and self._persisted_state is None:
+            self._persisted_state = task.status.state
 
     async def refresh_task(self) -> Task | None:
         """Reload the task snapshot from the store and replace the local cache.
@@ -64,18 +98,27 @@ class AionTaskManager(TaskManager):
             self.task_id,
             self._call_context,
         )
+        if self._current_task is not None:
+            self._persisted_state = self._current_task.status.state
         return self._current_task
 
     @override
     async def _save_task(self, task: Task) -> None:
-        """Persist through the store, then release non-active ownership.
+        """Persist through the store, then act on a move out of active state.
 
         The store performs the fencing write.  Release happens only after that
         write returns successfully, so a terminal outcome never discards the
         token before it has served as proof of ownership. The receipt is
         captured before the write: a replacement incarnation must not be
         released if the old write races with ownership loss.
+
+        Both effects follow the transition, not the state being written: the SDK
+        consumer saves the task once more in its interrupt state when it records
+        the incoming user message of a resumed turn, before the turn's first event
+        is applied. Treating that write as a fresh interrupt would tear down the
+        execution that just started and release the lease it just took.
         """
+        previous_state = self._persisted_state
         claim = (
             self._ownership_provider.claim_for(task.id)
             if self._ownership_provider is not None
@@ -84,7 +127,8 @@ class AionTaskManager(TaskManager):
         await super()._save_task(task)
 
         state = task.status.state
-        if state not in NON_ACTIVE_TASK_STATES:
+        self._persisted_state = state
+        if state not in NON_ACTIVE_TASK_STATES or state == previous_state:
             return
 
         # A claim only exists when a provider handed one out.
@@ -225,4 +269,5 @@ class AionTaskManager(TaskManager):
 
         self.task_id = last_task.id
         self._current_task = last_task
+        self._persisted_state = last_task.status.state
         return last_task
