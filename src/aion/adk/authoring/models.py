@@ -82,13 +82,16 @@ def aion_lite_llm(
         A Google ADK ``LiteLlm`` instance backed by Aion's model proxy.
 
     Raises:
-        ImportError: If ``google-adk`` is not installed.
+        ImportError: If ``google-adk`` or ``litellm`` is not installed. The
+            ADK extras install litellm only on Python < 3.15, the newest it
+            supports.
     """
     try:
         from google.adk.models.lite_llm import LiteLlm, LiteLLMClient
     except ImportError as exc:
         raise ImportError(
-            "aion_lite_llm requires google-adk with LiteLlm support."
+            "aion_lite_llm requires google-adk and litellm. The ADK extras "
+            "install litellm on Python < 3.15 only, the newest it supports."
         ) from exc
 
     config = aion_openai_config()

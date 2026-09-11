@@ -23,8 +23,8 @@ jobs:
       # sibling finish rather than cancelling it.
       fail-fast: false
       matrix:
-        # Every version the repository locks under ([tool.poetry.dependencies]
-        # python, >=3.12,<3.15) - the range README promises.
+        # Every released Python within requires-python - the range README
+        # promises. Add the next one when it ships.
         python-version: ["3.12", "3.13", "3.14"]
     steps:
       - name: Check out repository

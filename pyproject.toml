@@ -5,6 +5,10 @@ description = "Aion Python SDK — A2A server, authoring toolkits and the aion C
 readme = "README.md"
 license = "MIT"
 authors = [{ name = "Terminal Research Team", email = "support@terminal.exchange" }]
+# No upper bound: this is the wheel's Requires-Python, and Poetry refuses a
+# dependency whose Python range is narrower than the installing project's
+# (^3.12, the default there, means <4.0). The one bound the tree does carry
+# sits on litellm, below, as a marker.
 requires-python = ">=3.12"
 
 # The base install: aion.core, aion.api, aion.mcp endpoints and the CLI shell.
@@ -67,7 +71,12 @@ langgraph-authoring = [
 adk-authoring = [
     "google-adk>=1.20.0,<2.0.0",
     # aion_lite_llm() builds on ADK's LiteLlm, which imports litellm directly.
-    "litellm>=1.93,<2.0",
+    # litellm declares <3.15 in every release we allow. Without the marker that
+    # bound would become the SDK's, and Poetry then refuses every project
+    # declaring ^3.12. With it, a 3.15 interpreter gets the extra minus litellm
+    # and aion_lite_llm() raises ImportError saying so. Drop the marker as soon
+    # as litellm supports 3.15.
+    "litellm>=1.93,<2.0; python_version < '3.15'",
     # Not our dependency: mcp is pulled in by google-adk, and pinned here
     # because google-adk imports a name mcp no longer exports. mcp 1.29.1
     # renamed McpError to MCPError; google-adk still does
@@ -114,7 +123,8 @@ langgraph-server = [
 adk-server = [
     # aionto-sdk[adk-authoring]
     "google-adk>=1.20.0,<2.0.0",
-    "litellm>=1.93,<2.0",
+    # See [adk-authoring] for the marker.
+    "litellm>=1.93,<2.0; python_version < '3.15'",
     # See [adk-authoring]: google-adk still imports mcp's pre-1.29.1 name.
     "mcp<1.29.1",
     # aionto-sdk[server]
@@ -148,12 +158,13 @@ include = ["src/aion/cli/bin/*"]
 # README, and these ten would just be files nobody opens inside site-packages.
 exclude = ["src/aion/**/README.md"]
 
-# The range this repository's own lock resolves under - not published. litellm
-# (the ADK extras) declares <3.15 in every release we allow, and Poetry will
-# not lock a project whose Python range exceeds a dependency's. Drop the upper
-# bound as soon as litellm supports 3.15.
+# The range this repository's own lock resolves under - not published, that
+# is requires-python above. It cannot be open-ended: Poetry will not lock a
+# project whose Python range exceeds a dependency's, and grpc-interceptor
+# (under google-adk) declares <4.0. Written as ^3.12 it is what a consumer
+# project declares by default, so the two ranges agree.
 [tool.poetry.dependencies]
-python = ">=3.12,<3.15"
+python = ">=3.12,<4.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=8.0.0"
