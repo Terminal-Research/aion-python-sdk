@@ -1,5 +1,7 @@
 """Tests for AionAgentCard.from_config()."""
 
+import pytest
+
 from aion.server.agent.card import AionAgentCard
 from aion.core.config.models import AgentConfig, AgentSkill
 from aion.core.runtime import aion_a2a_extension_registry
@@ -12,6 +14,17 @@ def _make_config(**kwargs) -> AgentConfig:
 
 
 class TestCapabilities:
+    @pytest.mark.parametrize("uri", [
+        "https://docs.aion.to/a2a/extensions/aion/context/1.0.0",
+        "https://docs.aion.to/a2a/extensions/aion/context/get-context/1.0.0",
+        "https://docs.aion.to/a2a/extensions/aion/context/get-contexts/1.0.0",
+    ])
+    def test_context_extensions_are_not_advertised_by_default(self, uri):
+        """Legacy read handlers must not imply the platform's context contract."""
+        card = AionAgentCard.from_config(_make_config(), "http://localhost:8000")
+
+        assert uri not in {ext.uri for ext in card.capabilities.extensions}
+
     def test_streaming_enabled(self):
         """from_config produces a card with streaming capability enabled."""
         card = AionAgentCard.from_config(_make_config(), "http://localhost:8000")

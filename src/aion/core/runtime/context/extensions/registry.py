@@ -26,8 +26,6 @@ from aion.core.constants.a2a import (
     EVENT_EXTENSION_URI_V1,
     MESSAGING_EXTENSION_URI_V1,
     BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1,
-    GET_CONTEXT_EXTENSION_URI_V1,
-    GET_CONTEXTS_LIST_EXTENSION_URI_V1,
     TRACEABILITY_EXTENSION_URI_V1,
     USAGE_ATTRIBUTION_EXTENSION_URI_V1,
 )
@@ -121,6 +119,9 @@ class AionA2AExtensionRegistry(metaclass=Singleton):
 
 aion_a2a_extension_registry = AionA2AExtensionRegistry()
 
+# Context extensions are intentionally absent from the built-in registrations.
+# Legacy read handlers do not implement the platform's context lifecycle contract.
+
 aion_a2a_extension_registry.register(
     ExtensionDescriptor(
         uri=USAGE_ATTRIBUTION_EXTENSION_URI_V1,
@@ -191,17 +192,5 @@ aion_a2a_extension_registry.register(
         ),
         description="Self-improvement flow: daemon-driven directive/verdict/result routing.",
         active=False,
-    )
-)
-aion_a2a_extension_registry.register(
-    ExtensionDescriptor(
-        uri=GET_CONTEXT_EXTENSION_URI_V1,
-        description="Get conversation info based on context.",
-    )
-)
-aion_a2a_extension_registry.register(
-    ExtensionDescriptor(
-        uri=GET_CONTEXTS_LIST_EXTENSION_URI_V1,
-        description="Get list of available contexts.",
     )
 )

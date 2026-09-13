@@ -15,12 +15,24 @@ Agent-to-Agent (A2A) communication system.
 
 Formal protocol extensions that extend the base A2A communication capabilities with standard JSON-RPC 2.0 methods.
 
-### Context Extension
+### Legacy Context Methods
 
-Methods for retrieving conversation contexts and managing context lists:
+The SDK retains its older JSON-RPC read handlers:
 
-- **[GetContext](https://docs.aion.to/extensions/aion/context/get-context/1.0.0)** - Retrieve a specific conversation context with message history
-- **[GetContexts](https://docs.aion.to/extensions/aion/context/get-contexts/1.0.0)** - Retrieve a list of available contexts
+- **GetContext** - Retrieve a specific conversation context with message history.
+- **GetContexts** - Retrieve a list of available context IDs.
+
+Generated Agent Cards do not automatically advertise any of these URIs:
+
+- `https://docs.aion.to/a2a/extensions/aion/context/1.0.0`
+- `https://docs.aion.to/a2a/extensions/aion/context/get-context/1.0.0`
+- `https://docs.aion.to/a2a/extensions/aion/context/get-contexts/1.0.0`
+
+The legacy readers do not implement the Aion platform's unified Context
+contract, including context summaries and `DeleteContext`. Removing the
+built-in registrations does not disable the existing read handlers or filter
+extensions explicitly registered by a custom implementation. Such an
+implementation is responsible for fulfilling the contract it advertises.
 
 ---
 

@@ -56,8 +56,11 @@ and are discovered by `aion.server` at runtime.
   A2A protocol models, enums, request/response and artifact types, A2A
   extension payloads (`cards`, `distribution`, `messaging`, `event`,
   `traceability`), opaque usage-attribution extension collection, shared
-  extension URI/header constants, `aion.yaml` configuration
-  parsing and publication collectors (including dedicated secret fields),
+  extension URI/header constants, the built-in extension registry (which
+  does not register unified or legacy context-directory extensions for
+  automatic card advertisement),
+  `aion.yaml` configuration parsing and publication collectors (including
+  dedicated secret fields),
   invocation abstractions (`card`, `message`, `thread`), the runtime context
   hierarchy (builder, registry, context extensions), settings
   (`BaseEnvSettings`, `ApiSettings`), the `DbManagerProtocol` interface,
@@ -119,6 +122,9 @@ and are discovered by `aion.server` at runtime.
   Aion context-directory extensions resolve history through the same effective
   caller scope used when tasks are saved; anonymous callers receive empty
   context projections rather than access to shared history.
+  These legacy read handlers remain callable but are not advertised on generated
+  Agent Cards; the server does not implement the unified Context extension or
+  `DeleteContext`.
   Push notifications authenticate against external callbacks using the
   credentials in `taskPushNotificationConfig.authentication` (the a2a-sdk
   base sender ignores them); delivery timeouts come from
