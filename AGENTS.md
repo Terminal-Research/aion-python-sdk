@@ -112,7 +112,12 @@ and are discovered by `aion.server` at runtime.
   execution adapters (`agent/`), the plugin registry and factory
   (`plugins/`), fenced task stores, expiring task ownership supervision, task
   manager, event deduplicator and push notification senders (`tasks/`), file
-  storage and A2A file handling (`files/`), Aion auth manager and websocket
+  storage and A2A file handling (`files/` — an upload-first
+  `FileStorageBackend` that reports one `UploadReceipt` or `UploadFailure` per
+  file, the Aion Files API backend behind it, the verified `UploadContext`
+  projection naming the owning organization, and the guard that strips inline
+  bytes before a task is persisted),
+  Aion auth manager and websocket
   connection services (`services/aion`), OpenTelemetry wiring, and logging
   setup with stream and Logstash handlers. Graphs and HTTP apps are configured
   via `aion.yaml` and can be mounted dynamically. JSON-RPC streams use

@@ -13,14 +13,19 @@ __all__ = ["AppSettings", "app_settings"]
 class AppSettings(BaseEnvSettings):
     """Application configuration settings."""
 
-    file_storage_backend: Optional[Literal["stub"]] = Field(
+    file_storage_backend: Optional[Literal["stub", "aion"]] = Field(
         default=None,
         alias="FILE_STORAGE_BACKEND",
         description=(
             "File storage backend for converting inline (base64) file parts to URLs. "
-            "When set, outgoing A2A events with binary content are uploaded to storage "
-            "and replaced with URL references, minimizing content stored in tables. "
-            "Options: 'stub' (development only). Default: None (disabled, base64 passthrough)."
+            "When set, inbound and outbound file parts are stored before anything "
+            "persists them and replaced with URL references; an inbound file that "
+            "cannot be stored rejects the request, an outbound one is dropped and "
+            "logged rather than falling back to base64. "
+            "Parts the transformer skips, such as JSX Cards, stay inline. "
+            "Options: 'aion' (the Aion Files API; requires AION_CLIENT_ID and "
+            "AION_CLIENT_SECRET, the server refuses to start without them), "
+            "'stub' (development only). Default: None (disabled, base64 passthrough)."
         )
     )
 

@@ -148,7 +148,13 @@ class AppFactory:
 
     async def _create_request_handler(self) -> AionRequestHandler:
         """Create and configure the request handler with task store and agent executor."""
-        self.store_manager.initialize(agent_id=self.aion_agent.id)
+        # The guard follows the manager that is actually installed - which may
+        # have been injected without FILE_STORAGE_BACKEND set - rather than
+        # the setting, so the two cannot disagree.
+        self.store_manager.initialize(
+            agent_id=self.aion_agent.id,
+            guard_inline_files=self.upload_manager is not None,
+        )
         task_store = self.store_manager.get_store()
 
         self._executor = await AionAgentRequestExecutor.create(
@@ -172,7 +178,7 @@ class AppFactory:
                 auto_discover_interrupted_task=True,
             ),
             preprocessors=[
-                FilePartPreprocessor(self.file_transformer, wait_upload=True),
+                FilePartPreprocessor(self.file_transformer),
             ],
         )
 
@@ -196,12 +202,6 @@ class AppFactory:
             except Exception as exc:
                 logger.error("Error draining active tasks", exc_info=exc)
 
-        if self._executor is not None:
-            try:
-                await self._executor.drain()
-            except Exception as exc:
-                logger.error("Error draining uploads", exc_info=exc)
-
         if self._push_sender is not None:
             try:
                 await self._push_sender.aclose()
@@ -215,6 +215,17 @@ class AppFactory:
                 logger.info("Plugins cleaned up")
             except Exception as exc:
                 logger.error("Error cleaning up plugins", exc_info=exc)
+
+        # One owner for the storage client, closed once and last among its
+        # users: the manager is handed to the transformer and to plugins
+        # alike, and a plugin is free to store something while tearing down.
+        # Closing from any of them would close it out from under the others.
+        if self.upload_manager is not None:
+            try:
+                await self.upload_manager.aclose()
+                logger.info("File upload manager closed")
+            except Exception as exc:
+                logger.error("Error closing the file upload manager", exc_info=exc)
 
         if self.db_factory.is_initialized:
             try:

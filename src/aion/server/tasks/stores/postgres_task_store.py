@@ -66,6 +66,8 @@ class PostgresTaskStore(BaseTaskStore):
             agent_id: str,
             ownership_provider: OwnershipProvider,
             owner_resolver: OwnerResolver = resolve_user_scope,
+            *,
+            guard_inline_files: bool = False,
     ) -> None:
         """Initialize the store with its agent identity and ownership provider.
 
@@ -81,7 +83,10 @@ class PostgresTaskStore(BaseTaskStore):
                 incarnation of the same task.
             owner_resolver: Resolves the effective caller into the stable scope
                 persisted with each task.
+            guard_inline_files: Strip inline file content before writing -
+                see :class:`BaseTaskStore`.
         """
+        super().__init__(guard_inline_files=guard_inline_files)
         if not agent_id:
             raise ValueError("PostgresTaskStore requires a non-empty agent_id")
         if ownership_provider is None:
@@ -216,6 +221,12 @@ class PostgresTaskStore(BaseTaskStore):
             ValueError: If ``task.id`` is not a UUID (see
                 :meth:`TaskRecord.from_task`).
         """
+        # Before TaskRecord.from_task, not between the writes below: the head
+        # row carries `status` as JSONB of its own, so a guard placed in front
+        # of the message and artifact tables alone would still let raw bytes
+        # into it.
+        task = self._persistable(task)
+
         entity = TaskRecord.from_task(
             task,
             self.agent_id,

@@ -45,8 +45,10 @@ class AionAgentRequestExecutor(AgentExecutor):
     this executor simply enqueues them.
 
     If an A2AFileTransformer is provided, inline (base64) file parts in
-    outgoing events are transparently replaced with URL parts before
-    being enqueued. The actual upload happens in the background.
+    outgoing events are stored and replaced with URL parts before being
+    enqueued. Content that could not be stored is dropped from the event: the
+    agent's answer still reaches the client, but inline bytes never reach the
+    task record.
     """
 
     def __init__(
@@ -181,15 +183,6 @@ class AionAgentRequestExecutor(AgentExecutor):
             await task_updater.failed()
         except Exception:  # noqa: BLE001 - must not mask the original failure
             logger.exception("Could not mark the task as failed after an execution error")
-
-    async def drain(self) -> None:
-        """Wait for all in-flight background uploads to complete.
-
-        Should be called during graceful shutdown to ensure no uploads are
-        silently dropped when the server stops.
-        """
-        if self._file_transformer is not None:
-            await self._file_transformer.drain()
 
     async def cancel(
             self, context: RequestContext, event_queue: EventQueue

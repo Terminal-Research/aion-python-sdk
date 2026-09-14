@@ -160,7 +160,7 @@ class AionEventPipeline:
 
     async def _prepare_event(self, event):
         if self._file_transformer:
-            event = await self._file_transformer.transform_event(event, wait_upload=False)
+            event = await self._file_transformer.transform_event(event)
         return event
 
     async def _deduplicate_event(self, event):

@@ -7,6 +7,7 @@ from a2a.server.context import ServerCallContext
 from a2a.server.tasks import TaskStore
 from a2a.types.a2a_pb2 import Task
 
+from aion.server.files.a2a import strip_inline_file_content
 
 
 class BaseTaskStore(TaskStore):
@@ -15,7 +16,31 @@ class BaseTaskStore(TaskStore):
 
    Extends TaskStore with methods for retrieving context IDs and tasks
    associated with specific contexts, with optional pagination support.
+
+   Args:
+       guard_inline_files: True when a storage backend converts inline file
+           content before it is persisted. The store then strips any inline
+           file content that reaches it anyway, since with a backend
+           installed that is a bug in the emitting path rather than data to
+           keep. Set by whoever installs the backend - see
+           ``StoreManager.initialize`` - so the guard cannot disagree with
+           what is actually running.
    """
+
+    def __init__(self, *, guard_inline_files: bool = False) -> None:
+        super().__init__()
+        self._guard_inline_files = guard_inline_files
+
+    @property
+    def guards_inline_files(self) -> bool:
+        """Whether this store strips inline file content before persisting."""
+        return self._guard_inline_files
+
+    def _persistable(self, task: Task) -> Task:
+        """Return the task as it may be written: guarded when so configured."""
+        if not self._guard_inline_files:
+            return task
+        return strip_inline_file_content(task)
 
     @abstractmethod
     async def cancel_with_ownership_revocation(

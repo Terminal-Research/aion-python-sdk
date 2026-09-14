@@ -10,6 +10,7 @@ from aion.api.control_plane import (
     AION_PRINCIPAL_SELECTOR_HEADER,
     PrincipalSelector,
 )
+from aion.api.exceptions import AionFileStorageError
 from aion.api.file_service_client import AionFileClient
 from aion.core.constants import AION_USAGE_ATTRIBUTION_HEADER
 from aion.core.exceptions import AionError, AionFileValidationError
@@ -150,3 +151,36 @@ async def test_replace_preserves_explicit_attribution_headers() -> None:
 
     assert result == {"revision": 5}
     await http_client.aclose()
+
+
+@pytest.mark.anyio("asyncio")
+async def test_rejected_upload_is_both_an_sdk_and_an_httpx_error():
+    """A rejection must stay catchable both ways.
+
+    Callers already classify Files failures by ``response.status_code`` through
+    ``httpx.HTTPStatusError``; SDK-wide handlers catch ``AionError``. The
+    wrapper is both, so neither has to change.
+    """
+    async def rejected(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(422, json={"message": "bad purpose"})
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(rejected)
+    ) as http_client:
+        async with AionFileClient(
+            jwt_manager=StaticTokenManager(),
+            base_url="https://api.aion.test",
+            http_client=http_client,
+        ) as client:
+            with pytest.raises(AionFileStorageError) as error:
+                await client.create(
+                    b"media",
+                    organization_id="organization-1",
+                    purpose="Nonsense",
+                    file_name="message.bin",
+                )
+
+    assert isinstance(error.value, AionError)
+    assert isinstance(error.value, httpx.HTTPStatusError)
+    assert error.value.response.status_code == 422
+    assert error.value.request is not None

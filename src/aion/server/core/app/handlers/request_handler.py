@@ -23,7 +23,6 @@ from aion.core.a2a import ContextsList, Conversation, GetContextParams, GetConte
 from aion.core.runtime import ExtensionActivationError, aion_a2a_extension_registry
 from aion.core.runtime.context.extensions import AionRuntimeExtensions
 from collections.abc import AsyncGenerator
-from functools import wraps
 from google.protobuf import json_format
 from types import SimpleNamespace
 from typing import override
@@ -35,29 +34,10 @@ from aion.server.tasks.notifications import TaskEventListener
 from aion.server.tasks.ownership import OwnershipProvider
 from aion.server.tasks.ownership.config import CANCEL_WAIT_SECONDS
 from aion.server.a2a.conversation import ConversationBuilder
-from .request_preprocessors import A2ARequestPreprocessor
+from .request_preprocessors import A2ARequestPreprocessor, PreprocessingContext
 from .terminal_task_projection import TerminalTaskProjection
 
 logger = logging.getLogger(__name__)
-
-
-def _with_preprocessors(method):
-    """Decorator that runs all registered preprocessors before a handler method.
-
-    On success the wrapped method executes normally. On any exception,
-    rolls back preprocessors in reverse order before re-raising.
-    """
-    @wraps(method)
-    async def wrapper(self, params, *args, **kwargs):
-        for preprocessor in self._preprocessors:
-            await preprocessor.process(params)
-        try:
-            return await method(self, params, *args, **kwargs)
-        except Exception:
-            for preprocessor in reversed(self._preprocessors):
-                await preprocessor.rollback()
-            raise
-    return wrapper
 
 
 async def _no_events() -> AsyncGenerator[Event]:
@@ -109,21 +89,72 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         self._preprocessors = preprocessors or []
 
     @override
-    @_with_preprocessors
     async def _setup_active_task(
             self,
             params: SendMessageRequest,
             call_context: ServerCallContext,
     ) -> tuple[ActiveTask, RequestContext]:
-        """Setup the active task registry with preprocessors."""
-        self._verify_declared_extensions(params, call_context)
-        return await super()._setup_active_task(params, call_context)
+        """Verify, then preprocess, then set up the active task.
+
+        The order is the point. A preprocessor may have an external side
+        effect - storing an attachment into the organization the request
+        names - and metadata that merely parsed has not been accepted yet.
+        Verifying first means a declaration the agent is about to reject can
+        never trigger that side effect, and the preprocessor works from the
+        verified projection instead of re-reading the raw request.
+        """
+        extensions = self._verify_declared_extensions(params, call_context)
+        context = PreprocessingContext(
+            extensions=extensions, call_context=call_context
+        )
+
+        await self._run_preprocessors(params, context)
+        try:
+            return await super()._setup_active_task(params, call_context)
+        except Exception:
+            await self._rollback_preprocessors(len(self._preprocessors))
+            raise
+
+    async def _run_preprocessors(
+            self,
+            params: SendMessageRequest,
+            context: PreprocessingContext,
+    ) -> None:
+        """Run every preprocessor, compensating them all if one fails.
+
+        The failing preprocessor is rolled back too, not just the ones before
+        it: a preprocessor that stores a batch of files can reject the request
+        with part of that batch already stored, and its own ``rollback`` is the
+        only thing that knows about it.
+        """
+        for index, preprocessor in enumerate(self._preprocessors):
+            try:
+                await preprocessor.process(params, context)
+            except Exception:
+                await self._rollback_preprocessors(index + 1)
+                raise
+
+    async def _rollback_preprocessors(self, count: int) -> None:
+        """Roll back the first ``count`` preprocessors, in reverse order.
+
+        A failing rollback is logged rather than raised: it must not replace
+        the error that caused the rollback, and the remaining preprocessors
+        still need compensating.
+        """
+        for preprocessor in reversed(self._preprocessors[:count]):
+            try:
+                await preprocessor.rollback()
+            except Exception:
+                logger.exception(
+                    "Preprocessor %s failed to roll back",
+                    type(preprocessor).__name__,
+                )
 
     def _verify_declared_extensions(
             self,
             params: SendMessageRequest,
             call_context: ServerCallContext,
-    ) -> None:
+    ) -> AionRuntimeExtensions:
         """Reject invalid extension declarations from the request path.
 
         Runs the same collect/verify pipeline the executor's runtime-context
@@ -141,6 +172,9 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         silently handing the request to the primary flow the client
         explicitly asked to bypass.
 
+        Returns:
+            The verified extensions, which preprocessing acts on.
+
         Raises:
             InvalidParamsError: an extension declared active on the request
                 fails verification for this agent.
@@ -151,9 +185,15 @@ class AionRequestHandler(DefaultRequestHandlerV2):
             # collectors see the same plain-dict shape they see in execute().
             metadata=json_format.MessageToDict(params.metadata),
             requested_extensions=call_context.requested_extensions,
+            # HeaderCollector reads its value from call_context.state["headers"]
+            # (see descriptors.py); without it, every header-carried extension
+            # - usage attribution among them - would fail verification here and
+            # its payload would be missing from the projection preprocessing
+            # relies on.
+            call_context=call_context,
         )
         try:
-            AionRuntimeExtensions.collect(
+            return AionRuntimeExtensions.collect(
                 declaration, aion_a2a_extension_registry.get_all()
             )
         except ExtensionActivationError as ex:

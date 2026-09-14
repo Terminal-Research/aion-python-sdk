@@ -31,7 +31,7 @@ class StoreManager:
         self._ownership_provider: Optional[OwnershipProvider] = None
         self._event_listener: Optional[TaskEventListener] = None
 
-    def initialize(self, agent_id: str):
+    def initialize(self, agent_id: str, *, guard_inline_files: bool = False):
         """
         Initialize the store manager with appropriate storage backend.
 
@@ -43,6 +43,10 @@ class StoreManager:
                 task and claim the Postgres backend touches, so several
                 agents can share one database. Unused by the in-memory
                 fallback, which is already isolated by being unshared.
+            guard_inline_files: True when a file storage backend is
+                installed, so the store strips inline file content that
+                reaches it unconverted. Passed by the component that
+                installs the backend; the store never reads settings for it.
         """
         if self._is_initialized:
             logger.warning("Tried to initialize store, already initialized")
@@ -58,9 +62,13 @@ class StoreManager:
             # argument.
             event_listener = task_event_listener
             ownership_provider = PostgresOwnershipProvider(agent_id, event_listener=event_listener)
-            task_store = PostgresTaskStore(agent_id=agent_id, ownership_provider=ownership_provider)
+            task_store = PostgresTaskStore(
+                agent_id=agent_id,
+                ownership_provider=ownership_provider,
+                guard_inline_files=guard_inline_files,
+            )
         else:
-            task_store = InMemoryTaskStore()
+            task_store = InMemoryTaskStore(guard_inline_files=guard_inline_files)
             ownership_provider = task_store.ownership_provider
             event_listener = None
             logger.warning(

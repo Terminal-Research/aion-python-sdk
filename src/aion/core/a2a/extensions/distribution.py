@@ -226,6 +226,19 @@ class Environment(A2ABaseModel):
         description="Daemon agent identity id assigned for internal addressing.",
     )
 
+    @property
+    def principal_selector(self) -> str:
+        """Control-plane principal selector this environment acts as.
+
+        The daemon identity when the environment has one - the most specific
+        principal - and the environment itself otherwise. Header-ready:
+        ``aion://agent/identity/<id>`` or ``aion://agent/environment/<id>``.
+        Typed selector objects live in ``aion.api``.
+        """
+        if self.daemon_agent_identity_id:
+            return f"aion://agent/identity/{self.daemon_agent_identity_id}"
+        return f"aion://agent/environment/{self.id}"
+
     def get_configuration_variable(self, key: str) -> Optional[str]:
         """Return a runtime configuration variable value by key.
 

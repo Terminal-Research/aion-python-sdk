@@ -37,7 +37,10 @@ class InMemoryTaskStore(BaseTaskStore):
     def __init__(
             self,
             owner_resolver: OwnerResolver = resolve_user_scope,
+            *,
+            guard_inline_files: bool = False,
     ) -> None:
+        super().__init__(guard_inline_files=guard_inline_files)
         logger.debug('Initializing InMemoryTaskStore')
         self.tasks: dict[str, dict[str, Task]] = {}
         self.lock = asyncio.Lock()
@@ -56,6 +59,7 @@ class InMemoryTaskStore(BaseTaskStore):
             self, task: Task, context: ServerCallContext | None = None
     ) -> None:
         """Saves or updates a task in the in-memory store for the resolved owner."""
+        task = self._persistable(task)
         owner = self.owner_resolver(context)
         if owner not in self.tasks:
             self.tasks[owner] = {}

@@ -25,7 +25,14 @@ from aion.core.agent.invocation.card import Card
 from aion.core.agent.invocation.card.utils import build_card_a2a_part
 from aion.core.constants import CARDS_EXTENSION_URI_V1, MESSAGE_ACTION_PAYLOAD_SCHEMA_V1, MESSAGING_EXTENSION_URI_V1, \
     REACTION_ACTION_PAYLOAD_SCHEMA_V1
-from aion.server.files.storage import FileUploadManager
+from aion.core.runtime.context import get_aion_runtime_context
+from aion.server.files.storage import (
+    FileUpload,
+    FileUploadManager,
+    UploadFailure,
+    UploadReceipt,
+    resolve_upload_context,
+)
 from google.adk.events import Event
 from google.protobuf import json_format, struct_pb2
 
@@ -267,12 +274,9 @@ class ADKToA2AEventConverter:
                 continue
 
             if self._file_uploader is not None and a2a_part.raw:
-                url = self._file_uploader.schedule(
-                    data=a2a_part.raw,
-                    mime_type=a2a_part.media_type or "application/octet-stream",
-                    context_id=self._context_id,
-                )
-                a2a_part = Part(url=url, media_type=a2a_part.media_type, filename=a2a_part.filename)
+                a2a_part = await self._store_inline(a2a_part)
+                if a2a_part is None:
+                    continue
 
             artifact_id = hint.artifact_id if hint else str(uuid.uuid4())
             name = (hint.artifact_name if hint else None) or filename
@@ -295,6 +299,55 @@ class ADKToA2AEventConverter:
                 last_chunk=True,
             ))
         return results
+
+    async def _store_inline(self, part: Part) -> Part | None:
+        """Store an artifact's inline bytes, or drop the artifact.
+
+        Artifacts loaded from ADK's artifact service bypass the A2A part
+        transformer entirely, so this is the second direct entry into storage
+        and the one that would otherwise let raw bytes through. It follows the
+        same outbound policy: content that could not be stored never falls
+        back to inline bytes.
+
+        Args:
+            part: Artifact part carrying inline bytes.
+
+        Returns:
+            A URL part when the content was stored, ``None`` otherwise.
+        """
+        media_type = part.media_type or "application/octet-stream"
+        resolution = resolve_upload_context(
+            get_aion_runtime_context(),
+            context_id=self._context_id,
+            task_id=self._task_id,
+        )
+        if isinstance(resolution, UploadFailure):
+            failure = resolution
+        else:
+            outcome = await self._file_uploader.store(
+                FileUpload(
+                    data=bytes(part.raw),
+                    media_type=media_type,
+                    filename=part.filename or None,
+                ),
+                context=resolution,
+            )
+            if isinstance(outcome, UploadReceipt):
+                return Part(
+                    url=outcome.uri,
+                    media_type=part.media_type,
+                    filename=part.filename,
+                )
+            failure = outcome
+
+        logger.warning(
+            "Dropping artifact %r (%d bytes) that cannot be stored: %s",
+            part.filename or None,
+            len(part.raw),
+            failure.error_code.value,
+            exc_info=failure.cause,
+        )
+        return None
 
     def finalize_stream(self, delta_text: str) -> list[AgentEvent]:
         """End any open STREAM_DELTA and emit accumulated text as working status.

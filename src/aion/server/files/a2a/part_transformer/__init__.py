@@ -1,4 +1,8 @@
-from .transformer import A2AFileTransformer
+from .transformer import (
+    A2AFileTransformer,
+    MessageTransform,
+    TransformReport,
+)
 from .rules import (
     PartSkipRule,
     CardPartSkipRule,
@@ -8,6 +12,8 @@ from .rules import (
 
 __all__ = [
     "A2AFileTransformer",
+    "MessageTransform",
+    "TransformReport",
     "PartSkipRule",
     "CardPartSkipRule",
     "CompositePartSkipRule",

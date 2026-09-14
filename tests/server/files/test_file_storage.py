@@ -1,35 +1,15 @@
-"""Tests for file storage: StubFileStorageBackend, FileUploadManager, A2AFileTransformer.
+"""Tests for the upload-first file storage contract.
 
-Focus areas:
-  StubFileStorageBackend:
-    - generate_uri with/without mime_type and context_id
-    - upload is a no-op (does not raise)
-    - delete is a no-op
-    - URI format matches expected pattern
+Covers the outcome contract, the verified projection that names the owning
+organization, the outbound rule that drops content which could not be stored,
+and the guard that keeps inline bytes out of the task record.
 
-  FileUploadManager:
-    - schedule() returns URI and starts background task
-    - wait() only waits for requested URIs
-    - drain() waits for all pending
-    - delete() cancels pending / calls backend delete
-    - pending_count tracks correctly
-    - _upload_safe absorbs exceptions
-
-  A2AFileTransformer:
-    - is_active reflects upload_manager presence
-    - transform_event: no-op when no manager
-    - transform_event: transforms status event parts (raw -> url)
-    - transform_event: transforms artifact event parts
-    - transform_event: skips events with no raw parts
-    - transform_message: transforms raw parts
-    - transform_message: no-op with no parts
-    - wait_upload=True triggers wait() call
-    - drain() delegates to upload_manager
-    - pending_count delegates
+Backend-internal behaviour (retry classification, idempotent ``operation_id``,
+authentication diagnostics) lives in ``test_aion_backend.py``; the stub used
+here succeeds unconditionally.
 """
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from a2a.types import (
@@ -37,443 +17,679 @@ from a2a.types import (
     Message,
     Part,
     Role,
+    Task,
     TaskArtifactUpdateEvent,
     TaskState,
     TaskStatus,
     TaskStatusUpdateEvent,
 )
-
+from aion.core.a2a.extensions import (
+    Behavior,
+    Distribution,
+    DistributionExtensionV1,
+    Environment,
+    PrincipalIdentity,
+    ServiceIdentity,
+)
+from aion.core.constants import (
+    CARDS_MEDIA_TYPE,
+    DISTRIBUTION_EXTENSION_URI_V1,
+    USAGE_ATTRIBUTION_EXTENSION_URI_V1,
+)
+from aion.core.runtime.context import AionRuntimeExtensions
+from aion.server.files.a2a import strip_inline_file_content
 from aion.server.files.a2a.part_transformer import A2AFileTransformer
-from aion.server.files.storage.backends.stub import StubFileStorageBackend
-from aion.server.files.storage.manager import FileUploadManager
+from aion.server.files.storage import (
+    FileUpload,
+    FileUploadErrorCode,
+    FileUploadManager,
+    StubFileStorageBackend,
+    UploadContext,
+    UploadFailure,
+    UploadReceipt,
+    resolve_upload_context,
+)
 
-class TestStubFileStorageBackend:
-    def _backend(self):
-        return StubFileStorageBackend()
 
-    def test_generate_uri_returns_two_strings(self):
-        """generate_uri returns a tuple of (file_id, uri) as non-empty strings."""
-        backend = self._backend()
-        file_id, uri = backend.generate_uri()
-        assert isinstance(file_id, str) and file_id
-        assert isinstance(uri, str) and uri
+# --------------------------------------------------------------------------
+# Fixtures and builders
+# --------------------------------------------------------------------------
 
-    def test_generate_uri_different_file_ids(self):
-        """Each call to generate_uri produces a unique file ID."""
-        backend = self._backend()
-        id1, _ = backend.generate_uri()
-        id2, _ = backend.generate_uri()
-        assert id1 != id2
+ORG = "org-1"
 
-    def test_generate_uri_without_context_id(self):
-        """Generated URI contains file_id but not context_id when context_id is omitted."""
-        backend = self._backend()
-        file_id, uri = backend.generate_uri(mime_type="image/png")
-        assert file_id in uri
-        assert "ctx" not in uri  # no context_id in path
 
-    def test_generate_uri_with_context_id(self):
-        """Generated URI includes context_id when provided."""
-        backend = self._backend()
-        _, uri = backend.generate_uri(mime_type="image/png", context_id="ctx-abc")
-        assert "ctx-abc" in uri
+def principal(organization_id: str = ORG, identity_id: str = "pid-1") -> PrincipalIdentity:
+    return PrincipalIdentity(
+        kind="principal",
+        id=identity_id,
+        identity_network="Aion",
+        identity_kind="Principal",
+        organization_id=organization_id,
+    )
 
-    def test_generate_uri_base_url_prefix(self):
-        """Generated URI starts with the backend's BASE_URI."""
-        backend = self._backend()
-        _, uri = backend.generate_uri()
-        assert uri.startswith(StubFileStorageBackend.BASE_URI)
 
-    async def test_upload_does_not_raise(self):
-        """upload is a no-op and does not raise exceptions."""
-        backend = self._backend()
-        file_id, _ = backend.generate_uri(mime_type="text/plain")
-        await backend.upload(file_id=file_id, data=b"hello", mime_type="text/plain")
+def service_identity() -> ServiceIdentity:
+    return ServiceIdentity(
+        kind="service",
+        id="sid-1",
+        identity_network="Telegram",
+        identity_kind="Bot",
+        organization_id="org-other",
+    )
 
-    async def test_delete_does_not_raise(self):
-        """delete is a no-op and does not raise exceptions."""
-        backend = self._backend()
-        file_id, _ = backend.generate_uri()
-        await backend.delete(file_id=file_id)
 
-    async def test_delete_with_context_id_does_not_raise(self):
-        """delete accepts context_id parameter without raising exceptions."""
-        backend = self._backend()
-        file_id, _ = backend.generate_uri(context_id="ctx-1")
-        await backend.delete(file_id=file_id, context_id="ctx-1")
+def distribution_payload(
+    *identities,
+    daemon_identity_id: str | None = None,
+) -> DistributionExtensionV1:
+    return DistributionExtensionV1(
+        distribution=Distribution(
+            id="dist-1",
+            endpoint_type="A2A",
+            url="https://example.invalid/a2a",
+            identities=list(identities),
+        ),
+        behavior=Behavior(id="b-1", behavior_key="main", version_id="v-1"),
+        environment=Environment(
+            id="env-1",
+            name="prod",
+            project_id="proj-1",
+            deployment_id="dep-1",
+            configuration_variables={},
+            daemon_agent_identity_id=daemon_identity_id,
+        ),
+    )
+
+
+def extensions(payload: DistributionExtensionV1 | None, carrier: str | None = None):
+    verified = {}
+    if payload is not None:
+        verified[DISTRIBUTION_EXTENSION_URI_V1] = payload
+    if carrier is not None:
+        verified[USAGE_ATTRIBUTION_EXTENSION_URI_V1] = carrier
+    return AionRuntimeExtensions(verified)
+
+
+def upload_context(**overrides) -> UploadContext:
+    return UploadContext(organization_id=ORG, **overrides)
+
+
+def raw_part(data: bytes = b"bytes", name: str = "a.png", media: str = "image/png") -> Part:
+    return Part(raw=data, media_type=media, filename=name)
+
+
+class RecordingBackend(StubFileStorageBackend):
+    """Stub that records every batch it was handed."""
+
+    def __init__(self):
+        self.batches: list[list[FileUpload]] = []
+        self.contexts: list[UploadContext] = []
+
+    async def store_many(self, uploads, *, context):
+        self.batches.append(list(uploads))
+        self.contexts.append(context)
+        return await super().store_many(uploads, context=context)
+
+
+class OutcomeBackend(StubFileStorageBackend):
+    """Stub returning a scripted outcome per position, with a delay each."""
+
+    def __init__(self, outcomes, delay: float = 0.0):
+        self._outcomes = outcomes
+        self._delay = delay
+        self.concurrent_peak = 0
+        self._in_flight = 0
+
+    async def store_many(self, uploads, *, context):
+        async def one(index):
+            self._in_flight += 1
+            self.concurrent_peak = max(self.concurrent_peak, self._in_flight)
+            try:
+                if self._delay:
+                    await asyncio.sleep(self._delay)
+                return self._outcomes[index]
+            finally:
+                self._in_flight -= 1
+
+        return list(await asyncio.gather(*(one(i) for i in range(len(uploads)))))
+
+
+# --------------------------------------------------------------------------
+# Projection: which organization owns the file
+# --------------------------------------------------------------------------
+
+class TestUploadContextProjection:
+    def test_single_principal_identity_gives_its_organization(self):
+        """Exactly one principal identity: that identity's organization owns the file."""
+        resolved = resolve_upload_context(extensions(distribution_payload(principal())))
+        assert isinstance(resolved, UploadContext)
+        assert resolved.organization_id == ORG
+        assert resolved.distribution_id == "dist-1"
+
+    def test_no_principal_identity_is_a_context_failure(self):
+        """A distribution with only a service identity names no owning organization."""
+        resolved = resolve_upload_context(
+            extensions(distribution_payload(service_identity()))
+        )
+        assert isinstance(resolved, UploadFailure)
+        assert resolved.error_code is FileUploadErrorCode.NO_ORGANIZATION
+
+    def test_several_principal_identities_are_ambiguous(self):
+        """Two principals: refuse rather than silently pick who pays."""
+        resolved = resolve_upload_context(
+            extensions(
+                distribution_payload(
+                    principal(organization_id="org-a", identity_id="p-a"),
+                    principal(organization_id="org-b", identity_id="p-b"),
+                )
+            )
+        )
+        assert isinstance(resolved, UploadFailure)
+        assert resolved.error_code is FileUploadErrorCode.AMBIGUOUS_ORGANIZATION
+
+    def test_missing_distribution_is_its_own_code(self):
+        """No distribution at all is distinguishable from one without a principal."""
+        resolved = resolve_upload_context(extensions(None))
+        assert isinstance(resolved, UploadFailure)
+        assert resolved.error_code is FileUploadErrorCode.NO_DISTRIBUTION
+
+    def test_usage_carrier_is_projected(self):
+        """The opaque signed carrier travels with the projection, uninspected."""
+        resolved = resolve_upload_context(
+            extensions(distribution_payload(principal()), carrier="opaque-token")
+        )
+        assert resolved.usage_attribution == "opaque-token"
+
+    def test_selector_matches_the_runtime_context(self):
+        """The projected selector is the one the runtime context would produce.
+
+        Inbound preprocessing cannot read AionRuntimeContext, so it derives the
+        selector from the same environment. If the two ever disagreed, the same
+        agent would act as different principals depending on direction.
+        """
+        from aion.core.runtime.context import AionRuntimeContext
+
+        payload = distribution_payload(principal(), daemon_identity_id="daemon-7")
+        resolved = resolve_upload_context(extensions(payload))
+
+        expected = AionRuntimeContext(
+            distribution_extension_payload=payload
+        ).get_principal_selector()
+        assert expected == "aion://agent/identity/daemon-7"
+        assert resolved.principal_selector.to_header_value() == expected
+
+    def test_selector_falls_back_to_the_environment(self):
+        """Without a daemon identity the environment itself is the principal."""
+        resolved = resolve_upload_context(extensions(distribution_payload(principal())))
+        assert resolved.principal_selector.to_header_value() == (
+            "aion://agent/environment/env-1"
+        )
+
+
+# --------------------------------------------------------------------------
+# Manager and backend contract
+# --------------------------------------------------------------------------
 
 class TestFileUploadManager:
-    def _backend(self):
-        backend = MagicMock(spec=StubFileStorageBackend)
-        backend.generate_uri.return_value = ("file-id-1", "https://stub/files/file-id-1")
-        backend.upload = AsyncMock(return_value=None)
-        backend.delete = AsyncMock(return_value=None)
-        return backend
+    async def test_store_returns_a_receipt(self):
+        manager = FileUploadManager(StubFileStorageBackend())
+        outcome = await manager.store(
+            FileUpload(b"x", "text/plain", "n.txt"), context=upload_context()
+        )
+        assert isinstance(outcome, UploadReceipt)
+        assert outcome.uri
 
-    def _manager(self, backend=None):
-        return FileUploadManager(backend=backend or self._backend())
+    async def test_store_many_is_positional(self):
+        """Outcomes line up with the uploads that produced them."""
+        backend = OutcomeBackend(
+            [
+                UploadReceipt(uri="u-0"),
+                UploadFailure(FileUploadErrorCode.STORAGE_REJECTED),
+                UploadReceipt(uri="u-2"),
+            ]
+        )
+        manager = FileUploadManager(backend)
+        outcomes = await manager.store_many(
+            [FileUpload(b"a"), FileUpload(b"b"), FileUpload(b"c")],
+            context=upload_context(),
+        )
+        assert [getattr(o, "uri", None) for o in outcomes] == ["u-0", None, "u-2"]
 
-    async def test_schedule_returns_uri(self):
-        """schedule returns the URI generated by the backend."""
-        backend = self._backend()
-        backend.generate_uri.return_value = ("id1", "https://example.com/id1")
-        mgr = self._manager(backend)
-        uri = mgr.schedule(data=b"data", mime_type="text/plain")
-        assert uri == "https://example.com/id1"
+    async def test_empty_batch_does_not_reach_the_backend(self):
+        backend = RecordingBackend()
+        manager = FileUploadManager(backend)
+        assert await manager.store_many([], context=upload_context()) == []
+        assert backend.batches == []
 
-    async def test_schedule_increments_pending_count(self):
-        """schedule increments pending_count before the upload task completes."""
-        backend = self._backend()
-        backend.upload = AsyncMock(return_value=None)
-        event = asyncio.Event()
+    async def test_store_after_close_is_refused_per_file(self):
+        """Shutdown refuses new work without raising into a response in flight."""
+        manager = FileUploadManager(StubFileStorageBackend())
+        await manager.aclose()
 
-        async def _slow_upload(**kw):
-            await event.wait()
+        outcomes = await manager.store_many(
+            [FileUpload(b"a"), FileUpload(b"b")], context=upload_context()
+        )
+        assert all(isinstance(o, UploadFailure) for o in outcomes)
+        assert {o.error_code for o in outcomes} == {FileUploadErrorCode.STORAGE_CLOSED}
 
-        backend.upload = _slow_upload
-        mgr = self._manager(backend)
+    async def test_aclose_is_idempotent(self):
+        closed = []
 
-        mgr.schedule(data=b"x", mime_type="text/plain")
-        assert mgr.pending_count == 1
+        class CountingBackend(StubFileStorageBackend):
+            async def aclose(self):
+                closed.append(True)
 
-    async def test_schedule_clears_pending_after_upload(self):
-        """pending_count returns to 0 after uploaded file completes."""
-        backend = self._backend()
-        mgr = self._manager(backend)
-        uri = mgr.schedule(data=b"data", mime_type="text/plain")
-        await mgr.wait([uri])
-        await asyncio.sleep(0)
-        assert mgr.pending_count == 0
+        manager = FileUploadManager(CountingBackend())
+        await manager.aclose()
+        await manager.aclose()
+        assert manager.is_closed
+        assert len(closed) == 1
 
-    async def test_wait_for_specific_uri(self):
-        """wait completes when the specified URI has finished uploading."""
-        backend = self._backend()
-        mgr = self._manager(backend)
-        uri = mgr.schedule(data=b"data", mime_type="text/plain")
-        await mgr.wait([uri])
+    async def test_from_settings_returns_none_without_a_backend(self, monkeypatch):
+        from aion.server.settings import app_settings
 
-    async def test_wait_ignores_unknown_uris(self):
-        """wait does not raise for URIs that were never scheduled."""
-        mgr = self._manager()
-        await mgr.wait(["https://unknown.example.com/file"])
+        monkeypatch.setattr(app_settings, "file_storage_backend", None)
+        assert FileUploadManager.from_settings() is None
 
-    async def test_drain_waits_for_all(self):
-        """drain waits for all pending uploads to complete."""
-        backend = self._backend()
-        mgr = self._manager(backend)
-        for i in range(3):
-            backend.generate_uri.return_value = (f"id{i}", f"https://stub/{i}")
-            mgr.schedule(data=b"x", mime_type="text/plain")
+    async def test_from_settings_builds_the_stub(self, monkeypatch):
+        from aion.server.settings import app_settings
 
-        await mgr.drain()
-        assert mgr.pending_count == 0
+        monkeypatch.setattr(app_settings, "file_storage_backend", "stub")
+        assert isinstance(FileUploadManager.from_settings(), FileUploadManager)
 
-    async def test_drain_noop_when_no_pending(self):
-        """drain does not raise when there are no pending uploads."""
-        mgr = self._manager()
-        await mgr.drain()
+    async def test_from_settings_rejects_an_unknown_backend(self, monkeypatch):
+        from aion.server.settings import app_settings
 
-    async def test_delete_cancels_pending_task(self):
-        """delete cancels a pending upload task before completion."""
-        backend = self._backend()
-        event = asyncio.Event()
-
-        async def _slow(**kw):
-            await event.wait()
-
-        backend.upload = _slow
-        mgr = self._manager(backend)
-        uri = mgr.schedule(data=b"x", mime_type="text/plain")
-
-        await mgr.delete(uri)
-        for _ in range(5):
-            await asyncio.sleep(0)
-        assert uri not in mgr._pending
-
-    async def test_delete_calls_backend_delete(self):
-        """delete delegates to backend.delete after upload completes."""
-        backend = self._backend()
-        mgr = self._manager(backend)
-        uri = mgr.schedule(data=b"x", mime_type="text/plain")
-        await mgr.wait([uri])
-        await mgr.delete(uri)
-        backend.delete.assert_called_once()
-
-    async def test_upload_safe_absorbs_exceptions(self):
-        """_upload_safe catches backend upload exceptions without propagating them."""
-        backend = self._backend()
-        backend.upload = AsyncMock(side_effect=RuntimeError("boom"))
-        mgr = self._manager(backend)
-        uri = mgr.schedule(data=b"x", mime_type="text/plain")
-        await mgr.wait([uri])
-
-def _make_part_raw(data: bytes = b"hello", media_type: str = "text/plain") -> Part:
-    return Part(raw=data, media_type=media_type)
+        monkeypatch.setattr(app_settings, "file_storage_backend", "nope")
+        with pytest.raises(ValueError, match="Unknown storage backend"):
+            FileUploadManager.from_settings()
 
 
-def _make_part_text(text: str = "hello") -> Part:
-    return Part(text=text)
+class TestLeafName:
+    def _upload(self, filename, media_type="application/octet-stream"):
+        return FileUpload(data=b"x", media_type=media_type, filename=filename)
+
+    def test_directory_components_are_dropped(self):
+        assert self._upload("../../etc/passwd").leaf_name("id") == "passwd.bin"
+
+    def test_hostile_characters_are_replaced(self):
+        assert self._upload('a b;"x".png').leaf_name("id") == "a-b-x.png"
+
+    def test_extension_comes_from_the_media_type_when_absent(self):
+        assert self._upload("report", "application/pdf").leaf_name("id") == "report.pdf"
+
+    def test_empty_name_falls_back_to_the_upload_id(self):
+        assert self._upload(None, "text/plain").leaf_name("abc").startswith("abc.")
 
 
-def _make_status_event(parts: list[Part] | None = None, context_id: str = "ctx-1") -> TaskStatusUpdateEvent:
-    msg = Message(role=Role.ROLE_AGENT, parts=parts or []) if parts is not None else None
+# --------------------------------------------------------------------------
+# Transformer
+# --------------------------------------------------------------------------
+
+def status_event(*parts, context_id="ctx-1") -> TaskStatusUpdateEvent:
     return TaskStatusUpdateEvent(
-        task_id="task-1",
+        task_id="t-1",
         context_id=context_id,
-        status=TaskStatus(state=TaskState.TASK_STATE_WORKING, message=msg),
+        status=TaskStatus(
+            state=TaskState.TASK_STATE_WORKING,
+            message=Message(message_id="m-1", role=Role.ROLE_AGENT, parts=list(parts)),
+        ),
     )
 
 
-def _make_artifact_event(parts: list[Part], context_id: str = "ctx-1") -> TaskArtifactUpdateEvent:
-    artifact = Artifact(artifact_id="art-1", parts=parts)
+def artifact_event(*parts, context_id="ctx-1") -> TaskArtifactUpdateEvent:
     return TaskArtifactUpdateEvent(
-        task_id="task-1",
+        task_id="t-1",
         context_id=context_id,
-        artifact=artifact,
+        artifact=Artifact(artifact_id="a-1", name="art", parts=list(parts)),
     )
 
-
-def _make_message(parts: list[Part] | None = None, context_id: str = "ctx-1") -> Message:
-    return Message(role=Role.ROLE_USER, parts=parts or [], context_id=context_id)
 
 class TestA2AFileTransformer:
-    def _mock_manager(self):
-        mgr = MagicMock(spec=FileUploadManager)
-        mgr.schedule.return_value = "https://stub/files/abc"
-        mgr.wait = AsyncMock()
-        mgr.drain = AsyncMock()
-        mgr.pending_count = 0
-        return mgr
-
-    def test_is_active_true_with_manager(self):
-        """is_active returns True when upload_manager is set."""
-        t = A2AFileTransformer(upload_manager=self._mock_manager())
-        assert t.is_active is True
-
-    def test_is_active_false_without_manager(self):
-        """is_active returns False when upload_manager is None."""
-        t = A2AFileTransformer(upload_manager=None)
-        assert t.is_active is False
-
-    def test_upload_manager_property(self):
-        """upload_manager property returns the configured manager."""
-        mgr = self._mock_manager()
-        t = A2AFileTransformer(upload_manager=mgr)
-        assert t.upload_manager is mgr
-
-    async def test_transform_event_noop_without_manager(self):
-        """transform_event returns event unchanged when no upload_manager is configured."""
-        t = A2AFileTransformer(upload_manager=None)
-        event = _make_status_event(parts=[_make_part_raw()])
-        result = await t.transform_event(event)
-        assert result is event
-
-    async def test_transform_status_event_replaces_raw_part(self):
-        """transform_event replaces raw binary parts with uploaded file URLs in status events."""
-        mgr = self._mock_manager()
-        t = A2AFileTransformer(upload_manager=mgr)
-        event = _make_status_event(parts=[_make_part_raw(b"image data", "image/png")])
-
-        result = await t.transform_event(event)
-
-        assert isinstance(result, TaskStatusUpdateEvent)
-        new_parts = list(result.status.message.parts)
-        assert len(new_parts) == 1
-        assert new_parts[0].url == "https://stub/files/abc"
-        assert new_parts[0].raw is None or new_parts[0].raw == b""
-
-    async def test_transform_status_event_skips_non_raw_parts(self):
-        """transform_event leaves non-raw parts unchanged in status events."""
-        mgr = self._mock_manager()
-        t = A2AFileTransformer(upload_manager=mgr)
-        event = _make_status_event(parts=[_make_part_text("hello")])
-
-        result = await t.transform_event(event)
-        assert result is event
-
-    async def test_transform_status_event_no_message_returns_unchanged(self):
-        """transform_event returns status event unchanged when message is None."""
-        mgr = self._mock_manager()
-        t = A2AFileTransformer(upload_manager=mgr)
-        event = TaskStatusUpdateEvent(
-            task_id="t1",
-            context_id="ctx-1",
-            status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
+    def _transformer(self, backend=None):
+        return A2AFileTransformer(
+            upload_manager=FileUploadManager(backend or StubFileStorageBackend())
         )
-        result = await t.transform_event(event)
+
+    def test_inactive_without_a_manager(self):
+        assert A2AFileTransformer(upload_manager=None).is_active is False
+
+    async def test_no_manager_passes_events_through(self):
+        transformer = A2AFileTransformer(upload_manager=None)
+        event = status_event(raw_part())
+        assert await transformer.transform_event(event) is event
+
+    async def test_status_event_raw_becomes_url(self):
+        event = await self._transformer().transform_event(
+            status_event(raw_part()), upload_context=upload_context()
+        )
+        part = event.status.message.parts[0]
+        assert part.url and not part.raw
+
+    async def test_artifact_event_raw_becomes_url(self):
+        event = await self._transformer().transform_event(
+            artifact_event(raw_part()), upload_context=upload_context()
+        )
+        assert event.artifact.parts[0].url
+
+    async def test_event_without_inline_parts_is_returned_unchanged(self):
+        event = status_event(Part(text="hello"))
+        assert await self._transformer().transform_event(
+            event, upload_context=upload_context()
+        ) is event
+
+    async def test_card_parts_are_never_stored(self):
+        """Cards are UI documents, not files - the skip rules keep them inline."""
+        backend = RecordingBackend()
+        event = status_event(Part(raw=b"<Card/>", media_type=CARDS_MEDIA_TYPE))
+        result = await self._transformer(backend).transform_event(
+            event, upload_context=upload_context()
+        )
         assert result is event
+        assert backend.batches == []
 
-    async def test_transform_artifact_event_replaces_raw_part(self):
-        """transform_event replaces raw binary parts with uploaded URLs in artifact events."""
-        mgr = self._mock_manager()
-        t = A2AFileTransformer(upload_manager=mgr)
-        event = _make_artifact_event(parts=[_make_part_raw(b"bytes", "application/pdf")])
+    async def test_one_batch_per_event(self):
+        """Every inline part of one event is stored in a single call."""
+        backend = RecordingBackend()
+        await self._transformer(backend).transform_event(
+            status_event(raw_part(name="a.png"), Part(text="t"), raw_part(name="b.png")),
+            upload_context=upload_context(),
+        )
+        assert len(backend.batches) == 1
+        assert [u.filename for u in backend.batches[0]] == ["a.png", "b.png"]
 
-        result = await t.transform_event(event)
+    async def test_part_order_survives_concurrent_storage(self):
+        """Uploads run concurrently; parts are restored by index, not by arrival."""
+        backend = OutcomeBackend(
+            [UploadReceipt(uri=f"u-{i}") for i in range(4)], delay=0.01
+        )
+        event = await self._transformer(backend).transform_event(
+            status_event(*(raw_part(name=f"{i}.png") for i in range(4))),
+            upload_context=upload_context(),
+        )
+        assert [p.url for p in event.status.message.parts] == [f"u-{i}" for i in range(4)]
+        assert backend.concurrent_peak > 1
 
-        assert isinstance(result, TaskArtifactUpdateEvent)
-        new_parts = list(result.artifact.parts)
-        assert new_parts[0].url == "https://stub/files/abc"
+    async def test_a_failed_part_does_not_cancel_its_neighbours(self):
+        """Policy is 'let the rest arrive', so one failure keeps the others."""
+        backend = OutcomeBackend(
+            [
+                UploadReceipt(uri="u-0"),
+                UploadFailure(FileUploadErrorCode.STORAGE_REJECTED),
+                UploadReceipt(uri="u-2"),
+            ]
+        )
+        event = await self._transformer(backend).transform_event(
+            status_event(*(raw_part(name=f"{i}.png") for i in range(3))),
+            upload_context=upload_context(),
+        )
+        parts = event.status.message.parts
+        assert [p.url for p in parts] == ["u-0", "u-2"]
 
-    async def test_transform_artifact_event_empty_parts_unchanged(self):
-        """transform_event returns artifact event unchanged when parts list is empty."""
-        mgr = self._mock_manager()
-        t = A2AFileTransformer(upload_manager=mgr)
-        event = _make_artifact_event(parts=[])
-        result = await t.transform_event(event)
-        assert result is event
+    async def test_failed_part_is_dropped_and_logged(self, caplog):
+        """Never inline bytes - that is what the transformer exists to prevent."""
+        backend = OutcomeBackend([UploadFailure(FileUploadErrorCode.STORAGE_UNAVAILABLE, retryable=True)])
+        with caplog.at_level("WARNING"):
+            event = await self._transformer(backend).transform_event(
+                status_event(Part(text="answer"), raw_part(name="a.png")),
+                upload_context=upload_context(),
+            )
+        parts = event.status.message.parts
+        assert [p.text for p in parts] == ["answer"]
+        assert "a.png" in caplog.text
+        assert "STORAGE_UNAVAILABLE" in caplog.text
 
-    async def test_transform_message_replaces_raw_parts(self):
-        """transform_message replaces raw parts with uploaded file URLs."""
-        mgr = self._mock_manager()
-        t = A2AFileTransformer(upload_manager=mgr)
-        msg = _make_message(parts=[_make_part_raw(b"data", "text/plain")])
+    async def test_dropping_never_publishes_the_cause(self, caplog):
+        """The exception is logged, not handed to whoever reads the event."""
+        cause = RuntimeError("https://internal.host/secret timed out")
+        backend = OutcomeBackend([UploadFailure(FileUploadErrorCode.STORAGE_REJECTED, cause=cause)])
+        with caplog.at_level("WARNING"):
+            event = await self._transformer(backend).transform_event(
+                status_event(raw_part()), upload_context=upload_context()
+            )
+        assert "internal.host" not in event.SerializeToString().decode("latin-1")
+        assert "internal.host" in caplog.text
 
-        result = await t.transform_message(msg)
+    async def test_context_failure_is_reported_once_for_the_batch(self):
+        """Five attachments under one broken request produce one diagnostic."""
+        backend = RecordingBackend()
+        transformer = self._transformer(backend)
+        message = Message(
+            message_id="m-1",
+            role=Role.ROLE_USER,
+            parts=[raw_part(name=f"{i}.png") for i in range(5)],
+        )
+        failure = UploadFailure(FileUploadErrorCode.NO_DISTRIBUTION)
 
-        new_parts = list(result.parts)
-        assert new_parts[0].url == "https://stub/files/abc"
+        result = await transformer.transform_message(message, upload_context=failure)
 
-    async def test_transform_message_noop_without_manager(self):
-        """transform_message returns message unchanged when no upload_manager is configured."""
-        t = A2AFileTransformer(upload_manager=None)
-        msg = _make_message(parts=[_make_part_raw()])
-        result = await t.transform_message(msg)
-        assert result is msg
+        assert len(result.report.failures) == 1
+        assert backend.batches == []
+        assert list(result.message.parts) == []
 
-    async def test_transform_message_noop_no_parts(self):
-        """transform_message returns message unchanged when parts list is empty."""
-        mgr = self._mock_manager()
-        t = A2AFileTransformer(upload_manager=mgr)
-        msg = _make_message(parts=[])
-        result = await t.transform_message(msg)
-        assert result is msg
+    async def test_report_receipts_match_the_stored_parts(self):
+        transform = await self._transformer().transform_message(
+            Message(
+                message_id="m-1",
+                role=Role.ROLE_USER,
+                parts=[raw_part(), Part(text="t"), raw_part(name="b.png")],
+            ),
+            upload_context=upload_context(),
+        )
+        assert len(transform.report.receipts) == 2
+        assert transform.report.ok
+        urls = [p.url for p in transform.message.parts if p.url]
+        assert urls == [r.uri for r in transform.report.receipts]
 
-    async def test_wait_upload_true_calls_wait(self):
-        """transform_event with wait_upload=True calls manager's wait method."""
-        mgr = self._mock_manager()
-        t = A2AFileTransformer(upload_manager=mgr)
-        event = _make_status_event(parts=[_make_part_raw()])
-
-        await t.transform_event(event, wait_upload=True)
-
-        mgr.wait.assert_called_once()
-
-    async def test_wait_upload_false_does_not_call_wait(self):
-        """transform_event with wait_upload=False does not call manager's wait method."""
-        mgr = self._mock_manager()
-        t = A2AFileTransformer(upload_manager=mgr)
-        event = _make_status_event(parts=[_make_part_raw()])
-
-        await t.transform_event(event, wait_upload=False)
-
-        mgr.wait.assert_not_called()
-
-    async def test_drain_delegates_to_manager(self):
-        """drain delegates to the upload_manager's drain method."""
-        mgr = self._mock_manager()
-        t = A2AFileTransformer(upload_manager=mgr)
-        await t.drain()
-        mgr.drain.assert_called_once()
-
-    async def test_drain_noop_without_manager(self):
-        """drain does not raise when no upload_manager is configured."""
-        t = A2AFileTransformer(upload_manager=None)
-        await t.drain()
-
-    def test_pending_count_with_manager(self):
-        """pending_count returns the manager's pending count when manager is set."""
-        mgr = self._mock_manager()
-        mgr.pending_count = 5
-        t = A2AFileTransformer(upload_manager=mgr)
-        assert t.pending_count == 5
-
-    def test_pending_count_without_manager(self):
-        """pending_count returns 0 when no upload_manager is configured."""
-        t = A2AFileTransformer(upload_manager=None)
-        assert t.pending_count == 0
-
-    async def test_mime_type_guessed_from_filename(self):
-        """transform_message guesses mime type from filename when media_type is not set."""
-        mgr = self._mock_manager()
-        t = A2AFileTransformer(upload_manager=mgr)
-        part = Part(raw=b"data", filename="document.pdf")
-        msg = _make_message(parts=[part])
-        await t.transform_message(msg)
-        call_kwargs = mgr.schedule.call_args[1]
-        assert "pdf" in call_kwargs.get("mime_type", "")
-
-    async def test_fallback_mime_type_octet_stream(self):
-        """transform_message falls back to application/octet-stream when mime type cannot be determined."""
-        mgr = self._mock_manager()
-        t = A2AFileTransformer(upload_manager=mgr)
-        part = Part(raw=b"data")
-        msg = _make_message(parts=[part])
-        await t.transform_message(msg)
-        call_kwargs = mgr.schedule.call_args[1]
-        assert call_kwargs.get("mime_type") == "application/octet-stream"
+    async def test_source_message_is_not_mutated(self):
+        message = Message(message_id="m-1", role=Role.ROLE_USER, parts=[raw_part()])
+        transform = await self._transformer().transform_message(
+            message, upload_context=upload_context()
+        )
+        assert transform.message is not message
+        assert message.parts[0].raw
 
 
-class TestFileUploadManagerFromSettings:
-    def test_returns_none_when_no_backend_configured(self):
-        """from_settings returns None when file_storage_backend is not configured."""
-        with patch("aion.server.settings.app_settings") as mock:
-            mock.file_storage_backend = None
-            result = FileUploadManager.from_settings()
-            assert result is None
+# --------------------------------------------------------------------------
+# Inline-content guard
+# --------------------------------------------------------------------------
 
-    def test_returns_manager_for_stub_backend(self):
-        """from_settings returns a FileUploadManager when backend is 'stub'."""
-        with patch("aion.server.settings.app_settings") as mock:
-            mock.file_storage_backend = "stub"
-            result = FileUploadManager.from_settings()
-            assert isinstance(result, FileUploadManager)
+def task_with(status_parts=(), history_parts=(), artifact_parts=()) -> Task:
+    task = Task(id="11111111-1111-1111-1111-111111111111", context_id="ctx-1")
+    task.status.CopyFrom(
+        TaskStatus(
+            state=TaskState.TASK_STATE_WORKING,
+            message=Message(
+                message_id="m-status", role=Role.ROLE_AGENT, parts=list(status_parts)
+            ),
+        )
+    )
+    if history_parts:
+        task.history.append(
+            Message(message_id="m-hist", role=Role.ROLE_USER, parts=list(history_parts))
+        )
+    if artifact_parts:
+        task.artifacts.append(
+            Artifact(artifact_id="a-1", name="art", parts=list(artifact_parts))
+        )
+    return task
 
-    def test_raises_for_unknown_backend(self):
-        """from_settings raises ValueError for unknown storage backend names."""
-        with patch("aion.server.settings.app_settings") as mock:
-            mock.file_storage_backend = "s3"
-            with pytest.raises(ValueError, match="Unknown storage backend"):
-                FileUploadManager.from_settings()
 
-class TestFileUploadManagerContextId:
-    def _backend(self):
-        backend = MagicMock(spec=StubFileStorageBackend)
-        backend.generate_uri.return_value = ("file-id-1", "https://stub/files/file-id-1")
-        backend.upload = AsyncMock(return_value=None)
-        backend.delete = AsyncMock(return_value=None)
-        return backend
+class TestInlineContentGuard:
+    @pytest.mark.parametrize(
+        "field", ["status_parts", "history_parts", "artifact_parts"]
+    )
+    def test_raw_is_stripped_everywhere_it_can_hide(self, field):
+        """status, history and artifacts are written separately - all three are guarded."""
+        task = task_with(**{field: [raw_part()]})
+        guarded = strip_inline_file_content(task)
 
-    async def test_schedule_passes_context_id_to_backend(self):
-        """schedule passes context_id to backend's generate_uri method."""
-        backend = self._backend()
-        mgr = FileUploadManager(backend=backend)
-        mgr.schedule(data=b"x", mime_type="text/plain", context_id="ctx-42")
-        backend.generate_uri.assert_called_once_with(mime_type="text/plain", context_id="ctx-42")
+        remaining = [
+            part
+            for message in list(guarded.history) + [guarded.status.message]
+            for part in message.parts
+        ] + [part for artifact in guarded.artifacts for part in artifact.parts]
+        assert remaining == []
 
-    async def test_delete_passes_context_id_to_backend(self):
-        """delete passes context_id to backend's delete method."""
-        backend = self._backend()
-        mgr = FileUploadManager(backend=backend)
-        uri = mgr.schedule(data=b"x", mime_type="text/plain")
-        await mgr.wait([uri])
-        await mgr.delete(uri, context_id="ctx-99")
-        backend.delete.assert_called_once()
-        _, kwargs = backend.delete.call_args
-        assert kwargs.get("context_id") == "ctx-99"
+    def test_guard_does_not_mutate_the_original_task(self):
+        """The same object is already in the task manager and on its way out."""
+        task = task_with(status_parts=[raw_part()])
+        guarded = strip_inline_file_content(task)
 
-    async def test_delete_never_scheduled_uri_does_not_raise(self):
-        """delete does not raise or call backend for URIs that were never scheduled."""
-        backend = self._backend()
-        mgr = FileUploadManager(backend=backend)
-        await mgr.delete("https://never-scheduled.example.com/file")
-        backend.delete.assert_not_called()
+        assert guarded is not task
+        assert task.status.message.parts[0].raw == b"bytes"
 
-    async def test_uri_to_file_id_cleaned_up_after_delete(self):
-        """delete removes the URI from internal tracking after backend deletion."""
-        backend = self._backend()
-        mgr = FileUploadManager(backend=backend)
-        uri = mgr.schedule(data=b"x", mime_type="text/plain")
-        await mgr.wait([uri])
-        await mgr.delete(uri)
-        assert uri not in mgr._uri_to_file_id
+    def test_neighbouring_parts_survive(self, caplog):
+        """Only the inline file goes; the strike is logged as the bug it is."""
+        with caplog.at_level("ERROR"):
+            guarded = strip_inline_file_content(
+                task_with(status_parts=[Part(text="keep"), raw_part()])
+            )
+        assert [p.text for p in guarded.status.message.parts] == ["keep"]
+        assert guarded.id in caplog.text
+
+    def test_clean_task_is_returned_as_is(self):
+        task = task_with(status_parts=[Part(text="hello")])
+        assert strip_inline_file_content(task) is task
+
+    def test_card_parts_survive_the_guard(self):
+        """The guard follows the transformer's skip rules or it would eat cards."""
+        card = Part(raw=b"<Card/>", media_type=CARDS_MEDIA_TYPE)
+        task = task_with(status_parts=[card])
+        assert strip_inline_file_content(task) is task
+
+
+
+class TestStoreGuard:
+    """The guard is a property of the store, set where the backend is installed."""
+
+    @staticmethod
+    def _store(**kwargs):
+        from aion.server.tasks.stores import InMemoryTaskStore
+
+        return InMemoryTaskStore(owner_resolver=lambda _context: "owner", **kwargs)
+
+    async def _saved(self, store, task):
+        await store.save(task)
+        return await store.get(task.id)
+
+    async def test_a_guarded_store_strips_before_writing(self):
+        task = task_with(status_parts=[Part(text="keep"), raw_part()])
+        saved = await self._saved(self._store(guard_inline_files=True), task)
+
+        assert [p.text for p in saved.status.message.parts] == ["keep"]
+        assert task.status.message.parts[1].raw == b"bytes"
+
+    async def test_an_unguarded_store_keeps_the_bytes(self):
+        """Passthrough is a supported mode: with no backend, bytes belong in the row."""
+        task = task_with(status_parts=[raw_part()])
+        saved = await self._saved(self._store(), task)
+
+        assert saved.status.message.parts[0].raw == b"bytes"
+
+    def test_store_manager_builds_the_store_it_was_asked_for(self):
+        """Whoever installs the backend says so once; the store never reads settings."""
+        from aion.server.tasks import StoreManager
+
+        guarded, plain = StoreManager(), StoreManager()
+        guarded.initialize("agent", guard_inline_files=True)
+        plain.initialize("agent")
+
+        assert guarded.get_store().guards_inline_files is True
+        assert plain.get_store().guards_inline_files is False
+
+
+# --------------------------------------------------------------------------
+# Fault versus retryability
+# --------------------------------------------------------------------------
+
+class TestFaultClassification:
+    @pytest.mark.parametrize(
+        "code",
+        [
+            FileUploadErrorCode.NO_DISTRIBUTION,
+            FileUploadErrorCode.NO_ORGANIZATION,
+            FileUploadErrorCode.AMBIGUOUS_ORGANIZATION,
+            FileUploadErrorCode.STORAGE_REJECTED,
+        ],
+    )
+    def test_codes_the_sender_must_fix(self, code):
+        assert code.client_fault is True
+
+    @pytest.mark.parametrize(
+        "code",
+        [
+            FileUploadErrorCode.STORAGE_UNAVAILABLE,
+            FileUploadErrorCode.STORAGE_UNAUTHORIZED,
+            FileUploadErrorCode.STORAGE_CLOSED,
+        ],
+    )
+    def test_codes_the_deployment_must_fix(self, code):
+        assert code.client_fault is False
+
+    def test_fault_is_independent_of_retryability(self):
+        """Refused credentials are neither retryable nor the sender's doing."""
+        failure = UploadFailure(FileUploadErrorCode.STORAGE_UNAUTHORIZED)
+        assert failure.retryable is False
+        assert failure.client_fault is False
+
+    def test_public_reason_is_derived_from_the_code(self):
+        """There is no field a backend could put exception text into."""
+        from dataclasses import fields
+
+        assert "public_reason" not in {f.name for f in fields(UploadFailure)}
+        failure = UploadFailure(FileUploadErrorCode.STORAGE_REJECTED)
+        assert failure.public_reason == FileUploadErrorCode.STORAGE_REJECTED.public_reason
+
+    @pytest.mark.parametrize("code", list(FileUploadErrorCode))
+    def test_every_code_has_a_public_reason(self, code):
+        assert code.public_reason
+
+
+class TestCompensationSeam:
+    async def test_discard_delegates_to_the_backend(self):
+        """Only the backend knows whether a stored file can be withdrawn."""
+        seen: list[list[UploadReceipt]] = []
+
+        class DeletingBackend(StubFileStorageBackend):
+            async def discard(self, receipts):
+                seen.append(list(receipts))
+
+        manager = FileUploadManager(DeletingBackend())
+        await manager.discard([UploadReceipt(uri="u-0", file_id="f-0")])
+
+        assert [r.file_id for r in seen[0]] == ["f-0"]
+
+    async def test_discard_of_nothing_does_not_reach_the_backend(self):
+        class Exploding(StubFileStorageBackend):
+            async def discard(self, receipts):
+                raise AssertionError("must not be called")
+
+        await FileUploadManager(Exploding()).discard([])
+
+    async def test_backend_without_deletion_reports_orphans(self, caplog):
+        """Saying so beats pretending the compensation happened."""
+        from aion.server.files.storage.backends.base import FileStorageBackend
+
+        class NoDeletion(FileStorageBackend):
+            async def store_many(self, uploads, *, context):
+                return []
+
+        with caplog.at_level("WARNING"):
+            await NoDeletion().discard([UploadReceipt(uri="u-0", file_id="f-0")])
+
+        assert "f-0" in caplog.text
+
+    async def test_orphan_report_never_logs_the_uri(self, caplog):
+        """A storage service may answer with a signed URL that is a credential."""
+        from aion.server.files.storage.backends.base import FileStorageBackend
+
+        class NoDeletion(FileStorageBackend):
+            async def store_many(self, uploads, *, context):
+                return []
+
+        secret = "https://cdn.test/f?signature=s3cr3t"
+        with caplog.at_level("WARNING"):
+            await NoDeletion().discard([UploadReceipt(uri=secret, file_id="f-0")])
+
+        assert "s3cr3t" not in caplog.text

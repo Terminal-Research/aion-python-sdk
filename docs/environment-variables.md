@@ -80,10 +80,14 @@ AION_API_KEEP_ALIVE=60
 **`FILE_STORAGE_BACKEND`**
 - Type: `string` (optional)
 - Default: not set (disabled)
-- Enables conversion of inline (base64) file parts in outgoing A2A events to URL references, minimizing binary content stored in task history tables
-- When not set, file parts are passed through unchanged (base64 preserved)
-- Allowed values: `stub`
-  - `stub` — development/testing only; generates placeholder URLs without uploading any data
+- Enables conversion of inline (base64) file parts to URL references, keeping binary content out of the task tables. Applies to both directions: attachments on incoming requests are stored before any handler or task store sees them, and outgoing events are converted before they are streamed
+- Storage is awaited, never backgrounded — a URL only ever names content that exists
+- When it is set, inline file content is never written to the task record as a fallback. Parts the transformer deliberately skips — JSX Cards, which are UI documents rather than files — stay inline either way. An incoming file that cannot be stored rejects the request; an outgoing one is dropped from the event and logged with a stable error code
+- The owning organization comes from the principal identity of the verified `distribution` extension. Requests that do not declare one — daemon and direct A2A calls — cannot store files; text-only requests are unaffected
+- When not set, file parts are passed through unchanged (base64 preserved). This is the only configuration in which binary content reaches the database
+- Allowed values: `aion`, `stub`
+  - `aion` — stores content through the Aion Files API (`POST /files`) under the owning organization, acting as the request's effective principal and forwarding its usage attribution. Requires `AION_CLIENT_ID` and `AION_CLIENT_SECRET`; the server refuses to start without them. Uploads are retried on transport errors and 5xx responses with the same operation id, so a retry never creates a second File
+  - `stub` — development/testing only; returns placeholder URLs without uploading any data
 
 **`ENCRYPTION_KEY`**
 - Type: `string` (optional)

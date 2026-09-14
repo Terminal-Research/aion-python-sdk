@@ -16,6 +16,7 @@ from .control_plane import (
 from .exceptions import (
     AionAuthenticationError,
     AionError,
+    AionFileStorageError,
     AionFileValidationError,
     AionModelPrincipalError,
 )
@@ -35,6 +36,7 @@ __all__ = [
     "AionModelPrincipalError",
     "AionControlPlanePaths",
     "AionFileClient",
+    "AionFileStorageError",
     "AionFileValidationError",
     "CapabilityKey",
     "CapabilityKind",
