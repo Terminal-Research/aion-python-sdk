@@ -120,7 +120,15 @@ class Recorder:
         return [call[4] for call in self.calls if call[:1] == ["make"]]
 
 
-GATE_TARGETS = ["check-env", "tests", "lint-imports", "dist-build", "dist-check", "dist-smoke"]
+GATE_TARGETS = [
+    "check-env",
+    "tests",
+    "lint-imports",
+    "dist-build",
+    "dist-check",
+    "dist-smoke",
+    "scenarios-dist",
+]
 
 
 def test_gate_runs_the_make_targets_in_order(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -130,14 +138,20 @@ def test_gate_runs_the_make_targets_in_order(monkeypatch: pytest.MonkeyPatch) ->
     assert recorder.targets() == GATE_TARGETS
     assert all(call[:4] == ["make", "-C", str(release.REPO_ROOT), "--no-print-directory"]
                for call in recorder.calls)
-    assert recorder.calls[-1][-1] == "dist-smoke"  # no SMOKE_ARGS unless asked
+    # No interpreter asked for, no variable assignment on either of the two
+    # targets that take one.
+    assert recorder.calls[-2][-1] == "dist-smoke"
+    assert recorder.calls[-1][-1] == "scenarios-dist"
 
 
-def test_gate_passes_the_smoke_interpreter_through(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_gate_passes_the_interpreter_through_to_both_clean_environments(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     recorder = Recorder()
     monkeypatch.setattr(release.subprocess, "run", recorder)
     release.run_gate(python="3.12")
-    assert recorder.calls[-1][-2:] == ["dist-smoke", "SMOKE_ARGS=--python 3.12"]
+    assert recorder.calls[-2][-2:] == ["dist-smoke", "SMOKE_ARGS=--python 3.12"]
+    assert recorder.calls[-1][-2:] == ["scenarios-dist", "SCENARIOS_ARGS=--python 3.12"]
 
 
 def test_gate_stops_at_the_first_failing_step(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -75,8 +75,9 @@ Both commands run `scripts/release.py`, read the version from
    | `make dist-build` | Empties `dist/`, builds the wheel and the sdist. |
    | `make dist-check` | Reads `dist/` against the packaging contract, then `twine check`. |
    | `make dist-smoke` | Installs the built files into nine clean venvs and uses each one. |
+   | `make scenarios-dist` | Runs the scenario suite against the built wheel in a clean venv. |
 
-   The last three are what the release workflow itself runs, so green here
+   The last four are what the release workflow itself runs, so green here
    means the release is proven except for the upload.
 3. **The question.** Anything but `y` stops here. `make release YES=1` answers
    it, for a run without a terminal; without `YES=1` a run that has no
@@ -89,10 +90,12 @@ The release is the last thing it does. A failure anywhere before it stops the
 run with the failing step named, and nothing has been spent: no tag, no
 release, no version number. `make release-check` is step 2 alone.
 
-`dist-smoke` takes a minute or two and uses whatever `python3` is on the path.
-Pin it to the version the release is built with:
+`dist-smoke` takes a minute or two and uses whatever `python3` is on the path;
+`scenarios-dist` adds about half a minute on top, in an environment of the same
+kind. Pin both to the version the release is built with:
 `make release-check RELEASE_ARGS="--python 3.12"` (`make release` takes the
-same), or `make dist-smoke SMOKE_ARGS="--python 3.12"` on its own.
+same), or `make dist-smoke SMOKE_ARGS="--python 3.12"` and
+`make scenarios-dist SCENARIOS_ARGS="--python 3.12"` on their own.
 
 The same release by hand, if ever needed: `gh release create py-v0.2.0
 --target main --title py-v0.2.0 --generate-notes`, plus `--prerelease` for a
@@ -165,6 +168,13 @@ bad `0.2.0`, there is no second `0.2.0`.
   discovery which frameworks loaded, and asserts the libraries that extra did
   *not* buy are absent. The negative half is the point: a base install that
   quietly carries `fastapi` proves nothing.
+- **`scenarios-dist`** is the one check that runs the product. It installs the
+  wheel with both framework extras into one more clean environment and runs
+  `tests/scenarios` against it: a real `aion serve` per framework and
+  deployment variant, driven through the proxy by an A2A client, asserting on
+  what comes back over the wire. `dist-smoke` proves the installation is well
+  formed; this proves an agent written against it still behaves. The suite is
+  described in `tests/scenarios/README.md`.
 
 TestPyPI is deliberately not part of this. Several dependencies (`a2a-sdk`,
 `google-adk`, `asgi-proxy-lib`) do not exist there, so an install would need

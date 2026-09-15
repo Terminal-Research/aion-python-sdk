@@ -6,8 +6,10 @@ one wheel and one sdist; the extras install third-party libraries, never Aion
 code, so every `aion.*` subpackage is present in every installation and what an
 extra decides is whether its dependencies are importable.
 
-The tests for all of it live in `tests/`, mirroring `src/aion/`. Shared
-documentation lives in `docs/`, repo-wide tooling in `Makefile` and `scripts/`.
+The tests for all of it live in `tests/`, mirroring `src/aion/` — except
+`tests/scenarios`, the scenario suite, which mirrors nothing because it drives
+the product from outside. Shared documentation lives in `docs/`, repo-wide
+tooling in `Makefile` and `scripts/`.
 `libs/` holds one thing only: `aion-chat-ui`, an npm package with its own
 toolchain.
 
@@ -226,7 +228,8 @@ and are discovered by `aion.server` at runtime.
 - `make help` lists all targets. `make tests` runs the unit suite;
   `make tests-integration` runs the integration suite and
   `make tests-all` runs both. All three are plain `pytest` over `tests/` with
-  the `integration` marker selecting: `pytest` is not to be reached around, and
+  the `integration` marker selecting, and all three exclude `scenario`:
+  `pytest` is not to be reached around, and
   anything after `ARGS=` goes to it untouched
   (`make tests ARGS="-k websocket"`, `make tests ARGS="tests/server -q"`).
   A test marked `integration` needs a real PostgreSQL or real child processes
@@ -239,16 +242,30 @@ and are discovered by `aion.server` at runtime.
   in CI, or at a PostgreSQL of your own — takes over completely and nothing
   touches Docker. That variable is named apart from the ordinary connection
   setting on purpose: these tests migrate and truncate what they are pointed at.
+- `make scenarios` is the third run, and it is in neither `tests` nor
+  `tests-all`: the suite under `tests/scenarios` starts a real `aion serve` per
+  framework and deployment variant and drives it over A2A. `TAGS=` selects
+  suites, `FRAMEWORK=` one framework, `KEEP_SERVE=1` leaves the servers up.
+  `make scenarios-dist` runs the same scenarios against the wheel in `dist/`,
+  installed into a clean venv, and is a step of the release gate.
+  `make scenarios-matrix` regenerates `tests/scenarios/SCENARIOS.md`, which CI
+  checks is current. `tests/scenarios/README.md` is the whole of it, including
+  where the line with the unit tests runs.
 - `make lint-imports` checks the layer contract described above. Run it after
   moving code between subpackages; a new import that crosses a layer fails it.
 - `scripts/packaging/check.py` (`make dist-check`) reads the built wheel and
   sdist against the packaging contract; `scripts/packaging/smoke.py`
   (`make dist-smoke`) installs them into nine clean virtual environments and
   uses each one. Neither runs through `poetry run`: the point is an environment
-  that inherits nothing from this project's. `make dist-build` empties `dist/`
+  that inherits nothing from this project's. `scripts/packaging/scenarios.py`
+  (`make scenarios-dist`) builds one more such environment and runs the
+  scenario suite against it — that one does go through `poetry run`, because
+  pytest and the A2A client come from this project while the installation
+  under test is the venv. `make dist-build` empties `dist/`
   and builds. `scripts/release.py` strings those together: `make release-check`
-  runs environment, unit tests, layer contract, build, packaging contract and
-  smoke in order and publishes nothing; `make release` runs the same after a
+  runs environment, unit tests, layer contract, build, packaging contract,
+  smoke and scenarios in order and publishes nothing; `make release` runs the
+  same after a
   preflight over git, GitHub and PyPI, asks `Are you sure? [y/N]`, and creates
   the `py-v*` GitHub Release that starts the publishing workflow. The version,
   the tag and the pre-release flag all come from `[project].version`; nothing
@@ -256,9 +273,13 @@ and are discovered by `aion.server` at runtime.
   release procedure: commands, version rules, the worked example and the
   one-time PyPI setup.
 - `.github/workflows/python-ci.yml` runs the unit suite on 3.12, 3.13 and
-  3.14, the layer contract, and build + check on every pull request, plus an
-  integration job against a `postgres:16` service container.
-  `.github/workflows/publish-python.yml` builds, checks, smokes and publishes
+  3.14, the layer contract, the scenario matrix check (collection only, no
+  servers) and build + check on every pull request, plus an
+  integration job against a `postgres:16` service container. The scenarios
+  themselves are not run there; they run in the release gate and in
+  `publish-python.yml`, against the built wheel.
+  `.github/workflows/publish-python.yml` builds, checks, smokes, runs the
+  scenarios and publishes
   `aionto-sdk` to PyPI on a `py-v*` release, through trusted publishing and the
   `pypi` environment. `.github/workflows/publish-aion.yml` publishes the
   `aion-chat-ui` npm package on any other release; the two are kept apart by
@@ -269,7 +290,11 @@ and are discovered by `aion.server` at runtime.
 User-facing docs live in `docs/`: `environment-variables.md`,
 `aion-yaml-config.md`, `multiple-agents.md`, `app-registry.md`,
 `http_endpoints.md`, `a2a_extensions/` and `development/`. `RELEASE.md` at the
-root is for maintainers. Every subpackage has a `README.md` of its own beside
+root is for maintainers. A test suite that needs explaining carries its own
+`README.md` beside it - `tests/scenarios/README.md` is the scenario suite, and
+`tests/scenarios/SCENARIOS.md` next to it is generated by
+`make scenarios-matrix` and changed only through the suite it describes.
+Every subpackage has a `README.md` of its own beside
 the code, in `src/aion/<subpackage>/`; those are for whoever opens the
 directory and are excluded from the wheel and the sdist. The root
 `README.md` is the PyPI page — keep it short, and keep every link in it

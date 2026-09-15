@@ -57,6 +57,14 @@ jobs:
       - name: Check the layer contract
         run: make lint-imports
 
+      # Collection and the registries, nothing else: no server starts and it
+      # costs a second. The scenarios themselves are not run on a pull
+      # request - they run before a release, in publish-python.yml, against
+      # the built wheel - so this is what keeps the generated matrix from
+      # falling behind the suite it describes.
+      - name: Check the scenario matrix is current
+        run: poetry run ./scripts/scenarios_matrix.py --check
+
       - name: Build the distributions
         run: make dist-build
 

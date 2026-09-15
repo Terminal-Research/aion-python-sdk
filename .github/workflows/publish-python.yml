@@ -40,6 +40,12 @@ jobs:
       - name: Install the checking tools
         run: python -m pip install twine "a2a-sdk>=1.1.2,<1.2.0"
 
+      # The scenario suite runs pytest, the A2A client and the harness from
+      # the project's own environment, against the wheel built below. This is
+      # what puts them on the runner; nothing else in this job needs it.
+      - name: Install the project
+        run: poetry install -E langgraph-server -E adk-server --with dev
+
       - name: Verify the release tag matches the version in the manifest
         if: github.event_name == 'release'
         env:
@@ -74,6 +80,12 @@ jobs:
       # mean "the wheel installs and runs".
       - name: Smoke test the distributions
         run: python scripts/packaging/smoke.py
+
+      # The last gate before the upload, and the only one that runs the
+      # product: a real `aion serve` from a clean install of the wheel, one
+      # per framework and deployment variant, driven over A2A.
+      - name: Run the scenarios against the built wheel
+        run: poetry run ./scripts/packaging/scenarios.py
 
       - name: Upload the distributions
         uses: actions/upload-artifact@v6

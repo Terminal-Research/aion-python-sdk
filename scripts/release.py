@@ -7,9 +7,9 @@ GitHub Release kind and every check below are derived from it.
 
 ``check``
     The local release gate - environment, unit tests, layer contract, build,
-    packaging contract, smoke - run in order, stopping at the first failure.
-    Touches neither git nor GitHub, so it is safe to run on any branch at any
-    time; ``make release-check`` is this.
+    packaging contract, smoke, scenarios - run in order, stopping at the first
+    failure. Touches neither git nor GitHub, so it is safe to run on any
+    branch at any time; ``make release-check`` is this.
 
 ``publish``
     Everything ``check`` does, preceded by a preflight over git, GitHub and
@@ -184,10 +184,14 @@ def run_gate(python: str | None) -> None:
     The steps are the Makefile's own targets, so what this runs and what a
     developer runs by hand are the same commands with the same definitions.
 
+    The last step is the only one that runs the product rather than reading
+    it: the scenario suite against the wheel the two steps above just built
+    and checked.
+
     Args:
-        python: interpreter for the smoke environments, as ``smoke.py --python``
-            takes it (``3.12``, ``python3.12`` or a path); ``None`` means the
-            interpreter running this script.
+        python: interpreter for the clean environments, as ``smoke.py
+            --python`` takes it (``3.12``, ``python3.12`` or a path); ``None``
+            means the interpreter running this script.
     """
     run_step("environment", make("check-env"))
     run_step("unit tests", make("tests"))
@@ -196,6 +200,8 @@ def run_gate(python: str | None) -> None:
     run_step("packaging contract", make("dist-check"))
     smoke_args = [f"SMOKE_ARGS=--python {python}"] if python else []
     run_step("smoke", make("dist-smoke", *smoke_args))
+    scenario_args = [f"SCENARIOS_ARGS=--python {python}"] if python else []
+    run_step("scenarios", make("scenarios-dist", *scenario_args))
 
 
 # --- preflight ----------------------------------------------------------------

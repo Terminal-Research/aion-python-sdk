@@ -175,6 +175,11 @@ import-linter = ">=2.0"
 # install time needs the code generator.
 ariadne-codegen = { version = "==0.18.0", extras = ["subscriptions"] }
 twine = ">=6.0.0"
+# Both belong to the scenario suite under tests/scenarios: Jinja2 renders the
+# `aion.yaml` each deployment variant is started from, and pytest-timeout is
+# what stops a scenario whose server never answers from holding the run.
+Jinja2 = ">=3.1.0,<4.0.0"
+pytest-timeout = ">=2.3.1"
 
 # The ten libs used to keep the layers apart by accident: a lib's venv simply
 # had no code from the layers above it. One project, one venv, so the rule has
@@ -222,6 +227,30 @@ testpaths = ["tests"]
 filterwarnings = ["ignore::DeprecationWarning"]
 markers = [
     "integration: needs a real service or real processes; slower than a unit test",
+    # The scenario suite, tests/scenarios. `scenario` is on every item under
+    # that directory - the conftest there puts it on, so that no module can
+    # forget it - and is what keeps a suite that starts real servers out of
+    # `make tests`. `command` and `variant` say what one scenario drives and
+    # where; the scenario matrix is built out of them.
+    "scenario: drives a real `aion serve` over A2A; run by `make scenarios`, never by `make tests`",
+    "command(key): the command from tests/scenarios/commands.py this scenario drives; skipped where frameworks.UNSUPPORTED names the pair",
+    "variant(name): the deployment template under tests/scenarios/configs this scenario runs against",
+    # One marker per scenario suite; `make scenarios TAGS=...` selects on
+    # them. The "scenario suite -" prefix is what scripts/scenarios_matrix.py
+    # reads to tell a suite from the markers above.
+    "smoke: scenario suite - agent answers at all: card, health, help, echo",
+    "streaming: scenario suite - chunked replies, ephemeral typing, unary send",
+    "events: scenario suite - event order, ids, outbox, get_task agreement",
+    "terminal_states: scenario suite - COMPLETED, FAILED, CANCELED, INPUT_REQUIRED",
+    "interrupts: scenario suite - INPUT_REQUIRED and resume",
+    "errors: scenario suite - failures that must stay reported, not crash the server",
+    "artifacts: scenario suite - artifact and card emission",
+    "files: scenario suite - inline file parts: stored, rejected, or passed through",
+    "extensions: scenario suite - extension activation and payload delivery",
+    "daemon: scenario suite - daemon extension identity and environment",
+    "config: scenario suite - aion.yaml configuration and deployment variants",
+    "lifecycle: scenario suite - cancel, concurrency, push notifications, startup",
+    "persistence: scenario suite - needs POSTGRES_TEST_URL; survives a server restart",
 ]
 
 [tool.ariadne-codegen]

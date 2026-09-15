@@ -24,8 +24,9 @@ POSTGRES_TEST_URL ?= $(PG_TEST_URL)
 # where the only binding in scope is still the real one.
 POSTGRES_TEST_URL_IS_EXTERNAL := $(filter environment command line,$(origin POSTGRES_TEST_URL))
 
-.PHONY: help tests tests-integration tests-all lint-imports release-check \
-	release check-env dist-build dist-check dist-smoke pg-test-up pg-test-down
+.PHONY: help tests tests-integration tests-all scenarios scenarios-pg scenarios-dist \
+	scenarios-matrix lint-imports release-check release check-env dist-build dist-check \
+	dist-smoke pg-test-up pg-test-down
 
 # `make help` lists targets in file order, under the `##@` heading above them.
 # A new target goes under the heading it belongs to.
@@ -36,8 +37,10 @@ help: ## Show available commands
 
 ##@ Tests
 
+# `not scenario` in all three: the scenario suite under tests/scenarios starts
+# real servers and is run by `make scenarios`, never as part of a test run.
 tests: ## Run unit tests (make tests ARGS="-k platform_link")
-	poetry run pytest -m "not integration" $(ARGS)
+	poetry run pytest -m "not integration and not scenario" $(ARGS)
 
 # Run a command with a database under it, and take the database away again.
 #
@@ -74,11 +77,61 @@ endef
 # a database that was never started.
 tests-integration: export POSTGRES_TEST_URL := $(POSTGRES_TEST_URL)
 tests-integration: ## Run integration tests; run before you commit
-	@$(call with_pg_test,poetry run pytest -m integration $(ARGS))
+	@$(call with_pg_test,poetry run pytest -m "integration and not scenario" $(ARGS))
 
 tests-all: export POSTGRES_TEST_URL := $(POSTGRES_TEST_URL)
 tests-all: ## Run unit and integration tests together
-	@$(call with_pg_test,poetry run pytest $(ARGS))
+	@$(call with_pg_test,poetry run pytest -m "not scenario" $(ARGS))
+
+##@ Scenarios
+
+# The suite under tests/scenarios: a real `aion serve` per framework and
+# deployment variant, driven over A2A. It is not part of `make tests` - it
+# starts processes and takes a minute - and it runs here, before a release,
+# and whenever a change touches what goes over the wire.
+#
+#   TAGS="smoke events"   only those suites (any of them)
+#   FRAMEWORK=adk         one framework instead of all of them
+#   ARGS="-x -vv"         straight through to pytest
+#   KEEP_SERVE=1          leave the servers up afterwards and say where
+TAGS ?=
+FRAMEWORK ?=
+
+# Without TAGS, everything except persistence: that suite needs a database
+# and has `scenarios-pg` for it.
+SCENARIO_TAGS := $(if $(TAGS),$(shell echo "$(TAGS)" | sed 's/  */ or /g'),not persistence)
+SCENARIO_EXPR := scenario and ($(SCENARIO_TAGS))
+FRAMEWORK_FILTER := $(if $(FRAMEWORK),-k "[$(FRAMEWORK)]",)
+
+scenarios: ## Run the scenarios against this working tree (TAGS=, FRAMEWORK=)
+	poetry run pytest tests/scenarios -m "$(SCENARIO_EXPR)" $(FRAMEWORK_FILTER) $(ARGS)
+
+# The database is handled the way the integration targets handle it, and by
+# the same definition. The suite itself is not written yet - the harness
+# (tests/scenarios/harness/pg.py) and this target are what is in place for it -
+# and pytest exits 5 when a selection matches nothing. That is this target's
+# ordinary outcome today and not a failure, so it is turned into success with
+# a line saying why; every other status is the suite's and passes through.
+# The parentheses keep that inside a subshell, so `exit` here is not the exit
+# that would leave the container running.
+scenarios-pg: export POSTGRES_TEST_URL := $(POSTGRES_TEST_URL)
+scenarios-pg: ## Run the persistence scenarios against a disposable PostgreSQL
+	@$(call with_pg_test,(poetry run pytest tests/scenarios -m "scenario and persistence" \
+		$(FRAMEWORK_FILTER) $(ARGS); pytest_status=$$?; \
+		if [ $$pytest_status -eq 5 ]; then \
+			echo "[scenarios] no persistence scenarios yet"; pytest_status=0; \
+		fi; \
+		exit $$pytest_status))
+
+# The same scenarios, against the wheel in dist/ rather than the working tree:
+# `poetry run`, because pytest and the A2A client come from this project's
+# environment - the installation under test is the clean venv the script
+# builds, and the agents reach it through SCENARIOS_AION_BIN.
+scenarios-dist: ## Run the scenarios against the built wheel in a clean venv
+	poetry run ./scripts/packaging/scenarios.py $(SCENARIOS_ARGS)
+
+scenarios-matrix: ## Regenerate tests/scenarios/SCENARIOS.md from the suite
+	poetry run ./scripts/scenarios_matrix.py
 
 ##@ Checks
 
@@ -111,13 +164,14 @@ dist-smoke: ## Install the built distributions into clean venvs and use them
 ##@ Release
 
 # Two commands that both read the version from pyproject.toml and take none.
-# `release-check` runs check-env, tests, lint-imports, dist-build, dist-check
-# and dist-smoke in that order and publishes nothing. `release` runs the same
-# gate after a preflight over git, GitHub and PyPI, asks, and creates the
-# py-v* GitHub Release that starts publish-python.yml - the upload itself
-# happens there, behind the reviewer of the `pypi` environment. RELEASE_ARGS
-# goes to the script (`--python 3.12` picks the smoke interpreter); YES=1
-# answers the prompt for a run without a terminal.
+# `release-check` runs check-env, tests, lint-imports, dist-build, dist-check,
+# dist-smoke and scenarios-dist in that order and publishes nothing. `release`
+# runs the same gate after a preflight over git, GitHub and PyPI, asks, and
+# creates the py-v* GitHub Release that starts publish-python.yml - the upload
+# itself happens there, behind the reviewer of the `pypi` environment.
+# RELEASE_ARGS goes to the script (`--python 3.12` picks the interpreter for
+# both clean-environment steps); YES=1 answers the prompt for a run without a
+# terminal.
 release-check: ## Run every release check without publishing anything
 	./scripts/release.py check $(RELEASE_ARGS)
 

@@ -6,11 +6,13 @@ Everything you need to start contributing to the Aion Python SDK.
 
 - **[Environment Setup](environment.md)** — Python version requirements and environment configuration
 - **[Dependencies Management](dependencies.md)** — Installing the project, changing dependencies, and feature branch testing
+- **[Scenario tests](../../tests/scenarios/README.md)** — The suite that starts a real `aion serve` and drives it over A2A, documented beside itself
 
 ## Testing
 
-The whole suite lives in `tests/`, mirroring `src/aion/`, and runs as one
-`pytest` invocation. Anything after `ARGS=` is passed to pytest untouched.
+The suite lives in `tests/`, mirroring `src/aion/`, and runs as one `pytest`
+invocation. `tests/scenarios` is the one directory that mirrors nothing: it is
+the scenario suite described below. Anything after `ARGS=` is passed to pytest untouched.
 
 ```bash
 # Run the unit suite
@@ -65,6 +67,34 @@ given that meaning explicitly.
 
 Mark a new test with `@pytest.mark.integration` whenever it needs something the
 developer machine does not have by default.
+
+### Scenario tests
+
+A third suite lives in `tests/scenarios`. It starts a real `aion serve` for
+each framework and deployment variant, talks to the agents through the proxy
+with an ordinary A2A client, and asserts on what comes back over the wire.
+Every item in it carries the `scenario` marker, and all three targets above
+exclude it: a suite that starts processes is not what you run between two
+edits.
+
+```bash
+# The whole suite, against this working tree
+make scenarios
+
+# One suite, one framework
+make scenarios TAGS=smoke FRAMEWORK=adk
+
+# Against the wheel in dist/, installed into a clean venv
+make dist-build && make scenarios-dist
+```
+
+Run it when a change touches what goes over the wire; `make scenarios-dist` is
+a step of the release gate.
+[tests/scenarios/README.md](../../tests/scenarios/README.md) is the whole of it
+- how to write one, where the line with the unit tests runs, and how to add a
+command or a framework - and
+[tests/scenarios/SCENARIOS.md](../../tests/scenarios/SCENARIOS.md) beside it is
+the generated matrix of every scenario, command and framework.
 
 ## The layer contract
 
