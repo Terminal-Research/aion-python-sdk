@@ -237,7 +237,7 @@ markers = [
     # scenario matrix is built out of them.
     "command(key): the command from tests/scenarios/commands.py this scenario drives; skipped where frameworks.UNSUPPORTED names the pair",
     "variant(name): the deployment template under tests/scenarios/configs this scenario runs against",
-    # One marker per scenario suite; `make scenarios TAGS=...` selects on
+    # One marker per scenario suite; `make tests-scenarios TAGS=...` selects on
     # them. The "scenario suite -" prefix is what scripts/scenarios_matrix.py
     # reads to tell a suite from the markers above.
     "smoke: scenario suite - agent answers at all: card, health, help, echo",

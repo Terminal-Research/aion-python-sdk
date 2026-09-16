@@ -24,7 +24,9 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     A test is in a suite by where it is, and nowhere else: the Make targets
     select by directory, and the marker is here so that ``-m`` can still
     combine suites and so that no module can claim a suite it is not in. A
-    test file outside the three directories is an error, not a fourth suite.
+    test file outside the three directories is an error, not a fourth suite,
+    and so is a suite marker written on a test: with one written on, the item
+    would carry two and answer to both ``-m`` selections.
 
     ``tryfirst``: the deselection ``-m`` asks for happens in this same hook,
     and the marker has to be there by then.
@@ -39,6 +41,12 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
             raise pytest.UsageError(
                 f"{item.nodeid}: a test lives under tests/unit, tests/integration "
                 f"or tests/scenarios, not under tests/{top}"
+            )
+        written = [name for name in SUITES.values() if item.get_closest_marker(name)]
+        if written:
+            raise pytest.UsageError(
+                f"{item.nodeid}: carries @pytest.mark.{written[0]}; the suite comes "
+                f"from the directory, do not write it"
             )
         item.add_marker(getattr(pytest.mark, marker), append=False)
 

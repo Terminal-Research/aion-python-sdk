@@ -40,14 +40,18 @@ help: ## Show available commands
 # The three suites are three directories - tests/unit, tests/integration and
 # tests/scenarios - and the directory is what a target runs. tests/conftest.py
 # puts the matching marker on every item, so `-m` still combines suites, but
-# nothing here selects by it. TEST_PATHS= narrows a run to part of a suite;
-# ARGS= is pytest options and goes through untouched. They are two variables
-# because a path in ARGS would land next to the suite's own directory, and
-# the tests under it would be collected twice.
+# the marker is what keeps a target inside its suite. TEST_PATHS= narrows a
+# run to part of a suite; ARGS= is pytest options and goes through untouched.
+# They are two variables because a path in ARGS would land next to the
+# suite's own directory, and the tests under it would be collected twice.
+# The `-m` on each target is there for TEST_PATHS: a path into another
+# suite's directory collects nothing rather than running that suite without
+# what it needs - `make tests TEST_PATHS=tests/integration` must not start
+# integration tests with no database under them.
 TEST_PATHS ?=
 
 tests: ## Run the unit suite (make tests ARGS="-k platform_link" TEST_PATHS="tests/unit/core")
-	poetry run pytest $(if $(TEST_PATHS),$(TEST_PATHS),tests/unit) $(ARGS)
+	poetry run pytest $(if $(TEST_PATHS),$(TEST_PATHS),tests/unit) -m unit $(ARGS)
 
 # Run a command with a database under it, and take the database away again.
 #
@@ -84,11 +88,11 @@ endef
 # a database that was never started.
 tests-integration: export POSTGRES_TEST_URL := $(POSTGRES_TEST_URL)
 tests-integration: ## Run integration tests; run before you commit
-	@$(call with_pg_test,poetry run pytest $(if $(TEST_PATHS),$(TEST_PATHS),tests/integration) $(ARGS))
+	@$(call with_pg_test,poetry run pytest $(if $(TEST_PATHS),$(TEST_PATHS),tests/integration) -m integration $(ARGS))
 
 tests-all: export POSTGRES_TEST_URL := $(POSTGRES_TEST_URL)
 tests-all: ## Run unit and integration tests together
-	@$(call with_pg_test,poetry run pytest $(if $(TEST_PATHS),$(TEST_PATHS),tests/unit tests/integration) $(ARGS))
+	@$(call with_pg_test,poetry run pytest $(if $(TEST_PATHS),$(TEST_PATHS),tests/unit tests/integration) -m "unit or integration" $(ARGS))
 
 # The scenario suite, tests/scenarios: a real `aion serve` per framework and
 # deployment variant, driven over A2A. None of the targets above runs it - it
