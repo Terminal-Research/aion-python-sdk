@@ -52,12 +52,15 @@ TEST_PATHS ?=
 # database under them, and no `-m` on the command line could hold that,
 # because the last `-m` given wins and ARGS comes last. $(1) is the
 # directories allowed; a path is one of them, or anything under one, node
-# ids included.
+# ids included. Both sides go through abspath first, so that `..` and `.`
+# are resolved before the comparison rather than matched as path components:
+# tests/unit/../integration is tests/integration, and ./tests/unit is
+# tests/unit.
 empty :=
 space := $(empty) $(empty)
-under = $(subst $(space),|,$(foreach dir,$(1),$(dir)|$(dir)/*))
+under = $(subst $(space),|,$(foreach dir,$(abspath $(1)),$(dir)|$(dir)/*))
 define require_under
-	for path in $(TEST_PATHS); do \
+	for path in $(abspath $(TEST_PATHS)); do \
 		case "$$path" in \
 			$(call under,$(1)) ) ;; \
 			*) echo "TEST_PATHS: $$path is not under $(1) - not this target's suite" >&2; exit 2 ;; \
