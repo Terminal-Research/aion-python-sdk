@@ -18,8 +18,11 @@ root `conftest.py` puts the suite's marker on every item by directory, so a
 module never says which suite it belongs to.
 
 Anything after `ARGS=` is passed to pytest untouched; `TEST_PATHS=` narrows a
-run to part of a suite. They are separate so that a path never lands next to
-the suite's own directory and collects the same tests twice.
+run to part of a suite, and a target accepts paths under its own suite's
+directory only - `make tests` will not run something under `tests/integration`
+without the database the integration target sets up. The two are separate so
+that a path never lands next to the suite's own directory and collects the
+same tests twice.
 
 ```bash
 # Run the unit suite
