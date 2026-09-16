@@ -20,7 +20,7 @@ from aion.server.files.storage.backends.aion import (
     AionFileStorageBackend,
 )
 
-from tests.support.files import ORG, upload_context
+from tests.unit.support.files import ORG, upload_context
 
 
 class StaticTokenManager:

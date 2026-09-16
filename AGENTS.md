@@ -9,9 +9,9 @@ extra decides is whether its dependencies are importable.
 The tests for all of it live in `tests/`, in three suites that are three
 directories: `tests/unit` and `tests/integration` mirror `src/aion/`;
 `tests/scenarios`, the scenario suite, mirrors nothing because it drives the
-product from outside. `tests/support` holds builders shared between test
-modules and is collected from nowhere. Shared documentation lives in `docs/`,
-repo-wide tooling in `Makefile` and `scripts/`.
+product from outside. `tests/unit/support` holds builders shared between
+unit test modules and is collected from nowhere. Shared documentation lives
+in `docs/`, repo-wide tooling in `Makefile` and `scripts/`.
 `libs/` holds one thing only: `aion-chat-ui`, an npm package with its own
 toolchain.
 
