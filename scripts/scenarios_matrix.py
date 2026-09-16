@@ -49,14 +49,23 @@ DEFAULT_VARIANT = "default"
 SUITE_PREFIX = "scenario suite -"
 """What marks a suite marker in pyproject.toml, among all the others."""
 
-# Suites the plain `make scenarios` leaves out, and the target that runs each
+# Suites the plain `make tests-scenarios` leaves out, and the target that runs each
 # instead. Mirrors the default of SCENARIO_TAGS in the Makefile.
 SUITE_TARGETS = {
-    "persistence": "make scenarios-pg",
+    "persistence": "make tests-scenarios-pg",
 }
 
-RUNS = "yes"
+# One vocabulary for every status cell in the document, in both tables. Short
+# enough to scan down a column, and explained once under the title.
+RUNS = "\u2713"
+SKIP = "skip"
+GAP = "gap"
 ANY_FRAMEWORK = "any"
+NOT_PARAMETRIZED = "n/a"
+NOTHING = "\u2014"
+
+FRAMEWORKS_ANCHOR = "#frameworks"
+"""Where a `skip` cell sends the reader for the reason."""
 
 
 # --------------------------------------------------------------------------
@@ -83,15 +92,20 @@ class Scenario:
         return f"{self.file}::{self.name}"
 
     def status(self, framework: Framework) -> str:
-        """What happens to this scenario on that framework."""
+        """What happens to this scenario on that framework, as one token.
+
+        The reason behind a ``skip`` is not repeated here: it is one row of
+        the UNSUPPORTED table, which every skipped cell links to. An
+        ``xfail`` keeps its reason, because that one is about this scenario
+        and nothing else names it.
+        """
         if self.frameworks and framework.name not in self.frameworks:
-            return "n/a"
+            return NOT_PARAMETRIZED
         if self.command is not None:
-            reason = unsupported_reason(framework.name, self.command)
-            if reason:
-                return f"skip: {reason}"
+            if unsupported_reason(framework.name, self.command):
+                return SKIP
             if self.command not in implemented_commands(framework):
-                return "gap: not implemented"
+                return GAP
         if self.xfail:
             return f"xfail: {self.xfail}"
         return RUNS
@@ -107,7 +121,7 @@ class Suite:
     @property
     def target(self) -> str:
         """The make invocation that runs this suite alone."""
-        return SUITE_TARGETS.get(self.name, f"make scenarios TAGS={self.name}")
+        return SUITE_TARGETS.get(self.name, f"make tests-scenarios TAGS={self.name}")
 
 
 class _Collector:
@@ -200,6 +214,88 @@ def table(header: list[str], rows: list[list[str]]) -> list[str]:
     return lines
 
 
+def _totals(scenarios: list[Scenario], frameworks: list[Framework]) -> str:
+    """The one line that says how much there is and how much of it runs."""
+    counted: dict[str, int] = defaultdict(int)
+    for scenario in scenarios:
+        if not scenario.frameworks:
+            counted[ANY_FRAMEWORK] += 1
+            continue
+        for framework in frameworks:
+            if framework.name in scenario.frameworks:
+                counted[scenario.status(framework)] += 1
+
+    wording = (
+        (RUNS, "run"),
+        (SKIP, "skipped"),
+        (GAP, "waiting for a behaviour"),
+        (ANY_FRAMEWORK, "independent of the framework"),
+        (NOT_PARAMETRIZED, "not parametrized"),
+    )
+    parts = [f"{counted[key]} {word}" for key, word in wording if counted.get(key)]
+    deferred = sum(count for key, count in counted.items() if key.startswith("xfail"))
+    if deferred:
+        parts.append(f"{deferred} expected to fail")
+
+    files = len({scenario.file for scenario in scenarios})
+    return (
+        f"{len(scenarios)} scenarios in {files} files, {sum(counted.values())} runs across "
+        f"{len(frameworks)} framework{'s' if len(frameworks) != 1 else ''}: {', '.join(parts)}."
+    )
+
+
+def _coverage(scenarios: list[Scenario], suites: list[Suite], driven: set[str]) -> list[str]:
+    """What the suite reaches and what it does not, in one table.
+
+    The rest of the document answers this too, in two tables a reader has to
+    cross-check; this is the answer they came for.
+    """
+    covered_suites = [suite for suite in suites if any(suite.name in s.suites for s in scenarios)]
+    empty_suites = [suite for suite in suites if suite not in covered_suites]
+    commands = [command.key for command in COMMANDS]
+
+    def listed(keys: list[str]) -> str:
+        return ", ".join(code(key) for key in keys) or NOTHING
+
+    return table(
+        ["", "Covered", "Not yet"],
+        [
+            [
+                "Commands",
+                f"{len(driven)} of {len(commands)}: " + listed([k for k in commands if k in driven]),
+                listed([key for key in commands if key not in driven]),
+            ],
+            [
+                "Suites",
+                f"{len(covered_suites)} of {len(suites)}: " + listed([s.name for s in covered_suites]),
+                listed([suite.name for suite in empty_suites]),
+            ],
+        ],
+    )
+
+
+def _scenario_cell(scenario: Scenario) -> str:
+    """A scenario as a row label: what it checks, linked to the line it is on.
+
+    The sentence is the label rather than the function name - the name says
+    the same thing in snake_case and twice as wide - and the name is the
+    link's title, so hovering gives the argument for ``-k``.
+    """
+    label = scenario.checks or _pretty(scenario.name)
+    return f'[{label}]({_link(scenario.file)}#L{scenario.line} "{scenario.name}")'
+
+
+def _pretty(name: str) -> str:
+    """A test function's name as a sentence, for a scenario with no docstring."""
+    words = name.removeprefix("test_").replace("_", " ")
+    return words[:1].upper() + words[1:]
+
+
+def _status_cell(status: str) -> str:
+    """One status, with `skip` pointing at the reason instead of repeating it."""
+    return f"[{SKIP}]({FRAMEWORKS_ANCHOR})" if status == SKIP else status
+
+
 def render(scenarios: list[Scenario], suites: list[Suite]) -> str:
     """The whole of the document."""
     frameworks = list(FRAMEWORKS)
@@ -218,25 +314,25 @@ def render(scenarios: list[Scenario], suites: list[Suite]) -> str:
         "     commands.py and frameworks.py. Do not edit by hand: run",
         "     `make scenarios-matrix`. -->",
         "",
-        f"{len(scenarios)} scenarios in {len(by_file)} files, "
-        f"run against {len(frameworks)} framework{'s' if len(frameworks) != 1 else ''}. "
-        "Nothing here was produced by running a scenario: `pytest --collect-only` plus the "
-        "registries is all it takes. What the suite is and how to run it is in "
-        "[README.md](README.md).",
+        _totals(scenarios, frameworks),
         "",
-        "A cell in a framework column reads:",
+        "Nothing here was produced by running a scenario: `pytest --collect-only` and the "
+        "registries are all it takes, and the same suite always renders the same file. What "
+        "the suite is and how to run it is in [README.md](README.md).",
         "",
-        f"- `{RUNS}`: the scenario runs on that framework.",
-        "- `skip: <reason>`: `frameworks.UNSUPPORTED` lists the command for that framework.",
-        "- `gap: not implemented`: the command is in the contract but the agent has no behaviour "
-        "for it; the scenario fails until it does.",
-        "- `xfail: <reason>`: a defect that is knowingly deferred, with the issue in the reason.",
-        f"- `{ANY_FRAMEWORK}`: the scenario does not depend on a framework.",
-        "- `n/a`: the scenario is not parametrized over that framework.",
+        f"A status cell reads `{RUNS}` when it runs, `{SKIP}` when the pair is one "
+        f"`frameworks.UNSUPPORTED` names (the reason is under "
+        f"[Frameworks]({FRAMEWORKS_ANCHOR})), `{GAP}` when the agent has no behaviour for the "
+        f"command yet, `xfail: <reason>` for a knowingly deferred defect, "
+        f"`{ANY_FRAMEWORK}` when the scenario does not depend on a framework, and "
+        f"`{NOT_PARAMETRIZED}` when it does not run on that one.",
         "",
-        "## Frameworks",
+        "## Coverage at a glance",
         "",
     ]
+    lines += _coverage(scenarios, suites, set(by_command))
+
+    lines += ["", "## Frameworks", ""]
     lines += table(
         ["Framework", "Agent package", "Entry", "SDK extras", "Commands implemented"],
         [
@@ -251,7 +347,7 @@ def render(scenarios: list[Scenario], suites: list[Suite]) -> str:
         ],
     )
     if UNSUPPORTED:
-        lines += ["", "Pairs a framework genuinely cannot do, from `frameworks.UNSUPPORTED`:", ""]
+        lines += ["", "Pairs a framework genuinely cannot do, which is what a `skip` cell means:", ""]
         lines += table(
             ["Framework", "Command", "Reason"],
             [[framework, code(command), reason] for (framework, command), reason in UNSUPPORTED.items()],
@@ -278,17 +374,16 @@ def render(scenarios: list[Scenario], suites: list[Suite]) -> str:
         if module_doc:
             lines += [module_doc.splitlines()[0], ""]
         lines += table(
-            ["Scenario", "Checks", "Suite", "Command", "Deployment"] + [fw.name for fw in frameworks],
+            ["Scenario", "Suite", "Command", "Deployment"] + [fw.name for fw in frameworks],
             [
                 [
-                    f"[{scenario.name}]({_link(scenario.file)}#L{scenario.line})",
-                    scenario.checks,
-                    ", ".join(code(suite) for suite in scenario.suites),
-                    code(scenario.command or ""),
+                    _scenario_cell(scenario),
+                    ", ".join(code(suite) for suite in scenario.suites) or NOTHING,
+                    code(scenario.command) if scenario.command else NOTHING,
                     code(scenario.variant),
                 ]
                 + [
-                    scenario.status(framework) if scenario.frameworks else ANY_FRAMEWORK
+                    _status_cell(scenario.status(framework) if scenario.frameworks else ANY_FRAMEWORK)
                     for framework in frameworks
                 ]
                 for scenario in items
@@ -299,9 +394,9 @@ def render(scenarios: list[Scenario], suites: list[Suite]) -> str:
     lines += [
         "## Commands",
         "",
-        "The contract from `commands.py`, and how far each command is covered. A command with "
-        "no scenarios is declared but not yet driven; a command an agent has not implemented "
-        "answers `not implemented: <key>` on that framework.",
+        "The contract from `commands.py`. `Scenarios` counts the scenarios driving the command; "
+        f"a framework column says whether that agent answers it - `{RUNS}` for a behaviour it "
+        f"has, `{GAP}` for `not implemented: <key>`, which is what a scenario would receive.",
         "",
     ]
     lines += table(
@@ -323,10 +418,9 @@ def render(scenarios: list[Scenario], suites: list[Suite]) -> str:
 
 def _command_status(framework: Framework, key: str) -> str:
     """Whether the framework's agent answers this command."""
-    reason = unsupported_reason(framework.name, key)
-    if reason:
-        return f"skip: {reason}"
-    return "implemented" if key in implemented_commands(framework) else "not implemented"
+    if unsupported_reason(framework.name, key):
+        return _status_cell(SKIP)
+    return RUNS if key in implemented_commands(framework) else GAP
 
 
 def _link(file: str) -> str:

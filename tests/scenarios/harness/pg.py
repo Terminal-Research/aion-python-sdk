@@ -32,6 +32,6 @@ def postgres_env() -> dict[str, str]:
     url = postgres_url()
     if url is None:
         raise RuntimeError(
-            f"{POSTGRES_TEST_URL_VAR} is not set; run the persistence scenarios via `make scenarios-pg`."
+            f"{POSTGRES_TEST_URL_VAR} is not set; run the persistence scenarios via `make tests-scenarios-pg`."
         )
     return {"POSTGRES_URL": url}

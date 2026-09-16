@@ -201,7 +201,7 @@ def run_gate(python: str | None) -> None:
     smoke_args = [f"SMOKE_ARGS=--python {python}"] if python else []
     run_step("smoke", make("dist-smoke", *smoke_args))
     scenario_args = [f"SCENARIOS_ARGS=--python {python}"] if python else []
-    run_step("scenarios", make("scenarios-dist", *scenario_args))
+    run_step("scenarios", make("tests-scenarios-dist", *scenario_args))
 
 
 # --- preflight ----------------------------------------------------------------

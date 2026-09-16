@@ -6,7 +6,7 @@ Everything you need to start contributing to the Aion Python SDK.
 
 - **[Environment Setup](environment.md)** — Python version requirements and environment configuration
 - **[Dependencies Management](dependencies.md)** — Installing the project, changing dependencies, and feature branch testing
-- **[Scenario tests](../../tests/scenarios/README.md)** — The suite that starts a real `aion serve` and drives it over A2A, documented beside itself
+- **[Scenario tests](../../tests/scenarios/README.md)** — The suite that starts a real `aion serve` and drives it over A2A
 
 ## Testing
 
@@ -79,17 +79,17 @@ edits.
 
 ```bash
 # The whole suite, against this working tree
-make scenarios
+make tests-scenarios
 
 # One suite, one framework
-make scenarios TAGS=smoke FRAMEWORK=adk
+make tests-scenarios TAGS=smoke FRAMEWORK=adk
 
 # Against the wheel in dist/, installed into a clean venv
-make dist-build && make scenarios-dist
+make dist-build && make tests-scenarios-dist
 ```
 
-Run it when a change touches what goes over the wire; `make scenarios-dist` is
-a step of the release gate.
+Run it when a change touches what goes over the wire;
+`make tests-scenarios-dist` is a step of the release gate.
 [tests/scenarios/README.md](../../tests/scenarios/README.md) is the whole of it
 - how to write one, where the line with the unit tests runs, and how to add a
 command or a framework - and

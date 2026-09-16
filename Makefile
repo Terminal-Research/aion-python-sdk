@@ -24,21 +24,22 @@ POSTGRES_TEST_URL ?= $(PG_TEST_URL)
 # where the only binding in scope is still the real one.
 POSTGRES_TEST_URL_IS_EXTERNAL := $(filter environment command line,$(origin POSTGRES_TEST_URL))
 
-.PHONY: help tests tests-integration tests-all scenarios scenarios-pg scenarios-dist \
-	scenarios-matrix lint-imports release-check release check-env dist-build dist-check \
-	dist-smoke pg-test-up pg-test-down
+.PHONY: help tests tests-integration tests-all tests-scenarios tests-scenarios-pg \
+	tests-scenarios-dist scenarios-matrix lint-imports release-check release check-env \
+	dist-build dist-check dist-smoke pg-test-up pg-test-down
 
 # `make help` lists targets in file order, under the `##@` heading above them.
 # A new target goes under the heading it belongs to.
 help: ## Show available commands
 	@awk 'BEGIN {FS = ":.*## "} \
 		/^##@ / {printf "\n\033[1m%s\033[0m\n", substr($$0, 5); next} \
-		/^[a-zA-Z_-]+:.*## / {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+		/^[a-zA-Z_-]+:.*## / {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 ##@ Tests
 
 # `not scenario` in all three: the scenario suite under tests/scenarios starts
-# real servers and is run by `make scenarios`, never as part of a test run.
+# real servers and is run by `make tests-scenarios`, never as part of a
+# plain test run.
 tests: ## Run unit tests (make tests ARGS="-k platform_link")
 	poetry run pytest -m "not integration and not scenario" $(ARGS)
 
@@ -83,12 +84,11 @@ tests-all: export POSTGRES_TEST_URL := $(POSTGRES_TEST_URL)
 tests-all: ## Run unit and integration tests together
 	@$(call with_pg_test,poetry run pytest -m "not scenario" $(ARGS))
 
-##@ Scenarios
-
-# The suite under tests/scenarios: a real `aion serve` per framework and
-# deployment variant, driven over A2A. It is not part of `make tests` - it
-# starts processes and takes a minute - and it runs here, before a release,
-# and whenever a change touches what goes over the wire.
+# The scenario suite, tests/scenarios: a real `aion serve` per framework and
+# deployment variant, driven over A2A. The three targets above exclude it - it
+# starts processes and takes a minute - and these three are how it is run:
+# here, before a release, and whenever a change touches what goes over the
+# wire. `tests/scenarios/README.md` is the suite itself.
 #
 #   TAGS="smoke events"   only those suites (any of them)
 #   FRAMEWORK=adk         one framework instead of all of them
@@ -98,12 +98,12 @@ TAGS ?=
 FRAMEWORK ?=
 
 # Without TAGS, everything except persistence: that suite needs a database
-# and has `scenarios-pg` for it.
+# and has `tests-scenarios-pg` for it.
 SCENARIO_TAGS := $(if $(TAGS),$(shell echo "$(TAGS)" | sed 's/  */ or /g'),not persistence)
 SCENARIO_EXPR := scenario and ($(SCENARIO_TAGS))
 FRAMEWORK_FILTER := $(if $(FRAMEWORK),-k "[$(FRAMEWORK)]",)
 
-scenarios: ## Run the scenarios against this working tree (TAGS=, FRAMEWORK=)
+tests-scenarios: ## Run the scenarios against this working tree (TAGS=, FRAMEWORK=)
 	poetry run pytest tests/scenarios -m "$(SCENARIO_EXPR)" $(FRAMEWORK_FILTER) $(ARGS)
 
 # The database is handled the way the integration targets handle it, and by
@@ -114,8 +114,8 @@ scenarios: ## Run the scenarios against this working tree (TAGS=, FRAMEWORK=)
 # a line saying why; every other status is the suite's and passes through.
 # The parentheses keep that inside a subshell, so `exit` here is not the exit
 # that would leave the container running.
-scenarios-pg: export POSTGRES_TEST_URL := $(POSTGRES_TEST_URL)
-scenarios-pg: ## Run the persistence scenarios against a disposable PostgreSQL
+tests-scenarios-pg: export POSTGRES_TEST_URL := $(POSTGRES_TEST_URL)
+tests-scenarios-pg: ## Run the persistence scenarios against a disposable PostgreSQL
 	@$(call with_pg_test,(poetry run pytest tests/scenarios -m "scenario and persistence" \
 		$(FRAMEWORK_FILTER) $(ARGS); pytest_status=$$?; \
 		if [ $$pytest_status -eq 5 ]; then \
@@ -127,16 +127,18 @@ scenarios-pg: ## Run the persistence scenarios against a disposable PostgreSQL
 # `poetry run`, because pytest and the A2A client come from this project's
 # environment - the installation under test is the clean venv the script
 # builds, and the agents reach it through SCENARIOS_AION_BIN.
-scenarios-dist: ## Run the scenarios against the built wheel in a clean venv
+tests-scenarios-dist: ## Run the scenarios against the built wheel in a clean venv
 	poetry run ./scripts/packaging/scenarios.py $(SCENARIOS_ARGS)
-
-scenarios-matrix: ## Regenerate tests/scenarios/SCENARIOS.md from the suite
-	poetry run ./scripts/scenarios_matrix.py
 
 ##@ Checks
 
 lint-imports: ## Check the layer contract between the aion.* subpackages
 	poetry run lint-imports
+
+# Not a test run: it collects the scenarios and reads the registries, and
+# rewrites the document they describe. CI runs the same script with --check.
+scenarios-matrix: ## Regenerate tests/scenarios/SCENARIOS.md from the suite
+	poetry run ./scripts/scenarios_matrix.py
 
 # `poetry run`, because the environment under inspection is the project's own -
 # the script reports on whichever interpreter runs it.
@@ -165,7 +167,7 @@ dist-smoke: ## Install the built distributions into clean venvs and use them
 
 # Two commands that both read the version from pyproject.toml and take none.
 # `release-check` runs check-env, tests, lint-imports, dist-build, dist-check,
-# dist-smoke and scenarios-dist in that order and publishes nothing. `release`
+# dist-smoke and tests-scenarios-dist in that order and publishes nothing. `release`
 # runs the same gate after a preflight over git, GitHub and PyPI, asks, and
 # creates the py-v* GitHub Release that starts publish-python.yml - the upload
 # itself happens there, behind the reviewer of the `pypi` environment.

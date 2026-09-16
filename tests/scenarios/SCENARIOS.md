@@ -4,16 +4,18 @@
      commands.py and frameworks.py. Do not edit by hand: run
      `make scenarios-matrix`. -->
 
-24 scenarios in 4 files, run against 2 frameworks. Nothing here was produced by running a scenario: `pytest --collect-only` plus the registries is all it takes. What the suite is and how to run it is in [README.md](README.md).
+24 scenarios in 4 files, 48 runs across 2 frameworks: 46 run, 2 skipped.
 
-A cell in a framework column reads:
+Nothing here was produced by running a scenario: `pytest --collect-only` and the registries are all it takes, and the same suite always renders the same file. What the suite is and how to run it is in [README.md](README.md).
 
-- `yes`: the scenario runs on that framework.
-- `skip: <reason>`: `frameworks.UNSUPPORTED` lists the command for that framework.
-- `gap: not implemented`: the command is in the contract but the agent has no behaviour for it; the scenario fails until it does.
-- `xfail: <reason>`: a defect that is knowingly deferred, with the issue in the reason.
-- `any`: the scenario does not depend on a framework.
-- `n/a`: the scenario is not parametrized over that framework.
+A status cell reads `✓` when it runs, `skip` when the pair is one `frameworks.UNSUPPORTED` names (the reason is under [Frameworks](#frameworks)), `gap` when the agent has no behaviour for the command yet, `xfail: <reason>` for a knowingly deferred defect, `any` when the scenario does not depend on a framework, and `n/a` when it does not run on that one.
+
+## Coverage at a glance
+
+|  | Covered | Not yet |
+|---|---|---|
+| Commands | 7 of 20: `help`, `echo`, `stream`, `steps`, `artifacts`, `ids`, `parts` | `typing`, `slow`, `card`, `outbox-task`, `outbox-message`, `ask`, `ask-twice`, `fail`, `ext`, `whoami`, `event`, `config`, `big` |
+| Suites | 4 of 13: `smoke`, `streaming`, `events`, `files` | `terminal_states`, `interrupts`, `errors`, `artifacts`, `extensions`, `daemon`, `config`, `lifecycle`, `persistence` |
 
 ## Frameworks
 
@@ -22,7 +24,7 @@ A cell in a framework column reads:
 | langgraph | `tests.scenarios.agents.langgraph_core` | `graph.py:create_graph` | `langgraph-server` | 7 of 20 |
 | adk | `tests.scenarios.agents.adk_core` | `agent.py:create_agent` | `adk-server` | 7 of 20 |
 
-Pairs a framework genuinely cannot do, from `frameworks.UNSUPPORTED`:
+Pairs a framework genuinely cannot do, which is what a `skip` cell means:
 
 | Framework | Command | Reason |
 |---|---|---|
@@ -34,19 +36,19 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 
 | Suite | What it covers | Scenarios | Run |
 |---|---|---|---|
-| `smoke` | agent answers at all: card, health, help, echo | 5 | `make scenarios TAGS=smoke` |
-| `streaming` | chunked replies, ephemeral typing, unary send | 4 | `make scenarios TAGS=streaming` |
-| `events` | event order, ids, outbox, get_task agreement | 6 | `make scenarios TAGS=events` |
-| `terminal_states` | COMPLETED, FAILED, CANCELED, INPUT_REQUIRED | 0 | `make scenarios TAGS=terminal_states` |
-| `interrupts` | INPUT_REQUIRED and resume | 0 | `make scenarios TAGS=interrupts` |
-| `errors` | failures that must stay reported, not crash the server | 0 | `make scenarios TAGS=errors` |
-| `artifacts` | artifact and card emission | 0 | `make scenarios TAGS=artifacts` |
-| `files` | inline file parts: stored, rejected, or passed through | 9 | `make scenarios TAGS=files` |
-| `extensions` | extension activation and payload delivery | 0 | `make scenarios TAGS=extensions` |
-| `daemon` | daemon extension identity and environment | 0 | `make scenarios TAGS=daemon` |
-| `config` | aion.yaml configuration and deployment variants | 0 | `make scenarios TAGS=config` |
-| `lifecycle` | cancel, concurrency, push notifications, startup | 0 | `make scenarios TAGS=lifecycle` |
-| `persistence` | needs POSTGRES_TEST_URL; survives a server restart | 0 | `make scenarios-pg` |
+| `smoke` | agent answers at all: card, health, help, echo | 5 | `make tests-scenarios TAGS=smoke` |
+| `streaming` | chunked replies, ephemeral typing, unary send | 4 | `make tests-scenarios TAGS=streaming` |
+| `events` | event order, ids, outbox, get_task agreement | 6 | `make tests-scenarios TAGS=events` |
+| `terminal_states` | COMPLETED, FAILED, CANCELED, INPUT_REQUIRED | 0 | `make tests-scenarios TAGS=terminal_states` |
+| `interrupts` | INPUT_REQUIRED and resume | 0 | `make tests-scenarios TAGS=interrupts` |
+| `errors` | failures that must stay reported, not crash the server | 0 | `make tests-scenarios TAGS=errors` |
+| `artifacts` | artifact and card emission | 0 | `make tests-scenarios TAGS=artifacts` |
+| `files` | inline file parts: stored, rejected, or passed through | 9 | `make tests-scenarios TAGS=files` |
+| `extensions` | extension activation and payload delivery | 0 | `make tests-scenarios TAGS=extensions` |
+| `daemon` | daemon extension identity and environment | 0 | `make tests-scenarios TAGS=daemon` |
+| `config` | aion.yaml configuration and deployment variants | 0 | `make tests-scenarios TAGS=config` |
+| `lifecycle` | cancel, concurrency, push notifications, startup | 0 | `make tests-scenarios TAGS=lifecycle` |
+| `persistence` | needs POSTGRES_TEST_URL; survives a server restart | 0 | `make tests-scenarios-pg` |
 
 ## Scenarios by file
 
@@ -54,77 +56,77 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 
 The shape of a turn: which events arrive, in which order, under which ids.
 
-| Scenario | Checks | Suite | Command | Deployment | langgraph | adk |
-|---|---|---|---|---|---|---|
-| [test_a_turn_opens_with_submitted_and_closes_with_the_task](core/test_events.py#L28) | A plain turn is: Task SUBMITTED, WORKING, the reply, the terminal Task. | `events` | `echo` | `default` | yes | yes |
-| [test_working_statuses_arrive_in_order](core/test_events.py#L47) | `steps <n>` reports each step once, in order, before completing. | `events` | `steps` | `default` | yes | yes |
-| [test_the_agent_sees_the_ids_the_client_sees](core/test_events.py#L63) | The task and context the agent reports are the ones on the wire. | `events` | `ids` | `default` | yes | yes |
-| [test_a_second_message_in_a_context_starts_a_new_task](core/test_events.py#L75) | Reusing a context keeps it and starts a fresh task under it. | `events` | `ids` | `default` | yes | yes |
-| [test_get_task_agrees_with_the_closing_event](core/test_events.py#L85) | Reading the task back gives the state and the text the stream ended on. | `events` | `echo` | `default` | yes | yes |
-| [test_the_stream_carries_nothing_after_the_terminal_task](core/test_events.py#L101) | Nothing follows the closing Task, and the stream ends there. | `events` | `echo` | `default` | yes | yes |
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [A plain turn is: Task SUBMITTED, WORKING, the reply, the terminal Task.](core/test_events.py#L28 "test_a_turn_opens_with_submitted_and_closes_with_the_task") | `events` | `echo` | `default` | ✓ | ✓ |
+| [`steps <n>` reports each step once, in order, before completing.](core/test_events.py#L47 "test_working_statuses_arrive_in_order") | `events` | `steps` | `default` | ✓ | ✓ |
+| [The task and context the agent reports are the ones on the wire.](core/test_events.py#L63 "test_the_agent_sees_the_ids_the_client_sees") | `events` | `ids` | `default` | ✓ | ✓ |
+| [Reusing a context keeps it and starts a fresh task under it.](core/test_events.py#L75 "test_a_second_message_in_a_context_starts_a_new_task") | `events` | `ids` | `default` | ✓ | ✓ |
+| [Reading the task back gives the state and the text the stream ended on.](core/test_events.py#L85 "test_get_task_agrees_with_the_closing_event") | `events` | `echo` | `default` | ✓ | ✓ |
+| [Nothing follows the closing Task, and the stream ends there.](core/test_events.py#L101 "test_the_stream_carries_nothing_after_the_terminal_task") | `events` | `echo` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_files.py`
 
 Inline file parts: stored on the way in and out, rejected, or passed through.
 
-| Scenario | Checks | Suite | Command | Deployment | langgraph | adk |
-|---|---|---|---|---|---|---|
-| [test_an_inbound_file_reaches_the_agent_as_a_url](core/test_files.py#L102) | The agent never sees the bytes: by the time it runs, the file is a URL. | `files` | `parts` | `file-storage` | yes | yes |
-| [test_the_stored_task_holds_the_url_and_not_the_bytes](core/test_files.py#L121) | Reading the task back returns what was persisted: a URL part, no raw content. | `files` | `parts` | `file-storage` | yes | yes |
-| [test_an_inbound_file_without_a_distribution_is_rejected](core/test_files.py#L142) | No distribution means no owning organization: the request is refused, not degraded. | `files` | `parts` | `file-storage` | yes | yes |
-| [test_a_distribution_without_a_principal_cannot_own_a_file](core/test_files.py#L152) | A service identity alone names nobody to own the file. | `files` | `parts` | `file-storage` | yes | yes |
-| [test_text_only_requests_need_no_distribution](core/test_files.py#L167) | Storage is a concern of file parts only; a plain message is unaffected. | `files` | `parts` | `file-storage` | yes | yes |
-| [test_without_a_backend_inline_content_passes_through](core/test_files.py#L177) | Passthrough is a supported mode: no backend, the bytes reach the agent and the record. | `files` | `parts` | `default` | yes | yes |
-| [test_an_outbound_file_leaves_as_a_url](core/test_files.py#L195) | The agent emits bytes; the client receives a URL. Data and url parts are untouched. | `files` | `artifacts` | `file-storage` | yes | skip: the ADK artifact service stores one part per artifact, so the SDK refuses the two-part data artifact this command emits (aion.adk emit_artifact) |
-| [test_without_a_backend_an_outbound_file_stays_inline](core/test_files.py#L220) | No backend, no conversion: the bytes the agent emitted are the bytes received. | `files` | `artifacts` | `default` | yes | skip: the ADK artifact service stores one part per artifact, so the SDK refuses the two-part data artifact this command emits (aion.adk emit_artifact) |
-| [test_the_aion_backend_does_not_serve_without_credentials](core/test_files.py#L233) | Selecting the Aion backend without AION_CLIENT_ID and AION_CLIENT_SECRET is a startup error. | `files` |  | `aion-no-credentials` | yes | yes |
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [The agent never sees the bytes: by the time it runs, the file is a URL.](core/test_files.py#L102 "test_an_inbound_file_reaches_the_agent_as_a_url") | `files` | `parts` | `file-storage` | ✓ | ✓ |
+| [Reading the task back returns what was persisted: a URL part, no raw content.](core/test_files.py#L121 "test_the_stored_task_holds_the_url_and_not_the_bytes") | `files` | `parts` | `file-storage` | ✓ | ✓ |
+| [No distribution means no owning organization: the request is refused, not degraded.](core/test_files.py#L142 "test_an_inbound_file_without_a_distribution_is_rejected") | `files` | `parts` | `file-storage` | ✓ | ✓ |
+| [A service identity alone names nobody to own the file.](core/test_files.py#L152 "test_a_distribution_without_a_principal_cannot_own_a_file") | `files` | `parts` | `file-storage` | ✓ | ✓ |
+| [Storage is a concern of file parts only; a plain message is unaffected.](core/test_files.py#L167 "test_text_only_requests_need_no_distribution") | `files` | `parts` | `file-storage` | ✓ | ✓ |
+| [Passthrough is a supported mode: no backend, the bytes reach the agent and the record.](core/test_files.py#L177 "test_without_a_backend_inline_content_passes_through") | `files` | `parts` | `default` | ✓ | ✓ |
+| [The agent emits bytes; the client receives a URL. Data and url parts are untouched.](core/test_files.py#L195 "test_an_outbound_file_leaves_as_a_url") | `files` | `artifacts` | `file-storage` | ✓ | [skip](#frameworks) |
+| [No backend, no conversion: the bytes the agent emitted are the bytes received.](core/test_files.py#L220 "test_without_a_backend_an_outbound_file_stays_inline") | `files` | `artifacts` | `default` | ✓ | [skip](#frameworks) |
+| [Selecting the Aion backend without AION_CLIENT_ID and AION_CLIENT_SECRET is a startup error.](core/test_files.py#L233 "test_the_aion_backend_does_not_serve_without_credentials") | `files` | — | `aion-no-credentials` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_smoke.py`
 
 Does a deployment of this framework answer at all.
 
-| Scenario | Checks | Suite | Command | Deployment | langgraph | adk |
-|---|---|---|---|---|---|---|
-| [test_proxy_reports_every_agent_healthy](core/test_smoke.py#L14) | The proxy's system health names the agent and calls it healthy. | `smoke` |  | `default` | yes | yes |
-| [test_manifest_lists_the_agent](core/test_smoke.py#L23) | The deployment manifest names the agents the proxy routes to. | `smoke` |  | `default` | yes | yes |
-| [test_agent_card_is_served_through_the_proxy](core/test_smoke.py#L30) | The card arrives on the proxy route and describes the deployed agent. | `smoke` |  | `default` | yes | yes |
-| [test_help_answers_with_the_menu](core/test_smoke.py#L40) | `help` answers the menu, and the turn completes. | `smoke` | `help` | `default` | yes | yes |
-| [test_echo_answers_with_the_argument](core/test_smoke.py#L49) | `echo <text>` answers with the argument, unchanged. | `smoke` | `echo` | `default` | yes | yes |
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [The proxy's system health names the agent and calls it healthy.](core/test_smoke.py#L14 "test_proxy_reports_every_agent_healthy") | `smoke` | — | `default` | ✓ | ✓ |
+| [The deployment manifest names the agents the proxy routes to.](core/test_smoke.py#L23 "test_manifest_lists_the_agent") | `smoke` | — | `default` | ✓ | ✓ |
+| [The card arrives on the proxy route and describes the deployed agent.](core/test_smoke.py#L30 "test_agent_card_is_served_through_the_proxy") | `smoke` | — | `default` | ✓ | ✓ |
+| [`help` answers the menu, and the turn completes.](core/test_smoke.py#L40 "test_help_answers_with_the_menu") | `smoke` | `help` | `default` | ✓ | ✓ |
+| [`echo <text>` answers with the argument, unchanged.](core/test_smoke.py#L49 "test_echo_answers_with_the_argument") | `smoke` | `echo` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_streaming.py`
 
 Replies that arrive in pieces.
 
-| Scenario | Checks | Suite | Command | Deployment | langgraph | adk |
-|---|---|---|---|---|---|---|
-| [test_a_chunked_reply_arrives_as_deltas_then_one_message](core/test_streaming.py#L21) | Chunks arrive as stream-delta artifacts, then the whole reply as one message. | `streaming` | `stream` | `default` | yes | yes |
-| [test_the_chunks_are_the_message_broken_up](core/test_streaming.py#L35) | Every chunk arrives once, in order, and they add up to the reply. | `streaming` | `stream` | `default` | yes | yes |
-| [test_the_first_chunk_opens_the_artifact_and_the_rest_append](core/test_streaming.py#L46) | A chunked reply is one artifact: the first chunk opens it, the rest append. | `streaming` | `stream` | `default` | yes | yes |
-| [test_one_chunk_is_still_a_chunked_reply](core/test_streaming.py#L56) | `stream 1` keeps the same shape - one delta, then the message. | `streaming` | `stream` | `default` | yes | yes |
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [Chunks arrive as stream-delta artifacts, then the whole reply as one message.](core/test_streaming.py#L21 "test_a_chunked_reply_arrives_as_deltas_then_one_message") | `streaming` | `stream` | `default` | ✓ | ✓ |
+| [Every chunk arrives once, in order, and they add up to the reply.](core/test_streaming.py#L35 "test_the_chunks_are_the_message_broken_up") | `streaming` | `stream` | `default` | ✓ | ✓ |
+| [A chunked reply is one artifact: the first chunk opens it, the rest append.](core/test_streaming.py#L46 "test_the_first_chunk_opens_the_artifact_and_the_rest_append") | `streaming` | `stream` | `default` | ✓ | ✓ |
+| [`stream 1` keeps the same shape - one delta, then the message.](core/test_streaming.py#L56 "test_one_chunk_is_still_a_chunked_reply") | `streaming` | `stream` | `default` | ✓ | ✓ |
 
 ## Commands
 
-The contract from `commands.py`, and how far each command is covered. A command with no scenarios is declared but not yet driven; a command an agent has not implemented answers `not implemented: <key>` on that framework.
+The contract from `commands.py`. `Scenarios` counts the scenarios driving the command; a framework column says whether that agent answers it - `✓` for a behaviour it has, `gap` for `not implemented: <key>`, which is what a scenario would receive.
 
 | Command | Summary | Tags | Scenarios | langgraph | adk |
 |---|---|---|---|---|---|
-| `help` | Show this menu | `smoke` | 1 | implemented | implemented |
-| `echo <text>` | Reply with the argument, unchanged | `smoke`, `events` | 4 | implemented | implemented |
-| `stream <n>` | Reply in n chunks of one message | `streaming` | 4 | implemented | implemented |
-| `typing` | Send an ephemeral typing status, then a reply | `streaming`, `events` | 0 | not implemented | not implemented |
-| `steps <n>` | Emit n working statuses, then complete | `events` | 1 | implemented | implemented |
-| `slow <sec>` | Reply after n seconds | `lifecycle` | 0 | not implemented | not implemented |
-| `artifacts` | Emit a two-part data artifact, an inline file and a url | `artifacts`, `files` | 2 | implemented | skip: the ADK artifact service stores one part per artifact, so the SDK refuses the two-part data artifact this command emits (aion.adk emit_artifact) |
-| `card` | Emit one card | `artifacts` | 0 | not implemented | not implemented |
-| `outbox-task` | Return an A2A Task through the outbox | `events` | 0 | not implemented | not implemented |
-| `outbox-message` | Return an A2A Message through the outbox | `events` | 0 | not implemented | not implemented |
-| `ask` | Ask a question, then quote the answer | `interrupts` | 0 | not implemented | not implemented |
-| `ask-twice` | Ask two questions in a row | `interrupts` | 0 | not implemented | not implemented |
-| `fail <mode>` | Fail on purpose: exception \| after-reply \| before-interrupt | `errors`, `terminal_states` | 0 | not implemented | not implemented |
-| `ext` | Report active and unknown extensions | `extensions` | 0 | not implemented | not implemented |
-| `whoami` | Report the daemon identity | `daemon` | 0 | not implemented | not implemented |
-| `event` | Report which router handler received the event | `extensions`, `events` | 0 | not implemented | not implemented |
-| `config <key>` | Report one configuration value | `config` | 0 | not implemented | not implemented |
-| `ids` | Report task and context ids | `events`, `lifecycle` | 2 | implemented | implemented |
-| `big <kb>` | Reply with n KB of text | `errors` | 0 | not implemented | not implemented |
-| `parts` | Report the kinds of parts the inbound message carried | `files` | 6 | implemented | implemented |
+| `help` | Show this menu | `smoke` | 1 | ✓ | ✓ |
+| `echo <text>` | Reply with the argument, unchanged | `smoke`, `events` | 4 | ✓ | ✓ |
+| `stream <n>` | Reply in n chunks of one message | `streaming` | 4 | ✓ | ✓ |
+| `typing` | Send an ephemeral typing status, then a reply | `streaming`, `events` | 0 | gap | gap |
+| `steps <n>` | Emit n working statuses, then complete | `events` | 1 | ✓ | ✓ |
+| `slow <sec>` | Reply after n seconds | `lifecycle` | 0 | gap | gap |
+| `artifacts` | Emit a two-part data artifact, an inline file and a url | `artifacts`, `files` | 2 | ✓ | [skip](#frameworks) |
+| `card` | Emit one card | `artifacts` | 0 | gap | gap |
+| `outbox-task` | Return an A2A Task through the outbox | `events` | 0 | gap | gap |
+| `outbox-message` | Return an A2A Message through the outbox | `events` | 0 | gap | gap |
+| `ask` | Ask a question, then quote the answer | `interrupts` | 0 | gap | gap |
+| `ask-twice` | Ask two questions in a row | `interrupts` | 0 | gap | gap |
+| `fail <mode>` | Fail on purpose: exception \| after-reply \| before-interrupt | `errors`, `terminal_states` | 0 | gap | gap |
+| `ext` | Report active and unknown extensions | `extensions` | 0 | gap | gap |
+| `whoami` | Report the daemon identity | `daemon` | 0 | gap | gap |
+| `event` | Report which router handler received the event | `extensions`, `events` | 0 | gap | gap |
+| `config <key>` | Report one configuration value | `config` | 0 | gap | gap |
+| `ids` | Report task and context ids | `events`, `lifecycle` | 2 | ✓ | ✓ |
+| `big <kb>` | Reply with n KB of text | `errors` | 0 | gap | gap |
+| `parts` | Report the kinds of parts the inbound message carried | `files` | 6 | ✓ | ✓ |

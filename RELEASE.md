@@ -75,7 +75,7 @@ Both commands run `scripts/release.py`, read the version from
    | `make dist-build` | Empties `dist/`, builds the wheel and the sdist. |
    | `make dist-check` | Reads `dist/` against the packaging contract, then `twine check`. |
    | `make dist-smoke` | Installs the built files into nine clean venvs and uses each one. |
-   | `make scenarios-dist` | Runs the scenario suite against the built wheel in a clean venv. |
+   | `make tests-scenarios-dist` | Runs the scenario suite against the built wheel in a clean venv. |
 
    The last four are what the release workflow itself runs, so green here
    means the release is proven except for the upload.
@@ -91,11 +91,11 @@ run with the failing step named, and nothing has been spent: no tag, no
 release, no version number. `make release-check` is step 2 alone.
 
 `dist-smoke` takes a minute or two and uses whatever `python3` is on the path;
-`scenarios-dist` adds about half a minute on top, in an environment of the same
+`tests-scenarios-dist` adds about half a minute on top, in an environment of the same
 kind. Pin both to the version the release is built with:
 `make release-check RELEASE_ARGS="--python 3.12"` (`make release` takes the
 same), or `make dist-smoke SMOKE_ARGS="--python 3.12"` and
-`make scenarios-dist SCENARIOS_ARGS="--python 3.12"` on their own.
+`make tests-scenarios-dist SCENARIOS_ARGS="--python 3.12"` on their own.
 
 The same release by hand, if ever needed: `gh release create py-v0.2.0
 --target main --title py-v0.2.0 --generate-notes`, plus `--prerelease` for a
@@ -168,7 +168,7 @@ bad `0.2.0`, there is no second `0.2.0`.
   discovery which frameworks loaded, and asserts the libraries that extra did
   *not* buy are absent. The negative half is the point: a base install that
   quietly carries `fastapi` proves nothing.
-- **`scenarios-dist`** is the one check that runs the product. It installs the
+- **`tests-scenarios-dist`** is the one check that runs the product. It installs the
   wheel with both framework extras into one more clean environment and runs
   `tests/scenarios` against it: a real `aion serve` per framework and
   deployment variant, driven through the proxy by an A2A client, asserting on

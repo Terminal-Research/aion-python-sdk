@@ -13,7 +13,7 @@ They are a third suite, not part of `make tests`. Every item under this
 directory carries the `scenario` marker — `conftest.py` puts it on, so a new
 module cannot forget it — and all three test targets exclude it. Run them when
 a change touches what goes over the wire, and before a release, where
-`make scenarios-dist` is a step of the gate.
+`make tests-scenarios-dist` is a step of the gate.
 
 [SCENARIOS.md](SCENARIOS.md) lists every scenario, what it checks, which
 command and deployment it drives, and what happens to it on each framework. It
@@ -39,18 +39,19 @@ tests and agents both read `commands.py`.
 From the repository root, like every other target:
 
 ```bash
-make scenarios                        # everything except persistence
-make scenarios TAGS=smoke             # one suite
-make scenarios TAGS="daemon events"   # several suites (any of them)
-make scenarios FRAMEWORK=langgraph    # one framework
-make scenarios ARGS="-x -vv"          # straight through to pytest
-make scenarios-pg                     # persistence, against a disposable PostgreSQL
-make scenarios-dist                   # against the built wheel, in a clean venv
-make scenarios-matrix                 # rewrite SCENARIOS.md
+make tests-scenarios                       # everything except persistence
+make tests-scenarios TAGS=smoke            # one suite
+make tests-scenarios TAGS="daemon events"  # several suites (any of them)
+make tests-scenarios FRAMEWORK=langgraph   # one framework
+make tests-scenarios ARGS="-x -vv"         # straight through to pytest
+make tests-scenarios-pg                    # persistence, against a disposable PostgreSQL
+make tests-scenarios-dist                  # against the built wheel, in a clean venv
+make scenarios-matrix                      # rewrite SCENARIOS.md
 ```
 
-`make scenarios-pg` collects nothing today: the harness (`harness/pg.py`) and
-the target are in place, the persistence suite is not written yet.
+`make tests-scenarios-pg` collects nothing today: the harness
+(`harness/pg.py`) and the target are in place, the persistence suite is not
+written yet.
 
 `KEEP_SERVE=1` leaves the servers running after the session and prints the
 port, the rendered `aion.yaml` and the log of each — the fastest way to poke at
@@ -60,10 +61,10 @@ report either way.
 
 ### Which installation is under test
 
-`make scenarios` starts the `aion` of the project environment, so what it
+`make tests-scenarios` starts the `aion` of the project environment, so what it
 drives is the working tree.
 
-`make scenarios-dist` drives the wheel instead:
+`make tests-scenarios-dist` drives the wheel instead:
 `scripts/packaging/scenarios.py` installs `dist/*.whl` with both framework
 extras into a virtual environment that inherits nothing, and points the
 harness at that environment's `aion` through `SCENARIOS_AION_BIN`. Pytest, the
@@ -71,7 +72,7 @@ A2A client and the harness still come from this project — they are tooling,
 not the subject. It needs a build to run against:
 
 ```bash
-make dist-build && make scenarios-dist
+make dist-build && make tests-scenarios-dist
 ```
 
 This is the last step of `make release-check`, and the last gate before the
@@ -162,7 +163,7 @@ the gap shows up as a failure rather than as a wrong menu — and as
    extras its server side needs.
 3. Add an `UNSUPPORTED` line for anything the framework genuinely cannot do,
    with the reason.
-4. `make scenarios` must be green for it, with every skip coming from
+4. `make tests-scenarios` must be green for it, with every skip coming from
    `UNSUPPORTED`.
 5. `make scenarios-matrix`, and commit the matrix with the new column.
 

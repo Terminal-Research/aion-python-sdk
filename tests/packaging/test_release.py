@@ -127,7 +127,7 @@ GATE_TARGETS = [
     "dist-build",
     "dist-check",
     "dist-smoke",
-    "scenarios-dist",
+    "tests-scenarios-dist",
 ]
 
 
@@ -141,7 +141,7 @@ def test_gate_runs_the_make_targets_in_order(monkeypatch: pytest.MonkeyPatch) ->
     # No interpreter asked for, no variable assignment on either of the two
     # targets that take one.
     assert recorder.calls[-2][-1] == "dist-smoke"
-    assert recorder.calls[-1][-1] == "scenarios-dist"
+    assert recorder.calls[-1][-1] == "tests-scenarios-dist"
 
 
 def test_gate_passes_the_interpreter_through_to_both_clean_environments(
@@ -151,7 +151,7 @@ def test_gate_passes_the_interpreter_through_to_both_clean_environments(
     monkeypatch.setattr(release.subprocess, "run", recorder)
     release.run_gate(python="3.12")
     assert recorder.calls[-2][-2:] == ["dist-smoke", "SMOKE_ARGS=--python 3.12"]
-    assert recorder.calls[-1][-2:] == ["scenarios-dist", "SCENARIOS_ARGS=--python 3.12"]
+    assert recorder.calls[-1][-2:] == ["tests-scenarios-dist", "SCENARIOS_ARGS=--python 3.12"]
 
 
 def test_gate_stops_at_the_first_failing_step(monkeypatch: pytest.MonkeyPatch) -> None:

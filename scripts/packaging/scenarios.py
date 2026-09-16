@@ -17,7 +17,7 @@ about the wheel and would need test dependencies inside it.
 and every third-party library the extras bring. That is the installation a
 user gets, and it is the one under test.
 
-Run through ``poetry run`` (``make scenarios-dist`` does): the interpreter
+Run through ``poetry run`` (``make tests-scenarios-dist`` does): the interpreter
 running this script is the one that runs pytest. The venv is built by
 ``--python`` or by that same interpreter, and is emptied afterwards unless
 ``--keep`` says otherwise.
@@ -40,7 +40,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 SCENARIOS = "tests/scenarios"
 DEFAULT_MARKERS = "scenario and not persistence"
-"""Persistence needs a database of its own; `make scenarios-pg` runs it."""
+"""Persistence needs a database of its own; `make tests-scenarios-pg` runs it."""
 
 AION_BIN_VAR = "SCENARIOS_AION_BIN"
 """What the harness reads to decide which `aion` to start."""

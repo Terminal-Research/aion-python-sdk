@@ -115,7 +115,7 @@ def _aion_executable() -> Path:
     By default the one beside the interpreter running the tests - the project
     environment, and with it the working tree. ``SCENARIOS_AION_BIN`` points
     the scenarios at another installation instead: that is how
-    ``make scenarios-dist`` drives the wheel it just built.
+    ``make tests-scenarios-dist`` drives the wheel it just built.
     """
     override = os.environ.get(AION_BIN)
     if override:

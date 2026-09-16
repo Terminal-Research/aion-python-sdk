@@ -242,12 +242,12 @@ and are discovered by `aion.server` at runtime.
   in CI, or at a PostgreSQL of your own — takes over completely and nothing
   touches Docker. That variable is named apart from the ordinary connection
   setting on purpose: these tests migrate and truncate what they are pointed at.
-- `make scenarios` is the third run, and it is in neither `tests` nor
+- `make tests-scenarios` is the third run, and it is in neither `tests` nor
   `tests-all`: the suite under `tests/scenarios` starts a real `aion serve` per
   framework and deployment variant and drives it over A2A. `TAGS=` selects
   suites, `FRAMEWORK=` one framework, `KEEP_SERVE=1` leaves the servers up.
-  `make scenarios-dist` runs the same scenarios against the wheel in `dist/`,
-  installed into a clean venv, and is a step of the release gate.
+  `make tests-scenarios-dist` runs the same scenarios against the wheel in
+  `dist/`, installed into a clean venv, and is a step of the release gate.
   `make scenarios-matrix` regenerates `tests/scenarios/SCENARIOS.md`, which CI
   checks is current. `tests/scenarios/README.md` is the whole of it, including
   where the line with the unit tests runs.
@@ -258,7 +258,7 @@ and are discovered by `aion.server` at runtime.
   (`make dist-smoke`) installs them into nine clean virtual environments and
   uses each one. Neither runs through `poetry run`: the point is an environment
   that inherits nothing from this project's. `scripts/packaging/scenarios.py`
-  (`make scenarios-dist`) builds one more such environment and runs the
+  (`make tests-scenarios-dist`) builds one more such environment and runs the
   scenario suite against it — that one does go through `poetry run`, because
   pytest and the A2A client come from this project while the installation
   under test is the venv. `make dist-build` empties `dist/`
