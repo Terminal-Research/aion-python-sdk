@@ -37,11 +37,17 @@ help: ## Show available commands
 
 ##@ Tests
 
-# `not scenario` in all three: the scenario suite under tests/scenarios starts
-# real servers and is run by `make tests-scenarios`, never as part of a
-# plain test run.
-tests: ## Run unit tests (make tests ARGS="-k platform_link")
-	poetry run pytest -m "not integration and not scenario" $(ARGS)
+# The three suites are three directories - tests/unit, tests/integration and
+# tests/scenarios - and the directory is what a target runs. tests/conftest.py
+# puts the matching marker on every item, so `-m` still combines suites, but
+# nothing here selects by it. TEST_PATHS= narrows a run to part of a suite;
+# ARGS= is pytest options and goes through untouched. They are two variables
+# because a path in ARGS would land next to the suite's own directory, and
+# the tests under it would be collected twice.
+TEST_PATHS ?=
+
+tests: ## Run the unit suite (make tests ARGS="-k platform_link" TEST_PATHS="tests/unit/core")
+	poetry run pytest $(if $(TEST_PATHS),$(TEST_PATHS),tests/unit) $(ARGS)
 
 # Run a command with a database under it, and take the database away again.
 #
@@ -78,14 +84,14 @@ endef
 # a database that was never started.
 tests-integration: export POSTGRES_TEST_URL := $(POSTGRES_TEST_URL)
 tests-integration: ## Run integration tests; run before you commit
-	@$(call with_pg_test,poetry run pytest -m "integration and not scenario" $(ARGS))
+	@$(call with_pg_test,poetry run pytest $(if $(TEST_PATHS),$(TEST_PATHS),tests/integration) $(ARGS))
 
 tests-all: export POSTGRES_TEST_URL := $(POSTGRES_TEST_URL)
 tests-all: ## Run unit and integration tests together
-	@$(call with_pg_test,poetry run pytest -m "not scenario" $(ARGS))
+	@$(call with_pg_test,poetry run pytest $(if $(TEST_PATHS),$(TEST_PATHS),tests/unit tests/integration) $(ARGS))
 
 # The scenario suite, tests/scenarios: a real `aion serve` per framework and
-# deployment variant, driven over A2A. The three targets above exclude it - it
+# deployment variant, driven over A2A. None of the targets above runs it - it
 # starts processes and takes a minute - and these three are how it is run:
 # here, before a release, and whenever a change touches what goes over the
 # wire. `tests/scenarios/README.md` is the suite itself.

@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 GENERATED_CLIENT_DIR = (
-    Path(__file__).resolve().parents[2]
+    Path(__file__).resolve().parents[3]
     / "src"
     / "aion"
     / "api"

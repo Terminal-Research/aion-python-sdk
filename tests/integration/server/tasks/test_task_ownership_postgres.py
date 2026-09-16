@@ -49,7 +49,6 @@ from aion.server.tasks.stores.postgres_task_store import PostgresTaskStore
 # singleton holding a connection pool, and a pool bound to a loop that has been
 # closed cannot serve the next test.
 pytestmark = [
-    pytest.mark.integration,
     pytest.mark.skipif(not POSTGRES_TEST_URL, reason="POSTGRES_TEST_URL is not set"),
     pytest.mark.asyncio(loop_scope="module"),
 ]

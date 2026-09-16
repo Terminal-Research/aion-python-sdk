@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "packaging" / "envcheck.py"
+SCRIPT = Path(__file__).resolve().parents[3] / "scripts" / "packaging" / "envcheck.py"
 
 
 def _load_envcheck():

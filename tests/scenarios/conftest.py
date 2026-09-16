@@ -28,13 +28,12 @@ _SERVERS: dict[tuple[str, str], ServeProcess] = {}
 
 @pytest.hookimpl(tryfirst=True)
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
-    """Mark every scenario, and refuse a variant marker that names no template.
+    """Time-box every scenario, and refuse a variant marker that names no template.
 
-    Three markers go on the items under this directory and on nothing else:
+    The ``scenario`` marker itself is not put on here: the root conftest marks
+    every item by the suite directory it lives in. Two more markers go on the
+    items under this directory and on nothing else:
 
-    ``scenario``    what keeps scenarios out of `make tests`. The deselection
-                    `-m` asks for happens in this same hook, which is why this
-                    implementation runs ``tryfirst``.
     ``timeout``     a scenario drives real processes over a real socket; one
                     that hangs would otherwise hold the whole run.
     ``asyncio``     on the coroutine ones, with a session-scoped event loop:
@@ -49,7 +48,6 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
         if not item.path.is_relative_to(SCENARIOS_ROOT):
             continue
         item.add_marker(pytest.mark.timeout(TIMEOUT_SECONDS), append=False)
-        item.add_marker(pytest.mark.scenario, append=False)
         # `asyncio_mode = "auto"` has already put a bare `asyncio` marker on
         # the coroutine tests and on nothing else, which is what tells the two
         # apart here. The loop scope goes at the front: the closest marker is

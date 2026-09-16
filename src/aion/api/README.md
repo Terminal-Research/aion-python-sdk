@@ -121,7 +121,7 @@ Install the project from the repository root and run this subpackage's tests:
 
 ```bash
 poetry install -E langgraph-server -E adk-server --with dev
-make tests ARGS="tests/api"
+make tests TEST_PATHS="tests/unit/api"
 ```
 
 To regenerate the Python classes for the GraphQL API run:

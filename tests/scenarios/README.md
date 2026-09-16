@@ -10,8 +10,9 @@ No model is ever called: every answer an agent gives here is deterministic,
 and the scenarios never touch the Aion platform.
 
 They are a third suite, not part of `make tests`. Every item under this
-directory carries the `scenario` marker — `conftest.py` puts it on, so a new
-module cannot forget it — and all three test targets exclude it. Run them when
+directory carries the `scenario` marker — the root `tests/conftest.py` puts it
+on by directory, so a new module cannot forget it — and no other test target
+runs it. Run them when
 a change touches what goes over the wire, and before a release, where
 `make tests-scenarios-dist` is a step of the gate.
 
@@ -122,8 +123,8 @@ async def test_echo_answers_with_the_argument(client: ScenarioClient) -> None:
 - A scenario on a deployment other than the default carries
   `@pytest.mark.variant("<template>")`, naming the template under `configs/`
   it runs against. Naming one that does not exist is an error at collection.
-- The `scenario`, `asyncio` and `timeout` markers are added by the conftest;
-  do not write them.
+- The `scenario` marker is added by the root conftest, `asyncio` and
+  `timeout` by this directory's; do not write them.
 - Expected strings come from `commands.py`, never from a literal in the test —
   the agent builds its answers from the same functions.
 - `if framework.name == ...` in a test is not allowed. A difference is either
@@ -131,7 +132,8 @@ async def test_echo_answers_with_the_argument(client: ScenarioClient) -> None:
 
 ## Where the line with the unit tests is
 
-A converter rule belongs in `tests/langgraph`, `tests/adk` or `tests/server`,
+A converter rule belongs in `tests/unit/langgraph`, `tests/unit/adk` or
+`tests/unit/server`,
 where it can be checked by calling the converter. A scenario pins one
 observable consequence of that rule on the wire, once, through a real server.
 

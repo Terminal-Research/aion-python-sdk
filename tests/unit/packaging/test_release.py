@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "release.py"
+SCRIPT = Path(__file__).resolve().parents[3] / "scripts" / "release.py"
 
 
 def _load_release():

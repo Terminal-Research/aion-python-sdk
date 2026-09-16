@@ -90,7 +90,6 @@ class _GracefulAgentExecutor:
         await TaskUpdater(event_queue, context.task_id, context.context_id).cancel()
 
 pytestmark = [
-    pytest.mark.integration,
     pytest.mark.skipif(not POSTGRES_TEST_URL, reason="POSTGRES_TEST_URL is not set"),
     pytest.mark.asyncio(loop_scope="module"),
 ]

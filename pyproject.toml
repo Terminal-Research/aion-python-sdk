@@ -226,13 +226,15 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 filterwarnings = ["ignore::DeprecationWarning"]
 markers = [
-    "integration: needs a real service or real processes; slower than a unit test",
-    # The scenario suite, tests/scenarios. `scenario` is on every item under
-    # that directory - the conftest there puts it on, so that no module can
-    # forget it - and is what keeps a suite that starts real servers out of
-    # `make tests`. `command` and `variant` say what one scenario drives and
-    # where; the scenario matrix is built out of them.
-    "scenario: drives a real `aion serve` over A2A; run by `make scenarios`, never by `make tests`",
+    # One marker per suite, put on by tests/conftest.py from the directory an
+    # item lives in - tests/unit, tests/integration, tests/scenarios - so that
+    # no module can forget one or claim another. The Make targets run by
+    # directory; the markers are there for combining with `-m`.
+    "unit: runs on any developer machine with nothing set up; `make tests`",
+    "integration: needs PostgreSQL, or a real process tree to signal; `make tests-integration`",
+    "scenario: drives a real `aion serve` over A2A; `make tests-scenarios`, never `make tests`",
+    # `command` and `variant` say what one scenario drives and where; the
+    # scenario matrix is built out of them.
     "command(key): the command from tests/scenarios/commands.py this scenario drives; skipped where frameworks.UNSUPPORTED names the pair",
     "variant(name): the deployment template under tests/scenarios/configs this scenario runs against",
     # One marker per scenario suite; `make scenarios TAGS=...` selects on

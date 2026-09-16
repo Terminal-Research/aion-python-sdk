@@ -10,16 +10,23 @@ Everything you need to start contributing to the Aion Python SDK.
 
 ## Testing
 
-The suite lives in `tests/`, mirroring `src/aion/`, and runs as one `pytest`
-invocation. `tests/scenarios` is the one directory that mirrors nothing: it is
-the scenario suite described below. Anything after `ARGS=` is passed to pytest untouched.
+The suite lives in `tests/`, in three directories that are the three ways it
+is run: `tests/unit`, `tests/integration` and `tests/scenarios`. The first two
+mirror `src/aion/`; the scenario suite mirrors nothing, it drives the product
+from outside. The directory a test is in is what decides how it runs - the
+root `conftest.py` puts the suite's marker on every item by directory, so a
+module never says which suite it belongs to.
+
+Anything after `ARGS=` is passed to pytest untouched; `TEST_PATHS=` narrows a
+run to part of a suite. They are separate so that a path never lands next to
+the suite's own directory and collects the same tests twice.
 
 ```bash
 # Run the unit suite
 make tests
 
 # Run one subpackage's tests
-make tests ARGS="tests/core tests/db"
+make tests TEST_PATHS="tests/unit/core tests/unit/db"
 
 # Stop on first failure
 make tests ARGS="-x"
@@ -27,10 +34,13 @@ make tests ARGS="-x"
 
 ### Unit tests and integration tests
 
-The suites are separated by the `integration` marker, and `make tests` runs
-only the unit one. An integration test needs a real PostgreSQL to migrate and
-truncate, or real child processes to signal, and it waits for real lease
-timeouts. Run it before you commit rather than between two edits.
+A unit test runs on any developer machine with nothing set up. It may use
+`tmp_path`, a loopback socket or an in-process ASGI client, and it may start a
+short child Python to see what a thinner installation imports. An integration
+test is about a real infrastructure boundary or an OS-level lifecycle, where
+the real behaviour is the subject: a PostgreSQL to migrate and truncate, a
+real process tree and its descendants to signal, real lease timeouts to wait
+for. Run it before you commit rather than between two edits.
 
 ```bash
 # Start a database, run the integration suite, stop the database
@@ -65,16 +75,17 @@ The variable is deliberately not the ordinary `POSTGRES_URL`: these tests
 migrate and truncate whatever they are pointed at, so an address has to be
 given that meaning explicitly.
 
-Mark a new test with `@pytest.mark.integration` whenever it needs something the
-developer machine does not have by default.
+Put a new test under `tests/integration` whenever it needs something the
+developer machine does not have by default; the marker follows from the
+directory.
 
 ### Scenario tests
 
 A third suite lives in `tests/scenarios`. It starts a real `aion serve` for
 each framework and deployment variant, talks to the agents through the proxy
 with an ordinary A2A client, and asserts on what comes back over the wire.
-Every item in it carries the `scenario` marker, and all three targets above
-exclude it: a suite that starts processes is not what you run between two
+Every item in it carries the `scenario` marker, and none of the targets above
+runs it: a suite that starts processes is not what you run between two
 edits.
 
 ```bash

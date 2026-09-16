@@ -28,7 +28,6 @@ from aion.db.postgres.types import SortKey, Sorting
 
 
 pytestmark = [
-    pytest.mark.integration,
     pytest.mark.skipif(
         not os.getenv("POSTGRES_TEST_URL"),
         reason="POSTGRES_TEST_URL is not set",

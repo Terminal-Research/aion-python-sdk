@@ -25,8 +25,6 @@ import pytest
 
 from aion.server.utils.processes.process_manager import ProcessManager
 
-pytestmark = pytest.mark.integration
-
 GRANDCHILD = [sys.executable, "-c", "import time; time.sleep(300)"]
 """A process the manager knows nothing about, started by the process it manages."""
 

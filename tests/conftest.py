@@ -11,6 +11,37 @@ from pathlib import Path
 
 import pytest
 
+TESTS_ROOT = Path(__file__).resolve().parent
+
+SUITES = {"unit": "unit", "integration": "integration", "scenarios": "scenario"}
+"""The three suites: the directory each one lives in, and its marker."""
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Put the suite marker on every item, from the directory it lives in.
+
+    A test is in a suite by where it is, and nowhere else: the Make targets
+    select by directory, and the marker is here so that ``-m`` can still
+    combine suites and so that no module can claim a suite it is not in. A
+    test file outside the three directories is an error, not a fourth suite.
+
+    ``tryfirst``: the deselection ``-m`` asks for happens in this same hook,
+    and the marker has to be there by then.
+    """
+    for item in items:
+        try:
+            top = item.path.resolve().relative_to(TESTS_ROOT).parts[0]
+        except ValueError:
+            continue
+        marker = SUITES.get(top)
+        if marker is None:
+            raise pytest.UsageError(
+                f"{item.nodeid}: a test lives under tests/unit, tests/integration "
+                f"or tests/scenarios, not under tests/{top}"
+            )
+        item.add_marker(getattr(pytest.mark, marker), append=False)
+
 
 # Top-level import names of the third-party libraries the server extras
 # install. Blocking them turns this environment into a base install for the

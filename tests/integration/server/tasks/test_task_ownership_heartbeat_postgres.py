@@ -40,7 +40,6 @@ from a2a.types import TaskState
 from aion.server.tasks.ownership import Busy, Claim, Lost
 
 pytestmark = [
-    pytest.mark.integration,
     pytest.mark.skipif(not POSTGRES_TEST_URL, reason="POSTGRES_TEST_URL is not set"),
     pytest.mark.asyncio(loop_scope="module"),
 ]

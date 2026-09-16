@@ -6,10 +6,12 @@ one wheel and one sdist; the extras install third-party libraries, never Aion
 code, so every `aion.*` subpackage is present in every installation and what an
 extra decides is whether its dependencies are importable.
 
-The tests for all of it live in `tests/`, mirroring `src/aion/` — except
-`tests/scenarios`, the scenario suite, which mirrors nothing because it drives
-the product from outside. Shared documentation lives in `docs/`, repo-wide
-tooling in `Makefile` and `scripts/`.
+The tests for all of it live in `tests/`, in three suites that are three
+directories: `tests/unit` and `tests/integration` mirror `src/aion/`;
+`tests/scenarios`, the scenario suite, mirrors nothing because it drives the
+product from outside. `tests/support` holds builders shared between test
+modules and is collected from nowhere. Shared documentation lives in `docs/`,
+repo-wide tooling in `Makefile` and `scripts/`.
 `libs/` holds one thing only: `aion-chat-ui`, an npm package with its own
 toolchain.
 
@@ -227,14 +229,15 @@ and are discovered by `aion.server` at runtime.
   The comment in `poetry.toml` says when the setting can go away.
 - `make help` lists all targets. `make tests` runs the unit suite;
   `make tests-integration` runs the integration suite and
-  `make tests-all` runs both. All three are plain `pytest` over `tests/` with
-  the `integration` marker selecting, and all three exclude `scenario`:
-  `pytest` is not to be reached around, and
-  anything after `ARGS=` goes to it untouched
-  (`make tests ARGS="-k websocket"`, `make tests ARGS="tests/server -q"`).
-  A test marked `integration` needs a real PostgreSQL or real child processes
-  and waits for real timeouts, so it is not what you run between two edits —
-  run it before you commit. The database is handled for you: both integration
+  `make tests-all` runs both. All three are plain `pytest` over the suite's
+  directory — the directory is what selects, and `tests/conftest.py` puts the
+  matching marker on every item so that `-m` can still combine them:
+  `pytest` is not to be reached around, anything after `ARGS=` goes to it
+  untouched (`make tests ARGS="-k websocket"`), and `TEST_PATHS=` narrows a
+  run to part of a suite (`make tests TEST_PATHS="tests/unit/server"`).
+  A test lives under `tests/integration` when it needs a real PostgreSQL or a
+  real process tree to signal and waits for real timeouts, so it is not what
+  you run between two edits — run it before you commit. The database is handled for you: both integration
   targets start a disposable container, run the suite, and stop the container
   again, carrying the suite's exit status across the teardown. `PG_TEST_KEEP=1`
   leaves it up between runs while you debug one, and `make pg-test-up` /
