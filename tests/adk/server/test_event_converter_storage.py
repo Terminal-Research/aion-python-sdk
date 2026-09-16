@@ -30,7 +30,7 @@ from aion.server.files.storage import (
 from google.adk.events import Event, EventActions
 from google.genai import types
 
-from tests.server.files.test_file_storage import (
+from tests.support.files import (
     OutcomeBackend,
     RecordingBackend,
     distribution_payload,

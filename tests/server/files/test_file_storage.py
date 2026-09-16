@@ -9,8 +9,6 @@ authentication diagnostics) lives in ``test_aion_backend.py``; the stub used
 here succeeds unconditionally.
 """
 
-import asyncio
-
 import pytest
 from a2a.types import (
     Artifact,
@@ -24,11 +22,7 @@ from a2a.types import (
     TaskStatusUpdateEvent,
 )
 from aion.core.a2a.extensions import (
-    Behavior,
-    Distribution,
     DistributionExtensionV1,
-    Environment,
-    PrincipalIdentity,
     ServiceIdentity,
 )
 from aion.core.constants import (
@@ -50,23 +44,19 @@ from aion.server.files.storage import (
     resolve_upload_context,
 )
 
+from tests.support.files import (
+    ORG,
+    OutcomeBackend,
+    RecordingBackend,
+    distribution_payload,
+    principal,
+    upload_context,
+)
+
 
 # --------------------------------------------------------------------------
 # Fixtures and builders
 # --------------------------------------------------------------------------
-
-ORG = "org-1"
-
-
-def principal(organization_id: str = ORG, identity_id: str = "pid-1") -> PrincipalIdentity:
-    return PrincipalIdentity(
-        kind="principal",
-        id=identity_id,
-        identity_network="Aion",
-        identity_kind="Principal",
-        organization_id=organization_id,
-    )
-
 
 def service_identity() -> ServiceIdentity:
     return ServiceIdentity(
@@ -78,28 +68,6 @@ def service_identity() -> ServiceIdentity:
     )
 
 
-def distribution_payload(
-    *identities,
-    daemon_identity_id: str | None = None,
-) -> DistributionExtensionV1:
-    return DistributionExtensionV1(
-        distribution=Distribution(
-            id="dist-1",
-            endpoint_type="A2A",
-            url="https://example.invalid/a2a",
-            identities=list(identities),
-        ),
-        behavior=Behavior(id="b-1", behavior_key="main", version_id="v-1"),
-        environment=Environment(
-            id="env-1",
-            name="prod",
-            project_id="proj-1",
-            deployment_id="dep-1",
-            configuration_variables={},
-            daemon_agent_identity_id=daemon_identity_id,
-        ),
-    )
-
 
 def extensions(payload: DistributionExtensionV1 | None, carrier: str | None = None):
     verified = {}
@@ -110,48 +78,10 @@ def extensions(payload: DistributionExtensionV1 | None, carrier: str | None = No
     return AionRuntimeExtensions(verified)
 
 
-def upload_context(**overrides) -> UploadContext:
-    return UploadContext(organization_id=ORG, **overrides)
-
 
 def raw_part(data: bytes = b"bytes", name: str = "a.png", media: str = "image/png") -> Part:
     return Part(raw=data, media_type=media, filename=name)
 
-
-class RecordingBackend(StubFileStorageBackend):
-    """Stub that records every batch it was handed."""
-
-    def __init__(self):
-        self.batches: list[list[FileUpload]] = []
-        self.contexts: list[UploadContext] = []
-
-    async def store_many(self, uploads, *, context):
-        self.batches.append(list(uploads))
-        self.contexts.append(context)
-        return await super().store_many(uploads, context=context)
-
-
-class OutcomeBackend(StubFileStorageBackend):
-    """Stub returning a scripted outcome per position, with a delay each."""
-
-    def __init__(self, outcomes, delay: float = 0.0):
-        self._outcomes = outcomes
-        self._delay = delay
-        self.concurrent_peak = 0
-        self._in_flight = 0
-
-    async def store_many(self, uploads, *, context):
-        async def one(index):
-            self._in_flight += 1
-            self.concurrent_peak = max(self.concurrent_peak, self._in_flight)
-            try:
-                if self._delay:
-                    await asyncio.sleep(self._delay)
-                return self._outcomes[index]
-            finally:
-                self._in_flight -= 1
-
-        return list(await asyncio.gather(*(one(i) for i in range(len(uploads)))))
 
 
 # --------------------------------------------------------------------------
