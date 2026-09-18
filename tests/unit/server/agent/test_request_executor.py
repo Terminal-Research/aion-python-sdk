@@ -112,7 +112,7 @@ class TestExecuteRuntimeContext:
         init_execution_scope()
 
         with patch("aion.server.agent.execution.request_executor.AionRuntimeContextBuilder") as MockBuilder:
-            # Simulate no context available (e.g., graph without a2a_inbox)
+            # Simulate no context available (an agent that never reads one)
             MockBuilder.from_request_context.return_value = None
 
             with patch("aion.server.agent.execution.request_executor.AionRuntimeContextRegistry") as MockRegistry:

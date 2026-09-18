@@ -13,6 +13,7 @@ from a2a.types import (
     TaskStatusUpdateEvent,
 )
 from aion.core.a2a import ArtifactId, ArtifactName
+from aion.core.a2a.metadata import agent_metadata
 from aion.core.a2a.extensions.messaging import MessageActionPayload
 from aion.core.agent.invocation.card import Card
 from aion.core.agent.invocation.card.utils import build_card_a2a_part
@@ -103,18 +104,23 @@ class LangGraphA2AConverter:
         append = self._streaming_started
         self._streaming_started = True
 
+        # Two different statements, in the two places the spec puts them. The
+        # artifact id says which channel this is; the schema marker on the
+        # *event* says what shape the payload in it has, and the messaging
+        # extension names `artifactUpdate.metadata` for it. status and
+        # status_reason stay on the artifact: they describe the artifact.
         artifact_metadata: dict = {
             "status": "active",
             "status_reason": "chunk_streaming",
-            MESSAGING_EXTENSION_URI_V1: {"schema": STREAM_DELTA_PAYLOAD_SCHEMA_V1},
         }
-        user_meta = {k: v for k, v in (metadata or {}).items() if not k.startswith("aion:")} or None
+        user_meta = agent_metadata(metadata) or None
         if user_meta:
             artifact_metadata.update(user_meta)
 
         return [TaskArtifactUpdateEvent(
             task_id=self._task_id,
             context_id=self._context_id,
+            metadata={MESSAGING_EXTENSION_URI_V1: {"schema": STREAM_DELTA_PAYLOAD_SCHEMA_V1}},
             artifact=Artifact(
                 artifact_id=ArtifactId.STREAM_DELTA.value,
                 name=ArtifactName.STREAM_DELTA.value,
@@ -142,7 +148,7 @@ class LangGraphA2AConverter:
 
         role = self._detect_role(message)
         message_id = message.id or str(uuid.uuid4())
-        user_meta = {k: v for k, v in (metadata or {}).items() if not k.startswith("aion:")} or None
+        user_meta = agent_metadata(metadata) or None
         msg = Message(
             context_id=self._context_id,
             task_id=self._task_id,
@@ -173,7 +179,7 @@ class LangGraphA2AConverter:
                 MESSAGE_ACTION_PAYLOAD_SCHEMA_V1,
             ))
             extensions.append(MESSAGING_EXTENSION_URI_V1)
-        user_meta = {k: v for k, v in (metadata or {}).items() if not k.startswith("aion:")} or None
+        user_meta = agent_metadata(metadata) or None
         msg = Message(
             context_id=self._context_id,
             task_id=self._task_id,
@@ -202,7 +208,7 @@ class LangGraphA2AConverter:
             if event_data.routing is not None:
                 event_metadata[MESSAGING_EXTENSION_URI_V1] = event_data.routing.model_dump(by_alias=True, exclude_none=True)
             if event_data.metadata:
-                user_meta = {k: v for k, v in event_data.metadata.items() if not k.startswith("aion:")}
+                user_meta = agent_metadata(event_data.metadata)
                 event_metadata.update(user_meta)
             return [TaskArtifactUpdateEvent(
                 task_id=self._task_id,
@@ -266,7 +272,7 @@ class LangGraphA2AConverter:
         extensions = [MESSAGING_EXTENSION_URI_V1]
 
         message_id = message.id or str(uuid.uuid4())
-        user_meta = {k: v for k, v in (metadata or {}).items() if not k.startswith("aion:")} or None
+        user_meta = agent_metadata(metadata) or None
         msg = Message(
             context_id=self._context_id,
             task_id=self._task_id,

@@ -29,18 +29,11 @@ from typing import Any
 from a2a.types import Artifact, Message, Task, TaskArtifactUpdateEvent, TaskStatusUpdateEvent
 from google.protobuf.json_format import MessageToDict, ParseDict
 from google.protobuf.struct_pb2 import Struct
+from aion.core.a2a.metadata import is_platform_metadata_key
 from aion.server.a2a.utils import task_history_message_ids
 from aion.server.a2a.constants import TRANSIENT_ARTIFACT_IDS
 
 __all__ = ["A2ATaskDeduplicator"]
-
-PLATFORM_METADATA_PREFIX = "https://docs.aion.to"
-
-# Every namespace the platform reserves for its own metadata. Besides the
-# documentation URI, the short ``aion:`` prefix carries server-owned control
-# flags — ``aion:ephemeral`` decides whether an event is persisted at all, so a
-# client able to set it could delete its own events from task history.
-PLATFORM_METADATA_PREFIXES = (PLATFORM_METADATA_PREFIX, "aion:")
 
 logger = logging.getLogger(__name__)
 
@@ -532,4 +525,4 @@ class A2ATaskDeduplicator:
     @classmethod
     def _is_platform_metadata_key(cls, key: str) -> bool:
         """Return `True` for reserved platform metadata keys."""
-        return isinstance(key, str) and key.startswith(PLATFORM_METADATA_PREFIXES)
+        return is_platform_metadata_key(key)

@@ -16,6 +16,7 @@ from a2a.types import (
 )
 
 from aion.core.a2a import A2AOutbox
+from aion.core.a2a.metadata import agent_metadata
 from .event_converter import ADKToA2AEventConverter
 from .stream_executor import ADKStreamResult
 
@@ -144,13 +145,21 @@ class ADKExecutionResultHandler:
         Merge rules:
             - id, context_id, kind, status — kept from current task (server-owned).
             - history, artifacts — extended (current + patch).
-            - metadata — shallow merge; current task's keys take precedence
-              (protects server-controlled keys such as aion:network).
+            - metadata — shallow merge of the agent-writable keys only. Keys in
+              a platform namespace are dropped from the patch, so an outbox
+              Task cannot rewrite aion:network or any other server-owned key;
+              see aion.core.a2a.metadata.
 
         Emits a TaskStatusUpdateEvent for every message in patch.history and a
         TaskArtifactUpdateEvent for every artifact.
         """
         events: list[AgentEvent] = []
+
+        # The agent owns everything outside the platform namespaces and nothing
+        # inside them. Both the task it patches and the event that announces
+        # the patch get the same subset, because they are the same claim seen
+        # from the store and from the wire.
+        agent_patch_metadata = agent_metadata(patch.metadata)
 
         patched_history = []
         for msg in patch.history:
@@ -165,20 +174,17 @@ class ADKExecutionResultHandler:
                 merged = copy.deepcopy(current)
                 merged.history.extend(patched_history)
                 merged.artifacts.extend(patch.artifacts)
-                # patch overwrites current keys (preserves original merge behaviour)
-                for k, v in patch.metadata.items():
+                for k, v in agent_patch_metadata.items():
                     merged.metadata[k] = v
                 context.current_task = merged
 
-        if patch.metadata:
-            filtered = {k: v for k, v in patch.metadata.items() if not k.startswith("aion:")}
-            if filtered:
-                events.append(TaskStatusUpdateEvent(
-                    task_id=task_id,
-                    context_id=context_id,
-                    metadata=filtered,
-                    status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
-                ))
+        if agent_patch_metadata:
+            events.append(TaskStatusUpdateEvent(
+                task_id=task_id,
+                context_id=context_id,
+                metadata=agent_patch_metadata,
+                status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
+            ))
 
         for msg in patched_history:
             events.append(TaskStatusUpdateEvent(

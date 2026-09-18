@@ -24,7 +24,7 @@ from aion.core.a2a.extensions.messaging import ReactionActionPayload
 from aion.core.agent.invocation.card import Card
 from aion.core.agent.invocation.card.utils import build_card_a2a_part
 from aion.core.constants import CARDS_EXTENSION_URI_V1, MESSAGE_ACTION_PAYLOAD_SCHEMA_V1, MESSAGING_EXTENSION_URI_V1, \
-    REACTION_ACTION_PAYLOAD_SCHEMA_V1
+    REACTION_ACTION_PAYLOAD_SCHEMA_V1, STREAM_DELTA_PAYLOAD_SCHEMA_V1
 from aion.core.runtime.context import get_aion_runtime_context
 from aion.server.files.storage import (
     FileUpload,
@@ -87,11 +87,17 @@ class ADKToA2AEventConverter:
         """Emit a STREAM_DELTA artifact update for a partial (streaming) ADK event.
 
         The first chunk opens the artifact (append=False); subsequent chunks
-        use append=True. All partial events carry last_chunk=False; the sequence
-        ends with the durable message emitted for the next non-partial event or
-        with the terminal task status.
+        use append=True. The sequence ends with the durable message emitted for
+        the next non-partial event or with the terminal task status.
         User metadata from custom_metadata is merged into the artifact metadata
         so the UI can filter or route individual chunks.
+
+        Every partial carries last_chunk=False, and that is the ADK streaming
+        contract rather than a missing feature: intermediate responses are
+        partial=True and the turn ends with a separate partial=False response
+        carrying the aggregated content, so at the moment a partial is
+        converted there is nothing that could say it was the last one. The
+        information arrives with the next event.
         """
         parts = A2ATransformer.transform_content(adk_event.content)
         if not parts:
@@ -106,9 +112,14 @@ class ADKToA2AEventConverter:
         if user_meta:
             artifact_metadata.update(user_meta)
 
+        # The artifact id says which channel this is; the schema marker on the
+        # event says what shape the payload in it has. The messaging extension
+        # names `artifactUpdate.metadata` as the marker's place, and a client
+        # reading the stream-delta schema looks for it there.
         return [TaskArtifactUpdateEvent(
             task_id=self._task_id,
             context_id=self._context_id,
+            metadata={MESSAGING_EXTENSION_URI_V1: {"schema": STREAM_DELTA_PAYLOAD_SCHEMA_V1}},
             artifact=Artifact(
                 artifact_id=ArtifactId.STREAM_DELTA.value,
                 name=ArtifactName.STREAM_DELTA.value,

@@ -4,7 +4,7 @@
      commands.py and frameworks.py. Do not edit by hand: run
      `make scenarios-matrix`. -->
 
-24 scenarios in 4 files, 48 runs across 2 frameworks: 46 run, 2 skipped.
+28 scenarios in 5 files, 56 runs across 2 frameworks: 54 run, 2 skipped.
 
 Nothing here was produced by running a scenario: `pytest --collect-only` and the registries are all it takes, and the same suite always renders the same file. What the suite is and how to run it is in [README.md](README.md).
 
@@ -37,7 +37,7 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 | Suite | What it covers | Scenarios | Run |
 |---|---|---|---|
 | `smoke` | agent answers at all: card, health, help, echo | 5 | `make tests-scenarios TAGS=smoke` |
-| `streaming` | chunked replies, ephemeral typing, unary send | 4 | `make tests-scenarios TAGS=streaming` |
+| `streaming` | chunked replies, ephemeral typing, unary send | 8 | `make tests-scenarios TAGS=streaming` |
 | `events` | event order, ids, outbox, get_task agreement | 6 | `make tests-scenarios TAGS=events` |
 | `terminal_states` | COMPLETED, FAILED, CANCELED, INPUT_REQUIRED | 0 | `make tests-scenarios TAGS=terminal_states` |
 | `interrupts` | INPUT_REQUIRED and resume | 0 | `make tests-scenarios TAGS=interrupts` |
@@ -93,6 +93,17 @@ Does a deployment of this framework answer at all.
 | [`help` answers the menu, and the turn completes.](core/test_smoke.py#L40 "test_help_answers_with_the_menu") | `smoke` | `help` | `default` | ✓ | ✓ |
 | [`echo <text>` answers with the argument, unchanged.](core/test_smoke.py#L49 "test_echo_answers_with_the_argument") | `smoke` | `echo` | `default` | ✓ | ✓ |
 
+### `tests/scenarios/core/test_stream_delta_shape.py`
+
+The stream-delta channel has the shape the messaging extension specifies.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [The reserved id is what makes a delta recognisable as live reply text.](core/test_stream_delta_shape.py#L29 "test_every_delta_names_the_channel_by_artifact_id") | `streaming` | `stream` | `default` | ✓ | ✓ |
+| [The marker sits on the artifact update, which is where the spec puts it.](core/test_stream_delta_shape.py#L39 "test_every_delta_carries_the_schema_marker_on_the_event") | `streaming` | `stream` | `default` | ✓ | ✓ |
+| [Artifact metadata describes the artifact; the schema belongs to the event.](core/test_stream_delta_shape.py#L57 "test_the_artifact_carries_its_own_status_not_the_schema") | `streaming` | `stream` | `default` | ✓ | ✓ |
+| [`lastChunk` does not end a stream-delta sequence, and is not how to read one.](core/test_stream_delta_shape.py#L72 "test_the_sequence_is_closed_by_the_durable_reply_not_by_last_chunk") | `streaming` | `stream` | `default` | ✓ | ✓ |
+
 ### `tests/scenarios/core/test_streaming.py`
 
 Replies that arrive in pieces.
@@ -112,7 +123,7 @@ The contract from `commands.py`. `Scenarios` counts the scenarios driving the co
 |---|---|---|---|---|---|
 | `help` | Show this menu | `smoke` | 1 | ✓ | ✓ |
 | `echo <text>` | Reply with the argument, unchanged | `smoke`, `events` | 4 | ✓ | ✓ |
-| `stream <n>` | Reply in n chunks of one message | `streaming` | 4 | ✓ | ✓ |
+| `stream <n>` | Reply in n chunks of one message | `streaming` | 8 | ✓ | ✓ |
 | `typing` | Send an ephemeral typing status, then a reply | `streaming`, `events` | 0 | gap | gap |
 | `steps <n>` | Emit n working statuses, then complete | `events` | 1 | ✓ | ✓ |
 | `slow <sec>` | Reply after n seconds | `lifecycle` | 0 | gap | gap |

@@ -10,7 +10,8 @@ custom_metadata is treated as user-defined metadata forwarded to A2A.
 
 from __future__ import annotations
 
-from aion.adk.authoring.constants import AION_OUTPUT_KEY, AION_ROUTING_KEY, AION_SERVICE_KEYS
+from aion.adk.authoring.constants import AION_OUTPUT_KEY, AION_ROUTING_KEY
+from aion.core.a2a.metadata import agent_metadata
 from aion.core.a2a.extensions.messaging import MessageActionPayload, ReactionActionPayload
 from google.adk.events import Event
 from pydantic import BaseModel, Field, model_validator
@@ -103,11 +104,15 @@ def get_aion_routing(event: Event) -> MessageActionPayload | None:
 
 
 def get_aion_user_metadata(event: Event) -> dict | None:
-    """Return user-defined metadata from an ADK Event, excluding reserved aion:* service keys."""
-    if not event.custom_metadata:
-        return None
-    user_meta = {k: v for k, v in event.custom_metadata.items() if k not in AION_SERVICE_KEYS}
-    return user_meta or None
+    """Return the agent's own metadata from an ADK Event, or None if it wrote none.
+
+    Reserved keys are dropped by namespace rather than by name. The two the
+    emitters write - ``aion:output`` and ``aion:routing`` - are not the only
+    ones the platform owns, and a rule listing them would forward every other
+    ``aion:`` key an agent set straight through to the client as if the agent
+    had meant it as user metadata. See ``aion.core.a2a.metadata``.
+    """
+    return agent_metadata(event.custom_metadata) or None
 
 
 __all__ = [

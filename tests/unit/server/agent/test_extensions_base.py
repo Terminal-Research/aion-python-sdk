@@ -42,8 +42,8 @@ class TestRoutedExtensionMetadataKey:
     def test_is_platform_owned(self):
         """Must stay under the platform metadata prefix so
         A2ATaskDeduplicator protects it from being overwritten by incoming
-        task patches. See aion.server.tasks.deduplicator.PLATFORM_METADATA_PREFIX.
+        task patches. See aion.core.a2a.metadata.PLATFORM_METADATA_PREFIX.
         """
-        from aion.server.tasks.deduplicator import PLATFORM_METADATA_PREFIX
+        from aion.core.a2a.metadata import PLATFORM_METADATA_PREFIX
 
         assert ROUTED_EXTENSION_METADATA_KEY.startswith(PLATFORM_METADATA_PREFIX)

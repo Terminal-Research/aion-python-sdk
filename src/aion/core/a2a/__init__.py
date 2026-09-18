@@ -7,6 +7,13 @@ from a2a._base import A2ABaseModel
 
 from .artifacts import data_artifact, file_artifact, url_artifact
 
+from .metadata import (
+    PLATFORM_METADATA_PREFIX,
+    PLATFORM_METADATA_PREFIXES,
+    agent_metadata,
+    is_platform_metadata_key,
+)
+
 from .enums import (
     A2AEventType,
     A2AMetadataKey,

@@ -152,16 +152,16 @@ class TestAionConfig:
         config = AionConfig(agents={"agent1": {"path": "my.module:Agent"}})
         assert "agent1" in config.agents
 
-    def test_list_of_agents_converted_to_dict(self):
-        """AionConfig converts a list of agent configs to a dict using name as key."""
-        # List format uses name as key; unnamed agents fall back to agent_N
-        config = AionConfig(agents=[{"path": "my.module:Agent", "name": "MyAgent"}])
-        assert "MyAgent" in config.agents
+    def test_a_list_of_agents_is_not_a_configuration(self):
+        """`agents` is a mapping of agent id to agent, and only that.
 
-    def test_list_with_default_name_uses_index_key(self):
-        """AionConfig uses 'agent_0' as the key for a list item with the default name."""
-        config = AionConfig(agents=[{"path": "my.module:Agent"}])
-        assert "agent_0" in config.agents
+        A list used to be accepted and keyed by name or by position. It was
+        never documented, so nothing told an author which of the two shapes
+        was the real one - and a config format with an undocumented second
+        spelling is the thing `extra="forbid"` exists to stop.
+        """
+        with pytest.raises(ValidationError, match="mapping of agent ID"):
+            AionConfig(agents=[{"path": "my.module:Agent", "name": "MyAgent"}])  # type: ignore
 
     def test_get_agent_returns_config(self):
         """get_agent returns the AgentConfig for a known id and None for an unknown id."""
@@ -322,42 +322,21 @@ class TestAionConfigAgentsEdgeCases:
         assert config.agents["my"] is agent
 
     def test_agents_dict_invalid_value_type_raises(self):
-        """AionConfig raises ValidationError with 'must be an AgentConfig' for non-AgentConfig dict values."""
-        with pytest.raises(ValidationError, match="must be an AgentConfig"):
+        """A value that is not an agent is rejected where it stands."""
+        with pytest.raises(ValidationError) as failure:
             AionConfig(agents={"bad": 42})  # type: ignore
+        assert failure.value.errors()[0]["loc"][:2] == ("agents", "bad")
 
-    def test_agents_dict_invalid_agent_config_raises(self):
-        """AionConfig raises ValidationError with 'Invalid agent config' for a dict with invalid agent fields."""
-        with pytest.raises(ValidationError, match="Invalid agent config"):
-            AionConfig(agents={"bad": {"version": "not-semver"}})
+    def test_a_bad_agent_field_is_reported_at_its_own_location(self):
+        """The error names the agent and the field, not just `agents`.
 
-    def test_agents_list_with_agent_config_instances(self):
-        """AionConfig converts a list of AgentConfig instances to a dict keyed by name."""
-        a1 = AgentConfig(path="m:A", name="Alpha")
-        a2 = AgentConfig(path="m:B", name="Beta")
-        config = AionConfig(agents=[a1, a2])
-        assert "Alpha" in config.agents
-        assert "Beta" in config.agents
-
-    def test_agents_list_multiple_default_names_use_index_keys(self):
-        """AionConfig uses 'agent_N' keys for list items with the default 'Agent' name."""
-        # When name=="Agent" (default), falls back to agent_{i}
-        config = AionConfig(agents=[
-            {"path": "m:A"},
-            {"path": "m:B"},
-        ])
-        assert "agent_0" in config.agents
-        assert "agent_1" in config.agents
-
-    def test_agents_list_invalid_item_type_raises(self):
-        """AionConfig raises ValidationError with 'must be an AgentConfig' for non-dict list items."""
-        with pytest.raises(ValidationError, match="must be an AgentConfig"):
-            AionConfig(agents=[42])  # type: ignore
-
-    def test_agents_list_invalid_config_raises(self):
-        """AionConfig raises ValidationError with 'Invalid agent config at index' for invalid list items."""
-        with pytest.raises(ValidationError, match="Invalid agent config at index"):
-            AionConfig(agents=[{"version": "bad"}])
+        This is what the reader turns into the message a person reads, so the
+        location has to survive validation rather than being flattened into
+        one value error carrying a pydantic dump.
+        """
+        with pytest.raises(ValidationError) as failure:
+            AionConfig(agents={"bad": {"path": "m:A", "version": "not-semver"}})
+        assert failure.value.errors()[0]["loc"][:3] == ("agents", "bad", "version")
 
     def test_empty_agents_dict(self):
         """AionConfig with an empty agents dict has no agents and list_agents returns []."""

@@ -17,13 +17,14 @@ from aion.api import (
     CapabilitySubjectSource,
     RuntimeCapabilityReference,
 )
-from aion.core.a2a import A2AInbox, A2AOutbox
+from aion.core.a2a import A2AOutbox
 from aion.core.a2a.extensions.messaging import MessageActionPayload
 from aion.core.runtime.context import AionRuntimeContext
 from aion.langgraph.authoring import create_event_router, load_aion_mcp_tools
 from aion.langgraph.authoring.invocation.message import Message
 from aion.langgraph.authoring.invocation.thread import Thread
 from langchain_core.messages import AIMessage
+from langgraph.runtime import Runtime
 
 
 class PlainState(TypedDict):
@@ -33,9 +34,9 @@ class PlainState(TypedDict):
 
 
 class HybridState(PlainState):
-    """LangGraph state that also exposes an explicit A2A inbox."""
+    """LangGraph state that also carries an explicit A2A response."""
 
-    a2a_inbox: A2AInbox
+    a2a_outbox: A2AOutbox
 
 
 class HybridUpdate(TypedDict):
@@ -58,15 +59,24 @@ def plain_langgraph_reply(state: PlainState) -> PlainState:
     return {"messages": [AIMessage(content=f"Received: {content}")]}
 
 
-def hybrid_a2a_reply(state: HybridState) -> HybridUpdate:
+def hybrid_a2a_reply(
+    state: HybridState,
+    runtime: Runtime[AionRuntimeContext],
+) -> HybridUpdate:
     """Build an explicit A2A response while preserving its opaque context.
 
     The top-level A2A context is intentionally independent from Slack's
     channel and thread coordinates. Each inbound Slack turn starts a new task
     even when multiple turns share this long-lived context.
 
+    The inbound A2A message arrives through the invocation's runtime context,
+    which Aion Server passes to ``graph.astream()``; the graph declares
+    ``context_schema=AionRuntimeContext`` to receive it. The reply goes back
+    the other way, through ``a2a_outbox`` in the returned state.
+
     Args:
-        state: Graph state containing an A2A inbox and LangChain messages.
+        state: Graph state containing the conversation's LangChain messages.
+        runtime: LangGraph runtime carrying this invocation's Aion context.
 
     Returns:
         A state update with an explicit A2A outbox response.
@@ -74,7 +84,8 @@ def hybrid_a2a_reply(state: HybridState) -> HybridUpdate:
     Raises:
         ValueError: If the graph was invoked without an inbound A2A message.
     """
-    incoming = state["a2a_inbox"].message
+    inbox = runtime.context.inbox if runtime.context else None
+    incoming = inbox.message if inbox else None
     if incoming is None:
         raise ValueError("hybrid A2A handling requires an inbound message")
 

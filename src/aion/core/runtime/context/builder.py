@@ -56,7 +56,7 @@ class AionRuntimeContextBuilder:
         except (KeyError, AttributeError) as e:
             logger.debug(
                 "AionRuntimeContext not available: %s. "
-                "Graphs without a2a_inbox don't need runtime context.",
+                "An agent that does not read the runtime context does not need one.",
                 type(e).__name__,
             )
             return None

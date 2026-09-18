@@ -18,8 +18,10 @@ from aion.langgraph.authoring.events.custom_events import (
     ReactionCustomEvent,
 )
 from aion.langgraph.authoring.invocation.thread import Thread
+import pytest
 from examples.langgraph import slack_distribution
 from langchain_core.messages import AIMessage, HumanMessage
+from langgraph.graph import END, START, StateGraph
 
 from .helpers import make_mock_distribution_extension, make_mock_runtime
 
@@ -79,17 +81,34 @@ def _thread_context() -> AionRuntimeContext:
     )
 
 
-def test_plain_and_hybrid_examples_keep_context_layers_separate() -> None:
-    """Plain state works while explicit A2A replies keep the A2A context."""
+async def test_plain_and_hybrid_examples_keep_context_layers_separate() -> None:
+    """Plain state works while explicit A2A replies keep the A2A context.
+
+    The hybrid node runs inside a compiled graph invoked the way Aion Server
+    invokes one - ``context_schema=AionRuntimeContext`` on the builder and the
+    context passed at call time - rather than by handing the function a state
+    dict built here. That is the whole point of the example: the inbound A2A
+    message reaches a node through the runtime context and nowhere else, so a
+    test that assembles the input itself would pass against a node that could
+    never run on the server.
+    """
     plain = slack_distribution.plain_langgraph_reply(
         {"messages": [HumanMessage(content="Hello from Slack")]}
     )
     context = _thread_context()
-    hybrid = slack_distribution.hybrid_a2a_reply(
-        {
-            "messages": [HumanMessage(content="Hello from Slack")],
-            "a2a_inbox": context.inbox,
-        }
+
+    builder = StateGraph(
+        slack_distribution.HybridState,
+        context_schema=AionRuntimeContext,
+    )
+    builder.add_node("reply", slack_distribution.hybrid_a2a_reply)
+    builder.add_edge(START, "reply")
+    builder.add_edge("reply", END)
+    graph = builder.compile()
+
+    hybrid = await graph.ainvoke(
+        {"messages": [HumanMessage(content="Hello from Slack")]},
+        context=context,
     )
 
     assert plain["messages"][0].content == "Received: Hello from Slack"
@@ -98,6 +117,26 @@ def test_plain_and_hybrid_examples_keep_context_layers_separate() -> None:
         hybrid["a2a_outbox"].message.context_id
         != context.event.payload.context_id
     )
+
+
+async def test_hybrid_example_says_so_when_there_is_no_inbound_message() -> None:
+    """An invocation without an A2A message is refused, not answered blankly."""
+    builder = StateGraph(
+        slack_distribution.HybridState,
+        context_schema=AionRuntimeContext,
+    )
+    builder.add_node("reply", slack_distribution.hybrid_a2a_reply)
+    builder.add_edge(START, "reply")
+    builder.add_edge("reply", END)
+    graph = builder.compile()
+
+    with pytest.raises(ValueError, match="requires an inbound message"):
+        await graph.ainvoke(
+            {"messages": [HumanMessage(content="Hello from Slack")]},
+            context=AionRuntimeContext(
+                inbox=A2AInbox(), event=None, distribution_extension_payload=None
+            ),
+        )
 
 
 def test_thread_history_request_uses_normalized_slack_coordinates() -> None:

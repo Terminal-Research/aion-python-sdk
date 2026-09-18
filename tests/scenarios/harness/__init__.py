@@ -4,7 +4,19 @@ from .client import FileAttachment, ScenarioClient
 from .distribution import DISTRIBUTION_EXTENSION_URI, ORGANIZATION_ID, distribution_metadata
 from .recorder import Ev, final_task, record_stream, replies, reply_texts
 from .serve import ServeProcess, ServeVariant
-from .shape import ANY, SKIP, artifact, assert_shape, chunks, ephemeral, message, status, task
+from .shape import (
+    ANY,
+    SKIP,
+    STREAM_DELTA_ARTIFACT_ID,
+    artifact,
+    assert_shape,
+    chunks,
+    ephemeral,
+    is_chunk,
+    message,
+    status,
+    task,
+)
 
 __all__ = [
     "ANY",
@@ -13,6 +25,7 @@ __all__ = [
     "FileAttachment",
     "ORGANIZATION_ID",
     "SKIP",
+    "STREAM_DELTA_ARTIFACT_ID",
     "ScenarioClient",
     "ServeProcess",
     "ServeVariant",
@@ -22,6 +35,7 @@ __all__ = [
     "distribution_metadata",
     "ephemeral",
     "final_task",
+    "is_chunk",
     "message",
     "record_stream",
     "replies",
