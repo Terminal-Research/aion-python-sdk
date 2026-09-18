@@ -112,6 +112,27 @@ def _terminal_status(state: TaskState, text: str = "done") -> TaskStatusUpdateEv
     return TaskStatusUpdateEvent(task_id=TASK_ID, context_id=CONTEXT_ID, status=status)
 
 
+async def _until_settled(has_settled, timeout: float = 5.0) -> None:
+    """Wait for the push channel to have finished delivering, then return.
+
+    Push dispatch runs in the registry's background consumer, so it outlives
+    the subscriber loop above and there is no event a test can await. This
+    polls for what settling actually looks like on that channel - the last
+    delivery being the full Task - rather than sleeping a span that happens to
+    be long enough on the machine the test was written on.
+
+    A deadline that passes is not raised here on purpose: the caller's own
+    assertion then reports what was and was not delivered, which says more
+    than a timeout would.
+    """
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while loop.time() < deadline:
+        if has_settled():
+            return
+        await asyncio.sleep(0.01)
+
+
 async def _run_task_to_completion(events: list, call_context: ServerCallContext) -> tuple[Mock, list]:
     """Drives one task through the real registry/ActiveTask/EventConsumer wiring,
     with both outbound channels attached to the same run.
@@ -142,7 +163,10 @@ async def _run_task_to_completion(events: list, call_context: ServerCallContext)
     stream_events = [
         event async for event in projection.project(active_task.subscribe(request=request_context))
     ]
-    await asyncio.sleep(0.05)  # let the push-side consumer drain past the terminal event
+    await _until_settled(
+        lambda: bool(_push_deliveries(raw_push))
+        and isinstance(_push_deliveries(raw_push)[-1], Task)
+    )
 
     return raw_push, stream_events
 
@@ -335,7 +359,10 @@ class TestAuthenticatedWebhookDelivery:
         )
         async for _ in active_task.subscribe(request=request_context):
             pass
-        await asyncio.sleep(0.05)  # let the push-side consumer drain past the terminal event
+        await _until_settled(
+            lambda: bool(http_client.post.await_args_list)
+            and "task" in http_client.post.await_args_list[-1].kwargs["json"]
+        )
 
     @pytest.mark.anyio
     async def test_declared_credentials_reach_the_webhook(self, execution_scope):

@@ -63,6 +63,22 @@ def _record(
     )
 
 
+async def _advance_transaction_clock() -> None:
+    """Put a measurable gap between two transactions' timestamps.
+
+    ``created_at`` and ``updated_at`` default to ``now()``, which in PostgreSQL
+    is the start of the *transaction*, so two rows written in one transaction
+    share a timestamp exactly. The queries below order by those columns, and
+    the assertions are about that order - so the writes have to land in
+    separate transactions, separated far enough that the ordering is a fact
+    about the data rather than about how fast two commits happened to run.
+
+    This is not a wait for anything to arrive: nothing is in flight when it is
+    called, and no state it could poll for exists.
+    """
+    await asyncio.sleep(0.01)
+
+
 async def _save(session, entity: TaskRecord) -> None:
     repository = TasksRepository(session)
     await repository.save(entity)
@@ -153,7 +169,7 @@ async def test_upsert_preserves_created_at_and_updates_updated_at(postgres_sessi
     assert first.updated_at is not None
 
     await postgres_session.rollback()
-    await asyncio.sleep(0.01)
+    await _advance_transaction_clock()
     second_entity = _record(
         task_id,
         timestamp=datetime.now(timezone.utc) + timedelta(seconds=1),
@@ -236,7 +252,7 @@ async def test_context_queries_are_scoped_to_the_exact_owner(postgres_session):
     await repository.save(alice_shared)
     await repository.save(bob_shared)
     await postgres_session.commit()
-    await asyncio.sleep(0.01)
+    await _advance_transaction_clock()
 
     alice_recent = _record(context_id="alice-recent", owner_scope="alice")
     await repository.save(alice_recent)
@@ -348,7 +364,7 @@ async def test_find_artifacts_latest_only_returns_the_newest_task_s_version(
     await repository.save(older)
     await artifacts_repository.upsert_batch(older.id, [_artifact("1")])
     await postgres_session.commit()
-    await asyncio.sleep(0.01)
+    await _advance_transaction_clock()
 
     newer = TaskRecord(
         id=uuid.uuid4(),

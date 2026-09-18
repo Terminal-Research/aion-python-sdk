@@ -25,7 +25,7 @@ POSTGRES_TEST_URL ?= $(PG_TEST_URL)
 POSTGRES_TEST_URL_IS_EXTERNAL := $(filter environment command line,$(origin POSTGRES_TEST_URL))
 
 .PHONY: help tests tests-integration tests-all tests-scenarios tests-scenarios-pg \
-	tests-scenarios-dist scenarios-matrix lint-imports release-check release check-env \
+	tests-scenarios-dist tests-floors scenarios-matrix lint-imports release-check release check-env \
 	dist-build dist-check dist-smoke pg-test-up pg-test-down
 
 # `make help` lists targets in file order, under the `##@` heading above them.
@@ -175,6 +175,34 @@ scenarios-matrix: ## Regenerate tests/scenarios/SCENARIOS.md from the suite
 # the script reports on whichever interpreter runs it.
 check-env: ## Check the installed environment for duplicate or broken packages
 	poetry run ./scripts/packaging/envcheck.py
+
+# The other direction of the compatibility question. Every other target here
+# runs against the newest release in each declared range; this one installs the
+# oldest, so that `a2a-sdk>=1.1.2`, `langgraph>=1.0.0` and `google-adk>=1.20.0`
+# mean what the manifest says rather than only having been typed there.
+#
+# uv rather than Poetry, for the one thing Poetry cannot do: `--resolution
+# lowest-direct` takes every dependency this project declares to the oldest
+# release the whole graph still allows, while letting their own dependencies
+# resolve normally. Pinning each floor exactly instead would collide the extras
+# against each other - google-adk 1.20.0 pins opentelemetry-api==1.37.0 while
+# the server extra inherits >=1.33.0 from a2a-sdk, and both are true - and
+# report a conflict nobody would ever install.
+#
+# It rewrites this environment and leaves it downgraded: `poetry install -E
+# langgraph-server -E adk-server --with dev` puts it back. Run it in CI or in a
+# throwaway checkout, not in the one you are working in.
+tests-floors: ## Install the oldest allowed dependencies and run the unit suite
+	@command -v uv >/dev/null 2>&1 || { \
+		echo "tests-floors needs uv: https://docs.astral.sh/uv/getting-started/installation/" >&2; \
+		exit 2; \
+	}
+	@echo "[floors] this downgrades the current environment; re-run poetry install afterwards"
+	uv pip install --python "$$(poetry env info --path)/bin/python" \
+		--resolution lowest-direct -e ".[langgraph-server,adk-server]"
+	poetry run ./scripts/packaging/envcheck.py
+	poetry run ./scripts/packaging/floors.py --check
+	poetry run pytest tests/unit $(ARGS)
 
 ##@ Distribution
 

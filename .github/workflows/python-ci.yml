@@ -58,10 +58,8 @@ jobs:
         run: make lint-imports
 
       # Collection and the registries, nothing else: no server starts and it
-      # costs a second. The scenarios themselves are not run on a pull
-      # request - they run before a release, in publish-python.yml, against
-      # the built wheel - so this is what keeps the generated matrix from
-      # falling behind the suite it describes.
+      # costs a second. It keeps the generated matrix from falling behind the
+      # suite it describes; the suite itself runs in the `scenarios` job.
       - name: Check the scenario matrix is current
         run: poetry run ./scripts/scenarios_matrix.py --check
 
@@ -113,3 +111,78 @@ jobs:
 
       - name: Run integration tests
         run: make tests-integration
+
+  scenarios:
+    name: Scenario tests
+    runs-on: ubuntu-latest
+    # Deliberately not a leg of the matrix above. These start a real `aion
+    # serve` per framework and deployment variant and drive it over A2A, so
+    # each interpreter would multiply a minute of process startup by three to
+    # tell us something about the agents' transport rather than about the
+    # interpreter. One version is what the suite is for; the wheel gets its own
+    # run before a release in publish-python.yml.
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install Poetry
+        run: pipx install poetry==${{ env.POETRY_VERSION }}
+
+      - name: Install the project
+        run: poetry install -E langgraph-server -E adk-server --with dev
+
+      - name: Check the installed environment
+        run: make check-env
+
+      # Everything except persistence, which needs a database and runs from
+      # `make tests-scenarios-pg`.
+      - name: Run scenario tests
+        run: make tests-scenarios
+
+  floors:
+    name: Oldest allowed dependencies
+    runs-on: ubuntu-latest
+    # The matrix above varies the interpreter and nothing else, so every job in
+    # it resolves each declared range to its newest release. This one installs
+    # the oldest, which is the only thing that can tell us whether
+    # `a2a-sdk>=1.1.2`, `langgraph>=0.6.0` and `google-adk>=1.20.0` are the
+    # bounds the SDK actually works against or just the versions that happened
+    # to be current when they were written.
+    #
+    # Its own job because it downgrades the environment it runs in: nothing
+    # else may run afterwards and report about the versions this repository
+    # normally installs.
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      # 3.12, the bottom of requires-python: a floor is a claim about the
+      # oldest combination this project supports, and several of the releases
+      # below ship no wheel for a newer interpreter - which would fail as the
+      # interpreter being too new rather than the bound being wrong.
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install Poetry
+        run: pipx install poetry==${{ env.POETRY_VERSION }}
+
+      # `--resolution lowest-direct` is the one thing Poetry's solver cannot
+      # do, and the whole point of this job.
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      # The development environment first, for pytest and the dev group;
+      # `make tests-floors` then takes the project's own dependencies down to
+      # the bottom of every range and runs the suite there.
+      - name: Install the project
+        run: poetry install -E langgraph-server -E adk-server --with dev
+
+      - name: Run the unit suite against the oldest allowed dependencies
+        run: make tests-floors

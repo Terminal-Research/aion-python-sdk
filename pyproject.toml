@@ -23,7 +23,13 @@ dependencies = [
     "pydantic>=2.11.3",
     "pydantic-settings>=2.3.4",
     "python-dotenv>=1.0.1",
-    "PyYAML>=6.0.0,<7.0.0",
+    # Two reasons this is not 6.0. PyYAML 6.0 ships no wheel for any
+    # interpreter this project supports and its sdist does not build on 3.12,
+    # so the floor that was written here could never have been installed at
+    # all; and google-adk 1.20.0, the floor of the adk extra, asks for
+    # >=6.0.2 itself. Checked by the `floors` CI job, which installs the
+    # bottom of every range below and resolves them together.
+    "PyYAML>=6.0.2,<7.0.0",
     # The libs pinned ==1.1.2. Published, an exact pin conflicts with whatever
     # the installing project already has; the upper bound stays on the minor
     # because aion.server reaches into a2a-sdk's internals.
@@ -63,9 +69,13 @@ server = [
     "cryptography>=43.0.0",
 ]
 langgraph-authoring = [
-    "langgraph>=0.6.0,<=1.0.5",
+    # The floor is langchain's, not a guess: langchain 1.0.0 requires
+    # langgraph>=1.0.0,<1.1.0, so the pair `langgraph 0.6.0` + `langchain
+    # 1.0.0` this range used to allow has no solution and nobody could ever
+    # have installed it. The `floors` CI job is what now says so.
+    "langgraph>=1.0.0,<=1.0.5",
     "langchain>=1.0.0,<2.0.0",
-    "langchain-mcp-adapters>=0.1.0,<0.3.0",
+    "langchain-mcp-adapters>=0.1.11,<0.3.0",
     "langchain-openai>=1.1.7,<2.0.0",
 ]
 adk-authoring = [
@@ -97,9 +107,10 @@ adk-authoring = [
 # gets caught, by asserting the set relations these unions are supposed to have.
 langgraph-server = [
     # aionto-sdk[langgraph-authoring]
-    "langgraph>=0.6.0,<=1.0.5",
+    # See [langgraph-authoring] for why the floor is 1.0.0 and not 0.6.0.
+    "langgraph>=1.0.0,<=1.0.5",
     "langchain>=1.0.0,<2.0.0",
-    "langchain-mcp-adapters>=0.1.0,<0.3.0",
+    "langchain-mcp-adapters>=0.1.11,<0.3.0",
     "langchain-openai>=1.1.7,<2.0.0",
     # aionto-sdk[server]
     "SQLAlchemy>=2.0.0,<3.0.0",
@@ -224,7 +235,10 @@ forbidden_modules = ["aion.server", "aion.proxy", "aion.db", "aion.cli"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-filterwarnings = ["ignore::DeprecationWarning"]
+# No global warning filter. A blanket `ignore::DeprecationWarning` would hide
+# exactly the signal tests/unit/server/test_sdk_override_parity.py exists to
+# catch: an a2a-sdk extension point announcing its replacement one release
+# before it moves. Silence a specific warning at the test that provokes it.
 markers = [
     # One marker per suite, put on by tests/conftest.py from the directory an
     # item lives in - tests/unit, tests/integration, tests/scenarios - so that
