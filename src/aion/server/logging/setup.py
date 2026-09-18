@@ -44,7 +44,7 @@ def setup_root_logger():
         ssl_verify=False,
         enable=app_settings.is_logstash_configured,
         client_id=api_settings.client_id,
-        node_name=app_settings.node_name,
+        host_name=app_settings.host_name,
     )
     logstash_handler.addFilter(log_namespace_filter)
     logstash_handler.addFilter(shielded_close_filter)

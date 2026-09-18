@@ -16,13 +16,13 @@ class AionLogstashHandler(AsynchronousLogstashHandler):
 
     Args:
         client_id: Unique identifier for the client.
-        node_name: Name of the node generating the logs.
+        host_name: Name of the host generating the logs.
         **kwargs: Additional arguments passed to AsynchronousLogstashHandler.
     """
 
-    def __init__(self, client_id: str, node_name: str, **kwargs):
+    def __init__(self, client_id: str, host_name: str, **kwargs):
         from aion.server.logging.filters import ServerAionContextFilter
         super().__init__(**kwargs)
-        self.setFormatter(AionLogstashFormatter(client_id=client_id, node_name=node_name))
+        self.setFormatter(AionLogstashFormatter(client_id=client_id, host_name=host_name))
         self.addFilter(ServerAionContextFilter())
         self.addFilter(AionLogstashFilter())

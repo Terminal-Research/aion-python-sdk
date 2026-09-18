@@ -250,7 +250,7 @@ class TestHandlerWiring:
             use_platform_auth=True,
             enable=True,
             client_id="client-id",
-            node_name="node",
+            host_name="host",
         )
 
         assert isinstance(handler._transport, AionLogstashTransport)
@@ -269,7 +269,7 @@ class TestHandlerWiring:
             use_platform_auth=True,
             enable=True,
             client_id="client-id",
-            node_name="node",
+            host_name="host",
         )
 
         assert handler._transport.url == "https://logs.aion.to:443/ingest"
@@ -285,7 +285,7 @@ class TestHandlerWiring:
             use_platform_auth=False,
             enable=True,
             client_id="client-id",
-            node_name="node",
+            host_name="host",
         )
 
         assert isinstance(handler._transport, AionLogstashTransport)

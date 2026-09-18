@@ -54,16 +54,29 @@ class TestAppSettings:
         settings = AppSettings()
         assert settings.docs_url == "https://custom.aion.docs/"
 
-    def test_default_node_name(self):
-        """Test that node_name defaults to None."""
+    def test_default_host_name(self):
+        """Test that host_name defaults to None."""
         settings = AppSettings()
-        assert settings.node_name is None
+        assert settings.host_name is None
 
-    @patch.dict(os.environ, {"NODE_NAME": "test-node-123"})
-    def test_node_name_from_environment(self):
-        """Test that node_name can be set via environment variable."""
+    @patch.dict(os.environ, {"HOST_NAME": "test-pod-123"})
+    def test_host_name_from_environment(self):
+        """Test that host_name can be set via environment variable."""
         settings = AppSettings()
-        assert settings.node_name == "test-node-123"
+        assert settings.host_name == "test-pod-123"
+
+    @patch.dict(os.environ, {"HOSTNAME": "runtime-host", "POD_NAME": "runtime-pod"})
+    def test_host_name_does_not_read_the_container_runtime_variable(self):
+        """Only HOST_NAME is read, and that is the whole point of the name.
+
+        A container runtime sets HOSTNAME by itself: the pod name under
+        Kubernetes, a random hash under plain Docker, the developer's machine
+        name locally. Two of those three are meaningless as an instance
+        identity, and this value reaches shared state and a client-visible
+        error - so it is taken only from a variable somebody set on purpose.
+        """
+        settings = AppSettings()
+        assert settings.host_name is None
 
     def test_default_logstash_host(self):
         """Test that logstash_host defaults to None."""

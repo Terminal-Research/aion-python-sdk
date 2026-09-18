@@ -203,8 +203,8 @@ class TestAionLogstashFilter:
         assert f.filter(rec)
 
 class TestAionLogstashFormatter:
-    def _formatter(self, client_id: str = "c1", node_name: str = "n1") -> AionLogstashFormatter:
-        return AionLogstashFormatter(client_id=client_id, node_name=node_name)
+    def _formatter(self, client_id: str = "c1", host_name: str = "n1") -> AionLogstashFormatter:
+        return AionLogstashFormatter(client_id=client_id, host_name=host_name)
 
     def test_format_returns_valid_json(self):
         """format returns valid JSON-serializable dict output."""
@@ -216,7 +216,7 @@ class TestAionLogstashFormatter:
 
     def test_format_contains_required_fields(self):
         """format includes @timestamp, clientId, host.name, logLevel, and message."""
-        formatter = self._formatter(client_id="my-client", node_name="my-node")
+        formatter = self._formatter(client_id="my-client", host_name="my-node")
         rec = _make_logstash_record(trace_id="abc")
         data = json.loads(formatter.format(rec))
         assert "@timestamp" in data

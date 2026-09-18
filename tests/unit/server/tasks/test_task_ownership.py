@@ -4,16 +4,19 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import os
 import time
 import uuid
 from datetime import datetime, timezone
 from collections import deque
+from unittest import mock
 from unittest.mock import AsyncMock, Mock
 
 import pytest
 from a2a.types import Task, TaskState, TaskStatus, TaskStatusUpdateEvent
 
 from aion.server.agent.execution.active_task_registry import AionActiveTaskRegistry
+from aion.server.settings import AppSettings, app_settings
 from aion.server.tasks.ownership import (
     RECONCILER_ENV_VAR,
     Busy,
@@ -30,6 +33,26 @@ from aion.server.tasks.task_manager import AionTaskManager
 
 TASK_ID = str(uuid.uuid4())
 CONTEXT_ID = "context-1"
+
+
+async def _until(condition, timeout: float = 5.0) -> None:
+    """Wait for a supervisor loop to have done something, or fail saying it did not.
+
+    These loops run on intervals of their own that the test does not drive, so
+    there is no event to await. Polling for the effect keeps the assertion about
+    what happened rather than about how long a fixed sleep had to be to make it
+    likely, which is what makes such a test fail on a loaded machine.
+    """
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while True:
+        if condition():
+            return
+        if loop.time() >= deadline:
+            raise AssertionError(
+                f"The expected background effect did not happen within {timeout:.0f}s"
+            )
+        await asyncio.sleep(0.01)
 
 
 def _claim_row(token: uuid.UUID) -> dict:
@@ -425,20 +448,39 @@ async def test_confirmed_renewal_past_the_old_deadline_keeps_the_claim() -> None
 
 def test_reaper_is_on_unless_its_switch_is_cleared(monkeypatch) -> None:
     """The reaper defaults on, assuming the heartbeat is already everywhere."""
-    monkeypatch.delenv(RECONCILER_ENV_VAR, raising=False)
+    monkeypatch.setattr(app_settings, "task_ownership_reaper", True)
     assert PostgresOwnershipProvider(
         "test-agent",
         db_manager=_DbManager()).reconciler_enabled is True
 
-    monkeypatch.setenv(RECONCILER_ENV_VAR, "false")
+    monkeypatch.setattr(app_settings, "task_ownership_reaper", False)
     assert PostgresOwnershipProvider(
         "test-agent",
         db_manager=_DbManager()).reconciler_enabled is False
 
 
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [(None, True), ("false", False), ("FALSE", False), ("off", False),
+     ("no", False), ("0", False), ("true", True), ("1", True)],
+)
+def test_the_reaper_switch_reads_the_spellings_it_documents(raw, expected) -> None:
+    """The switch is off only for a value meant to turn it off.
+
+    Held here rather than left to the settings model's own boolean parsing: a
+    deployment that writes `off` and gets a reaper running anyway reclaims
+    leases from instances it was being kept away from.
+    """
+    environment = {} if raw is None else {RECONCILER_ENV_VAR: raw}
+    with mock.patch.dict(os.environ, environment, clear=False):
+        if raw is None:
+            os.environ.pop(RECONCILER_ENV_VAR, None)
+        assert AppSettings().task_ownership_reaper is expected
+
+
 def test_owner_instance_id_prefers_explicit_value(monkeypatch) -> None:
-    """An injected runtime identity takes precedence over the environment."""
-    monkeypatch.setenv("HOST_NAME", "pod-from-environment")
+    """An injected runtime identity takes precedence over the configured one."""
+    monkeypatch.setattr(app_settings, "host_name", "pod-from-environment")
 
     provider = PostgresOwnershipProvider(
         "test-agent",
@@ -451,7 +493,7 @@ def test_owner_instance_id_prefers_explicit_value(monkeypatch) -> None:
 
 def test_owner_instance_id_uses_host_name(monkeypatch) -> None:
     """The deployment-provided host name identifies the claim holder."""
-    monkeypatch.setenv("HOST_NAME", "pod-from-environment")
+    monkeypatch.setattr(app_settings, "host_name", "pod-from-environment")
 
     provider = PostgresOwnershipProvider(
         "test-agent",
@@ -462,7 +504,7 @@ def test_owner_instance_id_uses_host_name(monkeypatch) -> None:
 
 def test_blank_owner_instance_id_falls_back_to_host_name(monkeypatch) -> None:
     """An empty injected value is absent rather than an instance identity."""
-    monkeypatch.setenv("HOST_NAME", "pod-from-environment")
+    monkeypatch.setattr(app_settings, "host_name", "pod-from-environment")
 
     provider = PostgresOwnershipProvider(
         "test-agent",
@@ -474,8 +516,13 @@ def test_blank_owner_instance_id_falls_back_to_host_name(monkeypatch) -> None:
 
 
 def test_owner_instance_id_is_none_without_host_name(monkeypatch) -> None:
-    """Legacy host variables do not silently become the instance identity."""
-    monkeypatch.delenv("HOST_NAME", raising=False)
+    """No configured host name means no instance identity, not a guessed one.
+
+    Which variable the host name comes from is settled in AppSettings and
+    asserted there; what this holds is that an unset one stays unset here
+    rather than being filled in from somewhere else on the way down.
+    """
+    monkeypatch.setattr(app_settings, "host_name", None)
     monkeypatch.setenv("POD_NAME", "legacy-pod")
     monkeypatch.setenv("HOSTNAME", "legacy-host")
 
@@ -627,13 +674,14 @@ async def test_active_task_sweep_runs_far_less_often_than_the_claim_pass() -> No
 
     loop_task = asyncio.get_running_loop().create_task(provider._reconcile_loop())
     try:
-        await asyncio.sleep(0.08)
+        # Enough ticks for the longer interval to have come round at least twice,
+        # which is what makes "less often, but it does happen" observable at all.
+        await _until(lambda: len(seen) >= 6)
     finally:
         loop_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await loop_task
 
-    assert len(seen) >= 6
     # Roughly one tick in three (0.03 / 0.01 seconds), never every tick.
     assert any(seen)
     assert seen.count(True) < len(seen) / 2
@@ -657,10 +705,7 @@ async def test_heartbeat_restarts_after_crashing_outside_stop(monkeypatch) -> No
     monkeypatch.setattr(OwnershipHeartbeat, "run", _flaky_run)
     provider.start()
     try:
-        for _ in range(50):
-            if attempts >= 2:
-                break
-            await asyncio.sleep(0.01)
+        await _until(lambda: attempts >= 2)
 
         assert attempts == 2
         assert provider._heartbeat_task is not None
@@ -687,10 +732,7 @@ async def test_reconciler_restarts_after_crashing_outside_stop() -> None:
     provider._reconcile_loop = _flaky_loop
     provider.start()
     try:
-        for _ in range(50):
-            if attempts >= 2:
-                break
-            await asyncio.sleep(0.01)
+        await _until(lambda: attempts >= 2)
 
         assert attempts == 2
         assert provider._reconciler_task is not None

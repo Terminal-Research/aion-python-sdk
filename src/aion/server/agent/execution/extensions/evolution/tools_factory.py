@@ -115,8 +115,6 @@ ExtensionSetupError rather than a raw ValueError from inside the toolkit.
 from __future__ import annotations
 
 import logging
-import os
-import shlex
 from typing import TYPE_CHECKING, Optional
 
 from pydantic import ValidationError
@@ -135,7 +133,8 @@ from aion.toolkits.behaviour_evolution import (
 )
 
 from .directive import ParsedDirective
-from .errors import ExtensionSetupError, UnsupportedDirectiveError
+from .errors import ExtensionSetupError
+from .settings import EvolutionSettings, UnsupportedDirectiveError
 from .provider import CUSTOM, LOCAL_SESSION, resolve_provider, warn_ignored_keys
 
 log = logging.getLogger(__name__)
@@ -177,11 +176,13 @@ def check_environment(daemon: Optional["DaemonExtensionPayload"]) -> None:
         ExtensionSetupError: same conditions as build_worker() for the parts
             that do not depend on the directive.
     """
-    if not os.environ.get("GITHUB_TOKEN"):
+    settings = EvolutionSettings()
+
+    if not settings.github_token:
         raise ExtensionSetupError("GITHUB_TOKEN is not set - required to push the evolution branch")
 
-    provider = resolve_provider()
-    if provider == CUSTOM and not os.environ.get("CODEX_BASE_URL"):
+    provider = resolve_provider(settings)
+    if provider == CUSTOM and not settings.codex_base_url:
         raise ExtensionSetupError("CODEX_BASE_URL is not set - required by CODEX_PROVIDER=custom")
     if provider not in (LOCAL_SESSION, CUSTOM) and _daemon_principal_selector(daemon) is None:
         raise ExtensionSetupError(
@@ -205,8 +206,8 @@ def build_worker(
         ExtensionSetupError: required environment is missing, or the directive is not
             supported by the installed toolkit version.
     """
-    github_token = os.environ.get("GITHUB_TOKEN")
-    if not github_token:
+    settings = EvolutionSettings()
+    if not settings.github_token:
         raise ExtensionSetupError("GITHUB_TOKEN is not set - required to push the evolution branch")
 
     target = parsed.payload.target
@@ -237,7 +238,7 @@ def build_worker(
         raise UnsupportedDirectiveError(_unsupported_directive_message(ex)) from ex
 
     config_kwargs = {}
-    specs_root = os.environ.get("EVOLUTION_SPECS_ROOT") or _daemon_config_var(
+    specs_root = settings.specs_root or _daemon_config_var(
         daemon, SPECS_ROOT_CONFIG_KEY
     )
     if specs_root:
@@ -246,8 +247,8 @@ def build_worker(
     limits = parsed.payload.limits
     config = EvolutionConfig(
         branch_strategy=_branch_strategy(daemon, parsed.payload.branch_strategy),
-        workdir_root=os.environ.get("EVOLUTION_WORKDIR_ROOT"),
-        executor_network=_env_flag("EVOLUTION_EXECUTOR_NETWORK"),
+        workdir_root=settings.workdir_root,
+        executor_network=settings.executor_network,
         # `codex_timeout` falls back to `op_timeout` inside the toolkit when
         # unset — see EvolutionConfig. Sourced from the directive's own
         # `limits`, not env: this deployment protects itself elsewhere (network
@@ -256,12 +257,14 @@ def build_worker(
         op_timeout=_limit(limits, "op_timeout"),
         network_timeout=_limit(limits, "network_timeout"),
         codex_timeout=_limit(limits, "codex_timeout"),
-        setup_command=_env_argv("EVOLUTION_SETUP_COMMAND"),
-        setup_timeout=_env_float("EVOLUTION_SETUP_TIMEOUT"),
+        setup_command=settings.setup_command,
+        setup_timeout=settings.setup_timeout,
         **config_kwargs,
     )
 
-    codex_config, credentials_provider = _codex_access(daemon, parsed.payload.model, limits)
+    codex_config, credentials_provider = _codex_access(
+        daemon, parsed.payload.model, limits, settings
+    )
 
     async def _token(_repo_url: str) -> str:
         # Repo-independent BY DESIGN, not by oversight. `GITHUB_TOKEN` is
@@ -282,7 +285,10 @@ def build_worker(
         #
         # The toolkit injects this inline into git network calls only; it is
         # never stored on instances, written to .git/config, or exported.
-        return github_token
+        #
+        # Read now rather than captured above: the property reaches the
+        # environment on every call, and a run outlasts a rotation.
+        return settings.github_token
 
     tools = build_tools(
         config,
@@ -321,7 +327,12 @@ def _unsupported_directive_message(ex: ValidationError) -> str:
     )
 
 
-def _codex_access(daemon, prefs: Optional["ModelPreferences"], limits: Optional["RunLimits"]):
+def _codex_access(
+        daemon,
+        prefs: Optional["ModelPreferences"],
+        limits: Optional["RunLimits"],
+        settings: EvolutionSettings,
+):
     """Resolve the Codex model_access/model and, when the provider authenticates,
     a credentials resolver.
 
@@ -351,29 +362,32 @@ def _codex_access(daemon, prefs: Optional["ModelPreferences"], limits: Optional[
     which decides whose credentials and quota pay for the call - all
     deployment-operator decisions, not directive-author ones).
     """
-    provider = resolve_provider()
-    warn_ignored_keys(provider)
+    provider = resolve_provider(settings)
+    warn_ignored_keys(provider, settings)
     credentials_provider = None
 
     if provider == LOCAL_SESSION:
-        model_access = LocalAccess(home=os.environ.get("CODEX_HOME"))
+        model_access = LocalAccess(home=settings.codex_home)
 
     elif provider == CUSTOM:
-        base_url = os.environ.get("CODEX_BASE_URL")
+        base_url = settings.codex_base_url
         if not base_url:
             raise ExtensionSetupError(
                 "CODEX_BASE_URL is not set - required by CODEX_PROVIDER=custom"
             )
         model_access = RemoteAccess(base_url=base_url)
-        api_key = os.environ.get("CODEX_API_KEY")
+        api_key = settings.codex_api_key
         if api_key:
             # No principal: a plain API-key endpoint has nothing to attribute
             # usage to, so no attribution header is emitted (see the toolkit's
-            # RemoteAccess.principal_header). Unlike the Aion JWT this secret is
-            # long-lived by nature - it is read once here and only ever reaches
-            # the Codex subprocess environment, never the parent's.
+            # RemoteAccess.principal_header). The secret only ever reaches the
+            # Codex subprocess environment, never the parent's.
+            #
+            # Read at the moment of the call, like the forge token. Whether
+            # the endpoint is authenticated at all is settled once, above; what
+            # the key currently is, is not.
             async def credentials_provider() -> RemoteCredentials:
-                return RemoteCredentials(secret=api_key)
+                return RemoteCredentials(secret=settings.codex_api_key)
 
     else:  # AION
         # Imported lazily: the other providers never touch api settings/JWT
@@ -409,7 +423,7 @@ def _codex_access(daemon, prefs: Optional["ModelPreferences"], limits: Optional[
     codex_config = CodexConfig(
         model_access=model_access,
         model=_pref(prefs, "name") or _daemon_model(daemon),
-        model_catalog_json=os.environ.get("CODEX_MODEL_CATALOG_JSON"),
+        model_catalog_json=settings.codex_model_catalog_json,
         model_reasoning_effort=_pref(prefs, "reasoning_effort"),
         model_context_window=_pref(prefs, "context_window"),
         # Token budget for this run: on reaching it the executor stops
@@ -417,7 +431,7 @@ def _codex_access(daemon, prefs: Optional["ModelPreferences"], limits: Optional[
         # was committed (COMPLETED, not FAILED) — see the toolkit's
         # CodexConfig.max_total_tokens. From the directive's `limits`, not env.
         max_total_tokens=_limit(limits, "max_total_tokens"),
-        codex_bin=os.environ.get("CODEX_BIN", "codex"),
+        codex_bin=settings.codex_bin,
     )
     return codex_config, credentials_provider
 
@@ -454,62 +468,6 @@ def _branch_strategy(daemon, requested: Optional[str]) -> str:
             f"expected one of {list(BRANCH_STRATEGIES)}"
         )
     return value
-
-
-_TRUTHY = ("1", "true", "yes", "on")
-_FALSY = ("0", "false", "no", "off")
-
-
-def _env_flag(name: str) -> bool:
-    """A boolean deployment env var: "1"/"true"/"yes"/"on" (any case) is True.
-
-    A non-empty value that is neither truthy nor a recognized falsy spelling
-    (e.g. a typo) is treated as False, same as unset — but logged, so a
-    misspelled flag does not silently disable what the operator meant to
-    enable.
-    """
-    raw = (os.environ.get(name) or "").strip().lower()
-    if raw in _TRUTHY:
-        return True
-    if raw and raw not in _FALSY:
-        log.warning(
-            "%s=%r is not a recognized boolean value (expected one of %s) - treating as false",
-            name,
-            os.environ.get(name),
-            ", ".join(_TRUTHY),
-        )
-    return False
-
-
-def _env_float(name: str) -> Optional[float]:
-    """A numeric deployment env var (seconds); None when unset/blank.
-
-    A malformed value fails the run here with a named error, rather than
-    surfacing as a raw ValueError from deep inside the toolkit.
-    """
-    raw = os.environ.get(name)
-    if raw is None or not raw.strip():
-        return None
-    try:
-        return float(raw)
-    except ValueError as ex:
-        raise ExtensionSetupError(f"{name} must be a number of seconds, got {raw!r}") from ex
-
-
-def _env_argv(name: str) -> Optional[list[str]]:
-    """A shell-quoted command line split into argv; None when unset/blank.
-
-    Parsed with `shlex` so an operator can write
-    `EVOLUTION_SETUP_COMMAND=".venv/bin/pip install -e . --no-deps"`. An
-    unbalanced-quote value fails the run here with a named error.
-    """
-    raw = os.environ.get(name)
-    if raw is None or not raw.strip():
-        return None
-    try:
-        return shlex.split(raw)
-    except ValueError as ex:
-        raise ExtensionSetupError(f"{name} is not a valid command line: {ex}") from ex
 
 
 def _daemon_config_var(daemon, key: str) -> Optional[str]:

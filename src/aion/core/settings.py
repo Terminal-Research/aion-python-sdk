@@ -13,8 +13,43 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 __all__ = [
     "BaseEnvSettings",
     "ApiSettings",
+    "PLATFORM_SUPPLIED",
     "api_settings",
+    "platform_supplied_variables",
 ]
+
+
+PLATFORM_SUPPLIED = {"supplied_by": "platform"}
+"""Marks a setting whose value the Aion platform installs into the environment.
+
+Put it on ``Field(json_schema_extra=...)``. It records who provides the value,
+not what the setting does: a deployment Aion hosts receives these already set,
+and a self-managed one supplies them itself or goes without.
+
+The distinction is otherwise only knowable by reading each field's prose, and
+it is the distinction that decides what a deployer has to do. Keeping it on the
+field keeps it next to the code that reads the variable, where it cannot drift
+from it.
+"""
+
+
+def platform_supplied_variables(*models: type[BaseSettings]) -> set[str]:
+    """Return the environment variable names these models mark as platform-supplied.
+
+    Args:
+        models: Settings classes to inspect.
+
+    Returns:
+        The alias of every field carrying :data:`PLATFORM_SUPPLIED`.
+    """
+    found: set[str] = set()
+    for model in models:
+        for field in model.model_fields.values():
+            extra = field.json_schema_extra
+            if isinstance(extra, dict) and extra.get("supplied_by") == "platform":
+                if field.alias:
+                    found.add(field.alias)
+    return found
 
 
 class BaseEnvSettings(BaseSettings):

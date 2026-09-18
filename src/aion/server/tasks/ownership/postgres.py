@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import threading
 import time
 import uuid
@@ -19,6 +18,7 @@ from aion.db.postgres.events import TaskEventKind
 from aion.db.postgres.manager import DbManager
 from aion.db.postgres.models import TaskRecordModel
 from aion.db.postgres.repositories import TaskClaimsRepository
+from aion.server.settings import app_settings
 from aion.server.tasks.identifiers import require_task_uuid
 from aion.server.tasks.notifications import Subscription, TaskEventListener
 
@@ -78,7 +78,7 @@ class PostgresOwnershipProvider:
             task_id_parser: Identifier parsing, shared with the task store so a
                 lease and its task resolve to the same key.
             owner_instance_id: Optional diagnostic instance identity. When it
-                is absent, the deployment-provided ``HOST_NAME`` is used.
+                is absent, the deployment's configured host name is used.
             settings: Lease timing; the defaults are the deployed ones.
             reconciler_enabled: Whether this process reclaims expired leases.
                 Defaults to the ``TASK_OWNERSHIP_REAPER`` switch, which is
@@ -96,7 +96,7 @@ class PostgresOwnershipProvider:
         self._db_manager = db_manager
         self._task_id_parser = task_id_parser
         self.settings = settings or LeaseSettings()
-        self.owner_instance_id = owner_instance_id or os.getenv("HOST_NAME") or None
+        self.owner_instance_id = owner_instance_id or app_settings.host_name or None
         self.reconciler_enabled = (
             reaper_enabled_by_environment()
             if reconciler_enabled is None

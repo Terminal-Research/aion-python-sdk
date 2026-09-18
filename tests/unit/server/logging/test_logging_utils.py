@@ -69,7 +69,7 @@ class TestSetupRootLogger:
             ms.logstash_host = "localhost"
             ms.logstash_port = 5000
             ms.is_logstash_configured = False
-            ms.node_name = "n"
+            ms.host_name = "n"
             ma.client_id = "c"
 
             setup_root_logger()
@@ -213,7 +213,7 @@ class TestShieldedWebsocketCloseFilter:
                 ms.logstash_host = "localhost"
                 ms.logstash_port = 5000
                 ms.is_logstash_configured = False
-                ms.node_name = "n"
+                ms.host_name = "n"
                 ma.client_id = "c"
 
                 setup_root_logger()

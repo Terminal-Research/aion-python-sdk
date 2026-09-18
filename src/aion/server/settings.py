@@ -4,7 +4,7 @@ from typing import Literal, Optional
 
 from pydantic import Field, field_validator
 
-from aion.core.settings import BaseEnvSettings
+from aion.core.settings import PLATFORM_SUPPLIED, BaseEnvSettings
 from aion.core.utils.optional_deps import server_extras_hint
 
 __all__ = ["AppSettings", "app_settings"]
@@ -61,6 +61,19 @@ class AppSettings(BaseEnvSettings):
         )
     )
 
+    task_ownership_reaper: bool = Field(
+        default=True,
+        alias="TASK_OWNERSHIP_REAPER",
+        description=(
+            "Whether this process reclaims task leases whose owner stopped "
+            "renewing them. Reclaiming is only safe once every writer "
+            "heartbeats, which every deployed instance now does, so it is on "
+            "by default; set a falsy value to hold a process back during a "
+            "rollout whose older instances do not yet heartbeat. Applies only "
+            "where PostgreSQL ownership is in use."
+        ),
+    )
+
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = Field(
         description="Logging level to use.",
         alias="LOG_LEVEL",
@@ -73,28 +86,42 @@ class AppSettings(BaseEnvSettings):
         alias="AION_DOCS_URL"
     )
 
-    node_name: Optional[str] = Field(
+    host_name: Optional[str] = Field(
         default=None,
-        description="Node name used to identify deployment in Aion platform",
-        alias="NODE_NAME"
+        description=(
+            "Name of the host this process runs on, supplied by the deployment. "
+            "It identifies the instance in two places a person looks when "
+            "something is wrong: the `host.name` field of every shipped log "
+            "line, and the owner reported when a request arrives for a task "
+            "another instance is already running. A container runtime's own "
+            "HOSTNAME is deliberately not read - it is a random hash under "
+            "plain Docker and a developer's machine name locally, and either "
+            "would put a plausible but meaningless owner into shared state. "
+            "Default: unset, which reads honestly as unknown."
+        ),
+        alias="HOST_NAME",
+        json_schema_extra=PLATFORM_SUPPLIED,
     )
 
     version_id: Optional[str] = Field(
         default=None,
         description="Version ID used to identify deployment in Aion platform",
-        alias="VERSION_ID"
+        alias="VERSION_ID",
+        json_schema_extra=PLATFORM_SUPPLIED,
     )
 
     logstash_host: Optional[str] = Field(
         default=None,
         description="Logstash host to use.",
-        alias="LOGSTASH_HOST"
+        alias="LOGSTASH_HOST",
+        json_schema_extra=PLATFORM_SUPPLIED,
     )
 
     logstash_port: Optional[int] = Field(
         default=None,
         description="Logstash port to use.",
-        alias="LOGSTASH_PORT"
+        alias="LOGSTASH_PORT",
+        json_schema_extra=PLATFORM_SUPPLIED,
     )
 
     @field_validator("encryption_key")

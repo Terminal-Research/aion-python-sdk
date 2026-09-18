@@ -116,8 +116,12 @@ class LeaseSettings:
 
 
 def reaper_enabled_by_environment() -> bool:
-    """Read the reaper switch, defaulting to on."""
-    value = os.getenv(RECONCILER_ENV_VAR)
-    if value is None:
-        return True
-    return value.strip().lower() not in {"0", "false", "no", "off"}
+    """Whether this process reclaims expired leases; on unless turned off.
+
+    Reads the parsed setting rather than the raw variable, so "off", "no" and
+    "0" mean here what they mean everywhere else this deployment is
+    configured.
+    """
+    from aion.server.settings import app_settings
+
+    return app_settings.task_ownership_reaper

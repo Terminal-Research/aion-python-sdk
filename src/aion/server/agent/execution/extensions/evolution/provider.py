@@ -8,9 +8,12 @@ configuration without pulling in the optional toolkit distribution.
 from __future__ import annotations
 
 import logging
-import os
+from typing import TYPE_CHECKING
 
 from .errors import ExtensionSetupError
+
+if TYPE_CHECKING:
+    from .settings import EvolutionSettings
 
 __all__ = ["PROVIDERS", "AION", "LOCAL_SESSION", "CUSTOM", "resolve_provider", "warn_ignored_keys"]
 
@@ -24,20 +27,26 @@ CUSTOM = "custom"
 
 PROVIDERS = (AION, LOCAL_SESSION, CUSTOM)
 
-# Env vars each provider actually reads. Anything set outside its provider's
-# entry is ignored with a warning rather than an error: a leftover variable is
-# harmless, but silently paying with the wrong quota is not — so we say so.
+# Env vars each provider actually reads, as (variable, settings field). Anything
+# set outside its provider's entry is ignored with a warning rather than an
+# error: a leftover variable is harmless, but silently paying with the wrong
+# quota is not — so we say so.
 _RELEVANT_KEYS = {
     AION: (),
-    LOCAL_SESSION: ("CODEX_HOME",),
-    CUSTOM: ("CODEX_BASE_URL", "CODEX_API_KEY"),
+    LOCAL_SESSION: (("CODEX_HOME", "codex_home"),),
+    CUSTOM: (("CODEX_BASE_URL", "codex_base_url"), ("CODEX_API_KEY", "codex_api_key")),
 }
 
 _ALL_PROVIDER_KEYS = tuple(sorted({key for keys in _RELEVANT_KEYS.values() for key in keys}))
 
 
-def resolve_provider() -> str:
+def resolve_provider(settings: "EvolutionSettings" = None) -> str:
     """The configured Codex provider, normalized.
+
+    Args:
+        settings: An already-read environment. One is read here when omitted,
+            which is what `handler.availability()` does - it pre-flights the
+            configuration before any request has arrived to read it for.
 
     Raises:
         ExtensionSetupError: unset or not one of `PROVIDERS`. There is no
@@ -45,7 +54,12 @@ def resolve_provider() -> str:
             misconfigured deployment silently spends the platform's model
             quota.
     """
-    raw = (os.environ.get(PROVIDER_ENV_VAR) or "").strip().lower()
+    if settings is None:
+        from .settings import EvolutionSettings
+
+        settings = EvolutionSettings()
+
+    raw = settings.provider
     if not raw:
         raise ExtensionSetupError(
             f"{PROVIDER_ENV_VAR} is not set - it must be one of "
@@ -60,11 +74,21 @@ def resolve_provider() -> str:
     return raw
 
 
-def warn_ignored_keys(provider: str) -> None:
-    """Log every provider env var that is set but unused under `provider`."""
-    relevant = _RELEVANT_KEYS[provider]
-    for key in _ALL_PROVIDER_KEYS:
-        if key not in relevant and os.environ.get(key):
+def warn_ignored_keys(provider: str, settings: "EvolutionSettings" = None) -> None:
+    """Log every provider env var that is set but unused under `provider`.
+
+    Args:
+        provider: The resolved provider.
+        settings: An already-read environment; one is read here when omitted.
+    """
+    if settings is None:
+        from .settings import EvolutionSettings
+
+        settings = EvolutionSettings()
+
+    relevant = dict(_RELEVANT_KEYS[provider])
+    for key, attribute in _ALL_PROVIDER_KEYS:
+        if key not in relevant and getattr(settings, attribute):
             logger.warning(
                 "%s is set but ignored: %s=%s does not read it",
                 key,
