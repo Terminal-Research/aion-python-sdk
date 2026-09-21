@@ -249,13 +249,8 @@ class ServeProcess:
         tail = "\n".join(text[-lines:])
         return f"--- {self.log_path} (last {lines} lines) ---\n{tail}\n--- end of log ---"
 
-    def stop(self) -> None:
-        """Interrupt the server, then kill whatever is left of its group.
-
-        The working directory goes with it - the config was rendered and the
-        log was already attached to whatever failed. ``KEEP_SERVE`` keeps
-        both for a session someone is debugging.
-        """
+    def _stop_process(self) -> None:
+        """Kill the server process and close its log handle, but keep the directory."""
         process = self._process
         self._process = None
         if process is not None and process.poll() is None:
@@ -271,8 +266,48 @@ class ServeProcess:
         if self._log_handle is not None:
             self._log_handle.close()
             self._log_handle = None
+
+    def stop(self) -> None:
+        """Interrupt the server, then kill whatever is left of its group.
+
+        The working directory goes with it - the config was rendered and the
+        log was already attached to whatever failed. ``KEEP_SERVE`` keeps
+        both for a session someone is debugging.
+        """
+        self._stop_process()
         if not os.environ.get(KEEP_SERVE):
             shutil.rmtree(self._directory, ignore_errors=True)
+
+    def restart(self) -> "ServeProcess":
+        """Stop the server process and start a fresh one in the same directory.
+
+        The config and directory survive; a new process is launched on the
+        same port with the same environment. This is the operation a
+        persistence test uses to verify that durable state outlives its
+        server.
+        """
+        self._stop_process()
+        self._log_handle = self.log_path.open("a", encoding="utf-8")
+        self._process = subprocess.Popen(
+            [
+                str(_aion_executable()),
+                "serve",
+                "--port", str(self.port),
+                "--port-range-start", str(self.port + 1),
+                "--startup-timeout", str(STARTUP_TIMEOUT_SECONDS),
+            ],
+            cwd=self._directory,
+            env=_server_env(self.variant),
+            stdout=self._log_handle,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+        try:
+            self._wait_until_ready()
+        except Exception:
+            self.stop()
+            raise
+        return self
 
     def __enter__(self) -> "ServeProcess":
         return self.start()

@@ -83,6 +83,8 @@ UNSUPPORTED: dict[tuple[str, str], str] = {
         "the ADK artifact service stores one part per artifact, so the SDK refuses "
         "the two-part data artifact this command emits (aion.adk emit_artifact)"
     ),
+    ("adk", "ask"): "ADK has no interrupt/pause primitive; resume is a plain message send",
+    ("adk", "ask-twice"): "ADK has no interrupt/pause primitive; resume is a plain message send",
 }
 
 

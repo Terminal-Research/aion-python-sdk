@@ -25,6 +25,8 @@ __all__ = [
     "parse_command",
     "help_text",
     "echo_text",
+    "slow_text",
+    "DEFAULT_SLOW_SECONDS",
     "stream_chunks",
     "stream_text",
     "step_text",
@@ -244,6 +246,14 @@ def help_text() -> str:
 def echo_text(argument: str) -> str:
     """What ``echo <text>`` answers: the argument and nothing else."""
     return argument
+
+
+DEFAULT_SLOW_SECONDS = 10
+
+
+def slow_text(seconds: float) -> str:
+    """What ``slow <sec>`` answers after sleeping."""
+    return f"slept {seconds}s"
 
 
 def stream_chunks(count: int) -> tuple[str, ...]:

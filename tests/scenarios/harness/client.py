@@ -17,9 +17,11 @@ from a2a.types.a2a_pb2 import (
     Message,
     Part,
     Role,
+    SendMessageConfiguration,
     SendMessageRequest,
     SubscribeToTaskRequest,
     Task,
+    TaskPushNotificationConfig,
 )
 from google.protobuf.json_format import ParseDict
 from google.protobuf.struct_pb2 import Struct
@@ -159,6 +161,7 @@ class ScenarioClient:
         metadata: Optional[Mapping[str, Any]] = None,
         extensions: Iterable[str] = (),
         files: Iterable[FileAttachment] = (),
+        push_notification_url: Optional[str] = None,
         stream: bool = True,
     ) -> list[Ev]:
         """Send one message and record everything that came back."""
@@ -169,6 +172,14 @@ class ScenarioClient:
         )
         if metadata:
             request.metadata.CopyFrom(_struct(metadata))
+        if push_notification_url:
+            request.configuration.CopyFrom(
+                SendMessageConfiguration(
+                    task_push_notification_config=TaskPushNotificationConfig(
+                        url=push_notification_url,
+                    ),
+                )
+            )
 
         client = self._client(stream)
         return await record_stream(

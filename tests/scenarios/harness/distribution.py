@@ -7,7 +7,7 @@ and the platform does not import the SDK to build it.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional
 
 __all__ = ["DISTRIBUTION_EXTENSION_URI", "ORGANIZATION_ID", "distribution_metadata"]
 
@@ -40,6 +40,7 @@ def distribution_metadata(
     organization_id: str = ORGANIZATION_ID,
     principal: bool = True,
     service: bool = False,
+    configuration_variables: Optional[dict[str, str]] = None,
 ) -> dict[str, Any]:
     """Request metadata carrying one distribution extension payload.
 
@@ -50,6 +51,9 @@ def distribution_metadata(
             names no organization at all.
         service: Include a service identity as well, under another
             organization; it never decides ownership.
+        configuration_variables: Key-value pairs the environment carries to
+            the agent as configuration variables.  ``None`` sends an empty
+            mapping.
 
     Returns:
         A mapping to pass as ``ScenarioClient.send(metadata=...)``, keyed by
@@ -74,7 +78,7 @@ def distribution_metadata(
                 "name": "scenarios",
                 "projectId": "project-scenarios",
                 "deploymentId": "deployment-scenarios",
-                "configurationVariables": {},
+                "configurationVariables": configuration_variables or {},
             },
         }
     }

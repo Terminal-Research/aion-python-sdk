@@ -13,9 +13,11 @@ from google.adk.events import Event
 
 from tests.scenarios.agents.adk_core.invocation import Invocation
 
+from .config import config, ext
 from .errors import fail
 from .events import ids, steps
 from .files import artifacts, parts
+from .lifecycle import slow
 from .outbox import outbox_message, outbox_task
 from .smoke import echo, help_menu
 from .streaming import stream
@@ -31,10 +33,13 @@ BEHAVIORS: dict[str, Behavior] = {
     "echo": echo,
     "stream": stream,
     "steps": steps,
+    "slow": slow,
     "ids": ids,
     "parts": parts,
     "artifacts": artifacts,
     "fail": fail,
+    "ext": ext,
+    "config": config,
     "outbox-message": outbox_message,
     "outbox-task": outbox_task,
 }

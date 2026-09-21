@@ -1,5 +1,6 @@
 """Everything the scenarios need to run an agent and read what it answered."""
 
+from .callback import CallbackServer
 from .client import FileAttachment, ScenarioClient
 from .distribution import DISTRIBUTION_EXTENSION_URI, ORGANIZATION_ID, distribution_metadata
 from .recorder import Ev, final_task, record_stream, replies, reply_texts
@@ -20,6 +21,7 @@ from .shape import (
 
 __all__ = [
     "ANY",
+    "CallbackServer",
     "DISTRIBUTION_EXTENSION_URI",
     "Ev",
     "FileAttachment",

@@ -4,7 +4,7 @@
      commands.py and frameworks.py. Do not edit by hand: run
      `make scenarios-matrix`. -->
 
-42 scenarios in 7 files, 84 runs across 2 frameworks: 82 run, 2 skipped.
+58 scenarios in 13 files, 116 runs across 2 frameworks: 111 run, 5 skipped.
 
 Nothing here was produced by running a scenario: `pytest --collect-only` and the registries are all it takes, and the same suite always renders the same file. What the suite is and how to run it is in [README.md](README.md).
 
@@ -14,21 +14,23 @@ A status cell reads `✓` when it runs, `skip` when the pair is one `frameworks.
 
 |  | Covered | Not yet |
 |---|---|---|
-| Commands | 10 of 20: `help`, `echo`, `stream`, `steps`, `artifacts`, `outbox-task`, `outbox-message`, `fail`, `ids`, `parts` | `typing`, `slow`, `card`, `ask`, `ask-twice`, `ext`, `whoami`, `event`, `config`, `big` |
-| Suites | 6 of 13: `smoke`, `streaming`, `events`, `terminal_states`, `errors`, `files` | `interrupts`, `artifacts`, `extensions`, `daemon`, `config`, `lifecycle`, `persistence` |
+| Commands | 14 of 20: `help`, `echo`, `stream`, `steps`, `slow`, `artifacts`, `outbox-task`, `outbox-message`, `ask`, `fail`, `ext`, `config`, `ids`, `parts` | `typing`, `card`, `ask-twice`, `whoami`, `event`, `big` |
+| Suites | 11 of 13: `smoke`, `streaming`, `events`, `terminal_states`, `interrupts`, `errors`, `files`, `extensions`, `config`, `lifecycle`, `persistence` | `artifacts`, `daemon` |
 
 ## Frameworks
 
 | Framework | Agent package | Entry | SDK extras | Commands implemented |
 |---|---|---|---|---|
-| langgraph | `tests.scenarios.agents.langgraph_core` | `graph.py:create_graph` | `langgraph-server` | 10 of 20 |
-| adk | `tests.scenarios.agents.adk_core` | `agent.py:create_agent` | `adk-server` | 10 of 20 |
+| langgraph | `tests.scenarios.agents.langgraph_core` | `graph.py:create_graph` | `langgraph-server` | 15 of 20 |
+| adk | `tests.scenarios.agents.adk_core` | `agent.py:create_agent` | `adk-server` | 13 of 20 |
 
 Pairs a framework genuinely cannot do, which is what a `skip` cell means:
 
 | Framework | Command | Reason |
 |---|---|---|
 | adk | `artifacts` | the ADK artifact service stores one part per artifact, so the SDK refuses the two-part data artifact this command emits (aion.adk emit_artifact) |
+| adk | `ask` | ADK has no interrupt/pause primitive; resume is a plain message send |
+| adk | `ask-twice` | ADK has no interrupt/pause primitive; resume is a plain message send |
 
 ## Suites
 
@@ -39,18 +41,37 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 | `smoke` | agent answers at all: card, health, help, echo | 5 | `make tests-scenarios TAGS=smoke` |
 | `streaming` | chunked replies, ephemeral typing, unary send | 10 | `make tests-scenarios TAGS=streaming` |
 | `events` | event order, ids, outbox, get_task agreement | 13 | `make tests-scenarios TAGS=events` |
-| `terminal_states` | COMPLETED, FAILED, CANCELED, INPUT_REQUIRED | 5 | `make tests-scenarios TAGS=terminal_states` |
-| `interrupts` | INPUT_REQUIRED and resume | 0 | `make tests-scenarios TAGS=interrupts` |
+| `terminal_states` | COMPLETED, FAILED, CANCELED, INPUT_REQUIRED | 7 | `make tests-scenarios TAGS=terminal_states` |
+| `interrupts` | INPUT_REQUIRED and resume | 3 | `make tests-scenarios TAGS=interrupts` |
 | `errors` | failures that must stay reported, not crash the server | 5 | `make tests-scenarios TAGS=errors` |
 | `artifacts` | artifact and card emission | 0 | `make tests-scenarios TAGS=artifacts` |
 | `files` | inline file parts: stored, rejected, or passed through | 9 | `make tests-scenarios TAGS=files` |
-| `extensions` | extension activation and payload delivery | 0 | `make tests-scenarios TAGS=extensions` |
+| `extensions` | extension activation and payload delivery | 4 | `make tests-scenarios TAGS=extensions` |
 | `daemon` | daemon extension identity and environment | 0 | `make tests-scenarios TAGS=daemon` |
-| `config` | aion.yaml configuration and deployment variants | 0 | `make tests-scenarios TAGS=config` |
-| `lifecycle` | cancel, concurrency, push notifications, startup | 0 | `make tests-scenarios TAGS=lifecycle` |
-| `persistence` | needs POSTGRES_TEST_URL; survives a server restart | 0 | `make tests-scenarios-pg` |
+| `config` | aion.yaml configuration and deployment variants | 3 | `make tests-scenarios TAGS=config` |
+| `lifecycle` | cancel, concurrency, push notifications, startup | 2 | `make tests-scenarios TAGS=lifecycle` |
+| `persistence` | needs POSTGRES_TEST_URL; survives a server restart | 2 | `make tests-scenarios-pg` |
 
 ## Scenarios by file
+
+### `tests/scenarios/core/test_cancel.py`
+
+Cancelling a task that is still working through the public A2A endpoint.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [A cancel request on a WORKING task lands it in CANCELED.](core/test_cancel.py#L46 "test_cancel_stops_a_working_task") | `terminal_states` | `slow` | `default` | ✓ | ✓ |
+| [tasks/get after the cancel also says CANCELED, not the pre-cancel state.](core/test_cancel.py#L54 "test_cancelled_task_is_stored_as_cancelled") | `terminal_states` | `slow` | `default` | ✓ | ✓ |
+
+### `tests/scenarios/core/test_config.py`
+
+Configuration variable delivery through the distribution extension.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [A key present in the distribution payload is readable by the agent.](core/test_config.py#L36 "test_config_variable_reaches_the_agent") | `config` | `config` | `default` | ✓ | ✓ |
+| [A key that the platform did not send comes back ``present=False``.](core/test_config.py#L54 "test_absent_config_variable_is_reported_as_missing") | `config` | `config` | `default` | ✓ | ✓ |
+| [Without the distribution extension the environment is absent entirely.](core/test_config.py#L71 "test_config_without_distribution_sees_no_environment") | `config` | `config` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_errors.py`
 
@@ -77,6 +98,17 @@ The shape of a turn: which events arrive, in which order, under which ids.
 | [Reading the task back gives the state and the text the stream ended on.](core/test_events.py#L85 "test_get_task_agrees_with_the_closing_event") | `events` | `echo` | `default` | ✓ | ✓ |
 | [Nothing follows the closing Task, and the stream ends there.](core/test_events.py#L101 "test_the_stream_carries_nothing_after_the_terminal_task") | `events` | `echo` | `default` | ✓ | ✓ |
 
+### `tests/scenarios/core/test_extensions.py`
+
+End-to-end extension payload delivery to the agent.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [Requesting the distribution extension makes it active inside the agent.](core/test_extensions.py#L36 "test_distribution_extension_is_active") | `extensions` | `ext` | `default` | ✓ | ✓ |
+| [Without any extensions on the request the agent sees none active.](core/test_extensions.py#L51 "test_no_extensions_requested") | `extensions` | `ext` | `default` | ✓ | ✓ |
+| [An extension the server does not recognize lands in ``unknown``.](core/test_extensions.py#L61 "test_unknown_extension_is_reported") | `extensions` | `ext` | `default` | ✓ | ✓ |
+| [Both a known and an unknown extension can arrive on the same request.](core/test_extensions.py#L74 "test_distribution_present_alongside_unknown") | `extensions` | `ext` | `default` | ✓ | ✓ |
+
 ### `tests/scenarios/core/test_files.py`
 
 Inline file parts: stored on the way in and out, rejected, or passed through.
@@ -93,6 +125,16 @@ Inline file parts: stored on the way in and out, rejected, or passed through.
 | [No backend, no conversion: the bytes the agent emitted are the bytes received.](core/test_files.py#L220 "test_without_a_backend_an_outbound_file_stays_inline") | `files` | `artifacts` | `default` | ✓ | [skip](#frameworks) |
 | [Selecting the Aion backend without AION_CLIENT_ID and AION_CLIENT_SECRET is a startup error.](core/test_files.py#L233 "test_the_aion_backend_does_not_serve_without_credentials") | `files` | — | `aion-no-credentials` | ✓ | ✓ |
 
+### `tests/scenarios/core/test_interrupts.py`
+
+Interrupt pauses a task for user input; resume delivers the answer.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [The stream ends with INPUT_REQUIRED carrying the interrupt question.](core/test_interrupts.py#L22 "test_ask_pauses_the_task_as_input_required") | `interrupts` | `ask` | `default` | ✓ | [skip](#frameworks) |
+| [Sending a message to the paused task resumes it with the user's answer.](core/test_interrupts.py#L31 "test_resume_delivers_the_answer_and_completes") | `interrupts` | `ask` | `default` | ✓ | [skip](#frameworks) |
+| [tasks/get after resume reports COMPLETED, not INPUT_REQUIRED.](core/test_interrupts.py#L48 "test_resumed_task_is_stored_as_completed") | `interrupts` | `ask` | `default` | ✓ | [skip](#frameworks) |
+
 ### `tests/scenarios/core/test_outbox.py`
 
 The other door: an agent that hands the server a finished A2A payload.
@@ -106,6 +148,15 @@ The other door: an agent that hands the server a finished A2A payload.
 | [The patch adds to history; it does not replace what was already there.](core/test_outbox.py#L107 "test_a_task_patch_keeps_the_inbound_message_it_is_answering") | `events` | `outbox-task` | `default` | ✓ | ✓ |
 | [Agent metadata lands on the task, under the agent's own keys.](core/test_outbox.py#L124 "test_the_metadata_of_a_task_patch_is_merged") | `events` | `outbox-task` | `default` | ✓ | ✓ |
 | [Identity is the server's, whatever the payload says or omits.](core/test_outbox.py#L136 "test_the_server_keeps_the_ids_the_patch_left_unset") | `events` | `outbox-task` | `default` | ✓ | ✓ |
+
+### `tests/scenarios/core/test_push_notifications.py`
+
+Push notification delivery to a real HTTP callback.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [The server POSTs a terminal notification to the registered URL.](core/test_push_notifications.py#L93 "test_push_notification_reaches_callback") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
+| [The pushed body identifies the task the notification is about.](core/test_push_notifications.py#L120 "test_push_notification_carries_the_task_id") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_smoke.py`
 
@@ -143,6 +194,15 @@ Replies that arrive in pieces.
 | [A chunked reply is one artifact: the first chunk opens it, the rest append.](core/test_streaming.py#L46 "test_the_first_chunk_opens_the_artifact_and_the_rest_append") | `streaming` | `stream` | `default` | ✓ | ✓ |
 | [`stream 1` keeps the same shape - one delta, then the message.](core/test_streaming.py#L56 "test_one_chunk_is_still_a_chunked_reply") | `streaming` | `stream` | `default` | ✓ | ✓ |
 
+### `tests/scenarios/persistence/test_restart.py`
+
+A completed task survives a full server restart.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [tasks/get after a restart returns the same task with the same data.](persistence/test_restart.py#L24 "test_completed_task_survives_server_restart") | `persistence` | `echo` | `default` | ✓ | ✓ |
+| [A multi-step task's full history is intact after a restart.](persistence/test_restart.py#L52 "test_task_history_survives_server_restart") | `persistence` | `steps` | `default` | ✓ | ✓ |
+
 ## Commands
 
 The contract from `commands.py`. `Scenarios` counts the scenarios driving the command; a framework column says whether that agent answers it - `✓` for a behaviour it has, `gap` for `not implemented: <key>`, which is what a scenario would receive.
@@ -150,22 +210,22 @@ The contract from `commands.py`. `Scenarios` counts the scenarios driving the co
 | Command | Summary | Tags | Scenarios | langgraph | adk |
 |---|---|---|---|---|---|
 | `help` | Show this menu | `smoke` | 1 | ✓ | ✓ |
-| `echo <text>` | Reply with the argument, unchanged | `smoke`, `events` | 4 | ✓ | ✓ |
+| `echo <text>` | Reply with the argument, unchanged | `smoke`, `events` | 7 | ✓ | ✓ |
 | `stream <n>` | Reply in n chunks of one message | `streaming` | 10 | ✓ | ✓ |
 | `typing` | Send an ephemeral typing status, then a reply | `streaming`, `events` | 0 | gap | gap |
-| `steps <n>` | Emit n working statuses, then complete | `events` | 1 | ✓ | ✓ |
-| `slow <sec>` | Reply after n seconds | `lifecycle` | 0 | gap | gap |
+| `steps <n>` | Emit n working statuses, then complete | `events` | 2 | ✓ | ✓ |
+| `slow <sec>` | Reply after n seconds | `lifecycle` | 2 | ✓ | ✓ |
 | `artifacts` | Emit a two-part data artifact, an inline file and a url | `artifacts`, `files` | 2 | ✓ | [skip](#frameworks) |
 | `card` | Emit one card | `artifacts` | 0 | gap | gap |
 | `outbox-task` | Return an A2A Task through the outbox | `events` | 5 | ✓ | ✓ |
 | `outbox-message` | Return an A2A Message through the outbox | `events` | 2 | ✓ | ✓ |
-| `ask` | Ask a question, then quote the answer | `interrupts` | 0 | gap | gap |
-| `ask-twice` | Ask two questions in a row | `interrupts` | 0 | gap | gap |
+| `ask` | Ask a question, then quote the answer | `interrupts` | 3 | ✓ | [skip](#frameworks) |
+| `ask-twice` | Ask two questions in a row | `interrupts` | 0 | ✓ | [skip](#frameworks) |
 | `fail <mode>` | Fail on purpose: exception \| after-reply | `errors`, `terminal_states` | 5 | ✓ | ✓ |
-| `ext` | Report active and unknown extensions | `extensions` | 0 | gap | gap |
+| `ext` | Report active and unknown extensions | `extensions` | 4 | ✓ | ✓ |
 | `whoami` | Report the daemon identity | `daemon` | 0 | gap | gap |
 | `event` | Report which router handler received the event | `extensions`, `events` | 0 | gap | gap |
-| `config <key>` | Report one configuration value | `config` | 0 | gap | gap |
+| `config <key>` | Report one configuration value | `config` | 3 | ✓ | ✓ |
 | `ids` | Report task and context ids | `events`, `lifecycle` | 2 | ✓ | ✓ |
 | `big <kb>` | Reply with n KB of text | `errors` | 0 | gap | gap |
 | `parts` | Report the kinds of parts the inbound message carried | `files` | 6 | ✓ | ✓ |
