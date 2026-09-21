@@ -34,8 +34,9 @@ Three axes govern how an event crosses to A2A:
 - *Persistence.* Live progress — running commands, their results, intermediate
   agent messages — is flagged ephemeral: streamed to the client but dropped
   from task history by the task manager. Only milestones persist: branch
-  resolution, the executor's final summary (`AgentMessage(final=True)`), the
-  terminal status, and the `evolution-spec`/`evolution-result` artifacts.
+  resolution, each subtask of the plan the run closed (`SubtaskCompleted`), the
+  executor's final summary (`AgentMessage(final=True)`), the terminal status,
+  and the `evolution-spec`/`evolution-result` artifacts.
 
 - *Delivery.* The directive's `view` says how much of that the caller wants:
   `full` (everything, including each command's output), `activity` (the same
@@ -94,6 +95,8 @@ from aion.core.a2a.extensions.behaviour_evolution import (
     EvolutionCommandStartedPayload,
     EvolutionError,
     EvolutionResultActionPayload,
+    EvolutionSubtaskCompletedPayload,
+    EvolutionSubtaskStatus,
     EvolutionUsage,
 )
 from aion.core.constants.a2a import (
@@ -101,6 +104,7 @@ from aion.core.constants.a2a import (
     BEHAVIOUR_EVOLUTION_COMMAND_COMPLETED_PAYLOAD_SCHEMA_V1,
     BEHAVIOUR_EVOLUTION_COMMAND_STARTED_PAYLOAD_SCHEMA_V1,
     BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1,
+    BEHAVIOUR_EVOLUTION_SUBTASK_COMPLETED_PAYLOAD_SCHEMA_V1,
     EVENT_EXTENSION_URI_V1,
 )
 from aion.server.a2a.utils import mark_status_event_ephemeral
@@ -147,6 +151,7 @@ _RESERVED_PROGRESS_KEYS = frozenset(
         "resumed",
         "priorCommits",
         "stoppedEarly",
+        "subtasks",
     }
 )
 
@@ -179,6 +184,7 @@ _KNOWN_EVENT_KINDS = frozenset(
         "AgentMessage",
         "ExecutorTrace",
         "SpecCaptured",
+        "SubtaskCompleted",
         "RunCompleted",
     }
 )
@@ -339,7 +345,8 @@ class RunProgress:
     instead of having to have witnessed every delta.
 
     Carries run-level facts only — the scope the caller asked for, the
-    branch, the stage the run is at, the outcome, what it cost. Facts about a
+    branch, the stage the run is at, the subtask plan and how far it has got,
+    the outcome, what it cost. Facts about a
     single event (`callId`, `exitCode`, `final`, and which kind of event it
     is) deliberately do NOT belong here: they are already on that event's
     schema-tagged payload, and publishing them twice would make two sources of
@@ -563,11 +570,25 @@ def map_stream_event(
         # plumbing, so that case ships no message at all — the event still
         # carries its progress struct, so the branch reaches `task.metadata`
         # either way and stays available to a UI or an operator.
+        #
+        # A resume also brings the plan the branch already carries, which is
+        # the better half of the same sentence: steps are what the requester
+        # asked for, commits are how they happened to be recorded. The commit
+        # count stays as the fallback for an evolution whose spec holds no
+        # plan at all.
+        plan = _subtask_plan(event)
         text = None
         if event.resumed:
             text = "Picking up where the previous run left off"
-            if event.prior_commits:
+            if plan:
+                done = _subtasks_done(plan)
+                text = f"{text} — {done} of {len(plan)} steps already done"
+            elif event.prior_commits:
                 text = f"{text} — {event.prior_commits} change(s) already made"
+        if plan:
+            progress.remember(
+                subtasks=[entry.model_dump(mode="json", by_alias=True) for entry in plan]
+            )
         progress.remember(
             # BranchResolved is a fact *within* the PREPARING phase (see
             # worker._drive), not a phase of its own — `stage` names the
@@ -599,6 +620,8 @@ def map_stream_event(
         return _command_completed_event(task, event, progress=progress, view=view)
     if kind == "AgentMessage":
         return _agent_message_event(task, event, progress=progress)
+    if kind == "SubtaskCompleted":
+        return _subtask_completed_event(task, event, progress=progress)
     if kind == "SpecCaptured":
         return spec_artifact_event(task, path=event.path, content=event.content)
     if kind not in _KNOWN_EVENT_KINDS:
@@ -758,6 +781,125 @@ def _agent_message_event(
     )
 
 
+# The one plan status that counts as finished work. Compared case-folded and
+# stripped, because the value comes out of a document an executor wrote rather
+# than from an enum the toolkit enforces (see `EvolutionSubtaskStatus`).
+# Everything else — "in progress", "deferred", "blocked", a typo, nothing at
+# all — counts as not done, which is the reading that cannot overstate what the
+# run delivered.
+_SUBTASK_DONE_STATUS = "done"
+
+
+def _subtask_plan(event: object) -> list[EvolutionSubtaskStatus]:
+    """The plan carried by a toolkit subtask event, as wire payloads.
+
+    Read duck-typed field by field, like every other toolkit object here, so a
+    plan entry that gains a field upstream neither breaks this nor silently
+    leaks into the published payload.
+    """
+    plan: list[EvolutionSubtaskStatus] = []
+    for entry in getattr(event, "subtasks", ()) or ():
+        identifier = getattr(entry, "id", None)
+        if not identifier:
+            # An entry with no id is not addressable — it cannot be the one a
+            # later event names, and it cannot be rendered as a step. Dropping
+            # it keeps the denominator honest rather than counting a row
+            # nothing can refer to.
+            continue
+        plan.append(
+            EvolutionSubtaskStatus(
+                id=str(identifier),
+                title=str(getattr(entry, "title", "") or ""),
+                status=str(getattr(entry, "status", "") or ""),
+            )
+        )
+    return plan
+
+
+def _subtasks_done(plan: list[EvolutionSubtaskStatus]) -> int:
+    """How many entries of the plan count as finished.
+
+    The published `subtasksCompleted` count and the human-facing sentence both
+    come from here, so the number a consumer branches on and the number the
+    user reads cannot disagree.
+    """
+    return sum(1 for entry in plan if entry.status.strip().lower() == _SUBTASK_DONE_STATUS)
+
+
+def _subtask_completed_text(
+    plan: list[EvolutionSubtaskStatus], subtask_id: str, done: int
+) -> str:
+    """The sentence a plain chat client shows for a finished subtask.
+
+    Names the effect on the user's work — which step closed and how many are
+    behind us — and never the mechanism that produced the fact (a commit, its
+    message, the spec file it was parsed from).
+    """
+    total = len(plan)
+    label = next((entry.title for entry in plan if entry.id == subtask_id and entry.title), "")
+    what = f"step {subtask_id}: {label}" if label else f"step {subtask_id}"
+    if not total:
+        # A finished step with no plan to place it in: the toolkit could not
+        # re-read the document. Still worth saying, just without a denominator
+        # that would be invented here.
+        return f"Finished {what}"
+    return f"Finished {what} — {done} of {total} done"
+
+
+def _subtask_completed_event(
+    task: Task, event: object, *, progress: RunProgress
+) -> Optional[TaskStatusUpdateEvent]:
+    """A subtask of the evolution's plan that the run just closed.
+
+    Deliberately NOT ephemeral. How far the work got is part of the durable
+    record of the task, in the same sense branch resolution and the closing
+    summary are: a caller that reads the task tomorrow should find the same
+    nine steps a caller watching the stream saw close one by one. Because the
+    events persist, `milestones` carries them too — the handler selects that
+    view by this very flag, so delivery cannot promise less than the record
+    keeps.
+
+    The whole plan rides the progress struct as well as the payload. That is
+    the one duplication `RunProgress` permits, for the reason it permits it for
+    `usage`: the struct is what reaches `task.metadata`, so an operator asking
+    where the evolution stands finds the answer on the task without replaying
+    its history. It stays a run-level fact — which step this event is about
+    lives on the payload and only there.
+    """
+    subtask_id = getattr(event, "subtask_id", None)
+    if not subtask_id:
+        # The event is named for a completion and the toolkit only emits it for
+        # one, so this is drift rather than a case to render. Dropped rather
+        # than guessed at: what the plan is arrives on `BranchResolved` and
+        # `SpecCaptured`, and inventing a plan announcement here would put a
+        # second shape behind one schema.
+        logger.warning("evolution: SubtaskCompleted without a subtask id dropped")
+        return None
+    plan = _subtask_plan(event)
+    done = _subtasks_done(plan)
+    text = _subtask_completed_text(plan, subtask_id, done)
+    progress.remember(
+        stage="executing",
+        subtasks=[entry.model_dump(mode="json", by_alias=True) for entry in plan],
+    )
+    # The toolkit also reports the phase its commit marker named. It is not
+    # forwarded: a plan entry carries no phase of its own, so knowing the
+    # finished step's phase groups nothing and leaves a field a consumer can
+    # only print. Phases belong on the entries or nowhere.
+    return _typed_status_event(
+        task,
+        text=text,
+        payload=EvolutionSubtaskCompletedPayload(
+            subtasks=plan,
+            subtask_id=subtask_id,
+            subtasks_completed=done,
+        ),
+        schema=BEHAVIOUR_EVOLUTION_SUBTASK_COMPLETED_PAYLOAD_SCHEMA_V1,
+        progress=progress.snapshot(),
+        ephemeral=False,
+    )
+
+
 def spec_artifact_event(task: Task, *, path: str, content: str) -> TaskArtifactUpdateEvent:
     """The evolution's spec document as a markdown artifact.
 
@@ -815,6 +957,11 @@ def _result_payload(result: "EvolutionResult") -> EvolutionResultActionPayload:
         spec_path=getattr(result, "spec_path", None),
         rescue_pushed=getattr(result, "rescue_pushed", False),
         rescue_bundle_created=getattr(result, "rescue_bundle_created", False),
+        # The plan as the finished run leaves it. Authoritative in a way the
+        # streamed subtask events are not: a run whose executor departed from
+        # the commit discipline emits few of those or none, and this is still
+        # read off the spec at the end.
+        subtasks=_subtask_plan(result),
         usage=_usage_payload(result),
     )
 
@@ -900,9 +1047,12 @@ def cancel_result_message(task: Task, result: "EvolutionResult") -> Message:
     consumer shuts its queue down the moment a terminal state lands, so
     anything published afterwards is dropped, not merely late. This message
     is the handler's one channel for that terminal's own text/data — attached
-    to it by the cancel flow. CANCELED is a non-COMPLETED terminal state, so
-    the task manager also folds the message into task history: the outcome
-    becomes part of the durable record rather than something only a live
+    to it by the cancel flow. It lands as the task's `status.message` and
+    stays there: a terminal task takes no further status update, and only a
+    later one would move a message into `history`. That is the durable record
+    either way — `status.message` is the most recent message and `history` is
+    everything before it, the two together being the conversation — so the
+    outcome survives for a `tasks/get` rather than being something only a live
     subscriber saw.
 
     The rescue bundle itself is not on this message: `EvolutionTaskHandler.
@@ -1011,6 +1161,16 @@ def result_events(
         # one struct that reaches `task.metadata`, so an operator auditing cost
         # finds it on the task without having to open the artifact.
         progress.remember(usage=usage.model_dump(mode="json", by_alias=True))
+    final_plan = _subtask_plan(result)
+    if final_plan:
+        # Same argument as `usage`, and one case more: a run whose executor
+        # never followed the commit discipline emitted no subtask events at
+        # all, so without this the task would end carrying no plan even though
+        # the spec records one. Only written when there is a plan - an empty
+        # list would erase what earlier events in the same context put there.
+        progress.remember(
+            subtasks=[entry.model_dump(mode="json", by_alias=True) for entry in final_plan]
+        )
     run_metadata = getattr(result, "metadata", None)
     if isinstance(run_metadata, dict) and run_metadata:
         # The struct is shared with fields this mapper owns, and a toolkit key

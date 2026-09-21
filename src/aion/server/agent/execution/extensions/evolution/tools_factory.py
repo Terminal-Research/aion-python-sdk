@@ -133,8 +133,8 @@ from aion.toolkits.behaviour_evolution import (
 )
 
 from .directive import ParsedDirective
-from .errors import ExtensionSetupError
-from .settings import EvolutionSettings, UnsupportedDirectiveError
+from .errors import ExtensionSetupError, UnsupportedDirectiveError
+from .settings import EvolutionSettings
 from .provider import CUSTOM, LOCAL_SESSION, resolve_provider, warn_ignored_keys
 
 log = logging.getLogger(__name__)

@@ -5,7 +5,6 @@ distribution is not installed (no extra of this package pulls it in); run
 them in an e2e-capable environment with the toolkit pip-installed.
 """
 
-from types import SimpleNamespace
 
 import pytest
 
@@ -24,6 +23,8 @@ from aion.server.agent.execution.extensions.evolution.tools_factory import (  # 
     check_environment,
 )
 from aion.toolkits.behaviour_evolution import LocalAccess, RemoteAccess  # noqa: E402
+
+from tests.unit.support.daemon import daemon_payload  # noqa: E402
 
 REPO_URL = "https://github.com/acme/target-agent.git"
 
@@ -59,11 +60,9 @@ def _daemon(
         config_vars["llm"] = llm
     if branch_strategy:
         config_vars["evolution_branch_strategy"] = branch_strategy
-    return SimpleNamespace(
-        environment=SimpleNamespace(
-            configuration_variables=config_vars,
-            daemon_agent_identity_id=identity_id,
-        )
+    return daemon_payload(
+        configuration_variables=config_vars,
+        daemon_agent_identity_id=identity_id,
     )
 
 

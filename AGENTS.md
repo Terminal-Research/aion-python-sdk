@@ -121,6 +121,10 @@ and are discovered by `aion.server` at runtime.
   file, the Aion Files API backend behind it, the verified `UploadContext`
   projection naming the owning organization, and the guard that strips inline
   bytes before a task is persisted),
+  shared A2A helpers (`a2a/` — task and message predicates, the ephemeral mark,
+  and `outbox.py`, the one definition of how an agent's `a2a_outbox` is applied
+  to the task a request runs on; every framework adapter calls it, and
+  `tests/unit/server/agent/adapters/` is the contract they all hold),
   Aion auth manager and websocket
   connection services (`services/aion`), OpenTelemetry wiring, and logging
   setup with stream and Logstash handlers. Graphs and HTTP apps are configured

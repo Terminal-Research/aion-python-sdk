@@ -11,8 +11,10 @@ from typing import Awaitable, Callable, Optional
 
 from tests.scenarios.agents.langgraph_core.invocation import Invocation
 
+from .errors import fail
 from .events import ids, steps
 from .files import artifacts, parts
+from .outbox import outbox_message, outbox_task
 from .smoke import echo, help_menu
 from .streaming import stream
 
@@ -28,4 +30,7 @@ BEHAVIORS: dict[str, Behavior] = {
     "ids": ids,
     "parts": parts,
     "artifacts": artifacts,
+    "fail": fail,
+    "outbox-message": outbox_message,
+    "outbox-task": outbox_task,
 }

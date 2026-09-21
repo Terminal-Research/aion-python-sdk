@@ -51,6 +51,14 @@ __all__ = [
     "ARTIFACT_URL",
     "artifacts_data_parts",
     "artifacts_text",
+    "OUTBOX_MESSAGE_TEXT",
+    "OUTBOX_TASK_HISTORY_TEXT",
+    "OUTBOX_TASK_ARTIFACT_NAME",
+    "OUTBOX_TASK_ARTIFACT_TEXT",
+    "OUTBOX_TASK_METADATA",
+    "FAIL_MODES",
+    "FAIL_REPLY_TEXT",
+    "FAIL_MESSAGE",
 ]
 
 
@@ -162,7 +170,7 @@ COMMANDS: tuple[Command, ...] = (
     Command("outbox-message", "Return an A2A Message through the outbox", tags=("events",)),
     Command("ask", "Ask a question, then quote the answer", tags=("interrupts",)),
     Command("ask-twice", "Ask two questions in a row", tags=("interrupts",)),
-    Command("fail", "Fail on purpose: exception | after-reply | before-interrupt", "<mode>",
+    Command("fail", "Fail on purpose: exception | after-reply", "<mode>",
             ("errors", "terminal_states")),
     Command("ext", "Report active and unknown extensions", tags=("extensions",),
             response_model=ExtResponse),
@@ -315,6 +323,31 @@ def ask_answer_text(answer: str) -> str:
 def ask_twice_questions() -> tuple[str, str]:
     """The two questions ``ask-twice`` interrupts with, in order."""
     return ("First of two: what should I use?", "Second of two: are you sure?")
+
+
+# What the outbox commands put into the A2A payload they return. The point of
+# these two is that the agent hands the server a finished A2A object instead
+# of speaking through the thread, so every value here is one a scenario looks
+# for in the task the server stored, not only in the stream.
+OUTBOX_MESSAGE_TEXT = "outbox message"
+OUTBOX_TASK_HISTORY_TEXT = "outbox task history"
+OUTBOX_TASK_ARTIFACT_NAME = "outbox-artifact"
+OUTBOX_TASK_ARTIFACT_TEXT = "outbox artifact content"
+OUTBOX_TASK_METADATA = {"scenario": "outbox-task"}
+
+
+# How `fail <mode>` fails: before saying anything, or with a reply already
+# delivered. Those are the two an agent can produce.
+#
+# The third case the server handles - a producer that crashes after its own
+# terminal state was already reported, which must not be overwritten with
+# FAILED - is not one of these. No authoring surface lets an agent report a
+# terminal state: `a2a_outbox` is read from the final state, which a crash
+# never reaches. It is a unit test on the executor instead
+# (tests/unit/server/agent/test_failed_task_closing.py).
+FAIL_MODES = ("exception", "after-reply")
+FAIL_REPLY_TEXT = "about to fail"
+FAIL_MESSAGE = "scenario failure"
 
 
 NOT_IMPLEMENTED_PREFIX = "not implemented: "

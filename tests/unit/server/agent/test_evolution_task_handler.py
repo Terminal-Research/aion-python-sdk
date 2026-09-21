@@ -54,6 +54,8 @@ from aion.server.agent.execution.extensions.evolution.errors import (
 from aion.server.agent.execution.extensions.evolution import handler as handler_module
 from aion.server.agent.execution.extensions.evolution.handler import _RunHandle
 
+from tests.unit.support.daemon import daemon_payload
+
 
 @pytest.fixture
 def anyio_backend():
@@ -93,6 +95,20 @@ class CommandCompleted:
 class SpecCaptured:
     path: str
     content: str
+
+
+@dataclass(frozen=True)
+class SubtaskStatus:
+    id: str
+    title: str = ""
+    status: str = ""
+
+
+@dataclass(frozen=True)
+class SubtaskCompleted:
+    subtask_id: str
+    subtasks: tuple = ()
+    phase: str | None = None
 
 
 @dataclass(frozen=True)
@@ -482,12 +498,7 @@ class TestStream:
         model (environment's `llm` config var) and the principal that model
         usage is attributed to. The parsed directive must carry the task's
         A2A context id: it is the evolution's identity (branch + spec dir)."""
-        daemon = SimpleNamespace(
-            environment=SimpleNamespace(
-                configuration_variables={"llm": "qwen"},
-                daemon_agent_identity_id="daemon-1",
-            )
-        )
+        daemon = daemon_payload(configuration_variables={"llm": "qwen"})
         captured = {}
 
         def _capture(parsed, daemon_payload):
@@ -665,6 +676,13 @@ class TestStreamView:
             _phase("executing"),
             CommandCompleted(call_id="c", command="cat .env", exit_code=0, output="TOKEN=abc"),
             AgentMessage(text="working on it", final=False),
+            SubtaskCompleted(
+                subtasks=(
+                    SubtaskStatus(id="A", title="Add retries", status="done"),
+                    SubtaskStatus(id="B", title="Cover the timeout", status="not started"),
+                ),
+                subtask_id="A",
+            ),
             AgentMessage(text="Added retries", final=True),
             SpecCaptured(path=".aion/evolutions/ctx-456/spec.md", content="# Spec"),
             RunCompleted(result=result),
@@ -717,6 +735,23 @@ class TestStreamView:
         assert "working on it" not in texts
         assert "Added retries" in texts
         assert not any(t in texts for t in evolution_events._PHASE_TEXT.values())
+
+    @pytest.mark.anyio
+    async def test_milestones_view_keeps_a_finished_subtask(self):
+        """How far through its plan the run got is a milestone, not narration.
+
+        It survives here for the same reason it survives in the task record:
+        the view is defined by the ephemeral mark, and this event does not
+        carry one.
+        """
+        out = await self._run(EVOLUTION_VIEW_MILESTONES)
+
+        texts = [
+            e.status.message.parts[0].text
+            for e in out
+            if isinstance(e, TaskStatusUpdateEvent) and e.status.HasField("message")
+        ]
+        assert "Finished step A: Add retries — 1 of 2 done" in texts
 
     @pytest.mark.anyio
     async def test_milestones_view_still_delivers_artifacts_and_terminal_state(self):

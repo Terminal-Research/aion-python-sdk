@@ -60,13 +60,9 @@ async def test_the_artifact_carries_its_own_status_not_the_schema(client: Scenar
     events = await client.send("stream 3")
 
     for delta in (event for event in events if is_chunk(event)):
-        artifact_metadata = {
-            key: value.decode() if isinstance(value, bytes) else value
-            for key, value in _artifact_metadata(delta).items()
-        }
-        assert artifact_metadata.get("status") == "active"
-        assert artifact_metadata.get("status_reason") == "chunk_streaming"
-        assert MESSAGING_EXTENSION_URI_V1 not in artifact_metadata
+        assert delta.artifact_metadata.get("status") == "active"
+        assert delta.artifact_metadata.get("status_reason") == "chunk_streaming"
+        assert MESSAGING_EXTENSION_URI_V1 not in delta.artifact_metadata
 
 
 @pytest.mark.command("stream")
@@ -100,13 +96,37 @@ async def test_the_sequence_is_closed_by_the_durable_reply_not_by_last_chunk(
     assert after[-1].kind == "task" and after[-1].final
 
 
-def _artifact_metadata(event) -> dict:
-    """Artifact-level metadata of a recorded artifact update.
+@pytest.mark.command("stream")
+async def test_the_first_delta_opens_a_section_and_every_delta_carries_content(
+    client: ScenarioClient,
+) -> None:
+    """A reader appends from the second delta on, and never receives an empty one.
 
-    ``Ev`` projects the event's metadata, which is the one the schema marker
-    lives on; the artifact's own is read off the protobuf it kept.
+    ``append`` is how a client knows whether a delta starts a new section of
+    the reply or continues the open one, so the first must say false and the
+    rest true. And an empty delta would be indistinguishable from the end of
+    the stream for a client rendering as it reads, so no update is emitted
+    without content - the empty final chunk langchain-core ends a stream with
+    produces no event at all.
     """
-    from google.protobuf.json_format import MessageToDict
+    events = await client.send("stream 3")
 
-    artifact = event.raw.artifact
-    return MessageToDict(artifact).get("metadata", {})
+    deltas = [event for event in events if is_chunk(event)]
+    assert [delta.append for delta in deltas] == [False, True, True]
+    assert all(delta.text for delta in deltas)
+
+
+@pytest.mark.command("stream")
+async def test_a_single_delta_is_still_the_opening_of_a_section(client: ScenarioClient) -> None:
+    """The one-chunk reply is the edge case the append rule is easiest to lose on.
+
+    A reply that fits in one delta still opens a section, so that flag is
+    false there too. Asserting the shape without it would pass on an adapter
+    that appended a lone chunk onto whatever the client had open before.
+    """
+    events = await client.send("stream 1")
+
+    deltas = [event for event in events if is_chunk(event)]
+    assert len(deltas) == 1
+    assert deltas[0].append is False
+    assert deltas[0].text

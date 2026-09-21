@@ -7,18 +7,24 @@ shows up as a failing contract scenario rather than as a wrong menu.
 
 from __future__ import annotations
 
-from typing import Awaitable, Callable
+from typing import Awaitable, Callable, Optional
+
+from google.adk.events import Event
 
 from tests.scenarios.agents.adk_core.invocation import Invocation
 
+from .errors import fail
 from .events import ids, steps
 from .files import artifacts, parts
+from .outbox import outbox_message, outbox_task
 from .smoke import echo, help_menu
 from .streaming import stream
 
 __all__ = ["BEHAVIORS", "Behavior"]
 
-Behavior = Callable[[Invocation], Awaitable[None]]
+# A behaviour either answers through the thread and returns nothing, or
+# returns the ADK event the agent must yield on its behalf.
+Behavior = Callable[[Invocation], Awaitable[Optional[Event]]]
 
 BEHAVIORS: dict[str, Behavior] = {
     "help": help_menu,
@@ -28,4 +34,7 @@ BEHAVIORS: dict[str, Behavior] = {
     "ids": ids,
     "parts": parts,
     "artifacts": artifacts,
+    "fail": fail,
+    "outbox-message": outbox_message,
+    "outbox-task": outbox_task,
 }

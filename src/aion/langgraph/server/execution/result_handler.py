@@ -17,6 +17,7 @@ from a2a.types import (
 )
 
 from aion.core.a2a import A2AOutbox
+from aion.server.a2a.outbox import outbox_message, outbox_task
 from .stream_executor import StreamResult
 
 if TYPE_CHECKING:
@@ -29,9 +30,10 @@ AgentEvent = TaskStatusUpdateEvent | TaskArtifactUpdateEvent | Task | Message
 class ExecutionResultHandler:
     """Processes execution result into terminal events and task side-effects.
 
-    Reads `a2a_outbox` from the graph's final state and applies it to the
-    current a2a Task. If no outbox is present, falls back to streaming
-    accumulated text.
+    Reads `a2a_outbox` from the graph's final state and applies it through
+    `aion.server.a2a.outbox`, which is where what the server does with an
+    outbox is defined — for this adapter and the ADK one alike. If no outbox
+    is present, falls back to streaming accumulated text.
 
     Subclass and override `handle` to extend or replace the default logic.
     """
@@ -58,7 +60,7 @@ class ExecutionResultHandler:
         """
         outbox = snapshot.state.get("a2a_outbox")
         if outbox is not None:
-            result = self._handle_outbox(outbox, task_id, context_id)
+            result = self._handle_outbox(outbox, context, task_id, context_id)
             if result is not None:
                 return result
 
@@ -82,6 +84,7 @@ class ExecutionResultHandler:
     def _handle_outbox(
             self,
             outbox: Any,
+            context: "RequestContext | None",
             task_id: str,
             context_id: str,
     ) -> list[AgentEvent] | None:
@@ -97,7 +100,7 @@ class ExecutionResultHandler:
             return self._handle_outbox_message(outbox.message, task_id, context_id)
 
         if outbox.task is not None:
-            return self._handle_outbox_task(outbox.task, task_id, context_id)
+            return self._handle_outbox_task(outbox.task, context, task_id, context_id)
 
         return None
 
@@ -107,27 +110,22 @@ class ExecutionResultHandler:
             task_id: str,
             context_id: str,
     ) -> list[AgentEvent]:
-        """Return outbox Message with server fields enforced."""
-        new_msg = Message()
-        new_msg.CopyFrom(message)
-        new_msg.task_id = task_id
-        new_msg.context_id = context_id
-        return [new_msg]
+        """Return the outbox Message itself, with the server's ids enforced."""
+        return [outbox_message(message, task_id=task_id, context_id=context_id)]
 
     @staticmethod
     def _handle_outbox_task(
             patch: Task,
+            context: "RequestContext | None",
             task_id: str,
             context_id: str,
     ) -> list[AgentEvent]:
-        """Return outbox Task with server fields enforced on all messages."""
-        new_task = Task()
-        new_task.CopyFrom(patch)
-        new_task.id = task_id
-        new_task.context_id = context_id
-
-        for msg in new_task.history:
-            msg.task_id = task_id
-            msg.context_id = context_id
-
-        return [new_task]
+        """Return the request's task with the outbox Task patch applied."""
+        return [
+            outbox_task(
+                patch,
+                current=context.current_task if context is not None else None,
+                task_id=task_id,
+                context_id=context_id,
+            )
+        ]

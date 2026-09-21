@@ -4,7 +4,7 @@
      commands.py and frameworks.py. Do not edit by hand: run
      `make scenarios-matrix`. -->
 
-28 scenarios in 5 files, 56 runs across 2 frameworks: 54 run, 2 skipped.
+42 scenarios in 7 files, 84 runs across 2 frameworks: 82 run, 2 skipped.
 
 Nothing here was produced by running a scenario: `pytest --collect-only` and the registries are all it takes, and the same suite always renders the same file. What the suite is and how to run it is in [README.md](README.md).
 
@@ -14,15 +14,15 @@ A status cell reads `✓` when it runs, `skip` when the pair is one `frameworks.
 
 |  | Covered | Not yet |
 |---|---|---|
-| Commands | 7 of 20: `help`, `echo`, `stream`, `steps`, `artifacts`, `ids`, `parts` | `typing`, `slow`, `card`, `outbox-task`, `outbox-message`, `ask`, `ask-twice`, `fail`, `ext`, `whoami`, `event`, `config`, `big` |
-| Suites | 4 of 13: `smoke`, `streaming`, `events`, `files` | `terminal_states`, `interrupts`, `errors`, `artifacts`, `extensions`, `daemon`, `config`, `lifecycle`, `persistence` |
+| Commands | 10 of 20: `help`, `echo`, `stream`, `steps`, `artifacts`, `outbox-task`, `outbox-message`, `fail`, `ids`, `parts` | `typing`, `slow`, `card`, `ask`, `ask-twice`, `ext`, `whoami`, `event`, `config`, `big` |
+| Suites | 6 of 13: `smoke`, `streaming`, `events`, `terminal_states`, `errors`, `files` | `interrupts`, `artifacts`, `extensions`, `daemon`, `config`, `lifecycle`, `persistence` |
 
 ## Frameworks
 
 | Framework | Agent package | Entry | SDK extras | Commands implemented |
 |---|---|---|---|---|
-| langgraph | `tests.scenarios.agents.langgraph_core` | `graph.py:create_graph` | `langgraph-server` | 7 of 20 |
-| adk | `tests.scenarios.agents.adk_core` | `agent.py:create_agent` | `adk-server` | 7 of 20 |
+| langgraph | `tests.scenarios.agents.langgraph_core` | `graph.py:create_graph` | `langgraph-server` | 10 of 20 |
+| adk | `tests.scenarios.agents.adk_core` | `agent.py:create_agent` | `adk-server` | 10 of 20 |
 
 Pairs a framework genuinely cannot do, which is what a `skip` cell means:
 
@@ -37,11 +37,11 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 | Suite | What it covers | Scenarios | Run |
 |---|---|---|---|
 | `smoke` | agent answers at all: card, health, help, echo | 5 | `make tests-scenarios TAGS=smoke` |
-| `streaming` | chunked replies, ephemeral typing, unary send | 8 | `make tests-scenarios TAGS=streaming` |
-| `events` | event order, ids, outbox, get_task agreement | 6 | `make tests-scenarios TAGS=events` |
-| `terminal_states` | COMPLETED, FAILED, CANCELED, INPUT_REQUIRED | 0 | `make tests-scenarios TAGS=terminal_states` |
+| `streaming` | chunked replies, ephemeral typing, unary send | 10 | `make tests-scenarios TAGS=streaming` |
+| `events` | event order, ids, outbox, get_task agreement | 13 | `make tests-scenarios TAGS=events` |
+| `terminal_states` | COMPLETED, FAILED, CANCELED, INPUT_REQUIRED | 5 | `make tests-scenarios TAGS=terminal_states` |
 | `interrupts` | INPUT_REQUIRED and resume | 0 | `make tests-scenarios TAGS=interrupts` |
-| `errors` | failures that must stay reported, not crash the server | 0 | `make tests-scenarios TAGS=errors` |
+| `errors` | failures that must stay reported, not crash the server | 5 | `make tests-scenarios TAGS=errors` |
 | `artifacts` | artifact and card emission | 0 | `make tests-scenarios TAGS=artifacts` |
 | `files` | inline file parts: stored, rejected, or passed through | 9 | `make tests-scenarios TAGS=files` |
 | `extensions` | extension activation and payload delivery | 0 | `make tests-scenarios TAGS=extensions` |
@@ -51,6 +51,18 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 | `persistence` | needs POSTGRES_TEST_URL; survives a server restart | 0 | `make tests-scenarios-pg` |
 
 ## Scenarios by file
+
+### `tests/scenarios/core/test_errors.py`
+
+An agent that crashes must leave a task that says so.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [The stream ends in a terminal task, not in silence.](core/test_errors.py#L31 "test_a_crash_before_any_answer_closes_the_task_as_failed") | `errors`, `terminal_states` | `fail` | `default` | ✓ | ✓ |
+| [What was already delivered stays delivered, and the task still fails.](core/test_errors.py#L51 "test_a_crash_after_a_reply_keeps_the_reply") | `errors`, `terminal_states` | `fail` | `default` | ✓ | ✓ |
+| [A later `tasks/get` reports the failure too.](core/test_errors.py#L65 "test_the_failure_is_in_the_stored_task_not_only_on_the_wire") | `errors`, `terminal_states` | `fail` | `default` | ✓ | ✓ |
+| [The reason is logged, not published.](core/test_errors.py#L83 "test_the_failed_task_does_not_carry_the_exception") | `errors`, `terminal_states` | `fail` | `default` | ✓ | ✓ |
+| [The next request is answered normally.](core/test_errors.py#L99 "test_a_failing_turn_does_not_take_the_agent_with_it") | `errors`, `terminal_states` | `fail` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_events.py`
 
@@ -81,6 +93,20 @@ Inline file parts: stored on the way in and out, rejected, or passed through.
 | [No backend, no conversion: the bytes the agent emitted are the bytes received.](core/test_files.py#L220 "test_without_a_backend_an_outbound_file_stays_inline") | `files` | `artifacts` | `default` | ✓ | [skip](#frameworks) |
 | [Selecting the Aion backend without AION_CLIENT_ID and AION_CLIENT_SECRET is a startup error.](core/test_files.py#L233 "test_the_aion_backend_does_not_serve_without_credentials") | `files` | — | `aion-no-credentials` | ✓ | ✓ |
 
+### `tests/scenarios/core/test_outbox.py`
+
+The other door: an agent that hands the server a finished A2A payload.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [The terminal task carries the reply, because that is where it is read.](core/test_outbox.py#L44 "test_a_message_from_the_outbox_is_in_the_task_that_closes_the_stream") | `events` | `outbox-message` | `default` | ✓ | ✓ |
+| [It is history, not a frame: `tasks/get` answers with it afterwards.](core/test_outbox.py#L63 "test_a_message_from_the_outbox_is_in_the_stored_task") | `events` | `outbox-message` | `default` | ✓ | ✓ |
+| [An artifact named by the patch is on the task afterwards.](core/test_outbox.py#L77 "test_a_task_patch_adds_its_artifacts") | `events` | `outbox-task` | `default` | ✓ | ✓ |
+| [A message named by the patch is in the task's history afterwards.](core/test_outbox.py#L89 "test_a_task_patch_adds_its_history") | `events` | `outbox-task` | `default` | ✓ | ✓ |
+| [The patch adds to history; it does not replace what was already there.](core/test_outbox.py#L107 "test_a_task_patch_keeps_the_inbound_message_it_is_answering") | `events` | `outbox-task` | `default` | ✓ | ✓ |
+| [Agent metadata lands on the task, under the agent's own keys.](core/test_outbox.py#L124 "test_the_metadata_of_a_task_patch_is_merged") | `events` | `outbox-task` | `default` | ✓ | ✓ |
+| [Identity is the server's, whatever the payload says or omits.](core/test_outbox.py#L136 "test_the_server_keeps_the_ids_the_patch_left_unset") | `events` | `outbox-task` | `default` | ✓ | ✓ |
+
 ### `tests/scenarios/core/test_smoke.py`
 
 Does a deployment of this framework answer at all.
@@ -102,7 +128,9 @@ The stream-delta channel has the shape the messaging extension specifies.
 | [The reserved id is what makes a delta recognisable as live reply text.](core/test_stream_delta_shape.py#L29 "test_every_delta_names_the_channel_by_artifact_id") | `streaming` | `stream` | `default` | ✓ | ✓ |
 | [The marker sits on the artifact update, which is where the spec puts it.](core/test_stream_delta_shape.py#L39 "test_every_delta_carries_the_schema_marker_on_the_event") | `streaming` | `stream` | `default` | ✓ | ✓ |
 | [Artifact metadata describes the artifact; the schema belongs to the event.](core/test_stream_delta_shape.py#L57 "test_the_artifact_carries_its_own_status_not_the_schema") | `streaming` | `stream` | `default` | ✓ | ✓ |
-| [`lastChunk` does not end a stream-delta sequence, and is not how to read one.](core/test_stream_delta_shape.py#L72 "test_the_sequence_is_closed_by_the_durable_reply_not_by_last_chunk") | `streaming` | `stream` | `default` | ✓ | ✓ |
+| [`lastChunk` does not end a stream-delta sequence, and is not how to read one.](core/test_stream_delta_shape.py#L68 "test_the_sequence_is_closed_by_the_durable_reply_not_by_last_chunk") | `streaming` | `stream` | `default` | ✓ | ✓ |
+| [A reader appends from the second delta on, and never receives an empty one.](core/test_stream_delta_shape.py#L99 "test_the_first_delta_opens_a_section_and_every_delta_carries_content") | `streaming` | `stream` | `default` | ✓ | ✓ |
+| [The one-chunk reply is the edge case the append rule is easiest to lose on.](core/test_stream_delta_shape.py#L119 "test_a_single_delta_is_still_the_opening_of_a_section") | `streaming` | `stream` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_streaming.py`
 
@@ -123,17 +151,17 @@ The contract from `commands.py`. `Scenarios` counts the scenarios driving the co
 |---|---|---|---|---|---|
 | `help` | Show this menu | `smoke` | 1 | ✓ | ✓ |
 | `echo <text>` | Reply with the argument, unchanged | `smoke`, `events` | 4 | ✓ | ✓ |
-| `stream <n>` | Reply in n chunks of one message | `streaming` | 8 | ✓ | ✓ |
+| `stream <n>` | Reply in n chunks of one message | `streaming` | 10 | ✓ | ✓ |
 | `typing` | Send an ephemeral typing status, then a reply | `streaming`, `events` | 0 | gap | gap |
 | `steps <n>` | Emit n working statuses, then complete | `events` | 1 | ✓ | ✓ |
 | `slow <sec>` | Reply after n seconds | `lifecycle` | 0 | gap | gap |
 | `artifacts` | Emit a two-part data artifact, an inline file and a url | `artifacts`, `files` | 2 | ✓ | [skip](#frameworks) |
 | `card` | Emit one card | `artifacts` | 0 | gap | gap |
-| `outbox-task` | Return an A2A Task through the outbox | `events` | 0 | gap | gap |
-| `outbox-message` | Return an A2A Message through the outbox | `events` | 0 | gap | gap |
+| `outbox-task` | Return an A2A Task through the outbox | `events` | 5 | ✓ | ✓ |
+| `outbox-message` | Return an A2A Message through the outbox | `events` | 2 | ✓ | ✓ |
 | `ask` | Ask a question, then quote the answer | `interrupts` | 0 | gap | gap |
 | `ask-twice` | Ask two questions in a row | `interrupts` | 0 | gap | gap |
-| `fail <mode>` | Fail on purpose: exception \| after-reply \| before-interrupt | `errors`, `terminal_states` | 0 | gap | gap |
+| `fail <mode>` | Fail on purpose: exception \| after-reply | `errors`, `terminal_states` | 5 | ✓ | ✓ |
 | `ext` | Report active and unknown extensions | `extensions` | 0 | gap | gap |
 | `whoami` | Report the daemon identity | `daemon` | 0 | gap | gap |
 | `event` | Report which router handler received the event | `extensions`, `events` | 0 | gap | gap |

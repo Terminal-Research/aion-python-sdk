@@ -78,7 +78,12 @@ class Ev:
         ephemeral: True when the server marked this status update ephemeral.
         task_id: Task the event belongs to, when it names one.
         context_id: Context the event belongs to, when it names one.
-        metadata: Event metadata as a plain dict.
+        metadata: Event metadata as a plain dict. The schema marker of the
+            messaging extension lives here, on the update rather than on
+            the artifact.
+        artifact_metadata: The artifact's own metadata, which describes the
+            artifact itself - its ``status`` and ``status_reason``. A
+            different dict from ``metadata``, and the spec means it to be.
         raw: The protobuf message itself, for anything not projected here.
     """
 
@@ -94,6 +99,7 @@ class Ev:
     task_id: Optional[str] = None
     context_id: Optional[str] = None
     metadata: dict = field(default_factory=dict)
+    artifact_metadata: dict = field(default_factory=dict)
     raw: Any = None
 
     def __repr__(self) -> str:
@@ -158,6 +164,7 @@ def to_event(payload: Any) -> Ev:
             artifact_name=artifact.name or None,
             append=bool(payload.append),
             last_chunk=bool(payload.last_chunk),
+            artifact_metadata=_struct_to_dict(artifact.metadata),
             task_id=payload.task_id or None,
             context_id=payload.context_id or None,
             metadata=_struct_to_dict(payload.metadata),

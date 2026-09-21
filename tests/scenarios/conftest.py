@@ -10,7 +10,12 @@ import pytest
 import pytest_asyncio
 
 from tests.scenarios.commands import COMMANDS_BY_KEY
-from tests.scenarios.frameworks import FRAMEWORKS, Framework, unsupported_reason
+from tests.scenarios.frameworks import (
+    FRAMEWORKS,
+    Framework,
+    divergence_reason,
+    unsupported_reason,
+)
 from tests.scenarios.harness import ScenarioClient, ServeProcess, ServeVariant
 from tests.scenarios.harness.serve import configs_root
 
@@ -55,12 +60,35 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
         if item.get_closest_marker("asyncio") is not None:
             item.add_marker(pytest.mark.asyncio(loop_scope="session"), append=False)
 
+        _mark_known_divergence(item)
+
         marker = item.get_closest_marker("variant")
         if marker is not None and marker.args[0] not in templates:
             raise pytest.UsageError(
                 f"{item.nodeid}: @pytest.mark.variant({marker.args[0]!r}) names no template "
                 f"under {configs_root()}"
             )
+
+
+def _mark_known_divergence(item: pytest.Item) -> None:
+    """Expect the failure of a guarantee one adapter does not hold yet.
+
+    A scenario states one guarantee for every framework. When an adapter does
+    not hold it, the answer is neither a branch in the test nor a deleted
+    assertion: the pair is written down in ``frameworks.DIVERGENCES`` with
+    what that adapter does instead, and the scenario is expected to fail here
+    - strictly, so the entry cannot outlive the defect it records.
+    """
+    marker = item.get_closest_marker("divergence")
+    if marker is None:
+        return
+    params = getattr(item, "callspec", None)
+    framework_name = params.params.get("framework") if params is not None else None
+    if framework_name is None:
+        return
+    reason = divergence_reason(framework_name, marker.args[0])
+    if reason:
+        item.add_marker(pytest.mark.xfail(reason=reason, strict=True))
 
 
 @pytest.fixture(scope="session", params=[framework.name for framework in FRAMEWORKS])

@@ -18,6 +18,8 @@ __all__ = [
     "FRAMEWORKS_BY_NAME",
     "UNSUPPORTED",
     "unsupported_reason",
+    "DIVERGENCES",
+    "divergence_reason",
     "implemented_commands",
     "agents_root",
 ]
@@ -87,6 +89,27 @@ UNSUPPORTED: dict[tuple[str, str], str] = {
 def unsupported_reason(framework: str, command_key: str) -> str | None:
     """Why this framework does not implement this command, or None."""
     return UNSUPPORTED.get((framework, command_key))
+
+
+DIVERGENCES: dict[tuple[str, str], str] = {
+    # (framework name, divergence key) -> what this adapter does instead.
+    #
+    # Different from UNSUPPORTED: there the framework cannot do the thing at
+    # all and the scenario is skipped. Here both adapters do it and they
+    # disagree about the result, which is a defect in one of them. The
+    # scenario states the guarantee and is expected to fail on the listed
+    # adapter, strictly: the day the adapter starts holding it, this entry has
+    # to go or the run fails.
+    #
+    # Empty: no adapter is currently known to break a guarantee the scenarios
+    # state. The table stays because the next one found is recorded here rather
+    # than by weakening the scenario that found it.
+}
+
+
+def divergence_reason(framework: str, divergence_key: str) -> str | None:
+    """What this framework does instead of holding that guarantee, or None."""
+    return DIVERGENCES.get((framework, divergence_key))
 
 
 def implemented_commands(framework: Framework) -> frozenset[str]:

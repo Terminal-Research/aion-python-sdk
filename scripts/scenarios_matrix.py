@@ -37,6 +37,7 @@ from tests.scenarios.frameworks import (  # noqa: E402
     UNSUPPORTED,
     Framework,
     implemented_commands,
+    divergence_reason,
     unsupported_reason,
 )
 
@@ -84,6 +85,7 @@ class Scenario:
     command: str | None
     variant: str
     xfail: str | None
+    divergence: str | None = None
     frameworks: list[str] = field(default_factory=list)
 
     @property
@@ -97,7 +99,9 @@ class Scenario:
         The reason behind a ``skip`` is not repeated here: it is one row of
         the UNSUPPORTED table, which every skipped cell links to. An
         ``xfail`` keeps its reason, because that one is about this scenario
-        and nothing else names it.
+        and nothing else names it - and a divergence is an xfail on one
+        framework and nothing on the other, so it is read per framework out
+        of the registry rather than off the marker.
         """
         if self.frameworks and framework.name not in self.frameworks:
             return NOT_PARAMETRIZED
@@ -106,6 +110,9 @@ class Scenario:
                 return SKIP
             if self.command not in implemented_commands(framework):
                 return GAP
+        if self.divergence:
+            reason = divergence_reason(framework.name, self.divergence)
+            return f"xfail: {reason}" if reason else RUNS
         if self.xfail:
             return f"xfail: {self.xfail}"
         return RUNS
@@ -175,6 +182,7 @@ def collect(suite_names: set[str]) -> list[Scenario]:
             command = item.get_closest_marker("command")
             variant = item.get_closest_marker("variant")
             xfail = item.get_closest_marker("xfail")
+            divergence = item.get_closest_marker("divergence")
             doc = inspect.getdoc(getattr(item, "obj", None)) or ""
             scenario = Scenario(
                 file=file,
@@ -184,7 +192,11 @@ def collect(suite_names: set[str]) -> list[Scenario]:
                 suites=tuple(m.name for m in item.iter_markers() if m.name in suite_names),
                 command=command.args[0] if command else None,
                 variant=variant.args[0] if variant else DEFAULT_VARIANT,
-                xfail=str(xfail.kwargs.get("reason", "")) if xfail else None,
+                # A divergence puts its own xfail on the item per framework,
+                # so the marker here would describe whichever one was
+                # collected first. The registry answers per framework.
+                xfail=str(xfail.kwargs.get("reason", "")) if xfail and not divergence else None,
+                divergence=divergence.args[0] if divergence else None,
             )
             scenarios[base_id] = scenario
         callspec = getattr(item, "callspec", None)

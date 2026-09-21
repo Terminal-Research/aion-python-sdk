@@ -20,6 +20,7 @@ from aion.core.constants.a2a import (
     BEHAVIOUR_EVOLUTION_DIRECTIVE_EVENT_PAYLOAD_SCHEMA_V1,
     BEHAVIOUR_EVOLUTION_DIRECTIVE_EVENT_TYPE_V1,
     BEHAVIOUR_EVOLUTION_RESULT_ACTION_PAYLOAD_SCHEMA_V1,
+    BEHAVIOUR_EVOLUTION_SUBTASK_COMPLETED_PAYLOAD_SCHEMA_V1,
     BEHAVIOUR_EVOLUTION_VERDICT_EVENT_PAYLOAD_SCHEMA_V1,
     BEHAVIOUR_EVOLUTION_VERDICT_EVENT_TYPE_V1,
 )
@@ -33,12 +34,14 @@ __all__ = [
     "RunLimits",
     "EvolutionUsage",
     "EvolutionError",
+    "EvolutionSubtaskStatus",
     "EvolutionDirectiveEventPayload",
     "EvolutionVerdictEventPayload",
     "EvolutionResultActionPayload",
     "EvolutionCommandStartedPayload",
     "EvolutionCommandCompletedPayload",
     "EvolutionAgentMessagePayload",
+    "EvolutionSubtaskCompletedPayload",
 ]
 
 
@@ -343,6 +346,36 @@ class EvolutionError(A2ABaseModel):
     )
 
 
+class EvolutionSubtaskStatus(A2ABaseModel):
+    """One entry of the evolution's subtask plan, as its spec document states it.
+
+    The plan is the evolution's own decomposition of the work, written into the
+    spec and updated as the work proceeds. It describes the whole evolution,
+    not one run: on a resumed evolution it includes subtasks earlier runs
+    finished.
+
+    ``status`` is a plain string and not an enum, deliberately. The improver
+    reads it out of a document its executor wrote, and the vocabulary that
+    document is supposed to use (``not started``, ``in progress``, ``done``,
+    ``deferred``) is a discipline the executor follows rather than a guarantee
+    the improver can make. Validating here would turn "the plan says something
+    unexpected" into "there is no plan", so an unexpected value is passed
+    through as written. A consumer that branches on it should treat anything
+    outside that vocabulary as "not done".
+    """
+
+    id: str = Field(description='Subtask identifier from its heading (e.g. "A", "3").')
+    title: str = Field(default="", description="Subtask title, as written in the plan.")
+    status: str = Field(
+        default="",
+        description=(
+            "Status verbatim from the plan; empty when the entry carried none. "
+            "Usually one of 'not started', 'in progress', 'done', 'deferred' - "
+            "but see this model's note: the value is not validated."
+        ),
+    )
+
+
 class EvolutionResultActionPayload(A2ABaseModel):
     """Outbound run result reported by the improver once a run completes."""
 
@@ -393,6 +426,17 @@ class EvolutionResultActionPayload(A2ABaseModel):
         default=None,
         description="Repo-relative path of the evolution's spec document, if captured.",
     )
+    subtasks: list[EvolutionSubtaskStatus] = Field(
+        default_factory=list,
+        description=(
+            "The evolution's subtask plan and where each subtask stands, as the "
+            "spec document reads once the run has finished. Empty when no spec "
+            "was captured or it carried no plan - best-effort, like the spec "
+            "capture it comes from. This is the authoritative final state; the "
+            "EvolutionSubtaskCompletedPayload events streamed during the run are "
+            "the same plan seen earlier."
+        ),
+    )
     rescue_pushed: bool = Field(
         default=False,
         description=(
@@ -407,13 +451,13 @@ class EvolutionResultActionPayload(A2ABaseModel):
     # process's lifetime could ever reach, so a path naming it would be dead
     # information from the moment it is read. When the bundle is small enough
     # (see the improver's own size ceiling), it instead rides the task as its
-    # own artifact, named `rescue-{context_id}.bundle` — that artifact's
-    # presence is the signal a consumer acts on, not a field here.
+    # own `evolution-rescue-bundle` artifact — that artifact's presence is the
+    # signal a consumer acts on, not a field here.
     rescue_bundle_created: bool = Field(
         default=False,
         description=(
             "True as soon as the rescue fallback produced a git bundle, whether or "
-            "not it was small enough to attach as the `rescue-{context_id}.bundle` "
+            "not it was small enough to attach as the `evolution-rescue-bundle` "
             "artifact. Distinguishes 'nothing survived the failure' (False) from "
             "'work survived but could not be handed off' (True, with no matching "
             "artifact — the bundle exceeded the improver's size ceiling)."
@@ -496,4 +540,53 @@ class EvolutionAgentMessagePayload(A2ABaseModel):
     final: bool = Field(
         default=False,
         description="True for the last message of the run (the durable summary).",
+    )
+
+
+class EvolutionSubtaskCompletedPayload(A2ABaseModel):
+    """The evolution's subtask plan, reported as the run advances through it.
+
+    Unlike the command and intermediate-message payloads, this one is kept in
+    task history: how far the work got is part of the durable record of the
+    task, not a progress bar that only a client listening at that second sees.
+    A caller reading a finished task therefore finds one of these per subtask
+    the run closed.
+
+    ``subtasks`` is the whole plan every time, not the entry that changed: it
+    is the denominator (how much work there is) and the statuses in it are the
+    numerator, so one event is enough to render progress and a consumer that
+    joined late has missed nothing.
+
+    Best-effort. The improver derives these from what its executor commits, so
+    an executor that departs from the commit discipline simply produces fewer
+    of them - a run may emit none at all, and a caller must not expect exactly
+    one per subtask. The run's result payload carries the final plan
+    regardless.
+    """
+
+    SCHEMA_URI: ClassVar[str] = BEHAVIOUR_EVOLUTION_SUBTASK_COMPLETED_PAYLOAD_SCHEMA_V1
+
+    subtasks: list[EvolutionSubtaskStatus] = Field(
+        default_factory=list,
+        description="The evolution's whole plan as it reads at this moment.",
+    )
+    subtask_id: Optional[str] = Field(
+        default=None,
+        description=(
+            "The subtask that just finished, matching one entry's `id`. Absent "
+            "on the event that announces a newly written plan, where nothing "
+            "has been implemented yet but the plan itself is now known."
+        ),
+    )
+    subtasks_completed: int = Field(
+        default=0,
+        description=(
+            "How many entries of `subtasks` are finished. Published rather than "
+            "left to the reader because `status` is a free string: the rule is "
+            "that only 'done' counts and everything else reads as unfinished, "
+            "and a progress bar should not have to re-derive it. The "
+            "denominator is the length of `subtasks`. Note for consumers: the "
+            "part this rides on is a protobuf Struct, which has no integer "
+            "type, so the value arrives as a JSON number (2 reads back as 2.0)."
+        ),
     )

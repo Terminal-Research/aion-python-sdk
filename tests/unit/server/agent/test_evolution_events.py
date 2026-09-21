@@ -29,6 +29,7 @@ from aion.core.constants.a2a import (
     BEHAVIOUR_EVOLUTION_COMMAND_COMPLETED_PAYLOAD_SCHEMA_V1,
     BEHAVIOUR_EVOLUTION_COMMAND_STARTED_PAYLOAD_SCHEMA_V1,
     BEHAVIOUR_EVOLUTION_RESULT_ACTION_PAYLOAD_SCHEMA_V1,
+    BEHAVIOUR_EVOLUTION_SUBTASK_COMPLETED_PAYLOAD_SCHEMA_V1,
     EVENT_EXTENSION_URI_V1,
 )
 from aion.server.a2a.utils import is_ephemeral_status_event
@@ -47,6 +48,7 @@ class BranchResolved:
     branch: str
     resumed: bool
     prior_commits: int = 0
+    subtasks: tuple = ()
 
 
 @dataclass(frozen=True)
@@ -81,6 +83,28 @@ class ExecutorTrace:
 class SpecCaptured:
     path: str
     content: str
+
+
+@dataclass(frozen=True)
+class SubtaskStatus:
+    id: str
+    title: str = ""
+    status: str = ""
+
+
+@dataclass(frozen=True)
+class SubtaskCompleted:
+    subtask_id: Optional[str] = None
+    subtasks: tuple = ()
+    phase: Optional[str] = None
+
+
+def _plan(*entries: tuple[str, str, str]) -> tuple[SubtaskStatus, ...]:
+    """A subtask plan as the toolkit reports it: (id, title, status) each."""
+    return tuple(
+        SubtaskStatus(id=identifier, title=title, status=status)
+        for identifier, title, status in entries
+    )
 
 
 def _task() -> Task:
@@ -199,6 +223,65 @@ class TestMapStreamEvent:
         assert _progress(event)["resumed"] is True
         assert _progress(event)["priorCommits"] == 4
 
+    def test_a_resume_counts_steps_rather_than_commits(self):
+        """The plan the branch already carries arrives with the first event.
+
+        Steps are what the requester asked for; commits are how they happened
+        to be recorded. Without this the continuation of a nine-step evolution
+        says nothing about six finished steps until it closes one of its own.
+        """
+        event = _map_stream_event(
+            _task(),
+            BranchResolved(
+                branch="evolution/ctx-1",
+                resumed=True,
+                prior_commits=4,
+                subtasks=_plan(
+                    ("A", "Add the retry helper", "done"),
+                    ("B", "Wire it into the client", "done"),
+                    ("C", "Cover the timeout path", "not started"),
+                ),
+            ),
+        )
+
+        assert _text(event) == (
+            "Picking up where the previous run left off — 2 of 3 steps already done"
+        )
+        assert "change(s)" not in _text(event)
+
+    def test_a_resume_without_a_plan_falls_back_to_the_commit_count(self):
+        """An evolution whose spec holds no plan still has something to say."""
+        event = _map_stream_event(
+            _task(), BranchResolved(branch="evolution/ctx-1", resumed=True, prior_commits=4)
+        )
+
+        assert _text(event) == (
+            "Picking up where the previous run left off — 4 change(s) already made"
+        )
+
+    def test_a_resumed_plan_reaches_task_metadata_from_the_first_event(self):
+        """Not only the sentence: a UI polling the task sees the plan too."""
+        event = _map_stream_event(
+            _task(),
+            BranchResolved(
+                branch="evolution/ctx-1",
+                resumed=True,
+                subtasks=_plan(("A", "Add the retry helper", "done")),
+            ),
+        )
+
+        assert _progress(event)["subtasks"] == [
+            {"id": "A", "title": "Add the retry helper", "status": "done"}
+        ]
+
+    def test_a_fresh_start_carries_no_plan_because_there_is_none(self):
+        """The spec is the scaffold's template at this point — nothing to read."""
+        event = _map_stream_event(
+            _task(), BranchResolved(branch="evolution/ctx-1", resumed=False)
+        )
+
+        assert "subtasks" not in _progress(event)
+
     def test_resume_without_prior_work_omits_the_count(self):
         event = _map_stream_event(
             _task(), BranchResolved(branch="evolution/ctx-1", resumed=True, prior_commits=0)
@@ -314,6 +397,186 @@ class TestMapStreamEvent:
 
     def test_unknown_event_types_are_dropped(self):
         assert _map_stream_event(_task(), SimpleNamespace()) is None
+
+
+class TestSubtaskCompleted:
+    """A subtask of the plan that the run closed.
+
+    The one live event this module persists. Everything else that narrates a
+    run in flight is ephemeral; this is the answer to "how much is left", and a
+    caller reading the task afterwards is owed it as much as a caller who
+    happened to be listening.
+
+    Always about a completion: the plan becoming *known* is reported by
+    `BranchResolved` and `SpecCaptured`, never here.
+    """
+
+    THREE_STEPS = (
+        ("A", "Add the retry helper", "done"),
+        ("B", "Wire it into the client", "in progress"),
+        ("C", "Cover the timeout path", "not started"),
+    )
+
+    def test_a_finished_subtask_is_kept_in_task_history(self):
+        """Not ephemeral — the whole point of mapping this event.
+
+        A progress bar that only a live listener sees would leave a resumed or
+        re-read task with no record of what the run actually closed.
+        """
+        event = _map_stream_event(
+            _task(), SubtaskCompleted(subtasks=_plan(*self.THREE_STEPS), subtask_id="A")
+        )
+
+        assert isinstance(event, TaskStatusUpdateEvent)
+        assert event.status.state == TaskState.TASK_STATE_WORKING
+        assert is_ephemeral_status_event(event) is False
+
+    def test_the_text_counts_steps_rather_than_naming_the_mechanism(self):
+        """What the user gets is where the work stands, in their terms.
+
+        No commit, no phase number, no spec file: those are means they never
+        asked for. The title is theirs, though — it is what they recognise.
+        """
+        event = _map_stream_event(
+            _task(),
+            SubtaskCompleted(subtasks=_plan(*self.THREE_STEPS), subtask_id="A", phase="2"),
+        )
+
+        assert _text(event) == "Finished step A: Add the retry helper — 1 of 3 done"
+
+    def test_a_step_with_no_title_is_still_named(self):
+        event = _map_stream_event(
+            _task(), SubtaskCompleted(subtasks=_plan(("A", "", "done")), subtask_id="A")
+        )
+
+        assert _text(event) == "Finished step A — 1 of 1 done"
+
+
+
+
+
+    def test_the_payload_carries_the_whole_plan_and_the_step(self):
+        event = _map_stream_event(
+            _task(),
+            SubtaskCompleted(subtasks=_plan(*self.THREE_STEPS), subtask_id="A", phase="2"),
+        )
+
+        assert _part_schema(event) == BEHAVIOUR_EVOLUTION_SUBTASK_COMPLETED_PAYLOAD_SCHEMA_V1
+        assert _data(event) == {
+            "subtasks": [
+                {"id": "A", "title": "Add the retry helper", "status": "done"},
+                {"id": "B", "title": "Wire it into the client", "status": "in progress"},
+                {"id": "C", "title": "Cover the timeout path", "status": "not started"},
+            ],
+            "subtaskId": "A",
+            "subtasksCompleted": 1,
+        }
+
+    def test_the_commit_marker_phase_is_not_published(self):
+        """The toolkit names the phase its commit marker carried; we drop it.
+
+        A plan entry has no phase of its own, so the finished step's phase
+        groups nothing — it would be a field a consumer can only print.
+        """
+        event = _map_stream_event(
+            _task(), SubtaskCompleted(subtasks=_plan(("A", "First", "done")), subtask_id="A", phase="2")
+        )
+
+        assert "phase" not in _data(event)
+        assert "2" not in str(_data(event))
+
+    def test_the_completed_count_applies_the_status_rule_for_every_consumer(self):
+        """`status` is a free string, so the count is published, not derived.
+
+        Asserted against a plan whose unfinished entries are worded three
+        different ways: the number has to come out the same for all of them.
+        """
+        event = _map_stream_event(
+            _task(),
+            SubtaskCompleted(
+                subtasks=_plan(
+                    ("A", "First", "done"),
+                    ("B", "Second", "in progress"),
+                    ("C", "Third", "blocked"),
+                    ("D", "Fourth", ""),
+                ),
+                subtask_id="A",
+            ),
+        )
+
+        assert _data(event)["subtasksCompleted"] == 1
+
+
+    def test_the_plan_also_reaches_task_metadata(self):
+        """The progress struct is what lands on `task.metadata`, so "where does
+        this evolution stand" is answerable from the task itself."""
+        event = _map_stream_event(
+            _task(), SubtaskCompleted(subtasks=_plan(*self.THREE_STEPS), subtask_id="A")
+        )
+
+        progress = _progress(event)
+        assert [entry["status"] for entry in progress["subtasks"]] == [
+            "done",
+            "in progress",
+            "not started",
+        ]
+        assert progress["stage"] == "executing"
+
+    def test_which_step_this_is_stays_off_the_progress_struct(self):
+        """One fact, one channel. `subtaskId` is about this event; the struct
+        says where the run stands."""
+        event = _map_stream_event(
+            _task(), SubtaskCompleted(subtasks=_plan(*self.THREE_STEPS), subtask_id="A")
+        )
+
+        progress = _progress(event)
+        assert "subtaskId" not in progress
+        assert "phase" not in progress
+
+    def test_an_unexpected_status_word_does_not_count_as_done(self):
+        """The status is a string the executor wrote, not an enum. Anything
+        outside the vocabulary reads as unfinished, which cannot overstate what
+        the run delivered."""
+        event = _map_stream_event(
+            _task(),
+            SubtaskCompleted(
+                subtasks=_plan(("A", "First", "DONE"), ("B", "Second", "wip")),
+                subtask_id="A",
+            ),
+        )
+
+        assert "1 of 2 done" in _text(event)
+        assert _data(event)["subtasks"][1]["status"] == "wip"
+
+    def test_an_event_naming_no_subtask_is_dropped_and_logged(self, caplog):
+        """The event is named for a completion; one without a subtask is drift.
+
+        Dropped rather than rendered as a plan announcement: that would put a
+        second shape behind one schema, which is what the old name allowed.
+        Logged, because a toolkit producing these has diverged from this
+        mapper and someone should learn that from more than a missing update.
+        """
+        with caplog.at_level("WARNING"):
+            mapped = _map_stream_event(
+                _task(), SubtaskCompleted(subtasks=_plan(("A", "First", "done")))
+            )
+
+        assert mapped is None
+        assert "without a subtask id" in caplog.text
+
+    def test_a_plan_entry_without_an_id_is_left_out(self):
+        """An entry nothing can refer to would inflate the denominator without
+        ever being addressable by a later event."""
+        event = _map_stream_event(
+            _task(),
+            SubtaskCompleted(
+                subtask_id="A",
+                subtasks=(SubtaskStatus(id="", title="Nameless"), SubtaskStatus(id="A")),
+            ),
+        )
+
+        assert [entry["id"] for entry in _data(event)["subtasks"]] == ["A"]
+        assert "of 1 done" in _text(event)
 
 
 class TestStreamViewShapesCommandOutput:
@@ -487,6 +750,51 @@ class TestResultEvents:
         out = _result_events(_task(), _result("succeeded", resumed=True))
         data = MessageToDict(out[0].artifact.parts[0].data)
         assert data["resumed"] is True
+
+    def test_the_result_artifact_carries_the_plan_as_it_ends(self):
+        """The authoritative copy of the plan.
+
+        Read off the spec at the end of the run, so it holds even for a run
+        whose executor never followed the commit discipline and therefore
+        streamed no subtask events at all.
+        """
+        out = _result_events(
+            _task(),
+            _result(
+                "succeeded",
+                subtasks=_plan(("A", "Add the retry helper", "done"), ("B", "Wire it", "done")),
+            ),
+        )
+
+        data = MessageToDict(out[0].artifact.parts[0].data)
+        assert data["subtasks"] == [
+            {"id": "A", "title": "Add the retry helper", "status": "done"},
+            {"id": "B", "title": "Wire it", "status": "done"},
+        ]
+
+    def test_the_final_plan_also_reaches_task_metadata(self):
+        """Same reason `usage` is there: the struct is what lands on the task,
+        so a finished evolution reports its plan without opening the artifact."""
+        out = _result_events(
+            _task(), _result("succeeded", subtasks=_plan(("A", "Add the retry helper", "done")))
+        )
+
+        assert _progress(out[-1])["subtasks"] == [
+            {"id": "A", "title": "Add the retry helper", "status": "done"}
+        ]
+
+    def test_a_run_without_a_plan_says_so_on_the_artifact_and_nothing_on_the_task(self):
+        """An evolution with no spec plan is ordinary, not an error.
+
+        The artifact states it — an empty plan is an answer, and this payload
+        describes exactly one run. The progress struct stays silent instead,
+        because it is cumulative and shared with every event of the context: an
+        empty list written there would erase a plan an earlier event reported.
+        """
+        out = _result_events(_task(), _result("succeeded"))
+
+        assert MessageToDict(out[0].artifact.parts[0].data)["subtasks"] == []
+        assert "subtasks" not in _progress(out[-1])
 
     def test_pr_url_lands_in_payload_and_terminal_text(self):
         out = _result_events(

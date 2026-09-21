@@ -145,10 +145,9 @@ class AionEventPipeline:
             logger.warning("Cannot process event silently: task_manager is not initialized.")
 
     async def _emit_to_client(self, event) -> None:
-        """Emit event to client via event queue.
+        """Put the event on the queue, for the consumer to deliver and persist.
 
-        StatusUpdate and Artifact events are streamed to the client through
-        the event queue while also being persisted to the database.
+        Unlike a Task or a Message, which this pipeline stores itself.
         """
         event_copy = copy.deepcopy(event)
         await self._queue.enqueue_event(event_copy)

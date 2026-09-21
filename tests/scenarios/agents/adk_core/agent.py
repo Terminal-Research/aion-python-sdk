@@ -47,10 +47,12 @@ class ScenarioAgent(BaseAgent):
         elif (behavior := BEHAVIORS.get(command.key)) is None:
             await thread.reply(not_implemented_text(command.key))
         else:
-            await behavior(Invocation(thread=thread, context=runtime, command=command))
-
-        return
-        yield  # never reached: it makes this the async generator ADK expects
+            # A behaviour that answers through the thread returns nothing; one
+            # that hands the server an A2A payload returns the ADK event
+            # carrying it, which only the agent itself can yield.
+            emitted = await behavior(Invocation(thread=thread, context=runtime, command=command))
+            if emitted is not None:
+                yield emitted
 
 
 def create_agent() -> ScenarioAgent:
