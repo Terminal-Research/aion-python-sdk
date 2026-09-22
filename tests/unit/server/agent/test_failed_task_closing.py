@@ -113,7 +113,7 @@ async def test_a_reported_outcome_is_not_overwritten(queue, updater, pipeline) -
     assert _terminal_states(queue) == [TaskState.TASK_STATE_COMPLETED]
 
 
-async def test_a_failure_while_closing_is_swallowed(updater, pipeline) -> None:
+async def test_a_failure_while_closing_is_swallowed(queue, updater, pipeline) -> None:
     """The original exception is what the caller must see, not this one.
 
     Closing the task needs the store, which is one of the things that may
@@ -127,3 +127,5 @@ async def test_a_failure_while_closing_is_swallowed(updater, pipeline) -> None:
     updater.failed = _unavailable
 
     await AionAgentRequestExecutor._close_failed_task(updater, pipeline)
+
+    assert _terminal_states(queue) == []

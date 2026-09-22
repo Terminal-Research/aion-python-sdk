@@ -105,7 +105,8 @@ class TestBasePluginProtocolTeardown:
     async def test_teardown_default_does_not_raise(self):
         """Default teardown() completes without raising an exception."""
         plugin = _ConcretePlugin()
-        await plugin.teardown()  # should complete without error
+        result = await plugin.teardown()
+        assert result is None
 
     async def test_teardown_can_be_overridden(self):
         """A subclass can override teardown() with custom cleanup logic."""
@@ -122,8 +123,10 @@ class TestBasePluginProtocolTeardown:
     async def test_teardown_is_idempotent(self):
         """teardown() can be called multiple times without raising."""
         plugin = _ConcretePlugin()
-        await plugin.teardown()
-        await plugin.teardown()  # second call should also not raise
+        result = await plugin.teardown()
+        assert result is None
+        result = await plugin.teardown()
+        assert result is None
 
 
 class TestBasePluginProtocolHealthCheck:
@@ -187,7 +190,8 @@ class TestAgentPluginProtocolConfigureApp:
         plugin = _ConcreteAgentPlugin()
         app = MagicMock()
         agent = MagicMock()
-        await plugin.configure_app(app, agent)  # default impl — should not raise
+        result = await plugin.configure_app(app, agent)
+        assert result is None
 
     async def test_configure_app_can_be_overridden(self):
         """A subclass can override configure_app() to perform custom app configuration."""
@@ -207,7 +211,8 @@ class TestAgentPluginProtocolInheritance:
     async def test_inherits_default_teardown(self):
         """AgentPluginProtocol inherits the default teardown() that does not raise."""
         plugin = _ConcreteAgentPlugin()
-        await plugin.teardown()  # should not raise
+        result = await plugin.teardown()
+        assert result is None
 
     async def test_inherits_default_health_check(self):
         """AgentPluginProtocol inherits the default health_check() returning True."""

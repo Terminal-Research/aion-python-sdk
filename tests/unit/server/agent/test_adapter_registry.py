@@ -52,7 +52,8 @@ class TestUnregister:
 
     def test_unregister_nonexistent_does_not_raise(self, clean_registry):
         """Unregistering an unknown framework name does not raise an exception."""
-        clean_registry.unregister("nonexistent")  # should not raise
+        clean_registry.unregister("nonexistent")
+        assert not clean_registry.is_registered("nonexistent")
 
     def test_unregister_allows_re_registration(self, clean_registry):
         """After unregistering, the same framework name can be registered again."""

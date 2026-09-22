@@ -347,7 +347,8 @@ class TestVerifyDeclaredExtensions:
         aion_a2a_extension_registry.reset_to_default()
         params = SendMessageRequest(message=Message(message_id="m-1", role=Role.ROLE_USER))
 
-        self._verify(params, self._call_context())
+        result = self._verify(params, self._call_context())
+        assert result is None
 
     def test_enabled_extension_marked_unavailable_rejected(self):
         """The silent-fallback guard: an enabled extension marked unavailable

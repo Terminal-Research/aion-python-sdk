@@ -100,7 +100,8 @@ class TestCheckEnvironment:
 
     def test_passes_with_valid_environment(self, monkeypatch):
         _set_env(monkeypatch)
-        check_environment(_daemon())  # must not raise
+        result = check_environment(_daemon())
+        assert result is None
 
     def test_missing_github_token_raises_setup_error(self, monkeypatch):
         _set_env(monkeypatch, GITHUB_TOKEN=None)
@@ -124,11 +125,13 @@ class TestCheckEnvironment:
 
     def test_aion_provider_with_daemon_identity_passes(self, monkeypatch):
         _set_env(monkeypatch, CODEX_PROVIDER="aion", CODEX_BASE_URL=None)
-        check_environment(_daemon(identity_id="daemon-1"))  # must not raise
+        result = check_environment(_daemon(identity_id="daemon-1"))
+        assert result is None
 
     def test_local_session_provider_needs_no_daemon(self, monkeypatch):
         _set_env(monkeypatch, CODEX_PROVIDER="local_session", CODEX_BASE_URL=None)
-        check_environment(None)  # must not raise
+        result = check_environment(None)
+        assert result is None
 
 
 class TestBuildWorker:

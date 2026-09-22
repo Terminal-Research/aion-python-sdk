@@ -102,6 +102,8 @@ class TestLifecycle:
         await mgr.close()
         await mgr.close()  # second call should not raise
 
+        assert mgr.is_initialized is False
+
     async def test_reinitialize_after_close(self):
         """Verify that reinitialize after close."""
         mgr = _ConcreteDbManager()

@@ -299,6 +299,8 @@ class TestAionWebSocketManager:
         """Shutdown of an agent whose connection never started must not raise."""
         await ws_manager.stop()
 
+        assert ws_manager.is_connected is False
+
     async def test_connection_state_summarizes_the_link(self, ws_manager, transport_factory):
         """Health reporting reads this, so it has to track reality."""
         await ws_manager.start()

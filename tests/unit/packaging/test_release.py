@@ -87,7 +87,10 @@ def test_version_is_read_from_the_manifest(tmp_path: Path) -> None:
 
 def test_the_real_manifest_holds_a_releasable_version() -> None:
     """The check `make release` starts with, on the manifest as committed."""
-    release.read_version()
+    version = release.read_version()
+
+    assert isinstance(version, release.Version)
+    assert version.text
 
 
 # --- recording subprocesses ---------------------------------------------------
@@ -170,7 +173,8 @@ VERSION = release.Version(text="0.2.0", prerelease=False)
 
 def test_yes_skips_the_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("builtins.input", lambda _: pytest.fail("prompted despite --yes"))
-    release.confirm(VERSION, assume_yes=True)
+    result = release.confirm(VERSION, assume_yes=True)
+    assert result is None
 
 
 def test_without_a_terminal_the_prompt_is_an_error(monkeypatch: pytest.MonkeyPatch) -> None:

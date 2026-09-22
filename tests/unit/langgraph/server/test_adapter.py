@@ -227,4 +227,6 @@ class TestValidateConfig:
         """Valid config with a path passes validation without raising."""
         config = Mock()
         config.path = "/some/path"
-        self.adapter.validate_config(config)
+        result = self.adapter.validate_config(config)
+
+        assert result is None

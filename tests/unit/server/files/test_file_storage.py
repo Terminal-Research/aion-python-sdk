@@ -595,7 +595,9 @@ class TestCompensationSeam:
             async def discard(self, receipts):
                 raise AssertionError("must not be called")
 
-        await FileUploadManager(Exploding()).discard([])
+        result = await FileUploadManager(Exploding()).discard([])
+
+        assert result is None
 
     async def test_backend_without_deletion_reports_orphans(self, caplog):
         """Saying so beats pretending the compensation happened."""

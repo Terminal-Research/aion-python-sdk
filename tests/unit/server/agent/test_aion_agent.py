@@ -329,6 +329,9 @@ class TestAionAgentExecution:
 
         assert result is snapshot
         agent._executor.get_state.assert_called_once()
+        config = agent._executor.get_state.call_args.args[0]
+        assert config.context_id == "ctx-1"
+        assert config.task_id == "t-1"
 
     async def test_cancel_delegates_to_executor(self):
         """cancel on a built agent delegates to the executor's cancel method."""
@@ -338,6 +341,9 @@ class TestAionAgentExecution:
         await agent.cancel(ctx)
 
         agent._executor.cancel.assert_called_once()
+        config = agent._executor.cancel.call_args.args[0]
+        assert config.task_id == "t1"
+        assert config.context_id == "ctx-1"
 
     async def test_stream_delegates_to_executor(self):
         """stream on a built agent delegates to the executor's stream method."""
@@ -355,6 +361,11 @@ class TestAionAgentExecution:
             events.append(ev)
 
         agent._executor.stream.assert_called_once()
+        call_args = agent._executor.stream.call_args
+        assert call_args.args[0] is ctx
+        config = call_args.args[1]
+        assert config.task_id == "t1"
+        assert config.context_id == "ctx-1"
 
 class TestAionAgentCard:
     def test_card_lazy_loaded(self):
@@ -437,7 +448,10 @@ class TestAgentManager:
 
     async def test_clear_on_empty_manager_is_noop(self):
         """clear on a manager with no agent does not raise."""
-        self.manager.clear()  # should not raise
+        self.manager.clear()
+
+        assert not self.manager.is_loaded
+        assert self.manager.agent is None
 
     def test_get_agent_returns_none_when_empty(self):
         """get_agent returns None when no agent has been created."""

@@ -75,7 +75,8 @@ async def test_a_dispatch_of_a_different_kind_does_not_wake_this_waiter(listener
 
 async def test_a_dispatch_with_no_registered_waiter_is_a_silent_no_op(listener) -> None:
     """Every ordinary terminal write reaches here; almost none has a waiter."""
-    listener._dispatch(payload(CANCEL_RESOLVED, "nobody-is-waiting"))  # must not raise
+    listener._dispatch(payload(CANCEL_RESOLVED, "nobody-is-waiting"))
+    assert listener._waiters == {}
 
 
 async def test_two_registrations_for_the_same_key_share_one_event(listener) -> None:
@@ -220,14 +221,17 @@ async def test_a_waiter_and_a_subscriber_both_fire_from_one_dispatch(listener) -
 
 
 async def test_an_unparseable_payload_is_skipped_not_raised(listener) -> None:
-    listener._dispatch("not json at all")  # must not raise
+    listener._dispatch("not json at all")
+    assert listener._waiters == {}
 
 
 async def test_an_unrecognized_kind_is_skipped_not_raised(listener) -> None:
     """Forward compatibility: a newer deployment's kind must not crash an older one."""
-    listener._dispatch('{"kind": "some_future_kind", "task_id": "task-1"}')  # must not raise
+    listener._dispatch('{"kind": "some_future_kind", "task_id": "task-1"}')
+    assert listener._waiters == {}
 
 
 async def test_stop_before_start_is_a_safe_no_op(listener) -> None:
     """Shutdown paths call ``stop`` unconditionally; it must tolerate this."""
-    await listener.stop()  # never started; must not raise
+    await listener.stop()
+    assert listener._waiters == {}

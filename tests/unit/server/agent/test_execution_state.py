@@ -24,7 +24,7 @@ class TestInterruptInfoGetPromptText:
         info = InterruptInfo(value={"type": "approval", "choices": ["yes", "no"]})
         result = info.get_prompt_text()
         assert isinstance(result, str)
-        assert len(result) > 0
+        assert result == "Agent requires input"
 
     def test_empty_prompt_falls_through_to_value(self):
         """get_prompt_text falls through to value when prompt is an empty string."""

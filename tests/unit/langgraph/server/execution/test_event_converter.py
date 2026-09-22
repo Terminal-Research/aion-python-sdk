@@ -38,6 +38,7 @@ class TestConvert:
             result = converter.convert("messages", msg)
         assert len(result) == 1
         assert isinstance(result[0], TaskStatusUpdateEvent)
+        assert result[0].status.state == TaskState.TASK_STATE_WORKING
 
     def test_unknown_event_type_returns_empty_list(self, converter):
         """Unknown event types produce no events."""

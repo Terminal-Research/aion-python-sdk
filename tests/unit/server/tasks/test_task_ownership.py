@@ -97,6 +97,9 @@ class _ScriptedProvider:
         """
         self.renew_calls += 1
         if self.delay:
+            # Intentional real-time delay: the test for late-but-confirmed
+            # renewal needs time.monotonic() to advance past the claim's
+            # deadline while the renewal is in flight.
             await asyncio.sleep(self.delay)
         outcome = self.outcomes.popleft()
         if isinstance(outcome, Unknown):

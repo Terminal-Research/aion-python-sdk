@@ -419,4 +419,6 @@ class TestThreadTyping:
         # typing silently does nothing when no stream writer is available
         thread = make_thread()
         with patch(_GET_STREAM_WRITER, side_effect=RuntimeError("no writer")):
-            await thread.typing("Processing...")  # must not raise
+            result = await thread.typing("Processing...")
+
+        assert result is None

@@ -328,7 +328,11 @@ class TestAionA2AExtensionRegistry:
     def test_activate_with_unknown_uri_is_a_noop(self):
         """A URI in AgentConfig.enabled_extensions with no matching
         descriptor must not raise - it just has nothing to turn on."""
+        before = {d.uri: d.active for d in aion_a2a_extension_registry.get_all()}
         aion_a2a_extension_registry.activate(["aion://extensions/does-not-exist/v1"])
+        after = {d.uri: d.active for d in aion_a2a_extension_registry.get_all()}
+
+        assert after == before
 
     def test_reset_to_default_restores_registered_value(self):
         fake_uri = "aion://extensions/test-registry-reset/v1"
@@ -406,9 +410,13 @@ class TestMarkUnavailable:
         assert descriptor.unavailable_reason == "toolkit not installed"
 
     def test_mark_unavailable_unknown_uri_is_a_noop(self):
+        before = {d.uri for d in aion_a2a_extension_registry.get_all()}
         aion_a2a_extension_registry.mark_unavailable(
             "aion://extensions/does-not-exist/v1", "whatever"
         )
+        after = {d.uri for d in aion_a2a_extension_registry.get_all()}
+
+        assert after == before
 
     def test_reset_restores_availability(self):
         fake_uri = "aion://extensions/test-registry-unavailable-reset/v1"

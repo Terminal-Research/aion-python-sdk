@@ -157,7 +157,9 @@ class TestEmptyRegistry:
 
     def test_clear_on_empty_registry_does_not_raise(self):
         """Verify that clear on empty registry does not raise."""
-        PluginRegistry().clear()  # should not raise
+        reg = PluginRegistry()
+        reg.clear()
+        assert len(reg) == 0
 
 
 class TestHas:

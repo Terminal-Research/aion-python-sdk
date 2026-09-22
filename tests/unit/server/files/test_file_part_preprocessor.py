@@ -196,7 +196,9 @@ class TestCompensation:
 
     async def test_rollback_without_uploads_is_a_no_op(self):
         pre, _ = preprocessor()
-        await pre.rollback()
+        result = await pre.rollback()
+
+        assert result is None
 
     async def test_compensation_runs_once(self):
         """The handler rolls back the failing preprocessor too; it must be safe."""
@@ -352,7 +354,9 @@ class TestFailingCompensation:
         )
         self._exploding(pre)
 
-        await pre.rollback()
+        result = await pre.rollback()
+
+        assert result is None
 
     async def test_a_failed_compensation_is_not_retried(self):
         """Receipts are released before the attempt, so rollback cannot loop."""

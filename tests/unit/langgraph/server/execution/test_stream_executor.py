@@ -153,6 +153,8 @@ class TestExecute:
 
         [e async for e in executor.execute({}, {})]
         assert preprocessor.process.call_count == 2
+        preprocessor.process.assert_any_call("values", {"state": 1})
+        preprocessor.process.assert_any_call("updates", {"node": {}})
 
     async def test_preprocessor_not_set_does_not_raise(self):
         """Missing preprocessor is handled gracefully."""
@@ -162,8 +164,9 @@ class TestExecute:
         converter.convert.return_value = []
         executor = StreamExecutor(compiled_graph=graph, converter=converter, preprocessor=None)
 
-        # should not raise
-        [e async for e in executor.execute({}, {})]
+        events = [e async for e in executor.execute({}, {})]
+
+        assert isinstance(events, list)
 
     async def test_runtime_context_passed_to_astream(self):
         """runtime_context is forwarded to astream as the 'context' kwarg."""

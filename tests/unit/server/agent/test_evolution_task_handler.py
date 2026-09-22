@@ -342,7 +342,8 @@ class TestPreflight:
         handler = _handler(worker=FakeWorker(_result()))
         ctx = _make_context()
 
-        await handler.preflight(ctx)  # must not raise
+        result = await handler.preflight(ctx)
+        assert result is None
 
     @pytest.mark.anyio
     async def test_noop_when_toolkit_not_installed(self, monkeypatch):
@@ -362,7 +363,8 @@ class TestPreflight:
         handler = EvolutionTaskHandler()
         ctx = _make_context()
 
-        await handler.preflight(ctx)  # must not raise
+        result = await handler.preflight(ctx)
+        assert result is None
 
     @pytest.mark.anyio
     async def test_raises_extension_preflight_error_on_setup_error(self, monkeypatch):

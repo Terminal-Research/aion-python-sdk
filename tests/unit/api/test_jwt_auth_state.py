@@ -217,6 +217,8 @@ def test_lock_survives_being_used_from_a_second_event_loop(rejecting_manager):
     asyncio.run(contend(rejecting_manager))
     asyncio.run(contend(rejecting_manager))
 
+    assert rejecting_manager._client.calls == 1
+
 
 @pytest.mark.anyio("asyncio")
 async def test_async_path_survives_sync_failure(valid_jwt_token) -> None:

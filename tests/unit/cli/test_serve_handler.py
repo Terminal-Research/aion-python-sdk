@@ -112,7 +112,9 @@ class TestShutdownSignal:
     async def test_monitor_returns_when_monitoring_finishes_on_its_own(self, handler):
         with patch.object(serve, "ServeMonitoringService") as MockService:
             MockService.return_value.execute = AsyncMock(return_value=None)
-            await asyncio.wait_for(handler._monitor(), timeout=1.0)
+            result = await asyncio.wait_for(handler._monitor(), timeout=1.0)
+
+        assert result is None
 
     async def test_monitor_surfaces_a_monitoring_failure(self, handler):
         with patch.object(serve, "ServeMonitoringService") as MockService:
@@ -148,10 +150,11 @@ class TestShutdownSignal:
 class TestBackgroundTasks:
     async def test_task_is_referenced_until_it_finishes(self, handler):
         started = asyncio.Event()
+        proceed = asyncio.Event()
 
         async def _work():
             started.set()
-            await asyncio.sleep(0.01)
+            await proceed.wait()
 
         task = asyncio.ensure_future(_work())
         handler._track_background_task(task, "work")
@@ -159,6 +162,7 @@ class TestBackgroundTasks:
         await started.wait()
         assert task in handler._background_tasks
 
+        proceed.set()
         await task
         await asyncio.sleep(0)
         assert task not in handler._background_tasks

@@ -97,7 +97,11 @@ async def test_a_lease_outlives_its_ttl_while_the_heartbeat_runs(supervised) -> 
     assert isinstance(claim, Claim)
     first_expiry = await lease_expiry(task_id)
 
-    await asyncio.sleep(TTL_SECONDS * 1.5)
+    async def _lease_renewed():
+        current = await lease_expiry(task_id)
+        return current is not None and current > first_expiry
+
+    await _until_async_pred(_lease_renewed, timeout=TTL_SECONDS * 3)
 
     assert holder.claim_for(task_id) is not None
     assert await lease_expiry(task_id) > first_expiry
@@ -119,10 +123,14 @@ async def test_a_lease_is_let_go_once_supervision_stops(supervised) -> None:
     assert isinstance(claim, Claim)
 
     await holder.stop()
-    await asyncio.sleep(TTL_SECONDS * 1.5)
 
     successor = _provider("pod-b", settings=short_lease(TTL_SECONDS))
-    assert isinstance(await successor.acquire(task_id), Claim)
+
+    async def _successor_acquired():
+        result = await successor.acquire(task_id)
+        return isinstance(result, Claim)
+
+    await _until_async_pred(_successor_acquired, timeout=TTL_SECONDS * 3)
     assert isinstance(await holder.renew(claim), Lost)
 
 
@@ -164,6 +172,18 @@ async def test_the_periodic_reaper_settles_a_dead_owner_unprompted(
 
     await _until_async(lambda: task_state(task_id), "TASK_STATE_FAILED")
     assert await claim_count() == 0
+
+
+async def _until_async_pred(predicate, timeout: float = 5.0) -> None:
+    """Wait for an async predicate to return True."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while True:
+        if await predicate():
+            return
+        if loop.time() >= deadline:
+            raise AssertionError("The expected background effect did not happen in time")
+        await asyncio.sleep(0.05)
 
 
 async def _until(condition, timeout: float = 5.0) -> None:
