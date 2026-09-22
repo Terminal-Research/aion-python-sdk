@@ -252,6 +252,7 @@ markers = [
     "command(key): the command from tests/scenarios/commands.py this scenario drives; skipped where frameworks.UNSUPPORTED names the pair",
     "variant(name): the deployment template under tests/scenarios/configs this scenario runs against",
     "divergence(key): the guarantee this scenario asserts, as frameworks.DIVERGENCES names it when an adapter does not hold it yet",
+    "event_router: this scenario asserts which handler the SDK's event router picked; skipped where frameworks.NO_EVENT_ROUTER names an adapter that has no router",
     # One marker per scenario suite; `make tests-scenarios TAGS=...` selects on
     # them. The "scenario suite -" prefix is what scripts/scenarios_matrix.py
     # reads to tell a suite from the markers above.

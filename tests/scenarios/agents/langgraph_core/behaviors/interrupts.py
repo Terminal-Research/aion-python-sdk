@@ -7,7 +7,12 @@ from typing import Any
 from langgraph.types import interrupt
 
 from tests.scenarios.agents.langgraph_core.invocation import Invocation
-from tests.scenarios.commands import ask_answer_text, ask_question, ask_twice_questions
+from tests.scenarios.commands import (
+    ask_answer_text,
+    ask_question,
+    ask_twice_answer_text,
+    ask_twice_questions,
+)
 
 __all__ = ["ask", "ask_twice"]
 
@@ -44,5 +49,5 @@ async def ask_twice(invocation: Invocation) -> None:
     answer_1 = interrupt(q1)
     answer_2 = interrupt(q2)
     await invocation.thread.reply(
-        f"1: {_resume_text(answer_1)}, 2: {_resume_text(answer_2)}"
+        ask_twice_answer_text(_resume_text(answer_1), _resume_text(answer_2))
     )

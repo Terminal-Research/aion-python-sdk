@@ -36,6 +36,7 @@ __all__ = [
     "ask_question",
     "ask_answer_text",
     "ask_twice_questions",
+    "ask_twice_answer_text",
     "NOT_IMPLEMENTED_PREFIX",
     "not_implemented_text",
     "IdsResponse",
@@ -99,12 +100,18 @@ class WhoamiResponse(BaseModel):
 
 
 class EventResponse(BaseModel):
-    """Which router handler ran, and what the event carried."""
+    """What the event carried, and which router handler it reached.
 
-    handler: str
+    ``handler`` is the name of the handler the SDK's event router picked, and
+    is absent on a framework whose adapter has no router: the delivery of the
+    event is the contract both frameworks share, the routing is one
+    framework's.
+    """
+
     kind: Optional[str] = None
     event_id: Optional[str] = None
     payload: dict = {}
+    handler: Optional[str] = None
 
 
 class ConfigResponse(BaseModel):
@@ -177,7 +184,7 @@ COMMANDS: tuple[Command, ...] = (
     Command("ext", "Report active and unknown extensions", tags=("extensions",),
             response_model=ExtResponse),
     Command("whoami", "Report the daemon identity", tags=("daemon",), response_model=WhoamiResponse),
-    Command("event", "Report which router handler received the event", tags=("extensions", "events"),
+    Command("event", "Report the event this turn carried", tags=("extensions", "events"),
             response_model=EventResponse),
     Command("config", "Report one configuration value", "<key>", ("config",),
             response_model=ConfigResponse),
@@ -333,6 +340,15 @@ def ask_answer_text(answer: str) -> str:
 def ask_twice_questions() -> tuple[str, str]:
     """The two questions ``ask-twice`` interrupts with, in order."""
     return ("First of two: what should I use?", "Second of two: are you sure?")
+
+
+def ask_twice_answer_text(first: str, second: str) -> str:
+    """What ``ask-twice`` answers once both questions have been answered.
+
+    Both answers, in the order they were given: which one arrived first is
+    the part a resumed interrupt can get wrong.
+    """
+    return f"1: {first}, 2: {second}"
 
 
 # What the outbox commands put into the A2A payload they return. The point of

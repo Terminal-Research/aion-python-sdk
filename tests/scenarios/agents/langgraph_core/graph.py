@@ -14,6 +14,7 @@ from langgraph.constants import END, START
 from langgraph.graph import StateGraph
 from langgraph.runtime import Runtime
 
+from tests.scenarios.agents.extensions import register_scenario_extensions
 from tests.scenarios.agents.langgraph_core.behaviors import BEHAVIORS
 from tests.scenarios.agents.langgraph_core.invocation import Invocation
 from tests.scenarios.agents.langgraph_core.state import ScenarioState
@@ -23,6 +24,8 @@ __all__ = ["create_graph"]
 
 ROUTER_NODE = "aion_events"
 BEHAVIOR_NODE = "behavior"
+
+register_scenario_extensions()
 
 
 def _inbound(thread: Thread, handler: str) -> dict:

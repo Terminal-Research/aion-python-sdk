@@ -14,6 +14,7 @@ from tests.scenarios.frameworks import (
     FRAMEWORKS,
     Framework,
     divergence_reason,
+    no_event_router_reason,
     unsupported_reason,
 )
 from tests.scenarios.harness import ScenarioClient, ServeProcess, ServeVariant
@@ -114,6 +115,23 @@ def skip_unsupported(request: pytest.FixtureRequest) -> None:
     if "framework" not in request.fixturenames:
         return
     reason = unsupported_reason(request.getfixturevalue("framework").name, key)
+    if reason:
+        pytest.skip(reason)
+
+
+@pytest.fixture(autouse=True)
+def skip_without_event_router(request: pytest.FixtureRequest) -> None:
+    """Skip a scenario about routing on an adapter that does not route.
+
+    Same shape as ``skip_unsupported``, for the one authoring surface that is
+    not a command: the reason comes from ``frameworks.NO_EVENT_ROUTER``, and
+    the scenario says nothing about which framework it is running on.
+    """
+    if request.node.get_closest_marker("event_router") is None:
+        return
+    if "framework" not in request.fixturenames:
+        return
+    reason = no_event_router_reason(request.getfixturevalue("framework").name)
     if reason:
         pytest.skip(reason)
 

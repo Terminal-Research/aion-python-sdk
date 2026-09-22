@@ -24,7 +24,6 @@ from a2a.utils.errors import InvalidParamsError, TaskNotCancelableError
 from google.protobuf.timestamp_pb2 import Timestamp
 
 from aion.db.postgres.records import TaskRecord
-from aion.server.a2a.constants import ACTIVE_TASK_STATES
 from aion.server.tasks.ownership import Claim
 from aion.server.tasks.stores.page_token import PageCursor, encode_page_token
 from aion.server.tasks.stores.postgres_task_store import PostgresTaskStore
@@ -395,48 +394,6 @@ class TestContextLastTask:
 
         assert list(task.history) == history
         assert list(task.artifacts) == artifacts
-
-
-class TestActiveTasks:
-    """The query behind the startup reap of tasks a killed process left running."""
-
-    async def test_asks_for_every_active_state(self, store, repository):
-        """Missing a state would leave that kind of task running forever."""
-        await store.get_active_tasks()
-
-        queried = {
-            call.kwargs["status_state"] for call in repository.find.await_args_list
-        }
-        assert queried == {
-            TaskState.Name(state) for state in ACTIVE_TASK_STATES
-        }
-
-    async def test_returns_the_tasks_of_all_states_together(self, store, repository):
-        ids = [str(uuid.uuid4()) for _ in ACTIVE_TASK_STATES]
-        repository.find.side_effect = [[_make_entity(i)] for i in ids]
-
-        tasks = await store.get_active_tasks()
-
-        assert sorted(task.id for task in tasks) == sorted(ids)
-
-    async def test_no_active_task_is_an_empty_answer(self, store, repository):
-        repository.find.return_value = []
-
-        assert await store.get_active_tasks() == []
-
-    async def test_history_and_artifacts_are_never_read(
-        self, store, repository, messages_repository, artifacts_repository
-    ):
-        """Settlement only ever touches status - see this store's docstring
-        on why an unhydrated Task is safe to feed back into ``save``."""
-        repository.find.return_value = [_make_entity(TASK_UUID)]
-
-        await store.get_active_tasks()
-
-        messages_repository.find_by_task_id.assert_not_awaited()
-        messages_repository.find_by_task_ids.assert_not_awaited()
-        artifacts_repository.find_by_task_id.assert_not_awaited()
-        artifacts_repository.find_by_task_ids.assert_not_awaited()
 
 
 class TestList:

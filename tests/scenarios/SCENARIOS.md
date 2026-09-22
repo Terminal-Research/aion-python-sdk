@@ -4,25 +4,25 @@
      commands.py and frameworks.py. Do not edit by hand: run
      `make scenarios-matrix`. -->
 
-58 scenarios in 13 files, 116 runs across 2 frameworks: 111 run, 5 skipped.
+84 scenarios in 15 files, 184 runs across 2 frameworks: 171 run, 13 skipped.
 
 Nothing here was produced by running a scenario: `pytest --collect-only` and the registries are all it takes, and the same suite always renders the same file. What the suite is and how to run it is in [README.md](README.md).
 
-A status cell reads `✓` when it runs, `skip` when the pair is one `frameworks.UNSUPPORTED` names (the reason is under [Frameworks](#frameworks)), `gap` when the agent has no behaviour for the command yet, `xfail: <reason>` for a knowingly deferred defect, `any` when the scenario does not depend on a framework, and `n/a` when it does not run on that one.
+A status cell reads `✓` when it runs, `skip` when `frameworks.UNSUPPORTED` or `frameworks.NO_EVENT_ROUTER` names the pair (the reason is under [Frameworks](#frameworks)), `gap` when the agent has no behaviour for the command yet, `xfail: <reason>` for a knowingly deferred defect, `any` when the scenario does not depend on a framework, and `n/a` when it does not run on that one.
 
 ## Coverage at a glance
 
 |  | Covered | Not yet |
 |---|---|---|
-| Commands | 14 of 20: `help`, `echo`, `stream`, `steps`, `slow`, `artifacts`, `outbox-task`, `outbox-message`, `ask`, `fail`, `ext`, `config`, `ids`, `parts` | `typing`, `card`, `ask-twice`, `whoami`, `event`, `big` |
-| Suites | 11 of 13: `smoke`, `streaming`, `events`, `terminal_states`, `interrupts`, `errors`, `files`, `extensions`, `config`, `lifecycle`, `persistence` | `artifacts`, `daemon` |
+| Commands | 17 of 20: `help`, `echo`, `stream`, `steps`, `slow`, `artifacts`, `outbox-task`, `outbox-message`, `ask`, `ask-twice`, `fail`, `ext`, `whoami`, `event`, `config`, `ids`, `parts` | `typing`, `card`, `big` |
+| Suites | 12 of 13: `smoke`, `streaming`, `events`, `terminal_states`, `interrupts`, `errors`, `files`, `extensions`, `daemon`, `config`, `lifecycle`, `persistence` | `artifacts` |
 
 ## Frameworks
 
 | Framework | Agent package | Entry | SDK extras | Commands implemented |
 |---|---|---|---|---|
-| langgraph | `tests.scenarios.agents.langgraph_core` | `graph.py:create_graph` | `langgraph-server` | 15 of 20 |
-| adk | `tests.scenarios.agents.adk_core` | `agent.py:create_agent` | `adk-server` | 13 of 20 |
+| langgraph | `tests.scenarios.agents.langgraph_core` | `graph.py:create_graph` | `langgraph-server` | 17 of 20 |
+| adk | `tests.scenarios.agents.adk_core` | `agent.py:create_agent` | `adk-server` | 15 of 20 |
 
 Pairs a framework genuinely cannot do, which is what a `skip` cell means:
 
@@ -31,6 +31,12 @@ Pairs a framework genuinely cannot do, which is what a `skip` cell means:
 | adk | `artifacts` | the ADK artifact service stores one part per artifact, so the SDK refuses the two-part data artifact this command emits (aion.adk emit_artifact) |
 | adk | `ask` | ADK has no interrupt/pause primitive; resume is a plain message send |
 | adk | `ask-twice` | ADK has no interrupt/pause primitive; resume is a plain message send |
+
+An authoring surface only some adapters have; a scenario about it `skip`s on the rest:
+
+| Framework | Surface | Reason |
+|---|---|---|
+| adk | event router | the ADK adapter has no event router; every turn reaches the agent the same way, whatever the event is |
 
 ## Suites
 
@@ -41,16 +47,16 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 | `smoke` | agent answers at all: card, health, help, echo | 5 | `make tests-scenarios TAGS=smoke` |
 | `streaming` | chunked replies, ephemeral typing, unary send | 10 | `make tests-scenarios TAGS=streaming` |
 | `events` | event order, ids, outbox, get_task agreement | 13 | `make tests-scenarios TAGS=events` |
-| `terminal_states` | COMPLETED, FAILED, CANCELED, INPUT_REQUIRED | 7 | `make tests-scenarios TAGS=terminal_states` |
-| `interrupts` | INPUT_REQUIRED and resume | 3 | `make tests-scenarios TAGS=interrupts` |
+| `terminal_states` | COMPLETED, FAILED, CANCELED, INPUT_REQUIRED | 9 | `make tests-scenarios TAGS=terminal_states` |
+| `interrupts` | INPUT_REQUIRED and resume | 6 | `make tests-scenarios TAGS=interrupts` |
 | `errors` | failures that must stay reported, not crash the server | 5 | `make tests-scenarios TAGS=errors` |
 | `artifacts` | artifact and card emission | 0 | `make tests-scenarios TAGS=artifacts` |
 | `files` | inline file parts: stored, rejected, or passed through | 9 | `make tests-scenarios TAGS=files` |
-| `extensions` | extension activation and payload delivery | 4 | `make tests-scenarios TAGS=extensions` |
-| `daemon` | daemon extension identity and environment | 0 | `make tests-scenarios TAGS=daemon` |
-| `config` | aion.yaml configuration and deployment variants | 3 | `make tests-scenarios TAGS=config` |
-| `lifecycle` | cancel, concurrency, push notifications, startup | 2 | `make tests-scenarios TAGS=lifecycle` |
-| `persistence` | needs POSTGRES_TEST_URL; survives a server restart | 2 | `make tests-scenarios-persistence` |
+| `extensions` | extension activation and payload delivery | 12 | `make tests-scenarios TAGS=extensions` |
+| `daemon` | daemon extension identity and environment | 6 | `make tests-scenarios TAGS=daemon` |
+| `config` | aion.yaml configuration and deployment variants | 7 | `make tests-scenarios TAGS=config` |
+| `lifecycle` | cancel, concurrency, push notifications, startup | 4 | `make tests-scenarios TAGS=lifecycle` |
+| `persistence` | needs POSTGRES_TEST_URL; survives a server restart | 4 | `make tests-scenarios-persistence` |
 
 ## Scenarios by file
 
@@ -60,8 +66,10 @@ Cancelling a task that is still working through the public A2A endpoint.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [A cancel request on a WORKING task lands it in CANCELED.](core/test_cancel.py#L46 "test_cancel_stops_a_working_task") | `terminal_states` | `slow` | `default` | ✓ | ✓ |
-| [tasks/get after the cancel also says CANCELED, not the pre-cancel state.](core/test_cancel.py#L54 "test_cancelled_task_is_stored_as_cancelled") | `terminal_states` | `slow` | `default` | ✓ | ✓ |
+| [A cancel request on a WORKING task lands it in CANCELED.](core/test_cancel.py#L69 "test_cancel_stops_a_working_task") | `terminal_states` | `slow` | `default` | ✓ | ✓ |
+| [Nothing in the stream claims the outcome the cancel replaced.](core/test_cancel.py#L82 "test_a_cancelled_task_does_not_also_complete") | `terminal_states` | `slow` | `default` | ✓ | ✓ |
+| [tasks/get after the cancel also says CANCELED, not the pre-cancel state.](core/test_cancel.py#L91 "test_cancelled_task_is_stored_as_cancelled") | `terminal_states` | `slow` | `default` | ✓ | ✓ |
+| [The work stops: the reply the agent would have sent never lands.](core/test_cancel.py#L100 "test_no_answer_arrives_after_a_cancel") | `terminal_states` | `slow` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_config.py`
 
@@ -69,9 +77,26 @@ Configuration variable delivery through the distribution extension.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [A key present in the distribution payload is readable by the agent.](core/test_config.py#L36 "test_config_variable_reaches_the_agent") | `config` | `config` | `default` | ✓ | ✓ |
-| [A key that the platform did not send comes back ``present=False``.](core/test_config.py#L54 "test_absent_config_variable_is_reported_as_missing") | `config` | `config` | `default` | ✓ | ✓ |
-| [Without the distribution extension the environment is absent entirely.](core/test_config.py#L71 "test_config_without_distribution_sees_no_environment") | `config` | `config` | `default` | ✓ | ✓ |
+| [A key present in the distribution payload is readable by the agent.](core/test_config.py#L72 "test_config_variable_reaches_the_agent") | `config` | `config` | `default` | ✓ | ✓ |
+| [A key that the platform did not send comes back ``present=False``.](core/test_config.py#L90 "test_absent_config_variable_is_reported_as_missing") | `config` | `config` | `default` | ✓ | ✓ |
+| [Without the distribution extension the environment is absent entirely.](core/test_config.py#L107 "test_config_without_distribution_sees_no_environment") | `config` | `config` | `default` | ✓ | ✓ |
+| [One payload carries many keys, and each of them arrives under its own name.](core/test_config.py#L117 "test_every_variable_of_an_environment_reaches_the_agent") | `config` | `config` | `default` | ✓ | ✓ |
+| [Nothing between the wire and the agent masks or truncates a secret.](core/test_config.py#L129 "test_a_secret_value_arrives_whole") | `config` | `config` | `default` | ✓ | ✓ |
+| [An empty string is a configured value, not an absent key.](core/test_config.py#L138 "test_an_empty_value_is_a_value") | `config` | `config` | `default` | ✓ | ✓ |
+| [The contract is a mapping of strings; nothing re-types a value in transit.](core/test_config.py#L147 "test_values_arrive_as_the_strings_they_were_sent_as") | `config` | `config` | `default` | ✓ | ✓ |
+
+### `tests/scenarios/core/test_daemon.py`
+
+Daemon-scoped requests: who the platform says is asking, and about what.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [Every field of the daemon payload arrives as the platform sent it.](core/test_daemon.py#L69 "test_the_daemon_payload_reaches_the_agent_whole") | `daemon` | `whoami` | `daemon` | ✓ | ✓ |
+| [The requester is optional; the daemon it is addressed to is not.](core/test_daemon.py#L87 "test_a_daemon_request_without_a_requester_is_still_addressed") | `daemon` | `whoami` | `daemon` | ✓ | ✓ |
+| [Two payloads on one request stay two payloads: the daemon answers for itself.](core/test_daemon.py#L104 "test_the_daemon_identity_is_not_the_distribution_principal") | `daemon` | `whoami` | `daemon` | ✓ | ✓ |
+| [Declaring the extension is a promise to carry it; an empty request breaks it.](core/test_daemon.py#L126 "test_a_declared_daemon_extension_without_a_payload_is_refused") | `daemon` | `whoami` | `daemon` | ✓ | ✓ |
+| [A payload that does not validate names the field, and opens no task.](core/test_daemon.py#L145 "test_a_malformed_daemon_payload_is_refused_by_field") | `daemon` | `whoami` | `daemon` | ✓ | ✓ |
+| [Co-activation satisfied: the request is served, not refused.](core/test_daemon.py#L168 "test_an_extension_gets_what_it_requires_when_both_are_declared") | `extensions`, `daemon` | `whoami` | `daemon` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_errors.py`
 
@@ -84,6 +109,17 @@ An agent that crashes must leave a task that says so.
 | [A later `tasks/get` reports the failure too.](core/test_errors.py#L65 "test_the_failure_is_in_the_stored_task_not_only_on_the_wire") | `errors`, `terminal_states` | `fail` | `default` | ✓ | ✓ |
 | [The reason is logged, not published.](core/test_errors.py#L83 "test_the_failed_task_does_not_carry_the_exception") | `errors`, `terminal_states` | `fail` | `default` | ✓ | ✓ |
 | [The next request is answered normally.](core/test_errors.py#L99 "test_a_failing_turn_does_not_take_the_agent_with_it") | `errors`, `terminal_states` | `fail` | `default` | ✓ | ✓ |
+
+### `tests/scenarios/core/test_event_payloads.py`
+
+An Aion event, from the wire to the agent.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [The kind, the event id and every payload field survive the trip.](core/test_event_payloads.py#L85 "test_an_event_reaches_the_agent_as_it_was_sent") | `extensions` | `event` | `default` | ✓ | ✓ |
+| [Each kind reaches the handler registered for it, and no other.](core/test_event_payloads.py#L103 "test_the_event_kind_selects_the_router_handler") | `extensions` | `event` | `default` | ✓ | [skip](#frameworks) |
+| [A plain A2A request is not an event, and the agent is told so.](core/test_event_payloads.py#L117 "test_a_request_with_no_event_carries_none") | `extensions` | `event` | `default` | ✓ | ✓ |
+| [A part tagged with a known schema is held to it, and the refusal says so.](core/test_event_payloads.py#L128 "test_a_payload_that_does_not_match_its_schema_is_refused") | `extensions` | `event` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_events.py`
 
@@ -104,10 +140,13 @@ End-to-end extension payload delivery to the agent.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [Requesting the distribution extension makes it active inside the agent.](core/test_extensions.py#L36 "test_distribution_extension_is_active") | `extensions` | `ext` | `default` | ✓ | ✓ |
-| [Without any extensions on the request the agent sees none active.](core/test_extensions.py#L51 "test_no_extensions_requested") | `extensions` | `ext` | `default` | ✓ | ✓ |
-| [An extension the server does not recognize lands in ``unknown``.](core/test_extensions.py#L61 "test_unknown_extension_is_reported") | `extensions` | `ext` | `default` | ✓ | ✓ |
-| [Both a known and an unknown extension can arrive on the same request.](core/test_extensions.py#L74 "test_distribution_present_alongside_unknown") | `extensions` | `ext` | `default` | ✓ | ✓ |
+| [Requesting the distribution extension makes it active inside the agent.](core/test_extensions.py#L47 "test_distribution_extension_is_active") | `extensions` | `ext` | `default` | ✓ | ✓ |
+| [Without any extensions on the request the agent sees none active.](core/test_extensions.py#L62 "test_no_extensions_requested") | `extensions` | `ext` | `default` | ✓ | ✓ |
+| [An extension the server does not recognize lands in ``unknown``.](core/test_extensions.py#L72 "test_unknown_extension_is_reported") | `extensions` | `ext` | `default` | ✓ | ✓ |
+| [Both a known and an unknown extension can arrive on the same request.](core/test_extensions.py#L85 "test_distribution_present_alongside_unknown") | `extensions` | `ext` | `default` | ✓ | ✓ |
+| [A known extension is not an available one: the deployment decides.](core/test_extensions.py#L104 "test_an_extension_this_deployment_has_not_enabled_is_refused") | `extensions` | `ext` | `default` | ✓ | ✓ |
+| [Co-activation is checked before the agent runs, and the refusal names the gap.](core/test_extensions.py#L125 "test_an_extension_declared_without_what_it_requires_is_refused") | `extensions` | `ext` | `default` | ✓ | ✓ |
+| [A rejected request is one request: the next ordinary one is answered.](core/test_extensions.py#L145 "test_a_refused_declaration_leaves_the_agent_serving") | `extensions` | `echo` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_files.py`
 
@@ -131,9 +170,12 @@ Interrupt pauses a task for user input; resume delivers the answer.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [The stream ends with INPUT_REQUIRED carrying the interrupt question.](core/test_interrupts.py#L22 "test_ask_pauses_the_task_as_input_required") | `interrupts` | `ask` | `default` | ✓ | [skip](#frameworks) |
-| [Sending a message to the paused task resumes it with the user's answer.](core/test_interrupts.py#L31 "test_resume_delivers_the_answer_and_completes") | `interrupts` | `ask` | `default` | ✓ | [skip](#frameworks) |
-| [tasks/get after resume reports COMPLETED, not INPUT_REQUIRED.](core/test_interrupts.py#L48 "test_resumed_task_is_stored_as_completed") | `interrupts` | `ask` | `default` | ✓ | [skip](#frameworks) |
+| [The stream ends with INPUT_REQUIRED carrying the interrupt question.](core/test_interrupts.py#L43 "test_ask_pauses_the_task_as_input_required") | `interrupts` | `ask` | `default` | ✓ | [skip](#frameworks) |
+| [Sending a message to the paused task resumes it with the user's answer.](core/test_interrupts.py#L52 "test_resume_delivers_the_answer_and_completes") | `interrupts` | `ask` | `default` | ✓ | [skip](#frameworks) |
+| [tasks/get after resume reports COMPLETED, not INPUT_REQUIRED.](core/test_interrupts.py#L69 "test_resumed_task_is_stored_as_completed") | `interrupts` | `ask` | `default` | ✓ | [skip](#frameworks) |
+| [Each interrupt pauses the one task again, with its own question.](core/test_interrupts.py#L83 "test_two_interrupts_pause_the_same_task_in_turn") | `interrupts` | `ask-twice` | `default` | ✓ | [skip](#frameworks) |
+| [The second resume completes the task, carrying both answers as given.](core/test_interrupts.py#L102 "test_both_answers_reach_the_agent_in_order") | `interrupts` | `ask-twice` | `default` | ✓ | [skip](#frameworks) |
+| [The task the server kept agrees: two pauses, one outcome.](core/test_interrupts.py#L118 "test_a_twice_resumed_task_is_stored_as_completed") | `interrupts` | `ask-twice` | `default` | ✓ | [skip](#frameworks) |
 
 ### `tests/scenarios/core/test_outbox.py`
 
@@ -155,8 +197,10 @@ Push notification delivery to a real HTTP callback.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [The server POSTs a terminal notification to the registered URL.](core/test_push_notifications.py#L93 "test_push_notification_reaches_callback") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
-| [The pushed body identifies the task the notification is about.](core/test_push_notifications.py#L120 "test_push_notification_carries_the_task_id") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
+| [The server POSTs a terminal notification to the registered URL.](core/test_push_notifications.py#L125 "test_push_notification_reaches_callback") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
+| [The pushed body identifies the task the notification is about.](core/test_push_notifications.py#L152 "test_push_notification_carries_the_task_id") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
+| [The callback accepts the delivery, because it arrived authenticated.](core/test_push_notifications.py#L175 "test_a_declared_credential_is_presented_to_the_callback") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
+| [The callback really checks: the same delivery without credentials is rejected.](core/test_push_notifications.py#L206 "test_an_undeclared_credential_is_refused_by_the_callback") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_smoke.py`
 
@@ -196,12 +240,14 @@ Replies that arrive in pieces.
 
 ### `tests/scenarios/persistence/test_restart.py`
 
-A completed task survives a full server restart.
+What a server restart does to the tasks the previous process held.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [tasks/get after a restart returns the same task with the same data.](persistence/test_restart.py#L24 "test_completed_task_survives_server_restart") | `persistence` | `echo` | `default` | ✓ | ✓ |
-| [A multi-step task's full history is intact after a restart.](persistence/test_restart.py#L52 "test_task_history_survives_server_restart") | `persistence` | `steps` | `default` | ✓ | ✓ |
+| [The task read back after a restart is the task that was read before it.](persistence/test_restart.py#L122 "test_a_completed_task_is_unchanged_by_a_restart") | `persistence` | `echo` | `default` | ✓ | ✓ |
+| [Every reply of a multi-step turn is still there, in order, afterwards.](persistence/test_restart.py#L149 "test_a_multi_step_history_survives_a_restart") | `persistence` | `steps` | `default` | ✓ | ✓ |
+| [A shutdown cancels what it is running and says so on the task it leaves.](persistence/test_restart.py#L174 "test_a_running_task_is_settled_by_an_orderly_shutdown") | `persistence` | `slow` | `default` | ✓ | ✓ |
+| [A killed owner settles nothing, so the lease it stopped renewing does.](persistence/test_restart.py#L190 "test_a_running_task_is_settled_after_a_crash_when_its_lease_expires") | `persistence` | `slow` | `default` | ✓ | ✓ |
 
 ## Commands
 
@@ -210,22 +256,22 @@ The contract from `commands.py`. `Scenarios` counts the scenarios driving the co
 | Command | Summary | Tags | Scenarios | langgraph | adk |
 |---|---|---|---|---|---|
 | `help` | Show this menu | `smoke` | 1 | ✓ | ✓ |
-| `echo <text>` | Reply with the argument, unchanged | `smoke`, `events` | 7 | ✓ | ✓ |
+| `echo <text>` | Reply with the argument, unchanged | `smoke`, `events` | 10 | ✓ | ✓ |
 | `stream <n>` | Reply in n chunks of one message | `streaming` | 10 | ✓ | ✓ |
 | `typing` | Send an ephemeral typing status, then a reply | `streaming`, `events` | 0 | gap | gap |
 | `steps <n>` | Emit n working statuses, then complete | `events` | 2 | ✓ | ✓ |
-| `slow <sec>` | Reply after n seconds | `lifecycle` | 2 | ✓ | ✓ |
+| `slow <sec>` | Reply after n seconds | `lifecycle` | 6 | ✓ | ✓ |
 | `artifacts` | Emit a two-part data artifact, an inline file and a url | `artifacts`, `files` | 2 | ✓ | [skip](#frameworks) |
 | `card` | Emit one card | `artifacts` | 0 | gap | gap |
 | `outbox-task` | Return an A2A Task through the outbox | `events` | 5 | ✓ | ✓ |
 | `outbox-message` | Return an A2A Message through the outbox | `events` | 2 | ✓ | ✓ |
 | `ask` | Ask a question, then quote the answer | `interrupts` | 3 | ✓ | [skip](#frameworks) |
-| `ask-twice` | Ask two questions in a row | `interrupts` | 0 | ✓ | [skip](#frameworks) |
+| `ask-twice` | Ask two questions in a row | `interrupts` | 3 | ✓ | [skip](#frameworks) |
 | `fail <mode>` | Fail on purpose: exception \| after-reply | `errors`, `terminal_states` | 5 | ✓ | ✓ |
-| `ext` | Report active and unknown extensions | `extensions` | 4 | ✓ | ✓ |
-| `whoami` | Report the daemon identity | `daemon` | 0 | gap | gap |
-| `event` | Report which router handler received the event | `extensions`, `events` | 0 | gap | gap |
-| `config <key>` | Report one configuration value | `config` | 3 | ✓ | ✓ |
+| `ext` | Report active and unknown extensions | `extensions` | 6 | ✓ | ✓ |
+| `whoami` | Report the daemon identity | `daemon` | 6 | ✓ | ✓ |
+| `event` | Report the event this turn carried | `extensions`, `events` | 4 | ✓ | ✓ |
+| `config <key>` | Report one configuration value | `config` | 7 | ✓ | ✓ |
 | `ids` | Report task and context ids | `events`, `lifecycle` | 2 | ✓ | ✓ |
 | `big <kb>` | Reply with n KB of text | `errors` | 0 | gap | gap |
 | `parts` | Report the kinds of parts the inbound message carried | `files` | 6 | ✓ | ✓ |

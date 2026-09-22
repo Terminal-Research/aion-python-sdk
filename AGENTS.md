@@ -148,10 +148,16 @@ and are discovered by `aion.server` at runtime.
   rather than erroring while no token is available. Every outbound stream is
   closed with a full `Task`; tasks left active by a stopped process are settled
   as `FAILED` with `aion:settledReason` naming the cause — `server_shutdown`
-  when the shutdown itself cancelled the execution, `server_restart` when the
-  next start found them still active after a hard kill. DB management is
-  delegated to `aion.db`. PostgreSQL task claims record the deployment-provided
-  `HOST_NAME` as their optional diagnostic owner instance identity.
+  when the shutdown itself cancelled the execution and settled the task under
+  its own claim, `lease_expired` when a process was lost outright and the
+  ownership reaper reclaimed the task after its lease lapsed. A hard-killed
+  task is settled on the first ownership reconciliation after its lease
+  expires; that reconciliation may run during startup or in the periodic
+  reaper loop, and starting a new process is by itself no evidence that the
+  previous owner is dead (an in-memory store has no crash recovery at all).
+  DB management is delegated to `aion.db`. PostgreSQL task claims record the
+  deployment-provided `HOST_NAME` as their optional diagnostic owner instance
+  identity.
   Plugin discovery skips a framework whose extra is absent and keeps the
   reason, so an agent that cannot be built names the extra to install.
 - **`aion.proxy`** — the proxy server that fronts multiple agents behind one

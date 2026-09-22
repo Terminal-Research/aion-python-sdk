@@ -14,9 +14,20 @@ import json
 import socket
 import threading
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, Mapping, Optional
 
-__all__ = ["CallbackServer"]
+__all__ = [
+    "CallbackServer",
+    "Notification",
+    "AUTHORIZATION_HEADER",
+    "NOTIFICATION_TOKEN_HEADER",
+]
+
+AUTHORIZATION_HEADER = "Authorization"
+"""Where the push configuration's scheme and credentials arrive."""
+
+NOTIFICATION_TOKEN_HEADER = "X-A2A-Notification-Token"
+"""Where its opaque notification token arrives."""
 
 
 def _free_port() -> int:
@@ -25,20 +36,41 @@ def _free_port() -> int:
         return int(sock.getsockname()[1])
 
 
-HTTP_200 = (
-    b"HTTP/1.1 200 OK\r\n"
-    b"Content-Length: 0\r\n"
-    b"Connection: close\r\n"
-    b"\r\n"
-)
+def _response(status: int, reason: str) -> bytes:
+    """A bodyless HTTP response, which is all this server ever sends."""
+    return (
+        f"HTTP/1.1 {status} {reason}\r\n"
+        "Content-Length: 0\r\n"
+        "Connection: close\r\n"
+        "\r\n"
+    ).encode("ascii")
+
+
+HTTP_200 = _response(200, "OK")
+HTTP_401 = _response(401, "Unauthorized")
 
 
 @dataclass
 class Notification:
-    """One POST the callback server received."""
+    """One POST the callback server received.
+
+    Attributes:
+        body: The JSON the sender posted.
+        headers: Its request headers, as sent.
+        accepted: Whether this server answered 200 or refused the delivery.
+    """
 
     body: dict[str, Any]
     headers: dict[str, str]
+    accepted: bool = True
+
+    def header(self, name: str) -> Optional[str]:
+        """One header by name, matched without regard to case."""
+        wanted = name.casefold()
+        for key, value in self.headers.items():
+            if key.casefold() == wanted:
+                return value
+        return None
 
 
 class CallbackServer:
@@ -58,10 +90,11 @@ class CallbackServer:
             await server.stop()
     """
 
-    def __init__(self, port: int) -> None:
+    def __init__(self, port: int, required_headers: Optional[Mapping[str, str]] = None) -> None:
         self.port = port
         self.url = f"http://127.0.0.1:{port}/callback"
         self.notifications: list[Notification] = []
+        self._required = {name.casefold(): value for name, value in (required_headers or {}).items()}
         self._lock = threading.Lock()
         self._arrived = threading.Event()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
@@ -69,10 +102,20 @@ class CallbackServer:
         self._server: Optional[asyncio.AbstractServer] = None
 
     @classmethod
-    async def start(cls) -> "CallbackServer":
-        """Start the callback server on a free port in a background thread."""
+    async def start(
+        cls, *, required_headers: Optional[Mapping[str, str]] = None
+    ) -> "CallbackServer":
+        """Start the callback server on a free port in a background thread.
+
+        Args:
+            required_headers: Headers a delivery must carry, with the exact
+                values expected. A request missing one, or carrying another
+                value for it, is answered 401 - which is what makes an
+                authenticated delivery a claim about the sender rather than a
+                header this server happened to write down.
+        """
         port = _free_port()
-        instance = cls(port)
+        instance = cls(port, required_headers)
         ready = threading.Event()
         instance._thread = threading.Thread(
             target=instance._run_loop, args=(ready,), daemon=True
@@ -80,6 +123,11 @@ class CallbackServer:
         instance._thread.start()
         ready.wait(timeout=10)
         return instance
+
+    def _accepts(self, headers: Mapping[str, str]) -> bool:
+        """Whether this delivery carries every header this server requires."""
+        received = {name.casefold(): value for name, value in headers.items()}
+        return all(received.get(name) == value for name, value in self._required.items())
 
     def _run_loop(self, ready: threading.Event) -> None:
         """Entry point of the background thread: run the server loop."""
@@ -130,13 +178,14 @@ class CallbackServer:
             except json.JSONDecodeError:
                 parsed_body = {}
 
+            accepted = self._accepts(parsed_headers)
             with self._lock:
                 self.notifications.append(
-                    Notification(body=parsed_body, headers=parsed_headers)
+                    Notification(body=parsed_body, headers=parsed_headers, accepted=accepted)
                 )
             self._arrived.set()
 
-            writer.write(HTTP_200)
+            writer.write(HTTP_200 if accepted else HTTP_401)
             await writer.drain()
         except Exception:
             pass

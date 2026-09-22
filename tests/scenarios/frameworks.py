@@ -20,6 +20,8 @@ __all__ = [
     "unsupported_reason",
     "DIVERGENCES",
     "divergence_reason",
+    "NO_EVENT_ROUTER",
+    "no_event_router_reason",
     "implemented_commands",
     "agents_root",
 ]
@@ -112,6 +114,26 @@ DIVERGENCES: dict[tuple[str, str], str] = {
 def divergence_reason(framework: str, divergence_key: str) -> str | None:
     """What this framework does instead of holding that guarantee, or None."""
     return DIVERGENCES.get((framework, divergence_key))
+
+
+NO_EVENT_ROUTER: dict[str, str] = {
+    # framework name -> why this adapter reports no router handler.
+    #
+    # The event itself reaches the agent on every framework, and that is the
+    # guarantee the scenarios state for all of them. Which handler it reaches
+    # is a property of one adapter's authoring surface, so a scenario about
+    # the handler name skips here, with the reason, instead of asking which
+    # framework it is running on.
+    "adk": (
+        "the ADK adapter has no event router; every turn reaches the agent the same "
+        "way, whatever the event is"
+    ),
+}
+
+
+def no_event_router_reason(framework: str) -> str | None:
+    """Why this framework names no router handler, or None when it names one."""
+    return NO_EVENT_ROUTER.get(framework)
 
 
 def implemented_commands(framework: Framework) -> frozenset[str]:

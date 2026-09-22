@@ -17,11 +17,14 @@ from typing_extensions import override
 
 from tests.scenarios.agents.adk_core.behaviors import BEHAVIORS
 from tests.scenarios.agents.adk_core.invocation import Invocation
+from tests.scenarios.agents.extensions import register_scenario_extensions
 from tests.scenarios.commands import help_text, not_implemented_text, parse_command
 
 __all__ = ["ScenarioAgent", "create_agent"]
 
 AGENT_NAME = "scenario_agent"
+
+register_scenario_extensions()
 
 
 class ScenarioAgent(BaseAgent):

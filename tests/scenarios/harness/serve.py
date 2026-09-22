@@ -96,6 +96,26 @@ def _free_port() -> int:
         return int(sock.getsockname()[1])
 
 
+def _descendants(pid: int) -> list[int]:
+    """Every process under this one, parents before children.
+
+    ``pgrep -P`` rather than a process library: it is on every POSIX system
+    the scenarios run on, and this is the only thing here that needs to look
+    at the process tree at all.
+    """
+    found: list[int] = []
+    frontier = [pid]
+    while frontier:
+        parent = frontier.pop(0)
+        result = subprocess.run(
+            ["pgrep", "-P", str(parent)], capture_output=True, text=True, check=False
+        )
+        children = [int(line) for line in result.stdout.split() if line.isdigit()]
+        found.extend(children)
+        frontier.extend(children)
+    return found
+
+
 def _server_env(variant: ServeVariant) -> dict[str, str]:
     """The environment `aion serve` runs in: this shell, minus the platform."""
     environment = {
@@ -186,8 +206,17 @@ class ServeProcess:
             ),
             encoding="utf-8",
         )
+        return self._launch("w")
 
-        self._log_handle = self.log_path.open("w", encoding="utf-8")
+    def _launch(self, log_mode: str) -> "ServeProcess":
+        """Start a server process on the rendered config and wait until it answers.
+
+        Args:
+            log_mode: How to open the log - ``"w"`` for the first process of a
+                directory, ``"a"`` for a successor, whose own output is
+                appended after its predecessor's.
+        """
+        self._log_handle = self.log_path.open(log_mode, encoding="utf-8")
         self._process = subprocess.Popen(
             [
                 str(_aion_executable()),
@@ -250,7 +279,13 @@ class ServeProcess:
         return f"--- {self.log_path} (last {lines} lines) ---\n{tail}\n--- end of log ---"
 
     def _stop_process(self) -> None:
-        """Kill the server process and close its log handle, but keep the directory."""
+        """Interrupt the server process and close its log handle, keeping the directory.
+
+        SIGINT to the whole group, which is the signal an operator sends: the
+        server drains what it is running and settles the tasks it cancels. A
+        group that is still there after the grace period is killed, so a wedged
+        process cannot hold the session.
+        """
         process = self._process
         self._process = None
         if process is not None and process.poll() is None:
@@ -267,6 +302,30 @@ class ServeProcess:
             self._log_handle.close()
             self._log_handle = None
 
+    def _kill_process(self) -> None:
+        """Take the server away with no chance to shut down: SIGKILL to the whole tree.
+
+        Not ``killpg`` on its own. ``aion serve`` runs each agent as the leader
+        of a process group of its own (``ProcessManager``), so signalling the
+        launcher's group reaches the launcher and the proxy and leaves every
+        agent running - and it is the agent that holds the task. The
+        descendants are collected first, while their parent is still there to
+        name them.
+        """
+        process = self._process
+        self._process = None
+        if process is not None and process.poll() is None:
+            for pid in reversed(_descendants(process.pid)):
+                with contextlib.suppress(ProcessLookupError, PermissionError):
+                    os.kill(pid, signal.SIGKILL)
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+            with contextlib.suppress(subprocess.TimeoutExpired):
+                process.wait(timeout=SHUTDOWN_GRACE_SECONDS)
+        if self._log_handle is not None:
+            self._log_handle.close()
+            self._log_handle = None
+
     def stop(self) -> None:
         """Interrupt the server, then kill whatever is left of its group.
 
@@ -279,35 +338,27 @@ class ServeProcess:
             shutil.rmtree(self._directory, ignore_errors=True)
 
     def restart(self) -> "ServeProcess":
-        """Stop the server process and start a fresh one in the same directory.
+        """Shut the server down and start a fresh one in the same directory.
 
         The config and directory survive; a new process is launched on the
-        same port with the same environment. This is the operation a
-        persistence test uses to verify that durable state outlives its
-        server.
+        same port with the same environment. This is the orderly restart - a
+        deployment rolling over - so the outgoing process runs its shutdown
+        and settles whatever it was executing.
         """
         self._stop_process()
-        self._log_handle = self.log_path.open("a", encoding="utf-8")
-        self._process = subprocess.Popen(
-            [
-                str(_aion_executable()),
-                "serve",
-                "--port", str(self.port),
-                "--port-range-start", str(self.port + 1),
-                "--startup-timeout", str(STARTUP_TIMEOUT_SECONDS),
-            ],
-            cwd=self._directory,
-            env=_server_env(self.variant),
-            stdout=self._log_handle,
-            stderr=subprocess.STDOUT,
-            start_new_session=True,
-        )
-        try:
-            self._wait_until_ready()
-        except Exception:
-            self.stop()
-            raise
-        return self
+        return self._launch("a")
+
+    def crash_restart(self) -> "ServeProcess":
+        """Kill the server outright and start a fresh one in the same directory.
+
+        The counterpart of ``restart``: SIGKILL leaves no chance to shut
+        anything down, so a task that was running stays in the store with the
+        active state it had. What the next process makes of it is the
+        guarantee a scenario checks - the settlement reason is the only thing
+        that tells the two restarts apart.
+        """
+        self._kill_process()
+        return self._launch("a")
 
     def __enter__(self) -> "ServeProcess":
         return self.start()

@@ -25,7 +25,7 @@ from aion.db.postgres.repositories import (
     TasksRepository,
 )
 from aion.db.postgres.records import TaskRecord
-from aion.server.a2a.constants import ACTIVE_TASK_STATES, TERMINAL_TASK_STATES
+from aion.server.a2a.constants import TERMINAL_TASK_STATES
 from aion.server.tasks.identifiers import require_task_uuid
 from aion.server.tasks.ownership import OwnershipProvider, TaskOwnershipLost
 from .base_task_store import BaseTaskStore
@@ -574,37 +574,6 @@ class PostgresTaskStore(BaseTaskStore):
                     sorting=Sorting(SortKey(column="created_at")),
                 )
                 return await self._hydrate_many(session, records)
-
-    async def get_active_tasks(self) -> List[Task]:
-        """Retrieve every task in an active state, across all contexts.
-
-        Queried one state at a time because the repository filters on a single
-        state; the set is two members wide, and this runs once per process
-        start, so the extra round trips cost nothing worth folding into a
-        shared-package change.
-
-        History and artifacts are deliberately not read here: the only
-        consumer is the startup reap of interrupted tasks, which reads and
-        writes status alone (see ``aion.server.tasks.settlement``), and
-        ``save`` treats an empty history or artifact list as "nothing to
-        reconcile" rather than "clear what is stored" - see this class's
-        docstring.
-
-        Returns:
-            All tasks whose stored state is one of ``ACTIVE_TASK_STATES``,
-            with empty history and artifacts.
-        """
-        records: List[TaskRecord] = []
-        async with db_manager.get_session() as session:
-            repository = TasksRepository(session)
-            for state in ACTIVE_TASK_STATES:
-                records.extend(
-                    await repository.find(
-                        agent_id=self.agent_id, status_state=TaskState.Name(state)
-                    )
-                )
-
-        return [r.to_task(str(r.id)) for r in records]
 
     async def get_context_last_task(
             self,

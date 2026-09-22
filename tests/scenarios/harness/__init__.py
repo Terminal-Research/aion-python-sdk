@@ -1,9 +1,33 @@
 """Everything the scenarios need to run an agent and read what it answered."""
 
-from .callback import CallbackServer
-from .client import FileAttachment, ScenarioClient
+from .callback import (
+    AUTHORIZATION_HEADER,
+    NOTIFICATION_TOKEN_HEADER,
+    CallbackServer,
+    Notification,
+)
+from .client import DataAttachment, FileAttachment, PushAuth, ScenarioClient
+from .daemon import (
+    DAEMON_BEHAVIOR_ID,
+    DAEMON_ENVIRONMENT_ID,
+    DAEMON_EXTENSION_URI,
+    DAEMON_IDENTITY_ID,
+    REQUESTER_IDENTITY_ID,
+    daemon_metadata,
+)
 from .distribution import DISTRIBUTION_EXTENSION_URI, ORGANIZATION_ID, distribution_metadata
-from .recorder import Ev, final_task, record_stream, replies, reply_texts
+from .events import (
+    CARDS_EXTENSION_URI,
+    EVENT_EXTENSION_URI,
+    MESSAGING_EXTENSION_URI,
+    EventEnvelope,
+    card_action_event,
+    command_event,
+    event_envelope,
+    message_event,
+    reaction_event,
+)
+from .recorder import Ev, final_task, record_stream, replies, reply_texts, stored_texts
 from .serve import ServeProcess, ServeVariant
 from .shape import (
     ANY,
@@ -18,14 +42,29 @@ from .shape import (
     status,
     task,
 )
+from .waiting import eventually
 
 __all__ = [
     "ANY",
+    "AUTHORIZATION_HEADER",
+    "CARDS_EXTENSION_URI",
     "CallbackServer",
+    "DAEMON_BEHAVIOR_ID",
+    "DAEMON_ENVIRONMENT_ID",
+    "DAEMON_EXTENSION_URI",
+    "DAEMON_IDENTITY_ID",
     "DISTRIBUTION_EXTENSION_URI",
+    "DataAttachment",
+    "EVENT_EXTENSION_URI",
     "Ev",
+    "EventEnvelope",
     "FileAttachment",
+    "MESSAGING_EXTENSION_URI",
+    "NOTIFICATION_TOKEN_HEADER",
+    "Notification",
     "ORGANIZATION_ID",
+    "PushAuth",
+    "REQUESTER_IDENTITY_ID",
     "SKIP",
     "STREAM_DELTA_ARTIFACT_ID",
     "ScenarioClient",
@@ -33,15 +72,23 @@ __all__ = [
     "ServeVariant",
     "artifact",
     "assert_shape",
+    "card_action_event",
     "chunks",
+    "command_event",
+    "daemon_metadata",
     "distribution_metadata",
     "ephemeral",
+    "event_envelope",
+    "eventually",
     "final_task",
     "is_chunk",
     "message",
+    "message_event",
+    "reaction_event",
     "record_stream",
     "replies",
     "reply_texts",
     "status",
+    "stored_texts",
     "task",
 ]

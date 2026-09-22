@@ -1,9 +1,15 @@
 """Supplying a final state for a task whose execution is gone.
 
-The server writes a task's outcome only where the execution cannot: it was
-cancelled by shutdown, or it died with its process. Both leave a task holding an
-active state with nothing alive to advance it, so it would be presented as
-running forever.
+The server writes a task's outcome only where the execution cannot: shutdown
+cancelled it, or its owner stopped renewing the task's lease and the reaper
+reclaimed it. Both leave a task holding an active state with nothing alive to
+advance it, so it would be presented as running forever.
+
+This module builds the settled task; it never writes one. A shutdown settles
+its own tasks while it still holds their claims (``ActiveTaskRegistry``), and a
+task whose owner is gone is settled by ``ClaimReaper`` once the lease expires.
+Both reach the store through a claim, so exactly one writer ever decides a
+given task's supplied state.
 
 Such a task is settled terminally — most often as ``FAILED``, since the run
 did not finish and nothing can continue it. The alternative — a non-terminal
@@ -30,20 +36,14 @@ client can tell a state the server had to supply from one the agent declared.
 
 from __future__ import annotations
 
-import logging
-from typing import TYPE_CHECKING, Optional
+from typing import Optional
 
 from a2a.types import Task, TaskState
 
 from aion.core.a2a.enums import A2AMetadataKey, TaskSettlementReason
 from aion.server.a2a.constants import NON_ACTIVE_TASK_STATES
 
-if TYPE_CHECKING:
-    from aion.server.tasks.stores import BaseTaskStore
-
-logger = logging.getLogger(__name__)
-
-__all__ = ["settled_task", "settle_orphaned_tasks"]
+__all__ = ["settled_task"]
 
 
 def settled_task(task: Task, reason: TaskSettlementReason) -> Optional[Task]:
@@ -78,46 +78,3 @@ def settled_task(task: Task, reason: TaskSettlementReason) -> Optional[Task]:
     )
     settled.metadata[A2AMetadataKey.SETTLED_REASON.value] = reason.value
     return settled
-
-
-async def settle_orphaned_tasks(store: BaseTaskStore) -> None:
-    """Close out tasks a killed predecessor left running in the store.
-
-    A graceful stop settles its own tasks as it drains them. This covers what
-    no shutdown could: a process killed outright — SIGKILL, OOM, a lost
-    machine — leaves its tasks active in the store with the execution already
-    gone. A durable store carries them into the next process, which is the only
-    thing left that can end them.
-
-    Every task the store presents as running is one of those. This process has
-    just started and executes nothing yet, and a store whose contents die with
-    the process hands back nothing here at all.
-
-    Each task is settled on its own, because one write the store refuses says
-    nothing about the rest, and a task left active is exactly the state this
-    exists to remove.
-
-    Args:
-        store: The task store to reap. Must outlive nothing else — this runs
-            before the process serves any request.
-    """
-    tasks = await store.get_active_tasks()
-    if not tasks:
-        return
-
-    logger.info("Settling %d task(s) left running by a previous process", len(tasks))
-
-    for task in tasks:
-        settled = settled_task(task, TaskSettlementReason.SERVER_RESTART)
-        if settled is None:
-            continue
-
-        try:
-            await store.save(settled)
-        except Exception as exc:
-            logger.error(
-                "Failed to settle task %s left in %s by a previous process",
-                task.id,
-                TaskState.Name(task.status.state),
-                exc_info=exc,
-            )

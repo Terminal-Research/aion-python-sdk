@@ -5,6 +5,13 @@ server POSTs every state change there.  These scenarios start a local HTTP
 callback server in a background thread, register it as the push target,
 drive a task to completion, and verify that the callback received the
 terminal notification.
+
+A callback that answers 200 to anything says nothing about how the delivery
+was authenticated, so the authenticated scenarios run against a callback that
+requires the exact headers the push configuration declared and refuses
+everything else - the same two channels the A2A configuration carries:
+``authentication`` becomes ``Authorization``, ``token`` becomes
+``X-A2A-Notification-Token``.
 """
 
 from __future__ import annotations
@@ -15,13 +22,16 @@ import pytest
 import pytest_asyncio
 
 from tests.scenarios.harness import (
+    AUTHORIZATION_HEADER,
+    NOTIFICATION_TOKEN_HEADER,
     CallbackServer,
+    Notification,
+    PushAuth,
     ScenarioClient,
     ServeProcess,
     ServeVariant,
     final_task,
 )
-from tests.scenarios.harness.callback import Notification
 
 pytestmark = pytest.mark.lifecycle
 
@@ -29,6 +39,18 @@ PUSH_VARIANT = ServeVariant(
     name="push",
     env={"PUSH_NOTIFICATION_TIMEOUT_SECONDS": "5"},
 )
+
+PUSH_AUTH = PushAuth(
+    scheme="Bearer",
+    credentials="scenario-push-credentials",
+    token="scenario-notification-token",
+)
+"""What the client declares, and what the callback then insists on."""
+
+EXPECTED_HEADERS = {
+    AUTHORIZATION_HEADER: f"{PUSH_AUTH.scheme} {PUSH_AUTH.credentials}",
+    NOTIFICATION_TOKEN_HEADER: PUSH_AUTH.token,
+}
 
 
 def _task_from_notification(notification: Notification) -> dict[str, Any]:
@@ -82,8 +104,18 @@ async def push_client(push_server: ServeProcess) -> AsyncIterator[ScenarioClient
 
 @pytest.fixture
 async def callback() -> AsyncIterator[CallbackServer]:
-    """A callback server that lives for one test."""
+    """A callback server that lives for one test and accepts any delivery."""
     server = await CallbackServer.start()
+    try:
+        yield server
+    finally:
+        await server.stop()
+
+
+@pytest.fixture
+async def authenticated_callback() -> AsyncIterator[CallbackServer]:
+    """A callback that refuses anything not carrying the declared credentials."""
+    server = await CallbackServer.start(required_headers=EXPECTED_HEADERS)
     try:
         yield server
     finally:
@@ -138,3 +170,56 @@ async def test_push_notification_carries_the_task_id(
         assert pushed_id == task_ev.task_id, (
             f"pushed task id {pushed_id!r} != stream task id {task_ev.task_id!r}"
         )
+
+
+@pytest.mark.variant("push")
+@pytest.mark.command("echo")
+async def test_a_declared_credential_is_presented_to_the_callback(
+    push_client: ScenarioClient,
+    authenticated_callback: CallbackServer,
+) -> None:
+    """The callback accepts the delivery, because it arrived authenticated."""
+    events = await push_client.send(
+        "echo authenticated",
+        push_notification_url=authenticated_callback.url,
+        push_auth=PUSH_AUTH,
+    )
+    task_ev = final_task(events)
+
+    notifications = await authenticated_callback.wait(timeout=15)
+    assert notifications, "no push notification received"
+    accepted = [n for n in notifications if n.accepted]
+    assert accepted, "every delivery was refused: the credentials did not arrive"
+
+    for notification in accepted:
+        assert notification.header(AUTHORIZATION_HEADER) == EXPECTED_HEADERS[AUTHORIZATION_HEADER]
+        assert notification.header(NOTIFICATION_TOKEN_HEADER) == PUSH_AUTH.token
+
+    terminal = _find_terminal(accepted)
+    assert terminal is not None, f"no terminal notification among {len(accepted)} accepted"
+    assert _task_id_from_notification(terminal) == task_ev.task_id
+    assert _task_from_notification(terminal).get("status", {}).get("state") == (
+        "TASK_STATE_COMPLETED"
+    )
+
+
+@pytest.mark.variant("push")
+@pytest.mark.command("echo")
+async def test_an_undeclared_credential_is_refused_by_the_callback(
+    push_client: ScenarioClient,
+    authenticated_callback: CallbackServer,
+) -> None:
+    """The callback really checks: the same delivery without credentials is rejected.
+
+    What this pins down is the callback, not the server - a receiver that
+    answered 200 regardless would make the scenario above prove nothing.
+    """
+    await push_client.send(
+        "echo unauthenticated",
+        push_notification_url=authenticated_callback.url,
+    )
+
+    notifications = await authenticated_callback.wait(timeout=15)
+    assert notifications, "no push notification received"
+    assert not any(n.accepted for n in notifications)
+    assert all(n.header(AUTHORIZATION_HEADER) is None for n in notifications)

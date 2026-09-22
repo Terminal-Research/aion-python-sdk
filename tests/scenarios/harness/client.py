@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Iterable, Mapping, Optional
 
 import httpx
@@ -12,8 +12,10 @@ from a2a.client.card_resolver import parse_agent_card
 from a2a.client.service_parameters import ServiceParametersFactory, with_a2a_extensions
 from a2a.types.a2a_pb2 import (
     AgentCard,
+    AuthenticationInfo,
     CancelTaskRequest,
     GetTaskRequest,
+    ListTasksRequest,
     Message,
     Part,
     Role,
@@ -24,11 +26,17 @@ from a2a.types.a2a_pb2 import (
     TaskPushNotificationConfig,
 )
 from google.protobuf.json_format import ParseDict
-from google.protobuf.struct_pb2 import Struct
+from google.protobuf.struct_pb2 import Struct, Value
 
 from .recorder import Ev, record_stream
 
-__all__ = ["FileAttachment", "ScenarioClient", "AGENT_CARD_PATH"]
+__all__ = [
+    "DataAttachment",
+    "FileAttachment",
+    "PushAuth",
+    "ScenarioClient",
+    "AGENT_CARD_PATH",
+]
 
 AGENT_CARD_PATH = "/.well-known/agent-card.json"
 REQUEST_TIMEOUT_SECONDS = 60.0
@@ -37,6 +45,11 @@ REQUEST_TIMEOUT_SECONDS = 60.0
 def _struct(payload: Mapping[str, Any]) -> Struct:
     """A protobuf Struct carrying this mapping."""
     return ParseDict(dict(payload), Struct())
+
+
+def _value(payload: Mapping[str, Any]) -> Value:
+    """A protobuf Value carrying this mapping, which is what ``Part.data`` is."""
+    return ParseDict(dict(payload), Value())
 
 
 @dataclass(frozen=True)
@@ -52,6 +65,57 @@ class FileAttachment:
     name: str
     media_type: str
     content: bytes
+
+
+@dataclass(frozen=True)
+class DataAttachment:
+    """A structured part a scenario sends, as ``Part(data=...)`` with metadata.
+
+    The shape an event payload travels in: the data is the payload, and the
+    metadata names the schema it was written to, which is what the server
+    dispatches on.
+
+    Attributes:
+        data: The payload object itself.
+        metadata: Part metadata, keyed by extension URI.
+    """
+
+    data: Mapping[str, Any]
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class PushAuth:
+    """What the push callback expects the server to present.
+
+    The A2A push configuration carries two independent credentials, and this
+    is both of them: ``scheme``/``credentials`` become the ``Authorization``
+    header, ``token`` becomes ``X-A2A-Notification-Token``. An empty field is
+    one the configuration does not declare.
+
+    Attributes:
+        scheme: Authorization scheme, e.g. ``Bearer``.
+        credentials: The credentials that follow the scheme.
+        token: The opaque notification token.
+    """
+
+    scheme: str = ""
+    credentials: str = ""
+    token: str = ""
+
+
+def _push_config(url: str, auth: Optional[PushAuth]) -> TaskPushNotificationConfig:
+    """The push configuration a scenario registers with a message."""
+    config = TaskPushNotificationConfig(url=url)
+    if auth is None:
+        return config
+    if auth.token:
+        config.token = auth.token
+    if auth.scheme or auth.credentials:
+        config.authentication.CopyFrom(
+            AuthenticationInfo(scheme=auth.scheme, credentials=auth.credentials)
+        )
+    return config
 
 
 def _pin_card_to(card: AgentCard, url: str) -> AgentCard:
@@ -129,6 +193,8 @@ class ScenarioClient:
         context_id: Optional[str] = None,
         extensions: Iterable[str] = (),
         files: Iterable[FileAttachment] = (),
+        data: Iterable[DataAttachment] = (),
+        message_metadata: Optional[Mapping[str, Any]] = None,
     ) -> Message:
         """The user message a scenario sends: its text, then any attachments."""
         message = Message(
@@ -144,6 +210,13 @@ class ScenarioClient:
                     filename=attachment.name,
                 )
             )
+        for structured in data:
+            part = Part(data=_value(structured.data))
+            if structured.metadata:
+                part.metadata.CopyFrom(_struct(structured.metadata))
+            message.parts.append(part)
+        if message_metadata:
+            message.metadata.CopyFrom(_struct(message_metadata))
         if task_id:
             message.task_id = task_id
         if context_id:
@@ -161,13 +234,22 @@ class ScenarioClient:
         metadata: Optional[Mapping[str, Any]] = None,
         extensions: Iterable[str] = (),
         files: Iterable[FileAttachment] = (),
+        data: Iterable[DataAttachment] = (),
+        message_metadata: Optional[Mapping[str, Any]] = None,
         push_notification_url: Optional[str] = None,
+        push_auth: Optional[PushAuth] = None,
         stream: bool = True,
     ) -> list[Ev]:
         """Send one message and record everything that came back."""
         request = SendMessageRequest(
             message=self.build_message(
-                text, task_id=task_id, context_id=context_id, extensions=extensions, files=files
+                text,
+                task_id=task_id,
+                context_id=context_id,
+                extensions=extensions,
+                files=files,
+                data=data,
+                message_metadata=message_metadata,
             )
         )
         if metadata:
@@ -175,9 +257,7 @@ class ScenarioClient:
         if push_notification_url:
             request.configuration.CopyFrom(
                 SendMessageConfiguration(
-                    task_push_notification_config=TaskPushNotificationConfig(
-                        url=push_notification_url,
-                    ),
+                    task_push_notification_config=_push_config(push_notification_url, push_auth),
                 )
             )
 
@@ -192,6 +272,16 @@ class ScenarioClient:
         if history_length is not None:
             request.history_length = history_length
         return await self._client(True).get_task(request)
+
+    async def tasks_in_context(self, context_id: str) -> list[Task]:
+        """Every task the server holds under one context.
+
+        How a scenario tells "the request was refused" from "the request was
+        refused after a task had already been opened for it": the refusal is
+        what the caller sees either way, and this is what the server kept.
+        """
+        response = await self._client(True).list_tasks(ListTasksRequest(context_id=context_id))
+        return list(response.tasks)
 
     async def cancel(self, task_id: str) -> Task:
         """Ask the server to cancel a task."""

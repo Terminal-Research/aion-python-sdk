@@ -34,10 +34,12 @@ sys.path.insert(0, str(ROOT))
 from tests.scenarios.commands import COMMANDS  # noqa: E402
 from tests.scenarios.frameworks import (  # noqa: E402
     FRAMEWORKS,
+    NO_EVENT_ROUTER,
     UNSUPPORTED,
     Framework,
     implemented_commands,
     divergence_reason,
+    no_event_router_reason,
     unsupported_reason,
 )
 
@@ -86,7 +88,14 @@ class Scenario:
     variant: str
     xfail: str | None
     divergence: str | None = None
+    event_router: bool = False
     frameworks: list[str] = field(default_factory=list)
+    cases: int = 1
+    """How many times one framework runs this scenario.
+
+    More than one where the scenario is parametrized over something of its
+    own - an event kind, say. The row still describes the scenario once; only
+    the count of runs has to know."""
 
     @property
     def node_id(self) -> str:
@@ -105,6 +114,8 @@ class Scenario:
         """
         if self.frameworks and framework.name not in self.frameworks:
             return NOT_PARAMETRIZED
+        if self.event_router and no_event_router_reason(framework.name):
+            return SKIP
         if self.command is not None:
             if unsupported_reason(framework.name, self.command):
                 return SKIP
@@ -174,6 +185,7 @@ def collect(suite_names: set[str]) -> list[Scenario]:
         raise SystemExit(f"collection failed with {code!r}")
 
     scenarios: dict[str, Scenario] = {}
+    cases: dict[str, set[tuple]] = {}
     for item in collector.items:
         file, line, _ = item.location
         base_id = item.nodeid.split("[", 1)[0]
@@ -197,11 +209,18 @@ def collect(suite_names: set[str]) -> list[Scenario]:
                 # collected first. The registry answers per framework.
                 xfail=str(xfail.kwargs.get("reason", "")) if xfail and not divergence else None,
                 divergence=divergence.args[0] if divergence else None,
+                event_router=item.get_closest_marker("event_router") is not None,
             )
             scenarios[base_id] = scenario
         callspec = getattr(item, "callspec", None)
         if callspec is not None and "framework" in callspec.params:
             scenario.frameworks.append(callspec.params["framework"])
+            own = {name: value for name, value in callspec.params.items() if name != "framework"}
+            if own:
+                cases.setdefault(base_id, set()).add(tuple(sorted(own.items())))
+
+    for base_id, seen in cases.items():
+        scenarios[base_id].cases = len(seen)
     return list(scenarios.values())
 
 
@@ -231,11 +250,11 @@ def _totals(scenarios: list[Scenario], frameworks: list[Framework]) -> str:
     counted: dict[str, int] = defaultdict(int)
     for scenario in scenarios:
         if not scenario.frameworks:
-            counted[ANY_FRAMEWORK] += 1
+            counted[ANY_FRAMEWORK] += scenario.cases
             continue
         for framework in frameworks:
             if framework.name in scenario.frameworks:
-                counted[scenario.status(framework)] += 1
+                counted[scenario.status(framework)] += scenario.cases
 
     wording = (
         (RUNS, "run"),
@@ -332,8 +351,8 @@ def render(scenarios: list[Scenario], suites: list[Suite]) -> str:
         "registries are all it takes, and the same suite always renders the same file. What "
         "the suite is and how to run it is in [README.md](README.md).",
         "",
-        f"A status cell reads `{RUNS}` when it runs, `{SKIP}` when the pair is one "
-        f"`frameworks.UNSUPPORTED` names (the reason is under "
+        f"A status cell reads `{RUNS}` when it runs, `{SKIP}` when `frameworks.UNSUPPORTED` "
+        f"or `frameworks.NO_EVENT_ROUTER` names the pair (the reason is under "
         f"[Frameworks]({FRAMEWORKS_ANCHOR})), `{GAP}` when the agent has no behaviour for the "
         f"command yet, `xfail: <reason>` for a knowingly deferred defect, "
         f"`{ANY_FRAMEWORK}` when the scenario does not depend on a framework, and "
@@ -363,6 +382,17 @@ def render(scenarios: list[Scenario], suites: list[Suite]) -> str:
         lines += table(
             ["Framework", "Command", "Reason"],
             [[framework, code(command), reason] for (framework, command), reason in UNSUPPORTED.items()],
+        )
+    if NO_EVENT_ROUTER:
+        lines += [
+            "",
+            "An authoring surface only some adapters have; a scenario about it `skip`s on the "
+            "rest:",
+            "",
+        ]
+        lines += table(
+            ["Framework", "Surface", "Reason"],
+            [[framework, "event router", reason] for framework, reason in NO_EVENT_ROUTER.items()],
         )
 
     lines += ["", "## Suites", "", "One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.", ""]

@@ -29,6 +29,7 @@ __all__ = [
     "record_stream",
     "replies",
     "reply_texts",
+    "stored_texts",
     "text_of_parts",
     "to_event",
 ]
@@ -212,3 +213,16 @@ def replies(events: Sequence[Ev]) -> list[Ev]:
 def reply_texts(events: Sequence[Ev]) -> list[str]:
     """What the agent said this turn, in order."""
     return [event.text for event in replies(events)]
+
+
+def stored_texts(task: Task) -> list[str]:
+    """Everything a stored task says, in order: its history, then its status.
+
+    A turn's last reply stays on ``status.message`` until the next turn moves
+    it into history, so reading history alone reads the task one message
+    short - and it is the last message that most scenarios are about.
+    """
+    texts = [part.text for message in task.history for part in message.parts if part.text]
+    if task.status.HasField("message"):
+        texts.extend(part.text for part in task.status.message.parts if part.text)
+    return texts

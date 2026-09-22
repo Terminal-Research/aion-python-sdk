@@ -25,15 +25,17 @@ is generated from the tests and the registries, so it is read, not maintained:
 
 ```
 commands.py     the command contract: what to send, what comes back
+extensions.py   the two extension URIs this suite owns, and why it owns them
 frameworks.py   the frameworks under test, and what each cannot do
-harness/        serve, client, recorder, shape, pg
+harness/        serve, client, recorder, shape, pg, and the payload builders
 agents/         one agent package per framework, all answering commands.py
 configs/        aion.yaml templates, one per deployment variant
 core/           the scenarios, run for every framework
+persistence/    the scenarios that need a database under the server
 ```
 
 An agent never imports the harness or the tests. The direction is one way:
-tests and agents both read `commands.py`.
+tests and agents both read `commands.py` and `extensions.py`.
 
 ## Running
 
@@ -50,11 +52,23 @@ make tests-scenarios-dist                  # against the built wheel, in a clean
 make scenarios-matrix                      # rewrite SCENARIOS.md
 ```
 
-`make tests-scenarios-persistence` runs the two scenarios that restart a server
-and expect the tasks to still be there, once per framework. It uses
-`POSTGRES_TEST_URL` when the environment names one and starts a disposable
-PostgreSQL otherwise; without a database the suite skips itself. The rest of
-the scenarios need no database and do not wait for one.
+`make tests-scenarios-persistence` runs the scenarios under `persistence/`,
+which restart a server and ask what became of the tasks it was holding, once
+per framework. It uses `POSTGRES_TEST_URL` when the environment names one and
+starts a disposable PostgreSQL otherwise; without a database the suite skips
+itself. The rest of the scenarios need no database and do not wait for one.
+
+One of them does wait, and the contract is why. A server that shuts down in an
+orderly way settles the tasks it was running itself, under the claims it still
+holds, so that scenario reads `server_shutdown` the moment the next process is
+up. A server that is killed outright settles nothing: its tasks are reclaimed
+only when the leases it stopped renewing expire, which is `lease_expired` and
+no sooner than the lease allows — 60 seconds with a reconcile pass every 30
+(`aion.server.tasks.ownership.config`, not settable from outside the process).
+That scenario is minutes rather than seconds, and it is the reason this suite
+is not part of `make tests-scenarios`. It is also why the whole suite needs a
+database: an in-memory store dies with its process, so there is no crash to
+recover from.
 
 `KEEP_SERVE=1` leaves the servers running after the session and prints the
 port, the rendered `aion.yaml` and the log of each — the fastest way to poke at
@@ -130,7 +144,10 @@ async def test_echo_answers_with_the_argument(client: ScenarioClient) -> None:
 - Expected strings come from `commands.py`, never from a literal in the test —
   the agent builds its answers from the same functions.
 - `if framework.name == ...` in a test is not allowed. A difference is either
-  an entry in `UNSUPPORTED`, with the reason, or a defect to fix.
+  an entry in a table in `frameworks.py`, with the reason — `UNSUPPORTED` for
+  a command the framework cannot do, `NO_EVENT_ROUTER` for the one authoring
+  surface only one adapter has — or a defect to fix. A scenario asks the
+  table; it never asks which framework it is.
 
 ## Where the line with the unit tests is
 
@@ -167,8 +184,8 @@ the gap shows up as a failure rather than as a wrong menu — and as
    extras its server side needs.
 3. Add an `UNSUPPORTED` line for anything the framework genuinely cannot do,
    with the reason.
-4. `make tests-scenarios` must be green for it, with every skip coming from
-   `UNSUPPORTED`.
+4. `make tests-scenarios` must be green for it, with every skip coming from a
+   table in `frameworks.py`.
 5. `make scenarios-matrix`, and commit the matrix with the new column.
 
 ## Defects a scenario finds

@@ -11,7 +11,7 @@ from typing import Awaitable, Callable, Optional
 
 from tests.scenarios.agents.langgraph_core.invocation import Invocation
 
-from .config import config, ext
+from .config import config, event, ext, whoami
 from .errors import fail
 from .events import ids, steps
 from .files import artifacts, parts
@@ -38,6 +38,8 @@ BEHAVIORS: dict[str, Behavior] = {
     "artifacts": artifacts,
     "fail": fail,
     "ext": ext,
+    "whoami": whoami,
+    "event": event,
     "config": config,
     "outbox-message": outbox_message,
     "outbox-task": outbox_task,
