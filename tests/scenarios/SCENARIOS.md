@@ -50,7 +50,7 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 | `daemon` | daemon extension identity and environment | 0 | `make tests-scenarios TAGS=daemon` |
 | `config` | aion.yaml configuration and deployment variants | 3 | `make tests-scenarios TAGS=config` |
 | `lifecycle` | cancel, concurrency, push notifications, startup | 2 | `make tests-scenarios TAGS=lifecycle` |
-| `persistence` | needs POSTGRES_TEST_URL; survives a server restart | 2 | `make tests-scenarios-pg` |
+| `persistence` | needs POSTGRES_TEST_URL; survives a server restart | 2 | `make tests-scenarios-persistence` |
 
 ## Scenarios by file
 

@@ -24,7 +24,8 @@ POSTGRES_TEST_URL ?= $(PG_TEST_URL)
 # where the only binding in scope is still the real one.
 POSTGRES_TEST_URL_IS_EXTERNAL := $(filter environment command line,$(origin POSTGRES_TEST_URL))
 
-.PHONY: help tests tests-integration tests-all tests-scenarios tests-scenarios-pg \
+.PHONY: help tests tests-integration tests-all tests-scenarios tests-scenarios-persistence \
+	tests-scenarios-pg \
 	tests-scenarios-dist tests-floors scenarios-matrix lint-imports release-check release check-env \
 	dist-build dist-check dist-smoke pg-test-up pg-test-down
 
@@ -129,7 +130,7 @@ TAGS ?=
 FRAMEWORK ?=
 
 # Without TAGS, everything except persistence: that suite needs a database
-# and has `tests-scenarios-pg` for it.
+# and has `tests-scenarios-persistence` for it.
 SCENARIO_TAGS := $(if $(TAGS),$(shell echo "$(TAGS)" | sed 's/  */ or /g'),not persistence)
 SCENARIO_EXPR := scenario and ($(SCENARIO_TAGS))
 FRAMEWORK_FILTER := $(if $(FRAMEWORK),-k "[$(FRAMEWORK)]",)
@@ -137,22 +138,18 @@ FRAMEWORK_FILTER := $(if $(FRAMEWORK),-k "[$(FRAMEWORK)]",)
 tests-scenarios: ## Run the scenarios against this working tree (TAGS=, FRAMEWORK=)
 	poetry run pytest tests/scenarios -m "$(SCENARIO_EXPR)" $(FRAMEWORK_FILTER) $(ARGS)
 
+# The scenarios that restart a server and expect the tasks to still be there.
 # The database is handled the way the integration targets handle it, and by
-# the same definition. The suite itself is not written yet - the harness
-# (tests/scenarios/harness/pg.py) and this target are what is in place for it -
-# and pytest exits 5 when a selection matches nothing. That is this target's
-# ordinary outcome today and not a failure, so it is turned into success with
-# a line saying why; every other status is the suite's and passes through.
-# The parentheses keep that inside a subshell, so `exit` here is not the exit
-# that would leave the container running.
-tests-scenarios-pg: export POSTGRES_TEST_URL := $(POSTGRES_TEST_URL)
-tests-scenarios-pg: ## Run the persistence scenarios against a disposable PostgreSQL
-	@$(call with_pg_test,(poetry run pytest tests/scenarios -m "scenario and persistence" \
-		$(FRAMEWORK_FILTER) $(ARGS); pytest_status=$$?; \
-		if [ $$pytest_status -eq 5 ]; then \
-			echo "[scenarios] no persistence scenarios yet"; pytest_status=0; \
-		fi; \
-		exit $$pytest_status))
+# the same definition: an externally supplied POSTGRES_TEST_URL is used as is,
+# otherwise a disposable container is started and stopped around the run. The
+# target is named for what it proves rather than for the store that backs it;
+# `tests-scenarios-pg` remains as a compatibility alias for existing local workflows.
+tests-scenarios-persistence: export POSTGRES_TEST_URL := $(POSTGRES_TEST_URL)
+tests-scenarios-persistence: ## Run the persistence scenarios against a real database
+	@$(call with_pg_test,poetry run pytest tests/scenarios -m "scenario and persistence" \
+		$(FRAMEWORK_FILTER) $(ARGS))
+
+tests-scenarios-pg: tests-scenarios-persistence ## Alias for tests-scenarios-persistence
 
 # The same scenarios, against the wheel in dist/ rather than the working tree:
 # `poetry run`, because pytest and the A2A client come from this project's

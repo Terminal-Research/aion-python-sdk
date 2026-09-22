@@ -5,11 +5,6 @@ selects the target agent, forwards the request, and streams the response back
 through ``UpstreamStreamingResponse``.  Its contract is the observable behavior
 a caller — the route handler — relies on.
 
-Two test modules used to test this class in parallel, one behavioral
-(ASGI-level) and one unit-level.  They overlapped on streaming, header hygiene
-and URL construction.  This contract was written when those duplicates were
-merged into ``test_proxy_handlers.py``.
-
 ## The contract
 
 The numbered guarantees are asserted, one test each, in

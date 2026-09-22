@@ -40,7 +40,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 SCENARIOS = "tests/scenarios"
 DEFAULT_MARKERS = "scenario and not persistence"
-"""Persistence needs a database of its own; `make tests-scenarios-pg` runs it."""
+"""Persistence needs a database of its own; `make tests-scenarios-persistence` runs it."""
 
 AION_BIN_VAR = "SCENARIOS_AION_BIN"
 """What the harness reads to decide which `aion` to start."""

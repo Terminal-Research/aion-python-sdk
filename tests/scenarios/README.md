@@ -45,14 +45,16 @@ make tests-scenarios TAGS=smoke            # one suite
 make tests-scenarios TAGS="daemon events"  # several suites (any of them)
 make tests-scenarios FRAMEWORK=langgraph   # one framework
 make tests-scenarios ARGS="-x -vv"         # straight through to pytest
-make tests-scenarios-pg                    # persistence, against a disposable PostgreSQL
+make tests-scenarios-persistence           # persistence, against a real database
 make tests-scenarios-dist                  # against the built wheel, in a clean venv
 make scenarios-matrix                      # rewrite SCENARIOS.md
 ```
 
-`make tests-scenarios-pg` collects nothing today: the harness
-(`harness/pg.py`) and the target are in place, the persistence suite is not
-written yet.
+`make tests-scenarios-persistence` runs the two scenarios that restart a server
+and expect the tasks to still be there, once per framework. It uses
+`POSTGRES_TEST_URL` when the environment names one and starts a disposable
+PostgreSQL otherwise; without a database the suite skips itself. The rest of
+the scenarios need no database and do not wait for one.
 
 `KEEP_SERVE=1` leaves the servers running after the session and prints the
 port, the rendered `aion.yaml` and the log of each — the fastest way to poke at

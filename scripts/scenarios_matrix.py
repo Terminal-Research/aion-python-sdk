@@ -53,7 +53,7 @@ SUITE_PREFIX = "scenario suite -"
 # Suites the plain `make tests-scenarios` leaves out, and the target that runs each
 # instead. Mirrors the default of SCENARIO_TAGS in the Makefile.
 SUITE_TARGETS = {
-    "persistence": "make tests-scenarios-pg",
+    "persistence": "make tests-scenarios-persistence",
 }
 
 # One vocabulary for every status cell in the document, in both tables. Short

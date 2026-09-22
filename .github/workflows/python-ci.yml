@@ -59,7 +59,7 @@ jobs:
 
       # Collection and the registries, nothing else: no server starts and it
       # costs a second. It keeps the generated matrix from falling behind the
-      # suite it describes; the suite itself runs in the `scenarios` job.
+      # suite it describes; the suite itself runs in `runtime-validation`.
       - name: Check the scenario matrix is current
         run: poetry run ./scripts/scenarios_matrix.py --check
 
@@ -69,8 +69,20 @@ jobs:
       - name: Check the distributions
         run: make dist-check
 
-  integration:
-    name: Integration tests
+  runtime-validation:
+    name: Runtime validation
+    # What the SDK does across a real infrastructure boundary: the integration
+    # tests against a real database, and the scenarios, which start `aion
+    # serve` per framework and deployment variant and drive it over A2A.
+    #
+    # Deliberately not a leg of the matrix above. Each interpreter would
+    # multiply a minute of process startup by three to tell us something about
+    # the agents' transport rather than about the interpreter. One version is
+    # what these suites are for; the wheel gets its own run before a release in
+    # publish-python.yml.
+    #
+    # One job rather than two, because both need the same database and the same
+    # install, and splitting them paid for that twice.
     runs-on: ubuntu-latest
     services:
       # The Makefile starts a disposable PostgreSQL of its own on a nonstandard
@@ -112,37 +124,14 @@ jobs:
       - name: Run integration tests
         run: make tests-integration
 
-  scenarios:
-    name: Scenario tests
-    runs-on: ubuntu-latest
-    # Deliberately not a leg of the matrix above. These start a real `aion
-    # serve` per framework and deployment variant and drive it over A2A, so
-    # each interpreter would multiply a minute of process startup by three to
-    # tell us something about the agents' transport rather than about the
-    # interpreter. One version is what the suite is for; the wheel gets its own
-    # run before a release in publish-python.yml.
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v5
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-
-      - name: Install Poetry
-        run: pipx install poetry==${{ env.POETRY_VERSION }}
-
-      - name: Install the project
-        run: poetry install -E langgraph-server -E adk-server --with dev
-
-      - name: Check the installed environment
-        run: make check-env
-
-      # Everything except persistence, which needs a database and runs from
-      # `make tests-scenarios-pg`.
+      # Everything except persistence, and no database of its own: these start
+      # servers on the default in-memory variant.
       - name: Run scenario tests
         run: make tests-scenarios
+
+      # The ones that restart a server and expect the tasks to still be there.
+      - name: Run persistence scenarios
+        run: make tests-scenarios-persistence
 
   floors:
     name: Oldest allowed dependencies

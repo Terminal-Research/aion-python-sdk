@@ -17,13 +17,16 @@ from tests.scenarios.harness import ScenarioClient, ServeProcess, ServeVariant
 from tests.scenarios.harness.pg import have_postgres, postgres_env
 
 
-def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
-    """Skip the whole directory when no database is available."""
-    if have_postgres():
-        return
-    skip = pytest.mark.skip(reason="POSTGRES_TEST_URL is not set")
-    for item in items:
-        item.add_marker(skip)
+@pytest.fixture(autouse=True)
+def needs_postgres() -> None:
+    """Skip this directory when no database is available.
+
+    An autouse fixture reaches the tests under this conftest and nothing else.
+    ``pytest_collection_modifyitems`` would be handed every item in the
+    session, core scenarios included, and skip the whole suite.
+    """
+    if not have_postgres():
+        pytest.skip("POSTGRES_TEST_URL is not set")
 
 
 @pytest.fixture

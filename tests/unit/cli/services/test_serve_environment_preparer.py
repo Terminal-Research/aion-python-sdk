@@ -35,6 +35,28 @@ def credentials(monkeypatch):
     monkeypatch.setattr(api_settings, "client_secret", "test-secret", raising=False)
 
 
+@pytest.fixture(autouse=True)
+def platform_token(monkeypatch):
+    """Settle the preflight token read in-process.
+
+    ``execute`` reads a token before it looks at any version source, so without
+    this the fake credentials above are carried to the real auth endpoint.
+    Mutate ``["token"]`` to drive the auth_available outcome.
+    """
+    state = {"token": "test-token"}
+
+    async def get_token():
+        return state["token"]
+
+    monkeypatch.setattr(
+        environment_preparer.aion_jwt_manager,
+        "get_token",
+        get_token,
+        raising=False,
+    )
+    return state
+
+
 @pytest.fixture
 def token_version(monkeypatch):
     """Control what version the access token claims to be scoped to."""
