@@ -13,7 +13,11 @@ This subpackage exposes an `AppFactory` that assembles the agent application on
 top of the Google `a2a-sdk` and Starlette.
 
 Graphs are registered based on an `aion.yaml` file located in your project
-root. For detailed configuration options and examples, see the [Aion YAML Configuration Guide](../../../docs/aion-yaml-config.md).
+root. For detailed configuration options and examples, see the [Aion YAML
+Configuration Guide](https://docs.aion.to/sdk/python/configuration/aion-yaml).
 
-HTTP applications can also be mounted dynamically by listing them under the
-`http` section in `aion.yaml`.
+Custom HTTP endpoints are added through `AppRegistry`: the agent module
+registers its own FastAPI routers before the server starts, and the factory
+mounts them on the application it builds. `aion.yaml` declares agents and the
+MCP proxy, and rejects any other key - see the [AppRegistry
+guide](https://docs.aion.to/sdk/python/extensibility/app-registry).

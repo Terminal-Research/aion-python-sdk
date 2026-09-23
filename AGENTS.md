@@ -10,8 +10,8 @@ The tests for all of it live in `tests/`, in three suites that are three
 directories: `tests/unit` and `tests/integration` mirror `src/aion/`;
 `tests/scenarios`, the scenario suite, mirrors nothing because it drives the
 product from outside. `tests/unit/support` holds builders shared between
-unit test modules and is collected from nowhere. Shared documentation lives
-in `docs/`, repo-wide tooling in `Makefile` and `scripts/`.
+unit test modules and is collected from nowhere. Maintainer documentation
+lives in `docs/development/`, repo-wide tooling in `Makefile` and `scripts/`.
 `libs/` holds one thing only: `aion-chat-ui`, an npm package with its own
 toolchain.
 
@@ -61,8 +61,9 @@ and are discovered by `aion.server` at runtime.
   extension payloads (`cards`, `distribution`, `messaging`, `event`,
   `traceability`), opaque usage-attribution extension collection, shared
   extension URI/header constants, the built-in extension registry (which
-  does not register unified or legacy context-directory extensions for
-  automatic card advertisement),
+  keeps three properties apart: an extension is known, enabled for the
+  agent, and allowed on the Agent Card, and the card reads only
+  `get_advertised()`),
   `aion.yaml` configuration parsing and publication collectors (including
   dedicated secret fields),
   invocation abstractions (`card`, `message`, `thread`), the runtime context
@@ -127,17 +128,41 @@ and are discovered by `aion.server` at runtime.
   `tests/unit/server/agent/adapters/` is the contract they all hold),
   Aion auth manager and websocket
   connection services (`services/aion`), OpenTelemetry wiring, and logging
-  setup with stream and Logstash handlers. Graphs and HTTP apps are configured
-  via `aion.yaml` and can be mounted dynamically. JSON-RPC streams use
+  setup with stream and Logstash handlers. Graphs are configured via
+  `aion.yaml`, which declares agents and the MCP proxy and rejects every other
+  key; custom HTTP endpoints come from routers an agent module registers on
+  `AppRegistry`, which the app factory mounts. JSON-RPC streams use
   LF-delimited SSE events so their blank event boundary remains distinct from
   HTTP/1.1 CRLF transfer framing. Contract tests cover published configuration
   schemas, including compact discovery documents that omit null field metadata.
   Aion context-directory extensions resolve history through the same effective
   caller scope used when tasks are saved; anonymous callers receive empty
   context projections rather than access to shared history.
-  These legacy read handlers remain callable but are not advertised on generated
-  Agent Cards; the server does not implement the unified Context extension or
-  `DeleteContext`.
+  A2A extensions may augment messages, metadata, state machines, or add RPC
+  methods. Method extensions remain registered in
+  `AionA2AExtensionRegistry`; their transport-specific routing is represented
+  by method-extension bindings. Do not treat method extensions as
+  message-only extensions, and do not infer Agent Card exposure from the
+  extension point. Generated cards follow the descriptor's `advertised`,
+  activation, availability, and dependency state.
+  `GetContext` and `GetContexts` are current Aion context-read method
+  extensions, bound to JSON-RPC by
+  `AION_JSONRPC_METHOD_EXTENSION_BINDINGS`. A binding's wiring - a
+  registered descriptor, an existing handler - is validated when the
+  dispatcher is built; on every call the registry is asked whether the
+  extension is ready on this deployment - registered, enabled, available, and
+  with its requirement chain active. An extension declared on a message is
+  held to that and to per-request activation as well, since its requirements
+  must be declared on the same request; a directly invoked method extension
+  sends no declaration, so readiness is the whole question. They are
+  supported by the server but are not advertised by default. They must not be presented as the
+  unified Context lifecycle contract or added to generated Agent Cards unless
+  a deployment explicitly opts into advertising an implementation that
+  fulfills the contract it claims; the server declares neither that
+  lifecycle, nor context summaries, nor `DeleteContext`. Whether an extension
+  owns a task's execution is answered by whether an `ExtensionTaskHandler`
+  claims its URI, and by nothing else. The whole policy is in
+  `docs/development/extension-exposure.md`.
   Push notifications authenticate against external callbacks using the
   credentials in `taskPushNotificationConfig.authentication` (the a2a-sdk
   base sender ignores them); delivery timeouts come from
@@ -300,10 +325,14 @@ and are discovered by `aion.server` at runtime.
 
 ## Documentation
 
-User-facing docs live in `docs/`: `environment-variables.md`,
-`aion-yaml-config.md`, `multiple-agents.md`, `app-registry.md`,
-`http_endpoints.md`, `a2a_extensions/` and `development/`. `RELEASE.md` at the
-root is for maintainers. A test suite that needs explaining carries its own
+User-facing documentation is published on <https://docs.aion.to> and written
+in the `aion-docs-mintlify` repository, not here: link to the page that owns a
+subject rather than restating it, and never add a Markdown file whose content
+is one external URL - a file that only forwards is a second place to go stale
+and a hop for the reader. `docs/` is `docs/development/`, the maintainer
+section (environment, dependencies, extension exposure), and a file belongs in
+it when it says something about this repository that no published page does.
+`RELEASE.md` at the root is for maintainers. A test suite that needs explaining carries its own
 `README.md` beside it - `tests/scenarios/README.md` is the scenario suite, and
 `tests/scenarios/SCENARIOS.md` next to it is generated by
 `make scenarios-matrix` and changed only through the suite it describes.

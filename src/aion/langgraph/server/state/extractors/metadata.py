@@ -103,9 +103,8 @@ class MetadataExtractor(StateExtractor):
         """Extract interrupt data from snapshot.
 
         Extracts interrupt information compatible with LangGraph 0.6.0+:
-        - id: Unique interrupt identifier (new in 0.6.0, replaces interrupt_id)
+        - id: Unique interrupt identifier
         - value: Interrupt data/payload
-        - Removed deprecated fields: when, resumable, ns
 
         Args:
             snapshot: LangGraph StateSnapshot
