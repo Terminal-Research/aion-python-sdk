@@ -245,10 +245,9 @@ class AionGqlClient:
     async def a2a_stream(
         self,
         request: A2AJsonRpcRequestGQLInput,
-        distribution_id: str | None = None,
-        principal: PrincipalSelector | str | None = None,
         *,
-        target: CapabilitySubject | CapabilitySubjectGQLInput | None = None,
+        target: CapabilitySubject | CapabilitySubjectGQLInput,
+        principal: PrincipalSelector | str | None = None,
         service_parameters: A2AServiceParametersGQLInput | None = None,
         **kwargs: Any
     ) -> AsyncIterator[A2AStream]:
@@ -258,18 +257,21 @@ class AionGqlClient:
         incremental JSON-RPC responses produced during agent workflow
         execution.
 
+        Everything but the request is keyword-only, so no positional slot past
+        the first carries a meaning that reordering or adding a parameter
+        could silently change under an existing call.
+
         Args:
             request (A2AJsonRpcRequestGQLInput): JSON-RPC request payload.
-            distribution_id: Legacy distribution identifier used when ``target``
-                is not supplied.
+            target: Capability subject addressed by the request. Build a
+                distribution target with ``CapabilitySubject.distribution``.
             principal: Optional principal selector.
-            target: Capability subject addressed by the request.
             service_parameters: Optional A2A transport parameters. The current
                 request's opaque usage carrier is merged when one is present.
             **kwargs (Any): Additional parameters forwarded to the underlying client.
         """
         self._validate_client_before_execute()
-        gql_target = _resolve_a2a_target(distribution_id, target)
+        gql_target = _to_capability_subject_gql_input(target)
 
         async for chunk in self.client.a_2_a_stream(
             request=request,
@@ -387,20 +389,6 @@ def _with_usage_attribution(
         extensions=extensions,
         additional=additional,
     )
-
-
-def _resolve_a2a_target(
-    distribution_id: str | None,
-    target: CapabilitySubject | CapabilitySubjectGQLInput | None,
-) -> CapabilitySubjectGQLInput:
-    """Return a GraphQL A2A target from legacy or typed inputs."""
-    if target is not None and distribution_id is not None:
-        raise ValueError("provide either distribution_id or target, not both")
-    if target is None:
-        if distribution_id is None:
-            raise ValueError("distribution_id or target is required")
-        target = CapabilitySubject.distribution(distribution_id)
-    return _to_capability_subject_gql_input(target)
 
 
 def _to_principal_selector_gql_value(

@@ -14,6 +14,7 @@ pytest.importorskip("jwt")
 pytest.importorskip("gql")
 
 from aion.core.settings import api_settings as aion_api_settings
+from aion.api.control_plane import CapabilitySubject
 from aion.api.gql.client import AionGqlClient
 from aion.api.gql.generated.graphql_client import (
     A2AJsonRpcRequestGQLInput,
@@ -155,7 +156,9 @@ async def test_a2a_stream_calls_gql(monkeypatch) -> None:
     client._is_initialized = True
 
     chunks = []
-    async for chunk in client.a2a_stream(request_model, "dist1"):
+    async for chunk in client.a2a_stream(
+        request_model, target=CapabilitySubject.distribution("dist1")
+    ):
         chunks.append(chunk)
 
     assert chunks == [{"result": 1}]
@@ -266,7 +269,9 @@ async def test_a2a_stream_requires_initialize(dummy_jwt_manager) -> None:
 
     request = A2AJsonRpcRequestGQLInput(jsonrpc="2.0", method="test", id="test-id")
 
-    stream = client.a2a_stream(request=request, distribution_id="test-distribution")
+    stream = client.a2a_stream(
+        request=request, target=CapabilitySubject.distribution("test-distribution")
+    )
 
     with pytest.raises(
         RuntimeError,
