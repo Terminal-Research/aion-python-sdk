@@ -117,3 +117,28 @@ def run_python_without(
         )
 
     return run
+
+
+@pytest.fixture
+def isolated_registry():
+    """Undo everything a test registers in the A2A extension registry.
+
+    The registry is a Singleton, so a fake descriptor registered by one test
+    is visible to every test that runs after it - and to the AgentCard built
+    from it. reset_to_default() is not enough: it restores activation and
+    availability for URIs already present, and register() writes the defaults
+    it would restore to, so a fake URI survives it entirely. Snapshotting both
+    maps is the only way back, and reaching into them is the price of the
+    registry having no unregister() - which production has no use for.
+    """
+    from aion.core.runtime import aion_a2a_extension_registry
+
+    descriptors = dict(aion_a2a_extension_registry._descriptors)
+    defaults = dict(aion_a2a_extension_registry._defaults)
+    aion_a2a_extension_registry.reset_to_default()
+    try:
+        yield aion_a2a_extension_registry
+    finally:
+        aion_a2a_extension_registry._descriptors = descriptors
+        aion_a2a_extension_registry._defaults = defaults
+        aion_a2a_extension_registry.reset_to_default()

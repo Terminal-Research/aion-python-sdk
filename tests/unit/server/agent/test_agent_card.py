@@ -2,6 +2,14 @@
 
 import pytest
 
+from aion.core.a2a import AION_JSONRPC_METHOD_EXTENSION_BINDINGS
+from aion.core.constants.a2a import (
+    BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1,
+    DAEMON_EXTENSION_URI_V1,
+    GET_CONTEXT_EXTENSION_URI_V1,
+    GET_CONTEXTS_LIST_EXTENSION_URI_V1,
+)
+from aion.core.runtime.context.extensions.descriptors import ExtensionDescriptor
 from aion.server.agent.card import AionAgentCard
 from aion.core.config.models import AgentConfig, AgentSkill
 from aion.core.runtime import aion_a2a_extension_registry
@@ -14,16 +22,116 @@ def _make_config(**kwargs) -> AgentConfig:
 
 
 class TestCapabilities:
+    @pytest.fixture(autouse=True)
+    def _registry(self, isolated_registry):
+        pass
+
     @pytest.mark.parametrize("uri", [
         "https://docs.aion.to/a2a/extensions/aion/context/1.0.0",
-        "https://docs.aion.to/a2a/extensions/aion/context/get-context/1.0.0",
-        "https://docs.aion.to/a2a/extensions/aion/context/get-contexts/1.0.0",
+        GET_CONTEXT_EXTENSION_URI_V1,
+        GET_CONTEXTS_LIST_EXTENSION_URI_V1,
     ])
     def test_context_extensions_are_not_advertised_by_default(self, uri):
-        """Legacy read handlers must not imply the platform's context contract."""
+        """The context-read extensions are supported, not announced.
+
+        A standard agent does not present them as one of its capabilities, and
+        a card carrying them would also be claiming the platform's unified
+        Context lifecycle, which this server does not implement. The unified
+        URI is in the list because it is not registered at all.
+        """
         card = AionAgentCard.from_config(_make_config(), "http://localhost:8000")
 
         assert uri not in {ext.uri for ext in card.capabilities.extensions}
+
+    @pytest.mark.parametrize("uri", [
+        GET_CONTEXT_EXTENSION_URI_V1,
+        GET_CONTEXTS_LIST_EXTENSION_URI_V1,
+    ])
+    def test_context_extensions_are_registered_and_active(self, uri):
+        """Kept off the card, but supported: not advertised is not disabled.
+
+        The pair with the test above - together they are the whole claim.
+        Absent from the card and absent from the registry would be a removed
+        extension; absent from the card while active in the registry is the
+        internal, non-advertised surface these methods actually are.
+        """
+        descriptors = {d.uri: d for d in aion_a2a_extension_registry.get_all()}
+
+        assert uri in descriptors
+        assert descriptors[uri].active is True
+        assert descriptors[uri].advertised is False
+
+    def test_evolution_is_not_advertised_before_it_is_enabled(self):
+        """The counter-example: advertised=True, and still off the card.
+
+        Advertisement and enablement are independent in both directions, so
+        the card filter has to read both - not infer one from the other.
+        """
+        descriptors = {d.uri: d for d in aion_a2a_extension_registry.get_all()}
+        assert descriptors[BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1].advertised is True
+
+        card = AionAgentCard.from_config(_make_config(), "http://localhost:8000")
+
+        assert BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1 not in {
+            ext.uri for ext in card.capabilities.extensions
+        }
+
+    def test_evolution_is_advertised_once_enabled(self):
+        """Enabling it through enabled_extensions is what puts it on the card.
+
+        With the daemon extension it requires, because without it the card
+        would be offering something every request is refused for - see the
+        test below.
+        """
+        aion_a2a_extension_registry.activate(
+            [BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1, DAEMON_EXTENSION_URI_V1]
+        )
+
+        card = AionAgentCard.from_config(_make_config(), "http://localhost:8000")
+
+        assert BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1 in {
+            ext.uri for ext in card.capabilities.extensions
+        }
+
+    def test_an_extension_missing_a_required_extension_is_not_advertised(self):
+        """`requires` is a condition on advertising, not only on verification.
+
+        `activate()` is additive and expands nothing, so an agent listing
+        evolution alone in enabled_extensions leaves the daemon extension it
+        requires inactive. Every request declaring evolution is then refused
+        for the missing co-activation, and a card advertising it would have
+        promised exactly that call.
+        """
+        aion_a2a_extension_registry.activate([BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1])
+        descriptors = {d.uri: d for d in aion_a2a_extension_registry.get_all()}
+        assert descriptors[BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1].active is True
+        assert descriptors[DAEMON_EXTENSION_URI_V1].active is False
+
+        card = AionAgentCard.from_config(_make_config(), "http://localhost:8000")
+
+        assert BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1 not in {
+            ext.uri for ext in card.capabilities.extensions
+        }
+
+    def test_an_enabled_but_unavailable_extension_is_not_advertised(self):
+        """Advertising what this deployment would refuse invites a failed call.
+
+        The evolution toolkit is the real case: the agent enabled the
+        extension, the deployment cannot run it, and the request-time verifier
+        already rejects it with this exact reason.
+        """
+        aion_a2a_extension_registry.activate(
+            [BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1, DAEMON_EXTENSION_URI_V1]
+        )
+        aion_a2a_extension_registry.mark_unavailable(
+            BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1, "the evolution toolkit is not installed"
+        )
+
+        card = AionAgentCard.from_config(_make_config(), "http://localhost:8000")
+
+        assert BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1 not in {
+            ext.uri for ext in card.capabilities.extensions
+        }
 
     def test_streaming_enabled(self):
         """from_config produces a card with streaming capability enabled."""
@@ -35,19 +143,46 @@ class TestCapabilities:
         card = AionAgentCard.from_config(_make_config(), "http://localhost:8000")
         assert card.capabilities.push_notifications is True
 
-    def test_active_registry_extensions_are_advertised(self):
-        """The card advertises exactly the registry's active extensions.
+    def test_a_method_extension_may_be_advertised(self):
+        """Being a method extension is not what keeps one off the card.
+
+        Asserted on a URI that really is bound to a JSON-RPC method, not on a
+        fake descriptor that merely stands for one: an invented URI no
+        binding claims would pass this test however the card treated method
+        extensions, which is the one outcome that proves nothing. The two
+        context methods are withheld by exposure policy, and nothing in the
+        card builder knows a method extension from any other - the property
+        this pins, so the distinction cannot quietly grow into a rule.
+        """
+        uri = AION_JSONRPC_METHOD_EXTENSION_BINDINGS["GetContext"].extension_uri
+        assert uri == GET_CONTEXT_EXTENSION_URI_V1
+        aion_a2a_extension_registry.register(
+            ExtensionDescriptor(
+                uri=uri,
+                description="A context read this deployment does announce.",
+                advertised=True,
+            )
+        )
+
+        card = AionAgentCard.from_config(_make_config(), "http://localhost:8000")
+
+        assert uri in {ext.uri for ext in card.capabilities.extensions}
+
+    def test_the_card_advertises_exactly_what_the_registry_says_it_may(self):
+        """The card is get_advertised() and nothing else.
 
         Asserted against the registry rather than a fixed count: which
         extensions ship is the registry's business, and a card that quietly
-        stopped advertising one — or advertised an inactive one, which a client
-        would then be entitled to invoke — is the failure worth catching.
+        stopped advertising one — or advertised one the registry withheld,
+        which a client would then be entitled to invoke — is the failure worth
+        catching. Deciding the rule here instead of in the card builder is the
+        point: one place answers "may this be published".
         """
         card = AionAgentCard.from_config(_make_config(), "http://localhost:8000")
-        expected = {ext.uri for ext in aion_a2a_extension_registry.get_all() if ext.active}
+        expected = {ext.uri for ext in aion_a2a_extension_registry.get_advertised()}
 
         assert {ext.uri for ext in card.capabilities.extensions} == expected
-        assert expected, "registry has no active extensions; the assertion above is vacuous"
+        assert expected, "registry advertises nothing; the assertion above is vacuous"
 
     def test_extensions_not_required(self):
         """All capability extensions have required set to False."""

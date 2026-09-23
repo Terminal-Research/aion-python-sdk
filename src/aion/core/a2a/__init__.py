@@ -48,6 +48,11 @@ from .response import (
     GetContextsListSuccessResponse,
 )
 
+from .method_extensions import (
+    AION_JSONRPC_METHOD_EXTENSION_BINDINGS,
+    AionJsonRpcMethodExtensionBinding,
+)
+
 from .extensions.cards import CardActionEventPayload
 from .extensions.distribution import (
     Behavior,

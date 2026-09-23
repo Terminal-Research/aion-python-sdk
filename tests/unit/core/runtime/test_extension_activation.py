@@ -288,19 +288,18 @@ class TestAionRuntimeExtensionsCollect:
 
 class TestAionA2AExtensionRegistry:
     """register()/activate()/reset_to_default()/get_all() together form the
-    single source of truth both per-request enforcement and (eventually)
-    AgentCard advertisement read from. activate() is additive only - it
+    single source of truth both per-request enforcement and AgentCard
+    advertisement read from - the card through get_advertised(), everything
+    request-time through get_all(). activate() is additive only - it
     turns on exactly the descriptors it's given, leaving every other
     descriptor's current state (typically its registered default)
     untouched. reset_to_default() is the test-only escape hatch that
     restores every descriptor to the active value it was registered with -
     production calls activate() exactly once per agent and never needs it."""
 
-    def setup_method(self):
-        aion_a2a_extension_registry.reset_to_default()
-
-    def teardown_method(self):
-        aion_a2a_extension_registry.reset_to_default()
+    @pytest.fixture(autouse=True)
+    def _registry(self, isolated_registry):
+        pass
 
     def test_registered_default_is_preserved_until_activated(self):
         fake_uri = "aion://extensions/test-registry-default-active/v1"
@@ -394,11 +393,9 @@ class TestAionA2AExtensionRegistry:
 
 
 class TestMarkUnavailable:
-    def setup_method(self):
-        aion_a2a_extension_registry.reset_to_default()
-
-    def teardown_method(self):
-        aion_a2a_extension_registry.reset_to_default()
+    @pytest.fixture(autouse=True)
+    def _registry(self, isolated_registry):
+        pass
 
     def test_mark_unavailable_records_reason(self):
         fake_uri = "aion://extensions/test-registry-unavailable/v1"
@@ -427,3 +424,285 @@ class TestMarkUnavailable:
 
         descriptor = next(d for d in aion_a2a_extension_registry.get_all() if d.uri == fake_uri)
         assert descriptor.unavailable_reason is None
+
+
+class TestAdvertisement:
+    """`advertised` decides publication on the AgentCard and nothing else.
+
+    Three properties, kept apart: registered at all (the server knows the
+    URI), active (enabled for this agent), advertised (may be published).
+    get_advertised() is the only place that combines them, so the card
+    builder never reinterprets the registry.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _registry(self, isolated_registry):
+        pass
+
+    def test_defaults_to_advertised(self):
+        """Most extensions are ordinary capabilities; withholding one is the
+        deliberate case, so it is the one that has to be spelled out."""
+        assert ExtensionDescriptor(uri=MARKER_URI).advertised is True
+
+    def test_get_advertised_omits_inactive_descriptors(self):
+        uri = "aion://extensions/test-advertised-inactive/v1"
+        aion_a2a_extension_registry.register(
+            ExtensionDescriptor(uri=uri, active=False, advertised=True)
+        )
+
+        assert uri not in {d.uri for d in aion_a2a_extension_registry.get_advertised()}
+
+    def test_get_advertised_omits_non_advertised_descriptors(self):
+        uri = "aion://extensions/test-advertised-withheld/v1"
+        aion_a2a_extension_registry.register(
+            ExtensionDescriptor(uri=uri, active=True, advertised=False)
+        )
+
+        assert uri not in {d.uri for d in aion_a2a_extension_registry.get_advertised()}
+
+    def test_get_advertised_omits_unavailable_descriptors(self):
+        """Enabled and publishable, but this deployment cannot serve it - and
+        the request-time verifier already refuses it with the same reason."""
+        uri = "aion://extensions/test-advertised-unavailable/v1"
+        aion_a2a_extension_registry.register(ExtensionDescriptor(uri=uri, active=True))
+        aion_a2a_extension_registry.mark_unavailable(uri, "toolkit not installed")
+
+        assert uri not in {d.uri for d in aion_a2a_extension_registry.get_advertised()}
+
+    def test_get_all_still_returns_a_non_advertised_descriptor(self):
+        """The whole point of the flag: request-time behaviour is unchanged."""
+        uri = "aion://extensions/test-advertised-still-known/v1"
+        aion_a2a_extension_registry.register(
+            ExtensionDescriptor(uri=uri, active=True, advertised=False)
+        )
+
+        descriptor = next(d for d in aion_a2a_extension_registry.get_all() if d.uri == uri)
+        assert descriptor.active is True
+
+    def test_a_non_advertised_extension_is_verified_like_any_other(self):
+        """Not advertised is not an authorization decision.
+
+        A request declaring the URI is collected and verified exactly as it
+        would be for an advertised extension - the flag never reaches
+        _verify().
+        """
+        uri = "aion://extensions/test-advertised-verified/v1"
+        descriptor = ExtensionDescriptor(uri=uri, advertised=False)
+        msg = Message(message_id="m1", role=Role.ROLE_USER)
+        rc = _FakeRequestContext(
+            message=msg, metadata={}, requested_extensions=frozenset({uri})
+        )
+
+        extensions = AionRuntimeExtensions.collect(rc, [descriptor])
+
+        assert extensions.is_active(uri) is True
+        assert extensions.unknown == ()
+
+    def test_advertising_does_not_change_activation(self):
+        """Withholding a descriptor from the card leaves activate() alone."""
+        uri = "aion://extensions/test-advertised-activation/v1"
+        aion_a2a_extension_registry.register(
+            ExtensionDescriptor(uri=uri, active=False, advertised=False)
+        )
+
+        aion_a2a_extension_registry.activate([uri])
+
+        descriptor = next(d for d in aion_a2a_extension_registry.get_all() if d.uri == uri)
+        assert descriptor.active is True
+        assert descriptor.advertised is False
+
+    def test_context_read_extensions_are_active_and_not_advertised(self):
+        """The built-in case the flag exists for.
+
+        Both methods stay registered, enabled and callable; neither is
+        announced on a standard agent's card. Regression guard for
+        registry.py's registrations - see
+        docs/development/extension-exposure.md.
+        """
+        from aion.core.constants.a2a import (
+            GET_CONTEXT_EXTENSION_URI_V1,
+            GET_CONTEXTS_LIST_EXTENSION_URI_V1,
+        )
+
+        descriptors = {d.uri: d for d in aion_a2a_extension_registry.get_all()}
+        for uri in (GET_CONTEXT_EXTENSION_URI_V1, GET_CONTEXTS_LIST_EXTENSION_URI_V1):
+            assert descriptors[uri].active is True
+            assert descriptors[uri].advertised is False
+
+    def test_a_custom_registration_can_advertise_a_context_uri(self):
+        """An implementation that genuinely fulfills a broader contract may
+        say so: register() replaces by URI, and that stayed true."""
+        from aion.core.constants.a2a import GET_CONTEXT_EXTENSION_URI_V1
+
+        aion_a2a_extension_registry.register(
+            ExtensionDescriptor(uri=GET_CONTEXT_EXTENSION_URI_V1, advertised=True)
+        )
+
+        assert GET_CONTEXT_EXTENSION_URI_V1 in {
+            d.uri for d in aion_a2a_extension_registry.get_advertised()
+        }
+
+    def test_get_advertised_omits_a_descriptor_whose_requirement_is_inactive(self):
+        """`requires` decides advertisement too, not only verification.
+
+        A client reading the card would declare this extension and be refused
+        for the co-activation it could not have known was missing.
+        """
+        required = "aion://extensions/test-advertised-required/v1"
+        dependent = "aion://extensions/test-advertised-dependent/v1"
+        aion_a2a_extension_registry.register(
+            ExtensionDescriptor(uri=required, active=False)
+        )
+        aion_a2a_extension_registry.register(
+            ExtensionDescriptor(uri=dependent, requires=(required,))
+        )
+
+        assert dependent not in {d.uri for d in aion_a2a_extension_registry.get_advertised()}
+
+    def test_get_advertised_keeps_a_descriptor_whose_requirement_is_active(self):
+        required = "aion://extensions/test-advertised-required-on/v1"
+        dependent = "aion://extensions/test-advertised-dependent-on/v1"
+        aion_a2a_extension_registry.register(ExtensionDescriptor(uri=required))
+        aion_a2a_extension_registry.register(
+            ExtensionDescriptor(uri=dependent, requires=(required,))
+        )
+
+        assert dependent in {d.uri for d in aion_a2a_extension_registry.get_advertised()}
+
+    def test_a_requirement_that_is_active_but_unavailable_withholds_its_dependent(self):
+        """The chain is only as strong as its weakest link, so the check has
+        to keep narrowing rather than stop one level down."""
+        required = "aion://extensions/test-advertised-chain-required/v1"
+        middle = "aion://extensions/test-advertised-chain-middle/v1"
+        dependent = "aion://extensions/test-advertised-chain-dependent/v1"
+        aion_a2a_extension_registry.register(ExtensionDescriptor(uri=required))
+        aion_a2a_extension_registry.register(
+            ExtensionDescriptor(uri=middle, requires=(required,))
+        )
+        aion_a2a_extension_registry.register(
+            ExtensionDescriptor(uri=dependent, requires=(middle,))
+        )
+        aion_a2a_extension_registry.mark_unavailable(required, "toolkit not installed")
+
+        advertised = {d.uri for d in aion_a2a_extension_registry.get_advertised()}
+        assert middle not in advertised
+        assert dependent not in advertised
+
+    def test_a_requirement_need_not_itself_be_advertised(self):
+        """Advertising is about what a card says; verification only needs the
+        requirement active, so withholding it from the card changes nothing."""
+        required = "aion://extensions/test-advertised-hidden-required/v1"
+        dependent = "aion://extensions/test-advertised-hidden-dependent/v1"
+        aion_a2a_extension_registry.register(
+            ExtensionDescriptor(uri=required, advertised=False)
+        )
+        aion_a2a_extension_registry.register(
+            ExtensionDescriptor(uri=dependent, requires=(required,))
+        )
+
+        advertised = {d.uri for d in aion_a2a_extension_registry.get_advertised()}
+        assert dependent in advertised
+        assert required not in advertised
+
+
+class TestServiceability:
+    """`unservable_reason()` is the deployment-readiness half of an extension URI.
+
+    Registered is a fact about the code; ready is a fact about this
+    deployment right now, and the two move on different clocks. Readiness is
+    the whole question for a method extension invoked directly, which sends
+    no extension declaration of its own. An extension declared on a message
+    is held to this and then to per-request activation in _verify(), where
+    its requirements must be declared on that same request - so a URI ready
+    here can still be refused there.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _registry(self, isolated_registry):
+        pass
+
+    def test_a_registered_active_available_extension_is_servable(self):
+        uri = "aion://extensions/test-servable-ok/v1"
+        aion_a2a_extension_registry.register(ExtensionDescriptor(uri=uri))
+
+        assert aion_a2a_extension_registry.unservable_reason(uri) is None
+
+    def test_an_unregistered_uri_is_not_servable(self):
+        reason = aion_a2a_extension_registry.unservable_reason("aion://extensions/nope/v1")
+
+        assert reason is not None
+        assert "not registered" in reason
+
+    def test_an_inactive_extension_names_enabled_extensions(self):
+        """Named the way _verify() names it, because it is the same fix."""
+        uri = "aion://extensions/test-servable-inactive/v1"
+        aion_a2a_extension_registry.register(ExtensionDescriptor(uri=uri, active=False))
+
+        reason = aion_a2a_extension_registry.unservable_reason(uri)
+
+        assert reason is not None
+        assert "enabled_extensions" in reason
+
+    def test_an_unavailable_extension_reports_its_own_reason(self):
+        uri = "aion://extensions/test-servable-unavailable/v1"
+        aion_a2a_extension_registry.register(ExtensionDescriptor(uri=uri))
+        aion_a2a_extension_registry.mark_unavailable(uri, "toolkit not installed")
+
+        assert aion_a2a_extension_registry.unservable_reason(uri) == "toolkit not installed"
+
+    def test_a_missing_requirement_is_named(self):
+        required = "aion://extensions/test-servable-required/v1"
+        dependent = "aion://extensions/test-servable-dependent/v1"
+        aion_a2a_extension_registry.register(
+            ExtensionDescriptor(uri=required, active=False)
+        )
+        aion_a2a_extension_registry.register(
+            ExtensionDescriptor(uri=dependent, requires=(required,))
+        )
+
+        reason = aion_a2a_extension_registry.unservable_reason(dependent)
+
+        assert reason is not None
+        assert required in reason
+
+    def test_an_unavailable_requirement_is_named(self):
+        """Available is part of servable, so a requirement that cannot run
+        withholds its dependent as surely as an inactive one."""
+        required = "aion://extensions/test-servable-required-broken/v1"
+        dependent = "aion://extensions/test-servable-dependent-broken/v1"
+        aion_a2a_extension_registry.register(ExtensionDescriptor(uri=required))
+        aion_a2a_extension_registry.register(
+            ExtensionDescriptor(uri=dependent, requires=(required,))
+        )
+        aion_a2a_extension_registry.mark_unavailable(required, "gone")
+
+        reason = aion_a2a_extension_registry.unservable_reason(dependent)
+
+        assert reason is not None
+        assert required in reason
+
+    def test_advertisement_does_not_decide_serviceability(self):
+        """Both directions, because either one slipping would turn the card
+        into an access-control mechanism."""
+        withheld = "aion://extensions/test-servable-withheld/v1"
+        announced = "aion://extensions/test-servable-announced/v1"
+        aion_a2a_extension_registry.register(
+            ExtensionDescriptor(uri=withheld, advertised=False)
+        )
+        aion_a2a_extension_registry.register(
+            ExtensionDescriptor(uri=announced, active=False, advertised=True)
+        )
+
+        assert aion_a2a_extension_registry.unservable_reason(withheld) is None
+        assert aion_a2a_extension_registry.unservable_reason(announced) is not None
+
+    def test_the_context_read_extensions_are_servable_as_shipped(self):
+        """The methods this matters for: enforcement that refused them would
+        be a behaviour change, not a check."""
+        from aion.core.constants.a2a import (
+            GET_CONTEXT_EXTENSION_URI_V1,
+            GET_CONTEXTS_LIST_EXTENSION_URI_V1,
+        )
+
+        for uri in (GET_CONTEXT_EXTENSION_URI_V1, GET_CONTEXTS_LIST_EXTENSION_URI_V1):
+            assert aion_a2a_extension_registry.unservable_reason(uri) is None
