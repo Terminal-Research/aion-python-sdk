@@ -9,6 +9,11 @@ wrong without anyone noticing: one task has to pause, resume, pause again and
 resume again, and both answers have to reach the agent in the order they were
 given.
 
+``ask-fail`` pauses the same way and then crashes on the answer. A failure on
+resume is not the failure ``fail`` covers: the task has already been paused,
+stored and taken on again, and it is that history the closing task has to
+keep while it reports the crash.
+
 ADK has no interrupt primitive, so these scenarios run on LangGraph only.
 """
 
@@ -18,10 +23,12 @@ import pytest
 from a2a.types import TaskState
 
 from tests.scenarios.commands import (
+    FAIL_MESSAGE,
     ask_answer_text,
     ask_question,
     ask_twice_answer_text,
     ask_twice_questions,
+    echo_text,
 )
 from tests.scenarios.harness import (
     ScenarioClient,
@@ -32,6 +39,7 @@ from tests.scenarios.harness import (
     stored_texts,
     task,
 )
+from tests.scenarios.harness.recorder import TERMINAL_STATES
 
 pytestmark = [pytest.mark.interrupts]
 
@@ -130,3 +138,61 @@ async def test_a_twice_resumed_task_is_stored_as_completed(client: ScenarioClien
     assert SECOND_ANSWER in texts
     assert texts.index(FIRST_ANSWER) < texts.index(SECOND_ANSWER)
     assert ask_twice_answer_text(FIRST_ANSWER, SECOND_ANSWER) in texts
+
+
+@pytest.mark.command("ask-fail")
+async def test_a_crash_on_resume_closes_the_task_as_failed(client: ScenarioClient) -> None:
+    """The resumed turn ends in one terminal FAILED task, and nothing after it.
+
+    The same task that paused is the one that fails: a new task id here would
+    leave the paused one dangling, and a second terminal event - a COMPLETED
+    or a fresh INPUT_REQUIRED behind the FAILED - would tell the caller two
+    different things about one turn.
+    """
+    opened = final_task(await client.send("ask-fail"))
+    assert opened.state == "INPUT_REQUIRED"
+    assert ask_question() in opened.text
+
+    resumed = await client.send(RESUME_ANSWER, task_id=opened.task_id, context_id=opened.context_id)
+
+    closing = final_task(resumed)
+    assert closing.state == "FAILED"
+    assert closing.final is True
+    assert resumed[-1] is closing
+    closings = [event for event in resumed if event.state in (*TERMINAL_STATES, "INPUT_REQUIRED")]
+    assert closings == [closing]
+    assert closing.task_id == opened.task_id
+    assert closing.context_id == opened.context_id
+
+
+@pytest.mark.command("ask-fail")
+async def test_a_task_that_failed_on_resume_keeps_its_history(client: ScenarioClient) -> None:
+    """The stored task is FAILED and still says what led up to the crash.
+
+    Both turns stay in it, in order - the command that paused the task and
+    the answer that resumed it - and the exception's text stays out of it,
+    exactly as for a crash on the first turn.
+    """
+    opened = final_task(await client.send("ask-fail"))
+    await client.send(RESUME_ANSWER, task_id=opened.task_id, context_id=opened.context_id)
+
+    stored = await client.get_task(opened.task_id)
+
+    assert stored.status.state == TaskState.TASK_STATE_FAILED
+    texts = stored_texts(stored)
+    assert "ask-fail" in texts
+    assert RESUME_ANSWER in texts
+    assert texts.index("ask-fail") < texts.index(RESUME_ANSWER)
+    assert not any(FAIL_MESSAGE in text for text in texts)
+
+
+@pytest.mark.command("ask-fail")
+async def test_a_crash_on_resume_does_not_take_the_agent_with_it(client: ScenarioClient) -> None:
+    """The next request is answered normally."""
+    opened = final_task(await client.send("ask-fail"))
+    await client.send(RESUME_ANSWER, task_id=opened.task_id, context_id=opened.context_id)
+
+    events = await client.send("echo still here")
+
+    assert echo_text("still here") in reply_texts(events)
+    assert final_task(events).state == "COMPLETED"

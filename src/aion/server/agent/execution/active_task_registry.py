@@ -31,6 +31,10 @@ from aion.server.tasks.ownership import (
 
 logger = logging.getLogger(__name__)
 
+# A signaled cancellation can be rescuing committed evolution work. Give its
+# normal 60-second drain time to finish before shutdown interrupts it.
+SHUTDOWN_CANCEL_DRAIN_SECONDS = 60.0
+
 
 def _has_finished(active_task: ActiveTask) -> bool:
     """Report whether the SDK has closed this ActiveTask for good.
@@ -82,7 +86,9 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
         # incarnation, forgotten once it finishes so a later incarnation of
         # the same task_id can be signaled again.
         self._cancel_signal_tasks: set[asyncio.Task[None]] = set()
-        self._cancel_signal_tasks_by_id: dict[str, ActiveTask] = {}
+        self._cancel_signal_tasks_by_id: dict[
+            str, tuple[ActiveTask, asyncio.Task[None]]
+        ] = {}
         # Set for the duration of aclose(). While it is set,
         # _remove_task_for_incarnation must not release a claim: aclose() has
         # already taken its own snapshot of the claims held at shutdown, and
@@ -433,6 +439,11 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
     def _on_ownership_lost(self, task_id: str, reason: str) -> None:
         """Fail closed by tearing down the local execution immediately."""
         logger.warning("Task %s lost ownership (%s); stopping execution", task_id, reason)
+        pending_cancel = self._cancel_signal_tasks_by_id.get(task_id)
+        if pending_cancel is not None:
+            # ActiveTask.cancel holds its lock while it awaits the executor.
+            # Stop that wait so ActiveTask.aclose can acquire the lock.
+            pending_cancel[1].cancel()
         self._on_task_interrupted(task_id)
 
     def _on_control_signal(self, task_id: str, signal: ControlSignal) -> None:
@@ -451,7 +462,7 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
         left that mark eventually stops waiting for it (see the reaper's
         overdue-cancel pass, and the request-side wait timeout).
         """
-        if signal is not ControlSignal.CANCEL:
+        if signal is not ControlSignal.CANCEL or self._shutting_down:
             return
         active_task = self._active_tasks.get(task_id)
         if active_task is None:
@@ -471,7 +482,8 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
         second signal for the same incarnation a no-op while still allowing a
         later incarnation - after a resume - to be signaled again.
         """
-        if self._cancel_signal_tasks_by_id.get(task_id) is active_task:
+        existing = self._cancel_signal_tasks_by_id.get(task_id)
+        if existing is not None and existing[0] is active_task:
             return
 
         task_manager = self._task_managers.get(task_id)
@@ -482,11 +494,12 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
             name=f"cancel-signal:{task_id}",
         )
         self._cancel_signal_tasks.add(pending)
-        self._cancel_signal_tasks_by_id[task_id] = active_task
+        self._cancel_signal_tasks_by_id[task_id] = (active_task, pending)
 
         def forget_pending(done: asyncio.Task[None]) -> None:
             self._cancel_signal_tasks.discard(done)
-            if self._cancel_signal_tasks_by_id.get(task_id) is active_task:
+            current = self._cancel_signal_tasks_by_id.get(task_id)
+            if current is not None and current[0] is active_task and current[1] is done:
                 self._cancel_signal_tasks_by_id.pop(task_id, None)
 
         pending.add_done_callback(forget_pending)
@@ -601,6 +614,19 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
                 for task_id in self._task_managers
                 if (claim := self._ownership.claim_for(task_id)) is not None
             ]
+
+        # A signaled cancel may still be rescuing committed work. Let it
+        # finish its bounded drain while the heartbeat keeps the claim alive.
+        # ActiveTask.cancel holds the task's lock throughout that wait, so any
+        # cancel still pending at the deadline must be interrupted before the
+        # base drain calls ActiveTask.aclose.
+        cancel_tasks = set(self._cancel_signal_tasks)
+        if cancel_tasks:
+            _, pending = await asyncio.wait(
+                cancel_tasks, timeout=SHUTDOWN_CANCEL_DRAIN_SECONDS
+            )
+            for task in pending:
+                task.cancel()
 
         await super().aclose()
 

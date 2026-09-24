@@ -17,13 +17,33 @@ __all__ = [
     "SHUTDOWN_DB_TIMEOUT_SECONDS",
     "RECONCILER_ENV_VAR",
     "RECONCILE_ADVISORY_LOCK_KEY",
+    "LEASE_TTL_SECONDS",
+    "MIN_LEASE_TTL_SECONDS",
+    "MIN_RENEWAL_RESERVE_SECONDS",
+    "UNKNOWN_RETRY_JITTER",
     "LeaseSettings",
+    "lease_settings_from_environment",
     "reaper_enabled_by_environment",
 ]
 
 # How long a lease outlives its last renewal: the worst pause the heartbeat
-# itself may take. There are no blocking sections in the executors.
+# itself may take. There are no blocking sections in the executors. This is
+# the default of TASK_OWNERSHIP_LEASE_TTL_SECONDS; every lease timing below
+# except the cancellation ones is a fixed share of it (LeaseSettings.for_ttl).
 LEASE_TTL_SECONDS = 60.0
+
+# How much time must be left over when a renewal hangs for its whole
+# statement timeout and its one retry hangs too: the heartbeat's own
+# scheduling, and the teardown of a claim it gives up on, happen in it.
+MIN_RENEWAL_RESERVE_SECONDS = 1.0
+
+# The smallest TTL a deployment may configure. At 24s the scaled timings give
+# a 4s statement timeout and leave 1.5s of reserve (see
+# LeaseSettings.renewal_reserve_seconds); much below it the fixed retry delay
+# eats the working window. It is also the smallest TTL the distributed
+# scenarios can run at: a cancel there waits CANCEL_WAIT_SECONDS for an owner
+# whose lease must still be alive afterwards.
+MIN_LEASE_TTL_SECONDS = 24.0
 
 # A quarter of the TTL, so three consecutive missed renewals are forgiven.
 HEARTBEAT_INTERVAL_SECONDS = 15.0
@@ -33,6 +53,10 @@ HEARTBEAT_SAFETY_MARGIN_SECONDS = 15.0
 
 # A blink of the network must not cost a third of the TTL.
 UNKNOWN_RETRY_SECONDS = 2.0
+
+# Each retry waits UNKNOWN_RETRY_SECONDS give or take this share, so that
+# instances which lost the database together do not return to it together.
+UNKNOWN_RETRY_JITTER = 0.25
 
 # Half the TTL, so the worst "a dead task still looks alive" is TTL plus half
 # a pass.
@@ -70,7 +94,8 @@ SHUTDOWN_DB_TIMEOUT_SECONDS = 2.0
 # cannot survive: the fail-closed deadline is only evaluated between attempts,
 # so an unbounded await parks the supervisor while every lease in the process
 # quietly expires. Bounding the statement converts that silence into an unknown
-# outcome, which the deadline logic already handles.
+# outcome, which the deadline logic already handles. A sixth of the default
+# TTL; LeaseSettings.for_ttl keeps that share below it.
 DB_STATEMENT_TIMEOUT_SECONDS = 10.0
 
 # How long a signaled cancellation may go un-honored, at a live lease, before
@@ -109,10 +134,68 @@ class LeaseSettings:
     cancel_grace_seconds: float = CANCEL_GRACE_SECONDS
     cancel_wait_seconds: float = CANCEL_WAIT_SECONDS
 
+    @classmethod
+    def for_ttl(cls, ttl_seconds: float) -> LeaseSettings:
+        """Lease timing scaled to one TTL, in the deployed proportions.
+
+        The heartbeat, the safety margin, the reconcile passes and the orphan
+        age keep the shares of the TTL they have at the default, so
+        ``for_ttl(LEASE_TTL_SECONDS)`` is exactly ``LeaseSettings()``. The
+        statement timeout is a sixth of the TTL, capped at the default: a
+        renewal that starts on its tick and hangs, then a retry after the
+        longest backoff that hangs too, still end before the fail-closed
+        deadline (see :attr:`renewal_reserve_seconds`). The cancellation
+        timings do not scale: the grace is bound to the evolution handler's
+        drain budget and the wait to an HTTP request, and neither has anything
+        to do with how long a lease is.
+
+        Raises:
+            ValueError: If ``ttl_seconds`` is below ``MIN_LEASE_TTL_SECONDS``.
+        """
+        if ttl_seconds < MIN_LEASE_TTL_SECONDS:
+            raise ValueError(
+                f"a lease TTL of {ttl_seconds}s is below the minimum of "
+                f"{MIN_LEASE_TTL_SECONDS}s"
+            )
+        scale = ttl_seconds / LEASE_TTL_SECONDS
+        return cls(
+            ttl_seconds=ttl_seconds,
+            heartbeat_interval_seconds=HEARTBEAT_INTERVAL_SECONDS * scale,
+            safety_margin_seconds=HEARTBEAT_SAFETY_MARGIN_SECONDS * scale,
+            statement_timeout_seconds=min(DB_STATEMENT_TIMEOUT_SECONDS, ttl_seconds / 6),
+            reconcile_interval_seconds=RECONCILE_INTERVAL_SECONDS * scale,
+            active_task_sweep_interval_seconds=ACTIVE_TASK_SWEEP_INTERVAL_SECONDS * scale,
+            orphan_task_age_seconds=ORPHAN_TASK_AGE_SECONDS * scale,
+        )
+
     @property
     def working_window_seconds(self) -> float:
         """How long work may continue on a lease that was just confirmed."""
         return max(0.0, self.ttl_seconds - self.safety_margin_seconds)
+
+    @property
+    def renewal_reserve_seconds(self) -> float:
+        """What is left of the working window in the worst renewal that still succeeds.
+
+        The heartbeat ticks one interval after the last confirmed renewal; that
+        renewal hangs for the whole statement timeout, the retry waits the
+        longest backoff and hangs for the whole timeout too. Negative means the
+        retry cannot finish before the deadline, and the heartbeat would cut
+        it short and give the claim up.
+        """
+        longest_backoff = self.unknown_retry_seconds * (1 + UNKNOWN_RETRY_JITTER)
+        return self.working_window_seconds - (
+            self.heartbeat_interval_seconds
+            + 2 * self.statement_timeout_seconds
+            + longest_backoff
+        )
+
+
+def lease_settings_from_environment() -> LeaseSettings:
+    """Lease timing for this process, scaled to its configured TTL."""
+    from aion.server.settings import app_settings
+
+    return LeaseSettings.for_ttl(app_settings.task_ownership_lease_ttl_seconds)
 
 
 def reaper_enabled_by_environment() -> bool:

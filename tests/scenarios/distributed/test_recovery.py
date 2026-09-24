@@ -41,7 +41,7 @@ from tests.scenarios.harness import (
     run_until_working,
     stored_texts,
 )
-from tests.scenarios.harness.pg import claim_held, claim_released
+from tests.scenarios.harness.pg import claim_held, claim_released, scenario_lease
 
 pytestmark = [pytest.mark.distributed]
 
@@ -53,17 +53,19 @@ SETTLED_REASON_KEY = "aion:settledReason"
 
 ACTIVE_STATES = (TaskState.TASK_STATE_SUBMITTED, TaskState.TASK_STATE_WORKING)
 
-LEASE_TIMEOUT_SECONDS = 150
+LEASE = scenario_lease()
+
+LEASE_TIMEOUT_SECONDS = 2 * LEASE.ttl_seconds + LEASE.reconcile_interval_seconds
 """Room for the leases to expire and for the reaper to act on them.
 
-``aion.server.tasks.ownership.config`` gives a lease 60 seconds and
-reconciles every 30, and neither is settable from the outside, so this is the
-worst case plus margin rather than a number chosen to be comfortable. It is
+The worst case is a whole TTL and then a whole reconcile interval; another
+TTL on top is margin. Derived from the TTL the servers are given
+(``harness.pg.SCENARIO_LEASE_TTL_SECONDS``) rather than written down. It is
 one deadline for both tasks, not one each: the two are awaited concurrently,
 so a tick landing between their two expiries costs the scenario nothing.
 """
 
-QUIET_SECONDS = 35
+QUIET_SECONDS = LEASE.reconcile_interval_seconds + 5
 """One reconcile interval plus margin, spent watching nothing happen.
 
 Not a second lease: the leases are long gone by the time this starts. It is

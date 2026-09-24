@@ -21,10 +21,13 @@ from typing import Optional
 
 import psycopg
 from aion.db.postgres.constants import AION_SCHEMA
+from aion.server.tasks.ownership import LeaseSettings
 
 from .waiting import eventually
 
 __all__ = [
+    "SCENARIO_LEASE_TTL_SECONDS",
+    "scenario_lease",
     "postgres_url",
     "postgres_env",
     "have_postgres",
@@ -33,6 +36,29 @@ __all__ = [
 ]
 
 POSTGRES_TEST_URL_VAR = "POSTGRES_TEST_URL"
+
+SCENARIO_LEASE_TTL_SECONDS = 24.0
+"""The lease TTL every server on the database runs with.
+
+Well short of the deployed 60 seconds, because the scenarios that kill a
+server wait for its leases to expire, and not shorter: in
+``distributed/test_recovery.py`` a cancel through the survivor waits
+``CANCEL_WAIT_SECONDS`` (10 s) after the kill, and the dead owner's lease must
+still be alive after that. The owner renewed at most one heartbeat (a quarter
+of the TTL) before it died, so its lease outlives the kill by at least three
+quarters of the TTL - 18 s here, 8 s of margin. It is also the smallest TTL a
+deployment may set (``MIN_LEASE_TTL_SECONDS``); the unit tests of the
+heartbeat's deadline check both.
+"""
+
+
+def scenario_lease() -> LeaseSettings:
+    """The lease timing those servers derive from that TTL.
+
+    Waits in the scenarios are computed from it rather than written down, so
+    they move with the TTL instead of silently outliving it.
+    """
+    return LeaseSettings.for_ttl(SCENARIO_LEASE_TTL_SECONDS)
 
 
 def postgres_url() -> Optional[str]:
@@ -46,14 +72,17 @@ def have_postgres() -> bool:
 
 
 def postgres_env() -> dict[str, str]:
-    """Environment that puts the server on that database."""
+    """Environment that puts the server on that database, at the scenario lease TTL."""
     url = postgres_url()
     if url is None:
         raise RuntimeError(
             f"{POSTGRES_TEST_URL_VAR} is not set; run the persistence scenarios via "
             "`make tests-scenarios-persistence`."
         )
-    return {"POSTGRES_URL": url}
+    return {
+        "POSTGRES_URL": url,
+        "TASK_OWNERSHIP_LEASE_TTL_SECONDS": str(SCENARIO_LEASE_TTL_SECONDS),
+    }
 
 
 async def claim_held(task_id: str) -> bool:

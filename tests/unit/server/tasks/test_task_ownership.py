@@ -86,7 +86,7 @@ class _ScriptedProvider:
         self.renew_calls = 0
         self.releases = 0
 
-    async def renew_batch(self, claims: list[Claim]):
+    async def renew_batch(self, claims: list[Claim], *, timeout_seconds: float | None = None):
         """Return the next scripted outcome, applied to every claim in the batch.
 
         Mirrors ``PostgresOwnershipProvider.renew_batch``: an ``Unknown``

@@ -4,7 +4,7 @@
      commands.py and frameworks.py. Do not edit by hand: run
      `make scenarios-matrix`. -->
 
-118 scenarios in 22 files, 252 runs across 2 frameworks: 234 run, 18 skipped.
+121 scenarios in 22 files, 258 runs across 2 frameworks: 237 run, 21 skipped.
 
 Nothing here was produced by running a scenario: `pytest --collect-only` and the registries are all it takes, and the same suite always renders the same file. What the suite is and how to run it is in [README.md](README.md).
 
@@ -14,15 +14,15 @@ A status cell reads `✓` when it runs, `skip` when `frameworks.UNSUPPORTED` or 
 
 |  | Covered | Not yet |
 |---|---|---|
-| Commands | 20 of 20: `help`, `echo`, `stream`, `typing`, `steps`, `slow`, `artifacts`, `card`, `outbox-task`, `outbox-message`, `ask`, `ask-twice`, `fail`, `ext`, `whoami`, `event`, `config`, `ids`, `big`, `parts` | — |
+| Commands | 21 of 21: `help`, `echo`, `stream`, `typing`, `steps`, `slow`, `artifacts`, `card`, `outbox-task`, `outbox-message`, `ask`, `ask-twice`, `ask-fail`, `fail`, `ext`, `whoami`, `event`, `config`, `ids`, `big`, `parts` | — |
 | Suites | 14 of 14: `smoke`, `streaming`, `events`, `terminal_states`, `interrupts`, `errors`, `artifacts`, `files`, `extensions`, `daemon`, `config`, `lifecycle`, `persistence`, `distributed` | — |
 
 ## Frameworks
 
 | Framework | Agent package | Entry | SDK extras | Commands implemented |
 |---|---|---|---|---|
-| langgraph | `tests.scenarios.agents.langgraph_core` | `graph.py:create_graph` | `langgraph-server` | 20 of 20 |
-| adk | `tests.scenarios.agents.adk_core` | `agent.py:create_agent` | `adk-server` | 18 of 20 |
+| langgraph | `tests.scenarios.agents.langgraph_core` | `graph.py:create_graph` | `langgraph-server` | 21 of 21 |
+| adk | `tests.scenarios.agents.adk_core` | `agent.py:create_agent` | `adk-server` | 18 of 21 |
 
 Pairs a framework genuinely cannot do, which is what a `skip` cell means:
 
@@ -31,6 +31,7 @@ Pairs a framework genuinely cannot do, which is what a `skip` cell means:
 | adk | `artifacts` | the ADK artifact service stores one part per artifact, so the SDK refuses the two-part data artifact this command emits (aion.adk emit_artifact) |
 | adk | `ask` | ADK has no interrupt/pause primitive; resume is a plain message send |
 | adk | `ask-twice` | ADK has no interrupt/pause primitive; resume is a plain message send |
+| adk | `ask-fail` | ADK has no interrupt/pause primitive; resume is a plain message send |
 
 An authoring surface only some adapters have; a scenario about it `skip`s on the rest:
 
@@ -48,7 +49,7 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 | `streaming` | chunked replies, ephemeral typing, unary send | 13 | `make tests-scenarios TAGS=streaming` |
 | `events` | event order, ids, outbox, get_task agreement | 21 | `make tests-scenarios TAGS=events` |
 | `terminal_states` | COMPLETED, FAILED, CANCELED, INPUT_REQUIRED | 9 | `make tests-scenarios TAGS=terminal_states` |
-| `interrupts` | INPUT_REQUIRED and resume | 6 | `make tests-scenarios TAGS=interrupts` |
+| `interrupts` | INPUT_REQUIRED and resume | 9 | `make tests-scenarios TAGS=interrupts` |
 | `errors` | failures that must stay reported, not crash the server | 8 | `make tests-scenarios TAGS=errors` |
 | `artifacts` | artifact and card emission | 4 | `make tests-scenarios TAGS=artifacts` |
 | `files` | inline file parts: stored, rejected, or passed through | 9 | `make tests-scenarios TAGS=files` |
@@ -192,12 +193,15 @@ Interrupt pauses a task for user input; resume delivers the answer.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [The stream ends with INPUT_REQUIRED carrying the interrupt question.](core/test_interrupts.py#L43 "test_ask_pauses_the_task_as_input_required") | `interrupts` | `ask` | `default` | ✓ | [skip](#frameworks) |
-| [Sending a message to the paused task resumes it with the user's answer.](core/test_interrupts.py#L52 "test_resume_delivers_the_answer_and_completes") | `interrupts` | `ask` | `default` | ✓ | [skip](#frameworks) |
-| [tasks/get after resume reports COMPLETED, not INPUT_REQUIRED.](core/test_interrupts.py#L69 "test_resumed_task_is_stored_as_completed") | `interrupts` | `ask` | `default` | ✓ | [skip](#frameworks) |
-| [Each interrupt pauses the one task again, with its own question.](core/test_interrupts.py#L83 "test_two_interrupts_pause_the_same_task_in_turn") | `interrupts` | `ask-twice` | `default` | ✓ | [skip](#frameworks) |
-| [The second resume completes the task, carrying both answers as given.](core/test_interrupts.py#L102 "test_both_answers_reach_the_agent_in_order") | `interrupts` | `ask-twice` | `default` | ✓ | [skip](#frameworks) |
-| [The task the server kept agrees: two pauses, one outcome.](core/test_interrupts.py#L118 "test_a_twice_resumed_task_is_stored_as_completed") | `interrupts` | `ask-twice` | `default` | ✓ | [skip](#frameworks) |
+| [The stream ends with INPUT_REQUIRED carrying the interrupt question.](core/test_interrupts.py#L51 "test_ask_pauses_the_task_as_input_required") | `interrupts` | `ask` | `default` | ✓ | [skip](#frameworks) |
+| [Sending a message to the paused task resumes it with the user's answer.](core/test_interrupts.py#L60 "test_resume_delivers_the_answer_and_completes") | `interrupts` | `ask` | `default` | ✓ | [skip](#frameworks) |
+| [tasks/get after resume reports COMPLETED, not INPUT_REQUIRED.](core/test_interrupts.py#L77 "test_resumed_task_is_stored_as_completed") | `interrupts` | `ask` | `default` | ✓ | [skip](#frameworks) |
+| [Each interrupt pauses the one task again, with its own question.](core/test_interrupts.py#L91 "test_two_interrupts_pause_the_same_task_in_turn") | `interrupts` | `ask-twice` | `default` | ✓ | [skip](#frameworks) |
+| [The second resume completes the task, carrying both answers as given.](core/test_interrupts.py#L110 "test_both_answers_reach_the_agent_in_order") | `interrupts` | `ask-twice` | `default` | ✓ | [skip](#frameworks) |
+| [The task the server kept agrees: two pauses, one outcome.](core/test_interrupts.py#L126 "test_a_twice_resumed_task_is_stored_as_completed") | `interrupts` | `ask-twice` | `default` | ✓ | [skip](#frameworks) |
+| [The resumed turn ends in one terminal FAILED task, and nothing after it.](core/test_interrupts.py#L143 "test_a_crash_on_resume_closes_the_task_as_failed") | `interrupts` | `ask-fail` | `default` | ✓ | [skip](#frameworks) |
+| [The stored task is FAILED and still says what led up to the crash.](core/test_interrupts.py#L168 "test_a_task_that_failed_on_resume_keeps_its_history") | `interrupts` | `ask-fail` | `default` | ✓ | [skip](#frameworks) |
+| [The next request is answered normally.](core/test_interrupts.py#L189 "test_a_crash_on_resume_does_not_take_the_agent_with_it") | `interrupts` | `ask-fail` | `default` | ✓ | [skip](#frameworks) |
 
 ### `tests/scenarios/core/test_outbox.py`
 
@@ -284,11 +288,11 @@ Cancelling a task through a server that is not the one running it.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [The owner's own stream closes as CANCELED, on a cancel it never received.](distributed/test_cancel.py#L79 "test_a_cancel_on_the_other_server_reaches_the_owner") | `distributed` | `slow` | `default` | ✓ | ✓ |
-| [The reply the agent owed never lands, on either server, and the claim goes.](distributed/test_cancel.py#L120 "test_the_cancelled_work_produces_no_late_answer") | `distributed` | `slow` | `default` | ✓ | ✓ |
-| [Concurrent cancels reach one outcome, and no caller is told otherwise.](distributed/test_cancel.py#L137 "test_two_concurrent_cancels_agree") | `distributed` | `slow` | `default` | ✓ | ✓ |
-| [A repeat is not a second cancellation but an error, and changes nothing.](distributed/test_cancel.py#L180 "test_cancelling_a_settled_task_again_is_refused") | `distributed` | `slow` | `default` | ✓ | ✓ |
-| [The outcome holds: nothing overwrites it once the work has stopped.](distributed/test_cancel.py#L203 "test_a_cancelled_task_never_reaches_another_terminal_state") | `distributed` | `slow` | `default` | ✓ | ✓ |
+| [The owner's own stream closes as CANCELED, on a cancel it never received.](distributed/test_cancel.py#L88 "test_a_cancel_on_the_other_server_reaches_the_owner") | `distributed` | `slow` | `default` | ✓ | ✓ |
+| [The reply the agent owed never lands, on either server, and the claim goes.](distributed/test_cancel.py#L129 "test_the_cancelled_work_produces_no_late_answer") | `distributed` | `slow` | `default` | ✓ | ✓ |
+| [Concurrent cancels reach one outcome, and no caller is told otherwise.](distributed/test_cancel.py#L146 "test_two_concurrent_cancels_agree") | `distributed` | `slow` | `default` | ✓ | ✓ |
+| [A repeat is not a second cancellation but an error, and changes nothing.](distributed/test_cancel.py#L189 "test_cancelling_a_settled_task_again_is_refused") | `distributed` | `slow` | `default` | ✓ | ✓ |
+| [The outcome holds: nothing overwrites it once the work has stopped.](distributed/test_cancel.py#L212 "test_a_cancelled_task_never_reaches_another_terminal_state") | `distributed` | `slow` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/distributed/test_ownership.py`
 
@@ -310,7 +314,7 @@ One server dies; the one that was already running closes what it left.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [The whole sequence, in the order a deployment would live it.](distributed/test_recovery.py#L93 "test_a_dead_owner_leaves_two_tasks_and_the_survivor_closes_both") | `distributed` | `slow` | `default` | ✓ | ✓ |
+| [The whole sequence, in the order a deployment would live it.](distributed/test_recovery.py#L95 "test_a_dead_owner_leaves_two_tasks_and_the_survivor_closes_both") | `distributed` | `slow` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/persistence/test_restart.py`
 
@@ -318,10 +322,10 @@ What a server restart does to the tasks the previous process held.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [The task read back after a restart is the task that was read before it.](persistence/test_restart.py#L94 "test_a_completed_task_is_unchanged_by_a_restart") | `persistence` | `echo` | `default` | ✓ | ✓ |
-| [Every reply of a multi-step turn is still there, in order, afterwards.](persistence/test_restart.py#L121 "test_a_multi_step_history_survives_a_restart") | `persistence` | `steps` | `default` | ✓ | ✓ |
-| [A shutdown cancels what it is running and says so on the task it leaves.](persistence/test_restart.py#L146 "test_a_running_task_is_settled_by_an_orderly_shutdown") | `persistence` | `slow` | `default` | ✓ | ✓ |
-| [A killed owner settles nothing, so the lease it stopped renewing does.](persistence/test_restart.py#L162 "test_a_running_task_is_settled_after_a_crash_when_its_lease_expires") | `persistence` | `slow` | `default` | ✓ | ✓ |
+| [The task read back after a restart is the task that was read before it.](persistence/test_restart.py#L97 "test_a_completed_task_is_unchanged_by_a_restart") | `persistence` | `echo` | `default` | ✓ | ✓ |
+| [Every reply of a multi-step turn is still there, in order, afterwards.](persistence/test_restart.py#L124 "test_a_multi_step_history_survives_a_restart") | `persistence` | `steps` | `default` | ✓ | ✓ |
+| [A shutdown cancels what it is running and says so on the task it leaves.](persistence/test_restart.py#L149 "test_a_running_task_is_settled_by_an_orderly_shutdown") | `persistence` | `slow` | `default` | ✓ | ✓ |
+| [A killed owner settles nothing, so the lease it stopped renewing does.](persistence/test_restart.py#L165 "test_a_running_task_is_settled_after_a_crash_when_its_lease_expires") | `persistence` | `slow` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/persistence/test_resubscribe.py`
 
@@ -351,6 +355,7 @@ The contract from `commands.py`. `Scenarios` counts the scenarios driving the co
 | `outbox-message` | Return an A2A Message through the outbox | `events` | 2 | ✓ | ✓ |
 | `ask` | Ask a question, then quote the answer | `interrupts` | 8 | ✓ | [skip](#frameworks) |
 | `ask-twice` | Ask two questions in a row | `interrupts` | 3 | ✓ | [skip](#frameworks) |
+| `ask-fail` | Ask a question, then fail on the answer | `interrupts`, `errors` | 3 | ✓ | [skip](#frameworks) |
 | `fail <mode>` | Fail on purpose: exception \| after-reply | `errors`, `terminal_states` | 6 | ✓ | ✓ |
 | `ext` | Report active and unknown extensions | `extensions` | 6 | ✓ | ✓ |
 | `whoami` | Report the daemon identity | `daemon` | 6 | ✓ | ✓ |

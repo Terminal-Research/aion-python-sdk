@@ -7,6 +7,7 @@ import logging
 import random
 import time
 
+from .config import UNKNOWN_RETRY_JITTER
 from .types import Claim, Unknown
 
 __all__ = ["OwnershipHeartbeat"]
@@ -57,17 +58,26 @@ class OwnershipHeartbeat:
         so retrying is only ever needed when the statement itself failed or
         timed out, uncertain for every claim still pending at once rather
         than one ``Unknown`` per claim.
+
+        No attempt runs past a pending claim's fail-closed deadline. The
+        deadline is checked before every attempt, the first one and the one
+        after each backoff alike, and each attempt is given only the time
+        left until the nearest deadline. The provider applies that bound the
+        way it applies its statement timeout, so running out of it is an
+        ``Unknown`` for the batch rather than an error: the claim whose
+        deadline has come is then given up, and the others retry.
         """
         pending = list(claims)
         try:
-            while pending:
-                outcome = await self.provider.renew_batch(pending)
+            while True:
+                pending = self._survivors(pending)
+                if not pending:
+                    return
+                remaining = min(claim.deadline for claim in pending) - time.monotonic()
+                outcome = await self.provider.renew_batch(pending, timeout_seconds=remaining)
                 if not isinstance(outcome, Unknown):
                     # Every claim in this attempt now has a definitive
                     # Owned or Lost outcome, already applied by the provider.
-                    return
-                pending = self._survivors(pending)
-                if not pending:
                     return
                 await self._backoff(pending)
         except asyncio.CancelledError:
@@ -103,6 +113,9 @@ class OwnershipHeartbeat:
     async def _backoff(self, pending: list[Claim]) -> None:
         """Wait before the next retry, bounded by the nearest deadline."""
         retry_seconds = self.provider.settings.unknown_retry_seconds
-        retry = random.uniform(retry_seconds * 0.75, retry_seconds * 1.25)
+        retry = random.uniform(
+            retry_seconds * (1 - UNKNOWN_RETRY_JITTER),
+            retry_seconds * (1 + UNKNOWN_RETRY_JITTER),
+        )
         remaining = min(claim.deadline for claim in pending) - time.monotonic()
         await asyncio.sleep(max(0.0, min(retry, remaining)))

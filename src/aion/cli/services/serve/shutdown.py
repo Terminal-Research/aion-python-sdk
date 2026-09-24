@@ -11,7 +11,7 @@ class ServeShutdownService(BaseExecuteService):
     and proxy processes managed by the ProcessManager.
     """
 
-    async def execute(self, process_manager: ProcessManager, timeout: int = 30) -> bool:
+    async def execute(self, process_manager: ProcessManager, timeout: int) -> bool:
         """
         Gracefully shutdown all processes.
 

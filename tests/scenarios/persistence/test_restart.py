@@ -41,6 +41,7 @@ from tests.scenarios.harness import (
     run_until_working,
     stored_texts,
 )
+from tests.scenarios.harness.pg import scenario_lease
 
 pytestmark = [pytest.mark.persistence]
 
@@ -53,12 +54,14 @@ ACTIVE_STATES = (TaskState.TASK_STATE_SUBMITTED, TaskState.TASK_STATE_WORKING)
 SLOW_SECONDS = 120
 """Longer than any settlement here waits, so the agent never ends the task itself."""
 
-LEASE_TIMEOUT_SECONDS = 150
+LEASE = scenario_lease()
+
+LEASE_TIMEOUT_SECONDS = 2 * LEASE.ttl_seconds + LEASE.reconcile_interval_seconds
 """Room for the lease to expire and for a reconcile pass to act on it.
 
-``aion.server.tasks.ownership.config`` gives a lease 60 seconds and reconciles
-every 30, and neither is settable from the outside, so this is the worst case
-plus margin rather than a number chosen to be comfortable.
+The worst case is a whole TTL and then a whole reconcile interval; another
+TTL on top is margin. Derived from the TTL the servers are given
+(``harness.pg.SCENARIO_LEASE_TTL_SECONDS``) rather than written down.
 """
 
 

@@ -185,6 +185,7 @@ COMMANDS: tuple[Command, ...] = (
     Command("outbox-message", "Return an A2A Message through the outbox", tags=("events",)),
     Command("ask", "Ask a question, then quote the answer", tags=("interrupts",)),
     Command("ask-twice", "Ask two questions in a row", tags=("interrupts",)),
+    Command("ask-fail", "Ask a question, then fail on the answer", tags=("interrupts", "errors")),
     Command("fail", "Fail on purpose: exception | after-reply", "<mode>",
             ("errors", "terminal_states")),
     Command("ext", "Report active and unknown extensions", tags=("extensions",),
@@ -424,7 +425,10 @@ OUTBOX_TASK_METADATA = {"scenario": "outbox-task"}
 
 
 # How `fail <mode>` fails: before saying anything, or with a reply already
-# delivered. Those are the two an agent can produce.
+# delivered. Those are the two an agent can produce. A failure on the resume
+# of a paused task is its own command, `ask-fail`, rather than a third mode:
+# only LangGraph can pause, and `UNSUPPORTED` is keyed by command, so a mode
+# could not be skipped on ADK without skipping every other mode with it.
 #
 # The third case the server handles - a producer that crashes after its own
 # terminal state was already reported, which must not be overwritten with

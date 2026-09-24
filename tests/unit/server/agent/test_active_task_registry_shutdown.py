@@ -8,6 +8,8 @@ knows the execution is gone. A subscriber does not — it may have merely
 disconnected — which is why ``TerminalTaskProjection`` only reads.
 """
 
+import asyncio
+
 import pytest
 from a2a.types import Task, TaskState, TaskStatus
 from unittest.mock import AsyncMock, Mock, patch
@@ -147,3 +149,74 @@ class TestShutdownSettlement:
         await registry.aclose()
 
         store.save.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_shutdown_interrupts_a_stuck_signaled_cancel(execution_scope):
+    """Shutdown releases ActiveTask's lock before draining its execution."""
+    registry, _, active_task = await _registry_holding(TaskState.TASK_STATE_WORKING)
+    cancel_entered = asyncio.Event()
+    cancel_exited = asyncio.Event()
+
+    async def stuck_cancel(_context):
+        cancel_entered.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancel_exited.set()
+
+    async def close_after_cancel():
+        await cancel_exited.wait()
+
+    active_task.cancel.side_effect = stuck_cancel
+    active_task.aclose.side_effect = close_after_cancel
+    registry._dispatch_cancel(TASK_ID, active_task)
+    await cancel_entered.wait()
+
+    with patch(
+        "aion.server.agent.execution.active_task_registry.SHUTDOWN_CANCEL_DRAIN_SECONDS",
+        0.01,
+    ):
+        await asyncio.wait_for(registry.aclose(), timeout=1.0)
+
+    assert cancel_exited.is_set()
+    active_task.aclose.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_shutdown_allows_signaled_cancel_to_finish_rescue(execution_scope):
+    """A responsive cancellation finishes its rescue before ActiveTask closes."""
+    registry, store, active_task = await _registry_holding(TaskState.TASK_STATE_WORKING)
+    cancel_entered = asyncio.Event()
+    rescue_finished = asyncio.Event()
+    cancel_was_interrupted = False
+
+    async def rescuing_cancel(_context):
+        nonlocal cancel_was_interrupted
+        cancel_entered.set()
+        try:
+            await rescue_finished.wait()
+        except asyncio.CancelledError:
+            cancel_was_interrupted = True
+            raise
+        store.get.return_value = _task(TaskState.TASK_STATE_CANCELED)
+
+    async def close_after_rescue():
+        assert rescue_finished.is_set()
+
+    active_task.cancel.side_effect = rescuing_cancel
+    active_task.aclose.side_effect = close_after_rescue
+    registry._dispatch_cancel(TASK_ID, active_task)
+    await cancel_entered.wait()
+
+    shutdown = asyncio.create_task(registry.aclose())
+    await asyncio.sleep(0)
+    assert not shutdown.done()
+    assert not cancel_was_interrupted
+
+    rescue_finished.set()
+    await asyncio.wait_for(shutdown, timeout=1.0)
+
+    assert not cancel_was_interrupted
+    active_task.aclose.assert_awaited_once()
+    store.save.assert_not_awaited()

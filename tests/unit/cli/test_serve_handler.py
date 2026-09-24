@@ -192,3 +192,20 @@ class TestBackgroundTasks:
             await asyncio.sleep(0)
 
         assert not mock_logger.warning.called
+
+
+def test_child_shutdown_budget_covers_rescue_and_settlement():
+    """The parent keeps a child alive long enough for its bounded rescue."""
+    from aion.server.agent.execution.active_task_registry import (
+        SHUTDOWN_CANCEL_DRAIN_SECONDS,
+    )
+    from aion.server.agent.execution.extensions.evolution.handler import (
+        _CANCEL_DRAIN_TIMEOUT_S,
+    )
+    from aion.server.tasks.ownership import SHUTDOWN_DB_TIMEOUT_SECONDS
+
+    assert SHUTDOWN_CANCEL_DRAIN_SECONDS >= _CANCEL_DRAIN_TIMEOUT_S
+    assert (
+        serve.SERVE_SHUTDOWN_TIMEOUT_SECONDS
+        > SHUTDOWN_CANCEL_DRAIN_SECONDS + SHUTDOWN_DB_TIMEOUT_SECONDS
+    )

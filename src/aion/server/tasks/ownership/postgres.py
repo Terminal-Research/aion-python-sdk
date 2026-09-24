@@ -26,6 +26,7 @@ from .config import (
     LeaseSettings,
     RECONCILE_ADVISORY_LOCK_KEY,
     RECONCILER_ENV_VAR,
+    lease_settings_from_environment,
     reaper_enabled_by_environment,
 )
 from .heartbeat import OwnershipHeartbeat
@@ -79,7 +80,8 @@ class PostgresOwnershipProvider:
                 lease and its task resolve to the same key.
             owner_instance_id: Optional diagnostic instance identity. When it
                 is absent, the deployment's configured host name is used.
-            settings: Lease timing; the defaults are the deployed ones.
+            settings: Lease timing. Defaults to the deployed proportions
+                scaled to ``TASK_OWNERSHIP_LEASE_TTL_SECONDS``.
             reconciler_enabled: Whether this process reclaims expired leases.
                 Defaults to the ``TASK_OWNERSHIP_REAPER`` switch, which is
                 on unless explicitly disabled.
@@ -95,7 +97,7 @@ class PostgresOwnershipProvider:
         self.agent_id = agent_id
         self._db_manager = db_manager
         self._task_id_parser = task_id_parser
-        self.settings = settings or LeaseSettings()
+        self.settings = settings or lease_settings_from_environment()
         self.owner_instance_id = owner_instance_id or app_settings.host_name or None
         self.reconciler_enabled = (
             reaper_enabled_by_environment()
@@ -276,7 +278,9 @@ class PostgresOwnershipProvider:
             self._notify_control_signal_once(claim.task_id, claim.owner_token, ControlSignal.CANCEL)
         return Owned(record.lease_expires_at, cancel_requested=record.cancel_requested_at is not None)
 
-    async def renew_batch(self, claims: list[Claim]) -> dict[str, Owned | Lost] | Unknown:
+    async def renew_batch(
+        self, claims: list[Claim], *, timeout_seconds: float | None = None
+    ) -> dict[str, Owned | Lost] | Unknown:
         """Conditionally extend many leases in one round trip.
 
         Same fencing and result semantics as :meth:`renew`, batched: a
@@ -285,6 +289,15 @@ class PostgresOwnershipProvider:
         would report - so only a failed or timed-out statement is uncertain,
         and it is uncertain for the whole batch at once rather than as one
         ``Unknown`` per claim.
+
+        Args:
+            claims: The claims to renew together.
+            timeout_seconds: A tighter bound than the statement timeout for
+                this one call - the heartbeat passes the time left until the
+                nearest deadline in the batch. It is applied inside the same
+                ``except`` that turns the statement timeout into ``Unknown``,
+                so running out of it is uncertainty, never an error that
+                would fail every claim in the batch.
 
         Returns:
             A mapping from ``task_id`` to its outcome when the statement
@@ -296,9 +309,12 @@ class PostgresOwnershipProvider:
 
         started = time.monotonic()
         ttl = timedelta(seconds=self.settings.ttl_seconds)
+        limit = self.settings.statement_timeout_seconds
+        if timeout_seconds is not None:
+            limit = max(0.0, min(limit, timeout_seconds))
         try:
             pairs = [(self._task_id_parser(claim.task_id), claim.owner_token) for claim in claims]
-            async with asyncio.timeout(self.settings.statement_timeout_seconds):
+            async with asyncio.timeout(limit):
                 async with self._db_manager.get_session() as session:
                     records = await TaskClaimsRepository(session).renew_batch(pairs, ttl)
                     await session.commit()

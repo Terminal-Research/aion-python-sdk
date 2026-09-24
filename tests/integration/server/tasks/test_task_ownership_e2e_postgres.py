@@ -41,6 +41,8 @@ from a2a.types import CancelTaskRequest, SubscribeToTaskRequest, Task, TaskState
 from a2a.utils.errors import TaskNotCancelableError
 from sqlalchemy import text
 
+from aion.core.a2a.enums import A2AMetadataKey, TaskSettlementReason
+from aion.server.agent.execution.active_task_registry import _has_finished
 from aion.server.agent.execution.scope import init_execution_scope
 from aion.server.core.app.handlers import request_handler as _request_handler_module
 from aion.server.core.app.handlers.request_handler import AionRequestHandler
@@ -88,6 +90,37 @@ class _GracefulAgentExecutor:
     async def cancel(self, context, event_queue) -> None:
         """Publish the terminal CANCELED event, exactly as a real cancel does."""
         await TaskUpdater(event_queue, context.task_id, context.context_id).cancel()
+
+
+class _StuckAgentExecutor(_GracefulAgentExecutor):
+    """An owner that is alive and receives the cancellation, but never honors it.
+
+    ``cancel`` parks on an event instead of publishing the terminal outcome,
+    and parks without blocking the event loop - so the heartbeat keeps
+    renewing the lease and the task stays owned. That is the whole premise of
+    ``cancel_timeout``: a loop that blocked would starve the heartbeat, the
+    lease would expire, and the task would be settled as ``lease_expired``
+    instead - a different branch that would still pass a looser assertion.
+
+    The registry must cancel this pending call after ownership is lost so
+    ActiveTask can release its lock and close the execution.
+    """
+
+    def __init__(self) -> None:
+        """Start parked; ``cancel_entered`` reports that the signal arrived."""
+        self.cancel_entered = asyncio.Event()
+        self.cancel_exited = asyncio.Event()
+        self.release = asyncio.Event()
+
+    async def cancel(self, context, event_queue) -> None:
+        """Wait for a release or cancellation before publishing an outcome."""
+        self.cancel_entered.set()
+        try:
+            await self.release.wait()
+            await super().cancel(context, event_queue)
+        finally:
+            self.cancel_exited.set()
+
 
 pytestmark = [
     pytest.mark.skipif(not POSTGRES_TEST_URL, reason="POSTGRES_TEST_URL is not set"),
@@ -170,7 +203,13 @@ class _Instance:
         await self.listener.stop()
 
 
-def _instance(name: str, *, enable_push: bool = True, **provider_kwargs) -> _Instance:
+def _instance(
+    name: str,
+    *,
+    enable_push: bool = True,
+    agent_executor=None,
+    **provider_kwargs,
+) -> _Instance:
     """Assemble one instance over the shared database.
 
     The store and the provider are the pair ``StoreManager`` selects together,
@@ -197,6 +236,8 @@ def _instance(name: str, *, enable_push: bool = True, **provider_kwargs) -> _Ins
             heartbeat renewal. ``False`` is what a test reaches for when it
             needs the pre-push, poll-only timing back, deterministically -
             see ``test_cancel_wait_timeout_still_reports_current_state_and_converges_later``.
+        agent_executor: The executor the handler drives; ``_GracefulAgentExecutor``
+            when omitted.
     """
     listener = TaskEventListener(db_manager=_db_manager)
     listener.start()
@@ -207,7 +248,7 @@ def _instance(name: str, *, enable_push: bool = True, **provider_kwargs) -> _Ins
     agent_card = Mock()
     agent_card.capabilities.streaming = True
     handler = AionRequestHandler(
-        agent_executor=_GracefulAgentExecutor(),
+        agent_executor=agent_executor or _GracefulAgentExecutor(),
         task_store=store,
         agent_card=agent_card,
         ownership_provider=provider,
@@ -221,9 +262,9 @@ async def instances(database):
     """Two instances that are closed however the test ends."""
     built: list[_Instance] = []
 
-    def build(name: str, **provider_kwargs) -> _Instance:
+    def build(name: str, **instance_kwargs) -> _Instance:
         """Register one instance for shutdown and hand it to the test."""
-        instance = _instance(name, **provider_kwargs)
+        instance = _instance(name, **instance_kwargs)
         built.append(instance)
         return instance
 
@@ -483,6 +524,79 @@ async def test_concurrent_cancels_from_different_instances_agree(instances) -> N
     assert await claim_count() == 0
 
 
+async def test_an_owner_that_ignores_a_cancellation_is_forced_closed(
+    instances, monkeypatch
+) -> None:
+    """The last backstop of cancellation, end to end: ``cancel_timeout``.
+
+    The owner is alive, keeps renewing its lease, and receives the request -
+    it just never acts on it. Once the grace period runs out, the reaper on
+    another instance closes the task as CANCELED on the owner's behalf,
+    fenced by the owner's own token, and revokes the claim. The owner learns
+    of that from its next renewal, tears the execution down, and whatever it
+    writes afterwards is refused. The provider-level half of this is
+    ``test_a_live_lease_with_an_overdue_cancel_is_forced_closed``; this is
+    the same chain with the registry, the heartbeat and a real execution in
+    it.
+
+    The instances' own reapers are off so that the only pass that can settle
+    the task is the one this test drives, and a pass that finds nothing to do
+    is not mistaken for one that lost the cluster lock to a neighbour.
+    """
+    monkeypatch.setattr(_request_handler_module, "CANCEL_WAIT_SECONDS", 0.2)
+    task_id = str(uuid.uuid4())
+    stuck = _StuckAgentExecutor()
+    holder = instances(
+        "pod-a",
+        agent_executor=stuck,
+        settings=short_lease(),
+        reconciler_enabled=False,
+    )
+    controller = instances("pod-b", reconciler_enabled=False)
+    reaper = _provider(
+        "pod-c",
+        reconciler_enabled=True,
+        settings=short_lease(cancel_grace_seconds=1.0),
+    )
+    execution = await holder.execute(task_id)
+    await write_task(holder.provider, task_id, TaskState.TASK_STATE_WORKING)
+
+    try:
+        reported = await controller.cancel(task_id)
+        assert reported.status.state == TaskState.TASK_STATE_WORKING
+        await asyncio.wait_for(stuck.cancel_entered.wait(), timeout=STREAM_TIMEOUT_SECONDS)
+
+        # Within the grace period the reaper leaves a live owner alone.
+        assert await reaper.reconcile() == 0
+        assert await task_state(task_id) == "TASK_STATE_WORKING"
+        assert holder.provider.claim_for(task_id) is not None
+
+        await _until_async(lambda: _settled_one(reaper))
+
+        settled = await controller.store.get(task_id)
+        assert settled.status.state == TaskState.TASK_STATE_CANCELED
+        assert settled.metadata[A2AMetadataKey.SETTLED_REASON.value] == (
+            TaskSettlementReason.CANCEL_TIMEOUT.value
+        )
+        assert await claim_count() == 0
+
+        # The owner's next renewal finds the claim revoked and closes the
+        # execution while executor.cancel is still waiting.
+        await _until(lambda: holder.provider.claim_for(task_id) is None)
+        await asyncio.wait_for(stuck.cancel_exited.wait(), timeout=STREAM_TIMEOUT_SECONDS)
+        await _until(lambda: _has_finished(execution))
+        assert not stuck.release.is_set()
+
+        # A late write through the former owner's fenced store cannot replace
+        # the reaper's outcome.
+        with pytest.raises(TaskOwnershipLost):
+            await write_task(holder.provider, task_id, TaskState.TASK_STATE_COMPLETED)
+        assert await controller.store.get(task_id) == settled
+        assert await claim_count() == 0
+    finally:
+        stuck.release.set()
+
+
 async def test_a_task_left_by_a_dead_instance_is_settled(instances) -> None:
     """The whole point of an expiring lease, end to end.
 
@@ -572,6 +686,21 @@ async def test_shutdown_settles_what_it_interrupts_and_frees_the_task(
 
     assert await task_state(task_id) == "TASK_STATE_FAILED"
     assert first.provider.claim_for(task_id) is None
+
+
+async def _settled_one(reaper: PostgresOwnershipProvider) -> bool:
+    """Run one reaper pass and report whether it settled anything."""
+    return await reaper.reconcile() == 1
+
+
+async def _until_async(condition, timeout: float = 5.0) -> None:
+    """``_until`` for a condition that has to query something to answer."""
+    deadline = asyncio.get_running_loop().time() + timeout
+    while asyncio.get_running_loop().time() < deadline:
+        if await condition():
+            return
+        await asyncio.sleep(0.05)
+    raise AssertionError("The expected background effect did not happen in time")
 
 
 async def _until(condition, timeout: float = 5.0) -> None:

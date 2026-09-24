@@ -22,6 +22,15 @@ servers one of the two cancels reaches the owner itself, and an owner that
 finishes settling before the other request is served refuses that one as not
 cancelable. Both answers are correct, and which pair arrives is a race, so
 the scenario asserts the outcome and allows either reply.
+
+An owner that stays alive but never honors the cancel is not driven here.
+The reaper closes such a task as CANCELED with the ``cancel_timeout`` reason
+once ``CANCEL_GRACE_SECONDS`` (120 s) has passed, and that grace must stay
+longer than the evolution rescue drain, so a scenario would spend more than
+two minutes per framework waiting for it. The chain is checked at the
+integration level instead, by
+``test_an_owner_that_ignores_a_cancellation_is_forced_closed`` in
+``tests/integration/server/tasks/test_task_ownership_e2e_postgres.py``.
 """
 
 from __future__ import annotations

@@ -16,7 +16,7 @@ from .config import config, event, ext, whoami
 from .errors import fail
 from .events import ids, steps
 from .files import artifacts, parts
-from .interrupts import ask, ask_twice
+from .interrupts import ask, ask_fail, ask_twice
 from .lifecycle import slow
 from .outbox import outbox_message, outbox_task
 from .payload import big
@@ -36,6 +36,7 @@ BEHAVIORS: dict[str, Behavior] = {
     "slow": slow,
     "ask": ask,
     "ask-twice": ask_twice,
+    "ask-fail": ask_fail,
     "ids": ids,
     "parts": parts,
     "artifacts": artifacts,

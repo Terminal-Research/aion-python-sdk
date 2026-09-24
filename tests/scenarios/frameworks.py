@@ -87,6 +87,7 @@ UNSUPPORTED: dict[tuple[str, str], str] = {
     ),
     ("adk", "ask"): "ADK has no interrupt/pause primitive; resume is a plain message send",
     ("adk", "ask-twice"): "ADK has no interrupt/pause primitive; resume is a plain message send",
+    ("adk", "ask-fail"): "ADK has no interrupt/pause primitive; resume is a plain message send",
 }
 
 

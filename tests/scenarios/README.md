@@ -68,10 +68,13 @@ orderly way settles the tasks it was running itself, under the claims it still
 holds, so that scenario reads `server_shutdown` the moment the next process is
 up. A server that is killed outright settles nothing: its tasks are reclaimed
 only when the leases it stopped renewing expire, which is `lease_expired` and
-no sooner than the lease allows — 60 seconds with a reconcile pass every 30
-(`aion.server.tasks.ownership.config`, not settable from outside the process).
-That scenario is minutes rather than seconds, and it is the reason these two
-groups are not part of `make tests-scenarios`. `distributed/` waits once more,
+no sooner than the lease allows. The servers here run with
+`TASK_OWNERSHIP_LEASE_TTL_SECONDS` at 24 seconds rather than the deployed 60
+(`SCENARIO_LEASE_TTL_SECONDS` in `harness/pg.py`, which says why it cannot be
+lower), with a reconcile pass every 12, and every wait for a lease is derived
+from that TTL. That scenario is still the better part of a minute rather than
+seconds, and it is the reason these two groups are not part of
+`make tests-scenarios`. `distributed/` waits once more,
 for the same reason and only in `test_recovery.py`.
 
 It is also why both groups need a database. In-memory task storage is limited

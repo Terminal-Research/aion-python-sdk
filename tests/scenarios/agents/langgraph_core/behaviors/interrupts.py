@@ -8,13 +8,14 @@ from langgraph.types import interrupt
 
 from tests.scenarios.agents.langgraph_core.invocation import Invocation
 from tests.scenarios.commands import (
+    FAIL_MESSAGE,
     ask_answer_text,
     ask_question,
     ask_twice_answer_text,
     ask_twice_questions,
 )
 
-__all__ = ["ask", "ask_twice"]
+__all__ = ["ask", "ask_twice", "ask_fail"]
 
 
 def _resume_text(value: Any) -> str:
@@ -51,3 +52,14 @@ async def ask_twice(invocation: Invocation) -> None:
     await invocation.thread.reply(
         ask_twice_answer_text(_resume_text(answer_1), _resume_text(answer_2))
     )
+
+
+async def ask_fail(invocation: Invocation) -> None:
+    """Interrupt with the ``ask`` question, then crash on the answer.
+
+    The crash happens on the resume turn, after the task was already paused
+    once and has been taken on again - the one place a failure has a history
+    behind it that the closing task must keep.
+    """
+    interrupt(ask_question())
+    raise RuntimeError(f"{FAIL_MESSAGE}: on-resume")
