@@ -8,6 +8,7 @@ Everything you need to start contributing to the Aion Python SDK.
 - **[Dependencies Management](dependencies.md)** — Installing the project, changing dependencies, and feature branch testing
 - **[Extension exposure](extension-exposure.md)** — Known, active, advertised, unavailable, and which extension owns a task
 - **[Scenario tests](../../tests/scenarios/README.md)** — The suite that starts a real `aion serve` and drives it over A2A
+- **[Continuous integration](ci.md)** — Full pull request checks and the GitHub ruleset that makes them required
 
 This directory contains repository-level maintainer guides. Other Markdown in
 the repository is scoped to where it sits — the root `README.md` and
@@ -20,8 +21,8 @@ forwarding files: one copy of a subject is the point.
 
 ## Testing
 
-The suite lives in `tests/`, in three directories that are the three ways it
-is run: `tests/unit`, `tests/integration` and `tests/scenarios`. The first two
+The suite lives in three directories under `tests/`: `tests/unit`,
+`tests/integration` and `tests/scenarios`. The first two
 mirror `src/aion/`; the scenario suite mirrors nothing, it drives the product
 from outside. The directory a test is in is what decides how it runs - the
 root `conftest.py` puts the suite's marker on every item by directory, so a
@@ -29,21 +30,27 @@ module never says which suite it belongs to.
 
 Anything after `ARGS=` is passed to pytest untouched; `TEST_PATHS=` narrows a
 run to part of a suite, and a target accepts paths under its own suite's
-directory only - `make tests` will not run something under `tests/integration`
+directory only - `make tests-unit` will not run something under `tests/integration`
 without the database the integration target sets up. The two are separate so
 that a path never lands next to the suite's own directory and collects the
 same tests twice.
 
 ```bash
 # Run the unit suite
-make tests
+make tests-unit
 
 # Run one subpackage's tests
-make tests TEST_PATHS="tests/unit/core tests/unit/db"
+make tests-unit TEST_PATHS="tests/unit/core tests/unit/db"
 
 # Stop on first failure
-make tests ARGS="-x"
+make tests-unit ARGS="-x"
+
+# One process instead of four xdist workers, for --pdb or -s
+make tests-unit UNIT_WORKERS=0 ARGS="--pdb"
 ```
+
+Run the affected module's tests while editing and the whole unit suite
+before finishing a change.
 
 ### Unit tests and integration tests
 
@@ -59,14 +66,17 @@ for. Run it before you commit rather than between two edits.
 # Start a database, run the integration suite, stop the database
 make tests-integration
 
-# The same, with the unit suite as well
-make tests-all
+# Every source-checkout test group, including all scenarios
+make tests-full
 ```
 
-There is nothing to set up and nothing to clean up: both targets start a
-disposable PostgreSQL container, run the suite, and stop the container
-afterwards. A failing suite still fails the target - the exit status is carried
-across the teardown.
+There is nothing to set up and nothing to clean up: the integration target
+starts a disposable PostgreSQL container, runs its suite, and stops the
+container afterwards. `make tests-full` runs the unit, integration, and all
+three scenario groups in sequence; each database-backed target manages its
+own container. A failing suite stops the run and preserves its exit status.
+Run it deliberately; CI runs the full source-checkout gate for every
+pull request ([ci.md](ci.md)).
 
 ```bash
 # Keep the container up between runs while debugging one test
@@ -97,12 +107,12 @@ directory.
 A third suite lives in `tests/scenarios`. It starts a real `aion serve` for
 each framework and deployment variant, talks to the agents through the proxy
 with an ordinary A2A client, and asserts on what comes back over the wire.
-Every item in it carries the `scenario` marker, and none of the targets above
-runs it: a suite that starts processes is not what you run between two
-edits.
+Every item in it carries the `scenario` marker. The individual unit and
+integration targets do not run scenarios; `make tests-full` runs all three
+scenario groups after those suites.
 
 ```bash
-# The whole suite, against this working tree
+# Ordinary in-memory scenarios, against this working tree
 make tests-scenarios
 
 # One suite, one framework

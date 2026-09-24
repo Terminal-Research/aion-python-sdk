@@ -14,6 +14,7 @@ from a2a.types import (
 )
 from aion.adk.authoring.invocation import AionInvocationContext
 from aion.adk.authoring.invocation.event_metadata import (
+    AionOutput,
     get_aion_output,
     get_aion_routing,
     get_aion_user_metadata,
@@ -26,6 +27,7 @@ from aion.core.agent.invocation.card.utils import build_card_a2a_part
 from aion.core.constants import CARDS_EXTENSION_URI_V1, MESSAGE_ACTION_PAYLOAD_SCHEMA_V1, MESSAGING_EXTENSION_URI_V1, \
     REACTION_ACTION_PAYLOAD_SCHEMA_V1, STREAM_DELTA_PAYLOAD_SCHEMA_V1
 from aion.core.runtime.context import get_aion_runtime_context
+from aion.server.a2a.constants import TRANSIENT_ARTIFACT_IDS
 from aion.server.files.storage import (
     FileUpload,
     FileUploadManager,
@@ -178,6 +180,10 @@ class ADKToA2AEventConverter:
         (state=working) so the client receives the durable message while the
         task is still running. Finally, artifacts from artifact_delta are
         loaded and emitted as TaskArtifactUpdateEvents.
+
+        An event routed to a transient artifact carries its text there
+        instead, and emits no durable message at all - see
+        _convert_transient_text.
         """
         results: list[AgentEvent] = []
 
@@ -220,6 +226,10 @@ class ADKToA2AEventConverter:
 
         self._end_stream_delta()
 
+        transient = self._convert_transient_text(adk_event, output)
+        if transient is not None:
+            return [transient]
+
         if adk_event.content:
             content_parts = A2ATransformer.transform_content(adk_event.content)
 
@@ -250,6 +260,46 @@ class ADKToA2AEventConverter:
 
         results.extend(await self._convert_artifact_delta(adk_event))
         return results
+
+    def _convert_transient_text(
+        self, adk_event: Event, output: AionOutput | None
+    ) -> AgentEvent | None:
+        """Carry a transient event's text as its artifact, not as a reply.
+
+        ``emit_message(..., ephemeral=True)`` and ``Thread.typing()`` put the
+        text in the event's content and name a transient artifact in the
+        ``aion:output`` hint. The artifact_delta path cannot deliver that: it
+        loads files out of the ADK artifact service, and these events save no
+        file. Without this, the text would fall through to the ordinary
+        durable-message path and be persisted into task history - the opposite
+        of what the caller asked for.
+
+        Returns None for every other event, so the routing hint keeps working
+        exactly as before for artifacts that do have a delta to load.
+        """
+        hint = output.artifact if output else None
+        if hint is None or hint.artifact_id not in TRANSIENT_ARTIFACT_IDS:
+            return None
+        if adk_event.actions and adk_event.actions.artifact_delta:
+            return None
+
+        parts = A2ATransformer.transform_content(adk_event.content)
+        if not parts:
+            return None
+
+        artifact_metadata = get_aion_user_metadata(adk_event) or None
+        return TaskArtifactUpdateEvent(
+            task_id=self._task_id,
+            context_id=self._context_id,
+            artifact=Artifact(
+                artifact_id=hint.artifact_id,
+                name=hint.artifact_name or hint.artifact_id,
+                parts=parts,
+                metadata=artifact_metadata,
+            ),
+            append=False,
+            last_chunk=True,
+        )
 
     async def _convert_artifact_delta(self, adk_event: Event) -> list[AgentEvent]:
         """Load artifacts from artifact_delta and emit TaskArtifactUpdateEvents.

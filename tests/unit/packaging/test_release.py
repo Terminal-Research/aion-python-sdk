@@ -125,7 +125,7 @@ class Recorder:
 
 GATE_TARGETS = [
     "check-env",
-    "tests",
+    "tests-unit",
     "lint-imports",
     "dist-build",
     "dist-check",
@@ -162,7 +162,7 @@ def test_gate_stops_at_the_first_failing_step(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setattr(release.subprocess, "run", recorder)
     with pytest.raises(release.ReleaseError, match="step 'layer contract' failed"):
         release.run_gate(python=None)
-    assert recorder.targets() == ["check-env", "tests", "lint-imports"]
+    assert recorder.targets() == ["check-env", "tests-unit", "lint-imports"]
 
 
 # --- confirmation -------------------------------------------------------------

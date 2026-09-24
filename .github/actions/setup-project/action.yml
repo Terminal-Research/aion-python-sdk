@@ -1,0 +1,39 @@
+name: Set up the project
+description: >-
+  Install Python, Poetry and the development environment, then check the
+  environment for a quietly broken install. Expects the repository checked out.
+
+inputs:
+  python-version:
+    description: Interpreter to install the project for.
+    required: true
+  poetry-version:
+    description: Poetry release to install.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python ${{ inputs.python-version }}
+      uses: actions/setup-python@v6
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install Poetry
+      shell: bash
+      run: pipx install poetry==${{ inputs.poetry-version }}
+
+    # No cache: poetry.lock is deliberately not committed, so there is no key
+    # that describes the resolution, and a cache keyed on anything looser
+    # would install something other than what the manifest resolves to today.
+    - name: Install the project
+      shell: bash
+      run: poetry install -E langgraph-server -E adk-server --with dev
+
+    # Right after the install, because what it looks for is an install that
+    # went wrong quietly: two versions of one package unpacked over each
+    # other. Nothing further down would report that as anything but a strange
+    # failure somewhere else.
+    - name: Check the installed environment
+      shell: bash
+      run: make check-env

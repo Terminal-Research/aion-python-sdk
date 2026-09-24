@@ -125,14 +125,13 @@ Use `npm run dev`, not `node src/cli.tsx` or `node src/app.tsx`. The source tree
 
 Set `AION_CHAT_SKIP_UPDATE_CHECK=1` or `AION_CHAT_UPDATE_CHECK=0` to skip the startup update prompt while developing.
 
-If you want to test the integrated Python entrypoint instead, run `aion chat` from an agent project that depends on your local editable `aion-sdk`. In that flow, the Python launcher uses `libs/aion-chat-ui/dist/cli.mjs`, so rebuild after UI changes:
+To test the integrated Python entrypoint, run `aion chat` from an agent project that uses the local editable `aionto-sdk`. In a source checkout with Node available, the Python launcher prefers `libs/aion-chat-ui/dist/cli.mjs`, so rebuild after UI changes:
 
 ```bash
 npm run build
-npm run stage:python
 ```
 
-Then in the agent project, run `poetry run aion chat`.
+Then run `poetry run aion chat` in the agent project. Before building a Python wheel, run `npm run stage:python` to copy the built bundle into the SDK's `src/aion/cli/bin/`.
 
 ## Build
 
@@ -144,7 +143,7 @@ npm run stage:python
 
 - `npm run build` produces a Node-compatible bundle in `dist/cli.mjs`.
 - `npm run compile` additionally produces macOS Bun executables.
-- `npm run stage:python` copies any available build artifacts into `libs/aion-sdk/src/aion/cli/bin/` for packaging and local launch tests.
+- `npm run stage:python` copies available build artifacts into the repository's `src/aion/cli/bin/` for Python packaging.
 
 ## Release Flow
 

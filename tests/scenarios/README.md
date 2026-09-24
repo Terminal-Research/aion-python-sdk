@@ -9,12 +9,12 @@ over the wire. Nothing is mocked, and the harness imports nothing from `aion`
 No model is ever called: every answer an agent gives here is deterministic,
 and the scenarios never touch the Aion platform.
 
-They are a third suite, not part of `make tests`. Every item under this
+They are a third suite, not part of `make tests-unit`. Every item under this
 directory carries the `scenario` marker — the root `tests/conftest.py` puts it
-on by directory, so a new module cannot forget it — and no other test target
-runs it. Run them when
-a change touches what goes over the wire, and before a release, where
-`make tests-scenarios-dist` is a step of the gate.
+on by directory, so a new module cannot forget it. `make tests-full` runs all
+three scenario groups after unit and integration tests. Run relevant scenarios
+when a change touches what goes over the wire; `make tests-scenarios-dist`
+also checks the built wheel before release.
 
 [SCENARIOS.md](SCENARIOS.md) lists every scenario, what it checks, which
 command and deployment it drives, and what happens to it on each framework. It
@@ -32,6 +32,7 @@ agents/         one agent package per framework, all answering commands.py
 configs/        aion.yaml templates, one per deployment variant
 core/           the scenarios, run for every framework
 persistence/    the scenarios that need a database under the server
+distributed/    the scenarios that need two servers over one database
 ```
 
 An agent never imports the harness or the tests. The direction is one way:
@@ -42,21 +43,25 @@ tests and agents both read `commands.py` and `extensions.py`.
 From the repository root, like every other target:
 
 ```bash
-make tests-scenarios                       # everything except persistence
+make tests-scenarios                       # everything except persistence and distributed
 make tests-scenarios TAGS=smoke            # one suite
 make tests-scenarios TAGS="daemon events"  # several suites (any of them)
 make tests-scenarios FRAMEWORK=langgraph   # one framework
 make tests-scenarios ARGS="-x -vv"         # straight through to pytest
 make tests-scenarios-persistence           # persistence, against a real database
+make tests-scenarios-distributed           # two servers over one real database
 make tests-scenarios-dist                  # against the built wheel, in a clean venv
 make scenarios-matrix                      # rewrite SCENARIOS.md
 ```
 
 `make tests-scenarios-persistence` runs the scenarios under `persistence/`,
 which restart a server and ask what became of the tasks it was holding, once
-per framework. It uses `POSTGRES_TEST_URL` when the environment names one and
-starts a disposable PostgreSQL otherwise; without a database the suite skips
-itself. The rest of the scenarios need no database and do not wait for one.
+per framework. `make tests-scenarios-distributed` runs those under
+`distributed/`, which start two servers of one agent over one database and ask
+which of them owns a task, may cancel it, and closes what a dead one left
+behind. Both use `POSTGRES_TEST_URL` when the environment names one and start a
+disposable PostgreSQL otherwise; without a database both skip themselves. The
+rest of the scenarios need no database and do not wait for one.
 
 One of them does wait, and the contract is why. A server that shuts down in an
 orderly way settles the tasks it was running itself, under the claims it still
@@ -65,10 +70,19 @@ up. A server that is killed outright settles nothing: its tasks are reclaimed
 only when the leases it stopped renewing expire, which is `lease_expired` and
 no sooner than the lease allows — 60 seconds with a reconcile pass every 30
 (`aion.server.tasks.ownership.config`, not settable from outside the process).
-That scenario is minutes rather than seconds, and it is the reason this suite
-is not part of `make tests-scenarios`. It is also why the whole suite needs a
-database: an in-memory store dies with its process, so there is no crash to
-recover from.
+That scenario is minutes rather than seconds, and it is the reason these two
+groups are not part of `make tests-scenarios`. `distributed/` waits once more,
+for the same reason and only in `test_recovery.py`.
+
+It is also why both groups need a database. In-memory task storage is limited
+to the life of one process: it offers no cross-process ownership and no
+recovery from a hard crash, because leases, the refusals built on them and the
+reaper that settles a dead owner's tasks all belong to the PostgreSQL-backed
+store. That is a property of the deployment rather than a gap in the tests -
+`tests/unit/server/tasks/test_store_manager_ownership.py` asserts it from the
+other side, on the provider the in-memory store selects - so there is no
+crash for an in-memory server to recover from, and nothing here pretends
+otherwise.
 
 `KEEP_SERVE=1` leaves the servers running after the session and prints the
 port, the rendered `aion.yaml` and the log of each — the fastest way to poke at
@@ -86,7 +100,9 @@ drives is the working tree.
 extras into a virtual environment that inherits nothing, and points the
 harness at that environment's `aion` through `SCENARIOS_AION_BIN`. Pytest, the
 A2A client and the harness still come from this project — they are tooling,
-not the subject. It needs a build to run against:
+not the subject. By default this runs the ordinary scenarios; persistence and
+distributed scenarios need PostgreSQL and run against the source checkout in
+their own CI jobs. It needs a build to run against:
 
 ```bash
 make dist-build && make tests-scenarios-dist
@@ -110,9 +126,16 @@ Every scenario builds on the shape of a turn, which is what
 A reply the agent streams arrives ahead of its own step 3: one
 `TaskArtifactUpdateEvent` per chunk under the artifact id `aion:stream-delta`
 (the first with `append=False`, the rest with `append=True`), followed by the
-whole reply as a single `WORKING` status. An ephemeral status — a typing
-indicator — is streamed with `aion:ephemeral` in its metadata and never reaches
-task history.
+whole reply as a single `WORKING` status.
+
+An ephemeral event is delivered and then forgotten: the client sees it, task
+history never does. There are two shapes of one idea, and which one an agent
+produces depends on who emits it. `Thread.typing()` sends a transient artifact
+under the id `aion:ephemeral-message`. A server-side extension flags a
+`WORKING` status with `aion:ephemeral` in its metadata, which is what
+`Ev.ephemeral` in the recorder reads. The ADK adapter does not hold the first
+of these today — `frameworks.DIVERGENCES` has the entry and what it does
+instead.
 
 ## Writing a scenario
 

@@ -102,8 +102,8 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     # Trusted publishing: PyPI's pending publisher for aionto-sdk names this
-    # repository, this workflow file and this environment, and the environment
-    # is where the required reviewers sit. No token is stored anywhere.
+    # repository, this workflow file and this environment. No token is stored
+    # anywhere.
     environment: pypi
     permissions:
       contents: read

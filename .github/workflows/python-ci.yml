@@ -1,65 +1,62 @@
 name: Python CI
 
-# Every pull request, and main after the merge - the second is what makes a
-# green branch protection rule mean something once several have landed.
+# Every pull request update runs the complete source-checkout gate. Jobs are
+# independent, so a failing group does not prevent the others from reporting.
+# A push to main runs the same gate again as a signal about the merged branch.
+# Require the CI result check in main's branch ruleset to make this a merge gate.
 on:
   pull_request:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+# A newer push to a pull request supersedes its running checks. Main and
+# manual runs are never cancelled: each is the verdict on one commit.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   POETRY_VERSION: 2.4.1
+  # Unit tests spread over every core the runner has.
+  UNIT_WORKERS: auto
 
 jobs:
-  test:
+  unit:
     name: Unit tests, layers and build (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       # One version failing is a fact worth having about the other, so let the
       # sibling finish rather than cancelling it.
       fail-fast: false
       matrix:
-        # Every released Python within requires-python - the range README
-        # promises. Add the next one when it ships.
+        # Every released interpreter in requires-python. Add the next one when
+        # it ships.
         python-version: ["3.12", "3.13", "3.14"]
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
 
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v6
+      - name: Set up the project
+        uses: ./.github/actions/setup-project
         with:
           python-version: ${{ matrix.python-version }}
-
-      - name: Install Poetry
-        run: pipx install poetry==${{ env.POETRY_VERSION }}
-
-      # No cache: poetry.lock is deliberately not committed, so there is no key
-      # that describes the resolution, and a cache keyed on anything looser
-      # would install something other than what the manifest resolves to today.
-      - name: Install the project
-        run: poetry install -E langgraph-server -E adk-server --with dev
-
-      # Right after the install, because what it looks for is an install that
-      # went wrong quietly: two versions of one package unpacked over each
-      # other. Nothing further down would report that as anything but a strange
-      # failure somewhere else.
-      - name: Check the installed environment
-        run: make check-env
+          poetry-version: ${{ env.POETRY_VERSION }}
 
       - name: Run unit tests
-        run: make tests
+        run: make tests-unit
 
       - name: Check the layer contract
         run: make lint-imports
 
       # Collection and the registries, nothing else: no server starts and it
       # costs a second. It keeps the generated matrix from falling behind the
-      # suite it describes; the suite itself runs in `runtime-validation`.
+      # suite it describes; the suite itself runs in the scenario jobs.
       - name: Check the scenario matrix is current
         run: poetry run ./scripts/scenarios_matrix.py --check
 
@@ -69,27 +66,23 @@ jobs:
       - name: Check the distributions
         run: make dist-check
 
-  runtime-validation:
-    name: Runtime validation
-    # What the SDK does across a real infrastructure boundary: the integration
-    # tests against a real database, and the scenarios, which start `aion
-    # serve` per framework and deployment variant and drive it over A2A.
-    #
-    # Deliberately not a leg of the matrix above. Each interpreter would
-    # multiply a minute of process startup by three to tell us something about
-    # the agents' transport rather than about the interpreter. One version is
-    # what these suites are for; the wheel gets its own run before a release in
-    # publish-python.yml.
-    #
-    # One job rather than two, because both need the same database and the same
-    # install, and splitting them paid for that twice.
+  # The groups below cross a real infrastructure boundary: a real database,
+  # or `aion serve` per framework and deployment variant driven over A2A. Each
+  # is its own job so that one failing group leaves the others running and
+  # every group reports on its own. They run on one interpreter: each Python
+  # would multiply process startup to tell us about the agents' transport
+  # rather than about the interpreter. The wheel gets its own scenario run
+  # before a release in publish-python.yml.
+  #
+  # A job with a database has a PostgreSQL service of its own. The service is
+  # the runner's and dies with it, so the ordinary port is safe, and
+  # POSTGRES_TEST_URL coming from the environment tells the Makefile not to
+  # start its local container.
+  integration:
+    name: Integration tests
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     services:
-      # The Makefile starts a disposable PostgreSQL of its own on a nonstandard
-      # port, because these tests wipe what they find and a developer's 5432
-      # must never be it. Here the container is the runner's and dies with it,
-      # so the ordinary port is safe - and POSTGRES_TEST_URL coming from the
-      # environment tells the Makefile not to reach for Docker at all.
       postgres:
         image: postgres:16
         env:
@@ -107,39 +100,107 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v5
 
-      - name: Set up Python
-        uses: actions/setup-python@v6
+      - name: Set up the project
+        uses: ./.github/actions/setup-project
         with:
           python-version: "3.12"
-
-      - name: Install Poetry
-        run: pipx install poetry==${{ env.POETRY_VERSION }}
-
-      - name: Install the project
-        run: poetry install -E langgraph-server -E adk-server --with dev
-
-      - name: Check the installed environment
-        run: make check-env
+          poetry-version: ${{ env.POETRY_VERSION }}
 
       - name: Run integration tests
         run: make tests-integration
 
-      # Everything except persistence, and no database of its own: these start
-      # servers on the default in-memory variant.
+  scenarios:
+    name: Scenarios (in-memory)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up the project
+        uses: ./.github/actions/setup-project
+        with:
+          python-version: "3.12"
+          poetry-version: ${{ env.POETRY_VERSION }}
+
+      # The in-memory variants; the persistence and distributed groups have
+      # jobs of their own.
       - name: Run scenario tests
         run: make tests-scenarios
+
+  scenarios-persistence:
+    name: Scenarios (persistence)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      POSTGRES_TEST_URL: postgresql://postgres:postgres@localhost:5432/postgres
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up the project
+        uses: ./.github/actions/setup-project
+        with:
+          python-version: "3.12"
+          poetry-version: ${{ env.POETRY_VERSION }}
 
       # The ones that restart a server and expect the tasks to still be there.
       - name: Run persistence scenarios
         run: make tests-scenarios-persistence
 
+  scenarios-distributed:
+    name: Scenarios (distributed)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      POSTGRES_TEST_URL: postgresql://postgres:postgres@localhost:5432/postgres
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up the project
+        uses: ./.github/actions/setup-project
+        with:
+          python-version: "3.12"
+          poetry-version: ${{ env.POETRY_VERSION }}
+
+      # Two servers of one agent over one database: ownership, cross-process
+      # cancel, and what a surviving reaper does with a dead owner's tasks.
+      - name: Run distributed scenarios
+        run: make tests-scenarios-distributed
+
   floors:
     name: Oldest allowed dependencies
     runs-on: ubuntu-latest
-    # The matrix above varies the interpreter and nothing else, so every job in
-    # it resolves each declared range to its newest release. This one installs
+    timeout-minutes: 30
+    # The unit job varies the interpreter and nothing else, so every leg of it
+    # resolves each declared range to its newest release. This one installs
     # the oldest, which is the only thing that can tell us whether
-    # `a2a-sdk>=1.1.2`, `langgraph>=0.6.0` and `google-adk>=1.20.0` are the
+    # `a2a-sdk>=1.1.2`, `langgraph>=1.0.0` and `google-adk>=1.20.0` are the
     # bounds the SDK actually works against or just the versions that happened
     # to be current when they were written.
     #
@@ -150,28 +211,46 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v5
 
-      # 3.12, the bottom of requires-python: a floor is a claim about the
-      # oldest combination this project supports, and several of the releases
-      # below ship no wheel for a newer interpreter - which would fail as the
-      # interpreter being too new rather than the bound being wrong.
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-
-      - name: Install Poetry
-        run: pipx install poetry==${{ env.POETRY_VERSION }}
-
       # `--resolution lowest-direct` is the one thing Poetry's solver cannot
       # do, and the whole point of this job.
       - name: Install uv
         uses: astral-sh/setup-uv@v7
 
-      # The development environment first, for pytest and the dev group;
+      # 3.12, the bottom of requires-python: a floor is a claim about the
+      # oldest combination this project supports, and several of the releases
+      # it installs ship no wheel for a newer interpreter - which would fail as
+      # the interpreter being too new rather than the bound being wrong. The
+      # development environment comes first, for pytest and the dev group;
       # `make tests-floors` then takes the project's own dependencies down to
       # the bottom of every range and runs the suite there.
-      - name: Install the project
-        run: poetry install -E langgraph-server -E adk-server --with dev
+      - name: Set up the project
+        uses: ./.github/actions/setup-project
+        with:
+          python-version: "3.12"
+          poetry-version: ${{ env.POETRY_VERSION }}
 
       - name: Run the unit suite against the oldest allowed dependencies
         run: make tests-floors
+
+  # The one check branch protection should require. It runs even when a job
+  # above fails or is cancelled, because a skipped required check can count as
+  # passed. No test group may be skipped in this full gate.
+  result:
+    name: CI result
+    if: always()
+    needs:
+      - unit
+      - integration
+      - scenarios
+      - scenarios-persistence
+      - scenarios-distributed
+      - floors
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check every job's result
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          echo "$NEEDS" | jq -e 'all(.[]; .result == "success")' >/dev/null

@@ -1,31 +1,51 @@
-# Repo guidelines
+# Aion Python SDK
 
-This repository is the Aion Python SDK: **one Python project**, `aionto-sdk`,
-whose sources live under `src/aion/` as subpackages of one namespace. It builds
-one wheel and one sdist; the extras install third-party libraries, never Aion
-code, so every `aion.*` subpackage is present in every installation and what an
-extra decides is whether its dependencies are importable.
+This repository builds one Python distribution, `aionto-sdk`, from `src/aion/`.
+Every `aion.*` subpackage ships in the wheel and sdist. Extras install optional
+third-party dependencies; they do not select Aion source packages. The
+standalone npm package `libs/aion-chat-ui` has its own tooling and local
+`AGENTS.md`.
 
-The tests for all of it live in `tests/`, in three suites that are three
-directories: `tests/unit` and `tests/integration` mirror `src/aion/`;
-`tests/scenarios`, the scenario suite, mirrors nothing because it drives the
-product from outside. `tests/unit/support` holds builders shared between
-unit test modules and is collected from nowhere. Maintainer documentation
-lives in `docs/development/`, repo-wide tooling in `Makefile` and `scripts/`.
-`libs/` holds one thing only: `aion-chat-ui`, an npm package with its own
-toolchain.
+Use this file for decisions that apply across the repository. Read the
+relevant package README or maintainer guide when a task needs implementation
+details. `pyproject.toml`, `Makefile`, and the tests define the current executable
+contracts; reconcile this file with them when behavior changes.
 
-- Whenever you add or modify a subpackage, update this file with a brief
-  description so agents can understand its purpose.
+## Working rules
 
-## Layering
+- Keep Python docstrings, code comments, and maintainer documentation in
+  English. Describe the current code and why it works as it does, without
+  historical comparisons or obsolete behavior.
+- Use idiomatic Python and `snake_case` for modules, variables, attributes,
+  dataclass fields, parameters, and keyword arguments. Use camelCase only
+  where an external wire format requires it.
+- Document public APIs with Google-style docstrings. Explain non-obvious
+  internal behavior where that helps maintainers; avoid boilerplate docstrings
+  that merely repeat a name or signature. In sections that define injected or
+  projected fields, align names and descriptions in a hanging-indent
+  definition list separated by an em dash.
+- Add or update tests for changed behavior at the appropriate boundary. Do not
+  add tests that only restate the implementation or add a test requirement to
+  a documentation-only change.
+- Every SDK-owned exception derives from
+  `aion.core.exceptions.AionError`. Put public exceptions in that module and
+  local internal exceptions beside the code that raises them. Preserve
+  `ImportError` or `RuntimeError` compatibility through multiple inheritance
+  when applicable; `A2AError` subclasses remain in the a2a-sdk hierarchy.
+- No general formatter or type checker is configured for this Python project.
+  Follow surrounding style and do not introduce unrelated tooling changes.
+- Keep unrelated user changes intact. Commit messages must read like ordinary
+  developer messages, without AI attribution, `Co-Authored-By`, or generated-by
+  markers. If a commit is blocked, preserve the staged state and give the exact
+  manual commands.
 
-The subpackages are layered; a subpackage may import the layers below it and
-nothing above. The rule is not advisory — it is a contract in
-`[tool.importlinter]` of the root `pyproject.toml`, checked by
-`make lint-imports`:
+## Architecture boundaries
 
-```
+The layer order is enforced by `[tool.importlinter]` in `pyproject.toml`.
+A layer may import only layers below it. Names joined by `|` share a rank and
+may not import one another.
+
+```text
 aion.cli
   └── aion.langgraph.server | aion.adk.server
         └── aion.proxy
@@ -37,338 +57,137 @@ aion.cli
                                             └── aion.core
 ```
 
-Names joined by `|` share a rank and, by the same rule, may not import each
-other: that is what keeps the LangGraph and ADK sides from growing a dependency
-on one another. A second, `forbidden` contract states separately that
-`aion.langgraph.authoring` and `aion.adk.authoring` never import `aion.server`,
-`aion.proxy`, `aion.db` or `aion.cli` — this is the property the published
-extras are sold on, and it should fail by name when broken.
+- Keep authoring subpackages free of server, proxy, database, and CLI
+  machinery. They provide framework-facing tools; the server subpackages
+  implement `AgentPluginProtocol` and own framework adaptation.
+- Keep model helpers in the framework's authoring subpackage. Aion model
+  service calls use request-scoped principal and usage attribution rather
+  than a separate direct model client in a toolkit.
+- Keep `aion.mcp` importable in a base install: import its ASGI proxy only
+  through `load_proxy()`. Keep the `aion.cli` module importable without the
+  server extra; do not import `aion.server` at module load time.
+- Treat the production proxy HTTP surface and A2A streaming behavior as
+  public contracts. Preserve streaming responses and valid transfer framing;
+  verify compatibility with scenario tests when changing them.
+- Keep extension identity, activation, availability, advertisement, transport
+  bindings, and task ownership distinct. A method extension is not merely a
+  message extension; a registered method is not automatically advertised.
+  Generated Agent Cards use `get_advertised()`. An
+  `ExtensionTaskHandler` owns execution only when it claims that extension's
+  URI. Read `docs/development/extension-exposure.md` before changing
+  extension exposure or routing.
+- Preserve the external streaming contract: close every outbound stream with
+  a full `Task`, including completed and failed executions and the
+  initial-task resume path. Cancellation is a `Message`. Keep the shared
+  `aion.server.a2a.outbox` behavior consistent across framework adapters.
+  Use relevant unit and scenario tests when changing these paths.
 
-The ten former `libs/*` packages kept the layers apart by accident: a package's
-venv simply had no code from the layers above it. One project, one venv, so the
-rule has to be written down and checked.
+## Dependencies and generated files
 
-Authoring subpackages are what agent authors import; they must never pull in
-server or plugin machinery. Server subpackages implement `AgentPluginProtocol`
-and are discovered by `aion.server` at runtime.
+- Put dependencies required by the base install in
+  `[project].dependencies`. Put optional dependencies in the owning extra;
+  mirror them in the explicitly listed `langgraph-server` and `adk-server`
+  composite extras where applicable. Shared dependencies belong to their
+  owning package, not duplicate consumer declarations.
+- Keep code compatible with Python 3.12 and the declared minimum dependency
+  versions. `make tests-floors` checks those floors but downgrades the active
+  environment; run it in CI or a disposable checkout, not as a routine local
+  check.
+- Do not commit `poetry.lock`. For the project environment, install with
+  `poetry install -E langgraph-server -E adk-server --with dev`. The
+  `installer.re-resolve = true` setting in `poetry.toml` is required; use
+  `make check-env` after installation or dependency changes.
+- Treat `src/aion/api/gql/generated/` as generated from
+  `graphql/schema.graphql` and `graphql/queries.graphql`. Change the source
+  operations or schema and regenerate with `poetry run ariadne-codegen client`
+  instead of hand-editing generated client code.
+- Treat `src/aion/cli/bin/cli.mjs` as a bundled output of
+  `libs/aion-chat-ui`. Edit its TypeScript source and rebuild the bundle.
+  Verify the staging destination when refreshing the Python bundle.
 
-## Subpackages
+## Tests and validation
 
-### Foundation
+Run tests through the repository's Make targets so each suite gets its own
+setup and teardown. `make help` lists targets; `tests/README.md` explains
+selection. The suite directory determines its pytest marker, so do not add
+`unit`, `integration`, or `scenario` markers by hand. Python test-package
+directories need an `__init__.py` to avoid module-name collisions; data-only
+fixture and configuration directories do not.
 
-- **`aion.core`** — foundation layer with no internal Aion dependencies:
-  A2A protocol models, enums, request/response and artifact types, A2A
-  extension payloads (`cards`, `distribution`, `messaging`, `event`,
-  `traceability`), opaque usage-attribution extension collection, shared
-  extension URI/header constants, the built-in extension registry (which
-  keeps three properties apart: an extension is known, enabled for the
-  agent, and allowed on the Agent Card, and the card reads only
-  `get_advertised()`),
-  `aion.yaml` configuration parsing and publication collectors (including
-  dedicated secret fields),
-  invocation abstractions (`card`, `message`, `thread`), the runtime context
-  hierarchy (builder, registry, context extensions), settings
-  (`BaseEnvSettings`, `ApiSettings`), the `DbManagerProtocol` interface,
-  singleton metaclasses, the `AionLogger` / `AionLogRecord` logger class
-  every Aion logger is created from (its context fields are filled in by
-  `aion.server`), the SDK-wide exception hierarchy rooted at `AionError`
-  (`exceptions.py`), the factories that raise its `MissingOptionalDependency`
-  with the name of the extra a missing library belongs to
-  (`utils/optional_deps.py`), and pydantic/text/url/path utilities.
-  Owns the provider-neutral Distribution/Messaging context hierarchy, the
-  reply contract, and the provider payload fixtures that verify it.
-- **`aion.api`** — low-level Aion control-plane access: a websocket
-  GraphQL client generated with `gql` + `ariadne-codegen` (`aion.api.gql`),
-  an HTTP client and JWT manager (`aion.api.http`) that authenticates via
-  `AION_CLIENT_ID`/`AION_CLIENT_SECRET` against `/auth/tokens` and exposes the
-  deployment version those credentials are scoped to (`get_version_id()`, read
-  from the token's `sub`/`sub_type` claims), typed control-plane addressing
-  (`aion.api.control_plane`: `CapabilityReference`, `CapabilitySubject`,
-  `PrincipalSelector`, path helpers), and the OpenAI-compatible
-  `model_service_client` with strict request-scoped principal validation and
-  opaque usage-attribution forwarding, plus nested GraphQL A2A propagation.
-  The immutable Files client forwards the same request-scoped principal and
-  usage attribution for create and revision-fenced replace calls.
-  The generated client is committed; regenerate it from
-  `graphql/schema.graphql` and `graphql/queries.graphql`
-  (`[tool.ariadne-codegen]` in the root manifest).
-- **`aion.db`** — centralized DB management layer under the `aion.db.postgres`
-  namespace: `DbManager`, `DbFactory`, task records/models, fenced task-claim
-  records, durable caller ownership for task contexts, repositories, Alembic
-  migrations, custom fields/types, and utilities (`convert_pg_url`,
-  `verify_connection`, `validate_permissions`). Structured so sibling
-  namespaces (`aion.db.redis`, …) can be added later. Its third-party
-  dependencies come with the `server` extra.
-- **`aion.mcp`** — MCP integration utilities: an ASGI proxy for a local MCP
-  server declared in `aion.yaml` (`proxy.py`) and authenticated remote Aion
-  MCP endpoint builders (`endpoints.py`) for direct capability servers and the
-  control-plane MCP server, including request-scoped opaque usage-attribution
-  forwarding. `endpoints.py` works in a base install, so
-  `import aion.mcp` must not reach the proxy: `load_proxy()` imports
-  `proxy.py`, and with it the ASGI proxy libraries from the `server` extra,
-  only when it is called.
+- Unit behavior: while developing, run the tests of the affected module, for
+  example `make tests-unit TEST_PATHS="tests/unit/server" ARGS="-k websocket -x"`.
+  Before finishing a task, run the whole unit suite with `make tests-unit`.
+  It runs on four pytest-xdist workers; `UNIT_WORKERS=0` runs it in one
+  process for `--pdb` or `-s`. `tests/unit` mirrors `src/aion`; shared unit
+  builders live in `tests/unit/support`.
+- Real PostgreSQL, real process trees, or elapsed lease/timeout behavior:
+  `make tests-integration`, optionally with `TEST_PATHS=` and `ARGS=`.
+  Run the relevant integration suite before committing changes to these
+  boundaries. The target starts and removes a disposable PostgreSQL
+  container unless `POSTGRES_TEST_URL` is supplied.
+- Public A2A, proxy, agent-framework, or wire behavior: run the relevant
+  `make tests-scenarios` selection. It starts real `aion serve` processes.
+  `TAGS=` and `FRAMEWORK=` narrow it. Run database-backed groups with
+  `make tests-scenarios-persistence` or `make tests-scenarios-distributed`.
+  Read `tests/scenarios/README.md` for selection and scope.
+- New or changed cross-package imports: `make lint-imports`.
+- Extras, packaging, or installation behavior: `make dist-build` followed by
+  `make dist-check`; use `make dist-smoke` when the clean-install contract
+  changes. `make tests-scenarios-dist` runs selected scenarios against the
+  built wheel. Check its marker selection when adding scenario groups.
+- Changes to scenario inventory: `make scenarios-matrix` regenerates
+  `tests/scenarios/SCENARIOS.md`; commit the generated matrix with the tests.
+- Complete source-checkout validation: `make tests-full` runs unit,
+  integration, ordinary scenarios, persistence, and distributed scenarios in
+  sequence. It clears narrowing selectors and does not build or test the
+  wheel. Run it deliberately, not as a routine end-of-task check: the
+  full source-checkout gate runs on every pull request in CI. Require
+  its `CI result` check in the `main` ruleset to block a failing merge; see
+  `docs/development/ci.md`.
+- Release preparation: `make release-check` runs the full non-publishing
+  gate. `make release` publishes; follow `RELEASE.md` for that workflow.
 
-### Server
+`POSTGRES_TEST_URL` gives the test targets ownership of the specified
+database: integration and database-backed scenario tests migrate and truncate
+it. Point it only at a disposable test database. `PG_TEST_KEEP=1` retains the
+local test container while debugging.
 
-- **`aion.server`** — generic A2A server with plugin-based framework support,
-  built on the Google `a2a-sdk` and Starlette/FastAPI. Contains the app
-  factory, lifespan and route registry (`core/app`), middlewares, the
-  platform websocket link (`core/platform`), the agent card/factory and
-  execution adapters (`agent/`), the plugin registry and factory
-  (`plugins/`), fenced task stores, expiring task ownership supervision, task
-  manager, event deduplicator and push notification senders (`tasks/`), file
-  storage and A2A file handling (`files/` — an upload-first
-  `FileStorageBackend` that reports one `UploadReceipt` or `UploadFailure` per
-  file, the Aion Files API backend behind it, the verified `UploadContext`
-  projection naming the owning organization, and the guard that strips inline
-  bytes before a task is persisted),
-  shared A2A helpers (`a2a/` — task and message predicates, the ephemeral mark,
-  and `outbox.py`, the one definition of how an agent's `a2a_outbox` is applied
-  to the task a request runs on; every framework adapter calls it, and
-  `tests/unit/server/agent/adapters/` is the contract they all hold),
-  Aion auth manager and websocket
-  connection services (`services/aion`), OpenTelemetry wiring, and logging
-  setup with stream and Logstash handlers. Graphs are configured via
-  `aion.yaml`, which declares agents and the MCP proxy and rejects every other
-  key; custom HTTP endpoints come from routers an agent module registers on
-  `AppRegistry`, which the app factory mounts. JSON-RPC streams use
-  LF-delimited SSE events so their blank event boundary remains distinct from
-  HTTP/1.1 CRLF transfer framing. Contract tests cover published configuration
-  schemas, including compact discovery documents that omit null field metadata.
-  Aion context-directory extensions resolve history through the same effective
-  caller scope used when tasks are saved; anonymous callers receive empty
-  context projections rather than access to shared history.
-  A2A extensions may augment messages, metadata, state machines, or add RPC
-  methods. Method extensions remain registered in
-  `AionA2AExtensionRegistry`; their transport-specific routing is represented
-  by method-extension bindings. Do not treat method extensions as
-  message-only extensions, and do not infer Agent Card exposure from the
-  extension point. Generated cards follow the descriptor's `advertised`,
-  activation, availability, and dependency state.
-  `GetContext` and `GetContexts` are current Aion context-read method
-  extensions, bound to JSON-RPC by
-  `AION_JSONRPC_METHOD_EXTENSION_BINDINGS`. A binding's wiring - a
-  registered descriptor, an existing handler - is validated when the
-  dispatcher is built; on every call the registry is asked whether the
-  extension is ready on this deployment - registered, enabled, available, and
-  with its requirement chain active. An extension declared on a message is
-  held to that and to per-request activation as well, since its requirements
-  must be declared on the same request; a directly invoked method extension
-  sends no declaration, so readiness is the whole question. They are
-  supported by the server but are not advertised by default. They must not be presented as the
-  unified Context lifecycle contract or added to generated Agent Cards unless
-  a deployment explicitly opts into advertising an implementation that
-  fulfills the contract it claims; the server declares neither that
-  lifecycle, nor context summaries, nor `DeleteContext`. Whether an extension
-  owns a task's execution is answered by whether an `ExtensionTaskHandler`
-  claims its URI, and by nothing else. The whole policy is in
-  `docs/development/extension-exposure.md`.
-  Push notifications authenticate against external callbacks using the
-  credentials in `taskPushNotificationConfig.authentication` (the a2a-sdk
-  base sender ignores them); delivery timeouts come from
-  `PUSH_NOTIFICATION_TIMEOUT_SECONDS` (httpx's 5s default is too short for a
-  receiver that works before answering). The Logstash endpoint is derived
-  from `LOGSTASH_HOST` (bare host or full URL) with `LOGSTASH_PORT` as a
-  fallback; platform endpoints require an Aion bearer token and are skipped
-  rather than erroring while no token is available. Every outbound stream is
-  closed with a full `Task`; tasks left active by a stopped process are settled
-  as `FAILED` with `aion:settledReason` naming the cause — `server_shutdown`
-  when the shutdown itself cancelled the execution and settled the task under
-  its own claim, `lease_expired` when a process was lost outright and the
-  ownership reaper reclaimed the task after its lease lapsed. A hard-killed
-  task is settled on the first ownership reconciliation after its lease
-  expires; that reconciliation may run during startup or in the periodic
-  reaper loop, and starting a new process is by itself no evidence that the
-  previous owner is dead (an in-memory store has no crash recovery at all).
-  DB management is delegated to `aion.db`. PostgreSQL task claims record the
-  deployment-provided `HOST_NAME` as their optional diagnostic owner instance
-  identity.
-  Plugin discovery skips a framework whose extra is absent and keeps the
-  reason, so an agent that cannot be built names the extra to install.
-- **`aion.proxy`** — the proxy server that fronts multiple agents behind one
-  endpoint. It sits above `aion.server` rather than beside it: it reads the
-  server's settings and its port reservations. Streaming response bodies are
-  preserved and fresh downstream transfer framing is established rather than
-  buffering agent SSE output.
-- **`aion.langgraph.server`** — server-side LangGraph integration. Implements
-  `AgentPluginProtocol`/`AgentAdapter`, adapts inbound A2A requests into
-  `graph.astream()` invocations and maps graph output back into A2A messages,
-  tasks and streaming events. Includes execution, checkpointing, state
-  handling, converters, and A2A extension support. The agent path must resolve
-  to a `StateGraph`, a compiled `Pregel`, or a callable returning one.
-- **`aion.adk.server`** — server-side Google ADK integration:
-  `ADKPlugin`/`ADKAdapter`, `ADKExecutor` and `ADKStreamExecutor`, session
-  services (memory and PostgreSQL) via `SessionServiceFactory`, artifact
-  services (memory and A2A-backed) via `ArtifactServiceFactory`,
-  `StateConverter` mapping ADK session state to `ExecutionSnapshot`, and
-  bidirectional A2A ↔ ADK transformers.
+Run checks relevant to the change, fix failures caused by it, and report what
+was run. There is no need to run every suite for a documentation-only edit.
 
-### Authoring
+## Repository map
 
-- **`aion.langgraph.authoring`** — LangGraph authoring toolkit:
-  `aion_chat_model` and other model helpers that route LangChain/LangGraph
-  calls through Aion's OpenAI-compatible model proxy and resolve principal
-  headers at request time, state and streaming helpers, event-routing
-  utilities, invocation helpers, MCP tool loading, and provider-neutral
-  immediate context and direct-reply routing. Tested Slack distribution
-  examples that resolve provider tools from the incoming runtime capability
-  live in `examples/langgraph/`. The `langchain` dependency belongs to the
-  `langgraph-authoring` extra because `aion_chat_model()` imports LangChain's
-  model factory directly; agent packages must not declare it themselves.
-- **`aion.adk.authoring`** — Google ADK authoring toolkit: MCP toolset
-  bindings, request-scoped Aion model helpers, invocation helpers and
-  transformers, without pulling in server plugin machinery. The `litellm`
-  dependency belongs to the `adk-authoring` extra, since `aion_lite_llm()`
-  builds on ADK's `LiteLlm`; agent packages must not declare it themselves.
+- `aion.core`: protocol models, extension registry, configuration and runtime
+  abstractions, settings, logging types, and the public exception hierarchy.
+- `aion.api`: GraphQL and HTTP control-plane clients, token management,
+  capability addressing, Files and model-service clients.
+- `aion.mcp`: base-install MCP endpoint builders and a lazily loaded ASGI
+  proxy.
+- `aion.langgraph.authoring` and `aion.adk.authoring`: framework-facing
+  authoring helpers, model routing, tools, and invocation support.
+- `aion.db`: PostgreSQL manager, repositories, migrations, task claims, and
+  durable ownership.
+- `aion.server`: generic A2A app, plugin discovery, task and file lifecycle,
+  platform link, extensions, push notifications, and observability.
+- `aion.proxy`: public multi-agent proxy and streaming response handling.
+- `aion.langgraph.server` and `aion.adk.server`: framework plugins and
+  adapters for execution, state, streams, and A2A conversion.
+- `aion.cli`: the `aion` command, including `serve`, `chat`, and `logs`.
+- `libs/aion-chat-ui`: standalone React/Ink npm CLI; follow its local
+  `AGENTS.md` for package-specific work.
 
-### Entry point
+Update this map only when a subpackage is added, removed, changes
+responsibility, or moves in the layer order. Put implementation details in the
+relevant package README or maintainer guide.
 
-- **`aion.cli`** — the `aion` console script (`aion serve`, `aion chat`,
-  `aion logs`). `serve` launches all agents declared in `aion.yaml` plus the
-  proxy server with automatic port assignment, and asks for the `server` extra
-  by name when it is not installed; `chat` (including headless
-  `aion chat run`) delegates to the standalone chat UI bundled at
-  `src/aion/cli/bin/cli.mjs` and sets the Python credential-helper environment
-  for chat auth. The CLI module must stay importable in a base install — no
-  import of `aion.server` at module level.
+## Documentation ownership
 
-### Not a Python subpackage
-
-- **`libs/aion-chat-ui`** — standalone React/Ink terminal chat UI in
-  TypeScript. Published to npm as `@terminal-research/aion`, which installs the
-  `aio` executable with an `aion-chat` alias, and staged into `src/aion/cli/bin`
-  via `npm run stage:python`. Provides interactive chat, headless one-shot
-  `run`, slash-command request/response mode controls, update prompts with
-  GitHub release-note links, environment-scoped agent source discovery, local
-  session/settings persistence, streaming-aware Marked rendering for agent
-  output, immutable transcript offloading to terminal scrollback, TTY-aware
-  terminal clearing for `/clear`, a brand-themed composer prompt with native
-  cursor-aware multiline editing, and WorkOS CLI/device login with npm keyring
-  storage or the Python credential helper supplied by the SDK. Its GraphQL
-  operation types are generated from the restricted chat schema copied from
-  `aion.api`; rebuild and run `stage:python` after contract changes. See
-  `libs/aion-chat-ui/AGENTS.md` for session-log inspection and package-local
-  conventions.
-
-## Repo tooling
-
-- One project, one environment: `poetry install -E langgraph-server -E adk-server --with dev`
-  at the root.
-  Every `aion.*` import then resolves to the working tree, and there is nothing
-  to switch between local and remote. `poetry.lock` is not committed.
-- `installer.re-resolve = true` in `poetry.toml` is what makes that install
-  correct: with Poetry's own default the installer picks packages out of the
-  lock by marker and puts two versions of the same package into one
-  site-packages. `make check-env` is the check for it — one dist-info per
-  package and a clean `pip check` — and CI runs it right after installing.
-  The comment in `poetry.toml` says when the setting can go away.
-- `make help` lists all targets. `make tests` runs the unit suite;
-  `make tests-integration` runs the integration suite and
-  `make tests-all` runs both. All three are plain `pytest` over the suite's
-  directory — the directory is what selects, and `tests/conftest.py` puts the
-  matching marker on every item so that `-m` can still combine them:
-  `pytest` is not to be reached around, anything after `ARGS=` goes to it
-  untouched (`make tests ARGS="-k websocket"`), and `TEST_PATHS=` narrows a
-  run to part of a suite (`make tests TEST_PATHS="tests/unit/server"`).
-  A test lives under `tests/integration` when it needs a real PostgreSQL or a
-  real process tree to signal and waits for real timeouts, so it is not what
-  you run between two edits — run it before you commit. The database is handled for you: both integration
-  targets start a disposable container, run the suite, and stop the container
-  again, carrying the suite's exit status across the teardown. `PG_TEST_KEEP=1`
-  leaves it up between runs while you debug one, and `make pg-test-up` /
-  `make pg-test-down` drive it by hand. Setting `POSTGRES_TEST_URL` yourself —
-  in CI, or at a PostgreSQL of your own — takes over completely and nothing
-  touches Docker. That variable is named apart from the ordinary connection
-  setting on purpose: these tests migrate and truncate what they are pointed at.
-- `make tests-scenarios` is the third run, and it is in neither `tests` nor
-  `tests-all`: the suite under `tests/scenarios` starts a real `aion serve` per
-  framework and deployment variant and drives it over A2A. `TAGS=` selects
-  suites, `FRAMEWORK=` one framework, `KEEP_SERVE=1` leaves the servers up.
-  `make tests-scenarios-dist` runs the same scenarios against the wheel in
-  `dist/`, installed into a clean venv, and is a step of the release gate.
-  `make scenarios-matrix` regenerates `tests/scenarios/SCENARIOS.md`, which CI
-  checks is current. `tests/scenarios/README.md` is the whole of it, including
-  where the line with the unit tests runs.
-- `make lint-imports` checks the layer contract described above. Run it after
-  moving code between subpackages; a new import that crosses a layer fails it.
-- `scripts/packaging/check.py` (`make dist-check`) reads the built wheel and
-  sdist against the packaging contract; `scripts/packaging/smoke.py`
-  (`make dist-smoke`) installs them into nine clean virtual environments and
-  uses each one. Neither runs through `poetry run`: the point is an environment
-  that inherits nothing from this project's. `scripts/packaging/scenarios.py`
-  (`make tests-scenarios-dist`) builds one more such environment and runs the
-  scenario suite against it — that one does go through `poetry run`, because
-  pytest and the A2A client come from this project while the installation
-  under test is the venv. `make dist-build` empties `dist/`
-  and builds. `scripts/release.py` strings those together: `make release-check`
-  runs environment, unit tests, layer contract, build, packaging contract,
-  smoke and scenarios in order and publishes nothing; `make release` runs the
-  same after a
-  preflight over git, GitHub and PyPI, asks `Are you sure? [y/N]`, and creates
-  the `py-v*` GitHub Release that starts the publishing workflow. The version,
-  the tag and the pre-release flag all come from `[project].version`; nothing
-  takes a version on the command line. `RELEASE.md` at the root is the whole
-  release procedure: commands, version rules, the worked example and the
-  one-time PyPI setup.
-- `.github/workflows/python-ci.yml` runs the unit suite on 3.12, 3.13 and
-  3.14, the layer contract, the scenario matrix check (collection only, no
-  servers) and build + check on every pull request, plus an
-  integration job against a `postgres:16` service container. The scenarios
-  themselves are not run there; they run in the release gate and in
-  `publish-python.yml`, against the built wheel.
-  `.github/workflows/publish-python.yml` builds, checks, smokes, runs the
-  scenarios and publishes
-  `aionto-sdk` to PyPI on a `py-v*` release, through trusted publishing and the
-  `pypi` environment. `.github/workflows/publish-aion.yml` publishes the
-  `aion-chat-ui` npm package on any other release; the two are kept apart by
-  the `py-v` tag prefix.
-
-## Documentation
-
-User-facing documentation is published on <https://docs.aion.to> and written
-in the `aion-docs-mintlify` repository, not here: link to the page that owns a
-subject rather than restating it, and never add a Markdown file whose content
-is one external URL - a file that only forwards is a second place to go stale
-and a hop for the reader. `docs/` is `docs/development/`, the maintainer
-section (environment, dependencies, extension exposure), and a file belongs in
-it when it says something about this repository that no published page does.
-`RELEASE.md` at the root is for maintainers. A test suite that needs explaining carries its own
-`README.md` beside it - `tests/scenarios/README.md` is the scenario suite, and
-`tests/scenarios/SCENARIOS.md` next to it is generated by
-`make scenarios-matrix` and changed only through the suite it describes.
-Every subpackage has a `README.md` of its own beside
-the code, in `src/aion/<subpackage>/`; those are for whoever opens the
-directory and are excluded from the wheel and the sdist. The root
-`README.md` is the PyPI page — keep it short, and keep every link in it
-absolute, since relative links do not resolve on PyPI. Keep all of them in sync
-with behavioural changes.
-
-## Additional guidelines
-
-1. Always use idiomatic Python and best practices. Use `snake_case` for Python
-   module names, variables, attributes, dataclass fields, function parameters,
-   and keyword arguments; reserve camelCase only for explicit wire-format
-   aliases or protocol field names.
-2. Document all code with detailed Python docstrings in Google's style,
-   especially at the class and method level; avoid overly terse summaries.
-3. Create thorough unit tests for all code using pytest. A test module goes
-   under `tests/` at the path mirroring its subpackage, and every directory
-   under `tests/` carries an `__init__.py`: one rootdir means module basenames
-   collide otherwise.
-4. For docstring sections that define a group of injected or projected fields,
-   use a hanging-indent aligned definition list: left-align the field names in
-   a fixed-width first column and align descriptions after an em dash.
-5. Respect the layering above: authoring subpackages stay free of server
-   dependencies, and model helpers belong in the authoring subpackage for their
-   framework rather than in the server plugin.
-6. A new third-party dependency goes into the extra that owns it, and into the
-   composite extras that include it — `langgraph-server` and `adk-server`
-   are written out in full, and `make dist-check` is what catches the copy
-   you forgot.
-7. Every exception the SDK raises on its own behalf subclasses
-   `aion.core.exceptions.AionError`. That module holds the *public* ones — the
-   ones an agent author or an `aion.api` caller catches from their own code;
-   internal errors stay in the module that raises them and only take the shared
-   base. An exception that used to be an `ImportError` or a `RuntimeError` keeps
-   it as a second base (`class X(AionError, ImportError)`), and `A2AError`
-   subclasses stay outside the hierarchy — they are a2a-sdk's vocabulary.
+User-facing docs live in the `aion-docs-mintlify` repository at
+<https://docs.aion.to>. Link to the page that owns a topic rather than
+duplicating it here; do not create Markdown files that only forward to a URL.
+`docs/development/` holds repository-specific maintainer guides, and
+`RELEASE.md` holds the release procedure. The root `README.md` is the PyPI
+page: keep it short and use absolute links. Existing subpackage READMEs
+describe their local code; update the document that owns behavior you change.
+Test-suite guidance lives beside the suite, with the generated scenario matrix
+maintained through `make scenarios-matrix`.

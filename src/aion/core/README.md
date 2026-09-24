@@ -29,5 +29,5 @@ All other Aion subpackages depend on this one; it has no internal Aion dependenc
 
 ```bash
 poetry install -E langgraph-server -E adk-server --with dev
-make tests TEST_PATHS="tests/unit/core"
+make tests-unit TEST_PATHS="tests/unit/core"
 ```

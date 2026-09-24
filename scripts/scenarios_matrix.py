@@ -56,6 +56,7 @@ SUITE_PREFIX = "scenario suite -"
 # instead. Mirrors the default of SCENARIO_TAGS in the Makefile.
 SUITE_TARGETS = {
     "persistence": "make tests-scenarios-persistence",
+    "distributed": "make tests-scenarios-distributed",
 }
 
 # One vocabulary for every status cell in the document, in both tables. Short

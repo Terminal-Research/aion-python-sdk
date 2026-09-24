@@ -2,7 +2,7 @@
 
 This package contains the standalone React/Ink terminal chat UI for Aion Chat.
 It is packaged into the Python SDK through `npm run stage:python`, which copies
-the built CLI bundle into `libs/aion-sdk/src/aion/cli/bin/cli.mjs`.
+the built CLI bundle into the repository's `src/aion/cli/bin/cli.mjs`.
 
 ## Inspecting Aion Chat Session Logs
 

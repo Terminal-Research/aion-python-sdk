@@ -41,6 +41,10 @@ __all__ = [
 AGENT_CARD_PATH = "/.well-known/agent-card.json"
 REQUEST_TIMEOUT_SECONDS = 60.0
 
+A2A_VERSION_HEADER = "a2a-version"
+A2A_VERSION = "1.0"
+"""Protocol version the typed client announces, and so does ``rpc``."""
+
 
 def _struct(payload: Mapping[str, Any]) -> Struct:
     """A protobuf Struct carrying this mapping."""
@@ -288,8 +292,51 @@ class ScenarioClient:
         return await self._client(True).cancel_task(CancelTaskRequest(id=task_id))
 
     async def subscribe(self, task_id: str) -> list[Ev]:
-        """Resubscribe to a task and record what the stream delivers."""
-        return await record_stream(self._client(True).subscribe(SubscribeToTaskRequest(id=task_id)))
+        """Resubscribe to a task and record what the stream delivers.
+
+        Reads the subscription to its end, so it answers for a task whose
+        stream the server closes on its own - a settled task it replays, or a
+        running one that finishes. A task that is waiting for input on a
+        single-process deployment keeps the subscription open until something
+        continues it, and that one is driven with ``subscribe_stream``.
+        """
+        return await record_stream(self.subscribe_stream(task_id))
+
+    def subscribe_stream(self, task_id: str) -> AsyncIterator:
+        """Raw resubscribe, for scenarios that read events as they arrive."""
+        return self._client(True).subscribe(SubscribeToTaskRequest(id=task_id))
+
+    async def rpc(self, method: str, params: Mapping[str, Any]) -> dict:
+        """Call one JSON-RPC method by hand and return the body as it arrived.
+
+        The typed client is the right instrument almost everywhere, and it is
+        what every other method here uses. It has one blind spot: a JSON-RPC
+        error reaches the caller as an ``A2AClientError`` carrying a rendered
+        message, so the error object's ``data`` - where a server puts what it
+        knows about the refusal - is gone by the time a scenario could read
+        it. This posts to the same public endpoint, in the same envelope the
+        client uses, and hands back the parsed response instead.
+
+        Args:
+            method: The A2A method name as the wire spells it, e.g.
+                ``SubscribeToTask``.
+            params: The method's parameters, in protobuf JSON form.
+
+        Returns:
+            The decoded JSON-RPC response - ``result`` or ``error``.
+        """
+        response = await self._http.post(
+            self.agent_url,
+            json={
+                "jsonrpc": "2.0",
+                "id": uuid.uuid4().hex,
+                "method": method,
+                "params": dict(params),
+            },
+            headers={A2A_VERSION_HEADER: A2A_VERSION},
+        )
+        response.raise_for_status()
+        return response.json()
 
     def stream(self, text: str, **kwargs: Any) -> AsyncIterator:
         """Raw streaming send, for scenarios that read events as they arrive."""

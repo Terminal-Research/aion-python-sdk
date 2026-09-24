@@ -3,7 +3,7 @@
 ## PostgreSQL integration tests
 
 The repository tests use a real PostgreSQL instance, which is why they live
-under `tests/integration` and `make tests` does not run them. Run them before
+under `tests/integration` and `make tests-unit` does not run them. Run them before
 you commit:
 
 ```bash

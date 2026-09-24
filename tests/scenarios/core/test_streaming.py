@@ -1,10 +1,21 @@
-"""Replies that arrive in pieces."""
+"""Replies that arrive in pieces, and the indicator sent while one is built.
+
+A chunked reply is one message the client sees grow. A typing indicator is
+the other half of the same idea and the opposite of durable: it is delivered
+live so that the caller knows the agent is busy, and it is never part of what
+the turn leaves behind.
+"""
 
 from __future__ import annotations
 
 import pytest
 
-from tests.scenarios.commands import stream_chunks, stream_text
+from tests.scenarios.commands import (
+    TYPING_INDICATOR,
+    stream_chunks,
+    stream_text,
+    typing_text,
+)
 from tests.scenarios.harness import (
     ScenarioClient,
     assert_shape,
@@ -12,6 +23,7 @@ from tests.scenarios.harness import (
     final_task,
     reply_texts,
     status,
+    stored_texts,
     task,
 )
 
@@ -65,3 +77,47 @@ async def test_one_chunk_is_still_a_chunked_reply(client: ScenarioClient) -> Non
         status("WORKING", text=stream_text(1)),
         task("COMPLETED"),
     ])
+
+
+# --------------------------------------------------------------------------
+# The ephemeral indicator
+# --------------------------------------------------------------------------
+
+@pytest.mark.command("typing")
+async def test_the_indicator_is_delivered_before_the_reply(client: ScenarioClient) -> None:
+    """The caller learns the agent is busy, and the answer follows.
+
+    Delivery is the guarantee both adapters hold, so this reads the texts the
+    stream carried rather than the events that carried them: one adapter
+    sends the indicator as an ephemeral artifact, the other as a status, and
+    what a caller is owed here is the order.
+    """
+    events = await client.send("typing")
+
+    delivered = [event.text for event in events if event.text]
+    assert TYPING_INDICATOR in delivered, f"the indicator never arrived: {events}"
+    assert typing_text() in delivered
+    assert delivered.index(TYPING_INDICATOR) < delivered.index(typing_text())
+    assert final_task(events).state == "COMPLETED"
+
+
+@pytest.mark.command("typing")
+async def test_the_indicator_is_not_a_durable_reply(client: ScenarioClient) -> None:
+    """The turn has one durable reply, and the indicator is not it."""
+    events = await client.send("typing")
+
+    assert reply_texts(events) == [typing_text()]
+
+
+@pytest.mark.command("typing")
+async def test_the_indicator_never_reaches_task_history(client: ScenarioClient) -> None:
+    """What was shown once is gone; what was said is kept."""
+    events = await client.send("typing")
+
+    stored = await client.get_task(final_task(events).task_id)
+    texts = stored_texts(stored)
+
+    assert typing_text() in texts
+    assert TYPING_INDICATOR not in texts, (
+        f"the ephemeral indicator was persisted into task history: {texts}"
+    )

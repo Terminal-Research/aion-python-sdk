@@ -4,7 +4,7 @@
      commands.py and frameworks.py. Do not edit by hand: run
      `make scenarios-matrix`. -->
 
-84 scenarios in 15 files, 184 runs across 2 frameworks: 171 run, 13 skipped.
+118 scenarios in 22 files, 252 runs across 2 frameworks: 234 run, 18 skipped.
 
 Nothing here was produced by running a scenario: `pytest --collect-only` and the registries are all it takes, and the same suite always renders the same file. What the suite is and how to run it is in [README.md](README.md).
 
@@ -14,15 +14,15 @@ A status cell reads `✓` when it runs, `skip` when `frameworks.UNSUPPORTED` or 
 
 |  | Covered | Not yet |
 |---|---|---|
-| Commands | 17 of 20: `help`, `echo`, `stream`, `steps`, `slow`, `artifacts`, `outbox-task`, `outbox-message`, `ask`, `ask-twice`, `fail`, `ext`, `whoami`, `event`, `config`, `ids`, `parts` | `typing`, `card`, `big` |
-| Suites | 12 of 13: `smoke`, `streaming`, `events`, `terminal_states`, `interrupts`, `errors`, `files`, `extensions`, `daemon`, `config`, `lifecycle`, `persistence` | `artifacts` |
+| Commands | 20 of 20: `help`, `echo`, `stream`, `typing`, `steps`, `slow`, `artifacts`, `card`, `outbox-task`, `outbox-message`, `ask`, `ask-twice`, `fail`, `ext`, `whoami`, `event`, `config`, `ids`, `big`, `parts` | — |
+| Suites | 14 of 14: `smoke`, `streaming`, `events`, `terminal_states`, `interrupts`, `errors`, `artifacts`, `files`, `extensions`, `daemon`, `config`, `lifecycle`, `persistence`, `distributed` | — |
 
 ## Frameworks
 
 | Framework | Agent package | Entry | SDK extras | Commands implemented |
 |---|---|---|---|---|
-| langgraph | `tests.scenarios.agents.langgraph_core` | `graph.py:create_graph` | `langgraph-server` | 17 of 20 |
-| adk | `tests.scenarios.agents.adk_core` | `agent.py:create_agent` | `adk-server` | 15 of 20 |
+| langgraph | `tests.scenarios.agents.langgraph_core` | `graph.py:create_graph` | `langgraph-server` | 20 of 20 |
+| adk | `tests.scenarios.agents.adk_core` | `agent.py:create_agent` | `adk-server` | 18 of 20 |
 
 Pairs a framework genuinely cannot do, which is what a `skip` cell means:
 
@@ -45,20 +45,31 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 | Suite | What it covers | Scenarios | Run |
 |---|---|---|---|
 | `smoke` | agent answers at all: card, health, help, echo | 5 | `make tests-scenarios TAGS=smoke` |
-| `streaming` | chunked replies, ephemeral typing, unary send | 10 | `make tests-scenarios TAGS=streaming` |
-| `events` | event order, ids, outbox, get_task agreement | 13 | `make tests-scenarios TAGS=events` |
+| `streaming` | chunked replies, ephemeral typing, unary send | 13 | `make tests-scenarios TAGS=streaming` |
+| `events` | event order, ids, outbox, get_task agreement | 21 | `make tests-scenarios TAGS=events` |
 | `terminal_states` | COMPLETED, FAILED, CANCELED, INPUT_REQUIRED | 9 | `make tests-scenarios TAGS=terminal_states` |
 | `interrupts` | INPUT_REQUIRED and resume | 6 | `make tests-scenarios TAGS=interrupts` |
-| `errors` | failures that must stay reported, not crash the server | 5 | `make tests-scenarios TAGS=errors` |
-| `artifacts` | artifact and card emission | 0 | `make tests-scenarios TAGS=artifacts` |
+| `errors` | failures that must stay reported, not crash the server | 8 | `make tests-scenarios TAGS=errors` |
+| `artifacts` | artifact and card emission | 4 | `make tests-scenarios TAGS=artifacts` |
 | `files` | inline file parts: stored, rejected, or passed through | 9 | `make tests-scenarios TAGS=files` |
 | `extensions` | extension activation and payload delivery | 12 | `make tests-scenarios TAGS=extensions` |
 | `daemon` | daemon extension identity and environment | 6 | `make tests-scenarios TAGS=daemon` |
 | `config` | aion.yaml configuration and deployment variants | 7 | `make tests-scenarios TAGS=config` |
 | `lifecycle` | cancel, concurrency, push notifications, startup | 4 | `make tests-scenarios TAGS=lifecycle` |
-| `persistence` | needs POSTGRES_TEST_URL; survives a server restart | 4 | `make tests-scenarios-persistence` |
+| `persistence` | needs POSTGRES_TEST_URL; survives a server restart | 7 | `make tests-scenarios-persistence` |
+| `distributed` | needs POSTGRES_TEST_URL; two servers over one database | 13 | `make tests-scenarios-distributed` |
 
 ## Scenarios by file
+
+### `tests/scenarios/core/test_big_payload.py`
+
+A reply large enough that nothing on the way may quietly reshape it.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [One reply, of exactly the requested size, with its content intact.](core/test_big_payload.py#L24 "test_a_large_reply_arrives_whole") | `errors` | `big` | `default` | ✓ | ✓ |
+| [The Task that closes the stream is not a shortened version of it.](core/test_big_payload.py#L35 "test_the_terminal_task_carries_the_whole_reply") | `errors` | `big` | `default` | ✓ | ✓ |
+| [What the server kept is what the client saw, to the last character.](core/test_big_payload.py#L46 "test_a_large_reply_is_stored_whole") | `errors` | `big` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_cancel.py`
 
@@ -70,6 +81,17 @@ Cancelling a task that is still working through the public A2A endpoint.
 | [Nothing in the stream claims the outcome the cancel replaced.](core/test_cancel.py#L82 "test_a_cancelled_task_does_not_also_complete") | `terminal_states` | `slow` | `default` | ✓ | ✓ |
 | [tasks/get after the cancel also says CANCELED, not the pre-cancel state.](core/test_cancel.py#L91 "test_cancelled_task_is_stored_as_cancelled") | `terminal_states` | `slow` | `default` | ✓ | ✓ |
 | [The work stops: the reply the agent would have sent never lands.](core/test_cancel.py#L100 "test_no_answer_arrives_after_a_cancel") | `terminal_states` | `slow` | `default` | ✓ | ✓ |
+
+### `tests/scenarios/core/test_cards.py`
+
+A card the agent posts, from its Card object to the client's part.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [The card travels as a file part of the card media type, not as text.](core/test_cards.py#L63 "test_a_card_arrives_as_a_card_part") | `artifacts` | `card` | `default` | ✓ | ✓ |
+| [A client knows what it received: the schema on the part, the URI on the message.](core/test_cards.py#L78 "test_the_card_is_tagged_with_its_schema_and_extension") | `artifacts` | `card` | `default` | ✓ | ✓ |
+| [Byte for byte what the agent handed over, and the reply follows it.](core/test_cards.py#L90 "test_the_card_document_arrives_unchanged") | `artifacts` | `card` | `default` | ✓ | ✓ |
+| [A card is durable: a later tasks/get holds the same document and tags.](core/test_cards.py#L102 "test_the_stored_task_keeps_the_card") | `artifacts` | `card` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_config.py`
 
@@ -202,6 +224,21 @@ Push notification delivery to a real HTTP callback.
 | [The callback accepts the delivery, because it arrived authenticated.](core/test_push_notifications.py#L175 "test_a_declared_credential_is_presented_to_the_callback") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
 | [The callback really checks: the same delivery without credentials is rejected.](core/test_push_notifications.py#L206 "test_an_undeclared_credential_is_refused_by_the_callback") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
 
+### `tests/scenarios/core/test_resubscribe.py`
+
+What ``tasks/resubscribe`` gives a client that comes back to a task.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [The reconnecting client sees the rest of the turn, outcome included.](core/test_resubscribe.py#L86 "test_a_running_task_hands_its_remaining_events_to_a_subscriber") | `events` | `slow` | `default` | ✓ | ✓ |
+| [One execution, one task: the reply is said once, not once per subscriber.](core/test_resubscribe.py#L104 "test_resubscribing_does_not_start_the_turn_again") | `events` | `slow` | `default` | ✓ | ✓ |
+| [A finished turn answers a subscriber with the task it left behind.](core/test_resubscribe.py#L126 "test_a_settled_task_is_replayed_once_and_the_stream_closes") | `events` | `echo` | `default` | ✓ | ✓ |
+| [Resubscribe and tasks/get answer with the same record, not two readings.](core/test_resubscribe.py#L141 "test_the_replayed_task_is_the_stored_task") | `events` | `echo` | `default` | ✓ | ✓ |
+| [The outcome a subscriber is given is the one the task has, not a fresh run.](core/test_resubscribe.py#L154 "test_a_failed_task_is_replayed_as_failed") | `events` | `fail` | `default` | ✓ | ✓ |
+| [A cancel is an outcome like any other, and replays like one.](core/test_resubscribe.py#L166 "test_a_cancelled_task_is_replayed_as_cancelled") | `events` | `slow` | `default` | ✓ | ✓ |
+| [The subscriber is given the pause, then the turn that ends it.](core/test_resubscribe.py#L182 "test_a_paused_task_keeps_a_subscriber_until_another_client_resumes_it") | `events` | `ask` | `default` | ✓ | [skip](#frameworks) |
+| [No second task, and nothing the pause had recorded is lost.](core/test_resubscribe.py#L222 "test_resuming_under_a_subscriber_keeps_one_task_and_its_question") | `events` | `ask` | `default` | ✓ | [skip](#frameworks) |
+
 ### `tests/scenarios/core/test_smoke.py`
 
 Does a deployment of this framework answer at all.
@@ -229,14 +266,51 @@ The stream-delta channel has the shape the messaging extension specifies.
 
 ### `tests/scenarios/core/test_streaming.py`
 
-Replies that arrive in pieces.
+Replies that arrive in pieces, and the indicator sent while one is built.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [Chunks arrive as stream-delta artifacts, then the whole reply as one message.](core/test_streaming.py#L21 "test_a_chunked_reply_arrives_as_deltas_then_one_message") | `streaming` | `stream` | `default` | ✓ | ✓ |
-| [Every chunk arrives once, in order, and they add up to the reply.](core/test_streaming.py#L35 "test_the_chunks_are_the_message_broken_up") | `streaming` | `stream` | `default` | ✓ | ✓ |
-| [A chunked reply is one artifact: the first chunk opens it, the rest append.](core/test_streaming.py#L46 "test_the_first_chunk_opens_the_artifact_and_the_rest_append") | `streaming` | `stream` | `default` | ✓ | ✓ |
-| [`stream 1` keeps the same shape - one delta, then the message.](core/test_streaming.py#L56 "test_one_chunk_is_still_a_chunked_reply") | `streaming` | `stream` | `default` | ✓ | ✓ |
+| [Chunks arrive as stream-delta artifacts, then the whole reply as one message.](core/test_streaming.py#L33 "test_a_chunked_reply_arrives_as_deltas_then_one_message") | `streaming` | `stream` | `default` | ✓ | ✓ |
+| [Every chunk arrives once, in order, and they add up to the reply.](core/test_streaming.py#L47 "test_the_chunks_are_the_message_broken_up") | `streaming` | `stream` | `default` | ✓ | ✓ |
+| [A chunked reply is one artifact: the first chunk opens it, the rest append.](core/test_streaming.py#L58 "test_the_first_chunk_opens_the_artifact_and_the_rest_append") | `streaming` | `stream` | `default` | ✓ | ✓ |
+| [`stream 1` keeps the same shape - one delta, then the message.](core/test_streaming.py#L68 "test_one_chunk_is_still_a_chunked_reply") | `streaming` | `stream` | `default` | ✓ | ✓ |
+| [The caller learns the agent is busy, and the answer follows.](core/test_streaming.py#L86 "test_the_indicator_is_delivered_before_the_reply") | `streaming` | `typing` | `default` | ✓ | ✓ |
+| [The turn has one durable reply, and the indicator is not it.](core/test_streaming.py#L104 "test_the_indicator_is_not_a_durable_reply") | `streaming` | `typing` | `default` | ✓ | ✓ |
+| [What was shown once is gone; what was said is kept.](core/test_streaming.py#L112 "test_the_indicator_never_reaches_task_history") | `streaming` | `typing` | `default` | ✓ | ✓ |
+
+### `tests/scenarios/distributed/test_cancel.py`
+
+Cancelling a task through a server that is not the one running it.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [The owner's own stream closes as CANCELED, on a cancel it never received.](distributed/test_cancel.py#L79 "test_a_cancel_on_the_other_server_reaches_the_owner") | `distributed` | `slow` | `default` | ✓ | ✓ |
+| [The reply the agent owed never lands, on either server, and the claim goes.](distributed/test_cancel.py#L120 "test_the_cancelled_work_produces_no_late_answer") | `distributed` | `slow` | `default` | ✓ | ✓ |
+| [Concurrent cancels reach one outcome, and no caller is told otherwise.](distributed/test_cancel.py#L137 "test_two_concurrent_cancels_agree") | `distributed` | `slow` | `default` | ✓ | ✓ |
+| [A repeat is not a second cancellation but an error, and changes nothing.](distributed/test_cancel.py#L180 "test_cancelling_a_settled_task_again_is_refused") | `distributed` | `slow` | `default` | ✓ | ✓ |
+| [The outcome holds: nothing overwrites it once the work has stopped.](distributed/test_cancel.py#L203 "test_a_cancelled_task_never_reaches_another_terminal_state") | `distributed` | `slow` | `default` | ✓ | ✓ |
+
+### `tests/scenarios/distributed/test_ownership.py`
+
+Who owns a task, when two servers of one agent share one database.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [A subscriber on the wrong server is told so, by the reserved code.](distributed/test_ownership.py#L82 "test_the_other_server_refuses_to_subscribe_to_a_running_task") | `distributed` | `slow` | `default` | ✓ | ✓ |
+| [A message sent to the wrong server is refused the same way as a subscribe.](distributed/test_ownership.py#L98 "test_the_other_server_refuses_to_continue_a_running_task") | `distributed` | `slow` | `default` | ✓ | ✓ |
+| [The refusal is the whole outcome: no second turn, no second task.](distributed/test_ownership.py#L131 "test_a_refused_continuation_starts_nothing") | `distributed` | `slow` | `default` | ✓ | ✓ |
+| [The diagnostic reaches the caller, and it names the server that holds it.](distributed/test_ownership.py#L163 "test_the_refusal_names_the_owning_instance") | `distributed` | `slow` | `default` | ✓ | ✓ |
+| [Authority is the fencing token, not the name of the process holding it.](distributed/test_ownership.py#L183 "test_a_competitor_with_the_same_host_name_is_refused_too") | `distributed` | `slow` | `default` | ✓ | ✓ |
+| [A claim exists exactly while the work does.](distributed/test_ownership.py#L215 "test_a_running_task_holds_a_claim_and_lets_it_go") | `distributed` | `slow` | `default` | ✓ | ✓ |
+| [One database, one answer: the outcome does not depend on who is asked.](distributed/test_ownership.py#L228 "test_both_servers_read_the_same_finished_task") | `distributed` | `echo` | `default` | ✓ | ✓ |
+
+### `tests/scenarios/distributed/test_recovery.py`
+
+One server dies; the one that was already running closes what it left.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [The whole sequence, in the order a deployment would live it.](distributed/test_recovery.py#L93 "test_a_dead_owner_leaves_two_tasks_and_the_survivor_closes_both") | `distributed` | `slow` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/persistence/test_restart.py`
 
@@ -244,10 +318,20 @@ What a server restart does to the tasks the previous process held.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [The task read back after a restart is the task that was read before it.](persistence/test_restart.py#L122 "test_a_completed_task_is_unchanged_by_a_restart") | `persistence` | `echo` | `default` | ✓ | ✓ |
-| [Every reply of a multi-step turn is still there, in order, afterwards.](persistence/test_restart.py#L149 "test_a_multi_step_history_survives_a_restart") | `persistence` | `steps` | `default` | ✓ | ✓ |
-| [A shutdown cancels what it is running and says so on the task it leaves.](persistence/test_restart.py#L174 "test_a_running_task_is_settled_by_an_orderly_shutdown") | `persistence` | `slow` | `default` | ✓ | ✓ |
-| [A killed owner settles nothing, so the lease it stopped renewing does.](persistence/test_restart.py#L190 "test_a_running_task_is_settled_after_a_crash_when_its_lease_expires") | `persistence` | `slow` | `default` | ✓ | ✓ |
+| [The task read back after a restart is the task that was read before it.](persistence/test_restart.py#L94 "test_a_completed_task_is_unchanged_by_a_restart") | `persistence` | `echo` | `default` | ✓ | ✓ |
+| [Every reply of a multi-step turn is still there, in order, afterwards.](persistence/test_restart.py#L121 "test_a_multi_step_history_survives_a_restart") | `persistence` | `steps` | `default` | ✓ | ✓ |
+| [A shutdown cancels what it is running and says so on the task it leaves.](persistence/test_restart.py#L146 "test_a_running_task_is_settled_by_an_orderly_shutdown") | `persistence` | `slow` | `default` | ✓ | ✓ |
+| [A killed owner settles nothing, so the lease it stopped renewing does.](persistence/test_restart.py#L162 "test_a_running_task_is_settled_after_a_crash_when_its_lease_expires") | `persistence` | `slow` | `default` | ✓ | ✓ |
+
+### `tests/scenarios/persistence/test_resubscribe.py`
+
+Resubscribing to a paused task where ownership is enforced.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [One stored Task, carrying the question, and then the end of the stream.](persistence/test_resubscribe.py#L34 "test_a_paused_task_is_replayed_once_and_the_stream_closes") | `persistence` | `ask` | `default` | ✓ | [skip](#frameworks) |
+| [No execution was started, so the task is still waiting and still resumable.](persistence/test_resubscribe.py#L52 "test_the_replay_leaves_the_pause_as_it_found_it") | `persistence` | `ask` | `default` | ✓ | [skip](#frameworks) |
+| [Once the turn is over, the replay is the outcome - question and answer kept.](persistence/test_resubscribe.py#L83 "test_a_settled_task_is_replayed_the_same_way") | `persistence` | `ask` | `default` | ✓ | [skip](#frameworks) |
 
 ## Commands
 
@@ -256,22 +340,22 @@ The contract from `commands.py`. `Scenarios` counts the scenarios driving the co
 | Command | Summary | Tags | Scenarios | langgraph | adk |
 |---|---|---|---|---|---|
 | `help` | Show this menu | `smoke` | 1 | ✓ | ✓ |
-| `echo <text>` | Reply with the argument, unchanged | `smoke`, `events` | 10 | ✓ | ✓ |
+| `echo <text>` | Reply with the argument, unchanged | `smoke`, `events` | 13 | ✓ | ✓ |
 | `stream <n>` | Reply in n chunks of one message | `streaming` | 10 | ✓ | ✓ |
-| `typing` | Send an ephemeral typing status, then a reply | `streaming`, `events` | 0 | gap | gap |
+| `typing` | Send an ephemeral typing status, then a reply | `streaming`, `events` | 3 | ✓ | ✓ |
 | `steps <n>` | Emit n working statuses, then complete | `events` | 2 | ✓ | ✓ |
-| `slow <sec>` | Reply after n seconds | `lifecycle` | 6 | ✓ | ✓ |
+| `slow <sec>` | Reply after n seconds | `lifecycle` | 21 | ✓ | ✓ |
 | `artifacts` | Emit a two-part data artifact, an inline file and a url | `artifacts`, `files` | 2 | ✓ | [skip](#frameworks) |
-| `card` | Emit one card | `artifacts` | 0 | gap | gap |
+| `card` | Emit one card | `artifacts` | 4 | ✓ | ✓ |
 | `outbox-task` | Return an A2A Task through the outbox | `events` | 5 | ✓ | ✓ |
 | `outbox-message` | Return an A2A Message through the outbox | `events` | 2 | ✓ | ✓ |
-| `ask` | Ask a question, then quote the answer | `interrupts` | 3 | ✓ | [skip](#frameworks) |
+| `ask` | Ask a question, then quote the answer | `interrupts` | 8 | ✓ | [skip](#frameworks) |
 | `ask-twice` | Ask two questions in a row | `interrupts` | 3 | ✓ | [skip](#frameworks) |
-| `fail <mode>` | Fail on purpose: exception \| after-reply | `errors`, `terminal_states` | 5 | ✓ | ✓ |
+| `fail <mode>` | Fail on purpose: exception \| after-reply | `errors`, `terminal_states` | 6 | ✓ | ✓ |
 | `ext` | Report active and unknown extensions | `extensions` | 6 | ✓ | ✓ |
 | `whoami` | Report the daemon identity | `daemon` | 6 | ✓ | ✓ |
 | `event` | Report the event this turn carried | `extensions`, `events` | 4 | ✓ | ✓ |
 | `config <key>` | Report one configuration value | `config` | 7 | ✓ | ✓ |
 | `ids` | Report task and context ids | `events`, `lifecycle` | 2 | ✓ | ✓ |
-| `big <kb>` | Reply with n KB of text | `errors` | 0 | gap | gap |
+| `big <kb>` | Reply with n KB of text | `errors` | 3 | ✓ | ✓ |
 | `parts` | Report the kinds of parts the inbound message carried | `files` | 6 | ✓ | ✓ |

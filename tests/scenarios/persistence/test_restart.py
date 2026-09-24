@@ -28,8 +28,6 @@ lease is one.
 
 from __future__ import annotations
 
-import contextlib
-
 import pytest
 from a2a.types import TaskState
 
@@ -40,9 +38,9 @@ from tests.scenarios.harness import (
     eventually,
     final_task,
     reply_texts,
+    run_until_working,
     stored_texts,
 )
-from tests.scenarios.harness.recorder import Ev, _payload_of, to_event
 
 pytestmark = [pytest.mark.persistence]
 
@@ -67,32 +65,6 @@ plus margin rather than a number chosen to be comfortable.
 async def reconnect(server: ServeProcess) -> ScenarioClient:
     """A client on the server that is running now, whichever process that is."""
     return await ScenarioClient.connect(server.base_url, server.variant.agent_id)
-
-
-async def run_until_working(client: ScenarioClient, text: str) -> tuple[str, list[Ev]]:
-    """Start a task and return as soon as it is observably working.
-
-    The stream is closed on the way out and the task is left running: a
-    subscriber going away is not an outcome, so the execution carries on
-    until the restart takes it.
-    """
-    events: list[Ev] = []
-    task_id: str | None = None
-
-    stream = client.stream(text)
-    try:
-        async for response in stream:
-            event = to_event(_payload_of(response))
-            events.append(event)
-            if event.task_id and task_id is None:
-                task_id = event.task_id
-            if event.state == "WORKING" and event.text and task_id:
-                return task_id, events
-    finally:
-        with contextlib.suppress(Exception):
-            await stream.aclose()
-
-    raise AssertionError(f"the task never reached WORKING with a reply: {events}")
 
 
 def settled_reason(task) -> str | None:

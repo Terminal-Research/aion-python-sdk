@@ -42,7 +42,7 @@ from .shape import (
     status,
     task,
 )
-from .waiting import eventually
+from .waiting import eventually, run_until_working
 
 __all__ = [
     "ANY",
@@ -88,6 +88,7 @@ __all__ = [
     "record_stream",
     "replies",
     "reply_texts",
+    "run_until_working",
     "status",
     "stored_texts",
     "task",

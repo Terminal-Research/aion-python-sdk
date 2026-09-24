@@ -39,8 +39,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 SCENARIOS = "tests/scenarios"
-DEFAULT_MARKERS = "scenario and not persistence"
-"""Persistence needs a database of its own; `make tests-scenarios-persistence` runs it."""
+DEFAULT_MARKERS = "scenario and not persistence and not distributed"
+"""The database-backed groups run through their own Make targets."""
 
 AION_BIN_VAR = "SCENARIOS_AION_BIN"
 """What the harness reads to decide which `aion` to start."""

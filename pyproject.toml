@@ -181,6 +181,9 @@ python = ">=3.12,<4.0"
 pytest = ">=8.0.0"
 pytest-asyncio = ">=0.24"
 pytest-cov = ">=7.1.0"
+# `make tests-unit` spreads the unit suite over worker processes; UNIT_WORKERS
+# in the Makefile sets how many.
+pytest-xdist = ">=3.6.0"
 import-linter = ">=2.0"
 # Development-only: the generated GraphQL client is committed, so nothing at
 # install time needs the code generator.
@@ -244,9 +247,9 @@ markers = [
     # item lives in - tests/unit, tests/integration, tests/scenarios - so that
     # no module can forget one or claim another. The Make targets run by
     # directory; the markers are there for combining with `-m`.
-    "unit: runs on any developer machine with nothing set up; `make tests`",
+    "unit: runs on any developer machine with nothing set up; `make tests-unit`",
     "integration: needs PostgreSQL, or a real process tree to signal; `make tests-integration`",
-    "scenario: drives a real `aion serve` over A2A; `make tests-scenarios`, never `make tests`",
+    "scenario: drives a real `aion serve` over A2A; `make tests-scenarios`, never `make tests-unit`",
     # `command` and `variant` say what one scenario drives and where; the
     # scenario matrix is built out of them.
     "command(key): the command from tests/scenarios/commands.py this scenario drives; skipped where frameworks.UNSUPPORTED names the pair",
@@ -269,6 +272,7 @@ markers = [
     "config: scenario suite - aion.yaml configuration and deployment variants",
     "lifecycle: scenario suite - cancel, concurrency, push notifications, startup",
     "persistence: scenario suite - needs POSTGRES_TEST_URL; survives a server restart",
+    "distributed: scenario suite - needs POSTGRES_TEST_URL; two servers over one database",
 ]
 
 [tool.ariadne-codegen]

@@ -105,9 +105,6 @@ DIVERGENCES: dict[tuple[str, str], str] = {
     # adapter, strictly: the day the adapter starts holding it, this entry has
     # to go or the run fails.
     #
-    # Empty: no adapter is currently known to break a guarantee the scenarios
-    # state. The table stays because the next one found is recorded here rather
-    # than by weakening the scenario that found it.
 }
 
 

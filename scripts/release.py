@@ -15,8 +15,8 @@ GitHub Release kind and every check below are derived from it.
     Everything ``check`` does, preceded by a preflight over git, GitHub and
     PyPI and followed by a confirmation prompt, and then one action: create
     the GitHub Release whose ``py-v*`` tag starts ``publish-python.yml``. That
-    workflow builds, checks and uploads to PyPI after a reviewer approves the
-    ``pypi`` environment. Nothing is uploaded from this machine, and the
+    workflow builds, checks and uploads to PyPI automatically when its
+    build job succeeds. Nothing is uploaded from this machine, and the
     release is the last thing this script does - every step before it can
     fail without spending a tag or a version number.
 
@@ -194,7 +194,7 @@ def run_gate(python: str | None) -> None:
             means the interpreter running this script.
     """
     run_step("environment", make("check-env"))
-    run_step("unit tests", make("tests"))
+    run_step("unit tests", make("tests-unit"))
     run_step("layer contract", make("lint-imports"))
     run_step("build", make("dist-build"))
     run_step("packaging contract", make("dist-check"))
@@ -352,11 +352,11 @@ def command_publish(args: argparse.Namespace) -> None:
 
     say(
         f"\n{version.tag} is published as a GitHub Release. The workflow "
-        f"'{PUBLISH_WORKFLOW}' is now building and checking it; the upload to PyPI "
-        "waits for a reviewer in the 'pypi' environment:\n"
+        f"'{PUBLISH_WORKFLOW}' is now building and checking it; if the build "
+        "succeeds, the workflow uploads to PyPI automatically:\n"
         f"    {repo_url}/actions/workflows/{PUBLISH_WORKFLOW}\n"
-        "Approving it spends the version number for good - PyPI never takes a "
-        "file name twice."
+        "A successful upload spends the version number for good - PyPI never "
+        "takes a file name twice."
     )
 
 

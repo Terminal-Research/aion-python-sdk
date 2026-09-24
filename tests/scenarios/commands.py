@@ -29,9 +29,12 @@ __all__ = [
     "DEFAULT_SLOW_SECONDS",
     "stream_chunks",
     "stream_text",
+    "TYPING_INDICATOR",
+    "typing_text",
     "step_text",
     "steps_texts",
     "ids_text",
+    "BIG_KILOBYTES",
     "big_text",
     "ask_question",
     "ask_answer_text",
@@ -54,6 +57,9 @@ __all__ = [
     "ARTIFACT_URL",
     "artifacts_data_parts",
     "artifacts_text",
+    "CARD_TITLE",
+    "card_jsx",
+    "card_text",
     "OUTBOX_MESSAGE_TEXT",
     "OUTBOX_TASK_HISTORY_TEXT",
     "OUTBOX_TASK_ARTIFACT_NAME",
@@ -273,6 +279,18 @@ def stream_text(count: int) -> str:
     return "".join(stream_chunks(count))
 
 
+# What ``typing`` sends, in order: the ephemeral indicator, then the durable
+# answer. Two different texts, so a scenario reading the stream can say which
+# of the two it is looking at - and reading the stored task, which of the two
+# was kept.
+TYPING_INDICATOR = "still working on it"
+
+
+def typing_text() -> str:
+    """The durable reply ``typing`` sends once the indicator is out."""
+    return "finished thinking"
+
+
 def step_text(index: int, count: int) -> str:
     """The text of one working status emitted by ``steps <n>``."""
     return f"step {index}/{count}"
@@ -313,6 +331,49 @@ def artifacts_text() -> str:
     """What ``artifacts`` says once every artifact is out."""
     return "3 artifacts sent"
 
+
+# The card ``card`` emits. Written out here rather than built from the SDK's
+# component classes: the agent passes this document to ``Card(jsx=...)``
+# unchanged, so the string below is both what the agent sends and what the
+# client must receive, and nothing can render it into something else on the
+# way.
+CARD_TITLE = "Scenario card"
+CARD_BODY = "A card the scenarios can recognize."
+CARD_FIELD_LABEL = "Env"
+CARD_FIELD_VALUE = "scenario"
+CARD_BUTTON_LABEL = "Approve"
+CARD_BUTTON_ID = "approve"
+
+
+def card_jsx() -> str:
+    """The card document ``card`` emits, exactly as it goes on the wire."""
+    return (
+        f'<Card title="{CARD_TITLE}">\n'
+        f"<Text>{CARD_BODY}</Text>\n"
+        "<Fields>\n"
+        f'<Field label="{CARD_FIELD_LABEL}">{CARD_FIELD_VALUE}</Field>\n'
+        "</Fields>\n"
+        "<Divider />\n"
+        "<Actions>\n"
+        f'<Button id="{CARD_BUTTON_ID}" style="primary">{CARD_BUTTON_LABEL}</Button>\n'
+        "</Actions>\n"
+        "</Card>"
+    )
+
+
+def card_text() -> str:
+    """What ``card`` says once the card is out."""
+    return "card sent"
+
+
+BIG_KILOBYTES = 64
+"""The size the scenarios ask ``big`` for.
+
+A payload large enough that a truncation or a re-encoding on the way out
+would show, and small enough to stay an ordinary scenario. It is not a claim
+about a maximum: the SDK declares no limit on a reply's size, and this number
+does not introduce one.
+"""
 
 BIG_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789"
 

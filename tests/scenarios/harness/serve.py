@@ -337,6 +337,17 @@ class ServeProcess:
         if not os.environ.get(KEEP_SERVE):
             shutil.rmtree(self._directory, ignore_errors=True)
 
+    def kill(self) -> "ServeProcess":
+        """Take the server away outright, and do not start anything in its place.
+
+        The difference from ``crash_restart`` is the whole point of the
+        scenarios that use it: nothing replaces the dead process, so whatever
+        becomes of the tasks it was holding is the work of the other servers
+        that were already running.
+        """
+        self._kill_process()
+        return self
+
     def restart(self) -> "ServeProcess":
         """Shut the server down and start a fresh one in the same directory.
 

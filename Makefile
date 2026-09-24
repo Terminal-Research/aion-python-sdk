@@ -18,14 +18,14 @@ POSTGRES_TEST_URL ?= $(PG_TEST_URL)
 
 # Read once, here, before anything below gets a chance to rebind the variable
 # for one target's recipe. A target-specific `export ... :=` (used below to
-# keep the variable out of plain `make tests`) creates its own binding with
+# keep the variable out of plain `make tests-unit`) creates its own binding with
 # origin "file" inside that recipe, so asking $(origin POSTGRES_TEST_URL)
 # inside with_pg_test itself would always answer "file" - this is computed
 # where the only binding in scope is still the real one.
 POSTGRES_TEST_URL_IS_EXTERNAL := $(filter environment command line,$(origin POSTGRES_TEST_URL))
 
-.PHONY: help tests tests-integration tests-all tests-scenarios tests-scenarios-persistence \
-	tests-scenarios-pg \
+.PHONY: help tests tests-unit tests-integration tests-full tests-scenarios tests-scenarios-persistence \
+	tests-scenarios-pg tests-scenarios-distributed \
 	tests-scenarios-dist tests-floors scenarios-matrix lint-imports release-check release check-env \
 	dist-build dist-check dist-smoke pg-test-up pg-test-down
 
@@ -48,7 +48,7 @@ help: ## Show available commands
 TEST_PATHS ?=
 
 # A target takes TEST_PATHS under its own suite's directories only, checked
-# here before pytest starts and before any container does: `make tests
+# here before pytest starts and before any container does: `make tests-unit
 # TEST_PATHS=tests/integration` must not run integration tests with no
 # database under them, and no `-m` on the command line could hold that,
 # because the last `-m` given wins and ARGS comes last. $(1) is the
@@ -69,9 +69,20 @@ define require_under
 	done
 endef
 
-tests: ## Run the unit suite (make tests ARGS="-k platform_link" TEST_PATHS="tests/unit/core")
+# The unit suite runs on pytest-xdist workers. UNIT_WORKERS takes whatever
+# `pytest -n` takes: a number, `auto` or `logical`; 0 runs every test in the
+# pytest process itself, which is what `--pdb` and `-s` debugging need. CI
+# sets its own count for the runner's cores.
+UNIT_WORKERS ?= 4
+
+tests-unit: ## Run the unit suite (make tests-unit ARGS="-k platform_link" TEST_PATHS="tests/unit/core" UNIT_WORKERS=0)
 	@$(call require_under,tests/unit)
-	poetry run pytest $(if $(TEST_PATHS),$(TEST_PATHS),tests/unit) $(ARGS)
+	poetry run pytest -n $(UNIT_WORKERS) $(if $(TEST_PATHS),$(TEST_PATHS),tests/unit) $(ARGS)
+
+# tests/ is a directory, so without this rule "make tests" would succeed
+# without running any tests. Fail explicitly rather than silently passing.
+tests:
+	@echo "Use make tests-unit or make tests-full" >&2; exit 2
 
 # Run a command with a database under it, and take the database away again.
 #
@@ -101,26 +112,19 @@ define with_pg_test
 	fi
 endef
 
-# The variable is exported only for the two targets that run against it. A
-# global export would hand the default container's address to plain `make
-# tests`, and a test module that checks the variable's presence rather than
-# asking pytest's marker filter - the belt to that suite's braces - would see
-# a database that was never started.
+# Export the database URL only for targets that use it. A global export
+# would hand the default container's address to `make tests-unit` without
+# starting that container.
 tests-integration: export POSTGRES_TEST_URL := $(POSTGRES_TEST_URL)
 tests-integration: ## Run integration tests; run before you commit
 	@$(call require_under,tests/integration)
 	@$(call with_pg_test,poetry run pytest $(if $(TEST_PATHS),$(TEST_PATHS),tests/integration) $(ARGS))
 
-tests-all: export POSTGRES_TEST_URL := $(POSTGRES_TEST_URL)
-tests-all: ## Run unit and integration tests together
-	@$(call require_under,tests/unit tests/integration)
-	@$(call with_pg_test,poetry run pytest $(if $(TEST_PATHS),$(TEST_PATHS),tests/unit tests/integration) $(ARGS))
-
 # The scenario suite, tests/scenarios: a real `aion serve` per framework and
 # deployment variant, driven over A2A. None of the targets above runs it - it
-# starts processes and takes a minute - and these three are how it is run:
-# here, before a release, and whenever a change touches what goes over the
-# wire. `tests/scenarios/README.md` is the suite itself.
+# starts processes and takes a minute. The targets below separate the
+# in-memory, persistence, and distributed variants; the built wheel has a
+# separate release check. `tests/scenarios/README.md` explains the suite.
 #
 #   TAGS="smoke events"   only those suites (any of them)
 #   FRAMEWORK=adk         one framework instead of all of them
@@ -129,9 +133,10 @@ tests-all: ## Run unit and integration tests together
 TAGS ?=
 FRAMEWORK ?=
 
-# Without TAGS, everything except persistence: that suite needs a database
-# and has `tests-scenarios-persistence` for it.
-SCENARIO_TAGS := $(if $(TAGS),$(shell echo "$(TAGS)" | sed 's/  */ or /g'),not persistence)
+# Without TAGS, everything except the two groups that need a database and
+# have targets of their own: persistence restarts a server and waits out a
+# production lease, distributed runs two servers over one database.
+SCENARIO_TAGS := $(if $(TAGS),$(shell echo "$(TAGS)" | sed 's/  */ or /g'),not persistence and not distributed)
 SCENARIO_EXPR := scenario and ($(SCENARIO_TAGS))
 FRAMEWORK_FILTER := $(if $(FRAMEWORK),-k "[$(FRAMEWORK)]",)
 
@@ -150,6 +155,27 @@ tests-scenarios-persistence: ## Run the persistence scenarios against a real dat
 		$(FRAMEWORK_FILTER) $(ARGS))
 
 tests-scenarios-pg: tests-scenarios-persistence ## Alias for tests-scenarios-persistence
+
+# The scenarios that run two servers of one agent over one database and ask
+# which of them owns a task. Same database contract as the persistence target,
+# and separate from it for the same reason: a plain `make tests-scenarios`
+# would otherwise start four servers per scenario and wait out a lease.
+tests-scenarios-distributed: export POSTGRES_TEST_URL := $(POSTGRES_TEST_URL)
+tests-scenarios-distributed: ## Run the distributed scenarios against a real database
+	@$(call with_pg_test,poetry run pytest tests/scenarios -m "scenario and distributed" \
+		$(FRAMEWORK_FILTER) $(ARGS))
+
+# An explicit complete source-checkout run. Clear selectors so command-line
+# TEST_PATHS, ARGS, TAGS, or FRAMEWORK cannot make "full" silently partial.
+# Each database-backed target manages its own disposable PostgreSQL lifecycle.
+# The groups run one after another because they share that one container name
+# and port; CI runs them as separate jobs, each with its own database.
+tests-full: ## Run unit, integration, and every scenario group
+	$(MAKE) tests-unit TEST_PATHS= ARGS=
+	$(MAKE) tests-integration TEST_PATHS= ARGS=
+	$(MAKE) tests-scenarios TAGS= FRAMEWORK= ARGS=
+	$(MAKE) tests-scenarios-persistence FRAMEWORK= ARGS=
+	$(MAKE) tests-scenarios-distributed FRAMEWORK= ARGS=
 
 # The same scenarios, against the wheel in dist/ rather than the working tree:
 # `poetry run`, because pytest and the A2A client come from this project's
@@ -199,7 +225,7 @@ tests-floors: ## Install the oldest allowed dependencies and run the unit suite
 		--resolution lowest-direct -e ".[langgraph-server,adk-server]"
 	poetry run ./scripts/packaging/envcheck.py
 	poetry run ./scripts/packaging/floors.py --check
-	poetry run pytest tests/unit $(ARGS)
+	poetry run pytest -n $(UNIT_WORKERS) tests/unit $(ARGS)
 
 ##@ Distribution
 
