@@ -161,6 +161,59 @@ class TestCompileGraph:
         assert result is graph
 
 
+class TestCompiledGraphCheckpointer:
+    """A graph that arrives compiled, as ``create_agent`` returns it.
+
+    Real graphs rather than mocks: what matters is LangGraph's own
+    ``checkpointer`` attribute and whether the server can read the graph's
+    state afterwards - which it does at the end of every turn.
+    """
+
+    def setup_method(self):
+        self.adapter = LangGraphAdapter()
+        self.config = Mock()
+
+    @staticmethod
+    def _agent(**kwargs):
+        from langchain.agents import create_agent
+        from langchain_core.language_models.fake_chat_models import FakeListChatModel
+
+        return create_agent(FakeListChatModel(responses=["done"]), tools=[], **kwargs)
+
+    async def test_a_graph_compiled_without_one_gets_the_servers(self):
+        from langgraph.checkpoint.memory import InMemorySaver
+
+        graph = self._agent()
+        server_checkpointer = InMemorySaver()
+        with patch.object(self.adapter, "_get_checkpointer", new=AsyncMock(return_value=server_checkpointer)):
+            result = await self.adapter._compile_graph(graph, self.config)
+
+        assert result.checkpointer is server_checkpointer
+        assert graph.checkpointer is None
+        state = await result.aget_state({"configurable": {"thread_id": "ctx-1"}})
+        assert state.values == {}
+
+    async def test_a_graph_compiled_with_its_own_keeps_it(self):
+        from langgraph.checkpoint.memory import InMemorySaver
+
+        own = InMemorySaver()
+        graph = self._agent(checkpointer=own)
+        with patch.object(self.adapter, "_get_checkpointer", new=AsyncMock()) as server:
+            result = await self.adapter._compile_graph(graph, self.config)
+
+        assert result is graph
+        assert result.checkpointer is own
+        server.assert_not_awaited()
+
+    async def test_a_checkpointer_explicitly_turned_off_stays_off(self):
+        graph = self._agent(checkpointer=False)
+        with patch.object(self.adapter, "_get_checkpointer", new=AsyncMock()) as server:
+            result = await self.adapter._compile_graph(graph, self.config)
+
+        assert result is graph
+        server.assert_not_awaited()
+
+
 class TestCreateExecutor:
     """create_executor wraps compiled graphs in a LangGraphExecutor."""
 

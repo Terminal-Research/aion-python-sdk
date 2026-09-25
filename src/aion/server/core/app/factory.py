@@ -154,8 +154,18 @@ class AppFactory:
         self.store_manager.initialize(
             agent_id=self.aion_agent.id,
             guard_inline_files=self.upload_manager is not None,
+            owner_resolver=self.aion_agent.owner_resolver,
         )
         task_store = self.store_manager.get_store()
+        # The tasks and the agent's framework state have to name the same
+        # owner for every request. A store initialized earlier, with another
+        # resolver, would split them silently; stopping here is the only
+        # safe answer.
+        if task_store.owner_resolver is not self.aion_agent.owner_resolver:
+            raise RuntimeError(
+                "the task store and the agent resolve owners differently; build the "
+                "store with the agent's owner_resolver"
+            )
 
         self._executor = await AionAgentRequestExecutor.create(
             self.aion_agent,

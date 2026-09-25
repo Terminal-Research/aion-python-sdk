@@ -1,7 +1,9 @@
 """Registry that creates ActiveTask instances wired with AionTaskManager."""
 
 import asyncio
+import contextlib
 import logging
+from collections.abc import AsyncIterator
 from typing import Any, override
 
 from a2a.server.agent_execution.active_task import ActiveTask
@@ -34,6 +36,21 @@ logger = logging.getLogger(__name__)
 # A signaled cancellation can be rescuing committed evolution work. Give its
 # normal 60-second drain time to finish before shutdown interrupts it.
 SHUTDOWN_CANCEL_DRAIN_SECONDS = 60.0
+
+
+def _require_call_context(call_context: ServerCallContext | None) -> None:
+    """Refuse to act for a request whose context was lost on the way.
+
+    The task store treats a call with no context as unfiltered access to every
+    owner's tasks. Everything this registry does is on behalf of one A2A
+    request, so a missing context is a bug upstream of here, and is not
+    allowed to widen into that.
+    """
+    if call_context is None:
+        raise ValueError(
+            "the active task registry acts for one request and needs its "
+            "ServerCallContext"
+        )
 
 
 def _has_finished(active_task: ActiveTask) -> bool:
@@ -105,6 +122,31 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
         self._ownership.set_control_signal_callback(self._on_control_signal)
         self._ownership.start()
 
+    @contextlib.asynccontextmanager
+    async def _registry_lock(self) -> AsyncIterator[None]:
+        """Hold the base registry's lock, whichever kind this a2a-sdk has.
+
+        The lock is the base class's and has to stay shared: the base methods
+        this class still inherits - ``_remove_task``, ``get``, ``aclose`` -
+        guard ``_active_tasks`` with it too. a2a-sdk up to 1.1.2 makes it an
+        ``asyncio.Lock``, entered with ``async with``; from 1.1.3 it is a
+        ``threading.RLock``, entered with ``with``. Both are in the supported
+        range, so the kind is read off the object rather than assumed.
+
+        Every critical section in this class is synchronous - no ``await``
+        between entering and leaving - and has to stay that way. That is what
+        makes the two kinds interchangeable here: a ``threading.RLock`` held
+        across an ``await`` would let another coroutine on the same thread
+        re-enter it, and would exclude nothing.
+        """
+        lock = self._lock
+        if isinstance(lock, asyncio.Lock):
+            async with lock:
+                yield
+        else:
+            with lock:
+                yield
+
     @override
     async def get_or_create(
         self,
@@ -140,8 +182,10 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
             RuntimeError: If the registry has already been closed via
                 ``aclose()``.
         """
+        _require_call_context(call_context)
         while True:
-            async with self._lock:
+            reusable: ActiveTask | None = None
+            async with self._registry_lock():
                 if self._closed:
                     raise RuntimeError('ActiveTaskRegistry is closed')
 
@@ -149,9 +193,11 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
                 if existing is not None and self._is_reusable(
                     existing, task_id, create_task_if_missing
                 ):
-                    return existing
+                    reusable = existing
 
-                if existing is None:
+                if reusable is not None:
+                    stale_active_task = None
+                elif existing is None:
                     stale_active_task = None
                 else:
                     # A finished ActiveTask can linger until the SDK's deferred
@@ -162,6 +208,18 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
                     stale_active_task = existing
                     self._active_tasks.pop(task_id, None)
                     self._task_managers.pop(task_id, None)
+
+            if reusable is not None:
+                # The cache-hit guard a2a-sdk's own get_or_create has had since
+                # 1.1.4 (#1172): a live task found by id alone is handed out
+                # only to a caller the owner-aware store shows it to. Skipped
+                # on the create path, where the send path has already read the
+                # task through the store. Outside the lock: the read is I/O.
+                if not create_task_if_missing and await self._task_store.get(
+                    task_id, call_context
+                ) is None:
+                    raise TaskNotFoundError
+                return reusable
 
             if stale_active_task is not None:
                 # Closed outside the critical section: aclose drives the SDK
@@ -210,7 +268,7 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
             closed = False
             raced: ActiveTask | None = None
             active_task: ActiveTask | None = None
-            async with self._lock:
+            async with self._registry_lock():
                 if self._closed:
                     closed = True
                 else:
@@ -308,7 +366,7 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
         the normal path, where the claim is already gone by the time cleanup
         runs.
         """
-        async with self._lock:
+        async with self._registry_lock():
             if self._active_tasks.get(active_task.task_id) is not active_task:
                 return
             self._active_tasks.pop(active_task.task_id, None)
@@ -346,28 +404,42 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
             Only single-process serving still attaches to an interrupted task,
             because only there can the same object carry the next turn.
 
+        The caller's access is checked before anything is handed out, the
+        local execution included: ``_active_tasks`` is keyed by task id alone
+        and knows nothing of owners, while the task store is partitioned by
+        the caller's scope. A task another user owns reads as absent there,
+        and is reported as not found - its existence is not confirmed.
+
         Raises:
-            TaskNotFoundError: If no such task exists.
+            TaskNotFoundError: If no such task exists for this caller.
             TaskOwnershipBusy: If another instance is executing the task.
         """
+        _require_call_context(call_context)
         stale_active_task = None
-        async with self._lock:
+        local_active_task = None
+        async with self._registry_lock():
             if self._closed:
                 raise RuntimeError('ActiveTaskRegistry is closed')
             active_task = self._active_tasks.get(task_id)
             if active_task is not None:
                 if self._is_reusable(active_task, task_id, create_task_if_missing=False):
-                    return active_task
-                stale_active_task = active_task
-                self._active_tasks.pop(task_id, None)
-                self._task_managers.pop(task_id, None)
+                    local_active_task = active_task
+                else:
+                    stale_active_task = active_task
+                    self._active_tasks.pop(task_id, None)
+                    self._task_managers.pop(task_id, None)
 
         if stale_active_task is not None:
             await stale_active_task.aclose()
 
+        # Outside the registry lock: a store read is I/O, and no critical
+        # section here may await.
         task = await self._task_store.get(task_id, call_context)
         if task is None:
             raise TaskNotFoundError
+
+        if local_active_task is not None:
+            return local_active_task
 
         if (
             self._ownership.enforcement_enabled
@@ -486,8 +558,17 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
         if existing is not None and existing[0] is active_task:
             return
 
+        # The cancel runs as the task's owner: the context its manager was
+        # built with. A context is not invented when that is missing - an
+        # empty one names a different owner, and the store would then look
+        # in the wrong partition. The claim's own backstop settles the task.
         task_manager = self._task_managers.get(task_id)
-        call_context = getattr(task_manager, "_call_context", None) or ServerCallContext()
+        call_context = getattr(task_manager, "_call_context", None)
+        if call_context is None:
+            logger.warning(
+                "Cancel signal for %s ignored: its owner's call context is gone", task_id
+            )
+            return
 
         pending = asyncio.create_task(
             self._run_signaled_cancel(task_id, active_task, call_context),
@@ -546,7 +627,16 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
         live execution is found here, which tells the caller to fall through
         to the claim-signal or direct-store path instead.
 
+        The caller's access is checked first, through the owner-partitioned
+        task store, exactly as ``get_for_attach`` checks it. It has to be:
+        ``ActiveTask.cancel`` rebinds the task manager to the caller's
+        context, so a cancel from another user would both stop the owner's
+        run and write the cancelled task into that user's partition.
+
         Raises:
+            TaskNotFoundError: If the task is running here but belongs to
+                another caller. Raised rather than answered with ``None``, so
+                the request does not fall through to the claim or store path.
             TaskNotCancelableError: If this process's own copy of the task
                 already has an outcome. Left to propagate rather than
                 swallowed into the ``None`` case: the answer is authoritative
@@ -562,9 +652,12 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
                 error branches 2 and 3 already guarantee, instead of a
                 same-pod cancel occasionally answering as if it had succeeded.
         """
+        _require_call_context(call_context)
         active_task = self._active_tasks.get(task_id)
         if active_task is None or _has_finished(active_task):
             return None
+        if await self._task_store.get(task_id, call_context) is None:
+            raise TaskNotFoundError
         task = await active_task.cancel(call_context)
         if (
             task.status.state in TERMINAL_TASK_STATES
@@ -582,7 +675,7 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
     async def _remove_task(self, task_id: str) -> None:
         """Drop the task manager alongside the base registry's own entry."""
         await super()._remove_task(task_id)
-        async with self._lock:
+        async with self._registry_lock():
             self._task_managers.pop(task_id, None)
 
     @override
@@ -606,7 +699,7 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
         it - see ``_remove_task_for_incarnation``, which is told to stand
         down for the duration via ``_shutting_down``.
         """
-        async with self._lock:
+        async with self._registry_lock():
             self._shutting_down = True
             task_managers = list(self._task_managers.values())
             claims = [
@@ -649,7 +742,7 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
         except TimeoutError:
             logger.warning("Task shutdown settlement exceeded %.1fs", SHUTDOWN_DB_TIMEOUT_SECONDS)
 
-        async with self._lock:
+        async with self._registry_lock():
             self._task_managers.clear()
 
         for claim in claims:

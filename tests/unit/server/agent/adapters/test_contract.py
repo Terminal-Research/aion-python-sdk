@@ -244,6 +244,23 @@ def test_an_outbox_carrying_both_delivers_the_message(adapter) -> None:
     assert _texts(events) == [REPLY_TEXT]
 
 
+def test_an_outbox_saved_by_an_earlier_turn_is_not_applied_again(adapter) -> None:
+    """Guarantee 10. The saved state outlives the turn; the outbox does not.
+
+    The earlier turn's message is still in the checkpoint or the session when
+    the next turn of the context finishes. Answering with it would put the
+    same reply into every later task of the conversation.
+    """
+    events = adapter.result_events(
+        saved_outbox=A2AOutbox(message=_message("said last turn")),
+        delta_text=REPLY_TEXT,
+    )
+
+    assert len(events) == 1
+    assert isinstance(events[0], TaskStatusUpdateEvent)
+    assert events[0].status.message.parts[0].text == REPLY_TEXT
+
+
 def test_an_adapter_with_no_current_task_still_applies_the_patch(adapter) -> None:
     """The degenerate case the merge has to survive: nothing to merge onto.
 

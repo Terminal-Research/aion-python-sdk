@@ -15,7 +15,9 @@ from aion.server.agent.adapters import (
     AgentAdapter,
     ExecutionSnapshot,
     ExecutorAdapter,
+    StateScope,
 )
+from a2a.server.owner_resolver import OwnerResolver, resolve_user_scope
 from aion.server.agent.card import AionAgentCard
 from aion.core.config.models import AgentConfig
 from aion.core.logging.base import AionLogger
@@ -27,6 +29,7 @@ from .models import AgentMetadata
 if TYPE_CHECKING:
     from aion.core.logging.base import AionLogger
     from a2a.server.agent_execution import RequestContext
+    from a2a.server.context import ServerCallContext
     from a2a.server.events import EventQueue
 
 
@@ -62,6 +65,7 @@ class AionAgent:
             port: Optional[int] = None,
             metadata: Optional[AgentMetadata] = None,
             logger: Optional[AionLogger] = None,
+            owner_resolver: OwnerResolver = resolve_user_scope,
     ):
         """Initialize AionAgent.
 
@@ -74,6 +78,12 @@ class AionAgent:
             port: Port number
             metadata: Optional agent metadata
             logger: Optional AionLogger instance
+            owner_resolver: Resolves a request's owner from its
+                ``ServerCallContext``. One function for the agent's framework
+                state and for its task store: ``AppFactory`` builds the store
+                with this same resolver, so a task and the state beside it
+                always name the same owner. Defaults to a2a-sdk's
+                ``resolve_user_scope`` - the request's trusted user.
 
         Note:
             You can create an agent with just agent_id and config, then call build()
@@ -87,6 +97,7 @@ class AionAgent:
         self._executor = executor
         self._native_agent = native_agent
         self._is_built = False
+        self._owner_resolver = owner_resolver
 
         # Create default metadata if not provided
         if metadata is None:
@@ -101,6 +112,11 @@ class AionAgent:
         if not self._logger:
             self._logger = logging.getLogger(__name__)
         return self._logger
+
+    @property
+    def owner_resolver(self) -> OwnerResolver:
+        """How a request's owner is resolved, for framework state and tasks alike."""
+        return self._owner_resolver
 
     @property
     def id(self) -> str:
@@ -208,6 +224,7 @@ class AionAgent:
             context_id=context.context_id,
             timeout=timeout,
             metadata=metadata,
+            state_scope=StateScope.for_call(self._id, context.call_context, self._owner_resolver),
         )
 
         async for event in self._executor.stream(context, config):
@@ -217,12 +234,19 @@ class AionAgent:
             self,
             context_id: str,
             task_id: Optional[str] = None,
+            *,
+            call_context: "ServerCallContext",
     ) -> ExecutionSnapshot:
         """Get the current execution state snapshot for a context.
+
+        The state read is the caller's own: ``context_id`` is chosen by
+        clients, so the snapshot is keyed by this agent and the user of
+        ``call_context`` as well (see ``StateScope``).
 
         Args:
             context_id: Context identifier (A2A context_id)
             task_id: Optional task identifier (A2A task.id)
+            call_context: The request's call context, whose user owns the state.
 
         Returns:
             ExecutionSnapshot: Current execution snapshot including state, messages, status, and metadata
@@ -236,7 +260,11 @@ class AionAgent:
                 f"Agent '{self._id}' is not built yet. Call build() before accessing state."
             )
 
-        config = ExecutionConfig(task_id=task_id, context_id=context_id)
+        config = ExecutionConfig(
+            task_id=task_id,
+            context_id=context_id,
+            state_scope=StateScope.for_call(self._id, call_context, self._owner_resolver),
+        )
 
         self.logger.debug(
             f"Getting state for agent '{self.id}', task_id={task_id}, context_id={context_id}"
@@ -272,6 +300,7 @@ class AionAgent:
             task_id=context.task_id,
             context_id=context.context_id,
             metadata=metadata,
+            state_scope=StateScope.for_call(self._id, context.call_context, self._owner_resolver),
         )
 
         self.logger.debug(
@@ -304,6 +333,7 @@ class AionAgent:
         config = ExecutionConfig(
             task_id=context.task_id,
             context_id=context.context_id,
+            state_scope=StateScope.for_call(self._id, context.call_context, self._owner_resolver),
         )
 
         self.logger.debug(
@@ -322,6 +352,8 @@ class AionAgent:
             config: AgentConfig,
             adapter: AgentAdapter,
             native_agent: Any,
+            *,
+            owner_resolver: OwnerResolver = resolve_user_scope,
     ) -> "AionAgent":
         """Create AionAgent from adapter and native agent.
 
@@ -332,6 +364,7 @@ class AionAgent:
             config: Agent configuration
             adapter: Framework-specific adapter
             native_agent: Native framework agent object (Graph, AssistantAgent, etc.)
+            owner_resolver: How a request's owner is resolved; see ``__init__``.
 
         Returns:
             AionAgent: Unified agent instance
@@ -365,6 +398,7 @@ class AionAgent:
             executor=executor,
             native_agent=initialized_agent,
             metadata=metadata,
+            owner_resolver=owner_resolver,
         )
 
         logger.info(

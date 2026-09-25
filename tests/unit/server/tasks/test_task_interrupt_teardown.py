@@ -364,7 +364,8 @@ async def test_attaching_to_an_interrupted_task_leaves_nothing_behind() -> None:
             id=task_id,
             context_id=CONTEXT_ID,
             status=TaskStatus(state=TaskState.TASK_STATE_INPUT_REQUIRED),
-        )
+        ),
+        Mock(),
     )
     registry = AionActiveTaskRegistry(
         agent_executor=Mock(),

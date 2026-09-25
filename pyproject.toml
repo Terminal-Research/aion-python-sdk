@@ -26,14 +26,18 @@ dependencies = [
     # Two reasons this is not 6.0. PyYAML 6.0 ships no wheel for any
     # interpreter this project supports and its sdist does not build on 3.12,
     # so the floor that was written here could never have been installed at
-    # all; and google-adk 1.20.0, the floor of the adk extra, asks for
+    # all; and google-adk, whose floor the adk extra sets, asks for
     # >=6.0.2 itself. Checked by the `floors` CI job, which installs the
     # bottom of every range below and resolves them together.
     "PyYAML>=6.0.2,<7.0.0",
-    # The libs pinned ==1.1.2. Published, an exact pin conflicts with whatever
-    # the installing project already has; the upper bound stays on the minor
-    # because aion.server reaches into a2a-sdk's internals.
-    "a2a-sdk>=1.1.2,<1.2.0",
+    # Published, an exact pin conflicts with whatever the installing project
+    # already has; the upper bound stays on the minor because aion.server
+    # reaches into a2a-sdk's internals. The floor is 1.1.5 rather than
+    # anything older: the server relies on the owner-scoped cancel and
+    # subscribe and the terminal write on cancel that 1.1.4 introduced
+    # (a2a-python #1172), on the threading.RLock its registry shares since
+    # 1.1.3, and 1.1.5 is the release those were verified against.
+    "a2a-sdk>=1.1.5,<1.2.0",
     "gql>=3.4.1,<4.0.0",
     "PyJWT>=2.9.0,<3.0.0",
     "httpx>=0.28.1,<0.29.0",
@@ -60,10 +64,14 @@ server = [
     # one extra, and a2a-sdk is exactly that - base, because aion.core builds on
     # its types, and extras-carrying, because aion.server needs its server side.
     # These five are what those three extras of a2a-sdk 1.1.x pull in; they are
-    # pinned to a2a-sdk's own constraints and held in place by the <1.2.0 bound
+    # pinned to a2a-sdk's own constraints and held in place by the upper bound
     # on a2a-sdk itself.
     "starlette",
-    "sse-starlette",
+    # 1.6.5 is the oldest release where the separator the JSON-RPC
+    # dispatcher sets on a response after building it is honored; below it
+    # events go out CRLF-delimited, which HTTP tunnels mangle. Found by the
+    # `floors` CI job (tests/unit/server/core/test_jsonrpc_dispatcher.py).
+    "sse-starlette>=1.6.5",
     "opentelemetry-api>=1.33.0",
     "opentelemetry-sdk>=1.33.0",
     "cryptography>=43.0.0",
@@ -74,12 +82,32 @@ langgraph-authoring = [
     # 1.0.0` this range used to allow has no solution and nobody could ever
     # have installed it. The `floors` CI job is what now says so.
     "langgraph>=1.0.0,<=1.0.5",
+    # Not our dependency: langgraph-prebuilt comes with langgraph, which asks
+    # for `langgraph-prebuilt>=1.0.2,<1.1` and so lets a fresh resolve take
+    # the newest 1.0.x. From 1.0.9 on it imports names langgraph.runtime only
+    # has after 1.0.5 (`ExecutionInfo`), and `from langgraph.prebuilt import
+    # ToolNode` and `from langchain.agents import create_agent` - the standard
+    # way to build an agent with tools - raise ImportError. Its upper bound
+    # moves together with the one on langgraph; tests/unit/langgraph/
+    # test_framework_imports.py and the dist-smoke langgraph-server
+    # environment are what fail when the two stop fitting.
+    "langgraph-prebuilt>=1.0.0,<1.0.9",
     "langchain>=1.0.0,<2.0.0",
     "langchain-mcp-adapters>=0.1.11,<0.3.0",
     "langchain-openai>=1.1.7,<2.0.0",
 ]
 adk-authoring = [
-    "google-adk>=1.20.0,<2.0.0",
+    # 1.27.1, not lower: the server imports `ensure_part` from
+    # google.adk.artifacts.base_artifact_service, which 1.27 introduced, and
+    # 1.27.0 itself is yanked. Found by the `floors` CI job.
+    "google-adk>=1.27.1,<2.0.0",
+    # Not our dependency: google-adk 1.27 imports GEN_AI_INPUT_MESSAGES from
+    # the OpenTelemetry semantic conventions 0.58b0, which come with
+    # opentelemetry 1.37, while declaring `opentelemetry-*>=1.36.0`. At 1.36
+    # importing google.adk fails. Drop these two lines once a google-adk
+    # release we allow declares the version it imports from.
+    "opentelemetry-api>=1.37.0",
+    "opentelemetry-sdk>=1.37.0",
     # aion_lite_llm() builds on ADK's LiteLlm, which imports litellm directly.
     # litellm declares <3.15 in every release we allow. Without the marker that
     # bound would become the SDK's, and Poetry then refuses every project
@@ -109,6 +137,8 @@ langgraph-server = [
     # aionto-sdk[langgraph-authoring]
     # See [langgraph-authoring] for why the floor is 1.0.0 and not 0.6.0.
     "langgraph>=1.0.0,<=1.0.5",
+    # See [langgraph-authoring]: the newest langgraph-prebuilt needs a newer langgraph.
+    "langgraph-prebuilt>=1.0.0,<1.0.9",
     "langchain>=1.0.0,<2.0.0",
     "langchain-mcp-adapters>=0.1.11,<0.3.0",
     "langchain-openai>=1.1.7,<2.0.0",
@@ -122,7 +152,7 @@ langgraph-server = [
     "python-logstash-async>=4.0.1,<5.0.0",
     "asgi-proxy-lib==0.2a0",
     "starlette",
-    "sse-starlette",
+    "sse-starlette>=1.6.5",
     "opentelemetry-api>=1.33.0",
     "opentelemetry-sdk>=1.33.0",
     "cryptography>=43.0.0",
@@ -133,7 +163,10 @@ langgraph-server = [
 # framework extras read the same way at the install line.
 adk-server = [
     # aionto-sdk[adk-authoring]
-    "google-adk>=1.20.0,<2.0.0",
+    # See [adk-authoring] for the google-adk floor and the opentelemetry pair.
+    "google-adk>=1.27.1,<2.0.0",
+    "opentelemetry-api>=1.37.0",
+    "opentelemetry-sdk>=1.37.0",
     # See [adk-authoring] for the marker.
     "litellm>=1.93,<2.0; python_version < '3.15'",
     # See [adk-authoring]: google-adk still imports mcp's pre-1.29.1 name.
@@ -148,7 +181,7 @@ adk-server = [
     "python-logstash-async>=4.0.1,<5.0.0",
     "asgi-proxy-lib==0.2a0",
     "starlette",
-    "sse-starlette",
+    "sse-starlette>=1.6.5",
     "opentelemetry-api>=1.33.0",
     "opentelemetry-sdk>=1.33.0",
     "cryptography>=43.0.0",
@@ -256,6 +289,7 @@ markers = [
     "variant(name): the deployment template under tests/scenarios/configs this scenario runs against",
     "divergence(key): the guarantee this scenario asserts, as frameworks.DIVERGENCES names it when an adapter does not hold it yet",
     "event_router: this scenario asserts which handler the SDK's event router picked; skipped where frameworks.NO_EVENT_ROUTER names an adapter that has no router",
+    "capability(key): the framework feature this native scenario drives; skipped where frameworks.NATIVE_UNSUPPORTED names the pair",
     # One marker per scenario suite; `make tests-scenarios TAGS=...` selects on
     # them. The "scenario suite -" prefix is what scripts/scenarios_matrix.py
     # reads to tell a suite from the markers above.
@@ -273,6 +307,7 @@ markers = [
     "lifecycle: scenario suite - cancel, concurrency, push notifications, startup",
     "persistence: scenario suite - needs POSTGRES_TEST_URL; survives a server restart",
     "distributed: scenario suite - needs POSTGRES_TEST_URL; two servers over one database",
+    "native: scenario suite - an ordinary framework agent on its own path: model, tools, memory, no Aion API",
 ]
 
 [tool.ariadne-codegen]

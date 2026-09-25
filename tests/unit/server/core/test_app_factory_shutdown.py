@@ -154,6 +154,7 @@ async def test_the_store_is_guarded_exactly_when_a_manager_is_installed(
     store_manager = Mock()
     agent = Mock()
     agent.id = "agent-1"
+    store_manager.get_store.return_value.owner_resolver = agent.owner_resolver
 
     factory = AppFactory(
         aion_agent=agent,
@@ -166,5 +167,50 @@ async def test_the_store_is_guarded_exactly_when_a_manager_is_installed(
     await factory._create_request_handler()
 
     store_manager.initialize.assert_called_once_with(
-        agent_id="agent-1", guard_inline_files=installed
+        agent_id="agent-1",
+        guard_inline_files=installed,
+        owner_resolver=agent.owner_resolver,
     )
+
+
+async def test_a_store_resolving_owners_differently_stops_startup(monkeypatch) -> None:
+    """The tasks and the agent's framework state must name one owner per request.
+
+    A store built earlier with another resolver would file a task under one
+    owner and keep its LangGraph/ADK state under another; startup refuses
+    rather than serve that.
+    """
+    import aion.server.core.app.factory as factory_module
+
+    monkeypatch.setattr(
+        factory_module.AionAgentRequestExecutor, "create", AsyncMock(return_value=Mock())
+    )
+    monkeypatch.setattr(
+        factory_module.PushNotificationFactory, "create", Mock(return_value=(Mock(), Mock()))
+    )
+    monkeypatch.setattr(factory_module, "AionRequestHandler", Mock())
+    monkeypatch.setattr(factory_module, "AionRequestContextBuilder", Mock())
+    monkeypatch.setattr(factory_module, "FilePartPreprocessor", Mock())
+    monkeypatch.setattr(
+        factory_module.FileUploadManager, "from_settings", classmethod(lambda cls: None)
+    )
+    plugin_factory = Mock()
+    plugin_factory.is_initialized.return_value = False
+    db_factory = Mock()
+    db_factory.is_initialized = False
+    store_manager = Mock()
+    agent = Mock()
+    agent.id = "agent-1"
+    store_manager.get_store.return_value.owner_resolver = lambda context: "someone-else"
+
+    factory = AppFactory(
+        aion_agent=agent,
+        db_factory=db_factory,
+        agent_factory=Mock(),
+        plugin_factory=plugin_factory,
+        store_manager=store_manager,
+        upload_manager=None,
+    )
+
+    with pytest.raises(RuntimeError, match="resolve owners differently"):
+        await factory._create_request_handler()

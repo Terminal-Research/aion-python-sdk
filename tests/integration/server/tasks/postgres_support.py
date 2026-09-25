@@ -23,6 +23,7 @@ POSTGRES_TEST_URL = os.getenv("POSTGRES_TEST_URL")
 if POSTGRES_TEST_URL:
     os.environ["POSTGRES_URL"] = POSTGRES_TEST_URL
 
+from a2a.server.context import ServerCallContext
 from a2a.types import Task, TaskStatus, TaskState  # noqa: E402
 from sqlalchemy import text  # noqa: E402
 
@@ -121,10 +122,15 @@ async def write_task(
     state: TaskState,
     context_id: str = "ctx",
 ) -> None:
-    """Write a task through the fenced store the provider belongs to."""
+    """Write a task through the fenced store the provider belongs to.
+
+    As the anonymous owner: these tests are about the lease, and a task
+    needs an owner named on its first write.
+    """
     store = PostgresTaskStore(agent_id=owner.agent_id, ownership_provider=owner)
     await store.save(
-        Task(id=task_id, context_id=context_id, status=TaskStatus(state=state))
+        Task(id=task_id, context_id=context_id, status=TaskStatus(state=state)),
+        ServerCallContext(),
     )
 
 

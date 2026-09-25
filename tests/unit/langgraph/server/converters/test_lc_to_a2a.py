@@ -3,6 +3,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 from a2a.types import Part
+from langchain_core.messages import AIMessageChunk
 
 from aion.langgraph.server.converters.lc_to_a2a import LcToA2AConverter
 
@@ -72,6 +73,25 @@ class TestFromBlock:
         """invalid_tool_call blocks are silently skipped."""
         result = LcToA2AConverter.from_block(make_block("invalid_tool_call"))
         assert result is None
+
+    @pytest.mark.parametrize(
+        "block_type", ["tool_call_chunk", "server_tool_call_chunk", "server_tool_result"]
+    )
+    def test_streamed_and_provider_side_tool_blocks_return_none(self, block_type):
+        """What a streaming tool call and a provider-side tool send is skipped too.
+
+        Not falling back to a DataPart: every chunk of a streamed tool call
+        would otherwise reach the client as a stream delta.
+        """
+        assert LcToA2AConverter.from_block(make_block(block_type)) is None
+
+    def test_a_streamed_tool_call_chunk_converts_to_nothing(self):
+        """The real chunk a tool-calling model streams, not a hand-made block."""
+        chunk = AIMessageChunk(
+            content="",
+            tool_call_chunks=[{"name": "f", "args": "{}", "id": "call-1", "index": 0}],
+        )
+        assert LcToA2AConverter.from_message(chunk) == []
 
     def test_reasoning_block_excluded_by_default(self):
         """Reasoning blocks are not included when include_reasoning=False (default)."""

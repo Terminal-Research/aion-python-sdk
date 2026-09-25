@@ -6,7 +6,7 @@ from uuid import uuid4
 
 from a2a.types import Artifact, Part
 from aion.core.a2a import file_artifact
-from google.protobuf.json_format import ParseDict
+from google.protobuf.json_format import MessageToDict, ParseDict
 from google.protobuf.struct_pb2 import Value
 
 from tests.scenarios.agents.adk_core.invocation import Invocation
@@ -36,6 +36,10 @@ async def parts(invocation: Invocation) -> None:
             kinds=[part.WhichOneof("content") or "empty" for part in received],
             urls=[part.url for part in received if part.url],
             raw_bytes=sum(len(part.raw) for part in received if part.raw),
+            data=[MessageToDict(part.data) for part in received if part.HasField("data")],
+            data_metadata=[
+                MessageToDict(part.metadata) for part in received if part.HasField("data")
+            ],
         )
     )
 

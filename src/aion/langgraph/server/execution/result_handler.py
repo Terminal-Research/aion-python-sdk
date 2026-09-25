@@ -30,10 +30,13 @@ AgentEvent = TaskStatusUpdateEvent | TaskArtifactUpdateEvent | Task | Message
 class ExecutionResultHandler:
     """Processes execution result into terminal events and task side-effects.
 
-    Reads `a2a_outbox` from the graph's final state and applies it through
+    Applies the `a2a_outbox` a node wrote during this run through
     `aion.server.a2a.outbox`, which is where what the server does with an
-    outbox is defined — for this adapter and the ADK one alike. If no outbox
-    is present, falls back to streaming accumulated text.
+    outbox is defined — for this adapter and the ADK one alike. The outbox
+    comes from the run's own updates, not from the graph's final state: the
+    checkpoint keeps the last value written in the context, and the next
+    turn would otherwise answer with it again. If this run wrote no outbox,
+    falls back to streaming accumulated text.
 
     Subclass and override `handle` to extend or replace the default logic.
     """
@@ -58,7 +61,7 @@ class ExecutionResultHandler:
         Returns:
             A2A events to emit before Complete/Interrupt.
         """
-        outbox = snapshot.state.get("a2a_outbox")
+        outbox = stream_result.outbox
         if outbox is not None:
             result = self._handle_outbox(outbox, context, task_id, context_id)
             if result is not None:

@@ -13,15 +13,26 @@ from langchain_core.messages.content import ContentBlock  # type: ignore[attr-de
 logger = logging.getLogger(__name__)
 
 _DATA_BLOCK_TYPES = frozenset({"image", "audio", "video", "file"})
-_TOOL_BLOCK_TYPES = frozenset({"tool_call", "server_tool_call", "invalid_tool_call"})
+# Every block langchain-core defines for a tool call or its result, streamed or
+# whole. A model streaming a tool call sends `tool_call_chunk` blocks; a
+# provider-side tool answers with `server_tool_result`. None of it is the
+# agent speaking.
+_TOOL_BLOCK_TYPES = frozenset({
+    "tool_call",
+    "tool_call_chunk",
+    "invalid_tool_call",
+    "server_tool_call",
+    "server_tool_call_chunk",
+    "server_tool_result",
+})
 
 
 class LcToA2AConverter:
     """Converts LangChain ContentBlock objects to A2A Part objects.
 
-    Tool blocks (tool_call, server_tool_call, invalid_tool_call) are skipped —
-    they're not surfaced at the A2A level. Unknown block types fall back to
-    DataPart so nothing is silently dropped.
+    Tool blocks (calls, their streamed chunks and provider-side results) are
+    skipped — they're not surfaced at the A2A level. Unknown block types fall
+    back to DataPart so nothing is silently dropped.
 
     Not meant to be instantiated — use from_message() or from_block() directly.
     """

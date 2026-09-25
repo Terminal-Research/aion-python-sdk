@@ -1,5 +1,6 @@
 """Wire-format and routing tests for the Aion JSON-RPC dispatcher."""
 
+import asyncio
 import json
 from collections.abc import AsyncGenerator
 from typing import Any
@@ -43,8 +44,15 @@ async def test_streaming_response_uses_lf_event_delimiters() -> None:
     async def send(message: dict[str, Any]) -> None:
         messages.append(message)
 
+    async def receive() -> dict[str, Any]:
+        # The client never disconnects; the response ends with its stream.
+        await asyncio.Event().wait()
+        return {'type': 'http.disconnect'}
+
     assert isinstance(response, EventSourceResponse)
-    await response._stream_response(send)
+    # Through the public ASGI entry point rather than a private helper of
+    # sse-starlette, whose name is not stable across its releases.
+    await response({'type': 'http', 'method': 'POST', 'headers': []}, receive, send)
 
     body = b''.join(
         message.get('body', b'')

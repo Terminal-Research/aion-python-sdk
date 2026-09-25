@@ -5,6 +5,7 @@ from a2a.types import Part
 from langchain_core.messages import HumanMessage
 
 from aion.langgraph.server.execution.transformer import LangGraphTransformer
+from aion.server.agent.adapters import ExecutionConfig, StateScope
 
 from ..helpers import make_execution_config, make_mock_request_context
 
@@ -25,11 +26,33 @@ class TestGenerateLangGraphConfig:
         result = LangGraphTransformer.generate_langgraph_config(config)
         assert result == {}
 
-    def test_config_with_context_id_sets_thread_id(self):
-        """context_id is mapped to configurable.thread_id for LangGraph checkpointing."""
-        config = make_execution_config(context_id="session-abc")
-        result = LangGraphTransformer.generate_langgraph_config(config)
-        assert result == {"configurable": {"thread_id": "session-abc"}}
+    def test_the_thread_is_keyed_by_agent_owner_and_context(self):
+        """Two users or two agents presenting one context_id get two threads."""
+        def thread(agent, owner, context="session-abc"):
+            config = ExecutionConfig(context_id=context, state_scope=StateScope(agent, owner))
+            return LangGraphTransformer.generate_langgraph_config(config)["configurable"]["thread_id"]
+
+        assert thread("agent-a", "alice") == "aion.v1:agent-a:alice:session-abc"
+        assert len({thread("agent-a", "alice"), thread("agent-a", "bob"), thread("agent-b", "alice")}) == 3
+
+    def test_separators_in_a_part_cannot_make_two_keys_meet(self):
+        """Percent-encoding keeps ("a:b", "c") and ("a", "b:c") apart."""
+        first = StateScope("a:b", "c").key_for("x")
+        second = StateScope("a", "b:c").key_for("x")
+        assert first != second
+
+    def test_a_config_without_a_scope_is_refused(self):
+        """State is never read by context_id alone."""
+        with pytest.raises(ValueError, match="state scope"):
+            LangGraphTransformer.generate_langgraph_config(ExecutionConfig(context_id="session-abc"))
+
+    def test_the_legacy_key_is_the_context_alone_unless_it_looks_scoped(self):
+        """A context shaped like a scoped key is not looked up as legacy state."""
+        plain = ExecutionConfig(context_id="session-abc")
+        scoped_looking = ExecutionConfig(context_id=StateScope("agent-a", "alice").key_for("x"))
+
+        assert LangGraphTransformer.legacy_langgraph_config(plain) == {"configurable": {"thread_id": "session-abc"}}
+        assert LangGraphTransformer.legacy_langgraph_config(scoped_looking) is None
 
 
 class TestGenerateLangGraphInputs:

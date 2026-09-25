@@ -28,15 +28,40 @@ commands.py     the command contract: what to send, what comes back
 extensions.py   the two extension URIs this suite owns, and why it owns them
 frameworks.py   the frameworks under test, and what each cannot do
 harness/        serve, client, recorder, shape, pg, and the payload builders
-agents/         one agent package per framework, all answering commands.py
+agents/         one agent package per framework, all answering commands.py,
+                and one native agent per framework, answering native_script.py
 configs/        aion.yaml templates, one per deployment variant
 core/           the scenarios, run for every framework
 persistence/    the scenarios that need a database under the server
 distributed/    the scenarios that need two servers over one database
+native/         the framework's own path: a native agent instead of the contract
 ```
 
 An agent never imports the harness or the tests. The direction is one way:
 tests and agents both read `commands.py` and `extensions.py`.
+
+## The native agents
+
+The agents under `agents/*_core` answer through the Aion authoring API - the
+thread, the emitter, the inbox - because that is what makes the command
+contract deterministic. A real agent does not: it is a model, some tools and
+the framework's own loop, and its answer is whatever the framework produced.
+`native/` is where that path is checked. Its agents - `langgraph_native`, a
+`StateGraph` with a model node and the prebuilt `ToolNode`, and `adk_native`,
+an `LlmAgent` with function tools - use nothing of Aion's. The one thing they
+cannot have is a real model, so the model is `agents/native_script.py`
+behind each framework's model interface, deciding from the latest user
+message.
+
+They are in `frameworks.NATIVE_AGENTS` rather than `FRAMEWORKS`, under the
+same names, so `FRAMEWORK=` selects them the same way while the matrix does
+not hold them to the command contract. A feature one framework has and the
+other does not is a `@pytest.mark.capability(key)` with its reason in
+`NATIVE_UNSUPPORTED`. `native/` scenarios that need a database carry the
+`persistence` or `distributed` marker as well and run with those groups.
+
+A guarantee of an adapter counts as checked when a native scenario asserts
+it, not only a scenario on a contract agent.
 
 ## Running
 
@@ -210,9 +235,13 @@ the gap shows up as a failure rather than as a wrong menu — and as
    extras its server side needs.
 3. Add an `UNSUPPORTED` line for anything the framework genuinely cannot do,
    with the reason.
-4. `make tests-scenarios` must be green for it, with every skip coming from a
+4. Add a native agent for it under `agents/` - the framework's own way of
+   building a tool-calling agent around `native_script` - and its entry in
+   `NATIVE_AGENTS`, with a `NATIVE_UNSUPPORTED` line for each capability it
+   lacks.
+5. `make tests-scenarios` must be green for it, with every skip coming from a
    table in `frameworks.py`.
-5. `make scenarios-matrix`, and commit the matrix with the new column.
+6. `make scenarios-matrix`, and commit the matrix with the new column.
 
 ## Defects a scenario finds
 

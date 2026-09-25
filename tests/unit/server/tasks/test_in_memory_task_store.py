@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
+from a2a.server.context import ServerCallContext
 from a2a.types import Task, TaskStatus, a2a_pb2
 
 from aion.server.tasks.stores.in_memory_task_store import InMemoryTaskStore
@@ -22,7 +23,7 @@ async def test_timestamp_filter_and_sorting_use_datetime_order():
         _task("at-zero", base),
         _task("unstamped"),
     ):
-        await store.save(task)
+        await store.save(task, ServerCallContext())
 
     response = await store.list(a2a_pb2.ListTasksRequest())
     assert [task.id for task in response.tasks] == [

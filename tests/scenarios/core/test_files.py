@@ -30,6 +30,7 @@ from tests.scenarios.harness import (
     DISTRIBUTION_EXTENSION_URI,
     Ev,
     FileAttachment,
+    DataAttachment,
     ScenarioClient,
     ServeProcess,
     ServeVariant,
@@ -98,6 +99,24 @@ def artifact_named(events: list[Ev], name: str):
 # --------------------------------------------------------------------------
 # Inbound
 # --------------------------------------------------------------------------
+
+@pytest.mark.command("parts")
+async def test_an_inbound_data_part_reaches_the_inbox_whole(client: ScenarioClient) -> None:
+    """The inbox keeps the data part as it was sent, metadata included.
+
+    What a model reads is the part's JSON text alone; the inbox is where an
+    agent finds the rest. Numbers come back as floats: the part is a protobuf
+    ``Value``.
+    """
+    events = await client.send(
+        "parts", data=[DataAttachment(data={"order": 42}, metadata={"source": "crm"})]
+    )
+
+    seen = parts_seen(events)
+    assert seen.kinds == ["text", "data"]
+    assert seen.data == [{"order": 42}]
+    assert seen.data_metadata == [{"source": "crm"}]
+
 
 @pytest.mark.variant("file-storage")
 @pytest.mark.command("parts")

@@ -59,14 +59,26 @@ class TestFromPart:
         assert parsed.get("score") == 0.9
         assert parsed.get("label") == "positive"
 
-    def test_part_with_no_text_url_raw_falls_through_to_data_branch(self):
-        """Part() with no text/raw/url always hits the data branch (proto data field is always set).
-        This means from_part returns a JSON text block, never None, for real Part objects."""
-        result = A2AToLcConverter.from_part(Part())
+    def test_an_empty_part_converts_to_nothing(self):
+        """Part() carries no content, and is not a data part holding ``{}``.
+
+        A protobuf message is always truthy, so testing ``part.data`` instead
+        of ``HasField("data")`` would turn it into a text block the model
+        reads as an empty JSON object.
+        """
+        assert A2AToLcConverter.from_part(Part()) is None
+        blocks = A2AToLcConverter.from_parts([Part(text="hi"), Part()])
+        assert [block["text"] for block in blocks] == ["hi"]
+
+    def test_a_data_part_holding_an_empty_object_is_still_data(self):
+        """Set but empty is a real data part, and reads as ``{}``."""
+        value = struct_pb2.Value()
+        value.struct_value.SetInParent()
+
+        result = A2AToLcConverter.from_part(Part(data=value))
+
         assert result is not None
-        assert result.get("type") == "text"
-        # empty proto data serializes to '{}'
-        assert result.get("text") == "{}"
+        assert json.loads(result["text"]) == {}
 
     def test_raw_part_mime_type_is_detected(self):
         """Raw Part without explicit media_type uses _detect_mime_type fallback."""

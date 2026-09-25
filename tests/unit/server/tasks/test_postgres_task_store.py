@@ -18,6 +18,7 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from a2a.server.context import ServerCallContext
 from a2a.types import Artifact, Message, Task, TaskState, TaskStatus, a2a_pb2
 from a2a.utils.constants import DEFAULT_LIST_TASKS_PAGE_SIZE, MAX_LIST_TASKS_PAGE_SIZE
 from a2a.utils.errors import InvalidParamsError, TaskNotCancelableError
@@ -87,6 +88,8 @@ def repository():
     repo = MagicMock()
     repo.save = AsyncMock()
     repo.save_owned = AsyncMock(return_value=True)
+    repo.save_owned_locked = AsyncMock(return_value=True)
+    repo.lock_owner_scope = AsyncMock(return_value=None)
     repo.find = AsyncMock(return_value=[])
     repo.find_ids = AsyncMock(return_value=[])
     repo.count = AsyncMock(return_value=0)
@@ -172,7 +175,10 @@ class TestCancel:
         canceled = await store.cancel_with_ownership_revocation(TASK_UUID)
 
         task_uuid = uuid.UUID(TASK_UUID)
-        repository.find_by_id_for_update.assert_awaited_once_with(task_uuid, TEST_AGENT_ID)
+        # No caller context here, so the owner is not a filter.
+        repository.find_by_id_for_update.assert_awaited_once_with(
+            task_uuid, TEST_AGENT_ID, owner_scope=None
+        )
         repository.update_status.assert_awaited_once_with(task_uuid, TEST_AGENT_ID, canceled.status)
         claim_repository.revoke_unconditionally.assert_awaited_once_with(task_uuid, TEST_AGENT_ID)
         assert canceled.status.state == TaskState.TASK_STATE_CANCELED
@@ -200,9 +206,9 @@ class TestCancel:
 
 class TestSaveIdentity:
     async def test_save_keeps_the_callers_identifier(self, store, repository):
-        await store.save(_make_task())
+        await store.save(_make_task(), ServerCallContext())
 
-        entity = repository.save_owned.await_args.args[0]
+        entity = repository.save_owned_locked.await_args.args[0]
         assert str(entity.id) == TASK_UUID
 
     async def test_save_persists_the_resolved_owner(self, store, repository):
@@ -211,7 +217,7 @@ class TestSaveIdentity:
 
         await store.save(_make_task(), context)
 
-        entity = repository.save_owned.await_args.args[0]
+        entity = repository.save_owned_locked.await_args.args[0]
         assert entity.owner_scope == "caller-123"
 
     @pytest.mark.parametrize("task_id", ["not-a-uuid", "", "evo-test-e1907a4c"])
@@ -223,7 +229,7 @@ class TestSaveIdentity:
         with pytest.raises(ValueError):
             await store.save(_make_task(task_id=task_id))
 
-        repository.save_owned.assert_not_awaited()
+        repository.save_owned_locked.assert_not_awaited()
 
 
 class TestSaveNormalization:
@@ -236,7 +242,7 @@ class TestSaveNormalization:
         history = [Message(message_id="m1")]
         artifacts = [Artifact(artifact_id="a1")]
 
-        await store.save(_make_task(history=history, artifacts=artifacts))
+        await store.save(_make_task(history=history, artifacts=artifacts), ServerCallContext())
 
         task_uuid = uuid.UUID(TASK_UUID)
         messages_repository.append_new.assert_awaited_once_with(task_uuid, history)
@@ -248,7 +254,7 @@ class TestSaveNormalization:
         """An unhydrated Task (empty history/artifacts) must still be passed
         through - the child repositories are what treat "empty" as a no-op,
         not the store deciding to skip the call."""
-        await store.save(_make_task())
+        await store.save(_make_task(), ServerCallContext())
 
         task_uuid = uuid.UUID(TASK_UUID)
         messages_repository.append_new.assert_awaited_once_with(task_uuid, [])
@@ -266,7 +272,7 @@ class TestSaveNormalization:
         task = _make_task(history=history)
         task.status.message.CopyFrom(status_message)
 
-        await store.save(task)
+        await store.save(task, ServerCallContext())
 
         task_uuid = uuid.UUID(TASK_UUID)
         messages_repository.append_new.assert_awaited_once_with(
@@ -285,8 +291,8 @@ class TestSaveNormalization:
         task = _make_task()
         task.status.message.CopyFrom(status_message)
 
-        await store.save(task)
-        await store.save(task)
+        await store.save(task, ServerCallContext())
+        await store.save(task, ServerCallContext())
 
         assert messages_repository.append_new.await_count == 2
         for call in messages_repository.append_new.await_args_list:

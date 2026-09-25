@@ -17,7 +17,23 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from aion.server.agent.adapters.interfaces.executor import ExecutionConfig, ExecutorAdapter
+from a2a.auth.user import User
+from a2a.server.context import ServerCallContext
+
+from aion.server.agent.adapters.interfaces.executor import ExecutionConfig, ExecutorAdapter, StateScope
+
+
+class _NamedUser(User):
+    def __init__(self, name: str) -> None:
+        self._name = name
+
+    @property
+    def is_authenticated(self) -> bool:
+        return True
+
+    @property
+    def user_name(self) -> str:
+        return self._name
 from aion.server.agent.adapters.interfaces.agent import AgentAdapter
 from aion.server.agent.adapters.interfaces.state import ExecutionSnapshot
 from aion.server.agent.aion_agent.agent import AionAgent
@@ -156,7 +172,7 @@ class TestAionAgentNotBuiltGuard:
         """get_state raises RuntimeError with 'not built' message on an unbuilt agent."""
         agent = _make_agent()
         with pytest.raises(RuntimeError, match="not built"):
-            await agent.get_state(context_id="ctx-1")
+            await agent.get_state(context_id="ctx-1", call_context=ServerCallContext())
 
     async def test_resume_raises_when_not_built(self):
         """resume raises RuntimeError with 'not built' message on an unbuilt agent."""
@@ -325,13 +341,17 @@ class TestAionAgentExecution:
         snapshot = MagicMock(spec=ExecutionSnapshot)
         agent._executor.get_state = AsyncMock(return_value=snapshot)
 
-        result = await agent.get_state(context_id="ctx-1", task_id="t-1")
+        result = await agent.get_state(
+            context_id="ctx-1", task_id="t-1", call_context=ServerCallContext(user=_NamedUser("alice"))
+        )
 
         assert result is snapshot
         agent._executor.get_state.assert_called_once()
         config = agent._executor.get_state.call_args.args[0]
         assert config.context_id == "ctx-1"
         assert config.task_id == "t-1"
+        # The state read is the caller's: keyed by this agent and that user.
+        assert config.state_scope == StateScope(agent_id=agent.id, owner_scope="alice")
 
     async def test_cancel_delegates_to_executor(self):
         """cancel on a built agent delegates to the executor's cancel method."""

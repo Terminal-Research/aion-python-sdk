@@ -201,31 +201,48 @@ check-env: ## Check the installed environment for duplicate or broken packages
 
 # The other direction of the compatibility question. Every other target here
 # runs against the newest release in each declared range; this one installs the
-# oldest, so that `a2a-sdk>=1.1.2`, `langgraph>=1.0.0` and `google-adk>=1.20.0`
+# oldest, so that `a2a-sdk>=1.1.5`, `langgraph>=1.0.0` and `google-adk>=1.27.1`
 # mean what the manifest says rather than only having been typed there.
 #
 # uv rather than Poetry, for the one thing Poetry cannot do: `--resolution
 # lowest-direct` takes every dependency this project declares to the oldest
 # release the whole graph still allows, while letting their own dependencies
 # resolve normally. Pinning each floor exactly instead would collide the extras
-# against each other - google-adk 1.20.0 pins opentelemetry-api==1.37.0 while
-# the server extra inherits >=1.33.0 from a2a-sdk, and both are true - and
-# report a conflict nobody would ever install.
+# against each other - google-adk 1.27.1 asks for fastapi>=0.124.1 while the
+# server extra declares >=0.115.2, and both are true - and report a conflict
+# nobody would ever install.
 #
-# It rewrites this environment and leaves it downgraded: `poetry install -E
-# langgraph-server -E adk-server --with dev` puts it back. Run it in CI or in a
-# throwaway checkout, not in the one you are working in.
-tests-floors: ## Install the oldest allowed dependencies and run the unit suite
+# It builds an environment of its own, `.venv-floors`, on Python 3.12, the
+# bottom of requires-python, rather than downgrading the development one: the
+# test tooling from the dev group first, then the project at its floors. An
+# environment that was first installed at the newest releases and then
+# lowered keeps whatever those releases pulled in and nothing needs any more,
+# and `envcheck.py` rightly fails on such an orphan's unmet requirements.
+#
+# `--upgrade` is what makes the resolution take the floors at all: without it
+# uv keeps any installed version that still satisfies a requirement. That is
+# how this job once ran the unit suite against the newest releases while
+# reporting every floor as "resolved to" something higher. `floors.py --check`
+# now fails on a floor that is neither installed nor recorded as raised by a
+# sibling, so a run that lowers nothing cannot pass again.
+FLOORS_PYTHON ?= 3.12
+FLOORS_VENV := .venv-floors
+FLOORS_PY := $(FLOORS_VENV)/bin/python
+
+tests-floors: ## Install the oldest allowed dependencies in .venv-floors and run the unit suite there
 	@command -v uv >/dev/null 2>&1 || { \
 		echo "tests-floors needs uv: https://docs.astral.sh/uv/getting-started/installation/" >&2; \
 		exit 2; \
 	}
-	@echo "[floors] this downgrades the current environment; re-run poetry install afterwards"
-	uv pip install --python "$$(poetry env info --path)/bin/python" \
-		--resolution lowest-direct -e ".[langgraph-server,adk-server]"
-	poetry run ./scripts/packaging/envcheck.py
-	poetry run ./scripts/packaging/floors.py --check
-	poetry run pytest -n $(UNIT_WORKERS) tests/unit $(ARGS)
+	uv venv --clear --seed --python $(FLOORS_PYTHON) $(FLOORS_VENV)
+	uv pip install --python $(FLOORS_PY) packaging
+	$(FLOORS_PY) ./scripts/packaging/floors.py --test-requirements > $(FLOORS_VENV)/test-requirements.txt
+	uv pip install --python $(FLOORS_PY) -r $(FLOORS_VENV)/test-requirements.txt
+	uv pip install --python $(FLOORS_PY) \
+		--resolution lowest-direct --upgrade -e ".[langgraph-server,adk-server]"
+	$(FLOORS_PY) ./scripts/packaging/envcheck.py
+	$(FLOORS_PY) ./scripts/packaging/floors.py --check
+	$(FLOORS_PY) -m pytest -n $(UNIT_WORKERS) tests/unit $(ARGS)
 
 ##@ Distribution
 

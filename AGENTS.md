@@ -90,9 +90,12 @@ aion.cli
   composite extras where applicable. Shared dependencies belong to their
   owning package, not duplicate consumer declarations.
 - Keep code compatible with Python 3.12 and the declared minimum dependency
-  versions. `make tests-floors` checks those floors but downgrades the active
-  environment; run it in CI or a disposable checkout, not as a routine local
-  check.
+  versions. `make tests-floors` checks those floors in an environment of its
+  own, `.venv-floors` (it needs `uv`, and fetches Python 3.12 if it has to),
+  and leaves the development environment alone. It fails on a floor that is
+  neither installed nor recorded in `RAISED_BY_SIBLING` in
+  `scripts/packaging/floors.py`; a floor raised on purpose goes there with
+  the sibling that raises it.
 - Do not commit `poetry.lock`. For the project environment, install with
   `poetry install -E langgraph-server -E adk-server --with dev`. The
   `installer.re-resolve = true` setting in `poetry.toml` is required; use

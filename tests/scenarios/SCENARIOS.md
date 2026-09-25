@@ -4,18 +4,18 @@
      commands.py and frameworks.py. Do not edit by hand: run
      `make scenarios-matrix`. -->
 
-121 scenarios in 22 files, 258 runs across 2 frameworks: 237 run, 21 skipped.
+152 scenarios in 30 files, 322 runs across 2 frameworks: 292 run, 30 skipped.
 
 Nothing here was produced by running a scenario: `pytest --collect-only` and the registries are all it takes, and the same suite always renders the same file. What the suite is and how to run it is in [README.md](README.md).
 
-A status cell reads `✓` when it runs, `skip` when `frameworks.UNSUPPORTED` or `frameworks.NO_EVENT_ROUTER` names the pair (the reason is under [Frameworks](#frameworks)), `gap` when the agent has no behaviour for the command yet, `xfail: <reason>` for a knowingly deferred defect, `any` when the scenario does not depend on a framework, and `n/a` when it does not run on that one.
+A status cell reads `✓` when it runs, `skip` when `frameworks.UNSUPPORTED`, `frameworks.NATIVE_UNSUPPORTED` or `frameworks.NO_EVENT_ROUTER` names the pair (the reason is under [Frameworks](#frameworks)), `gap` when the agent has no behaviour for the command yet, `xfail: <reason>` for a knowingly deferred defect, `any` when the scenario does not depend on a framework, and `n/a` when it does not run on that one.
 
 ## Coverage at a glance
 
 |  | Covered | Not yet |
 |---|---|---|
 | Commands | 21 of 21: `help`, `echo`, `stream`, `typing`, `steps`, `slow`, `artifacts`, `card`, `outbox-task`, `outbox-message`, `ask`, `ask-twice`, `ask-fail`, `fail`, `ext`, `whoami`, `event`, `config`, `ids`, `big`, `parts` | — |
-| Suites | 14 of 14: `smoke`, `streaming`, `events`, `terminal_states`, `interrupts`, `errors`, `artifacts`, `files`, `extensions`, `daemon`, `config`, `lifecycle`, `persistence`, `distributed` | — |
+| Suites | 15 of 15: `smoke`, `streaming`, `events`, `terminal_states`, `interrupts`, `errors`, `artifacts`, `files`, `extensions`, `daemon`, `config`, `lifecycle`, `persistence`, `distributed`, `native` | — |
 
 ## Frameworks
 
@@ -23,6 +23,13 @@ A status cell reads `✓` when it runs, `skip` when `frameworks.UNSUPPORTED` or 
 |---|---|---|---|---|
 | langgraph | `tests.scenarios.agents.langgraph_core` | `graph.py:create_graph` | `langgraph-server` | 21 of 21 |
 | adk | `tests.scenarios.agents.adk_core` | `agent.py:create_agent` | `adk-server` | 18 of 21 |
+
+The `native` suite runs a second agent per framework instead: an ordinary agent on the framework's own path - a model, a tool, the framework's loop and memory - with no Aion authoring API and no part of the command contract. Its cells name the agent.
+
+| Framework | Native agent package | Entry | SDK extras |
+|---|---|---|---|
+| langgraph | `tests.scenarios.agents.langgraph_native` | `graph.py:create_graph` | `langgraph-server` |
+| adk | `tests.scenarios.agents.adk_native` | `agent.py:create_agent` | `adk-server` |
 
 Pairs a framework genuinely cannot do, which is what a `skip` cell means:
 
@@ -32,6 +39,15 @@ Pairs a framework genuinely cannot do, which is what a `skip` cell means:
 | adk | `ask` | ADK has no interrupt/pause primitive; resume is a plain message send |
 | adk | `ask-twice` | ADK has no interrupt/pause primitive; resume is a plain message send |
 | adk | `ask-fail` | ADK has no interrupt/pause primitive; resume is a plain message send |
+
+Features a framework's native agent does not have; a native scenario driving one `skip`s there:
+
+| Framework | Capability | Reason |
+|---|---|---|
+| adk | `interrupt` | ADK has no interrupt/pause primitive; a tool cannot suspend the run for input |
+| langgraph | `artifact-service` | LangGraph has no artifact service; a graph emits artifacts through the Aion API |
+| adk | `prebuilt-agent` | ADK's LlmAgent is already its one standard way to build an agent; the rest of the native group runs it |
+| langgraph | `session-state` | LangGraph has no output_key or tool-written session state; its state is the graph's own channels |
 
 An authoring surface only some adapters have; a scenario about it `skip`s on the rest:
 
@@ -47,18 +63,19 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 |---|---|---|---|
 | `smoke` | agent answers at all: card, health, help, echo | 5 | `make tests-scenarios TAGS=smoke` |
 | `streaming` | chunked replies, ephemeral typing, unary send | 13 | `make tests-scenarios TAGS=streaming` |
-| `events` | event order, ids, outbox, get_task agreement | 21 | `make tests-scenarios TAGS=events` |
+| `events` | event order, ids, outbox, get_task agreement | 23 | `make tests-scenarios TAGS=events` |
 | `terminal_states` | COMPLETED, FAILED, CANCELED, INPUT_REQUIRED | 9 | `make tests-scenarios TAGS=terminal_states` |
 | `interrupts` | INPUT_REQUIRED and resume | 9 | `make tests-scenarios TAGS=interrupts` |
 | `errors` | failures that must stay reported, not crash the server | 8 | `make tests-scenarios TAGS=errors` |
 | `artifacts` | artifact and card emission | 4 | `make tests-scenarios TAGS=artifacts` |
-| `files` | inline file parts: stored, rejected, or passed through | 9 | `make tests-scenarios TAGS=files` |
+| `files` | inline file parts: stored, rejected, or passed through | 10 | `make tests-scenarios TAGS=files` |
 | `extensions` | extension activation and payload delivery | 12 | `make tests-scenarios TAGS=extensions` |
 | `daemon` | daemon extension identity and environment | 6 | `make tests-scenarios TAGS=daemon` |
 | `config` | aion.yaml configuration and deployment variants | 7 | `make tests-scenarios TAGS=config` |
 | `lifecycle` | cancel, concurrency, push notifications, startup | 4 | `make tests-scenarios TAGS=lifecycle` |
-| `persistence` | needs POSTGRES_TEST_URL; survives a server restart | 7 | `make tests-scenarios-persistence` |
-| `distributed` | needs POSTGRES_TEST_URL; two servers over one database | 13 | `make tests-scenarios-distributed` |
+| `persistence` | needs POSTGRES_TEST_URL; survives a server restart | 10 | `make tests-scenarios-persistence` |
+| `distributed` | needs POSTGRES_TEST_URL; two servers over one database | 15 | `make tests-scenarios-distributed` |
+| `native` | an ordinary framework agent on its own path: model, tools, memory, no Aion API | 28 | `make tests-scenarios TAGS=native` |
 
 ## Scenarios by file
 
@@ -177,15 +194,16 @@ Inline file parts: stored on the way in and out, rejected, or passed through.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [The agent never sees the bytes: by the time it runs, the file is a URL.](core/test_files.py#L102 "test_an_inbound_file_reaches_the_agent_as_a_url") | `files` | `parts` | `file-storage` | ✓ | ✓ |
-| [Reading the task back returns what was persisted: a URL part, no raw content.](core/test_files.py#L121 "test_the_stored_task_holds_the_url_and_not_the_bytes") | `files` | `parts` | `file-storage` | ✓ | ✓ |
-| [No distribution means no owning organization: the request is refused, not degraded.](core/test_files.py#L142 "test_an_inbound_file_without_a_distribution_is_rejected") | `files` | `parts` | `file-storage` | ✓ | ✓ |
-| [A service identity alone names nobody to own the file.](core/test_files.py#L152 "test_a_distribution_without_a_principal_cannot_own_a_file") | `files` | `parts` | `file-storage` | ✓ | ✓ |
-| [Storage is a concern of file parts only; a plain message is unaffected.](core/test_files.py#L167 "test_text_only_requests_need_no_distribution") | `files` | `parts` | `file-storage` | ✓ | ✓ |
-| [Passthrough is a supported mode: no backend, the bytes reach the agent and the record.](core/test_files.py#L177 "test_without_a_backend_inline_content_passes_through") | `files` | `parts` | `default` | ✓ | ✓ |
-| [The agent emits bytes; the client receives a URL. Data and url parts are untouched.](core/test_files.py#L195 "test_an_outbound_file_leaves_as_a_url") | `files` | `artifacts` | `file-storage` | ✓ | [skip](#frameworks) |
-| [No backend, no conversion: the bytes the agent emitted are the bytes received.](core/test_files.py#L220 "test_without_a_backend_an_outbound_file_stays_inline") | `files` | `artifacts` | `default` | ✓ | [skip](#frameworks) |
-| [Selecting the Aion backend without AION_CLIENT_ID and AION_CLIENT_SECRET is a startup error.](core/test_files.py#L233 "test_the_aion_backend_does_not_serve_without_credentials") | `files` | — | `aion-no-credentials` | ✓ | ✓ |
+| [The inbox keeps the data part as it was sent, metadata included.](core/test_files.py#L103 "test_an_inbound_data_part_reaches_the_inbox_whole") | `files` | `parts` | `default` | ✓ | ✓ |
+| [The agent never sees the bytes: by the time it runs, the file is a URL.](core/test_files.py#L121 "test_an_inbound_file_reaches_the_agent_as_a_url") | `files` | `parts` | `file-storage` | ✓ | ✓ |
+| [Reading the task back returns what was persisted: a URL part, no raw content.](core/test_files.py#L140 "test_the_stored_task_holds_the_url_and_not_the_bytes") | `files` | `parts` | `file-storage` | ✓ | ✓ |
+| [No distribution means no owning organization: the request is refused, not degraded.](core/test_files.py#L161 "test_an_inbound_file_without_a_distribution_is_rejected") | `files` | `parts` | `file-storage` | ✓ | ✓ |
+| [A service identity alone names nobody to own the file.](core/test_files.py#L171 "test_a_distribution_without_a_principal_cannot_own_a_file") | `files` | `parts` | `file-storage` | ✓ | ✓ |
+| [Storage is a concern of file parts only; a plain message is unaffected.](core/test_files.py#L186 "test_text_only_requests_need_no_distribution") | `files` | `parts` | `file-storage` | ✓ | ✓ |
+| [Passthrough is a supported mode: no backend, the bytes reach the agent and the record.](core/test_files.py#L196 "test_without_a_backend_inline_content_passes_through") | `files` | `parts` | `default` | ✓ | ✓ |
+| [The agent emits bytes; the client receives a URL. Data and url parts are untouched.](core/test_files.py#L214 "test_an_outbound_file_leaves_as_a_url") | `files` | `artifacts` | `file-storage` | ✓ | [skip](#frameworks) |
+| [No backend, no conversion: the bytes the agent emitted are the bytes received.](core/test_files.py#L239 "test_without_a_backend_an_outbound_file_stays_inline") | `files` | `artifacts` | `default` | ✓ | [skip](#frameworks) |
+| [Selecting the Aion backend without AION_CLIENT_ID and AION_CLIENT_SECRET is a startup error.](core/test_files.py#L252 "test_the_aion_backend_does_not_serve_without_credentials") | `files` | — | `aion-no-credentials` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_interrupts.py`
 
@@ -216,6 +234,8 @@ The other door: an agent that hands the server a finished A2A payload.
 | [The patch adds to history; it does not replace what was already there.](core/test_outbox.py#L107 "test_a_task_patch_keeps_the_inbound_message_it_is_answering") | `events` | `outbox-task` | `default` | ✓ | ✓ |
 | [Agent metadata lands on the task, under the agent's own keys.](core/test_outbox.py#L124 "test_the_metadata_of_a_task_patch_is_merged") | `events` | `outbox-task` | `default` | ✓ | ✓ |
 | [Identity is the server's, whatever the payload says or omits.](core/test_outbox.py#L136 "test_the_server_keeps_the_ids_the_patch_left_unset") | `events` | `outbox-task` | `default` | ✓ | ✓ |
+| [An outbox answers the turn that wrote it, and only that one.](core/test_outbox.py#L154 "test_the_next_turn_in_the_context_does_not_repeat_the_outbox") | `events` | `outbox-message` | `default` | ✓ | ✓ |
+| [A task patch is not merged again into the next task of the context.](core/test_outbox.py#L175 "test_the_next_turn_in_the_context_does_not_repeat_the_task_patch") | `events` | `outbox-task` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_push_notifications.py`
 
@@ -316,6 +336,90 @@ One server dies; the one that was already running closes what it left.
 |---|---|---|---|---|---|
 | [The whole sequence, in the order a deployment would live it.](distributed/test_recovery.py#L95 "test_a_dead_owner_leaves_two_tasks_and_the_survivor_closes_both") | `distributed` | `slow` | `default` | ✓ | ✓ |
 
+### `tests/scenarios/native/test_distributed.py`
+
+A native agent served by two instances over one database.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [A conversation begun on one instance continues on the other](native/test_distributed.py#L51 "test_a_conversation_begun_on_one_instance_continues_on_the_other") | `native`, `distributed` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+| [A tool paused on one instance resumes on the other](native/test_distributed.py#L65 "test_a_tool_paused_on_one_instance_resumes_on_the_other") | `native`, `distributed` | — | `default` | ✓ `langgraph_native` | [skip](#frameworks) |
+
+### `tests/scenarios/native/test_failure_and_cancel.py`
+
+A native agent failing or being cancelled halfway through its work.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [The chunks already sent stay sent; the outcome is FAILED on the wire.](native/test_failure_and_cancel.py#L47 "test_a_model_failing_after_its_first_chunks_fails_the_task") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+| [``tasks/get`` agrees, and the partial answer is not kept as history.](native/test_failure_and_cancel.py#L56 "test_the_failed_task_is_stored_as_failed_without_the_chunks") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+| [The failed run does not go on behind the outcome and answer later.](native/test_failure_and_cancel.py#L70 "test_nothing_arrives_after_the_failure") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+| [What the agent had fully said stays said; only the partial answer is lost.](native/test_failure_and_cancel.py#L82 "test_a_message_completed_before_the_failure_is_kept") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+| [The model's stream stops: the progress it writes per word stops growing.](native/test_failure_and_cancel.py#L140 "test_a_cancel_stops_the_model_mid_stream") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+| [The tool the framework is running stops too, not only the stream.](native/test_failure_and_cancel.py#L151 "test_a_cancel_stops_the_running_tool") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+| [The context is not left broken: the saved state of the cancelled run](native/test_failure_and_cancel.py#L162 "test_the_next_turn_after_a_cancel_is_answered") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+
+### `tests/scenarios/native/test_framework_features.py`
+
+Features only one framework has, used the way that framework documents them.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [``interrupt()`` inside a tool: INPUT_REQUIRED with the question, then resume.](native/test_framework_features.py#L25 "test_a_tool_asking_the_user_pauses_the_task_for_input") | `native` | — | `default` | ✓ `langgraph_native` | [skip](#frameworks) |
+| [``tool_context.save_artifact`` becomes an artifact on the wire and on the task.](native/test_framework_features.py#L39 "test_an_artifact_a_tool_saves_reaches_the_client") | `native` | — | `default` | [skip](#frameworks) | ✓ `adk_native` |
+| [What ``output_key`` and a tool wrote is there when the next turn runs.](native/test_framework_features.py#L51 "test_output_key_and_tool_state_are_in_the_next_turns_state") | `native` | — | `default` | [skip](#frameworks) | ✓ `adk_native` |
+
+### `tests/scenarios/native/test_memory.py`
+
+A native agent remembers the conversation, the framework's way.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [The next turn sees the earlier ones](native/test_memory.py#L19 "test_the_next_turn_sees_the_earlier_ones") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+| [Memory is per context, not per server.](native/test_memory.py#L28 "test_another_context_starts_empty") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+
+### `tests/scenarios/native/test_model_and_tools.py`
+
+An ordinary agent's answer, tool call and inputs, through `aion serve`.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [The ordinary answer: tokens as they come, then the whole of it, once.](native/test_model_and_tools.py#L67 "test_the_answer_streams_as_deltas_then_lands_as_one_message") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+| [Only the model's words reach the client; the tool round-trip does not.](native/test_model_and_tools.py#L83 "test_the_tool_call_and_its_result_are_not_replies") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+| [The answer after the tool opens a stream of its own.](native/test_model_and_tools.py#L98 "test_two_model_calls_are_two_streams") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+| [No empty reply, no empty chunk: a silent tool request is silent.](native/test_model_and_tools.py#L109 "test_a_model_call_that_only_calls_a_tool_says_nothing") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+| [Contract: a file arrives as a file, a data part as its JSON text.](native/test_model_and_tools.py#L117 "test_a_file_and_a_data_part_reach_the_model_in_the_agreed_form") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+| [Thoughts stream first and are left out: a LangGraph reasoning block, an](native/test_model_and_tools.py#L143 "test_the_models_reasoning_is_not_sent") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+| [The model asks once, and the tool runs once.](native/test_model_and_tools.py#L153 "test_the_tool_runs_once_per_request") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+
+### `tests/scenarios/native/test_persistence.py`
+
+A native agent's memory and pause live in the database, not in the process.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [The conversation survives a restart](native/test_persistence.py#L56 "test_the_conversation_survives_a_restart") | `native`, `persistence` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+| [The run paused inside ``interrupt()`` continues from the PG checkpoint.](native/test_persistence.py#L68 "test_a_paused_tool_resumes_after_a_restart") | `native`, `persistence` | — | `default` | ✓ `langgraph_native` | [skip](#frameworks) |
+| [``create_agent`` brings no checkpointer; the one it runs with is the](native/test_persistence.py#L84 "test_a_prebuilt_agents_conversation_survives_a_restart") | `native`, `persistence` | — | `default` | ✓ `langgraph_native` | [skip](#frameworks) |
+
+### `tests/scenarios/native/test_prebuilt_agent.py`
+
+The agent ``langchain.agents.create_agent`` builds, served as it is built.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [A turn with a tool completes](native/test_prebuilt_agent.py#L38 "test_a_turn_with_a_tool_completes") | `native` | — | `default` | ✓ `langgraph_native` | [skip](#frameworks) |
+| [The next turn remembers](native/test_prebuilt_agent.py#L45 "test_the_next_turn_remembers") | `native` | — | `default` | ✓ `langgraph_native` | [skip](#frameworks) |
+| [A tool can pause for the user](native/test_prebuilt_agent.py#L53 "test_a_tool_can_pause_for_the_user") | `native` | — | `default` | ✓ `langgraph_native` | [skip](#frameworks) |
+
+### `tests/scenarios/native/test_selection.py`
+
+The native scenarios run the native agent, and the one the run asked for.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [The deployment the server was started from names the native agent.](native/test_selection.py#L13 "test_the_server_runs_the_native_agent_of_this_framework") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+
 ### `tests/scenarios/persistence/test_restart.py`
 
 What a server restart does to the tasks the previous process held.
@@ -351,8 +455,8 @@ The contract from `commands.py`. `Scenarios` counts the scenarios driving the co
 | `slow <sec>` | Reply after n seconds | `lifecycle` | 21 | ✓ | ✓ |
 | `artifacts` | Emit a two-part data artifact, an inline file and a url | `artifacts`, `files` | 2 | ✓ | [skip](#frameworks) |
 | `card` | Emit one card | `artifacts` | 4 | ✓ | ✓ |
-| `outbox-task` | Return an A2A Task through the outbox | `events` | 5 | ✓ | ✓ |
-| `outbox-message` | Return an A2A Message through the outbox | `events` | 2 | ✓ | ✓ |
+| `outbox-task` | Return an A2A Task through the outbox | `events` | 6 | ✓ | ✓ |
+| `outbox-message` | Return an A2A Message through the outbox | `events` | 3 | ✓ | ✓ |
 | `ask` | Ask a question, then quote the answer | `interrupts` | 8 | ✓ | [skip](#frameworks) |
 | `ask-twice` | Ask two questions in a row | `interrupts` | 3 | ✓ | [skip](#frameworks) |
 | `ask-fail` | Ask a question, then fail on the answer | `interrupts`, `errors` | 3 | ✓ | [skip](#frameworks) |
@@ -363,4 +467,4 @@ The contract from `commands.py`. `Scenarios` counts the scenarios driving the co
 | `config <key>` | Report one configuration value | `config` | 7 | ✓ | ✓ |
 | `ids` | Report task and context ids | `events`, `lifecycle` | 2 | ✓ | ✓ |
 | `big <kb>` | Reply with n KB of text | `errors` | 3 | ✓ | ✓ |
-| `parts` | Report the kinds of parts the inbound message carried | `files` | 6 | ✓ | ✓ |
+| `parts` | Report the kinds of parts the inbound message carried | `files` | 7 | ✓ | ✓ |

@@ -16,9 +16,10 @@ the day it is registered.
 The three things it pins down:
 
 *Same input.* An adapter is handed the framework's own idea of a finished run
-— accumulated stream text, and whatever the agent left in `a2a_outbox`. The
-shape that reaches the adapter is the framework's (see DIFFERENCES); what the
-adapter is asked is the same question.
+— accumulated stream text, whatever the agent wrote to `a2a_outbox` during
+the run, and the state the framework saved, which may still hold an outbox
+from an earlier turn. The shape that reaches the adapter is the framework's
+(see DIFFERENCES); what the adapter is asked is the same question.
 
 *Same observable output.* The list of A2A events the adapter returns before the
 turn's terminal event. Not merely equivalent in spirit: the same kinds of
@@ -60,6 +61,10 @@ The numbered guarantees are asserted, one test each, in `test_contract.py`.
    the accumulated-text path rather than failing or answering nothing.
 9. An outbox carrying both a message and a task delivers the message. One
    answer per turn, and the ambiguity is resolved the same way everywhere.
+10. An outbox answers the run that wrote it. One the framework's saved state
+    still holds from an earlier turn in the context - the LangGraph
+    checkpoint, the ADK session - is not applied again: the turn goes down
+    the accumulated-text path as if there were none.
 
 Guarantees 3 through 9 are one implementation — `aion.server.a2a.outbox` —
 called by both adapters. They are asserted through each adapter's own result
@@ -89,10 +94,11 @@ class AdapterUnderTest:
         name: Short name, used in test ids.
         result_events: Runs the adapter's result handling for one turn and
             returns the A2A events it produces before the terminal event.
-            Keyword-only: ``outbox`` (an ``A2AOutbox``, or any object, to stand
-            in the framework's state), ``delta_text`` (what the run streamed
-            without confirming) and ``current_task`` (the task the request is
-            running on, or None).
+            Keyword-only: ``outbox`` (an ``A2AOutbox``, or any object,
+            written during this run), ``saved_outbox`` (one the framework's
+            saved state holds from an earlier turn), ``delta_text`` (what the
+            run streamed without confirming) and ``current_task`` (the task
+            the request is running on, or None).
     """
 
     name: str
@@ -109,6 +115,7 @@ def _context(current_task: Optional[Task]):
 def _langgraph_result_events(
     *,
     outbox: Any = None,
+    saved_outbox: Any = None,
     delta_text: str = "",
     current_task: Optional[Task] = None,
     task_id: str = "task-1",
@@ -118,10 +125,14 @@ def _langgraph_result_events(
     from aion.langgraph.server.execution.stream_executor import StreamResult
     from aion.server.agent.adapters import ExecutionSnapshot, ExecutionStatus
 
-    state = {} if outbox is None else {"a2a_outbox": outbox}
+    # A node's write reaches the adapter through the run's "updates" stream;
+    # the checkpoint holds the last value written in the context, whichever
+    # turn wrote it.
+    saved = outbox if outbox is not None else saved_outbox
+    state = {} if saved is None else {"a2a_outbox": saved}
     snapshot = ExecutionSnapshot(state=state, status=ExecutionStatus.COMPLETE, metadata={})
     return ExecutionResultHandler().handle(
-        StreamResult(delta_text=delta_text),
+        StreamResult(delta_text=delta_text, outbox=outbox),
         snapshot,
         _context(current_task),
         task_id,
@@ -132,6 +143,7 @@ def _langgraph_result_events(
 def _adk_result_events(
     *,
     outbox: Any = None,
+    saved_outbox: Any = None,
     delta_text: str = "",
     current_task: Optional[Task] = None,
     task_id: str = "task-1",
@@ -144,12 +156,19 @@ def _adk_result_events(
     # ADK session state is a delta map the framework serializes, so an outbox
     # arrives as plain data rather than as the model the agent built. See
     # DIFFERENCES["outbox-carrier"].
-    carried = outbox.model_dump() if isinstance(outbox, A2AOutbox) else outbox
-    state = {} if outbox is None else {"a2a_outbox": carried}
+    def carried(value: Any) -> Any:
+        return value.model_dump() if isinstance(value, A2AOutbox) else value
+
+    # The run's own state deltas carry what it wrote; the session holds the
+    # last value written in the context, whichever turn wrote it.
+    saved = outbox if outbox is not None else saved_outbox
     session = Mock()
-    session.state = state
+    session.state = {} if saved is None else {"a2a_outbox": carried(saved)}
     return ADKExecutionResultHandler().handle(
-        ADKStreamResult(delta_text=delta_text),
+        ADKStreamResult(
+            delta_text=delta_text,
+            outbox=None if outbox is None else carried(outbox),
+        ),
         ADKToA2AEventConverter(task_id=task_id, context_id=context_id),
         session,
         _context(current_task),

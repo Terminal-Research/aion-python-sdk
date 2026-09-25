@@ -429,11 +429,9 @@ class TestPersistedStateBaseline:
             return_value=_task(TaskState.TASK_STATE_INPUT_REQUIRED)
         )
 
-        with patch(
-            "aion.server.tasks.task_manager.store_manager.get_store",
-            Mock(return_value=context_store),
-        ):
-            await manager.auto_discover_and_assign_task()
+        manager.task_store = context_store
+
+        await manager.auto_discover_and_assign_task()
 
         assert manager._persisted_state == TaskState.TASK_STATE_INPUT_REQUIRED
 

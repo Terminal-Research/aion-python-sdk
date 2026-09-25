@@ -13,7 +13,7 @@ answers with.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel
 
@@ -133,12 +133,15 @@ class PartsResponse(BaseModel):
 
     ``kinds`` names the content each part carried - ``text``, ``raw``, ``url``
     or ``data`` - which is how a scenario tells whether the server converted
-    an inline file before the agent ran.
+    an inline file before the agent ran. ``data`` and ``data_metadata`` are
+    each data part's content and metadata, in order, as the inbox holds them.
     """
 
     kinds: list[str] = []
     urls: list[str] = []
     raw_bytes: int = 0
+    data: list[Any] = []
+    data_metadata: list[dict[str, Any]] = []
 
 
 # --------------------------------------------------------------------------
@@ -307,9 +310,21 @@ def ids_text(task_id: Optional[str], context_id: Optional[str]) -> str:
     return IdsResponse(task_id=task_id, context_id=context_id).model_dump_json()
 
 
-def parts_text(kinds: list[str], urls: list[str], raw_bytes: int) -> str:
+def parts_text(
+    kinds: list[str],
+    urls: list[str],
+    raw_bytes: int,
+    data: list[Any] = (),
+    data_metadata: list[dict[str, Any]] = (),
+) -> str:
     """The JSON ``parts`` answers with."""
-    return PartsResponse(kinds=kinds, urls=urls, raw_bytes=raw_bytes).model_dump_json()
+    return PartsResponse(
+        kinds=kinds,
+        urls=urls,
+        raw_bytes=raw_bytes,
+        data=list(data),
+        data_metadata=list(data_metadata),
+    ).model_dump_json()
 
 
 # What ``artifacts`` emits, in order: a data artifact of two parts, an inline

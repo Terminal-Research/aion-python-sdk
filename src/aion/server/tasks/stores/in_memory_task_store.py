@@ -10,7 +10,7 @@ from a2a.types.a2a_pb2 import Task
 from a2a.utils.constants import DEFAULT_LIST_TASKS_PAGE_SIZE
 from a2a.utils.errors import InvalidParamsError, TaskNotCancelableError
 from a2a.utils.task import decode_page_token, encode_page_token
-from typing import Iterator, Optional, List
+from typing import NamedTuple, Optional, List
 
 from aion.server.a2a.constants import TERMINAL_TASK_STATES
 from aion.server.tasks.ownership import DegenerateOwnershipProvider
@@ -27,11 +27,27 @@ def _status_timestamp(task: Task) -> datetime | None:
     return task.status.timestamp.ToDatetime(tzinfo=timezone.utc)
 
 
+class _Stored(NamedTuple):
+    owner: str
+    task: Task
+
+
 class InMemoryTaskStore(BaseTaskStore):
     """In-memory implementation of TaskStore.
 
-    Stores task objects in a nested dictionary keyed by owner then task_id.
-    Task data is lost when the server process stops.
+    Stores every task once, keyed by task_id, with the owner its first write
+    fixed. Task data is lost when the server process stops.
+
+    The dictionary keeps creation order across owners: a task takes its
+    place when it is first written, an update leaves it there, a delete
+    removes it. Context listings read that order newest first, the order
+    ``PostgresTaskStore`` gets from ``created_at``.
+
+    Owner semantics match ``PostgresTaskStore`` exactly: a context limits
+    every call to the owner this store's ``owner_resolver`` gives it, ``None``
+    reaches every owner on reads, listings, cancel and delete, and a task's
+    owner is fixed by its first write. See ``BaseTaskStore._owner_filter``
+    and ``_owner_of_write``.
     """
 
     def __init__(
@@ -42,30 +58,50 @@ class InMemoryTaskStore(BaseTaskStore):
     ) -> None:
         super().__init__(guard_inline_files=guard_inline_files)
         logger.debug('Initializing InMemoryTaskStore')
-        self.tasks: dict[str, dict[str, Task]] = {}
+        self.tasks: dict[str, _Stored] = {}
         self.lock = asyncio.Lock()
         self.owner_resolver = owner_resolver
         self.ownership_provider = DegenerateOwnershipProvider()
 
-    def _get_owner_tasks(self, owner: str) -> dict[str, Task]:
-        return self.tasks.get(owner, {})
+    def _visible(self, owner: Optional[str]) -> list[Task]:
+        """The tasks a call may see, oldest first: one owner's, or every owner's for None."""
+        return [
+            stored.task
+            for stored in self.tasks.values()
+            if owner is None or stored.owner == owner
+        ]
 
-    def _all_tasks(self) -> Iterator[Task]:
-        """Iterate over all tasks across all owners."""
-        for owner_tasks in self.tasks.values():
-            yield from owner_tasks.values()
+    def _locate(self, task_id: str, owner: Optional[str]) -> Task | None:
+        """The task, if it exists and the call may see it."""
+        stored = self.tasks.get(task_id)
+        if stored is None or (owner is not None and stored.owner != owner):
+            return None
+        return stored.task
 
     async def save(
             self, task: Task, context: ServerCallContext | None = None
     ) -> None:
-        """Saves or updates a task in the in-memory store for the resolved owner."""
+        """Save a task; its owner is fixed by its first write.
+
+        A new task takes the owner its context names - ``ServerCallContext()``
+        the anonymous owner ``""`` - and ``None`` cannot create one. An
+        existing task keeps its owner and its place in creation order.
+
+        Raises:
+            TaskOwnerUndefinedError: If the task is new and ``context`` is
+                ``None``.
+            TaskOwnerMismatchError: If ``context`` resolves to another owner.
+        """
         task = self._persistable(task)
-        owner = self.owner_resolver(context)
-        if owner not in self.tasks:
-            self.tasks[owner] = {}
+        write_owner = self._write_owner(context)
 
         async with self.lock:
-            self.tasks[owner][task.id] = task
+            stored = self.tasks.get(task.id)
+            owner = self._owner_of_write(
+                task.id, write_owner, None if stored is None else stored.owner
+            )
+            # Assigning to an existing key keeps its position.
+            self.tasks[task.id] = _Stored(owner, task)
             logger.debug(
                 'Task %s for owner %s saved successfully.', task.id, owner
             )
@@ -74,15 +110,14 @@ class InMemoryTaskStore(BaseTaskStore):
             self, task_id: str, context: ServerCallContext | None = None
     ) -> Task | None:
         """Retrieves a task from the in-memory store by ID, for the given owner."""
-        owner = self.owner_resolver(context)
+        owner = self._owner_filter(context)
         async with self.lock:
             logger.debug(
                 'Attempting to get task with id: %s for owner: %s',
                 task_id,
                 owner,
             )
-            owner_tasks = self._get_owner_tasks(owner)
-            task = owner_tasks.get(task_id)
+            task = self._locate(task_id, owner)
             if task:
                 logger.debug(
                     'Task %s retrieved successfully for owner %s.',
@@ -101,12 +136,11 @@ class InMemoryTaskStore(BaseTaskStore):
             context: ServerCallContext | None = None,
     ) -> a2a_pb2.ListTasksResponse:
         """Retrieves a list of tasks from the store, for the given owner."""
-        owner = self.owner_resolver(context)
+        owner = self._owner_filter(context)
         logger.debug('Listing tasks for owner %s with params %s', owner, params)
 
         async with self.lock:
-            owner_tasks = self._get_owner_tasks(owner)
-            tasks = list(owner_tasks.values())
+            tasks = self._visible(owner)
 
         # Filter tasks
         if params.context_id:
@@ -175,30 +209,24 @@ class InMemoryTaskStore(BaseTaskStore):
             self, task_id: str, context: ServerCallContext | None = None
     ) -> None:
         """Deletes a task from the in-memory store by ID, for the given owner."""
-        owner = self.owner_resolver(context)
+        owner_filter = self._owner_filter(context)
         async with self.lock:
             logger.debug(
                 'Attempting to delete task with id: %s for owner %s',
                 task_id,
-                owner,
+                owner_filter,
             )
 
-            owner_tasks = self._get_owner_tasks(owner)
-            if task_id not in owner_tasks:
+            if self._locate(task_id, owner_filter) is None:
                 logger.warning(
                     'Attempted to delete nonexistent task with id: %s for owner %s',
                     task_id,
-                    owner,
+                    owner_filter,
                 )
                 return
 
-            del owner_tasks[task_id]
-            logger.debug(
-                'Task %s deleted successfully for owner %s.', task_id, owner
-            )
-            if not owner_tasks:
-                del self.tasks[owner]
-                logger.debug('Removed empty owner %s from store.', owner)
+            del self.tasks[task_id]
+            logger.debug('Task %s deleted successfully.', task_id)
 
     async def cancel_with_ownership_revocation(
             self, task_id: str, context: ServerCallContext | None = None
@@ -215,9 +243,9 @@ class InMemoryTaskStore(BaseTaskStore):
         Raises:
             TaskNotCancelableError: If the task already has an outcome.
         """
-        owner = self.owner_resolver(context)
+        owner = self._owner_filter(context)
         async with self.lock:
-            task = self._get_owner_tasks(owner).get(task_id)
+            task = self._locate(task_id, owner)
             if task is None:
                 return None
             if task.status.state in TERMINAL_TASK_STATES:
@@ -244,9 +272,9 @@ class InMemoryTaskStore(BaseTaskStore):
         to :meth:`cancel_with_ownership_revocation`, the correct single-writer
         outcome here.
         """
-        owner = self.owner_resolver(context)
+        owner = self._owner_filter(context)
         async with self.lock:
-            task = self._get_owner_tasks(owner).get(task_id)
+            task = self._locate(task_id, owner)
             if task is None:
                 return None
             if task.status.state in TERMINAL_TASK_STATES:
@@ -265,14 +293,14 @@ class InMemoryTaskStore(BaseTaskStore):
             context: ServerCallContext | None = None,
     ) -> List[str]:
         """Retrieve the resolved owner's unique context IDs."""
-        owner = self.owner_resolver(context)
+        owner = self._owner_filter(context)
         offset = offset or 0
         context_ids = []
         seen = set()
         skipped = 0
 
         async with self.lock:
-            tasks = list(self._get_owner_tasks(owner).values())
+            tasks = self._visible(owner)
 
         for task in reversed(tasks):
             if not task.context_id:
@@ -298,13 +326,13 @@ class InMemoryTaskStore(BaseTaskStore):
             context: ServerCallContext | None = None,
     ) -> List[Task]:
         """Retrieve the resolved owner's tasks for a specific context."""
-        owner = self.owner_resolver(context)
+        owner = self._owner_filter(context)
         offset = offset or 0
         matching_tasks = []
         skipped = 0
 
         async with self.lock:
-            tasks = list(self._get_owner_tasks(owner).values())
+            tasks = self._visible(owner)
 
         for task in reversed(tasks):
             if task.context_id != context_id:

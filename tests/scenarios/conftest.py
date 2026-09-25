@@ -29,7 +29,12 @@ TIMEOUT_SECONDS = 300
 """A scenario still running after this is hung, not slow."""
 
 _SERVERS: dict[tuple[str, str], ServeProcess] = {}
-"""Servers started this session, one per (framework, variant)."""
+"""Servers started this session, one per (agent, variant).
+
+Keyed by the agent's path rather than the framework's name: tests/scenarios/native
+serves other agents of each framework under the same name, one of them from
+the same package as another.
+"""
 
 
 @pytest.hookimpl(tryfirst=True)
@@ -138,7 +143,7 @@ def skip_without_event_router(request: pytest.FixtureRequest) -> None:
 
 def serve_for(framework: Framework, variant: ServeVariant) -> ServeProcess:
     """The server for this pair, started on first use and kept for the session."""
-    key = (framework.name, variant.name)
+    key = (framework.agent_path, variant.name)
     if key not in _SERVERS:
         _SERVERS[key] = ServeProcess(framework, variant).start()
     return _SERVERS[key]

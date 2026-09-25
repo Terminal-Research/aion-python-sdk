@@ -200,13 +200,12 @@ jobs:
     # The unit job varies the interpreter and nothing else, so every leg of it
     # resolves each declared range to its newest release. This one installs
     # the oldest, which is the only thing that can tell us whether
-    # `a2a-sdk>=1.1.2`, `langgraph>=1.0.0` and `google-adk>=1.20.0` are the
+    # `a2a-sdk>=1.1.5`, `langgraph>=1.0.0` and `google-adk>=1.27.1` are the
     # bounds the SDK actually works against or just the versions that happened
     # to be current when they were written.
     #
-    # Its own job because it downgrades the environment it runs in: nothing
-    # else may run afterwards and report about the versions this repository
-    # normally installs.
+    # `make tests-floors` builds an environment of its own for that, so this
+    # job needs no Poetry install: Python and uv are the whole setup.
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
@@ -219,15 +218,15 @@ jobs:
       # 3.12, the bottom of requires-python: a floor is a claim about the
       # oldest combination this project supports, and several of the releases
       # it installs ship no wheel for a newer interpreter - which would fail as
-      # the interpreter being too new rather than the bound being wrong. The
-      # development environment comes first, for pytest and the dev group;
-      # `make tests-floors` then takes the project's own dependencies down to
-      # the bottom of every range and runs the suite there.
-      - name: Set up the project
-        uses: ./.github/actions/setup-project
+      # the interpreter being too new rather than the bound being wrong.
+      # `make tests-floors` builds `.venv-floors` on it (FLOORS_PYTHON), puts
+      # the dev group's test tooling there, then the project at the bottom of
+      # every range, and fails unless every floor is installed or recorded as
+      # raised by a sibling before it runs the suite.
+      - name: Set up Python
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-          poetry-version: ${{ env.POETRY_VERSION }}
 
       - name: Run the unit suite against the oldest allowed dependencies
         run: make tests-floors

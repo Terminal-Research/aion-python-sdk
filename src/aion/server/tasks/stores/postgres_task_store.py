@@ -95,10 +95,6 @@ class PostgresTaskStore(BaseTaskStore):
         self.ownership_provider = ownership_provider
         self.owner_resolver = owner_resolver
 
-    def _owner_scope(self, context: ServerCallContext | None) -> str:
-        """Resolve the durable owner scope for one server call."""
-        return self.owner_resolver(context) if context is not None else ""
-
     @staticmethod
     async def _repeatable_read(session: AsyncSession) -> None:
         """Start a snapshot that every query in this transaction shares.
@@ -217,29 +213,44 @@ class PostgresTaskStore(BaseTaskStore):
     ) -> None:
         """Save a task.
 
+        A task's owner (``owner_scope``) is fixed by its first write. A new
+        task takes the owner its context names - a user's context that
+        user, an explicit ``ServerCallContext()`` the anonymous owner ``""``
+        - and ``None`` cannot create one. An existing task keeps its owner:
+        a write with ``None`` updates it as recorded, a write with another
+        owner's context is refused. Separately, the write is fenced by this
+        process's lease on the task - the lease owner is a server process
+        and has nothing to do with the user who owns the task.
+
         Raises:
             ValueError: If ``task.id`` is not a UUID (see
                 :meth:`TaskRecord.from_task`).
+            TaskOwnerUndefinedError: If the task is new and ``context`` is
+                ``None``.
+            TaskOwnerMismatchError: If ``context`` resolves to another owner.
+            TaskOwnershipLost: If this process no longer holds the lease.
         """
         # Before TaskRecord.from_task, not between the writes below: the head
         # row carries `status` as JSONB of its own, so a guard placed in front
         # of the message and artifact tables alone would still let raw bytes
         # into it.
         task = self._persistable(task)
-
-        entity = TaskRecord.from_task(
-            task,
-            self.agent_id,
-            self._owner_scope(context),
-        )
-
-        claim = self.ownership_provider.claim_for(task.id)
-        if claim is None:
-            raise TaskOwnershipLost(task.id)
+        task_uuid = uuid.UUID(task.id)
+        write_owner = self._write_owner(context)
 
         async with db_manager.get_session() as session:
             repository = TasksRepository(session)
-            if not await repository.save_owned(entity, claim.owner_token):
+            # The row lock the upsert below takes anyway, taken first so the
+            # owner it reads cannot change before the write. Who owns the
+            # task is settled before the lease, so a write naming no owner
+            # for a new task fails the same way as in the in-memory store.
+            recorded = await repository.lock_owner_scope(task_uuid)
+            owner = self._owner_of_write(task.id, write_owner, recorded)
+            claim = self.ownership_provider.claim_for(task.id)
+            if claim is None:
+                raise TaskOwnershipLost(task.id)
+            entity = TaskRecord.from_task(task, self.agent_id, owner)
+            if not await repository.save_owned_locked(entity, claim.owner_token):
                 raise TaskOwnershipLost(task.id)
             await TaskMessagesRepository(session).append_new(
                 entity.id, self._effective_history(task)
@@ -268,8 +279,16 @@ class PostgresTaskStore(BaseTaskStore):
         the caller from the returned state: a successful cancellation also ends
         in a terminal state, so afterwards the two are indistinguishable.
 
+        With a caller's context, only that caller's task is found - its
+        ``owner_scope`` is part of the locking query, so another user's task
+        is neither locked nor changed and reads as absent. The owner token the
+        claim carries names a server process, not a user, and says nothing
+        about who may cancel. ``None`` reaches every owner's task, as everywhere
+        in this store.
+
         Returns:
-            The canceled task, or ``None`` when no such task exists.
+            The canceled task, or ``None`` when no such task exists for this
+            caller.
 
         Raises:
             TaskNotCancelableError: If the task already has an outcome.
@@ -279,6 +298,7 @@ class PostgresTaskStore(BaseTaskStore):
         except InvalidParamsError:
             return None
 
+        owner_scope = self._owner_filter(context)
         async with db_manager.get_session() as session:
             async with session.begin():
                 # No REPEATABLE READ here on purpose: find_by_id_for_update's
@@ -289,7 +309,9 @@ class PostgresTaskStore(BaseTaskStore):
                 # its serialization failures on the UPDATE further down.
                 tasks = TasksRepository(session)
                 claims = TaskClaimsRepository(session)
-                entity = await tasks.find_by_id_for_update(task_uuid, self.agent_id)
+                entity = await tasks.find_by_id_for_update(
+                    task_uuid, self.agent_id, owner_scope=owner_scope
+                )
                 if entity is None:
                     return None
 
@@ -339,7 +361,9 @@ class PostgresTaskStore(BaseTaskStore):
             task exists but has no live claim - there is no owner to ask, and
             the caller must close the task out directly instead, exactly as
             :meth:`cancel_with_ownership_revocation` already does. ``None``
-            when no such task exists.
+            when no such task exists for this caller: as there, the caller's
+            ``owner_scope`` is part of the locking query, so another user's
+            task is neither locked nor marked.
 
         Raises:
             TaskNotCancelableError: If the task already has an outcome.
@@ -349,11 +373,14 @@ class PostgresTaskStore(BaseTaskStore):
         except InvalidParamsError:
             return None
 
+        owner_scope = self._owner_filter(context)
         async with db_manager.get_session() as session:
             async with session.begin():
                 tasks = TasksRepository(session)
                 claims = TaskClaimsRepository(session)
-                entity = await tasks.find_by_id_for_update(task_uuid, self.agent_id)
+                entity = await tasks.find_by_id_for_update(
+                    task_uuid, self.agent_id, owner_scope=owner_scope
+                )
                 if entity is None:
                     return None
 
@@ -371,17 +398,27 @@ class PostgresTaskStore(BaseTaskStore):
     async def get(
             self, task_id: str, context: ServerCallContext | None = None
     ) -> Task | None:
-        """Get a task by ID, with its full history and artifacts."""
+        """Get a task by ID, with its full history and artifacts.
+
+        With a caller's context, only that caller's task is found: another
+        owner's task reads as absent, as it does in the in-memory store. This
+        is the check the registry relies on before it hands a live task to a
+        subscriber or cancels one. ``None`` reads regardless of owner: the
+        store's deliberate unfiltered access, which no A2A request path uses.
+        """
         try:
             task_uuid = uuid.UUID(task_id)
         except ValueError:
             return None
 
+        owner_scope = self._owner_filter(context)
         async with db_manager.get_session() as session:
             async with session.begin():
                 await self._repeatable_read(session)
                 repository = TasksRepository(session)
-                entity = await repository.find_by_id(task_uuid, self.agent_id)
+                entity = await repository.find_by_id(
+                    task_uuid, self.agent_id, owner_scope=owner_scope
+                )
 
                 if not entity:
                     return None
@@ -391,11 +428,16 @@ class PostgresTaskStore(BaseTaskStore):
     async def delete(
             self, task_id: str, context: ServerCallContext | None = None
     ) -> None:
-        """Delete a task by ID.
+        """Delete a task by ID - the caller's, or any owner's with no context.
 
-        ``task_messages`` and ``task_artifacts`` rows cascade with it; there
-        is nothing else here to clean up.
+        With a context only a task of the caller's owner is deleted; another
+        owner's is left as it is, exactly as in the in-memory store. ``None``
+        deletes regardless of owner: the store's deliberate unfiltered access,
+        which no A2A request path uses. ``task_messages`` and
+        ``task_artifacts`` rows cascade with it; there is nothing else here to
+        clean up.
         """
+        owner_scope = self._owner_filter(context)
         try:
             task_uuid = uuid.UUID(task_id)
         except ValueError:
@@ -403,7 +445,7 @@ class PostgresTaskStore(BaseTaskStore):
 
         async with db_manager.get_session() as session:
             repository = TasksRepository(session)
-            await repository.delete_by_id(task_uuid, self.agent_id)
+            await repository.delete_by_id(task_uuid, self.agent_id, owner_scope=owner_scope)
             await session.commit()
 
     async def list(
@@ -431,9 +473,18 @@ class PostgresTaskStore(BaseTaskStore):
         ``include_artifacts=false`` skips the artifacts query entirely,
         rather than loading either in full and trimming the result.
 
+        Only the caller's own tasks are listed and counted: with a context,
+        ``owner_scope`` is part of both queries, so another user's tasks, their
+        ids and their history never appear, and ``total_size`` does not count
+        them. The page token needs no owner of its own for that - the filter
+        is applied to every page, so a token can only position the cursor
+        within the listing of whoever presents it.
+
         Args:
             params: Filter, page size, and page token of the request.
-            context: Server call context (unused).
+            context: Server call context; its owner, resolved by this
+                store's ``owner_resolver``, selects the owner scope. ``None``
+                lists every owner's tasks.
 
         Returns:
             The requested page, the total number of matching tasks, and a token
@@ -468,6 +519,7 @@ class PostgresTaskStore(BaseTaskStore):
         if params.HasField('history_length') and params.history_length > 0:
             history_limit = params.history_length
 
+        owner_scope = self._owner_filter(context)
         async with db_manager.get_session() as session:
             async with session.begin():
                 await self._repeatable_read(session)
@@ -476,12 +528,18 @@ class PostgresTaskStore(BaseTaskStore):
                 # A separate span so the p95 cost of the exact COUNT is visible
                 # apart from the page query it accompanies on every request.
                 with _tracer.start_as_current_span("tasks.list.count"):
-                    total_size = await repository.count(agent_id=self.agent_id, **filters)
+                    total_size = await repository.count(
+                        agent_id=self.agent_id, owner_scope=owner_scope, **filters
+                    )
 
                 # One extra row reveals whether a next page exists without a
                 # second round trip or an approximate `has_more` from the count.
                 entities = await repository.find_page(
-                    agent_id=self.agent_id, after=after, limit=page_size + 1, **filters
+                    agent_id=self.agent_id,
+                    owner_scope=owner_scope,
+                    after=after,
+                    limit=page_size + 1,
+                    **filters,
                 )
 
                 has_next = len(entities) > page_size
@@ -543,7 +601,7 @@ class PostgresTaskStore(BaseTaskStore):
             repository = TasksRepository(session)
             return await repository.find_unique_context_ids(
                 agent_id=self.agent_id,
-                owner_scope=self._owner_scope(context),
+                owner_scope=self._owner_filter(context),
                 pagination=Pagination(limit=limit, offset=offset),
             )
 
@@ -568,7 +626,7 @@ class PostgresTaskStore(BaseTaskStore):
                 repository = TasksRepository(session)
                 records = await repository.find(
                     agent_id=self.agent_id,
-                    owner_scope=self._owner_scope(context),
+                    owner_scope=self._owner_filter(context),
                     context_id=context_id,
                     pagination=Pagination(limit=limit, offset=offset),
                     sorting=Sorting(SortKey(column="created_at")),

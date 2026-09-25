@@ -67,8 +67,10 @@ class A2AOutbox(A2ABaseModel):
     """Serializable wrapper for the agent's outgoing A2A Task or Message.
 
     Graphs set `a2a_outbox` in their state to return a Task or Message at the
-    end of execution. Wrapping in a Pydantic model with Protobuf annotations
-    ensures LangGraph's checkpoint saver can serialize the state.
+    end of execution. It answers the run that wrote it: the saved state keeps
+    the value afterwards, and later turns of the same context do not apply it
+    again. Wrapping in a Pydantic model with Protobuf annotations ensures
+    LangGraph's checkpoint saver can serialize the state.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)

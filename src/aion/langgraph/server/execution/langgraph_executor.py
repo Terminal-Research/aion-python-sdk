@@ -12,6 +12,7 @@ from aion.server.agent.adapters import (
     ExecutionConfig,
     ExecutionSnapshot,
     ExecutorAdapter,
+    LegacyStateError,
 )
 from aion.server.agent.exceptions import ExecutionError, StateRetrievalError
 from aion.core.runtime.context.registry import AionRuntimeContextRegistry
@@ -78,6 +79,10 @@ class LangGraphExecutor(ExecutorAdapter):
 
             lg_inputs = LangGraphTransformer.generate_langgraph_inputs(context)
             lg_config = LangGraphTransformer.generate_langgraph_config(config)
+            if lg_config:
+                snapshot = await self.compiled_graph.aget_state(lg_config)
+                if not snapshot.values and not snapshot.next:
+                    await self._refuse_legacy_state(config)
 
             runtime_context = await AionRuntimeContextRegistry.aget_current_context()
             stream_exec = StreamExecutor(self.compiled_graph, converter, self._preprocessor)
@@ -159,11 +164,34 @@ class LangGraphExecutor(ExecutorAdapter):
         try:
             lg_config = LangGraphTransformer.generate_langgraph_config(config)
             snapshot = await self.compiled_graph.aget_state(lg_config)
+            if not snapshot.values and not snapshot.next:
+                await self._refuse_legacy_state(config)
             return self._state_adapter.get_state_from_snapshot(snapshot)
 
         except Exception as e:
             logger.error(f"Failed to get state: {e}")
             raise StateRetrievalError(f"Failed to retrieve state: {e}") from e
+
+    async def _refuse_legacy_state(self, config: ExecutionConfig) -> None:
+        """Refuse a context whose only state was saved under the context_id alone.
+
+        Called once the caller's scoped key is known to hold nothing. State
+        under the bare ``context_id`` was saved before keys carried agent and
+        owner, so it cannot be attributed to this caller: reading it could
+        show one user another's conversation, and starting afresh would drop
+        a conversation without a word. Neither happens - the turn fails with
+        ``LegacyStateError`` and that state is left untouched.
+        """
+        legacy_config = LangGraphTransformer.legacy_langgraph_config(config)
+        if legacy_config is None:
+            return
+        legacy = await self.compiled_graph.aget_state(legacy_config)
+        if legacy.values or legacy.next:
+            raise LegacyStateError(
+                f"context {config.context_id} has graph state that predates per-agent, "
+                "per-owner state keys and cannot be attributed to this caller; it is "
+                "left untouched until it is migrated or removed"
+            )
 
     async def _finalize(
             self,

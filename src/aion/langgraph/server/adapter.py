@@ -124,6 +124,14 @@ class LangGraphAdapter(AgentAdapter):
     ) -> Any:
         """Compile a LangGraph graph with checkpointer.
 
+        A graph that arrives compiled - what ``langchain.agents.create_agent``
+        returns - keeps a checkpointer it was compiled with, and is given the
+        server's when it has none. The server cannot run a graph without one:
+        every turn ends by reading the graph's state, which LangGraph refuses
+        without a checkpointer, and memory between turns and ``interrupt()``
+        need one too. A copy is returned; the caller's graph is not modified.
+        ``checkpointer=False`` is an explicit choice and is left alone.
+
         Args:
             graph: LangGraph graph instance
             config: Agent configuration
@@ -136,7 +144,11 @@ class LangGraphAdapter(AgentAdapter):
             "CompiledGraph",
             "CompiledMessageGraph"
         }:
-            logger.debug(f"Graph is already compiled")
+            if getattr(graph, "checkpointer", None) is None and hasattr(graph, "copy"):
+                logger.debug("Graph is already compiled; attaching the server checkpointer")
+                checkpointer = await self._get_checkpointer()
+                return graph.copy(update={"checkpointer": checkpointer})
+            logger.debug(f"Graph is already compiled with its own checkpointer")
             return graph
 
         if hasattr(graph, "compile") and callable(getattr(graph, "compile")):

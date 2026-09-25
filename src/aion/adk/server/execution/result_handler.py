@@ -31,11 +31,14 @@ class ADKExecutionResultHandler:
     Called by ADKExecutor after the stream cycle completes, before
     the final complete/error event is emitted.
 
-    Reads `a2a_outbox` from the ADK session state and applies it through
+    Applies the `a2a_outbox` the agent wrote during this run through
     `aion.server.a2a.outbox`, which is where what the server does with an
     outbox is defined — for this adapter and the LangGraph one alike. The
-    result is one `Message` or one `Task`, handed on as itself for the
-    execution pipeline to save into the task record.
+    outbox comes from the run's own state deltas, not from the session
+    state: the session keeps the last value written in the context, and the
+    next turn would otherwise answer with it again. The result is one
+    `Message` or one `Task`, handed on as itself for the execution pipeline
+    to save into the task record.
 
     Falls back to streaming accumulated text if no outbox is present.
 
@@ -53,7 +56,7 @@ class ADKExecutionResultHandler:
     ) -> list[AgentEvent]:
         """Produce A2A events based on execution result.
 
-        Checks `a2a_outbox` in the final ADK session state. If present and
+        Checks the `a2a_outbox` written during this run. If present and
         parseable as a Task or Message, returns that object for the pipeline to
         merge into the task. Otherwise falls back to closing any pending
         STREAM_DELTA and emitting accumulated delta text.
@@ -61,7 +64,9 @@ class ADKExecutionResultHandler:
         Args:
             stream_result: Accumulated state from the stream cycle.
             converter: Active converter holding stream state for this execution.
-            session: ADK Session after stream completion (provides final state).
+            session: ADK Session after stream completion. Unused by the
+                default logic and kept for subclasses that override this
+                method.
             context: A2A request context (current_task, task_id, etc.). Unused
                 by the outbox path — the payload is merged by the task manager,
                 not by editing the request's copy of the task — and kept for
@@ -72,14 +77,12 @@ class ADKExecutionResultHandler:
         Returns:
             A2A events to emit before the terminal complete/error event.
         """
-        if session is not None:
-            state = getattr(session, "state", None) or {}
-            outbox = state.get("a2a_outbox")
-            if outbox is not None:
-                result = self._handle_outbox(outbox, context, task_id, context_id)
-                if result is not None:
-                    logger.debug("Result via outbox: %d event(s)", len(result))
-                    return result
+        outbox = stream_result.outbox
+        if outbox is not None:
+            result = self._handle_outbox(outbox, context, task_id, context_id)
+            if result is not None:
+                logger.debug("Result via outbox: %d event(s)", len(result))
+                return result
 
         logger.debug("Result via stream fallback")
         return converter.finalize_stream(stream_result.delta_text)

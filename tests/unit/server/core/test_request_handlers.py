@@ -60,11 +60,11 @@ def mock_task_store():
 # !! Composite Fixtures !!
 
 @pytest.fixture
-def request_handler():
+def request_handler(mock_task_store):
     """Create request handler with mocked dependencies."""
     return AionRequestHandler(
         agent_executor=Mock(),
-        task_store=Mock(),
+        task_store=mock_task_store,
         agent_card=Mock(),
     )
 
@@ -79,26 +79,17 @@ def mock_conversation_builder():
 
 
 @pytest.fixture
-def mock_store_manager():
-    """Mock store_manager."""
-    with patch('aion.server.core.app.handlers.request_handler.store_manager') as mock:
-        yield mock
-
-
-@pytest.fixture
-def configured_success_scenario(mock_conversation_builder, mock_store_manager, mock_task_store):
+def configured_success_scenario(mock_conversation_builder, mock_task_store):
     """Pre-configured scenario for successful operations."""
     test_tasks = create_test_tasks(2)
     test_conversation = create_test_conversation("test_context_123")
 
     # Configure mocks
-    mock_store_manager.get_store.return_value = mock_task_store
     mock_task_store.get_context_tasks.return_value = test_tasks
     mock_conversation_builder.build_from_tasks.return_value = test_conversation
 
     return {
         'conversation_builder': mock_conversation_builder,
-        'store_manager': mock_store_manager,
         'task_store': mock_task_store,
         'expected_conversation': test_conversation,
         'test_tasks': test_tasks
@@ -173,13 +164,12 @@ class TestAionRequestHandler:
         )
 
     @pytest.mark.anyio
-    async def test_get_contexts_list_success(self, request_handler, mock_context, mock_store_manager, mock_task_store):
+    async def test_get_contexts_list_success(self, request_handler, mock_context, mock_task_store):
         """Test successful contexts list retrieval with proper data flow."""
         # Setup
         params = GetContextsListParams(history_length=100, history_offset=0)
         mock_context_ids_data = ["ctx_1", "ctx_2", "ctx_3"]
 
-        mock_store_manager.get_store.return_value = mock_task_store
         mock_task_store.get_context_ids.return_value = mock_context_ids_data
 
         # Execute
@@ -198,7 +188,6 @@ class TestAionRequestHandler:
     async def test_anonymous_context_reads_are_indistinguishable_from_missing(
         self,
         request_handler,
-        mock_store_manager,
     ):
         """Anonymous callers cannot enumerate or hydrate persisted history."""
         context = SimpleNamespace(
@@ -218,7 +207,8 @@ class TestAionRequestHandler:
         assert conversation.history == []
         assert conversation.artifacts == []
         assert contexts.root == []
-        mock_store_manager.get_store.assert_not_called()
+        request_handler.task_store.get_context_tasks.assert_not_called()
+        request_handler.task_store.get_context_ids.assert_not_called()
 
     @pytest.mark.parametrize("exception_msg,method_name", [
         ("Database error", "get_context_tasks"),
@@ -229,14 +219,12 @@ class TestAionRequestHandler:
             self,
             request_handler,
             mock_context,
-            mock_store_manager,
             mock_task_store,
             exception_msg,
             method_name
     ):
         """Test that store errors are properly propagated."""
         # Setup
-        mock_store_manager.get_store.return_value = mock_task_store
         getattr(mock_task_store, method_name).side_effect = Exception(exception_msg)
 
         # Choose appropriate params and method based on test case
@@ -252,14 +240,12 @@ class TestAionRequestHandler:
             await test_method(params, mock_context)
 
     @pytest.mark.anyio
-    async def test_get_context_empty_tasks(self, request_handler, mock_context, mock_conversation_builder,
-                                           mock_store_manager, mock_task_store):
+    async def test_get_context_empty_tasks(self, request_handler, mock_context, mock_conversation_builder, mock_task_store):
         """Test handling of empty task list."""
         # Setup
         params = GetContextParams(context_id="empty_context")
         empty_conversation = create_test_conversation("empty_context")
 
-        mock_store_manager.get_store.return_value = mock_task_store
         mock_task_store.get_context_tasks.return_value = []
         mock_conversation_builder.build_from_tasks.return_value = empty_conversation
 
@@ -275,13 +261,12 @@ class TestAionRequestHandler:
         )
 
     @pytest.mark.anyio
-    async def test_get_contexts_list_empty_result(self, request_handler, mock_context, mock_store_manager,
+    async def test_get_contexts_list_empty_result(self, request_handler, mock_context,
                                                   mock_task_store):
         """Test handling of empty contexts list."""
         # Setup
         params = GetContextsListParams()
 
-        mock_store_manager.get_store.return_value = mock_task_store
         mock_task_store.get_context_ids.return_value = []
 
         # Execute

@@ -13,6 +13,7 @@ import uuid
 from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pytest
+from a2a.server.context import ServerCallContext
 from a2a.types import Task, TaskState, TaskStatus
 from a2a.utils.errors import TaskNotCancelableError, TaskNotFoundError
 
@@ -276,7 +277,7 @@ async def test_cancelling_a_finished_task_is_reported_as_such() -> None:
     reading the returned state cannot tell the two apart.
     """
     store = _memory_store()
-    await store.save(_task(TaskState.TASK_STATE_COMPLETED))
+    await store.save(_task(TaskState.TASK_STATE_COMPLETED), ServerCallContext())
 
     with pytest.raises(TaskNotCancelableError):
         await store.cancel_with_ownership_revocation(TASK_ID)
@@ -286,7 +287,7 @@ async def test_cancelling_a_finished_task_is_reported_as_such() -> None:
 async def test_cancelling_a_running_task_returns_the_canceled_task() -> None:
     """The ordinary path returns the task rather than raising."""
     store = _memory_store()
-    await store.save(_task(TaskState.TASK_STATE_WORKING))
+    await store.save(_task(TaskState.TASK_STATE_WORKING), ServerCallContext())
 
     task = await store.cancel_with_ownership_revocation(TASK_ID)
 

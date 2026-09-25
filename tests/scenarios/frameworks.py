@@ -16,6 +16,11 @@ __all__ = [
     "Framework",
     "FRAMEWORKS",
     "FRAMEWORKS_BY_NAME",
+    "NATIVE_AGENTS",
+    "NATIVE_AGENTS_BY_NAME",
+    "PREBUILT_AGENTS",
+    "NATIVE_UNSUPPORTED",
+    "native_unsupported_reason",
     "UNSUPPORTED",
     "unsupported_reason",
     "DIVERGENCES",
@@ -77,6 +82,71 @@ FRAMEWORKS: tuple[Framework, ...] = (
 )
 
 FRAMEWORKS_BY_NAME: dict[str, Framework] = {framework.name: framework for framework in FRAMEWORKS}
+
+
+NATIVE_AGENTS: tuple[Framework, ...] = (
+    # The second agent of each framework, for tests/scenarios/native: an
+    # ordinary agent on the framework's own path - a model, a tool, the
+    # framework's loop and memory - with none of the Aion authoring API. It
+    # answers no part of the command contract, which is why it is not in
+    # FRAMEWORKS: the matrix would hold it to every command there. Same
+    # names as there, so FRAMEWORK= selects it the same way.
+    Framework(
+        name="langgraph",
+        agent_package="tests.scenarios.agents.langgraph_native",
+        agent_entry="graph.py:create_graph",
+        sdk_extras=("langgraph-server",),
+    ),
+    Framework(
+        name="adk",
+        agent_package="tests.scenarios.agents.adk_native",
+        agent_entry="agent.py:create_agent",
+        sdk_extras=("adk-server",),
+    ),
+)
+
+NATIVE_AGENTS_BY_NAME: dict[str, Framework] = {agent.name: agent for agent in NATIVE_AGENTS}
+
+
+PREBUILT_AGENTS: dict[str, Framework] = {
+    # The framework's one-call agent factory, where it has one, served as its
+    # own agent: `native/test_prebuilt_agent.py`. It arrives compiled, which
+    # is a different road through the adapter than the native StateGraph.
+    "langgraph": Framework(
+        name="langgraph",
+        agent_package="tests.scenarios.agents.langgraph_native",
+        agent_entry="graph.py:create_prebuilt_agent",
+        sdk_extras=("langgraph-server",),
+    ),
+}
+
+
+NATIVE_UNSUPPORTED: dict[tuple[str, str], str] = {
+    # (framework name, capability) -> why the framework has no such thing.
+    #
+    # UNSUPPORTED for the native scenarios, which drive a framework's own
+    # features rather than commands: a scenario names the feature with
+    # @pytest.mark.capability(key) and skips on the framework listed here.
+    ("adk", "interrupt"): (
+        "ADK has no interrupt/pause primitive; a tool cannot suspend the run for input"
+    ),
+    ("langgraph", "artifact-service"): (
+        "LangGraph has no artifact service; a graph emits artifacts through the Aion API"
+    ),
+    ("adk", "prebuilt-agent"): (
+        "ADK's LlmAgent is already its one standard way to build an agent; the "
+        "rest of the native group runs it"
+    ),
+    ("langgraph", "session-state"): (
+        "LangGraph has no output_key or tool-written session state; its state is the "
+        "graph's own channels"
+    ),
+}
+
+
+def native_unsupported_reason(framework: str, capability: str) -> str | None:
+    """Why this framework's native agent cannot do that, or None."""
+    return NATIVE_UNSUPPORTED.get((framework, capability))
 
 
 UNSUPPORTED: dict[tuple[str, str], str] = {

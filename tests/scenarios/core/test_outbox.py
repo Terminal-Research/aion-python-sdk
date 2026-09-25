@@ -149,3 +149,40 @@ async def test_the_server_keeps_the_ids_the_patch_left_unset(client: ScenarioCli
     assert stored.id == closing.task_id
     assert stored.context_id == closing.context_id
     assert stored.id and stored.context_id
+
+
+@pytest.mark.command("outbox-message")
+async def test_the_next_turn_in_the_context_does_not_repeat_the_outbox(
+    client: ScenarioClient,
+) -> None:
+    """An outbox answers the turn that wrote it, and only that one.
+
+    The payload sits in the agent's saved state - the LangGraph checkpoint,
+    the ADK session - which the next turn in the same context starts from.
+    Read back from there, it would be merged into every later task of the
+    conversation as if the agent had said it again.
+    """
+    first = final_task(await client.send("outbox-message"))
+
+    second = final_task(await client.send("echo next turn", context_id=first.context_id))
+    stored = await client.get_task(second.task_id)
+
+    assert second.task_id != first.task_id
+    assert OUTBOX_MESSAGE_TEXT not in _history_of(stored)
+    assert _texts_of([stored.status.message]) == ["next turn"]
+
+
+@pytest.mark.command("outbox-task")
+async def test_the_next_turn_in_the_context_does_not_repeat_the_task_patch(
+    client: ScenarioClient,
+) -> None:
+    """A task patch is not merged again into the next task of the context."""
+    first = final_task(await client.send("outbox-task"))
+
+    second = final_task(await client.send("echo next turn", context_id=first.context_id))
+    stored = await client.get_task(second.task_id)
+
+    assert OUTBOX_TASK_ARTIFACT_NAME not in [artifact.name for artifact in stored.artifacts]
+    assert OUTBOX_TASK_HISTORY_TEXT not in _history_of(stored)
+    for key in OUTBOX_TASK_METADATA:
+        assert key not in stored.metadata

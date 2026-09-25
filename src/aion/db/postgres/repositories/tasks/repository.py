@@ -53,21 +53,29 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
         """Pydantic domain entity used as the public return type."""
         return TaskRecord
 
-    async def find_by_id(self, id: uuid.UUID, agent_id: str) -> Optional[TaskRecord]:
-        """Find a task by id, scoped to ``agent_id``.
+    async def find_by_id(
+            self, id: uuid.UUID, agent_id: str, owner_scope: Optional[str] = None
+    ) -> Optional[TaskRecord]:
+        """Find a task by id, scoped to ``agent_id`` and, when given, its owner.
 
         Overrides :meth:`BaseRepository.find_by_id` with a mandatory
         ``agent_id``: unlike the child tables, ``tasks`` is read directly by
         id from outside any already-scoped query, so the scoping has to live
-        here rather than be assumed from context.
+        here rather than be assumed from context. ``owner_scope`` narrows the
+        read to one caller's tasks; ``None`` reads regardless of owner, which
+        is what the server's own paths - reconciliation, settlement - need.
         """
         stmt = select(self.model_class).where(
             self.model_class.id == id, self.model_class.agent_id == agent_id
         )
+        if owner_scope is not None:
+            stmt = stmt.where(self.model_class.owner_scope == owner_scope)
         return await self._execute_and_convert(stmt)
 
-    async def delete_by_id(self, id: uuid.UUID, agent_id: str) -> bool:
-        """Delete a task by id, scoped to ``agent_id``.
+    async def delete_by_id(
+            self, id: uuid.UUID, agent_id: str, owner_scope: Optional[str] = None
+    ) -> bool:
+        """Delete a task by id, scoped to ``agent_id`` and, when given, its owner.
 
         Overrides :meth:`BaseRepository.delete_by_id` for the same reason as
         :meth:`find_by_id`.
@@ -75,6 +83,8 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
         stmt = delete(self.model_class).where(
             self.model_class.id == id, self.model_class.agent_id == agent_id
         )
+        if owner_scope is not None:
+            stmt = stmt.where(self.model_class.owner_scope == owner_scope)
         result = await self._session.execute(stmt)
         return result.rowcount > 0
 
@@ -180,6 +190,7 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
     async def count(
             self,
             agent_id: str,
+            owner_scope: Optional[str] = None,
             task_id: Optional[str] = None,
             context_id: Optional[str] = None,
             status_state: Optional[str] = None,
@@ -195,6 +206,7 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
         stmt = self._apply_filter(
             stmt,
             agent_id=agent_id,
+            owner_scope=owner_scope,
             task_id=task_id,
             context_id=context_id,
             status_state=status_state,
@@ -207,6 +219,7 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
             self,
             *,
             agent_id: str,
+            owner_scope: Optional[str] = None,
             task_id: Optional[str] = None,
             context_id: Optional[str] = None,
             status_state: Optional[str] = None,
@@ -224,6 +237,8 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
 
         Args:
             agent_id: Restrict to this agent's tasks.
+            owner_scope: Restrict to one caller's tasks; ``None`` lists every
+                owner's, for the server's own paths.
             after: The ``(status_timestamp, id)`` of the last row already
                 returned, decoded straight from the caller's page token.
                 ``None`` starts from the first page.
@@ -236,6 +251,7 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
         stmt = self._apply_filter(
             stmt,
             agent_id=agent_id,
+            owner_scope=owner_scope,
             task_id=task_id,
             context_id=context_id,
             status_state=status_state,
@@ -288,6 +304,21 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
         )
         await self._session.execute(stmt)
         await self._session.flush()
+
+    async def lock_owner_scope(self, task_id: uuid.UUID) -> Optional[str]:
+        """Lock the task row and return its recorded owner, or None if there is no row.
+
+        The same ``SELECT ... FOR UPDATE`` :meth:`save_owned` starts with, so a
+        caller that goes on to :meth:`save_owned_locked` pays for one lock and
+        learns whose task it is writing - a task's owner is fixed by its first
+        write, and the upsert never changes it.
+        """
+        result = await self._session.execute(
+            select(self.model_class.owner_scope)
+            .where(self.model_class.id == task_id)
+            .with_for_update()
+        )
+        return result.scalar_one_or_none()
 
     async def save_owned(self, entity: TaskRecord, owner_token: uuid.UUID) -> bool:
         """Fenced upsert a task only while ``owner_token`` is current.
@@ -374,7 +405,12 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
         return result.first() is not None
 
     async def find_by_id_for_update(
-            self, task_id: uuid.UUID, agent_id: Optional[str] = None, *, skip_locked: bool = False
+            self,
+            task_id: uuid.UUID,
+            agent_id: Optional[str] = None,
+            *,
+            owner_scope: Optional[str] = None,
+            skip_locked: bool = False,
     ) -> Optional[TaskRecord]:
         """Find and lock a task row until the surrounding transaction ends.
 
@@ -391,6 +427,9 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
                 claim reaper, which reconciles tasks across every agent
                 sharing this database; every request-facing caller must pass
                 its own agent_id instead.
+            owner_scope: Restrict to one caller's tasks - another user's task
+                is reported as not found and is not locked. ``None`` for the
+                server's own paths, which act for no user.
             skip_locked: When ``True``, a row already locked by another
                 transaction is reported as not found instead of waited on -
                 for callers, such as the reaper, that treat "someone else has
@@ -399,6 +438,8 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
         conditions = [self.model_class.id == task_id]
         if agent_id is not None:
             conditions.append(self.model_class.agent_id == agent_id)
+        if owner_scope is not None:
+            conditions.append(self.model_class.owner_scope == owner_scope)
         stmt = (
             select(self.model_class)
             .where(*conditions)
@@ -464,16 +505,18 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
     async def find_unique_context_ids(
             self,
             agent_id: str,
-            owner_scope: str,
+            owner_scope: Optional[str],
             pagination: Optional[Pagination] = None,
     ) -> List[str]:
-        """Find all unique context_id values ordered by latest task creation."""
+        """Find all unique context_id values ordered by latest task creation.
+
+        ``owner_scope`` limits them to one owner's; ``None`` lists every owner's.
+        """
+        stmt = select(self.model_class.context_id).where(self.model_class.agent_id == agent_id)
+        if owner_scope is not None:
+            stmt = stmt.where(self.model_class.owner_scope == owner_scope)
         stmt = (
-            select(self.model_class.context_id)
-            .where(
-                self.model_class.agent_id == agent_id,
-                self.model_class.owner_scope == owner_scope,
-            )
+            stmt
             .group_by(self.model_class.context_id)
             .order_by(
                 desc(func.max(self.model_class.created_at)),
@@ -494,10 +537,13 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
             context_id: Optional[str] = None,
             artifact_name: Optional[str] = None,
             artifact_version: Optional[str] = None,
+            owner_scope: Optional[str] = None,
     ) -> List[Artifact]:
         """Find artifacts matching the given criteria.
 
         Either ``task_id`` or ``context_id`` must be provided to scope the search.
+        ``owner_scope`` narrows it to one user's tasks - a ``context_id`` is
+        chosen by clients, and two users may share one.
 
         Behaviour matrix:
         - name=None,  version=None   > latest version of each artifact (by task creation order)
@@ -519,7 +565,13 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
             .join(TaskArtifactModel, TaskArtifactModel.task_id == self.model_class.id)
             .order_by(desc(self.model_class.created_at), self.model_class.id)
         )
-        stmt = self._apply_filter(stmt, agent_id=agent_id, task_id=task_id, context_id=context_id)
+        stmt = self._apply_filter(
+            stmt,
+            agent_id=agent_id,
+            owner_scope=owner_scope,
+            task_id=task_id,
+            context_id=context_id,
+        )
 
         if artifact_name is not None:
             stmt = stmt.where(TaskArtifactModel.payload["name"].astext == artifact_name)

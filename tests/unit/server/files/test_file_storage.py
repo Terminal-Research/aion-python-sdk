@@ -10,6 +10,7 @@ here succeeds unconditionally.
 """
 
 import pytest
+from a2a.server.context import ServerCallContext
 from a2a.types import (
     Artifact,
     Message,
@@ -500,7 +501,7 @@ class TestStoreGuard:
         return InMemoryTaskStore(owner_resolver=lambda _context: "owner", **kwargs)
 
     async def _saved(self, store, task):
-        await store.save(task)
+        await store.save(task, ServerCallContext())
         return await store.get(task.id)
 
     async def test_a_guarded_store_strips_before_writing(self):

@@ -18,7 +18,10 @@ These tests close that gap by asserting the coupling directly instead of
 relying on some other test to happen to traverse it.
 """
 
+import ast
+import asyncio
 import inspect
+import threading
 
 import pytest
 from a2a.server.agent_execution import AgentExecutor, RequestContextBuilder
@@ -31,6 +34,7 @@ from a2a.server.tasks.push_notification_sender import PushNotificationSender
 from a2a.types import Message, Role
 from unittest.mock import AsyncMock, Mock, patch
 
+from aion.server.agent.execution import active_task_registry as active_task_registry_module
 from aion.server.agent.execution.active_task_registry import AionActiveTaskRegistry
 from aion.server.agent.execution.scope import clear_execution_scope, init_execution_scope
 from aion.server.agent.execution.request_context_builder import AionRequestContextBuilder
@@ -240,3 +244,55 @@ async def test_get_or_create_refuses_work_once_registry_is_closed():
 
     with pytest.raises(RuntimeError, match="closed"):
         await registry.get_or_create("task-after-close", call_context=Mock())
+
+
+async def test_the_registry_holds_the_base_lock_of_either_kind():
+    """The override enters whatever lock the installed a2a-sdk gives the base.
+
+    a2a-sdk 1.1.3 changed ``ActiveTaskRegistry._lock`` from an
+    ``asyncio.Lock`` to a ``threading.RLock``, and the override - which
+    entered it with ``async with`` - failed every request. Both kinds are in
+    the supported range, so both are checked here, whichever this
+    environment installed.
+    """
+    registry = AionActiveTaskRegistry(
+        agent_executor=Mock(),
+        task_store=InMemoryTaskStore(),
+        push_sender=None,
+    )
+
+    registry._lock = asyncio.Lock()
+    async with registry._registry_lock():
+        assert registry._lock.locked()
+    assert not registry._lock.locked()
+
+    registry._lock = threading.RLock()
+    async with registry._registry_lock():
+        assert registry._lock._is_owned()
+    assert not registry._lock._is_owned()
+
+
+def test_no_critical_section_of_the_registry_awaits():
+    """What makes the two lock kinds interchangeable, held for every section.
+
+    A ``threading.RLock`` held across an ``await`` lets another coroutine on
+    the same thread re-enter it and so excludes nothing. Every section the
+    override guards is therefore synchronous; this fails the day one is not.
+    """
+    tree = ast.parse(inspect.getsource(active_task_registry_module))
+    sections = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.AsyncWith)
+        and "_registry_lock" in ast.unparse(node.items[0].context_expr)
+    ]
+    awaiting = [
+        section.lineno
+        for section in sections
+        for statement in section.body
+        for node in ast.walk(statement)
+        if isinstance(node, (ast.Await, ast.AsyncFor, ast.AsyncWith))
+    ]
+
+    assert sections
+    assert awaiting == [], f"critical sections awaiting at lines {awaiting}"

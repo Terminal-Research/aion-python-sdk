@@ -28,7 +28,6 @@ from types import SimpleNamespace
 from typing import override
 
 from aion.server.agent.execution import AionActiveTaskRegistry
-from aion.server.tasks import store_manager
 from aion.db.postgres.events import TaskEventKind
 from aion.server.tasks.notifications import TaskEventListener
 from aion.server.tasks.ownership import OwnershipProvider
@@ -199,8 +198,8 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         except ExtensionActivationError as ex:
             raise InvalidParamsError(message=str(ex)) from ex
 
-    @staticmethod
     async def on_get_context(
+            self,
             params: GetContextParams,
             context: ServerCallContext | None = None
     ) -> Conversation:
@@ -219,8 +218,7 @@ class AionRequestHandler(DefaultRequestHandlerV2):
                 tasks=[],
             )
 
-        task_store = store_manager.get_store()
-        tasks = await task_store.get_context_tasks(
+        tasks = await self.task_store.get_context_tasks(
             context_id=params.context_id,
             limit=params.history_length,
             offset=params.history_offset,
@@ -229,8 +227,8 @@ class AionRequestHandler(DefaultRequestHandlerV2):
 
         return ConversationBuilder.build_from_tasks(context_id=params.context_id, tasks=tasks)
 
-    @staticmethod
     async def on_get_contexts_list(
+            self,
             params: GetContextsListParams,
             context: ServerCallContext | None = None
     ) -> ContextsList:
@@ -246,8 +244,7 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         if context is None or not context.user.is_authenticated:
             return ContextsList.model_validate([])
 
-        task_store = store_manager.get_store()
-        context_ids = await task_store.get_context_ids(
+        context_ids = await self.task_store.get_context_ids(
             limit=params.history_length,
             offset=params.history_offset,
             context=context,

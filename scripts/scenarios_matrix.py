@@ -34,11 +34,15 @@ sys.path.insert(0, str(ROOT))
 from tests.scenarios.commands import COMMANDS  # noqa: E402
 from tests.scenarios.frameworks import (  # noqa: E402
     FRAMEWORKS,
+    NATIVE_AGENTS,
+    NATIVE_AGENTS_BY_NAME,
+    NATIVE_UNSUPPORTED,
     NO_EVENT_ROUTER,
     UNSUPPORTED,
     Framework,
     implemented_commands,
     divergence_reason,
+    native_unsupported_reason,
     no_event_router_reason,
     unsupported_reason,
 )
@@ -51,6 +55,9 @@ DEFAULT_VARIANT = "default"
 
 SUITE_PREFIX = "scenario suite -"
 """What marks a suite marker in pyproject.toml, among all the others."""
+
+NATIVE_SUITE = "native"
+"""The suite whose scenarios run the native agents rather than FRAMEWORKS'."""
 
 # Suites the plain `make tests-scenarios` leaves out, and the target that runs each
 # instead. Mirrors the default of SCENARIO_TAGS in the Makefile.
@@ -90,6 +97,7 @@ class Scenario:
     xfail: str | None
     divergence: str | None = None
     event_router: bool = False
+    capability: str | None = None
     frameworks: list[str] = field(default_factory=list)
     cases: int = 1
     """How many times one framework runs this scenario.
@@ -97,6 +105,11 @@ class Scenario:
     More than one where the scenario is parametrized over something of its
     own - an event kind, say. The row still describes the scenario once; only
     the count of runs has to know."""
+
+    @property
+    def native(self) -> bool:
+        """Whether this scenario runs the framework's native agent."""
+        return NATIVE_SUITE in self.suites
 
     @property
     def node_id(self) -> str:
@@ -116,6 +129,8 @@ class Scenario:
         if self.frameworks and framework.name not in self.frameworks:
             return NOT_PARAMETRIZED
         if self.event_router and no_event_router_reason(framework.name):
+            return SKIP
+        if self.capability and native_unsupported_reason(framework.name, self.capability):
             return SKIP
         if self.command is not None:
             if unsupported_reason(framework.name, self.command):
@@ -196,6 +211,7 @@ def collect(suite_names: set[str]) -> list[Scenario]:
             variant = item.get_closest_marker("variant")
             xfail = item.get_closest_marker("xfail")
             divergence = item.get_closest_marker("divergence")
+            capability = item.get_closest_marker("capability")
             doc = inspect.getdoc(getattr(item, "obj", None)) or ""
             scenario = Scenario(
                 file=file,
@@ -211,6 +227,7 @@ def collect(suite_names: set[str]) -> list[Scenario]:
                 xfail=str(xfail.kwargs.get("reason", "")) if xfail and not divergence else None,
                 divergence=divergence.args[0] if divergence else None,
                 event_router=item.get_closest_marker("event_router") is not None,
+                capability=capability.args[0] if capability else None,
             )
             scenarios[base_id] = scenario
         callspec = getattr(item, "callspec", None)
@@ -328,6 +345,21 @@ def _status_cell(status: str) -> str:
     return f"[{SKIP}]({FRAMEWORKS_ANCHOR})" if status == SKIP else status
 
 
+def _run_cell(scenario: Scenario, framework: Framework) -> str:
+    """The status of one scenario on one framework, naming a native agent.
+
+    A native scenario runs a different agent than the rest of the row's
+    framework column does, so its cell says which.
+    """
+    if not scenario.frameworks:
+        return _status_cell(ANY_FRAMEWORK)
+    status = _status_cell(scenario.status(framework))
+    if scenario.native and status == RUNS:
+        agent = NATIVE_AGENTS_BY_NAME[framework.name]
+        return f"{RUNS} {code(agent.agent_package.rsplit('.', 1)[-1])}"
+    return status
+
+
 def render(scenarios: list[Scenario], suites: list[Suite]) -> str:
     """The whole of the document."""
     frameworks = list(FRAMEWORKS)
@@ -352,8 +384,8 @@ def render(scenarios: list[Scenario], suites: list[Suite]) -> str:
         "registries are all it takes, and the same suite always renders the same file. What "
         "the suite is and how to run it is in [README.md](README.md).",
         "",
-        f"A status cell reads `{RUNS}` when it runs, `{SKIP}` when `frameworks.UNSUPPORTED` "
-        f"or `frameworks.NO_EVENT_ROUTER` names the pair (the reason is under "
+        f"A status cell reads `{RUNS}` when it runs, `{SKIP}` when `frameworks.UNSUPPORTED`, "
+        f"`frameworks.NATIVE_UNSUPPORTED` or `frameworks.NO_EVENT_ROUTER` names the pair (the reason is under "
         f"[Frameworks]({FRAMEWORKS_ANCHOR})), `{GAP}` when the agent has no behaviour for the "
         f"command yet, `xfail: <reason>` for a knowingly deferred defect, "
         f"`{ANY_FRAMEWORK}` when the scenario does not depend on a framework, and "
@@ -378,11 +410,42 @@ def render(scenarios: list[Scenario], suites: list[Suite]) -> str:
             for framework in frameworks
         ],
     )
+    lines += [
+        "",
+        f"The `{NATIVE_SUITE}` suite runs a second agent per framework instead: an ordinary "
+        "agent on the framework's own path - a model, a tool, the framework's loop and "
+        "memory - with no Aion authoring API and no part of the command contract. Its cells "
+        "name the agent.",
+        "",
+    ]
+    lines += table(
+        ["Framework", "Native agent package", "Entry", "SDK extras"],
+        [
+            [
+                agent.name,
+                code(agent.agent_package),
+                code(agent.agent_entry),
+                ", ".join(code(extra) for extra in agent.sdk_extras),
+            ]
+            for agent in NATIVE_AGENTS
+        ],
+    )
     if UNSUPPORTED:
         lines += ["", "Pairs a framework genuinely cannot do, which is what a `skip` cell means:", ""]
         lines += table(
             ["Framework", "Command", "Reason"],
             [[framework, code(command), reason] for (framework, command), reason in UNSUPPORTED.items()],
+        )
+    if NATIVE_UNSUPPORTED:
+        lines += [
+            "",
+            "Features a framework's native agent does not have; a native scenario driving one "
+            "`skip`s there:",
+            "",
+        ]
+        lines += table(
+            ["Framework", "Capability", "Reason"],
+            [[framework, code(capability), reason] for (framework, capability), reason in NATIVE_UNSUPPORTED.items()],
         )
     if NO_EVENT_ROUTER:
         lines += [
@@ -425,10 +488,7 @@ def render(scenarios: list[Scenario], suites: list[Suite]) -> str:
                     code(scenario.command) if scenario.command else NOTHING,
                     code(scenario.variant),
                 ]
-                + [
-                    _status_cell(scenario.status(framework) if scenario.frameworks else ANY_FRAMEWORK)
-                    for framework in frameworks
-                ]
+                + [_run_cell(scenario, framework) for framework in frameworks]
                 for scenario in items
             ],
         )
