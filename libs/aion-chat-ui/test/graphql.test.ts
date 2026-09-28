@@ -55,12 +55,20 @@ function findLoggedEvent(
 }
 
 describe("GraphQL client", () => {
-	it("validates catalog discovery against the schema and generated operation", () => {
+	it("validates catalog discovery against the chat-only schema and generated operation", () => {
 		// Caliban emits server-only directive locations; still validate the
 		// operation's fields, arguments, fragments, and enum values below.
 		const schema = buildSchema(readFileSync(new URL(
 			"../src/graphql/chat-client-schema.graphql", import.meta.url
 		), "utf8"), { assumeValidSDL: true });
+		// Import only the backend's chat export, never its full application schema.
+		expect(Object.keys(schema.getQueryType()?.getFields() ?? {}).sort()).toEqual([
+			"agentIdentityDetail", "agentIdentityDetails", "healthCheckAgent", "login", "user"
+		]);
+		expect(schema.getMutationType()).toBeUndefined();
+		expect(Object.keys(schema.getSubscriptionType()?.getFields() ?? {}).sort()).toEqual([
+			"a2aRpc", "conversationUpdates"
+		]);
 		const runtime = parse(AGENT_CATALOG_IDENTITIES_QUERY, { noLocation: true });
 		const generatedSource = parse(readFileSync(new URL(
 			"../src/graphql/operations/registry.graphql", import.meta.url

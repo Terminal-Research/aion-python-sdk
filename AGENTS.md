@@ -204,8 +204,10 @@ and are discovered by `aion.server` at runtime.
   storage or the Python credential helper supplied by the SDK. Its GraphQL
   discovery prompts for explicit `/login` after authentication fails; it does
   not automatically launch interactive sign-in for an expired session. GraphQL
-  operation types are generated from the restricted chat schema copied from
-  `aion.api`; rebuild and run `stage:python` after contract changes. See
+  operation types are generated from the API backend's restricted
+  `src/main/resources/static/chat-client-schema.graphql` export, not its full
+  application or SDK-runtime schema. Sync it manually and run
+  `graphql:codegen` and `prepare:python` after contract changes. See
   `libs/aion-chat-ui/AGENTS.md` for session-log inspection and package-local
   conventions.
 

@@ -123,6 +123,16 @@ Run the UI directly from `libs/aion-chat-ui` when you want to work on the Ink/Re
 
 The GraphQL schema used by this package lives at `src/graphql/chat-client-schema.graphql`. Operations live under `src/graphql/operations/`, and generated TypeScript operation types are committed under `src/graphql/generated/`. Regenerate them with `npm run graphql:codegen` after schema or operation changes.
 
+Sync that file manually from the merged Aion API checkout's
+`src/main/resources/static/chat-client-schema.graphql`, produced by its
+`generateChatClientSchema` exporter. Do not use the full `schema.graphql` or
+the separate `sdk-schema.graphql` export. The chat subset contains login,
+current-user, identity catalog/detail, and health queries, plus `a2aRpc` and
+`conversationUpdates` subscriptions; it has no mutations. After syncing, run
+`npm run graphql:codegen`, `npm test`, and `npm run prepare:python` to validate
+the operations and refresh both CLI bundles. Updating the local schema does
+not update a running backend; it must also serve the matching contract.
+
 Use `npm run dev`, not `node src/cli.tsx` or `node src/app.tsx`. The source tree uses TypeScript files with `.js` import specifiers, so it must be run through `tsx` in development or through the built `dist/cli.mjs` bundle.
 
 Set `AION_CHAT_SKIP_UPDATE_CHECK=1` or `AION_CHAT_UPDATE_CHECK=0` to skip the startup update prompt while developing.

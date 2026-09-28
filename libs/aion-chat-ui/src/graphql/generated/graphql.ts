@@ -25,6 +25,7 @@ export type EndpointTypeGQL =
   | 'GitHub'
   | 'Meet'
   | 'Slack'
+  | 'Sms'
   | 'Telegram'
   | 'TelegramBot'
   | 'Twitter'

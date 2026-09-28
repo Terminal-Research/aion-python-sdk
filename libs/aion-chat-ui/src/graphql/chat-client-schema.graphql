@@ -10,6 +10,7 @@ schema {
   subscription: Subscriptions
 }
 scalar Json
+scalar Long
 "A date-time with an offset from UTC/Greenwich in the ISO-8601 calendar system using the format 1970-01-01T00:00:00Z"
 scalar OffsetDateTime
 """
@@ -45,15 +46,22 @@ enum AgentIdentityType {
   System
 }
 
+"The two supported conversation metadata changes."
+enum ConversationUpdateKind {
+  ConversationSummaryUpdated
+  TaskStatusUpdated
+}
+
 "Enumeration of supported Distribution endpoint types."
 enum EndpointTypeGQL {
   A2A
   AgentMail
   Aion
+  AionChat
   GitHub
   Meet
-  AionChat
   Slack
+  Sms
   Telegram
   TelegramBot
   Twitter
@@ -195,8 +203,12 @@ user's bio
   biography: String
   "URL to the identity's avatar image"
   avatarImageUrl: String
+  "Stable Aion File Recording for the avatar image"
+  avatarFileRecordingId: ID
   "URL to the identity's profile background image"
   backgroundImageUrl: String
+  "Stable Aion File Recording for the background image"
+  backgroundFileRecordingId: ID
   "Timestamp when the identity record was last updated. Serialized as RFC 3339 (ISO-8601) with offset, in UTC."
   updatedAt: OffsetDateTime!
   "Internal notes for administrators"
@@ -227,6 +239,42 @@ type AgentIdentityDetail {
   distributionUsages: [IdentityDistributionUsage!]!
   "Active direct role keys currently assigned to this agent identity."
   roleKeys: [String!]!
+}
+
+"Absolute caller-visible metadata; never contains chat history."
+type ConversationUpdate {
+  "Discriminator for the populated metadata fields."
+  kind: ConversationUpdateKind!
+  "Owning organization."
+  organizationId: ID!
+  "Stable edge Agent Environment Recording ID."
+  agentEnvironmentId: ID!
+  "Current distribution/catalog agent ID, when applicable."
+  distributionId: ID
+  "Caller-visible context ID, scoped to the environment."
+  contextId: String!
+  "Persisted update time; not a global sequence or replay ID."
+  updatedAt: OffsetDateTime!
+  "Notification creation time; use updatedAt to compare persisted versions."
+  createdAt: OffsetDateTime!
+  "Caller-visible task ID for a TaskStatusUpdated event."
+  taskId: String
+  "Canonical TASK_STATE_* value for a task update."
+  taskState: String
+  "Generated title for a ConversationSummaryUpdated event."
+  title: String
+  "Generated summary for a ConversationSummaryUpdated event."
+  summary: String
+  "Accepted summary checkpoint, absent on task updates."
+  summarizedThroughTurn: Long
+}
+
+"Active-task reset on connection, then best-effort changes."
+type ConversationUpdates {
+  "True on initial/reconnect state: replace task activity and refresh context metadata. Reset does not clear conversation history."
+  reset: Boolean!
+  "Complete active tasks on reset; otherwise metadata changes."
+  updates: [ConversationUpdate!]!
 }
 
 "Health-check result for a failed check or target lifecycle."
@@ -341,6 +389,8 @@ type Organization {
   workOSOrganizationId: String
   "Official IANA timezone for organization-owned schedules"
   timezone: String!
+  "Whether organization content may be summarized by an LLM"
+  summarizationEnabled: Boolean!
 }
 
 "Active user membership in an organization."
@@ -371,6 +421,8 @@ type Queries {
 }
 
 type Subscriptions {
+  "Streams principal-owned conversation summaries and task status, beginning with current active tasks. Best effort; no replay."
+  conversationUpdates("Optional organization filter; never broadens caller access." organizationId: ID, "Optional authorized Aion principal resource URI." principal: String): ConversationUpdates
   "Executes an agent-to-agent JSON-RPC request and streams the responses."
   a2aRpc("JSON-RPC request body" request: A2AJsonRpcRequestGQLInput!, "A2A capability subject" target: CapabilitySubjectGQLInput!, "Service parameters associated with the request" serviceParameters: A2AServiceParametersGQLInput, "Optional Aion resource URI selecting the effective principal. Supported forms include aion://agent/environment/{id}, aion://agent/identity/{id}, and aion://agent/identity/name/{name}. When omitted, the authenticated subject is used." principal: String): A2AJsonRpcResponseGQL
 }
