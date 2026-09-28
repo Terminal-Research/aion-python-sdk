@@ -76,13 +76,15 @@ aion-chat login
 
 Inside the composer, `/login` is visible in the slash command picker and runs the same login flow.
 
+If a session expires from inactivity or its credentials are rejected, registry discovery displays a system message asking you to run `/login` again. It does not open browser sign-in automatically; normal silent token refresh remains supported while the session is valid.
+
 ### Updates
 
 When an interactive chat session starts, `aio` checks npm for the latest published version. If a newer version is available, it links to that version's GitHub release notes and asks whether to update globally, update in the current project, skip once, or skip until the next version. Choosing an update option runs the npm command and exits; start `aio` again after the install completes.
 
 ### Agent Sources and Sessions
 
-Agent sources are discovered per selected Aion environment. Every environment includes a default local source at `http://localhost:8000`; this default is silent when no local server is running. When you are logged in, the selected Aion environment can also provide registry-backed agents for that account. Passing `--url` adds an explicit source for that run. Explicit URLs are resolved as a manifest first and then as a direct agent card.
+Agent sources are discovered per selected Aion environment. Every environment includes a default local source at `http://localhost:8000`; this default is silent when no local server is running. When you are logged in, the selected Aion environment can also provide registry-backed agents with an A2A or AionChat distribution for that account. An identity exposed through both types appears once. Passing `--url` adds an explicit source for that run. Explicit URLs are resolved as a manifest first and then as a direct agent card.
 
 Inside the composer, `/sources` is visible in the slash command picker and lists configured sources, their type, URL, description, and current status.
 
@@ -120,6 +122,16 @@ npm run dev -- --url http://localhost:8000
 Run the UI directly from `libs/aion-chat-ui` when you want to work on the Ink/React interface itself. Pass an A2A endpoint with `--url` when you want agent discovery and chat connection.
 
 The GraphQL schema used by this package lives at `src/graphql/chat-client-schema.graphql`. Operations live under `src/graphql/operations/`, and generated TypeScript operation types are committed under `src/graphql/generated/`. Regenerate them with `npm run graphql:codegen` after schema or operation changes.
+
+Sync that file manually from the merged Aion API checkout's
+`src/main/resources/static/chat-client-schema.graphql`, produced by its
+`generateChatClientSchema` exporter. Do not use the full `schema.graphql` or
+the separate `sdk-schema.graphql` export. The chat subset contains login,
+current-user, identity catalog/detail, and health queries, plus `a2aRpc` and
+`conversationUpdates` subscriptions; it has no mutations. After syncing, run
+`npm run graphql:codegen`, `npm test`, and `npm run prepare:python` to validate
+the operations and refresh both CLI bundles. Updating the local schema does
+not update a running backend; it must also serve the matching contract.
 
 Use `npm run dev`, not `node src/cli.tsx` or `node src/app.tsx`. The source tree uses TypeScript files with `.js` import specifiers, so it must be run through `tsx` in development or through the built `dist/cli.mjs` bundle.
 

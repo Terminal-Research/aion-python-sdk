@@ -492,22 +492,53 @@ describe("discoverAgentSources", () => {
 		});
 	});
 
-	it("marks registry sources with auth failure when token refresh fails", async () => {
+	it.each(["invalid_grant", "Session ended due to inactivity."])(
+		"prompts for explicit login when token refresh fails: %s",
+		async (reason) => {
+			const source = createDefaultRegistryAgentSource("development");
+			const fetchImpl = vi.fn();
+			const accessTokenProvider = vi.fn(async () => {
+				throw new Error(`WorkOS token refresh failed: ${reason}`);
+			});
+			const result = await discoverAgentSources([source], fetchImpl, {
+				environmentId: "development",
+				controlPlaneAccessTokenProvider: accessTokenProvider,
+				graphQLFetchImpl: fetchImpl
+			});
+
+			expect(result.agents).toEqual([]);
+			expect(result.errors[0]?.error).toBe("Authentication failed. Run /login to sign in again.");
+			expect(result.sources[0]).toMatchObject({
+				type: "registry",
+				status: "unavailable",
+				lastError: "Authentication failed. Run /login to sign in again."
+			});
+			expect(accessTokenProvider).toHaveBeenCalledTimes(1);
+			expect(fetchImpl).not.toHaveBeenCalled();
+		}
+	);
+
+	it("prompts for login without retrying discovery when forced refresh finds an inactive session", async () => {
 		const source = createDefaultRegistryAgentSource("development");
-		const result = await discoverAgentSources([source], vi.fn() as unknown as typeof fetch, {
+		const accessTokenProvider = vi.fn()
+			.mockResolvedValueOnce("expired-access-token")
+			.mockRejectedValueOnce(new Error("WorkOS token refresh failed: Session ended due to inactivity."));
+		const graphQLFetchImpl = vi.fn(async () =>
+			new Response("", { status: 401, statusText: "Unauthorized" })
+		);
+		const agentFetchImpl = vi.fn();
+		const result = await discoverAgentSources([source], agentFetchImpl, {
 			environmentId: "development",
-			controlPlaneAccessTokenProvider: async () => {
-				throw new Error("WorkOS token refresh failed: invalid_grant");
-			}
+			controlPlaneAccessTokenProvider: accessTokenProvider,
+			graphQLFetchImpl
 		});
 
 		expect(result.agents).toEqual([]);
-		expect(result.errors[0]?.error).toBe("Auth failed.");
-		expect(result.sources[0]).toMatchObject({
-			type: "registry",
-			status: "unavailable",
-			lastError: "Auth failed."
-		});
+		expect(result.errors[0]?.error).toBe("Authentication failed. Run /login to sign in again.");
+		expect(accessTokenProvider).toHaveBeenCalledTimes(2);
+		expect(accessTokenProvider).toHaveBeenNthCalledWith(2, { forceRefresh: true });
+		expect(graphQLFetchImpl).toHaveBeenCalledTimes(1);
+		expect(agentFetchImpl).not.toHaveBeenCalled();
 	});
 
 	it("marks registry sources with control-plane failure when GraphQL fails", async () => {

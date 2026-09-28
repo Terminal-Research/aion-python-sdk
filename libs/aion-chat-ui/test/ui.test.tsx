@@ -543,16 +543,16 @@ describe("Ink components", () => {
 					{
 						id: "notification-1",
 						role: "system",
-						body: "Aion development registry: Auth failed.",
+						body: "Aion development registry: Authentication failed. Run /login to sign in again.",
 						isFinalized: true
 					}
 				]}
 			/>
 		);
 
-		expect(app.lastFrame()).toContain(
-			"· System Aion development registry: Auth failed."
-		);
+		const frame = app.lastFrame()?.replace(/\s+/gu, " ");
+		expect(frame).toContain("· System Aion development registry: Authentication failed.");
+		expect(frame).toContain("Run /login to sign in again.");
 		app.unmount();
 	});
 
