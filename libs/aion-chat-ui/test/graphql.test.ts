@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { buildSchema, parse, validate } from "graphql";
 
 import {
 	buildAuthenticatedGraphQLWebSocketUrl,
@@ -10,7 +12,10 @@ import {
 	resolvePostAuthPath,
 	runLoginBootstrap
 } from "../src/lib/graphql/authBootstrap.js";
-import { fetchRegistryAgentIdentities } from "../src/lib/graphql/registry.js";
+import {
+	AGENT_CATALOG_IDENTITIES_QUERY,
+	fetchRegistryAgentIdentities
+} from "../src/lib/graphql/registry.js";
 import type {
 	ChatSessionLogger,
 	ChatSessionLogLevel
@@ -50,6 +55,25 @@ function findLoggedEvent(
 }
 
 describe("GraphQL client", () => {
+	it("validates catalog discovery against the schema and generated operation", () => {
+		// Caliban emits server-only directive locations; still validate the
+		// operation's fields, arguments, fragments, and enum values below.
+		const schema = buildSchema(readFileSync(new URL(
+			"../src/graphql/chat-client-schema.graphql", import.meta.url
+		), "utf8"), { assumeValidSDL: true });
+		const runtime = parse(AGENT_CATALOG_IDENTITIES_QUERY, { noLocation: true });
+		const generatedSource = parse(readFileSync(new URL(
+			"../src/graphql/operations/registry.graphql", import.meta.url
+		), "utf8"), { noLocation: true });
+
+		expect(validate(schema, runtime)).toEqual([]);
+		expect(runtime.definitions).toEqual(generatedSource.definitions.filter(
+			(definition) => definition.kind === "FragmentDefinition" ||
+				(definition.kind === "OperationDefinition" &&
+					definition.name?.value === "AgentCatalogIdentities")
+		));
+	});
+
 	it("posts authenticated GraphQL queries to the environment API", async () => {
 		const fetchImpl = vi.fn(async () =>
 			new Response(JSON.stringify({ data: { ok: true } }), { status: 200 })
@@ -206,7 +230,7 @@ describe("login bootstrap", () => {
 });
 
 describe("registry GraphQL", () => {
-	it("loads current user and A2A agent identities", async () => {
+	it("requests current user and either A2A or AionChat identities", async () => {
 		const fetchImpl = vi
 			.fn()
 			.mockResolvedValueOnce(
@@ -308,13 +332,47 @@ describe("registry GraphQL", () => {
 			query: string;
 			variables: { organizationId: string; networkTypes: string[] };
 		};
-		expect(catalogRequest.query).toContain(
-			"$networkTypes: [EndpointTypeGQL!]"
-		);
+		expect(catalogRequest.query).toContain("networkTypes: $networkTypes");
 		expect(catalogRequest.variables).toEqual({
 			organizationId: "org-1",
-			networkTypes: ["A2A"]
+			networkTypes: ["A2A", "AionChat"]
 		});
+	});
+
+	it("consumes the merged catalog and deduplicates the personal identity", async () => {
+		const detail = (id: string, ...networkTypes: string[]) => ({
+			identity: {
+				id, name: id, a2aUrl: `https://agent.example/${id}`,
+				updatedAt: "2026-09-27T00:00:00Z"
+			},
+			distributionUsages: networkTypes.map((networkType) => ({
+				distributionId: `dist-${id}-${networkType}`, networkType
+			}))
+		});
+		const respond = (data: unknown) =>
+			new Response(JSON.stringify({ data }), { status: 200 });
+		const fetchImpl = vi.fn()
+			.mockResolvedValueOnce(respond({ login: { nextRoute: null } }))
+			.mockResolvedValueOnce(respond({ user: {
+				id: "user-1", homeOrganization: { id: "org-1" },
+				agentIdentity: detail("self", "A2A").identity
+			} }))
+			.mockResolvedValueOnce(respond({
+				agentIdentityDetails: [
+					detail("a2a-only", "A2A"), detail("both", "A2A", "AionChat"),
+					detail("self", "A2A"), detail("chat-only", "AionChat"),
+					{ identity: { id: "unaddressable" }, distributionUsages: [] }
+				]
+			}));
+
+		const identities = await fetchRegistryAgentIdentities({
+			environmentId: "development", accessToken: "access-token", fetchImpl
+		});
+
+		expect(identities.map(({ id }) => id)).toEqual([
+			"a2a-only", "both", "chat-only", "self"
+		]);
+		expect(fetchImpl).toHaveBeenCalledTimes(3);
 	});
 
 	it("debug logs skipped catalog identities without raw profile fields", async () => {

@@ -52,7 +52,7 @@ enum EndpointTypeGQL {
   Aion
   GitHub
   Meet
-  Playground
+  AionChat
   Slack
   Telegram
   TelegramBot
@@ -179,7 +179,7 @@ their user.
   name: String
 """
 Agent-card discovery URL used for Agent-to-Agent discovery. Detail
-queries populate this from the active A2A distribution when available.
+queries prefer an active A2A distribution and fall back to Aion Chat.
 """
   a2aUrl: String
   "Website URL for human consumption"
@@ -363,7 +363,7 @@ type Queries {
   "Checks runtime health for the agent actor bound to an agent environment."
   healthCheckAgent("Agent environment identifier" agentEnvironmentId: ID!): HealthCheckResult @auth(subjectType: "User")
   "Retrieves agent identity details for the authenticated user. GraphQL field selection determines whether usage rows and role keys are loaded."
-  agentIdentityDetails("Organization whose visible identities should be listed" organizationId: ID!, "Optional identity-type filter applied to organization-visible identities." types: [AgentIdentityType!], "Optional distribution network types used to keep only identities that are used by at least one active distribution for every requested network. For example, choosing A2A and Playground returns only identities that have distributions for both." networkTypes: [EndpointTypeGQL!], "When true, include the caller's own personal identity for the requested organization even when it falls outside the normal visible set or type filter." includePersonalSelf: Boolean!): [AgentIdentityDetail!] @auth(subjectType: "User")
+  agentIdentityDetails("Organization whose visible identities should be listed" organizationId: ID!, "Optional identity-type filter applied to organization-visible identities." types: [AgentIdentityType!], "Optional distribution network types used to keep only identities that are used by at least one active distribution for any requested network. Choosing A2A and AionChat returns identities with either type, once per identity. Omit or pass an empty list to leave networks unfiltered." networkTypes: [EndpointTypeGQL!], "When true, include the caller's own personal identity for the requested organization even when it falls outside the normal visible set or type filter." includePersonalSelf: Boolean!): [AgentIdentityDetail!] @auth(subjectType: "User")
   "Retrieves one agent identity detail payload by identifier for the authenticated user."
   agentIdentityDetail(agentIdentityId: ID!): AgentIdentityDetail @auth(subjectType: "User")
   "Returns post-login routing. The optional intendedRoute is a one-time frontend route hint. Invitation accept routes are returned before onboarding so invitation acceptance can run first. Otherwise onboarding overrides the intended route. When no backend detour is needed, the intended route is echoed unchanged."

@@ -195,7 +195,8 @@ and are discovered by `aion.server` at runtime.
   `aio` executable with an `aion-chat` alias, and staged into `src/aion/cli/bin`
   via `npm run stage:python`. Provides interactive chat, headless one-shot
   `run`, slash-command request/response mode controls, update prompts with
-  GitHub release-note links, environment-scoped agent source discovery, local
+  GitHub release-note links, environment-scoped A2A/AionChat agent discovery
+  (deduplicated across the two endpoint types), local
   session/settings persistence, streaming-aware Marked rendering for agent
   output, immutable transcript offloading to terminal scrollback, TTY-aware
   terminal clearing for `/clear`, a brand-themed composer prompt with native

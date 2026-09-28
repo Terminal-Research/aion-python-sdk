@@ -82,7 +82,7 @@ When an interactive chat session starts, `aio` checks npm for the latest publish
 
 ### Agent Sources and Sessions
 
-Agent sources are discovered per selected Aion environment. Every environment includes a default local source at `http://localhost:8000`; this default is silent when no local server is running. When you are logged in, the selected Aion environment can also provide registry-backed agents for that account. Passing `--url` adds an explicit source for that run. Explicit URLs are resolved as a manifest first and then as a direct agent card.
+Agent sources are discovered per selected Aion environment. Every environment includes a default local source at `http://localhost:8000`; this default is silent when no local server is running. When you are logged in, the selected Aion environment can also provide registry-backed agents with an A2A or AionChat distribution for that account. An identity exposed through both types appears once. Passing `--url` adds an explicit source for that run. Explicit URLs are resolved as a manifest first and then as a direct agent card.
 
 Inside the composer, `/sources` is visible in the slash command picker and lists configured sources, their type, URL, description, and current status.
 

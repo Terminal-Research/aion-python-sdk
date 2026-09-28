@@ -57775,7 +57775,10 @@ query CurrentUser {
 }
 `;
 var AGENT_CATALOG_IDENTITIES_QUERY = `
-query AgentCatalogIdentities($organizationId: ID!, $networkTypes: [EndpointTypeGQL!]) {
+query AgentCatalogIdentities(
+	$organizationId: ID!
+	$networkTypes: [EndpointTypeGQL!]
+) {
 	agentIdentityDetails(
 		organizationId: $organizationId
 		types: [Principal, Personal]
@@ -57899,7 +57902,7 @@ async function fetchRegistryAgentIdentities(options2) {
     query: AGENT_CATALOG_IDENTITIES_QUERY,
     variables: {
       organizationId,
-      networkTypes: ["A2A"]
+      networkTypes: ["A2A", "AionChat"]
     },
     accessToken: options2.accessToken,
     fetchImpl: options2.fetchImpl,
