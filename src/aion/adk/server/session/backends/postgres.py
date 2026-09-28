@@ -1,7 +1,8 @@
 """Database session service backend."""
 
-import logging
 import asyncio
+import inspect
+import logging
 
 from aion.core.db import DbManagerProtocol
 from sqlalchemy import text
@@ -14,6 +15,11 @@ from .base import SessionServiceBackend
 logger = logging.getLogger(__name__)
 
 
+# google-adk 2.4 added a constructor that takes an engine; earlier releases
+# only build their own engine from a URL.
+_ACCEPTS_ENGINE = "db_engine" in inspect.signature(DatabaseSessionService.__init__).parameters
+
+
 class AionADKSessionService(DatabaseSessionService):
     """DatabaseSessionService that reuses a shared SQLAlchemy engine.
 
@@ -24,9 +30,15 @@ class AionADKSessionService(DatabaseSessionService):
 
     def __init__(self, engine: AsyncEngine, schema: str = AION_ADK_SCHEMA):
         self._schema = schema
-        self.db_engine = engine.execution_options(
-            schema_translate_map={None: schema}
-        )
+        engine = engine.execution_options(schema_translate_map={None: schema})
+        if _ACCEPTS_ENGINE:
+            super().__init__(db_engine=engine)
+        else:
+            self._init_on_engine(engine)
+
+    def _init_on_engine(self, engine: AsyncEngine) -> None:
+        """Set up what DatabaseSessionService.__init__ would, around ``engine``."""
+        self.db_engine = engine
         self.database_session_factory = async_sessionmaker(
             bind=self.db_engine, expire_on_commit=False
         )
@@ -42,12 +54,7 @@ class AionADKSessionService(DatabaseSessionService):
         self._session_locks_guard = asyncio.Lock()
 
     async def setup(self) -> None:
-        await self._prepare_tables()
-
-    async def _prepare_tables(self):
-        if self._tables_created:
-            return
-
+        """Create the schema, then the tables google-adk keeps in it."""
         logger.debug(f"Ensuring schema '{self._schema}' exists")
         try:
             async with self.db_engine.begin() as conn:
@@ -56,7 +63,9 @@ class AionADKSessionService(DatabaseSessionService):
         except Exception as ex:
             logger.error(f"Failed to create schema '{self._schema}': {ex}")
             raise
-        await super()._prepare_tables()
+        # google-adk 2.4 made table preparation public as prepare_tables.
+        prepare_tables = getattr(self, "prepare_tables", None) or self._prepare_tables
+        await prepare_tables()
 
 
 class PostgresBackend(SessionServiceBackend):

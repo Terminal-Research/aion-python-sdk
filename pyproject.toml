@@ -38,10 +38,10 @@ dependencies = [
     # (a2a-python #1172), on the threading.RLock its registry shares since
     # 1.1.3, and 1.1.5 is the release those were verified against.
     "a2a-sdk>=1.1.5,<1.2.0",
-    "gql>=3.4.1,<4.0.0",
+    "gql>=3.4.1,<5.0.0",
     "PyJWT>=2.9.0,<3.0.0",
     "httpx>=0.28.1,<0.29.0",
-    "websockets>=15.0.1,<16.0.0",
+    "websockets>=15.0.1,<18.0.0",
     "asyncclick>=8.0.1.2,<9.0.0",
     "keyring>=25.0.0",
 ]
@@ -81,26 +81,28 @@ langgraph-authoring = [
     # langgraph>=1.0.0,<1.1.0, so the pair `langgraph 0.6.0` + `langchain
     # 1.0.0` this range used to allow has no solution and nobody could ever
     # have installed it. The `floors` CI job is what now says so.
-    "langgraph>=1.0.0,<=1.0.5",
-    # Not our dependency: langgraph-prebuilt comes with langgraph, which asks
-    # for `langgraph-prebuilt>=1.0.2,<1.1` and so lets a fresh resolve take
-    # the newest 1.0.x. From 1.0.9 on it imports names langgraph.runtime only
-    # has after 1.0.5 (`ExecutionInfo`), and `from langgraph.prebuilt import
-    # ToolNode` and `from langchain.agents import create_agent` - the standard
-    # way to build an agent with tools - raise ImportError. Its upper bound
-    # moves together with the one on langgraph; tests/unit/langgraph/
+    "langgraph>=1.0.0,<2.0.0",
+    # Not our dependency: langgraph-prebuilt comes with langgraph, and each
+    # langgraph release names the prebuilt range it goes with. Only the floor
+    # is ours, so that the `floors` job pairs langgraph 1.0.0 with prebuilt
+    # 1.0.0. One pairing langgraph allows does not work: every langgraph below
+    # 1.1.3 accepts `langgraph-prebuilt<1.1`, and prebuilt 1.0.9 and later
+    # import `ExecutionInfo`, which langgraph.runtime has from 1.1.3 on. A
+    # project that holds langgraph below 1.1.3 has to hold prebuilt below
+    # 1.0.9 as well; an upper bound here cannot say that without also keeping
+    # out the prebuilt that langgraph 1.2 requires. tests/unit/langgraph/
     # test_framework_imports.py and the dist-smoke langgraph-server
-    # environment are what fail when the two stop fitting.
-    "langgraph-prebuilt>=1.0.0,<1.0.9",
+    # environment are what fail when a resolution pairs the two wrongly.
+    "langgraph-prebuilt>=1.0.0",
     "langchain>=1.0.0,<2.0.0",
-    "langchain-mcp-adapters>=0.1.11,<0.3.0",
+    "langchain-mcp-adapters>=0.1.11,<0.4.0",
     "langchain-openai>=1.1.7,<2.0.0",
 ]
 adk-authoring = [
     # 1.27.1, not lower: the server imports `ensure_part` from
     # google.adk.artifacts.base_artifact_service, which 1.27 introduced, and
     # 1.27.0 itself is yanked. Found by the `floors` CI job.
-    "google-adk>=1.27.1,<2.0.0",
+    "google-adk>=1.27.1,<3.0.0",
     # Not our dependency: google-adk 1.27 imports GEN_AI_INPUT_MESSAGES from
     # the OpenTelemetry semantic conventions 0.58b0, which come with
     # opentelemetry 1.37, while declaring `opentelemetry-*>=1.36.0`. At 1.36
@@ -115,14 +117,10 @@ adk-authoring = [
     # and aion_lite_llm() raises ImportError saying so. Drop the marker as soon
     # as litellm supports 3.15.
     "litellm>=1.93,<2.0; python_version < '3.15'",
-    # Not our dependency: mcp is pulled in by google-adk, and pinned here
-    # because google-adk imports a name mcp no longer exports. mcp 1.29.1
-    # renamed McpError to MCPError; google-adk still does
-    # `from mcp.shared.exceptions import McpError` (checked up to 2.8.0, the
-    # newest release there is) and asks for `mcp>=1.24,<2`, so a fresh resolve
-    # takes 1.29.1 and importing google.adk.tools.mcp_tool raises ImportError.
-    # Drop this line as soon as a google-adk release we allow imports MCPError.
-    "mcp<1.29.1",
+    # The server builds on google-adk's MCP toolset, which needs mcp. google-adk
+    # 1.x depends on it directly; 2.x moved it into its `mcp` extra. The range
+    # is the one google-adk states for it.
+    "mcp>=1.24,<3.0.0",
 ]
 
 # The composite extras below are written out in full rather than as
@@ -136,11 +134,11 @@ adk-authoring = [
 langgraph-server = [
     # aionto-sdk[langgraph-authoring]
     # See [langgraph-authoring] for why the floor is 1.0.0 and not 0.6.0.
-    "langgraph>=1.0.0,<=1.0.5",
-    # See [langgraph-authoring]: the newest langgraph-prebuilt needs a newer langgraph.
-    "langgraph-prebuilt>=1.0.0,<1.0.9",
+    "langgraph>=1.0.0,<2.0.0",
+    # See [langgraph-authoring]: only the floor is ours.
+    "langgraph-prebuilt>=1.0.0",
     "langchain>=1.0.0,<2.0.0",
-    "langchain-mcp-adapters>=0.1.11,<0.3.0",
+    "langchain-mcp-adapters>=0.1.11,<0.4.0",
     "langchain-openai>=1.1.7,<2.0.0",
     # aionto-sdk[server]
     "SQLAlchemy>=2.0.0,<3.0.0",
@@ -157,20 +155,20 @@ langgraph-server = [
     "opentelemetry-sdk>=1.33.0",
     "cryptography>=43.0.0",
     # its own
-    "langgraph-checkpoint-postgres>=2.0.0,<=3.0.2",
+    "langgraph-checkpoint-postgres>=2.0.0,<4.0.0",
 ]
 # No external dependencies of its own beyond the union: an alias, so the four
 # framework extras read the same way at the install line.
 adk-server = [
     # aionto-sdk[adk-authoring]
     # See [adk-authoring] for the google-adk floor and the opentelemetry pair.
-    "google-adk>=1.27.1,<2.0.0",
+    "google-adk>=1.27.1,<3.0.0",
     "opentelemetry-api>=1.37.0",
     "opentelemetry-sdk>=1.37.0",
     # See [adk-authoring] for the marker.
     "litellm>=1.93,<2.0; python_version < '3.15'",
-    # See [adk-authoring]: google-adk still imports mcp's pre-1.29.1 name.
-    "mcp<1.29.1",
+    # See [adk-authoring]: google-adk 2.x keeps mcp in an extra.
+    "mcp>=1.24,<3.0.0",
     # aionto-sdk[server]
     "SQLAlchemy>=2.0.0,<3.0.0",
     "alembic>=1.13.0,<2.0.0",
