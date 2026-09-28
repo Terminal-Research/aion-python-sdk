@@ -1,115 +1,64 @@
+"""``AionContextMiddleware`` on its own, without ``CallerIdentityMiddleware`` in front.
+
+It prepares the request through the same ``prepare_rpc_request`` the identity
+middleware uses, refuses a malformed payload the same way, and names nobody:
+the caller of a request it lets through is the anonymous one.
+"""
+
 import logging
+from typing import Any
 
 import pytest
-from pydantic import ValidationError
+from starlette.middleware import Middleware
 
-from aion.core.constants import DISTRIBUTION_EXTENSION_URI_V1
-from aion.server.core.middlewares.aion_context import AionContextMiddleware
+from aion.core.constants import DISTRIBUTION_EXTENSION_URI_V1, TRACEABILITY_EXTENSION_URI_V1
+from aion.server.core.middlewares import AionContextMiddleware
 
+from tests.unit.support.distribution import distribution_metadata
+from tests.unit.support.request_path import Probe, send_message
 
-# !! Test Data Factories !!
-def create_distribution_payload(identity_overrides=None):
-    """Factory function to build a distribution extension payload as sent by the control plane.
-
-    Field names and shape mirror a payload captured from staging, so this factory
-    doubles as the contract check against the published extension spec at
-    https://docs.aion.to/a2a/extensions/aion/distribution/1.0.0.
-    """
-    identity = {
-        "kind": "principal",
-        "id": "identity-1",
-        "identityNetwork": "Aion",
-        "identityKind": "Personal",
-        "representedUserId": "user-1",
-        "organizationId": "org-1",
-        "displayName": "Artem Sosnytskyi",
-        "userName": "sosnytskyi_artem_dev",
-        "agentType": "Personal",
-    }
-    identity.update(identity_overrides or {})
-
-    return {
-        "distribution": {
-            "id": "dist-1",
-            "endpointType": "A2A",
-            "url": "https://example.com/distributions/dist-1/a2a/.well-known/agent-card.json",
-            "componentAgentCardUrl": "https://example.com/environments/env-1/a2a/.well-known/agent-card.json",
-            "identities": [identity],
-        },
-        "behavior": {
-            "id": "beh-1",
-            "behaviorKey": "testGraph",
-            "versionId": "v1",
-        },
-        "environment": {
-            "id": "env-1",
-            "name": "Development",
-            "projectId": "proj-1",
-            "deploymentId": "dep-1",
-            "configurationVariables": {},
-        },
-    }
+INVALID_REQUEST = -32600
+SECRET = "s3cr3t-value"
 
 
-# !! Tests !!
-class TestGetDistributionExtension:
-    def test_parses_payload_with_identity_network(self, caplog):
-        """A fully populated identity parses and logs no warning."""
-        metadata = {DISTRIBUTION_EXTENSION_URI_V1: create_distribution_payload()}
+def _without_project_holding_a_secret() -> dict[str, Any]:
+    metadata = distribution_metadata("dist-1", configuration_variables={"API_KEY": SECRET})
+    del metadata[DISTRIBUTION_EXTENSION_URI_V1]["environment"]["projectId"]
+    return metadata
 
-        with caplog.at_level(logging.WARNING):
-            extension = AionContextMiddleware._get_distribution_extension(metadata)
 
-        assert extension.distribution.identities[0].identity_network == "Aion"
-        assert caplog.records == []
+def _traceability_of_the_wrong_version() -> dict[str, Any]:
+    """The rejected value itself is the secret: the answer must not quote it."""
+    return {TRACEABILITY_EXTENSION_URI_V1: {"version": SECRET}}
 
-    @pytest.mark.parametrize(
-        "field",
-        ["identityNetwork", "identityKind", "organizationId"],
-    )
-    def test_rejects_identity_missing_required_field(self, field):
-        """The spec marks these identity fields required, so omitting one is an error."""
-        payload = create_distribution_payload()
-        del payload["distribution"]["identities"][0][field]
-        metadata = {DISTRIBUTION_EXTENSION_URI_V1: payload}
 
-        with pytest.raises(ValidationError):
-            AionContextMiddleware._get_distribution_extension(metadata)
+async def test_it_reads_the_distribution_into_the_execution_scope() -> None:
+    probe = Probe()
+    async with probe.client(Middleware(AionContextMiddleware)) as client:
+        answer = (await send_message(client, distribution_metadata("dist-1"))).json()
 
-    @pytest.mark.parametrize(
-        "field",
-        ["projectId", "deploymentId", "configurationVariables"],
-    )
-    def test_rejects_environment_missing_required_field(self, field):
-        """The spec marks these environment fields required, so omitting one is an error."""
-        payload = create_distribution_payload()
-        del payload["environment"][field]
-        metadata = {DISTRIBUTION_EXTENSION_URI_V1: payload}
+    assert answer["scope_distribution"] == "dist-1"
+    assert (answer["owner"], answer["authenticated"], answer["scopes"]) == ("", False, None)
 
-        with pytest.raises(ValidationError):
-            AionContextMiddleware._get_distribution_extension(metadata)
 
-    def test_binds_every_field_the_control_plane_sends(self):
-        """Every field in a real control-plane payload lands on the model.
+@pytest.mark.parametrize(
+    ("metadata", "problem"),
+    [
+        (_without_project_holding_a_secret(), "environment.projectId: Field required [missing]"),
+        (_traceability_of_the_wrong_version(), "version: Input should be '1.0.0' [literal_error]"),
+    ],
+    ids=["distribution", "traceability"],
+)
+async def test_it_refuses_a_malformed_payload_without_echoing_it(metadata, problem, caplog) -> None:
+    probe = Probe()
+    with caplog.at_level(logging.WARNING):
+        async with probe.client(Middleware(AionContextMiddleware)) as client:
+            response = await send_message(client, metadata, request_id={"not": "an id"})
 
-        Guards against the failure mode where a renamed wire field is silently
-        dropped by extra="ignore" and the attribute just reads as None.
-        """
-        payload = create_distribution_payload()
-        metadata = {DISTRIBUTION_EXTENSION_URI_V1: payload}
-
-        extension = AionContextMiddleware._get_distribution_extension(metadata)
-
-        identity = extension.distribution.identities[0]
-        assert identity.identity_network == "Aion"
-        assert identity.identity_kind == "Personal"
-        assert identity.agent_type == "Personal"
-        assert identity.represented_user_id == "user-1"
-        assert extension.distribution.component_agent_card_url.endswith(
-            "/environments/env-1/a2a/.well-known/agent-card.json"
-        )
-        assert extension.environment.project_id == "proj-1"
-
-    def test_returns_none_without_extension(self):
-        """Metadata without the distribution extension yields no payload."""
-        assert AionContextMiddleware._get_distribution_extension({}) is None
+    assert response.status_code == 200
+    answer = response.json()
+    assert (answer["error"]["code"], answer["id"]) == (INVALID_REQUEST, None)
+    assert problem in answer["error"]["data"]
+    assert SECRET not in answer["error"]["data"]
+    assert SECRET not in caplog.text
+    assert probe.calls == 0

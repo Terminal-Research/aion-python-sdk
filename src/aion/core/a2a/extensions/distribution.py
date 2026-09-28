@@ -158,7 +158,10 @@ class Distribution(A2ABaseModel):
     to the active behavior or environment.
     """
 
-    id: str = Field(description="Distribution identifier in the Aion control plane.")
+    id: str = Field(
+        min_length=1,
+        description="Distribution identifier in the Aion control plane; never empty.",
+    )
     endpoint_type: str = Field(
         description="Source/target network type, for example Twitter or A2A."
     )

@@ -140,7 +140,10 @@ async def test_an_inbound_file_reaches_the_agent_as_a_url(storage_client: Scenar
 @pytest.mark.variant("file-storage")
 @pytest.mark.command("parts")
 async def test_the_stored_task_holds_the_url_and_not_the_bytes(storage_client: ScenarioClient) -> None:
-    """Reading the task back returns what was persisted: a URL part, no raw content."""
+    """Reading the task back returns what was persisted: a URL part, no raw content.
+
+    The task is the distribution's, so it is read back as that distribution.
+    """
     events = await storage_client.send(
         "parts",
         files=[PNG],
@@ -148,7 +151,9 @@ async def test_the_stored_task_holds_the_url_and_not_the_bytes(storage_client: S
         extensions=[DISTRIBUTION_EXTENSION_URI],
     )
 
-    task = await storage_client.get_task(final_task(events).task_id, history_length=10)
+    task = await storage_client.get_task_v03(
+        final_task(events).task_id, history_length=10, metadata=distribution_metadata()
+    )
 
     inbound = [message for message in task.history if message.role == 1]  # ROLE_USER
     assert inbound, f"history carries no user message: {task}"

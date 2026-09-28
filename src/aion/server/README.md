@@ -30,37 +30,72 @@ owner is what `AionAgent.owner_resolver` names for a request's
 name. `AppFactory` builds the task store with that same resolver and refuses
 to start if a store was built with another, so the tasks table's
 `owner_scope`, LangGraph's checkpoint `thread_id` and ADK's session `user_id`
-always name the same owner. A custom resolver is passed to the agent:
-`AionAgent.from_adapter(..., owner_resolver=...)`; it should derive the owner
-from the verified user.
+always name the same owner, and so do the task's push notification configs.
+A custom resolver is passed to the agent:
+`AionAgent.from_adapter(..., owner_resolver=...)`; it receives the request's
+`ServerCallContext`, whose user is the caller described below.
 
 ### Where the user comes from
 
-a2a-sdk's `DefaultServerCallContextBuilder`, which the JSON-RPC route uses,
-takes the user from `request.scope["user"]` - the trusted slot an
-authentication middleware such as Starlette's `AuthenticationMiddleware`
-fills - and otherwise gives the request an unauthenticated user, whose name
-is `""`. `AppFactory` installs no authentication, so a stock `aion serve`
-sees every caller as that anonymous user: all clients are one owner and see
-each other's tasks. **Isolation between users requires the application to
-put a verified user into `ServerCallContext`**, by installing authentication
-that sets `request.scope["user"]` before a request reaches the JSON-RPC
-route. The SDK does not read identity from request headers or parameters.
-`ServerCallContext.tenant` is not a source either: the JSON-RPC dispatcher
-copies it from the request's own `tenant` field, which the client chooses,
-and the default resolver ignores it.
+The server names the caller of every JSON-RPC request before the request
+reaches the dispatcher. `CallerIdentityMiddleware`, which `AppFactory`
+installs, reads the [distribution
+payload](https://docs.aion.to/a2a/extensions/aion/distribution/1.0.0) a
+platform request carries in `params.metadata` and installs the caller the
+way Starlette's authentication does: a `DistributionCaller` as
+`request.scope["user"]` and credentials without scopes as
+`request.scope["auth"]`. a2a-sdk's `DefaultServerCallContextBuilder` makes
+them `ServerCallContext.user` and `state["auth"]`, and `resolve_user_scope`
+makes the user's name - the distribution's id - the owner. The policy that
+names the caller is `aion.server.identity.resolve_distribution_caller`. So
+there are two callers:
+
+- a request that carries a distribution payload belongs to that
+  distribution. An agent published on several channels - an A2A endpoint, a
+  Slack workspace - has an owner per channel, each with its own tasks and
+  framework state;
+- a request without one belongs to the anonymous owner `""`, shared by every
+  such caller - a direct A2A client, `aion chat`, another agent calling this
+  one - and, on a database several deployments share, by every deployment of
+  the same agent id.
+
+A distribution payload decides the caller whatever user and credentials a
+middleware in front of `CallerIdentityMiddleware` set: both are replaced, so
+a distribution never carries another caller's credentials. A request without
+a payload keeps the scope as it found it. A malformed payload, an empty
+distribution id included, is refused as an invalid request (`-32600`) rather
+than served anonymously; the error names the fields at fault, never their
+values. Headers name nobody. `ServerCallContext.tenant` is not a source either: the JSON-RPC
+dispatcher copies it from the request's own `tenant` field, which the client
+chooses, and the default resolver ignores it.
+
+**This is isolation, not access control.** The distribution id comes from the
+request itself, and nothing verifies that the platform sent it, so the caller
+is never authenticated (`is_authenticated` is `False`). What the SDK serves
+only to an authenticated user stays closed: Aion's `GetContexts` and
+`GetContext` answer with empty projections, and an interrupted task is not
+found through its `contextId` - it is continued by its `taskId`.
 
 ### What is isolated
 
-With a verified user, every A2A operation is limited to the caller's owner,
-on the in-memory and the PostgreSQL store alike: `SendMessage` and
-`SendStreamingMessage` (including a `taskId` to continue, and the
-interrupted task found through a `contextId`), `GetTask`, `ListTasks`,
-`CancelTask`, `SubscribeToTask`, and Aion's `GetContexts`/`GetContext`.
-Another owner's task answers as if it did not exist. Two clients may present
-the same `contextId`; their tasks and state stay apart. Each request path
-carries its own `ServerCallContext` down to the store; the server refuses to
-run one without it rather than treat it as unscoped.
+Every A2A operation is limited to the caller's owner, on the in-memory and
+the PostgreSQL store alike: `SendMessage` and `SendStreamingMessage`
+(including a `taskId` to continue), `GetTask`, `ListTasks`, `CancelTask`,
+`SubscribeToTask`, the push notification config methods, and Aion's
+`GetContexts`/`GetContext`. Another owner's task answers as if it did not
+exist. Two callers may present the same `contextId`; their tasks and state
+stay apart. Each request path carries its own `ServerCallContext` down to the
+store; the server refuses to run one without it rather than treat it as
+unscoped.
+
+A caller is named only by a request that has `params.metadata`: in A2A v1
+that is `SendMessage`, `SendStreamingMessage` and `CancelTask`; in A2A v0.3,
+`message/send`, `message/stream`, `tasks/get`, `tasks/cancel` and
+`tasks/resubscribe`; and Aion's `GetContexts`/`GetContext`. A2A v1's
+`GetTask`, `ListTasks`, `SubscribeToTask` and push notification config
+methods have no such field - a request that adds one is refused as invalid
+params - so they always run as the anonymous caller and never reach a
+distribution's tasks.
 
 ### `context=None` in the stores
 
@@ -82,7 +117,7 @@ Context listings (`get_context_tasks`, `get_context_last_task`,
 `get_context_ids`) are ordered by task creation, newest first, across owners;
 an update keeps a task's place.
 
-The owner here is a user. It is unrelated to the lease owner of task
+The owner here is the caller. It is unrelated to the lease owner of task
 ownership in the PostgreSQL deployment - the server process currently
 executing a task - which decides who may write a task's progress, never who
 may see or cancel it.

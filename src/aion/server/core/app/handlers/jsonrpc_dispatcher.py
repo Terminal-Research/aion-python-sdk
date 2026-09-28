@@ -132,7 +132,9 @@ class AionJsonRpcDispatcher(JsonRpcDispatcher):
         method = body.get('method')
         binding = AION_JSONRPC_METHOD_EXTENSION_BINDINGS[method]
 
-        logger.debug('Aion request body: %s', body)
+        # The method, not the body: params.metadata carries the distribution
+        # payload, whose configuration variables hold secrets in plain text.
+        logger.debug('Aion method extension call: %s', method)
 
         # Validate base JSON-RPC structure (reuses parent's error response)
         try:

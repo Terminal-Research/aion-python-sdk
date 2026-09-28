@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 
 import httpx
+from a2a.server.owner_resolver import OwnerResolver, resolve_user_scope
 from a2a.server.tasks import InMemoryPushNotificationConfigStore
 from a2a.server.tasks.push_notification_config_store import PushNotificationConfigStore
 from a2a.server.tasks.push_notification_sender import PushNotificationSender
@@ -31,11 +32,23 @@ class PushNotificationFactory:
     def create(
             cls,
             db_manager: Optional[DbManagerProtocol] = None,
+            owner_resolver: OwnerResolver = resolve_user_scope,
     ) -> tuple[PushNotificationConfigStore, PushNotificationSender]:
+        """Build the config store and the sender that delivers from it.
+
+        Args:
+            db_manager: The database the configs live in when it is initialized;
+                in memory otherwise.
+            owner_resolver: The agent's resolver, so a task's configs belong to
+                the task's owner when a client reads or deletes them. Delivery
+                reads them by task id alone, across owners.
+        """
         if db_manager and db_manager.is_initialized:
-            config_store: PushNotificationConfigStore = cls._create_postgres_store(db_manager)
+            config_store: PushNotificationConfigStore = cls._create_postgres_store(
+                db_manager, owner_resolver
+            )
         else:
-            config_store = cls._create_memory_store()
+            config_store = cls._create_memory_store(owner_resolver)
 
         sender = AuthenticatedPushNotificationSender(
             httpx_client=httpx.AsyncClient(timeout=cls._build_timeout()),
@@ -68,7 +81,10 @@ class PushNotificationFactory:
         )
 
     @staticmethod
-    def _create_postgres_store(db_manager: DbManagerProtocol) -> PushNotificationConfigStore:
+    def _create_postgres_store(
+            db_manager: DbManagerProtocol,
+            owner_resolver: OwnerResolver,
+    ) -> PushNotificationConfigStore:
         """Build a DatabasePushNotificationConfigStore bound to the shared engine.
 
         A stored configuration is the callback URL plus the credentials the
@@ -117,10 +133,10 @@ class PushNotificationFactory:
         return DatabasePushNotificationConfigStore(
             engine=engine,
             encryption_key=encryption_key,
-            owner_resolver=lambda _ctx: "",
+            owner_resolver=owner_resolver,
         )
 
     @staticmethod
-    def _create_memory_store() -> PushNotificationConfigStore:
+    def _create_memory_store(owner_resolver: OwnerResolver) -> PushNotificationConfigStore:
         """Return an in-memory push notification config store as a fallback."""
-        return InMemoryPushNotificationConfigStore()
+        return InMemoryPushNotificationConfigStore(owner_resolver=owner_resolver)

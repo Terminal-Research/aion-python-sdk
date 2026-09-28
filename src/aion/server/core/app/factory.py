@@ -20,7 +20,7 @@ from aion.server.agent.factory import AgentFactory
 from aion.server.core.app.api import AionExtraHTTPRoutes
 from aion.server.core.app.handlers import AionJsonRpcDispatcher, AionRequestHandler
 from aion.server.core.app.handlers.request_preprocessors import A2ARequestPreprocessor, FilePartPreprocessor
-from aion.server.core.middlewares import TracingMiddleware, AionContextMiddleware
+from aion.server.core.middlewares import AionContextMiddleware, CallerIdentityMiddleware, TracingMiddleware
 from aion.server.plugins import PluginFactory
 from aion.server.tasks import StoreManager, PushNotificationFactory
 from .lifespan import AppLifespan
@@ -172,7 +172,10 @@ class AppFactory:
             file_transformer=self.file_transformer,
         )
 
-        push_config_store, push_sender = PushNotificationFactory.create(self.db_factory.db_manager)
+        push_config_store, push_sender = PushNotificationFactory.create(
+            self.db_factory.db_manager,
+            owner_resolver=self.aion_agent.owner_resolver,
+        )
         self._push_sender = push_sender
 
         return AionRequestHandler(
@@ -193,8 +196,11 @@ class AppFactory:
         )
 
     def _add_extra_middlewares(self):
+        # The middleware added last runs first: the caller is named before the
+        # execution scope is populated, and the scope before the span reads it.
         self.fastapi_app.add_middleware(TracingMiddleware)
         self.fastapi_app.add_middleware(AionContextMiddleware)
+        self.fastapi_app.add_middleware(CallerIdentityMiddleware)
 
     async def shutdown(self) -> None:
         """Shutdown the application and cleanup resources."""

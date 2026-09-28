@@ -15,7 +15,7 @@ from .daemon import (
     REQUESTER_IDENTITY_ID,
     daemon_metadata,
 )
-from .distribution import DISTRIBUTION_EXTENSION_URI, ORGANIZATION_ID, distribution_metadata
+from .distribution import DISTRIBUTION_EXTENSION_URI, DISTRIBUTION_ID, ORGANIZATION_ID, distribution_metadata
 from .events import (
     CARDS_EXTENSION_URI,
     EVENT_EXTENSION_URI,
@@ -54,6 +54,7 @@ __all__ = [
     "DAEMON_EXTENSION_URI",
     "DAEMON_IDENTITY_ID",
     "DISTRIBUTION_EXTENSION_URI",
+    "DISTRIBUTION_ID",
     "DataAttachment",
     "EVENT_EXTENSION_URI",
     "Ev",

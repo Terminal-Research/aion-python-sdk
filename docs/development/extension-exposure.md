@@ -187,7 +187,8 @@ Withholding an extension from the card changes what a client is *told*, never
 what a client is *allowed*. A non-advertised extension is invoked exactly like
 an advertised one, under the same authentication and caller-scoping rules —
 context reads resolve history through the same effective caller scope used
-when tasks are saved, and an anonymous caller receives an empty projection
-rather than shared history. Anything that must actually be refused is refused
+when tasks are saved, and a caller that is not authenticated - a
+distribution's included, since nothing verifies its id - receives an empty
+projection rather than shared history. Anything that must actually be refused is refused
 at request time - by activation state, availability, the extension's
 requirements, or the caller's scope.

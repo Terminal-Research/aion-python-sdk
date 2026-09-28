@@ -1,13 +1,14 @@
 """Tests for PushNotificationFactory.
 
-The factory decides three things the push channel depends on and nothing else
+The factory decides four things the push channel depends on and nothing else
 asserts: which sender the server dispatches through — the SDK base class sends
 webhook calls anonymously — how long a delivery may wait for the receiver, which
-httpx otherwise defaults to five seconds for, and whether stored configs, which
-carry webhook credentials, are encrypted at rest.
+httpx otherwise defaults to five seconds for, whether stored configs, which
+carry webhook credentials, are encrypted at rest, and whose configs they are.
 """
 
 import pytest
+from a2a.server.owner_resolver import resolve_user_scope
 from a2a.server.tasks import InMemoryPushNotificationConfigStore
 from cryptography.fernet import Fernet
 from unittest.mock import Mock, patch
@@ -127,3 +128,27 @@ class TestConfigEncryption:
         config_store, _ = PushNotificationFactory.create(db_manager)
 
         assert config_store._fernet is not None
+
+
+class TestConfigOwner:
+    """A task's configs belong to the task's owner, resolved as the agent resolves it."""
+
+    @staticmethod
+    def resolver(context):
+        return "owner-from-the-agent"
+
+    def test_the_memory_store_resolves_owners_like_the_agent(self):
+        config_store, _ = PushNotificationFactory.create(owner_resolver=self.resolver)
+
+        assert config_store.owner_resolver is self.resolver
+
+    def test_the_database_store_resolves_owners_like_the_agent(self, db_manager):
+        """Without it every config would sit under one owner, whoever the task belongs to."""
+        config_store, _ = PushNotificationFactory.create(db_manager, owner_resolver=self.resolver)
+
+        assert config_store.owner_resolver is self.resolver
+
+    def test_the_default_is_the_users_name(self):
+        config_store, _ = PushNotificationFactory.create()
+
+        assert config_store.owner_resolver is resolve_user_scope

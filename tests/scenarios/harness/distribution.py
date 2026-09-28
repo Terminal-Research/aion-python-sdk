@@ -9,9 +9,10 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-__all__ = ["DISTRIBUTION_EXTENSION_URI", "ORGANIZATION_ID", "distribution_metadata"]
+__all__ = ["DISTRIBUTION_EXTENSION_URI", "DISTRIBUTION_ID", "ORGANIZATION_ID", "distribution_metadata"]
 
 DISTRIBUTION_EXTENSION_URI = "https://docs.aion.to/a2a/extensions/aion/distribution/1.0.0"
+DISTRIBUTION_ID = "distribution-scenarios"
 ORGANIZATION_ID = "organization-scenarios"
 
 
@@ -37,6 +38,7 @@ def _service() -> dict[str, Any]:
 
 def distribution_metadata(
     *,
+    distribution_id: str = DISTRIBUTION_ID,
     organization_id: str = ORGANIZATION_ID,
     principal: bool = True,
     service: bool = False,
@@ -45,6 +47,8 @@ def distribution_metadata(
     """Request metadata carrying one distribution extension payload.
 
     Args:
+        distribution_id: The distribution the request came through - the
+            caller the server files the request's tasks and state under.
         organization_id: Organization the principal identity belongs to - the
             one a stored file is owned by.
         principal: Include a principal identity. Without one the request
@@ -67,7 +71,7 @@ def distribution_metadata(
     return {
         DISTRIBUTION_EXTENSION_URI: {
             "distribution": {
-                "id": "distribution-scenarios",
+                "id": distribution_id,
                 "endpointType": "A2A",
                 "url": "https://example.invalid/a2a",
                 "identities": identities,
