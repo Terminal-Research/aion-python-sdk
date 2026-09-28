@@ -202,6 +202,8 @@ and are discovered by `aion.server` at runtime.
   terminal clearing for `/clear`, a brand-themed composer prompt with native
   cursor-aware multiline editing, and WorkOS CLI/device login with npm keyring
   storage or the Python credential helper supplied by the SDK. Its GraphQL
+  discovery prompts for explicit `/login` after authentication fails; it does
+  not automatically launch interactive sign-in for an expired session. GraphQL
   operation types are generated from the restricted chat schema copied from
   `aion.api`; rebuild and run `stage:python` after contract changes. See
   `libs/aion-chat-ui/AGENTS.md` for session-log inspection and package-local

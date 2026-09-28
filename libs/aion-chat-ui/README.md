@@ -76,6 +76,8 @@ aion-chat login
 
 Inside the composer, `/login` is visible in the slash command picker and runs the same login flow.
 
+If a session expires from inactivity or its credentials are rejected, registry discovery displays a system message asking you to run `/login` again. It does not open browser sign-in automatically; normal silent token refresh remains supported while the session is valid.
+
 ### Updates
 
 When an interactive chat session starts, `aio` checks npm for the latest published version. If a newer version is available, it links to that version's GitHub release notes and asks whether to update globally, update in the current project, skip once, or skip until the next version. Choosing an update option runs the npm command and exits; start `aio` again after the install completes.

@@ -57949,7 +57949,7 @@ var MANIFEST_PATH = "/.well-known/manifest.json";
 var AGENT_CARD_PATH3 = "/.well-known/agent-card.json";
 var AGENT_PROXY_PREFIX = "/agents/";
 var REGISTRY_LOGIN_REQUIRED_MESSAGE = "/login to authenticate.";
-var REGISTRY_AUTH_FAILED_MESSAGE = "Auth failed.";
+var REGISTRY_AUTH_FAILED_MESSAGE = "Authentication failed. Run /login to sign in again.";
 var REGISTRY_CONTROL_PLANE_UNAVAILABLE_MESSAGE = "Aion Control Plane did not respond.";
 var REGISTRY_UNEXPECTED_ERROR_MESSAGE = "Unexpected error.";
 function trimTrailingSlash(value) {

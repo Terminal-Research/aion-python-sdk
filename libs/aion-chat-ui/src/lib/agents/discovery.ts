@@ -19,7 +19,7 @@ const MANIFEST_PATH = "/.well-known/manifest.json";
 const AGENT_CARD_PATH = "/.well-known/agent-card.json";
 const AGENT_PROXY_PREFIX = "/agents/";
 const REGISTRY_LOGIN_REQUIRED_MESSAGE = "/login to authenticate.";
-const REGISTRY_AUTH_FAILED_MESSAGE = "Auth failed.";
+const REGISTRY_AUTH_FAILED_MESSAGE = "Authentication failed. Run /login to sign in again.";
 const REGISTRY_CONTROL_PLANE_UNAVAILABLE_MESSAGE = "Aion Control Plane did not respond.";
 const REGISTRY_UNEXPECTED_ERROR_MESSAGE = "Unexpected error.";
 
