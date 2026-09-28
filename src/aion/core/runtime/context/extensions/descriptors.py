@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import KW_ONLY, dataclass, field
 from typing import TYPE_CHECKING, Any, Optional, Protocol, Type
 
 from pydantic import ValidationError
@@ -327,7 +327,9 @@ class ExtensionDescriptor:
             this one is active. Directional - the required extension does
             not need this one active in return. Checked against extensions
             that are both declared by the client and active for the current
-            agent, not merely declared.
+            agent, not merely declared. Also a condition on advertisement:
+            an extension whose requirement is not active would be refused
+            on every request, so the AgentCard does not offer it.
         description: Human-readable summary, surfaced verbatim on the
             AgentCard's advertised AgentExtension entry.
         active: Whether this extension is enabled for the current agent.
@@ -335,13 +337,25 @@ class ExtensionDescriptor:
             traceability, distribution, ...) are active out of the box.
             Agent-specific features (evolution, reflection) register with
             active=False and rely on AgentConfig.enabled_extensions to
-            turn them on.
+            turn them on. Enablement only: it says nothing about whether
+            the extension is published on the AgentCard.
         unavailable_reason: When set, the extension is enabled but cannot
             actually function on this deployment (e.g. its optional toolkit
             is not installed) - a request declaring it is rejected with
             exactly this user-facing message. None means available. Marked
             at startup via AionA2AExtensionRegistry.mark_unavailable() by
             whichever component owns the extension's runtime dependencies.
+        advertised: Whether this extension may be published on the
+            generated AgentCard. Defaults to True. Independent of `active`
+            in both directions: an extension can be enabled for the agent
+            and deliberately kept off the card (the Aion context-read
+            extensions, which are an internal surface rather than a
+            capability a standard agent announces), or advertised and
+            registered inactive, so it appears on the card only once the
+            agent opts into it. Advertisement is a publication decision,
+            not an access-control one - a non-advertised extension is
+            collected, verified and invoked exactly like an advertised one,
+            under the same authentication and scoping rules.
     """
 
     uri: str
@@ -350,3 +364,9 @@ class ExtensionDescriptor:
     description: str = ""
     active: bool = True
     unavailable_reason: Optional[str] = None
+    # Appended after the existing fields, and keyword-only, so that no
+    # positional argument changes meaning: inserting a field in the middle
+    # would silently re-point every argument after it, and appending a
+    # positional one would make the next addition face the same choice.
+    _: KW_ONLY
+    advertised: bool = True

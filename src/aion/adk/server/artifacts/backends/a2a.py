@@ -148,7 +148,7 @@ class A2AArtifactService(BaseArtifactService):
 
         if path not in self._version_offsets:
             if not self._artifacts.get(path) and session_id:
-                self._version_offsets[path] = await self._resolve_db_version_offset(
+                self._version_offsets[path] = await self._resolve_db_version_offset(app_name=app_name, user_id=user_id, 
                     session_id=session_id, filename=filename
                 )
             else:
@@ -193,14 +193,14 @@ class A2AArtifactService(BaseArtifactService):
         offset = self._version_offsets.get(path, 0)
 
         if not entries:
-            return await self._load_from_db(
+            return await self._load_from_db(app_name=app_name, user_id=user_id, 
                 session_id=session_id, filename=filename, version=version
             )
 
         if version is None:
             entry = entries[-1]
         elif version < offset:
-            return await self._load_from_db(
+            return await self._load_from_db(app_name=app_name, user_id=user_id, 
                 session_id=session_id, filename=filename, version=version
             )
         else:
@@ -208,7 +208,7 @@ class A2AArtifactService(BaseArtifactService):
             try:
                 entry = entries[mem_index]
             except IndexError:
-                return await self._load_from_db(
+                return await self._load_from_db(app_name=app_name, user_id=user_id, 
                     session_id=session_id, filename=filename, version=version
                 )
 
@@ -240,7 +240,7 @@ class A2AArtifactService(BaseArtifactService):
                 filenames.add(path.removeprefix(usernamespace_prefix))
 
         if session_id:
-            filenames.update(await self._fetch_db_artifact_keys(session_id=session_id))
+            filenames.update(await self._fetch_db_artifact_keys(app_name=app_name, user_id=user_id, session_id=session_id))
 
         return sorted(filenames)
 
@@ -277,7 +277,7 @@ class A2AArtifactService(BaseArtifactService):
 
         if not session_id:
             return []
-        db_artifacts = await self._fetch_db_artifacts(
+        db_artifacts = await self._fetch_db_artifacts(app_name=app_name, user_id=user_id, 
             session_id=session_id, filename=filename
         )
         return sorted(self._parse_versions_from_db(db_artifacts))
@@ -298,7 +298,7 @@ class A2AArtifactService(BaseArtifactService):
         mem_versions = [entry.artifact_version for entry in entries] if entries else []
 
         if offset > 0 and session_id:
-            db_artifacts = await self._fetch_db_artifacts(
+            db_artifacts = await self._fetch_db_artifacts(app_name=app_name, user_id=user_id, 
                 session_id=session_id, filename=filename
             )
             db_versions = [
@@ -318,7 +318,7 @@ class A2AArtifactService(BaseArtifactService):
 
         if not session_id:
             return []
-        db_artifacts = await self._fetch_db_artifacts(
+        db_artifacts = await self._fetch_db_artifacts(app_name=app_name, user_id=user_id, 
             session_id=session_id, filename=filename
         )
         return [
@@ -373,12 +373,19 @@ class A2AArtifactService(BaseArtifactService):
     async def _fetch_db_artifacts(
             self,
             *,
+            app_name: str,
+            user_id: str,
             session_id: str,
             filename: str,
             version: Optional[int] = None,
             latest_only: bool = False,
     ) -> List[Artifact]:
         """Fetches artifact records from DB. Returns empty list on any failure.
+
+        Only the rows of this agent and user are read: ``app_name`` is the Aion
+        agent id and ``user_id`` the caller's ``owner_scope``, the two columns
+        the tasks table scopes every row by, so another agent's or another
+        user's artifacts under the same ``context_id`` never come back.
 
         ``latest_only`` is for a caller that only ever reads the newest
         version back out: it lets the repository stop at the first matching
@@ -399,15 +406,17 @@ class A2AArtifactService(BaseArtifactService):
             async with self._db_manager.get_session() as db_session:
                 repo = TasksRepository(db_session)
                 return await repo.find_artifacts(
+                    agent_id=app_name,
+                    owner_scope=user_id,
                     context_id=session_id,
                     artifact_name=filename,
                     artifact_version=artifact_version,
                 )
         except Exception as e:
-            logger.warning(f"DB fetch failed for '{filename}': {e}")
+            logger.warning(f"DB fetch failed for '{filename}': {e}", exc_info=True)
             return []
 
-    async def _fetch_db_artifact_keys(self, *, session_id: str) -> list[str]:
+    async def _fetch_db_artifact_keys(self, *, app_name: str, user_id: str, session_id: str) -> list[str]:
         """Returns distinct artifact names stored in DB for this session."""
         if not self._is_db_available():
             return []
@@ -415,7 +424,9 @@ class A2AArtifactService(BaseArtifactService):
         try:
             async with self._db_manager.get_session() as db_session:
                 repo = TasksRepository(db_session)
-                artifacts = await repo.find_artifacts(context_id=session_id)
+                artifacts = await repo.find_artifacts(
+                    agent_id=app_name, owner_scope=user_id, context_id=session_id
+                )
             return [a.name for a in artifacts if a.name]
         except Exception as e:
             logger.warning(f"DB fetch artifact keys failed for session '{session_id}': {e}")
@@ -433,7 +444,7 @@ class A2AArtifactService(BaseArtifactService):
         """Constructs an ArtifactVersion from a DB record (no in-memory entry required)."""
         if not session_id:
             return None
-        artifacts = await self._fetch_db_artifacts(
+        artifacts = await self._fetch_db_artifacts(app_name=app_name, user_id=user_id, 
             session_id=session_id, filename=filename, version=version, latest_only=True
         )
         if not artifacts:
@@ -455,14 +466,16 @@ class A2AArtifactService(BaseArtifactService):
             ),
         )
 
-    async def _resolve_db_version_offset(self, *, session_id: str, filename: str) -> int:
+    async def _resolve_db_version_offset(
+            self, *, app_name: str, user_id: str, session_id: str, filename: str
+    ) -> int:
         """Returns the next available version number based on what's already in DB.
 
         Returns 0 if there are no existing records, 1 if records exist but
         have no version metadata (treating them collectively as version 0),
         or max(version) + 1 if version metadata is present.
         """
-        artifacts = await self._fetch_db_artifacts(session_id=session_id, filename=filename)
+        artifacts = await self._fetch_db_artifacts(app_name=app_name, user_id=user_id, session_id=session_id, filename=filename)
         if not artifacts:
             return 0
         versions = self._parse_versions_from_db(artifacts)
@@ -471,6 +484,8 @@ class A2AArtifactService(BaseArtifactService):
     async def _load_from_db(
             self,
             *,
+            app_name: str,
+            user_id: str,
             session_id: Optional[str],
             filename: str,
             version: Optional[int],
@@ -478,7 +493,7 @@ class A2AArtifactService(BaseArtifactService):
         """Loads artifact data directly from DB and converts it to a genai Part."""
         if not session_id:
             return None
-        artifacts = await self._fetch_db_artifacts(
+        artifacts = await self._fetch_db_artifacts(app_name=app_name, user_id=user_id, 
             session_id=session_id, filename=filename, version=version, latest_only=True
         )
         if not artifacts:

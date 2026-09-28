@@ -1,0 +1,466 @@
+"""Tests for the aion logging system.
+
+Focus areas:
+  AionLogRecord:
+    - Created with standard LogRecord args
+    - All context fields are None when no scope is active
+
+  AionLogger:
+    - makeRecord returns AionLogRecord
+    - makeRecord with extra dict merges fields
+    - makeRecord raises KeyError for protected keys
+
+  get_logger:
+    - Returns AionLogger instance when setLoggerClass is active
+    - Re-uses existing logger by same name (stdlib caching)
+
+  AionLogstashFilter:
+    - Rejects DEBUG records
+    - Accepts INFO+ with valid distribution_id
+    - Accepts INFO+ with valid trace_id
+    - Rejects INFO+ with neither deployment nor trace context
+
+  AionLogstashFormatter:
+    - format returns valid JSON
+    - timestamp field in correct format
+    - logLevel mapping: WARNING -> WARN, CRITICAL -> FATAL
+    - error fields present when exc_info is set
+    - user.id extracted from trace_baggage
+
+  LogStreamFormatter:
+    - format returns non-empty string
+    - colorize errors are suppressed (returns plain message)
+
+  ServerAionContextFilter:
+    - Enriches record with OpenTelemetry tracing info
+    - Enriches record with execution scope context
+    - Populates aion_version_id from scope or falls back to app_settings
+    - Handles exceptions gracefully
+"""
+
+import json
+import logging
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from aion.core.logging.base import AionLogRecord, AionLogger
+from aion.server.logging.handlers.logstash import (
+    AionLogstashFilter,
+    AionLogstashFormatter,
+)
+from aion.server.logging.handlers.stream import LogStreamFormatter, LogStreamHandler
+
+def _make_log_record(
+    name: str = "test",
+    level: int = logging.INFO,
+    msg: str = "test message",
+) -> AionLogRecord:
+    """Create a minimal AionLogRecord with no execution scope."""
+    record = AionLogRecord(
+        name=name,
+        level=level,
+        pathname="test.py",
+        lineno=1,
+        msg=msg,
+        args=(),
+        exc_info=None,
+    )
+    return record
+
+
+def _make_logstash_record(**overrides) -> AionLogRecord:
+    rec = _make_log_record()
+    for k, v in overrides.items():
+        setattr(rec, k, v)
+    return rec
+
+class TestAionLogRecord:
+    def test_creates_without_scope(self):
+        """AionLogRecord can be instantiated without active execution scope."""
+        rec = _make_log_record()
+        assert isinstance(rec, AionLogRecord)
+        assert isinstance(rec, logging.LogRecord)
+
+    def test_all_context_fields_none_without_scope(self):
+        """All context fields are None when no execution scope is active."""
+        rec = _make_log_record()
+        context_fields = [
+            "trace_id", "trace_span_id", "trace_span_name", "trace_parent_span_id",
+            "trace_baggage", "agent_trace_baggage",
+            "transaction_id", "transaction_name",
+            "aion_distribution_id", "aion_version_id", "aion_agent_environment_id",
+            "http_request_method", "http_request_target",
+            "task_id", "a2a_rpc_method", "a2a_task_status",
+        ]
+        for field in context_fields:
+            assert getattr(rec, field) is None, f"{field} should be None"
+
+class TestAionLogger:
+    def _logger(self, name: str = "test_logger") -> AionLogger:
+        logging.setLoggerClass(AionLogger)
+        return logging.getLogger(name)
+
+    def test_make_record_returns_aion_log_record(self):
+        """makeRecord returns an AionLogRecord instance."""
+        logger = self._logger("make_record_test")
+        with patch("aion.server.agent.execution.scope.get_execution_scope", return_value=None):
+            with patch("aion.server.opentelemetry.tracing.get_span_info", return_value=None):
+                rec = logger.makeRecord(
+                    name="test", level=logging.INFO, fn="f.py",
+                    lno=1, msg="hello", args=(), exc_info=None,
+                )
+        assert isinstance(rec, AionLogRecord)
+
+    def test_make_record_extra_fields_added(self):
+        """makeRecord merges extra dict fields into the log record."""
+        logger = self._logger("make_record_extra_test")
+        with patch("aion.server.agent.execution.scope.get_execution_scope", return_value=None):
+            with patch("aion.server.opentelemetry.tracing.get_span_info", return_value=None):
+                rec = logger.makeRecord(
+                    name="test", level=logging.INFO, fn="f.py",
+                    lno=1, msg="hello", args=(), exc_info=None,
+                    extra={"custom_field": "custom_value"},
+                )
+        assert rec.custom_field == "custom_value"
+
+    def test_make_record_raises_on_protected_key(self):
+        """makeRecord raises KeyError when extra dict contains protected keys."""
+        logger = self._logger("protected_key_test")
+        with patch("aion.server.agent.execution.scope.get_execution_scope", return_value=None):
+            with patch("aion.server.opentelemetry.tracing.get_span_info", return_value=None):
+                with pytest.raises(KeyError):
+                    logger.makeRecord(
+                        name="test", level=logging.INFO, fn="f.py",
+                        lno=1, msg="hello", args=(), exc_info=None,
+                        extra={"message": "bad"},
+                    )
+
+class TestGetLogger:
+    def test_returns_aion_logger_instance(self):
+        """logging.getLogger returns AionLogger when setLoggerClass is active."""
+        logging.setLoggerClass(AionLogger)
+        logger = logging.getLogger("unique_factory_test_logger")
+        assert isinstance(logger, AionLogger)
+
+    def test_same_logger_returned_for_same_name(self):
+        """logging.getLogger returns the same logger instance for the same name."""
+        l1 = logging.getLogger("same_name_logger_x")
+        l2 = logging.getLogger("same_name_logger_x")
+        assert l1 is l2
+
+class TestAionLogstashFilter:
+    def _filter(self) -> AionLogstashFilter:
+        return AionLogstashFilter()
+
+    def test_rejects_debug_level(self):
+        """AionLogstashFilter rejects DEBUG level records."""
+        f = self._filter()
+        rec = _make_logstash_record(aion_distribution_id="dist-1")
+        rec.levelno = logging.DEBUG
+        assert not f.filter(rec)
+
+    def test_accepts_info_with_distribution_id(self):
+        """AionLogstashFilter accepts INFO+ with distribution_id set."""
+        f = self._filter()
+        rec = _make_logstash_record(aion_distribution_id="dist-1", aion_version_id=None, trace_id=None)
+        rec.levelno = logging.INFO
+        assert f.filter(rec)
+
+    def test_accepts_info_with_version_id(self):
+        """AionLogstashFilter accepts INFO+ with version_id set."""
+        f = self._filter()
+        rec = _make_logstash_record(aion_distribution_id=None, aion_version_id="v1.0.0", trace_id=None)
+        rec.levelno = logging.INFO
+        assert f.filter(rec)
+
+    def test_accepts_info_with_trace_id(self):
+        """AionLogstashFilter accepts INFO+ with trace_id set."""
+        f = self._filter()
+        rec = _make_logstash_record(aion_distribution_id=None, aion_version_id=None, trace_id="abc123")
+        rec.levelno = logging.INFO
+        assert f.filter(rec)
+
+    def test_rejects_info_without_deployment_or_trace(self):
+        """AionLogstashFilter rejects INFO without distribution, version, or trace context."""
+        f = self._filter()
+        rec = _make_logstash_record(aion_distribution_id=None, aion_version_id=None, trace_id=None)
+        rec.levelno = logging.INFO
+        assert not f.filter(rec)
+
+    def test_accepts_error_level(self):
+        """AionLogstashFilter accepts ERROR level regardless of context."""
+        f = self._filter()
+        rec = _make_logstash_record(aion_distribution_id="dist-1")
+        rec.levelno = logging.ERROR
+        assert f.filter(rec)
+
+    def test_accepts_warning_level(self):
+        """AionLogstashFilter accepts WARNING level regardless of context."""
+        f = self._filter()
+        rec = _make_logstash_record(trace_id="abc")
+        rec.levelno = logging.WARNING
+        assert f.filter(rec)
+
+class TestAionLogstashFormatter:
+    def _formatter(self, client_id: str = "c1", host_name: str = "n1") -> AionLogstashFormatter:
+        return AionLogstashFormatter(client_id=client_id, host_name=host_name)
+
+    def test_format_returns_valid_json(self):
+        """format returns valid JSON-serializable dict output."""
+        formatter = self._formatter()
+        rec = _make_logstash_record(trace_id="abc", aion_distribution_id="dist")
+        result = formatter.format(rec)
+        data = json.loads(result)
+        assert isinstance(data, dict)
+
+    def test_format_contains_required_fields(self):
+        """format includes @timestamp, clientId, host.name, logLevel, and message."""
+        formatter = self._formatter(client_id="my-client", host_name="my-node")
+        rec = _make_logstash_record(trace_id="abc")
+        data = json.loads(formatter.format(rec))
+        assert "@timestamp" in data
+        assert data["clientId"] == "my-client"
+        assert data["host.name"] == "my-node"
+        assert "logLevel" in data
+        assert "message" in data
+
+    def test_warning_level_mapped_to_warn(self):
+        """format maps WARNING level to WARN."""
+        formatter = self._formatter()
+        rec = _make_logstash_record()
+        rec.levelname = "WARNING"
+        data = json.loads(formatter.format(rec))
+        assert data["logLevel"] == "WARN"
+
+    def test_critical_level_mapped_to_fatal(self):
+        """format maps CRITICAL level to FATAL."""
+        formatter = self._formatter()
+        rec = _make_logstash_record()
+        rec.levelname = "CRITICAL"
+        data = json.loads(formatter.format(rec))
+        assert data["logLevel"] == "FATAL"
+
+    def test_info_level_unchanged(self):
+        """format leaves INFO level unchanged."""
+        formatter = self._formatter()
+        rec = _make_logstash_record()
+        rec.levelname = "INFO"
+        data = json.loads(formatter.format(rec))
+        assert data["logLevel"] == "INFO"
+
+    def test_error_fields_added_on_exc_info(self):
+        """format includes error.message, error.type, and error.stack_trace when exc_info is set."""
+        formatter = self._formatter()
+        rec = _make_logstash_record()
+        try:
+            raise ValueError("test error")
+        except ValueError:
+            import sys
+            rec.exc_info = sys.exc_info()
+
+        data = json.loads(formatter.format(rec))
+        assert "error.message" in data
+        assert data["error.type"] == "ValueError"
+        assert "error.stack_trace" in data
+
+    def test_user_id_extracted_from_baggage(self):
+        """format extracts user.id from trace_baggage's aion.sender.id."""
+        formatter = self._formatter()
+        rec = _make_logstash_record(trace_baggage={"aion.sender.id": "user-xyz"})
+        data = json.loads(formatter.format(rec))
+        assert data["user.id"] == "user-xyz"
+
+    def test_user_id_none_when_no_baggage(self):
+        """format sets user.id to None when trace_baggage is not present."""
+        formatter = self._formatter()
+        rec = _make_logstash_record(trace_baggage=None)
+        data = json.loads(formatter.format(rec))
+        assert data["user.id"] is None
+
+    def test_timestamp_format(self):
+        """format uses ISO 8601 timestamp format ending with Z."""
+        formatter = self._formatter()
+        rec = _make_logstash_record()
+        data = json.loads(formatter.format(rec))
+        ts = data["@timestamp"]
+        assert "T" in ts
+        assert ts.endswith("Z")
+
+class TestLogStreamFormatter:
+    def _formatter(self) -> LogStreamFormatter:
+        return LogStreamFormatter()
+
+    def _record(self, msg: str = "test", level: int = logging.INFO) -> AionLogRecord:
+        return _make_log_record(msg=msg, level=level)
+
+    def test_format_returns_non_empty_string(self):
+        """format returns a non-empty string."""
+        formatter = self._formatter()
+        rec = self._record()
+        with patch("aion.server.agent.aion_agent.agent_manager") as mock_mgr:
+            mock_mgr.agent_id = None
+            result = formatter.format(rec)
+        assert isinstance(result, str)
+        assert len(result) > 0
+
+    def test_format_includes_level_name(self):
+        """format includes the log level name in the output."""
+        formatter = self._formatter()
+        rec = self._record(level=logging.ERROR)
+        rec.levelname = "ERROR"
+        with patch("aion.server.agent.aion_agent.agent_manager") as mock_mgr:
+            mock_mgr.agent_id = None
+            result = formatter.format(rec)
+        assert "ERROR" in result
+
+    def test_format_includes_message(self):
+        """format includes the message text in the output."""
+        formatter = self._formatter()
+        rec = self._record(msg="unique-msg-xyz")
+        with patch("aion.server.agent.aion_agent.agent_manager") as mock_mgr:
+            mock_mgr.agent_id = None
+            result = formatter.format(rec)
+        assert "unique-msg-xyz" in result
+
+    def test_format_includes_agent_id_when_set(self):
+        """format includes agent_id when agent_manager.agent_id is set."""
+        formatter = self._formatter()
+        rec = self._record()
+        with patch("aion.server.agent.aion_agent.agent_manager") as mock_mgr:
+            mock_mgr.agent_id = "test-agent"
+            result = formatter.format(rec)
+        assert "test-agent" in result
+
+    def test_format_includes_task_id_when_set(self):
+        """format includes task_id when set on the log record."""
+        formatter = self._formatter()
+        rec = self._record()
+        rec.task_id = "task-abc"
+        with patch("aion.server.agent.aion_agent.agent_manager") as mock_mgr:
+            mock_mgr.agent_id = None
+            result = formatter.format(rec)
+        assert "task-abc" in result
+
+    def test_colorize_exception_suppressed(self):
+        """_colorize falls back to plain text when colorize_text raises exceptions."""
+        formatter = self._formatter()
+        with patch("aion.server.logging.handlers.stream.colorize_text", side_effect=RuntimeError("color broken")):
+            result = formatter._colorize("INFO", "plain message")
+        assert result == "plain message"
+
+
+class TestServerAionContextFilter:
+    """Tests for ServerAionContextFilter context enrichment."""
+
+    def _filter(self):
+        from aion.server.logging.filters import ServerAionContextFilter
+        return ServerAionContextFilter()
+
+    def test_filter_returns_true_for_aion_log_record(self):
+        """filter returns True and enriches AionLogRecord."""
+        filter_obj = self._filter()
+        rec = _make_log_record()
+        result = filter_obj.filter(rec)
+        assert result is True
+
+    def test_filter_returns_true_for_regular_log_record(self):
+        """filter returns True for non-AionLogRecord (pass through)."""
+        filter_obj = self._filter()
+        rec = logging.LogRecord(
+            name="test", level=logging.INFO, pathname="x.py",
+            lineno=1, msg="hi", args=(), exc_info=None
+        )
+        result = filter_obj.filter(rec)
+        assert result is True
+
+    def test_version_id_from_scope_when_available(self):
+        """aion_version_id is set from execution scope when available."""
+        filter_obj = self._filter()
+        rec = _make_log_record()
+
+        mock_scope = MagicMock()
+        mock_scope.inbound.aion.version_id = "v1.2.3"
+
+        with patch("aion.server.agent.execution.scope.get_execution_scope", return_value=mock_scope):
+            filter_obj.filter(rec)
+
+        assert rec.aion_version_id == "v1.2.3"
+
+    def test_version_id_falls_back_to_app_settings(self):
+        """aion_version_id falls back to app_settings when scope version is None."""
+        filter_obj = self._filter()
+        rec = _make_log_record()
+
+        mock_scope = MagicMock()
+        mock_scope.inbound.aion.version_id = None  # scope has no version
+
+        with patch("aion.server.agent.execution.scope.get_execution_scope", return_value=mock_scope):
+            with patch("aion.server.settings.app_settings") as mock_settings:
+                mock_settings.version_id = "v9.9.9"
+                filter_obj.filter(rec)
+
+        assert rec.aion_version_id == "v9.9.9"
+
+    def test_exception_in_scope_enrichment_handled_gracefully(self):
+        """Exceptions during scope enrichment are caught and ignored."""
+        filter_obj = self._filter()
+        rec = _make_log_record()
+
+        with patch("aion.server.agent.execution.scope.get_execution_scope", side_effect=Exception("broken scope")):
+            result = filter_obj.filter(rec)
+
+        # Should still return True and not propagate exception
+        assert result is True
+        # Record should have None values (not enriched)
+        assert rec.trace_id is None
+
+
+class TestProcessRoleInStreamOutput:
+    """aion serve interleaves three processes on one console.
+
+    Only agents used to identify themselves, so a line from the CLI and a line
+    from the proxy were indistinguishable -- which is how a token fetched by the
+    CLI reads as a second, unexplained fetch by the agent.
+    """
+
+    def _formatted(self, message: str = "hello") -> str:
+        import logging as _logging
+
+        from aion.server.logging.handlers.stream import LogStreamFormatter
+
+        record = _logging.LogRecord(
+            name="aion.test", level=_logging.INFO, pathname="x.py",
+            lineno=1, msg=message, args=(), exc_info=None,
+        )
+        return LogStreamFormatter().format(record)
+
+    def test_role_labels_a_process_without_an_agent(self, monkeypatch):
+        from aion.core.logging import process, set_process_role
+
+        monkeypatch.setattr(process, "_process_role", None)
+        set_process_role("Proxy")
+
+        assert "Proxy" in self._formatted()
+
+    def test_an_agent_name_wins_over_the_role(self, monkeypatch):
+        """The agent process claims "Agent" early, then names itself."""
+        from aion.core.logging import process, set_process_role
+        from aion.server.agent.aion_agent import agent_manager
+
+        monkeypatch.setattr(process, "_process_role", None)
+        set_process_role("Agent")
+        monkeypatch.setattr(agent_manager, "_agent_id", "command-agent")
+
+        formatted = self._formatted()
+
+        assert "Agent [command-agent]" in formatted
+        assert "- Agent -" not in formatted
+
+    def test_an_unclaimed_process_still_formats(self, monkeypatch):
+        """A role is optional; anything importing the formatter must not break."""
+        from aion.core.logging import process
+
+        monkeypatch.setattr(process, "_process_role", None)
+
+        assert "hello" in self._formatted()

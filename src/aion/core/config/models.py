@@ -180,7 +180,7 @@ class AgentConfig(BaseModel):
     """Configuration for an agent."""
 
     model_config = ConfigDict(
-        extra="ignore",
+        extra="forbid",
         use_enum_values=True,
         validate_assignment=True,
     )
@@ -288,11 +288,31 @@ class AgentConfig(BaseModel):
         return value
 
 
+class McpConfig(BaseModel):
+    """Configuration for the MCP proxy `aion serve` mounts."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    port: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=65535,
+        description="Local port of the MCP server to proxy. Without it, no proxy is mounted.",
+    )
+
+
 class AionConfig(BaseModel):
-    """Main configuration for Aion system."""
+    """Main configuration for Aion system.
+
+    Unknown keys are rejected rather than ignored. A key that is silently
+    dropped reads as supported for as long as nobody checks what the server
+    did with it, which is how `capabilities` stayed in a published quickstart
+    and `http` stayed in a published settings table while neither did
+    anything. Every key this model declares is a key the SDK acts on.
+    """
 
     model_config = ConfigDict(
-        extra="ignore",
+        extra="forbid",
         use_enum_values=True,
         validate_assignment=True,
     )
@@ -302,49 +322,30 @@ class AionConfig(BaseModel):
         description="Dictionary of agent configurations mapped by agent ID"
     )
 
+    mcp: Optional[McpConfig] = Field(
+        default=None,
+        description="MCP proxy configuration; without it, no proxy is mounted",
+    )
+
     @field_validator('agents', mode='before')
     @classmethod
     def validate_agents(cls, value):
-        """Validate agents dictionary and convert from various input formats."""
+        """Accept a missing `agents` section, and insist the rest is a mapping.
+
+        Each agent is left to the field's own type to validate, so a bad key
+        inside one is reported at `agents -> <id> -> <key>` with its own error
+        type. Building the AgentConfig here instead and re-raising the failure
+        as text would collapse every one of those into a single value error on
+        `agents` carrying a pydantic dump, which is what the reader would then
+        have to show a person who typed one word wrong.
+        """
         if value is None:
             return {}
 
-        if isinstance(value, dict):
-            # If already a dict, validate each agent config
-            result = {}
-            for agent_id, agent_config in value.items():
-                if isinstance(agent_config, AgentConfig):
-                    result[agent_id] = agent_config
-                elif isinstance(agent_config, dict):
-                    try:
-                        result[agent_id] = AgentConfig(**agent_config)
-                    except Exception as e:
-                        raise ValueError(f"Invalid agent config for '{agent_id}': {e}")
-                else:
-                    raise ValueError(f"Agent config for '{agent_id}' must be an AgentConfig instance or dict")
-            return result
+        if not isinstance(value, dict):
+            raise ValueError("Agents must be a mapping of agent ID to agent configuration")
 
-        elif isinstance(value, list):
-            # Convert from list format (backward compatibility)
-            result = {}
-            for i, agent_config in enumerate(value):
-                if isinstance(agent_config, AgentConfig):
-                    # Use agent name or path as key, fallback to index
-                    agent_id = agent_config.name if agent_config.name != "Agent" else f"agent_{i}"
-                    result[agent_id] = agent_config
-                elif isinstance(agent_config, dict):
-                    try:
-                        config = AgentConfig(**agent_config)
-                        agent_id = config.name if config.name != "Agent" else f"agent_{i}"
-                        result[agent_id] = config
-                    except Exception as e:
-                        raise ValueError(f"Invalid agent config at index {i}: {e}")
-                else:
-                    raise ValueError(f"Agent config at index {i} must be an AgentConfig instance or dict")
-            return result
-
-        else:
-            raise ValueError("Agents must be a dictionary or list")
+        return value
 
     def get_agent(self, agent_id: str) -> Optional[AgentConfig]:
         """Get an agent configuration by ID."""

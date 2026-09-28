@@ -4,8 +4,8 @@ The repository is one PyPI project, `aionto-sdk`: one wheel and one sdist
 built from one commit on `main`, with every `aion.*` subpackage inside and
 extras that only add third-party libraries. A GitHub Release with a `py-v*`
 tag is what publishes it: `.github/workflows/publish-python.yml` builds,
-checks and uploads after a reviewer approves. Nothing is published from a
-laptop, and the repository holds no PyPI credentials.
+checks and uploads automatically after the build job succeeds. Nothing is
+published from a laptop, and the repository holds no PyPI credentials.
 
 ## Releasing
 
@@ -30,10 +30,10 @@ Release aionto-sdk 0.2.0 as py-v0.2.0 (final release). Are you sure? [y/N]
 
 `y` creates the GitHub Release `py-v0.2.0`, which starts the workflow. Open
 the run under **Actions → Publish Aion Python package**: the `build` job runs
-first, then the `publish` job waits in the `pypi` environment. **Review
-deployments**, approve. This is the last point at which the release can be
-stopped - PyPI never takes a file name twice, not after a delete and not after
-a yank, so an approved upload spends the version number for good.
+first, then the `publish` job uploads automatically if the build succeeds.
+The confirmation prompt is the last manual approval before this flow starts.
+PyPI never accepts the same file name twice, even after a delete or yank, so
+a successful upload spends the version number for good.
 
 Once the upload has finished, install the new version to check it:
 
@@ -70,13 +70,14 @@ Both commands run `scripts/release.py`, read the version from
    | Target | What it does |
    |---|---|
    | `make check-env` | Says the working environment is not half-installed. |
-   | `make tests` | Unit suite. |
+   | `make tests-unit` | Unit suite. |
    | `make lint-imports` | The layer contract between subpackages. |
    | `make dist-build` | Empties `dist/`, builds the wheel and the sdist. |
    | `make dist-check` | Reads `dist/` against the packaging contract, then `twine check`. |
    | `make dist-smoke` | Installs the built files into nine clean venvs and uses each one. |
+   | `make tests-scenarios-dist` | Runs the scenario suite against the built wheel in a clean venv. |
 
-   The last three are what the release workflow itself runs, so green here
+   The last four are what the release workflow itself runs, so green here
    means the release is proven except for the upload.
 3. **The question.** Anything but `y` stops here. `make release YES=1` answers
    it, for a run without a terminal; without `YES=1` a run that has no
@@ -89,10 +90,12 @@ The release is the last thing it does. A failure anywhere before it stops the
 run with the failing step named, and nothing has been spent: no tag, no
 release, no version number. `make release-check` is step 2 alone.
 
-`dist-smoke` takes a minute or two and uses whatever `python3` is on the path.
-Pin it to the version the release is built with:
+`dist-smoke` takes a minute or two and uses whatever `python3` is on the path;
+`tests-scenarios-dist` adds about half a minute on top, in an environment of the same
+kind. Pin both to the version the release is built with:
 `make release-check RELEASE_ARGS="--python 3.12"` (`make release` takes the
-same), or `make dist-smoke SMOKE_ARGS="--python 3.12"` on its own.
+same), or `make dist-smoke SMOKE_ARGS="--python 3.12"` and
+`make tests-scenarios-dist SCENARIOS_ARGS="--python 3.12"` on their own.
 
 The same release by hand, if ever needed: `gh release create py-v0.2.0
 --target main --title py-v0.2.0 --generate-notes`, plus `--prerelease` for a
@@ -165,6 +168,15 @@ bad `0.2.0`, there is no second `0.2.0`.
   discovery which frameworks loaded, and asserts the libraries that extra did
   *not* buy are absent. The negative half is the point: a base install that
   quietly carries `fastapi` proves nothing.
+- **`tests-scenarios-dist`** is the one check that runs the product. It installs the
+  wheel with both framework extras into one more clean environment and runs
+  the ordinary, in-memory `tests/scenarios` against it: a real `aion serve`
+  per framework and deployment variant, driven through the proxy by an A2A
+  client, asserting on what comes back over the wire. The PostgreSQL-backed
+  persistence and distributed groups run in the source-checkout CI jobs.
+  `dist-smoke` proves the installation is well formed; this proves an agent
+  written against it still behaves. The suite is
+  described in `tests/scenarios/README.md`.
 
 TestPyPI is deliberately not part of this. Several dependencies (`a2a-sdk`,
 `google-adk`, `asgi-proxy-lib`) do not exist there, so an install would need

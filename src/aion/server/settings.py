@@ -4,7 +4,7 @@ from typing import Literal, Optional
 
 from pydantic import Field, field_validator
 
-from aion.core.settings import BaseEnvSettings
+from aion.core.settings import PLATFORM_SUPPLIED, BaseEnvSettings
 from aion.core.utils.optional_deps import server_extras_hint
 
 __all__ = ["AppSettings", "app_settings"]
@@ -13,14 +13,19 @@ __all__ = ["AppSettings", "app_settings"]
 class AppSettings(BaseEnvSettings):
     """Application configuration settings."""
 
-    file_storage_backend: Optional[Literal["stub"]] = Field(
+    file_storage_backend: Optional[Literal["stub", "aion"]] = Field(
         default=None,
         alias="FILE_STORAGE_BACKEND",
         description=(
             "File storage backend for converting inline (base64) file parts to URLs. "
-            "When set, outgoing A2A events with binary content are uploaded to storage "
-            "and replaced with URL references, minimizing content stored in tables. "
-            "Options: 'stub' (development only). Default: None (disabled, base64 passthrough)."
+            "When set, inbound and outbound file parts are stored before anything "
+            "persists them and replaced with URL references; an inbound file that "
+            "cannot be stored rejects the request, an outbound one is dropped and "
+            "logged rather than falling back to base64. "
+            "Parts the transformer skips, such as JSX Cards, stay inline. "
+            "Options: 'aion' (the Aion Files API; requires AION_CLIENT_ID and "
+            "AION_CLIENT_SECRET, the server refuses to start without them), "
+            "'stub' (development only). Default: None (disabled, base64 passthrough)."
         )
     )
 
@@ -56,6 +61,39 @@ class AppSettings(BaseEnvSettings):
         )
     )
 
+    task_ownership_reaper: bool = Field(
+        default=True,
+        alias="TASK_OWNERSHIP_REAPER",
+        description=(
+            "Whether this process reclaims task leases whose owner stopped "
+            "renewing them. Reclaiming is only safe once every writer "
+            "heartbeats, which every deployed instance now does, so it is on "
+            "by default; set a falsy value to hold a process back during a "
+            "rollout whose older instances do not yet heartbeat. Applies only "
+            "where PostgreSQL ownership is in use."
+        ),
+    )
+
+    # The bound mirrors MIN_LEASE_TTL_SECONDS in aion.server.tasks.ownership.config,
+    # which cannot be imported here without importing the whole ownership
+    # package; a unit test keeps the two equal.
+    task_ownership_lease_ttl_seconds: float = Field(
+        default=60.0,
+        ge=24.0,
+        alias="TASK_OWNERSHIP_LEASE_TTL_SECONDS",
+        description=(
+            "How long a task lease outlives its holder's last renewal, in "
+            "seconds. It bounds how long a task whose instance died looks "
+            "alive before another instance settles it; the renewal interval, "
+            "the reconcile passes and the other lease timings are fixed shares "
+            "of it, so a shorter TTL means faster recovery and more frequent "
+            "database writes for every running task. The cancellation grace "
+            "and wait are not affected. Minimum 24. Applies only where "
+            "PostgreSQL ownership is in use; each lease carries its own "
+            "expiry, so instances may differ during a rollout."
+        ),
+    )
+
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = Field(
         description="Logging level to use.",
         alias="LOG_LEVEL",
@@ -68,28 +106,42 @@ class AppSettings(BaseEnvSettings):
         alias="AION_DOCS_URL"
     )
 
-    node_name: Optional[str] = Field(
+    host_name: Optional[str] = Field(
         default=None,
-        description="Node name used to identify deployment in Aion platform",
-        alias="NODE_NAME"
+        description=(
+            "Name of the host this process runs on, supplied by the deployment. "
+            "It identifies the instance in two places a person looks when "
+            "something is wrong: the `host.name` field of every shipped log "
+            "line, and the owner reported when a request arrives for a task "
+            "another instance is already running. A container runtime's own "
+            "HOSTNAME is deliberately not read - it is a random hash under "
+            "plain Docker and a developer's machine name locally, and either "
+            "would put a plausible but meaningless owner into shared state. "
+            "Default: unset, which reads honestly as unknown."
+        ),
+        alias="HOST_NAME",
+        json_schema_extra=PLATFORM_SUPPLIED,
     )
 
     version_id: Optional[str] = Field(
         default=None,
         description="Version ID used to identify deployment in Aion platform",
-        alias="VERSION_ID"
+        alias="VERSION_ID",
+        json_schema_extra=PLATFORM_SUPPLIED,
     )
 
     logstash_host: Optional[str] = Field(
         default=None,
         description="Logstash host to use.",
-        alias="LOGSTASH_HOST"
+        alias="LOGSTASH_HOST",
+        json_schema_extra=PLATFORM_SUPPLIED,
     )
 
     logstash_port: Optional[int] = Field(
         default=None,
         description="Logstash port to use.",
-        alias="LOGSTASH_PORT"
+        alias="LOGSTASH_PORT",
+        json_schema_extra=PLATFORM_SUPPLIED,
     )
 
     @field_validator("encryption_key")

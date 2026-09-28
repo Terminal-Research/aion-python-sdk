@@ -27,11 +27,15 @@ __all__ = [
 
 
 class A2AInbox(A2ABaseModel):
-    """Server-populated input envelope for graphs that opt into A2A.
+    """Server-populated input envelope for agents that opt into A2A.
 
-    Graphs declare `a2a_inbox: A2AInbox` in their state schema to receive
-    a snapshot of the current A2A context at invocation time.  All fields are
-    defensive copies — mutating them does not affect server state.
+    The server builds one per invocation and hands it over on
+    `AionRuntimeContext.inbox`, so an agent reaches it the way it reaches the
+    rest of that context: a LangGraph node through
+    `Runtime[AionRuntimeContext]`, an ADK agent through
+    `ctx.aion_runtime_context`.  It is a snapshot of the A2A context as it
+    stood at invocation time, and all fields are defensive copies — mutating
+    them does not affect server state.
     """
 
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
@@ -63,8 +67,10 @@ class A2AOutbox(A2ABaseModel):
     """Serializable wrapper for the agent's outgoing A2A Task or Message.
 
     Graphs set `a2a_outbox` in their state to return a Task or Message at the
-    end of execution. Wrapping in a Pydantic model with Protobuf annotations
-    ensures LangGraph's checkpoint saver can serialize the state.
+    end of execution. It answers the run that wrote it: the saved state keeps
+    the value afterwards, and later turns of the same context do not apply it
+    again. Wrapping in a Pydantic model with Protobuf annotations ensures
+    LangGraph's checkpoint saver can serialize the state.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)

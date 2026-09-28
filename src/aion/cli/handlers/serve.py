@@ -26,6 +26,10 @@ from aion.cli.utils.port_manager import AionPortManager
 
 logger = logging.getLogger(__name__)
 
+# Each child may spend 60 seconds rescuing a signaled cancellation, then up
+# to two seconds settling interrupted tasks. Leave room for remaining cleanup.
+SERVE_SHUTDOWN_TIMEOUT_SECONDS = 75
+
 
 class ServeHandler:
     """
@@ -54,7 +58,7 @@ class ServeHandler:
 
         Signal handlers run between bytecodes on the main thread, so doing the
         shutdown *in* one blocks the event loop for as long as the child
-        processes take to die (up to 30s), and racing it against the normal
+        processes take to die (up to 75s), and racing it against the normal
         ``finally`` path would shut everything down twice. Instead the handler
         only sets an event, and ``run``'s own ``finally`` performs the one
         graceful, awaited shutdown.
@@ -383,7 +387,7 @@ class ServeHandler:
                 except asyncio.CancelledError:
                     pass
 
-    async def shutdown(self, timeout: int = 30) -> bool:
+    async def shutdown(self, timeout: int = SERVE_SHUTDOWN_TIMEOUT_SECONDS) -> bool:
         """
         Gracefully shutdown all processes and release reserved ports.
 

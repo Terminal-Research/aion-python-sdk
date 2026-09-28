@@ -49,7 +49,9 @@ class A2AToLcConverter:
             mime_type = cls._detect_mime_type(part)
             return create_file_block(url=part.url, mime_type=mime_type)
 
-        if part.data:
+        # HasField, not truthiness: a protobuf message is always truthy, so an
+        # empty Part would otherwise become a text block holding "{}".
+        if part.HasField("data"):
             data_dict = json_format.MessageToDict(part).get("data", {})
             return create_text_block(text=json.dumps(data_dict, indent=2))
 

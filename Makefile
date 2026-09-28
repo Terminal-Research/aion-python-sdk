@@ -18,26 +18,71 @@ POSTGRES_TEST_URL ?= $(PG_TEST_URL)
 
 # Read once, here, before anything below gets a chance to rebind the variable
 # for one target's recipe. A target-specific `export ... :=` (used below to
-# keep the variable out of plain `make tests`) creates its own binding with
+# keep the variable out of plain `make tests-unit`) creates its own binding with
 # origin "file" inside that recipe, so asking $(origin POSTGRES_TEST_URL)
 # inside with_pg_test itself would always answer "file" - this is computed
 # where the only binding in scope is still the real one.
 POSTGRES_TEST_URL_IS_EXTERNAL := $(filter environment command line,$(origin POSTGRES_TEST_URL))
 
-.PHONY: help tests tests-integration tests-all lint-imports release-check \
-	release check-env dist-build dist-check dist-smoke pg-test-up pg-test-down
+.PHONY: help tests tests-unit tests-integration tests-full tests-scenarios tests-scenarios-persistence \
+	tests-scenarios-pg tests-scenarios-distributed \
+	tests-scenarios-dist tests-floors scenarios-matrix lint-imports release-check release check-env \
+	dist-build dist-check dist-smoke pg-test-up pg-test-down
 
 # `make help` lists targets in file order, under the `##@` heading above them.
 # A new target goes under the heading it belongs to.
 help: ## Show available commands
 	@awk 'BEGIN {FS = ":.*## "} \
 		/^##@ / {printf "\n\033[1m%s\033[0m\n", substr($$0, 5); next} \
-		/^[a-zA-Z_-]+:.*## / {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+		/^[a-zA-Z_-]+:.*## / {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 ##@ Tests
 
-tests: ## Run unit tests (make tests ARGS="-k platform_link")
-	poetry run pytest -m "not integration" $(ARGS)
+# The three suites are three directories - tests/unit, tests/integration and
+# tests/scenarios - and the directory is what a target runs. tests/conftest.py
+# puts the matching marker on every item, so `-m` combines suites in ARGS,
+# but nothing here selects by marker. TEST_PATHS= narrows a run to part of a
+# suite; ARGS= is pytest options and goes through untouched. They are two
+# variables because a path in ARGS would land next to the suite's own
+# directory, and the tests under it would be collected twice.
+TEST_PATHS ?=
+
+# A target takes TEST_PATHS under its own suite's directories only, checked
+# here before pytest starts and before any container does: `make tests-unit
+# TEST_PATHS=tests/integration` must not run integration tests with no
+# database under them, and no `-m` on the command line could hold that,
+# because the last `-m` given wins and ARGS comes last. $(1) is the
+# directories allowed; a path is one of them, or anything under one, node
+# ids included. Both sides go through abspath first, so that `..` and `.`
+# are resolved before the comparison rather than matched as path components:
+# tests/unit/../integration is tests/integration, and ./tests/unit is
+# tests/unit.
+empty :=
+space := $(empty) $(empty)
+under = $(subst $(space),|,$(foreach dir,$(abspath $(1)),$(dir)|$(dir)/*))
+define require_under
+	for path in $(abspath $(TEST_PATHS)); do \
+		case "$$path" in \
+			$(call under,$(1)) ) ;; \
+			*) echo "TEST_PATHS: $$path is not under $(1) - not this target's suite" >&2; exit 2 ;; \
+		esac; \
+	done
+endef
+
+# The unit suite runs on pytest-xdist workers. UNIT_WORKERS takes whatever
+# `pytest -n` takes: a number, `auto` or `logical`; 0 runs every test in the
+# pytest process itself, which is what `--pdb` and `-s` debugging need. CI
+# sets its own count for the runner's cores.
+UNIT_WORKERS ?= 4
+
+tests-unit: ## Run the unit suite (make tests-unit ARGS="-k platform_link" TEST_PATHS="tests/unit/core" UNIT_WORKERS=0)
+	@$(call require_under,tests/unit)
+	poetry run pytest -n $(UNIT_WORKERS) $(if $(TEST_PATHS),$(TEST_PATHS),tests/unit) $(ARGS)
+
+# tests/ is a directory, so without this rule "make tests" would succeed
+# without running any tests. Fail explicitly rather than silently passing.
+tests:
+	@echo "Use make tests-unit or make tests-full" >&2; exit 2
 
 # Run a command with a database under it, and take the database away again.
 #
@@ -67,28 +112,137 @@ define with_pg_test
 	fi
 endef
 
-# The variable is exported only for the two targets that run against it. A
-# global export would hand the default container's address to plain `make
-# tests`, and a test module that checks the variable's presence rather than
-# asking pytest's marker filter - the belt to that suite's braces - would see
-# a database that was never started.
+# Export the database URL only for targets that use it. A global export
+# would hand the default container's address to `make tests-unit` without
+# starting that container.
 tests-integration: export POSTGRES_TEST_URL := $(POSTGRES_TEST_URL)
 tests-integration: ## Run integration tests; run before you commit
-	@$(call with_pg_test,poetry run pytest -m integration $(ARGS))
+	@$(call require_under,tests/integration)
+	@$(call with_pg_test,poetry run pytest $(if $(TEST_PATHS),$(TEST_PATHS),tests/integration) $(ARGS))
 
-tests-all: export POSTGRES_TEST_URL := $(POSTGRES_TEST_URL)
-tests-all: ## Run unit and integration tests together
-	@$(call with_pg_test,poetry run pytest $(ARGS))
+# The scenario suite, tests/scenarios: a real `aion serve` per framework and
+# deployment variant, driven over A2A. None of the targets above runs it - it
+# starts processes and takes a minute. The targets below separate the
+# in-memory, persistence, and distributed variants; the built wheel has a
+# separate release check. `tests/scenarios/README.md` explains the suite.
+#
+#   TAGS="smoke events"   only those suites (any of them)
+#   FRAMEWORK=adk         one framework instead of all of them
+#   ARGS="-x -vv"         straight through to pytest
+#   KEEP_SERVE=1          leave the servers up afterwards and say where
+TAGS ?=
+FRAMEWORK ?=
+
+# Without TAGS, everything except the two groups that need a database and
+# have targets of their own: persistence restarts a server and waits out a
+# production lease, distributed runs two servers over one database.
+SCENARIO_TAGS := $(if $(TAGS),$(shell echo "$(TAGS)" | sed 's/  */ or /g'),not persistence and not distributed)
+SCENARIO_EXPR := scenario and ($(SCENARIO_TAGS))
+FRAMEWORK_FILTER := $(if $(FRAMEWORK),-k "[$(FRAMEWORK)]",)
+
+tests-scenarios: ## Run the scenarios against this working tree (TAGS=, FRAMEWORK=)
+	poetry run pytest tests/scenarios -m "$(SCENARIO_EXPR)" $(FRAMEWORK_FILTER) $(ARGS)
+
+# The scenarios that restart a server and expect the tasks to still be there.
+# The database is handled the way the integration targets handle it, and by
+# the same definition: an externally supplied POSTGRES_TEST_URL is used as is,
+# otherwise a disposable container is started and stopped around the run. The
+# target is named for what it proves rather than for the store that backs it;
+# `tests-scenarios-pg` remains as a compatibility alias for existing local workflows.
+tests-scenarios-persistence: export POSTGRES_TEST_URL := $(POSTGRES_TEST_URL)
+tests-scenarios-persistence: ## Run the persistence scenarios against a real database
+	@$(call with_pg_test,poetry run pytest tests/scenarios -m "scenario and persistence" \
+		$(FRAMEWORK_FILTER) $(ARGS))
+
+tests-scenarios-pg: tests-scenarios-persistence ## Alias for tests-scenarios-persistence
+
+# The scenarios that run two servers of one agent over one database and ask
+# which of them owns a task. Same database contract as the persistence target,
+# and separate from it for the same reason: a plain `make tests-scenarios`
+# would otherwise start four servers per scenario and wait out a lease.
+tests-scenarios-distributed: export POSTGRES_TEST_URL := $(POSTGRES_TEST_URL)
+tests-scenarios-distributed: ## Run the distributed scenarios against a real database
+	@$(call with_pg_test,poetry run pytest tests/scenarios -m "scenario and distributed" \
+		$(FRAMEWORK_FILTER) $(ARGS))
+
+# An explicit complete source-checkout run. Clear selectors so command-line
+# TEST_PATHS, ARGS, TAGS, or FRAMEWORK cannot make "full" silently partial.
+# Each database-backed target manages its own disposable PostgreSQL lifecycle.
+# The groups run one after another because they share that one container name
+# and port; CI runs them as separate jobs, each with its own database.
+tests-full: ## Run unit, integration, and every scenario group
+	$(MAKE) tests-unit TEST_PATHS= ARGS=
+	$(MAKE) tests-integration TEST_PATHS= ARGS=
+	$(MAKE) tests-scenarios TAGS= FRAMEWORK= ARGS=
+	$(MAKE) tests-scenarios-persistence FRAMEWORK= ARGS=
+	$(MAKE) tests-scenarios-distributed FRAMEWORK= ARGS=
+
+# The same scenarios, against the wheel in dist/ rather than the working tree:
+# `poetry run`, because pytest and the A2A client come from this project's
+# environment - the installation under test is the clean venv the script
+# builds, and the agents reach it through SCENARIOS_AION_BIN.
+tests-scenarios-dist: ## Run the scenarios against the built wheel in a clean venv
+	poetry run ./scripts/packaging/scenarios.py $(SCENARIOS_ARGS)
 
 ##@ Checks
 
 lint-imports: ## Check the layer contract between the aion.* subpackages
 	poetry run lint-imports
 
+# Not a test run: it collects the scenarios and reads the registries, and
+# rewrites the document they describe. CI runs the same script with --check.
+scenarios-matrix: ## Regenerate tests/scenarios/SCENARIOS.md from the suite
+	poetry run ./scripts/scenarios_matrix.py
+
 # `poetry run`, because the environment under inspection is the project's own -
 # the script reports on whichever interpreter runs it.
 check-env: ## Check the installed environment for duplicate or broken packages
 	poetry run ./scripts/packaging/envcheck.py
+
+# The other direction of the compatibility question. Every other target here
+# runs against the newest release in each declared range; this one installs the
+# oldest, so that `a2a-sdk>=1.1.5`, `langgraph>=1.0.0` and `google-adk>=1.27.1`
+# mean what the manifest says rather than only having been typed there.
+#
+# uv rather than Poetry, for the one thing Poetry cannot do: `--resolution
+# lowest-direct` takes every dependency this project declares to the oldest
+# release the whole graph still allows, while letting their own dependencies
+# resolve normally. Pinning each floor exactly instead would collide the extras
+# against each other - google-adk 1.27.1 asks for fastapi>=0.124.1 while the
+# server extra declares >=0.115.2, and both are true - and report a conflict
+# nobody would ever install.
+#
+# It builds an environment of its own, `.venv-floors`, on Python 3.12, the
+# bottom of requires-python, rather than downgrading the development one: the
+# test tooling from the dev group first, then the project at its floors. An
+# environment that was first installed at the newest releases and then
+# lowered keeps whatever those releases pulled in and nothing needs any more,
+# and `envcheck.py` rightly fails on such an orphan's unmet requirements.
+#
+# `--upgrade` is what makes the resolution take the floors at all: without it
+# uv keeps any installed version that still satisfies a requirement. That is
+# how this job once ran the unit suite against the newest releases while
+# reporting every floor as "resolved to" something higher. `floors.py --check`
+# now fails on a floor that is neither installed nor recorded as raised by a
+# sibling, so a run that lowers nothing cannot pass again.
+FLOORS_PYTHON ?= 3.12
+FLOORS_VENV := .venv-floors
+FLOORS_PY := $(FLOORS_VENV)/bin/python
+
+tests-floors: ## Install the oldest allowed dependencies in .venv-floors and run the unit suite there
+	@command -v uv >/dev/null 2>&1 || { \
+		echo "tests-floors needs uv: https://docs.astral.sh/uv/getting-started/installation/" >&2; \
+		exit 2; \
+	}
+	uv venv --clear --seed --python $(FLOORS_PYTHON) $(FLOORS_VENV)
+	uv pip install --python $(FLOORS_PY) packaging
+	$(FLOORS_PY) ./scripts/packaging/floors.py --test-requirements > $(FLOORS_VENV)/test-requirements.txt
+	uv pip install --python $(FLOORS_PY) -r $(FLOORS_VENV)/test-requirements.txt
+	uv pip install --python $(FLOORS_PY) \
+		--resolution lowest-direct --upgrade -e ".[langgraph-server,adk-server]"
+	$(FLOORS_PY) ./scripts/packaging/envcheck.py
+	$(FLOORS_PY) ./scripts/packaging/floors.py --check
+	$(FLOORS_PY) -m pytest -n $(UNIT_WORKERS) tests/unit $(ARGS)
 
 ##@ Distribution
 
@@ -111,13 +265,14 @@ dist-smoke: ## Install the built distributions into clean venvs and use them
 ##@ Release
 
 # Two commands that both read the version from pyproject.toml and take none.
-# `release-check` runs check-env, tests, lint-imports, dist-build, dist-check
-# and dist-smoke in that order and publishes nothing. `release` runs the same
-# gate after a preflight over git, GitHub and PyPI, asks, and creates the
-# py-v* GitHub Release that starts publish-python.yml - the upload itself
-# happens there, behind the reviewer of the `pypi` environment. RELEASE_ARGS
-# goes to the script (`--python 3.12` picks the smoke interpreter); YES=1
-# answers the prompt for a run without a terminal.
+# `release-check` runs check-env, tests, lint-imports, dist-build, dist-check,
+# dist-smoke and tests-scenarios-dist in that order and publishes nothing. `release`
+# runs the same gate after a preflight over git, GitHub and PyPI, asks, and
+# creates the py-v* GitHub Release that starts publish-python.yml - the upload
+# itself happens there, behind the reviewer of the `pypi` environment.
+# RELEASE_ARGS goes to the script (`--python 3.12` picks the interpreter for
+# both clean-environment steps); YES=1 answers the prompt for a run without a
+# terminal.
 release-check: ## Run every release check without publishing anything
 	./scripts/release.py check $(RELEASE_ARGS)
 

@@ -22,10 +22,13 @@ class AionAgentCard:
             base_url: str,
     ) -> AgentCard:
         """Build an AgentCard from agent config and the server's base URL."""
+        # Which extensions belong on a card is the registry's decision, not
+        # this builder's: an extension can be supported and callable without
+        # being something a standard agent announces (see get_advertised and
+        # docs/development/extension-exposure.md).
         extensions = [
             AgentExtension(uri=ext.uri, description=ext.description, required=False)
-            for ext in aion_a2a_extension_registry.get_all()
-            if ext.active
+            for ext in aion_a2a_extension_registry.get_advertised()
         ]
         capabilities = AgentCapabilities(
             streaming=True,

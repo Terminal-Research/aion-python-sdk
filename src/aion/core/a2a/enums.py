@@ -95,25 +95,20 @@ class TaskSettlementReason(str, Enum):
     """The server stopped while the task was still running.
 
     Shutdown cancels the execution, so nothing is left to record an outcome and
-    the task would otherwise stay active in the store forever.
-    """
-
-    SERVER_RESTART = "server_restart"
-    """A previous server process died while the task was still running.
-
-    A hard kill — SIGKILL, OOM, a lost machine — leaves no chance to settle
-    anything: the process is gone before shutdown runs, so the task keeps the
-    active state it had with nothing alive to advance it. The next start finds
-    it in the store and settles it as a graceful shutdown would have; only the
-    reason tells the two apart.
+    the task would otherwise stay active in the store forever. The shutting-down
+    process settles the task itself, while it still holds the claim, so the
+    outcome is recorded at once rather than waiting for the lease to lapse.
     """
 
     LEASE_EXPIRED = "lease_expired"
     """This task's ownership lease expired before it was renewed.
 
-    Reported when a task is reclaimed by timeout rather than found gone at
-    startup, so it carries a weaker guarantee than `SERVER_RESTART`: the
-    previous owner is presumed gone, not confirmed gone.
+    The one reason reported for an owner lost outright — SIGKILL, OOM, a lost
+    machine — because such a process is gone before shutdown runs and cannot
+    settle anything. The task keeps the active state it had until its lease
+    lapses and the reaper reclaims it, which is also why this is the weakest
+    of the reasons: the previous owner is presumed gone, not confirmed gone,
+    and the settlement arrives no sooner than the lease allows.
     """
 
     CANCEL_REQUESTED = "cancel_requested"
@@ -162,10 +157,6 @@ class TaskSettlementReason(str, Enum):
 _SETTLEMENT_DESCRIPTIONS = {
     TaskSettlementReason.SERVER_SHUTDOWN: (
         "The server was shut down while this task was still running, so the "
-        "task was stopped without finishing."
-    ),
-    TaskSettlementReason.SERVER_RESTART: (
-        "The server process running this task stopped unexpectedly, so the "
         "task was stopped without finishing."
     ),
     TaskSettlementReason.LEASE_EXPIRED: (

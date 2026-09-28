@@ -6,4 +6,5 @@
 
 ## Environment Variables
 
-Create a `.env` file in your project root. For a full reference of all available variables, see the **[Environment Variables Guide](../environment-variables.md)**.
+Create a `.env` file in your project root. For a full reference of all available variables, see the
+**[Environment Variables Guide](https://docs.aion.to/sdk/python/configuration/environment-variables)**.

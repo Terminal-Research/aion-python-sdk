@@ -1,0 +1,17 @@
+# One agent, one framework, nothing optional turned on.
+aion:
+  agents:
+    {{ agent_id }}:
+      path: "{{ agent_path }}"
+      name: "Scenario agent ({{ framework }})"
+      description: "Answers the scenario command contract on {{ framework }}"
+      version: "1.0.0"
+      skills:
+        - id: "commands"
+          name: "Scenario commands"
+          description: "Deterministic answers to the scenario command contract"
+          tags: ["scenarios"]
+          examples: ["help", "echo hello", "stream 5"]
+      input_modes: ["text"]
+      output_modes: ["text"]
+      enabled_extensions: [{% for uri in enabled_extensions %}"{{ uri }}"{% if not loop.last %}, {% endif %}{% endfor %}]

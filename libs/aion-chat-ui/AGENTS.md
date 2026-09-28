@@ -2,7 +2,7 @@
 
 This package contains the standalone React/Ink terminal chat UI for Aion Chat.
 It is packaged into the Python SDK through `npm run stage:python`, which copies
-the built CLI bundle into `src/aion/cli/bin/cli.mjs`.
+the built CLI bundle into the repository's `src/aion/cli/bin/cli.mjs`.
 
 Registry discovery requests `networkTypes: [A2A, AionChat]` in one GraphQL
 selection. The server matches either endpoint type and returns each identity

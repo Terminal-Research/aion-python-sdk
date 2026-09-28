@@ -25,14 +25,14 @@ class AionLogstashFormatter(LogstashFormatter):
 
     Args:
         client_id: Unique identifier for the client.
-        node_name: Name of the node generating the logs.
+        host_name: Name of the host generating the logs.
         **kwargs: Additional arguments passed to LogstashFormatter.
     """
 
-    def __init__(self, client_id: str, node_name: str, **kwargs):
+    def __init__(self, client_id: str, host_name: str, **kwargs):
         super().__init__(**kwargs)
         self._client_id = client_id
-        self._node_name = node_name
+        self._host_name = host_name
 
     def format(self, record: AionLogRecord) -> str:
         """Create a structured log entry formatted for Logstash ingestion.
@@ -78,7 +78,7 @@ class AionLogstashFormatter(LogstashFormatter):
             'user.id': user_id,
 
             # Host & Process metadata
-            'host.name': self._node_name,
+            'host.name': self._host_name,
             'process.pid': os.getpid(),
 
             # Application & trace context

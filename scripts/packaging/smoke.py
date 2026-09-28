@@ -314,6 +314,17 @@ ENVIRONMENTS = (
                     "aion.langgraph.authoring", "aion.langgraph.server", "aion.server"
                 ),
             ),
+            # Written the way an agent imports them, not as whole packages: a
+            # langgraph-prebuilt newer than the langgraph beside it imports as
+            # a package and fails on exactly these names.
+            Step(
+                "the standard LangGraph agent entry points import",
+                code=(
+                    "from langgraph.prebuilt import ToolNode\n"
+                    "from langchain.agents import create_agent\n"
+                    "print('imported ToolNode, create_agent')"
+                ),
+            ),
             Step(
                 "discovery loads LangGraph and skips ADK with a hint",
                 code=probe_discovery(loaded=("LangGraphPlugin",), skipped=("adk-server",)),

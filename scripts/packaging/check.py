@@ -186,6 +186,18 @@ def check_wheel_contents(wheel: Path, report: Report) -> list[str]:
             f"{data_file} is missing from the wheel",
         )
 
+    # The tests are not part of the distribution. True by construction - the
+    # packages list names src/aion and nothing else - and asserted here
+    # because tests/scenarios holds agent packages and an A2A harness, which
+    # would look like something to import if they ever reached an
+    # installation.
+    tests = sorted(n for n in names if n.startswith("tests/"))
+    report.check(
+        not tests,
+        "no tests in the wheel",
+        f"the wheel ships {len(tests)} file(s) from tests/: {', '.join(tests[:5])}",
+    )
+
     # The subpackage READMEs live beside the code and are excluded from the
     # build; the package page is the root README, which travels in METADATA.
     markdown = sorted(n for n in names if n.endswith(".md"))
@@ -210,6 +222,15 @@ def check_sdist_matches(sdist: Path, wheel_names: Iterable[str], report: Report)
         f"the same {wheel_py} Python files as the wheel",
         f"the sdist has {sdist_py} Python files, the wheel has {wheel_py}: "
         f"a wheel built from this sdist would not match the one shipped beside it",
+    )
+
+    # As in the wheel, and for the same reason. Every name here is under the
+    # archive's one top-level directory, which is what gets stripped first.
+    tests = sorted(n for n in sdist_names if n.split("/", 1)[-1].startswith("tests/"))
+    report.check(
+        not tests,
+        "no tests in the sdist",
+        f"the sdist ships {len(tests)} file(s) from tests/: {', '.join(tests[:5])}",
     )
 
 

@@ -5,7 +5,7 @@ from .push_notifications import PushNotificationFactory
 from .authenticated_push_sender import AuthenticatedPushNotificationSender
 from .terminal_push_sender import TerminalTaskPushSender
 from .deduplicator import A2ATaskDeduplicator
-from .settlement import settle_orphaned_tasks, settled_task
+from .settlement import settled_task
 from .ownership import (
     Busy,
     Claim,
@@ -34,7 +34,6 @@ __all__ = [
     "A2ATaskDeduplicator",
     # Settlement of tasks whose execution is gone
     "settled_task",
-    "settle_orphaned_tasks",
     # Task ownership
     "Claim",
     "Busy",

@@ -33,7 +33,7 @@ __all__ = [
 
 # Platform-owned task metadata key recording which extension handler a task
 # was routed to at creation time. Prefixed under the platform metadata
-# namespace (see aion.server.tasks.deduplicator.PLATFORM_METADATA_PREFIX) so
+# namespace (see aion.core.a2a.metadata.PLATFORM_METADATA_PREFIX) so
 # A2ATaskDeduplicator protects it from being overwritten by incoming task
 # patches - the routing decision must persist unchanged for the task's
 # lifetime, see resume-routing rationale in

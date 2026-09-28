@@ -8,6 +8,7 @@ from typing import Any, Optional, TYPE_CHECKING
 
 from a2a.types import TaskArtifactUpdateEvent, TaskStatusUpdateEvent
 from aion.server.agent.adapters import (
+    LegacyStateError,
     ExecutionConfig,
     ExecutionSnapshot,
     ExecutorAdapter,
@@ -92,7 +93,7 @@ class ADKExecutor(ExecutorAdapter):
             )
             logger.debug(f"Input preview: {extract_input_preview(context.message)!r}")
 
-            session = await self._get_or_create_session(context_id)
+            session = await self._get_or_create_session(config, context_id)
             user_content = ADKTransformer.transform_context(context)
 
             # IMPORTANT: Add user message to session BEFORE creating invocation context
@@ -163,13 +164,15 @@ class ADKExecutor(ExecutorAdapter):
         try:
             logger.debug(f"Getting ADK state for context: {config.context_id}")
 
+            scope = config.require_state_scope()
             session = await self._session_service.get_session(
-                app_name=self._get_app_name(),
-                user_id=self._get_user_id(),
+                app_name=scope.agent_id,
+                user_id=scope.owner_scope,
                 session_id=config.context_id,
             )
 
             if not session:
+                await self._refuse_legacy_session(config.context_id)
                 raise StateRetrievalError(
                     f"Session not found: {config.context_id}"
                 )
@@ -223,49 +226,59 @@ class ADKExecutor(ExecutorAdapter):
             logger.error(f"Failed to resume ADK execution: {e}")
             raise ExecutionError(f"Failed to resume execution: {e}") from e
 
-    async def _get_or_create_session(self, session_id: str) -> Session:
-        """Get existing session or create a new one.
+    async def _get_or_create_session(self, config: ExecutionConfig, session_id: str) -> Session:
+        """Get the caller's session for this context, or create it.
 
-        Args:
-            session_id: The session identifier
+        Keyed by ``app_name`` = the Aion agent id and ``user_id`` = the
+        caller's ``owner_scope`` (``StateScope``), with the A2A ``context_id``
+        as ``session_id``: two users - or two agents on one database - that
+        present the same ``context_id`` get two sessions.
 
-        Returns:
-            Session: ADK Session object
+        Raises:
+            LegacyStateError: No such session exists, but one saved before
+                sessions were keyed by agent and owner does.
         """
-        app_name = self._get_app_name()
-        user_id = self._get_user_id()
-
+        scope = config.require_state_scope()
         session = await self._session_service.get_session(
-            app_name=app_name,
-            user_id=user_id,
+            app_name=scope.agent_id,
+            user_id=scope.owner_scope,
+            session_id=session_id,
+        )
+        if session:
+            logger.debug(f"Session resumed: {session_id}")
+            return session
+
+        await self._refuse_legacy_session(session_id)
+        logger.info(f"Session created: {session_id}")
+        return await self._session_service.create_session(
+            app_name=scope.agent_id,
+            user_id=scope.owner_scope,
             session_id=session_id,
         )
 
-        if not session:
-            logger.info(f"Session created: {session_id}")
-            session = await self._session_service.create_session(
-                app_name=app_name,
-                user_id=user_id,
-                session_id=session_id,
+    async def _refuse_legacy_session(self, session_id: str) -> None:
+        """Refuse a context whose only session was saved under the shared user.
+
+        Before sessions were keyed by agent and owner, every user's session
+        for a ``context_id`` was ``(display name, "default-user", context_id)``.
+        Such a session cannot be attributed to the caller: reading it could
+        show one user another's conversation, and creating a fresh one next
+        to it would drop a conversation without a word. Neither happens -
+        the turn fails with ``LegacyStateError`` and the old session is left
+        as it is.
+        """
+        legacy = await self._session_service.get_session(
+            app_name=self._legacy_app_name(),
+            user_id=DEFAULT_USER_ID,
+            session_id=session_id,
+        )
+        if legacy is not None:
+            raise LegacyStateError(
+                f"context {session_id} has an ADK session that predates per-agent, "
+                "per-owner session keys and cannot be attributed to this caller; it is "
+                "left untouched until it is migrated or removed"
             )
-        else:
-            logger.debug(f"Session resumed: {session_id}")
 
-        return session
-
-    def _get_app_name(self) -> str:
-        """Get application name from config or use default.
-
-        Returns:
-            str: Application name
-        """
+    def _legacy_app_name(self) -> str:
+        """The ``app_name`` sessions were saved under before they carried the agent id."""
         return self.config.name or "aion-adk-agent"
-
-    @staticmethod
-    def _get_user_id() -> str:
-        """Get user ID from config or use default.
-
-        Returns:
-            str: User identifier
-        """
-        return DEFAULT_USER_ID

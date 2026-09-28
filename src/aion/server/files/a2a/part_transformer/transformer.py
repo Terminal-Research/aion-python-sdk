@@ -1,17 +1,26 @@
-"""File part transformer for A2A events and messages.
+"""Move inline file content out of A2A messages and events.
 
-Walks A2A events/messages looking for Part(raw=...) — inline bytes content —
-and replaces them with Part(url=...) using a presigned URL.
-The actual upload is scheduled in the background via FileUploadManager.
+Walks a message or event for ``Part(raw=...)`` - inline bytes - and replaces
+each one with ``Part(url=...)`` once the content is stored. Storage is awaited,
+so a URL only ever names content that exists.
 
-If no upload_manager is provided or resolved, all transform methods are no-ops.
+Every inline part of one message or event is collected first and stored in a
+single batch. Sequential storage would add up the round trips; the batch pays
+only for its slowest file.
 
-Parts that match skip rules (e.g., JSX Cards) are never uploaded to storage.
+Parts matching a skip rule (JSX Cards, for instance) are documents rather than
+files and are left alone. With no upload manager configured the transformer is
+a no-op and inline content passes through unchanged - the one place where
+"keep the bytes in the database" is decided, and it is decided by configuration
+rather than by a failure.
 """
-import logging
+
+from __future__ import annotations
 
 import copy
+import logging
 import mimetypes
+from dataclasses import dataclass, field
 
 from a2a.types import (
     Message,
@@ -19,26 +28,56 @@ from a2a.types import (
     TaskArtifactUpdateEvent,
     TaskStatusUpdateEvent,
 )
-from aion.server.files.storage.manager import FileUploadManager
+from aion.core.runtime.context import get_aion_runtime_context
+from aion.server.files.storage import (
+    FileUpload,
+    FileUploadManager,
+    UploadContextResolution,
+    UploadFailure,
+    UploadReceipt,
+    resolve_upload_context,
+)
+
 from .rules import PartSkipRule, create_default_skip_rules
 
 logger = logging.getLogger(__name__)
 
+AgentEvent = TaskStatusUpdateEvent | TaskArtifactUpdateEvent
+
+
+@dataclass
+class TransformReport:
+    """What one transform did, for the caller that has to answer for it.
+
+    ``failures`` is what an inbound caller rejects on; an outbound caller has
+    already dropped the parts they describe. A context failure appears once,
+    not once per file.
+    """
+
+    receipts: list[UploadReceipt] = field(default_factory=list)
+    failures: list[UploadFailure] = field(default_factory=list)
+    changed: bool = False
+
+    @property
+    def ok(self) -> bool:
+        """Whether every inline part found a home."""
+        return not self.failures
+
+
+@dataclass
+class MessageTransform:
+    """A transformed message paired with its report."""
+
+    message: Message
+    report: TransformReport
+
+
 class A2AFileTransformer:
-    """Transforms Part(raw=...) > Part(url=...) in A2A events.
+    """Rewrites ``Part(raw=...)`` into ``Part(url=...)``.
 
-    If upload_manager is not provided, one is created from settings automatically.
-    If no storage backend is configured, all transform methods are no-ops — events
-    pass through unchanged, allowing the transformer to be always instantiated
-    unconditionally.
-
-    For each inline file part found:
-    1. Checks if it matches any skip rules (e.g., JSX Cards)
-    2. If not skipped: prepares a URL and schedules background upload
-    3. Returns the transformed part (uploaded with url) or original part (if skipped)
-
-    context_id is extracted from the event and forwarded to the backend for
-    organizing files by conversation/session.
+    If ``upload_manager`` is omitted, one is built from settings. With no
+    backend configured every method is a pass-through, so the transformer can
+    be constructed unconditionally.
     """
 
     def __init__(
@@ -46,14 +85,14 @@ class A2AFileTransformer:
         upload_manager: FileUploadManager | None = None,
         skip_rules: PartSkipRule | None = None,
     ) -> None:
-        """Initialize the transformer with an optional upload manager and skip rules.
+        """Initialize the transformer.
 
         Args:
-            upload_manager: Upload manager to use. If None, one is created from
-                            settings. If no backend is configured, the transformer
-                            becomes a no-op.
-            skip_rules: Rules determining which parts to skip. If None, default
-                       rules are used (e.g., skip JSX Cards).
+            upload_manager: Manager to store content through. ``None`` builds
+                one from settings; still ``None`` afterwards means no backend
+                is configured and the transformer is inert.
+            skip_rules: Which parts are never stored. Defaults to the standard
+                rules.
         """
         self._upload_manager = upload_manager or FileUploadManager.from_settings()
         self._skip_rules = skip_rules or create_default_skip_rules()
@@ -68,149 +107,176 @@ class A2AFileTransformer:
         """The underlying upload manager, if a backend is configured."""
         return self._upload_manager
 
-    async def drain(self) -> None:
-        """Wait for all in-flight uploads. Call during graceful shutdown."""
-        if self._upload_manager is not None:
-            await self._upload_manager.drain()
-
-    @property
-    def pending_count(self) -> int:
-        """Number of uploads currently scheduled but not yet completed."""
-        return self._upload_manager.pending_count if self._upload_manager is not None else 0
-
     async def transform_event(
-            self,
-            event: TaskStatusUpdateEvent | TaskArtifactUpdateEvent,
-            *,
-            wait_upload: bool = False,
-    ) -> TaskStatusUpdateEvent | TaskArtifactUpdateEvent:
-        """Return a transformed copy of the event, or the original if unchanged.
+        self,
+        event: AgentEvent,
+        *,
+        upload_context: UploadContextResolution | None = None,
+    ) -> AgentEvent:
+        """Return a transformed copy of ``event``, or the original if unchanged.
+
+        Outbound content never falls back to inline bytes: what could not be
+        stored is dropped from the event, so the agent's answer survives while
+        the file does not.
 
         Args:
-            event: The A2A event to transform (TaskStatusUpdateEvent or TaskArtifactUpdateEvent).
-            wait_upload: If True, waits for all uploads scheduled during this call
-                         to complete before returning. If False, uploads run in the background.
+            event: Status or artifact update to transform.
+            upload_context: Resolved projection to store against. Defaults to
+                the one projected from the active runtime context.
+
+        Returns:
+            The event, transformed when it carried inline content.
         """
         if self._upload_manager is None:
             return event
 
         if isinstance(event, TaskStatusUpdateEvent):
-            return await self._transform_status_event(event, wait_upload=wait_upload)
-        if isinstance(event, TaskArtifactUpdateEvent):
-            return await self._transform_artifact_event(event, wait_upload=wait_upload)
-        return event
+            message = event.status.message
+            if not message or not message.parts:
+                return event
+            source = list(message.parts)
+        elif isinstance(event, TaskArtifactUpdateEvent):
+            if not event.artifact.parts:
+                return event
+            source = list(event.artifact.parts)
+        else:
+            return event
 
-    async def transform_message(self, message: Message, *, wait_upload: bool = False) -> Message:
-        """Transform inline parts in a standalone Message.
+        resolution = upload_context or self._current_context(
+            context_id=event.context_id, task_id=event.task_id
+        )
+        new_parts, report = await self._transform_parts(source, resolution)
+        if not report.changed:
+            return event
+
+        new_event = copy.deepcopy(event)
+        target = (
+            new_event.status.message.parts
+            if isinstance(new_event, TaskStatusUpdateEvent)
+            else new_event.artifact.parts
+        )
+        del target[:]
+        target.extend(new_parts)
+        return new_event
+
+    async def transform_message(
+        self,
+        message: Message,
+        *,
+        upload_context: UploadContextResolution | None = None,
+    ) -> MessageTransform:
+        """Transform inline parts in a standalone message.
+
+        Unlike the event path this reports rather than decides: an inbound
+        caller rejects the request on any failure and discards the message
+        returned here.
 
         Args:
-            message: The A2A message whose parts will be transformed.
-            wait_upload: If True, waits for all uploads scheduled during this call to
-                         complete before returning. Use in request preprocessors to ensure
-                         files are available before the message is processed downstream.
-                         If False, uploads run in the background.
+            message: Message whose parts are transformed.
+            upload_context: Resolved projection to store against. Defaults to
+                the one projected from the active runtime context.
+
+        Returns:
+            The (possibly unchanged) message and a report of what happened.
         """
         if self._upload_manager is None or not message.parts:
-            return message
+            return MessageTransform(message, TransformReport())
 
-        new_parts, urls = await self._transform_parts(list(message.parts), message.context_id)
-        if not urls:
-            return message
-
-        if wait_upload and urls:
-            await self._upload_manager.wait(urls)
+        resolution = upload_context or self._current_context(
+            context_id=message.context_id, task_id=message.task_id
+        )
+        new_parts, report = await self._transform_parts(list(message.parts), resolution)
+        if not report.changed:
+            return MessageTransform(message, report)
 
         new_message = copy.deepcopy(message)
         del new_message.parts[:]
         new_message.parts.extend(new_parts)
-        return new_message
+        return MessageTransform(new_message, report)
 
-    async def _transform_status_event(
-            self, event: TaskStatusUpdateEvent, *, wait_upload: bool = False
-    ) -> TaskStatusUpdateEvent:
-        """Transform inline file parts in the status message of a TaskStatusUpdateEvent."""
-        message = event.status.message
-        if not message or not message.parts:
-            return event
-
-        new_parts, urls = await self._transform_parts(list(message.parts), context_id=event.context_id)
-        if not urls:
-            return event
-
-        if wait_upload and urls:
-            await self._upload_manager.wait(urls)
-
-        new_event = copy.deepcopy(event)
-        del new_event.status.message.parts[:]
-        new_event.status.message.parts.extend(new_parts)
-        return new_event
-
-    async def _transform_artifact_event(
-            self, event: TaskArtifactUpdateEvent, *, wait_upload: bool = False
-    ) -> TaskArtifactUpdateEvent:
-        """Transform inline file parts in the artifact of a TaskArtifactUpdateEvent."""
-        artifact = event.artifact
-        if not artifact.parts:
-            return event
-
-        new_parts, urls = await self._transform_parts(list(artifact.parts), context_id=event.context_id)
-        if not urls:
-            return event
-
-        if wait_upload and urls:
-            await self._upload_manager.wait(urls)
-
-        new_event = copy.deepcopy(event)
-        del new_event.artifact.parts[:]
-        new_event.artifact.parts.extend(new_parts)
-        return new_event
-
-    async def _transform_parts(
-            self,
-            parts: list[Part],
-            context_id: str | None,
-    ) -> tuple[list[Part], list[str]]:
-        """Transform a list of parts, returning new parts and scheduled upload URLs."""
-        new_parts = []
-        urls: list[str] = []
-
-        for part in parts:
-            new_part, url = await self._transform_part(part, context_id)
-            new_parts.append(new_part)
-            if url:
-                urls.append(url)
-
-        return new_parts, urls
-
-    async def _transform_part(
-            self,
-            part: Part,
-            context_id: str | None,
-    ) -> tuple[Part, str | None]:
-        """Transform a single Part if it contains inline bytes; returns the part and upload URL.
-
-        If a part matches any skip rule, it is returned unchanged (not uploaded).
-        Otherwise, prepares a URL for the inline bytes and schedules background upload.
-        """
-        if not part.raw:
-            return part, None
-
-        # Check skip rules — if matched, return part unchanged
-        if self._skip_rules.should_skip(part):
-            return part, None
-
-        data: bytes = part.raw
-
-        mime_type = part.media_type
-        if not mime_type and part.filename:
-            guessed, _ = mimetypes.guess_type(part.filename)
-            mime_type = guessed
-        mime_type = mime_type or "application/octet-stream"
-
-        url = self._upload_manager.schedule(
-            data=data,
-            mime_type=mime_type,
-            context_id=context_id,
+    @staticmethod
+    def _current_context(
+        *, context_id: str | None, task_id: str | None
+    ) -> UploadContextResolution:
+        """Project an upload context from the active runtime context."""
+        return resolve_upload_context(
+            get_aion_runtime_context(),
+            context_id=context_id or None,
+            task_id=task_id or None,
         )
 
-        return Part(url=url, media_type=mime_type, filename=part.filename), url
+    async def _transform_parts(
+        self,
+        parts: list[Part],
+        resolution: UploadContextResolution,
+    ) -> tuple[list[Part], TransformReport]:
+        """Store every convertible part of one message or event in one batch.
+
+        A part that could not be stored is left out of the result rather than
+        kept inline - inline bytes are exactly what this transformer exists to
+        keep out of the task record - and the reason is logged once per part,
+        or once per batch when the request itself cannot store anything.
+        """
+        report = TransformReport()
+        indexes = [i for i, part in enumerate(parts) if self._is_convertible(part)]
+        if not indexes:
+            return parts, report
+
+        report.changed = True
+        if isinstance(resolution, UploadFailure):
+            # One diagnostic for the request, not one per attachment.
+            logger.warning(
+                "Dropping %d inline file part(s) that cannot be stored: %s",
+                len(indexes),
+                resolution.error_code.value,
+            )
+            report.failures.append(resolution)
+            dropped = set(indexes)
+            return [p for i, p in enumerate(parts) if i not in dropped], report
+
+        uploads = [self._upload_for(parts[index]) for index in indexes]
+        outcomes = await self._upload_manager.store_many(uploads, context=resolution)
+
+        stored: dict[int, Part] = {}
+        for index, upload, outcome in zip(indexes, uploads, outcomes, strict=True):
+            if isinstance(outcome, UploadReceipt):
+                report.receipts.append(outcome)
+                stored[index] = Part(
+                    url=outcome.uri,
+                    media_type=upload.media_type,
+                    filename=parts[index].filename,
+                )
+                continue
+            logger.warning(
+                "Dropping inline file part %r (%d bytes): %s",
+                upload.filename,
+                upload.byte_size,
+                outcome.error_code.value,
+                exc_info=outcome.cause,
+            )
+            report.failures.append(outcome)
+
+        convertible = set(indexes)
+        new_parts: list[Part] = []
+        for index, part in enumerate(parts):
+            if index not in convertible:
+                new_parts.append(part)
+            elif index in stored:
+                new_parts.append(stored[index])
+        return new_parts, report
+
+    def _is_convertible(self, part: Part) -> bool:
+        """Whether a part carries inline content this transformer should store."""
+        return bool(part.raw) and not self._skip_rules.should_skip(part)
+
+    @staticmethod
+    def _upload_for(part: Part) -> FileUpload:
+        """Build the storage request for one inline part."""
+        media_type = part.media_type
+        if not media_type and part.filename:
+            media_type, _ = mimetypes.guess_type(part.filename)
+        return FileUpload(
+            data=bytes(part.raw),
+            media_type=media_type or "application/octet-stream",
+            filename=part.filename or None,
+        )

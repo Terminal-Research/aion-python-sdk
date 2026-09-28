@@ -11,6 +11,45 @@ from pathlib import Path
 
 import pytest
 
+TESTS_ROOT = Path(__file__).resolve().parent
+
+SUITES = {"unit": "unit", "integration": "integration", "scenarios": "scenario"}
+"""The three suites: the directory each one lives in, and its marker."""
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Put the suite marker on every item, from the directory it lives in.
+
+    A test is in a suite by where it is, and nowhere else: the Make targets
+    select by directory, and the marker is here so that ``-m`` can still
+    combine suites and so that no module can claim a suite it is not in. A
+    test file outside the three directories is an error, not a fourth suite,
+    and so is a suite marker written on a test: with one written on, the item
+    would carry two and answer to both ``-m`` selections.
+
+    ``tryfirst``: the deselection ``-m`` asks for happens in this same hook,
+    and the marker has to be there by then.
+    """
+    for item in items:
+        try:
+            top = item.path.resolve().relative_to(TESTS_ROOT).parts[0]
+        except ValueError:
+            continue
+        marker = SUITES.get(top)
+        if marker is None:
+            raise pytest.UsageError(
+                f"{item.nodeid}: a test lives under tests/unit, tests/integration "
+                f"or tests/scenarios, not under tests/{top}"
+            )
+        written = [name for name in SUITES.values() if item.get_closest_marker(name)]
+        if written:
+            raise pytest.UsageError(
+                f"{item.nodeid}: carries @pytest.mark.{written[0]}; the suite comes "
+                f"from the directory, do not write it"
+            )
+        item.add_marker(getattr(pytest.mark, marker), append=False)
+
 
 # Top-level import names of the third-party libraries the server extras
 # install. Blocking them turns this environment into a base install for the
@@ -78,3 +117,28 @@ def run_python_without(
         )
 
     return run
+
+
+@pytest.fixture
+def isolated_registry():
+    """Undo everything a test registers in the A2A extension registry.
+
+    The registry is a Singleton, so a fake descriptor registered by one test
+    is visible to every test that runs after it - and to the AgentCard built
+    from it. reset_to_default() is not enough: it restores activation and
+    availability for URIs already present, and register() writes the defaults
+    it would restore to, so a fake URI survives it entirely. Snapshotting both
+    maps is the only way back, and reaching into them is the price of the
+    registry having no unregister() - which production has no use for.
+    """
+    from aion.core.runtime import aion_a2a_extension_registry
+
+    descriptors = dict(aion_a2a_extension_registry._descriptors)
+    defaults = dict(aion_a2a_extension_registry._defaults)
+    aion_a2a_extension_registry.reset_to_default()
+    try:
+        yield aion_a2a_extension_registry
+    finally:
+        aion_a2a_extension_registry._descriptors = descriptors
+        aion_a2a_extension_registry._defaults = defaults
+        aion_a2a_extension_registry.reset_to_default()

@@ -3,6 +3,7 @@
 import logging
 from typing import Optional
 
+from a2a.server.owner_resolver import OwnerResolver, resolve_user_scope
 
 from aion.db.postgres import db_manager
 from .notifications import TaskEventListener, task_event_listener
@@ -31,7 +32,13 @@ class StoreManager:
         self._ownership_provider: Optional[OwnershipProvider] = None
         self._event_listener: Optional[TaskEventListener] = None
 
-    def initialize(self, agent_id: str):
+    def initialize(
+            self,
+            agent_id: str,
+            *,
+            guard_inline_files: bool = False,
+            owner_resolver: OwnerResolver = resolve_user_scope,
+    ):
         """
         Initialize the store manager with appropriate storage backend.
 
@@ -43,6 +50,14 @@ class StoreManager:
                 task and claim the Postgres backend touches, so several
                 agents can share one database. Unused by the in-memory
                 fallback, which is already isolated by being unshared.
+            guard_inline_files: True when a file storage backend is
+                installed, so the store strips inline file content that
+                reaches it unconverted. Passed by the component that
+                installs the backend; the store never reads settings for it.
+            owner_resolver: Resolves a call's owner from its
+                ``ServerCallContext``. ``AppFactory`` passes the agent's own
+                resolver, so the tasks and the agent's framework state name
+                the same owner. Defaults to a2a-sdk's ``resolve_user_scope``.
         """
         if self._is_initialized:
             logger.warning("Tried to initialize store, already initialized")
@@ -58,9 +73,14 @@ class StoreManager:
             # argument.
             event_listener = task_event_listener
             ownership_provider = PostgresOwnershipProvider(agent_id, event_listener=event_listener)
-            task_store = PostgresTaskStore(agent_id=agent_id, ownership_provider=ownership_provider)
+            task_store = PostgresTaskStore(
+                agent_id=agent_id,
+                ownership_provider=ownership_provider,
+                owner_resolver=owner_resolver,
+                guard_inline_files=guard_inline_files,
+            )
         else:
-            task_store = InMemoryTaskStore()
+            task_store = InMemoryTaskStore(owner_resolver, guard_inline_files=guard_inline_files)
             ownership_provider = task_store.ownership_provider
             event_listener = None
             logger.warning(

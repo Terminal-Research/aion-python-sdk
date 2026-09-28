@@ -268,11 +268,7 @@ class AionRuntimeContext:
             distribution environment is available.
         """
         environment = self.get_environment()
-        if environment is None:
-            return None
-        if environment.daemon_agent_identity_id:
-            return f"aion://agent/identity/{environment.daemon_agent_identity_id}"
-        return f"aion://agent/environment/{environment.id}"
+        return environment.principal_selector if environment else None
 
     def get_principal_identity(self) -> Optional[PrincipalIdentity]:
         """Return the principal identity from the distribution.

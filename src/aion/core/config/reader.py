@@ -16,7 +16,7 @@ from pydantic import ValidationError
 from aion.core.utils.path import get_config_path
 
 from .exceptions import ConfigurationError
-from .models import AgentConfig, AionConfig
+from .models import AgentConfig, AionConfig, McpConfig
 
 
 class AionConfigReader:
@@ -97,6 +97,24 @@ class AionConfigReader:
 
         return aion_data
 
+    @staticmethod
+    def _known_keys(location: tuple) -> str:
+        """The keys accepted beside the unknown one, for the error message.
+
+        An unknown key is almost always a typo or a key from another product's
+        config, and either way the useful half of the message is what could
+        have stood there instead. The location tells which model was being
+        validated: an unknown key directly under `aion` is the top level, one
+        two levels down under `agents` is an agent.
+        """
+        if len(location) >= 3 and location[0] == "agents":
+            model = AgentConfig
+        elif len(location) >= 2 and location[0] == "mcp":
+            model = McpConfig
+        else:
+            model = AionConfig
+        return ", ".join(sorted(model.model_fields))
+
     def _format_pydantic_error(self, error: ValidationError) -> str:
         error_messages = []
 
@@ -105,7 +123,12 @@ class AionConfigReader:
             error_type = err["type"]
             message = err["msg"]
 
-            if error_type == "missing":
+            if error_type == "extra_forbidden":
+                readable_msg = (
+                    f"Unknown key '{location}' in aion.yaml. "
+                    f"Known keys at this level: {self._known_keys(err['loc'])}"
+                )
+            elif error_type == "missing":
                 readable_msg = f"Required field '{location}' is missing"
             elif error_type == "value_error":
                 readable_msg = f"Invalid value for '{location}': {message}"

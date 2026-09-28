@@ -54,11 +54,12 @@ class AppLifespan:
         # SETUP OPEN-TELEMETRY
         init_tracing()
 
-        # Safe to run now that a process can tell its predecessor's abandoned
-        # work from work another instance is still executing: an unexpired
-        # lease says the task has a live owner. It is a no-op until the reaper
-        # switch is on.
-        await self._settle_orphaned_tasks()
+        # One reconciliation pass before this process serves anything, so
+        # ownership that was already due for reclaiming is not left waiting
+        # for the first periodic pass. It settles nothing on the strength of
+        # this process having started: what it acts on is an expired claim, an
+        # overdue cancellation, or an active task with no claim at all.
+        await self._reconcile_task_ownership()
         self._start_event_listener()
 
     def _start_event_listener(self):
@@ -76,15 +77,23 @@ class AppLifespan:
         if listener is not None:
             listener.start()
 
-    async def _settle_orphaned_tasks(self):
+    async def _reconcile_task_ownership(self):
         """Run the ownership reconciler once before the server accepts work.
 
-        The reconciler distinguishes an expired claim from a live one and also
-        covers the older active-task-without-claim anomaly. It does nothing
-        unless the reaper is enabled, which is a separate deployment from the
-        heartbeat it depends on. A cleanup failure must not make a healthy
-        process fail startup; the periodic pass and the next process start
-        remain available as fallbacks.
+        One pass of the same mechanism the periodic reaper runs, not a second
+        recovery path, and it settles the same three things that pass does:
+        a task whose claim has expired, so its owner stopped renewing and is
+        presumed gone; a cancellation the owner has not honored within its
+        grace period, whose lease is still being renewed normally; and a task
+        presented as active with no claim behind it at all, which no lease
+        expiry can ever surface. A task whose claim is live and current is
+        left to the process that holds it - a new process starting is not
+        evidence that the previous owner died.
+
+        It does nothing unless the reaper is enabled, which is a separate
+        deployment from the heartbeat it depends on. A reconciliation failure
+        must not make a healthy process fail startup; the periodic pass
+        remains the primary recovery mechanism either way.
         """
         provider = self.app_factory.store_manager.get_ownership_provider()
         try:
@@ -93,7 +102,7 @@ class AppLifespan:
             logger.warning("Failed to reconcile task ownership during startup", exc_info=True)
             return
         if settled:
-            logger.info("Settled %d orphaned task(s) during startup", settled)
+            logger.info("Reconciled task ownership at startup: settled %d task(s)", settled)
 
     async def shutdown(self):
         """Handle application shutdown events."""

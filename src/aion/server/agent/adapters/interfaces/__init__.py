@@ -1,5 +1,11 @@
 from .agent import AgentAdapter
-from .executor import ExecutorAdapter, ExecutionConfig
+from .executor import (
+    ExecutorAdapter,
+    ExecutionConfig,
+    LegacyStateError,
+    StateScope,
+    is_state_key,
+)
 from .messages import (
     normalize_role_to_a2a,
     create_message_from_parts,
@@ -18,6 +24,9 @@ __all__ = [
     # Executor
     "ExecutorAdapter",
     "ExecutionConfig",
+    "LegacyStateError",
+    "StateScope",
+    "is_state_key",
     # State
     "StateExtractor",
     "InterruptInfo",

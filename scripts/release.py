@@ -7,16 +7,16 @@ GitHub Release kind and every check below are derived from it.
 
 ``check``
     The local release gate - environment, unit tests, layer contract, build,
-    packaging contract, smoke - run in order, stopping at the first failure.
-    Touches neither git nor GitHub, so it is safe to run on any branch at any
-    time; ``make release-check`` is this.
+    packaging contract, smoke, scenarios - run in order, stopping at the first
+    failure. Touches neither git nor GitHub, so it is safe to run on any
+    branch at any time; ``make release-check`` is this.
 
 ``publish``
     Everything ``check`` does, preceded by a preflight over git, GitHub and
     PyPI and followed by a confirmation prompt, and then one action: create
     the GitHub Release whose ``py-v*`` tag starts ``publish-python.yml``. That
-    workflow builds, checks and uploads to PyPI after a reviewer approves the
-    ``pypi`` environment. Nothing is uploaded from this machine, and the
+    workflow builds, checks and uploads to PyPI automatically when its
+    build job succeeds. Nothing is uploaded from this machine, and the
     release is the last thing this script does - every step before it can
     fail without spending a tag or a version number.
 
@@ -184,18 +184,24 @@ def run_gate(python: str | None) -> None:
     The steps are the Makefile's own targets, so what this runs and what a
     developer runs by hand are the same commands with the same definitions.
 
+    The last step is the only one that runs the product rather than reading
+    it: the scenario suite against the wheel the two steps above just built
+    and checked.
+
     Args:
-        python: interpreter for the smoke environments, as ``smoke.py --python``
-            takes it (``3.12``, ``python3.12`` or a path); ``None`` means the
-            interpreter running this script.
+        python: interpreter for the clean environments, as ``smoke.py
+            --python`` takes it (``3.12``, ``python3.12`` or a path); ``None``
+            means the interpreter running this script.
     """
     run_step("environment", make("check-env"))
-    run_step("unit tests", make("tests"))
+    run_step("unit tests", make("tests-unit"))
     run_step("layer contract", make("lint-imports"))
     run_step("build", make("dist-build"))
     run_step("packaging contract", make("dist-check"))
     smoke_args = [f"SMOKE_ARGS=--python {python}"] if python else []
     run_step("smoke", make("dist-smoke", *smoke_args))
+    scenario_args = [f"SCENARIOS_ARGS=--python {python}"] if python else []
+    run_step("scenarios", make("tests-scenarios-dist", *scenario_args))
 
 
 # --- preflight ----------------------------------------------------------------
@@ -346,11 +352,11 @@ def command_publish(args: argparse.Namespace) -> None:
 
     say(
         f"\n{version.tag} is published as a GitHub Release. The workflow "
-        f"'{PUBLISH_WORKFLOW}' is now building and checking it; the upload to PyPI "
-        "waits for a reviewer in the 'pypi' environment:\n"
+        f"'{PUBLISH_WORKFLOW}' is now building and checking it; if the build "
+        "succeeds, the workflow uploads to PyPI automatically:\n"
         f"    {repo_url}/actions/workflows/{PUBLISH_WORKFLOW}\n"
-        "Approving it spends the version number for good - PyPI never takes a "
-        "file name twice."
+        "A successful upload spends the version number for good - PyPI never "
+        "takes a file name twice."
     )
 
 

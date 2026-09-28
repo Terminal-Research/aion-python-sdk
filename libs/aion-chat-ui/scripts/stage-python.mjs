@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { chmodSync, copyFileSync, existsSync, mkdirSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -15,7 +15,10 @@ const artifacts = [
   "aion-chat-ui-darwin-x64"
 ];
 
-mkdirSync(targetDir, { recursive: true });
+if (!existsSync(path.join(targetDir, "__init__.py"))) {
+  console.error(`Python SDK bundle directory not found: ${targetDir}`);
+  process.exit(1);
+}
 
 let copied = 0;
 

@@ -20,7 +20,7 @@ from aion.server.agent.factory import AgentFactory
 from aion.server.core.app.api import AionExtraHTTPRoutes
 from aion.server.core.app.handlers import AionJsonRpcDispatcher, AionRequestHandler
 from aion.server.core.app.handlers.request_preprocessors import A2ARequestPreprocessor, FilePartPreprocessor
-from aion.server.core.middlewares import TracingMiddleware, AionContextMiddleware
+from aion.server.core.middlewares import AionContextMiddleware, CallerIdentityMiddleware, TracingMiddleware
 from aion.server.plugins import PluginFactory
 from aion.server.tasks import StoreManager, PushNotificationFactory
 from .lifespan import AppLifespan
@@ -148,15 +148,34 @@ class AppFactory:
 
     async def _create_request_handler(self) -> AionRequestHandler:
         """Create and configure the request handler with task store and agent executor."""
-        self.store_manager.initialize(agent_id=self.aion_agent.id)
+        # The guard follows the manager that is actually installed - which may
+        # have been injected without FILE_STORAGE_BACKEND set - rather than
+        # the setting, so the two cannot disagree.
+        self.store_manager.initialize(
+            agent_id=self.aion_agent.id,
+            guard_inline_files=self.upload_manager is not None,
+            owner_resolver=self.aion_agent.owner_resolver,
+        )
         task_store = self.store_manager.get_store()
+        # The tasks and the agent's framework state have to name the same
+        # owner for every request. A store initialized earlier, with another
+        # resolver, would split them silently; stopping here is the only
+        # safe answer.
+        if task_store.owner_resolver is not self.aion_agent.owner_resolver:
+            raise RuntimeError(
+                "the task store and the agent resolve owners differently; build the "
+                "store with the agent's owner_resolver"
+            )
 
         self._executor = await AionAgentRequestExecutor.create(
             self.aion_agent,
             file_transformer=self.file_transformer,
         )
 
-        push_config_store, push_sender = PushNotificationFactory.create(self.db_factory.db_manager)
+        push_config_store, push_sender = PushNotificationFactory.create(
+            self.db_factory.db_manager,
+            owner_resolver=self.aion_agent.owner_resolver,
+        )
         self._push_sender = push_sender
 
         return AionRequestHandler(
@@ -172,13 +191,16 @@ class AppFactory:
                 auto_discover_interrupted_task=True,
             ),
             preprocessors=[
-                FilePartPreprocessor(self.file_transformer, wait_upload=True),
+                FilePartPreprocessor(self.file_transformer),
             ],
         )
 
     def _add_extra_middlewares(self):
+        # The middleware added last runs first: the caller is named before the
+        # execution scope is populated, and the scope before the span reads it.
         self.fastapi_app.add_middleware(TracingMiddleware)
         self.fastapi_app.add_middleware(AionContextMiddleware)
+        self.fastapi_app.add_middleware(CallerIdentityMiddleware)
 
     async def shutdown(self) -> None:
         """Shutdown the application and cleanup resources."""
@@ -196,12 +218,6 @@ class AppFactory:
             except Exception as exc:
                 logger.error("Error draining active tasks", exc_info=exc)
 
-        if self._executor is not None:
-            try:
-                await self._executor.drain()
-            except Exception as exc:
-                logger.error("Error draining uploads", exc_info=exc)
-
         if self._push_sender is not None:
             try:
                 await self._push_sender.aclose()
@@ -215,6 +231,17 @@ class AppFactory:
                 logger.info("Plugins cleaned up")
             except Exception as exc:
                 logger.error("Error cleaning up plugins", exc_info=exc)
+
+        # One owner for the storage client, closed once and last among its
+        # users: the manager is handed to the transformer and to plugins
+        # alike, and a plugin is free to store something while tearing down.
+        # Closing from any of them would close it out from under the others.
+        if self.upload_manager is not None:
+            try:
+                await self.upload_manager.aclose()
+                logger.info("File upload manager closed")
+            except Exception as exc:
+                logger.error("Error closing the file upload manager", exc_info=exc)
 
         if self.db_factory.is_initialized:
             try:

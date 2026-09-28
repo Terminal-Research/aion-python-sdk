@@ -1,82 +1,52 @@
 """Stub file storage backend for development and testing."""
 
+from __future__ import annotations
+
 import logging
-import mimetypes
+from typing import Sequence
 from uuid import uuid4
 
-from aion.server.files.storage.backends.base import FileStorageBackend
+from ..context import UploadContext
+from ..contracts import FileUpload, UploadOutcome, UploadReceipt
+from .base import FileStorageBackend
 
 logger = logging.getLogger(__name__)
 
 
 class StubFileStorageBackend(FileStorageBackend):
-    """No-op storage backend that generates fake URIs without uploading.
+    """Hands back a plausible URI without storing anything.
 
-    Useful for development and testing when a real storage backend is not
-    available. Logs upload calls so you can verify the integration works.
+    Useful for exercising the whole conversion path - preprocessing ordering,
+    the outbound drop policy, the inline-content guard - without a storage
+    service.
+    It succeeds unconditionally, so it proves the wiring, not the failure
+    handling.
     """
 
     BASE_URI = "https://stub-storage.example.com/files"
 
-    def generate_uri(
+    async def discard(self, receipts) -> None:
+        """Nothing was stored, so nothing is abandoned."""
+        return None
+
+    async def store_many(
         self,
-        mime_type: str | None = None,
-        context_id: str | None = None,
-    ) -> tuple[str, str]:
-        """Generate a fake file ID and URI without performing any storage.
+        uploads: Sequence[FileUpload],
+        *,
+        context: UploadContext,
+    ) -> list[UploadOutcome]:
+        """Return a receipt per upload, logging what a real backend would send."""
+        return [self._receipt(upload, context) for upload in uploads]
 
-        Args:
-            mime_type: Content type (used to guess file extension).
-            context_id: Optional context identifier (included in URI path).
-
-        Returns:
-            Tuple of (file_id, uri).
-        """
+    def _receipt(self, upload: FileUpload, context: UploadContext) -> UploadReceipt:
         file_id = str(uuid4())
-        return file_id, self._build_uri(file_id, mime_type, context_id)
-
-    async def upload(
-        self,
-        file_id: str,
-        data: bytes,
-        mime_type: str,
-        context_id: str | None = None,
-    ) -> None:
-        """Log upload call without actually storing the file.
-
-        This is a no-op method. Useful for development and testing to verify
-        the upload flow without requiring actual file storage.
-
-        Args:
-            file_id: Unique identifier for the file.
-            data: Raw bytes to upload (ignored).
-            mime_type: Content type of the file.
-            context_id: Optional context identifier.
-        """
-        uri = self._build_uri(file_id, mime_type, context_id)
-        logger.debug("[StubStorage] upload skipped: uri=%s size=%d", uri, len(data))
-
-    async def delete(
-        self,
-        file_id: str,
-        context_id: str | None = None,
-    ) -> None:
-        """Log delete call without removing anything (no-op)."""
-        logger.debug("[StubStorage] delete skipped: file_id=%s", file_id)
-
-    def _build_uri(self, file_id: str, mime_type: str | None, context_id: str | None) -> str:
-        """Build a fake file URI with optional context prefix.
-
-        Args:
-            file_id: Unique identifier for the file.
-            mime_type: Content type (used to determine file extension).
-            context_id: Optional context identifier for URI path organization.
-
-        Returns:
-            A fake file URI.
-        """
-        ext = mimetypes.guess_extension(mime_type) if mime_type else None
-        name = f"{file_id}{ext or ''}"
-        if context_id:
-            return f"{self.BASE_URI}/{context_id}/{name}"
-        return f"{self.BASE_URI}/{name}"
+        name = upload.leaf_name(file_id)
+        prefix = f"/{context.context_id}" if context.context_id else ""
+        uri = f"{self.BASE_URI}{prefix}/{file_id}/{name}"
+        logger.debug(
+            "[StubStorage] upload skipped: uri=%s size=%d organization=%s",
+            uri,
+            upload.byte_size,
+            context.organization_id,
+        )
+        return UploadReceipt(uri=uri, file_id=file_id)

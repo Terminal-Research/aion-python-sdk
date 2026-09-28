@@ -7,7 +7,11 @@ from uuid import UUID, uuid4
 
 import httpx
 from aion.api.control_plane import PrincipalSelector
-from aion.api.exceptions import AionAuthenticationError, AionFileValidationError
+from aion.api.exceptions import (
+    AionAuthenticationError,
+    AionFileStorageError,
+    AionFileValidationError,
+)
 from aion.api.http import aion_jwt_manager
 from aion.api.http.client import DEFAULT_HTTP_TIMEOUT_SECONDS
 from aion.core.constants import AION_USAGE_ATTRIBUTION_HEADER
@@ -93,7 +97,8 @@ class AionFileClient:
         Raises:
             AionFileValidationError: If only one association field is supplied.
             AionAuthenticationError: If no bearer token is available.
-            httpx.HTTPStatusError: If the Files API rejects the mutation.
+            AionFileStorageError: If the Files API rejects the mutation. Also
+                an ``httpx.HTTPStatusError``.
         """
         params = {
             "operationId": str(operation_id or uuid4()),
@@ -147,7 +152,8 @@ class AionFileClient:
 
         Raises:
             AionAuthenticationError: If no bearer token is available.
-            httpx.HTTPStatusError: If the Files API rejects the mutation.
+            AionFileStorageError: If the Files API rejects the mutation. Also
+                an ``httpx.HTTPStatusError``.
         """
         return await self._upload(
             "PUT",
@@ -202,7 +208,8 @@ class AionFileClient:
             headers=headers,
             files={"file": (file_name, content, media_type)},
         )
-        response.raise_for_status()
+        if response.is_error:
+            raise AionFileStorageError.from_response(response)
         return response.json()
 
 

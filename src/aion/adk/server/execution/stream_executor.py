@@ -33,9 +33,15 @@ class ADKStreamResult:
     delta_text — concatenated text extracted from STREAM_DELTA chunks.
         Non-empty only when the agent streamed partial events without a
         subsequent non-partial event to confirm the full message.
+    outbox — the last `a2a_outbox` an event's state_delta carried during
+        this cycle, serialized, or None when none did. Taken from the
+        cycle's own events rather than from the session state: the session
+        keeps the key across turns, and the next turn in the context would
+        read it back.
     """
 
     delta_text: str
+    outbox: Any = None
 
 
 class ADKStreamExecutor:
@@ -67,11 +73,13 @@ class ADKStreamExecutor:
         self._session_service = session_service
         self._converter = converter
         self._delta_text: str = ""
+        self._outbox: Any = None
+        self._persisted: set[str] = set()
 
     @property
     def result(self) -> ADKStreamResult:
         """Accumulated state. Valid after execute() iteration is complete."""
-        return ADKStreamResult(delta_text=self._delta_text)
+        return ADKStreamResult(delta_text=self._delta_text, outbox=self._outbox)
 
     async def execute(
         self,
@@ -87,7 +95,7 @@ class ADKStreamExecutor:
         Yields:
             A2A AgentEvent objects.
         """
-        async with self._managed_invocation(invocation_context) as consumer:
+        async with self._managed_invocation(invocation_context, session) as consumer:
             async for event in consumer.consume_all():
                 async for a2a_event in self._process_event(event, invocation_context, session):
                     yield a2a_event
@@ -96,6 +104,7 @@ class ADKStreamExecutor:
     async def _managed_invocation(
         self,
         invocation_context: Any,
+        session: Any,
     ) -> AsyncGenerator[ADKEventConsumer, None]:
         """Set up the event queue, emitter, and agent task for one invocation.
 
@@ -112,7 +121,7 @@ class ADKStreamExecutor:
         ctx_token = set_adk_ctx(invocation_context)
 
         agent_task = asyncio.create_task(
-            self._run_agent(queue, invocation_context)
+            self._run_agent(queue, invocation_context, session)
         )
         agent_task.add_done_callback(consumer.agent_task_callback)
 
@@ -133,10 +142,19 @@ class ADKStreamExecutor:
         self,
         queue: ADKEventQueue,
         invocation_context: Any,
+        session: Any,
     ) -> None:
-        """Drive agent.run_async() and forward all events into the queue."""
+        """Drive agent.run_async(), persisting each event before forwarding it.
+
+        The agent does not resume until its event is in the session, which is
+        what ADK's own Runner guarantees: the next model call builds its
+        request from the session, and a function response still waiting in
+        the queue would be missing from it - the model would ask for the
+        same tool again.
+        """
         try:
             async for event in self._agent.run_async(invocation_context):
+                await self._persist(event, invocation_context, session)
                 queue.enqueue_event(event)
         except Exception as exc:
             logger.error("Agent run_async failed: %s", exc, exc_info=True)
@@ -150,9 +168,9 @@ class ADKStreamExecutor:
         invocation_context: Any,
         session: Any,
     ) -> AsyncIterator[AgentEvent]:
-        """Stamp, persist, convert, track and yield A2A events for one ADK Event."""
-        self._stamp_event(event, invocation_context)
-        await self._session_service.append_event(session, event)
+        """Persist if not yet persisted, then convert, track and yield A2A events."""
+        if event.id not in self._persisted:
+            await self._persist(event, invocation_context, session)
 
         if not event.partial and event.content:
             for part in event.content.parts:
@@ -167,6 +185,22 @@ class ADKStreamExecutor:
         for a2a_event in await self._converter.convert(event):
             self._track(a2a_event)
             yield a2a_event
+
+    async def _persist(self, event: Event, invocation_context: Any, session: Any) -> None:
+        """Stamp one event and append it to the session, once.
+
+        Events from agent.run_async() are persisted by the agent task before
+        they are forwarded; events the thread emits reach the queue directly
+        and are persisted when the consumer takes them.
+        """
+        # Looked up before stamping, which drops an outbox written as None:
+        # that write still clears one made earlier in the same run.
+        wrote_outbox = event.actions is not None and "a2a_outbox" in event.actions.state_delta
+        self._stamp_event(event, invocation_context)
+        if wrote_outbox:
+            self._outbox = event.actions.state_delta.get("a2a_outbox")
+        await self._session_service.append_event(session, event)
+        self._persisted.add(event.id)
 
     @staticmethod
     def _stamp_event(event: Event, ctx: Any) -> None:

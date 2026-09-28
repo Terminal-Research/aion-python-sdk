@@ -52,6 +52,17 @@ def artifacts_by_version(
         for artifact in (task_artifacts or []):
             if artifact_name is not None and artifact.name != artifact_name:
                 continue
-            if (artifact.metadata or {}).get("version") == artifact_version:
+            if _version_of(artifact) == artifact_version:
                 artifacts.append(artifact)
     return artifacts
+
+
+def _version_of(artifact: Artifact) -> Optional[str]:
+    """The artifact's ``metadata["version"]``, or None.
+
+    ``metadata`` is a protobuf ``Struct``: it has no ``get``, and an unset one
+    is still an object, so the key is looked up rather than defaulted.
+    """
+    if artifact.HasField("metadata") and "version" in artifact.metadata:
+        return artifact.metadata["version"]
+    return None

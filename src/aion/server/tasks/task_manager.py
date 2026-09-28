@@ -15,7 +15,6 @@ from aion.server.a2a.utils import is_ephemeral_status_event, is_task_interrupted
 from aion.server.agent.execution.scope import set_task_status
 from typing import override
 
-from aion.server.tasks import store_manager
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +46,15 @@ class AionTaskManager(TaskManager):
         event that requested cleanup.
         """
         super().__init__(*args, **kwargs)
+        # Every read and write this manager makes carries the request's
+        # context, and the store scopes it to that request's owner. A store
+        # call with no context is the store's unfiltered access; a manager
+        # built without one would turn a user's request into exactly that.
+        if self._call_context is None:
+            raise ValueError(
+                "AionTaskManager needs the request's ServerCallContext; without it "
+                "the task store would not be limited to the request's owner"
+            )
         self._on_interrupted = on_interrupted
         self._ownership_provider = ownership_provider
         # The state the store last held, kept as a scalar rather than read off
@@ -257,7 +265,7 @@ class AionTaskManager(TaskManager):
         if not self._call_context.user.is_authenticated:
             return None
 
-        last_task = await store_manager.get_store().get_context_last_task(
+        last_task = await self.task_store.get_context_last_task(
             context_id=self.context_id,
             context=self._call_context,
         )

@@ -13,6 +13,7 @@ from a2a.types import (
     TaskStatusUpdateEvent,
 )
 from aion.core.a2a import ArtifactId, ArtifactName
+from aion.core.a2a.metadata import agent_metadata
 from aion.core.a2a.extensions.messaging import MessageActionPayload
 from aion.core.agent.invocation.card import Card
 from aion.core.agent.invocation.card.utils import build_card_a2a_part
@@ -57,6 +58,11 @@ class LangGraphA2AConverter:
         self._task_id = task_id
         self._context_id = context_id
         self._streaming_started = False
+        # The model output the graph is streaming in "messages" mode: the id
+        # of the message its chunks belong to, and their text so far. None
+        # when the open stream, if any, came from the thread instead.
+        self._graph_stream_id: Optional[str] = None
+        self._graph_stream_text = ""
 
     def convert(self, event_type: str, event_data: Any) -> list[A2AAgentEvent]:
         """Convert a LangGraph event to zero or more A2A events.
@@ -69,7 +75,7 @@ class LangGraphA2AConverter:
             List of A2A events (may be empty for skipped event types).
         """
         if event_type == "messages":
-            return self._convert_message(event_data)
+            return self._convert_graph_message(event_data)
         elif event_type == "custom":
             return self._convert_custom(event_data)
         elif event_type in SKIP_EVENTS:
@@ -77,6 +83,55 @@ class LangGraphA2AConverter:
         else:
             logger.warning(f"Unknown LangGraph event type: {event_type}")
             return []
+
+    def _convert_graph_message(self, message: Any) -> list[A2AAgentEvent]:
+        """Convert a message from the graph's "messages" stream.
+
+        That stream carries every message a node produced: model output, and
+        also the ToolMessage a tool node returns, a HumanMessage a node
+        appends, and so on. Only AI messages are the agent speaking; the
+        others are the conversation's bookkeeping and are not sent. An AI
+        message with nothing to show - a model turn that only calls a tool -
+        produces no event either, in `_convert_message`.
+
+        Every call to a model streams under its own message id, and LangGraph
+        does not repeat the finished message once its chunks went out. So a
+        chunk under a new id is where the previous model call ended: its text
+        becomes a durable message, and the new call opens a new stream.
+        """
+        if not isinstance(message, AIMessage):
+            return []
+
+        events: list[A2AAgentEvent] = []
+        if self._graph_stream_id is not None and message.id != self._graph_stream_id:
+            events.extend(self._close_graph_stream())
+
+        if isinstance(message, AIMessageChunk):
+            if self._graph_stream_id is None:
+                self._streaming_started = False
+                self._graph_stream_id = message.id
+            converted = self._convert_streaming_chunk(message)
+            for event in converted:
+                self._graph_stream_text += "".join(part.text for part in event.artifact.parts)
+            events.extend(converted)
+            return events
+
+        # A finished message under the open stream's id is that stream's own
+        # closing message; it replaces what was streamed.
+        self._graph_stream_id = None
+        self._graph_stream_text = ""
+        events.extend(self._convert_full_message(message))
+        return events
+
+    def _close_graph_stream(self) -> list[A2AAgentEvent]:
+        """End the model call the graph was streaming, keeping what it said."""
+        text, message_id = self._graph_stream_text, self._graph_stream_id
+        self._graph_stream_id = None
+        self._graph_stream_text = ""
+        self._streaming_started = False
+        if not text:
+            return []
+        return self._convert_full_message(AIMessage(content=text, id=message_id))
 
     def _convert_message(self, message: AIMessage | AIMessageChunk, metadata: dict | None = None) -> list[
         A2AAgentEvent]:
@@ -103,18 +158,23 @@ class LangGraphA2AConverter:
         append = self._streaming_started
         self._streaming_started = True
 
+        # Two different statements, in the two places the spec puts them. The
+        # artifact id says which channel this is; the schema marker on the
+        # *event* says what shape the payload in it has, and the messaging
+        # extension names `artifactUpdate.metadata` for it. status and
+        # status_reason stay on the artifact: they describe the artifact.
         artifact_metadata: dict = {
             "status": "active",
             "status_reason": "chunk_streaming",
-            MESSAGING_EXTENSION_URI_V1: {"schema": STREAM_DELTA_PAYLOAD_SCHEMA_V1},
         }
-        user_meta = {k: v for k, v in (metadata or {}).items() if not k.startswith("aion:")} or None
+        user_meta = agent_metadata(metadata) or None
         if user_meta:
             artifact_metadata.update(user_meta)
 
         return [TaskArtifactUpdateEvent(
             task_id=self._task_id,
             context_id=self._context_id,
+            metadata={MESSAGING_EXTENSION_URI_V1: {"schema": STREAM_DELTA_PAYLOAD_SCHEMA_V1}},
             artifact=Artifact(
                 artifact_id=ArtifactId.STREAM_DELTA.value,
                 name=ArtifactName.STREAM_DELTA.value,
@@ -140,9 +200,12 @@ class LangGraphA2AConverter:
         if not a2a_parts:
             return []
 
+        # A durable message ends whatever was streaming: the next chunk opens
+        # a new section rather than extending the one this message closed.
+        self._streaming_started = False
         role = self._detect_role(message)
         message_id = message.id or str(uuid.uuid4())
-        user_meta = {k: v for k, v in (metadata or {}).items() if not k.startswith("aion:")} or None
+        user_meta = agent_metadata(metadata) or None
         msg = Message(
             context_id=self._context_id,
             task_id=self._task_id,
@@ -173,7 +236,7 @@ class LangGraphA2AConverter:
                 MESSAGE_ACTION_PAYLOAD_SCHEMA_V1,
             ))
             extensions.append(MESSAGING_EXTENSION_URI_V1)
-        user_meta = {k: v for k, v in (metadata or {}).items() if not k.startswith("aion:")} or None
+        user_meta = agent_metadata(metadata) or None
         msg = Message(
             context_id=self._context_id,
             task_id=self._task_id,
@@ -202,7 +265,7 @@ class LangGraphA2AConverter:
             if event_data.routing is not None:
                 event_metadata[MESSAGING_EXTENSION_URI_V1] = event_data.routing.model_dump(by_alias=True, exclude_none=True)
             if event_data.metadata:
-                user_meta = {k: v for k, v in event_data.metadata.items() if not k.startswith("aion:")}
+                user_meta = agent_metadata(event_data.metadata)
                 event_metadata.update(user_meta)
             return [TaskArtifactUpdateEvent(
                 task_id=self._task_id,
@@ -266,7 +329,7 @@ class LangGraphA2AConverter:
         extensions = [MESSAGING_EXTENSION_URI_V1]
 
         message_id = message.id or str(uuid.uuid4())
-        user_meta = {k: v for k, v in (metadata or {}).items() if not k.startswith("aion:")} or None
+        user_meta = agent_metadata(metadata) or None
         msg = Message(
             context_id=self._context_id,
             task_id=self._task_id,
