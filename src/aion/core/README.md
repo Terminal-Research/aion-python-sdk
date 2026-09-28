@@ -30,12 +30,13 @@ All other Aion subpackages depend on this one; it has no internal Aion dependenc
 The optional Cron extension exposes `CronExtensionV1` through
 `context.extensions.get(CRON_EXTENSION_URI_V1)`. Check
 `context.is_extension_active(AionExtensions.CRON)` before treating it as active.
-It includes the accepted schedule, attachment/occurrence IDs, and UTC
-`scheduled_at` / `sent_at` instants. It does not copy message content or prove
-the caller's authority. Agent authors decide whether to use it in prompts or
-copy its payload into response metadata. Advertising support does not make
-Cron attachable to A2A or Aion Chat distributions; attachment ownership remains
-a control-plane, Behavior-only rule.
+It includes only UTC `scheduled_at` / `sent_at` instants (wire keys
+`scheduledAt` / `sentAt`, with a `Z` suffix); the extension URI marks Cron
+origin. No schedule, identifiers, or timezone database lookup are needed.
+It does not copy message content or prove the caller's authority. Agent authors
+decide whether to use it in prompts or copy its payload into response metadata.
+Advertising support does not make Cron attachable to A2A or Aion Chat
+distributions; attachment ownership remains a control-plane, Behavior-only rule.
 
 ## Development
 

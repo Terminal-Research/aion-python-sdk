@@ -263,7 +263,7 @@ aion_a2a_extension_registry.register(
     ExtensionDescriptor(
         uri=CRON_EXTENSION_URI_V1,
         collector=TaskMetadataCollector(CronExtensionV1),
-        description="Scheduled invocation provenance: schedule, occurrence, and dispatch time.",
+        description="Cron invocation timing: intended firing and producer dispatch time.",
     )
 )
 

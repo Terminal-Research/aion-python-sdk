@@ -28,7 +28,7 @@ def registry():
 def request(activate=True):
     """Use the same wire fixture as Scala rather than constructing a new contract."""
     payload = json.loads(
-        (Path(__file__).parents[2] / 'core/fixtures/a2a/cron-recurring.json').read_text()
+        (Path(__file__).parents[2] / 'core/fixtures/a2a/cron.json').read_text()
     )
     return ParseDict({
         'message': {'messageId': 'input', 'role': 'ROLE_USER', 'parts': [{'text': 'hello'}]},

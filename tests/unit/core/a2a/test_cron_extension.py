@@ -18,49 +18,41 @@ from aion.core.runtime.context.extensions.registry import aion_a2a_extension_reg
 FIXTURES = Path(__file__).parents[1] / "fixtures" / "a2a"
 
 
-def _payload(name: str = "recurring") -> dict:
+def _payload() -> dict:
     """Load a verbatim copy of the backend wire fixture."""
-    return json.loads((FIXTURES / f"cron-{name}.json").read_text())
+    return json.loads((FIXTURES / "cron.json").read_text())
 
 
-@pytest.mark.parametrize("name", ["recurring", "one-time"])
-def test_wire_contract(name: str) -> None:
-    """UUIDs, aliases, UTC timestamps and schedule shapes agree across clients."""
-    data = _payload(name)
+def test_wire_contract() -> None:
+    """Only aliased UTC timestamps cross the wire, for every schedule kind."""
+    data = _payload()
     payload = CronExtensionV1.model_validate(data)
     assert payload.model_dump(mode="json", by_alias=True, exclude_none=True) == data
+    assert set(data) == {"scheduledAt", "sentAt"}
 
 
-@pytest.mark.parametrize(("path", "value"), [
-    (("attachmentId",), "invalid"),
-    (("schedule", "type"), "unknown"),
-    (("schedule", "cronExpression"), None),
-    (("schedule", "cronExpression"), "* * *"),
-    (("schedule", "timezone"), "Not/AZone"),
-    (("schedule", "timezone"), "+02:00"),
-    (("schedule", "description"), "  "),
-    (("sentAt",), "2026-09-28T09:00:03-07:00"),
-    (("scheduledAt",), "not-a-timestamp"),
+@pytest.mark.parametrize("field", ["scheduledAt", "sentAt"])
+@pytest.mark.parametrize("value", [
+    None,
+    0,
+    "not-a-timestamp",
+    "2026-09-28T09:00:03-07:00",
+    "2026-09-28T16:00:03+00:00",
+    "2026-09-28T16:00:03",
 ])
-def test_invalid_metadata_is_rejected(path: tuple[str, ...], value: object) -> None:
-    """Bad scheduling context must fail validation, not become active."""
+def test_invalid_metadata_is_rejected(field: str, value: object) -> None:
+    """Both timestamps must be valid UTC-Z strings, not local times or epochs."""
     data = _payload()
-    target = data
-    for key in path[:-1]:
-        target = target[key]
-    target[path[-1]] = value
+    data[field] = value
     with pytest.raises(ValidationError):
         CronExtensionV1.model_validate(data)
 
 
-def test_one_time_rejects_expression_and_required_ids_cannot_be_missing() -> None:
-    """Do not silently reinterpret a contradictory or incomplete firing."""
-    data = _payload("one-time")
-    data["schedule"]["cronExpression"] = "0 9 * * *"
-    with pytest.raises(ValidationError):
-        CronExtensionV1.model_validate(data)
+@pytest.mark.parametrize("field", ["scheduledAt", "sentAt"])
+def test_both_timestamps_are_required(field: str) -> None:
+    """A receiver must not invent either timestamp when one is missing."""
     data = _payload()
-    del data["occurrenceId"]
+    del data[field]
     with pytest.raises(ValidationError):
         CronExtensionV1.model_validate(data)
 
@@ -78,6 +70,19 @@ def test_metadata_activation_exposes_typed_payload(explicit: bool) -> None:
     )
     assert extensions.is_active(CRON_EXTENSION_URI_V1)
     assert isinstance(extensions.get(CRON_EXTENSION_URI_V1), CronExtensionV1)
+
+
+def test_invalid_timing_cannot_activate_extension() -> None:
+    """Malformed metadata is rejected before the receiver executes work."""
+    data = _payload()
+    data["sentAt"] = "not-a-timestamp"
+    context = SimpleNamespace(
+        message=None,
+        requested_extensions={CRON_EXTENSION_URI_V1},
+        metadata={CRON_EXTENSION_URI_V1: ParseDict(data, Struct())},
+    )
+    with pytest.raises(ExtensionActivationError):
+        AionRuntimeExtensions.collect(context, aion_a2a_extension_registry.get_all())
 
 
 def test_support_alone_does_not_activate_ordinary_requests() -> None:

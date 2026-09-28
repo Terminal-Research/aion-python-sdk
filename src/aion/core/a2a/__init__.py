@@ -54,7 +54,7 @@ from .method_extensions import (
 )
 
 from .extensions.cards import CardActionEventPayload
-from .extensions.cron import CronExtensionV1, CronScheduleV1
+from .extensions.cron import CronExtensionV1
 from .extensions.distribution import (
     Behavior,
     Distribution,
