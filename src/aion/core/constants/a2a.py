@@ -5,6 +5,7 @@ See: https://docs.aion.to/a2a/extensions
 """
 
 __all__ = [
+    "CRON_EXTENSION_URI_V1",
     # Distribution extension
     "DISTRIBUTION_EXTENSION_URI_V1",
     # Cards extension
@@ -50,6 +51,9 @@ __all__ = [
     "GET_CONTEXT_EXTENSION_URI_V1",
     "GET_CONTEXTS_LIST_EXTENSION_URI_V1",
 ]
+
+# Scheduled invocation provenance (message content remains in ordinary parts).
+CRON_EXTENSION_URI_V1 = "https://docs.aion.to/a2a/extensions/aion/cron/1.0.0"
 
 # Distribution extension
 # See: https://docs.aion.to/a2a/extensions/aion/distribution/1.0.0

@@ -1,0 +1,12 @@
+{
+  "attachmentId": "10000000-0000-0000-0000-000000000001",
+  "occurrenceId": "20000000-0000-0000-0000-000000000002",
+  "schedule": {
+    "id": "30000000-0000-0000-0000-000000000003",
+    "type": "one-time",
+    "timezone": "UTC",
+    "description": "Once at the specified time"
+  },
+  "scheduledAt": "2026-09-28T16:00:00Z",
+  "sentAt": "2026-09-28T16:00:03Z"
+}

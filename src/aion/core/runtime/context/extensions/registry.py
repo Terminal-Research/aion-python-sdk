@@ -10,6 +10,7 @@ from aion.core.a2a.extensions.behaviour_evolution import (
     EvolutionVerdictEventPayload,
 )
 from aion.core.a2a.extensions.cards import CardActionEventPayload
+from aion.core.a2a.extensions.cron import CronExtensionV1
 from aion.core.a2a.extensions.daemon import DaemonExtensionPayload
 from aion.core.a2a.extensions.distribution import DistributionExtensionV1
 from aion.core.a2a.extensions.messaging import (
@@ -21,6 +22,7 @@ from aion.core.a2a.extensions.traceability import TraceabilityExtensionV1
 from aion.core.constants.a2a import (
     AION_USAGE_ATTRIBUTION_HEADER,
     CARDS_EXTENSION_URI_V1,
+    CRON_EXTENSION_URI_V1,
     DAEMON_EXTENSION_URI_V1,
     DISTRIBUTION_EXTENSION_URI_V1,
     EVENT_EXTENSION_URI_V1,
@@ -254,6 +256,14 @@ aion_a2a_extension_registry.register(
         uri=GET_CONTEXTS_LIST_EXTENSION_URI_V1,
         description="List the conversation context identifiers visible to the caller.",
         advertised=False,
+    )
+)
+
+aion_a2a_extension_registry.register(
+    ExtensionDescriptor(
+        uri=CRON_EXTENSION_URI_V1,
+        collector=TaskMetadataCollector(CronExtensionV1),
+        description="Scheduled invocation provenance: schedule, occurrence, and dispatch time.",
     )
 )
 
