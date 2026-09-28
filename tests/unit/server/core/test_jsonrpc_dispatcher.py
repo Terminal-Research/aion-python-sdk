@@ -7,6 +7,7 @@ from typing import Any
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+from a2a.server.context import ServerCallContext
 from a2a.server.routes.jsonrpc_dispatcher import JsonRpcDispatcher
 from sse_starlette.sse import EventSourceResponse
 from starlette.responses import JSONResponse, Response
@@ -38,7 +39,7 @@ async def test_streaming_response_uses_lf_event_delimiters() -> None:
         yield {'jsonrpc': '2.0', 'id': 1, 'result': {'sequence': 2}}
 
     dispatcher = AionJsonRpcDispatcher(request_handler=Mock())
-    response = dispatcher._create_response(Mock(), results())
+    response = dispatcher._create_response(ServerCallContext(), results())
     messages: list[dict[str, Any]] = []
 
     async def send(message: dict[str, Any]) -> None:

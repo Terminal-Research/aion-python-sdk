@@ -35,6 +35,7 @@ from aion.server.tasks.ownership.config import CANCEL_WAIT_SECONDS
 from aion.server.a2a.conversation import ConversationBuilder
 from .request_preprocessors import A2ARequestPreprocessor, PreprocessingContext
 from .terminal_task_projection import TerminalTaskProjection
+from aion.server.a2a.response_extensions import ResponseServiceParameters
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +103,7 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         never trigger that side effect, and the preprocessor works from the
         verified projection instead of re-reading the raw request.
         """
-        extensions = self._verify_declared_extensions(params, call_context)
+        extensions = self.verify_declared_extensions(params, call_context)
         context = PreprocessingContext(
             extensions=extensions, call_context=call_context
         )
@@ -149,7 +150,7 @@ class AionRequestHandler(DefaultRequestHandlerV2):
                     type(preprocessor).__name__,
                 )
 
-    def _verify_declared_extensions(
+    def verify_declared_extensions(
             self,
             params: SendMessageRequest,
             call_context: ServerCallContext,
@@ -192,11 +193,13 @@ class AionRequestHandler(DefaultRequestHandlerV2):
             call_context=call_context,
         )
         try:
-            return AionRuntimeExtensions.collect(
+            verified = AionRuntimeExtensions.collect(
                 declaration, aion_a2a_extension_registry.get_all()
             )
         except ExtensionActivationError as ex:
             raise InvalidParamsError(message=str(ex)) from ex
+        ResponseServiceParameters(verified.activated_uris).record(call_context)
+        return verified
 
     async def on_get_context(
             self,

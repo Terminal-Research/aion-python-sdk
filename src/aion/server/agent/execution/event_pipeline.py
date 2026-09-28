@@ -10,6 +10,7 @@ from aion.server.agent.execution.scope import get_task_manager as exec_scope_get
 from aion.server.files.a2a import A2AFileTransformer
 from aion.server.tasks import A2ATaskDeduplicator
 from aion.server.a2a.constants import TERMINAL_TASK_STATES
+from aion.server.a2a.response_extensions import ResponseServiceParameters
 from aion.server.a2a.utils import (
     is_ephemeral_status_event,
     is_message_in_task_history,
@@ -42,6 +43,8 @@ class AionEventPipeline:
             task_updater: TaskUpdater,
             file_transformer: Optional[A2AFileTransformer] = None,
             task_started: bool = False,
+            response_parameters: ResponseServiceParameters = ResponseServiceParameters(),
+            prior_message_ids: frozenset[str] = frozenset(),
     ):
         """
         Args:
@@ -50,12 +53,16 @@ class AionEventPipeline:
             file_transformer: Optional transformer for inline file parts.
             task_started: True when the caller has already announced the work,
                 as the executor does for a resumed task.
+            response_parameters: Verified activation for this invocation only.
+            prior_message_ids: Existing history/status messages to preserve.
         """
         self._queue = event_queue
         self._task_updater = task_updater
         self._file_transformer = file_transformer
         self._task_started = task_started
         self._terminal_seen = False
+        self._response_parameters = response_parameters
+        self._prior_message_ids = prior_message_ids
         self._deduplicator: Optional[A2ATaskDeduplicator] = None
 
     @property
@@ -158,6 +165,7 @@ class AionEventPipeline:
             self._task_started = True
 
     async def _prepare_event(self, event):
+        event = self._response_parameters.annotate(event, self._prior_message_ids)
         if self._file_transformer:
             event = await self._file_transformer.transform_event(event)
         return event

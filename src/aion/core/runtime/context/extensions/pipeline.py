@@ -127,6 +127,11 @@ class AionRuntimeExtensions:
         return cls(verified, unknown=active_uris - known_uris)
 
     @property
+    def activated_uris(self) -> tuple[str, ...]:
+        """Verified activations only, excluding inert unknown declarations."""
+        return tuple(self._verified)
+
+    @property
     def unknown(self) -> tuple[UnknownExtension, ...]:
         """Declared URIs no registered descriptor claims - carried, not handled."""
         return tuple(self._unknown.values())
