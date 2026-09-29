@@ -184,3 +184,7 @@ npm test
 npm run build
 npm pack --dry-run
 ```
+
+Agent capabilities come from the selected A2A Agent Card. The bundled GraphQL
+schema also includes `a2aAgentCardUrl` for clients that resolve a distribution
+target before fetching its card; it is not a separate capability flag.

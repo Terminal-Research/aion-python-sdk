@@ -64,3 +64,7 @@ jq 'select(.event == "a2a.stream.event" or .event == "chat.agent_message.rendere
 
 The active log path is also recorded near startup in the
 `chat.session.started` event as `data.logFilePath`.
+
+The bundled chat schema includes `a2aAgentCardUrl` for authorized, route-specific
+React client discovery. The terminal client continues to fetch its selected
+Agent Card through the existing direct A2A connection.

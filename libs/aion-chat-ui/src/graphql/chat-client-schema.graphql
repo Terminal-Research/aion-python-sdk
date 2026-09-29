@@ -408,6 +408,8 @@ type OrganizationMember {
 }
 
 type Queries {
+  "Resolves the authorized distribution card URL for the selected A2A message target. Returns null for direct agent targets."
+  a2aAgentCardUrl("The same A2A target used for message dispatch" target: CapabilitySubjectGQLInput!, "Optional effective principal resource URI" principal: String): String
   "Retrieves a user by ID. When no userId is supplied, returns the currently authenticated user."
   user(userId: ID): User @auth(subjectType: "User")
   "Checks runtime health for the agent actor bound to an agent environment."
