@@ -1,3 +1,4 @@
+import { createChatThread } from "./lib/welcomeMessage.js";
 import { randomUUID } from "node:crypto";
 
 import type {
@@ -28,7 +29,6 @@ import {
 	parseAgentSelection
 } from "./lib/agentSelection.js";
 import {
-	clearAgentActiveContext,
 	loadChatSettings,
 	saveChatSettings,
 	type ChatSettings
@@ -403,7 +403,15 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 	const [entries, setEntries] = useState<TranscriptEntry[]>([]);
 	const [transcriptGeneration, setTranscriptGeneration] = useState(0);
 	const [notifications, setNotifications] = useState<TranscriptEntry[]>([]);
-	const [contextId, setContextId] = useState<string>();
+	const contextIdRef = useRef<string | undefined>(undefined);
+	const contextScopeRef = useRef("");
+	const connectedAgentKeyRef = useRef<string | undefined>(undefined);
+	const currentThreadScopeRef = useRef("");
+	const welcomeLifetimeRef = useRef(new AbortController());
+	const setCurrentContextId = (value: string | undefined): void => {
+		contextIdRef.current = value;
+		contextScopeRef.current = `${selectedEnvironment}:${selectedAgentKey ?? ""}`;
+	};
 	const [taskId, setTaskId] = useState<string>();
 	const [workingStartedAt, setWorkingStartedAt] = useState<number>();
 	const [clientState, setClientState] = useState<Awaited<ReturnType<typeof connectClient>>>();
@@ -432,6 +440,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		activeEnvironmentSettings.responseMode
 	);
 	const [reconnectNonce, setReconnectNonce] = useState(0);
+	currentThreadScopeRef.current = `${selectedEnvironment}:${selectedAgentKey ?? ""}`;
 	const shownMessageKeysRef = useRef<Set<string>>(new Set());
 	const streamedTaskIdsRef = useRef<Set<string>>(new Set());
 	const streamTranscriptStateRef = useRef(createStreamTranscriptState());
@@ -506,6 +515,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 	};
 
 	useEffect(() => {
+		welcomeLifetimeRef.current = new AbortController();
 		const environmentAtStart = selectedEnvironment;
 		chatSessionLogger.info("chat.session.started", {
 			mode: "interactive",
@@ -520,6 +530,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		}
 
 		return () => {
+			welcomeLifetimeRef.current.abort();
 			chatSessionLogger.info("chat.session.ended", {
 				mode: "interactive",
 				environmentId: environmentAtStart
@@ -582,7 +593,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		streamedTaskIdsRef.current.clear();
 		clearStreamTranscriptState(streamTranscriptStateRef.current);
 		lastCopyableResponseRef.current = undefined;
-		setContextId(undefined);
+		setCurrentContextId(undefined);
 		setTaskId(undefined);
 		setStreamLabel("Idle");
 		setWorkingStartedAt(undefined);
@@ -833,7 +844,8 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				setSelectedAgentKey(undefined);
 				setSelectedAgentId(undefined);
 				setClientState(undefined);
-				setContextId(undefined);
+				connectedAgentKeyRef.current = undefined;
+				setCurrentContextId(undefined);
 				setTaskId(undefined);
 				setStreamLabel("Idle");
 				persistEnvironmentSettings(selectedEnvironment, {
@@ -919,8 +931,12 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				}
 
 				setClientState(undefined);
-				setContextId(
-					activeEnvironmentSettings.agents[selectedAgent.agentKey]?.activeContextId
+				connectedAgentKeyRef.current = undefined;
+				const scope = `${selectedEnvironment}:${selectedAgent.agentKey}`;
+				setCurrentContextId(
+					contextScopeRef.current === scope && contextIdRef.current
+						? contextIdRef.current
+						: activeEnvironmentSettings.agents[selectedAgent.agentKey]?.activeContextId
 				);
 				setTaskId(undefined);
 
@@ -944,6 +960,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				}
 
 				setClientState(connected);
+				connectedAgentKeyRef.current = selectedAgent.agentKey;
 				const connectionNoticeKey = `${selectedAgent.agentKey}:${connected.agentCard.name}:${connected.endpoints.rpcUrl}`;
 				if (lastConnectionNoticeRef.current !== connectionNoticeKey) {
 					lastConnectionNoticeRef.current = connectionNoticeKey;
@@ -1075,7 +1092,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 
 	const handleMessage = (message: Message, protocolPayload: unknown = message): boolean => {
 		if (message.contextId) {
-			setContextId(message.contextId);
+			setCurrentContextId(message.contextId);
 		}
 		setTaskId(undefined);
 
@@ -1088,7 +1105,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 	};
 
 	const handleTaskSnapshot = (task: Task, protocolPayload: unknown = task): boolean => {
-		setContextId(task.contextId);
+		setCurrentContextId(task.contextId);
 		const isTerminalTask = isTerminalTaskState(task.status?.state);
 		setTaskId(isTaskContinuationState(task.status?.state) ? task.id : undefined);
 
@@ -1117,7 +1134,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		event: TaskStatusUpdateEvent,
 		protocolPayload: unknown = event
 	): boolean => {
-		setContextId(event.contextId);
+		setCurrentContextId(event.contextId);
 		setTaskId(isTaskContinuationState(event.status?.state) ? event.taskId : undefined);
 		setStreamLabel(taskStateLabel(event.status?.state));
 
@@ -1162,7 +1179,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		event: TaskArtifactUpdateEvent,
 		protocolPayload: unknown = event
 	): boolean => {
-		setContextId(event.contextId);
+		setCurrentContextId(event.contextId);
 		setTaskId(undefined);
 
 		const artifact = event.artifact;
@@ -1467,17 +1484,60 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		appendSystem(`Aion environment set to ${environmentId}.`);
 	};
 
+	const activateNewContext = (nextContextId: string): void => {
+		setCurrentContextId(nextContextId);
+		const key = selectedAgent?.agentKey ?? selectedAgentKey;
+		const existing = key ? activeEnvironmentSettings.agents[key] : undefined;
+		if (key && existing) {
+			persistEnvironmentSettings(selectedEnvironment, {
+				agents: {
+					...activeEnvironmentSettings.agents,
+					[key]: { ...existing, activeContextId: nextContextId }
+				}
+			});
+		}
+	};
+
 	const runClearSlashCommand = (): void => {
 		const selectedContextAgentKey = selectedAgent?.agentKey ?? selectedAgentKey;
 		clearTranscript();
 		if (selectedContextAgentKey) {
-			persistSettings(
-				clearAgentActiveContext(
-					chatSettings,
-					selectedEnvironment,
-					selectedContextAgentKey
-				)
-			);
+			const scope = `${selectedEnvironment}:${selectedContextAgentKey}`;
+			createChatThread({
+				signal: welcomeLifetimeRef.current.signal,
+				connected: connectedAgentKeyRef.current === selectedContextAgentKey
+					? clientState : undefined,
+				onCreated: activateNewContext,
+				onWelcome: (request, response) => {
+					const originalContext = request.message!.contextId;
+					const messages = isMessage(response)
+						? [request.message!, response]
+						: [request.message!, ...getTaskMessages(response)];
+					const warning = saveCompletedExchange({
+						environment: selectedEnvironment,
+						agentKey: selectedContextAgentKey,
+						contextId: originalContext,
+						chatSessionId: chatSessionLogger.chatSessionId,
+						chatSessionLogPath: chatSessionLogger.logFilePath,
+						messages
+					});
+					if (warning) chatSessionLogger.warn("chat.welcome.save_failed", { warning });
+					if (currentThreadScopeRef.current !== scope
+						|| contextIdRef.current !== originalContext) return;
+					// Rendering does not mutate the foreground task or busy state.
+					if (responseMode === "a2a-protocol") appendProtocol(response);
+					else for (const message of messages) {
+						renderAgentResponseBubble(message, isMessage(response) ? undefined : response.id);
+					}
+				},
+				onError: (error, originalContext) => {
+					chatSessionLogger.warn("chat.welcome.failed", { contextId: originalContext, error });
+					if (currentThreadScopeRef.current === scope
+						&& contextIdRef.current === originalContext) {
+						appendSystem(`Welcome failed: ${error instanceof Error ? error.message : String(error)}`);
+					}
+				}
+			});
 		}
 		setReconnectNonce((current) => current + 1);
 		const terminalClearRequested = requestTerminalClear({
@@ -1618,7 +1678,9 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			}
 		]);
 
-		const params = buildMessageParams(parts, contextId, taskId, pushConfig);
+		const requestContextId = contextIdRef.current ?? randomUUID();
+		if (!contextIdRef.current) activateNewContext(requestContextId);
+		const params = buildMessageParams(parts, requestContextId, taskId, pushConfig);
 		const outboundMessage = params.message;
 		if (!outboundMessage) {
 			appendStatus("Unable to build outbound A2A message.");

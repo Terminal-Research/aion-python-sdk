@@ -106,7 +106,14 @@ async function buildAuthHeaders(
 ): Promise<Headers> {
 	const headers = new Headers(initHeaders ?? requestHeaders);
 	for (const [key, value] of Object.entries(options.headers)) {
-		headers.set(key, value);
+		if (key.toLowerCase() === "a2a-extensions") {
+			const extensions = [headers.get(key) ?? "", value]
+				.flatMap((entry) => entry.split(",")).map((entry) => entry.trim())
+				.filter(Boolean);
+			headers.set(key, [...new Set(extensions)].join(","));
+		} else {
+			headers.set(key, value);
+		}
 	}
 	const token = options.token ?? (await options.tokenProvider?.());
 	if (token) {
@@ -182,6 +189,8 @@ function buildFetch(options: ChatConnectionOptions, endpoints: EndpointConfig): 
 					? undefined
 					: (request.body ?? undefined));
 			const nextRequest: RequestInit & { duplex?: "half" } = {
+				...init,
+				signal: init?.signal ?? request.signal,
 				method,
 				headers,
 				body

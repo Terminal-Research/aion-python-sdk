@@ -63,6 +63,7 @@ describe("GraphQL client", () => {
 		), "utf8"), { assumeValidSDL: true });
 		// Import only the backend's chat export, never its full application schema.
 		expect(Object.keys(schema.getQueryType()?.getFields() ?? {}).sort()).toEqual([
+			"a2aAgentCardUrl",
 			"agentIdentityDetail", "agentIdentityDetails", "healthCheckAgent", "login", "user"
 		]);
 		expect(schema.getMutationType()).toBeUndefined();

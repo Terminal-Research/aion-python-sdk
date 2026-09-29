@@ -49570,8 +49570,8 @@ function parseCliArgs(argv) {
   };
 }
 
-// src/app.tsx
-import { randomUUID as randomUUID3 } from "crypto";
+// src/lib/welcomeMessage.ts
+import { randomUUID as randomUUID2 } from "crypto";
 
 // node_modules/@a2a-js/sdk/dist/chunk-IFX37PQI.js
 var TaskState = /* @__PURE__ */ ((TaskState2) => {
@@ -50910,7 +50910,1740 @@ var A2A_PROTOCOL_VERSION = "1.0";
 var JSON_CONTENT_TYPE = "application/json";
 var A2A_CONTENT_TYPE = "application/a2a+json";
 
+// src/lib/connection.ts
+import { randomUUID } from "crypto";
+
+// node_modules/@a2a-js/sdk/dist/chunk-WMQQYH7W.js
+async function* parseSseStream(response) {
+  if (!response.body) {
+    throw new Error("SSE response body is undefined. Cannot read stream.");
+  }
+  let buffer = "";
+  let eventType = "message";
+  let eventData = "";
+  const stream = response.body.pipeThrough(new TextDecoderStream());
+  for await (const value of readFrom(stream)) {
+    buffer += value;
+    let lineEndIndex;
+    while ((lineEndIndex = buffer.indexOf("\n")) >= 0) {
+      const line = buffer.substring(0, lineEndIndex).trim();
+      buffer = buffer.substring(lineEndIndex + 1);
+      if (line === "") {
+        if (eventData) {
+          yield { type: eventType, data: eventData };
+          eventData = "";
+          eventType = "message";
+        }
+      } else if (line.startsWith("event:")) {
+        eventType = line.substring("event:".length).trim();
+      } else if (line.startsWith("data:")) {
+        eventData = line.substring("data:".length).trim();
+      }
+    }
+  }
+  if (eventData) {
+    yield { type: eventType, data: eventData };
+  }
+}
+async function* readFrom(stream) {
+  const reader = stream.getReader();
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      yield value;
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+// node_modules/@a2a-js/sdk/dist/chunk-TNVTFICZ.js
+var A2A_ERROR_CODE = {
+  PARSE_ERROR: -32700,
+  INVALID_REQUEST: -32600,
+  METHOD_NOT_FOUND: -32601,
+  INVALID_PARAMS: -32602,
+  INTERNAL_ERROR: -32603,
+  TASK_NOT_FOUND: -32001,
+  TASK_NOT_CANCELABLE: -32002,
+  PUSH_NOTIFICATION_NOT_SUPPORTED: -32003,
+  UNSUPPORTED_OPERATION: -32004,
+  CONTENT_TYPE_NOT_SUPPORTED: -32005,
+  INVALID_AGENT_RESPONSE: -32006,
+  EXTENDED_CARD_NOT_CONFIGURED: -32007,
+  EXTENSION_SUPPORT_REQUIRED: -32008,
+  VERSION_NOT_SUPPORTED: -32009
+};
+var ERROR_INFO_TYPE = "type.googleapis.com/google.rpc.ErrorInfo";
+var A2A_ERROR_REASON = {
+  TaskNotFoundError: "TASK_NOT_FOUND",
+  TaskNotCancelableError: "TASK_NOT_CANCELABLE",
+  PushNotificationNotSupportedError: "PUSH_NOTIFICATION_NOT_SUPPORTED",
+  UnsupportedOperationError: "UNSUPPORTED_OPERATION",
+  ContentTypeNotSupportedError: "CONTENT_TYPE_NOT_SUPPORTED",
+  InvalidAgentResponseError: "INVALID_AGENT_RESPONSE",
+  ExtendedAgentCardNotConfiguredError: "EXTENDED_AGENT_CARD_NOT_CONFIGURED",
+  ExtensionSupportRequiredError: "EXTENSION_SUPPORT_REQUIRED",
+  VersionNotSupportedError: "VERSION_NOT_SUPPORTED",
+  RequestMalformedError: "INVALID_PARAMS",
+  GenericError: "INTERNAL_ERROR"
+};
+var A2A_REASON_TO_ERROR = Object.fromEntries(
+  Object.entries(A2A_ERROR_REASON).map(([cls, reason]) => [reason, cls])
+);
+var A2A_ERROR_CODE_TO_CLASS = {
+  [A2A_ERROR_CODE.TASK_NOT_FOUND]: "TaskNotFoundError",
+  [A2A_ERROR_CODE.TASK_NOT_CANCELABLE]: "TaskNotCancelableError",
+  [A2A_ERROR_CODE.PUSH_NOTIFICATION_NOT_SUPPORTED]: "PushNotificationNotSupportedError",
+  [A2A_ERROR_CODE.UNSUPPORTED_OPERATION]: "UnsupportedOperationError",
+  [A2A_ERROR_CODE.CONTENT_TYPE_NOT_SUPPORTED]: "ContentTypeNotSupportedError",
+  [A2A_ERROR_CODE.INVALID_AGENT_RESPONSE]: "InvalidAgentResponseError",
+  [A2A_ERROR_CODE.EXTENDED_CARD_NOT_CONFIGURED]: "ExtendedAgentCardNotConfiguredError",
+  [A2A_ERROR_CODE.EXTENSION_SUPPORT_REQUIRED]: "ExtensionSupportRequiredError",
+  [A2A_ERROR_CODE.VERSION_NOT_SUPPORTED]: "VersionNotSupportedError",
+  [A2A_ERROR_CODE.INVALID_PARAMS]: "RequestMalformedError",
+  [A2A_ERROR_CODE.INTERNAL_ERROR]: "GenericError"
+};
+var RequestMalformedError = class extends Error {
+  constructor(message) {
+    super(message ?? "Request malformed");
+    this.name = "RequestMalformedError";
+  }
+};
+var GenericError = class extends Error {
+  constructor(message) {
+    super(message ?? "An unexpected error occurred.");
+    this.name = "GenericError";
+  }
+};
+var TaskNotFoundError = class extends Error {
+  constructor(message) {
+    super(message ?? "Task not found");
+    this.name = "TaskNotFoundError";
+  }
+};
+var TaskNotCancelableError = class extends Error {
+  constructor(message) {
+    super(message ?? "Task cannot be canceled");
+    this.name = "TaskNotCancelableError";
+  }
+};
+var PushNotificationNotSupportedError = class extends Error {
+  constructor(message) {
+    super(message ?? "Push Notification is not supported");
+    this.name = "PushNotificationNotSupportedError";
+  }
+};
+var UnsupportedOperationError = class extends Error {
+  constructor(message) {
+    super(message ?? "This operation is not supported");
+    this.name = "UnsupportedOperationError";
+  }
+};
+var ContentTypeNotSupportedError = class extends Error {
+  constructor(message) {
+    super(message ?? "Incompatible content types");
+    this.name = "ContentTypeNotSupportedError";
+  }
+};
+var InvalidAgentResponseError = class extends Error {
+  constructor(message) {
+    super(message ?? "Invalid agent response type");
+    this.name = "InvalidAgentResponseError";
+  }
+};
+var ExtendedAgentCardNotConfiguredError = class extends Error {
+  constructor(message) {
+    super(message ?? "Extended Agent Card not configured");
+    this.name = "ExtendedAgentCardNotConfiguredError";
+  }
+};
+var ExtensionSupportRequiredError = class extends Error {
+  constructor(message) {
+    super(message ?? "Extension support required");
+    this.name = "ExtensionSupportRequiredError";
+  }
+};
+var VersionNotSupportedError = class extends Error {
+  constructor(message) {
+    super(message ?? "Version not supported");
+    this.name = "VersionNotSupportedError";
+  }
+};
+var A2A_REASON_TO_ERROR_CLASS = {
+  TASK_NOT_FOUND: TaskNotFoundError,
+  TASK_NOT_CANCELABLE: TaskNotCancelableError,
+  PUSH_NOTIFICATION_NOT_SUPPORTED: PushNotificationNotSupportedError,
+  UNSUPPORTED_OPERATION: UnsupportedOperationError,
+  CONTENT_TYPE_NOT_SUPPORTED: ContentTypeNotSupportedError,
+  INVALID_AGENT_RESPONSE: InvalidAgentResponseError,
+  EXTENDED_AGENT_CARD_NOT_CONFIGURED: ExtendedAgentCardNotConfiguredError,
+  EXTENSION_SUPPORT_REQUIRED: ExtensionSupportRequiredError,
+  VERSION_NOT_SUPPORTED: VersionNotSupportedError,
+  INVALID_PARAMS: RequestMalformedError,
+  INTERNAL_ERROR: GenericError
+};
+var A2A_NAME_TO_ERROR_CLASS = Object.fromEntries(
+  Object.entries(A2A_ERROR_REASON).map(([name, reason]) => [
+    name,
+    A2A_REASON_TO_ERROR_CLASS[reason]
+  ])
+);
+
+// node_modules/@a2a-js/sdk/dist/chunk-BVQ77WJF.js
+var FromProto = class {
+  static sendMessageResult(response) {
+    if (response.payload?.$case === "task" || response.payload?.$case === "message") {
+      return response.payload.value;
+    }
+    throw new GenericError("Invalid SendMessageResponse: missing result");
+  }
+};
+
+// node_modules/@a2a-js/sdk/dist/client/index.js
+var DefaultAgentCardResolver = class {
+  constructor(options2) {
+    this.options = options2;
+  }
+  /**
+   * Fetches the agent card based on provided base URL and path.
+   * Path is selected in the following order:
+   * 1) path parameter
+   * 2) path from options
+   * 3) .well-known/agent-card.json
+   */
+  async resolve(baseUrl, path4) {
+    const agentCardUrl = new URL(path4 ?? this.options?.path ?? AGENT_CARD_PATH, baseUrl);
+    const response = await this.fetchImpl(agentCardUrl);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch Agent Card from ${agentCardUrl}: ${response.status}`);
+    }
+    const rawCard = await response.json();
+    return this.normalizeAgentCard(rawCard);
+  }
+  fetchImpl(...args) {
+    if (this.options?.fetchImpl) {
+      return this.options.fetchImpl(...args);
+    }
+    return fetch(...args);
+  }
+  /*
+   * In the v0.3.0 specification, there was a structural drift between the JSON Schema data model
+   * and the Protobuf-based data model for AgentCards.
+   * The JSON Schema format uses a `"type"` discriminator (e.g., `{"type": "openIdConnect"}`),
+   * while the Protobuf JSON representation uses the `oneof` field name as the discriminator
+   * (e.g., `{"openIdConnectSecurityScheme": {...}}`).
+   *
+   * The A2A SDK internal logic expects the JSON Schema-based format. This fallback detection
+   * allows us to parse cards served by endpoints returning the Protobuf JSON structure by
+   * identifying the lack of the "type" field in security schemes or the presence of the
+   * "schemes" wrapper in security entries, and normalizing it before use.
+   */
+  normalizeAgentCard(card) {
+    if (this.isProtoAgentCard(card)) {
+      const parsedProto = AgentCard.fromJSON(card);
+      return parsedProto;
+    }
+    return card;
+  }
+  isProtoAgentCard(card) {
+    if (!card || typeof card !== "object") return false;
+    const c = card;
+    if (this.hasProtoSecurity(c.security)) return true;
+    if (this.hasProtoSecuritySchemes(c.securitySchemes)) return true;
+    if (Array.isArray(c.skills)) {
+      return c.skills.some(
+        (skill) => skill && typeof skill === "object" && this.hasProtoSecurity(skill.security)
+      );
+    }
+    return false;
+  }
+  hasProtoSecurity(securityArray) {
+    if (Array.isArray(securityArray) && securityArray.length > 0) {
+      const first = securityArray[0];
+      return first && typeof first === "object" && "schemes" in first;
+    }
+    return false;
+  }
+  hasProtoSecuritySchemes(securitySchemes) {
+    if (securitySchemes && typeof securitySchemes === "object") {
+      const schemes = Object.values(securitySchemes);
+      if (schemes.length > 0) {
+        const first = schemes[0];
+        return first && typeof first === "object" && !("type" in first);
+      }
+    }
+    return false;
+  }
+};
+var AgentCardResolver = {
+  default: new DefaultAgentCardResolver()
+};
+var ServiceParameters = {
+  create(...updates) {
+    return ServiceParameters.createFrom(void 0, ...updates);
+  },
+  createFrom: (serviceParameters, ...updates) => {
+    const result = serviceParameters ? { ...serviceParameters } : {};
+    for (const update of updates) {
+      update(result);
+    }
+    return result;
+  }
+};
+function withA2AVersion(version) {
+  return (parameters) => {
+    parameters[A2A_VERSION_HEADER] = version;
+  };
+}
+var Client = class {
+  constructor(transport, agentCard, config) {
+    this.transport = transport;
+    this.agentCard = agentCard;
+    this.config = config;
+  }
+  /**
+   * The A2A protocol version sent with every request via the A2A-Version header.
+   * Determined by the transport, which receives the version from the matched
+   * AgentInterface during factory creation. Clients MUST send this header per §3.6.1.
+   */
+  get protocolVersion() {
+    return this.transport.protocolVersion;
+  }
+  /**
+   * If the current agent card supports the extended feature, it will try to fetch the extended agent card from the server,
+   * Otherwise it will return the current agent card value.
+   *
+   * When a default tenant is configured (via `TenantTransportDecorator`, wired
+   * automatically by `ClientFactory` from `AgentInterface.tenant`), the tenant
+   * is applied to the request transparently.
+   */
+  async getAgentCard(options2, verifySignature) {
+    if (this.agentCard.capabilities?.extendedAgentCard) {
+      this.agentCard = await this.executeWithInterceptors(
+        { method: "getAgentCard" },
+        options2,
+        (_, options22) => this.transport.getExtendedAgentCard({ tenant: "" }, options22)
+      );
+    }
+    if (verifySignature) {
+      await verifySignature(this.agentCard);
+    }
+    return this.agentCard;
+  }
+  /**
+   * Sends a message to an agent to initiate a new interaction or to continue an existing one.
+   * Uses blocking mode by default.
+   */
+  sendMessage(params, options2) {
+    params = this.applyClientConfig({
+      params,
+      returnImmediately: this.config?.polling ?? false
+    });
+    return this.executeWithInterceptors(
+      { method: "sendMessage", value: params },
+      options2,
+      this.transport.sendMessage.bind(this.transport)
+    );
+  }
+  /**
+   * Sends a message to an agent to initiate/continue a task AND subscribes the client to real-time updates for that task.
+   * Performs fallback to non-streaming if not supported by the agent.
+   */
+  async *sendMessageStream(params, options2) {
+    const method = "sendMessageStream";
+    params = this.applyClientConfig({ params, returnImmediately: false });
+    const beforeArgs = {
+      input: { method, value: params },
+      agentCard: this.agentCard,
+      options: this.withVersionHeader(options2)
+    };
+    const beforeResult = await this.interceptBefore(beforeArgs);
+    if (beforeResult) {
+      const earlyReturn = beforeResult.earlyReturn.value;
+      const afterArgs = {
+        result: { method, value: earlyReturn },
+        agentCard: this.agentCard,
+        options: beforeArgs.options
+      };
+      await this.interceptAfter(afterArgs, beforeResult.executed);
+      yield afterArgs.result.value;
+      return;
+    }
+    if (!this.agentCard.capabilities?.streaming) {
+      const result = await this.transport.sendMessage(beforeArgs.input.value, beforeArgs.options);
+      let streamValue;
+      if ("messageId" in result) {
+        streamValue = { payload: { $case: "message", value: result } };
+      } else {
+        streamValue = { payload: { $case: "task", value: result } };
+      }
+      const afterArgs = {
+        result: { method, value: streamValue },
+        agentCard: this.agentCard,
+        options: beforeArgs.options
+      };
+      await this.interceptAfter(afterArgs);
+      yield afterArgs.result.value;
+      return;
+    }
+    for await (const event of this.transport.sendMessageStream(
+      beforeArgs.input.value,
+      beforeArgs.options
+    )) {
+      const afterArgs = {
+        result: { method, value: event },
+        agentCard: this.agentCard,
+        options: beforeArgs.options
+      };
+      await this.interceptAfter(afterArgs);
+      yield afterArgs.result.value;
+      if (afterArgs.earlyReturn) {
+        return;
+      }
+    }
+  }
+  /**
+   * Creates a push notification configuration for a specified task.
+   * Requires the server to have AgentCard.capabilities.pushNotifications: true.
+   */
+  createTaskPushNotificationConfig(params, options2) {
+    if (!this.agentCard.capabilities?.pushNotifications) {
+      throw new PushNotificationNotSupportedError();
+    }
+    return this.executeWithInterceptors(
+      { method: "createTaskPushNotificationConfig", value: params },
+      options2,
+      this.transport.createTaskPushNotificationConfig.bind(this.transport)
+    );
+  }
+  /**
+   * Retrieves the current push notification configuration for a specified task.
+   * Requires the server to have AgentCard.capabilities.pushNotifications: true.
+   */
+  getTaskPushNotificationConfig(params, options2) {
+    if (!this.agentCard.capabilities?.pushNotifications) {
+      throw new PushNotificationNotSupportedError();
+    }
+    return this.executeWithInterceptors(
+      { method: "getTaskPushNotificationConfig", value: params },
+      options2,
+      this.transport.getTaskPushNotificationConfig.bind(this.transport)
+    );
+  }
+  /**
+   * Retrieves the associated push notification configurations for a specified task.
+   * Requires the server to have AgentCard.capabilities.pushNotifications: true.
+   */
+  listTaskPushNotificationConfig(params, options2) {
+    if (!this.agentCard.capabilities?.pushNotifications) {
+      throw new PushNotificationNotSupportedError();
+    }
+    return this.executeWithInterceptors(
+      { method: "listTaskPushNotificationConfig", value: params },
+      options2,
+      this.transport.listTaskPushNotificationConfig.bind(this.transport)
+    );
+  }
+  /**
+   * Deletes an associated push notification configuration for a task.
+   */
+  deleteTaskPushNotificationConfig(params, options2) {
+    return this.executeWithInterceptors(
+      { method: "deleteTaskPushNotificationConfig", value: params },
+      options2,
+      this.transport.deleteTaskPushNotificationConfig.bind(this.transport)
+    );
+  }
+  /**
+   * Retrieves the current state (including status, artifacts, and optionally history) of a previously initiated task.
+   */
+  getTask(params, options2) {
+    return this.executeWithInterceptors(
+      { method: "getTask", value: params },
+      options2,
+      this.transport.getTask.bind(this.transport)
+    );
+  }
+  /**
+   * Requests the cancellation of an ongoing task. The server will attempt to cancel the task,
+   * but success is not guaranteed (e.g., the task might have already completed or failed, or cancellation might not be supported at its current stage).
+   */
+  cancelTask(params, options2) {
+    return this.executeWithInterceptors(
+      { method: "cancelTask", value: params },
+      options2,
+      this.transport.cancelTask.bind(this.transport)
+    );
+  }
+  /**
+   * Retrieves a list of tasks with optional filtering and pagination.
+   */
+  listTasks(params, options2) {
+    return this.executeWithInterceptors(
+      { method: "listTasks", value: params },
+      options2,
+      this.transport.listTasks.bind(this.transport)
+    );
+  }
+  /**
+   * Allows a client to reconnect to an updates stream for an ongoing task after a previous connection was interrupted.
+   */
+  async *resubscribeTask(params, options2) {
+    const method = "resubscribeTask";
+    const beforeArgs = {
+      input: { method, value: params },
+      agentCard: this.agentCard,
+      options: this.withVersionHeader(options2)
+    };
+    const beforeResult = await this.interceptBefore(beforeArgs);
+    if (beforeResult) {
+      const earlyReturn = beforeResult.earlyReturn.value;
+      const afterArgs = {
+        result: { method, value: earlyReturn },
+        agentCard: this.agentCard,
+        options: beforeArgs.options
+      };
+      await this.interceptAfter(afterArgs, beforeResult.executed);
+      yield afterArgs.result.value;
+      return;
+    }
+    for await (const event of this.transport.resubscribeTask(
+      beforeArgs.input.value,
+      beforeArgs.options
+    )) {
+      const afterArgs = {
+        result: { method, value: event },
+        agentCard: this.agentCard,
+        options: beforeArgs.options
+      };
+      await this.interceptAfter(afterArgs);
+      yield afterArgs.result.value;
+      if (afterArgs.earlyReturn) {
+        return;
+      }
+    }
+  }
+  applyClientConfig({
+    params,
+    returnImmediately
+  }) {
+    const result = {
+      ...params,
+      configuration: params.configuration ?? {}
+    };
+    result.configuration.acceptedOutputModes = result.configuration.acceptedOutputModes ?? this.config?.acceptedOutputModes ?? [];
+    if (!result.configuration.taskPushNotificationConfig && this.config?.pushNotificationConfig) {
+      if (params.message?.taskId !== void 0) {
+        result.configuration.taskPushNotificationConfig = this.config.pushNotificationConfig;
+      }
+    }
+    result.configuration.returnImmediately ??= returnImmediately;
+    return result;
+  }
+  /**
+   * Ensures the A2A-Version header is present in the request's service parameters.
+   * Per §3.6.1: "Clients MUST send the A2A-Version header with each request."
+   */
+  withVersionHeader(options2) {
+    return {
+      ...options2,
+      serviceParameters: ServiceParameters.createFrom(
+        options2?.serviceParameters,
+        withA2AVersion(this.protocolVersion)
+      )
+    };
+  }
+  async executeWithInterceptors(input, options2, transportCall) {
+    const beforeArgs = {
+      input,
+      agentCard: this.agentCard,
+      options: this.withVersionHeader(options2)
+    };
+    const beforeResult = await this.interceptBefore(beforeArgs);
+    if (beforeResult) {
+      const afterArgs2 = {
+        result: {
+          method: input.method,
+          value: beforeResult.earlyReturn.value
+        },
+        agentCard: this.agentCard,
+        options: beforeArgs.options
+      };
+      await this.interceptAfter(afterArgs2, beforeResult.executed);
+      return afterArgs2.result.value;
+    }
+    const result = await transportCall(beforeArgs.input.value, beforeArgs.options);
+    const afterArgs = {
+      result: { method: input.method, value: result },
+      agentCard: this.agentCard,
+      options: beforeArgs.options
+    };
+    await this.interceptAfter(afterArgs);
+    return afterArgs.result.value;
+  }
+  async interceptBefore(args) {
+    if (!this.config?.interceptors || this.config.interceptors.length === 0) {
+      return;
+    }
+    const executed = [];
+    for (const interceptor of this.config.interceptors) {
+      await interceptor.before(args);
+      executed.push(interceptor);
+      if (args.earlyReturn) {
+        return {
+          earlyReturn: args.earlyReturn,
+          executed
+        };
+      }
+    }
+  }
+  async interceptAfter(args, interceptors) {
+    const reversedInterceptors = [...interceptors ?? this.config?.interceptors ?? []].reverse();
+    for (const interceptor of reversedInterceptors) {
+      await interceptor.after(args);
+      if (args.earlyReturn) {
+        return;
+      }
+    }
+  }
+};
+var TenantTransportDecorator = class {
+  constructor(base, defaultTenant) {
+    this.base = base;
+    this.defaultTenant = defaultTenant;
+  }
+  get protocolName() {
+    return this.base.protocolName;
+  }
+  get protocolVersion() {
+    return this.base.protocolVersion;
+  }
+  /**
+   * Returns the request tenant if non-empty, otherwise falls back to the default.
+   */
+  _resolveTenant(tenant) {
+    return tenant || this.defaultTenant;
+  }
+  async getExtendedAgentCard(params, options2) {
+    return this.base.getExtendedAgentCard(
+      { ...params, tenant: this._resolveTenant(params.tenant) },
+      options2
+    );
+  }
+  async sendMessage(params, options2) {
+    return this.base.sendMessage(
+      { ...params, tenant: this._resolveTenant(params.tenant) },
+      options2
+    );
+  }
+  async *sendMessageStream(params, options2) {
+    yield* this.base.sendMessageStream(
+      { ...params, tenant: this._resolveTenant(params.tenant) },
+      options2
+    );
+  }
+  async getTask(params, options2) {
+    return this.base.getTask({ ...params, tenant: this._resolveTenant(params.tenant) }, options2);
+  }
+  async cancelTask(params, options2) {
+    return this.base.cancelTask({ ...params, tenant: this._resolveTenant(params.tenant) }, options2);
+  }
+  async listTasks(params, options2) {
+    return this.base.listTasks({ ...params, tenant: this._resolveTenant(params.tenant) }, options2);
+  }
+  async createTaskPushNotificationConfig(params, options2) {
+    return this.base.createTaskPushNotificationConfig(
+      { ...params, tenant: this._resolveTenant(params.tenant) },
+      options2
+    );
+  }
+  async getTaskPushNotificationConfig(params, options2) {
+    return this.base.getTaskPushNotificationConfig(
+      { ...params, tenant: this._resolveTenant(params.tenant) },
+      options2
+    );
+  }
+  async listTaskPushNotificationConfig(params, options2) {
+    return this.base.listTaskPushNotificationConfig(
+      { ...params, tenant: this._resolveTenant(params.tenant) },
+      options2
+    );
+  }
+  async deleteTaskPushNotificationConfig(params, options2) {
+    return this.base.deleteTaskPushNotificationConfig(
+      { ...params, tenant: this._resolveTenant(params.tenant) },
+      options2
+    );
+  }
+  async *resubscribeTask(params, options2) {
+    yield* this.base.resubscribeTask(
+      { ...params, tenant: this._resolveTenant(params.tenant) },
+      options2
+    );
+  }
+};
+var PROTOCOL_NAME = "JSONRPC";
+var JsonRpcTransport = class _JsonRpcTransport {
+  customFetchImpl;
+  endpoint;
+  requestIdCounter = 1;
+  constructor(options2) {
+    this.endpoint = options2.endpoint;
+    this.customFetchImpl = options2.fetchImpl;
+  }
+  get protocolName() {
+    return PROTOCOL_NAME;
+  }
+  get protocolVersion() {
+    return A2A_PROTOCOL_VERSION;
+  }
+  async getExtendedAgentCard(params, options2) {
+    const rpcResponse = await this._sendRpcRequest(
+      "GetExtendedAgentCard",
+      params,
+      options2,
+      GetExtendedAgentCardRequest
+    );
+    return AgentCard.fromJSON(rpcResponse.result);
+  }
+  async sendMessage(params, options2) {
+    const rpcResponse = await this._sendRpcRequest(
+      "SendMessage",
+      params,
+      options2,
+      SendMessageRequest
+    );
+    const response = SendMessageResponse.fromJSON(rpcResponse.result);
+    if (!response.payload) {
+      throw new Error("Invalid response: missing payload");
+    }
+    return response.payload.value;
+  }
+  async *sendMessageStream(params, options2) {
+    yield* this._sendStreamingRequest(
+      "SendStreamingMessage",
+      params,
+      options2,
+      SendMessageRequest
+    );
+  }
+  async createTaskPushNotificationConfig(params, options2) {
+    const rpcResponse = await this._sendRpcRequest("CreateTaskPushNotificationConfig", params, options2, TaskPushNotificationConfig);
+    return TaskPushNotificationConfig.fromJSON(rpcResponse.result);
+  }
+  async getTaskPushNotificationConfig(params, options2) {
+    const rpcResponse = await this._sendRpcRequest("GetTaskPushNotificationConfig", params, options2, GetTaskPushNotificationConfigRequest);
+    return TaskPushNotificationConfig.fromJSON(rpcResponse.result);
+  }
+  async listTaskPushNotificationConfig(params, options2) {
+    const rpcResponse = await this._sendRpcRequest("ListTaskPushNotificationConfigs", params, options2, ListTaskPushNotificationConfigsRequest);
+    return ListTaskPushNotificationConfigsResponse.fromJSON(rpcResponse.result);
+  }
+  async deleteTaskPushNotificationConfig(params, options2) {
+    await this._sendRpcRequest(
+      "DeleteTaskPushNotificationConfig",
+      params,
+      options2,
+      DeleteTaskPushNotificationConfigRequest
+    );
+  }
+  async getTask(params, options2) {
+    const rpcResponse = await this._sendRpcRequest(
+      "GetTask",
+      params,
+      options2,
+      GetTaskRequest
+    );
+    return Task.fromJSON(rpcResponse.result);
+  }
+  async cancelTask(params, options2) {
+    const rpcResponse = await this._sendRpcRequest(
+      "CancelTask",
+      params,
+      options2,
+      CancelTaskRequest
+    );
+    return Task.fromJSON(rpcResponse.result);
+  }
+  async listTasks(params, options2) {
+    const rpcResponse = await this._sendRpcRequest(
+      "ListTasks",
+      params,
+      options2,
+      ListTasksRequest
+    );
+    return ListTasksResponse.fromJSON(rpcResponse.result);
+  }
+  async *resubscribeTask(params, options2) {
+    yield* this._sendStreamingRequest(
+      "SubscribeToTask",
+      params,
+      options2,
+      SubscribeToTaskRequest
+    );
+  }
+  async callExtensionMethod(method, params, options2) {
+    return await this._sendRpcRequest(
+      method,
+      params,
+      options2,
+      void 0
+    );
+  }
+  _fetch(...args) {
+    if (this.customFetchImpl) {
+      return this.customFetchImpl(...args);
+    }
+    if (typeof fetch === "function") {
+      return fetch(...args);
+    }
+    throw new Error(
+      "A `fetch` implementation was not provided and is not available in the global scope. Please provide a `fetchImpl` in the A2ATransportOptions. "
+    );
+  }
+  async _sendRpcRequest(method, params, options2, requestType) {
+    const requestId = this.requestIdCounter++;
+    const rpcRequest = {
+      jsonrpc: "2.0",
+      method,
+      params: requestType?.toJSON(params) ?? params,
+      id: requestId
+    };
+    const httpResponse = await this._fetchRpc(rpcRequest, JSON_CONTENT_TYPE, options2);
+    if (!httpResponse.ok) {
+      let errorBodyText = "(empty or non-JSON response)";
+      let errorJson;
+      try {
+        errorBodyText = await httpResponse.text();
+        errorJson = JSON.parse(errorBodyText);
+      } catch (e) {
+        throw new Error(
+          `HTTP error for ${method}! Status: ${httpResponse.status} ${httpResponse.statusText}. Response: ${errorBodyText}`,
+          { cause: e }
+        );
+      }
+      if (errorJson.jsonrpc && errorJson.error) {
+        throw _JsonRpcTransport.mapToError(errorJson);
+      } else {
+        throw new Error(
+          `HTTP error for ${method}! Status: ${httpResponse.status} ${httpResponse.statusText}. Response: ${errorBodyText}`
+        );
+      }
+    }
+    const json = await httpResponse.json();
+    if ("error" in json) {
+      throw _JsonRpcTransport.mapToError(json);
+    }
+    const rpcResponse = json;
+    if (rpcResponse.id !== requestId) {
+      throw new Error(
+        `JSON-RPC response ID mismatch for method ${method}. Expected ${requestId}, got ${rpcResponse.id}.`
+      );
+    }
+    return rpcResponse;
+  }
+  async _fetchRpc(rpcRequest, acceptHeader = JSON_CONTENT_TYPE, options2) {
+    const requestInit = {
+      method: "POST",
+      headers: {
+        ...options2?.serviceParameters,
+        "Content-Type": JSON_CONTENT_TYPE,
+        Accept: acceptHeader
+      },
+      body: JSON.stringify(rpcRequest),
+      signal: options2?.signal
+    };
+    return this._fetch(this.endpoint, requestInit);
+  }
+  async *_sendStreamingRequest(method, params, options2, requestType) {
+    const clientRequestId = this.requestIdCounter++;
+    const rpcRequest = {
+      jsonrpc: "2.0",
+      method,
+      params: requestType?.toJSON(params) ?? params,
+      id: clientRequestId
+    };
+    const response = await this._fetchRpc(rpcRequest, "text/event-stream", options2);
+    if (!response.ok) {
+      let errorBody = "";
+      try {
+        errorBody = await response.text();
+        const errorJson = JSON.parse(errorBody);
+        if (errorJson.error) {
+          throw _JsonRpcTransport.mapToError(errorJson);
+        }
+      } catch (e) {
+        if (e instanceof Error && e.name !== "SyntaxError") {
+          throw e;
+        }
+      }
+      throw new Error(
+        `HTTP error establishing stream for ${method}: ${response.status} ${response.statusText}. Response: ${errorBody || "(empty)"}`
+      );
+    }
+    if (!response.headers.get("Content-Type")?.startsWith("text/event-stream")) {
+      try {
+        const body = await response.text();
+        const errorJson = JSON.parse(body);
+        if (errorJson.error) {
+          throw _JsonRpcTransport.mapToError(errorJson);
+        }
+      } catch (e) {
+        if (e instanceof Error && e.name !== "SyntaxError") {
+          throw e;
+        }
+      }
+      throw new Error(
+        `Invalid response Content-Type for SSE stream for ${method}. Expected 'text/event-stream'.`
+      );
+    }
+    for await (const event of parseSseStream(response)) {
+      yield this._processSseEventData(event.data, clientRequestId);
+    }
+  }
+  _processSseEventData(jsonData, originalRequestId) {
+    if (!jsonData.trim()) {
+      throw new Error("Attempted to process empty SSE event data.");
+    }
+    let a2aStreamResponse;
+    try {
+      a2aStreamResponse = JSON.parse(jsonData);
+    } catch (e) {
+      throw new Error(
+        `Failed to parse SSE event data: "${jsonData.substring(0, 100)}...". Original error: ${e instanceof Error && e.message || "Unknown error"}`,
+        { cause: e }
+      );
+    }
+    if (a2aStreamResponse.id !== originalRequestId) {
+      throw new Error(
+        `JSON-RPC response ID mismatch in SSE event. Expected ${originalRequestId}, got ${a2aStreamResponse.id}.`
+      );
+    }
+    if ("error" in a2aStreamResponse) {
+      const err = a2aStreamResponse.error;
+      throw new Error(
+        `SSE event contained an error: ${err.message} (Code: ${err.code}) Data: ${JSON.stringify(err.data || {})}`,
+        { cause: _JsonRpcTransport.mapToError(a2aStreamResponse) }
+      );
+    }
+    if (!("result" in a2aStreamResponse) || typeof a2aStreamResponse.result === "undefined") {
+      throw new Error(`SSE event JSON-RPC response is missing 'result' field. Data: ${jsonData}`);
+    }
+    return StreamResponse.fromJSON(a2aStreamResponse.result);
+  }
+  static mapToError(response) {
+    const errorMessage = response.error.message;
+    switch (response.error.code) {
+      case A2A_ERROR_CODE.PARSE_ERROR:
+      case A2A_ERROR_CODE.INVALID_REQUEST:
+      case A2A_ERROR_CODE.METHOD_NOT_FOUND:
+      case A2A_ERROR_CODE.INVALID_PARAMS:
+      case A2A_ERROR_CODE.INTERNAL_ERROR:
+        return new RequestMalformedError(errorMessage);
+      case A2A_ERROR_CODE.TASK_NOT_FOUND:
+        return new TaskNotFoundError(errorMessage);
+      case A2A_ERROR_CODE.TASK_NOT_CANCELABLE:
+        return new TaskNotCancelableError(errorMessage);
+      case A2A_ERROR_CODE.PUSH_NOTIFICATION_NOT_SUPPORTED:
+        return new PushNotificationNotSupportedError(errorMessage);
+      case A2A_ERROR_CODE.UNSUPPORTED_OPERATION:
+        return new UnsupportedOperationError(errorMessage);
+      case A2A_ERROR_CODE.CONTENT_TYPE_NOT_SUPPORTED:
+        return new ContentTypeNotSupportedError(errorMessage);
+      case A2A_ERROR_CODE.INVALID_AGENT_RESPONSE:
+        return new InvalidAgentResponseError(errorMessage);
+      case A2A_ERROR_CODE.EXTENDED_CARD_NOT_CONFIGURED:
+        return new ExtendedAgentCardNotConfiguredError(errorMessage);
+      case A2A_ERROR_CODE.EXTENSION_SUPPORT_REQUIRED:
+        return new ExtensionSupportRequiredError(errorMessage);
+      case A2A_ERROR_CODE.VERSION_NOT_SUPPORTED:
+        return new VersionNotSupportedError(errorMessage);
+      default:
+        return new JSONRPCTransportError(response);
+    }
+  }
+};
+var JsonRpcTransportFactory = class {
+  constructor(options2) {
+    this.options = options2;
+  }
+  get protocolName() {
+    return PROTOCOL_NAME;
+  }
+  async create(url, _agentCard) {
+    return new JsonRpcTransport({
+      endpoint: url,
+      fetchImpl: this.options?.fetchImpl
+    });
+  }
+};
+var JSONRPCTransportError = class extends Error {
+  constructor(errorResponse) {
+    super(
+      `JSON-RPC error: ${errorResponse.error.message} (Code: ${errorResponse.error.code}) Data: ${JSON.stringify(errorResponse.error.data || {})}`
+    );
+    this.errorResponse = errorResponse;
+  }
+};
+var PROTOCOL_NAME2 = "HTTP+JSON";
+var RestTransport = class _RestTransport {
+  customFetchImpl;
+  endpoint;
+  constructor(options2) {
+    this.endpoint = options2.endpoint.replace(/\/+$/, "");
+    this.customFetchImpl = options2.fetchImpl;
+  }
+  _buildPath(path4, tenant) {
+    return tenant ? "/" + encodeURIComponent(tenant) + path4 : path4;
+  }
+  get protocolName() {
+    return PROTOCOL_NAME2;
+  }
+  get protocolVersion() {
+    return A2A_PROTOCOL_VERSION;
+  }
+  async getExtendedAgentCard(params, options2) {
+    const path4 = this._buildPath("/extendedAgentCard", params.tenant);
+    const response = await this._sendRequest(
+      "GET",
+      path4,
+      void 0,
+      options2,
+      void 0,
+      AgentCard
+    );
+    return response;
+  }
+  async sendMessage(params, options2) {
+    const requestBody = params;
+    const path4 = this._buildPath("/message:send", params.tenant);
+    const response = await this._sendRequest(
+      "POST",
+      path4,
+      requestBody,
+      options2,
+      SendMessageRequest,
+      SendMessageResponse
+    );
+    return FromProto.sendMessageResult(response);
+  }
+  async *sendMessageStream(params, options2) {
+    const requestBody = SendMessageRequest.toJSON(params);
+    const path4 = this._buildPath("/message:stream", params.tenant);
+    yield* this._sendStreamingRequest(path4, requestBody, options2);
+  }
+  async createTaskPushNotificationConfig(params, options2) {
+    const path4 = this._buildPath(
+      `/tasks/${encodeURIComponent(params.taskId)}/pushNotificationConfigs`,
+      params.tenant
+    );
+    const response = await this._sendRequest("POST", path4, params, options2, TaskPushNotificationConfig, TaskPushNotificationConfig);
+    return response;
+  }
+  async getTaskPushNotificationConfig(params, options2) {
+    const path4 = this._buildPath(
+      `/tasks/${encodeURIComponent(params.taskId)}/pushNotificationConfigs/${encodeURIComponent(
+        params.id
+      )}`,
+      params.tenant
+    );
+    const response = await this._sendRequest(
+      "GET",
+      path4,
+      void 0,
+      options2,
+      void 0,
+      TaskPushNotificationConfig
+    );
+    return response;
+  }
+  async listTaskPushNotificationConfig(params, options2) {
+    const path4 = this._buildPath(
+      `/tasks/${encodeURIComponent(params.taskId)}/pushNotificationConfigs`,
+      params.tenant
+    );
+    const response = await this._sendRequest(
+      "GET",
+      path4,
+      void 0,
+      options2,
+      void 0,
+      ListTaskPushNotificationConfigsResponse
+    );
+    return response;
+  }
+  async deleteTaskPushNotificationConfig(params, options2) {
+    const path4 = this._buildPath(
+      `/tasks/${encodeURIComponent(params.taskId)}/pushNotificationConfigs/${encodeURIComponent(
+        params.id
+      )}`,
+      params.tenant
+    );
+    await this._sendRequest("DELETE", path4, void 0, options2, void 0, void 0);
+  }
+  async getTask(params, options2) {
+    const queryParams = new URLSearchParams();
+    if (params.historyLength !== void 0) {
+      queryParams.set("historyLength", params.historyLength.toString());
+    }
+    const queryString = queryParams.toString();
+    const path4 = this._buildPath(
+      `/tasks/${encodeURIComponent(params.id)}${queryString ? `?${queryString}` : ""}`,
+      params.tenant
+    );
+    const response = await this._sendRequest(
+      "GET",
+      path4,
+      void 0,
+      options2,
+      void 0,
+      Task
+    );
+    return response;
+  }
+  async cancelTask(params, options2) {
+    const path4 = this._buildPath(`/tasks/${encodeURIComponent(params.id)}:cancel`, params.tenant);
+    const response = await this._sendRequest(
+      "POST",
+      path4,
+      void 0,
+      options2,
+      void 0,
+      Task
+    );
+    return response;
+  }
+  async listTasks(params, options2) {
+    const queryParams = new URLSearchParams();
+    if (params.contextId) queryParams.set("contextId", params.contextId);
+    if (params.status !== void 0 && params.status !== 0) {
+      queryParams.set("status", taskStateToJSON(params.status));
+    }
+    if (params.pageSize !== void 0) queryParams.set("pageSize", String(params.pageSize));
+    if (params.pageToken) queryParams.set("pageToken", params.pageToken);
+    if (params.historyLength !== void 0)
+      queryParams.set("historyLength", String(params.historyLength));
+    if (params.statusTimestampAfter)
+      queryParams.set("statusTimestampAfter", params.statusTimestampAfter);
+    if (params.includeArtifacts !== void 0)
+      queryParams.set("includeArtifacts", String(params.includeArtifacts));
+    const queryString = queryParams.toString();
+    const path4 = this._buildPath(`/tasks${queryString ? `?${queryString}` : ""}`, params.tenant);
+    const response = await this._sendRequest(
+      "GET",
+      path4,
+      void 0,
+      options2,
+      void 0,
+      ListTasksResponse
+    );
+    return response;
+  }
+  async *resubscribeTask(params, options2) {
+    const path4 = this._buildPath(
+      `/tasks/${encodeURIComponent(params.id)}:subscribe`,
+      params.tenant
+    );
+    yield* this._sendStreamingRequest(path4, void 0, options2);
+  }
+  _fetch(...args) {
+    if (this.customFetchImpl) {
+      return this.customFetchImpl(...args);
+    }
+    if (typeof fetch === "function") {
+      return fetch(...args);
+    }
+    throw new Error(
+      "A `fetch` implementation was not provided and is not available in the global scope. Please provide a `fetchImpl` in the RestTransportOptions."
+    );
+  }
+  _buildHeaders(options2, acceptHeader = A2A_CONTENT_TYPE) {
+    return {
+      ...options2?.serviceParameters,
+      "Content-Type": A2A_CONTENT_TYPE,
+      Accept: acceptHeader
+    };
+  }
+  async _sendRequest(method, path4, body, options2, requestType, responseType) {
+    const url = `${this.endpoint}${path4}`;
+    const requestInit = {
+      method,
+      headers: this._buildHeaders(options2),
+      signal: options2?.signal
+    };
+    if (body !== void 0 && method !== "GET") {
+      if (!requestType) {
+        throw new Error(
+          `Bug: Request body provided for ${method} ${path4} but no toJson serializer provided.`
+        );
+      }
+      requestInit.body = JSON.stringify(requestType.toJSON(body));
+    }
+    const response = await this._fetch(url, requestInit);
+    if (!response.ok) {
+      await this._handleErrorResponse(response, path4);
+    }
+    if (response.status === 204 || !responseType) {
+      return void 0;
+    }
+    const result = await response.json();
+    return responseType.fromJSON(result);
+  }
+  async _handleErrorResponse(response, path4) {
+    let errorBodyText = "(empty or non-JSON response)";
+    let errorStatus;
+    try {
+      errorBodyText = await response.text();
+      if (errorBodyText) {
+        const parsed = JSON.parse(errorBodyText);
+        if (parsed?.error && typeof parsed.error === "object") {
+          errorStatus = parsed.error;
+        }
+      }
+    } catch {
+    }
+    if (errorStatus) {
+      throw _RestTransport.mapToError(errorStatus);
+    }
+    throw new Error(
+      `HTTP error for ${path4}! Status: ${response.status} ${response.statusText}. Response: ${errorBodyText}`
+    );
+  }
+  async *_sendStreamingRequest(path4, body, options2) {
+    const url = `${this.endpoint}${path4}`;
+    const requestInit = {
+      method: "POST",
+      headers: this._buildHeaders(options2, "text/event-stream"),
+      signal: options2?.signal
+    };
+    if (body !== void 0) {
+      requestInit.body = JSON.stringify(body);
+    }
+    const response = await this._fetch(url, requestInit);
+    if (!response.ok) {
+      await this._handleErrorResponse(response, path4);
+    }
+    const contentType = response.headers.get("Content-Type");
+    if (!contentType?.startsWith("text/event-stream")) {
+      throw new Error(
+        `Invalid response Content-Type for SSE stream. Expected 'text/event-stream', got '${contentType}'.`
+      );
+    }
+    for await (const event of parseSseStream(response)) {
+      if (event.type === "error") {
+        const errorData = JSON.parse(event.data);
+        if (errorData.error && typeof errorData.error === "object") {
+          throw _RestTransport.mapToError(errorData.error);
+        }
+        throw new Error(`SSE error event: ${JSON.stringify(errorData)}`);
+      }
+      yield this._processSseEventData(event.data);
+    }
+  }
+  _processSseEventData(jsonData) {
+    if (!jsonData.trim()) {
+      throw new Error("Attempted to process empty SSE event data.");
+    }
+    try {
+      const response = JSON.parse(jsonData);
+      return StreamResponse.fromJSON(response);
+    } catch (e) {
+      console.error("Failed to parse SSE event data:", jsonData, e);
+      throw new Error(
+        `Failed to parse SSE event data: "${jsonData.substring(0, 100)}...". Original error: ${e instanceof Error && e.message || "Unknown error"}`
+      );
+    }
+  }
+  static mapToError(error) {
+    const message = error.message || "Unknown error";
+    if (Array.isArray(error.details)) {
+      const errorInfo = error.details.find((d) => d["@type"] === ERROR_INFO_TYPE);
+      if (errorInfo && typeof errorInfo["reason"] === "string") {
+        const ErrorClass = A2A_REASON_TO_ERROR_CLASS[errorInfo["reason"]];
+        if (ErrorClass) return new ErrorClass(message);
+      }
+    }
+    return new Error(
+      `REST error: ${error.status || "UNKNOWN"} (${error.code || "unknown code"}) - ${message}`
+    );
+  }
+};
+var RestTransportFactory = class {
+  constructor(options2) {
+    this.options = options2;
+  }
+  get protocolName() {
+    return PROTOCOL_NAME2;
+  }
+  async create(url, _agentCard) {
+    return new RestTransport({
+      endpoint: url,
+      fetchImpl: this.options?.fetchImpl
+    });
+  }
+};
+var ClientFactoryOptions = {
+  /**
+   * SDK default options for {@link ClientFactory}.
+   */
+  default: {
+    transports: [new JsonRpcTransportFactory(), new RestTransportFactory()]
+  },
+  /**
+   * Creates new options by merging an original and an override object.
+   * Transports are merged based on `TransportFactory.protocolName`,
+   * interceptors are concatenated, other fields are overriden.
+   *
+   * @example
+   * ```ts
+   * const options = ClientFactoryOptions.createFrom(ClientFactoryOptions.default, {
+   *  transports: [new MyCustomTransportFactory()], // adds a custom transport
+   *  clientConfig: { interceptors: [new MyInterceptor()] }, // adds a custom interceptor
+   * });
+   * ```
+   */
+  createFrom(original, overrides) {
+    return {
+      ...original,
+      ...overrides,
+      transports: mergeTransports(original.transports, overrides.transports),
+      clientConfig: {
+        ...original.clientConfig ?? {},
+        ...overrides.clientConfig ?? {},
+        interceptors: mergeArrays(
+          original.clientConfig?.interceptors,
+          overrides.clientConfig?.interceptors
+        ),
+        acceptedOutputModes: overrides.clientConfig?.acceptedOutputModes ?? original.clientConfig?.acceptedOutputModes
+      },
+      preferredTransports: overrides.preferredTransports ?? original.preferredTransports
+    };
+  }
+};
+var ClientFactory = class {
+  constructor(options2 = ClientFactoryOptions.default) {
+    this.options = options2;
+    if (!options2.transports || options2.transports.length === 0) {
+      throw new Error("No transports provided");
+    }
+    this.transportsByName = transportsByName(options2.transports);
+    for (const transport of options2.preferredTransports ?? []) {
+      if (!this.transportsByName.has(transport)) {
+        throw new Error(
+          `Unknown preferred transport: ${transport}, available transports: ${[...this.transportsByName.keys()].join()}`
+        );
+      }
+    }
+    this.agentCardResolver = options2.cardResolver ?? AgentCardResolver.default;
+  }
+  transportsByName;
+  agentCardResolver;
+  /**
+   * Creates a new client from the provided agent card.
+   *
+   * When the selected `AgentInterface` declares a non-empty `tenant` value
+   * (per spec Section 4.4.6), the transport is automatically wrapped with a
+   * {@link TenantTransportDecorator} so the default tenant is applied to every
+   * request without requiring callers to set it manually.
+   */
+  async createFromAgentCard(agentCard) {
+    const interfaces = agentCard.supportedInterfaces ?? [];
+    const bestInterfacePerProtocol = new CaseInsensitiveMap();
+    for (const agentInterface of interfaces) {
+      const existing = bestInterfacePerProtocol.get(agentInterface.protocolBinding);
+      if (!existing || agentInterface.protocolVersion === "1.0") {
+        bestInterfacePerProtocol.set(agentInterface.protocolBinding, agentInterface);
+      }
+    }
+    const transportsByPreference = [
+      ...this.options.preferredTransports ?? [],
+      ...interfaces.map((i) => i.protocolBinding)
+    ];
+    for (const transportName of transportsByPreference) {
+      const selectedInterface = bestInterfacePerProtocol.get(transportName);
+      const factory = this.transportsByName.get(transportName);
+      if (factory && selectedInterface) {
+        let transport = await factory.create(selectedInterface.url, agentCard);
+        if (selectedInterface.tenant) {
+          transport = new TenantTransportDecorator(transport, selectedInterface.tenant);
+        }
+        return new Client(transport, agentCard, this.options.clientConfig);
+      }
+    }
+    throw new Error(
+      "No compatible transport found, available transports: " + [...this.transportsByName.keys()].join()
+    );
+  }
+  /**
+   * Downloads agent card using AgentCardResolver from options
+   * and creates a new client from the downloaded card.
+   *
+   * @example
+   * ```ts
+   * const factory = new ClientFactory(); // use default options and default {@link AgentCardResolver}.
+   * const client1 = await factory.createFromUrl('https://example.com'); // /.well-known/agent-card.json is used by default
+   * const client2 = await factory.createFromUrl('https://example.com', '/my-agent-card.json'); // specify custom path
+   * const client3 = await factory.createFromUrl('https://example.com/my-agent-card.json', ''); // specify full URL and set path to empty
+   * ```
+   */
+  async createFromUrl(baseUrl, path4) {
+    const agentCard = await this.agentCardResolver.resolve(baseUrl, path4);
+    return this.createFromAgentCard(agentCard);
+  }
+};
+function mergeTransports(original, overrides) {
+  if (!overrides) {
+    return original;
+  }
+  const result = transportsByName(original);
+  const overridesByName = transportsByName(overrides);
+  for (const [name, factory] of overridesByName) {
+    result.set(name, factory);
+  }
+  return Array.from(result.values());
+}
+function transportsByName(transports) {
+  const result = new CaseInsensitiveMap();
+  if (!transports) {
+    return result;
+  }
+  for (const t of transports) {
+    if (result.has(t.protocolName)) {
+      throw new Error(`Duplicate protocol name: ${t.protocolName}`);
+    }
+    result.set(t.protocolName, t);
+  }
+  return result;
+}
+function mergeArrays(a1, a2) {
+  if (!a1 && !a2) {
+    return void 0;
+  }
+  return [...a1 ?? [], ...a2 ?? []];
+}
+var CaseInsensitiveMap = class extends Map {
+  normalizeKey(key) {
+    return key.toUpperCase();
+  }
+  set(key, value) {
+    return super.set(this.normalizeKey(key), value);
+  }
+  get(key) {
+    return super.get(this.normalizeKey(key));
+  }
+  has(key) {
+    return super.has(this.normalizeKey(key));
+  }
+  delete(key) {
+    return super.delete(this.normalizeKey(key));
+  }
+};
+
+// src/lib/a2aMetadata.ts
+import crypto from "crypto";
+var DISTRIBUTION_EXTENSION_URI_V1 = "https://docs.aion.to/a2a/extensions/aion/distribution/1.0.0";
+var TRACEABILITY_EXTENSION_URI_V1 = "https://docs.aion.to/a2a/extensions/aion/traceability/1.0.0";
+var STREAM_DELTA_ARTIFACT_ID = "aion:stream-delta";
+var THINKING_DELTA_ARTIFACT_ID = "aion:thinking-delta";
+function tokenHex(bytes) {
+  return crypto.randomBytes(bytes).toString("hex");
+}
+function generateTaskMetadata(options2 = {}) {
+  const senderId = options2.senderId ?? "aion:user:2244994945";
+  const nodeId = options2.nodeId ?? "cli-node-local";
+  const agentName = options2.agentName ?? "Test Agent";
+  const agentUsername = options2.agentUsername ?? "testagent";
+  const behaviorKey = options2.behaviorKey ?? "testGraph";
+  const environmentName = options2.environmentName ?? "Development";
+  const traceId = tokenHex(16);
+  const spanId = tokenHex(8);
+  const orgId = crypto.randomUUID();
+  return {
+    [DISTRIBUTION_EXTENSION_URI_V1]: {
+      senderId,
+      distribution: {
+        id: crypto.randomUUID(),
+        endpointType: "Aion",
+        url: "https://example.com/agent-card",
+        identities: [
+          {
+            kind: "principal",
+            id: crypto.randomUUID(),
+            identityNetwork: "Aion",
+            identityKind: "Personal",
+            representedUserId: crypto.randomUUID(),
+            organizationId: orgId,
+            displayName: agentName,
+            userName: agentUsername,
+            avatarImageUrl: "https://example.com/avatar.png",
+            agentType: "Personal",
+            url: "https://example.com/agent"
+          }
+        ]
+      },
+      behavior: {
+        id: crypto.randomUUID(),
+        behaviorKey,
+        versionId: crypto.randomUUID()
+      },
+      environment: {
+        id: crypto.randomUUID(),
+        name: environmentName,
+        projectId: crypto.randomUUID(),
+        deploymentId: crypto.randomUUID(),
+        configurationVariables: {
+          API_TIMEOUT: "30",
+          MAX_RETRIES: "3",
+          LOG_LEVEL: "INFO"
+        }
+      }
+    },
+    [TRACEABILITY_EXTENSION_URI_V1]: {
+      traceparent: `00-${traceId}-${spanId}-01`,
+      tracestate: [{ key: "aion", value: spanId }],
+      baggage: {
+        "aion.sender.id": nodeId,
+        channel: "cli",
+        tenant: "local"
+      }
+    }
+  };
+}
+
+// src/lib/connection.ts
+var AGENT_CARD_PATH2 = "/.well-known/agent-card.json";
+var CLIENT_TRANSPORT_PREFERENCES = ["JSONRPC", "HTTP+JSON"];
+var ACCEPTED_OUTPUT_MODES = ["text", "text/plain", "application/json"];
+function normalizeEndpoint(url) {
+  return url.endsWith("/") ? url.slice(0, -1) : url;
+}
+function buildDirectEndpoints(url) {
+  const normalized = normalizeEndpoint(url);
+  if (normalized.endsWith(AGENT_CARD_PATH2)) {
+    const rpcBaseUrl = normalized.slice(0, -AGENT_CARD_PATH2.length);
+    return {
+      baseUrl: normalized,
+      cardUrl: normalized,
+      cardPath: "",
+      rpcUrl: `${rpcBaseUrl}/`
+    };
+  }
+  return {
+    baseUrl: normalized,
+    cardUrl: `${normalized}${AGENT_CARD_PATH2}`,
+    cardPath: AGENT_CARD_PATH2,
+    rpcUrl: `${normalized}/`
+  };
+}
+function formatProxyPath(agentId, path4 = "") {
+  const cleanPath = path4.replace(/^\/+/, "");
+  return `/agents/${agentId}/${cleanPath}`;
+}
+function buildEndpointConfig(options2) {
+  const direct = buildDirectEndpoints(options2.url);
+  if (!options2.agentId) {
+    return direct;
+  }
+  const cardPath = formatProxyPath(options2.agentId, AGENT_CARD_PATH2);
+  return {
+    baseUrl: direct.baseUrl,
+    cardUrl: `${direct.baseUrl}${cardPath}`,
+    cardPath,
+    rpcUrl: `${direct.baseUrl}${formatProxyPath(options2.agentId)}`
+  };
+}
+async function buildAuthHeaders(options2, initHeaders, requestHeaders) {
+  const headers = new Headers(initHeaders ?? requestHeaders);
+  for (const [key, value] of Object.entries(options2.headers)) {
+    if (key.toLowerCase() === "a2a-extensions") {
+      const extensions = [headers.get(key) ?? "", value].flatMap((entry) => entry.split(",")).map((entry) => entry.trim()).filter(Boolean);
+      headers.set(key, [...new Set(extensions)].join(","));
+    } else {
+      headers.set(key, value);
+    }
+  }
+  const token = options2.token ?? await options2.tokenProvider?.();
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+  return headers;
+}
+function buildAuthenticatedFetch(options2) {
+  return async (input, init) => {
+    const isRequest = input instanceof Request;
+    const originalRequest = isRequest ? input : void 0;
+    const method = init?.method ?? originalRequest?.method ?? "GET";
+    const headers = await buildAuthHeaders(
+      options2,
+      init?.headers,
+      originalRequest?.headers
+    );
+    if (isRequest) {
+      const request = originalRequest;
+      const body = init?.body ?? (method.toUpperCase() === "GET" || method.toUpperCase() === "HEAD" ? void 0 : request.body ?? void 0);
+      const nextRequest = {
+        ...init,
+        method,
+        headers,
+        body
+      };
+      if (body !== void 0) {
+        nextRequest.duplex = "half";
+      }
+      return fetch(new Request(request, nextRequest));
+    }
+    return fetch(input, {
+      ...init,
+      method,
+      headers
+    });
+  };
+}
+function buildFetch(options2, endpoints) {
+  return async (input, init) => {
+    const isRequest = input instanceof Request;
+    const originalRequest = isRequest ? input : void 0;
+    const method = init?.method ?? originalRequest?.method ?? "GET";
+    const targetUrl = options2.agentId && method.toUpperCase() !== "GET" ? endpoints.rpcUrl : isRequest ? input.url : String(input);
+    const headers = await buildAuthHeaders(
+      options2,
+      init?.headers,
+      originalRequest?.headers
+    );
+    if (isRequest) {
+      const request = originalRequest;
+      const body = init?.body ?? (method.toUpperCase() === "GET" || method.toUpperCase() === "HEAD" ? void 0 : request.body ?? void 0);
+      const nextRequest = {
+        ...init,
+        signal: init?.signal ?? request.signal,
+        method,
+        headers,
+        body
+      };
+      if (body !== void 0) {
+        nextRequest.duplex = "half";
+      }
+      return fetch(
+        new Request(targetUrl, nextRequest)
+      );
+    }
+    return fetch(targetUrl, {
+      ...init,
+      method,
+      headers
+    });
+  };
+}
+function rewriteAgentCard(agentCard, endpoints) {
+  return {
+    ...agentCard,
+    supportedInterfaces: agentCard.supportedInterfaces.map((item) => ({
+      ...item,
+      url: endpoints.rpcUrl
+    }))
+  };
+}
+async function connectClient(options2) {
+  const endpoints = buildEndpointConfig(options2);
+  const fetchImpl = buildFetch(options2, endpoints);
+  const resolver = new DefaultAgentCardResolver({ fetchImpl });
+  const resolvedCard = await resolver.resolve(endpoints.baseUrl, endpoints.cardPath);
+  const agentCard = options2.agentId ? rewriteAgentCard(resolvedCard, endpoints) : resolvedCard;
+  const factoryOptions = ClientFactoryOptions.createFrom(ClientFactoryOptions.default, {
+    transports: [
+      new JsonRpcTransportFactory({ fetchImpl }),
+      new RestTransportFactory({ fetchImpl })
+    ],
+    preferredTransports: [...CLIENT_TRANSPORT_PREFERENCES],
+    clientConfig: {
+      acceptedOutputModes: [...ACCEPTED_OUTPUT_MODES]
+    }
+  });
+  const factory = new ClientFactory(factoryOptions);
+  const client = await factory.createFromAgentCard(agentCard);
+  return {
+    agentCard,
+    client,
+    endpoints
+  };
+}
+function createPushNotificationConfig(receiverUrl) {
+  const parsed = new URL(receiverUrl);
+  return {
+    tenant: "",
+    id: randomUUID(),
+    taskId: "",
+    url: `${parsed.origin}/notify`,
+    token: randomUUID(),
+    authentication: {
+      scheme: "bearer",
+      credentials: ""
+    }
+  };
+}
+function buildMessageParams(parts, contextId, taskId, pushNotificationConfig) {
+  return {
+    tenant: "",
+    message: {
+      messageId: randomUUID(),
+      role: Role.ROLE_USER,
+      taskId: taskId ?? "",
+      contextId: contextId ?? "",
+      parts,
+      metadata: void 0,
+      extensions: [],
+      referenceTaskIds: []
+    },
+    metadata: generateTaskMetadata(),
+    configuration: {
+      acceptedOutputModes: [...ACCEPTED_OUTPUT_MODES],
+      taskPushNotificationConfig: pushNotificationConfig,
+      historyLength: void 0,
+      returnImmediately: false
+    }
+  };
+}
+
+// src/lib/welcomeMessage.ts
+var WELCOME_MESSAGE_EXTENSION_URI = "https://docs.aion.to/a2a/extensions/aion/welcome-message/1.0.0";
+var WELCOME_REQUEST_SCHEMA = `${WELCOME_MESSAGE_EXTENSION_URI}#WelcomeRequestPayload`;
+function buildWelcomeRequest(contextId) {
+  const request = buildMessageParams([{
+    content: { $case: "data", value: { type: "welcome-request" } },
+    metadata: {
+      [WELCOME_MESSAGE_EXTENSION_URI]: { schema: WELCOME_REQUEST_SCHEMA }
+    },
+    filename: "",
+    mediaType: "application/json"
+  }], contextId, void 0);
+  request.message.extensions = [WELCOME_MESSAGE_EXTENSION_URI];
+  return request;
+}
+function createChatThread(options2) {
+  const contextId = (options2.createId ?? randomUUID2)();
+  options2.onCreated(contextId);
+  const connected = options2.connected;
+  if (options2.signal?.aborted || !connected?.agentCard.capabilities?.extensions?.some(
+    (extension2) => extension2.uri === WELCOME_MESSAGE_EXTENSION_URI
+  )) return contextId;
+  const request = buildWelcomeRequest(contextId);
+  void connected.client.sendMessage(request, {
+    signal: options2.signal,
+    serviceParameters: { "A2A-Extensions": WELCOME_MESSAGE_EXTENSION_URI }
+  }).then((response) => {
+    if (!options2.signal?.aborted) options2.onWelcome(request, response);
+  }).catch((error) => {
+    if (!options2.signal?.aborted) options2.onError(error, contextId);
+  });
+  return contextId;
+}
+
 // src/app.tsx
+import { randomUUID as randomUUID4 } from "crypto";
 var import_react37 = __toESM(require_react(), 1);
 
 // src/components/ChatComposer.tsx
@@ -55300,30 +57033,6 @@ function saveChatSettings(settings, settingsPath = resolveChatSettingsPath()) {
     return `chat2 could not save settings: ${error instanceof Error ? error.message : String(error)}`;
   }
 }
-function clearAgentActiveContext(settings, environmentId, agentKey) {
-  if (!agentKey) {
-    return settings;
-  }
-  const environmentSettings = settings.environments[environmentId];
-  const agent = environmentSettings.agents[agentKey];
-  if (!agent?.activeContextId) {
-    return settings;
-  }
-  const { activeContextId: _activeContextId, ...agentWithoutContext } = agent;
-  return {
-    ...settings,
-    environments: {
-      ...settings.environments,
-      [environmentId]: {
-        ...environmentSettings,
-        agents: {
-          ...environmentSettings.agents,
-          [agentKey]: agentWithoutContext
-        }
-      }
-    }
-  };
-}
 function loadSkippedUpdateVersion(settingsPath = resolveChatSettingsPath()) {
   const rawSettings = readRawSettings(settingsPath);
   const skippedVersion = rawSettings?.updateCheck?.skippedVersion;
@@ -55770,1700 +57479,9 @@ function applyFileSuggestion(draft, suggestion) {
   return before ? `${before} ${suggestion.absolutePath}` : suggestion.absolutePath;
 }
 
-// src/lib/connection.ts
-import { randomUUID } from "crypto";
-
-// node_modules/@a2a-js/sdk/dist/chunk-WMQQYH7W.js
-async function* parseSseStream(response) {
-  if (!response.body) {
-    throw new Error("SSE response body is undefined. Cannot read stream.");
-  }
-  let buffer = "";
-  let eventType = "message";
-  let eventData = "";
-  const stream = response.body.pipeThrough(new TextDecoderStream());
-  for await (const value of readFrom(stream)) {
-    buffer += value;
-    let lineEndIndex;
-    while ((lineEndIndex = buffer.indexOf("\n")) >= 0) {
-      const line = buffer.substring(0, lineEndIndex).trim();
-      buffer = buffer.substring(lineEndIndex + 1);
-      if (line === "") {
-        if (eventData) {
-          yield { type: eventType, data: eventData };
-          eventData = "";
-          eventType = "message";
-        }
-      } else if (line.startsWith("event:")) {
-        eventType = line.substring("event:".length).trim();
-      } else if (line.startsWith("data:")) {
-        eventData = line.substring("data:".length).trim();
-      }
-    }
-  }
-  if (eventData) {
-    yield { type: eventType, data: eventData };
-  }
-}
-async function* readFrom(stream) {
-  const reader = stream.getReader();
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
-        break;
-      }
-      yield value;
-    }
-  } finally {
-    reader.releaseLock();
-  }
-}
-
-// node_modules/@a2a-js/sdk/dist/chunk-TNVTFICZ.js
-var A2A_ERROR_CODE = {
-  PARSE_ERROR: -32700,
-  INVALID_REQUEST: -32600,
-  METHOD_NOT_FOUND: -32601,
-  INVALID_PARAMS: -32602,
-  INTERNAL_ERROR: -32603,
-  TASK_NOT_FOUND: -32001,
-  TASK_NOT_CANCELABLE: -32002,
-  PUSH_NOTIFICATION_NOT_SUPPORTED: -32003,
-  UNSUPPORTED_OPERATION: -32004,
-  CONTENT_TYPE_NOT_SUPPORTED: -32005,
-  INVALID_AGENT_RESPONSE: -32006,
-  EXTENDED_CARD_NOT_CONFIGURED: -32007,
-  EXTENSION_SUPPORT_REQUIRED: -32008,
-  VERSION_NOT_SUPPORTED: -32009
-};
-var ERROR_INFO_TYPE = "type.googleapis.com/google.rpc.ErrorInfo";
-var A2A_ERROR_REASON = {
-  TaskNotFoundError: "TASK_NOT_FOUND",
-  TaskNotCancelableError: "TASK_NOT_CANCELABLE",
-  PushNotificationNotSupportedError: "PUSH_NOTIFICATION_NOT_SUPPORTED",
-  UnsupportedOperationError: "UNSUPPORTED_OPERATION",
-  ContentTypeNotSupportedError: "CONTENT_TYPE_NOT_SUPPORTED",
-  InvalidAgentResponseError: "INVALID_AGENT_RESPONSE",
-  ExtendedAgentCardNotConfiguredError: "EXTENDED_AGENT_CARD_NOT_CONFIGURED",
-  ExtensionSupportRequiredError: "EXTENSION_SUPPORT_REQUIRED",
-  VersionNotSupportedError: "VERSION_NOT_SUPPORTED",
-  RequestMalformedError: "INVALID_PARAMS",
-  GenericError: "INTERNAL_ERROR"
-};
-var A2A_REASON_TO_ERROR = Object.fromEntries(
-  Object.entries(A2A_ERROR_REASON).map(([cls, reason]) => [reason, cls])
-);
-var A2A_ERROR_CODE_TO_CLASS = {
-  [A2A_ERROR_CODE.TASK_NOT_FOUND]: "TaskNotFoundError",
-  [A2A_ERROR_CODE.TASK_NOT_CANCELABLE]: "TaskNotCancelableError",
-  [A2A_ERROR_CODE.PUSH_NOTIFICATION_NOT_SUPPORTED]: "PushNotificationNotSupportedError",
-  [A2A_ERROR_CODE.UNSUPPORTED_OPERATION]: "UnsupportedOperationError",
-  [A2A_ERROR_CODE.CONTENT_TYPE_NOT_SUPPORTED]: "ContentTypeNotSupportedError",
-  [A2A_ERROR_CODE.INVALID_AGENT_RESPONSE]: "InvalidAgentResponseError",
-  [A2A_ERROR_CODE.EXTENDED_CARD_NOT_CONFIGURED]: "ExtendedAgentCardNotConfiguredError",
-  [A2A_ERROR_CODE.EXTENSION_SUPPORT_REQUIRED]: "ExtensionSupportRequiredError",
-  [A2A_ERROR_CODE.VERSION_NOT_SUPPORTED]: "VersionNotSupportedError",
-  [A2A_ERROR_CODE.INVALID_PARAMS]: "RequestMalformedError",
-  [A2A_ERROR_CODE.INTERNAL_ERROR]: "GenericError"
-};
-var RequestMalformedError = class extends Error {
-  constructor(message) {
-    super(message ?? "Request malformed");
-    this.name = "RequestMalformedError";
-  }
-};
-var GenericError = class extends Error {
-  constructor(message) {
-    super(message ?? "An unexpected error occurred.");
-    this.name = "GenericError";
-  }
-};
-var TaskNotFoundError = class extends Error {
-  constructor(message) {
-    super(message ?? "Task not found");
-    this.name = "TaskNotFoundError";
-  }
-};
-var TaskNotCancelableError = class extends Error {
-  constructor(message) {
-    super(message ?? "Task cannot be canceled");
-    this.name = "TaskNotCancelableError";
-  }
-};
-var PushNotificationNotSupportedError = class extends Error {
-  constructor(message) {
-    super(message ?? "Push Notification is not supported");
-    this.name = "PushNotificationNotSupportedError";
-  }
-};
-var UnsupportedOperationError = class extends Error {
-  constructor(message) {
-    super(message ?? "This operation is not supported");
-    this.name = "UnsupportedOperationError";
-  }
-};
-var ContentTypeNotSupportedError = class extends Error {
-  constructor(message) {
-    super(message ?? "Incompatible content types");
-    this.name = "ContentTypeNotSupportedError";
-  }
-};
-var InvalidAgentResponseError = class extends Error {
-  constructor(message) {
-    super(message ?? "Invalid agent response type");
-    this.name = "InvalidAgentResponseError";
-  }
-};
-var ExtendedAgentCardNotConfiguredError = class extends Error {
-  constructor(message) {
-    super(message ?? "Extended Agent Card not configured");
-    this.name = "ExtendedAgentCardNotConfiguredError";
-  }
-};
-var ExtensionSupportRequiredError = class extends Error {
-  constructor(message) {
-    super(message ?? "Extension support required");
-    this.name = "ExtensionSupportRequiredError";
-  }
-};
-var VersionNotSupportedError = class extends Error {
-  constructor(message) {
-    super(message ?? "Version not supported");
-    this.name = "VersionNotSupportedError";
-  }
-};
-var A2A_REASON_TO_ERROR_CLASS = {
-  TASK_NOT_FOUND: TaskNotFoundError,
-  TASK_NOT_CANCELABLE: TaskNotCancelableError,
-  PUSH_NOTIFICATION_NOT_SUPPORTED: PushNotificationNotSupportedError,
-  UNSUPPORTED_OPERATION: UnsupportedOperationError,
-  CONTENT_TYPE_NOT_SUPPORTED: ContentTypeNotSupportedError,
-  INVALID_AGENT_RESPONSE: InvalidAgentResponseError,
-  EXTENDED_AGENT_CARD_NOT_CONFIGURED: ExtendedAgentCardNotConfiguredError,
-  EXTENSION_SUPPORT_REQUIRED: ExtensionSupportRequiredError,
-  VERSION_NOT_SUPPORTED: VersionNotSupportedError,
-  INVALID_PARAMS: RequestMalformedError,
-  INTERNAL_ERROR: GenericError
-};
-var A2A_NAME_TO_ERROR_CLASS = Object.fromEntries(
-  Object.entries(A2A_ERROR_REASON).map(([name, reason]) => [
-    name,
-    A2A_REASON_TO_ERROR_CLASS[reason]
-  ])
-);
-
-// node_modules/@a2a-js/sdk/dist/chunk-BVQ77WJF.js
-var FromProto = class {
-  static sendMessageResult(response) {
-    if (response.payload?.$case === "task" || response.payload?.$case === "message") {
-      return response.payload.value;
-    }
-    throw new GenericError("Invalid SendMessageResponse: missing result");
-  }
-};
-
-// node_modules/@a2a-js/sdk/dist/client/index.js
-var DefaultAgentCardResolver = class {
-  constructor(options2) {
-    this.options = options2;
-  }
-  /**
-   * Fetches the agent card based on provided base URL and path.
-   * Path is selected in the following order:
-   * 1) path parameter
-   * 2) path from options
-   * 3) .well-known/agent-card.json
-   */
-  async resolve(baseUrl, path4) {
-    const agentCardUrl = new URL(path4 ?? this.options?.path ?? AGENT_CARD_PATH, baseUrl);
-    const response = await this.fetchImpl(agentCardUrl);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch Agent Card from ${agentCardUrl}: ${response.status}`);
-    }
-    const rawCard = await response.json();
-    return this.normalizeAgentCard(rawCard);
-  }
-  fetchImpl(...args) {
-    if (this.options?.fetchImpl) {
-      return this.options.fetchImpl(...args);
-    }
-    return fetch(...args);
-  }
-  /*
-   * In the v0.3.0 specification, there was a structural drift between the JSON Schema data model
-   * and the Protobuf-based data model for AgentCards.
-   * The JSON Schema format uses a `"type"` discriminator (e.g., `{"type": "openIdConnect"}`),
-   * while the Protobuf JSON representation uses the `oneof` field name as the discriminator
-   * (e.g., `{"openIdConnectSecurityScheme": {...}}`).
-   *
-   * The A2A SDK internal logic expects the JSON Schema-based format. This fallback detection
-   * allows us to parse cards served by endpoints returning the Protobuf JSON structure by
-   * identifying the lack of the "type" field in security schemes or the presence of the
-   * "schemes" wrapper in security entries, and normalizing it before use.
-   */
-  normalizeAgentCard(card) {
-    if (this.isProtoAgentCard(card)) {
-      const parsedProto = AgentCard.fromJSON(card);
-      return parsedProto;
-    }
-    return card;
-  }
-  isProtoAgentCard(card) {
-    if (!card || typeof card !== "object") return false;
-    const c = card;
-    if (this.hasProtoSecurity(c.security)) return true;
-    if (this.hasProtoSecuritySchemes(c.securitySchemes)) return true;
-    if (Array.isArray(c.skills)) {
-      return c.skills.some(
-        (skill) => skill && typeof skill === "object" && this.hasProtoSecurity(skill.security)
-      );
-    }
-    return false;
-  }
-  hasProtoSecurity(securityArray) {
-    if (Array.isArray(securityArray) && securityArray.length > 0) {
-      const first = securityArray[0];
-      return first && typeof first === "object" && "schemes" in first;
-    }
-    return false;
-  }
-  hasProtoSecuritySchemes(securitySchemes) {
-    if (securitySchemes && typeof securitySchemes === "object") {
-      const schemes = Object.values(securitySchemes);
-      if (schemes.length > 0) {
-        const first = schemes[0];
-        return first && typeof first === "object" && !("type" in first);
-      }
-    }
-    return false;
-  }
-};
-var AgentCardResolver = {
-  default: new DefaultAgentCardResolver()
-};
-var ServiceParameters = {
-  create(...updates) {
-    return ServiceParameters.createFrom(void 0, ...updates);
-  },
-  createFrom: (serviceParameters, ...updates) => {
-    const result = serviceParameters ? { ...serviceParameters } : {};
-    for (const update of updates) {
-      update(result);
-    }
-    return result;
-  }
-};
-function withA2AVersion(version) {
-  return (parameters) => {
-    parameters[A2A_VERSION_HEADER] = version;
-  };
-}
-var Client = class {
-  constructor(transport, agentCard, config) {
-    this.transport = transport;
-    this.agentCard = agentCard;
-    this.config = config;
-  }
-  /**
-   * The A2A protocol version sent with every request via the A2A-Version header.
-   * Determined by the transport, which receives the version from the matched
-   * AgentInterface during factory creation. Clients MUST send this header per §3.6.1.
-   */
-  get protocolVersion() {
-    return this.transport.protocolVersion;
-  }
-  /**
-   * If the current agent card supports the extended feature, it will try to fetch the extended agent card from the server,
-   * Otherwise it will return the current agent card value.
-   *
-   * When a default tenant is configured (via `TenantTransportDecorator`, wired
-   * automatically by `ClientFactory` from `AgentInterface.tenant`), the tenant
-   * is applied to the request transparently.
-   */
-  async getAgentCard(options2, verifySignature) {
-    if (this.agentCard.capabilities?.extendedAgentCard) {
-      this.agentCard = await this.executeWithInterceptors(
-        { method: "getAgentCard" },
-        options2,
-        (_, options22) => this.transport.getExtendedAgentCard({ tenant: "" }, options22)
-      );
-    }
-    if (verifySignature) {
-      await verifySignature(this.agentCard);
-    }
-    return this.agentCard;
-  }
-  /**
-   * Sends a message to an agent to initiate a new interaction or to continue an existing one.
-   * Uses blocking mode by default.
-   */
-  sendMessage(params, options2) {
-    params = this.applyClientConfig({
-      params,
-      returnImmediately: this.config?.polling ?? false
-    });
-    return this.executeWithInterceptors(
-      { method: "sendMessage", value: params },
-      options2,
-      this.transport.sendMessage.bind(this.transport)
-    );
-  }
-  /**
-   * Sends a message to an agent to initiate/continue a task AND subscribes the client to real-time updates for that task.
-   * Performs fallback to non-streaming if not supported by the agent.
-   */
-  async *sendMessageStream(params, options2) {
-    const method = "sendMessageStream";
-    params = this.applyClientConfig({ params, returnImmediately: false });
-    const beforeArgs = {
-      input: { method, value: params },
-      agentCard: this.agentCard,
-      options: this.withVersionHeader(options2)
-    };
-    const beforeResult = await this.interceptBefore(beforeArgs);
-    if (beforeResult) {
-      const earlyReturn = beforeResult.earlyReturn.value;
-      const afterArgs = {
-        result: { method, value: earlyReturn },
-        agentCard: this.agentCard,
-        options: beforeArgs.options
-      };
-      await this.interceptAfter(afterArgs, beforeResult.executed);
-      yield afterArgs.result.value;
-      return;
-    }
-    if (!this.agentCard.capabilities?.streaming) {
-      const result = await this.transport.sendMessage(beforeArgs.input.value, beforeArgs.options);
-      let streamValue;
-      if ("messageId" in result) {
-        streamValue = { payload: { $case: "message", value: result } };
-      } else {
-        streamValue = { payload: { $case: "task", value: result } };
-      }
-      const afterArgs = {
-        result: { method, value: streamValue },
-        agentCard: this.agentCard,
-        options: beforeArgs.options
-      };
-      await this.interceptAfter(afterArgs);
-      yield afterArgs.result.value;
-      return;
-    }
-    for await (const event of this.transport.sendMessageStream(
-      beforeArgs.input.value,
-      beforeArgs.options
-    )) {
-      const afterArgs = {
-        result: { method, value: event },
-        agentCard: this.agentCard,
-        options: beforeArgs.options
-      };
-      await this.interceptAfter(afterArgs);
-      yield afterArgs.result.value;
-      if (afterArgs.earlyReturn) {
-        return;
-      }
-    }
-  }
-  /**
-   * Creates a push notification configuration for a specified task.
-   * Requires the server to have AgentCard.capabilities.pushNotifications: true.
-   */
-  createTaskPushNotificationConfig(params, options2) {
-    if (!this.agentCard.capabilities?.pushNotifications) {
-      throw new PushNotificationNotSupportedError();
-    }
-    return this.executeWithInterceptors(
-      { method: "createTaskPushNotificationConfig", value: params },
-      options2,
-      this.transport.createTaskPushNotificationConfig.bind(this.transport)
-    );
-  }
-  /**
-   * Retrieves the current push notification configuration for a specified task.
-   * Requires the server to have AgentCard.capabilities.pushNotifications: true.
-   */
-  getTaskPushNotificationConfig(params, options2) {
-    if (!this.agentCard.capabilities?.pushNotifications) {
-      throw new PushNotificationNotSupportedError();
-    }
-    return this.executeWithInterceptors(
-      { method: "getTaskPushNotificationConfig", value: params },
-      options2,
-      this.transport.getTaskPushNotificationConfig.bind(this.transport)
-    );
-  }
-  /**
-   * Retrieves the associated push notification configurations for a specified task.
-   * Requires the server to have AgentCard.capabilities.pushNotifications: true.
-   */
-  listTaskPushNotificationConfig(params, options2) {
-    if (!this.agentCard.capabilities?.pushNotifications) {
-      throw new PushNotificationNotSupportedError();
-    }
-    return this.executeWithInterceptors(
-      { method: "listTaskPushNotificationConfig", value: params },
-      options2,
-      this.transport.listTaskPushNotificationConfig.bind(this.transport)
-    );
-  }
-  /**
-   * Deletes an associated push notification configuration for a task.
-   */
-  deleteTaskPushNotificationConfig(params, options2) {
-    return this.executeWithInterceptors(
-      { method: "deleteTaskPushNotificationConfig", value: params },
-      options2,
-      this.transport.deleteTaskPushNotificationConfig.bind(this.transport)
-    );
-  }
-  /**
-   * Retrieves the current state (including status, artifacts, and optionally history) of a previously initiated task.
-   */
-  getTask(params, options2) {
-    return this.executeWithInterceptors(
-      { method: "getTask", value: params },
-      options2,
-      this.transport.getTask.bind(this.transport)
-    );
-  }
-  /**
-   * Requests the cancellation of an ongoing task. The server will attempt to cancel the task,
-   * but success is not guaranteed (e.g., the task might have already completed or failed, or cancellation might not be supported at its current stage).
-   */
-  cancelTask(params, options2) {
-    return this.executeWithInterceptors(
-      { method: "cancelTask", value: params },
-      options2,
-      this.transport.cancelTask.bind(this.transport)
-    );
-  }
-  /**
-   * Retrieves a list of tasks with optional filtering and pagination.
-   */
-  listTasks(params, options2) {
-    return this.executeWithInterceptors(
-      { method: "listTasks", value: params },
-      options2,
-      this.transport.listTasks.bind(this.transport)
-    );
-  }
-  /**
-   * Allows a client to reconnect to an updates stream for an ongoing task after a previous connection was interrupted.
-   */
-  async *resubscribeTask(params, options2) {
-    const method = "resubscribeTask";
-    const beforeArgs = {
-      input: { method, value: params },
-      agentCard: this.agentCard,
-      options: this.withVersionHeader(options2)
-    };
-    const beforeResult = await this.interceptBefore(beforeArgs);
-    if (beforeResult) {
-      const earlyReturn = beforeResult.earlyReturn.value;
-      const afterArgs = {
-        result: { method, value: earlyReturn },
-        agentCard: this.agentCard,
-        options: beforeArgs.options
-      };
-      await this.interceptAfter(afterArgs, beforeResult.executed);
-      yield afterArgs.result.value;
-      return;
-    }
-    for await (const event of this.transport.resubscribeTask(
-      beforeArgs.input.value,
-      beforeArgs.options
-    )) {
-      const afterArgs = {
-        result: { method, value: event },
-        agentCard: this.agentCard,
-        options: beforeArgs.options
-      };
-      await this.interceptAfter(afterArgs);
-      yield afterArgs.result.value;
-      if (afterArgs.earlyReturn) {
-        return;
-      }
-    }
-  }
-  applyClientConfig({
-    params,
-    returnImmediately
-  }) {
-    const result = {
-      ...params,
-      configuration: params.configuration ?? {}
-    };
-    result.configuration.acceptedOutputModes = result.configuration.acceptedOutputModes ?? this.config?.acceptedOutputModes ?? [];
-    if (!result.configuration.taskPushNotificationConfig && this.config?.pushNotificationConfig) {
-      if (params.message?.taskId !== void 0) {
-        result.configuration.taskPushNotificationConfig = this.config.pushNotificationConfig;
-      }
-    }
-    result.configuration.returnImmediately ??= returnImmediately;
-    return result;
-  }
-  /**
-   * Ensures the A2A-Version header is present in the request's service parameters.
-   * Per §3.6.1: "Clients MUST send the A2A-Version header with each request."
-   */
-  withVersionHeader(options2) {
-    return {
-      ...options2,
-      serviceParameters: ServiceParameters.createFrom(
-        options2?.serviceParameters,
-        withA2AVersion(this.protocolVersion)
-      )
-    };
-  }
-  async executeWithInterceptors(input, options2, transportCall) {
-    const beforeArgs = {
-      input,
-      agentCard: this.agentCard,
-      options: this.withVersionHeader(options2)
-    };
-    const beforeResult = await this.interceptBefore(beforeArgs);
-    if (beforeResult) {
-      const afterArgs2 = {
-        result: {
-          method: input.method,
-          value: beforeResult.earlyReturn.value
-        },
-        agentCard: this.agentCard,
-        options: beforeArgs.options
-      };
-      await this.interceptAfter(afterArgs2, beforeResult.executed);
-      return afterArgs2.result.value;
-    }
-    const result = await transportCall(beforeArgs.input.value, beforeArgs.options);
-    const afterArgs = {
-      result: { method: input.method, value: result },
-      agentCard: this.agentCard,
-      options: beforeArgs.options
-    };
-    await this.interceptAfter(afterArgs);
-    return afterArgs.result.value;
-  }
-  async interceptBefore(args) {
-    if (!this.config?.interceptors || this.config.interceptors.length === 0) {
-      return;
-    }
-    const executed = [];
-    for (const interceptor of this.config.interceptors) {
-      await interceptor.before(args);
-      executed.push(interceptor);
-      if (args.earlyReturn) {
-        return {
-          earlyReturn: args.earlyReturn,
-          executed
-        };
-      }
-    }
-  }
-  async interceptAfter(args, interceptors) {
-    const reversedInterceptors = [...interceptors ?? this.config?.interceptors ?? []].reverse();
-    for (const interceptor of reversedInterceptors) {
-      await interceptor.after(args);
-      if (args.earlyReturn) {
-        return;
-      }
-    }
-  }
-};
-var TenantTransportDecorator = class {
-  constructor(base, defaultTenant) {
-    this.base = base;
-    this.defaultTenant = defaultTenant;
-  }
-  get protocolName() {
-    return this.base.protocolName;
-  }
-  get protocolVersion() {
-    return this.base.protocolVersion;
-  }
-  /**
-   * Returns the request tenant if non-empty, otherwise falls back to the default.
-   */
-  _resolveTenant(tenant) {
-    return tenant || this.defaultTenant;
-  }
-  async getExtendedAgentCard(params, options2) {
-    return this.base.getExtendedAgentCard(
-      { ...params, tenant: this._resolveTenant(params.tenant) },
-      options2
-    );
-  }
-  async sendMessage(params, options2) {
-    return this.base.sendMessage(
-      { ...params, tenant: this._resolveTenant(params.tenant) },
-      options2
-    );
-  }
-  async *sendMessageStream(params, options2) {
-    yield* this.base.sendMessageStream(
-      { ...params, tenant: this._resolveTenant(params.tenant) },
-      options2
-    );
-  }
-  async getTask(params, options2) {
-    return this.base.getTask({ ...params, tenant: this._resolveTenant(params.tenant) }, options2);
-  }
-  async cancelTask(params, options2) {
-    return this.base.cancelTask({ ...params, tenant: this._resolveTenant(params.tenant) }, options2);
-  }
-  async listTasks(params, options2) {
-    return this.base.listTasks({ ...params, tenant: this._resolveTenant(params.tenant) }, options2);
-  }
-  async createTaskPushNotificationConfig(params, options2) {
-    return this.base.createTaskPushNotificationConfig(
-      { ...params, tenant: this._resolveTenant(params.tenant) },
-      options2
-    );
-  }
-  async getTaskPushNotificationConfig(params, options2) {
-    return this.base.getTaskPushNotificationConfig(
-      { ...params, tenant: this._resolveTenant(params.tenant) },
-      options2
-    );
-  }
-  async listTaskPushNotificationConfig(params, options2) {
-    return this.base.listTaskPushNotificationConfig(
-      { ...params, tenant: this._resolveTenant(params.tenant) },
-      options2
-    );
-  }
-  async deleteTaskPushNotificationConfig(params, options2) {
-    return this.base.deleteTaskPushNotificationConfig(
-      { ...params, tenant: this._resolveTenant(params.tenant) },
-      options2
-    );
-  }
-  async *resubscribeTask(params, options2) {
-    yield* this.base.resubscribeTask(
-      { ...params, tenant: this._resolveTenant(params.tenant) },
-      options2
-    );
-  }
-};
-var PROTOCOL_NAME = "JSONRPC";
-var JsonRpcTransport = class _JsonRpcTransport {
-  customFetchImpl;
-  endpoint;
-  requestIdCounter = 1;
-  constructor(options2) {
-    this.endpoint = options2.endpoint;
-    this.customFetchImpl = options2.fetchImpl;
-  }
-  get protocolName() {
-    return PROTOCOL_NAME;
-  }
-  get protocolVersion() {
-    return A2A_PROTOCOL_VERSION;
-  }
-  async getExtendedAgentCard(params, options2) {
-    const rpcResponse = await this._sendRpcRequest(
-      "GetExtendedAgentCard",
-      params,
-      options2,
-      GetExtendedAgentCardRequest
-    );
-    return AgentCard.fromJSON(rpcResponse.result);
-  }
-  async sendMessage(params, options2) {
-    const rpcResponse = await this._sendRpcRequest(
-      "SendMessage",
-      params,
-      options2,
-      SendMessageRequest
-    );
-    const response = SendMessageResponse.fromJSON(rpcResponse.result);
-    if (!response.payload) {
-      throw new Error("Invalid response: missing payload");
-    }
-    return response.payload.value;
-  }
-  async *sendMessageStream(params, options2) {
-    yield* this._sendStreamingRequest(
-      "SendStreamingMessage",
-      params,
-      options2,
-      SendMessageRequest
-    );
-  }
-  async createTaskPushNotificationConfig(params, options2) {
-    const rpcResponse = await this._sendRpcRequest("CreateTaskPushNotificationConfig", params, options2, TaskPushNotificationConfig);
-    return TaskPushNotificationConfig.fromJSON(rpcResponse.result);
-  }
-  async getTaskPushNotificationConfig(params, options2) {
-    const rpcResponse = await this._sendRpcRequest("GetTaskPushNotificationConfig", params, options2, GetTaskPushNotificationConfigRequest);
-    return TaskPushNotificationConfig.fromJSON(rpcResponse.result);
-  }
-  async listTaskPushNotificationConfig(params, options2) {
-    const rpcResponse = await this._sendRpcRequest("ListTaskPushNotificationConfigs", params, options2, ListTaskPushNotificationConfigsRequest);
-    return ListTaskPushNotificationConfigsResponse.fromJSON(rpcResponse.result);
-  }
-  async deleteTaskPushNotificationConfig(params, options2) {
-    await this._sendRpcRequest(
-      "DeleteTaskPushNotificationConfig",
-      params,
-      options2,
-      DeleteTaskPushNotificationConfigRequest
-    );
-  }
-  async getTask(params, options2) {
-    const rpcResponse = await this._sendRpcRequest(
-      "GetTask",
-      params,
-      options2,
-      GetTaskRequest
-    );
-    return Task.fromJSON(rpcResponse.result);
-  }
-  async cancelTask(params, options2) {
-    const rpcResponse = await this._sendRpcRequest(
-      "CancelTask",
-      params,
-      options2,
-      CancelTaskRequest
-    );
-    return Task.fromJSON(rpcResponse.result);
-  }
-  async listTasks(params, options2) {
-    const rpcResponse = await this._sendRpcRequest(
-      "ListTasks",
-      params,
-      options2,
-      ListTasksRequest
-    );
-    return ListTasksResponse.fromJSON(rpcResponse.result);
-  }
-  async *resubscribeTask(params, options2) {
-    yield* this._sendStreamingRequest(
-      "SubscribeToTask",
-      params,
-      options2,
-      SubscribeToTaskRequest
-    );
-  }
-  async callExtensionMethod(method, params, options2) {
-    return await this._sendRpcRequest(
-      method,
-      params,
-      options2,
-      void 0
-    );
-  }
-  _fetch(...args) {
-    if (this.customFetchImpl) {
-      return this.customFetchImpl(...args);
-    }
-    if (typeof fetch === "function") {
-      return fetch(...args);
-    }
-    throw new Error(
-      "A `fetch` implementation was not provided and is not available in the global scope. Please provide a `fetchImpl` in the A2ATransportOptions. "
-    );
-  }
-  async _sendRpcRequest(method, params, options2, requestType) {
-    const requestId = this.requestIdCounter++;
-    const rpcRequest = {
-      jsonrpc: "2.0",
-      method,
-      params: requestType?.toJSON(params) ?? params,
-      id: requestId
-    };
-    const httpResponse = await this._fetchRpc(rpcRequest, JSON_CONTENT_TYPE, options2);
-    if (!httpResponse.ok) {
-      let errorBodyText = "(empty or non-JSON response)";
-      let errorJson;
-      try {
-        errorBodyText = await httpResponse.text();
-        errorJson = JSON.parse(errorBodyText);
-      } catch (e) {
-        throw new Error(
-          `HTTP error for ${method}! Status: ${httpResponse.status} ${httpResponse.statusText}. Response: ${errorBodyText}`,
-          { cause: e }
-        );
-      }
-      if (errorJson.jsonrpc && errorJson.error) {
-        throw _JsonRpcTransport.mapToError(errorJson);
-      } else {
-        throw new Error(
-          `HTTP error for ${method}! Status: ${httpResponse.status} ${httpResponse.statusText}. Response: ${errorBodyText}`
-        );
-      }
-    }
-    const json = await httpResponse.json();
-    if ("error" in json) {
-      throw _JsonRpcTransport.mapToError(json);
-    }
-    const rpcResponse = json;
-    if (rpcResponse.id !== requestId) {
-      throw new Error(
-        `JSON-RPC response ID mismatch for method ${method}. Expected ${requestId}, got ${rpcResponse.id}.`
-      );
-    }
-    return rpcResponse;
-  }
-  async _fetchRpc(rpcRequest, acceptHeader = JSON_CONTENT_TYPE, options2) {
-    const requestInit = {
-      method: "POST",
-      headers: {
-        ...options2?.serviceParameters,
-        "Content-Type": JSON_CONTENT_TYPE,
-        Accept: acceptHeader
-      },
-      body: JSON.stringify(rpcRequest),
-      signal: options2?.signal
-    };
-    return this._fetch(this.endpoint, requestInit);
-  }
-  async *_sendStreamingRequest(method, params, options2, requestType) {
-    const clientRequestId = this.requestIdCounter++;
-    const rpcRequest = {
-      jsonrpc: "2.0",
-      method,
-      params: requestType?.toJSON(params) ?? params,
-      id: clientRequestId
-    };
-    const response = await this._fetchRpc(rpcRequest, "text/event-stream", options2);
-    if (!response.ok) {
-      let errorBody = "";
-      try {
-        errorBody = await response.text();
-        const errorJson = JSON.parse(errorBody);
-        if (errorJson.error) {
-          throw _JsonRpcTransport.mapToError(errorJson);
-        }
-      } catch (e) {
-        if (e instanceof Error && e.name !== "SyntaxError") {
-          throw e;
-        }
-      }
-      throw new Error(
-        `HTTP error establishing stream for ${method}: ${response.status} ${response.statusText}. Response: ${errorBody || "(empty)"}`
-      );
-    }
-    if (!response.headers.get("Content-Type")?.startsWith("text/event-stream")) {
-      try {
-        const body = await response.text();
-        const errorJson = JSON.parse(body);
-        if (errorJson.error) {
-          throw _JsonRpcTransport.mapToError(errorJson);
-        }
-      } catch (e) {
-        if (e instanceof Error && e.name !== "SyntaxError") {
-          throw e;
-        }
-      }
-      throw new Error(
-        `Invalid response Content-Type for SSE stream for ${method}. Expected 'text/event-stream'.`
-      );
-    }
-    for await (const event of parseSseStream(response)) {
-      yield this._processSseEventData(event.data, clientRequestId);
-    }
-  }
-  _processSseEventData(jsonData, originalRequestId) {
-    if (!jsonData.trim()) {
-      throw new Error("Attempted to process empty SSE event data.");
-    }
-    let a2aStreamResponse;
-    try {
-      a2aStreamResponse = JSON.parse(jsonData);
-    } catch (e) {
-      throw new Error(
-        `Failed to parse SSE event data: "${jsonData.substring(0, 100)}...". Original error: ${e instanceof Error && e.message || "Unknown error"}`,
-        { cause: e }
-      );
-    }
-    if (a2aStreamResponse.id !== originalRequestId) {
-      throw new Error(
-        `JSON-RPC response ID mismatch in SSE event. Expected ${originalRequestId}, got ${a2aStreamResponse.id}.`
-      );
-    }
-    if ("error" in a2aStreamResponse) {
-      const err = a2aStreamResponse.error;
-      throw new Error(
-        `SSE event contained an error: ${err.message} (Code: ${err.code}) Data: ${JSON.stringify(err.data || {})}`,
-        { cause: _JsonRpcTransport.mapToError(a2aStreamResponse) }
-      );
-    }
-    if (!("result" in a2aStreamResponse) || typeof a2aStreamResponse.result === "undefined") {
-      throw new Error(`SSE event JSON-RPC response is missing 'result' field. Data: ${jsonData}`);
-    }
-    return StreamResponse.fromJSON(a2aStreamResponse.result);
-  }
-  static mapToError(response) {
-    const errorMessage = response.error.message;
-    switch (response.error.code) {
-      case A2A_ERROR_CODE.PARSE_ERROR:
-      case A2A_ERROR_CODE.INVALID_REQUEST:
-      case A2A_ERROR_CODE.METHOD_NOT_FOUND:
-      case A2A_ERROR_CODE.INVALID_PARAMS:
-      case A2A_ERROR_CODE.INTERNAL_ERROR:
-        return new RequestMalformedError(errorMessage);
-      case A2A_ERROR_CODE.TASK_NOT_FOUND:
-        return new TaskNotFoundError(errorMessage);
-      case A2A_ERROR_CODE.TASK_NOT_CANCELABLE:
-        return new TaskNotCancelableError(errorMessage);
-      case A2A_ERROR_CODE.PUSH_NOTIFICATION_NOT_SUPPORTED:
-        return new PushNotificationNotSupportedError(errorMessage);
-      case A2A_ERROR_CODE.UNSUPPORTED_OPERATION:
-        return new UnsupportedOperationError(errorMessage);
-      case A2A_ERROR_CODE.CONTENT_TYPE_NOT_SUPPORTED:
-        return new ContentTypeNotSupportedError(errorMessage);
-      case A2A_ERROR_CODE.INVALID_AGENT_RESPONSE:
-        return new InvalidAgentResponseError(errorMessage);
-      case A2A_ERROR_CODE.EXTENDED_CARD_NOT_CONFIGURED:
-        return new ExtendedAgentCardNotConfiguredError(errorMessage);
-      case A2A_ERROR_CODE.EXTENSION_SUPPORT_REQUIRED:
-        return new ExtensionSupportRequiredError(errorMessage);
-      case A2A_ERROR_CODE.VERSION_NOT_SUPPORTED:
-        return new VersionNotSupportedError(errorMessage);
-      default:
-        return new JSONRPCTransportError(response);
-    }
-  }
-};
-var JsonRpcTransportFactory = class {
-  constructor(options2) {
-    this.options = options2;
-  }
-  get protocolName() {
-    return PROTOCOL_NAME;
-  }
-  async create(url, _agentCard) {
-    return new JsonRpcTransport({
-      endpoint: url,
-      fetchImpl: this.options?.fetchImpl
-    });
-  }
-};
-var JSONRPCTransportError = class extends Error {
-  constructor(errorResponse) {
-    super(
-      `JSON-RPC error: ${errorResponse.error.message} (Code: ${errorResponse.error.code}) Data: ${JSON.stringify(errorResponse.error.data || {})}`
-    );
-    this.errorResponse = errorResponse;
-  }
-};
-var PROTOCOL_NAME2 = "HTTP+JSON";
-var RestTransport = class _RestTransport {
-  customFetchImpl;
-  endpoint;
-  constructor(options2) {
-    this.endpoint = options2.endpoint.replace(/\/+$/, "");
-    this.customFetchImpl = options2.fetchImpl;
-  }
-  _buildPath(path4, tenant) {
-    return tenant ? "/" + encodeURIComponent(tenant) + path4 : path4;
-  }
-  get protocolName() {
-    return PROTOCOL_NAME2;
-  }
-  get protocolVersion() {
-    return A2A_PROTOCOL_VERSION;
-  }
-  async getExtendedAgentCard(params, options2) {
-    const path4 = this._buildPath("/extendedAgentCard", params.tenant);
-    const response = await this._sendRequest(
-      "GET",
-      path4,
-      void 0,
-      options2,
-      void 0,
-      AgentCard
-    );
-    return response;
-  }
-  async sendMessage(params, options2) {
-    const requestBody = params;
-    const path4 = this._buildPath("/message:send", params.tenant);
-    const response = await this._sendRequest(
-      "POST",
-      path4,
-      requestBody,
-      options2,
-      SendMessageRequest,
-      SendMessageResponse
-    );
-    return FromProto.sendMessageResult(response);
-  }
-  async *sendMessageStream(params, options2) {
-    const requestBody = SendMessageRequest.toJSON(params);
-    const path4 = this._buildPath("/message:stream", params.tenant);
-    yield* this._sendStreamingRequest(path4, requestBody, options2);
-  }
-  async createTaskPushNotificationConfig(params, options2) {
-    const path4 = this._buildPath(
-      `/tasks/${encodeURIComponent(params.taskId)}/pushNotificationConfigs`,
-      params.tenant
-    );
-    const response = await this._sendRequest("POST", path4, params, options2, TaskPushNotificationConfig, TaskPushNotificationConfig);
-    return response;
-  }
-  async getTaskPushNotificationConfig(params, options2) {
-    const path4 = this._buildPath(
-      `/tasks/${encodeURIComponent(params.taskId)}/pushNotificationConfigs/${encodeURIComponent(
-        params.id
-      )}`,
-      params.tenant
-    );
-    const response = await this._sendRequest(
-      "GET",
-      path4,
-      void 0,
-      options2,
-      void 0,
-      TaskPushNotificationConfig
-    );
-    return response;
-  }
-  async listTaskPushNotificationConfig(params, options2) {
-    const path4 = this._buildPath(
-      `/tasks/${encodeURIComponent(params.taskId)}/pushNotificationConfigs`,
-      params.tenant
-    );
-    const response = await this._sendRequest(
-      "GET",
-      path4,
-      void 0,
-      options2,
-      void 0,
-      ListTaskPushNotificationConfigsResponse
-    );
-    return response;
-  }
-  async deleteTaskPushNotificationConfig(params, options2) {
-    const path4 = this._buildPath(
-      `/tasks/${encodeURIComponent(params.taskId)}/pushNotificationConfigs/${encodeURIComponent(
-        params.id
-      )}`,
-      params.tenant
-    );
-    await this._sendRequest("DELETE", path4, void 0, options2, void 0, void 0);
-  }
-  async getTask(params, options2) {
-    const queryParams = new URLSearchParams();
-    if (params.historyLength !== void 0) {
-      queryParams.set("historyLength", params.historyLength.toString());
-    }
-    const queryString = queryParams.toString();
-    const path4 = this._buildPath(
-      `/tasks/${encodeURIComponent(params.id)}${queryString ? `?${queryString}` : ""}`,
-      params.tenant
-    );
-    const response = await this._sendRequest(
-      "GET",
-      path4,
-      void 0,
-      options2,
-      void 0,
-      Task
-    );
-    return response;
-  }
-  async cancelTask(params, options2) {
-    const path4 = this._buildPath(`/tasks/${encodeURIComponent(params.id)}:cancel`, params.tenant);
-    const response = await this._sendRequest(
-      "POST",
-      path4,
-      void 0,
-      options2,
-      void 0,
-      Task
-    );
-    return response;
-  }
-  async listTasks(params, options2) {
-    const queryParams = new URLSearchParams();
-    if (params.contextId) queryParams.set("contextId", params.contextId);
-    if (params.status !== void 0 && params.status !== 0) {
-      queryParams.set("status", taskStateToJSON(params.status));
-    }
-    if (params.pageSize !== void 0) queryParams.set("pageSize", String(params.pageSize));
-    if (params.pageToken) queryParams.set("pageToken", params.pageToken);
-    if (params.historyLength !== void 0)
-      queryParams.set("historyLength", String(params.historyLength));
-    if (params.statusTimestampAfter)
-      queryParams.set("statusTimestampAfter", params.statusTimestampAfter);
-    if (params.includeArtifacts !== void 0)
-      queryParams.set("includeArtifacts", String(params.includeArtifacts));
-    const queryString = queryParams.toString();
-    const path4 = this._buildPath(`/tasks${queryString ? `?${queryString}` : ""}`, params.tenant);
-    const response = await this._sendRequest(
-      "GET",
-      path4,
-      void 0,
-      options2,
-      void 0,
-      ListTasksResponse
-    );
-    return response;
-  }
-  async *resubscribeTask(params, options2) {
-    const path4 = this._buildPath(
-      `/tasks/${encodeURIComponent(params.id)}:subscribe`,
-      params.tenant
-    );
-    yield* this._sendStreamingRequest(path4, void 0, options2);
-  }
-  _fetch(...args) {
-    if (this.customFetchImpl) {
-      return this.customFetchImpl(...args);
-    }
-    if (typeof fetch === "function") {
-      return fetch(...args);
-    }
-    throw new Error(
-      "A `fetch` implementation was not provided and is not available in the global scope. Please provide a `fetchImpl` in the RestTransportOptions."
-    );
-  }
-  _buildHeaders(options2, acceptHeader = A2A_CONTENT_TYPE) {
-    return {
-      ...options2?.serviceParameters,
-      "Content-Type": A2A_CONTENT_TYPE,
-      Accept: acceptHeader
-    };
-  }
-  async _sendRequest(method, path4, body, options2, requestType, responseType) {
-    const url = `${this.endpoint}${path4}`;
-    const requestInit = {
-      method,
-      headers: this._buildHeaders(options2),
-      signal: options2?.signal
-    };
-    if (body !== void 0 && method !== "GET") {
-      if (!requestType) {
-        throw new Error(
-          `Bug: Request body provided for ${method} ${path4} but no toJson serializer provided.`
-        );
-      }
-      requestInit.body = JSON.stringify(requestType.toJSON(body));
-    }
-    const response = await this._fetch(url, requestInit);
-    if (!response.ok) {
-      await this._handleErrorResponse(response, path4);
-    }
-    if (response.status === 204 || !responseType) {
-      return void 0;
-    }
-    const result = await response.json();
-    return responseType.fromJSON(result);
-  }
-  async _handleErrorResponse(response, path4) {
-    let errorBodyText = "(empty or non-JSON response)";
-    let errorStatus;
-    try {
-      errorBodyText = await response.text();
-      if (errorBodyText) {
-        const parsed = JSON.parse(errorBodyText);
-        if (parsed?.error && typeof parsed.error === "object") {
-          errorStatus = parsed.error;
-        }
-      }
-    } catch {
-    }
-    if (errorStatus) {
-      throw _RestTransport.mapToError(errorStatus);
-    }
-    throw new Error(
-      `HTTP error for ${path4}! Status: ${response.status} ${response.statusText}. Response: ${errorBodyText}`
-    );
-  }
-  async *_sendStreamingRequest(path4, body, options2) {
-    const url = `${this.endpoint}${path4}`;
-    const requestInit = {
-      method: "POST",
-      headers: this._buildHeaders(options2, "text/event-stream"),
-      signal: options2?.signal
-    };
-    if (body !== void 0) {
-      requestInit.body = JSON.stringify(body);
-    }
-    const response = await this._fetch(url, requestInit);
-    if (!response.ok) {
-      await this._handleErrorResponse(response, path4);
-    }
-    const contentType = response.headers.get("Content-Type");
-    if (!contentType?.startsWith("text/event-stream")) {
-      throw new Error(
-        `Invalid response Content-Type for SSE stream. Expected 'text/event-stream', got '${contentType}'.`
-      );
-    }
-    for await (const event of parseSseStream(response)) {
-      if (event.type === "error") {
-        const errorData = JSON.parse(event.data);
-        if (errorData.error && typeof errorData.error === "object") {
-          throw _RestTransport.mapToError(errorData.error);
-        }
-        throw new Error(`SSE error event: ${JSON.stringify(errorData)}`);
-      }
-      yield this._processSseEventData(event.data);
-    }
-  }
-  _processSseEventData(jsonData) {
-    if (!jsonData.trim()) {
-      throw new Error("Attempted to process empty SSE event data.");
-    }
-    try {
-      const response = JSON.parse(jsonData);
-      return StreamResponse.fromJSON(response);
-    } catch (e) {
-      console.error("Failed to parse SSE event data:", jsonData, e);
-      throw new Error(
-        `Failed to parse SSE event data: "${jsonData.substring(0, 100)}...". Original error: ${e instanceof Error && e.message || "Unknown error"}`
-      );
-    }
-  }
-  static mapToError(error) {
-    const message = error.message || "Unknown error";
-    if (Array.isArray(error.details)) {
-      const errorInfo = error.details.find((d) => d["@type"] === ERROR_INFO_TYPE);
-      if (errorInfo && typeof errorInfo["reason"] === "string") {
-        const ErrorClass = A2A_REASON_TO_ERROR_CLASS[errorInfo["reason"]];
-        if (ErrorClass) return new ErrorClass(message);
-      }
-    }
-    return new Error(
-      `REST error: ${error.status || "UNKNOWN"} (${error.code || "unknown code"}) - ${message}`
-    );
-  }
-};
-var RestTransportFactory = class {
-  constructor(options2) {
-    this.options = options2;
-  }
-  get protocolName() {
-    return PROTOCOL_NAME2;
-  }
-  async create(url, _agentCard) {
-    return new RestTransport({
-      endpoint: url,
-      fetchImpl: this.options?.fetchImpl
-    });
-  }
-};
-var ClientFactoryOptions = {
-  /**
-   * SDK default options for {@link ClientFactory}.
-   */
-  default: {
-    transports: [new JsonRpcTransportFactory(), new RestTransportFactory()]
-  },
-  /**
-   * Creates new options by merging an original and an override object.
-   * Transports are merged based on `TransportFactory.protocolName`,
-   * interceptors are concatenated, other fields are overriden.
-   *
-   * @example
-   * ```ts
-   * const options = ClientFactoryOptions.createFrom(ClientFactoryOptions.default, {
-   *  transports: [new MyCustomTransportFactory()], // adds a custom transport
-   *  clientConfig: { interceptors: [new MyInterceptor()] }, // adds a custom interceptor
-   * });
-   * ```
-   */
-  createFrom(original, overrides) {
-    return {
-      ...original,
-      ...overrides,
-      transports: mergeTransports(original.transports, overrides.transports),
-      clientConfig: {
-        ...original.clientConfig ?? {},
-        ...overrides.clientConfig ?? {},
-        interceptors: mergeArrays(
-          original.clientConfig?.interceptors,
-          overrides.clientConfig?.interceptors
-        ),
-        acceptedOutputModes: overrides.clientConfig?.acceptedOutputModes ?? original.clientConfig?.acceptedOutputModes
-      },
-      preferredTransports: overrides.preferredTransports ?? original.preferredTransports
-    };
-  }
-};
-var ClientFactory = class {
-  constructor(options2 = ClientFactoryOptions.default) {
-    this.options = options2;
-    if (!options2.transports || options2.transports.length === 0) {
-      throw new Error("No transports provided");
-    }
-    this.transportsByName = transportsByName(options2.transports);
-    for (const transport of options2.preferredTransports ?? []) {
-      if (!this.transportsByName.has(transport)) {
-        throw new Error(
-          `Unknown preferred transport: ${transport}, available transports: ${[...this.transportsByName.keys()].join()}`
-        );
-      }
-    }
-    this.agentCardResolver = options2.cardResolver ?? AgentCardResolver.default;
-  }
-  transportsByName;
-  agentCardResolver;
-  /**
-   * Creates a new client from the provided agent card.
-   *
-   * When the selected `AgentInterface` declares a non-empty `tenant` value
-   * (per spec Section 4.4.6), the transport is automatically wrapped with a
-   * {@link TenantTransportDecorator} so the default tenant is applied to every
-   * request without requiring callers to set it manually.
-   */
-  async createFromAgentCard(agentCard) {
-    const interfaces = agentCard.supportedInterfaces ?? [];
-    const bestInterfacePerProtocol = new CaseInsensitiveMap();
-    for (const agentInterface of interfaces) {
-      const existing = bestInterfacePerProtocol.get(agentInterface.protocolBinding);
-      if (!existing || agentInterface.protocolVersion === "1.0") {
-        bestInterfacePerProtocol.set(agentInterface.protocolBinding, agentInterface);
-      }
-    }
-    const transportsByPreference = [
-      ...this.options.preferredTransports ?? [],
-      ...interfaces.map((i) => i.protocolBinding)
-    ];
-    for (const transportName of transportsByPreference) {
-      const selectedInterface = bestInterfacePerProtocol.get(transportName);
-      const factory = this.transportsByName.get(transportName);
-      if (factory && selectedInterface) {
-        let transport = await factory.create(selectedInterface.url, agentCard);
-        if (selectedInterface.tenant) {
-          transport = new TenantTransportDecorator(transport, selectedInterface.tenant);
-        }
-        return new Client(transport, agentCard, this.options.clientConfig);
-      }
-    }
-    throw new Error(
-      "No compatible transport found, available transports: " + [...this.transportsByName.keys()].join()
-    );
-  }
-  /**
-   * Downloads agent card using AgentCardResolver from options
-   * and creates a new client from the downloaded card.
-   *
-   * @example
-   * ```ts
-   * const factory = new ClientFactory(); // use default options and default {@link AgentCardResolver}.
-   * const client1 = await factory.createFromUrl('https://example.com'); // /.well-known/agent-card.json is used by default
-   * const client2 = await factory.createFromUrl('https://example.com', '/my-agent-card.json'); // specify custom path
-   * const client3 = await factory.createFromUrl('https://example.com/my-agent-card.json', ''); // specify full URL and set path to empty
-   * ```
-   */
-  async createFromUrl(baseUrl, path4) {
-    const agentCard = await this.agentCardResolver.resolve(baseUrl, path4);
-    return this.createFromAgentCard(agentCard);
-  }
-};
-function mergeTransports(original, overrides) {
-  if (!overrides) {
-    return original;
-  }
-  const result = transportsByName(original);
-  const overridesByName = transportsByName(overrides);
-  for (const [name, factory] of overridesByName) {
-    result.set(name, factory);
-  }
-  return Array.from(result.values());
-}
-function transportsByName(transports) {
-  const result = new CaseInsensitiveMap();
-  if (!transports) {
-    return result;
-  }
-  for (const t of transports) {
-    if (result.has(t.protocolName)) {
-      throw new Error(`Duplicate protocol name: ${t.protocolName}`);
-    }
-    result.set(t.protocolName, t);
-  }
-  return result;
-}
-function mergeArrays(a1, a2) {
-  if (!a1 && !a2) {
-    return void 0;
-  }
-  return [...a1 ?? [], ...a2 ?? []];
-}
-var CaseInsensitiveMap = class extends Map {
-  normalizeKey(key) {
-    return key.toUpperCase();
-  }
-  set(key, value) {
-    return super.set(this.normalizeKey(key), value);
-  }
-  get(key) {
-    return super.get(this.normalizeKey(key));
-  }
-  has(key) {
-    return super.has(this.normalizeKey(key));
-  }
-  delete(key) {
-    return super.delete(this.normalizeKey(key));
-  }
-};
-
-// src/lib/a2aMetadata.ts
-import crypto from "crypto";
-var DISTRIBUTION_EXTENSION_URI_V1 = "https://docs.aion.to/a2a/extensions/aion/distribution/1.0.0";
-var TRACEABILITY_EXTENSION_URI_V1 = "https://docs.aion.to/a2a/extensions/aion/traceability/1.0.0";
-var STREAM_DELTA_ARTIFACT_ID = "aion:stream-delta";
-var THINKING_DELTA_ARTIFACT_ID = "aion:thinking-delta";
-function tokenHex(bytes) {
-  return crypto.randomBytes(bytes).toString("hex");
-}
-function generateTaskMetadata(options2 = {}) {
-  const senderId = options2.senderId ?? "aion:user:2244994945";
-  const nodeId = options2.nodeId ?? "cli-node-local";
-  const agentName = options2.agentName ?? "Test Agent";
-  const agentUsername = options2.agentUsername ?? "testagent";
-  const behaviorKey = options2.behaviorKey ?? "testGraph";
-  const environmentName = options2.environmentName ?? "Development";
-  const traceId = tokenHex(16);
-  const spanId = tokenHex(8);
-  const orgId = crypto.randomUUID();
-  return {
-    [DISTRIBUTION_EXTENSION_URI_V1]: {
-      senderId,
-      distribution: {
-        id: crypto.randomUUID(),
-        endpointType: "Aion",
-        url: "https://example.com/agent-card",
-        identities: [
-          {
-            kind: "principal",
-            id: crypto.randomUUID(),
-            identityNetwork: "Aion",
-            identityKind: "Personal",
-            representedUserId: crypto.randomUUID(),
-            organizationId: orgId,
-            displayName: agentName,
-            userName: agentUsername,
-            avatarImageUrl: "https://example.com/avatar.png",
-            agentType: "Personal",
-            url: "https://example.com/agent"
-          }
-        ]
-      },
-      behavior: {
-        id: crypto.randomUUID(),
-        behaviorKey,
-        versionId: crypto.randomUUID()
-      },
-      environment: {
-        id: crypto.randomUUID(),
-        name: environmentName,
-        projectId: crypto.randomUUID(),
-        deploymentId: crypto.randomUUID(),
-        configurationVariables: {
-          API_TIMEOUT: "30",
-          MAX_RETRIES: "3",
-          LOG_LEVEL: "INFO"
-        }
-      }
-    },
-    [TRACEABILITY_EXTENSION_URI_V1]: {
-      traceparent: `00-${traceId}-${spanId}-01`,
-      tracestate: [{ key: "aion", value: spanId }],
-      baggage: {
-        "aion.sender.id": nodeId,
-        channel: "cli",
-        tenant: "local"
-      }
-    }
-  };
-}
-
-// src/lib/connection.ts
-var AGENT_CARD_PATH2 = "/.well-known/agent-card.json";
-var CLIENT_TRANSPORT_PREFERENCES = ["JSONRPC", "HTTP+JSON"];
-var ACCEPTED_OUTPUT_MODES = ["text", "text/plain", "application/json"];
-function normalizeEndpoint(url) {
-  return url.endsWith("/") ? url.slice(0, -1) : url;
-}
-function buildDirectEndpoints(url) {
-  const normalized = normalizeEndpoint(url);
-  if (normalized.endsWith(AGENT_CARD_PATH2)) {
-    const rpcBaseUrl = normalized.slice(0, -AGENT_CARD_PATH2.length);
-    return {
-      baseUrl: normalized,
-      cardUrl: normalized,
-      cardPath: "",
-      rpcUrl: `${rpcBaseUrl}/`
-    };
-  }
-  return {
-    baseUrl: normalized,
-    cardUrl: `${normalized}${AGENT_CARD_PATH2}`,
-    cardPath: AGENT_CARD_PATH2,
-    rpcUrl: `${normalized}/`
-  };
-}
-function formatProxyPath(agentId, path4 = "") {
-  const cleanPath = path4.replace(/^\/+/, "");
-  return `/agents/${agentId}/${cleanPath}`;
-}
-function buildEndpointConfig(options2) {
-  const direct = buildDirectEndpoints(options2.url);
-  if (!options2.agentId) {
-    return direct;
-  }
-  const cardPath = formatProxyPath(options2.agentId, AGENT_CARD_PATH2);
-  return {
-    baseUrl: direct.baseUrl,
-    cardUrl: `${direct.baseUrl}${cardPath}`,
-    cardPath,
-    rpcUrl: `${direct.baseUrl}${formatProxyPath(options2.agentId)}`
-  };
-}
-async function buildAuthHeaders(options2, initHeaders, requestHeaders) {
-  const headers = new Headers(initHeaders ?? requestHeaders);
-  for (const [key, value] of Object.entries(options2.headers)) {
-    headers.set(key, value);
-  }
-  const token = options2.token ?? await options2.tokenProvider?.();
-  if (token) {
-    headers.set("Authorization", `Bearer ${token}`);
-  }
-  return headers;
-}
-function buildAuthenticatedFetch(options2) {
-  return async (input, init) => {
-    const isRequest = input instanceof Request;
-    const originalRequest = isRequest ? input : void 0;
-    const method = init?.method ?? originalRequest?.method ?? "GET";
-    const headers = await buildAuthHeaders(
-      options2,
-      init?.headers,
-      originalRequest?.headers
-    );
-    if (isRequest) {
-      const request = originalRequest;
-      const body = init?.body ?? (method.toUpperCase() === "GET" || method.toUpperCase() === "HEAD" ? void 0 : request.body ?? void 0);
-      const nextRequest = {
-        ...init,
-        method,
-        headers,
-        body
-      };
-      if (body !== void 0) {
-        nextRequest.duplex = "half";
-      }
-      return fetch(new Request(request, nextRequest));
-    }
-    return fetch(input, {
-      ...init,
-      method,
-      headers
-    });
-  };
-}
-function buildFetch(options2, endpoints) {
-  return async (input, init) => {
-    const isRequest = input instanceof Request;
-    const originalRequest = isRequest ? input : void 0;
-    const method = init?.method ?? originalRequest?.method ?? "GET";
-    const targetUrl = options2.agentId && method.toUpperCase() !== "GET" ? endpoints.rpcUrl : isRequest ? input.url : String(input);
-    const headers = await buildAuthHeaders(
-      options2,
-      init?.headers,
-      originalRequest?.headers
-    );
-    if (isRequest) {
-      const request = originalRequest;
-      const body = init?.body ?? (method.toUpperCase() === "GET" || method.toUpperCase() === "HEAD" ? void 0 : request.body ?? void 0);
-      const nextRequest = {
-        method,
-        headers,
-        body
-      };
-      if (body !== void 0) {
-        nextRequest.duplex = "half";
-      }
-      return fetch(
-        new Request(targetUrl, nextRequest)
-      );
-    }
-    return fetch(targetUrl, {
-      ...init,
-      method,
-      headers
-    });
-  };
-}
-function rewriteAgentCard(agentCard, endpoints) {
-  return {
-    ...agentCard,
-    supportedInterfaces: agentCard.supportedInterfaces.map((item) => ({
-      ...item,
-      url: endpoints.rpcUrl
-    }))
-  };
-}
-async function connectClient(options2) {
-  const endpoints = buildEndpointConfig(options2);
-  const fetchImpl = buildFetch(options2, endpoints);
-  const resolver = new DefaultAgentCardResolver({ fetchImpl });
-  const resolvedCard = await resolver.resolve(endpoints.baseUrl, endpoints.cardPath);
-  const agentCard = options2.agentId ? rewriteAgentCard(resolvedCard, endpoints) : resolvedCard;
-  const factoryOptions = ClientFactoryOptions.createFrom(ClientFactoryOptions.default, {
-    transports: [
-      new JsonRpcTransportFactory({ fetchImpl }),
-      new RestTransportFactory({ fetchImpl })
-    ],
-    preferredTransports: [...CLIENT_TRANSPORT_PREFERENCES],
-    clientConfig: {
-      acceptedOutputModes: [...ACCEPTED_OUTPUT_MODES]
-    }
-  });
-  const factory = new ClientFactory(factoryOptions);
-  const client = await factory.createFromAgentCard(agentCard);
-  return {
-    agentCard,
-    client,
-    endpoints
-  };
-}
-function createPushNotificationConfig(receiverUrl) {
-  const parsed = new URL(receiverUrl);
-  return {
-    tenant: "",
-    id: randomUUID(),
-    taskId: "",
-    url: `${parsed.origin}/notify`,
-    token: randomUUID(),
-    authentication: {
-      scheme: "bearer",
-      credentials: ""
-    }
-  };
-}
-function buildMessageParams(parts, contextId, taskId, pushNotificationConfig) {
-  return {
-    tenant: "",
-    message: {
-      messageId: randomUUID(),
-      role: Role.ROLE_USER,
-      taskId: taskId ?? "",
-      contextId: contextId ?? "",
-      parts,
-      metadata: void 0,
-      extensions: [],
-      referenceTaskIds: []
-    },
-    metadata: generateTaskMetadata(),
-    configuration: {
-      acceptedOutputModes: [...ACCEPTED_OUTPUT_MODES],
-      taskPushNotificationConfig: pushNotificationConfig,
-      historyLength: void 0,
-      returnImmediately: false
-    }
-  };
-}
-
 // src/lib/sessionLogger.ts
 var import_pino = __toESM(require_pino(), 1);
-import { randomUUID as randomUUID2 } from "crypto";
+import { randomUUID as randomUUID3 } from "crypto";
 import { mkdirSync as mkdirSync2 } from "fs";
 import path2 from "path";
 var LOG_DIRECTORY_NAME = "chat-session-logs";
@@ -57484,7 +57502,7 @@ function resolveChatSessionLogFilePath({
   env: env3 = process.env,
   homeDirectory,
   now = /* @__PURE__ */ new Date(),
-  chatSessionId = randomUUID2()
+  chatSessionId = randomUUID3()
 }) {
   return path2.join(
     resolveChatSessionLogsDirectory(env3, homeDirectory),
@@ -57579,7 +57597,7 @@ function writeEvent(logger, level, event, data) {
   });
 }
 function createChatSessionLogger(options2) {
-  const chatSessionId = options2.chatSessionId ?? randomUUID2();
+  const chatSessionId = options2.chatSessionId ?? randomUUID3();
   const logFilePath = resolveChatSessionLogFilePath({
     env: options2.env,
     homeDirectory: options2.homeDirectory,
@@ -58600,7 +58618,10 @@ function saveCompletedExchange(snapshot, sessionsDirectory = resolveSessionsDire
       localTurnCount: (existing?.localTurnCount ?? 0) + 1,
       ...snapshot.lastTaskId ? { lastTaskId: snapshot.lastTaskId } : {},
       ...existing?.summary ? { summary: existing.summary } : {},
-      messages: snapshot.messages
+      messages: [...new Map([
+        ...existing?.messages ?? [],
+        ...snapshot.messages
+      ].map((message) => [message.messageId, message])).values()]
     };
     mkdirSync3(path3.dirname(filePath), { recursive: true });
     writeFileSync2(filePath, `${JSON.stringify(nextSession, null, 2)}
@@ -59464,7 +59485,15 @@ function ChatApp({ options: options2 }) {
   const [entries, setEntries] = (0, import_react37.useState)([]);
   const [transcriptGeneration, setTranscriptGeneration] = (0, import_react37.useState)(0);
   const [notifications, setNotifications] = (0, import_react37.useState)([]);
-  const [contextId, setContextId] = (0, import_react37.useState)();
+  const contextIdRef = (0, import_react37.useRef)(void 0);
+  const contextScopeRef = (0, import_react37.useRef)("");
+  const connectedAgentKeyRef = (0, import_react37.useRef)(void 0);
+  const currentThreadScopeRef = (0, import_react37.useRef)("");
+  const welcomeLifetimeRef = (0, import_react37.useRef)(new AbortController());
+  const setCurrentContextId = (value) => {
+    contextIdRef.current = value;
+    contextScopeRef.current = `${selectedEnvironment}:${selectedAgentKey ?? ""}`;
+  };
   const [taskId, setTaskId] = (0, import_react37.useState)();
   const [workingStartedAt, setWorkingStartedAt] = (0, import_react37.useState)();
   const [clientState, setClientState] = (0, import_react37.useState)();
@@ -59491,6 +59520,7 @@ function ChatApp({ options: options2 }) {
     activeEnvironmentSettings.responseMode
   );
   const [reconnectNonce, setReconnectNonce] = (0, import_react37.useState)(0);
+  currentThreadScopeRef.current = `${selectedEnvironment}:${selectedAgentKey ?? ""}`;
   const shownMessageKeysRef = (0, import_react37.useRef)(/* @__PURE__ */ new Set());
   const streamedTaskIdsRef = (0, import_react37.useRef)(/* @__PURE__ */ new Set());
   const streamTranscriptStateRef = (0, import_react37.useRef)(createStreamTranscriptState());
@@ -59501,7 +59531,7 @@ function ChatApp({ options: options2 }) {
     setEntries((current) => [
       ...current,
       {
-        id: randomUUID3(),
+        id: randomUUID4(),
         role,
         body,
         isFinalized: true
@@ -59512,7 +59542,7 @@ function ChatApp({ options: options2 }) {
     appendEntry("system", body);
   };
   const appendNotification = (body) => {
-    const id = randomUUID3();
+    const id = randomUUID4();
     chatSessionLogger.info("system.notification.shown", {
       notificationId: id,
       body
@@ -59558,6 +59588,7 @@ function ChatApp({ options: options2 }) {
     }
   };
   (0, import_react37.useEffect)(() => {
+    welcomeLifetimeRef.current = new AbortController();
     const environmentAtStart = selectedEnvironment;
     chatSessionLogger.info("chat.session.started", {
       mode: "interactive",
@@ -59571,6 +59602,7 @@ function ChatApp({ options: options2 }) {
       appendNotification(chatSessionLoggerResult.warning);
     }
     return () => {
+      welcomeLifetimeRef.current.abort();
       chatSessionLogger.info("chat.session.ended", {
         mode: "interactive",
         environmentId: environmentAtStart
@@ -59624,7 +59656,7 @@ function ChatApp({ options: options2 }) {
     streamedTaskIdsRef.current.clear();
     clearStreamTranscriptState(streamTranscriptStateRef.current);
     lastCopyableResponseRef.current = void 0;
-    setContextId(void 0);
+    setCurrentContextId(void 0);
     setTaskId(void 0);
     setStreamLabel("Idle");
     setWorkingStartedAt(void 0);
@@ -59828,7 +59860,8 @@ function ChatApp({ options: options2 }) {
         setSelectedAgentKey(void 0);
         setSelectedAgentId(void 0);
         setClientState(void 0);
-        setContextId(void 0);
+        connectedAgentKeyRef.current = void 0;
+        setCurrentContextId(void 0);
         setTaskId(void 0);
         setStreamLabel("Idle");
         persistEnvironmentSettings(selectedEnvironment, {
@@ -59909,8 +59942,10 @@ ${JSON.stringify(
           setPushLabel(server.callbackUrl);
         }
         setClientState(void 0);
-        setContextId(
-          activeEnvironmentSettings.agents[selectedAgent.agentKey]?.activeContextId
+        connectedAgentKeyRef.current = void 0;
+        const scope = `${selectedEnvironment}:${selectedAgent.agentKey}`;
+        setCurrentContextId(
+          contextScopeRef.current === scope && contextIdRef.current ? contextIdRef.current : activeEnvironmentSettings.agents[selectedAgent.agentKey]?.activeContextId
         );
         setTaskId(void 0);
         const useCliEndpointAuth = isTransientAgentSource(selectedAgent.source);
@@ -59930,6 +59965,7 @@ ${JSON.stringify(
           return;
         }
         setClientState(connected);
+        connectedAgentKeyRef.current = selectedAgent.agentKey;
         const connectionNoticeKey = `${selectedAgent.agentKey}:${connected.agentCard.name}:${connected.endpoints.rpcUrl}`;
         if (lastConnectionNoticeRef.current !== connectionNoticeKey) {
           lastConnectionNoticeRef.current = connectionNoticeKey;
@@ -60043,7 +60079,7 @@ ${JSON.stringify(
   };
   const handleMessage = (message, protocolPayload = message) => {
     if (message.contextId) {
-      setContextId(message.contextId);
+      setCurrentContextId(message.contextId);
     }
     setTaskId(void 0);
     if (responseMode === "a2a-protocol") {
@@ -60053,7 +60089,7 @@ ${JSON.stringify(
     return replaceLastResponseStreamSection(message) || renderAgentResponseBubble(message);
   };
   const handleTaskSnapshot = (task, protocolPayload = task) => {
-    setContextId(task.contextId);
+    setCurrentContextId(task.contextId);
     const isTerminalTask = isTerminalTaskState(task.status?.state);
     setTaskId(isTaskContinuationState(task.status?.state) ? task.id : void 0);
     if (responseMode === "a2a-protocol") {
@@ -60072,7 +60108,7 @@ ${JSON.stringify(
     return renderedAgentOutput;
   };
   const handleStatusUpdate = (event, protocolPayload = event) => {
-    setContextId(event.contextId);
+    setCurrentContextId(event.contextId);
     setTaskId(isTaskContinuationState(event.status?.state) ? event.taskId : void 0);
     setStreamLabel(taskStateLabel(event.status?.state));
     if (responseMode === "a2a-protocol") {
@@ -60101,7 +60137,7 @@ ${JSON.stringify(
     return renderedAgentOutput;
   };
   const handleArtifactUpdate = (event, protocolPayload = event) => {
-    setContextId(event.contextId);
+    setCurrentContextId(event.contextId);
     setTaskId(void 0);
     const artifact = event.artifact;
     if (!artifact) {
@@ -60375,17 +60411,53 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
     reloadEnvironmentState(environmentId);
     appendSystem(`Aion environment set to ${environmentId}.`);
   };
+  const activateNewContext = (nextContextId) => {
+    setCurrentContextId(nextContextId);
+    const key = selectedAgent?.agentKey ?? selectedAgentKey;
+    const existing = key ? activeEnvironmentSettings.agents[key] : void 0;
+    if (key && existing) {
+      persistEnvironmentSettings(selectedEnvironment, {
+        agents: {
+          ...activeEnvironmentSettings.agents,
+          [key]: { ...existing, activeContextId: nextContextId }
+        }
+      });
+    }
+  };
   const runClearSlashCommand = () => {
     const selectedContextAgentKey = selectedAgent?.agentKey ?? selectedAgentKey;
     clearTranscript();
     if (selectedContextAgentKey) {
-      persistSettings(
-        clearAgentActiveContext(
-          chatSettings,
-          selectedEnvironment,
-          selectedContextAgentKey
-        )
-      );
+      const scope = `${selectedEnvironment}:${selectedContextAgentKey}`;
+      createChatThread({
+        signal: welcomeLifetimeRef.current.signal,
+        connected: connectedAgentKeyRef.current === selectedContextAgentKey ? clientState : void 0,
+        onCreated: activateNewContext,
+        onWelcome: (request, response) => {
+          const originalContext = request.message.contextId;
+          const messages = isMessage(response) ? [request.message, response] : [request.message, ...getTaskMessages(response)];
+          const warning = saveCompletedExchange({
+            environment: selectedEnvironment,
+            agentKey: selectedContextAgentKey,
+            contextId: originalContext,
+            chatSessionId: chatSessionLogger.chatSessionId,
+            chatSessionLogPath: chatSessionLogger.logFilePath,
+            messages
+          });
+          if (warning) chatSessionLogger.warn("chat.welcome.save_failed", { warning });
+          if (currentThreadScopeRef.current !== scope || contextIdRef.current !== originalContext) return;
+          if (responseMode === "a2a-protocol") appendProtocol(response);
+          else for (const message of messages) {
+            renderAgentResponseBubble(message, isMessage(response) ? void 0 : response.id);
+          }
+        },
+        onError: (error, originalContext) => {
+          chatSessionLogger.warn("chat.welcome.failed", { contextId: originalContext, error });
+          if (currentThreadScopeRef.current === scope && contextIdRef.current === originalContext) {
+            appendSystem(`Welcome failed: ${error instanceof Error ? error.message : String(error)}`);
+          }
+        }
+      });
     }
     setReconnectNonce((current) => current + 1);
     const terminalClearRequested = requestTerminalClear({
@@ -60499,13 +60571,15 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
     setEntries((current) => [
       ...current,
       {
-        id: randomUUID3(),
+        id: randomUUID4(),
         role: "user",
         body: displayBody,
         isFinalized: true
       }
     ]);
-    const params = buildMessageParams(parts, contextId, taskId, pushConfig);
+    const requestContextId = contextIdRef.current ?? randomUUID4();
+    if (!contextIdRef.current) activateNewContext(requestContextId);
+    const params = buildMessageParams(parts, requestContextId, taskId, pushConfig);
     const outboundMessage = params.message;
     if (!outboundMessage) {
       appendStatus("Unable to build outbound A2A message.");

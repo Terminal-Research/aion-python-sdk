@@ -92,7 +92,9 @@ export function saveCompletedExchange(
 			localTurnCount: (existing?.localTurnCount ?? 0) + 1,
 			...(snapshot.lastTaskId ? { lastTaskId: snapshot.lastTaskId } : {}),
 			...(existing?.summary ? { summary: existing.summary } : {}),
-			messages: snapshot.messages
+			messages: [...new Map([
+				...(existing?.messages ?? []), ...snapshot.messages
+			].map((message) => [message.messageId, message])).values()]
 		};
 		mkdirSync(path.dirname(filePath), { recursive: true });
 		writeFileSync(filePath, `${JSON.stringify(nextSession, null, 2)}\n`, "utf8");
