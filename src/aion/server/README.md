@@ -86,10 +86,11 @@ source either: the JSON-RPC dispatcher copies it from the request's own
 `tenant` field, which the client chooses, and the default resolver ignores it.
 There is no `/docs` or `/redoc` in either mode.
 
-A verified caller is authenticated, so Aion's `GetContexts` and `GetContext`,
-and finding an interrupted task through its `contextId`, are open to it - for
-its own tasks. They stay closed to the anonymous caller of local mode: its
-interrupted task is continued by its `taskId`.
+Aion's `GetContexts` and `GetContext`, and finding an interrupted task through
+its `contextId`, go through the same owner filter as everything else: a
+caller sees its own contexts and continues its own interrupted task, in
+either mode. Only a call without a `ServerCallContext` - from Python code
+that holds the handler - reads no history at all.
 
 ### What is isolated
 

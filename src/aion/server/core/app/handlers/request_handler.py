@@ -212,7 +212,7 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         Returns:
             Conversation object with context data
         """
-        if context is None or not context.user.is_authenticated:
+        if context is None:
             return ConversationBuilder.build_from_tasks(
                 context_id=params.context_id,
                 tasks=[],
@@ -241,7 +241,7 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         Returns:
             List of available context IDs
         """
-        if context is None or not context.user.is_authenticated:
+        if context is None:
             return ContextsList.model_validate([])
 
         context_ids = await self.task_store.get_context_ids(
