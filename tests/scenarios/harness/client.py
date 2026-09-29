@@ -10,9 +10,6 @@ import httpx
 from a2a.client import Client, ClientCallContext, ClientConfig, ClientFactory
 from a2a.client.card_resolver import parse_agent_card
 from a2a.client.service_parameters import ServiceParametersFactory, with_a2a_extensions
-from a2a.compat.v0_3 import conversions
-from a2a.compat.v0_3 import types as types_v03
-from a2a.compat.v0_3.jsonrpc_transport import CompatJsonRpcTransport
 from a2a.types.a2a_pb2 import (
     AgentCard,
     AuthenticationInfo,
@@ -30,7 +27,6 @@ from a2a.types.a2a_pb2 import (
 )
 from google.protobuf.json_format import ParseDict
 from google.protobuf.struct_pb2 import Struct, Value
-from jsonrpc.jsonrpc2 import JSONRPC20Request, JSONRPC20Response
 
 from .recorder import Ev, record_stream
 
@@ -139,30 +135,6 @@ def _pin_card_to(card: AgentCard, url: str) -> AgentCard:
     for interface in pinned.supported_interfaces:
         interface.url = url
     return pinned
-
-
-class _TaskReaderV03(CompatJsonRpcTransport):
-    """a2a-sdk's v0.3 JSON-RPC transport, reading a task as the caller its metadata names.
-
-    The transport's own ``get_task`` takes A2A v1's ``GetTaskRequest``, which
-    has no metadata field, so it cannot say who reads. This sends the same
-    ``tasks/get`` with ``TaskQueryParams.metadata`` set and otherwise goes the
-    transport's way: its request conversion, its HTTP request and version
-    header, its error mapping, and its conversion back to a v1 ``Task``.
-    """
-
-    async def get_task_as(self, request: GetTaskRequest, metadata: Mapping[str, Any]) -> Task:
-        compat = conversions.to_compat_get_task_request(request, request_id=0)
-        params = compat.params.model_copy(update={"metadata": dict(metadata)})
-        rpc_request = JSONRPC20Request(
-            method="tasks/get",
-            params=params.model_dump(by_alias=True, exclude_none=True, mode="json"),
-            _id=str(uuid.uuid4()),
-        )
-        response = JSONRPC20Response(**await self._send_request(dict(rpc_request.data)))
-        if response.error:
-            raise self._create_jsonrpc_error(response.error)
-        return conversions.to_core_task(types_v03.Task.model_validate(response.result))
 
 
 class ScenarioClient:
@@ -304,26 +276,6 @@ class ScenarioClient:
         if history_length is not None:
             request.history_length = history_length
         return await self._client(True).get_task(request)
-
-    async def get_task_v03(
-        self,
-        task_id: str,
-        *,
-        metadata: Mapping[str, Any],
-        history_length: Optional[int] = None,
-    ) -> Task:
-        """Read a task back over A2A v0.3's ``tasks/get``, as the caller ``metadata`` names.
-
-        A2A v1's ``GetTask`` has no metadata field, so it always reads as the
-        anonymous caller. A task a distribution sent is that distribution's,
-        and is read back this way; the answer is the v1 ``Task`` every other
-        read returns.
-        """
-        request = GetTaskRequest(id=task_id)
-        if history_length is not None:
-            request.history_length = history_length
-        reader = _TaskReaderV03(httpx_client=self._http, agent_card=self.card, url=self.agent_url)
-        return await reader.get_task_as(request, metadata)
 
     async def tasks_in_context(self, context_id: str) -> list[Task]:
         """Every task the server holds under one context.

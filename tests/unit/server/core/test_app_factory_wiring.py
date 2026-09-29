@@ -1,4 +1,4 @@
-"""How ``AppFactory`` wires the request path: the task store, push configs and middlewares.
+"""How ``AppFactory`` wires the request path: the task store, push configs, token verification and middlewares.
 
 What building the request handler would construct around them is replaced
 with inert stand-ins, so each test sees only the call or the order it asserts.
@@ -12,8 +12,8 @@ from fastapi import FastAPI
 import aion.server.core.app.factory as factory_module
 from aion.server.core.app.factory import AppFactory
 from aion.server.core.middlewares import (
+    AionAuthMiddleware,
     AionContextMiddleware,
-    CallerIdentityMiddleware,
     TracingMiddleware,
 )
 
@@ -105,15 +105,18 @@ async def test_push_configs_resolve_owners_like_the_tasks(create_push) -> None:
     )
 
 
-def test_the_caller_is_named_before_anything_reads_the_request(create_push) -> None:
-    """Outermost first: the caller, then the execution scope, then the span that reads it."""
+@pytest.mark.parametrize("verifier", [Mock(), None], ids=["platform", "local-mode"])
+def test_the_caller_is_named_before_anything_reads_the_request(create_push, verifier) -> None:
+    """Outermost first, in both modes: the caller, then the execution scope, then the span that reads it."""
     factory, _, _ = _factory()
     factory.fastapi_app = FastAPI()
+    factory.token_verifier = verifier
 
     factory._add_extra_middlewares()
 
     assert [entry.cls for entry in factory.fastapi_app.user_middleware] == [
-        CallerIdentityMiddleware,
+        AionAuthMiddleware,
         AionContextMiddleware,
         TracingMiddleware,
     ]
+    assert factory.fastapi_app.user_middleware[0].kwargs == {"verifier": verifier}

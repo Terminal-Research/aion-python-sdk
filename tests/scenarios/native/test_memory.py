@@ -51,19 +51,16 @@ def _through(distribution_id: str) -> dict[str, Any]:
     }
 
 
-async def test_memory_is_per_distribution(client: ScenarioClient) -> None:
-    """Two channels of one agent on one context are two conversations.
+async def test_a_distribution_does_not_split_the_conversation(client: ScenarioClient) -> None:
+    """The distribution a request came through is its channel, not its owner.
 
-    The checkpoint and the session belong to the distribution a request came
-    through; a request without one is the anonymous caller's.
+    One caller through two channels on one context is one conversation: the
+    checkpoint and the session belong to the caller. Separate callers are
+    covered where tokens name them (the integration isolation tests); the
+    scenarios run in local mode, where every request is the anonymous caller's.
     """
     first = final_task(await client.send("say hello", **_through("distribution-a")))
-    context_id = first.context_id
 
-    others = await client.send("recall", context_id=context_id, **_through("distribution-b"))
-    nobodys = await client.send("recall", context_id=context_id)
-    own = await client.send("recall", context_id=context_id, **_through("distribution-a"))
+    events = await client.send("recall", context_id=first.context_id, **_through("distribution-b"))
 
-    assert reply_texts(others) == [RECALL_PREFIX]
-    assert reply_texts(nobodys) == [RECALL_PREFIX]
-    assert reply_texts(own) == [RECALL_PREFIX + "say hello"]
+    assert reply_texts(events) == [RECALL_PREFIX + "say hello"]

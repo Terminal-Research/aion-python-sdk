@@ -41,11 +41,8 @@ class AionContextMiddleware(BaseHTTPMiddleware):
     metadata from the request to set up the request context for logging
     and tracing purposes.
 
-    Reads the request as ``prepare_rpc_request`` prepared it. Behind
-    ``CallerIdentityMiddleware`` that is the preparation the identity
-    middleware already made; on its own this middleware prepares the request
-    itself, the same way, and refuses a malformed distribution payload the
-    same way.
+    Reads the request as ``prepare_rpc_request`` prepares it, and refuses a
+    malformed distribution payload as an invalid request.
     """
 
     async def dispatch(self, request: Request, call_next) -> Response:
