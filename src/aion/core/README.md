@@ -44,3 +44,15 @@ distributions; attachment ownership remains a control-plane, Behavior-only rule.
 poetry install -E langgraph-server -E adk-server --with dev
 make tests-unit TEST_PATHS="tests/unit/core"
 ```
+
+
+### Welcome message requests
+
+An agent may opt into
+`https://docs.aion.to/a2a/extensions/aion/welcome-message/1.0.0` through
+`enabled_extensions` in `aion.yaml`. The runtime validates its schema-tagged
+`WelcomeRequestPayload` and exposes it through `context.extensions.get(uri)`.
+Actual user text takes precedence over welcome intent. The implementation
+chooses the greeting and completes through its existing task API; the SDK
+adds no greeting generator. Mark each intentional greeting with the URI in
+that response message's `extensions`; acknowledgment headers do not add it.

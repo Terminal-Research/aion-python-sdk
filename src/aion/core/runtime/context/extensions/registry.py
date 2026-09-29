@@ -23,6 +23,7 @@ from aion.core.constants.a2a import (
     AION_USAGE_ATTRIBUTION_HEADER,
     CARDS_EXTENSION_URI_V1,
     CRON_EXTENSION_URI_V1,
+    WELCOME_MESSAGE_EXTENSION_URI_V1,
     DAEMON_EXTENSION_URI_V1,
     DISTRIBUTION_EXTENSION_URI_V1,
     EVENT_EXTENSION_URI_V1,
@@ -40,6 +41,7 @@ from .descriptors import (
     HeaderCollector,
     MessagesCollector,
     TaskMetadataCollector,
+    WelcomeMessageCollector,
 )
 
 __all__ = [
@@ -336,6 +338,17 @@ aion_a2a_extension_registry.register(
             EvolutionVerdictEventPayload,
         ),
         description="Self-improvement flow: daemon-driven directive/verdict/result routing.",
+        active=False,
+    )
+)
+
+
+# Enabling this declaration is the agent implementer's commitment to handle it.
+aion_a2a_extension_registry.register(
+    ExtensionDescriptor(
+        uri=WELCOME_MESSAGE_EXTENSION_URI_V1,
+        collector=WelcomeMessageCollector(),
+        description="Generate an opening message for a new conversation.",
         active=False,
     )
 )

@@ -6,6 +6,8 @@ See: https://docs.aion.to/a2a/extensions
 
 __all__ = [
     "CRON_EXTENSION_URI_V1",
+    "WELCOME_MESSAGE_EXTENSION_URI_V1",
+    "WELCOME_REQUEST_PAYLOAD_SCHEMA_V1",
     # Distribution extension
     "DISTRIBUTION_EXTENSION_URI_V1",
     # Cards extension
@@ -124,3 +126,11 @@ DAEMON_EXTENSION_URI_V1 = "https://docs.aion.to/a2a/extensions/aion/daemon/1.0.0
 # See: https://docs.aion.to/a2a/extensions/aion/context
 GET_CONTEXT_EXTENSION_URI_V1 = "https://docs.aion.to/a2a/extensions/aion/context/get-context/1.0.0"
 GET_CONTEXTS_LIST_EXTENSION_URI_V1 = "https://docs.aion.to/a2a/extensions/aion/context/get-contexts/1.0.0"
+
+# Optional agent-generated opening message; Voice keeps its configured greeting.
+WELCOME_MESSAGE_EXTENSION_URI_V1 = (
+    "https://docs.aion.to/a2a/extensions/aion/welcome-message/1.0.0"
+)
+WELCOME_REQUEST_PAYLOAD_SCHEMA_V1 = (
+    f"{WELCOME_MESSAGE_EXTENSION_URI_V1}#WelcomeRequestPayload"
+)

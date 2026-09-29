@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from a2a.server.context import ServerCallContext
 from a2a.types import Message, Role, Task, TaskStatusUpdateEvent
 
+from aion.core.constants.a2a import WELCOME_MESSAGE_EXTENSION_URI_V1
+
 
 @dataclass(frozen=True)
 class ResponseServiceParameters:
@@ -35,7 +37,12 @@ class ResponseServiceParameters:
             A protobuf copy when annotation applies; otherwise the original event.
             Historical and user messages keep their original extension declarations.
         """
-        if not self.activated_extensions or not isinstance(
+        # The agent must mark intentional welcome messages itself.
+        inherited = tuple(
+            uri for uri in self.activated_extensions
+            if uri != WELCOME_MESSAGE_EXTENSION_URI_V1
+        )
+        if not inherited or not isinstance(
             event, (Message, Task, TaskStatusUpdateEvent)
         ):
             return event
@@ -52,7 +59,7 @@ class ResponseServiceParameters:
         for message in messages:
             if message.role != Role.ROLE_AGENT or message.message_id in prior_message_ids:
                 continue
-            extensions = dict.fromkeys((*message.extensions, *self.activated_extensions))
+            extensions = dict.fromkeys((*message.extensions, *inherited))
             del message.extensions[:]
             message.extensions.extend(extensions)
         return result

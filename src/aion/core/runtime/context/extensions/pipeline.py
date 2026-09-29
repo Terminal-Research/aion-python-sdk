@@ -3,6 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Iterable, Optional
 
+from aion.core.a2a.extensions.welcome_message import has_user_text
+from aion.core.constants.a2a import WELCOME_MESSAGE_EXTENSION_URI_V1
+
 from .descriptors import ExtensionActivationError, ExtensionDescriptor
 
 if TYPE_CHECKING:
@@ -36,7 +39,14 @@ def _collect(request_context: "RequestContext") -> frozenset[str]:
     message_uris = frozenset(message.extensions or ()) if message is not None else frozenset()
     metadata = dict(request_context.metadata) if request_context.metadata else {}
     requested = frozenset(request_context.requested_extensions or ())
-    return requested | message_uris | frozenset(metadata.keys())
+    active = requested | message_uris | frozenset(metadata.keys())
+    # Welcome requires explicit intent, and actual user text always wins.
+    if (
+        WELCOME_MESSAGE_EXTENSION_URI_V1 not in requested | message_uris
+        or has_user_text(message)
+    ):
+        active = active - {WELCOME_MESSAGE_EXTENSION_URI_V1}
+    return active
 
 
 def _verify(

@@ -110,3 +110,15 @@ def test_read_does_not_acknowledge_historical_extensions():
         'result': {'history': [{'extensions': [CRON_EXTENSION_URI_V1]}]}
     })
     assert 'A2A-Extensions' not in response.headers
+
+
+def test_welcome_requires_message_owned_activation():
+    """An acknowledgment cannot turn incidental output into a welcome."""
+    from a2a.types import Message, Role
+    from aion.core.constants.a2a import WELCOME_MESSAGE_EXTENSION_URI_V1 as uri
+
+    head = ResponseServiceParameters((uri,))
+    message = Message(role=Role.ROLE_AGENT, message_id="welcome-response")
+    assert not head.annotate(message, frozenset()).extensions
+    message.extensions.append(uri)
+    assert list(head.annotate(message, frozenset()).extensions) == [uri]

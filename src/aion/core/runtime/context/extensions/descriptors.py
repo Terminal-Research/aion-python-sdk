@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING, Any, Optional, Protocol, Type
 from pydantic import ValidationError
 
 from aion.core.a2a import A2ABaseModel
+from aion.core.a2a.extensions.welcome_message import WelcomeRequestPayload
+from aion.core.constants.a2a import WELCOME_REQUEST_PAYLOAD_SCHEMA_V1
 from aion.core.a2a.extensions.event import EventMessageMetadataV1, EventPartMetadataV1
 from aion.core.a2a.extensions.messaging import SourceSystemEventPayload
 from aion.core.constants.a2a import EVENT_EXTENSION_URI_V1, SOURCE_SYSTEM_EVENT_PAYLOAD_SCHEMA_V1
@@ -23,6 +25,7 @@ __all__ = [
     "MarkerCollector",
     "HeaderCollector",
     "TaskMetadataCollector",
+    "WelcomeMessageCollector",
     "MessagesCollector",
     "ExtensionDescriptor",
 ]
@@ -182,6 +185,43 @@ class TaskMetadataCollector:
             raise ExtensionActivationError(uri, reason=_format_validation_error(ex)) from ex
         except Exception as ex:
             raise ExtensionActivationError(uri, reason=str(ex)) from ex
+
+
+class WelcomeMessageCollector:
+    """Verify the single welcome-owned data part after explicit activation.
+
+    Unrelated distribution parts remain available through existing collectors.
+    Ownership metadata and its schema must be present; a bare data type is
+    insufficient to identify the extension's payload.
+    """
+
+    def collect(self, uri: str, request_context: "RequestContext") -> WelcomeRequestPayload:
+        """Return typed intent or reject malformed payload before execution.
+
+        Args:
+            uri: Canonical welcome URI selected by the descriptor.
+            request_context: Inbound message and invocation context.
+
+        Returns:
+            The validated welcome request payload for the agent implementer.
+
+        Raises:
+            ExtensionActivationError: Missing, duplicate, or malformed owned part.
+        """
+        message = request_context.message
+        parts = [part for part in message.parts if uri in part.metadata] if message else []
+        if len(parts) != 1 or not parts[0].HasField("data"):
+            raise ExtensionActivationError(
+                uri, reason="Welcome request requires one schema-tagged welcome data part."
+            )
+        part = parts[0]
+        try:
+            metadata = proto_to_dict(part.metadata[uri])
+            if not isinstance(metadata, dict) or metadata.get("schema") != WELCOME_REQUEST_PAYLOAD_SCHEMA_V1:
+                raise ExtensionActivationError(uri, reason="Invalid welcome request schema.")
+            return WelcomeRequestPayload.model_validate(proto_to_dict(part.data))
+        except (ValidationError, TypeError, ValueError, AttributeError) as error:
+            raise ExtensionActivationError(uri, reason="Invalid welcome request payload.") from error
 
 
 class MessagesCollector:
