@@ -93,6 +93,7 @@ a public endpoint that needs no credentials (`JwksKeySource`):
   one every 30 seconds. If the key is still missing the token is refused.
 - A failed refresh keeps the old set and logs a warning. Keys are never
   dropped by age.
+- After a failure the refresh is retried at most once every 30 seconds.
 
 The startup log says whether the server is hosted on the Aion platform.
 

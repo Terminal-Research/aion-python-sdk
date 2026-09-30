@@ -15,14 +15,14 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "JwksKeySource",
     "REFRESH_AFTER_SECONDS",
-    "UNKNOWN_KID_REFETCH_INTERVAL_SECONDS",
+    "REFETCH_INTERVAL_SECONDS",
 ]
 
 REFRESH_AFTER_SECONDS = 600
 """Age after which a key set is refreshed in the background; the control plane rotates keys slowly."""
 
-UNKNOWN_KID_REFETCH_INTERVAL_SECONDS = 30
-"""Least time between fetches an unknown ``kid`` may cause, so a stream of forged ``kid`` values cannot hammer the control plane."""
+REFETCH_INTERVAL_SECONDS = 30
+"""Least time between fetches a request may cause - for an unknown ``kid`` or a stale set - so forged ``kid`` values or a control plane that keeps failing cannot turn every request into a fetch and a warning."""
 
 _FETCH_TIMEOUT_SECONDS = 10.0
 
@@ -39,7 +39,9 @@ class JwksKeySource:
     ``REFRESH_AFTER_SECONDS`` is refreshed in the background while the current
     request is still verified with what is held. A ``kid`` the set does not
     contain triggers an immediate fetch - the control plane may have rotated
-    keys - but at most one per ``UNKNOWN_KID_REFETCH_INTERVAL_SECONDS``. Fetches
+    keys. Either way, requests cause at most one fetch per
+    ``REFETCH_INTERVAL_SECONDS``, so a failing refresh is retried, and
+    warned about, no more often than that. Fetches
     are single-flight: concurrent callers share one request.
     """
 
@@ -67,7 +69,7 @@ class JwksKeySource:
         """The key published under ``kid``, or ``None`` when there is none."""
         key = self._keys.get(kid)
         if key is not None:
-            if self._is_stale():
+            if self._is_stale() and self._inflight is None and self._may_refetch():
                 self._start_refresh()
             return key
         if self._inflight is not None or self._may_refetch():
@@ -87,7 +89,7 @@ class JwksKeySource:
     def _may_refetch(self) -> bool:
         return (
             self._last_attempt_at is None
-            or self._clock() - self._last_attempt_at >= UNKNOWN_KID_REFETCH_INTERVAL_SECONDS
+            or self._clock() - self._last_attempt_at >= REFETCH_INTERVAL_SECONDS
         )
 
     def _start_refresh(self) -> asyncio.Task[None]:

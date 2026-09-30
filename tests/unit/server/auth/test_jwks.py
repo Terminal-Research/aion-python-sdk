@@ -6,7 +6,7 @@ import logging
 import pytest
 from cryptography.hazmat.primitives.asymmetric import ec
 
-from aion.server.auth.jwks import REFRESH_AFTER_SECONDS, UNKNOWN_KID_REFETCH_INTERVAL_SECONDS
+from aion.server.auth.jwks import REFRESH_AFTER_SECONDS, REFETCH_INTERVAL_SECONDS
 from tests.unit.support.tokens import (
     SESSION_KEY,
     SESSION_KID,
@@ -42,7 +42,7 @@ async def test_a_failed_first_load_does_not_stop_the_server_and_refuses_tokens(c
         await source.load()
 
     assert "Could not fetch the Aion verification keys" in caplog.text
-    clock.advance(UNKNOWN_KID_REFETCH_INTERVAL_SECONDS)
+    clock.advance(REFETCH_INTERVAL_SECONDS)
     control_plane.failing = True
     assert await source.key_for(SESSION_KID) is None
 
@@ -54,7 +54,7 @@ async def test_keys_load_later_once_the_control_plane_answers() -> None:
     await source.load()
 
     control_plane.failing = False
-    clock.advance(UNKNOWN_KID_REFETCH_INTERVAL_SECONDS)
+    clock.advance(REFETCH_INTERVAL_SECONDS)
 
     assert await source.key_for(SESSION_KID) is not None
 
@@ -107,7 +107,7 @@ async def test_an_unknown_kid_fetches_at_once_and_finds_a_rotated_key() -> None:
     await source.load()
     control_plane.document = jwks_document(**{"new": ROTATED_KEY.public_key()})
 
-    clock.advance(UNKNOWN_KID_REFETCH_INTERVAL_SECONDS)
+    clock.advance(REFETCH_INTERVAL_SECONDS)
 
     assert await source.key_for("new") is not None
     assert control_plane.requests == 2
@@ -118,7 +118,7 @@ async def test_an_unknown_kid_fetches_at_most_once_in_thirty_seconds() -> None:
     source = _source(control_plane, clock)
     await source.load()
 
-    clock.advance(UNKNOWN_KID_REFETCH_INTERVAL_SECONDS - 1)
+    clock.advance(REFETCH_INTERVAL_SECONDS - 1)
     assert await source.key_for("forged-1") is None
     assert await source.key_for("forged-2") is None
     assert control_plane.requests == 1
@@ -165,7 +165,7 @@ async def test_a_document_without_usable_keys_keeps_the_old_set() -> None:
     await source.load()
     control_plane.document = {"keys": []}
 
-    clock.advance(UNKNOWN_KID_REFETCH_INTERVAL_SECONDS)
+    clock.advance(REFETCH_INTERVAL_SECONDS)
     assert await source.key_for("other") is None
 
     assert await source.key_for(SESSION_KID) is not None
@@ -179,3 +179,35 @@ async def test_a_malformed_document_is_a_failed_fetch(document) -> None:
     await source.load()
 
     assert await source.key_for(SESSION_KID) is None
+
+
+async def test_a_failing_background_refresh_is_retried_at_most_once_in_thirty_seconds(caplog) -> None:
+    control_plane, clock = ControlPlane(), Clock()
+    source = _source(control_plane, clock)
+    await source.load()
+    loaded_at = source._fetched_at
+    control_plane.failing = True
+    clock.advance(REFRESH_AFTER_SECONDS + 100)
+
+    async def requests(count: int) -> None:
+        for _ in range(count):
+            assert await source.key_for(SESSION_KID) is not None
+            clock.advance(0.1)
+            await asyncio.sleep(0)
+        await asyncio.sleep(0)
+
+    with caplog.at_level(logging.WARNING):
+        await requests(50)
+    assert control_plane.requests == 2
+    assert caplog.text.count("Could not fetch") == 1
+
+    clock.advance(REFETCH_INTERVAL_SECONDS)
+    await requests(50)
+    assert control_plane.requests == 3
+
+    control_plane.failing = False
+    clock.advance(REFETCH_INTERVAL_SECONDS)
+    await requests(1)
+    assert control_plane.requests == 4
+    assert source._fetched_at > loaded_at
+    assert not source._is_stale()
