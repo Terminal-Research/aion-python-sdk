@@ -57,7 +57,7 @@ async def test_a_distribution_does_not_split_the_conversation(client: ScenarioCl
     One caller through two channels on one context is one conversation: the
     checkpoint and the session belong to the caller. Separate callers are
     covered where tokens name them (the integration isolation tests); the
-    scenarios run in local mode, where every request is the anonymous caller's.
+    scenarios' client is one anonymous session throughout.
     """
     first = final_task(await client.send("say hello", **_through("distribution-a")))
 

@@ -39,57 +39,71 @@ A custom resolver is passed to the agent:
 
 ### Where the user comes from
 
-The server runs in one of two modes, and `AION_CLIENT_ID` and
-`AION_CLIENT_SECRET` decide which. The rule lives in `aion.server.auth`:
-`authentication_required()` says which mode this is, and
-`build_token_verifier()` returns the platform's verifier or `None`.
-`AppFactory` hands that to `AionAuthMiddleware`, which it installs in both
-modes, outside the server's other middlewares; the agent card and
-`aion serve` ask the same functions.
+Every request to an agent's server carries a bearer token,
+`Authorization: Bearer <JWT>` - the JSON-RPC endpoint, the OpenAPI schema and
+any route an application adds through `AppRegistry` alike. Only the public
+paths are open without one: the agent card, health and the configuration
+schema, which a client or a probe reads before it has a token. The agent card
+declares the bearer scheme in its `securitySchemes`; the token is issued by the
+Aion control plane. A request without a token, or with one that does not
+verify, is answered `401` before its body is read, and the agent never runs.
 
-**With the credentials, authentication is required.** Every request to an
-agent's server carries a bearer token, `Authorization: Bearer <JWT>` - the
-JSON-RPC endpoint, the OpenAPI schema and any route an application adds
-through `AppRegistry` alike. Only the public paths are open without one: the
-agent card, health and the configuration schema, which a client or a probe
-reads before it has a token. The agent card describes the token in its
-`securitySchemes`. `AionAuthMiddleware` verifies the token with a
-`TokenVerifier` and installs the caller the way Starlette's authentication
-does: an `AuthenticatedCaller` as `request.scope["user"]` and `authenticated`
-credentials as `request.scope["auth"]`. a2a-sdk's
+`AppFactory` builds a `TokenVerifier` (`aion.server.auth.build_token_verifier`)
+and hands it to `AionAuthMiddleware`, which it installs outside the server's
+other middlewares. The middleware installs the caller the way Starlette's
+authentication does: an `AuthenticatedCaller` as `request.scope["user"]` and
+`authenticated` credentials as `request.scope["auth"]`. a2a-sdk's
 `DefaultServerCallContextBuilder` makes them `ServerCallContext.user` and
 `state["auth"]`, and `resolve_user_scope` makes the token's `sub` the owner.
-The token's other claims stay on the caller (`AuthenticatedCaller.claims`) for
-the agent's own logic. The distribution a request came through is its channel,
-not its owner.
+The token's other claims, `subject_type` among them, stay on the caller
+(`AuthenticatedCaller.claims`) for the agent's own logic. The distribution a
+request came through is its channel, not its owner. Whatever user and
+credentials a middleware in front of `AionAuthMiddleware` set are replaced.
 
-The token is ES256, signed with the platform's key for this deployment. The
-deployment gets its own token with `AION_CLIENT_ID` and `AION_CLIENT_SECRET` at
-startup and then asks the control plane for the key; every client id has a key
-of its own. The request for the key is a stub for now
-(`PlatformKeySource._fetch_key`), so requests the platform signs are refused.
-A token has to be current (`exp`, and `nbf` when it has one) and name its
-caller in `sub`; `aud` is not checked. A request without a token, or with one
-that does not verify, is answered `401` before its body is read, and the agent
-never runs. Whatever user and credentials a middleware in front of
-`AionAuthMiddleware` set are replaced.
+Both kinds of token are signed JWTs (JWS). The verifier reads the token's
+unverified `aud` only to choose the key, then verifies the whole token with it,
+`aud` included. An `aud` that names neither kind is refused.
 
-**Without the credentials, the server runs in local mode.** Nothing checks a
-token, `aion serve` warns that authentication is disabled, and the card asks
-for no token. `AionAuthMiddleware` lets every request through as the
-unauthenticated anonymous caller, owner `""` - unless a middleware in front of
-it already named somebody - so all of them share one set of tasks and
-framework state: one developer's machine, not a deployment to expose.
+| | Call token | Anonymous session token |
+| --- | --- | --- |
+| `aud` | this server's `AION_CLIENT_ID` | `aion-anonymous-session` |
+| Key | the platform's key for this deployment | the control plane's published keys, by the token's `kid` |
+| Algorithm | ES256 | the key's own: ES256, ES384, ES512, RS256, PS256 or EdDSA |
+| Required claims | `aud`, `exp`, `sub` | `iss` = `aion`, `aud`, `subject_type` = `AnonymousSession`, `exp`, `sub` |
+| Server deployed by the Aion platform | accepted | refused |
+| Any other server | accepted with `AION_CLIENT_ID` and `AION_CLIENT_SECRET` set, refused without | accepted |
 
-Other headers name nobody in either mode. `ServerCallContext.tenant` is not a
-source either: the JSON-RPC dispatcher copies it from the request's own
-`tenant` field, which the client chooses, and the default resolver ignores it.
-There is no `/docs` or `/redoc` in either mode.
+A token also has to be current (`exp`, and `nbf` when it has one). A kind a
+server does not accept in its situation is refused without any cryptography,
+and the reason in the `401` never quotes the token. A call token may carry
+`subject_type` = `AnonymousSession`; nothing restricts it.
+
+The call token's key comes from the control plane, one key per client id. The
+request for it is a stub for now (`PlatformKeySource._fetch_key`), so call
+tokens are refused.
+
+Anonymous session keys are the JWKS at `{AION_API_HOST}/runtime/a2a/verification-keys`,
+a public endpoint that needs no credentials (`JwksKeySource`):
+
+- The keys load at startup. A failed load does not stop the server; anonymous
+  session tokens are refused until a later fetch succeeds.
+- A key set older than 10 minutes is refreshed in the background while the
+  current request is verified with the keys held. One refresh runs at a time.
+- A token whose `kid` is not in the set triggers an immediate fetch, at most
+  one every 30 seconds. If the key is still missing the token is refused.
+- A failed refresh keeps the old set and logs a warning. Keys are never
+  dropped by age.
+
+The startup log says whether the server is hosted on the Aion platform.
+
+Other headers name nobody. `ServerCallContext.tenant` is not a source either:
+the JSON-RPC dispatcher copies it from the request's own `tenant` field, which
+the client chooses, and the default resolver ignores it. There is no `/docs` or
+`/redoc`.
 
 Aion's `GetContexts` and `GetContext`, and finding an interrupted task through
 its `contextId`, go through the same owner filter as everything else: a
-caller sees its own contexts and continues its own interrupted task, in
-either mode. Only a call without a `ServerCallContext` - from Python code
+caller sees its own contexts and continues its own interrupted task. Only a call without a `ServerCallContext` - from Python code
 that holds the handler - reads no history at all.
 
 ### What is isolated

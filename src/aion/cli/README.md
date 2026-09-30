@@ -33,7 +33,7 @@ This command reads your `aion.yaml` configuration and launches all configured AI
 - Proxy server is started automatically
 
 **Authorization:**
-With `AION_CLIENT_ID` and `AION_CLIENT_SECRET` set, every request to an agent needs the platform's `Authorization: Bearer <token>`; without a valid one the answer is `401`. Only the agent card, health and configuration endpoints (and the proxy's manifest and health) are open without a token. Without the credentials the agents run in local mode: authentication is disabled, every request is accepted, and `aion serve` warns about it at startup. There is no `/docs` or `/redoc` in either mode.
+Every request to an agent needs `Authorization: Bearer <token>`; without a valid one the answer is `401`. Only the agent card, health and configuration endpoints (and the proxy's manifest and health) are open without a token. A server deployed by the Aion platform accepts the call tokens Aion issues for it. Anywhere else it accepts anonymous session tokens, which the Aion control plane signs with keys it publishes at `AION_API_HOST`, and accepts call tokens only when `AION_CLIENT_ID` and `AION_CLIENT_SECRET` are set. There is no `/docs` or `/redoc`.
 
 **Examples:**
 
