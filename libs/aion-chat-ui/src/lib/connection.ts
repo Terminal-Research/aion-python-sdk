@@ -48,6 +48,7 @@ export interface AuthenticatedFetchOptions {
 export interface ChatConnectionOptions extends ChatCliOptions {
 	url: string;
 	tokenProvider?: TokenProvider;
+	fetchImpl?: typeof fetch;
 }
 
 const AGENT_CARD_PATH = "/.well-known/agent-card.json";
@@ -164,6 +165,7 @@ export function buildAuthenticatedFetch(
 }
 
 function buildFetch(options: ChatConnectionOptions, endpoints: EndpointConfig): typeof fetch {
+	const fetcher = options.fetchImpl ?? fetch;
 	return async (input, init) => {
 		const isRequest = input instanceof Request;
 		const originalRequest = isRequest ? input : undefined;
@@ -199,12 +201,12 @@ function buildFetch(options: ChatConnectionOptions, endpoints: EndpointConfig): 
 				nextRequest.duplex = "half";
 			}
 
-			return fetch(
+			return fetcher(
 				new Request(targetUrl, nextRequest)
 			);
 		}
 
-		return fetch(targetUrl, {
+		return fetcher(targetUrl, {
 			...init,
 			method,
 			headers

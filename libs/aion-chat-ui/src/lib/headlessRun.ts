@@ -27,12 +27,10 @@ import {
 } from "./chatSession.js";
 import { loadChatSettings } from "./chatSettings.js";
 import {
-	buildAuthenticatedFetch,
 	buildMessageParams,
 	connectClient,
 	createPushNotificationConfig,
-	type ConnectedClient,
-	type TokenProvider
+	type ConnectedClient
 } from "./connection.js";
 import {
 	discoverAgentSources,
@@ -41,15 +39,13 @@ import {
 } from "./agents/discovery.js";
 import {
 	createExplicitAgentSource,
-	isTransientAgentSource,
+	createDefaultRegistryAgentSource,
 	mergeAgentSources,
-	normalizeSourceUrl,
 	type DiscoveredAgentRecord
 } from "./agents/model.js";
 import { buildMessageParts } from "./input/index.js";
 import {
-	type AionEnvironmentId,
-	getControlPlaneApiBaseUrl
+	type AionEnvironmentId
 } from "./environment.js";
 import { formatMessageParts } from "./messageDisplay.js";
 import {
@@ -59,6 +55,9 @@ import {
 import type { ResponseMode } from "./slashCommands.js";
 import { isTerminalTaskState } from "./taskState.js";
 import { getStoredAccessToken } from "./workosAuth.js";
+import { SourceCredentials } from "./sourceCredentials.js";
+import type { AnonymousSessionStore } from "./anonymousSession.js";
+import { GUEST_HISTORY_WARNING } from "./anonymousSession.js";
 
 const NO_AGENT_MESSAGE_NOTICE = "Task completed with no agent message.";
 
@@ -67,6 +66,7 @@ interface WritableStreamLike {
 }
 
 export interface HeadlessRunDependencies {
+	sessionStore?: AnonymousSessionStore;
 	stdout?: WritableStreamLike;
 	stderr?: WritableStreamLike;
 	fetchImpl?: typeof fetch;
@@ -529,40 +529,6 @@ function canStream(agentCard: AgentCard): boolean {
 	return Boolean(agentCard.capabilities?.streaming);
 }
 
-function isAionControlPlaneRegistryAgent(
-	selectedAgent: DiscoveredAgentRecord,
-	environmentId: AionEnvironmentId
-): boolean {
-	return (
-		selectedAgent.source.type === "registry" &&
-		normalizeSourceUrl(selectedAgent.source.url) ===
-			normalizeSourceUrl(getControlPlaneApiBaseUrl(environmentId))
-	);
-}
-
-function getConnectionOptions(
-	options: HeadlessRunOptions,
-	selectedAgent: DiscoveredAgentRecord,
-	environmentId: AionEnvironmentId,
-	registryTokenProvider: TokenProvider
-): HeadlessRunOptions & { url: string; tokenProvider?: TokenProvider } {
-	const useCliEndpointAuth = isTransientAgentSource(selectedAgent.source);
-	const useAionRegistryAuth = isAionControlPlaneRegistryAgent(
-		selectedAgent,
-		environmentId
-	);
-	return {
-		...options,
-		url: selectedAgent.connectionUrl,
-		agentId: selectedAgent.connectionAgentId,
-		token: useCliEndpointAuth ? options.token : undefined,
-		tokenProvider: useAionRegistryAuth ? registryTokenProvider : undefined,
-		headers: useCliEndpointAuth ? options.headers : {},
-		pushNotifications: options.pushNotifications,
-		pushReceiver: options.pushReceiver
-	};
-}
-
 export async function runHeadless(
 	options: HeadlessRunOptions,
 	dependencies: HeadlessRunDependencies = {}
@@ -601,9 +567,10 @@ export async function runHeadless(
 		selectedEnvironment,
 		options.url
 	);
-	const explicitSourceFetch = buildAuthenticatedFetch({
-		token: options.token,
-		headers: options.headers
+	const credentials = new SourceCredentials({
+		environmentId: selectedEnvironment, cli: options,
+		accountToken: () => getStoredAccessTokenImpl(selectedEnvironment),
+		store: dependencies.sessionStore, fetch: fetchImpl
 	});
 
 	logger.info("headless.run.started", {
@@ -618,13 +585,18 @@ export async function runHeadless(
 	});
 
 	try {
+		if (options.newSession) {
+			const source = runtimeSources.find((item) => item.sourceKey === explicitSourceKey);
+			if (!source) throw new Error("--new-session requires --url to choose the guest source.");
+			writeLine(stderr, GUEST_HISTORY_WARNING);
+			await credentials.startNew(source);
+		}
 		const discovery = await discoverAgentSourcesImpl(runtimeSources, fetchImpl, {
 			environmentId: selectedEnvironment,
 			controlPlaneAccessTokenProvider: () =>
 				getStoredAccessTokenImpl(selectedEnvironment),
-			graphQLFetchImpl: fetchImpl,
-			sourceFetchImpl: (source) =>
-				source.sourceKey === explicitSourceKey ? explicitSourceFetch : fetchImpl,
+			graphQLFetchImpl: credentials.fetch(createDefaultRegistryAgentSource(selectedEnvironment)),
+			sourceFetchImpl: (source) => credentials.fetch(source),
 			logger
 		});
 		writeDiscoveryErrors(discovery, stderr);
@@ -643,14 +615,11 @@ export async function runHeadless(
 			explicitSourceKey,
 			selectedEnvironment
 		);
-		const clientState = await connectClientImpl(
-			getConnectionOptions(
-				options,
-				selectedAgent,
-				selectedEnvironment,
-				() => getStoredAccessTokenImpl(selectedEnvironment)
-			)
-		);
+		const clientState = await connectClientImpl({
+			...options, headers: {}, token: undefined,
+			url: selectedAgent.connectionUrl, agentId: selectedAgent.connectionAgentId,
+			fetchImpl: credentials.fetch(selectedAgent.source)
+		});
 		const parts = await buildMessagePartsImpl(options.message ?? "");
 		const pushConfig = options.pushNotifications
 			? createPushNotificationConfig(options.pushReceiver)
@@ -711,6 +680,7 @@ export async function runHeadless(
 		logger.error("headless.run.failed", { error });
 		throw error;
 	} finally {
+		credentials.dispose();
 		logger.flush();
 	}
 }

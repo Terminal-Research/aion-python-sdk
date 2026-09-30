@@ -25,6 +25,7 @@ describe("slashCommands", () => {
 			"/login",
 			"/request",
 			"/response",
+			"/session",
 			"/sources"
 		]);
 		expect(filterSlashCommands("e").map((command) => command.label)).toEqual([
@@ -45,6 +46,7 @@ describe("slashCommands", () => {
 			"/copy"
 		]);
 		expect(filterSlashCommands("s").map((command) => command.label)).toEqual([
+			"/session",
 			"/sources"
 		]);
 	});

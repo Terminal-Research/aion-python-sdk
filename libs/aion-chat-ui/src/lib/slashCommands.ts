@@ -56,6 +56,14 @@ export const RESPONSE_MODE_OPTIONS: readonly SlashCommandOption<ResponseMode>[] 
 
 export const SLASH_COMMANDS = [
 	{
+		id: "session",
+		label: "/session",
+		description: "Retry guest authentication or explicitly replace a guest session.",
+		title: "Guest Session",
+		subtitle: "Use /session retry <source-key> or /session new <source-key>. New sessions lose access to previous conversations.",
+		options: []
+	},
+	{
 		id: "clear",
 		label: "/clear",
 		description: "Clear terminal output and start a fresh chat context.",

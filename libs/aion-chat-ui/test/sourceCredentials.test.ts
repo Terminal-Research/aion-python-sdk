@@ -1,0 +1,86 @@
+import { describe, expect, it, vi } from "vitest";
+import { SourceCredentials } from "../src/lib/sourceCredentials.js";
+import { createDefaultLocalAgentSource, createDefaultRegistryAgentSource, createExplicitAgentSource } from "../src/lib/agents/model.js";
+
+const local = createDefaultLocalAgentSource();
+const registry = createDefaultRegistryAgentSource("development");
+const guest = { sessionId: "00000000-0000-4000-8000-000000000001", token: "guest-secret", expiresAt: new Date(Date.now() + 30 * 86400000).toISOString() };
+function setup() {
+	const fetcher = vi.fn<typeof fetch>(async (input) => String(input).endsWith("/auth/anonymous-sessions") ? Response.json(guest) : Response.json({ ok: true }));
+	const account = vi.fn(async (): Promise<string | undefined> => "account-secret");
+	const credentials = new SourceCredentials({ environmentId: "development", cli: { headers: {} }, accountToken: account, fetch: fetcher,
+		store: { getAnonymousSession: async () => undefined, setAnonymousSession: async () => undefined } });
+	return { credentials, fetcher, account };
+}
+
+describe("source-aware credentials", () => {
+	it("uses guests for all direct methods and fresh account credentials only at the matching registry", async () => {
+		const { credentials, fetcher, account } = setup();
+		const direct = credentials.fetch(local);
+		for (const path of ["/.well-known/manifest.json", "/agents/demo/.well-known/agent-card.json", "/tasks/1?historyLength=1", "/contexts/1", "/stream"]) {
+			await direct(local.url + path);
+			expect(new Headers(fetcher.mock.lastCall?.[1]?.headers).get("Authorization")).toBe("Bearer guest-secret");
+		}
+		expect(account).not.toHaveBeenCalled();
+		await credentials.fetch(registry)(registry.url + "/distributions/demo/a2a");
+		expect(new Headers(fetcher.mock.lastCall?.[1]?.headers).get("Authorization")).toBe("Bearer account-secret");
+		account.mockResolvedValue("refreshed-account");
+		await credentials.fetch(registry)(registry.url + "/distributions/demo/a2a");
+		expect(new Headers(fetcher.mock.lastCall?.[1]?.headers).get("Authorization")).toBe("Bearer refreshed-account");
+	});
+
+	it("blocks redirects and card/manifest pivots before acquiring or sending credentials", async () => {
+		const { credentials, fetcher, account } = setup();
+		await expect(credentials.fetch(local)("https://evil.test/card")).rejects.toThrow("Untrusted");
+		expect(fetcher).not.toHaveBeenCalled(); expect(account).not.toHaveBeenCalled();
+		await credentials.fetch(local)(local.url);
+		expect(fetcher.mock.lastCall?.[1]).toMatchObject({ redirect: "error", credentials: "omit" });
+	});
+
+	it("never converts an account auth failure into guest mode", async () => {
+		const { credentials, fetcher, account } = setup();
+		account.mockRejectedValue(new Error("login required"));
+		await expect(credentials.fetch(registry)(registry.url)).rejects.toThrow("login required");
+		expect(fetcher).not.toHaveBeenCalled();
+		account.mockResolvedValue(undefined);
+		await expect(credentials.fetch(registry)(registry.url)).rejects.toThrow("requires an account");
+		expect(fetcher).not.toHaveBeenCalled();
+	});
+
+	it("refuses unknown registries without consulting the account provider", async () => {
+		const { credentials, fetcher, account } = setup();
+		const source = { ...registry, url: "https://other.test" };
+		await expect(credentials.fetch(source)(source.url)).rejects.toThrow("restricted");
+		expect(account).not.toHaveBeenCalled(); expect(fetcher).not.toHaveBeenCalled();
+	});
+
+	it("reuses a held guest after login lifecycle cancellation but rejects stale requests", async () => {
+		const { credentials, fetcher } = setup();
+		const old = credentials.fetch(local);
+		await old(local.url);
+		credentials.cancelPending();
+		await expect(old(local.url)).rejects.toThrow();
+		await credentials.fetch(local)(local.url);
+		expect(fetcher.mock.calls.filter(([input]) => String(input).endsWith("/auth/anonymous-sessions"))).toHaveLength(1);
+	});
+
+	it("turns receiver rejection into an explicit new-session action, not replay", async () => {
+		const { credentials, fetcher } = setup();
+		await credentials.fetch(local)(local.url);
+		fetcher.mockResolvedValue(new Response(null, { status: 401 }));
+		await expect(credentials.fetch(local)(local.url)).rejects.toMatchObject({ reason: "rejected" });
+		const count = fetcher.mock.calls.length;
+		await expect(credentials.fetch(local)(local.url)).rejects.toThrow("previous session's conversations");
+		expect(fetcher).toHaveBeenCalledTimes(count);
+	});
+
+	it("preserves explicit endpoint credentials without forwarding them to other sources", async () => {
+		const { fetcher, account } = setup();
+		const credentials = new SourceCredentials({ environmentId: "development", cli: { token: "explicit", headers: { "X-Test": "explicit-only" } }, accountToken: account, fetch: fetcher });
+		const source = createExplicitAgentSource("http://localhost:9000");
+		await credentials.fetch(source)(source.url);
+		expect(new Headers(fetcher.mock.lastCall?.[1]?.headers).get("Authorization")).toBe("Bearer explicit");
+		await credentials.fetch(registry)(registry.url);
+		expect(new Headers(fetcher.mock.lastCall?.[1]?.headers).has("X-Test")).toBe(false);
+	});
+});

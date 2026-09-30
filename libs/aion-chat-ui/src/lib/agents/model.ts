@@ -38,6 +38,7 @@ export interface AgentRecord {
 	lastLoadedAt?: string;
 	status?: "available" | "unavailable";
 	activeContextId?: string;
+	credentialScope?: string;
 }
 
 export interface DiscoveredAgentRecord extends AgentRecord {
