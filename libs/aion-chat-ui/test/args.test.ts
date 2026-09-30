@@ -8,6 +8,10 @@ import {
 } from "../src/args.js";
 
 describe("parseArgs", () => {
+	it("requires explicit guest replacement in headless arguments", () => {
+		expect(parseRunArgs(["--url", "http://localhost:8000", "--new-session", "hello"]).newSession).toBe(true);
+		expect(parseRunArgs(["hello"]).newSession).toBeUndefined();
+	});
 	it("parses the core chat2 flags", () => {
 		expect(
 			parseArgs([

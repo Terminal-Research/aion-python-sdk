@@ -22,6 +22,14 @@ process.stdin.setEncoding("utf8");
 process.stdin.on("data", (chunk) => chunks.push(chunk));
 process.stdin.on("end", () => {
   const request = JSON.parse(chunks.join(""));
+  if (request.action === "get-session" && request.sessionKey.startsWith("aion-chat:anonymous-session:v1:")) {
+    process.stdout.write(JSON.stringify({ session: "stored-session" }));
+    return;
+  }
+  if (request.action === "set-session" && request.session === "renewed-session" && !request.refreshToken) {
+    process.stdout.write("{}");
+    return;
+  }
   if (request.action === "get") {
     process.stdout.write(JSON.stringify({ refreshToken: "stored-" + request.environmentId }));
     return;
@@ -43,6 +51,12 @@ process.stdin.on("end", () => {
 }
 
 describe("HelperCredentialStore", () => {
+	it("uses a separate guest helper protocol rather than the refresh-token field", async () => {
+		const helper = new HelperCredentialStore(JSON.stringify([process.execPath, await createHelperScript()]));
+		const key = "aion-chat:anonymous-session:v1:api:development:local:origin";
+		expect(await helper.getAnonymousSession(key)).toBe("stored-session");
+		await expect(helper.setAnonymousSession(key, "renewed-session")).resolves.toBeUndefined();
+	});
 	it("delegates refresh-token operations to the configured helper command", async () => {
 		const helperScript = await createHelperScript();
 		const store = new HelperCredentialStore(

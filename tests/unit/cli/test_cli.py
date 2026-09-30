@@ -146,6 +146,9 @@ async def test_chat_run_launches_headless_ui(monkeypatch) -> None:
         [
             "chat",
             "run",
+            "--new-session",
+            "--url",
+            "http://localhost:8000",
             "--agent",
             "@team-agent",
             "--request-mode",
@@ -159,6 +162,8 @@ async def test_chat_run_launches_headless_ui(monkeypatch) -> None:
 
     assert result.exit_code == 0
     options = called["options"]
+    assert options.new_session is True
+    assert "--new-session" in options.to_args()
     assert options.agent == "@team-agent"
     assert options.request_mode == "streaming-message"
     assert options.response_mode == "a2a"

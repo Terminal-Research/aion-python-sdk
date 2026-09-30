@@ -88,6 +88,7 @@ export class SourceCredentials {
 			let guest: AnonymousSession | undefined;
 			if (this.isRegistry(source)) {
 				const token = await this.options.accountToken();
+				lifetime.throwIfAborted();
 				if (!token) throw new Error("This registry requires an account. Run /login to sign in.");
 				headers.set("Authorization", `Bearer ${token}`);
 				// The account provider establishes trust; decoding here only partitions local cache.
@@ -104,7 +105,9 @@ export class SourceCredentials {
 			} else {
 				guest = this.guest(source);
 				lifetime = AbortSignal.any([lifetime, guest.signal]);
-				headers.set("Authorization", `Bearer ${await guest.token()}`);
+				const token = await guest.token();
+				lifetime.throwIfAborted();
+				headers.set("Authorization", `Bearer ${token}`);
 				this.owners.set(source.sourceKey, `guest:${guest.owner}`);
 			}
 			lifetime.throwIfAborted();

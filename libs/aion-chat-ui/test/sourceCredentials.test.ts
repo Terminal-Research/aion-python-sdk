@@ -14,6 +14,37 @@ function setup() {
 }
 
 describe("source-aware credentials", () => {
+	it("does not let a retired account lookup overwrite the new local-history owner", async () => {
+		const { credentials, fetcher, account } = setup();
+		let finishOld!: (token: string) => void;
+		account.mockImplementationOnce(() => new Promise((resolve) => { finishOld = resolve; }));
+		const pending = credentials.fetch(registry)(registry.url);
+		const cancelled = expect(pending).rejects.toThrow();
+		credentials.cancelPending();
+		account.mockResolvedValue("new-account");
+		await credentials.fetch(registry)(registry.url);
+		const owner = credentials.owner(registry);
+		finishOld("old-account");
+		await cancelled;
+		expect(credentials.owner(registry)).toBe(owner);
+		expect(fetcher).toHaveBeenCalledTimes(1);
+	});
+
+	it("supports guest credentials at a public control-plane agent route without making catalog discovery public", async () => {
+		const { credentials, fetcher, account } = setup();
+		const publicAgent = { ...registry, type: "agentCard" as const, url: registry.url + "/distributions/public/a2a" };
+		await credentials.fetch(publicAgent)(publicAgent.url);
+		expect(new Headers(fetcher.mock.lastCall?.[1]?.headers).get("Authorization")).toBe("Bearer guest-secret");
+		expect(account).not.toHaveBeenCalled();
+	});
+
+	it("does not send an uncredentialed agent request when session issuance fails", async () => {
+		const { credentials, fetcher } = setup();
+		fetcher.mockResolvedValue(new Response(null, { status: 503 }));
+		await expect(credentials.fetch(local)(local.url)).rejects.toMatchObject({ reason: "temporary" });
+		expect(fetcher).toHaveBeenCalledTimes(1);
+		expect(String(fetcher.mock.lastCall?.[0])).toContain("/auth/anonymous-sessions");
+	});
 	it("uses guests for all direct methods and fresh account credentials only at the matching registry", async () => {
 		const { credentials, fetcher, account } = setup();
 		const direct = credentials.fetch(local);
