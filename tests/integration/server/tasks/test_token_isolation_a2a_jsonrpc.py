@@ -6,8 +6,9 @@ a request is the ``sub`` of its bearer token and nothing else. Two callers
 present the same ``contextId`` throughout; they hold call tokens or anonymous
 session tokens, and the two kinds isolate the same way.
 
-A verified caller is authenticated: its context history and finding its
-interrupted task through the ``contextId`` are open to it, and only to it. A
+A verified caller is authenticated: its context history, finding its
+interrupted task through the ``contextId``, subscribing to its tasks and their
+push notification configs are open to it, and only to it. A
 request without a valid token never reaches the agent.
 
 The in-memory run and the PostgreSQL run are the same test.
@@ -15,6 +16,7 @@ The in-memory run and the PostgreSQL run are the same test.
 
 from __future__ import annotations
 
+import asyncio
 import time
 import uuid
 from typing import Any, Optional
@@ -230,6 +232,59 @@ async def test_context_history_is_open_to_its_owner_only(server, callers) -> Non
     assert state_of(owners) == "TASK_STATE_COMPLETED"
     assert state_of(others) == "TASK_STATE_UNSPECIFIED"
     assert not others.get("history")
+
+
+async def test_a_finished_task_is_subscribed_to_only_by_its_owner(server, callers) -> None:
+    alice, bob = callers
+    done = task_of(await _send(server, alice, "done", str(uuid.uuid4())))
+
+    assert error_of(await _call(server, bob, "SubscribeToTask", {"id": done["id"]})) == TASK_NOT_FOUND
+    [owners] = await _call(server, alice, "SubscribeToTask", {"id": done["id"]})
+    assert owners["result"]["task"]["id"] == done["id"]
+    assert state_of(owners["result"]["task"]) == "TASK_STATE_COMPLETED"
+
+
+async def test_a_live_task_is_subscribed_to_only_by_its_owner(server, callers) -> None:
+    alice, bob = callers
+    held = task_of(await _send(server, alice, "hold", str(uuid.uuid4()), returnImmediately=True))
+
+    assert error_of(await _call(server, bob, "SubscribeToTask", {"id": held["id"]})) == TASK_NOT_FOUND
+
+    subscription = asyncio.create_task(_call(server, alice, "SubscribeToTask", {"id": held["id"]}))
+    await asyncio.sleep(0.2)
+    assert not subscription.done(), subscription.result()
+    server.agent.release.set()
+    events = await asyncio.wait_for(subscription, timeout=20)
+
+    assert all("error" not in event for event in events), events
+    tasks = [event["result"]["task"] for event in events]
+    assert {task["id"] for task in tasks} == {held["id"]}
+    assert state_of(tasks[-1]) == "TASK_STATE_COMPLETED"
+
+
+async def test_push_configs_belong_to_the_tasks_owner(server, callers) -> None:
+    alice, bob = callers
+    task_id = task_of(await _send(server, alice, "done", str(uuid.uuid4())))["id"]
+    config = {"taskId": task_id, "id": "hook-1", "url": "https://hooks.example/alice"}
+
+    assert error_of(await _call(server, bob, "CreateTaskPushNotificationConfig", config)) == TASK_NOT_FOUND
+    created = await _call(server, alice, "CreateTaskPushNotificationConfig", config)
+    assert created["result"]["url"] == config["url"], created
+
+    selector = {"taskId": task_id, "id": "hook-1"}
+    assert error_of(await _call(server, bob, "GetTaskPushNotificationConfig", selector)) == TASK_NOT_FOUND
+    assert error_of(await _call(server, bob, "ListTaskPushNotificationConfigs", {"taskId": task_id})) == TASK_NOT_FOUND
+    assert error_of(await _call(server, bob, "DeleteTaskPushNotificationConfig", selector)) == TASK_NOT_FOUND
+
+    # Nothing the other caller did reached the owner's config.
+    owners = await _call(server, alice, "GetTaskPushNotificationConfig", selector)
+    assert owners["result"]["url"] == config["url"], owners
+    listed = (await _call(server, alice, "ListTaskPushNotificationConfigs", {"taskId": task_id}))["result"]
+    assert [item["id"] for item in listed["configs"]] == ["hook-1"]
+
+    assert "error" not in await _call(server, alice, "DeleteTaskPushNotificationConfig", selector)
+    listed = (await _call(server, alice, "ListTaskPushNotificationConfigs", {"taskId": task_id}))["result"]
+    assert not listed.get("configs")
 
 
 @pytest.mark.parametrize(
