@@ -87,7 +87,7 @@ a public endpoint that needs no credentials (`JwksKeySource`):
 
 - The keys load at startup. A failed load does not stop the server; anonymous
   session tokens are refused until a later fetch succeeds.
-- A key set older than 10 minutes is refreshed in the background while the
+- A key set older than 1 minute is refreshed in the background while the
   current request is verified with the keys held. One refresh runs at a time.
 - A token whose `kid` is not in the set triggers an immediate fetch, at most
   one every 30 seconds. If the key is still missing the token is refused.

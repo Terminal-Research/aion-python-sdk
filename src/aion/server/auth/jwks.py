@@ -18,8 +18,14 @@ __all__ = [
     "REFETCH_INTERVAL_SECONDS",
 ]
 
-REFRESH_AFTER_SECONDS = 600
-"""Age after which a key set is refreshed in the background; the control plane rotates keys slowly."""
+REFRESH_AFTER_SECONDS = 60
+"""Age after which requests refresh the set to pick up key removals.
+
+A key removed from the published JWKS remains accepted until a successful
+refresh replaces the held set. This threshold exceeds
+``REFETCH_INTERVAL_SECONDS`` so age-triggered refreshes are eligible under
+the fetch rate limit.
+"""
 
 REFETCH_INTERVAL_SECONDS = 30
 """Least time between fetches a request may cause - for an unknown ``kid`` or a stale set - so forged ``kid`` values or a control plane that keeps failing cannot turn every request into a fetch and a warning."""
@@ -35,8 +41,8 @@ class JwksKeySource:
     the set is never dropped: a failed refresh keeps the keys already held,
     because a stale key still verifies the tokens it signed.
 
-    ``key_for`` answers from the held set. A set older than
-    ``REFRESH_AFTER_SECONDS`` is refreshed in the background while the current
+    ``key_for`` answers from the held set. A set older than one minute
+    (``REFRESH_AFTER_SECONDS``) is refreshed in the background while the current
     request is still verified with what is held. A ``kid`` the set does not
     contain triggers an immediate fetch - the control plane may have rotated
     keys. Either way, requests cause at most one fetch per

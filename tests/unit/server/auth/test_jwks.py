@@ -22,6 +22,10 @@ def _source(control_plane: ControlPlane, clock: Clock):
     return control_plane.key_source(clock=clock)
 
 
+def test_the_refresh_age_exceeds_the_refetch_interval() -> None:
+    assert REFRESH_AFTER_SECONDS > REFETCH_INTERVAL_SECONDS
+
+
 async def test_the_keys_are_loaded_at_startup() -> None:
     control_plane, clock = ControlPlane(), Clock()
     source = _source(control_plane, clock)
@@ -59,11 +63,11 @@ async def test_keys_load_later_once_the_control_plane_answers() -> None:
     assert await source.key_for(SESSION_KID) is not None
 
 
-async def test_a_set_older_than_ten_minutes_is_refreshed_in_the_background() -> None:
+async def test_a_set_older_than_one_minute_is_refreshed_in_the_background() -> None:
     control_plane, clock = ControlPlane(), Clock()
     source = _source(control_plane, clock)
     await source.load()
-    control_plane.document = jwks_document(**{SESSION_KID: SESSION_KEY.public_key(), "new": ROTATED_KEY.public_key()})
+    control_plane.document = jwks_document(**{"new": ROTATED_KEY.public_key()})
 
     clock.advance(REFRESH_AFTER_SECONDS + 1)
     current = await source.key_for(SESSION_KID)
@@ -74,6 +78,7 @@ async def test_a_set_older_than_ten_minutes_is_refreshed_in_the_background() -> 
     await asyncio.sleep(0)
     assert control_plane.requests == 2
     assert await source.key_for("new") is not None
+    assert await source.key_for(SESSION_KID) is None
 
 
 async def test_a_fresh_set_is_not_refreshed() -> None:
@@ -182,26 +187,30 @@ async def test_a_malformed_document_is_a_failed_fetch(document) -> None:
 
 
 async def test_a_failing_background_refresh_is_retried_at_most_once_in_thirty_seconds(caplog) -> None:
+    """A failed refresh leaves the set stale while the fetch rate limit bounds retries."""
     control_plane, clock = ControlPlane(), Clock()
     source = _source(control_plane, clock)
     await source.load()
     loaded_at = source._fetched_at
     control_plane.failing = True
-    clock.advance(REFRESH_AFTER_SECONDS + 100)
+    clock.advance(REFRESH_AFTER_SECONDS + 1)
+    assert source._is_stale()
 
     async def requests(count: int) -> None:
         for _ in range(count):
             assert await source.key_for(SESSION_KID) is not None
-            clock.advance(0.1)
             await asyncio.sleep(0)
         await asyncio.sleep(0)
 
     with caplog.at_level(logging.WARNING):
         await requests(50)
+        clock.advance(REFETCH_INTERVAL_SECONDS - 1)
+        assert source._is_stale()
+        await requests(50)
     assert control_plane.requests == 2
     assert caplog.text.count("Could not fetch") == 1
 
-    clock.advance(REFETCH_INTERVAL_SECONDS)
+    clock.advance(1)
     await requests(50)
     assert control_plane.requests == 3
 
