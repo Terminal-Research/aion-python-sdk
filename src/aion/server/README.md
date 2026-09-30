@@ -90,10 +90,13 @@ a public endpoint that needs no credentials (`JwksKeySource`):
 - A key set older than 1 minute is refreshed in the background while the
   current request is verified with the keys held. One refresh runs at a time.
 - A token whose `kid` is not in the set triggers an immediate fetch, at most
-  one every 30 seconds. If the key is still missing the token is refused.
-- A failed refresh keeps the old set and logs a warning. Keys are never
-  dropped by age.
-- After a failure the refresh is retried at most once every 30 seconds.
+  one every 10 seconds. If the key is still missing the token is refused.
+- A failed refresh keeps the old set and logs a warning. A set not successfully
+  refreshed for more than three refresh intervals (3 minutes) is not used.
+  The request waits for a permitted fetch; if it fails or is rate-limited, the
+  set is cleared and anonymous session tokens receive `401` until a fetch succeeds.
+  Clearing logs one error; recovery logs one informational message.
+- After a failure the refresh is retried at most once every 10 seconds.
 
 The startup log says whether the server is hosted on the Aion platform.
 
