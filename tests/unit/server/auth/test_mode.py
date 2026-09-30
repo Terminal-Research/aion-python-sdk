@@ -85,3 +85,34 @@ def test_the_startup_log_names_the_mode_in_words(monkeypatch, caplog, deployment
 
     assert words in caplog.text
     assert "DEPLOYMENT_ID" not in caplog.text
+
+
+@pytest.mark.parametrize("client_id", [None, ""], ids=["unset", "empty"])
+def test_a_hosted_server_without_client_id_warns_about_refused_call_tokens(monkeypatch, caplog, client_id) -> None:
+    monkeypatch.setenv("DEPLOYMENT_ID", "deployment-1")
+    _settings(monkeypatch, has_credentials=False, client_id=client_id)
+
+    with caplog.at_level(logging.INFO, logger=mode.logger.name):
+        build_token_verifier()
+
+    records = [record for record in caplog.records if record.name == mode.logger.name]
+    assert [(record.levelno, record.message) for record in records] == [
+        (
+            logging.WARNING,
+            "Authentication: hosted on the Aion platform, but AION_CLIENT_ID is not set; "
+            "every call token will be refused with 401",
+        )
+    ]
+
+
+def test_a_hosted_server_with_client_id_logs_that_call_tokens_are_accepted(monkeypatch, caplog) -> None:
+    monkeypatch.setenv("DEPLOYMENT_ID", "deployment-1")
+    _settings(monkeypatch, has_credentials=True)
+
+    with caplog.at_level(logging.INFO, logger=mode.logger.name):
+        build_token_verifier()
+
+    records = [record for record in caplog.records if record.name == mode.logger.name]
+    assert [(record.levelno, record.message) for record in records] == [
+        (logging.INFO, "Authentication: hosted on the Aion platform; accepting the platform's call tokens")
+    ]

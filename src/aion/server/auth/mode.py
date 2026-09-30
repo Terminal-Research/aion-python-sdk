@@ -38,7 +38,13 @@ def build_token_verifier() -> TokenVerifier:
     hosted = is_hosted()
     accepts_call_tokens = hosted or api_settings.has_credentials
     if hosted:
-        logger.info("Authentication: hosted on the Aion platform; accepting the platform's call tokens")
+        if not api_settings.client_id:
+            logger.warning(
+                "Authentication: hosted on the Aion platform, but AION_CLIENT_ID is not set; "
+                "every call token will be refused with 401"
+            )
+        else:
+            logger.info("Authentication: hosted on the Aion platform; accepting the platform's call tokens")
     elif accepts_call_tokens:
         logger.info("Authentication: not hosted; accepting the platform's call tokens and anonymous session tokens")
     else:
