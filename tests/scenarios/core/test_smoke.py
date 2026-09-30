@@ -37,6 +37,21 @@ def test_agent_card_is_served_through_the_proxy(server: ServeProcess) -> None:
     assert payload["supportedInterfaces"], "a card with no interface cannot be connected to"
 
 
+def test_in_local_mode_the_card_asks_for_no_token(server: ServeProcess) -> None:
+    """Without credentials nothing checks a token, and the card does not ask for one."""
+    payload = httpx.get(f"{server.agent_url()}/.well-known/agent-card.json", timeout=10.0).json()
+
+    assert "securitySchemes" not in payload
+    assert "securityRequirements" not in payload
+
+
+@pytest.mark.parametrize("path", ["/docs", "/redoc"])
+def test_there_is_no_api_browser(server: ServeProcess, path: str) -> None:
+    response = httpx.get(f"{server.agent_url()}{path}", timeout=10.0)
+
+    assert response.status_code == 404
+
+
 @pytest.mark.command("help")
 async def test_help_answers_with_the_menu(client: ScenarioClient) -> None:
     """`help` answers the menu, and the turn completes."""

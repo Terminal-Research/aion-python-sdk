@@ -185,22 +185,18 @@ class TestAionRequestHandler:
         )
 
     @pytest.mark.anyio
-    async def test_anonymous_context_reads_are_indistinguishable_from_missing(
+    async def test_context_reads_without_a_context_are_empty(
         self,
         request_handler,
     ):
-        """Anonymous callers cannot enumerate or hydrate persisted history."""
-        context = SimpleNamespace(
-            user=SimpleNamespace(is_authenticated=False),
-        )
-
+        """Without a context nobody is named, so nothing is read - never every owner's history."""
         conversation = await request_handler.on_get_context(
             GetContextParams(context_id="private-context"),
-            context,
+            None,
         )
         contexts = await request_handler.on_get_contexts_list(
             GetContextsListParams(),
-            context,
+            None,
         )
 
         assert conversation.context_id == "private-context"
@@ -209,6 +205,22 @@ class TestAionRequestHandler:
         assert contexts.root == []
         request_handler.task_store.get_context_tasks.assert_not_called()
         request_handler.task_store.get_context_ids.assert_not_called()
+
+    @pytest.mark.anyio
+    async def test_an_unauthenticated_callers_context_reads_go_through_its_owner(
+        self,
+        request_handler,
+    ):
+        """Who sees which history is the store's owner filter, not ``is_authenticated``."""
+        context = SimpleNamespace(user=SimpleNamespace(is_authenticated=False))
+        request_handler.task_store.get_context_tasks.return_value = []
+        request_handler.task_store.get_context_ids.return_value = []
+
+        await request_handler.on_get_context(GetContextParams(context_id="own-context"), context)
+        await request_handler.on_get_contexts_list(GetContextsListParams(), context)
+
+        assert request_handler.task_store.get_context_tasks.await_args.kwargs["context"] is context
+        assert request_handler.task_store.get_context_ids.await_args.kwargs["context"] is context
 
     @pytest.mark.parametrize("exception_msg,method_name", [
         ("Database error", "get_context_tasks"),

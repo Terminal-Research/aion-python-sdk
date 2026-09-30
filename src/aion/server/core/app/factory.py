@@ -9,6 +9,7 @@ from a2a.server.routes import add_a2a_routes_to_fastapi, create_agent_card_route
 from a2a.utils.constants import DEFAULT_RPC_URL
 from aion.db.postgres import DbFactory
 from aion.server.agent.aion_agent import AionAgent
+from aion.server.auth import TokenVerifier, build_token_verifier
 from aion.server.files.a2a import A2AFileTransformer
 from aion.server.files.storage.manager import FileUploadManager
 from fastapi import FastAPI
@@ -20,7 +21,7 @@ from aion.server.agent.factory import AgentFactory
 from aion.server.core.app.api import AionExtraHTTPRoutes
 from aion.server.core.app.handlers import AionJsonRpcDispatcher, AionRequestHandler
 from aion.server.core.app.handlers.request_preprocessors import A2ARequestPreprocessor, FilePartPreprocessor
-from aion.server.core.middlewares import AionContextMiddleware, CallerIdentityMiddleware, TracingMiddleware
+from aion.server.core.middlewares import AionAuthMiddleware, AionContextMiddleware, TracingMiddleware
 from aion.server.plugins import PluginFactory
 from aion.server.tasks import StoreManager, PushNotificationFactory
 from .lifespan import AppLifespan
@@ -49,6 +50,7 @@ class AppFactory:
             store_manager: StoreManager,
             upload_manager: Optional[FileUploadManager] = None,
             startup_callback=None,
+            token_verifier: Optional[TokenVerifier] = None,
     ):
         """Initialize factory with all dependencies via dependency injection.
 
@@ -63,6 +65,10 @@ class AppFactory:
                 env var is not set, file uploading is disabled and inline parts pass
                 through unchanged.
             startup_callback: Optional callback to call after initialization
+            token_verifier: Optional pre-built verifier for request tokens. If
+                None, ``aion.server.auth.build_token_verifier`` decides at
+                initialization: the platform's with AION_CLIENT_ID and
+                AION_CLIENT_SECRET, none - local mode - without them.
         """
         self.aion_agent = aion_agent
         self.db_factory = db_factory
@@ -70,6 +76,7 @@ class AppFactory:
         self.plugin_factory = plugin_factory
         self.store_manager = store_manager
         self.startup_callback = startup_callback
+        self.token_verifier = token_verifier
         self.upload_manager = upload_manager or FileUploadManager.from_settings()
         self.file_transformer = A2AFileTransformer(self.upload_manager)
 
@@ -95,6 +102,12 @@ class AppFactory:
     async def _initialize(self) -> None:
         """Initialize all application components in sequence."""
         logger.debug("Initializing application for agent '%s'", self.aion_agent.id)
+
+        # 0. Get the key request tokens are verified with ready - or none, in local mode
+        if self.token_verifier is None:
+            self.token_verifier = build_token_verifier()
+        if self.token_verifier is not None:
+            await self.token_verifier.load()
 
         # 1. Initialize database
         await self.db_factory.initialize()
@@ -130,12 +143,15 @@ class AppFactory:
             enable_v0_3_compat=True,
         )
         lifespan = AppLifespan(app_factory=self)
-        self.fastapi_app = FastAPI(lifespan=lifespan.executor)
+        # No /docs or /redoc: an agent's server is not browsed. The OpenAPI
+        # schema stays, behind the same bearer token as everything but the
+        # public paths.
+        self.fastapi_app = FastAPI(lifespan=lifespan.executor, docs_url=None, redoc_url=None)
 
         # Registered through the SDK helper rather than FastAPI(routes=...) so
-        # the A2A endpoints are re-wrapped as APIRoute and show up in /docs with
-        # proto-derived request schemas. The routes themselves are unchanged —
-        # JSON-RPC still dispatches through AionJsonRpcDispatcher.
+        # the A2A endpoints are re-wrapped as APIRoute and appear in the OpenAPI
+        # schema with proto-derived request schemas. The routes themselves are
+        # unchanged — JSON-RPC still dispatches through AionJsonRpcDispatcher.
         add_a2a_routes_to_fastapi(
             self.fastapi_app,
             agent_card_routes=create_agent_card_routes(self.aion_agent.card),
@@ -196,11 +212,12 @@ class AppFactory:
         )
 
     def _add_extra_middlewares(self):
-        # The middleware added last runs first: the caller is named before the
-        # execution scope is populated, and the scope before the span reads it.
+        # The middleware added last runs first: the caller is named - and a
+        # request without a valid token refused - before anything reads it, and
+        # the execution scope is populated before the span reads it.
         self.fastapi_app.add_middleware(TracingMiddleware)
         self.fastapi_app.add_middleware(AionContextMiddleware)
-        self.fastapi_app.add_middleware(CallerIdentityMiddleware)
+        self.fastapi_app.add_middleware(AionAuthMiddleware, verifier=self.token_verifier)
 
     async def shutdown(self) -> None:
         """Shutdown the application and cleanup resources."""

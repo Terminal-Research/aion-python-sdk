@@ -1,3 +1,3 @@
 from .aion_context import AionContextMiddleware
-from .caller_identity import CallerIdentityMiddleware
+from .auth import AionAuthMiddleware
 from .tracing import TracingMiddleware

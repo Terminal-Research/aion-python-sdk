@@ -1,17 +1,14 @@
-"""The fields of an A2A JSON-RPC request the server's middlewares read.
+"""The fields of an A2A JSON-RPC request that ``AionContextMiddleware`` reads.
 
-``CallerIdentityMiddleware`` and ``AionContextMiddleware`` both read a few
-fields of the request body before a2a-sdk's dispatcher parses it: the method,
-the id an error answers to, ``params.metadata`` and the distribution payload
-in it. The first of them to ask prepares those fields and keeps the result
-in the ASGI scope, which the middlewares and the endpoint share. The body is
-decoded and the payload validated once among the middlewares, whichever of
-them an application runs.
+It reads a few fields of the request body before a2a-sdk's dispatcher parses
+it: the method, the id an error answers to, ``params.metadata`` and the
+distribution payload in it. They are prepared once and kept in the ASGI
+scope, which the endpoint shares.
 
 That is all "once" covers. For ``SendMessage`` the request handler's
 extension pipeline validates the payload again for its preflight and the
 runtime context, and a2a-sdk parses the body as the protocol. Preparing a
-request reads only what the middlewares need and leaves the body as it came.
+request reads only what the middleware needs and leaves the body as it came.
 """
 
 import logging
@@ -48,7 +45,7 @@ class InvalidExtensionPayloadError(AionError):
 
 @dataclass(frozen=True)
 class PreparedRpcRequest:
-    """The fields of one JSON-RPC request that the middlewares read.
+    """The fields of one JSON-RPC request that the middleware reads.
 
     method        — the method the body names, when it is a string.
     request_id    — the id an error answer goes to: the body's id when it is
@@ -75,7 +72,7 @@ def is_rpc_post(request: Request) -> bool:
 
 
 async def prepare_rpc_request(request: Request) -> PreparedRpcRequest:
-    """The request's prepared fields, prepared by whichever middleware asks first.
+    """The request's prepared fields, prepared on the first call and kept in the scope.
 
     Raises:
         InvalidExtensionPayloadError: The distribution payload is malformed.
@@ -107,8 +104,7 @@ def describe_validation_error(error: ValidationError) -> str:
 def refuse_invalid_extension(request_id: str | int | None, detail: str) -> JSONResponse:
     """Log and answer a request whose extension payload is malformed.
 
-    The same invalid-request error with the same safe ``detail``, from
-    whichever middleware found the problem.
+    An invalid-request error with a ``detail`` that is safe to show.
     """
     logger.warning("Refused a request with an invalid extension payload in its metadata: %s", detail)
     return JSONResponse(

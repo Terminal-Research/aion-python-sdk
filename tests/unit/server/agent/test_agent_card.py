@@ -328,3 +328,26 @@ class TestInputOutputModes:
         """Card default output modes are ['text'] when none are configured."""
         card = AionAgentCard.from_config(_make_config(), "http://localhost:8000")
         assert card.default_output_modes == ["text"]
+
+
+@pytest.mark.parametrize("has_credentials", [True, False], ids=["platform", "local-mode"])
+def test_the_card_asks_for_a_bearer_token_only_when_one_is_needed(monkeypatch, has_credentials):
+    """With credentials every call needs the platform's token, and the card says so; in local mode it says nothing."""
+    from unittest.mock import Mock
+
+    from google.protobuf.json_format import MessageToDict
+
+    import aion.server.auth.mode as mode
+
+    monkeypatch.setattr(mode, "api_settings", Mock(has_credentials=has_credentials))
+
+    card = MessageToDict(AionAgentCard.from_config(_make_config(), "http://localhost:8000"))
+
+    if has_credentials:
+        scheme = card["securitySchemes"]["bearer"]["httpAuthSecurityScheme"]
+        assert (scheme["scheme"], scheme["bearerFormat"]) == ("Bearer", "JWT")
+    else:
+        assert "securitySchemes" not in card
+    # Never published: its empty scope list serializes as {}, which the
+    # platform's card decoder refuses, failing registration.
+    assert "securityRequirements" not in card

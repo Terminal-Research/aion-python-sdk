@@ -78,7 +78,7 @@ class AionRequestContextBuilder(RequestContextBuilder):
             context: ServerCallContext,
     ) -> Task | None:
         """Return the caller-owned interrupted task for a context, if any."""
-        if not self._task_store or not context.user.is_authenticated:
+        if not self._task_store:
             return None
 
         last_task = await self._task_store.get_context_last_task(

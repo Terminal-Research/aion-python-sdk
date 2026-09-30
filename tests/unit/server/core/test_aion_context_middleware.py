@@ -1,8 +1,8 @@
-"""``AionContextMiddleware`` on its own, without ``CallerIdentityMiddleware`` in front.
+"""``AionContextMiddleware`` on its own, without ``AionAuthMiddleware`` in front.
 
-It prepares the request through the same ``prepare_rpc_request`` the identity
-middleware uses, refuses a malformed payload the same way, and names nobody:
-the caller of a request it lets through is the anonymous one.
+It prepares the request through ``prepare_rpc_request``, refuses a malformed
+payload, and names nobody: the caller of a request it lets through is the
+anonymous one.
 """
 
 import logging

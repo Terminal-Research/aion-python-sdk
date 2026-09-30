@@ -80,14 +80,14 @@ class TestFindInterruptedTask:
         )
         assert result is None
 
-    async def test_anonymous_caller_does_not_resume_a_shared_context(self):
-        store = _make_store(_make_task(TaskState.TASK_STATE_INPUT_REQUIRED))
+    async def test_an_unauthenticated_caller_resumes_through_its_own_owner(self):
+        """Who may see a task is the store's owner filter, not ``is_authenticated``."""
+        interrupted = _make_task(TaskState.TASK_STATE_INPUT_REQUIRED)
+        store = _make_store(interrupted)
         builder = AionRequestContextBuilder(task_store=store)
+        context = ServerCallContext()
 
-        result = await builder._find_interrupted_task(
-            "ctx-1",
-            ServerCallContext(),
-        )
+        result = await builder._find_interrupted_task("ctx-1", context)
 
-        assert result is None
-        store.get_context_last_task.assert_not_awaited()
+        assert result is interrupted
+        store.get_context_last_task.assert_awaited_once_with(context_id="ctx-1", context=context)

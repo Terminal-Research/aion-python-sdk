@@ -19,7 +19,7 @@ poetry run aion serve [OPTIONS]
 ```
 
 **Description:**
-This command reads your `aion.yaml` configuration and launches all configured AION Agent API servers. The system automatically runs multiple agents simultaneously and includes a proxy server for unified access. Ports are assigned automatically unless explicitly specified. Each agent server provides HTTP endpoints for interacting with your configured agents and includes automatic API documentation.
+This command reads your `aion.yaml` configuration and launches all configured AION Agent API servers. The system automatically runs multiple agents simultaneously and includes a proxy server for unified access. Ports are assigned automatically unless explicitly specified. Each agent server provides HTTP endpoints for interacting with your configured agents.
 
 **Options:**
 
@@ -31,6 +31,9 @@ This command reads your `aion.yaml` configuration and launches all configured AI
 **Configuration Requirements:**
 - At least one agent must be configured in your `aion.yaml` file
 - Proxy server is started automatically
+
+**Authorization:**
+With `AION_CLIENT_ID` and `AION_CLIENT_SECRET` set, every request to an agent needs the platform's `Authorization: Bearer <token>`; without a valid one the answer is `401`. Only the agent card, health and configuration endpoints (and the proxy's manifest and health) are open without a token. Without the credentials the agents run in local mode: authentication is disabled, every request is accepted, and `aion serve` warns about it at startup. There is no `/docs` or `/redoc` in either mode.
 
 **Examples:**
 

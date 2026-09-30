@@ -4,7 +4,7 @@
      commands.py and frameworks.py. Do not edit by hand: run
      `make scenarios-matrix`. -->
 
-153 scenarios in 30 files, 324 runs across 2 frameworks: 294 run, 30 skipped.
+155 scenarios in 30 files, 330 runs across 2 frameworks: 300 run, 30 skipped.
 
 Nothing here was produced by running a scenario: `pytest --collect-only` and the registries are all it takes, and the same suite always renders the same file. What the suite is and how to run it is in [README.md](README.md).
 
@@ -61,7 +61,7 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 
 | Suite | What it covers | Scenarios | Run |
 |---|---|---|---|
-| `smoke` | agent answers at all: card, health, help, echo | 5 | `make tests-scenarios TAGS=smoke` |
+| `smoke` | agent answers at all: card, health, help, echo | 7 | `make tests-scenarios TAGS=smoke` |
 | `streaming` | chunked replies, ephemeral typing, unary send | 13 | `make tests-scenarios TAGS=streaming` |
 | `events` | event order, ids, outbox, get_task agreement | 23 | `make tests-scenarios TAGS=events` |
 | `terminal_states` | COMPLETED, FAILED, CANCELED, INPUT_REQUIRED | 9 | `make tests-scenarios TAGS=terminal_states` |
@@ -197,13 +197,13 @@ Inline file parts: stored on the way in and out, rejected, or passed through.
 | [The inbox keeps the data part as it was sent, metadata included.](core/test_files.py#L103 "test_an_inbound_data_part_reaches_the_inbox_whole") | `files` | `parts` | `default` | ✓ | ✓ |
 | [The agent never sees the bytes: by the time it runs, the file is a URL.](core/test_files.py#L121 "test_an_inbound_file_reaches_the_agent_as_a_url") | `files` | `parts` | `file-storage` | ✓ | ✓ |
 | [Reading the task back returns what was persisted: a URL part, no raw content.](core/test_files.py#L140 "test_the_stored_task_holds_the_url_and_not_the_bytes") | `files` | `parts` | `file-storage` | ✓ | ✓ |
-| [No distribution means no owning organization: the request is refused, not degraded.](core/test_files.py#L166 "test_an_inbound_file_without_a_distribution_is_rejected") | `files` | `parts` | `file-storage` | ✓ | ✓ |
-| [A service identity alone names nobody to own the file.](core/test_files.py#L176 "test_a_distribution_without_a_principal_cannot_own_a_file") | `files` | `parts` | `file-storage` | ✓ | ✓ |
-| [Storage is a concern of file parts only; a plain message is unaffected.](core/test_files.py#L191 "test_text_only_requests_need_no_distribution") | `files` | `parts` | `file-storage` | ✓ | ✓ |
-| [Passthrough is a supported mode: no backend, the bytes reach the agent and the record.](core/test_files.py#L201 "test_without_a_backend_inline_content_passes_through") | `files` | `parts` | `default` | ✓ | ✓ |
-| [The agent emits bytes; the client receives a URL. Data and url parts are untouched.](core/test_files.py#L219 "test_an_outbound_file_leaves_as_a_url") | `files` | `artifacts` | `file-storage` | ✓ | [skip](#frameworks) |
-| [No backend, no conversion: the bytes the agent emitted are the bytes received.](core/test_files.py#L244 "test_without_a_backend_an_outbound_file_stays_inline") | `files` | `artifacts` | `default` | ✓ | [skip](#frameworks) |
-| [Selecting the Aion backend without AION_CLIENT_ID and AION_CLIENT_SECRET is a startup error.](core/test_files.py#L257 "test_the_aion_backend_does_not_serve_without_credentials") | `files` | — | `aion-no-credentials` | ✓ | ✓ |
+| [No distribution means no owning organization: the request is refused, not degraded.](core/test_files.py#L161 "test_an_inbound_file_without_a_distribution_is_rejected") | `files` | `parts` | `file-storage` | ✓ | ✓ |
+| [A service identity alone names nobody to own the file.](core/test_files.py#L171 "test_a_distribution_without_a_principal_cannot_own_a_file") | `files` | `parts` | `file-storage` | ✓ | ✓ |
+| [Storage is a concern of file parts only; a plain message is unaffected.](core/test_files.py#L186 "test_text_only_requests_need_no_distribution") | `files` | `parts` | `file-storage` | ✓ | ✓ |
+| [Passthrough is a supported mode: no backend, the bytes reach the agent and the record.](core/test_files.py#L196 "test_without_a_backend_inline_content_passes_through") | `files` | `parts` | `default` | ✓ | ✓ |
+| [The agent emits bytes; the client receives a URL. Data and url parts are untouched.](core/test_files.py#L214 "test_an_outbound_file_leaves_as_a_url") | `files` | `artifacts` | `file-storage` | ✓ | [skip](#frameworks) |
+| [No backend, no conversion: the bytes the agent emitted are the bytes received.](core/test_files.py#L239 "test_without_a_backend_an_outbound_file_stays_inline") | `files` | `artifacts` | `default` | ✓ | [skip](#frameworks) |
+| [Selecting the Aion backend without AION_CLIENT_ID and AION_CLIENT_SECRET is a startup error.](core/test_files.py#L252 "test_the_aion_backend_does_not_serve_without_credentials") | `files` | — | `aion-no-credentials` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_interrupts.py`
 
@@ -272,8 +272,10 @@ Does a deployment of this framework answer at all.
 | [The proxy's system health names the agent and calls it healthy.](core/test_smoke.py#L14 "test_proxy_reports_every_agent_healthy") | `smoke` | — | `default` | ✓ | ✓ |
 | [The deployment manifest names the agents the proxy routes to.](core/test_smoke.py#L23 "test_manifest_lists_the_agent") | `smoke` | — | `default` | ✓ | ✓ |
 | [The card arrives on the proxy route and describes the deployed agent.](core/test_smoke.py#L30 "test_agent_card_is_served_through_the_proxy") | `smoke` | — | `default` | ✓ | ✓ |
-| [`help` answers the menu, and the turn completes.](core/test_smoke.py#L40 "test_help_answers_with_the_menu") | `smoke` | `help` | `default` | ✓ | ✓ |
-| [`echo <text>` answers with the argument, unchanged.](core/test_smoke.py#L49 "test_echo_answers_with_the_argument") | `smoke` | `echo` | `default` | ✓ | ✓ |
+| [Without credentials nothing checks a token, and the card does not ask for one.](core/test_smoke.py#L40 "test_in_local_mode_the_card_asks_for_no_token") | `smoke` | — | `default` | ✓ | ✓ |
+| [There is no api browser](core/test_smoke.py#L48 "test_there_is_no_api_browser") | `smoke` | — | `default` | ✓ | ✓ |
+| [`help` answers the menu, and the turn completes.](core/test_smoke.py#L55 "test_help_answers_with_the_menu") | `smoke` | `help` | `default` | ✓ | ✓ |
+| [`echo <text>` answers with the argument, unchanged.](core/test_smoke.py#L64 "test_echo_answers_with_the_argument") | `smoke` | `echo` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_stream_delta_shape.py`
 
@@ -377,7 +379,7 @@ A native agent remembers the conversation, the framework's way.
 |---|---|---|---|---|---|
 | [The next turn sees the earlier ones](native/test_memory.py#L28 "test_the_next_turn_sees_the_earlier_ones") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
 | [Memory is per context, not per server.](native/test_memory.py#L37 "test_another_context_starts_empty") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
-| [Two channels of one agent on one context are two conversations.](native/test_memory.py#L54 "test_memory_is_per_distribution") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+| [The distribution a request came through is its channel, not its owner.](native/test_memory.py#L54 "test_a_distribution_does_not_split_the_conversation") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
 
 ### `tests/scenarios/native/test_model_and_tools.py`
 

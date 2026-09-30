@@ -18,7 +18,9 @@ Configuration Guide](https://docs.aion.to/sdk/python/configuration/aion-yaml).
 
 Custom HTTP endpoints are added through `AppRegistry`: the agent module
 registers its own FastAPI routers before the server starts, and the factory
-mounts them on the application it builds. `aion.yaml` declares agents and the
+mounts them on the application it builds. With platform credentials those
+routes need a bearer token like every other route of the server (see below).
+`aion.yaml` declares agents and the
 MCP proxy, and rejects any other key - see the [AppRegistry
 guide](https://docs.aion.to/sdk/python/extensibility/app-registry).
 
@@ -37,44 +39,58 @@ A custom resolver is passed to the agent:
 
 ### Where the user comes from
 
-The server names the caller of every JSON-RPC request before the request
-reaches the dispatcher. `CallerIdentityMiddleware`, which `AppFactory`
-installs, reads the [distribution
-payload](https://docs.aion.to/a2a/extensions/aion/distribution/1.0.0) a
-platform request carries in `params.metadata` and installs the caller the
-way Starlette's authentication does: a `DistributionCaller` as
-`request.scope["user"]` and credentials without scopes as
-`request.scope["auth"]`. a2a-sdk's `DefaultServerCallContextBuilder` makes
-them `ServerCallContext.user` and `state["auth"]`, and `resolve_user_scope`
-makes the user's name - the distribution's id - the owner. The policy that
-names the caller is `aion.server.identity.resolve_distribution_caller`. So
-there are two callers:
+The server runs in one of two modes, and `AION_CLIENT_ID` and
+`AION_CLIENT_SECRET` decide which. The rule lives in `aion.server.auth`:
+`authentication_required()` says which mode this is, and
+`build_token_verifier()` returns the platform's verifier or `None`.
+`AppFactory` hands that to `AionAuthMiddleware`, which it installs in both
+modes, outside the server's other middlewares; the agent card and
+`aion serve` ask the same functions.
 
-- a request that carries a distribution payload belongs to that
-  distribution. An agent published on several channels - an A2A endpoint, a
-  Slack workspace - has an owner per channel, each with its own tasks and
-  framework state;
-- a request without one belongs to the anonymous owner `""`, shared by every
-  such caller - a direct A2A client, `aion chat`, another agent calling this
-  one - and, on a database several deployments share, by every deployment of
-  the same agent id.
+**With the credentials, authentication is required.** Every request to an
+agent's server carries a bearer token, `Authorization: Bearer <JWT>` - the
+JSON-RPC endpoint, the OpenAPI schema and any route an application adds
+through `AppRegistry` alike. Only the public paths are open without one: the
+agent card, health and the configuration schema, which a client or a probe
+reads before it has a token. The agent card describes the token in its
+`securitySchemes`. `AionAuthMiddleware` verifies the token with a
+`TokenVerifier` and installs the caller the way Starlette's authentication
+does: an `AuthenticatedCaller` as `request.scope["user"]` and `authenticated`
+credentials as `request.scope["auth"]`. a2a-sdk's
+`DefaultServerCallContextBuilder` makes them `ServerCallContext.user` and
+`state["auth"]`, and `resolve_user_scope` makes the token's `sub` the owner.
+The token's other claims stay on the caller (`AuthenticatedCaller.claims`) for
+the agent's own logic. The distribution a request came through is its channel,
+not its owner.
 
-A distribution payload decides the caller whatever user and credentials a
-middleware in front of `CallerIdentityMiddleware` set: both are replaced, so
-a distribution never carries another caller's credentials. A request without
-a payload keeps the scope as it found it. A malformed payload, an empty
-distribution id included, is refused as an invalid request (`-32600`) rather
-than served anonymously; the error names the fields at fault, never their
-values. Headers name nobody. `ServerCallContext.tenant` is not a source either: the JSON-RPC
-dispatcher copies it from the request's own `tenant` field, which the client
-chooses, and the default resolver ignores it.
+The token is ES256, signed with the platform's key for this deployment. The
+deployment gets its own token with `AION_CLIENT_ID` and `AION_CLIENT_SECRET` at
+startup and then asks the control plane for the key; every client id has a key
+of its own. The request for the key is a stub for now
+(`PlatformKeySource._fetch_key`), so requests the platform signs are refused.
+A token has to be current (`exp`, and `nbf` when it has one) and name its
+caller in `sub`; `aud` is not checked. A request without a token, or with one
+that does not verify, is answered `401` before its body is read, and the agent
+never runs. Whatever user and credentials a middleware in front of
+`AionAuthMiddleware` set are replaced.
 
-**This is isolation, not access control.** The distribution id comes from the
-request itself, and nothing verifies that the platform sent it, so the caller
-is never authenticated (`is_authenticated` is `False`). What the SDK serves
-only to an authenticated user stays closed: Aion's `GetContexts` and
-`GetContext` answer with empty projections, and an interrupted task is not
-found through its `contextId` - it is continued by its `taskId`.
+**Without the credentials, the server runs in local mode.** Nothing checks a
+token, `aion serve` warns that authentication is disabled, and the card asks
+for no token. `AionAuthMiddleware` lets every request through as the
+unauthenticated anonymous caller, owner `""` - unless a middleware in front of
+it already named somebody - so all of them share one set of tasks and
+framework state: one developer's machine, not a deployment to expose.
+
+Other headers name nobody in either mode. `ServerCallContext.tenant` is not a
+source either: the JSON-RPC dispatcher copies it from the request's own
+`tenant` field, which the client chooses, and the default resolver ignores it.
+There is no `/docs` or `/redoc` in either mode.
+
+Aion's `GetContexts` and `GetContext`, and finding an interrupted task through
+its `contextId`, go through the same owner filter as everything else: a
+caller sees its own contexts and continues its own interrupted task, in
+either mode. Only a call without a `ServerCallContext` - from Python code
+that holds the handler - reads no history at all.
 
 ### What is isolated
 
@@ -86,16 +102,8 @@ the PostgreSQL store alike: `SendMessage` and `SendStreamingMessage`
 exist. Two callers may present the same `contextId`; their tasks and state
 stay apart. Each request path carries its own `ServerCallContext` down to the
 store; the server refuses to run one without it rather than treat it as
-unscoped.
-
-A caller is named only by a request that has `params.metadata`: in A2A v1
-that is `SendMessage`, `SendStreamingMessage` and `CancelTask`; in A2A v0.3,
-`message/send`, `message/stream`, `tasks/get`, `tasks/cancel` and
-`tasks/resubscribe`; and Aion's `GetContexts`/`GetContext`. A2A v1's
-`GetTask`, `ListTasks`, `SubscribeToTask` and push notification config
-methods have no such field - a request that adds one is refused as invalid
-params - so they always run as the anonymous caller and never reach a
-distribution's tasks.
+unscoped. The token is a header, so every method names its caller the same
+way, whether or not it has `params.metadata`.
 
 ### `context=None` in the stores
 
