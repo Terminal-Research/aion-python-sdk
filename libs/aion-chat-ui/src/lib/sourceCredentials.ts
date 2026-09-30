@@ -114,6 +114,7 @@ export class SourceCredentials {
 			lifetime.throwIfAborted();
 			if (response.status === 401) {
 				await response.body?.cancel();
+				lifetime.throwIfAborted();
 				if (guest) { guest.reject(); await guest.token(); }
 				throw new Error("Authentication failed. Run /login to sign in again or check the explicit source credentials.");
 			}

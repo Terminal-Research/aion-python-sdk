@@ -1782,6 +1782,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 							handleArtifactUpdate(event, streamResponse) || renderedAgentOutput;
 					}
 				}
+				if (requestSignal.aborted) return;
 				if (
 					shouldShowNoAgentMessageNotice({
 						responseMode,

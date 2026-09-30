@@ -107,4 +107,18 @@ describe("anonymous session lifecycle", () => {
 		await expect(pending).rejects.toThrow();
 		expect(storage.setAnonymousSession).not.toHaveBeenCalled();
 	});
+
+	it("does not let an old rejection invalidate an explicitly replaced guest", async () => {
+		const { session, fetcher } = setup({ ...initial, expiresAt: new Date(now + day).toISOString() });
+		let finishCancel!: () => void;
+		const cancel = vi.fn(() => new Promise<void>((resolve) => { finishCancel = resolve; }));
+		fetcher.mockResolvedValueOnce(new Response(new ReadableStream({ cancel }), { status: 401 }));
+		const pending = session.token();
+		const failed = expect(pending).rejects.toThrow();
+		await vi.waitFor(() => expect(cancel).toHaveBeenCalled());
+		await session.startNew();
+		finishCancel();
+		await failed;
+		expect(await session.token()).toBe(initial.token);
+	});
 });

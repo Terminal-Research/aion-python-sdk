@@ -181,6 +181,7 @@ export class AnonymousSession {
 			}
 			if (!response.ok) {
 				await response.body?.cancel();
+				signal.throwIfAborted();
 				if (response.status === 401 && previous) this.rejected = true;
 				if (response.status >= 400 && response.status < 500 && response.status !== 429) {
 					this.nextAttemptAt = Infinity;
