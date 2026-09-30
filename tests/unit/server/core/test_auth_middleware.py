@@ -1,4 +1,4 @@
-"""Who may reach an agent, and who the caller is, as ``AionAuthMiddleware`` decides in either mode.
+"""Who may reach an agent, and who the caller is, as ``AionAuthMiddleware`` decides.
 
 The middlewares run in the order ``AppFactory`` installs them, on their own or
 behind an application's ``AuthenticationMiddleware``, and the probe endpoint
@@ -19,7 +19,14 @@ from aion.server.core.middlewares import AionAuthMiddleware, AionContextMiddlewa
 
 from tests.unit.support.distribution import distribution_metadata
 from tests.unit.support.request_path import ELSEWHERE, Probe, send_message
-from tests.unit.support.tokens import PLATFORM_SUBJECT, platform_token, platform_verifier
+from tests.unit.support.tokens import (
+    PLATFORM_SUBJECT,
+    SESSION_SUBJECT,
+    open_verifier,
+    platform_token,
+    platform_verifier,
+    session_token,
+)
 
 
 class _Alice(AuthenticationBackend):
@@ -47,6 +54,24 @@ async def test_the_token_names_the_owner() -> None:
         True,
         ["authenticated"],
     )
+
+
+async def test_an_anonymous_session_token_names_the_owner_too() -> None:
+    probe = Probe()
+    middleware = [Middleware(AionAuthMiddleware, verifier=open_verifier()), Middleware(AionContextMiddleware)]
+    async with probe.client(*middleware) as client:
+        answer = (await send_message(client, headers=_bearer(session_token()))).json()
+
+    assert (answer["owner"], answer["authenticated"]) == (SESSION_SUBJECT, True)
+
+
+async def test_a_hosted_server_refuses_an_anonymous_session_token() -> None:
+    probe = Probe()
+    async with probe.client(*_aion()) as client:
+        response = await send_message(client, headers=_bearer(session_token()))
+
+    assert response.status_code == 401
+    assert probe.calls == 0
 
 
 async def test_a_distribution_is_channel_context_not_the_owner() -> None:
@@ -163,35 +188,3 @@ async def test_nothing_else_is_public(path) -> None:
         response = await client.get(path)
 
     assert response.status_code == 401
-
-
-def _local() -> list[Middleware]:
-    return [Middleware(AionAuthMiddleware, verifier=None), Middleware(AionContextMiddleware)]
-
-
-@pytest.mark.parametrize("headers", [{}, {"Authorization": "Bearer not-a-jwt"}], ids=["no-token", "any-token"])
-async def test_in_local_mode_every_request_is_the_anonymous_callers(headers) -> None:
-    """Nothing is checked: no token and a token alike reach the agent as the owner ``""``."""
-    probe = Probe()
-    async with probe.client(*_local()) as client:
-        response = await send_message(client, headers=headers)
-
-    assert response.status_code == 200
-    assert (response.json()["owner"], response.json()["authenticated"]) == ("", False)
-
-
-async def test_in_local_mode_every_route_is_open() -> None:
-    probe = Probe()
-    async with probe.client(*_local()) as client:
-        response = await send_message(client, path=ELSEWHERE)
-
-    assert response.status_code == 200
-    assert response.json() == {"user": "", "scopes": []}
-
-
-async def test_in_local_mode_a_user_an_earlier_middleware_named_is_kept() -> None:
-    probe = Probe()
-    async with probe.client(Middleware(AuthenticationMiddleware, backend=_Alice()), *_local()) as client:
-        answer = (await send_message(client)).json()
-
-    assert (answer["owner"], answer["authenticated"]) == ("alice", True)

@@ -164,6 +164,11 @@ class ApiSettings(BaseEnvSettings):
         return self._http_url
 
     @property
+    def verification_keys_url(self) -> str:
+        """URL of the control plane's public JWKS for verifying anonymous session tokens."""
+        return f"{self.http_url}/runtime/a2a/verification-keys"
+
+    @property
     def gql_url(self) -> str:
         """
         Get the complete HTTP URL for GraphQL endpoint.

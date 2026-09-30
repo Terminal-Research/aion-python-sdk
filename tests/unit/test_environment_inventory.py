@@ -43,6 +43,7 @@ def _model_variables() -> set[str]:
 
 # Read outside any settings model, by a deployment's process environment.
 DEPLOYMENT_OUTSIDE_MODELS = {
+    "DEPLOYMENT_ID",
     "TASK_OWNERSHIP_REAPER",
 }
 

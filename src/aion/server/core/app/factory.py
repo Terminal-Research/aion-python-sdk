@@ -66,9 +66,8 @@ class AppFactory:
                 through unchanged.
             startup_callback: Optional callback to call after initialization
             token_verifier: Optional pre-built verifier for request tokens. If
-                None, ``aion.server.auth.build_token_verifier`` decides at
-                initialization: the platform's with AION_CLIENT_ID and
-                AION_CLIENT_SECRET, none - local mode - without them.
+                None, ``aion.server.auth.build_token_verifier`` builds the one
+                for the mode the server runs in at initialization.
         """
         self.aion_agent = aion_agent
         self.db_factory = db_factory
@@ -103,11 +102,10 @@ class AppFactory:
         """Initialize all application components in sequence."""
         logger.debug("Initializing application for agent '%s'", self.aion_agent.id)
 
-        # 0. Get the key request tokens are verified with ready - or none, in local mode
+        # 0. Get the keys request tokens are verified with ready
         if self.token_verifier is None:
             self.token_verifier = build_token_verifier()
-        if self.token_verifier is not None:
-            await self.token_verifier.load()
+        await self.token_verifier.load()
 
         # 1. Initialize database
         await self.db_factory.initialize()
@@ -241,6 +239,12 @@ class AppFactory:
                 logger.info("Push notification client closed")
             except Exception as exc:
                 logger.error("Error closing push notification client", exc_info=exc)
+
+        if self.token_verifier is not None:
+            try:
+                await self.token_verifier.aclose()
+            except Exception as exc:
+                logger.error("Error closing the token verifier", exc_info=exc)
 
         if self.plugin_factory.is_initialized():
             try:

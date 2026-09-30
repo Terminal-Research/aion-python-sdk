@@ -1,25 +1,28 @@
-"""Who calls an agent: the platform's bearer tokens, the key they are verified with, and the caller they name.
+"""Who calls an agent: the bearer tokens requests carry, the keys they are verified with, and the caller they name.
 
-With ``AION_CLIENT_ID`` and ``AION_CLIENT_SECRET`` set, every protected request
-carries ``Authorization: Bearer <JWT>``. ``AionAuthMiddleware`` verifies it with
-a ``TokenVerifier`` against the platform's key (``PlatformKeySource``) and
-installs the ``AuthenticatedCaller`` the token names; its ``sub`` is the owner
-of the request's tasks and framework state. Without the credentials the server
-runs in local mode, with authentication disabled. ``authentication_required``
-and ``build_token_verifier`` are where that rule lives.
+Every protected request carries ``Authorization: Bearer <JWT>``.
+``AionAuthMiddleware`` verifies it with a ``TokenVerifier`` and installs the
+``AuthenticatedCaller`` the token names; its ``sub`` is the owner of the
+request's tasks and framework state. Two kinds of token are accepted: call
+tokens Aion signs for this deployment (``PlatformKeySource``) and anonymous
+session tokens signed with keys the control plane publishes
+(``JwksKeySource``). Which kinds a server accepts depends on where it runs;
+``build_token_verifier`` is where that rule lives.
 """
 
 from .caller import AuthenticatedCaller
-from .mode import authentication_required, build_token_verifier
+from .jwks import JwksKeySource
+from .mode import build_token_verifier, is_hosted
 from .platform import PlatformKeySource
 from .verifier import InvalidTokenError, KeySource, TokenVerifier
 
 __all__ = [
     "AuthenticatedCaller",
     "InvalidTokenError",
+    "JwksKeySource",
     "KeySource",
     "PlatformKeySource",
     "TokenVerifier",
-    "authentication_required",
     "build_token_verifier",
+    "is_hosted",
 ]

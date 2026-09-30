@@ -1,32 +1,50 @@
-"""Whether the server requires a token, and what it verifies tokens with.
+"""Which tokens the server accepts, decided from where it runs.
 
-The one place the rule lives: with ``AION_CLIENT_ID`` and ``AION_CLIENT_SECRET``
-the deployment has the platform behind it, and every protected request needs
-the platform's bearer token; without them the server runs in local mode, with
-authentication disabled. ``AppFactory``, the agent card and ``aion serve`` all
-ask here rather than read the credentials themselves.
+Every protected request carries a bearer token; there is no mode without one.
+What differs is which kinds ``TokenVerifier`` accepts. A server the Aion
+platform deployed accepts only the platform's call tokens. Anywhere else - a
+remote server or local development - it also accepts anonymous session tokens,
+and call tokens only when ``AION_CLIENT_ID`` and ``AION_CLIENT_SECRET`` say
+the deployment has an identity on the platform. ``AppFactory`` asks
+``build_token_verifier``; nothing else reads these settings.
 """
 
-from typing import Optional
+import logging
+import os
 
 from aion.core.settings import api_settings
 
+from .jwks import JwksKeySource
 from .platform import PlatformKeySource
 from .verifier import TokenVerifier
 
+logger = logging.getLogger(__name__)
+
 __all__ = [
-    "authentication_required",
     "build_token_verifier",
+    "is_hosted",
 ]
 
 
-def authentication_required() -> bool:
-    """Whether requests need the platform's bearer token; ``False`` is local mode."""
-    return api_settings.has_credentials
+def is_hosted() -> bool:
+    """Whether the Aion platform deployed this server."""
+    # Set by the platform in the environment of the servers it deploys. Not an
+    # AION_* setting and not documented for users: they cannot opt in.
+    return bool(os.environ.get("DEPLOYMENT_ID", "").strip())
 
 
-def build_token_verifier() -> Optional[TokenVerifier]:
-    """The verifier for the platform's tokens, or ``None`` in local mode."""
-    if not authentication_required():
-        return None
-    return TokenVerifier(PlatformKeySource())
+def build_token_verifier() -> TokenVerifier:
+    """The verifier for the tokens this server accepts in the mode it runs in."""
+    hosted = is_hosted()
+    accepts_call_tokens = hosted or api_settings.has_credentials
+    if hosted:
+        logger.info("Authentication: hosted on the Aion platform; accepting the platform's call tokens")
+    elif accepts_call_tokens:
+        logger.info("Authentication: not hosted; accepting the platform's call tokens and anonymous session tokens")
+    else:
+        logger.info("Authentication: not hosted, no platform credentials; accepting anonymous session tokens only")
+    return TokenVerifier(
+        call_keys=PlatformKeySource() if accepts_call_tokens else None,
+        call_audience=api_settings.client_id if accepts_call_tokens else None,
+        session_keys=None if hosted else JwksKeySource(api_settings.verification_keys_url),
+    )
