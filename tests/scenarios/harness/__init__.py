@@ -7,6 +7,7 @@ from .callback import (
     Notification,
 )
 from .client import DataAttachment, FileAttachment, PushAuth, ScenarioClient
+from .control_plane import DEFAULT_SUBJECT, FakeControlPlane, control_plane
 from .daemon import (
     DAEMON_BEHAVIOR_ID,
     DAEMON_ENVIRONMENT_ID,
@@ -54,11 +55,13 @@ __all__ = [
     "DAEMON_EXTENSION_URI",
     "DAEMON_IDENTITY_ID",
     "DISTRIBUTION_EXTENSION_URI",
+    "DEFAULT_SUBJECT",
     "DISTRIBUTION_ID",
     "DataAttachment",
     "EVENT_EXTENSION_URI",
     "Ev",
     "EventEnvelope",
+    "FakeControlPlane",
     "FileAttachment",
     "MESSAGING_EXTENSION_URI",
     "NOTIFICATION_TOKEN_HEADER",
@@ -76,6 +79,7 @@ __all__ = [
     "card_action_event",
     "chunks",
     "command_event",
+    "control_plane",
     "daemon_metadata",
     "distribution_metadata",
     "ephemeral",

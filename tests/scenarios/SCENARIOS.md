@@ -4,7 +4,7 @@
      commands.py and frameworks.py. Do not edit by hand: run
      `make scenarios-matrix`. -->
 
-155 scenarios in 30 files, 330 runs across 2 frameworks: 300 run, 30 skipped.
+159 scenarios in 31 files, 346 runs across 2 frameworks: 316 run, 30 skipped.
 
 Nothing here was produced by running a scenario: `pytest --collect-only` and the registries are all it takes, and the same suite always renders the same file. What the suite is and how to run it is in [README.md](README.md).
 
@@ -15,7 +15,7 @@ A status cell reads `✓` when it runs, `skip` when `frameworks.UNSUPPORTED`, `f
 |  | Covered | Not yet |
 |---|---|---|
 | Commands | 21 of 21: `help`, `echo`, `stream`, `typing`, `steps`, `slow`, `artifacts`, `card`, `outbox-task`, `outbox-message`, `ask`, `ask-twice`, `ask-fail`, `fail`, `ext`, `whoami`, `event`, `config`, `ids`, `big`, `parts` | — |
-| Suites | 15 of 15: `smoke`, `streaming`, `events`, `terminal_states`, `interrupts`, `errors`, `artifacts`, `files`, `extensions`, `daemon`, `config`, `lifecycle`, `persistence`, `distributed`, `native` | — |
+| Suites | 16 of 16: `smoke`, `streaming`, `events`, `terminal_states`, `interrupts`, `errors`, `artifacts`, `files`, `extensions`, `daemon`, `authentication`, `config`, `lifecycle`, `persistence`, `distributed`, `native` | — |
 
 ## Frameworks
 
@@ -71,6 +71,7 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 | `files` | inline file parts: stored, rejected, or passed through | 10 | `make tests-scenarios TAGS=files` |
 | `extensions` | extension activation and payload delivery | 12 | `make tests-scenarios TAGS=extensions` |
 | `daemon` | daemon extension identity and environment | 6 | `make tests-scenarios TAGS=daemon` |
+| `authentication` | bearer tokens: required, verified, and naming the caller | 4 | `make tests-scenarios TAGS=authentication` |
 | `config` | aion.yaml configuration and deployment variants | 7 | `make tests-scenarios TAGS=config` |
 | `lifecycle` | cancel, concurrency, push notifications, startup | 4 | `make tests-scenarios TAGS=lifecycle` |
 | `persistence` | needs POSTGRES_TEST_URL; survives a server restart | 10 | `make tests-scenarios-persistence` |
@@ -78,6 +79,17 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 | `native` | an ordinary framework agent on its own path: model, tools, memory, no Aion API | 29 | `make tests-scenarios TAGS=native` |
 
 ## Scenarios by file
+
+### `tests/scenarios/core/test_authentication.py`
+
+Who a request is from, and what a server does with one that names nobody it trusts.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [No ``Authorization`` header: ``401`` with a bearer challenge, and no run.](core/test_authentication.py#L36 "test_a_call_without_a_token_is_refused") | `authentication` | — | `default` | ✓ | ✓ |
+| [The token names no caller the server trusts: ``401``, and the reason never quotes it.](core/test_authentication.py#L44 "test_a_call_with_a_token_that_does_not_verify_is_refused") | `authentication` | — | `default` | ✓ | ✓ |
+| [The control plane's token opens the endpoint the two refusals above close.](core/test_authentication.py#L64 "test_a_call_with_an_anonymous_session_token_is_served") | `authentication` | — | `default` | ✓ | ✓ |
+| [The caller is the token's ``sub``: the same ``contextId`` opens a task apiece.](core/test_authentication.py#L72 "test_two_sessions_on_one_context_do_not_see_each_others_tasks") | `authentication` | — | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_big_payload.py`
 
@@ -272,8 +284,8 @@ Does a deployment of this framework answer at all.
 | [The proxy's system health names the agent and calls it healthy.](core/test_smoke.py#L14 "test_proxy_reports_every_agent_healthy") | `smoke` | — | `default` | ✓ | ✓ |
 | [The deployment manifest names the agents the proxy routes to.](core/test_smoke.py#L23 "test_manifest_lists_the_agent") | `smoke` | — | `default` | ✓ | ✓ |
 | [The card arrives on the proxy route and describes the deployed agent.](core/test_smoke.py#L30 "test_agent_card_is_served_through_the_proxy") | `smoke` | — | `default` | ✓ | ✓ |
-| [Without credentials nothing checks a token, and the card does not ask for one.](core/test_smoke.py#L40 "test_in_local_mode_the_card_asks_for_no_token") | `smoke` | — | `default` | ✓ | ✓ |
-| [There is no api browser](core/test_smoke.py#L48 "test_there_is_no_api_browser") | `smoke` | — | `default` | ✓ | ✓ |
+| [Every call needs a token, and the card says so before the first one is refused.](core/test_smoke.py#L40 "test_the_card_asks_for_a_bearer_token") | `smoke` | — | `default` | ✓ | ✓ |
+| [There is no api browser](core/test_smoke.py#L47 "test_there_is_no_api_browser") | `smoke` | — | `default` | ✓ | ✓ |
 | [`help` answers the menu, and the turn completes.](core/test_smoke.py#L55 "test_help_answers_with_the_menu") | `smoke` | `help` | `default` | ✓ | ✓ |
 | [`echo <text>` answers with the argument, unchanged.](core/test_smoke.py#L64 "test_echo_answers_with_the_argument") | `smoke` | `echo` | `default` | ✓ | ✓ |
 

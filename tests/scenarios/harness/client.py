@@ -28,6 +28,7 @@ from a2a.types.a2a_pb2 import (
 from google.protobuf.json_format import ParseDict
 from google.protobuf.struct_pb2 import Struct, Value
 
+from .control_plane import DEFAULT_SUBJECT, control_plane
 from .recorder import Ev, record_stream
 
 __all__ = [
@@ -159,9 +160,24 @@ class ScenarioClient:
         return f"{self.base_url}/agents/{self.agent_id}"
 
     @classmethod
-    async def connect(cls, base_url: str, agent_id: str) -> "ScenarioClient":
-        """Fetch the agent card through the proxy and build the clients."""
-        http_client = httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SECONDS)
+    async def connect(
+            cls,
+            base_url: str,
+            agent_id: str,
+            *,
+            subject: str = DEFAULT_SUBJECT,
+    ) -> "ScenarioClient":
+        """Fetch the agent card through the proxy and build the clients.
+
+        Every request the clients make carries an anonymous session token for
+        ``subject``, signed by the scenarios' stand-in control plane. Clients
+        of one subject are one caller to the server; a scenario about
+        isolation connects two with different subjects.
+        """
+        http_client = httpx.AsyncClient(
+            timeout=REQUEST_TIMEOUT_SECONDS,
+            headers={"Authorization": f"Bearer {control_plane().token(subject)}"},
+        )
         agent_url = f"{base_url.rstrip('/')}/agents/{agent_id}"
         try:
             response = await http_client.get(f"{agent_url}{AGENT_CARD_PATH}")
