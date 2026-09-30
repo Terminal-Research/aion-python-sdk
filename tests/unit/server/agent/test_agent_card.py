@@ -5,6 +5,7 @@ import pytest
 from aion.core.a2a import AION_JSONRPC_METHOD_EXTENSION_BINDINGS
 from aion.core.constants.a2a import (
     BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1,
+    CRON_EXTENSION_URI_V1,
     DAEMON_EXTENSION_URI_V1,
     GET_CONTEXT_EXTENSION_URI_V1,
     GET_CONTEXTS_LIST_EXTENSION_URI_V1,
@@ -25,6 +26,16 @@ class TestCapabilities:
     @pytest.fixture(autouse=True)
     def _registry(self, isolated_registry):
         pass
+
+    def test_cron_support_is_advertised_once_and_optional(self):
+        """The typed Cron collector is discoverable without requiring its use."""
+        card = AionAgentCard.from_config(_make_config(), "http://localhost:8000")
+        declarations = [
+            extension for extension in card.capabilities.extensions
+            if extension.uri == CRON_EXTENSION_URI_V1
+        ]
+        assert len(declarations) == 1
+        assert not declarations[0].required
 
     @pytest.mark.parametrize("uri", [
         "https://docs.aion.to/a2a/extensions/aion/context/1.0.0",

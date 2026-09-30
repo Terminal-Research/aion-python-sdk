@@ -184,3 +184,14 @@ npm test
 npm run build
 npm pack --dry-run
 ```
+
+Agent capabilities come from the selected A2A Agent Card. The bundled GraphQL
+schema also includes `a2aAgentCardUrl` for clients that resolve a distribution
+target before fetching its card; it is not a separate capability flag.
+
+Explicit `/clear` creates and stores a new context ID before sending a unary
+Welcome Message Extension request when the selected card supports it. Welcome
+completion is independent of the foreground request. Reconnect and context
+restoration do not dispatch it, and failures are not retried. A first user
+prompt creates its context without a separate welcome. Session saves merge
+messages by ID so concurrent welcomes cannot erase ordinary replies.

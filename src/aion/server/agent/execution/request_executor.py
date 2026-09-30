@@ -20,6 +20,7 @@ from aion.core.runtime import (
 )
 from aion.core.runtime.context.registry import AionRuntimeContextRegistry
 from aion.server.a2a.constants import TERMINAL_TASK_STATES
+from aion.server.a2a.response_extensions import ResponseServiceParameters
 from aion.server.agent.aion_agent import AionAgent
 from aion.server.agent.execution.scope import set_task_id
 from aion.server.files.a2a import A2AFileTransformer
@@ -120,7 +121,7 @@ class AionAgentRequestExecutor(AgentExecutor):
         task_updater = TaskUpdater(event_queue, task.id, task.context_id)
 
         try:
-            await self._setup_runtime_context(context)
+            response_parameters = await self._setup_runtime_context(context)
         except ExtensionActivationError as ex:
             raise InvalidParamsError(message=str(ex)) from ex
 
@@ -145,6 +146,11 @@ class AionAgentRequestExecutor(AgentExecutor):
             task_updater,
             self._file_transformer,
             task_started=not is_new_task,
+            response_parameters=response_parameters,
+            prior_message_ids=frozenset(
+                [message.message_id for message in task.history]
+                + ([task.status.message.message_id] if task.status.HasField('message') else [])
+            ),
         )
         try:
             async for agent_event in produce_events(context=context):
@@ -233,11 +239,13 @@ class AionAgentRequestExecutor(AgentExecutor):
         await task_updater.cancel(message=cancel_message)
 
     @staticmethod
-    async def _setup_runtime_context(context: RequestContext) -> None:
-        """Build and set Aion runtime context at server level for all executors."""
+    async def _setup_runtime_context(context: RequestContext) -> ResponseServiceParameters:
+        """Set runtime context and return its verified invocation activation."""
         runtime_context = AionRuntimeContextBuilder.from_request_context(context)
         if runtime_context:
             await AionRuntimeContextRegistry.aset_current_context(runtime_context)
+            return ResponseServiceParameters(runtime_context.extensions.activated_uris)
+        return ResponseServiceParameters()
 
     async def _resolve(
             self,

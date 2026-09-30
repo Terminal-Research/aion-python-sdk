@@ -12,16 +12,22 @@ from a2a.server.jsonrpc_models import (
 )
 from a2a.server.request_handlers import prepare_response_object
 from a2a.server.routes.jsonrpc_dispatcher import JsonRpcDispatcher
+from a2a.server.request_handlers.response_helpers import build_error_response
+from a2a.utils import constants, proto_utils
+from a2a.utils.errors import A2AError
+from a2a.utils.version_validator import validate_version
+from google.protobuf.json_format import MessageToDict
 from a2a.utils.errors import UnsupportedOperationError
 from aion.core.a2a import AION_JSONRPC_METHOD_EXTENSION_BINDINGS
 from aion.core.runtime import aion_a2a_extension_registry
-from jsonrpc.jsonrpc2 import JSONRPC20Request
+from jsonrpc.jsonrpc2 import JSONRPC20Request, JSONRPC20Response
 from pydantic import ValidationError
 from sse_starlette.sse import EventSourceResponse
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 from .request_handler import AionRequestHandler
+from aion.server.a2a.response_extensions import ResponseServiceParameters
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +110,48 @@ class AionJsonRpcDispatcher(JsonRpcDispatcher):
         return await super().handle_requests(request)
 
     @override
+    @validate_version(constants.PROTOCOL_VERSION_1_0)
+    async def _process_streaming_request(
+        self,
+        request_id: str | int | None,
+        request_obj: Any,
+        context: ServerCallContext,
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """Verify send activation before headers without pulling a body event.
+
+        Read subscriptions keep upstream startup validation. Send validation
+        of extension payloads is synchronous; subsequent execution failures
+        remain JSON-RPC errors in the SSE body. Closing the response closes
+        its owned generator, including on client cancellation.
+
+        Args:
+            request_id: JSON-RPC correlation ID.
+            request_obj: Parsed protocol request.
+            context: Invocation-local authentication and service parameters.
+
+        Returns:
+            An unconsumed generator after extension preflight succeeds.
+        """
+        if context.state.get('method') != 'SendStreamingMessage':
+            return await super()._process_streaming_request(
+                request_id, request_obj, context
+            )
+        self.request_handler.verify_declared_extensions(request_obj, context)
+
+        async def results():
+            stream = self.request_handler.on_message_send_stream(request_obj, context)
+            try:
+                async for event in stream:
+                    result = MessageToDict(proto_utils.to_stream_response(event))
+                    yield JSONRPC20Response(result=result, _id=request_id).data
+            except A2AError as error:
+                yield build_error_response(request_id, error)
+            finally:
+                await stream.aclose()
+
+        return results()
+
+    @override
     def _create_response(
         self,
         context: ServerCallContext,
@@ -122,6 +170,9 @@ class AionJsonRpcDispatcher(JsonRpcDispatcher):
             JSON or SSE response created by the upstream A2A dispatcher.
         """
         response = super()._create_response(context, handler_result)
+        parameters = ResponseServiceParameters.from_context(context)
+        if parameters.activated_extensions:
+            response.headers['A2A-Extensions'] = ','.join(parameters.activated_extensions)
         if isinstance(response, EventSourceResponse):
             response.sep = _SSE_LINE_SEPARATOR
         return response

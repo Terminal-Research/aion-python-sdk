@@ -298,7 +298,7 @@ class TestVerifyDeclaredExtensions:
     @staticmethod
     def _call_context(requested=frozenset()):
         from types import SimpleNamespace
-        return SimpleNamespace(requested_extensions=set(requested))
+        return SimpleNamespace(requested_extensions=set(requested), state={})
 
     @staticmethod
     def _handler_self():
@@ -307,7 +307,7 @@ class TestVerifyDeclaredExtensions:
         return SimpleNamespace()
 
     def _verify(self, params, call_context):
-        AionRequestHandler._verify_declared_extensions(
+        AionRequestHandler.verify_declared_extensions(
             self._handler_self(), params, call_context
         )
 

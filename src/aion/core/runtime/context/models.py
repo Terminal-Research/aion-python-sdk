@@ -14,6 +14,7 @@ from aion.core.constants.a2a import (
     CARD_ACTION_EVENT_TYPE_V1,
     CARDS_EXTENSION_URI_V1,
     COMMAND_EVENT_TYPE_V1,
+    CRON_EXTENSION_URI_V1,
     DAEMON_EXTENSION_URI_V1,
     DISTRIBUTION_EXTENSION_URI_V1,
     EVENT_EXTENSION_URI_V1,
@@ -71,6 +72,7 @@ NormalizedPayload = Union[
 class AionExtensions(str, Enum):
     """Extension URIs declared in message.extensions[] by the A2A sender."""
     DISTRIBUTION = DISTRIBUTION_EXTENSION_URI_V1
+    CRON = CRON_EXTENSION_URI_V1
     MESSAGING = MESSAGING_EXTENSION_URI_V1
     CARDS = CARDS_EXTENSION_URI_V1
     EVENT = EVENT_EXTENSION_URI_V1

@@ -1,6 +1,8 @@
 """A2A extension models — re-exports all extension payload types."""
 
 from .distribution import *
+from .cron import *
+from .welcome_message import *
 from .traceability import *
 from .messaging import *
 from .cards import *

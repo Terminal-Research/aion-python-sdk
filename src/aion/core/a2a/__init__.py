@@ -54,6 +54,8 @@ from .method_extensions import (
 )
 
 from .extensions.cards import CardActionEventPayload
+from .extensions.cron import CronExtensionV1
+from .extensions.welcome_message import WelcomeRequestPayload
 from .extensions.distribution import (
     Behavior,
     Distribution,

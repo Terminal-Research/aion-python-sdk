@@ -16,6 +16,7 @@ stored task, not about a call that happened.
 from __future__ import annotations
 
 import uuid
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from a2a.server.context import ServerCallContext
@@ -32,6 +33,7 @@ from a2a.types import (
     TaskStatusUpdateEvent,
 )
 
+from aion.server.a2a.response_extensions import ResponseServiceParameters
 from aion.server.a2a.utils import mark_status_event_ephemeral
 from aion.server.agent.execution.event_pipeline import AionEventPipeline
 from aion.server.agent.execution.scope import (
@@ -402,3 +404,52 @@ async def test_a_pending_status_message_survives_a_task_saved_over_it(
         "carried in status",
         "from the incoming task",
     ]
+
+
+def message(id, role=Role.ROLE_AGENT, extensions=()):
+    return Message(message_id=id, role=role, extensions=extensions)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('kind', ['task', 'message', 'status'])
+async def test_annotates_new_agent_messages_before_storage_or_delivery(kind):
+    new = message('new', extensions=['urn:existing', 'urn:cron'])
+    old = message('old', extensions=['urn:old'])
+    user = message('user', Role.ROLE_USER)
+    status = TaskStatus(state=TaskState.TASK_STATE_COMPLETED, message=new)
+    if kind == 'task':
+        event = Task(id='task', history=[old, user, new], status=status)
+    elif kind == 'status':
+        event = TaskStatusUpdateEvent(task_id='task', status=status)
+    else:
+        event = new
+    before = event.SerializeToString()
+    queue, manager = AsyncMock(), AsyncMock()
+    manager.get_task.return_value = None
+    pipeline = AionEventPipeline(
+        queue, AsyncMock(), task_started=True,
+        response_parameters=ResponseServiceParameters(('urn:cron', 'urn:verified')),
+        prior_message_ids=frozenset({'old', 'user'}),
+    )
+    with patch('aion.server.agent.execution.event_pipeline.exec_scope_get_task_manager', return_value=manager):
+        await pipeline.process(event)
+    output = (queue.enqueue_event if kind == 'status' else manager.process).call_args.args[0]
+    actual = output if kind == 'message' else output.status.message
+    assert list(actual.extensions) == ['urn:existing', 'urn:cron', 'urn:verified']
+    if kind == 'task':
+        assert list(output.history[0].extensions) == ['urn:old']
+        assert not output.history[1].extensions
+    assert event.SerializeToString() == before
+
+
+@pytest.mark.parametrize('role,id', [(Role.ROLE_USER, 'new'), (Role.ROLE_AGENT, 'old')])
+def test_old_status_and_user_messages_keep_their_provenance(role, id):
+    event = TaskStatusUpdateEvent(status=TaskStatus(message=message(id, role)))
+    result = ResponseServiceParameters(('urn:cron',)).annotate(event, frozenset({'old'}))
+    assert not result.status.message.extensions
+
+
+def test_empty_task_does_not_fabricate_a_message():
+    result = ResponseServiceParameters(('urn:cron',)).annotate(Task(id='task'), frozenset())
+    assert not result.history
+    assert not result.status.HasField('message')

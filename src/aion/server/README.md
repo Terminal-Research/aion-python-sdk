@@ -147,3 +147,12 @@ The owner here is the caller. It is unrelated to the lease owner of task
 ownership in the PostgreSQL deployment - the server process currently
 executing a task - which decides who may write a task's progress, never who
 may see or cancel it.
+
+## Response Extension Provenance
+
+A2A 1.0 JSON-RPC responses acknowledge verified invocation extensions in the
+`A2A-Extensions` header, including empty or delayed streams. Unknown declarations
+are not acknowledgment. Runtime-produced agent messages retain the same URI list
+through persistence; earlier history and user messages are not relabeled. This
+does not require copying extension payloads into response metadata. The server
+currently exposes JSON-RPC, not an additional HTTP+JSON binding.

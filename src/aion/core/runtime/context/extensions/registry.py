@@ -10,6 +10,7 @@ from aion.core.a2a.extensions.behaviour_evolution import (
     EvolutionVerdictEventPayload,
 )
 from aion.core.a2a.extensions.cards import CardActionEventPayload
+from aion.core.a2a.extensions.cron import CronExtensionV1
 from aion.core.a2a.extensions.daemon import DaemonExtensionPayload
 from aion.core.a2a.extensions.distribution import DistributionExtensionV1
 from aion.core.a2a.extensions.messaging import (
@@ -21,6 +22,8 @@ from aion.core.a2a.extensions.traceability import TraceabilityExtensionV1
 from aion.core.constants.a2a import (
     AION_USAGE_ATTRIBUTION_HEADER,
     CARDS_EXTENSION_URI_V1,
+    CRON_EXTENSION_URI_V1,
+    WELCOME_MESSAGE_EXTENSION_URI_V1,
     DAEMON_EXTENSION_URI_V1,
     DISTRIBUTION_EXTENSION_URI_V1,
     EVENT_EXTENSION_URI_V1,
@@ -38,6 +41,7 @@ from .descriptors import (
     HeaderCollector,
     MessagesCollector,
     TaskMetadataCollector,
+    WelcomeMessageCollector,
 )
 
 __all__ = [
@@ -259,6 +263,14 @@ aion_a2a_extension_registry.register(
 
 aion_a2a_extension_registry.register(
     ExtensionDescriptor(
+        uri=CRON_EXTENSION_URI_V1,
+        collector=TaskMetadataCollector(CronExtensionV1),
+        description="Cron invocation timing: intended firing and producer dispatch time.",
+    )
+)
+
+aion_a2a_extension_registry.register(
+    ExtensionDescriptor(
         uri=USAGE_ATTRIBUTION_EXTENSION_URI_V1,
         collector=HeaderCollector(AION_USAGE_ATTRIBUTION_HEADER),
         description=(
@@ -326,6 +338,17 @@ aion_a2a_extension_registry.register(
             EvolutionVerdictEventPayload,
         ),
         description="Self-improvement flow: daemon-driven directive/verdict/result routing.",
+        active=False,
+    )
+)
+
+
+# Enabling this declaration is the agent implementer's commitment to handle it.
+aion_a2a_extension_registry.register(
+    ExtensionDescriptor(
+        uri=WELCOME_MESSAGE_EXTENSION_URI_V1,
+        collector=WelcomeMessageCollector(),
+        description="Generate an opening message for a new conversation.",
         active=False,
     )
 )
