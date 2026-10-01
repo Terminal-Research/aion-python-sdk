@@ -18,21 +18,30 @@ Configuration Guide](https://docs.aion.to/sdk/python/configuration/aion-yaml).
 
 Custom HTTP endpoints are added through `AppRegistry`: the agent module
 registers its own FastAPI routers before the server starts, and the factory
-mounts them on the application it builds. With platform credentials those
-routes need a bearer token like every other route of the server (see below).
+mounts them on the application it builds. Those routes need a verified
+caller like every other route of the server (see below).
 `aion.yaml` declares agents and the
 MCP proxy, and rejects any other key - see the [AppRegistry
 guide](https://docs.aion.to/sdk/python/extensibility/app-registry).
 
 ## Who a task belongs to
 
-Every task, and the framework state behind it, belongs to one owner. The
-owner is what `AionAgent.owner_resolver` names for a request's
-`ServerCallContext` - by default a2a-sdk's `resolve_user_scope`, the user's
-name. `AppFactory` builds the task store with that same resolver and refuses
-to start if a store was built with another, so the tasks table's
-`owner_scope`, LangGraph's checkpoint `thread_id` and ADK's session `user_id`
-always name the same owner, and so do the task's push notification configs.
+Every task belongs to one owner: the caller who started it. The owner is
+what `AionAgent.owner_resolver` names for a request's `ServerCallContext` - by
+default a2a-sdk's `resolve_user_scope`, the user's name. `AppFactory` builds
+the task store with that same resolver and refuses to start if a store was
+built with another, so the tasks table's `owner_scope` and the task's push
+notification configs always name the same owner.
+
+The framework state behind the tasks - LangGraph's checkpoint `thread_id`,
+ADK's session `user_id` - belongs to the conversation (`StateScope`). A
+private conversation is its caller's, and its state owner is that same owner.
+A conversation Aion routes through its gateway, named by a verified
+invocation token, is shared: its state is keyed by the receiving agent
+identity and the edge environment (`aion.gateway:<identity>:<edge>`), so every
+participant's turn sees the same memory, while each task - reading,
+continuing, cancelling it, its push configs - stays its initiator's. Context
+admission keeps a context private or shared, never both (see below).
 A custom resolver is passed to the agent:
 `AionAgent.from_adapter(..., owner_resolver=...)`; it receives the request's
 `ServerCallContext`, whose user is the caller described below.

@@ -167,7 +167,7 @@ class ADKExecutor(ExecutorAdapter):
             scope = config.require_state_scope()
             session = await self._session_service.get_session(
                 app_name=scope.agent_id,
-                user_id=scope.owner_scope,
+                user_id=scope.state_owner,
                 session_id=config.context_id,
             )
 
@@ -230,9 +230,11 @@ class ADKExecutor(ExecutorAdapter):
         """Get the caller's session for this context, or create it.
 
         Keyed by ``app_name`` = the Aion agent id and ``user_id`` = the
-        caller's ``owner_scope`` (``StateScope``), with the A2A ``context_id``
-        as ``session_id``: two users - or two agents on one database - that
-        present the same ``context_id`` get two sessions.
+        conversation's state owner (``StateScope.state_owner``: the caller's
+        ``owner_scope``, or the gateway conversation's), with the A2A
+        ``context_id`` as ``session_id``: two users - or two agents on one
+        database - that present the same ``context_id`` get two sessions,
+        while the participants of one gateway conversation share one.
 
         Raises:
             LegacyStateError: No such session exists, but one saved before
@@ -241,7 +243,7 @@ class ADKExecutor(ExecutorAdapter):
         scope = config.require_state_scope()
         session = await self._session_service.get_session(
             app_name=scope.agent_id,
-            user_id=scope.owner_scope,
+            user_id=scope.state_owner,
             session_id=session_id,
         )
         if session:
@@ -252,7 +254,7 @@ class ADKExecutor(ExecutorAdapter):
         logger.info(f"Session created: {session_id}")
         return await self._session_service.create_session(
             app_name=scope.agent_id,
-            user_id=scope.owner_scope,
+            user_id=scope.state_owner,
             session_id=session_id,
         )
 

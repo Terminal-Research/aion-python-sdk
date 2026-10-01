@@ -46,6 +46,14 @@ from aion.core.runtime.context.registry import AionRuntimeContextRegistry
 from aion.langgraph.server.adapter import LangGraphAdapter
 from aion.server.agent.aion_agent.agent import AionAgent
 from aion.server.agent.adapters import StateScope
+from aion.server.auth import (
+    Assurance,
+    AuthenticatedCaller,
+    CallerCredentials,
+    CredentialKind,
+    GatewayCoordinates,
+    Principal,
+)
 from aion.server.agent.exceptions import ExecutionError
 from aion.server.agent.execution.scope import init_execution_scope
 from aion.server.tasks.stores.postgres_task_store import PostgresTaskStore
@@ -416,3 +424,69 @@ async def test_a_custom_owner_resolver_names_one_owner_for_the_task_and_the_stat
             app_name=agent.id, user_id="org:acme", session_id=context_id
         )
         assert session is not None
+
+
+# ------------------------------------------------------- gateway conversation
+
+_IDENTITY = "6f1c2a40-0d5e-4b8e-9a51-3c1f2e7d9b10"
+_EDGE = "0b7e4f3a-62d1-4c59-8f0e-a2c9d14b7e21"
+_OTHER_EDGE = "2b4c6d8e-0f1a-4b3c-8d5e-7f9a1b2c3d4e"
+
+
+def _verified(principal: Principal, *, credential: CredentialKind, edge: str = _EDGE) -> ServerCallContext:
+    """A call context as the server builds it for a verified token: the caller rides in ``state["auth"]``."""
+    gateway = (
+        GatewayCoordinates(_IDENTITY, edge, "9d3a1c75-4e8b-42f6-b0d7-5e6f8a1c2b34")
+        if credential is CredentialKind.INVOCATION
+        else None
+    )
+    caller = AuthenticatedCaller(
+        principal,
+        credential=credential,
+        assurance=Assurance.SESSION if principal.type == "AnonymousSession" else Assurance.PROVIDER,
+        issuer="aion.io",
+        gateway=gateway,
+        claims={},
+    )
+    return ServerCallContext(user=_User(caller.subject), state={"auth": CallerCredentials(caller)})
+
+
+def _gateway(name: str, edge: str = _EDGE) -> ServerCallContext:
+    return _verified(Principal("ExternalSender", name), credential=CredentialKind.INVOCATION, edge=edge)
+
+
+@pytest.fixture(params=["langgraph", "adk"])
+def _shared_framework(request):
+    return request.param
+
+
+async def _agent_for(db, framework: str) -> AionAgent:
+    return await (_langgraph(db) if framework == "langgraph" else _adk(db))
+
+
+async def test_participants_of_one_gateway_conversation_share_its_memory(db, _shared_framework) -> None:
+    """The state is the conversation's, whoever starts the turn; each task is still its initiator's."""
+    agent = await _agent_for(db, _shared_framework)
+    context_id = str(uuid.uuid4())
+
+    assert await _answer(agent.stream(_request(_gateway("alice"), context_id, "a1"))) == "turns=1"
+    assert await _answer(agent.stream(_request(_gateway("bob"), context_id, "b1"))) == "turns=2"
+
+
+async def test_another_edge_environment_is_another_conversation(db, _shared_framework) -> None:
+    agent = await _agent_for(db, _shared_framework)
+    context_id = str(uuid.uuid4())
+
+    assert await _answer(agent.stream(_request(_gateway("alice"), context_id, "a1"))) == "turns=1"
+    assert await _answer(agent.stream(_request(_gateway("alice", _OTHER_EDGE), context_id, "a2"))) == "turns=1"
+
+
+async def test_a_direct_session_keeps_private_memory_apart_from_the_gateway(db, _shared_framework) -> None:
+    agent = await _agent_for(db, _shared_framework)
+    context_id = str(uuid.uuid4())
+    session = _verified(Principal("AnonymousSession", str(uuid.uuid4())), credential=CredentialKind.SESSION)
+    guest = _verified(Principal("AnonymousSession", str(uuid.uuid4())), credential=CredentialKind.INVOCATION)
+
+    assert await _answer(agent.stream(_request(guest, context_id, "g1"))) == "turns=1"
+    assert await _answer(agent.stream(_request(session, context_id, "s1"))) == "turns=1"
+    assert await _answer(agent.stream(_request(_gateway("alice"), context_id, "a1"))) == "turns=2"

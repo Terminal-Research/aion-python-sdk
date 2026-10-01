@@ -277,3 +277,19 @@ async def test_a_refusal_writes_no_reservation(postgres_server) -> None:
             )
         ).all()
     assert [tuple(row) for row in rows] == [("private", "alice")]
+
+
+async def test_in_a_shared_conversation_only_the_initiator_cancels_a_task(server) -> None:
+    """Deleting a conversation, Aion cancels each task as its initiator; a participant cannot."""
+    context_id = str(uuid.uuid4())
+    held = task_of(
+        await _send(server, _invocation("alice"), "hold", context_id, returnImmediately=True)
+    )
+
+    refused = await server.rpc("CancelTask", {"id": held["id"]}, headers=_invocation("bob"))
+    assert error_of(refused) == TASK_NOT_FOUND
+    assert server.agent.cancels == 0
+
+    # Aion, acting for the task's persisted initiator, presents alice's invocation.
+    cancelled = await server.rpc("CancelTask", {"id": held["id"]}, headers=_invocation("alice"))
+    assert state_of(cancelled["result"]) == "TASK_STATE_CANCELED"
