@@ -137,9 +137,8 @@ them is that `session` assurance belongs to an `AnonymousSession` principal
 and no other. The header carries `alg`, `typ` and `kid` and nothing else -
 `jku`, `x5u`, `jwk`, `crit` and `zip` are refused - and no member appears
 twice in the header or the claims. Times are checked with 30 seconds of
-tolerance; nothing
-else is. A kind a server does not accept is refused before any key is looked
-up, and the reason in the `401` never quotes the token.
+tolerance; nothing else is. A kind a server does not accept is refused before
+any key is looked up, and the reason in the `401` never quotes the token.
 
 A server is hosted when `DEPLOYMENT_ID` is set. It has to be the deployment's
 UUID: a malformed or empty value stops the server instead of being read as
