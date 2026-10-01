@@ -52299,6 +52299,20 @@ function generateTaskMetadata(options2 = {}) {
   };
 }
 
+// src/lib/requestHeaders.ts
+function mergeRequestHeaders(requestHeaders, configuredHeaders) {
+  const headers = new Headers(requestHeaders);
+  for (const [key, value] of configuredHeaders) {
+    if (key.toLowerCase() === "a2a-extensions") {
+      const extensions = [headers.get(key) ?? "", value].flatMap((entry) => entry.split(",")).map((entry) => entry.trim()).filter(Boolean);
+      headers.set(key, [...new Set(extensions)].join(","));
+    } else {
+      headers.set(key, value);
+    }
+  }
+  return headers;
+}
+
 // src/lib/connection.ts
 var AGENT_CARD_PATH2 = "/.well-known/agent-card.json";
 var CLIENT_TRANSPORT_PREFERENCES = ["JSONRPC", "HTTP+JSON"];
@@ -52342,15 +52356,7 @@ function buildEndpointConfig(options2) {
   };
 }
 async function buildAuthHeaders(options2, initHeaders, requestHeaders) {
-  const headers = new Headers(initHeaders ?? requestHeaders);
-  for (const [key, value] of Object.entries(options2.headers)) {
-    if (key.toLowerCase() === "a2a-extensions") {
-      const extensions = [headers.get(key) ?? "", value].flatMap((entry) => entry.split(",")).map((entry) => entry.trim()).filter(Boolean);
-      headers.set(key, [...new Set(extensions)].join(","));
-    } else {
-      headers.set(key, value);
-    }
-  }
+  const headers = mergeRequestHeaders(initHeaders ?? requestHeaders, Object.entries(options2.headers));
   const token = options2.token ?? await options2.tokenProvider?.();
   if (token) {
     headers.set("Authorization", `Bearer ${token}`);
@@ -59441,9 +59447,8 @@ var SourceCredentials = class {
       );
       let lifetime = AbortSignal.any(signals);
       lifetime.throwIfAborted();
-      const headers = new Headers(init?.headers ?? request?.headers);
       const explicit = this.explicitHeaders(source);
-      for (const [key, value] of explicit) headers.set(key, value);
+      const headers = mergeRequestHeaders(init?.headers ?? request?.headers, explicit);
       let guest;
       if (this.isRegistry(source)) {
         const token = await this.options.accountToken();

@@ -14,6 +14,27 @@ function setup() {
 }
 
 describe("source-aware credentials", () => {
+	it.each(["object", "headers", "request"])("merges operation extensions with explicit headers supplied as %s", async (inputKind) => {
+		const { fetcher, account } = setup();
+		const source = createExplicitAgentSource("http://localhost:9000");
+		const credentials = new SourceCredentials({ environmentId: "development",
+			cli: { token: "explicit", headers: {
+				"a2a-EXTENSIONS": " shared, configured, , shared ",
+				"X-Test": "configured", Authorization: "Bearer header-token"
+			} }, accountToken: account, fetch: fetcher });
+		const headers = { "A2A-Extensions": "request, shared, request",
+			"X-Test": "request", Authorization: "Bearer request-token" };
+		const send = credentials.fetch(source);
+		if (inputKind === "request") await send(new Request(source.url, { headers }));
+		else await send(source.url, { headers: inputKind === "headers" ? new Headers(headers) : headers });
+		const sent = new Headers(fetcher.mock.lastCall?.[1]?.headers);
+		expect(sent.get("A2A-Extensions")).toBe("request,shared,configured");
+		expect(sent.get("X-Test")).toBe("configured");
+		expect(sent.get("Authorization")).toBe("Bearer explicit");
+		expect(account).not.toHaveBeenCalled();
+		expect(fetcher).toHaveBeenCalledTimes(1);
+	});
+
 	it("does not let a retired account lookup overwrite the new local-history owner", async () => {
 		const { credentials, fetcher, account } = setup();
 		let finishOld!: (token: string) => void;
@@ -107,11 +128,12 @@ describe("source-aware credentials", () => {
 
 	it("preserves explicit endpoint credentials without forwarding them to other sources", async () => {
 		const { fetcher, account } = setup();
-		const credentials = new SourceCredentials({ environmentId: "development", cli: { token: "explicit", headers: { "X-Test": "explicit-only" } }, accountToken: account, fetch: fetcher });
+		const credentials = new SourceCredentials({ environmentId: "development", cli: { token: "explicit", headers: { "X-Test": "explicit-only", "A2A-Extensions": "explicit-extension" } }, accountToken: account, fetch: fetcher });
 		const source = createExplicitAgentSource("http://localhost:9000");
 		await credentials.fetch(source)(source.url);
 		expect(new Headers(fetcher.mock.lastCall?.[1]?.headers).get("Authorization")).toBe("Bearer explicit");
 		await credentials.fetch(registry)(registry.url);
 		expect(new Headers(fetcher.mock.lastCall?.[1]?.headers).has("X-Test")).toBe(false);
+		expect(new Headers(fetcher.mock.lastCall?.[1]?.headers).has("A2A-Extensions")).toBe(false);
 	});
 });

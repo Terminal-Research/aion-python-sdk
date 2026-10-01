@@ -22,6 +22,7 @@ import {
 
 import type { ChatCliOptions } from "../args.js";
 import { generateTaskMetadata } from "./a2aMetadata.js";
+import { mergeRequestHeaders } from "./requestHeaders.js";
 
 export interface EndpointConfig {
 	baseUrl: string;
@@ -105,17 +106,7 @@ async function buildAuthHeaders(
 	initHeaders: HeadersInit | undefined,
 	requestHeaders: HeadersInit | undefined
 ): Promise<Headers> {
-	const headers = new Headers(initHeaders ?? requestHeaders);
-	for (const [key, value] of Object.entries(options.headers)) {
-		if (key.toLowerCase() === "a2a-extensions") {
-			const extensions = [headers.get(key) ?? "", value]
-				.flatMap((entry) => entry.split(",")).map((entry) => entry.trim())
-				.filter(Boolean);
-			headers.set(key, [...new Set(extensions)].join(","));
-		} else {
-			headers.set(key, value);
-		}
-	}
+	const headers = mergeRequestHeaders(initHeaders ?? requestHeaders, Object.entries(options.headers));
 	const token = options.token ?? (await options.tokenProvider?.());
 	if (token) {
 		headers.set("Authorization", `Bearer ${token}`);

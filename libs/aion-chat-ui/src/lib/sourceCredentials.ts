@@ -1,6 +1,7 @@
 import type { ChatCliOptions } from "../args.js";
 import { AnonymousSession, trustedUrl, type AnonymousSessionStore } from "./anonymousSession.js";
 import { defaultCredentialStore } from "./credentialStore.js";
+import { mergeRequestHeaders } from "./requestHeaders.js";
 import { getControlPlaneApiBaseUrl, type AionEnvironmentId } from "./environment.js";
 import { hashValue, isTransientAgentSource, normalizeSourceUrl, type RuntimeAgentSource } from "./agents/model.js";
 
@@ -82,9 +83,8 @@ export class SourceCredentials {
 			);
 			let lifetime = AbortSignal.any(signals);
 			lifetime.throwIfAborted();
-			const headers = new Headers(init?.headers ?? request?.headers);
 			const explicit = this.explicitHeaders(source);
-			for (const [key, value] of explicit) headers.set(key, value);
+			const headers = mergeRequestHeaders(init?.headers ?? request?.headers, explicit);
 			let guest: AnonymousSession | undefined;
 			if (this.isRegistry(source)) {
 				const token = await this.options.accountToken();
