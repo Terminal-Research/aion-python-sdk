@@ -225,6 +225,10 @@ twine = ">=6.0.0"
 # what stops a scenario whose server never answers from holding the run.
 Jinja2 = ">=3.1.0,<4.0.0"
 pytest-timeout = ">=2.3.1"
+# `make tests-floors` builds its environment with uv: `--resolution
+# lowest-direct` is the one thing Poetry's solver cannot do. A tool, not a
+# library - nothing under src/ or tests/ imports it.
+uv = ">=0.12.0"
 
 # The ten libs used to keep the layers apart by accident: a lib's venv simply
 # had no code from the layers above it. One project, one venv, so the rule has

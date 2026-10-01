@@ -225,21 +225,35 @@ check-env: ## Check the installed environment for duplicate or broken packages
 # reporting every floor as "resolved to" something higher. `floors.py --check`
 # now fails on a floor that is neither installed nor recorded as raised by a
 # sibling, so a run that lowers nothing cannot pass again.
+#
+# `--exclude-newer` holds the resolution still. Only this project's own
+# dependencies go to their floors; theirs resolve to the newest release that
+# fits, so without a cutoff an upstream release can move a floor in or out of
+# RAISED_BY_SIBLING with no commit here, and turn the job red in either
+# direction. FLOORS_EXCLUDE_NEWER is moved on purpose, in the same commit as
+# whatever RAISED_BY_SIBLING change the new resolution needs. The jobs that
+# install the newest releases keep covering everything published since.
+#
+# uv comes from the dev group, so a `poetry install` is enough to run this;
+# one on PATH is used first, which is how CI provides it without Poetry.
 FLOORS_PYTHON ?= 3.12
+FLOORS_EXCLUDE_NEWER ?= 2026-10-01
 FLOORS_VENV := .venv-floors
 FLOORS_PY := $(FLOORS_VENV)/bin/python
+FLOORS_UV = $(or $(shell command -v uv 2>/dev/null),$(shell poetry run sh -c 'command -v uv' 2>/dev/null))
+FLOORS_UV_PIP = $(UV) pip install --python $(FLOORS_PY) --exclude-newer $(FLOORS_EXCLUDE_NEWER)
 
+tests-floors: UV := $(FLOORS_UV)
 tests-floors: ## Install the oldest allowed dependencies in .venv-floors and run the unit suite there
-	@command -v uv >/dev/null 2>&1 || { \
-		echo "tests-floors needs uv: https://docs.astral.sh/uv/getting-started/installation/" >&2; \
+	@test -n "$(UV)" || { \
+		echo "tests-floors needs uv: run 'poetry install --with dev', or see https://docs.astral.sh/uv/getting-started/installation/" >&2; \
 		exit 2; \
 	}
-	uv venv --clear --seed --python $(FLOORS_PYTHON) $(FLOORS_VENV)
-	uv pip install --python $(FLOORS_PY) packaging
+	$(UV) venv --clear --seed --python $(FLOORS_PYTHON) $(FLOORS_VENV)
+	$(FLOORS_UV_PIP) packaging
 	$(FLOORS_PY) ./scripts/packaging/floors.py --test-requirements > $(FLOORS_VENV)/test-requirements.txt
-	uv pip install --python $(FLOORS_PY) -r $(FLOORS_VENV)/test-requirements.txt
-	uv pip install --python $(FLOORS_PY) \
-		--resolution lowest-direct --upgrade -e ".[langgraph-server,adk-server]"
+	$(FLOORS_UV_PIP) -r $(FLOORS_VENV)/test-requirements.txt
+	$(FLOORS_UV_PIP) --resolution lowest-direct --upgrade -e ".[langgraph-server,adk-server]"
 	$(FLOORS_PY) ./scripts/packaging/envcheck.py
 	$(FLOORS_PY) ./scripts/packaging/floors.py --check
 	$(FLOORS_PY) -m pytest -n $(UNIT_WORKERS) tests/unit $(ARGS)
