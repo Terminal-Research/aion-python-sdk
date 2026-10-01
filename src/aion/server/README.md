@@ -122,10 +122,22 @@ protected `typ` header tells them apart.
 Both also need `iss` = `AION_API_CLIENT_AUTH_ISSUER` (default `aion.io`),
 `contract_version` = 1, and integer `iat` = `nbf`. `sub` is canonical,
 `aion:v1:<PrincipalType>:<unpadded base64url of the ID>` (`aion.server.auth.Principal`),
-with an ID of at most 1024 bytes; `session` assurance belongs to an
-`AnonymousSession` principal and no other. The header carries `alg`, `typ`
-and `kid` and nothing else - `jku`, `x5u`, `jwk`, `crit` and `zip` are refused
-- and no member appears twice in the header or the claims. Times are checked with 30 seconds of tolerance; nothing
+with a non-empty ID of at most 1024 bytes of UTF-8. The ID formats the
+contract fixes are checked: `AnonymousSession` and `ExternalIdentity` IDs are
+lowercase UUIDs, and an `ExternalSender` ID is
+`v1:<provider>:<encoded-tenant>:<encoded-sender>` - a lowercase provider label,
+then the provider's tenant and sender IDs, each unpadded base64url of its exact
+UTF-8. The tenant is part of the sender's identity; whether the tenant exists
+and the sender belongs to it is Aion's to establish before it signs, and the
+SDK does not ask the provider. Any other type's ID is opaque and
+case-sensitive: the agent and system principal types and their formats are
+Aion's backend contract, not a closed list in the SDK. Assurance is read from
+its own claim, never inferred from the principal type; the one rule tying
+them is that `session` assurance belongs to an `AnonymousSession` principal
+and no other. The header carries `alg`, `typ` and `kid` and nothing else -
+`jku`, `x5u`, `jwk`, `crit` and `zip` are refused - and no member appears
+twice in the header or the claims. Times are checked with 30 seconds of
+tolerance; nothing
 else is. A kind a server does not accept is refused before any key is looked
 up, and the reason in the `401` never quotes the token.
 

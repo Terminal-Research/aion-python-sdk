@@ -452,7 +452,8 @@ def _verified(principal: Principal, *, credential: CredentialKind, edge: str = _
 
 
 def _gateway(name: str, edge: str = _EDGE) -> ServerCallContext:
-    return _verified(Principal("ExternalSender", name), credential=CredentialKind.INVOCATION, edge=edge)
+    sender = "v1:slack:VDE:" + Principal("AionUser", name).subject.rsplit(":", 1)[1]
+    return _verified(Principal("ExternalSender", sender), credential=CredentialKind.INVOCATION, edge=edge)
 
 
 @pytest.fixture(params=["langgraph", "adk"])

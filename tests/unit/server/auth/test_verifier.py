@@ -31,6 +31,11 @@ USER_ID = "7a9e2b1c-1111-4d2e-8f3a-6b5c4d3e2f10"
 SESSION_ID = "f9d7daea-df95-4111-8533-5d6f043edaf9"
 
 
+def _raw_subject(principal_type: str, principal_id: str) -> str:
+    """A subject encoded as the contract does, without checking the ID: for IDs the verifier must refuse."""
+    return f"aion:v1:{principal_type}:" + base64.urlsafe_b64encode(principal_id.encode()).rstrip(b"=").decode()
+
+
 async def _verify(token: str, make=verifier):
     built = make()
     await built.load()
@@ -78,7 +83,9 @@ async def test_a_session_token_names_the_session() -> None:
 
 @pytest.mark.parametrize("assurance", ["account", "runtime", "provider", "internal", "unattributed"])
 async def test_an_invocation_carries_the_assurance_aion_established(assurance) -> None:
-    caller = await _verify(AION_KEY.invocation_token(assurance=assurance, principal_type="ExternalSender"))
+    caller = await _verify(AION_KEY.invocation_token(
+        "v1:slack:VDE:VTI", assurance=assurance, principal_type="ExternalSender"
+    ))
 
     assert caller.assurance == Assurance(assurance)
 
@@ -127,6 +134,8 @@ async def test_the_mode_decides_which_kind_is_accepted(make, token, accepted) ->
         (lambda: AION_KEY.invocation_token(iss=None), "'iss'"),
         (lambda: AION_KEY.invocation_token(sub=None), "'sub'"),
         (lambda: AION_KEY.invocation_token(sub="aion:user:alice"), "canonical principal"),
+        (lambda: AION_KEY.invocation_token(sub=_raw_subject("ExternalSender", "AbC")), "external sender"),
+        (lambda: AION_KEY.invocation_token(sub=_raw_subject("ExternalIdentity", "x")), "external identity"),
         (lambda: AION_KEY.invocation_token(sub=42), "'sub' is not a string"),
         (lambda: AION_KEY.invocation_token(token_use="anonymous_session"), "token_use"),
         (lambda: AION_KEY.invocation_token(token_use=None), "'token_use'"),
@@ -145,7 +154,8 @@ async def test_the_mode_decides_which_kind_is_accepted(make, token, accepted) ->
         (lambda: AION_KEY.invocation_token(owner_agent_identity_id=OWNER_AGENT_IDENTITY_ID.upper()), "lowercase UUID"),
         (lambda: AION_KEY.invocation_token(owner_agent_identity_id=7), "lowercase UUID"),
     ],
-    ids=["other-aud", "aud-list", "no-aud", "other-iss", "no-iss", "no-sub", "legacy-sub", "sub-not-text",
+    ids=["other-aud", "aud-list", "no-aud", "other-iss", "no-iss", "no-sub", "legacy-sub", "malformed-sender",
+         "malformed-identity", "sub-not-text",
          "wrong-token-use", "no-token-use", "version-2", "version-text", "version-bool", "no-version",
          "unknown-assurance", "no-assurance", "session-assurance-for-a-user", "session-without-session-assurance",
          "no-owner", "no-edge", "no-terminal", "edge-not-uuid", "owner-uppercase", "owner-not-text"],
@@ -307,7 +317,7 @@ async def test_a_token_over_8_kib_is_refused_unread() -> None:
 async def test_a_principal_id_over_1024_bytes_is_refused() -> None:
     encoded = base64.urlsafe_b64encode(b"x" * 1025).rstrip(b"=").decode()
 
-    await _refused(AION_KEY.invocation_token(sub=f"aion:v1:ExternalSender:{encoded}"), match="1024")
+    await _refused(AION_KEY.invocation_token(sub=f"aion:v1:AionUser:{encoded}"), match="1024")
 
 
 async def test_without_loaded_keys_a_token_cannot_be_verified() -> None:
