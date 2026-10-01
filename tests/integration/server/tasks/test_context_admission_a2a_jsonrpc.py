@@ -22,10 +22,12 @@ from typing import Any
 import httpx
 import pytest
 import pytest_asyncio
+from langgraph.checkpoint.base import empty_checkpoint
 from sqlalchemy import text
 from starlette.middleware import Middleware
 
 from aion.db.postgres import db_manager
+from aion.langgraph.server.checkpoint.backends.postgres import PostgresBackend
 from aion.server.auth import JwksKeySource, TokenVerifier
 from aion.server.core.middlewares import AionAuthMiddleware, AionContextMiddleware
 from aion.server.tasks.admission import ContextHolder, PostgresContextAdmission
@@ -293,3 +295,42 @@ async def test_in_a_shared_conversation_only_the_initiator_cancels_a_task(server
     # Aion, acting for the task's persisted initiator, presents alice's invocation.
     cancelled = await server.rpc("CancelTask", {"id": held["id"]}, headers=_invocation("alice"))
     assert state_of(cancelled["result"]) == "TASK_STATE_CANCELED"
+
+
+@pytest.mark.parametrize("closed_by", ["blocked-reservation", "state-naming-no-agent"])
+async def test_a_context_from_before_reservations_is_refused_before_anything_happens(postgres_server, closed_by) -> None:
+    """Revision 006 closes contexts with old data; old state naming no agent closes one at first use."""
+    context_id, alice = str(uuid.uuid4()), _session()
+    if closed_by == "blocked-reservation":
+        async with db_manager.get_session() as session:
+            await session.execute(
+                text("INSERT INTO context_reservations (agent_id, context_id, kind) VALUES (:agent, :id, 'blocked')"),
+                {"agent": postgres_server.lease.agent_id, "id": context_id},
+            )
+            await session.commit()
+    else:
+        saver = await PostgresBackend(db_manager).create()
+        config = {"configurable": {"thread_id": context_id, "checkpoint_ns": ""}}
+        await saver.aput(config, empty_checkpoint(), {"source": "input", "step": -1}, {})
+    runs = len(postgres_server.agent.runs)
+
+    answer = await _send(
+        postgres_server, alice, "done", context_id, taskPushNotificationConfig={"url": "https://hooks.example/a"}
+    )
+    streamed = await postgres_server.rpc(
+        "SendStreamingMessage",
+        {"message": {"messageId": "m-1", "contextId": context_id, "role": "ROLE_USER", "parts": [{"text": "done"}]}},
+        headers=alice,
+    )
+
+    assert error_of(answer) == TASK_NOT_FOUND
+    assert [error_of(event) for event in streamed] == [TASK_NOT_FOUND]
+    assert len(postgres_server.agent.runs) == runs
+    assert await _tasks_of(postgres_server, alice) == []
+    async with db_manager.get_session() as session:
+        kinds = (await session.execute(
+            text("SELECT kind FROM context_reservations WHERE context_id = :id"), {"id": context_id}
+        )).scalars().all()
+    assert kinds == (["blocked"] if closed_by == "blocked-reservation" else [])
+    # A new context works as before.
+    assert "error" not in await _send(postgres_server, alice, "done", str(uuid.uuid4()))

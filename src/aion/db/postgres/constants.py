@@ -8,6 +8,15 @@ TASK_MESSAGES_TABLE = "task_messages"
 TASK_ARTIFACTS_TABLE = "task_artifacts"
 CONTEXT_RESERVATIONS_TABLE = "context_reservations"
 
+LANGGRAPH_SCHEMA = "aion_langgraph"
+"""Schema of the LangGraph checkpoint tables the SDK's checkpointer keeps on this database."""
+
+ADK_SCHEMA = "aion_adk"
+"""Schema of the ADK session tables the SDK's session service keeps on this database."""
+
+ADK_LEGACY_USER_ID = "default-user"
+"""The ``user_id`` every ADK session was saved under before sessions carried agent and owner."""
+
 TASK_EVENT_CHANNEL = "task_events"
 """``LISTEN``/``NOTIFY`` channel carrying every cross-pod task event.
 

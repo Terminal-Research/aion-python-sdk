@@ -214,6 +214,35 @@ the in-memory store. An agent that brings its own checkpointer or session
 backend outside the SDK's database keeps that state's lifetime in step
 itself.
 
+#### Contexts from before reservations
+
+A database that already holds conversations when reservations are introduced
+(migration `006`) has nothing that says who may continue them: owners were
+recorded per task, and a shared conversation's gateway coordinates not at
+all. So every existing context is closed - reserved `blocked` for its agent,
+admitted into by nobody - whoever its tasks name and however many there are.
+Its data is found in the tasks table, in the LangGraph checkpoint tables
+(`aion_langgraph`) and in the ADK session tables (`aion_adk`), for the
+frameworks whose tables the database has. Nothing is moved or deleted: the
+old tasks stay readable by their owners through the usual owner filter, and
+the old framework state stays where it was. Only new messages into an old
+context are refused, with the same `TaskNotFound`; new context IDs work as
+always.
+
+State saved before it carried the agent - a LangGraph checkpoint whose
+`thread_id` is the context ID alone, an ADK session under the shared
+`default-user` - names no agent to reserve for. The first message into such
+a context is refused instead, whatever agent it is for, before the context is
+reserved and before any task, upload or push config. Nothing a current server
+writes takes that shape, so two servers reserving a new context cannot
+disagree about it.
+
+Upgrading follows one order: stop every process of the previous version,
+run the migration (a server starting against the database runs it), then
+start the new version. An old process still writing during or after the
+migration creates tasks and state no reservation knows about, and the check
+at first use cannot make up for it.
+
 ### `context=None` in the stores
 
 The stores' `context` parameter keeps a2a-sdk's `TaskStore` signature.

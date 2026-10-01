@@ -243,8 +243,9 @@ class ContextReservationModel(BaseModel):
     request is admitted only if it is the same holder. A ``private`` context
     belongs to one caller, by ``owner_scope``; a ``shared`` one to an Aion
     gateway conversation, by the receiving agent identity and the edge
-    environment of the invocation. The row is never updated or deleted: the
-    framework state it guards outlives tasks.
+    environment of the invocation. A ``blocked`` context already had data when
+    reservations were introduced and is admitted into by nobody. The row is
+    never updated or deleted: the framework state it guards outlives tasks.
     """
 
     __tablename__ = CONTEXT_RESERVATIONS_TABLE
@@ -252,7 +253,7 @@ class ContextReservationModel(BaseModel):
 
     agent_id = Column(Text, nullable=False, doc="Identity of the agent whose context this is.")
     context_id = Column(Text, nullable=False, doc="The A2A context ID.")
-    kind = Column(Text, nullable=False, doc="``private`` or ``shared``.")
+    kind = Column(Text, nullable=False, doc="``private``, ``shared`` or ``blocked``.")
     owner_scope = Column(Text, nullable=True, doc="The private context's owner; NULL for a shared one.")
     owner_agent_identity_id = Column(
         Text, nullable=True, doc="The shared context's receiving agent identity; NULL for a private one."

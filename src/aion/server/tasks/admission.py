@@ -43,9 +43,14 @@ __all__ = [
 
 @dataclass(frozen=True)
 class ContextHolder:
-    """Who a context is reserved for."""
+    """Who a context is reserved for.
 
-    kind: Literal["private", "shared"]
+    ``blocked`` is no caller: a context that already had data when
+    reservations were introduced is reserved for nobody, so it is never
+    admitted into again.
+    """
+
+    kind: Literal["private", "shared", "blocked"]
     owner_scope: Optional[str] = None
     owner_agent_identity_id: Optional[str] = None
     edge_agent_environment_id: Optional[str] = None
@@ -103,7 +108,11 @@ class InMemoryContextAdmission:
 
 
 class PostgresContextAdmission:
-    """Reservations in ``context_reservations``, shared by every server of the agent on one database."""
+    """Reservations in ``context_reservations``, shared by every server of the agent on one database.
+
+    A context nobody holds is refused, and stays unreserved, when framework
+    state saved before it carried an agent exists for it.
+    """
 
     def __init__(self, agent_id: str, db_manager: DbManager) -> None:
         self._agent_id = agent_id
@@ -121,6 +130,8 @@ class PostgresContextAdmission:
         async with self._db_manager.get_session() as session:
             async with session.begin():
                 held = await ContextReservationsRepository(session).reserve(wanted)
+        if held is None:
+            return False
         return ContextHolder(
             held.kind,  # type: ignore[arg-type]
             owner_scope=held.owner_scope,

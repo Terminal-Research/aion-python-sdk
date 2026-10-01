@@ -223,7 +223,7 @@ class ContextReservationRecord(BaseModel):
     context_id: str
     """The A2A context ID."""
     kind: str
-    """``private`` or ``shared``."""
+    """``private``, ``shared``, or ``blocked`` for a context that existed before reservations."""
     owner_scope: str | None = None
     """The private context's owner."""
     owner_agent_identity_id: str | None = None
