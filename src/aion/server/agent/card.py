@@ -87,7 +87,7 @@ class AionAgentCard:
                 http_auth_security_scheme=HTTPAuthSecurityScheme(
                     scheme="Bearer",
                     bearer_format="JWT",
-                    description="A token issued by the Aion control plane.",
+                    description="An Aion invocation or anonymous session token, issued by the Aion control plane.",
                 )
             )
         )

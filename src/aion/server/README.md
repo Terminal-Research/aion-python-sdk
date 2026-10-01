@@ -151,7 +151,11 @@ the client chooses, and the default resolver ignores it. There is no `/docs` or
 
 Aion's `GetContexts` and `GetContext`, and finding an interrupted task through
 its `contextId`, go through the same owner filter as everything else: a
-caller sees its own contexts and continues its own interrupted task. Only a call without a `ServerCallContext` - from Python code
+caller sees its own contexts and continues its own interrupted task. They are
+the caller's task history, not a conversation's: in a shared gateway
+conversation `GetContext` returns only the caller's own tasks, and the whole
+conversation's history is Aion's to serve. Neither extension is advertised on
+the agent card. Only a call without a `ServerCallContext` - from Python code
 that holds the handler - reads no history at all.
 
 ### What is isolated
