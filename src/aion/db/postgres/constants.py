@@ -6,6 +6,7 @@ TASKS_TABLE = "tasks"
 TASK_CLAIMS_TABLE = "task_claims"
 TASK_MESSAGES_TABLE = "task_messages"
 TASK_ARTIFACTS_TABLE = "task_artifacts"
+CONTEXT_RESERVATIONS_TABLE = "context_reservations"
 
 TASK_EVENT_CHANNEL = "task_events"
 """``LISTEN``/``NOTIFY`` channel carrying every cross-pod task event.

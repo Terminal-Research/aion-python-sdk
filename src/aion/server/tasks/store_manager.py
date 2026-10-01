@@ -6,6 +6,7 @@ from typing import Optional
 from a2a.server.owner_resolver import OwnerResolver, resolve_user_scope
 
 from aion.db.postgres import db_manager
+from .admission import ContextAdmission, InMemoryContextAdmission, PostgresContextAdmission
 from .notifications import TaskEventListener, task_event_listener
 from .ownership import OwnershipProvider, PostgresOwnershipProvider
 from .stores import (
@@ -31,6 +32,7 @@ class StoreManager:
         self._store: Optional[InMemoryTaskStore | PostgresTaskStore] = None
         self._ownership_provider: Optional[OwnershipProvider] = None
         self._event_listener: Optional[TaskEventListener] = None
+        self._admission: Optional[ContextAdmission] = None
 
     def initialize(
             self,
@@ -79,10 +81,12 @@ class StoreManager:
                 owner_resolver=owner_resolver,
                 guard_inline_files=guard_inline_files,
             )
+            admission = PostgresContextAdmission(agent_id, db_manager)
         else:
             task_store = InMemoryTaskStore(owner_resolver, guard_inline_files=guard_inline_files)
             ownership_provider = task_store.ownership_provider
             event_listener = None
+            admission = InMemoryContextAdmission()
             logger.warning(
                 "Task ownership enforcement is disabled; in-memory task storage "
                 "is safe only in a single server instance"
@@ -92,6 +96,7 @@ class StoreManager:
         self._store = task_store
         self._ownership_provider = ownership_provider
         self._event_listener = event_listener
+        self._admission = admission
 
     def get_store(self) -> BaseTaskStore:
         """
@@ -130,5 +135,19 @@ class StoreManager:
         if not self._is_initialized:
             raise RuntimeError("Trying to get event listener without initialization")
         return self._event_listener
+
+    def get_admission(self) -> ContextAdmission:
+        """Return the context reservations kept beside the active task store.
+
+        Chosen with the store, as framework state is: PostgreSQL reservations
+        for a PostgreSQL store, this process's for the in-memory one.
+
+        Raises:
+            RuntimeError: If called before initialization.
+        """
+        if not self._is_initialized:
+            raise RuntimeError("Trying to get context admission without initialization")
+        return self._admission
+
 
 store_manager = StoreManager()

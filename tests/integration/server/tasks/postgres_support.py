@@ -76,9 +76,9 @@ async def prepared_database():
 
 
 async def truncate() -> None:
-    """Empty the claim and task tables."""
+    """Empty the claim, task and context reservation tables."""
     async with db_manager.get_session() as session:
-        await session.execute(text("TRUNCATE task_claims, tasks CASCADE"))
+        await session.execute(text("TRUNCATE task_claims, tasks, context_reservations CASCADE"))
         await session.commit()
 
 

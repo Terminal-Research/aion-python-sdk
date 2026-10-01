@@ -3,8 +3,9 @@
 Every call to an agent carries a bearer token. Outside the Aion platform the
 tokens a server accepts are anonymous session tokens, signed by the control
 plane whose keys the server fetches from ``AION_API_HOST``; the scenarios run
-a stand-in for it. The token's ``sub`` is the caller: two sessions on one
-``contextId`` are two callers, and neither sees the other's tasks.
+a stand-in for it. The token's ``sub`` is the caller, and a session's context
+is its own: another session that presents the same ``contextId`` is refused as
+if the task did not exist, before the agent runs.
 """
 
 from __future__ import annotations
@@ -70,18 +71,24 @@ def test_a_call_with_an_anonymous_session_token_is_served(server: ServeProcess) 
     assert "error" not in response.json()
 
 
-async def test_two_sessions_on_one_context_do_not_see_each_others_tasks(server: ServeProcess) -> None:
-    """The caller is the token's ``sub``: the same ``contextId`` opens a task apiece."""
+async def test_a_session_cannot_enter_another_sessions_context(server: ServeProcess) -> None:
+    """The caller is the token's ``sub``: the first session holds the context, the second is refused."""
     context_id = str(uuid.uuid4())
     async with (
         await ScenarioClient.connect(server.base_url, server.variant.agent_id, subject=session_subject(str(uuid.uuid4()))) as first,
         await ScenarioClient.connect(server.base_url, server.variant.agent_id, subject=session_subject(str(uuid.uuid4()))) as second,
     ):
         firsts = final_task(await first.send("echo one", context_id=context_id))
-        seconds = final_task(await second.send("echo two", context_id=context_id))
 
-        assert firsts.task_id != seconds.task_id
-        assert [task.id for task in await first.tasks_in_context(context_id)] == [firsts.task_id]
-        assert [task.id for task in await second.tasks_in_context(context_id)] == [seconds.task_id]
+        refusal = await second.rpc(
+            "SendMessage",
+            {"message": {"messageId": str(uuid.uuid4()), "contextId": context_id, "role": "ROLE_USER",
+                         "parts": [{"text": "echo two"}]}},
+        )
+        assert refusal["error"]["code"] == TASK_NOT_FOUND
+        assert await second.tasks_in_context(context_id) == []
         refusal = await second.rpc("GetTask", {"id": firsts.task_id})
         assert refusal["error"]["code"] == TASK_NOT_FOUND
+
+        again = final_task(await first.send("echo three", context_id=context_id))
+        assert {task.id for task in await first.tasks_in_context(context_id)} == {firsts.task_id, again.task_id}

@@ -10,6 +10,7 @@ from a2a.types import Artifact, Message, Task, TaskStatus
 from google.protobuf.struct_pb2 import Struct
 
 __all__ = [
+    "ContextReservationRecord",
     "TaskRecord",
     "TaskClaimRecord",
     "TaskMessageRecord",
@@ -212,3 +213,22 @@ class TaskArtifactRecord(BaseModel):
     """Timestamp this artifact was first written."""
     updated_at: _dt.datetime | None = None
     """Timestamp this artifact's payload was last replaced."""
+
+
+class ContextReservationRecord(BaseModel):
+    """Pydantic representation of a row from the ``context_reservations`` table."""
+
+    agent_id: str
+    """Identity of the agent whose context this is."""
+    context_id: str
+    """The A2A context ID."""
+    kind: str
+    """``private`` or ``shared``."""
+    owner_scope: str | None = None
+    """The private context's owner."""
+    owner_agent_identity_id: str | None = None
+    """The shared context's receiving agent identity."""
+    edge_agent_environment_id: str | None = None
+    """The shared context's edge environment."""
+    created_at: _dt.datetime | None = None
+    """When the first request was admitted into the context."""

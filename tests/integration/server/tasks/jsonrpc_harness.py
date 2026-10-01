@@ -29,6 +29,7 @@ from starlette.routing import Route
 from aion.server.agent.execution.request_context_builder import AionRequestContextBuilder
 from aion.server.core.app.handlers import AionJsonRpcDispatcher, AionRequestHandler
 from aion.db.postgres.manager import db_manager
+from aion.server.tasks.admission import InMemoryContextAdmission, PostgresContextAdmission
 from aion.server.tasks.push_notifications import PushNotificationFactory
 from aion.server.tasks.stores.in_memory_task_store import InMemoryTaskStore
 from aion.server.tasks.stores.postgres_task_store import PostgresTaskStore
@@ -92,9 +93,12 @@ class JsonRpcServer:
         if kind == "memory":
             self.store = InMemoryTaskStore()
             lease = self.store.ownership_provider
+            admission = InMemoryContextAdmission()
         else:
             lease = provider("pod-a")
             self.store = PostgresTaskStore(agent_id=lease.agent_id, ownership_provider=lease)
+            admission = PostgresContextAdmission(lease.agent_id, db_manager)
+        self.admission = admission
         self.lease = lease
         self.agent = ScriptedAgent()
         card = Mock()
@@ -108,6 +112,7 @@ class JsonRpcServer:
             task_store=self.store,
             agent_card=card,
             ownership_provider=lease,
+            admission=admission,
             push_config_store=self.push_configs,
             request_context_builder=AionRequestContextBuilder(
                 task_store=self.store, auto_discover_interrupted_task=True

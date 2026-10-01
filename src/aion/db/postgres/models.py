@@ -3,17 +3,24 @@
 from __future__ import annotations
 
 import uuid
-from sqlalchemy import BigInteger, Column, Computed, DateTime, ForeignKey, String, Text, func
+from sqlalchemy import BigInteger, Column, Computed, DateTime, ForeignKey, PrimaryKeyConstraint, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import declarative_base
 from google.protobuf.struct_pb2 import Struct
 from a2a.types import Artifact, Message, TaskStatus
 
-from .constants import TASK_ARTIFACTS_TABLE, TASK_CLAIMS_TABLE, TASK_MESSAGES_TABLE, TASKS_TABLE
+from .constants import (
+    CONTEXT_RESERVATIONS_TABLE,
+    TASK_ARTIFACTS_TABLE,
+    TASK_CLAIMS_TABLE,
+    TASK_MESSAGES_TABLE,
+    TASKS_TABLE,
+)
 from .fields import ProtobufType
 
 __all__ = [
     "BaseModel",
+    "ContextReservationModel",
     "TaskClaimModel",
     "TaskRecordModel",
     "TaskMessageModel",
@@ -227,3 +234,35 @@ class TaskArtifactModel(BaseModel):
         server_default=func.clock_timestamp(),
         onupdate=func.clock_timestamp(),
         doc="Timestamp this artifact's payload was last replaced.")
+
+
+class ContextReservationModel(BaseModel):
+    """Who may use a context of an agent: one row per ``(agent_id, context_id)``, written once.
+
+    The first request admitted into a context writes the row; every later
+    request is admitted only if it is the same holder. A ``private`` context
+    belongs to one caller, by ``owner_scope``; a ``shared`` one to an Aion
+    gateway conversation, by the receiving agent identity and the edge
+    environment of the invocation. The row is never updated or deleted: the
+    framework state it guards outlives tasks.
+    """
+
+    __tablename__ = CONTEXT_RESERVATIONS_TABLE
+    __table_args__ = (PrimaryKeyConstraint("agent_id", "context_id"),)
+
+    agent_id = Column(Text, nullable=False, doc="Identity of the agent whose context this is.")
+    context_id = Column(Text, nullable=False, doc="The A2A context ID.")
+    kind = Column(Text, nullable=False, doc="``private`` or ``shared``.")
+    owner_scope = Column(Text, nullable=True, doc="The private context's owner; NULL for a shared one.")
+    owner_agent_identity_id = Column(
+        Text, nullable=True, doc="The shared context's receiving agent identity; NULL for a private one."
+    )
+    edge_agent_environment_id = Column(
+        Text, nullable=True, doc="The shared context's edge environment; NULL for a private one."
+    )
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.clock_timestamp(),
+        doc="When the first request was admitted into the context.",
+    )

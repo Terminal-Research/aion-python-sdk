@@ -152,11 +152,43 @@ the PostgreSQL store alike: `SendMessage` and `SendStreamingMessage`
 (including a `taskId` to continue), `GetTask`, `ListTasks`, `CancelTask`,
 `SubscribeToTask`, the push notification config methods, and Aion's
 `GetContexts`/`GetContext`. Another owner's task answers as if it did not
-exist. Two callers may present the same `contextId`; their tasks and state
-stay apart. Each request path carries its own `ServerCallContext` down to the
+exist. Each request path carries its own `ServerCallContext` down to the
 store; the server refuses to run one without it rather than treat it as
 unscoped. The token is a header, so every method names its caller the same
 way, whether or not it has `params.metadata`.
+
+### Who may use a context
+
+A context ID is chosen by the client, but the framework state keyed by it -
+LangGraph checkpoints, ADK sessions - outlives every task in it. So before a
+message does anything, its caller is admitted into the context
+(`aion.server.tasks.admission`). The first message reserves the context for
+its holder; a message from anyone else is answered `TaskNotFound`, the same
+error as for a task that does not exist, whoever holds the context:
+
+| Holder | Who | Shares the context with |
+| --- | --- | --- |
+| private | an anonymous session, the application's own user | nobody: its owner scope alone |
+| shared | a verified Aion invocation | every invocation of the same gateway conversation: the same receiving agent identity and edge environment |
+
+A context is one or the other, never both, and its holder never changes.
+Admission comes first in `SendMessage` and `SendStreamingMessage`, ahead of
+extension verification, preprocessing (file uploads), push configuration and
+the task, so a refused message leaves nothing behind - no task, no push
+config, no reservation - and every extension handler runs behind it. A
+message that continues a task takes the task's context: the task has to be
+the caller's own, and a `contextId` sent with it has to match. A message with
+neither gets a new context ID, reserved like any other. In a shared context
+each participant still owns only their own tasks.
+
+A reservation is never released: not when the agent fails, not when the
+process dies, not when task rows are deleted, because the framework state may
+still be there. Reservations live beside the task store: in PostgreSQL
+(`context_reservations`, keyed by agent and context, so several servers of
+one agent agree and several agents share a database) or in the process for
+the in-memory store. An agent that brings its own checkpointer or session
+backend outside the SDK's database keeps that state's lifetime in step
+itself.
 
 ### `context=None` in the stores
 

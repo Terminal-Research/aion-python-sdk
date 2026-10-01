@@ -26,9 +26,11 @@ from collections.abc import AsyncGenerator
 from google.protobuf import json_format
 from types import SimpleNamespace
 from typing import override
+import uuid
 
 from aion.server.agent.execution import AionActiveTaskRegistry
 from aion.db.postgres.events import TaskEventKind
+from aion.server.tasks.admission import ContextAdmission, InMemoryContextAdmission, holder_of
 from aion.server.tasks.notifications import TaskEventListener
 from aion.server.tasks.ownership import OwnershipProvider
 from aion.server.tasks.ownership.config import CANCEL_WAIT_SECONDS
@@ -60,6 +62,7 @@ class AionRequestHandler(DefaultRequestHandlerV2):
             preprocessors: list[A2ARequestPreprocessor] | None = None,
             ownership_provider: OwnershipProvider | None = None,
             event_listener: TaskEventListener | None = None,
+            admission: ContextAdmission | None = None,
             **kwargs,
     ) -> None:
         """Build the handler and hand the registry its ownership provider.
@@ -77,6 +80,10 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         in-memory-backed handler should have, since ``on_cancel_task``'s
         second branch is unreachable without a durable store to hold the
         claim it waits on.
+
+        ``admission`` comes from the same factory too; omitted, contexts are
+        reserved in this process only, which is right for a handler without a
+        durable store.
         """
         super().__init__(*args, **kwargs)
         self._active_task_registry = AionActiveTaskRegistry(
@@ -87,6 +94,7 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         )
         self._event_listener = event_listener
         self._preprocessors = preprocessors or []
+        self._admission = admission or InMemoryContextAdmission()
 
     @override
     async def _setup_active_task(
@@ -94,15 +102,19 @@ class AionRequestHandler(DefaultRequestHandlerV2):
             params: SendMessageRequest,
             call_context: ServerCallContext,
     ) -> tuple[ActiveTask, RequestContext]:
-        """Verify, then preprocess, then set up the active task.
+        """Admit, verify, then preprocess, then set up the active task.
 
         The order is the point. A preprocessor may have an external side
         effect - storing an attachment into the organization the request
         names - and metadata that merely parsed has not been accepted yet.
-        Verifying first means a declaration the agent is about to reject can
-        never trigger that side effect, and the preprocessor works from the
-        verified projection instead of re-reading the raw request.
+        Admitting the caller into the context and verifying first means a
+        request the agent is about to reject can never trigger that side
+        effect, nor write a push config or a task, and the preprocessor works
+        from the verified projection instead of re-reading the raw request.
+        Unary and streaming sends, and every extension handler behind them,
+        come through here.
         """
+        await self._admit(params, call_context)
         extensions = self.verify_declared_extensions(params, call_context)
         context = PreprocessingContext(
             extensions=extensions, call_context=call_context
@@ -114,6 +126,34 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         except Exception:
             await self._rollback_preprocessors(len(self._preprocessors))
             raise
+
+    async def _admit(self, params: SendMessageRequest, call_context: ServerCallContext) -> None:
+        """Admit the caller into the message's context, or refuse it as if the task did not exist.
+
+        A continuation's context is its task's: the task has to be the
+        caller's own, found through the owner-scoped store, and a ``contextId``
+        sent with it has to match. A message without either starts a new
+        context, whose ID is chosen here so it is reserved like any other.
+        Every refusal is the same ``TaskNotFoundError``, whether another caller
+        holds the context or the caller has no owner to hold it by: it says
+        nothing about who holds what.
+
+        Raises:
+            TaskNotFoundError: The caller may not use the context or the task.
+        """
+        message = params.message
+        if message.task_id:
+            task = await self.task_store.get(message.task_id, call_context)
+            if task is None or (message.context_id and message.context_id != task.context_id):
+                raise TaskNotFoundError(f'Task {message.task_id} not found')
+            message.context_id = task.context_id
+        elif not message.context_id:
+            message.context_id = str(uuid.uuid4())
+
+        holder = holder_of(call_context, self.task_store.owner_resolver)
+        if holder is None or not await self._admission.admit(message.context_id, holder):
+            logger.info("Refused a message into a context its caller may not use")
+            raise TaskNotFoundError(f'Task {message.task_id} not found' if message.task_id else 'Task not found')
 
     async def _run_preprocessors(
             self,

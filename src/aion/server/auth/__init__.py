@@ -12,7 +12,14 @@ Which of these a server accepts depends on where it runs;
 ``build_token_verifier`` is where that rule lives.
 """
 
-from .caller import Assurance, AuthenticatedCaller, CredentialKind, GatewayCoordinates
+from .caller import (
+    Assurance,
+    AuthenticatedCaller,
+    CallerCredentials,
+    CredentialKind,
+    GatewayCoordinates,
+    verified_caller,
+)
 from .jwks import JwksKeySource
 from .mode import AuthConfigurationError, build_token_verifier, deployment_id, is_hosted
 from .principal import InvalidPrincipalError, Principal
@@ -22,6 +29,7 @@ __all__ = [
     "Assurance",
     "AuthConfigurationError",
     "AuthenticatedCaller",
+    "CallerCredentials",
     "CredentialKind",
     "GatewayCoordinates",
     "InvalidPrincipalError",
@@ -35,4 +43,5 @@ __all__ = [
     "claimed_kind",
     "deployment_id",
     "is_hosted",
+    "verified_caller",
 ]

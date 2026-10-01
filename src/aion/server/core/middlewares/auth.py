@@ -2,10 +2,16 @@
 
 import logging
 from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH
-from aion.server.auth import InvalidTokenError, KeysUnavailableError, TokenClaim, TokenVerifier, claimed_kind
+from aion.server.auth import (
+    CallerCredentials,
+    InvalidTokenError,
+    KeysUnavailableError,
+    TokenClaim,
+    TokenVerifier,
+    claimed_kind,
+)
 from aion.server.constants import CONFIGURATION_FILE_URL, HEALTH_CHECK_URL
 from fastapi import Request, Response
-from starlette.authentication import AuthCredentials
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp
@@ -41,7 +47,9 @@ class AionAuthMiddleware(BaseHTTPMiddleware):
       is verified by the ``TokenVerifier`` ``AppFactory`` builds. The caller it
       names replaces whatever user a middleware in front of this one set, and
       is installed the way Starlette's authentication does - credentials in
-      ``request.scope["auth"]``, the user in ``request.scope["user"]``.
+      ``request.scope["auth"]``, the user in ``request.scope["user"]``. The
+      credentials carry the typed caller too (``CallerCredentials``), which is
+      how request handling finds it behind a2a-sdk's user wrapper.
     - A token without an Aion ``typ`` but with an Aion ``token_use`` is a
       damaged Aion token and refused.
     - Anything else - no token, or the application's own credential - is
@@ -86,7 +94,7 @@ class AionAuthMiddleware(BaseHTTPMiddleware):
         except KeysUnavailableError as error:
             return _unavailable(str(error))
 
-        request.scope["auth"] = AuthCredentials(["authenticated"])
+        request.scope["auth"] = CallerCredentials(caller)
         request.scope["user"] = caller
         return await call_next(request)
 

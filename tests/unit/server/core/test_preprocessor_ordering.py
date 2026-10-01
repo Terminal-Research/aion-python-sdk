@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import pytest
 from a2a.server.request_handlers import DefaultRequestHandlerV2
 from a2a.types import Message, Role, SendMessageRequest
-from a2a.utils.errors import InvalidParamsError
+from a2a.utils.errors import InvalidParamsError, TaskNotFoundError
 from aion.core.constants.a2a import BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1
 from aion.core.runtime import aion_a2a_extension_registry
 from aion.core.runtime.context import AionRuntimeExtensions
@@ -42,9 +42,16 @@ def handler(*preprocessors) -> AionRequestHandler:
 
     Built without ``__init__``: the full constructor wires a task store, an
     executor and a push sender, none of which take part in ordering.
+    Admission into the context is recorded in ``admitted`` instead of run.
     """
     instance = AionRequestHandler.__new__(AionRequestHandler)
     instance._preprocessors = list(preprocessors)
+    instance.admitted = 0
+
+    async def admit(params, call_context) -> None:
+        instance.admitted += 1
+
+    instance._admit = admit
     return instance
 
 
@@ -87,6 +94,21 @@ class TestOrdering:
 
         with pytest.raises(InvalidParamsError):
             await handler(spy)._setup_active_task(request, call_context())
+
+        assert spy.calls == []
+        assert accepting_super == []
+
+    async def test_admission_into_the_context_runs_before_anything_else(self, accepting_super):
+        """A caller refused the context must not reach verification, preprocessing or setup."""
+        spy = SpyPreprocessor()
+        refusing = handler(spy)
+
+        async def refuse(params, call_context) -> None:
+            raise TaskNotFoundError()
+
+        refusing._admit = refuse
+        with pytest.raises(TaskNotFoundError):
+            await refusing._setup_active_task(params(), call_context())
 
         assert spy.calls == []
         assert accepting_super == []

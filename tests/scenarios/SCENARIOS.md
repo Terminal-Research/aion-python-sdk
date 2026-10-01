@@ -4,7 +4,7 @@
      commands.py and frameworks.py. Do not edit by hand: run
      `make scenarios-matrix`. -->
 
-159 scenarios in 31 files, 346 runs across 2 frameworks: 316 run, 30 skipped.
+159 scenarios in 31 files, 348 runs across 2 frameworks: 318 run, 30 skipped.
 
 Nothing here was produced by running a scenario: `pytest --collect-only` and the registries are all it takes, and the same suite always renders the same file. What the suite is and how to run it is in [README.md](README.md).
 
@@ -86,10 +86,10 @@ Who a request is from, and what a server does with one that names nobody it trus
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [No ``Authorization`` header: ``401`` with a bearer challenge, and no run.](core/test_authentication.py#L36 "test_a_call_without_a_token_is_refused") | `authentication` | — | `default` | ✓ | ✓ |
-| [The token names no caller the server trusts: ``401``, and the reason never quotes it.](core/test_authentication.py#L44 "test_a_call_with_a_token_that_does_not_verify_is_refused") | `authentication` | — | `default` | ✓ | ✓ |
-| [The control plane's token opens the endpoint the two refusals above close.](core/test_authentication.py#L64 "test_a_call_with_an_anonymous_session_token_is_served") | `authentication` | — | `default` | ✓ | ✓ |
-| [The caller is the token's ``sub``: the same ``contextId`` opens a task apiece.](core/test_authentication.py#L72 "test_two_sessions_on_one_context_do_not_see_each_others_tasks") | `authentication` | — | `default` | ✓ | ✓ |
+| [No ``Authorization`` header: ``401`` with a bearer challenge, and no run.](core/test_authentication.py#L37 "test_a_call_without_a_token_is_refused") | `authentication` | — | `default` | ✓ | ✓ |
+| [The token names no caller the server trusts: ``401``, and the reason never quotes it.](core/test_authentication.py#L45 "test_a_call_with_a_token_that_does_not_verify_is_refused") | `authentication` | — | `default` | ✓ | ✓ |
+| [The control plane's token opens the endpoint the two refusals above close.](core/test_authentication.py#L66 "test_a_call_with_an_anonymous_session_token_is_served") | `authentication` | — | `default` | ✓ | ✓ |
+| [The caller is the token's ``sub``: the first session holds the context, the second is refused.](core/test_authentication.py#L74 "test_a_session_cannot_enter_another_sessions_context") | `authentication` | — | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_big_payload.py`
 

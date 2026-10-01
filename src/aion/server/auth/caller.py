@@ -4,15 +4,17 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Mapping, Optional
 
-from starlette.authentication import BaseUser
+from starlette.authentication import AuthCredentials, BaseUser
 
 from .principal import Principal
 
 __all__ = [
     "Assurance",
     "AuthenticatedCaller",
+    "CallerCredentials",
     "CredentialKind",
     "GatewayCoordinates",
+    "verified_caller",
 ]
 
 
@@ -106,3 +108,26 @@ class AuthenticatedCaller(BaseUser):
     @property
     def identity(self) -> str:
         return self.subject
+
+
+class CallerCredentials(AuthCredentials):
+    """The ``authenticated`` credentials of a verified request, carrying its caller.
+
+    a2a-sdk hands ``ServerCallContext.user`` on wrapped in its own user type,
+    but passes ``request.auth`` through as ``state["auth"]`` unchanged: that
+    is where request handling finds the typed caller again.
+    """
+
+    def __init__(self, caller: AuthenticatedCaller) -> None:
+        super().__init__(["authenticated"])
+        self.caller = caller
+
+
+def verified_caller(call_context: Any) -> Optional[AuthenticatedCaller]:
+    """The caller a verified Aion token named for this call; ``None`` for any other caller."""
+    user = getattr(call_context, "user", None)
+    if isinstance(user, AuthenticatedCaller):
+        return user
+    state = getattr(call_context, "state", None) or {}
+    credentials = state.get("auth")
+    return credentials.caller if isinstance(credentials, CallerCredentials) else None

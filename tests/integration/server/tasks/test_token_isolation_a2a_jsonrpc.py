@@ -4,7 +4,9 @@ The middlewares are the ones ``AppFactory`` installs, and the tokens are signed
 with a stand-in for Aion's published key, so the owner of a request is the
 ``sub`` of its bearer token and nothing else. Two callers present the same
 ``contextId`` throughout; they hold invocation tokens or anonymous session
-tokens, and the two kinds isolate the same way.
+tokens. Their tasks are isolated the same way. Their contexts are not: two
+invocations from one gateway conversation share it, while an anonymous
+session's context is its own and the other session is refused entry.
 
 A verified caller is authenticated: its context history, finding its
 interrupted task through the ``contextId``, subscribing to its tasks and their
@@ -127,17 +129,28 @@ async def _call(server: JsonRpcServer, subject: str, method: str, params: dict[s
     return await server.rpc(method, params, headers=_as(server, subject))
 
 
+def _share_contexts(caller: str) -> bool:
+    """Whether callers of this kind share a context: invocations of one gateway conversation do."""
+    return Principal.from_subject(caller).type != "AnonymousSession"
+
+
 async def test_two_callers_on_one_context_keep_their_tasks_apart(server, callers) -> None:
     alice, bob = callers
     context_id = str(uuid.uuid4())
     first = task_of(await _send(server, alice, "done", context_id))
-    second = task_of(await _send(server, bob, "done", context_id))
+    runs = len(server.agent.runs)
+    if _share_contexts(alice):
+        second = task_of(await _send(server, bob, "done", context_id))
+    else:
+        assert error_of(await _send(server, bob, "done", context_id)) == TASK_NOT_FOUND
+        assert len(server.agent.runs) == runs
+        second = task_of(await _send(server, bob, "done", str(uuid.uuid4())))
     assert first["id"] != second["id"]
 
     # The header names the caller of every method, GetTask and ListTasks included.
     assert (await _call(server, alice, "GetTask", {"id": first["id"]}))["result"]["id"] == first["id"]
     assert error_of(await _call(server, bob, "GetTask", {"id": first["id"]})) == TASK_NOT_FOUND
-    listed = (await _call(server, bob, "ListTasks", {"contextId": context_id}))["result"]["tasks"]
+    listed = (await _call(server, bob, "ListTasks", {"contextId": second["contextId"]}))["result"]["tasks"]
     assert [task["id"] for task in listed] == [second["id"]]
 
 
@@ -160,10 +173,13 @@ async def test_an_interrupted_task_is_found_through_its_context_by_its_owner_onl
     context_id = str(uuid.uuid4())
     asked = task_of(await _send(server, alice, "ask", context_id))
 
-    second = task_of(await _send(server, bob, "done", context_id))
+    if _share_contexts(alice):
+        second = task_of(await _send(server, bob, "done", context_id))
+        assert second["id"] != asked["id"]
+    else:
+        assert error_of(await _send(server, bob, "done", context_id)) == TASK_NOT_FOUND
     first = task_of(await _send(server, alice, "done", context_id))
 
-    assert second["id"] != asked["id"]
     assert (first["id"], state_of(first)) == (asked["id"], "TASK_STATE_COMPLETED")
 
 
@@ -185,10 +201,14 @@ async def test_context_history_is_open_to_its_owner_only(server, callers) -> Non
     first_only, shared = str(uuid.uuid4()), str(uuid.uuid4())
     await _send(server, alice, "done", first_only)
     await _send(server, alice, "done", shared)
-    await _send(server, bob, "done", shared)
+    bobs = await _send(server, bob, "done", shared)
 
     assert set((await _call(server, alice, "GetContexts", {}))["result"]) == {first_only, shared}
-    assert (await _call(server, bob, "GetContexts", {}))["result"] == [shared]
+    if _share_contexts(alice):
+        assert (await _call(server, bob, "GetContexts", {}))["result"] == [shared]
+    else:
+        assert error_of(bobs) == TASK_NOT_FOUND
+        assert (await _call(server, bob, "GetContexts", {}))["result"] == []
 
     owners = (await _call(server, alice, "GetContext", {"context_id": first_only}))["result"]
     others = (await _call(server, bob, "GetContext", {"context_id": first_only}))["result"]
