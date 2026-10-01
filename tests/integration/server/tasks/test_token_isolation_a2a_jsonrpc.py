@@ -17,6 +17,7 @@ The in-memory run and the PostgreSQL run are the same test.
 from __future__ import annotations
 
 import asyncio
+import time
 import uuid
 from typing import Any, Optional
 
@@ -274,3 +275,21 @@ async def test_a_request_without_a_valid_token_never_reaches_the_agent(server, h
 
     assert response.status_code == 401
     assert len(server.agent.runs) == runs
+
+
+async def test_a_renewed_session_token_is_the_same_caller(server) -> None:
+    """Renewal changes the bearer, not the session: the new token reads and continues the old token's task."""
+    session_id = Principal.from_subject(SESSION_A).id
+    first = SIGNER.session_token(session_id, issued_at=int(time.time()) - 600)
+    renewed = SIGNER.session_token(session_id)
+    assert first != renewed
+    context_id = str(uuid.uuid4())
+
+    asked = task_of(
+        await server.send("ask", context_id, None, headers={"Authorization": f"Bearer {first}"})
+    )
+    renewed_headers = {"Authorization": f"Bearer {renewed}"}
+    read = await server.rpc("GetTask", {"id": asked["id"]}, headers=renewed_headers)
+    assert read["result"]["id"] == asked["id"]
+    resumed = task_of(await server.send("done", context_id, asked["id"], headers=renewed_headers))
+    assert (resumed["id"], state_of(resumed)) == (asked["id"], "TASK_STATE_COMPLETED")

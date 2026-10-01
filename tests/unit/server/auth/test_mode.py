@@ -171,3 +171,22 @@ def test_the_startup_log_names_the_mode_in_words(monkeypatch, caplog, deployment
 
     records = [record for record in caplog.records if record.name == mode.logger.name]
     assert [(record.levelno, record.message) for record in records] == [(logging.INFO, message)]
+
+
+async def test_a_local_server_verifies_sessions_without_any_credential_exchange(monkeypatch) -> None:
+    """Only the public key set is fetched: no client secret, no token for the server itself."""
+    from aion.api.http import aion_jwt_manager
+    from tests.unit.support.tokens import AION_KEY, ControlPlane
+
+    _deployment(monkeypatch, None)
+    _settings(monkeypatch, client_id=None)
+    control_plane = ControlPlane()
+    monkeypatch.setattr(mode, "JwksKeySource", lambda url: control_plane.key_source())
+    monkeypatch.setattr(aion_jwt_manager, "get_token", Mock(side_effect=AssertionError("no exchange")))
+
+    verifier = build_token_verifier()
+    await verifier.load()
+    caller = await verifier.verify(AION_KEY.session_token())
+
+    assert caller.session_id is not None
+    assert control_plane.requests == 1

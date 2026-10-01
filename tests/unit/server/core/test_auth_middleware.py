@@ -337,3 +337,14 @@ async def test_a_hosted_or_strict_server_still_serves_a_verified_invocation() ->
         answer = (await send_message(client, headers=_bearer(platform_token()))).json()
 
     assert answer["owner"] == PLATFORM_SUBJECT
+
+
+@pytest.mark.parametrize("path", [None, ELSEWHERE], ids=["json-rpc", "application-route"])
+async def test_a_hosted_server_refuses_a_session_on_every_protected_route(path) -> None:
+    probe = Probe()
+    async with probe.client(*_aion()) as client:
+        kwargs = {"path": path} if path else {}
+        response = await send_message(client, headers=_bearer(session_token()), **kwargs)
+
+    assert response.status_code == 401
+    assert probe.calls == 0
