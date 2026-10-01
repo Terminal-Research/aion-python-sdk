@@ -74,8 +74,9 @@ application's own credential - is served as the user an authentication
 middleware of the application installed in front of `AionAuthMiddleware`,
 when the mode allows it and that user `is_authenticated` with a non-empty
 `display_name`. The name becomes the owner of the request's tasks and state as
-it is: keeping it unique, and apart from Aion's `aion:v1:` subjects, is the
-application's contract. Such a user is a private caller with no gateway rights.
+it is: keeping it unique, and apart from Aion's `aion:v1:` subjects and the
+`aion.gateway:` keys of shared conversation state, is the application's
+contract - the SDK adds no prefix, and two equal names are one owner. Such a user is a private caller with no gateway rights.
 A token stripped of both its `typ` and its `token_use` cannot be told from an
 application's credential; whatever the application's authentication makes of
 it, it carries no Aion rights.
