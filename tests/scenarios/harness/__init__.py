@@ -7,7 +7,7 @@ from .callback import (
     Notification,
 )
 from .client import DataAttachment, FileAttachment, PushAuth, ScenarioClient
-from .control_plane import DEFAULT_SUBJECT, FakeControlPlane, control_plane, session_subject
+from .control_plane import CLIENT_ID, DEFAULT_SUBJECT, FakeControlPlane, control_plane, session_subject
 from .daemon import (
     DAEMON_BEHAVIOR_ID,
     DAEMON_ENVIRONMENT_ID,
@@ -49,6 +49,7 @@ __all__ = [
     "ANY",
     "AUTHORIZATION_HEADER",
     "CARDS_EXTENSION_URI",
+    "CLIENT_ID",
     "CallbackServer",
     "DAEMON_BEHAVIOR_ID",
     "DAEMON_ENVIRONMENT_ID",

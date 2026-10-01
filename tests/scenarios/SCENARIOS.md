@@ -4,7 +4,7 @@
      commands.py and frameworks.py. Do not edit by hand: run
      `make scenarios-matrix`. -->
 
-159 scenarios in 31 files, 348 runs across 2 frameworks: 318 run, 30 skipped.
+161 scenarios in 31 files, 358 runs across 2 frameworks: 328 run, 30 skipped.
 
 Nothing here was produced by running a scenario: `pytest --collect-only` and the registries are all it takes, and the same suite always renders the same file. What the suite is and how to run it is in [README.md](README.md).
 
@@ -71,7 +71,7 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 | `files` | inline file parts: stored, rejected, or passed through | 10 | `make tests-scenarios TAGS=files` |
 | `extensions` | extension activation and payload delivery | 12 | `make tests-scenarios TAGS=extensions` |
 | `daemon` | daemon extension identity and environment | 6 | `make tests-scenarios TAGS=daemon` |
-| `authentication` | bearer tokens: required, verified, and naming the caller | 4 | `make tests-scenarios TAGS=authentication` |
+| `authentication` | bearer tokens: required, verified, and naming the caller | 6 | `make tests-scenarios TAGS=authentication` |
 | `config` | aion.yaml configuration and deployment variants | 7 | `make tests-scenarios TAGS=config` |
 | `lifecycle` | cancel, concurrency, push notifications, startup | 4 | `make tests-scenarios TAGS=lifecycle` |
 | `persistence` | needs POSTGRES_TEST_URL; survives a server restart | 10 | `make tests-scenarios-persistence` |
@@ -86,10 +86,12 @@ Who a request is from, and what a server does with one that names nobody it trus
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [No ``Authorization`` header: ``401`` with a bearer challenge, and no run.](core/test_authentication.py#L37 "test_a_call_without_a_token_is_refused") | `authentication` | — | `default` | ✓ | ✓ |
-| [The token names no caller the server trusts: ``401``, and the reason never quotes it.](core/test_authentication.py#L45 "test_a_call_with_a_token_that_does_not_verify_is_refused") | `authentication` | — | `default` | ✓ | ✓ |
-| [The control plane's token opens the endpoint the two refusals above close.](core/test_authentication.py#L66 "test_a_call_with_an_anonymous_session_token_is_served") | `authentication` | — | `default` | ✓ | ✓ |
-| [The caller is the token's ``sub``: the first session holds the context, the second is refused.](core/test_authentication.py#L74 "test_a_session_cannot_enter_another_sessions_context") | `authentication` | — | `default` | ✓ | ✓ |
+| [No ``Authorization`` header: ``401`` with a bearer challenge, and no run.](core/test_authentication.py#L48 "test_a_call_without_a_token_is_refused") | `authentication` | — | `default` | ✓ | ✓ |
+| [The token names no caller the server trusts: ``401``, and the reason never quotes it.](core/test_authentication.py#L56 "test_a_call_with_a_token_that_does_not_verify_is_refused") | `authentication` | — | `default` | ✓ | ✓ |
+| [The control plane's token opens the endpoint the two refusals above close.](core/test_authentication.py#L77 "test_a_call_with_an_anonymous_session_token_is_served") | `authentication` | — | `default` | ✓ | ✓ |
+| [The caller is the token's ``sub``: the first session holds the context, the second is refused.](core/test_authentication.py#L85 "test_a_session_cannot_enter_another_sessions_context") | `authentication` | — | `default` | ✓ | ✓ |
+| [Aion's invocation for this client ID is served; a session and another client's invocation are refused.](core/test_authentication.py#L134 "test_a_hosted_or_strict_server_serves_invocations_only") | `authentication` | — | `default` | ✓ | ✓ |
+| [Not a server that starts open: ``aion serve`` exits with an error, and says why.](core/test_authentication.py#L149 "test_settings_that_cannot_protect_the_server_stop_it_starting") | `authentication` | — | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_big_payload.py`
 

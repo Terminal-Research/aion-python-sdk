@@ -1,4 +1,4 @@
-"""A stand-in Aion control plane: the key set a server verifies tokens with, and the session tokens signed by it.
+"""A stand-in Aion control plane: the key set a server verifies tokens with, and the tokens signed by it.
 
 Every server the scenarios start is pointed at this one (``AION_API_HOST``), and
 every client presents a token it signs, so the scenarios drive the same
@@ -14,9 +14,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Optional
 
 from aion.server.auth import Principal
-from tests.support.aion_tokens import SigningKey, subject
+from tests.support.aion_tokens import CLIENT_ID, SigningKey, subject
 
 __all__ = [
+    "CLIENT_ID",
     "DEFAULT_SUBJECT",
     "FakeControlPlane",
     "control_plane",
@@ -36,7 +37,7 @@ DEFAULT_SUBJECT = session_subject("5c0e9a52-3b7d-4f18-9a26-0d4e8b1c7f35")
 
 
 class FakeControlPlane:
-    """Serves a JWKS on a local port and signs anonymous session tokens with its key."""
+    """Serves a JWKS on a local port and signs anonymous session and invocation tokens with its key."""
 
     def __init__(self) -> None:
         self.signer = SigningKey()
@@ -72,6 +73,10 @@ class FakeControlPlane:
         so a session-scoped client signs its token once.
         """
         return self.signer.session_token(Principal.from_subject(session).id, **claims)
+
+    def invocation_token(self, principal_id: str = "scenario-user", **claims: Any) -> str:
+        """An invocation token Aion would send a deployment whose ``AION_CLIENT_ID`` is ``CLIENT_ID``."""
+        return self.signer.invocation_token(principal_id, **claims)
 
     def forged_token(self, session: str = DEFAULT_SUBJECT) -> str:
         """A token that claims this control plane's key but is signed with another."""

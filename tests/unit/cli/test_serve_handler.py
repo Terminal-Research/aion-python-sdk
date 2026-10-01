@@ -209,3 +209,14 @@ def test_child_shutdown_budget_covers_rescue_and_settlement():
         serve.SERVE_SHUTDOWN_TIMEOUT_SECONDS
         > SHUTDOWN_CANCEL_DRAIN_SECONDS + SHUTDOWN_DB_TIMEOUT_SECONDS
     )
+
+
+class TestStartupOutcome:
+    async def test_run_reports_that_no_agent_started(self, handler):
+        """The command turns this into a failing exit status; a clean exit would hide it."""
+        handler._setup_signal_handlers = MagicMock()
+        handler._startup = AsyncMock(return_value=([], ["agent-1"], False))
+        handler.shutdown = AsyncMock()
+
+        assert await handler.run(config=MagicMock()) is False
+        handler.shutdown.assert_awaited_once()

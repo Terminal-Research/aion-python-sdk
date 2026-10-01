@@ -6,6 +6,8 @@ reads the result the way a2a-sdk's dispatcher does: the owner, whether the
 user is authenticated, and the credentials that came with it.
 """
 
+import asyncio
+
 import httpx
 import jwt
 import pytest
@@ -13,7 +15,7 @@ from starlette.applications import Starlette
 from starlette.authentication import AuthCredentials, AuthenticationBackend, SimpleUser, UnauthenticatedUser
 from starlette.middleware import Middleware
 from starlette.middleware.authentication import AuthenticationMiddleware
-from starlette.responses import PlainTextResponse
+from starlette.responses import PlainTextResponse, StreamingResponse
 from starlette.routing import Route
 
 from aion.server.core.middlewares import AionAuthMiddleware, AionContextMiddleware
@@ -348,3 +350,34 @@ async def test_a_hosted_server_refuses_a_session_on_every_protected_route(path) 
 
     assert response.status_code == 401
     assert probe.calls == 0
+
+
+async def test_a_token_is_checked_once_per_request_not_during_its_stream() -> None:
+    """An established stream outlives its token's expiry; the next request is verified again."""
+    checked = hosted_verifier()
+    verify = checked.verify
+    calls = 0
+
+    async def counting(token: str):
+        nonlocal calls
+        calls += 1
+        return await verify(token)
+
+    checked.verify = counting
+
+    async def events():
+        for index in range(3):
+            await asyncio.sleep(0)
+            yield f"data: {index}\n\n"
+
+    app = Starlette(
+        routes=[Route("/stream", lambda request: StreamingResponse(events(), media_type="text/event-stream"))],
+        middleware=[Middleware(AionAuthMiddleware, verifier=checked)],
+    )
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        streamed = await client.get("/stream", headers=_bearer(platform_token()))
+        assert streamed.text.count("data:") == 3
+        assert calls == 1
+
+        await client.get("/stream", headers=_bearer(platform_token()))
+        assert calls == 2

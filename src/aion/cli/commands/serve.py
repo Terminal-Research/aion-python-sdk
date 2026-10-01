@@ -150,7 +150,7 @@ async def serve(
 
         # Run complete lifecycle through handler
         handler = ServeHandler()
-        await handler.run(
+        started = await handler.run(
             config=config,
             proxy_port=strategy.proxy_port,
             port_range_start=strategy.port_range_start,
@@ -163,3 +163,9 @@ async def serve(
     except Exception as ex:
         logger.exception(f"Failed to start server: {str(ex)}")
         raise click.ClickException(f"Unable to start AION system: {str(ex)}")
+
+    # A deployment none of whose agents started has failed, whatever stopped
+    # them - a wrong DEPLOYMENT_ID among other settings - and a supervisor has
+    # to see that in the exit status, not a clean exit.
+    if not started:
+        raise click.ClickException("No agent started; the errors above say why")

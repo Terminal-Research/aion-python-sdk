@@ -108,7 +108,7 @@ class ServeHandler:
             proxy_port_search_start: int = 8000,
             proxy_port_search_end: int = 8100,
             startup_timeout: int = 30
-    ) -> None:
+    ) -> bool:
         """
         Complete lifecycle: startup, broadcast config, monitor, and shutdown.
 
@@ -122,6 +122,10 @@ class ServeHandler:
             proxy_port_search_start: Starting port for proxy search if auto-finding
             proxy_port_search_end: Ending port for proxy search if auto-finding
             startup_timeout: Timeout in seconds for startup confirmation (0 to skip)
+
+        Returns:
+            False when no agent started, so the command can fail; True once a
+            deployment that started has shut down.
         """
         try:
             self._setup_signal_handlers()
@@ -139,7 +143,7 @@ class ServeHandler:
 
             # Exit if no agents started successfully
             if not successful_agents:
-                return
+                return False
 
             # Announce this deployment to the platform, in the background so the
             # agents keep serving while registration retries. Tracked rather than
@@ -152,6 +156,7 @@ class ServeHandler:
 
             # Monitor processes (blocking call until shutdown)
             await self._monitor()
+            return True
 
         finally:
             # Ensure graceful shutdown
