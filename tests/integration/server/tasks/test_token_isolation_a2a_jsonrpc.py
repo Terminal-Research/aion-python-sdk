@@ -350,3 +350,12 @@ async def test_an_unattributed_invocation_runs_but_reaches_no_task_after(server)
     # A message into the context starts a task of its own; the interrupted one is nobody's to resume.
     fresh = task_of(await server.send("done", context_id, headers=_unattributed()))
     assert fresh["id"] != asked["id"]
+
+    # The request that creates a task follows it to the end, streamed too.
+    streamed = await server.rpc(
+        "SendStreamingMessage",
+        {"message": {"messageId": "m-s", "contextId": context_id, "role": "ROLE_USER", "parts": [{"text": "done"}]}},
+        headers=_unattributed(),
+    )
+    assert all("error" not in event for event in streamed), streamed
+    assert state_of(streamed[-1]["result"]["task"]) == "TASK_STATE_COMPLETED"
