@@ -9,9 +9,17 @@ from a2a.server.request_handlers import DefaultRequestHandlerV2
 from a2a.server.request_handlers.request_handler import validate, validate_request_params
 from a2a.types import (
     CancelTaskRequest,
+    DeleteTaskPushNotificationConfigRequest,
+    GetTaskPushNotificationConfigRequest,
+    GetTaskRequest,
+    ListTaskPushNotificationConfigsRequest,
+    ListTaskPushNotificationConfigsResponse,
+    ListTasksRequest,
+    ListTasksResponse,
     SendMessageRequest,
     SubscribeToTaskRequest,
     Task,
+    TaskPushNotificationConfig,
 )
 from a2a.utils.errors import (
     InternalError,
@@ -30,6 +38,7 @@ import uuid
 
 from aion.server.agent.execution import AionActiveTaskRegistry
 from aion.db.postgres.events import TaskEventKind
+from aion.server.auth import has_individual_access
 from aion.server.tasks.admission import ContextAdmission, InMemoryContextAdmission, holder_of
 from aion.server.tasks.notifications import TaskEventListener
 from aion.server.tasks.ownership import OwnershipProvider
@@ -51,6 +60,16 @@ async def _no_events() -> AsyncGenerator[Event]:
     """
     return
     yield  # pragma: no cover - unreachable, and what makes this a generator
+
+
+def _require_individual_access(context: ServerCallContext | None, task_id: str) -> None:
+    """Refuse a caller without individual access as if ``task_id`` did not exist.
+
+    Raises:
+        TaskNotFoundError: The caller reaches no task by being its initiator.
+    """
+    if context is not None and not has_individual_access(context):
+        raise TaskNotFoundError(f'Task {task_id} not found')
 
 
 class AionRequestHandler(DefaultRequestHandlerV2):
@@ -134,6 +153,7 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         caller's own, found through the owner-scoped store, and a ``contextId``
         sent with it has to match. A message without either starts a new
         context, whose ID is chosen here so it is reserved like any other.
+        A caller without individual access continues no task.
         Every refusal is the same ``TaskNotFoundError``, whether another caller
         holds the context or the caller has no owner to hold it by: it says
         nothing about who holds what.
@@ -143,6 +163,7 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         """
         message = params.message
         if message.task_id:
+            _require_individual_access(call_context, message.task_id)
             task = await self.task_store.get(message.task_id, call_context)
             if task is None or (message.context_id and message.context_id != task.context_id):
                 raise TaskNotFoundError(f'Task {message.task_id} not found')
@@ -241,6 +262,59 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         ResponseServiceParameters(verified.activated_uris).record(call_context)
         return verified
 
+    @override
+    async def on_get_task(self, params: GetTaskRequest, context: ServerCallContext) -> Task | None:
+        """The caller's own task; a caller without individual access has none."""
+        _require_individual_access(context, params.id)
+        return await super().on_get_task(params, context)
+
+    @override
+    async def on_list_tasks(self, params: ListTasksRequest, context: ServerCallContext) -> ListTasksResponse:
+        """The caller's own tasks; a caller without individual access lists none."""
+        if not has_individual_access(context):
+            return ListTasksResponse()
+        return await super().on_list_tasks(params, context)
+
+    @override
+    async def on_create_task_push_notification_config(
+            self,
+            params: TaskPushNotificationConfig,
+            context: ServerCallContext,
+    ) -> TaskPushNotificationConfig:
+        """Only a task's initiator directs its notifications."""
+        _require_individual_access(context, params.task_id)
+        return await super().on_create_task_push_notification_config(params, context)
+
+    @override
+    async def on_get_task_push_notification_config(
+            self,
+            params: GetTaskPushNotificationConfigRequest,
+            context: ServerCallContext,
+    ) -> TaskPushNotificationConfig:
+        """Only a task's initiator reads its notification configs."""
+        _require_individual_access(context, params.task_id)
+        return await super().on_get_task_push_notification_config(params, context)
+
+    @override
+    async def on_list_task_push_notification_configs(
+            self,
+            params: ListTaskPushNotificationConfigsRequest,
+            context: ServerCallContext,
+    ) -> ListTaskPushNotificationConfigsResponse:
+        """Only a task's initiator lists its notification configs."""
+        _require_individual_access(context, params.task_id)
+        return await super().on_list_task_push_notification_configs(params, context)
+
+    @override
+    async def on_delete_task_push_notification_config(
+            self,
+            params: DeleteTaskPushNotificationConfigRequest,
+            context: ServerCallContext,
+    ) -> None:
+        """Only a task's initiator removes its notification configs."""
+        _require_individual_access(context, params.task_id)
+        await super().on_delete_task_push_notification_config(params, context)
+
     async def on_get_context(
             self,
             params: GetContextParams,
@@ -255,7 +329,7 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         Returns:
             Conversation object with context data
         """
-        if context is None:
+        if context is None or not has_individual_access(context):
             return ConversationBuilder.build_from_tasks(
                 context_id=params.context_id,
                 tasks=[],
@@ -284,7 +358,7 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         Returns:
             List of available context IDs
         """
-        if context is None:
+        if context is None or not has_individual_access(context):
             return ContextsList.model_validate([])
 
         context_ids = await self.task_store.get_context_ids(
@@ -367,6 +441,9 @@ class AionRequestHandler(DefaultRequestHandlerV2):
     ) -> Task:
         """Cancel a task, wherever in the process fleet it is actually executing.
 
+        Only its initiator may, so a caller without individual access cancels
+        nothing: the task answers as if it did not exist.
+
         Three branches, tried in order:
 
         1. This process is executing the task right now
@@ -395,6 +472,7 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         indistinguishable.
         """
         task_id = params.id
+        _require_individual_access(context, task_id)
 
         local = await self._active_task_registry.cancel_local(task_id, context)
         if local is not None:
@@ -455,6 +533,7 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         closes it with the stored Task - which is the answer the client asked
         for, and the reason the reaper settles a task rather than deleting it.
         """
+        _require_individual_access(context, params.id)
         active_task = await self._active_task_registry.get_for_attach(
             params.id,
             context,

@@ -131,3 +131,16 @@ def verified_caller(call_context: Any) -> Optional[AuthenticatedCaller]:
     state = getattr(call_context, "state", None) or {}
     credentials = state.get("auth")
     return credentials.caller if isinstance(credentials, CallerCredentials) else None
+
+
+def has_individual_access(call_context: Any) -> bool:
+    """Whether the caller may reach tasks by being their initiator.
+
+    Every caller may, except a verified invocation whose ``assurance`` is
+    ``unattributed``: its subject - the common ``ExternalAnonymous`` - is
+    attribution kept for audit, shared by whoever arrived anonymously, so it
+    tells no initiator from another. Such a caller may start a task in its
+    gateway conversation and follow it on the same request, and nothing more.
+    """
+    caller = verified_caller(call_context)
+    return caller is None or caller.assurance is not Assurance.UNATTRIBUTED

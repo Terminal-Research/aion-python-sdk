@@ -18,6 +18,7 @@ from .caller import (
     CallerCredentials,
     CredentialKind,
     GatewayCoordinates,
+    has_individual_access,
     verified_caller,
 )
 from .jwks import JwksKeySource
@@ -42,6 +43,7 @@ __all__ = [
     "build_token_verifier",
     "claimed_kind",
     "deployment_id",
+    "has_individual_access",
     "is_hosted",
     "verified_caller",
 ]

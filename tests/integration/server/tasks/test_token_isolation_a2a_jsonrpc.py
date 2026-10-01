@@ -313,3 +313,40 @@ async def test_a_renewed_session_token_is_the_same_caller(server) -> None:
     assert read["result"]["id"] == asked["id"]
     resumed = task_of(await server.send("done", context_id, asked["id"], headers=renewed_headers))
     assert (resumed["id"], state_of(resumed)) == (asked["id"], "TASK_STATE_COMPLETED")
+
+
+def _unattributed() -> dict[str, str]:
+    """An invocation whose initiator Aion kept only as the common ``ExternalAnonymous`` attribution."""
+    token = SIGNER.invocation_token("anonymous", principal_type="ExternalAnonymous", assurance="unattributed")
+    return {"Authorization": f"Bearer {token}"}
+
+
+async def test_an_unattributed_invocation_runs_but_reaches_no_task_after(server) -> None:
+    """Its subject is shared by everyone anonymous, so it tells no initiator apart: it starts tasks, nothing more."""
+    context_id = str(uuid.uuid4())
+    asked = task_of(await server.send("ask", context_id, headers=_unattributed()))
+    assert state_of(asked) == "TASK_STATE_INPUT_REQUIRED"
+    selector = {"taskId": asked["id"], "id": "hook-1"}
+
+    refused = [
+        await server.rpc("GetTask", {"id": asked["id"]}, headers=_unattributed()),
+        await server.rpc("CancelTask", {"id": asked["id"]}, headers=_unattributed()),
+        await server.rpc("SubscribeToTask", {"id": asked["id"]}, headers=_unattributed()),
+        await server.rpc("CreateTaskPushNotificationConfig", {**selector, "url": "https://hooks.example/x"},
+                         headers=_unattributed()),
+        await server.rpc("GetTaskPushNotificationConfig", selector, headers=_unattributed()),
+        await server.rpc("ListTaskPushNotificationConfigs", {"taskId": asked["id"]}, headers=_unattributed()),
+        await server.rpc("DeleteTaskPushNotificationConfig", selector, headers=_unattributed()),
+        await server.send("done", context_id, asked["id"], headers=_unattributed()),
+    ]
+    assert [error_of(answer) for answer in refused] == [TASK_NOT_FOUND] * len(refused)
+    assert server.agent.cancels == 0
+
+    assert (await server.rpc("ListTasks", {}, headers=_unattributed()))["result"].get("tasks", []) == []
+    assert (await server.rpc("GetContexts", {}, headers=_unattributed()))["result"] == []
+    history = (await server.rpc("GetContext", {"context_id": context_id}, headers=_unattributed()))["result"]
+    assert not history.get("history")
+
+    # A message into the context starts a task of its own; the interrupted one is nobody's to resume.
+    fresh = task_of(await server.send("done", context_id, headers=_unattributed()))
+    assert fresh["id"] != asked["id"]

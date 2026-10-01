@@ -170,6 +170,16 @@ store; the server refuses to run one without it rather than treat it as
 unscoped. The token is a header, so every method names its caller the same
 way, whether or not it has `params.metadata`.
 
+An invocation with `unattributed` assurance has no individual access. Its
+subject is attribution Aion keeps for audit - the common `ExternalAnonymous` -
+shared by everyone who arrived anonymously, so it tells no initiator from
+another (`aion.server.auth.has_individual_access`). It starts a task in its
+gateway conversation and follows it on the same request; every later reach is
+refused as if no task existed: `GetTask`, `CancelTask`, `SubscribeToTask`,
+continuing a task, the push notification config methods and finding an
+interrupted task through its `contextId`. `ListTasks`, `GetContexts` and
+`GetContext` answer empty.
+
 ### Who may use a context
 
 A context ID is chosen by the client, but the framework state keyed by it -

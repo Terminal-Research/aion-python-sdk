@@ -5,6 +5,7 @@ from a2a.server.context import ServerCallContext
 from a2a.server.id_generator import IDGenerator
 from a2a.types.a2a_pb2 import SendMessageRequest, Task
 
+from aion.server.auth import has_individual_access
 from aion.server.tasks.stores.base_task_store import BaseTaskStore
 from aion.server.a2a.utils import is_task_interrupted
 
@@ -77,8 +78,12 @@ class AionRequestContextBuilder(RequestContextBuilder):
             context_id: str,
             context: ServerCallContext,
     ) -> Task | None:
-        """Return the caller-owned interrupted task for a context, if any."""
-        if not self._task_store:
+        """Return the caller-owned interrupted task for a context, if any.
+
+        A caller without individual access owns none to return to: its
+        shared attribution cannot tell whose interrupted task it would be.
+        """
+        if not self._task_store or not has_individual_access(context):
             return None
 
         last_task = await self._task_store.get_context_last_task(
