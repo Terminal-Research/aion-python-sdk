@@ -1,9 +1,8 @@
-"""Middleware that names every request's caller from its bearer token, or as the stand-in caller."""
+"""Middleware that names every request's caller, and refuses one without a valid bearer token."""
 
 import logging
 from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH
 from aion.server.auth import InvalidTokenError, TokenVerifier
-from aion.server.auth.caller import AuthenticatedCaller
 from aion.server.constants import CONFIGURATION_FILE_URL, HEALTH_CHECK_URL
 from fastapi import Request, Response
 from starlette.authentication import AuthCredentials
@@ -16,11 +15,7 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "AionAuthMiddleware",
     "PUBLIC_PATHS",
-    "STAND_IN_SUBJECT",
 ]
-
-STAND_IN_SUBJECT = "aion:anonymous:stand-in"
-"""The caller of every request that carries no token that verifies; all such requests share its tasks."""
 
 _BEARER = "bearer"
 
@@ -31,25 +26,24 @@ PUBLIC_PATHS = frozenset(
 
 
 class AionAuthMiddleware(BaseHTTPMiddleware):
-    """Names every request's caller from its bearer token, or as the stand-in caller.
+    """Names every request's caller and refuses one without a valid bearer token.
 
-    A request to the agent's server carries ``Authorization: Bearer <JWT>``,
+    Every request to the agent's server carries ``Authorization: Bearer <JWT>``,
     except the few ``PUBLIC_PATHS`` - the agent card, health and the
     configuration schema - which a client or a probe reads before it has a
-    token and which pass untouched. The ``TokenVerifier`` ``AppFactory`` builds
-    (``aion.server.auth.build_token_verifier``) checks the token, and the caller
-    the token names is installed the way Starlette's authentication does -
-    credentials in ``request.scope["auth"]``, the user in
-    ``request.scope["user"]``. a2a-sdk's ``DefaultServerCallContextBuilder``
-    turns them into ``ServerCallContext.user``, and the agent's
-    ``owner_resolver`` into the owner of the request's tasks and framework
-    state.
+    token. Everything else is closed by default: the JSON-RPC endpoint, the
+    OpenAPI schema, and any route an application adds through ``AppRegistry``.
+    The ``TokenVerifier`` ``AppFactory`` builds (``aion.server.auth.build_token_verifier``)
+    checks the token, and the caller the token names is installed the way
+    Starlette's authentication does - credentials in ``request.scope["auth"]``,
+    the user in ``request.scope["user"]``. a2a-sdk's
+    ``DefaultServerCallContextBuilder`` turns them into
+    ``ServerCallContext.user``, and the agent's ``owner_resolver`` into the
+    owner of the request's tasks and framework state.
 
-    A request without a token, or with one that does not verify, is served as
-    ``STAND_IN_SUBJECT``, and a warning names the reason. Every such request
-    shares that caller's tasks, so the server isolates only callers with a
-    verified token. Whatever a middleware in front of this one put in the
-    scope is replaced.
+    A request without a token, or with one that does not verify, is answered
+    ``401`` before its body is read, and the agent never runs. Whatever a
+    middleware in front of this one put in the scope is replaced.
     """
 
     def __init__(self, app: ASGIApp, verifier: TokenVerifier) -> None:
@@ -60,17 +54,13 @@ class AionAuthMiddleware(BaseHTTPMiddleware):
         if request.url.path.rstrip("/") in PUBLIC_PATHS:
             return await call_next(request)
 
-        # TODO(platform-token-auth): answer these requests with `_unauthorized`
-        # before release. The stand-in caller serves them until the control
-        # plane publishes the keys that verify its tokens.
         token = _bearer_token(request.headers.get("authorization"))
+        if token is None:
+            return _unauthorized("the request carries no bearer token", error_code=None)
         try:
-            if token is None:
-                raise InvalidTokenError("the request carries no bearer token")
             caller = await self._verifier.verify(token)
         except InvalidTokenError as error:
-            logger.warning("Serving an unverified request as %s: %s", STAND_IN_SUBJECT, error)
-            caller = AuthenticatedCaller(STAND_IN_SUBJECT, None, {})
+            return _unauthorized(str(error), error_code="invalid_token")
 
         request.scope["auth"] = AuthCredentials(["authenticated"])
         request.scope["user"] = caller

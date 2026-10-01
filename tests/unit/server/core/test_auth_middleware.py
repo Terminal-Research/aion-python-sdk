@@ -16,7 +16,6 @@ from starlette.responses import PlainTextResponse
 from starlette.routing import Route
 
 from aion.server.core.middlewares import AionAuthMiddleware, AionContextMiddleware
-from aion.server.core.middlewares.auth import STAND_IN_SUBJECT
 
 from tests.unit.support.distribution import distribution_metadata
 from tests.unit.support.request_path import ELSEWHERE, Probe, send_message
@@ -133,20 +132,6 @@ async def test_a_request_without_a_valid_token_never_reaches_the_agent(headers, 
     assert response.headers["www-authenticate"] == challenge
     assert response.json()["error"] == "unauthorized"
     assert probe.calls == 0
-
-
-@pytest.mark.parametrize(
-    "headers",
-    [{}, {"Authorization": "Basic YWxpY2U6c2VjcmV0"}, _bearer(platform_token(lifetime=-120)), _bearer("not-a-jwt")],
-    ids=["no-header", "basic", "expired", "garbage"],
-)
-async def test_a_request_without_a_valid_token_is_served_as_the_stand_in_caller(headers) -> None:
-    probe = Probe()
-    async with probe.client(*_aion()) as client:
-        answer = (await send_message(client, headers=headers)).json()
-
-    assert (answer["owner"], answer["authenticated"]) == (STAND_IN_SUBJECT, True)
-    assert probe.calls == 1
 
 
 async def test_a_refusal_never_quotes_the_token(caplog) -> None:
