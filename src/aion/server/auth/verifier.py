@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import binascii
 import json
+from enum import Enum
 from typing import Any, Optional
 
 import jwt
@@ -24,7 +25,9 @@ __all__ = [
     "KeysUnavailableError",
     "MAX_TOKEN_BYTES",
     "SESSION_TYPE",
+    "TokenClaim",
     "TokenVerifier",
+    "claimed_kind",
 ]
 
 ALGORITHM = "ES256"
@@ -61,6 +64,41 @@ class KeysUnavailableError(AionError):
     """No verification key is loaded yet, so no token can be verified; the request may be retried."""
 
 
+class TokenClaim(Enum):
+    """What a bearer token claims to be, read without verifying anything; it only chooses the check."""
+
+    AION = "aion"
+    """An Aion ``typ`` header: verified in full, and refused if it does not verify."""
+
+    DAMAGED_AION = "damaged_aion"
+    """No Aion ``typ``, but an Aion ``token_use`` or a repeated member: refused, never handed elsewhere."""
+
+    FOREIGN = "foreign"
+    """Anything else - the application's own credential, say - which this verifier does not judge."""
+
+
+def claimed_kind(token: str) -> TokenClaim:
+    """What ``token`` claims to be.
+
+    Grants nothing: it decides whether the token is Aion's to verify, or
+    refuse, or the application's. A token stripped of both its ``typ`` and its
+    ``token_use`` cannot be told from an application's credential; whatever
+    the application's authentication makes of it, it carries no Aion rights.
+    """
+    segments = token.split(".")
+    if len(segments) != 3:
+        return TokenClaim.FOREIGN
+    try:
+        header, claims = _parse_segment(segments[0]), _parse_segment(segments[1])
+    except _DuplicateMemberError:
+        return TokenClaim.DAMAGED_AION
+    if header is not None and header.get("typ") in (INVOCATION_TYPE, SESSION_TYPE):
+        return TokenClaim.AION
+    if claims is not None and claims.get("token_use") in {kind.value for kind in CredentialKind}:
+        return TokenClaim.DAMAGED_AION
+    return TokenClaim.FOREIGN
+
+
 class TokenVerifier:
     """Verifies a request token and names the caller it was issued to.
 
@@ -87,6 +125,11 @@ class TokenVerifier:
     the header, and no claim twice. The ``kid`` has to name a loaded key: an
     unknown one is refused without fetching. Times are checked with
     ``CLOCK_SKEW_LEEWAY_SECONDS`` of tolerance and nothing else is.
+
+    ``trust_application_users`` says whether a request without an Aion token
+    may still be served as the user the application's own authentication
+    installed; the middleware asks. Only a server outside the platform that
+    does not require invocation tokens trusts them.
     """
 
     def __init__(
@@ -96,11 +139,13 @@ class TokenVerifier:
             issuer: str,
             invocation_audience: Optional[str] = None,
             accept_sessions: bool = True,
+            trust_application_users: bool = False,
     ) -> None:
         self.keys = keys
         self.issuer = issuer
         self.invocation_audience = invocation_audience
         self.accept_sessions = accept_sessions
+        self.trust_application_users = trust_application_users
 
     @property
     def accepts_invocations(self) -> bool:
@@ -170,15 +215,26 @@ def _unverified_parts(token: str) -> tuple[dict[str, Any], dict[str, Any]]:
 
 def _json_segment(segment: str) -> dict[str, Any]:
     try:
-        raw = base64.urlsafe_b64decode(segment + "=" * (-len(segment) % 4))
-        value = json.loads(raw, object_pairs_hook=_no_duplicates)
+        value = _parse_segment(segment)
     except _DuplicateMemberError as error:
         raise InvalidTokenError(f"the bearer token repeats '{error.name}'") from None
-    except (binascii.Error, ValueError):
-        raise InvalidTokenError("the bearer token is not a JWT") from None
-    if not isinstance(value, dict):
+    if value is None:
         raise InvalidTokenError("the bearer token is not a JWT")
     return value
+
+
+def _parse_segment(segment: str) -> Optional[dict[str, Any]]:
+    """A base64url JSON object; ``None`` for anything else.
+
+    Raises:
+        _DuplicateMemberError: The object repeats a member.
+    """
+    try:
+        raw = base64.urlsafe_b64decode(segment + "=" * (-len(segment) % 4))
+        value = json.loads(raw, object_pairs_hook=_no_duplicates)
+    except (binascii.Error, ValueError):
+        return None
+    return value if isinstance(value, dict) else None
 
 
 class _DuplicateMemberError(Exception):

@@ -15,6 +15,8 @@ from aion.server.auth import (
     InvalidTokenError,
     KeysUnavailableError,
     Principal,
+    TokenClaim,
+    claimed_kind,
 )
 from tests.support.aion_tokens import (
     EDGE_ENVIRONMENT_ID,
@@ -329,3 +331,26 @@ async def test_every_session_is_its_own_caller() -> None:
     assert (await _verify(AION_KEY.session_token(first))).subject != (
         await _verify(AION_KEY.session_token(second))
     ).subject
+
+
+@pytest.mark.parametrize(
+    ("token", "claim"),
+    [
+        (lambda: AION_KEY.invocation_token(), TokenClaim.AION),
+        (lambda: AION_KEY.session_token(), TokenClaim.AION),
+        (lambda: AION_KEY.invocation_token(audience="elsewhere", iss="x"), TokenClaim.AION),
+        (lambda: AION_KEY.invocation_token(headers={"typ": None}), TokenClaim.DAMAGED_AION),
+        (lambda: AION_KEY.session_token(headers={"typ": "JWT"}), TokenClaim.DAMAGED_AION),
+        (lambda: AION_KEY.sign_raw(
+            '{"alg":"ES256","typ":"JWT","typ":"aion-invocation+jwt"}', "{}"), TokenClaim.DAMAGED_AION),
+        (lambda: jwt.encode({"sub": "alice"}, "an-application-secret-long-enough-for-hs256", algorithm="HS256"),
+         TokenClaim.FOREIGN),
+        (lambda: AION_KEY.invocation_token(headers={"typ": None}, token_use=None), TokenClaim.FOREIGN),
+        (lambda: "an-opaque-application-key", TokenClaim.FOREIGN),
+        (lambda: "a.b.c", TokenClaim.FOREIGN),
+    ],
+    ids=["invocation", "session", "aion-typ-wrong-claims", "no-typ-aion-use", "jwt-typ-aion-use",
+         "repeated-typ", "application-jwt", "stripped-aion", "opaque", "not-json"],
+)
+def test_what_a_token_claims_chooses_the_check_and_nothing_more(token, claim) -> None:
+    assert claimed_kind(token()) is claim

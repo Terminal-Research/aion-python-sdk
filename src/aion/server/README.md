@@ -39,14 +39,37 @@ A custom resolver is passed to the agent:
 
 ### Where the user comes from
 
-Every request to an agent's server carries a bearer token,
-`Authorization: Bearer <JWT>` - the JSON-RPC endpoint, the OpenAPI schema and
-any route an application adds through `AppRegistry` alike. Only the public
-paths are open without one: the agent card, health and the configuration
-schema, which a client or a probe reads before it has a token. The agent card
-declares the bearer scheme in its `securitySchemes`; the token is issued by the
-Aion control plane. A request without a token, or with one that does not
-verify, is answered `401` before its body is read, and the agent never runs.
+Every request to an agent's server needs a verified caller - the JSON-RPC
+endpoint, the OpenAPI schema and any route an application adds through
+`AppRegistry` alike. Only the public paths are open without one: the agent
+card, health and the configuration schema, which a client or a probe reads
+before it has a caller. The agent card declares the bearer scheme in its
+`securitySchemes`; Aion's tokens are issued by the Aion control plane. A
+request without a verified caller is answered `401` before its body is read,
+and the agent never runs.
+
+Where the caller may come from is the server's mode:
+
+| Mode | Selected by | Served |
+| --- | --- | --- |
+| Hosted | `DEPLOYMENT_ID` set | invocation tokens only |
+| Strict | `AION_REQUIRE_INVOCATION_AUTH=true`, not hosted | invocation tokens only |
+| Remote or local | neither | anonymous session tokens; invocation tokens when `AION_CLIENT_ID` is set; the application's own authenticated user |
+
+The bearer token chooses the path by what it claims to be, never by whether a
+check failed. A token with an Aion `typ` header is verified in full; if it
+does not verify the request is refused, whoever else the request could have
+been served as. A token without an Aion `typ` but with an Aion `token_use` is a
+damaged Aion token and refused. Anything else - no token, or the
+application's own credential - is served as the user an authentication
+middleware of the application installed in front of `AionAuthMiddleware`,
+when the mode allows it and that user `is_authenticated` with a non-empty
+`display_name`. The name becomes the owner of the request's tasks and state as
+it is: keeping it unique, and apart from Aion's `aion:v1:` subjects, is the
+application's contract. Such a user is a private caller with no gateway rights.
+A token stripped of both its `typ` and its `token_use` cannot be told from an
+application's credential; whatever the application's authentication makes of
+it, it carries no Aion rights.
 
 `AppFactory` builds a `TokenVerifier` (`aion.server.auth.build_token_verifier`)
 and hands it to `AionAuthMiddleware`, which it installs outside the server's
@@ -59,9 +82,9 @@ The caller is typed: its `principal` (type and ID), `credential` (invocation
 or anonymous session), `assurance` - what Aion established about it, so a
 verified session or provider sender is never taken for an account login - and,
 for an invocation, the `gateway` coordinates it was routed through. The
-distribution a request came through is its channel, not its owner. Whatever
-user and credentials a middleware in front of `AionAuthMiddleware` set are
-replaced.
+distribution a request came through is its channel, not its owner. A verified
+Aion token replaces whatever user and credentials a middleware in front of
+`AionAuthMiddleware` set.
 
 Both kinds of token are ES256-signed JWTs with the one key Aion publishes; the
 protected `typ` header tells them apart.
@@ -91,7 +114,8 @@ up, and the reason in the `401` never quotes the token.
 
 A server is hosted when `DEPLOYMENT_ID` is set. It has to be the deployment's
 UUID: a malformed or empty value stops the server instead of being read as
-"not hosted", and so does a hosted server without `AION_CLIENT_ID`.
+"not hosted". A hosted or strict server without `AION_CLIENT_ID` does not start
+either.
 
 The keys are the JWKS at `{AION_API_HOST}/runtime/a2a/verification-keys`, a
 public endpoint that needs no credentials (`JwksKeySource`). It has to be

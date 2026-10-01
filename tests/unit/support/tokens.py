@@ -60,17 +60,23 @@ def verifier(
         invocations: bool = True,
         sessions: bool = True,
 ) -> TokenVerifier:
-    """A verifier over the stand-in endpoint; by default it accepts both kinds, as a server with ``AION_CLIENT_ID`` does."""
+    """A verifier over the stand-in endpoint.
+
+    By default it accepts both kinds and the application's users, as a server
+    outside the platform with ``AION_CLIENT_ID`` does. One without sessions
+    takes invocation tokens only, as a hosted or strict server does.
+    """
     return TokenVerifier(
         (control_plane or ControlPlane()).key_source(),
         issuer=ISSUER,
         invocation_audience=CLIENT_ID if invocations else None,
         accept_sessions=sessions,
+        trust_application_users=sessions,
     )
 
 
 def hosted_verifier(control_plane: Optional[ControlPlane] = None) -> TokenVerifier:
-    """A verifier that accepts invocation tokens only, as a server the platform hosts does."""
+    """A verifier that accepts invocation tokens only, as a hosted or strict server does."""
     return verifier(control_plane, sessions=False)
 
 
