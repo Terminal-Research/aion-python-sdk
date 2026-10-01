@@ -7,6 +7,10 @@ user is authenticated, and the credentials that came with it.
 """
 
 import asyncio
+import base64
+import datetime
+import json
+import time
 
 import httpx
 import jwt
@@ -18,6 +22,7 @@ from starlette.middleware.authentication import AuthenticationMiddleware
 from starlette.responses import PlainTextResponse, StreamingResponse
 from starlette.routing import Route
 
+from aion.server.auth.verifier import CLOCK_SKEW_LEEWAY_SECONDS, INVOCATION_LIFETIME_SECONDS as INVOCATION_LIFETIME
 from aion.server.core.middlewares import AionAuthMiddleware, AionContextMiddleware
 
 from tests.unit.support.distribution import distribution_metadata
@@ -352,32 +357,75 @@ async def test_a_hosted_server_refuses_a_session_on_every_protected_route(path) 
     assert probe.calls == 0
 
 
-async def test_a_token_is_checked_once_per_request_not_during_its_stream() -> None:
-    """An established stream outlives its token's expiry; the next request is verified again."""
-    checked = hosted_verifier()
-    verify = checked.verify
-    calls = 0
-
-    async def counting(token: str):
-        nonlocal calls
-        calls += 1
-        return await verify(token)
-
-    checked.verify = counting
+async def test_a_stream_outlives_its_tokens_expiry_and_the_next_request_is_refused(monkeypatch) -> None:
+    """One token: the stream it opened keeps going past ``exp`` + leeway; the same token is refused after."""
+    issued_at = int(time.time())
+    monkeypatch.setattr(_JwtClock, "moment", issued_at)
+    monkeypatch.setattr(jwt.api_jwt, "datetime", _JwtClock)
+    token = platform_token(issued_at=issued_at)
 
     async def events():
-        for index in range(3):
+        yield "data: 0\n\n"
+        _JwtClock.moment = issued_at + INVOCATION_LIFETIME + CLOCK_SKEW_LEEWAY_SECONDS + 1
+        for index in (1, 2):
             await asyncio.sleep(0)
             yield f"data: {index}\n\n"
 
     app = Starlette(
         routes=[Route("/stream", lambda request: StreamingResponse(events(), media_type="text/event-stream"))],
-        middleware=[Middleware(AionAuthMiddleware, verifier=checked)],
+        middleware=[Middleware(AionAuthMiddleware, verifier=hosted_verifier())],
     )
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
-        streamed = await client.get("/stream", headers=_bearer(platform_token()))
+        streamed = await client.get("/stream", headers=_bearer(token))
+        assert streamed.status_code == 200
         assert streamed.text.count("data:") == 3
-        assert calls == 1
 
-        await client.get("/stream", headers=_bearer(platform_token()))
-        assert calls == 2
+        again = await client.get("/stream", headers=_bearer(token))
+        assert again.status_code == 401
+        assert "expired" in again.json()["detail"]
+
+
+class _JwtClock(datetime.datetime):
+    """PyJWT's ``datetime``, reading the time the test sets in ``moment``."""
+
+    moment: float = 0.0
+
+    @classmethod
+    def now(cls, tz=None):
+        return datetime.datetime.fromtimestamp(cls.moment, tz=tz)
+
+
+@pytest.mark.parametrize(
+    "token",
+    [
+        lambda: _unsigned({"alg": "HS256"}, {"token_use": []}),
+        lambda: _unsigned({"alg": "HS256"}, {"token_use": {}}),
+        lambda: _unsigned({"alg": "ES256", "typ": ["aion-invocation+jwt"]}, {}),
+        lambda: _unsigned({"alg": "ES256", "typ": "aion-invocation+jwt", "kid": AION_KEY.kid}, {"iat": []}),
+        lambda: _signed_claims(iat=[]),
+        lambda: _signed_claims(nbf={}),
+        lambda: _signed_claims(exp=[]),
+        lambda: _signed_claims(iss=[]),
+        lambda: _signed_claims(aud={}),
+        lambda: platform_token(padding="x" * 8192),
+    ],
+    ids=["token-use-list", "token-use-object", "typ-list", "unsigned-iat-list", "iat-list", "nbf-object",
+         "exp-list", "iss-list", "aud-object", "oversized"],
+)
+async def test_a_malformed_bearer_is_refused_with_401_never_a_server_error(token) -> None:
+    probe = Probe()
+    async with probe.client(*_aion()) as client:
+        response = await send_message(client, headers=_bearer(token()))
+
+    assert response.status_code == 401
+    assert probe.calls == 0
+
+
+def _unsigned(header: dict, claims: dict) -> str:
+    encode = lambda value: base64.urlsafe_b64encode(json.dumps(value).encode()).rstrip(b"=").decode()
+    return f"{encode(header)}.{encode(claims)}.c2lnbmF0dXJl"
+
+
+def _signed_claims(**replaced) -> str:
+    claims = jwt.decode(platform_token(), options={"verify_signature": False})
+    return AION_KEY.sign_raw(AION_KEY.header_json(), json.dumps({**claims, **replaced}))

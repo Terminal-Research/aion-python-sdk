@@ -121,18 +121,18 @@ async def test_the_mode_decides_which_kind_is_accepted(make, token, accepted) ->
     ("token", "reason"),
     [
         (lambda: AION_KEY.invocation_token(audience="another-client"), "not addressed"),
-        (lambda: AION_KEY.invocation_token(audience=["client-123"]), "not addressed|exactly one"),
+        (lambda: AION_KEY.invocation_token(audience=["client-123"]), "'aud' is not a string"),
         (lambda: AION_KEY.invocation_token(audience=None), "'aud'"),
         (lambda: AION_KEY.invocation_token(iss="someone-else"), "issuer"),
         (lambda: AION_KEY.invocation_token(iss=None), "'iss'"),
         (lambda: AION_KEY.invocation_token(sub=None), "'sub'"),
         (lambda: AION_KEY.invocation_token(sub="aion:user:alice"), "canonical principal"),
-        (lambda: AION_KEY.invocation_token(sub=42), "does not verify|principal"),
+        (lambda: AION_KEY.invocation_token(sub=42), "'sub' is not a string"),
         (lambda: AION_KEY.invocation_token(token_use="anonymous_session"), "token_use"),
         (lambda: AION_KEY.invocation_token(token_use=None), "'token_use'"),
         (lambda: AION_KEY.invocation_token(contract_version=2), "contract version"),
-        (lambda: AION_KEY.invocation_token(contract_version="1"), "contract version"),
-        (lambda: AION_KEY.invocation_token(contract_version=True), "contract version"),
+        (lambda: AION_KEY.invocation_token(contract_version="1"), "'contract_version' is not a whole number"),
+        (lambda: AION_KEY.invocation_token(contract_version=True), "'contract_version' is not a whole number"),
         (lambda: AION_KEY.invocation_token(contract_version=None), "'contract_version'"),
         (lambda: AION_KEY.invocation_token(assurance="admin"), "'assurance'"),
         (lambda: AION_KEY.invocation_token(assurance=None), "'assurance'"),
@@ -177,9 +177,9 @@ async def test_a_session_token_off_the_contract_is_refused(token, reason) -> Non
     [
         (lambda now: now - 3600 - 31, {}, "expired"),
         (lambda now: now + 31, {}, "not valid yet"),
-        (lambda now: now, {"nbf": "later"}, "not a JWT|whole seconds|does not verify"),
-        (lambda now: now, {"exp": "later"}, "not a JWT|whole seconds|does not verify"),
-        (lambda now: now, {"iat": 1.5}, "not a JWT|whole seconds|does not verify"),
+        (lambda now: now, {"nbf": "later"}, "'nbf' is not a whole number"),
+        (lambda now: now, {"exp": "later"}, "'exp' is not a whole number"),
+        (lambda now: now, {"iat": 1.5}, "'iat' is not a whole number"),
         (lambda now: now, {"nbf": None}, "'nbf'"),
         (lambda now: now, {"iat": None}, "'iat'"),
         (lambda now: now, {"exp": None}, "'exp'"),
@@ -277,6 +277,24 @@ def _payload_json_with_repeated_sub() -> str:
     return text[:-1] + ', "sub": "%s"}' % subject("AionUser", "mallory")
 
 
+@pytest.mark.parametrize("name", ["iss", "aud", "sub", "token_use", "assurance"])
+@pytest.mark.parametrize("value", [[], {}, 1, True], ids=["list", "object", "number", "boolean"])
+async def test_a_string_claim_of_another_type_is_refused(name, value) -> None:
+    await _refused(_signed_claims(**{name: value}), match=f"'{name}' is not a string")
+
+
+@pytest.mark.parametrize("name", ["iat", "nbf", "exp", "contract_version"])
+@pytest.mark.parametrize("value", [[], {}, "1", True, 1.5], ids=["list", "object", "string", "boolean", "fraction"])
+async def test_an_integer_claim_of_another_type_is_refused(name, value) -> None:
+    await _refused(_signed_claims(**{name: value}), match=f"'{name}' is not a whole number")
+
+
+def _signed_claims(**replaced) -> str:
+    """A valid invocation token's claims with ``replaced`` in them, signed as they are."""
+    claims = jwt.decode(AION_KEY.invocation_token(USER_ID), options={"verify_signature": False})
+    return AION_KEY.sign_raw(AION_KEY.header_json(), json.dumps({**claims, **replaced}))
+
+
 @pytest.mark.parametrize("token", ["not-a-jwt", "a.b", "a..c", "e30.e30.", "W10.e30.sig"])
 async def test_something_that_is_not_a_jwt_is_refused(token) -> None:
     await _refused(token, match="not a JWT")
@@ -348,9 +366,15 @@ async def test_every_session_is_its_own_caller() -> None:
         (lambda: AION_KEY.invocation_token(headers={"typ": None}, token_use=None), TokenClaim.FOREIGN),
         (lambda: "an-opaque-application-key", TokenClaim.FOREIGN),
         (lambda: "a.b.c", TokenClaim.FOREIGN),
+        (lambda: AION_KEY.invocation_token(headers={"typ": None}, token_use=[]), TokenClaim.FOREIGN),
+        (lambda: AION_KEY.invocation_token(headers={"typ": None}, token_use={}), TokenClaim.FOREIGN),
+        (lambda: AION_KEY.invocation_token(headers={"typ": ["aion-invocation+jwt"]}), TokenClaim.DAMAGED_AION),
+        (lambda: AION_KEY.invocation_token(padding="x" * 8192), TokenClaim.AION),
+        (lambda: AION_KEY.invocation_token(headers={"typ": None}, padding="x" * 8192), TokenClaim.FOREIGN),
     ],
     ids=["invocation", "session", "aion-typ-wrong-claims", "no-typ-aion-use", "jwt-typ-aion-use",
-         "repeated-typ", "application-jwt", "stripped-aion", "opaque", "not-json"],
+         "repeated-typ", "application-jwt", "stripped-aion", "opaque", "not-json", "token-use-list",
+         "token-use-object", "typ-list", "oversized-aion", "oversized-unread-claims"],
 )
 def test_what_a_token_claims_chooses_the_check_and_nothing_more(token, claim) -> None:
     assert claimed_kind(token()) is claim

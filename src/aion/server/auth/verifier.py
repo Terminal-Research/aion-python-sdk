@@ -88,13 +88,19 @@ def claimed_kind(token: str) -> TokenClaim:
     segments = token.split(".")
     if len(segments) != 3:
         return TokenClaim.FOREIGN
+    # Nothing longer than an Aion token can be is parsed whole; a header that
+    # short still says whether the token claims to be Aion's, and verifying
+    # it then refuses it for its length.
+    oversized = len(token.encode("utf-8")) > MAX_TOKEN_BYTES
     try:
-        header, claims = _parse_segment(segments[0]), _parse_segment(segments[1])
+        header = _parse_segment(segments[0]) if len(segments[0]) <= MAX_TOKEN_BYTES else None
+        claims = None if oversized else _parse_segment(segments[1])
     except _DuplicateMemberError:
         return TokenClaim.DAMAGED_AION
     if header is not None and header.get("typ") in (INVOCATION_TYPE, SESSION_TYPE):
         return TokenClaim.AION
-    if claims is not None and claims.get("token_use") in {kind.value for kind in CredentialKind}:
+    token_use = claims.get("token_use") if claims is not None else None
+    if isinstance(token_use, str) and token_use in {kind.value for kind in CredentialKind}:
         return TokenClaim.DAMAGED_AION
     return TokenClaim.FOREIGN
 
@@ -168,7 +174,7 @@ class TokenVerifier:
         """
         if len(token.encode("utf-8")) > MAX_TOKEN_BYTES:
             raise InvalidTokenError(f"the bearer token is longer than {MAX_TOKEN_BYTES} bytes")
-        header, _ = _unverified_parts(token)
+        header, unverified_claims = _unverified_parts(token)
 
         if header.get("alg") != ALGORITHM:
             raise InvalidTokenError("the bearer token is not signed with ES256")
@@ -196,6 +202,7 @@ class TokenVerifier:
                 raise KeysUnavailableError("the verification keys are not available yet")
             raise InvalidTokenError("the bearer token is signed with an unknown key")
 
+        _check_claim_types(unverified_claims)
         claims = _decode(token, key=key.key, audience=audience, issuer=self.issuer)
         return _caller(claims, credential=credential)
 
@@ -252,6 +259,25 @@ def _no_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return members
 
 
+_STRING_CLAIMS = ("iss", "aud", "sub", "token_use", "assurance")
+_INTEGER_CLAIMS = ("iat", "nbf", "exp", "contract_version")
+
+
+def _check_claim_types(claims: dict[str, Any]) -> None:
+    """Refuse claims of the wrong JSON type before PyJWT reads them.
+
+    PyJWT compares and converts these claims itself and expects the types
+    the contract fixes; any other type is a malformed token, not a fault of
+    the server. A claim that is missing is left to the required-claim check.
+    """
+    for name in _STRING_CLAIMS:
+        if name in claims and not isinstance(claims[name], str):
+            raise InvalidTokenError(f"the bearer token's '{name}' is not a string")
+    for name in _INTEGER_CLAIMS:
+        if name in claims and not _is_int(claims[name]):
+            raise InvalidTokenError(f"the bearer token's '{name}' is not a whole number")
+
+
 def _decode(token: str, *, key: Any, audience: str, issuer: str) -> dict[str, Any]:
     try:
         claims = jwt.decode(
@@ -279,8 +305,6 @@ def _decode(token: str, *, key: Any, audience: str, issuer: str) -> dict[str, An
         raise InvalidTokenError("the bearer token is not a JWT") from None
     except jwt.PyJWTError:
         raise InvalidTokenError("the bearer token does not verify") from None
-    if not isinstance(claims.get("aud"), str):
-        raise InvalidTokenError("the bearer token has to name exactly one audience")
     return claims
 
 
@@ -288,18 +312,14 @@ def _caller(claims: dict[str, Any], *, credential: CredentialKind) -> Authentica
     """The caller verified ``claims`` name, once the contract's own rules hold."""
     if claims["token_use"] != credential.value:
         raise InvalidTokenError("the bearer token's 'token_use' does not match its type")
-    if not _is_int(claims["contract_version"]) or claims["contract_version"] != CONTRACT_VERSION:
+    if claims["contract_version"] != CONTRACT_VERSION:
         raise InvalidTokenError("the bearer token's contract version is not supported")
 
     issued, not_before, expires = claims["iat"], claims["nbf"], claims["exp"]
-    if not all(_is_int(value) for value in (issued, not_before, expires)):
-        raise InvalidTokenError("the bearer token's times are not whole seconds")
     lifetime = INVOCATION_LIFETIME_SECONDS if credential is CredentialKind.INVOCATION else SESSION_LIFETIME_SECONDS
     if not_before != issued or expires - issued != lifetime:
         raise InvalidTokenError("the bearer token's validity window is not the contract's")
 
-    if not isinstance(claims["sub"], str):
-        raise InvalidTokenError("the bearer token's 'sub' is not a principal")
     try:
         principal = Principal.from_subject(claims["sub"])
     except InvalidPrincipalError as error:
