@@ -402,6 +402,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 	const connectedAgentKeyRef = useRef<string | undefined>(undefined);
 	const currentThreadScopeRef = useRef("");
 	const welcomeLifetimeRef = useRef(new AbortController());
+	const foregroundLifetimeRef = useRef(new AbortController());
 	const setCurrentContextId = (value: string | undefined): void => {
 		contextIdRef.current = value;
 		contextScopeRef.current = `${selectedEnvironment}:${selectedAgentKey ?? ""}`;
@@ -532,6 +533,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 
 		return () => {
 			welcomeLifetimeRef.current.abort();
+			foregroundLifetimeRef.current.abort();
 			chatSessionLogger.info("chat.session.ended", {
 				mode: "interactive",
 				environmentId: environmentAtStart
@@ -588,6 +590,10 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 	};
 
 	const clearTranscript = (): void => {
+		// Retire the old conversation's responses, not the reusable connection
+		// or independent welcomes whose results belong to their original thread.
+		foregroundLifetimeRef.current.abort();
+		foregroundLifetimeRef.current = new AbortController();
 		setEntries([]);
 		setTranscriptGeneration((current) => current + 1);
 		shownMessageKeysRef.current.clear();
@@ -893,6 +899,9 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		let closed = false;
 		const connectionLifetime = new AbortController();
 		connectionSignalRef.current = connectionLifetime.signal;
+		setWorkingStartedAt(undefined);
+		setStreamLabel("Idle");
+		finalizeOpenStreamEntries();
 		let closePush: (() => Promise<void>) | undefined;
 
 		const handlePushEvent = (event: PushNotificationEvent): void => {
@@ -986,13 +995,18 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			}
 		};
 	}, [
-		agentEndpointUrl,
-		controlPlaneApiBaseUrl,
-		discoveredAgents.length,
 		credentials,
-		options,
+		options.pushNotifications,
+		options.pushReceiver,
 		reconnectNonce,
-		selectedAgent,
+		// Discovery refreshes replace records without changing the connection.
+		selectedAgent?.agentKey,
+		selectedAgent?.connectionUrl,
+		selectedAgent?.connectionAgentId,
+		selectedAgent?.source.sourceKey,
+		selectedAgent?.source.url,
+		selectedAgent?.source.type,
+		selectedAgent && isTransientAgentSource(selectedAgent.source),
 		selectedEnvironment
 	]);
 
@@ -1547,7 +1561,6 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				}
 			});
 		}
-		setReconnectNonce((current) => current + 1);
 		const terminalClearRequested = requestTerminalClear({
 			isTTY: stdout.isTTY,
 			terminalType: process.env.TERM,
@@ -1683,7 +1696,8 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		replaceDraft("");
 
 		const requestSignal = AbortSignal.any([
-			credentials.signal, connectionSignalRef.current ?? credentials.signal
+			credentials.signal, connectionSignalRef.current ?? credentials.signal,
+			foregroundLifetimeRef.current.signal
 		]);
 		const parts = await buildMessageParts(trimmed);
 		if (requestSignal.aborted) return;
@@ -1749,7 +1763,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				let finalStatusUpdate: TaskStatusUpdateEvent | undefined;
 				let reachedTerminal = false;
 				let renderedAgentOutput = false;
-				for await (const streamResponse of clientState.client.sendMessageStream(params)) {
+				for await (const streamResponse of clientState.client.sendMessageStream(params, { signal: requestSignal })) {
 					if (requestSignal.aborted) return;
 					const event = unwrapStreamResponse(streamResponse);
 					if (!event) {
@@ -1820,7 +1834,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				setStreamLabel("Idle");
 			} else {
 				setStreamLabel("Waiting");
-				const response = await clientState.client.sendMessage(params);
+				const response = await clientState.client.sendMessage(params, { signal: requestSignal });
 				if (requestSignal.aborted) return;
 				chatSessionLogger.debug("a2a.response.received", {
 					durationMs: Date.now() - requestStartedAt,

@@ -59693,6 +59693,7 @@ function ChatApp({ options: options2 }) {
   const connectedAgentKeyRef = (0, import_react37.useRef)(void 0);
   const currentThreadScopeRef = (0, import_react37.useRef)("");
   const welcomeLifetimeRef = (0, import_react37.useRef)(new AbortController());
+  const foregroundLifetimeRef = (0, import_react37.useRef)(new AbortController());
   const setCurrentContextId = (value) => {
     contextIdRef.current = value;
     contextScopeRef.current = `${selectedEnvironment}:${selectedAgentKey ?? ""}`;
@@ -59814,6 +59815,7 @@ function ChatApp({ options: options2 }) {
     }
     return () => {
       welcomeLifetimeRef.current.abort();
+      foregroundLifetimeRef.current.abort();
       chatSessionLogger.info("chat.session.ended", {
         mode: "interactive",
         environmentId: environmentAtStart
@@ -59861,6 +59863,8 @@ function ChatApp({ options: options2 }) {
     appendSystem(`Response mode: ${getResponseModeLabel(mode)}`);
   };
   const clearTranscript = () => {
+    foregroundLifetimeRef.current.abort();
+    foregroundLifetimeRef.current = new AbortController();
     setEntries([]);
     setTranscriptGeneration((current) => current + 1);
     shownMessageKeysRef.current.clear();
@@ -60115,6 +60119,9 @@ ${message}` : `Agent source discovery failed: ${message}`
     let closed = false;
     const connectionLifetime = new AbortController();
     connectionSignalRef.current = connectionLifetime.signal;
+    setWorkingStartedAt(void 0);
+    setStreamLabel("Idle");
+    finalizeOpenStreamEntries();
     let closePush;
     const handlePushEvent = (event) => {
       if (event.kind === "validation") {
@@ -60202,13 +60209,18 @@ ${JSON.stringify(
       }
     };
   }, [
-    agentEndpointUrl,
-    controlPlaneApiBaseUrl,
-    discoveredAgents.length,
     credentials,
-    options2,
+    options2.pushNotifications,
+    options2.pushReceiver,
     reconnectNonce,
-    selectedAgent,
+    // Discovery refreshes replace records without changing the connection.
+    selectedAgent?.agentKey,
+    selectedAgent?.connectionUrl,
+    selectedAgent?.connectionAgentId,
+    selectedAgent?.source.sourceKey,
+    selectedAgent?.source.url,
+    selectedAgent?.source.type,
+    selectedAgent && isTransientAgentSource(selectedAgent.source),
     selectedEnvironment
   ]);
   const replaceLastResponseStreamSection = (message, fallbackTaskId) => {
@@ -60680,7 +60692,6 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
         }
       });
     }
-    setReconnectNonce((current) => current + 1);
     const terminalClearRequested = requestTerminalClear({
       isTTY: stdout.isTTY,
       terminalType: process.env.TERM,
@@ -60803,7 +60814,8 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
     replaceDraft("");
     const requestSignal = AbortSignal.any([
       credentials.signal,
-      connectionSignalRef.current ?? credentials.signal
+      connectionSignalRef.current ?? credentials.signal,
+      foregroundLifetimeRef.current.signal
     ]);
     const parts = await buildMessageParts2(trimmed);
     if (requestSignal.aborted) return;
@@ -60861,7 +60873,7 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
         let finalStatusUpdate;
         let reachedTerminal = false;
         let renderedAgentOutput = false;
-        for await (const streamResponse of clientState.client.sendMessageStream(params)) {
+        for await (const streamResponse of clientState.client.sendMessageStream(params, { signal: requestSignal })) {
           if (requestSignal.aborted) return;
           const event = unwrapStreamResponse(streamResponse);
           if (!event) {
@@ -60926,7 +60938,7 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
         setStreamLabel("Idle");
       } else {
         setStreamLabel("Waiting");
-        const response = await clientState.client.sendMessage(params);
+        const response = await clientState.client.sendMessage(params, { signal: requestSignal });
         if (requestSignal.aborted) return;
         chatSessionLogger.debug("a2a.response.received", {
           durationMs: Date.now() - requestStartedAt,
