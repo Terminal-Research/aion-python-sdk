@@ -1,304 +1,331 @@
-"""Which bearer tokens ``TokenVerifier`` accepts, and the caller it names from one."""
+"""Which bearer tokens ``TokenVerifier`` accepts under contract A, and the caller it names from one."""
 
 import base64
-import logging
+import json
 import time
-from unittest.mock import AsyncMock
+import uuid
 
 import jwt
 import pytest
-from cryptography.hazmat.primitives.asymmetric import ec, ed25519
-from jwt.algorithms import OKPAlgorithm
 
-from aion.server.auth import InvalidTokenError, PlatformKeySource, TokenVerifier
-from tests.unit.support.tokens import (
-    CLIENT_ID,
-    PLATFORM_KEY,
-    PLATFORM_SUBJECT,
-    SESSION_KID,
-    SESSION_SUBJECT,
-    ControlPlane,
-    StaticKeySource,
-    jwks_document,
-    open_verifier,
-    platform_token,
-    platform_verifier,
-    session_token,
-    session_verifier,
+from aion.server.auth import (
+    Assurance,
+    CredentialKind,
+    GatewayCoordinates,
+    InvalidTokenError,
+    KeysUnavailableError,
+    Principal,
 )
+from tests.support.aion_tokens import (
+    EDGE_ENVIRONMENT_ID,
+    OWNER_AGENT_IDENTITY_ID,
+    TERMINAL_ENVIRONMENT_ID,
+    SigningKey,
+    subject,
+)
+from tests.unit.support.tokens import AION_KEY, ControlPlane, hosted_verifier, session_verifier, verifier
+
+USER_ID = "7a9e2b1c-1111-4d2e-8f3a-6b5c4d3e2f10"
+SESSION_ID = "f9d7daea-df95-4111-8533-5d6f043edaf9"
 
 
-async def test_a_call_token_names_its_subject_and_keeps_its_claims() -> None:
-    caller = await platform_verifier().verify(platform_token())
-
-    assert (caller.subject, caller.display_name, caller.is_authenticated) == (PLATFORM_SUBJECT, PLATFORM_SUBJECT, True)
-    assert caller.issuer == "https://aion.example"
-    assert caller.claims["distribution_id"] == "distribution-321"
-    assert caller.claims["caller_kind"] == "authenticated"
+async def _verify(token: str, make=verifier):
+    built = make()
+    await built.load()
+    return await built.verify(token)
 
 
-async def test_a_call_token_may_be_an_anonymous_session_subject() -> None:
-    """``subject_type`` is a claim like any other on a call token; nothing limits it."""
-    caller = await platform_verifier().verify(platform_token(subject_type="AnonymousSession"))
+async def _refused(token: str, make=verifier, match: str | None = None) -> InvalidTokenError:
+    built = make()
+    await built.load()
+    with pytest.raises(InvalidTokenError, match=match) as refused:
+        await built.verify(token)
+    assert token not in str(refused.value)
+    return refused.value
 
-    assert caller.claims["subject_type"] == "AnonymousSession"
+
+async def test_an_invocation_token_names_a_typed_caller() -> None:
+    caller = await _verify(AION_KEY.invocation_token(USER_ID))
+
+    assert caller.principal == Principal("AionUser", USER_ID)
+    assert (caller.subject, caller.display_name, caller.is_authenticated) == (
+        subject("AionUser", USER_ID),
+        subject("AionUser", USER_ID),
+        True,
+    )
+    assert (caller.credential, caller.assurance, caller.issuer) == (
+        CredentialKind.INVOCATION,
+        Assurance.ACCOUNT,
+        "aion.io",
+    )
+    assert caller.gateway == GatewayCoordinates(OWNER_AGENT_IDENTITY_ID, EDGE_ENVIRONMENT_ID, TERMINAL_ENVIRONMENT_ID)
+    assert caller.session_id is None
 
 
-async def test_an_anonymous_session_token_names_its_subject_and_keeps_its_claims() -> None:
-    caller = await session_verifier().verify(session_token())
+async def test_a_session_token_names_the_session() -> None:
+    caller = await _verify(AION_KEY.session_token(SESSION_ID))
 
-    assert (caller.subject, caller.is_authenticated, caller.issuer) == (SESSION_SUBJECT, True, "aion")
-    assert caller.claims["subject_type"] == "AnonymousSession"
+    assert caller.principal == Principal("AnonymousSession", SESSION_ID)
+    assert (caller.credential, caller.assurance, caller.gateway, caller.session_id) == (
+        CredentialKind.SESSION,
+        Assurance.SESSION,
+        None,
+        SESSION_ID,
+    )
+
+
+@pytest.mark.parametrize("assurance", ["account", "runtime", "provider", "internal", "unattributed"])
+async def test_an_invocation_carries_the_assurance_aion_established(assurance) -> None:
+    caller = await _verify(AION_KEY.invocation_token(assurance=assurance, principal_type="ExternalSender"))
+
+    assert caller.assurance == Assurance(assurance)
+
+
+async def test_an_invocation_may_come_from_an_anonymous_session() -> None:
+    """A public distribution's guest reaches the agent through Aion with session assurance."""
+    caller = await _verify(
+        AION_KEY.invocation_token(SESSION_ID, principal_type="AnonymousSession", assurance="session")
+    )
+
+    assert (caller.credential, caller.assurance, caller.principal.type) == (
+        CredentialKind.INVOCATION,
+        Assurance.SESSION,
+        "AnonymousSession",
+    )
 
 
 @pytest.mark.parametrize(
-    ("verifier", "token", "accepted"),
+    ("make", "token", "accepted"),
     [
-        ("hosted", "call", True),
-        ("hosted", "session", False),
-        ("credentials", "call", True),
-        ("credentials", "session", True),
-        ("no-credentials", "call", False),
-        ("no-credentials", "session", True),
+        (hosted_verifier, "invocation", True),
+        (hosted_verifier, "session", False),
+        (verifier, "invocation", True),
+        (verifier, "session", True),
+        (session_verifier, "invocation", False),
+        (session_verifier, "session", True),
     ],
+    ids=["hosted-invocation", "hosted-session", "client-id-invocation", "client-id-session",
+         "no-client-id-invocation", "no-client-id-session"],
 )
-async def test_the_mode_decides_which_kind_of_token_is_accepted(verifier, token, accepted) -> None:
-    """Hosted servers take call tokens only; elsewhere sessions are open and call tokens need credentials."""
-    control_plane = ControlPlane()
-    verifiers = {
-        "hosted": platform_verifier(),
-        "credentials": open_verifier(control_plane),
-        "no-credentials": session_verifier(control_plane),
-    }
-    tokens = {"call": platform_token(), "session": session_token()}
-    requests_before = control_plane.requests
-
+async def test_the_mode_decides_which_kind_is_accepted(make, token, accepted) -> None:
+    raw = AION_KEY.invocation_token() if token == "invocation" else AION_KEY.session_token()
     if accepted:
-        await verifiers[verifier].verify(tokens[token])
+        await _verify(raw, make)
     else:
-        with pytest.raises(InvalidTokenError):
-            await verifiers[verifier].verify(tokens[token])
-
-    if verifier == "hosted":
-        assert control_plane.requests == requests_before
-
-
-@pytest.mark.parametrize(
-    "token",
-    [
-        lambda: platform_token(lifetime=-120),
-        lambda: platform_token(nbf=int(time.time()) + 600),
-    ],
-    ids=["expired", "not-yet-valid"],
-)
-async def test_a_call_token_has_to_be_current(token) -> None:
-    with pytest.raises(InvalidTokenError, match="expired|not valid yet"):
-        await platform_verifier().verify(token())
+        await _refused(raw, make, match="does not accept")
 
 
 @pytest.mark.parametrize(
     ("token", "reason"),
     [
-        (lambda: platform_token(None), "'sub'"),
-        (lambda: platform_token(""), "'sub'"),
-        (lambda: platform_token(exp=None), "'exp'"),
-        (lambda: platform_token(aud=None), "not addressed"),
-        (lambda: platform_token(aud="another-client"), "not addressed"),
-        (lambda: platform_token(key=ec.generate_private_key(ec.SECP256R1())), "does not verify"),
-        (lambda: platform_token(key="a-shared-secret-long-enough-for-hs256", algorithm="HS256"), "does not verify"),
-        (lambda: jwt.encode({"sub": "s", "aud": CLIENT_ID, "exp": int(time.time()) + 60}, None, algorithm="none"),
-         "does not verify"),
-        (lambda: "not-a-jwt", "not a JWT"),
+        (lambda: AION_KEY.invocation_token(audience="another-client"), "not addressed"),
+        (lambda: AION_KEY.invocation_token(audience=["client-123"]), "not addressed|exactly one"),
+        (lambda: AION_KEY.invocation_token(audience=None), "'aud'"),
+        (lambda: AION_KEY.invocation_token(iss="someone-else"), "issuer"),
+        (lambda: AION_KEY.invocation_token(iss=None), "'iss'"),
+        (lambda: AION_KEY.invocation_token(sub=None), "'sub'"),
+        (lambda: AION_KEY.invocation_token(sub="aion:user:alice"), "canonical principal"),
+        (lambda: AION_KEY.invocation_token(sub=42), "does not verify|principal"),
+        (lambda: AION_KEY.invocation_token(token_use="anonymous_session"), "token_use"),
+        (lambda: AION_KEY.invocation_token(token_use=None), "'token_use'"),
+        (lambda: AION_KEY.invocation_token(contract_version=2), "contract version"),
+        (lambda: AION_KEY.invocation_token(contract_version="1"), "contract version"),
+        (lambda: AION_KEY.invocation_token(contract_version=True), "contract version"),
+        (lambda: AION_KEY.invocation_token(contract_version=None), "'contract_version'"),
+        (lambda: AION_KEY.invocation_token(assurance="admin"), "'assurance'"),
+        (lambda: AION_KEY.invocation_token(assurance=None), "'assurance'"),
+        (lambda: AION_KEY.invocation_token(assurance="session"), "does not fit"),
+        (lambda: AION_KEY.invocation_token(SESSION_ID, principal_type="AnonymousSession"), "does not fit"),
+        (lambda: AION_KEY.invocation_token(owner_agent_identity_id=None), "'owner_agent_identity_id'"),
+        (lambda: AION_KEY.invocation_token(edge_agent_environment_id=None), "'edge_agent_environment_id'"),
+        (lambda: AION_KEY.invocation_token(terminal_agent_environment_id=None), "'terminal_agent_environment_id'"),
+        (lambda: AION_KEY.invocation_token(edge_agent_environment_id="env-1"), "lowercase UUID"),
+        (lambda: AION_KEY.invocation_token(owner_agent_identity_id=OWNER_AGENT_IDENTITY_ID.upper()), "lowercase UUID"),
+        (lambda: AION_KEY.invocation_token(owner_agent_identity_id=7), "lowercase UUID"),
     ],
-    ids=["no-sub", "empty-sub", "no-exp", "no-aud", "other-aud", "other-key", "hs256", "alg-none", "garbage"],
+    ids=["other-aud", "aud-list", "no-aud", "other-iss", "no-iss", "no-sub", "legacy-sub", "sub-not-text",
+         "wrong-token-use", "no-token-use", "version-2", "version-text", "version-bool", "no-version",
+         "unknown-assurance", "no-assurance", "session-assurance-for-a-user", "session-without-session-assurance",
+         "no-owner", "no-edge", "no-terminal", "edge-not-uuid", "owner-uppercase", "owner-not-text"],
 )
-async def test_a_call_token_that_does_not_verify_is_refused(token, reason) -> None:
-    raw = token()
-
-    with pytest.raises(InvalidTokenError, match=reason) as refused:
-        await platform_verifier().verify(raw)
-
-    assert raw not in str(refused.value)
-
-
-async def test_the_call_audience_may_be_one_of_several() -> None:
-    caller = await platform_verifier().verify(platform_token(aud=["another", CLIENT_ID]))
-
-    assert caller.subject == PLATFORM_SUBJECT
+async def test_an_invocation_token_off_the_contract_is_refused(token, reason) -> None:
+    await _refused(token(), match=reason)
 
 
 @pytest.mark.parametrize(
-    ("claims", "reason"),
+    ("token", "reason"),
     [
-        ({"sub": None}, "'sub'"),
-        ({"exp": None}, "'exp'"),
-        ({"iss": None}, "'iss'"),
-        ({"subject_type": None}, "'subject_type'"),
-        ({"iss": "someone-else"}, "issuer"),
-        ({"subject_type": "User"}, "anonymous session"),
-        ({"lifetime": -120}, "expired"),
-        ({"nbf": int(time.time()) + 600}, "not valid yet"),
+        (lambda: AION_KEY.session_token(aud="client-123"), "not addressed"),
+        (lambda: AION_KEY.session_token(sub=subject("AionUser", USER_ID)), "does not fit|anonymous session"),
+        (lambda: AION_KEY.session_token(sub=subject("AionUser", USER_ID), assurance="account"), "anonymous session"),
+        (lambda: AION_KEY.session_token(assurance="account"), "does not fit"),
+        (lambda: AION_KEY.session_token(token_use="a2a_invocation"), "token_use"),
+        (lambda: AION_KEY.session_token(owner_agent_identity_id=OWNER_AGENT_IDENTITY_ID), "invocation claims"),
+        (lambda: AION_KEY.session_token(sub="aion:v1:AnonymousSession:c2Vzc2lvbg"), "lowercase UUID"),
     ],
-    ids=["no-sub", "no-exp", "no-iss", "no-subject-type", "other-iss", "other-subject-type", "expired", "not-yet-valid"],
+    ids=["invocation-aud", "user-subject", "user-subject-account", "account-assurance", "wrong-token-use",
+         "gateway-claim", "session-id-not-uuid"],
 )
-async def test_an_anonymous_session_token_needs_every_claim(claims, reason) -> None:
-    raw = session_token(**claims)
+async def test_a_session_token_off_the_contract_is_refused(token, reason) -> None:
+    await _refused(token(), match=reason)
 
-    with pytest.raises(InvalidTokenError, match=reason) as refused:
-        await session_verifier().verify(raw)
 
-    assert raw not in str(refused.value)
+@pytest.mark.parametrize(
+    ("issued_at", "claims", "reason"),
+    [
+        (lambda now: now - 3600 - 31, {}, "expired"),
+        (lambda now: now + 31, {}, "not valid yet"),
+        (lambda now: now, {"nbf": "later"}, "not a JWT|whole seconds|does not verify"),
+        (lambda now: now, {"exp": "later"}, "not a JWT|whole seconds|does not verify"),
+        (lambda now: now, {"iat": 1.5}, "not a JWT|whole seconds|does not verify"),
+        (lambda now: now, {"nbf": None}, "'nbf'"),
+        (lambda now: now, {"iat": None}, "'iat'"),
+        (lambda now: now, {"exp": None}, "'exp'"),
+    ],
+    ids=["expired", "not-yet-valid", "nbf-text", "exp-text", "iat-float", "no-nbf", "no-iat", "no-exp"],
+)
+async def test_an_invocation_token_has_to_be_current(issued_at, claims, reason) -> None:
+    await _refused(AION_KEY.invocation_token(issued_at=issued_at(int(time.time())), **claims), match=reason)
+
+
+async def test_the_clock_tolerance_is_thirty_seconds() -> None:
+    now = int(time.time())
+
+    await _verify(AION_KEY.invocation_token(issued_at=now - 3600 - 25))
+    await _verify(AION_KEY.invocation_token(issued_at=now + 25))
+
+
+@pytest.mark.parametrize(
+    ("claims", "kind"),
+    [
+        (lambda now: {"nbf": now + 1}, "invocation"),
+        (lambda now: {"exp": now + 3599}, "invocation"),
+        (lambda now: {"exp": now + 7200}, "invocation"),
+        (lambda now: {"exp": now + 3600}, "session"),
+    ],
+    ids=["nbf-after-iat", "short-invocation", "long-invocation", "session-one-hour"],
+)
+async def test_the_validity_window_is_exactly_the_contracts(claims, kind) -> None:
+    now = int(time.time())
+    make = AION_KEY.invocation_token if kind == "invocation" else AION_KEY.session_token
+
+    await _refused(make(issued_at=now, **claims(now)), match="validity window")
+
+
+@pytest.mark.parametrize(
+    ("headers", "reason"),
+    [
+        ({"typ": None}, "not an Aion"),
+        ({"typ": "JWT"}, "not an Aion"),
+        ({"kid": None}, "'kid'"),
+        ({"kid": "unknown"}, "unknown key"),
+        ({"jku": "https://evil.example/keys"}, "unsupported parameters"),
+        ({"x5u": "https://evil.example/cert"}, "unsupported parameters"),
+        ({"jwk": AION_KEY.public_jwk()}, "unsupported parameters"),
+        ({"crit": ["exp"]}, "unsupported parameters"),
+        ({"zip": "DEF"}, "unsupported parameters"),
+        ({"cty": "JWT"}, "unsupported parameters"),
+    ],
+    ids=["no-typ", "plain-jwt-typ", "no-kid", "unknown-kid", "jku", "x5u", "embedded-jwk", "crit", "zip", "cty"],
+)
+async def test_a_header_off_the_contract_is_refused(headers, reason) -> None:
+    await _refused(AION_KEY.invocation_token(headers=headers), match=reason)
+
+
+async def test_a_token_signed_with_another_key_under_the_kid_is_refused() -> None:
+    forger = SigningKey()
+    forger.kid = AION_KEY.kid
+
+    await _refused(forger.invocation_token(), match="does not verify")
 
 
 @pytest.mark.parametrize(
     "token",
     [
-        lambda: session_token(aud=None),
-        lambda: session_token(aud="another-audience"),
-        lambda: platform_token(aud="aion:runtime:another"),
+        lambda: jwt.encode({"sub": "s"}, "a-shared-secret-long-enough-for-hs256-0123456789",
+                           algorithm="HS256", headers={"typ": "aion-invocation+jwt", "kid": AION_KEY.kid}),
+        lambda: jwt.encode({"sub": "s"}, None, algorithm="none",
+                           headers={"typ": "aion-invocation+jwt", "kid": AION_KEY.kid}),
     ],
-    ids=["no-aud", "other-aud", "call-token-for-another-server"],
+    ids=["hs256", "none"],
 )
-async def test_a_token_addressed_to_neither_audience_is_refused(token) -> None:
-    with pytest.raises(InvalidTokenError, match="not addressed"):
-        await open_verifier().verify(token())
+async def test_only_es256_is_accepted(token) -> None:
+    await _refused(token(), match="ES256|not a JWT")
 
 
-async def test_the_audience_may_be_a_list() -> None:
-    caller = await session_verifier().verify(session_token(aud=["aion-anonymous-session", "other"]))
+@pytest.mark.parametrize(
+    "header_payload",
+    [
+        lambda: ('{"alg":"ES256","typ":"aion-invocation+jwt","kid":"%s","kid":"%s"}' % (AION_KEY.kid, AION_KEY.kid),
+                 "{}"),
+        lambda: (AION_KEY.header_json(), _payload_json_with_repeated_sub()),
+    ],
+    ids=["header-member", "claim"],
+)
+async def test_a_repeated_member_is_refused(header_payload) -> None:
+    header, payload = header_payload()
 
-    assert caller.subject == SESSION_SUBJECT
+    await _refused(AION_KEY.sign_raw(header, payload), match="repeats")
 
 
-async def test_an_unknown_audience_costs_no_key_lookup() -> None:
+def _payload_json_with_repeated_sub() -> str:
+    token = AION_KEY.invocation_token(USER_ID)
+    claims = jwt.decode(token, options={"verify_signature": False})
+    text = json.dumps(claims)
+    return text[:-1] + ', "sub": "%s"}' % subject("AionUser", "mallory")
+
+
+@pytest.mark.parametrize("token", ["not-a-jwt", "a.b", "a..c", "e30.e30.", "W10.e30.sig"])
+async def test_something_that_is_not_a_jwt_is_refused(token) -> None:
+    await _refused(token, match="not a JWT")
+
+
+async def test_a_token_over_8_kib_is_refused_unread() -> None:
+    await _refused(AION_KEY.invocation_token(padding="x" * 8192), match="8192 bytes")
+
+
+async def test_a_principal_id_over_1024_bytes_is_refused() -> None:
+    encoded = base64.urlsafe_b64encode(b"x" * 1025).rstrip(b"=").decode()
+
+    await _refused(AION_KEY.invocation_token(sub=f"aion:v1:ExternalSender:{encoded}"), match="1024")
+
+
+async def test_without_loaded_keys_a_token_cannot_be_verified() -> None:
+    """Not a refusal: the token is neither accepted nor declared invalid until the keys are there."""
     control_plane = ControlPlane()
+    control_plane.failing = True
+    built = verifier(control_plane)
+    await built.load()
+
+    with pytest.raises(KeysUnavailableError):
+        await built.verify(AION_KEY.invocation_token())
+
+
+async def test_a_token_the_mode_refuses_costs_no_key_lookup() -> None:
+    control_plane = ControlPlane()
+    built = hosted_verifier(control_plane)
 
     with pytest.raises(InvalidTokenError):
-        await open_verifier(control_plane).verify(session_token(aud="another-audience"))
+        await built.verify(AION_KEY.session_token())
 
     assert control_plane.requests == 0
 
 
-@pytest.mark.parametrize(
-    "token",
-    [
-        lambda: session_token(key=ec.generate_private_key(ec.SECP256R1())),
-        lambda: session_token(kid=None),
-        lambda: session_token(kid="unknown"),
-        lambda: "not-a-jwt",
-    ],
-    ids=["other-key", "no-kid", "unknown-kid", "garbage"],
-)
-async def test_an_anonymous_session_token_the_keys_do_not_verify_is_refused(token) -> None:
-    with pytest.raises(InvalidTokenError):
-        await session_verifier().verify(token())
-
-
-async def test_a_session_key_names_its_own_algorithm() -> None:
-    key = ec.generate_private_key(ec.SECP384R1())
-    control_plane = ControlPlane(jwks_document(**{"p384": key.public_key()}))
-
-    caller = await session_verifier(control_plane).verify(session_token(key=key, kid="p384", algorithm="ES384"))
-
-    assert caller.subject == SESSION_SUBJECT
-
-
-async def test_a_session_token_may_use_eddsa() -> None:
-    key = ed25519.Ed25519PrivateKey.generate()
-    document = {"keys": [{**OKPAlgorithm.to_jwk(key.public_key(), as_dict=True), "kid": "ed", "alg": "EdDSA"}]}
-
-    caller = await session_verifier(ControlPlane(document)).verify(
-        session_token(key=key, kid="ed", algorithm="EdDSA")
-    )
-
-    assert caller.subject == SESSION_SUBJECT
-
-
-async def test_a_session_token_cannot_choose_another_algorithm_than_its_key_names() -> None:
-    """The algorithm is the key's, not the token header's."""
-    other = ec.generate_private_key(ec.SECP384R1())
-
-    with pytest.raises(InvalidTokenError, match="does not verify"):
-        await session_verifier().verify(session_token(key=other, algorithm="ES384"))
-
-
-@pytest.mark.parametrize("algorithm", ["HS256", "HS384", "HS512"])
-async def test_a_symmetric_algorithm_is_never_accepted(algorithm) -> None:
-    """Neither a shared-secret key in the set nor a token that signs with the public key vouches for itself."""
-    secret = "a-shared-secret-long-enough-for-every-hs-variant-0123456789-0123456789abcdef"
-    document = {
-        "keys": [
-            {
-                "kty": "oct",
-                "kid": "shared",
-                "alg": algorithm,
-                "k": base64.urlsafe_b64encode(secret.encode()).rstrip(b"=").decode(),
-            }
-        ]
-    }
-
-    with pytest.raises(InvalidTokenError, match="algorithm"):
-        await session_verifier(ControlPlane(document)).verify(
-            session_token(key=secret, kid="shared", algorithm=algorithm)
-        )
-
-
-async def test_an_unsigned_token_is_never_accepted() -> None:
-    unsigned = jwt.encode(
-        {
-            "iss": "aion",
-            "aud": "aion-anonymous-session",
-            "sub": SESSION_SUBJECT,
-            "subject_type": "AnonymousSession",
-            "exp": int(time.time()) + 60,
-        },
-        None,
-        algorithm="none",
-        headers={"kid": SESSION_KID},
-    )
-
-    with pytest.raises(InvalidTokenError):
-        await session_verifier().verify(unsigned)
-
-
-async def test_a_token_is_refused_until_the_call_key_is_there() -> None:
-    verifier = TokenVerifier(call_keys=StaticKeySource(None), call_audience=CLIENT_ID)
-
-    with pytest.raises(InvalidTokenError, match="verification key is not available"):
-        await verifier.verify(platform_token())
-
-
-async def test_the_verifier_loads_its_key_sources() -> None:
-    call_keys = StaticKeySource(None)
+async def test_the_issuer_is_the_configured_one() -> None:
     control_plane = ControlPlane()
+    built = verifier(control_plane)
+    built.issuer = "aion.staging"
+    await built.load()
 
-    await TokenVerifier(call_keys=call_keys, call_audience=CLIENT_ID, session_keys=control_plane.key_source()).load()
-
-    assert (call_keys.loads, control_plane.requests) == (1, 1)
-
-
-async def test_the_platform_key_is_asked_for_with_the_deployment_token(monkeypatch) -> None:
-    """The deployment's own token first, then the key; the key request is a stub for now."""
-    token = object()
-    jwt_manager = AsyncMock()
-    jwt_manager.get_token.return_value = token
-    source = PlatformKeySource(jwt_manager=jwt_manager)
-    fetch = AsyncMock(return_value=PLATFORM_KEY.public_key())
-    monkeypatch.setattr(source, "_fetch_key", fetch)
-
-    await source.load()
-
-    fetch.assert_awaited_once_with(token)
-    assert source.current_key() is not None
+    with pytest.raises(InvalidTokenError, match="issuer"):
+        await built.verify(AION_KEY.invocation_token())
+    caller = await built.verify(AION_KEY.invocation_token(iss="aion.staging"))
+    assert caller.issuer == "aion.staging"
 
 
-async def test_without_a_deployment_token_there_is_no_platform_key(caplog) -> None:
-    jwt_manager = AsyncMock()
-    jwt_manager.get_token.return_value = None
-    source = PlatformKeySource(jwt_manager=jwt_manager)
+async def test_every_session_is_its_own_caller() -> None:
+    first, second = str(uuid.uuid4()), str(uuid.uuid4())
 
-    with caplog.at_level(logging.WARNING):
-        await source.load()
-
-    assert source.current_key() is None
-    assert "requests the platform signs will be refused" in caplog.text
+    assert (await _verify(AION_KEY.session_token(first))).subject != (
+        await _verify(AION_KEY.session_token(second))
+    ).subject

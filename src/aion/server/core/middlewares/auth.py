@@ -2,7 +2,7 @@
 
 import logging
 from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH
-from aion.server.auth import InvalidTokenError, TokenVerifier
+from aion.server.auth import InvalidTokenError, KeysUnavailableError, TokenVerifier
 from aion.server.constants import CONFIGURATION_FILE_URL, HEALTH_CHECK_URL
 from fastapi import Request, Response
 from starlette.authentication import AuthCredentials
@@ -42,8 +42,11 @@ class AionAuthMiddleware(BaseHTTPMiddleware):
     owner of the request's tasks and framework state.
 
     A request without a token, or with one that does not verify, is answered
-    ``401`` before its body is read, and the agent never runs. Whatever a
-    middleware in front of this one put in the scope is replaced.
+    ``401`` before its body is read, and the agent never runs. While the
+    verification keys have not loaded, a token cannot be checked at all and
+    the request is answered ``503``: an outage never lets a token through
+    unchecked. Whatever a middleware in front of this one put in the scope is
+    replaced.
     """
 
     def __init__(self, app: ASGIApp, verifier: TokenVerifier) -> None:
@@ -61,6 +64,8 @@ class AionAuthMiddleware(BaseHTTPMiddleware):
             caller = await self._verifier.verify(token)
         except InvalidTokenError as error:
             return _unauthorized(str(error), error_code="invalid_token")
+        except KeysUnavailableError as error:
+            return _unavailable(str(error))
 
         request.scope["auth"] = AuthCredentials(["authenticated"])
         request.scope["user"] = caller
@@ -86,4 +91,14 @@ def _unauthorized(reason: str, *, error_code: str | None) -> JSONResponse:
         {"error": "unauthorized", "detail": reason},
         status_code=401,
         headers={"WWW-Authenticate": challenge},
+    )
+
+
+def _unavailable(reason: str) -> JSONResponse:
+    """A ``503``: the token could not be checked yet, so the request is neither refused nor served."""
+    logger.warning("Could not verify a request: %s", reason)
+    return JSONResponse(
+        {"error": "unavailable", "detail": reason},
+        status_code=503,
+        headers={"Retry-After": "1"},
     )

@@ -14,7 +14,7 @@ import uuid
 import httpx
 import pytest
 
-from tests.scenarios.harness import ScenarioClient, ServeProcess, control_plane, final_task
+from tests.scenarios.harness import ScenarioClient, ServeProcess, control_plane, final_task, session_subject
 
 pytestmark = [pytest.mark.authentication]
 
@@ -46,9 +46,10 @@ def test_a_call_without_a_token_is_refused(server: ServeProcess) -> None:
     [
         pytest.param("not-a-jwt", id="not-a-jwt"),
         pytest.param(lambda: control_plane().forged_token(), id="signed-by-another-key"),
-        pytest.param(lambda: control_plane().token(exp=1), id="expired"),
+        pytest.param(lambda: control_plane().token(issued_at=0), id="expired"),
         pytest.param(lambda: control_plane().token(aud="somebody-else"), id="addressed-to-another-audience"),
-        pytest.param(lambda: control_plane().token(subject_type="User"), id="not-an-anonymous-session"),
+        pytest.param(lambda: control_plane().token(assurance="account"), id="not-session-assurance"),
+        pytest.param(lambda: control_plane().token(token_use="a2a_invocation"), id="not-a-session-purpose"),
     ],
 )
 def test_a_call_with_a_token_that_does_not_verify_is_refused(server: ServeProcess, credentials) -> None:
@@ -73,8 +74,8 @@ async def test_two_sessions_on_one_context_do_not_see_each_others_tasks(server: 
     """The caller is the token's ``sub``: the same ``contextId`` opens a task apiece."""
     context_id = str(uuid.uuid4())
     async with (
-        await ScenarioClient.connect(server.base_url, server.variant.agent_id, subject="aion:anonymous:first") as first,
-        await ScenarioClient.connect(server.base_url, server.variant.agent_id, subject="aion:anonymous:second") as second,
+        await ScenarioClient.connect(server.base_url, server.variant.agent_id, subject=session_subject(str(uuid.uuid4()))) as first,
+        await ScenarioClient.connect(server.base_url, server.variant.agent_id, subject=session_subject(str(uuid.uuid4()))) as second,
     ):
         firsts = final_task(await first.send("echo one", context_id=context_id))
         seconds = final_task(await second.send("echo two", context_id=context_id))

@@ -9,7 +9,7 @@ from a2a.server.routes import add_a2a_routes_to_fastapi, create_agent_card_route
 from a2a.utils.constants import DEFAULT_RPC_URL
 from aion.db.postgres import DbFactory
 from aion.server.agent.aion_agent import AionAgent
-from aion.server.auth import TokenVerifier, build_token_verifier
+from aion.server.auth import AuthConfigurationError, TokenVerifier, build_token_verifier
 from aion.server.files.a2a import A2AFileTransformer
 from aion.server.files.storage.manager import FileUploadManager
 from fastapi import FastAPI
@@ -89,10 +89,17 @@ class AppFactory:
 
         Returns:
             Self if initialization successful, None if initialization failed
+
+        Raises:
+            AuthConfigurationError: The authentication settings are wrong; the
+                server must not start, rather than start unprotected.
         """
         try:
             await self._initialize()
             return self
+        except AuthConfigurationError:
+            await self.shutdown()
+            raise
         except Exception as exc:
             logger.error("Failed to initialize application factory", exc_info=exc)
             await self.shutdown()

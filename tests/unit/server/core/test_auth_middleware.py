@@ -19,14 +19,21 @@ from aion.server.core.middlewares import AionAuthMiddleware, AionContextMiddlewa
 
 from tests.unit.support.distribution import distribution_metadata
 from tests.unit.support.request_path import ELSEWHERE, Probe, send_message
-from tests.unit.support.tokens import (
-    PLATFORM_SUBJECT,
-    SESSION_SUBJECT,
-    open_verifier,
-    platform_token,
-    platform_verifier,
-    session_token,
-)
+from tests.support.aion_tokens import subject
+from tests.unit.support.tokens import AION_KEY, ControlPlane, hosted_verifier, verifier
+
+USER_ID = "7a9e2b1c-1111-4d2e-8f3a-6b5c4d3e2f10"
+SESSION_ID = "f9d7daea-df95-4111-8533-5d6f043edaf9"
+PLATFORM_SUBJECT = subject("AionUser", USER_ID)
+SESSION_SUBJECT = subject("AnonymousSession", SESSION_ID)
+
+
+def platform_token(**claims) -> str:
+    return AION_KEY.invocation_token(USER_ID, **claims)
+
+
+def session_token() -> str:
+    return AION_KEY.session_token(SESSION_ID)
 
 
 class _Alice(AuthenticationBackend):
@@ -37,7 +44,7 @@ class _Alice(AuthenticationBackend):
 
 
 def _aion() -> list[Middleware]:
-    return [Middleware(AionAuthMiddleware, verifier=platform_verifier()), Middleware(AionContextMiddleware)]
+    return [Middleware(AionAuthMiddleware, verifier=hosted_verifier()), Middleware(AionContextMiddleware)]
 
 
 def _bearer(token: str) -> dict[str, str]:
@@ -58,7 +65,7 @@ async def test_the_token_names_the_owner() -> None:
 
 async def test_an_anonymous_session_token_names_the_owner_too() -> None:
     probe = Probe()
-    middleware = [Middleware(AionAuthMiddleware, verifier=open_verifier()), Middleware(AionContextMiddleware)]
+    middleware = [Middleware(AionAuthMiddleware, verifier=verifier()), Middleware(AionContextMiddleware)]
     async with probe.client(*middleware) as client:
         answer = (await send_message(client, headers=_bearer(session_token()))).json()
 
@@ -118,7 +125,7 @@ async def test_other_headers_name_nobody() -> None:
         ({}, "Bearer"),
         ({"Authorization": "Basic YWxpY2U6c2VjcmV0"}, "Bearer"),
         ({"Authorization": "Bearer "}, "Bearer"),
-        (_bearer(platform_token(lifetime=-120)), 'Bearer error="invalid_token"'),
+        (_bearer(platform_token(issued_at=0)), 'Bearer error="invalid_token"'),
         (_bearer("not-a-jwt"), 'Bearer error="invalid_token"'),
     ],
     ids=["no-header", "basic", "empty-bearer", "expired", "garbage"],
@@ -135,7 +142,7 @@ async def test_a_request_without_a_valid_token_never_reaches_the_agent(headers, 
 
 
 async def test_a_refusal_never_quotes_the_token(caplog) -> None:
-    token = platform_token(lifetime=-120)
+    token = platform_token(issued_at=0)
 
     probe = Probe()
     async with probe.client(*_aion()) as client:
@@ -143,6 +150,21 @@ async def test_a_refusal_never_quotes_the_token(caplog) -> None:
 
     assert token not in response.text
     assert token not in caplog.text
+
+
+async def test_until_the_keys_load_a_request_is_answered_503_and_never_served() -> None:
+    """An outage is neither a pass nor a verdict on the token: the client may retry."""
+    control_plane = ControlPlane()
+    control_plane.failing = True
+    probe = Probe()
+    middleware = [Middleware(AionAuthMiddleware, verifier=hosted_verifier(control_plane)), Middleware(AionContextMiddleware)]
+    async with probe.client(*middleware) as client:
+        response = await send_message(client, headers=_bearer(platform_token()))
+
+    assert response.status_code == 503
+    assert response.headers["retry-after"] == "1"
+    assert response.json()["error"] == "unavailable"
+    assert probe.calls == 0
 
 
 async def test_every_other_route_needs_a_token_too() -> None:

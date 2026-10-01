@@ -1,10 +1,10 @@
 """The caller a stock ``aion serve`` names, over the A2A wire, on both task stores.
 
 The middlewares are the ones ``AppFactory`` installs, and the tokens are signed
-with stand-ins for the platform's key and the control plane's, so the owner of
-a request is the ``sub`` of its bearer token and nothing else. Two callers
-present the same ``contextId`` throughout; they hold call tokens or anonymous
-session tokens, and the two kinds isolate the same way.
+with a stand-in for Aion's published key, so the owner of a request is the
+``sub`` of its bearer token and nothing else. Two callers present the same
+``contextId`` throughout; they hold invocation tokens or anonymous session
+tokens, and the two kinds isolate the same way.
 
 A verified caller is authenticated: its context history, finding its
 interrupted task through the ``contextId``, subscribing to its tasks and their
@@ -17,20 +17,18 @@ The in-memory run and the PostgreSQL run are the same test.
 from __future__ import annotations
 
 import asyncio
-import time
 import uuid
 from typing import Any, Optional
 
 import httpx
-import jwt
 import pytest
 import pytest_asyncio
-from cryptography.hazmat.primitives.asymmetric import ec
-from jwt.algorithms import ECAlgorithm
 from starlette.middleware import Middleware
 
-from aion.server.auth import JwksKeySource, TokenVerifier
+from aion.server.auth import JwksKeySource, Principal, TokenVerifier
 from aion.server.core.middlewares import AionAuthMiddleware, AionContextMiddleware
+
+from tests.support.aion_tokens import CLIENT_ID, ISSUER, SigningKey, subject
 
 from .jsonrpc_harness import (
     TASK_NOT_FOUND,
@@ -44,32 +42,18 @@ from .postgres_support import POSTGRES_TEST_URL, prepared_database
 
 pytestmark = [pytest.mark.asyncio(loop_scope="module")]
 
-ALICE = "aion:user:alice"
-BOB = "aion:user:bob"
-SESSION_A = "aion:anonymous:session-a"
-SESSION_B = "aion:anonymous:session-b"
+SIGNER = SigningKey()
+"""The stand-in Aion: it publishes this key and signs every caller's token with it."""
+
+ALICE = subject("AionUser", "alice")
+BOB = subject("AionUser", "bob")
+SESSION_A = subject("AnonymousSession", "0c5a3e1f-7b2d-4a6c-9e8f-1a2b3c4d5e6f")
+SESSION_B = subject("AnonymousSession", "5e6f7a8b-9c0d-4e1f-a2b3-c4d5e6f7a8b9")
 
 
-CLIENT_ID = "client-123"
-SESSION_KID = "session-key-1"
-PLATFORM_KEY = ec.generate_private_key(ec.SECP256R1())
-SESSION_KEY = ec.generate_private_key(ec.SECP256R1())
-
-
-class _PlatformKey:
-    """The stand-in platform's public key, where the server would have fetched it."""
-
-    async def load(self) -> None:
-        pass
-
-    def current_key(self):
-        return PLATFORM_KEY.public_key()
-
-
-def _control_plane() -> JwksKeySource:
-    """A key source whose HTTP is a stand-in control plane serving the session key."""
-    document = {"keys": [{**ECAlgorithm.to_jwk(SESSION_KEY.public_key(), as_dict=True), "kid": SESSION_KID}]}
-    transport = httpx.MockTransport(lambda request: httpx.Response(200, json=document))
+def _key_endpoint() -> JwksKeySource:
+    """A key source whose HTTP is a stand-in Aion key endpoint serving the signer's key."""
+    transport = httpx.MockTransport(lambda request: httpx.Response(200, json=SIGNER.jwks()))
     return JwksKeySource(
         "https://api.aion.example/runtime/a2a/verification-keys",
         client=httpx.AsyncClient(transport=transport),
@@ -88,11 +72,7 @@ async def _database():
 @pytest_asyncio.fixture(params=["memory", "postgres"], loop_scope="module")
 async def server(request, _database):
     # The middlewares AppFactory installs, outermost first.
-    verifier = TokenVerifier(
-        call_keys=_PlatformKey(),
-        call_audience=CLIENT_ID,
-        session_keys=_control_plane(),
-    )
+    verifier = TokenVerifier(_key_endpoint(), issuer=ISSUER, invocation_audience=CLIENT_ID)
     await verifier.load()
     middleware = [
         Middleware(AionAuthMiddleware, verifier=verifier),
@@ -102,51 +82,33 @@ async def server(request, _database):
         yield built
 
 
-def _call_token(subject: str) -> str:
-    now = int(time.time())
-    claims = {"aud": CLIENT_ID, "sub": subject, "iat": now, "exp": now + 300}
-    return jwt.encode(claims, PLATFORM_KEY, algorithm="ES256")
-
-
-def _session_token(subject: str) -> str:
-    now = int(time.time())
-    claims = {
-        "iss": "aion",
-        "aud": "aion-anonymous-session",
-        "sub": subject,
-        "subject_type": "AnonymousSession",
-        "iat": now,
-        "exp": now + 300,
-    }
-    return jwt.encode(claims, SESSION_KEY, algorithm="ES256", headers={"kid": SESSION_KID})
+def _token(caller: str, signer: SigningKey = SIGNER) -> str:
+    """The token of a caller: an anonymous session for an ``AnonymousSession``, an invocation otherwise."""
+    principal = Principal.from_subject(caller)
+    if principal.type == "AnonymousSession":
+        return signer.session_token(principal.id)
+    return signer.invocation_token(principal.id, principal_type=principal.type)
 
 
 @pytest.fixture(
     params=[(ALICE, BOB), (SESSION_A, SESSION_B)],
-    ids=["call-tokens", "anonymous-sessions"],
+    ids=["invocation-tokens", "anonymous-sessions"],
 )
 def callers(request) -> tuple[str, str]:
-    """Two callers that present the same context: holders of call tokens, or of anonymous session tokens."""
+    """Two callers that present the same context: holders of invocation tokens, or of anonymous session tokens."""
     return request.param
 
 
 def _forged_session_token() -> str:
-    now = int(time.time())
-    claims = {
-        "iss": "aion",
-        "aud": "aion-anonymous-session",
-        "sub": SESSION_A,
-        "subject_type": "AnonymousSession",
-        "exp": now + 300,
-    }
-    forger = ec.generate_private_key(ec.SECP256R1())
-    return jwt.encode(claims, forger, algorithm="ES256", headers={"kid": SESSION_KID})
+    """SESSION_A's token, signed by another key under the published key's ``kid``."""
+    forger = SigningKey()
+    forger.kid = SIGNER.kid
+    return _token(SESSION_A, forger)
 
 
 def _as(server: JsonRpcServer, subject: str) -> dict[str, str]:
-    """The headers of a caller: an anonymous session for ``anonymous:`` subjects, a call token otherwise."""
-    make = _session_token if subject.startswith("aion:anonymous:") else _call_token
-    return {"Authorization": f"Bearer {make(subject)}"}
+    """The headers of a caller."""
+    return {"Authorization": f"Bearer {_token(subject)}"}
 
 
 async def _send(

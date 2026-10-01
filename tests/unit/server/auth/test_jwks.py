@@ -1,353 +1,194 @@
-"""How ``JwksKeySource`` keeps the control plane's keys: the cache policy, row by row."""
+"""How ``JwksKeySource`` gets Aion's keys and keeps them: once loaded, for the life of the process."""
 
 import asyncio
 import logging
 
+import httpx
 import pytest
-from cryptography.hazmat.primitives.asymmetric import ec
 
-from aion.server.auth.jwks import (
-    MAX_KEY_SET_AGE_SECONDS,
-    MISSED_REFRESHES_ALLOWED,
-    REFRESH_AFTER_SECONDS,
-    REFETCH_INTERVAL_SECONDS,
-)
-from tests.unit.support.tokens import (
-    SESSION_KEY,
-    SESSION_KID,
-    Clock,
-    ControlPlane,
-    jwks_document,
-)
-
-ROTATED_KEY = ec.generate_private_key(ec.SECP256R1())
+from aion.server.auth.jwks import COLD_RETRY_SECONDS, MAX_DOCUMENT_BYTES, JwksKeySource
+from tests.support.aion_tokens import SigningKey
+from tests.unit.support.tokens import AION_KEY, JWKS_URL, Clock, ControlPlane
 
 
-def _source(control_plane: ControlPlane, clock: Clock):
-    return control_plane.key_source(clock=clock)
-
-
-def test_the_refresh_age_exceeds_the_refetch_interval() -> None:
-    assert MAX_KEY_SET_AGE_SECONDS == MISSED_REFRESHES_ALLOWED * REFRESH_AFTER_SECONDS
-    assert MAX_KEY_SET_AGE_SECONDS > REFRESH_AFTER_SECONDS > REFETCH_INTERVAL_SECONDS
-
-
-async def test_the_keys_are_loaded_at_startup() -> None:
-    control_plane, clock = ControlPlane(), Clock()
-    source = _source(control_plane, clock)
+async def test_the_keys_load_at_startup() -> None:
+    control_plane = ControlPlane()
+    source = control_plane.key_source()
 
     await source.load()
 
-    assert control_plane.requests == 1
-    assert await source.key_for(SESSION_KID) is not None
+    assert source.available
+    assert (await source.key_for(AION_KEY.kid)) is not None
     assert control_plane.requests == 1
 
 
-async def test_a_failed_first_load_does_not_stop_the_server_and_refuses_tokens(caplog) -> None:
-    control_plane, clock = ControlPlane(), Clock()
+async def test_loaded_keys_are_kept_without_another_fetch_however_long_it_runs() -> None:
+    """No timer and no refresh: an outage after startup changes nothing."""
+    clock = Clock()
+    control_plane = ControlPlane()
+    source = control_plane.key_source(clock)
+    await source.load()
+
     control_plane.failing = True
-    source = _source(control_plane, clock)
+    clock.advance(30 * 24 * 3600)
 
-    with caplog.at_level(logging.WARNING):
+    assert (await source.key_for(AION_KEY.kid)) is not None
+    assert control_plane.requests == 1
+
+
+async def test_an_unknown_kid_is_refused_without_a_fetch_once_keys_are_loaded() -> None:
+    clock = Clock()
+    control_plane = ControlPlane()
+    source = control_plane.key_source(clock)
+    await source.load()
+    clock.advance(3600)
+
+    assert (await source.key_for("unknown")) is None
+    assert control_plane.requests == 1
+
+
+async def test_a_failed_startup_fetch_is_retried_by_a_later_request_at_most_once_a_second(caplog) -> None:
+    clock = Clock()
+    control_plane = ControlPlane()
+    control_plane.failing = True
+    source = control_plane.key_source(clock)
+    with caplog.at_level(logging.WARNING, logger="aion.server.auth.jwks"):
         await source.load()
+    assert not source.available
+    assert "protected requests are refused" in caplog.text
 
-    assert "Could not fetch the Aion verification keys" in caplog.text
-    clock.advance(REFETCH_INTERVAL_SECONDS)
-    control_plane.failing = True
-    assert await source.key_for(SESSION_KID) is None
+    assert (await source.key_for(AION_KEY.kid)) is None
+    assert control_plane.requests == 1
 
-
-async def test_keys_load_later_once_the_control_plane_answers() -> None:
-    control_plane, clock = ControlPlane(), Clock()
-    control_plane.failing = True
-    source = _source(control_plane, clock)
-    await source.load()
-
+    clock.advance(COLD_RETRY_SECONDS)
     control_plane.failing = False
-    clock.advance(REFETCH_INTERVAL_SECONDS)
-
-    assert await source.key_for(SESSION_KID) is not None
-
-
-async def test_a_set_older_than_one_minute_is_refreshed_in_the_background() -> None:
-    control_plane, clock = ControlPlane(), Clock()
-    source = _source(control_plane, clock)
-    await source.load()
-    control_plane.document = jwks_document(**{"new": ROTATED_KEY.public_key()})
-
-    clock.advance(REFRESH_AFTER_SECONDS + 1)
-    current = await source.key_for(SESSION_KID)
-
-    assert current is not None
-    assert control_plane.requests == 1  # the request in hand is verified with what is held
-    await asyncio.sleep(0)
-    await asyncio.sleep(0)
-    assert control_plane.requests == 2
-    assert await source.key_for("new") is not None
-    assert await source.key_for(SESSION_KID) is None
-
-
-async def test_a_fresh_set_is_not_refreshed() -> None:
-    control_plane, clock = ControlPlane(), Clock()
-    source = _source(control_plane, clock)
-    await source.load()
-
-    clock.advance(REFRESH_AFTER_SECONDS - 1)
-    await source.key_for(SESSION_KID)
-    await asyncio.sleep(0)
-
-    assert control_plane.requests == 1
-
-
-async def test_one_background_refresh_runs_at_a_time() -> None:
-    control_plane, clock = ControlPlane(), Clock()
-    source = _source(control_plane, clock)
-    await source.load()
-
-    clock.advance(REFRESH_AFTER_SECONDS + 1)
-    await asyncio.gather(*(source.key_for(SESSION_KID) for _ in range(10)))
-    await asyncio.sleep(0)
-    await asyncio.sleep(0)
-
+    assert (await source.key_for(AION_KEY.kid)) is not None
     assert control_plane.requests == 2
 
 
-async def test_an_unknown_kid_fetches_at_once_and_finds_a_rotated_key() -> None:
-    control_plane, clock = ControlPlane(), Clock()
-    source = _source(control_plane, clock)
-    await source.load()
-    control_plane.document = jwks_document(**{"new": ROTATED_KEY.public_key()})
-
-    clock.advance(REFETCH_INTERVAL_SECONDS)
-
-    assert await source.key_for("new") is not None
-    assert control_plane.requests == 2
-
-
-async def test_an_unknown_kid_fetches_at_most_once_per_refetch_interval() -> None:
-    control_plane, clock = ControlPlane(), Clock()
-    source = _source(control_plane, clock)
-    await source.load()
-
-    clock.advance(REFETCH_INTERVAL_SECONDS - 1)
-    assert await source.key_for("forged-1") is None
-    assert await source.key_for("forged-2") is None
-    assert control_plane.requests == 1
-
-    clock.advance(1)
-    assert await source.key_for("forged-3") is None
-    assert control_plane.requests == 2
-    assert await source.key_for("forged-4") is None
-    assert control_plane.requests == 2
-
-
-async def test_concurrent_unknown_kids_share_one_fetch() -> None:
-    control_plane, clock = ControlPlane(), Clock()
-    source = _source(control_plane, clock)
-
-    results = await asyncio.gather(*(source.key_for(SESSION_KID) for _ in range(10)))
-
-    assert all(key is not None for key in results)
-    assert control_plane.requests == 1
-
-
-@pytest.mark.parametrize("age_offset", [-1, 0], ids=["below-maximum-age", "at-maximum-age"])
-async def test_a_failed_refresh_keeps_the_keys_within_the_maximum_age(caplog, age_offset) -> None:
-    control_plane, clock = ControlPlane(), Clock()
-    source = _source(control_plane, clock)
-    await source.load()
+async def test_a_continuing_outage_warns_once(caplog) -> None:
+    clock = Clock()
+    control_plane = ControlPlane()
     control_plane.failing = True
+    source = control_plane.key_source(clock)
 
-    clock.advance(MAX_KEY_SET_AGE_SECONDS + age_offset)
-    with caplog.at_level(logging.WARNING):
-        assert await source.key_for(SESSION_KID) is not None
-        await asyncio.sleep(0)
-        await asyncio.sleep(0)
+    with caplog.at_level(logging.WARNING, logger="aion.server.auth.jwks"):
+        for _ in range(3):
+            await source.key_for(AION_KEY.kid)
+            clock.advance(COLD_RETRY_SECONDS)
 
-    assert control_plane.requests == 2
-    assert "keeping the keys already held" in caplog.text
-    assert await source.key_for(SESSION_KID) is not None
-    assert source._keys
-    assert not any(record.levelno >= logging.ERROR for record in caplog.records)
-
-
-async def test_a_document_without_usable_keys_keeps_the_old_set() -> None:
-    control_plane, clock = ControlPlane(), Clock()
-    source = _source(control_plane, clock)
-    await source.load()
-    control_plane.document = {"keys": []}
-
-    clock.advance(REFETCH_INTERVAL_SECONDS)
-    assert await source.key_for("other") is None
-
-    assert await source.key_for(SESSION_KID) is not None
-
-
-@pytest.mark.parametrize("document", [{}, {"keys": "nope"}, []], ids=["empty", "bad-keys", "not-an-object"])
-async def test_a_malformed_document_is_a_failed_fetch(document) -> None:
-    control_plane, clock = ControlPlane(document), Clock()
-    source = _source(control_plane, clock)
-
-    await source.load()
-
-    assert await source.key_for(SESSION_KID) is None
-
-
-async def test_a_failing_background_refresh_is_retried_at_most_once_per_refetch_interval(caplog) -> None:
-    """A failed refresh leaves the set stale while the fetch rate limit bounds retries."""
-    control_plane, clock = ControlPlane(), Clock()
-    source = _source(control_plane, clock)
-    await source.load()
-    loaded_at = source._fetched_at
-    control_plane.failing = True
-    clock.advance(REFRESH_AFTER_SECONDS + 1)
-    assert source._is_stale()
-
-    async def requests(count: int) -> None:
-        for _ in range(count):
-            assert await source.key_for(SESSION_KID) is not None
-            await asyncio.sleep(0)
-        await asyncio.sleep(0)
-
-    with caplog.at_level(logging.WARNING):
-        await requests(50)
-        clock.advance(REFETCH_INTERVAL_SECONDS - 1)
-        assert source._is_stale()
-        await requests(50)
-    assert control_plane.requests == 2
-    assert caplog.text.count("Could not fetch") == 1
-
-    clock.advance(1)
-    await requests(50)
     assert control_plane.requests == 3
-
-    control_plane.failing = False
-    clock.advance(REFETCH_INTERVAL_SECONDS)
-    await requests(1)
-    assert control_plane.requests == 4
-    assert source._fetched_at > loaded_at
-    assert not source._is_stale()
+    assert caplog.text.count("could not fetch") == 1
 
 
-@pytest.mark.parametrize("background_refresh", [False, True], ids=["idle-server", "refresh-in-flight"])
-async def test_an_overage_set_waits_for_one_fetch_and_uses_the_new_keys(monkeypatch, caplog, background_refresh) -> None:
-    """Requests wait for the control plane before trusting a set beyond its maximum age."""
-    control_plane, clock = ControlPlane(), Clock()
-    started, release = asyncio.Event(), asyncio.Event()
-    handle = control_plane.handle
+async def test_concurrent_cold_requests_share_one_fetch() -> None:
+    release = asyncio.Event()
+    requests = 0
 
-    async def delayed_response(request):
-        response = handle(request)
-        if control_plane.requests > 1:
-            started.set()
-            await release.wait()
-        return response
+    async def handle(request: httpx.Request) -> httpx.Response:
+        nonlocal requests
+        requests += 1
+        await release.wait()
+        return httpx.Response(200, json=AION_KEY.jwks())
 
-    monkeypatch.setattr(control_plane, "handle", delayed_response)
-    source = _source(control_plane, clock)
-    await source.load()
-    control_plane.document = jwks_document(**{SESSION_KID: ROTATED_KEY.public_key()})
-
-    if background_refresh:
-        clock.advance(REFRESH_AFTER_SECONDS + 1)
-        assert await source.key_for(SESSION_KID) is not None
-        await started.wait()
-        clock.advance(MAX_KEY_SET_AGE_SECONDS - REFRESH_AFTER_SECONDS)
-    else:
-        clock.advance(MAX_KEY_SET_AGE_SECONDS + 1)
-
-    pending = [asyncio.create_task(source.key_for(SESSION_KID)) for _ in range(10)]
-    try:
-        await started.wait()
-        await asyncio.sleep(0)
-        assert all(not request.done() for request in pending)
-        assert control_plane.requests == 2
-    finally:
-        release.set()
-        keys = await asyncio.gather(*pending)
-
-    assert all(key.key.public_numbers() == ROTATED_KEY.public_key().public_numbers() for key in keys)
-    assert not any(record.levelno >= logging.ERROR for record in caplog.records)
-
-
-async def test_an_overage_set_is_cleared_once_and_failed_fetches_are_rate_limited(caplog) -> None:
-    control_plane, clock = ControlPlane(), Clock()
-    source = _source(control_plane, clock)
-    await source.load()
-    loaded_at = source._fetched_at
-    control_plane.failing = True
-    clock.advance(MAX_KEY_SET_AGE_SECONDS + 1)
-
-    async def refused_requests() -> None:
-        assert await asyncio.gather(*(source.key_for(SESSION_KID) for _ in range(50))) == [None] * 50
-
-    with caplog.at_level(logging.ERROR, logger="aion.server.auth.jwks"):
-        await refused_requests()
-        assert source._keys == {}
-        assert source._fetched_at == loaded_at
-        assert control_plane.requests == 2
-
-        clock.advance(REFETCH_INTERVAL_SECONDS - 1)
-        await refused_requests()
-        assert control_plane.requests == 2
-
-        clock.advance(1)
-        await refused_requests()
-        assert control_plane.requests == 3
-
-    errors = [record for record in caplog.records if record.levelno == logging.ERROR]
-    assert len(errors) == 1
-    assert f"not been refreshed for more than {MAX_KEY_SET_AGE_SECONDS} seconds" in errors[0].message
-    assert "anonymous session tokens are refused until contact with the control plane is restored" in errors[0].message
-
-
-async def test_an_overage_set_is_cleared_when_the_refetch_interval_forbids_a_fetch(caplog) -> None:
-    control_plane, clock = ControlPlane(), Clock()
-    source = _source(control_plane, clock)
-    await source.load()
-    control_plane.failing = True
-    clock.advance(MAX_KEY_SET_AGE_SECONDS)
-    assert await source.key_for(SESSION_KID) is not None
+    source = JwksKeySource(JWKS_URL, client=httpx.AsyncClient(transport=httpx.MockTransport(handle)))
+    waiting = [asyncio.create_task(source.key_for(AION_KEY.kid)) for _ in range(5)]
     await asyncio.sleep(0)
-    await asyncio.sleep(0)
-    assert control_plane.requests == 2
+    release.set()
 
-    clock.advance(1)
-    with caplog.at_level(logging.ERROR, logger="aion.server.auth.jwks"):
-        assert await source.key_for(SESSION_KID) is None
-        assert await source.key_for("unknown") is None
-
-    assert source._keys == {}
-    assert control_plane.requests == 2
-    assert len([record for record in caplog.records if record.levelno == logging.ERROR]) == 1
+    assert all(key is not None for key in await asyncio.gather(*waiting))
+    assert requests == 1
 
 
-async def test_a_successful_fetch_restores_verification_and_logs_once(caplog) -> None:
-    control_plane, clock = ControlPlane(), Clock()
-    source = _source(control_plane, clock)
+def _source_answering(response: httpx.Response) -> JwksKeySource:
+    return JwksKeySource(JWKS_URL, client=httpx.AsyncClient(transport=httpx.MockTransport(lambda request: response)))
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        httpx.Response(302, headers={"Location": "https://elsewhere.example/keys"}),
+        httpx.Response(404),
+        httpx.Response(200, content=b"not json"),
+        httpx.Response(200, json={"keys": "none"}),
+        httpx.Response(200, json=[AION_KEY.public_jwk()]),
+        httpx.Response(200, content=b'{"keys": [], "keys": []}'),
+        httpx.Response(200, content=b'{"keys": [], "padding": "' + b"x" * MAX_DOCUMENT_BYTES + b'"}'),
+    ],
+    ids=["redirect", "not-found", "not-json", "keys-not-a-list", "not-an-object", "duplicate-member", "too-large"],
+)
+async def test_a_response_that_is_not_a_bounded_jwks_loads_nothing(response) -> None:
+    source = _source_answering(response)
+
     await source.load()
-    control_plane.failing = True
-    clock.advance(MAX_KEY_SET_AGE_SECONDS + 1)
 
-    with caplog.at_level(logging.INFO, logger="aion.server.auth.jwks"):
-        assert await source.key_for(SESSION_KID) is None
-        control_plane.failing = False
-        clock.advance(REFETCH_INTERVAL_SECONDS - 1)
-        assert await source.key_for(SESSION_KID) is None
-        assert control_plane.requests == 2
-        assert not any(record.levelno == logging.INFO for record in caplog.records)
+    assert not source.available
 
-        clock.advance(1)
-        assert await source.key_for(SESSION_KID) is not None
-        assert control_plane.requests == 3
-        assert source._fetched_at == clock()
-        clock.advance(REFRESH_AFTER_SECONDS + 1)
-        assert await source.key_for(SESSION_KID) is not None
-        await asyncio.sleep(0)
-        await asyncio.sleep(0)
-        assert control_plane.requests == 4
 
-    infos = [record for record in caplog.records if record.levelno == logging.INFO]
-    assert [record.message for record in infos] == [
-        "Authentication: contact with the control plane is restored; anonymous session token verification has resumed"
-    ]
+async def test_the_fetch_has_a_deadline(monkeypatch) -> None:
+    import aion.server.auth.jwks as jwks
+
+    async def hang(request: httpx.Request) -> httpx.Response:
+        await asyncio.sleep(60)
+        return httpx.Response(200, json=AION_KEY.jwks())
+
+    monkeypatch.setattr(jwks, "FETCH_DEADLINE_SECONDS", 0.05)
+    source = JwksKeySource(JWKS_URL, client=httpx.AsyncClient(transport=httpx.MockTransport(hang)))
+
+    await asyncio.wait_for(source.load(), timeout=5)
+
+    assert not source.available
+
+
+@pytest.mark.parametrize(
+    ("jwk", "kept"),
+    [
+        (AION_KEY.public_jwk(), True),
+        (AION_KEY.public_jwk(alg=None, use=None), True),
+        (AION_KEY.public_jwk(kid="not-the-thumbprint"), False),
+        (AION_KEY.public_jwk(alg="ES384"), False),
+        (AION_KEY.public_jwk(use="enc"), False),
+        (AION_KEY.public_jwk(crv="P-384"), False),
+        (AION_KEY.public_jwk(d="private"), False),
+        ({"kty": "oct", "kid": "shared", "k": "c2VjcmV0"}, False),
+    ],
+    ids=["published", "no-alg-or-use", "kid-not-thumbprint", "other-alg", "encryption-key", "other-curve",
+         "private-key", "symmetric"],
+)
+async def test_only_es256_public_keys_named_by_their_thumbprint_are_kept(jwk, kept) -> None:
+    source = _source_answering(httpx.Response(200, json={"keys": [jwk]}))
+
+    await source.load()
+
+    assert source.available is kept
+
+
+async def test_a_kid_published_twice_is_ambiguous_and_used_for_neither() -> None:
+    other = SigningKey()
+    source = _source_answering(
+        httpx.Response(200, json={"keys": [AION_KEY.public_jwk(), AION_KEY.public_jwk(), other.public_jwk()]})
+    )
+
+    await source.load()
+
+    assert (await source.key_for(AION_KEY.kid)) is None
+    assert (await source.key_for(other.kid)) is not None
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://api.aion.example/runtime/a2a/verification-keys",
+        "ftp://api.aion.example/keys",
+        "https:///keys",
+    ],
+)
+def test_keys_come_over_https(url) -> None:
+    with pytest.raises(ValueError, match="HTTPS"):
+        JwksKeySource(url)
+
+
+@pytest.mark.parametrize("host", ["localhost", "127.0.0.1", "[::1]", "aion.localhost"])
+async def test_plain_http_is_allowed_to_this_machine_only(host) -> None:
+    source = JwksKeySource(f"http://{host}:8080/runtime/a2a/verification-keys")
+    await source.aclose()

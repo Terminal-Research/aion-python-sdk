@@ -7,7 +7,7 @@ from .callback import (
     Notification,
 )
 from .client import DataAttachment, FileAttachment, PushAuth, ScenarioClient
-from .control_plane import DEFAULT_SUBJECT, FakeControlPlane, control_plane
+from .control_plane import DEFAULT_SUBJECT, FakeControlPlane, control_plane, session_subject
 from .daemon import (
     DAEMON_BEHAVIOR_ID,
     DAEMON_ENVIRONMENT_ID,
@@ -94,6 +94,7 @@ __all__ = [
     "replies",
     "reply_texts",
     "run_until_working",
+    "session_subject",
     "status",
     "stored_texts",
     "task",

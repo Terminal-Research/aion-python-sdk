@@ -55,48 +55,59 @@ authentication does: an `AuthenticatedCaller` as `request.scope["user"]` and
 `authenticated` credentials as `request.scope["auth"]`. a2a-sdk's
 `DefaultServerCallContextBuilder` makes them `ServerCallContext.user` and
 `state["auth"]`, and `resolve_user_scope` makes the token's `sub` the owner.
-The token's other claims, `subject_type` among them, stay on the caller
-(`AuthenticatedCaller.claims`) for the agent's own logic. The distribution a
-request came through is its channel, not its owner. Whatever user and
-credentials a middleware in front of `AionAuthMiddleware` set are replaced.
+The caller is typed: its `principal` (type and ID), `credential` (invocation
+or anonymous session), `assurance` - what Aion established about it, so a
+verified session or provider sender is never taken for an account login - and,
+for an invocation, the `gateway` coordinates it was routed through. The
+distribution a request came through is its channel, not its owner. Whatever
+user and credentials a middleware in front of `AionAuthMiddleware` set are
+replaced.
 
-Both kinds of token are signed JWTs (JWS). The verifier reads the token's
-unverified `aud` only to choose the key, then verifies the whole token with it,
-`aud` included. An `aud` that names neither kind is refused.
+Both kinds of token are ES256-signed JWTs with the one key Aion publishes; the
+protected `typ` header tells them apart.
 
-| | Call token | Anonymous session token |
+| | Invocation token | Anonymous session token |
 | --- | --- | --- |
-| `aud` | this server's `AION_CLIENT_ID` | `aion-anonymous-session` |
-| Key | the platform's key for this deployment | the control plane's published keys, by the token's `kid` |
-| Algorithm | ES256 | the key's own: ES256, ES384, ES512, RS256, PS256 or EdDSA |
-| Required claims | `aud`, `exp`, `sub` | `iss` = `aion`, `aud`, `subject_type` = `AnonymousSession`, `exp`, `sub` |
+| `typ` | `aion-invocation+jwt` | `aion-session+jwt` |
+| `aud` | exactly this server's `AION_CLIENT_ID` | exactly `urn:aion:a2a:anonymous-session` |
+| `token_use` | `a2a_invocation` | `anonymous_session` |
+| `sub` | the initiating principal | an `AnonymousSession`, its ID the session UUID |
+| `assurance` | `account`, `runtime`, `provider`, `session`, `internal` or `unattributed` | `session` |
+| Gateway claims | `owner_agent_identity_id`, `edge_agent_environment_id`, `terminal_agent_environment_id`, lowercase UUIDs | none |
+| Lifetime (`exp` − `iat`) | 1 hour | 30 days |
 | Server deployed by the Aion platform | accepted | refused |
-| Any other server | accepted with `AION_CLIENT_ID` and `AION_CLIENT_SECRET` set, refused without | accepted |
+| Any other server | accepted when `AION_CLIENT_ID` is set | accepted |
 
-A token also has to be current (`exp`, and `nbf` when it has one). A kind a
-server does not accept in its situation is refused without any cryptography,
-and the reason in the `401` never quotes the token. A call token may carry
-`subject_type` = `AnonymousSession`; nothing restricts it.
+Both also need `iss` = `AION_API_CLIENT_AUTH_ISSUER` (default `aion.io`),
+`contract_version` = 1, and integer `iat` = `nbf`. `sub` is canonical,
+`aion:v1:<PrincipalType>:<unpadded base64url of the ID>` (`aion.server.auth.Principal`),
+with an ID of at most 1024 bytes; `session` assurance belongs to an
+`AnonymousSession` principal and no other. The header carries `alg`, `typ`
+and `kid` and nothing else - `jku`, `x5u`, `jwk`, `crit` and `zip` are refused
+- and no member appears twice in the header or the claims. A token over 8 KiB
+is refused unread. Times are checked with 30 seconds of tolerance; nothing
+else is. A kind a server does not accept is refused before any key is looked
+up, and the reason in the `401` never quotes the token.
 
-The call token's key comes from the control plane, one key per client id. The
-request for it is a stub for now (`PlatformKeySource._fetch_key`), so call
-tokens are refused.
+A server is hosted when `DEPLOYMENT_ID` is set. It has to be the deployment's
+UUID: a malformed or empty value stops the server instead of being read as
+"not hosted", and so does a hosted server without `AION_CLIENT_ID`.
 
-Anonymous session keys are the JWKS at `{AION_API_HOST}/runtime/a2a/verification-keys`,
-a public endpoint that needs no credentials (`JwksKeySource`):
+The keys are the JWKS at `{AION_API_HOST}/runtime/a2a/verification-keys`, a
+public endpoint that needs no credentials (`JwksKeySource`). It has to be
+HTTPS, or plain HTTP to a loopback address for development:
 
-- The keys load at startup. A failed load does not stop the server; anonymous
-  session tokens are refused until a later fetch succeeds.
-- A key set older than 1 minute is refreshed in the background while the
-  current request is verified with the keys held. One refresh runs at a time.
-- A token whose `kid` is not in the set triggers an immediate fetch, at most
-  one every 10 seconds. If the key is still missing the token is refused.
-- A failed refresh keeps the old set and logs a warning. A set not successfully
-  refreshed for more than three refresh intervals (3 minutes) is not used.
-  The request waits for a permitted fetch; if it fails or is rate-limited, the
-  set is cleared and anonymous session tokens receive `401` until a fetch succeeds.
-  Clearing logs one error; recovery logs one informational message.
-- After a failure the refresh is retried at most once every 10 seconds.
+- The keys load at startup and are kept for the life of the process: no timer,
+  no refresh. A key endpoint outage after that changes nothing.
+- Only EC P-256 keys for ES256 are kept, without a private part, and only under
+  a `kid` that is the key's RFC 7638 thumbprint. A `kid` published twice is
+  ambiguous and used for neither. A token whose `kid` is not loaded is refused
+  without a fetch.
+- A fetch has 5 seconds in total, reads at most 64 KiB and follows no
+  redirect.
+- Until keys load, a request is answered `503` with `Retry-After`, never let
+  through unchecked. It may start a new fetch, at most one a second; concurrent
+  requests share it. The first failure logs a warning, repeats log at debug.
 
 The startup log says whether the server is hosted on the Aion platform.
 

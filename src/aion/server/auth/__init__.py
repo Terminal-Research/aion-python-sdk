@@ -2,27 +2,33 @@
 
 Every protected request carries ``Authorization: Bearer <JWT>``.
 ``AionAuthMiddleware`` verifies it with a ``TokenVerifier`` and installs the
-``AuthenticatedCaller`` the token names; its ``sub`` is the owner of the
-request's tasks and framework state. Two kinds of token are accepted: call
-tokens Aion signs for this deployment (``PlatformKeySource``) and anonymous
-session tokens signed with keys the control plane publishes
-(``JwksKeySource``). Which kinds a server accepts depends on where it runs;
+``AuthenticatedCaller`` the token names; its canonical ``sub`` is the owner of
+the request's tasks and framework state. Two kinds of token are accepted, both
+signed with the key Aion publishes (``JwksKeySource``): invocation tokens Aion
+issues when it dispatches a request to this agent, and anonymous session tokens
+a direct client holds. Which kinds a server accepts depends on where it runs;
 ``build_token_verifier`` is where that rule lives.
 """
 
-from .caller import AuthenticatedCaller
+from .caller import Assurance, AuthenticatedCaller, CredentialKind, GatewayCoordinates
 from .jwks import JwksKeySource
-from .mode import build_token_verifier, is_hosted
-from .platform import PlatformKeySource
-from .verifier import InvalidTokenError, KeySource, TokenVerifier
+from .mode import AuthConfigurationError, build_token_verifier, deployment_id, is_hosted
+from .principal import InvalidPrincipalError, Principal
+from .verifier import InvalidTokenError, KeysUnavailableError, TokenVerifier
 
 __all__ = [
+    "Assurance",
+    "AuthConfigurationError",
     "AuthenticatedCaller",
+    "CredentialKind",
+    "GatewayCoordinates",
+    "InvalidPrincipalError",
     "InvalidTokenError",
     "JwksKeySource",
-    "KeySource",
-    "PlatformKeySource",
+    "KeysUnavailableError",
+    "Principal",
     "TokenVerifier",
     "build_token_verifier",
+    "deployment_id",
     "is_hosted",
 ]

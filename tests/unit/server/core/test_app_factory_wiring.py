@@ -10,6 +10,7 @@ import pytest
 from fastapi import FastAPI
 
 import aion.server.core.app.factory as factory_module
+from aion.server.auth import AuthConfigurationError
 from aion.server.core.app.factory import AppFactory
 from aion.server.core.middlewares import (
     AionAuthMiddleware,
@@ -120,3 +121,16 @@ def test_the_caller_is_named_before_anything_reads_the_request(create_push, veri
         TracingMiddleware,
     ]
     assert factory.fastapi_app.user_middleware[0].kwargs == {"verifier": verifier}
+
+
+async def test_wrong_authentication_settings_stop_startup_before_anything_else(monkeypatch) -> None:
+    """Raised, not turned into a quiet ``None``: a server must not start unprotected."""
+    factory, _, _ = _factory()
+    monkeypatch.setattr(
+        factory_module, "build_token_verifier", Mock(side_effect=AuthConfigurationError("DEPLOYMENT_ID"))
+    )
+
+    with pytest.raises(AuthConfigurationError):
+        await factory.initialize()
+
+    factory.db_factory.initialize.assert_not_called()

@@ -87,6 +87,12 @@ class ApiSettings(BaseEnvSettings):
         description="API host URL"
     )
 
+    client_auth_issuer: str = Field(
+        default="aion.io",
+        alias="AION_API_CLIENT_AUTH_ISSUER",
+        description="The issuer Aion signs request tokens as; a token naming another is refused"
+    )
+
     api_keep_alive: int = Field(
         default=60,
         alias="AION_API_KEEP_ALIVE",
@@ -165,7 +171,7 @@ class ApiSettings(BaseEnvSettings):
 
     @property
     def verification_keys_url(self) -> str:
-        """URL of the control plane's public JWKS for verifying anonymous session tokens."""
+        """URL of Aion's public JWKS, which request tokens are verified with."""
         return f"{self.http_url}/runtime/a2a/verification-keys"
 
     @property
