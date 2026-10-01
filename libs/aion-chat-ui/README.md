@@ -113,6 +113,29 @@ These commands are intentionally hidden: `aio environment ...`, `aio env ...`, `
 
 ## Development
 
+### Credential Integration
+
+`SourceCredentials` is the shared fetch boundary for discovery, interactive
+connections and headless requests. It pins each credential to the configured
+source origin and refuses redirects. The registry keeps account authentication;
+direct sources without explicit credentials use `AnonymousSession`. Guest
+lifecycle and keychain records are separate from WorkOS refresh tokens. The
+Python helper exposes `get-session` and `set-session` using `sessionKey` and
+`session`, never the account `refreshToken` field.
+
+Guest records use the versioned scope from the caller-authentication spec:
+control-plane API URL, environment, stable source key and destination origin.
+`credentialScope` in the agent index is a non-secret local-history discriminator,
+not an authorization assertion. It prevents a replacement guest or different
+account from restoring an old active context. No history or access is migrated.
+
+See [Authentication And Guest Sessions](https://docs.aion.to/tools/aion-chat#authentication-and-guest-sessions)
+for user-facing behavior. Client tests use controlled receivers and fake
+keychains; they do not establish server-side token verification or ownership
+enforcement. Those are implemented separately in the SDK runtime phase.
+
+### Local Workflow
+
 ```bash
 npm install
 npm run graphql:codegen

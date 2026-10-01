@@ -80,6 +80,7 @@ class ChatRunLaunchOptions:
         request_mode: A2A request mode to use.
         response_mode: Output rendering mode to use.
         message: Message text, or ``-`` to read from standard input.
+        new_session: Explicitly replace the endpoint's guest identity and access.
     """
 
     endpoint: Optional[str]
@@ -92,10 +93,14 @@ class ChatRunLaunchOptions:
     request_mode: str
     response_mode: str
     message: Optional[str]
+    new_session: bool = False
 
     def to_args(self) -> list[str]:
         """Convert the options to CLI arguments for the standalone UI."""
         args: list[str] = ["run"]
+
+        if self.new_session:
+            args.append("--new-session")
 
         if self.endpoint:
             args.extend(["--url", self.endpoint])

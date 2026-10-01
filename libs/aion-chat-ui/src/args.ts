@@ -10,6 +10,7 @@ import {
 import { getPackageInfo } from "./packageInfo.js";
 
 export interface ChatCliOptions {
+	newSession?: boolean;
 	url?: string;
 	agentId?: string;
 	token?: string;
@@ -89,6 +90,7 @@ Agent selection:
   -u, --url, --host <endpoint>   Explicit A2A endpoint or proxy URL
 
 Authentication:
+      --new-session              Replace guest identity for --url; prior history becomes inaccessible
       --token <token>            Bearer token for the explicit --url endpoint
       --header <key=value>       Repeatable custom HTTP header for the explicit --url endpoint
 
@@ -264,6 +266,7 @@ export function parseArgs(argv: string[]): ChatCliOptions {
 }
 
 export function parseRunArgs(argv: string[]): HeadlessRunOptions {
+	let newSession = false;
 	let url: string | undefined;
 	let agentId: string | undefined;
 	let agentSelector: string | undefined;
@@ -292,6 +295,9 @@ export function parseRunArgs(argv: string[]): HeadlessRunOptions {
 			case "--agent":
 				agentSelector = requireValue(argv, index, arg);
 				index += 1;
+				break;
+			case "--new-session":
+				newSession = true;
 				break;
 			case "--token":
 				token = requireValue(argv, index, arg);
@@ -343,6 +349,7 @@ export function parseRunArgs(argv: string[]): HeadlessRunOptions {
 		...(url ? { url } : {}),
 		agentId,
 		agentSelector,
+		...(newSession ? { newSession: true } : {}),
 		token,
 		headers,
 		pushNotifications,

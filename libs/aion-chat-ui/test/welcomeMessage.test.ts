@@ -7,7 +7,9 @@ import { createChatThread, buildWelcomeRequest, isWelcomeRequest,
 	WELCOME_MESSAGE_EXTENSION_URI as uri, WELCOME_REQUEST_SCHEMA as schema
 } from "../src/lib/welcomeMessage.js";
 import type { ConnectedClient } from "../src/lib/connection.js";
-import { buildAuthenticatedFetch, buildMessageParams } from "../src/lib/connection.js";
+import { buildAuthenticatedFetch, buildMessageParams, connectClient } from "../src/lib/connection.js";
+import { SourceCredentials } from "../src/lib/sourceCredentials.js";
+import { createExplicitAgentSource } from "../src/lib/agents/model.js";
 import { makeTextPart } from "../src/lib/a2aProtocol.js";
 import { shouldRenderLiveResponseMessage } from "../src/lib/chatSession.js";
 import { loadMostRecentSession, saveCompletedExchange } from "../src/lib/agents/sessionStore.js";
@@ -87,10 +89,47 @@ describe("terminal new-thread welcome", () => {
 	it("preserves request activation when custom distribution headers are present", async () => {
 		const fetcher = vi.fn().mockResolvedValue(new Response("{}"));
 		vi.stubGlobal("fetch", fetcher);
-		await buildAuthenticatedFetch({ headers: { "a2a-extensions": "distribution-extension" } })("https://agent", {
+		await buildAuthenticatedFetch({ headers: {
+			"a2a-extensions": "distribution-extension", "A2A-Extensions": "other-extension, distribution-extension",
+			"X-Test": "first", "x-test": "last"
+		} })("https://agent", {
 			headers: { "A2A-Extensions": uri }
 		});
-		expect(new Headers(fetcher.mock.calls[0]![1].headers).get("A2A-Extensions")).toBe(`${uri},distribution-extension`);
+		const headers = new Headers(fetcher.mock.calls[0]![1].headers);
+		expect(headers.get("A2A-Extensions")).toBe(`${uri},distribution-extension,other-extension`);
+		expect(headers.get("X-Test")).toBe("last");
+	});
+
+	it("preserves welcome activation through the real client and source credential wrapper", async () => {
+		const source = createExplicitAgentSource("http://localhost:9000");
+		const received: Request[] = [];
+		const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+			const request = new Request(input, init);
+			received.push(request);
+			if (request.method === "GET") return Response.json(AgentCard.toJSON(AgentCard.fromJSON({
+				name: "Welcome receiver", version: "1", capabilities: { extensions: [{ uri }] },
+				supportedInterfaces: [{ url: source.url + "/", protocolBinding: "JSONRPC", protocolVersion: "1.0" }]
+			})));
+			const body = await request.json();
+			expect(body.method).toBe("SendMessage");
+			expect(body.params.message.extensions).toEqual([uri]);
+			return Response.json({ jsonrpc: "2.0", id: body.id, result: { message: Message.toJSON(greeting) } });
+		});
+		const credentials = new SourceCredentials({ environmentId: "development",
+			cli: { token: "explicit", headers: { "a2a-extensions": "distribution-extension" } },
+			accountToken: async () => undefined, fetch: fetcher });
+		const connection = await connectClient({ url: source.url, headers: {},
+			pushNotifications: false, pushReceiver: "http://localhost:5000",
+			fetchImpl: credentials.fetch(source) });
+		const onWelcome = vi.fn();
+		const onError = vi.fn();
+		createChatThread({ connected: connection, onCreated: vi.fn(), onWelcome, onError });
+		await vi.waitFor(() => expect(onWelcome).toHaveBeenCalledOnce());
+		expect(onError).not.toHaveBeenCalled();
+		expect(received.filter((request) => request.method === "POST")).toHaveLength(1);
+		const request = received.find((request) => request.method === "POST")!;
+		expect(request.headers.get("A2A-Extensions")).toBe(`${uri},distribution-extension`);
+		expect(request.headers.get("Authorization")).toBe("Bearer explicit");
 	});
 
 	it("keeps both replies and markers when welcome completes after ordinary chat", () => {

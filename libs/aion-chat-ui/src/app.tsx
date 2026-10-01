@@ -55,7 +55,6 @@ import {
 } from "./lib/input";
 import { loadChatModeSettings, saveChatModeSettings } from "./lib/chatSettings.js";
 import {
-	buildAuthenticatedFetch,
 	buildMessageParams,
 	connectClient,
 	createPushNotificationConfig
@@ -82,7 +81,7 @@ import {
 	createExplicitAgentSource,
 	isTransientAgentSource,
 	mergeAgentSources,
-	normalizeSourceUrl
+	createDefaultRegistryAgentSource
 } from "./lib/agents/model.js";
 import {
 	resolveSessionFilePath,
@@ -156,6 +155,8 @@ import {
 } from "./lib/taskState.js";
 import { requestTerminalClear } from "./lib/terminal.js";
 import { getStoredAccessToken, loginWithWorkOS } from "./lib/workosAuth.js";
+import { SourceCredentials } from "./lib/sourceCredentials.js";
+import { GUEST_HISTORY_WARNING } from "./lib/anonymousSession.js";
 
 const NO_AGENT_MESSAGE_NOTICE = "Task completed with no agent message.";
 const NOTIFICATION_TTL_MS = 12_000;
@@ -251,17 +252,6 @@ function summarizeProtocolEventForLog(event: StreamEvent): Record<string, unknow
 	};
 }
 
-function isAionControlPlaneRegistryAgent(
-	agent: DiscoveredAgentRecord,
-	environmentId: AionEnvironmentId
-): boolean {
-	return (
-		agent.source.type === "registry" &&
-		normalizeSourceUrl(agent.source.url) ===
-			normalizeSourceUrl(getControlPlaneApiBaseUrl(environmentId))
-	);
-}
-
 function summarizeAgentForLog(
 	agent: DiscoveredAgentRecord | undefined
 ): Record<string, unknown> | undefined {
@@ -340,6 +330,7 @@ interface CopyableResponse {
 }
 
 type ExactSlashCommand =
+	| { kind: "session"; action: "new" | "retry"; sourceKey?: string }
 	| { kind: "login" }
 	| { kind: "copy" }
 	| { kind: "clear" }
@@ -347,6 +338,9 @@ type ExactSlashCommand =
 
 function parseExactSlashCommand(value: string): ExactSlashCommand | undefined {
 	const [command, environmentId, extra] = value.trim().split(/\s+/);
+	if (command === "/session" && (environmentId === "new" || environmentId === "retry")) {
+		return { kind: "session", action: environmentId, sourceKey: extra };
+	}
 	if (command === "/login" && !environmentId) {
 		return { kind: "login" };
 	}
@@ -408,6 +402,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 	const connectedAgentKeyRef = useRef<string | undefined>(undefined);
 	const currentThreadScopeRef = useRef("");
 	const welcomeLifetimeRef = useRef(new AbortController());
+	const foregroundLifetimeRef = useRef(new AbortController());
 	const setCurrentContextId = (value: string | undefined): void => {
 		contextIdRef.current = value;
 		contextScopeRef.current = `${selectedEnvironment}:${selectedAgentKey ?? ""}`;
@@ -440,6 +435,13 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		activeEnvironmentSettings.responseMode
 	);
 	const [reconnectNonce, setReconnectNonce] = useState(0);
+	const credentials = useMemo(() => new SourceCredentials({
+		environmentId: selectedEnvironment, cli: options,
+		accountToken: () => getStoredAccessToken(selectedEnvironment)
+	}), [selectedEnvironment, options.token, options.headers]);
+	useEffect(() => () => credentials.dispose(), [credentials]);
+	const credentialScopeRef = useRef<string | undefined>(undefined);
+	const connectionSignalRef = useRef<AbortSignal | undefined>(undefined);
 	currentThreadScopeRef.current = `${selectedEnvironment}:${selectedAgentKey ?? ""}`;
 	const shownMessageKeysRef = useRef<Set<string>>(new Set());
 	const streamedTaskIdsRef = useRef<Set<string>>(new Set());
@@ -531,6 +533,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 
 		return () => {
 			welcomeLifetimeRef.current.abort();
+			foregroundLifetimeRef.current.abort();
 			chatSessionLogger.info("chat.session.ended", {
 				mode: "interactive",
 				environmentId: environmentAtStart
@@ -587,6 +590,10 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 	};
 
 	const clearTranscript = (): void => {
+		// Retire the old conversation's responses, not the reusable connection
+		// or independent welcomes whose results belong to their original thread.
+		foregroundLifetimeRef.current.abort();
+		foregroundLifetimeRef.current = new AbortController();
 		setEntries([]);
 		setTranscriptGeneration((current) => current + 1);
 		shownMessageKeysRef.current.clear();
@@ -745,10 +752,6 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			const explicitSourceKey = agentEndpointUrl
 				? createExplicitAgentSource(agentEndpointUrl).sourceKey
 				: undefined;
-			const explicitSourceFetch = buildAuthenticatedFetch({
-				headers: options.headers,
-				token: options.token
-			});
 			chatSessionLogger.debug("agent.discovery.refresh.started", {
 				environmentId: selectedEnvironment,
 				sourceCount: runtimeSources.length,
@@ -763,9 +766,8 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 						getStoredAccessToken(selectedEnvironment, {
 							forceRefresh: request?.forceRefresh
 						}),
-					graphQLFetchImpl: fetch,
-					sourceFetchImpl: (source) =>
-						source.sourceKey === explicitSourceKey ? explicitSourceFetch : fetch,
+					graphQLFetchImpl: credentials.fetch(createDefaultRegistryAgentSource(selectedEnvironment)),
+					sourceFetchImpl: (source) => credentials.fetch(source),
 					logger: chatSessionLogger
 				}
 			);
@@ -775,7 +777,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				agentCount: discovery.agents.length,
 				errorCount: discovery.errors.length
 			});
-			if (isClosed()) {
+			if (isClosed() || credentials.signal.aborted) {
 				return undefined;
 			}
 
@@ -809,7 +811,8 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			if (announceExplicitSourceErrors) {
 				for (const error of discovery.errors) {
 					const shouldNotify =
-						error.source.type === "registry" || !error.source.isDefault;
+						error.source.type === "registry" || !error.source.isDefault ||
+						/guest session/i.test(error.error ?? "");
 					if (shouldNotify && error.error) {
 						appendNotification(
 							`${error.source.description}: ${error.error}`
@@ -883,6 +886,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		};
 	}, [
 		agentEndpointUrl,
+		credentials,
 		controlPlaneApiBaseUrl,
 		options.agentId,
 		options.headers,
@@ -893,6 +897,11 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 
 	useEffect(() => {
 		let closed = false;
+		const connectionLifetime = new AbortController();
+		connectionSignalRef.current = connectionLifetime.signal;
+		setWorkingStartedAt(undefined);
+		setStreamLabel("Idle");
+		finalizeOpenStreamEntries();
 		let closePush: (() => Promise<void>) | undefined;
 
 		const handlePushEvent = (event: PushNotificationEvent): void => {
@@ -932,26 +941,11 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 
 				setClientState(undefined);
 				connectedAgentKeyRef.current = undefined;
-				const scope = `${selectedEnvironment}:${selectedAgent.agentKey}`;
-				setCurrentContextId(
-					contextScopeRef.current === scope && contextIdRef.current
-						? contextIdRef.current
-						: activeEnvironmentSettings.agents[selectedAgent.agentKey]?.activeContextId
-				);
 				setTaskId(undefined);
-
-				const useCliEndpointAuth = isTransientAgentSource(selectedAgent.source);
-				const useAionRegistryAuth = isAionControlPlaneRegistryAgent(
-					selectedAgent,
-					selectedEnvironment
-				);
 				const connected = await connectClient({
 					...options,
-					headers: useCliEndpointAuth ? options.headers : {},
-					token: useCliEndpointAuth ? options.token : undefined,
-					tokenProvider: useAionRegistryAuth
-						? () => getStoredAccessToken(selectedEnvironment)
-						: undefined,
+					headers: {}, token: undefined,
+					fetchImpl: credentials.fetch(selectedAgent.source, connectionLifetime.signal),
 					url: selectedAgent.connectionUrl,
 					agentId: selectedAgent.connectionAgentId
 				});
@@ -959,6 +953,18 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 					return;
 				}
 
+				const owner = credentials.owner(selectedAgent.source);
+				const scope = `${selectedEnvironment}:${selectedAgent.agentKey}`;
+				const stored = activeEnvironmentSettings.agents[selectedAgent.agentKey];
+				const sameOwner = !!owner && owner === credentialScopeRef.current &&
+					contextScopeRef.current === scope;
+				if (!sameOwner) clearTranscript();
+				setCurrentContextId(
+					sameOwner && contextScopeRef.current === scope && contextIdRef.current
+						? contextIdRef.current
+						: owner && stored?.credentialScope === owner ? stored.activeContextId : undefined
+				);
+				credentialScopeRef.current = owner;
 				setClientState(connected);
 				connectedAgentKeyRef.current = selectedAgent.agentKey;
 				const connectionNoticeKey = `${selectedAgent.agentKey}:${connected.agentCard.name}:${connected.endpoints.rpcUrl}`;
@@ -982,17 +988,25 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 
 		return () => {
 			closed = true;
+			connectionLifetime.abort();
+			if (selectedAgent) credentials.cancelSource(selectedAgent.source);
 			if (closePush) {
 				void closePush();
 			}
 		};
 	}, [
-		agentEndpointUrl,
-		controlPlaneApiBaseUrl,
-		discoveredAgents.length,
-		options,
+		credentials,
+		options.pushNotifications,
+		options.pushReceiver,
 		reconnectNonce,
-		selectedAgent,
+		// Discovery refreshes replace records without changing the connection.
+		selectedAgent?.agentKey,
+		selectedAgent?.connectionUrl,
+		selectedAgent?.connectionAgentId,
+		selectedAgent?.source.sourceKey,
+		selectedAgent?.source.url,
+		selectedAgent?.source.type,
+		selectedAgent && isTransientAgentSource(selectedAgent.source),
 		selectedEnvironment
 	]);
 
@@ -1327,7 +1341,8 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 						lastSeenAt: currentAgent.lastSeenAt,
 						lastLoadedAt: currentAgent.lastLoadedAt,
 						status: currentAgent.status,
-						activeContextId: nextContextId
+						activeContextId: nextContextId,
+						credentialScope: credentialScopeRef.current
 					}
 				}
 			});
@@ -1394,6 +1409,11 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			void runLoginSlashCommand();
 			return;
 		}
+		if (command.id === "session") {
+			resetSlashSelection();
+			appendSystem("Use /session retry <source-key> or /session new <source-key>. " + GUEST_HISTORY_WARNING);
+			return;
+		}
 
 		if (command.id === "exit") {
 			exit();
@@ -1449,6 +1469,8 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				}
 			}
 			appendSystem(`Logged in to Aion ${selectedEnvironment}.`);
+			credentials.cancelPending();
+			clearTranscript();
 			chatSessionLogger.info("auth.login.completed", {
 				environmentId: selectedEnvironment,
 				postAuthPath
@@ -1492,7 +1514,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			persistEnvironmentSettings(selectedEnvironment, {
 				agents: {
 					...activeEnvironmentSettings.agents,
-					[key]: { ...existing, activeContextId: nextContextId }
+					[key]: { ...existing, activeContextId: nextContextId, credentialScope: credentialScopeRef.current }
 				}
 			});
 		}
@@ -1539,7 +1561,6 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				}
 			});
 		}
-		setReconnectNonce((current) => current + 1);
 		const terminalClearRequested = requestTerminalClear({
 			isTTY: stdout.isTTY,
 			terminalType: process.env.TERM,
@@ -1596,6 +1617,21 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		}
 
 		resetSlashSelection();
+		if (command.kind === "session") {
+			const source = command.sourceKey ? agentSources[command.sourceKey] : selectedAgent?.source;
+			if (!source) {
+				appendSystem("Choose a source with /session new <source-key> or /session retry <source-key>. Use /sources to list keys.");
+				return true;
+			}
+			if (command.action === "new") {
+				appendSystem(GUEST_HISTORY_WARNING);
+				setClientState(undefined);
+			}
+			void (command.action === "new" ? credentials.startNew(source) : credentials.retry(source))
+				.then(() => { if (!credentials.signal.aborted) setReconnectNonce((value) => value + 1); })
+				.catch((error: unknown) => { if (!credentials.signal.aborted) appendSystem(error instanceof Error ? error.message : "Guest session unavailable."); });
+			return true;
+		}
 		if (command.kind === "login") {
 			void runLoginSlashCommand();
 			return true;
@@ -1659,7 +1695,12 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 
 		replaceDraft("");
 
+		const requestSignal = AbortSignal.any([
+			credentials.signal, connectionSignalRef.current ?? credentials.signal,
+			foregroundLifetimeRef.current.signal
+		]);
 		const parts = await buildMessageParts(trimmed);
+		if (requestSignal.aborted) return;
 		const attachedFiles = parts
 			.filter((part) => part.content?.$case === "raw" || part.content?.$case === "url")
 			.map((part) => part.filename || "unnamed");
@@ -1722,7 +1763,8 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				let finalStatusUpdate: TaskStatusUpdateEvent | undefined;
 				let reachedTerminal = false;
 				let renderedAgentOutput = false;
-				for await (const streamResponse of clientState.client.sendMessageStream(params)) {
+				for await (const streamResponse of clientState.client.sendMessageStream(params, { signal: requestSignal })) {
+					if (requestSignal.aborted) return;
 					const event = unwrapStreamResponse(streamResponse);
 					if (!event) {
 						continue;
@@ -1754,6 +1796,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 							handleArtifactUpdate(event, streamResponse) || renderedAgentOutput;
 					}
 				}
+				if (requestSignal.aborted) return;
 				if (
 					shouldShowNoAgentMessageNotice({
 						responseMode,
@@ -1791,7 +1834,8 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				setStreamLabel("Idle");
 			} else {
 				setStreamLabel("Waiting");
-				const response = await clientState.client.sendMessage(params);
+				const response = await clientState.client.sendMessage(params, { signal: requestSignal });
+				if (requestSignal.aborted) return;
 				chatSessionLogger.debug("a2a.response.received", {
 					durationMs: Date.now() - requestStartedAt,
 					response: summarizeProtocolEventForLog(response)
@@ -1839,6 +1883,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				setStreamLabel("Idle");
 			}
 		} catch (error) {
+			if (requestSignal.aborted) return;
 			setStreamLabel("Error");
 			chatSessionLogger.warn("a2a.request.failed", {
 				durationMs: requestStartedAt ? Date.now() - requestStartedAt : undefined,
@@ -1847,10 +1892,10 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			});
 			appendStatus(`Request failed: ${error instanceof Error ? error.message : String(error)}`);
 		} finally {
-			if (useStreaming) {
+			if (useStreaming && !requestSignal.aborted) {
 				finalizeOpenStreamEntries();
 			}
-			setWorkingStartedAt(undefined);
+			if (!requestSignal.aborted) setWorkingStartedAt(undefined);
 		}
 	};
 

@@ -83,6 +83,11 @@ def chat(
 
 @chat.command(name="run", context_settings={"max_content_width": 100})
 @click.option(
+    "--new-session",
+    is_flag=True,
+    help="Replace the guest identity for --url; previous conversations become inaccessible.",
+)
+@click.option(
     "--url",
     "--host",
     "-u",
@@ -136,6 +141,7 @@ def chat(
 )
 @click.argument("message", nargs=-1, required=False)
 def run(
+    new_session: bool,
     endpoint: Optional[str],
     agent_id: Optional[str],
     agent: Optional[str],
@@ -175,6 +181,7 @@ def run(
       aion chat run --agent @team-agent --response-mode a2a "Hello"
     """
     options = ChatRunLaunchOptions(
+        new_session=new_session,
         endpoint=endpoint,
         agent_id=agent_id,
         agent=agent,

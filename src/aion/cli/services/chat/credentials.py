@@ -8,8 +8,9 @@ The launcher advertises this module to the Node process through
 
 The helper protocol is intentionally small: the Node process sends one JSON
 request on stdin and receives one JSON response on stdout. Supported actions are
-``get``, ``set``, and ``delete`` for the Aion WorkOS refresh token associated
-with an environment. Python-launched chat stores credentials under a separate
+``get``, ``set``, and ``delete`` for account refresh tokens, plus ``get-session``
+and ``set-session`` for separately scoped guest credentials. Python-launched
+chat stores credentials under a separate
 service name from the npm ``aio``/``aion-chat`` keyring implementation, so the
 two launch paths do not compete for ownership of the same keychain item.
 """
@@ -100,6 +101,17 @@ def _read_request(stdin: TextIO) -> dict[str, Any]:
         raise CredentialHelperError("Credential helper request must be a JSON object.")
 
     action = request.get("action")
+    if action in {"get-session", "set-session"}:
+        session_key = request.get("sessionKey")
+        if (
+            not isinstance(session_key, str)
+            or not session_key.startswith("aion-chat:anonymous-session:v1:")
+            or len(session_key.split(":")) != 7
+        ):
+            raise CredentialHelperError("Invalid anonymous session key.")
+        if action == "set-session" and not isinstance(request.get("session"), str):
+            raise CredentialHelperError("Session storage requires a string value.")
+        return request
     environment_id = request.get("environmentId")
     if action not in {"get", "set", "delete"}:
         raise CredentialHelperError("Credential helper action must be get, set, or delete.")
@@ -124,6 +136,11 @@ def _handle_request(request: dict[str, Any]) -> dict[str, str | None]:
         Exception: If the configured Python keyring backend fails.
     """
     action = request["action"]
+    if action == "get-session":
+        return {"session": _get_password(request["sessionKey"])}
+    if action == "set-session":
+        _set_password(request["sessionKey"], request["session"])
+        return {}
     environment_id = request["environmentId"]
     account_name = _account_name(environment_id)
 
@@ -148,8 +165,8 @@ def main() -> int:
     """
     try:
         response = _handle_request(_read_request(sys.stdin))
-    except Exception as exc:  # noqa: BLE001 - CLI helper must report all failures.
-        print(str(exc), file=sys.stderr)
+    except Exception:  # noqa: BLE001 - Never echo credentials from a backend error.
+        print("Unable to access chat credentials in the operating-system keychain.", file=sys.stderr)
         return 1
 
     print(json.dumps(response), flush=True)

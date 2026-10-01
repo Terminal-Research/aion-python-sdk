@@ -25,6 +25,7 @@ from sqlalchemy import create_engine, text
 from aion.db.postgres.constants import (
     AION_SCHEMA,
     TASK_ARTIFACTS_TABLE,
+    TASK_CLAIMS_TABLE,
     TASK_MESSAGES_TABLE,
     TASKS_TABLE,
 )
@@ -57,7 +58,17 @@ def _sync_engine():
 
 @pytest.fixture
 def at_revision_003(_sync_engine):
-    """Reset the schema to revision 003, yield the engine, restore to head."""
+    """Reset the schema to revision 003, yield the engine, restore to head.
+
+    The tables are emptied first: other tests leave their rows behind, and
+    downgrading through 002 restores a unique ``context_id`` those rows can
+    violate.
+    """
+    command.upgrade(alembic_config, "head")
+    with _sync_engine.begin() as connection:
+        connection.execute(
+            text(f"TRUNCATE TABLE {AION_SCHEMA}.{TASK_CLAIMS_TABLE}, {AION_SCHEMA}.{TASKS_TABLE} CASCADE")
+        )
     command.downgrade(alembic_config, "base")
     command.upgrade(alembic_config, "003")
     try:

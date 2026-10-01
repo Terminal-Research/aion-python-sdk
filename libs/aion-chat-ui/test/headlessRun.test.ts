@@ -728,8 +728,12 @@ describe("runHeadless", () => {
 		const stderr = createStream();
 		const getStoredAccessTokenImpl = vi.fn(async () => "registry-token");
 		const connectClientImpl = vi.fn(async (connectionOptions) => {
-			expect(await connectionOptions.tokenProvider?.()).toBe("registry-token");
+			await connectionOptions.fetchImpl(registryAgent.connectionUrl);
 			return connectedClient({});
+		});
+		const fetchImpl = vi.fn<typeof fetch>(async (_input, init) => {
+			expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer registry-token");
+			return new Response("{}");
 		});
 
 		await expect(
@@ -740,7 +744,7 @@ describe("runHeadless", () => {
 				discoverAgentSourcesImpl: async () => discoveryResult(registryAgent),
 				connectClientImpl,
 				buildMessagePartsImpl: async (text) => buildParts(text),
-				getStoredAccessTokenImpl
+				getStoredAccessTokenImpl, fetchImpl
 			})
 		).resolves.toBe(0);
 
@@ -749,7 +753,7 @@ describe("runHeadless", () => {
 			expect.objectContaining({
 				token: undefined,
 				headers: {},
-				tokenProvider: expect.any(Function)
+				fetchImpl: expect.any(Function)
 			})
 		);
 	});
@@ -788,7 +792,7 @@ describe("runHeadless", () => {
 		).resolves.toBe(0);
 
 		expect(connectClientImpl).toHaveBeenCalledWith(
-			expect.objectContaining({ tokenProvider: undefined })
+			expect.objectContaining({ token: undefined, fetchImpl: expect.any(Function) })
 		);
 		expect(getStoredAccessTokenImpl).not.toHaveBeenCalled();
 	});
@@ -810,15 +814,21 @@ describe("runHeadless", () => {
 			): Promise<AgentDiscoveryResult> => {
 				for (const runtimeSource of sources) {
 					const sourceFetch = discoveryOptions?.sourceFetchImpl?.(runtimeSource);
-					await sourceFetch?.(`http://example.com/${runtimeSource.sourceKey}`);
+					if (runtimeSource.type !== "registry") {
+						await sourceFetch?.(`${runtimeSource.url}/${runtimeSource.sourceKey}`);
+					}
 				}
 				return discoveryResult();
 			}
 		);
-		const fetchImpl = vi.fn(async (url: string | URL | Request) => {
-			defaultFetchCalls.push(String(url));
+		const fetchImpl = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+			if (String(url).endsWith("/auth/anonymous-sessions")) {
+				return Response.json({ sessionId: "00000000-0000-4000-8000-000000000001", token: "guest", expiresAt: new Date(Date.now() + 30 * 86400000).toISOString() });
+			}
+			if (new Headers(init?.headers).get("Authorization") === "Bearer explicit-token") explicitFetchCalls.push(String(url));
+			else defaultFetchCalls.push(String(url));
 			return new Response("", { status: 404 });
-		}) as unknown as typeof fetch;
+		}) as typeof fetch;
 		const originalFetch = globalThis.fetch;
 		globalThis.fetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
 			const headers = new Headers(init?.headers);
@@ -839,6 +849,7 @@ describe("runHeadless", () => {
 					stdout: stdout.stream,
 					stderr: stderr.stream,
 					fetchImpl,
+					sessionStore: { getAnonymousSession: async () => undefined, setAnonymousSession: async () => undefined },
 					loadChatSettingsImpl: () => ({
 						settings: {
 							...baseSettings,
@@ -861,7 +872,7 @@ describe("runHeadless", () => {
 			globalThis.fetch = originalFetch;
 		}
 
-		expect(defaultFetchCalls).toContain("http://example.com/default-localhost-8000");
+		expect(defaultFetchCalls).toContain("http://localhost:8000/default-localhost-8000");
 		expect(explicitFetchCalls.some((url) => url.includes(explicitSourceKey))).toBe(true);
 	});
 });

@@ -57,12 +57,14 @@ DEFAULT_EXTRAS = ("langgraph-server", "adk-server")
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 # The development group less what the unit suite never imports: the GraphQL
-# code generator, the publishing tool and the layer linter. They only add
-# packages the floors install would then have to resolve around.
-NOT_FOR_THE_UNIT_SUITE = frozenset({"ariadne-codegen", "twine", "import-linter"})
+# code generator, the publishing tool, the layer linter and uv, which builds
+# the floors environment from outside it. They only add packages the floors
+# install would then have to resolve around.
+NOT_FOR_THE_UNIT_SUITE = frozenset({"ariadne-codegen", "twine", "import-linter", "uv"})
 
 # Floors a sibling dependency raises in the default combined install
-# (langgraph-server + adk-server, Python 3.12), and the sibling that does.
+# (langgraph-server + adk-server, Python 3.12, releases up to
+# FLOORS_EXCLUDE_NEWER in the Makefile), and the sibling that does.
 # Checked both ways by --check: a lifted floor missing here fails the job,
 # and so does an entry whose floor is installed exactly.
 RAISED_BY_SIBLING: dict[str, str] = {
@@ -71,17 +73,6 @@ RAISED_BY_SIBLING: dict[str, str] = {
     "pyjwt": "mcp 1.23.0, under google-adk, requires pyjwt>=2.10.1",
     "uvicorn": "google-adk 1.27.1 requires uvicorn>=0.34.0",
     "fastapi": "google-adk 1.27.1 requires fastapi>=0.124.1",
-    # google-adk asks for opentelemetry-exporter-otlp-proto-http with no upper
-    # bound; a transitive dependency resolves to its newest release, and each
-    # exporter release pins the sdk and api of its own minor.
-    "opentelemetry-api": (
-        "opentelemetry-exporter-otlp-proto-http, under google-adk, pins the "
-        "opentelemetry release of its own minor"
-    ),
-    "opentelemetry-sdk": (
-        "opentelemetry-exporter-otlp-proto-http, under google-adk, pins the "
-        "opentelemetry release of its own minor"
-    ),
 }
 
 

@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 
 import type { AionEnvironmentId } from "./environment.js";
+import type { AnonymousSessionStore } from "./anonymousSession.js";
 
 const SERVICE_NAME = "aion-chat";
 
@@ -25,14 +26,19 @@ export interface CredentialStore {
 	deleteRefreshToken(environmentId: AionEnvironmentId): Promise<void>;
 }
 
-interface CredentialHelperRequest {
+type CredentialHelperRequest = {
 	action: "get" | "set" | "delete";
 	environmentId: AionEnvironmentId;
 	refreshToken?: string;
-}
+} | {
+	action: "get-session" | "set-session";
+	sessionKey: string;
+	session?: string;
+};
 
 interface CredentialHelperResponse {
 	refreshToken?: string | null;
+	session?: string | null;
 }
 
 function accountName(environmentId: AionEnvironmentId): string {
@@ -93,7 +99,7 @@ function parseCredentialHelperResponse(value: string): CredentialHelperResponse 
 	return parsed;
 }
 
-export class HelperCredentialStore implements CredentialStore {
+export class HelperCredentialStore implements CredentialStore, AnonymousSessionStore {
 	private readonly command: string[];
 
 	constructor(commandValue: string) {
@@ -116,12 +122,27 @@ export class HelperCredentialStore implements CredentialStore {
 		await this.request({ action: "delete", environmentId });
 	}
 
+	async getAnonymousSession(sessionKey: string): Promise<string | undefined> {
+		const response = await this.request({ action: "get-session", sessionKey });
+		return typeof response.session === "string" ? response.session : undefined;
+	}
+
+	async setAnonymousSession(sessionKey: string, session: string): Promise<void> {
+		await this.request({ action: "set-session", sessionKey, session });
+	}
+
 	private request(request: CredentialHelperRequest): Promise<CredentialHelperResponse> {
 		const [executable, ...args] = this.command;
 		return new Promise((resolve, reject) => {
 			const child = spawn(executable, args, {
 				stdio: ["pipe", "pipe", "pipe"]
 			});
+			const timer = setTimeout(() => {
+				child.kill();
+				reject(new Error("Credential helper timed out."));
+			}, 10_000);
+			child.once("error", () => clearTimeout(timer));
+			child.once("close", () => clearTimeout(timer));
 			if (!child.stdin || !child.stdout || !child.stderr) {
 				reject(new Error("Credential helper did not expose standard streams."));
 				return;
@@ -158,7 +179,16 @@ export class HelperCredentialStore implements CredentialStore {
 	}
 }
 
-export class KeyringCredentialStore implements CredentialStore {
+export class KeyringCredentialStore implements CredentialStore, AnonymousSessionStore {
+	async getAnonymousSession(key: string): Promise<string | undefined> {
+		const { AsyncEntry } = await loadKeyring();
+		return (await new AsyncEntry(SERVICE_NAME, key).getPassword()) ?? undefined;
+	}
+
+	async setAnonymousSession(key: string, value: string): Promise<void> {
+		const { AsyncEntry } = await loadKeyring();
+		await new AsyncEntry(SERVICE_NAME, key).setPassword(value);
+	}
 	async getRefreshToken(environmentId: AionEnvironmentId): Promise<string | undefined> {
 		try {
 			const { AsyncEntry } = await loadKeyring();
@@ -203,7 +233,7 @@ export const keyringCredentialStore = new KeyringCredentialStore();
 
 export function createDefaultCredentialStore(
 	env: NodeJS.ProcessEnv = process.env
-): CredentialStore {
+): CredentialStore & AnonymousSessionStore {
 	const helperCommand = env[AION_CHAT_CREDENTIAL_HELPER_ENV];
 	if (helperCommand) {
 		return new HelperCredentialStore(helperCommand);

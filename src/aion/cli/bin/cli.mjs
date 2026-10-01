@@ -24481,7 +24481,7 @@ var require_permessage_deflate = __commonJS({
       acceptAsServer(offers) {
         const opts = this._options;
         const accepted = offers.find((params) => {
-          if (opts.serverNoContextTakeover === false && params.server_no_context_takeover || params.server_max_window_bits && (opts.serverMaxWindowBits === false || typeof opts.serverMaxWindowBits === "number" && opts.serverMaxWindowBits > params.server_max_window_bits) || typeof opts.clientMaxWindowBits === "number" && (typeof params.client_max_window_bits === "number" ? opts.clientMaxWindowBits > params.client_max_window_bits : !params.client_max_window_bits)) {
+          if (opts.serverNoContextTakeover === false && params.server_no_context_takeover || params.server_max_window_bits && (opts.serverMaxWindowBits === false || typeof opts.serverMaxWindowBits === "number" && opts.serverMaxWindowBits > params.server_max_window_bits) || typeof opts.clientMaxWindowBits === "number" && !params.client_max_window_bits) {
             return false;
           }
           return true;
@@ -24971,10 +24971,6 @@ var require_receiver = __commonJS({
        *     extensions
        * @param {Boolean} [options.isServer=false] Specifies whether to operate in
        *     client or server mode
-       * @param {Number} [options.maxBufferedChunks=0] The maximum number of
-       *     buffered data chunks
-       * @param {Number} [options.maxFragments=0] The maximum number of message
-       *     fragments
        * @param {Number} [options.maxPayload=0] The maximum allowed message length
        * @param {Boolean} [options.skipUTF8Validation=false] Specifies whether or
        *     not to skip UTF-8 validation for text and close messages
@@ -24985,8 +24981,6 @@ var require_receiver = __commonJS({
         this._binaryType = options2.binaryType || BINARY_TYPES[0];
         this._extensions = options2.extensions || {};
         this._isServer = !!options2.isServer;
-        this._maxBufferedChunks = options2.maxBufferedChunks | 0;
-        this._maxFragments = options2.maxFragments | 0;
         this._maxPayload = options2.maxPayload | 0;
         this._skipUTF8Validation = !!options2.skipUTF8Validation;
         this[kWebSocket] = void 0;
@@ -25001,7 +24995,6 @@ var require_receiver = __commonJS({
         this._opcode = 0;
         this._totalPayloadLength = 0;
         this._messageLength = 0;
-        this._numFragments = 0;
         this._fragments = [];
         this._errored = false;
         this._loop = false;
@@ -25017,18 +25010,6 @@ var require_receiver = __commonJS({
        */
       _write(chunk, encoding, cb) {
         if (this._opcode === 8 && this._state == GET_INFO) return cb();
-        if (this._maxBufferedChunks > 0 && this._buffers.length >= this._maxBufferedChunks) {
-          cb(
-            this.createError(
-              RangeError,
-              "Too many buffered chunks",
-              false,
-              1008,
-              "WS_ERR_TOO_MANY_BUFFERED_PARTS"
-            )
-          );
-          return;
-        }
         this._bufferedBytes += chunk.length;
         this._buffers.push(chunk);
         this.startLoop(cb);
@@ -25352,17 +25333,6 @@ var require_receiver = __commonJS({
           this.controlMessage(data, cb);
           return;
         }
-        if (this._maxFragments > 0 && ++this._numFragments > this._maxFragments) {
-          const error = this.createError(
-            RangeError,
-            "Too many message fragments",
-            false,
-            1008,
-            "WS_ERR_TOO_MANY_BUFFERED_PARTS"
-          );
-          cb(error);
-          return;
-        }
         if (this._compressed) {
           this._state = INFLATING;
           this.decompress(data, cb);
@@ -25420,7 +25390,6 @@ var require_receiver = __commonJS({
         this._totalPayloadLength = 0;
         this._messageLength = 0;
         this._fragmented = 0;
-        this._numFragments = 0;
         this._fragments = [];
         if (this._opcode === 2) {
           let data;
@@ -25565,9 +25534,6 @@ var require_sender = __commonJS({
     "use strict";
     var { Duplex } = __require("stream");
     var { randomFillSync } = __require("crypto");
-    var {
-      types: { isUint8Array }
-    } = __require("util");
     var PerMessageDeflate2 = require_permessage_deflate();
     var { EMPTY_BUFFER, kWebSocket, NOOP } = require_constants2();
     var { isBlob, isValidStatusCode } = require_validation();
@@ -25721,10 +25687,8 @@ var require_sender = __commonJS({
           buf.writeUInt16BE(code, 0);
           if (typeof data === "string") {
             buf.write(data, 2);
-          } else if (isUint8Array(data)) {
-            buf.set(data, 2);
           } else {
-            throw new TypeError("Second argument must be a string or a Uint8Array");
+            buf.set(data, 2);
           }
         }
         const options2 = {
@@ -26499,23 +26463,11 @@ var require_websocket = __commonJS({
           this._isServer = false;
           this._redirects = 0;
           if (protocols === void 0) {
-            if (!options2 || options2.protocols === void 0) {
-              protocols = [];
-            } else if (Array.isArray(options2.protocols)) {
-              protocols = options2.protocols;
-            } else {
-              protocols = [options2.protocols];
-            }
+            protocols = [];
           } else if (!Array.isArray(protocols)) {
             if (typeof protocols === "object" && protocols !== null) {
               options2 = protocols;
-              if (options2.protocols === void 0) {
-                protocols = [];
-              } else if (Array.isArray(options2.protocols)) {
-                protocols = options2.protocols;
-              } else {
-                protocols = [options2.protocols];
-              }
+              protocols = [];
             } else {
               protocols = [protocols];
             }
@@ -26617,10 +26569,6 @@ var require_websocket = __commonJS({
        *     multiple times in the same tick
        * @param {Function} [options.generateMask] The function used to generate the
        *     masking key
-       * @param {Number} [options.maxBufferedChunks=0] The maximum number of
-       *     buffered data chunks
-       * @param {Number} [options.maxFragments=0] The maximum number of message
-       *     fragments
        * @param {Number} [options.maxPayload=0] The maximum allowed message size
        * @param {Boolean} [options.skipUTF8Validation=false] Specifies whether or
        *     not to skip UTF-8 validation for text and close messages
@@ -26632,8 +26580,6 @@ var require_websocket = __commonJS({
           binaryType: this.binaryType,
           extensions: this._extensions,
           isServer: this._isServer,
-          maxBufferedChunks: options2.maxBufferedChunks,
-          maxFragments: options2.maxFragments,
           maxPayload: options2.maxPayload,
           skipUTF8Validation: options2.skipUTF8Validation
         });
@@ -26712,6 +26658,7 @@ var require_websocket = __commonJS({
           }
           return;
         }
+        this._readyState = _WebSocket.CLOSING;
         this._sender.close(code, data, !this._isServer, (err) => {
           if (err) return;
           this._closeFrameSent = true;
@@ -26719,7 +26666,6 @@ var require_websocket = __commonJS({
             this._socket.end();
           }
         });
-        this._readyState = _WebSocket.CLOSING;
         setCloseTimer(this);
       }
       /**
@@ -26933,8 +26879,6 @@ var require_websocket = __commonJS({
         autoPong: true,
         closeTimeout: CLOSE_TIMEOUT,
         protocolVersion: protocolVersions[1],
-        maxBufferedChunks: 256 * 1024,
-        maxFragments: 16 * 1024,
         maxPayload: 100 * 1024 * 1024,
         skipUTF8Validation: false,
         perMessageDeflate: true,
@@ -26944,7 +26888,6 @@ var require_websocket = __commonJS({
         socketPath: void 0,
         hostname: void 0,
         protocol: void 0,
-        protocols: void 0,
         timeout: void 0,
         method: "GET",
         host: void 0,
@@ -27178,8 +27121,6 @@ var require_websocket = __commonJS({
         websocket.setSocket(socket, head, {
           allowSynchronousEvents: opts.allowSynchronousEvents,
           generateMask: opts.generateMask,
-          maxBufferedChunks: opts.maxBufferedChunks,
-          maxFragments: opts.maxFragments,
           maxPayload: opts.maxPayload,
           skipUTF8Validation: opts.skipUTF8Validation
         });
@@ -27522,10 +27463,6 @@ var require_websocket_server = __commonJS({
        *     called
        * @param {Function} [options.handleProtocols] A hook to handle protocols
        * @param {String} [options.host] The hostname where to bind the server
-       * @param {Number} [options.maxBufferedChunks=262144] The maximum number of
-       *     buffered data chunks
-       * @param {Number} [options.maxFragments=16384] The maximum number of message
-       *     fragments
        * @param {Number} [options.maxPayload=104857600] The maximum allowed message
        *     size
        * @param {Boolean} [options.noServer=false] Enable no server mode
@@ -27547,8 +27484,6 @@ var require_websocket_server = __commonJS({
         options2 = {
           allowSynchronousEvents: true,
           autoPong: true,
-          maxBufferedChunks: 256 * 1024,
-          maxFragments: 16 * 1024,
           maxPayload: 100 * 1024 * 1024,
           skipUTF8Validation: false,
           perMessageDeflate: false,
@@ -27828,8 +27763,6 @@ var require_websocket_server = __commonJS({
         socket.removeListener("error", socketOnError);
         ws.setSocket(socket, head, {
           allowSynchronousEvents: this.options.allowSynchronousEvents,
-          maxBufferedChunks: this.options.maxBufferedChunks,
-          maxFragments: this.options.maxFragments,
           maxPayload: this.options.maxPayload,
           skipUTF8Validation: this.options.skipUTF8Validation
         });
@@ -43074,9 +43007,8 @@ var import_react = __toESM(require_react(), 1);
 
 // node_modules/string-width/index.js
 var segmenter2 = new Intl.Segmenter();
-var zeroWidthClusterRegex = new RegExp("^(?:\\p{Default_Ignorable_Code_Point}|\\p{Control}|\\p{Format}|\\p{Nonspacing_Mark}|\\p{Enclosing_Mark}|\\p{Surrogate})+$", "v");
-var leadingNonPrintingRegex = new RegExp("^[\\p{Default_Ignorable_Code_Point}\\p{Control}\\p{Format}\\p{Nonspacing_Mark}\\p{Enclosing_Mark}\\p{Surrogate}]+", "v");
-var spacingMarkRegex = new RegExp("\\p{Spacing_Mark}", "v");
+var zeroWidthClusterRegex = new RegExp("^(?:\\p{Default_Ignorable_Code_Point}|\\p{Control}|\\p{Format}|\\p{Mark}|\\p{Surrogate})+$", "v");
+var leadingNonPrintingRegex = new RegExp("^[\\p{Default_Ignorable_Code_Point}\\p{Control}\\p{Format}\\p{Mark}\\p{Surrogate}]+", "v");
 var rgiEmojiRegex = new RegExp("^\\p{RGI_Emoji}$", "v");
 var unqualifiedKeycapRegex = /^[\d#*]\u20E3$/;
 var extendedPictographicRegex = new RegExp("\\p{Extended_Pictographic}", "gu");
@@ -43099,60 +43031,13 @@ function baseVisible(segment) {
 function isZeroWidthCluster(segment) {
   return zeroWidthClusterRegex.test(segment);
 }
-function isHangulLeadingJamo(codePoint) {
-  return codePoint >= 4352 && codePoint <= 4447 || codePoint >= 43360 && codePoint <= 43388;
-}
-function isHangulVowelJamo(codePoint) {
-  return codePoint >= 4448 && codePoint <= 4519 || codePoint >= 55216 && codePoint <= 55238;
-}
-function isHangulTrailingJamo(codePoint) {
-  return codePoint >= 4520 && codePoint <= 4607 || codePoint >= 55243 && codePoint <= 55291;
-}
-function isHangulJamo(codePoint) {
-  return isHangulLeadingJamo(codePoint) || isHangulVowelJamo(codePoint) || isHangulTrailingJamo(codePoint);
-}
-function hangulClusterWidth(visibleSegment, eastAsianWidthOptions) {
-  const codePoints = [];
-  for (const character of visibleSegment) {
-    if (zeroWidthClusterRegex.test(character)) {
-      continue;
-    }
-    codePoints.push(character.codePointAt(0));
-  }
-  if (codePoints.length === 0) {
-    return void 0;
-  }
-  let width = 0;
-  for (let index = 0; index < codePoints.length; index++) {
-    const codePoint = codePoints[index];
-    if (!isHangulJamo(codePoint)) {
-      if (width === 0) {
-        return void 0;
-      }
-      for (let remaining = index; remaining < codePoints.length; remaining++) {
-        width += eastAsianWidth(codePoints[remaining], eastAsianWidthOptions);
-      }
-      return width;
-    }
-    if (isHangulLeadingJamo(codePoint) && isHangulVowelJamo(codePoints[index + 1])) {
-      width += 2;
-      index += isHangulTrailingJamo(codePoints[index + 2]) ? 2 : 1;
-      continue;
-    }
-    width += eastAsianWidth(codePoint, eastAsianWidthOptions);
-  }
-  return width;
-}
-function trailingWidth(visibleSegment, eastAsianWidthOptions) {
+function trailingHalfwidthWidth(segment, eastAsianWidthOptions) {
   let extra = 0;
-  let first = true;
-  for (const character of visibleSegment) {
-    if (first) {
-      first = false;
-      continue;
-    }
-    if (spacingMarkRegex.test(character) || character >= "\uFF00" && character <= "\uFFEF") {
-      extra += eastAsianWidth(character.codePointAt(0), eastAsianWidthOptions);
+  if (segment.length > 1) {
+    for (const char of segment.slice(1)) {
+      if (char >= "\uFF00" && char <= "\uFFEF") {
+        extra += eastAsianWidth(char.codePointAt(0), eastAsianWidthOptions);
+      }
     }
   }
   return extra;
@@ -43185,15 +43070,9 @@ function stringWidth2(input, options2 = {}) {
       width += 2;
       continue;
     }
-    const visibleSegment = baseVisible(segment);
-    const hangulWidth = hangulClusterWidth(visibleSegment, eastAsianWidthOptions);
-    if (hangulWidth !== void 0) {
-      width += hangulWidth;
-      continue;
-    }
-    const codePoint = visibleSegment.codePointAt(0);
+    const codePoint = baseVisible(segment).codePointAt(0);
     width += eastAsianWidth(codePoint, eastAsianWidthOptions);
-    width += trailingWidth(visibleSegment, eastAsianWidthOptions);
+    width += trailingHalfwidthWidth(segment, eastAsianWidthOptions);
   }
   return width;
 }
@@ -49299,6 +49178,7 @@ Agent selection:
   -u, --url, --host <endpoint>   Explicit A2A endpoint or proxy URL
 
 Authentication:
+      --new-session              Replace guest identity for --url; prior history becomes inaccessible
       --token <token>            Bearer token for the explicit --url endpoint
       --header <key=value>       Repeatable custom HTTP header for the explicit --url endpoint
 
@@ -49460,6 +49340,7 @@ function parseArgs(argv) {
   };
 }
 function parseRunArgs(argv) {
+  let newSession = false;
   let url;
   let agentId;
   let agentSelector;
@@ -49487,6 +49368,9 @@ function parseRunArgs(argv) {
       case "--agent":
         agentSelector = requireValue(argv, index, arg);
         index += 1;
+        break;
+      case "--new-session":
+        newSession = true;
         break;
       case "--token":
         token = requireValue(argv, index, arg);
@@ -49537,6 +49421,7 @@ function parseRunArgs(argv) {
     ...url ? { url } : {},
     agentId,
     agentSelector,
+    ...newSession ? { newSession: true } : {},
     token,
     headers,
     pushNotifications,
@@ -52414,6 +52299,20 @@ function generateTaskMetadata(options2 = {}) {
   };
 }
 
+// src/lib/requestHeaders.ts
+function mergeRequestHeaders(requestHeaders, configuredHeaders) {
+  const headers = new Headers(requestHeaders);
+  for (const [key, value] of configuredHeaders) {
+    if (key.toLowerCase() === "a2a-extensions") {
+      const extensions = [headers.get(key) ?? "", value].flatMap((entry) => entry.split(",")).map((entry) => entry.trim()).filter(Boolean);
+      headers.set(key, [...new Set(extensions)].join(","));
+    } else {
+      headers.set(key, value);
+    }
+  }
+  return headers;
+}
+
 // src/lib/connection.ts
 var AGENT_CARD_PATH2 = "/.well-known/agent-card.json";
 var CLIENT_TRANSPORT_PREFERENCES = ["JSONRPC", "HTTP+JSON"];
@@ -52457,53 +52356,15 @@ function buildEndpointConfig(options2) {
   };
 }
 async function buildAuthHeaders(options2, initHeaders, requestHeaders) {
-  const headers = new Headers(initHeaders ?? requestHeaders);
-  for (const [key, value] of Object.entries(options2.headers)) {
-    if (key.toLowerCase() === "a2a-extensions") {
-      const extensions = [headers.get(key) ?? "", value].flatMap((entry) => entry.split(",")).map((entry) => entry.trim()).filter(Boolean);
-      headers.set(key, [...new Set(extensions)].join(","));
-    } else {
-      headers.set(key, value);
-    }
-  }
+  const headers = mergeRequestHeaders(initHeaders ?? requestHeaders, Object.entries(options2.headers));
   const token = options2.token ?? await options2.tokenProvider?.();
   if (token) {
     headers.set("Authorization", `Bearer ${token}`);
   }
   return headers;
 }
-function buildAuthenticatedFetch(options2) {
-  return async (input, init) => {
-    const isRequest = input instanceof Request;
-    const originalRequest = isRequest ? input : void 0;
-    const method = init?.method ?? originalRequest?.method ?? "GET";
-    const headers = await buildAuthHeaders(
-      options2,
-      init?.headers,
-      originalRequest?.headers
-    );
-    if (isRequest) {
-      const request = originalRequest;
-      const body = init?.body ?? (method.toUpperCase() === "GET" || method.toUpperCase() === "HEAD" ? void 0 : request.body ?? void 0);
-      const nextRequest = {
-        ...init,
-        method,
-        headers,
-        body
-      };
-      if (body !== void 0) {
-        nextRequest.duplex = "half";
-      }
-      return fetch(new Request(request, nextRequest));
-    }
-    return fetch(input, {
-      ...init,
-      method,
-      headers
-    });
-  };
-}
 function buildFetch(options2, endpoints) {
+  const fetcher = options2.fetchImpl ?? fetch;
   return async (input, init) => {
     const isRequest = input instanceof Request;
     const originalRequest = isRequest ? input : void 0;
@@ -52527,11 +52388,11 @@ function buildFetch(options2, endpoints) {
       if (body !== void 0) {
         nextRequest.duplex = "half";
       }
-      return fetch(
+      return fetcher(
         new Request(targetUrl, nextRequest)
       );
     }
-    return fetch(targetUrl, {
+    return fetcher(targetUrl, {
       ...init,
       method,
       headers
@@ -56634,6 +56495,14 @@ var RESPONSE_MODE_OPTIONS = [
 ];
 var SLASH_COMMANDS = [
   {
+    id: "session",
+    label: "/session",
+    description: "Retry guest authentication or explicitly replace a guest session.",
+    title: "Guest Session",
+    subtitle: "Use /session retry <source-key> or /session new <source-key>. New sessions lose access to previous conversations.",
+    options: []
+  },
+  {
     id: "clear",
     label: "/clear",
     description: "Clear terminal output and start a fresh chat context.",
@@ -56892,7 +56761,8 @@ function normalizeAgentRecord(key, value) {
     lastSeenAt: value.lastSeenAt,
     ...typeof value.lastLoadedAt === "string" && value.lastLoadedAt.trim() ? { lastLoadedAt: value.lastLoadedAt } : {},
     ...value.status === "available" || value.status === "unavailable" ? { status: value.status } : {},
-    ...typeof value.activeContextId === "string" && value.activeContextId.trim() ? { activeContextId: value.activeContextId } : {}
+    ...typeof value.activeContextId === "string" && value.activeContextId.trim() ? { activeContextId: value.activeContextId } : {},
+    ...typeof value.credentialScope === "string" ? { credentialScope: value.credentialScope } : {}
   };
 }
 function defaultSettings() {
@@ -58311,6 +58181,9 @@ async function fetchRegistryIdentitiesWithToken(source, accessToken, options2) {
 }
 async function discoverRegistrySource(source, fetchImpl, now, options2) {
   let accessToken;
+  if (options2 && normalizeSourceUrl(source.url) !== normalizeSourceUrl(getControlPlaneApiBaseUrl(options2.environmentId))) {
+    return registryUnavailableResult(source, now, "Account credentials are restricted to the selected control-plane registry.");
+  }
   try {
     accessToken = await options2?.controlPlaneAccessTokenProvider?.();
   } catch (error) {
@@ -59003,12 +58876,25 @@ var HelperCredentialStore = class {
   async deleteRefreshToken(environmentId) {
     await this.request({ action: "delete", environmentId });
   }
+  async getAnonymousSession(sessionKey) {
+    const response = await this.request({ action: "get-session", sessionKey });
+    return typeof response.session === "string" ? response.session : void 0;
+  }
+  async setAnonymousSession(sessionKey, session) {
+    await this.request({ action: "set-session", sessionKey, session });
+  }
   request(request) {
     const [executable, ...args] = this.command;
     return new Promise((resolve3, reject) => {
       const child = spawn3(executable, args, {
         stdio: ["pipe", "pipe", "pipe"]
       });
+      const timer = setTimeout(() => {
+        child.kill();
+        reject(new Error("Credential helper timed out."));
+      }, 1e4);
+      child.once("error", () => clearTimeout(timer));
+      child.once("close", () => clearTimeout(timer));
       if (!child.stdin || !child.stdout || !child.stderr) {
         reject(new Error("Credential helper did not expose standard streams."));
         return;
@@ -59044,6 +58930,14 @@ var HelperCredentialStore = class {
   }
 };
 var KeyringCredentialStore = class {
+  async getAnonymousSession(key) {
+    const { AsyncEntry } = await loadKeyring();
+    return await new AsyncEntry(SERVICE_NAME, key).getPassword() ?? void 0;
+  }
+  async setAnonymousSession(key, value) {
+    const { AsyncEntry } = await loadKeyring();
+    await new AsyncEntry(SERVICE_NAME, key).setPassword(value);
+  }
   async getRefreshToken(environmentId) {
     try {
       const { AsyncEntry } = await loadKeyring();
@@ -59299,6 +59193,320 @@ async function getStoredAccessToken(environmentId, options2 = {}) {
   return session.accessToken;
 }
 
+// src/lib/anonymousSession.ts
+var GUEST_HISTORY_WARNING = "A new guest session will not have access to the previous session's conversations.";
+var GuestSessionError = class extends Error {
+  constructor(reason) {
+    super(reason === "temporary" ? "Guest session temporarily unavailable. Retry later; your identity has not been replaced." : `Your guest session has ${reason === "expired" ? "expired" : "been rejected"}. Use /session new <source-key> (or --new-session with --url). ${GUEST_HISTORY_WARNING}`);
+    this.reason = reason;
+    this.name = "GuestSessionError";
+  }
+};
+function trustedUrl(value) {
+  const url = new URL(value);
+  if (url.username || url.password || url.search || url.hash || !["http:", "https:"].includes(url.protocol)) {
+    throw new Error("Credential scope requires an absolute HTTP(S) URL.");
+  }
+  return url;
+}
+function anonymousSessionKey(scope) {
+  if (!scope.environmentId || !scope.sourceId) throw new Error("Missing session scope.");
+  return "aion-chat:anonymous-session:v1:" + [
+    trustedUrl(scope.controlPlaneUrl).href.replace(/\/$/, ""),
+    scope.environmentId,
+    scope.sourceId,
+    trustedUrl(scope.destinationOrigin).origin
+  ].map(encodeURIComponent).join(":");
+}
+function parseSession(value) {
+  if (!value || typeof value !== "object") return void 0;
+  const data = value;
+  if (data.version !== 1 || typeof data.sessionId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(data.sessionId) || typeof data.token !== "string" || !data.token || /\s/.test(data.token) || data.token.length > 8192 || typeof data.expiresAt !== "string" || !data.expiresAt.endsWith("Z") || !Number.isFinite(Date.parse(data.expiresAt))) return void 0;
+  return data;
+}
+var AnonymousSession = class {
+  constructor(options2) {
+    this.options = options2;
+    this.key = anonymousSessionKey(options2);
+    this.now = options2.now ?? Date.now;
+    this.fetcher = options2.fetch ?? fetch;
+  }
+  key;
+  session;
+  restored;
+  pending;
+  writes = Promise.resolve();
+  lifetime = new AbortController();
+  failures = 0;
+  nextAttemptAt = 0;
+  retryAfterAt = 0;
+  rejected = false;
+  now;
+  fetcher;
+  get signal() {
+    return this.lifetime.signal;
+  }
+  get owner() {
+    return this.session?.sessionId;
+  }
+  async restore() {
+    const signal = this.signal;
+    this.restored ??= (async () => {
+      try {
+        const value = await this.options.store.getAnonymousSession(this.key);
+        signal.throwIfAborted();
+        this.session = value ? parseSession(JSON.parse(value)) : void 0;
+      } catch {
+      }
+    })();
+    await this.restored;
+    signal.throwIfAborted();
+  }
+  async token() {
+    const signal = this.signal;
+    await this.restore();
+    if (this.session && Date.parse(this.session.expiresAt) <= this.now()) {
+      throw new GuestSessionError("expired");
+    }
+    if (this.rejected) throw new GuestSessionError("rejected");
+    if (!this.session || Date.parse(this.session.expiresAt) - this.now() < 7 * 864e5) {
+      if (this.now() >= Math.max(this.nextAttemptAt, this.retryAfterAt)) {
+        if (!this.pending) {
+          const pending = this.exchange();
+          this.pending = pending;
+          void pending.finally(() => {
+            if (this.pending === pending) this.pending = void 0;
+          }).catch(() => void 0);
+        }
+        await this.pending;
+      }
+    }
+    signal.throwIfAborted();
+    if (!this.session) throw new GuestSessionError("temporary");
+    if (this.rejected) throw new GuestSessionError("rejected");
+    if (Date.parse(this.session.expiresAt) <= this.now()) throw new GuestSessionError("expired");
+    return this.session.token;
+  }
+  /** A receiver's 401 cannot cause transparent identity replacement. */
+  reject() {
+    this.rejected = true;
+  }
+  async retry() {
+    this.failures = 0;
+    this.nextAttemptAt = 0;
+    await this.token();
+  }
+  async startNew() {
+    await this.restore();
+    this.cancelPending();
+    this.session = void 0;
+    this.rejected = false;
+    this.failures = 0;
+    this.nextAttemptAt = 0;
+    await this.token();
+  }
+  dispose() {
+    this.lifetime.abort();
+  }
+  /** Cancel stale work without losing a bearer already held in memory. */
+  cancelPending() {
+    this.lifetime.abort();
+    this.lifetime = new AbortController();
+    this.pending = void 0;
+    this.restored = this.session ? Promise.resolve() : void 0;
+  }
+  async exchange() {
+    const signal = this.signal;
+    const previous = this.session;
+    const endpoint = trustedUrl(this.options.controlPlaneUrl);
+    endpoint.pathname = endpoint.pathname.replace(/\/$/, "") + "/auth/anonymous-sessions";
+    const timeout = new AbortController();
+    const timer = setTimeout(() => timeout.abort(), 1e4);
+    try {
+      const response = await this.fetcher(endpoint, {
+        method: "POST",
+        credentials: "omit",
+        redirect: "error",
+        headers: previous ? { Authorization: `Bearer ${previous.token}` } : {},
+        signal: AbortSignal.any([signal, timeout.signal])
+      });
+      signal.throwIfAborted();
+      if (response.status === 429) {
+        const value = response.headers.get("Retry-After") ?? "";
+        const deadline = /^\d+$/.test(value) ? this.now() + Number(value) * 1e3 : Date.parse(value);
+        this.retryAfterAt = Number.isFinite(deadline) ? Math.max(this.now(), deadline) : this.now() + 6e4;
+      }
+      if (!response.ok) {
+        await response.body?.cancel();
+        signal.throwIfAborted();
+        if (response.status === 401 && previous) this.rejected = true;
+        if (response.status >= 400 && response.status < 500 && response.status !== 429) {
+          this.nextAttemptAt = Infinity;
+        }
+        throw new GuestSessionError("temporary");
+      }
+      const data = await response.json();
+      signal.throwIfAborted();
+      const next = parseSession({ ...data, version: 1 });
+      if (!next || Date.parse(next.expiresAt) <= this.now() || previous && previous.sessionId !== next.sessionId) {
+        throw new GuestSessionError("temporary");
+      }
+      this.session = next;
+      this.failures = 0;
+      this.nextAttemptAt = 0;
+      this.retryAfterAt = 0;
+      this.writes = this.writes.then(async () => {
+        if (!signal.aborted) {
+          await this.options.store.setAnonymousSession(this.key, JSON.stringify(next));
+        }
+      }).catch(() => {
+      });
+      await this.writes;
+    } catch {
+      signal.throwIfAborted();
+      if (this.nextAttemptAt !== Infinity) {
+        this.nextAttemptAt = this.now() + ([1e3, 5e3, 3e4][this.failures] ?? 3e5);
+        this.failures = this.failures >= 3 ? 0 : this.failures + 1;
+      }
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+};
+
+// src/lib/sourceCredentials.ts
+var SourceCredentials = class {
+  constructor(options2) {
+    this.options = options2;
+    this.fetcher = options2.fetch ?? fetch;
+  }
+  guests = /* @__PURE__ */ new Map();
+  owners = /* @__PURE__ */ new Map();
+  lifetime = new AbortController();
+  fetcher;
+  get signal() {
+    return this.lifetime.signal;
+  }
+  isRegistry(source) {
+    return source.type === "registry" && normalizeSourceUrl(source.url) === normalizeSourceUrl(getControlPlaneApiBaseUrl(this.options.environmentId));
+  }
+  explicitHeaders(source) {
+    const headers = new Headers(isTransientAgentSource(source) ? this.options.cli.headers : {});
+    if (isTransientAgentSource(source) && this.options.cli.token) {
+      headers.set("Authorization", `Bearer ${this.options.cli.token}`);
+    }
+    return headers;
+  }
+  guest(source) {
+    if (source.type === "registry" || this.explicitHeaders(source).has("Authorization")) {
+      throw new Error("This source does not use a guest session.");
+    }
+    const key = `${source.sourceKey}:${trustedUrl(source.url).origin}`;
+    let guest = this.guests.get(key);
+    if (!guest) {
+      guest = new AnonymousSession({
+        controlPlaneUrl: getControlPlaneApiBaseUrl(this.options.environmentId),
+        environmentId: this.options.environmentId,
+        sourceId: source.sourceKey,
+        destinationOrigin: trustedUrl(source.url).origin,
+        store: this.options.store ?? defaultCredentialStore,
+        fetch: this.fetcher
+      });
+      this.guests.set(key, guest);
+    }
+    return guest;
+  }
+  /** Non-secret cache namespace, never used as an authorization assertion. */
+  owner(source) {
+    return this.owners.get(source.sourceKey);
+  }
+  async startNew(source) {
+    const guest = this.guest(source);
+    this.cancelPending();
+    await guest.startNew();
+  }
+  async retry(source) {
+    await this.guest(source).retry();
+  }
+  cancelSource(source) {
+    const key = `${source.sourceKey}:${trustedUrl(source.url).origin}`;
+    this.guests.get(key)?.cancelPending();
+  }
+  /** Pins credentials to configured origin and refuses redirects/card pivots. */
+  fetch(source, signal) {
+    const destination = trustedUrl(source.url).origin;
+    const epoch = this.signal;
+    return async (input, init) => {
+      const request = input instanceof Request ? input : void 0;
+      const url = new URL(request?.url ?? String(input));
+      if (url.origin !== destination || url.username || url.password) {
+        throw new Error("Untrusted credential destination.");
+      }
+      const signals = [epoch, signal, init?.signal, request?.signal].filter(
+        (value) => !!value
+      );
+      let lifetime = AbortSignal.any(signals);
+      lifetime.throwIfAborted();
+      const explicit = this.explicitHeaders(source);
+      const headers = mergeRequestHeaders(init?.headers ?? request?.headers, explicit);
+      let guest;
+      if (this.isRegistry(source)) {
+        const token = await this.options.accountToken();
+        lifetime.throwIfAborted();
+        if (!token) throw new Error("This registry requires an account. Run /login to sign in.");
+        headers.set("Authorization", `Bearer ${token}`);
+        let owner = token;
+        try {
+          const claims = JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString());
+          if (typeof claims.sub === "string") owner = `${claims.iss}:${claims.sub}`;
+        } catch {
+        }
+        this.owners.set(source.sourceKey, `account:${hashValue(owner)}`);
+      } else if (source.type === "registry") {
+        throw new Error("Account credentials are restricted to the selected control-plane registry.");
+      } else if (explicit.has("Authorization")) {
+        this.owners.set(source.sourceKey, `explicit:${hashValue(explicit.get("Authorization"))}`);
+      } else {
+        guest = this.guest(source);
+        lifetime = AbortSignal.any([lifetime, guest.signal]);
+        const token = await guest.token();
+        lifetime.throwIfAborted();
+        headers.set("Authorization", `Bearer ${token}`);
+        this.owners.set(source.sourceKey, `guest:${guest.owner}`);
+      }
+      lifetime.throwIfAborted();
+      const response = await this.fetcher(input, {
+        ...init,
+        headers,
+        credentials: "omit",
+        redirect: "error",
+        signal: lifetime
+      });
+      lifetime.throwIfAborted();
+      if (response.status === 401) {
+        await response.body?.cancel();
+        lifetime.throwIfAborted();
+        if (guest) {
+          guest.reject();
+          await guest.token();
+        }
+        throw new Error("Authentication failed. Run /login to sign in again or check the explicit source credentials.");
+      }
+      return response;
+    };
+  }
+  /** Login/source switches retire outstanding requests, not stored guests. */
+  cancelPending() {
+    this.lifetime.abort();
+    this.lifetime = new AbortController();
+    for (const guest of this.guests.values()) guest.cancelPending();
+  }
+  dispose() {
+    this.lifetime.abort();
+    for (const guest of this.guests.values()) guest.dispose();
+  }
+};
+
 // src/app.tsx
 var import_jsx_runtime11 = __toESM(require_jsx_runtime(), 1);
 var NO_AGENT_MESSAGE_NOTICE = "Task completed with no agent message.";
@@ -59383,9 +59591,6 @@ function summarizeProtocolEventForLog(event) {
     parts: event.artifact?.parts.map(summarizePartForLog) ?? []
   };
 }
-function isAionControlPlaneRegistryAgent(agent, environmentId) {
-  return agent.source.type === "registry" && normalizeSourceUrl(agent.source.url) === normalizeSourceUrl(getControlPlaneApiBaseUrl(environmentId));
-}
 function summarizeAgentForLog2(agent) {
   if (!agent) {
     return void 0;
@@ -59432,6 +59637,9 @@ function shouldReplaceCurrentStreamSection(event, kind) {
 }
 function parseExactSlashCommand(value) {
   const [command, environmentId, extra] = value.trim().split(/\s+/);
+  if (command === "/session" && (environmentId === "new" || environmentId === "retry")) {
+    return { kind: "session", action: environmentId, sourceKey: extra };
+  }
   if (command === "/login" && !environmentId) {
     return { kind: "login" };
   }
@@ -59490,6 +59698,7 @@ function ChatApp({ options: options2 }) {
   const connectedAgentKeyRef = (0, import_react37.useRef)(void 0);
   const currentThreadScopeRef = (0, import_react37.useRef)("");
   const welcomeLifetimeRef = (0, import_react37.useRef)(new AbortController());
+  const foregroundLifetimeRef = (0, import_react37.useRef)(new AbortController());
   const setCurrentContextId = (value) => {
     contextIdRef.current = value;
     contextScopeRef.current = `${selectedEnvironment}:${selectedAgentKey ?? ""}`;
@@ -59520,6 +59729,14 @@ function ChatApp({ options: options2 }) {
     activeEnvironmentSettings.responseMode
   );
   const [reconnectNonce, setReconnectNonce] = (0, import_react37.useState)(0);
+  const credentials = (0, import_react37.useMemo)(() => new SourceCredentials({
+    environmentId: selectedEnvironment,
+    cli: options2,
+    accountToken: () => getStoredAccessToken(selectedEnvironment)
+  }), [selectedEnvironment, options2.token, options2.headers]);
+  (0, import_react37.useEffect)(() => () => credentials.dispose(), [credentials]);
+  const credentialScopeRef = (0, import_react37.useRef)(void 0);
+  const connectionSignalRef = (0, import_react37.useRef)(void 0);
   currentThreadScopeRef.current = `${selectedEnvironment}:${selectedAgentKey ?? ""}`;
   const shownMessageKeysRef = (0, import_react37.useRef)(/* @__PURE__ */ new Set());
   const streamedTaskIdsRef = (0, import_react37.useRef)(/* @__PURE__ */ new Set());
@@ -59603,6 +59820,7 @@ function ChatApp({ options: options2 }) {
     }
     return () => {
       welcomeLifetimeRef.current.abort();
+      foregroundLifetimeRef.current.abort();
       chatSessionLogger.info("chat.session.ended", {
         mode: "interactive",
         environmentId: environmentAtStart
@@ -59650,6 +59868,8 @@ function ChatApp({ options: options2 }) {
     appendSystem(`Response mode: ${getResponseModeLabel(mode)}`);
   };
   const clearTranscript = () => {
+    foregroundLifetimeRef.current.abort();
+    foregroundLifetimeRef.current = new AbortController();
     setEntries([]);
     setTranscriptGeneration((current) => current + 1);
     shownMessageKeysRef.current.clear();
@@ -59776,10 +59996,6 @@ function ChatApp({ options: options2 }) {
         agentEndpointUrl
       );
       const explicitSourceKey = agentEndpointUrl ? createExplicitAgentSource(agentEndpointUrl).sourceKey : void 0;
-      const explicitSourceFetch = buildAuthenticatedFetch({
-        headers: options2.headers,
-        token: options2.token
-      });
       chatSessionLogger.debug("agent.discovery.refresh.started", {
         environmentId: selectedEnvironment,
         sourceCount: runtimeSources.length,
@@ -59793,8 +60009,8 @@ function ChatApp({ options: options2 }) {
           controlPlaneAccessTokenProvider: (request) => getStoredAccessToken(selectedEnvironment, {
             forceRefresh: request?.forceRefresh
           }),
-          graphQLFetchImpl: fetch,
-          sourceFetchImpl: (source) => source.sourceKey === explicitSourceKey ? explicitSourceFetch : fetch,
+          graphQLFetchImpl: credentials.fetch(createDefaultRegistryAgentSource(selectedEnvironment)),
+          sourceFetchImpl: (source) => credentials.fetch(source),
           logger: chatSessionLogger
         }
       );
@@ -59804,7 +60020,7 @@ function ChatApp({ options: options2 }) {
         agentCount: discovery.agents.length,
         errorCount: discovery.errors.length
       });
-      if (isClosed()) {
+      if (isClosed() || credentials.signal.aborted) {
         return void 0;
       }
       const nextSources = Object.fromEntries(
@@ -59829,7 +60045,7 @@ function ChatApp({ options: options2 }) {
       });
       if (announceExplicitSourceErrors) {
         for (const error of discovery.errors) {
-          const shouldNotify = error.source.type === "registry" || !error.source.isDefault;
+          const shouldNotify = error.source.type === "registry" || !error.source.isDefault || /guest session/i.test(error.error ?? "");
           if (shouldNotify && error.error) {
             appendNotification(
               `${error.source.description}: ${error.error}`
@@ -59896,6 +60112,7 @@ ${message}` : `Agent source discovery failed: ${message}`
     };
   }, [
     agentEndpointUrl,
+    credentials,
     controlPlaneApiBaseUrl,
     options2.agentId,
     options2.headers,
@@ -59905,6 +60122,11 @@ ${message}` : `Agent source discovery failed: ${message}`
   ]);
   (0, import_react37.useEffect)(() => {
     let closed = false;
+    const connectionLifetime = new AbortController();
+    connectionSignalRef.current = connectionLifetime.signal;
+    setWorkingStartedAt(void 0);
+    setStreamLabel("Idle");
+    finalizeOpenStreamEntries();
     let closePush;
     const handlePushEvent = (event) => {
       if (event.kind === "validation") {
@@ -59943,27 +60165,27 @@ ${JSON.stringify(
         }
         setClientState(void 0);
         connectedAgentKeyRef.current = void 0;
-        const scope = `${selectedEnvironment}:${selectedAgent.agentKey}`;
-        setCurrentContextId(
-          contextScopeRef.current === scope && contextIdRef.current ? contextIdRef.current : activeEnvironmentSettings.agents[selectedAgent.agentKey]?.activeContextId
-        );
         setTaskId(void 0);
-        const useCliEndpointAuth = isTransientAgentSource(selectedAgent.source);
-        const useAionRegistryAuth = isAionControlPlaneRegistryAgent(
-          selectedAgent,
-          selectedEnvironment
-        );
         const connected = await connectClient({
           ...options2,
-          headers: useCliEndpointAuth ? options2.headers : {},
-          token: useCliEndpointAuth ? options2.token : void 0,
-          tokenProvider: useAionRegistryAuth ? () => getStoredAccessToken(selectedEnvironment) : void 0,
+          headers: {},
+          token: void 0,
+          fetchImpl: credentials.fetch(selectedAgent.source, connectionLifetime.signal),
           url: selectedAgent.connectionUrl,
           agentId: selectedAgent.connectionAgentId
         });
         if (closed) {
           return;
         }
+        const owner = credentials.owner(selectedAgent.source);
+        const scope = `${selectedEnvironment}:${selectedAgent.agentKey}`;
+        const stored = activeEnvironmentSettings.agents[selectedAgent.agentKey];
+        const sameOwner = !!owner && owner === credentialScopeRef.current && contextScopeRef.current === scope;
+        if (!sameOwner) clearTranscript();
+        setCurrentContextId(
+          sameOwner && contextScopeRef.current === scope && contextIdRef.current ? contextIdRef.current : owner && stored?.credentialScope === owner ? stored.activeContextId : void 0
+        );
+        credentialScopeRef.current = owner;
         setClientState(connected);
         connectedAgentKeyRef.current = selectedAgent.agentKey;
         const connectionNoticeKey = `${selectedAgent.agentKey}:${connected.agentCard.name}:${connected.endpoints.rpcUrl}`;
@@ -59985,17 +60207,25 @@ ${JSON.stringify(
     void connect();
     return () => {
       closed = true;
+      connectionLifetime.abort();
+      if (selectedAgent) credentials.cancelSource(selectedAgent.source);
       if (closePush) {
         void closePush();
       }
     };
   }, [
-    agentEndpointUrl,
-    controlPlaneApiBaseUrl,
-    discoveredAgents.length,
-    options2,
+    credentials,
+    options2.pushNotifications,
+    options2.pushReceiver,
     reconnectNonce,
-    selectedAgent,
+    // Discovery refreshes replace records without changing the connection.
+    selectedAgent?.agentKey,
+    selectedAgent?.connectionUrl,
+    selectedAgent?.connectionAgentId,
+    selectedAgent?.source.sourceKey,
+    selectedAgent?.source.url,
+    selectedAgent?.source.type,
+    selectedAgent && isTransientAgentSource(selectedAgent.source),
     selectedEnvironment
   ]);
   const replaceLastResponseStreamSection = (message, fallbackTaskId) => {
@@ -60264,7 +60494,8 @@ ${JSON.stringify(
             lastSeenAt: currentAgent.lastSeenAt,
             lastLoadedAt: currentAgent.lastLoadedAt,
             status: currentAgent.status,
-            activeContextId: nextContextId
+            activeContextId: nextContextId,
+            credentialScope: credentialScopeRef.current
           }
         }
       });
@@ -60324,6 +60555,11 @@ ${JSON.stringify(
       void runLoginSlashCommand();
       return;
     }
+    if (command.id === "session") {
+      resetSlashSelection();
+      appendSystem("Use /session retry <source-key> or /session new <source-key>. " + GUEST_HISTORY_WARNING);
+      return;
+    }
     if (command.id === "exit") {
       exit();
       return;
@@ -60381,6 +60617,8 @@ ${postAuthUrl}`);
         }
       }
       appendSystem(`Logged in to Aion ${selectedEnvironment}.`);
+      credentials.cancelPending();
+      clearTranscript();
       chatSessionLogger.info("auth.login.completed", {
         environmentId: selectedEnvironment,
         postAuthPath
@@ -60419,7 +60657,7 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
       persistEnvironmentSettings(selectedEnvironment, {
         agents: {
           ...activeEnvironmentSettings.agents,
-          [key]: { ...existing, activeContextId: nextContextId }
+          [key]: { ...existing, activeContextId: nextContextId, credentialScope: credentialScopeRef.current }
         }
       });
     }
@@ -60459,7 +60697,6 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
         }
       });
     }
-    setReconnectNonce((current) => current + 1);
     const terminalClearRequested = requestTerminalClear({
       isTTY: stdout.isTTY,
       terminalType: process.env.TERM,
@@ -60508,6 +60745,23 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
       return false;
     }
     resetSlashSelection();
+    if (command.kind === "session") {
+      const source = command.sourceKey ? agentSources[command.sourceKey] : selectedAgent?.source;
+      if (!source) {
+        appendSystem("Choose a source with /session new <source-key> or /session retry <source-key>. Use /sources to list keys.");
+        return true;
+      }
+      if (command.action === "new") {
+        appendSystem(GUEST_HISTORY_WARNING);
+        setClientState(void 0);
+      }
+      void (command.action === "new" ? credentials.startNew(source) : credentials.retry(source)).then(() => {
+        if (!credentials.signal.aborted) setReconnectNonce((value) => value + 1);
+      }).catch((error) => {
+        if (!credentials.signal.aborted) appendSystem(error instanceof Error ? error.message : "Guest session unavailable.");
+      });
+      return true;
+    }
     if (command.kind === "login") {
       void runLoginSlashCommand();
       return true;
@@ -60563,7 +60817,13 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
       return;
     }
     replaceDraft("");
+    const requestSignal = AbortSignal.any([
+      credentials.signal,
+      connectionSignalRef.current ?? credentials.signal,
+      foregroundLifetimeRef.current.signal
+    ]);
     const parts = await buildMessageParts2(trimmed);
+    if (requestSignal.aborted) return;
     const attachedFiles = parts.filter((part) => part.content?.$case === "raw" || part.content?.$case === "url").map((part) => part.filename || "unnamed");
     const displayBody = attachedFiles.length > 0 ? `${trimmed}
 
@@ -60618,7 +60878,8 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
         let finalStatusUpdate;
         let reachedTerminal = false;
         let renderedAgentOutput = false;
-        for await (const streamResponse of clientState.client.sendMessageStream(params)) {
+        for await (const streamResponse of clientState.client.sendMessageStream(params, { signal: requestSignal })) {
+          if (requestSignal.aborted) return;
           const event = unwrapStreamResponse(streamResponse);
           if (!event) {
             continue;
@@ -60646,6 +60907,7 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
             renderedAgentOutput = handleArtifactUpdate(event, streamResponse) || renderedAgentOutput;
           }
         }
+        if (requestSignal.aborted) return;
         if (shouldShowNoAgentMessageNotice({
           responseMode,
           reachedTerminal,
@@ -60681,7 +60943,8 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
         setStreamLabel("Idle");
       } else {
         setStreamLabel("Waiting");
-        const response = await clientState.client.sendMessage(params);
+        const response = await clientState.client.sendMessage(params, { signal: requestSignal });
+        if (requestSignal.aborted) return;
         chatSessionLogger.debug("a2a.response.received", {
           durationMs: Date.now() - requestStartedAt,
           response: summarizeProtocolEventForLog(response)
@@ -60727,6 +60990,7 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
         setStreamLabel("Idle");
       }
     } catch (error) {
+      if (requestSignal.aborted) return;
       setStreamLabel("Error");
       chatSessionLogger.warn("a2a.request.failed", {
         durationMs: requestStartedAt ? Date.now() - requestStartedAt : void 0,
@@ -60735,10 +60999,10 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
       });
       appendStatus(`Request failed: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
-      if (useStreaming) {
+      if (useStreaming && !requestSignal.aborted) {
         finalizeOpenStreamEntries();
       }
-      setWorkingStartedAt(void 0);
+      if (!requestSignal.aborted) setWorkingStartedAt(void 0);
     }
   };
   use_input_default((input, key) => {
@@ -61457,26 +61721,6 @@ async function sendStreamingMessage({
 function canStream(agentCard) {
   return Boolean(agentCard.capabilities?.streaming);
 }
-function isAionControlPlaneRegistryAgent2(selectedAgent, environmentId) {
-  return selectedAgent.source.type === "registry" && normalizeSourceUrl(selectedAgent.source.url) === normalizeSourceUrl(getControlPlaneApiBaseUrl(environmentId));
-}
-function getConnectionOptions(options2, selectedAgent, environmentId, registryTokenProvider) {
-  const useCliEndpointAuth = isTransientAgentSource(selectedAgent.source);
-  const useAionRegistryAuth = isAionControlPlaneRegistryAgent2(
-    selectedAgent,
-    environmentId
-  );
-  return {
-    ...options2,
-    url: selectedAgent.connectionUrl,
-    agentId: selectedAgent.connectionAgentId,
-    token: useCliEndpointAuth ? options2.token : void 0,
-    tokenProvider: useAionRegistryAuth ? registryTokenProvider : void 0,
-    headers: useCliEndpointAuth ? options2.headers : {},
-    pushNotifications: options2.pushNotifications,
-    pushReceiver: options2.pushReceiver
-  };
-}
 async function runHeadless(options2, dependencies = {}) {
   const stdout = dependencies.stdout ?? process.stdout;
   const stderr = dependencies.stderr ?? process.stderr;
@@ -61504,9 +61748,12 @@ async function runHeadless(options2, dependencies = {}) {
     selectedEnvironment,
     options2.url
   );
-  const explicitSourceFetch = buildAuthenticatedFetch({
-    token: options2.token,
-    headers: options2.headers
+  const credentials = new SourceCredentials({
+    environmentId: selectedEnvironment,
+    cli: options2,
+    accountToken: () => getStoredAccessTokenImpl(selectedEnvironment),
+    store: dependencies.sessionStore,
+    fetch: fetchImpl
   });
   logger.info("headless.run.started", {
     environmentId: selectedEnvironment,
@@ -61519,11 +61766,17 @@ async function runHeadless(options2, dependencies = {}) {
     usesPersistedContext: false
   });
   try {
+    if (options2.newSession) {
+      const source = runtimeSources.find((item) => item.sourceKey === explicitSourceKey);
+      if (!source) throw new Error("--new-session requires --url to choose the guest source.");
+      writeLine(stderr, GUEST_HISTORY_WARNING);
+      await credentials.startNew(source);
+    }
     const discovery = await discoverAgentSourcesImpl(runtimeSources, fetchImpl, {
       environmentId: selectedEnvironment,
       controlPlaneAccessTokenProvider: () => getStoredAccessTokenImpl(selectedEnvironment),
-      graphQLFetchImpl: fetchImpl,
-      sourceFetchImpl: (source) => source.sourceKey === explicitSourceKey ? explicitSourceFetch : fetchImpl,
+      graphQLFetchImpl: credentials.fetch(createDefaultRegistryAgentSource(selectedEnvironment)),
+      sourceFetchImpl: (source) => credentials.fetch(source),
       logger
     });
     writeDiscoveryErrors(discovery, stderr);
@@ -61540,14 +61793,14 @@ async function runHeadless(options2, dependencies = {}) {
       explicitSourceKey,
       selectedEnvironment
     );
-    const clientState = await connectClientImpl(
-      getConnectionOptions(
-        options2,
-        selectedAgent,
-        selectedEnvironment,
-        () => getStoredAccessTokenImpl(selectedEnvironment)
-      )
-    );
+    const clientState = await connectClientImpl({
+      ...options2,
+      headers: {},
+      token: void 0,
+      url: selectedAgent.connectionUrl,
+      agentId: selectedAgent.connectionAgentId,
+      fetchImpl: credentials.fetch(selectedAgent.source)
+    });
     const parts = await buildMessagePartsImpl(options2.message ?? "");
     const pushConfig = options2.pushNotifications ? createPushNotificationConfig(options2.pushReceiver) : void 0;
     const params = buildMessageParams(
@@ -61600,6 +61853,7 @@ async function runHeadless(options2, dependencies = {}) {
     logger.error("headless.run.failed", { error });
     throw error;
   } finally {
+    credentials.dispose();
     logger.flush();
   }
 }

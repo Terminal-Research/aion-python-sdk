@@ -191,7 +191,8 @@ function normalizeAgentRecord(
 			: {}),
 		...(typeof value.activeContextId === "string" && value.activeContextId.trim()
 			? { activeContextId: value.activeContextId }
-			: {})
+			: {}),
+		...(typeof value.credentialScope === "string" ? { credentialScope: value.credentialScope } : {})
 	};
 }
 

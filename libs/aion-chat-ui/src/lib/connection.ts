@@ -22,6 +22,7 @@ import {
 
 import type { ChatCliOptions } from "../args.js";
 import { generateTaskMetadata } from "./a2aMetadata.js";
+import { mergeRequestHeaders } from "./requestHeaders.js";
 
 export interface EndpointConfig {
 	baseUrl: string;
@@ -48,6 +49,7 @@ export interface AuthenticatedFetchOptions {
 export interface ChatConnectionOptions extends ChatCliOptions {
 	url: string;
 	tokenProvider?: TokenProvider;
+	fetchImpl?: typeof fetch;
 }
 
 const AGENT_CARD_PATH = "/.well-known/agent-card.json";
@@ -104,17 +106,7 @@ async function buildAuthHeaders(
 	initHeaders: HeadersInit | undefined,
 	requestHeaders: HeadersInit | undefined
 ): Promise<Headers> {
-	const headers = new Headers(initHeaders ?? requestHeaders);
-	for (const [key, value] of Object.entries(options.headers)) {
-		if (key.toLowerCase() === "a2a-extensions") {
-			const extensions = [headers.get(key) ?? "", value]
-				.flatMap((entry) => entry.split(",")).map((entry) => entry.trim())
-				.filter(Boolean);
-			headers.set(key, [...new Set(extensions)].join(","));
-		} else {
-			headers.set(key, value);
-		}
-	}
+	const headers = mergeRequestHeaders(initHeaders ?? requestHeaders, Object.entries(options.headers));
 	const token = options.token ?? (await options.tokenProvider?.());
 	if (token) {
 		headers.set("Authorization", `Bearer ${token}`);
@@ -164,6 +156,7 @@ export function buildAuthenticatedFetch(
 }
 
 function buildFetch(options: ChatConnectionOptions, endpoints: EndpointConfig): typeof fetch {
+	const fetcher = options.fetchImpl ?? fetch;
 	return async (input, init) => {
 		const isRequest = input instanceof Request;
 		const originalRequest = isRequest ? input : undefined;
@@ -199,12 +192,12 @@ function buildFetch(options: ChatConnectionOptions, endpoints: EndpointConfig): 
 				nextRequest.duplex = "half";
 			}
 
-			return fetch(
+			return fetcher(
 				new Request(targetUrl, nextRequest)
 			);
 		}
 
-		return fetch(targetUrl, {
+		return fetcher(targetUrl, {
 			...init,
 			method,
 			headers

@@ -2,12 +2,14 @@ import type { AgentCard } from "@a2a-js/sdk";
 
 import {
 	type AionEnvironmentId,
+	getControlPlaneApiBaseUrl,
 	getGraphQLHttpUrlForBaseUrl
 } from "../environment.js";
 import { fetchRegistryAgentIdentities } from "../graphql/registry.js";
 import type { ChatSessionLogger } from "../sessionLogger.js";
 import {
 	createAgentKey,
+	normalizeSourceUrl,
 	slugKey,
 	type AgentRecord,
 	type AgentSourceRecord,
@@ -422,6 +424,10 @@ async function discoverRegistrySource(
 	options: AgentDiscoveryOptions | undefined
 ): Promise<SourceDiscoveryResult> {
 	let accessToken: string | undefined;
+	if (options && normalizeSourceUrl(source.url) !==
+		normalizeSourceUrl(getControlPlaneApiBaseUrl(options.environmentId))) {
+		return registryUnavailableResult(source, now, "Account credentials are restricted to the selected control-plane registry.");
+	}
 	try {
 		accessToken = await options?.controlPlaneAccessTokenProvider?.();
 	} catch (error) {
