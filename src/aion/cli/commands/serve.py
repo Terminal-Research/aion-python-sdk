@@ -11,12 +11,6 @@ from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
-LOCAL_MODE_WARNING = (
-    "Authentication is disabled: AION_CLIENT_ID and AION_CLIENT_SECRET are not set, "
-    "so the agents run in local mode and accept every request without a token. "
-    "Do not expose this server beyond your machine."
-)
-
 
 @dataclass
 class PortAllocationStrategy:
@@ -114,7 +108,6 @@ async def serve(
     # install - it is where the hint below gets read.
     try:
         from aion.core.logging import set_process_role
-        from aion.server.auth import authentication_required
         from aion.server.logging import setup_root_logger
 
         from aion.cli.handlers.serve import ServeHandler
@@ -137,9 +130,6 @@ async def serve(
 
     set_process_role("CLI")
     setup_root_logger()
-
-    if not authentication_required():
-        logger.warning(LOCAL_MODE_WARNING)
 
     try:
         # Load configuration
