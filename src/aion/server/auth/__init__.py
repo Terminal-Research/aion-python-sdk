@@ -24,7 +24,14 @@ from .caller import (
 from .jwks import JwksKeySource
 from .mode import AuthConfigurationError, build_token_verifier, deployment_id, is_hosted
 from .principal import InvalidPrincipalError, Principal
-from .verifier import InvalidTokenError, KeysUnavailableError, TokenClaim, TokenVerifier, claimed_kind
+from .verifier import (
+    MAX_TOKEN_BYTES,
+    InvalidTokenError,
+    KeysUnavailableError,
+    TokenClaim,
+    TokenVerifier,
+    claimed_kind,
+)
 
 __all__ = [
     "Assurance",
@@ -37,6 +44,7 @@ __all__ = [
     "InvalidTokenError",
     "JwksKeySource",
     "KeysUnavailableError",
+    "MAX_TOKEN_BYTES",
     "Principal",
     "TokenClaim",
     "TokenVerifier",

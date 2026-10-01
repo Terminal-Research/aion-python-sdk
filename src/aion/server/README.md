@@ -76,10 +76,18 @@ when the mode allows it and that user `is_authenticated` with a non-empty
 `display_name`. The name becomes the owner of the request's tasks and state as
 it is: keeping it unique, and apart from Aion's `aion:v1:` subjects and the
 `aion.gateway:` keys of shared conversation state, is the application's
-contract - the SDK adds no prefix, and two equal names are one owner. Such a user is a private caller with no gateway rights.
-A token stripped of both its `typ` and its `token_use` cannot be told from an
-application's credential; whatever the application's authentication makes of
-it, it carries no Aion rights.
+contract - the SDK adds no prefix, and two equal names are one owner. The
+name has to be stable from request to request and non-empty; it need not be a
+UUID or have the shape of an Aion principal. Such a user is a private caller
+with no gateway rights. A token stripped of both its `typ` and its
+`token_use` cannot be told from an application's credential; whatever the
+application's authentication makes of it, it carries no Aion rights.
+
+Any bearer token longer than 8 KiB (8192 bytes of UTF-8) is answered `401`
+before anything reads or routes it - an application's own credential too, and
+its user is not served instead. An application whose credentials can be
+longer has to keep them out of the `Authorization: Bearer` header of requests
+to the agent's server.
 
 `AppFactory` builds a `TokenVerifier` (`aion.server.auth.build_token_verifier`)
 and hands it to `AionAuthMiddleware`, which it installs outside the server's
@@ -117,8 +125,7 @@ Both also need `iss` = `AION_API_CLIENT_AUTH_ISSUER` (default `aion.io`),
 with an ID of at most 1024 bytes; `session` assurance belongs to an
 `AnonymousSession` principal and no other. The header carries `alg`, `typ`
 and `kid` and nothing else - `jku`, `x5u`, `jwk`, `crit` and `zip` are refused
-- and no member appears twice in the header or the claims. A token over 8 KiB
-is refused unread. Times are checked with 30 seconds of tolerance; nothing
+- and no member appears twice in the header or the claims. Times are checked with 30 seconds of tolerance; nothing
 else is. A kind a server does not accept is refused before any key is looked
 up, and the reason in the `401` never quotes the token.
 

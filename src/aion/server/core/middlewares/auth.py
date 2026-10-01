@@ -6,6 +6,7 @@ from aion.server.auth import (
     CallerCredentials,
     InvalidTokenError,
     KeysUnavailableError,
+    MAX_TOKEN_BYTES,
     TokenClaim,
     TokenVerifier,
     claimed_kind,
@@ -39,6 +40,10 @@ class AionAuthMiddleware(BaseHTTPMiddleware):
     - which a client or a probe reads before it has one. Everything else is
     closed by default: the JSON-RPC endpoint, the OpenAPI schema, and any route
     an application adds through ``AppRegistry``.
+
+    A bearer token longer than ``MAX_TOKEN_BYTES`` (8 KiB, in UTF-8) is
+    refused before anything reads it, whoever issued it: an application's own
+    credential too, and its user is not served instead.
 
     The bearer token decides the path, by what it claims to be
     (``aion.server.auth.claimed_kind``), never by whether a check failed:
@@ -77,6 +82,10 @@ class AionAuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         token = _bearer_token(request.headers.get("authorization"))
+        if token is not None and len(token.encode("utf-8")) > MAX_TOKEN_BYTES:
+            return _unauthorized(
+                f"the bearer token is longer than {MAX_TOKEN_BYTES} bytes", error_code="invalid_token"
+            )
         claim = claimed_kind(token) if token is not None else TokenClaim.FOREIGN
         if claim is TokenClaim.DAMAGED_AION:
             return _unauthorized("the bearer token is a damaged Aion token", error_code="invalid_token")

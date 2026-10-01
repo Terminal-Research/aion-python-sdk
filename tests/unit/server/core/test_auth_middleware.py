@@ -297,6 +297,36 @@ async def test_a_damaged_aion_token_is_refused_even_with_an_application_user(tok
     assert probe.calls == 0
 
 
+@pytest.mark.parametrize(
+    "token",
+    [
+        lambda: jwt.encode({"sub": "alice", "padding": "x" * 8192}, "an-application-secret-long-enough-for-hs256",
+                           algorithm="HS256"),
+        lambda: "k" * 8193,
+        lambda: AION_KEY.invocation_token(USER_ID, headers={"typ": None}, padding="x" * 8192),
+        lambda: platform_token(padding="x" * 8192),
+    ],
+    ids=["application-jwt", "opaque-application-key", "aion-token-use-without-typ", "aion-token"],
+)
+async def test_a_bearer_over_8_kib_is_refused_even_with_an_application_user(token) -> None:
+    """The limit holds for every bearer token, the application's own included, and is checked before routing."""
+    probe = Probe()
+    async with probe.client(*_remote()) as client:
+        response = await send_message(client, headers=_bearer(token()))
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "the bearer token is longer than 8192 bytes"
+    assert probe.calls == 0
+
+
+async def test_a_bearer_of_exactly_8_kib_is_not_refused_for_its_length() -> None:
+    probe = Probe()
+    async with probe.client(*_remote()) as client:
+        answer = (await send_message(client, headers=_bearer("k" * 8192))).json()
+
+    assert answer["owner"] == "alice"
+
+
 async def test_an_outage_never_falls_back_to_the_applications_user() -> None:
     control_plane = ControlPlane()
     control_plane.failing = True
