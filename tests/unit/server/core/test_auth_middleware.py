@@ -220,6 +220,58 @@ async def test_nothing_else_is_public(path) -> None:
     assert response.status_code == 401
 
 
+def _who(request) -> PlainTextResponse:
+    """The caller this middleware installed, if any."""
+    user = request.scope.get("user")
+    return PlainTextResponse(type(user).__name__ if user is not None else "nobody")
+
+
+async def _get(app: Starlette, path: str, **kwargs) -> httpx.Response:
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        return await client.request(kwargs.pop("method", "GET"), path, **kwargs)
+
+
+def _with_application_routes(sdk: list[Route], application: list[Route]) -> Starlette:
+    """The server's own routes first, then the application's, which the middleware leaves to the application."""
+    return Starlette(
+        routes=[*sdk, *application],
+        middleware=[Middleware(AionAuthMiddleware, verifier=hosted_verifier(), application_routes=application)],
+    )
+
+
+@pytest.mark.parametrize(
+    "headers", [None, _bearer("not-a-token"), _bearer("x" * 9000)], ids=["no-token", "foreign", "oversized"]
+)
+async def test_the_applications_routes_are_left_to_the_application(headers) -> None:
+    """No token is asked for, read or refused there, and no caller is installed: who may call them is the app's."""
+    app = _with_application_routes(
+        sdk=[Route("/", lambda request: PlainTextResponse("agent"), methods=["POST"])],
+        application=[Route("/api/items/{item_id}", _who, methods=["GET"])],
+    )
+
+    response = await _get(app, "/api/items/42", headers=headers)
+
+    assert (response.status_code, response.text) == (200, "nobody")
+    assert (await _get(app, "/", method="POST", headers=headers)).status_code == 401
+
+
+async def test_an_application_route_answering_another_method_is_still_the_applications() -> None:
+    app = _with_application_routes(sdk=[], application=[Route("/api/items", _who, methods=["GET"])])
+
+    assert (await _get(app, "/api/items", method="POST")).status_code == 405
+
+
+async def test_an_application_route_never_opens_a_path_the_server_answers_itself() -> None:
+    """Starlette dispatches to the first match, so the server's route shadows an application route on its path."""
+    app = _with_application_routes(
+        sdk=[Route("/shared", lambda request: PlainTextResponse("server"), methods=["GET"])],
+        application=[Route("/shared", _who, methods=["GET"]), Route("/{anything:path}", _who, methods=["GET"])],
+    )
+
+    assert (await _get(app, "/shared")).status_code == 401
+    assert (await _get(app, "/elsewhere")).text == "nobody"
+
+
 class _Anonymous(AuthenticationBackend):
     """An application's authentication that installs a user without vouching for it."""
 

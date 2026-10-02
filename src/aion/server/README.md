@@ -18,8 +18,12 @@ Configuration Guide](https://docs.aion.to/sdk/python/configuration/aion-yaml).
 
 Custom HTTP endpoints are added through `AppRegistry`: the agent module
 registers its own FastAPI routers before the server starts, and the factory
-mounts them on the application it builds. Those routes need a verified
-caller like every other route of the server (see below).
+mounts them on the application it builds. Those routes are the application's:
+the server's authentication leaves them alone - it neither asks for a token
+there nor installs a caller - so an application that needs to know who calls
+them authenticates the request itself. A router with a path the server
+already serves is not mounted, and a request on a path the server routes to
+its own endpoint stays protected.
 `aion.yaml` declares agents and the
 MCP proxy, and rejects any other key - see the [AppRegistry
 guide](https://docs.aion.to/sdk/python/extensibility/app-registry).
@@ -49,10 +53,11 @@ A custom resolver is passed to the agent:
 ### Where the user comes from
 
 Every request to an agent's server needs a verified caller - the JSON-RPC
-endpoint, the OpenAPI schema and any route an application adds through
-`AppRegistry` alike. Only the public paths are open without one: the agent
-card, health and the configuration schema, which a client or a probe reads
-before it has a caller. The agent card declares the bearer scheme in its
+endpoint, the OpenAPI schema and any route the SDK or a plugin adds alike.
+Only the public paths are open without one: the agent card, health and the
+configuration schema, which a client or a probe reads before it has a caller.
+Routes an application adds through `AppRegistry` follow the application's own
+policy (see above). The agent card declares the bearer scheme in its
 `securitySchemes`; Aion's tokens are issued by the Aion control plane. A
 request without a verified caller is answered `401` before its body is read,
 and the agent never runs.

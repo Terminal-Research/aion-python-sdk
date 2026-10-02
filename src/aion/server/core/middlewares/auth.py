@@ -1,6 +1,9 @@
 """Middleware that names every request's caller, and refuses one it cannot name."""
 
 import logging
+from collections.abc import Sequence
+from typing import Any, Optional
+
 from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH
 from aion.server.auth import (
     CallerCredentials,
@@ -15,7 +18,8 @@ from aion.server.constants import CONFIGURATION_FILE_URL, HEALTH_CHECK_URL
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
-from starlette.types import ASGIApp
+from starlette.routing import BaseRoute, Match
+from starlette.types import ASGIApp, Scope
 
 logger = logging.getLogger(__name__)
 
@@ -37,9 +41,18 @@ class AionAuthMiddleware(BaseHTTPMiddleware):
 
     Every request to the agent's server needs a verified caller, except the
     few ``PUBLIC_PATHS`` - the agent card, health and the configuration schema
-    - which a client or a probe reads before it has one. Everything else is
-    closed by default: the JSON-RPC endpoint, the OpenAPI schema, and any route
-    an application adds through ``AppRegistry``.
+    - which a client or a probe reads before it has one, and the routes the
+    application owns. Everything else is closed by default: the JSON-RPC
+    endpoint, the OpenAPI schema, and any route the SDK or a plugin adds.
+
+    The application's routes are those ``AppFactory`` mounts from
+    ``AppRegistry`` (``application_routes``). Who may call them is the
+    application's to decide: this middleware passes their requests on
+    untouched, without reading their token or installing a caller. A request
+    is the application's when the route the server would dispatch it to is
+    one of them - the same choice Starlette's router makes, first full match,
+    else first partial one - so a route of the application never opens a
+    path the server answers with one of its own.
 
     A bearer token longer than ``MAX_TOKEN_BYTES`` (8 KiB, in UTF-8) is
     refused before anything reads it, whoever issued it: an application's own
@@ -73,12 +86,24 @@ class AionAuthMiddleware(BaseHTTPMiddleware):
     through unchecked.
     """
 
-    def __init__(self, app: ASGIApp, verifier: TokenVerifier) -> None:
+    def __init__(
+        self, app: ASGIApp, verifier: TokenVerifier, application_routes: Sequence[BaseRoute] = ()
+    ) -> None:
+        """
+        Args:
+            app: The application this middleware wraps.
+            verifier: Verifies Aion's tokens in the server's mode.
+            application_routes: The routes the application owns, open to its
+                own policy. Read on every request: ``AppFactory`` adds to it
+                when it mounts the ``AppRegistry`` routers, after the
+                middleware is installed.
+        """
         super().__init__(app)
         self._verifier = verifier
+        self._application_routes = application_routes
 
     async def dispatch(self, request: Request, call_next) -> Response:
-        if request.url.path.rstrip("/") in PUBLIC_PATHS:
+        if request.url.path.rstrip("/") in PUBLIC_PATHS or self._is_application_route(request.scope):
             return await call_next(request)
 
         token = _bearer_token(request.headers.get("authorization"))
@@ -107,6 +132,17 @@ class AionAuthMiddleware(BaseHTTPMiddleware):
         request.scope["user"] = caller
         return await call_next(request)
 
+    def _is_application_route(self, scope: Scope) -> bool:
+        """Whether the server would hand the request to a route the application owns."""
+        if not self._application_routes:
+            return False
+        app: Any = scope.get("app")
+        router = getattr(app, "router", None)
+        if router is None:
+            return False
+        route = _dispatched_route(router.routes, scope)
+        return route is not None and any(route is owned for owned in self._application_routes)
+
 
 def _is_application_user(user: object) -> bool:
     """Whether the application's authentication installed a user to serve the request as."""
@@ -114,6 +150,18 @@ def _is_application_user(user: object) -> bool:
         return False
     name = getattr(user, "display_name", None)
     return isinstance(name, str) and bool(name.strip())
+
+
+def _dispatched_route(routes: Sequence[BaseRoute], scope: Scope) -> Optional[BaseRoute]:
+    """The route Starlette's router hands the request to: the first full match, else the first partial one."""
+    partial = None
+    for route in routes:
+        match, _ = route.matches(scope)
+        if match is Match.FULL:
+            return route
+        if match is Match.PARTIAL and partial is None:
+            partial = route
+    return partial
 
 
 def _bearer_token(header: str | None) -> str | None:

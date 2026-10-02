@@ -33,7 +33,7 @@ This command reads your `aion.yaml` configuration and launches all configured AI
 - Proxy server is started automatically
 
 **Authorization:**
-Every request to an agent needs a verified caller, usually `Authorization: Bearer <token>`; without one the answer is `401`. Only the agent card, health and configuration endpoints (and the proxy's manifest and health) are open without a token. A server deployed by the Aion platform (`DEPLOYMENT_ID` set), or one with `AION_REQUIRE_INVOCATION_AUTH=true`, accepts only the invocation tokens Aion issues for its `AION_CLIENT_ID`. Anywhere else it accepts anonymous session tokens, invocation tokens when `AION_CLIENT_ID` is set, and the user the application's own authentication middleware installed. Both are verified with the key Aion publishes at `AION_API_HOST`; until it loads, requests are answered `503`. There is no `/docs` or `/redoc`.
+Every request to an agent needs a verified caller, usually `Authorization: Bearer <token>`; without one the answer is `401`. Only the agent card, health and configuration endpoints (and the proxy's manifest and health) are open without a token; routes an application registers through `AppRegistry` follow its own policy. A server deployed by the Aion platform (`DEPLOYMENT_ID` set), or one with `AION_REQUIRE_INVOCATION_AUTH=true`, accepts only the invocation tokens Aion issues for its `AION_CLIENT_ID`. Anywhere else it accepts anonymous session tokens, invocation tokens when `AION_CLIENT_ID` is set, and the user the application's own authentication middleware installed. Both are verified with the key Aion publishes at `AION_API_HOST`; until it loads, requests are answered `503`. There is no `/docs` or `/redoc`.
 
 **Examples:**
 

@@ -13,7 +13,7 @@ from aion.server.auth import AuthConfigurationError, TokenVerifier, build_token_
 from aion.server.files.a2a import A2AFileTransformer
 from aion.server.files.storage.manager import FileUploadManager
 from fastapi import FastAPI
-from starlette.routing import Route
+from starlette.routing import BaseRoute, Route
 from typing import Optional
 
 from aion.server.agent.execution import AionAgentRequestExecutor, AionRequestContextBuilder
@@ -83,6 +83,9 @@ class AppFactory:
         self._executor: Optional[AionAgentRequestExecutor] = None
         self._request_handler: Optional[AionRequestHandler] = None
         self._push_sender = None
+        # The AppRegistry routes, filled once they are mounted; the
+        # authentication middleware leaves them to the application.
+        self._application_routes: list[BaseRoute] = []
 
     async def initialize(self):
         """Initialize the application factory.
@@ -130,7 +133,7 @@ class AppFactory:
         await self.plugin_factory.configure_app(self.fastapi_app, self.aion_agent)
 
         # 6. Apply custom app extensions from AppRegistry
-        app_registry.apply_to_app(self.fastapi_app)
+        self._application_routes.extend(app_registry.apply_to_app(self.fastapi_app))
 
         logger.info("Agent '%s' initialized at http://%s:%s",
                     self.aion_agent.id, self.aion_agent.host, self.aion_agent.port)
@@ -223,7 +226,9 @@ class AppFactory:
         # the execution scope is populated before the span reads it.
         self.fastapi_app.add_middleware(TracingMiddleware)
         self.fastapi_app.add_middleware(AionContextMiddleware)
-        self.fastapi_app.add_middleware(AionAuthMiddleware, verifier=self.token_verifier)
+        self.fastapi_app.add_middleware(
+            AionAuthMiddleware, verifier=self.token_verifier, application_routes=self._application_routes
+        )
 
     async def shutdown(self) -> None:
         """Shutdown the application and cleanup resources."""
