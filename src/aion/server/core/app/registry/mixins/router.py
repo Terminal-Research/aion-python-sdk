@@ -12,6 +12,7 @@ from typing import List, Set, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from fastapi import APIRouter, FastAPI
+    from starlette.routing import BaseRoute
     from threading import Lock
 
 logger = logging.getLogger(__name__)
@@ -113,7 +114,7 @@ class RouterRegistryMixin:
                     return True
         return False
 
-    def _apply_routers(self, app: FastAPI) -> None:
+    def _apply_routers(self, app: FastAPI) -> List[BaseRoute]:
         """Apply all registered routers to the FastAPI application.
 
         This internal method is called by the main apply_to_app() method to
@@ -126,9 +127,13 @@ class RouterRegistryMixin:
 
         Args:
             app: FastAPI application instance to add routers to
+
+        Returns:
+            The routes the applied routers added to ``app``.
         """
         # Detect reserved paths from the application
         reserved_paths = self._detect_reserved_paths(app)
+        mounted_before = len(app.router.routes)
 
         applied_count = 0
         for router in self._routers:
@@ -145,6 +150,7 @@ class RouterRegistryMixin:
 
         if applied_count:
             logger.info(f"Applied {applied_count} router(s) to FastAPI app")
+        return list(app.router.routes[mounted_before:])
 
     def _clear_routers(self) -> None:
         """Clear all registered routers.

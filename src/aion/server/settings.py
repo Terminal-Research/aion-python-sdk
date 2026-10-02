@@ -61,6 +61,18 @@ class AppSettings(BaseEnvSettings):
         )
     )
 
+    require_invocation_auth: bool = Field(
+        default=False,
+        alias="AION_REQUIRE_INVOCATION_AUTH",
+        description=(
+            "Whether a server outside the Aion platform serves only requests "
+            "carrying a verified Aion invocation token, refusing anonymous "
+            "session tokens and the application's own authentication. Needs "
+            "AION_CLIENT_ID. A server the platform hosts (DEPLOYMENT_ID set) "
+            "always does, whatever this says."
+        ),
+    )
+
     task_ownership_reaper: bool = Field(
         default=True,
         alias="TASK_OWNERSHIP_REAPER",

@@ -4,8 +4,9 @@ A real JSON-RPC request path, end to end: a2a-sdk's
 ``DefaultServerCallContextBuilder`` takes the user from the trusted
 ``request.scope["user"]``, and ``AionJsonRpcDispatcher`` hands the
 ``ServerCallContext`` to ``AionRequestHandler``, whose store filters by its
-``owner_resolver`` (a2a-sdk's ``resolve_user_scope``, the user name). Two
-users share one ``contextId`` throughout.
+``owner_resolver`` (a2a-sdk's ``resolve_user_scope``, the user name). A
+context is private to the user who started it: another user who presents its
+``contextId`` is refused like a foreign task.
 
 The identity is this test's own: it installs Starlette's
 ``AuthenticationMiddleware`` with a backend that takes an authenticated user
@@ -20,7 +21,7 @@ the task did not exist - ``TaskNotFound`` (-32001) or an empty listing -
 and changes nothing: send (continuing a foreign ``taskId``, or a foreign
 interrupted task found through the ``contextId``), get, list, cancel and
 subscribe, on live and finished tasks, and Aion's ``GetContexts`` and
-``GetContext``. The owner's own calls work as before, including the errors
+``GetContext`` - and sending into another user's context. The owner's own calls work as before, including the errors
 that reveal a task exists (not cancelable, terminal).
 
 The in-memory run and the PostgreSQL run are the same test; the lease owner
@@ -116,22 +117,26 @@ async def _get(server: JsonRpcServer, user: Optional[str], task_id: str) -> dict
     return await _call(server, user, "GetTask", {"id": task_id})
 
 
-async def test_send_get_and_list_on_one_context_keep_each_users_tasks_apart(server) -> None:
-    context_id = str(uuid.uuid4())
-    alices = task_of(await _send(server, "alice", "done", context_id))
-    mallorys = task_of(await _send(server, "mallory", "done", context_id))
-    assert alices["id"] != mallorys["id"]
-    assert alices["contextId"] == mallorys["contextId"] == context_id
+async def test_send_get_and_list_keep_each_users_tasks_apart(server) -> None:
+    alices_context, mallorys_context = str(uuid.uuid4()), str(uuid.uuid4())
+    alices = task_of(await _send(server, "alice", "done", alices_context))
+    runs = len(server.agent.runs)
+    assert error_of(await _send(server, "mallory", "done", alices_context)) == TASK_NOT_FOUND
+    assert len(server.agent.runs) == runs
+    mallorys = task_of(await _send(server, "mallory", "done", mallorys_context))
+    assert (alices["contextId"], mallorys["contextId"]) == (alices_context, mallorys_context)
 
     assert (await _get(server, "alice", alices["id"]))["result"]["id"] == alices["id"]
     assert error_of(await _get(server, "mallory", alices["id"])) == TASK_NOT_FOUND
     assert error_of(await _get(server, None, alices["id"])) == TASK_NOT_FOUND
 
     for user, own in (("alice", alices), ("mallory", mallorys)):
-        for params in ({}, {"contextId": context_id}):
+        for params in ({}, {"contextId": own["contextId"]}):
             listing = (await _call(server, user, "ListTasks", params))["result"]
             assert [task["id"] for task in listing["tasks"]] == [own["id"]], (user, params)
             assert listing["totalSize"] == 1
+    foreign = (await _call(server, "mallory", "ListTasks", {"contextId": alices_context}))["result"]
+    assert foreign.get("tasks", []) == []
     assert (await _call(server, None, "ListTasks", {}))["result"].get("tasks", []) == []
 
 
@@ -142,13 +147,9 @@ async def test_send_cannot_continue_another_users_task(server) -> None:
     runs = len(server.agent.runs)
 
     assert error_of(await _send(server, "mallory", "done", context_id, task_id=asked["id"])) == TASK_NOT_FOUND
+    # The context alone does not let them in either.
+    assert error_of(await _send(server, "mallory", "done", context_id)) == TASK_NOT_FOUND
     assert len(server.agent.runs) == runs
-
-    # The context alone must not find it either: the interrupted task the
-    # context builder discovers is the caller's, and mallory has none.
-    theirs = task_of(await _send(server, "mallory", "done", context_id))
-    assert theirs["id"] != asked["id"]
-    assert server.agent.runs[-1][0] == theirs["id"]
 
     still = (await _get(server, "alice", asked["id"]))["result"]
     assert state_of(still) == "TASK_STATE_INPUT_REQUIRED"
@@ -209,16 +210,16 @@ async def test_the_owners_subscription_follows_the_live_task_to_its_end(server) 
 
 async def test_aions_context_methods_hold_only_the_callers_contexts(server) -> None:
     """``GetContexts`` and ``GetContext``, Aion's method extensions, read through the same store."""
-    alices_only, shared = str(uuid.uuid4()), str(uuid.uuid4())
+    alices_only, alices_other, mallorys = str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4())
     await _send(server, "alice", "done", alices_only)
-    await _send(server, "alice", "done", shared)
-    await _send(server, "mallory", "done", shared)
+    await _send(server, "alice", "done", alices_other)
+    await _send(server, "mallory", "done", mallorys)
 
     contexts = {
         user: (await _call(server, user, "GetContexts", {}))["result"] for user in ("alice", "mallory")
     }
-    assert set(contexts["alice"]) == {alices_only, shared}
-    assert contexts["mallory"] == [shared]
+    assert set(contexts["alice"]) == {alices_only, alices_other}
+    assert contexts["mallory"] == [mallorys]
 
     owners = (await _call(server, "alice", "GetContext", {"context_id": alices_only}))["result"]
     theirs = (await _call(server, "mallory", "GetContext", {"context_id": alices_only}))["result"]

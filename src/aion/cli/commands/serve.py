@@ -11,12 +11,6 @@ from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
-LOCAL_MODE_WARNING = (
-    "Authentication is disabled: AION_CLIENT_ID and AION_CLIENT_SECRET are not set, "
-    "so the agents run in local mode and accept every request without a token. "
-    "Do not expose this server beyond your machine."
-)
-
 
 @dataclass
 class PortAllocationStrategy:
@@ -114,7 +108,6 @@ async def serve(
     # install - it is where the hint below gets read.
     try:
         from aion.core.logging import set_process_role
-        from aion.server.auth import authentication_required
         from aion.server.logging import setup_root_logger
 
         from aion.cli.handlers.serve import ServeHandler
@@ -138,9 +131,6 @@ async def serve(
     set_process_role("CLI")
     setup_root_logger()
 
-    if not authentication_required():
-        logger.warning(LOCAL_MODE_WARNING)
-
     try:
         # Load configuration
         reader = AionConfigReader()
@@ -160,7 +150,7 @@ async def serve(
 
         # Run complete lifecycle through handler
         handler = ServeHandler()
-        await handler.run(
+        started = await handler.run(
             config=config,
             proxy_port=strategy.proxy_port,
             port_range_start=strategy.port_range_start,
@@ -173,3 +163,9 @@ async def serve(
     except Exception as ex:
         logger.exception(f"Failed to start server: {str(ex)}")
         raise click.ClickException(f"Unable to start AION system: {str(ex)}")
+
+    # A deployment none of whose agents started has failed, whatever stopped
+    # them - a wrong DEPLOYMENT_ID among other settings - and a supervisor has
+    # to see that in the exit status, not a clean exit.
+    if not started:
+        raise click.ClickException("No agent started; the errors above say why")

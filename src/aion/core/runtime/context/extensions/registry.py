@@ -249,14 +249,14 @@ aion_a2a_extension_registry = AionA2AExtensionRegistry()
 aion_a2a_extension_registry.register(
     ExtensionDescriptor(
         uri=GET_CONTEXT_EXTENSION_URI_V1,
-        description="Read one conversation context with its message history.",
+        description="Read the caller's own tasks in one conversation context, with their message history.",
         advertised=False,
     )
 )
 aion_a2a_extension_registry.register(
     ExtensionDescriptor(
         uri=GET_CONTEXTS_LIST_EXTENSION_URI_V1,
-        description="List the conversation context identifiers visible to the caller.",
+        description="List the conversation contexts in which the caller has tasks.",
         advertised=False,
     )
 )

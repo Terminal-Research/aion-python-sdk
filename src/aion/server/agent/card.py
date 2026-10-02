@@ -12,7 +12,6 @@ from a2a.types import (
 
 from aion.core.config import AgentConfig
 from aion.core.runtime import aion_a2a_extension_registry
-from aion.server.auth import authentication_required
 
 BEARER_SECURITY_SCHEME = "bearer"
 """The name the card gives the bearer token every request to the agent carries."""
@@ -67,18 +66,15 @@ class AionAgentCard:
             capabilities=capabilities,
             skills=skills,
         )
-        if authentication_required():
-            cls._require_bearer_token(card)
+        cls._require_bearer_token(card)
         return card
 
     @staticmethod
     def _require_bearer_token(card: AgentCard) -> None:
-        """Say on the card that every call needs the platform's bearer token.
+        """Say on the card that every call needs a bearer token.
 
-        With credentials the server refuses a call without one
-        (``AionAuthMiddleware``); the card is where a client learns that before
-        its first call is refused. In local mode nothing is asked for, and the
-        card says nothing.
+        The server refuses a call without one (``AionAuthMiddleware``); the
+        card is where a client learns that before its first call is refused.
 
         Only the scheme is published, not ``security_requirements``. A bearer
         token has no scopes, so the requirement's scope list is empty, and
@@ -91,7 +87,7 @@ class AionAgentCard:
                 http_auth_security_scheme=HTTPAuthSecurityScheme(
                     scheme="Bearer",
                     bearer_format="JWT",
-                    description="A token the Aion platform signs for this deployment.",
+                    description="An Aion invocation or anonymous session token, issued by the Aion control plane.",
                 )
             )
         )

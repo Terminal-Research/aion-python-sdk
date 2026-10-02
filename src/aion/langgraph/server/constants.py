@@ -1,3 +1,5 @@
 """Internal constants for aion.langgraph.server."""
 
-AION_LANGGRAPH_SCHEMA = "aion_langgraph"
+from aion.db.postgres.constants import LANGGRAPH_SCHEMA as AION_LANGGRAPH_SCHEMA
+
+__all__ = ["AION_LANGGRAPH_SCHEMA"]

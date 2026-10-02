@@ -14,6 +14,7 @@ from .mixins import RouterRegistryMixin
 
 if TYPE_CHECKING:
     from fastapi import APIRouter, FastAPI
+    from starlette.routing import BaseRoute
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +34,7 @@ class AppRegistry(RouterRegistryMixin, metaclass=Singleton):
         self._lock = threading.Lock()
         self._routers: List["APIRouter"] = []
 
-    def apply_to_app(self, app: "FastAPI") -> None:
+    def apply_to_app(self, app: "FastAPI") -> List["BaseRoute"]:
         """Apply all registered extensions to the FastAPI application.
 
         This method integrates all registered routers and other extensions
@@ -43,9 +44,13 @@ class AppRegistry(RouterRegistryMixin, metaclass=Singleton):
 
         Args:
             app: FastAPI application instance to integrate extensions into
+
+        Returns:
+            The routes mounted on ``app``. They are the application's own: the
+            server's authentication leaves who may call them to the application.
         """
         with self._lock:
-            self._apply_routers(app)
+            return self._apply_routers(app)
 
     def clear(self) -> None:
         """Clear all registered extensions.

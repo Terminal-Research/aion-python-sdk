@@ -1,7 +1,8 @@
-"""Request tokens as the platform signs them, and a key source that holds a fixed key.
+"""A stand-in for Aion's key endpoint, and verifiers built against it.
 
-The claims are the ones the platform's example token carries. ``None`` for a
-claim in ``platform_token`` leaves it out.
+Tokens are signed by ``tests.support.aion_tokens``; this module serves the key
+they verify with through an ``httpx.MockTransport``, whose document and
+availability a test changes.
 """
 
 from __future__ import annotations
@@ -9,57 +10,76 @@ from __future__ import annotations
 import time
 from typing import Any, Optional
 
-import jwt
-from cryptography.hazmat.primitives.asymmetric import ec
+import httpx
 
-from aion.server.auth import TokenVerifier
+from aion.server.auth import JwksKeySource, TokenVerifier
+from tests.support.aion_tokens import CLIENT_ID, ISSUER, SigningKey
 
-PLATFORM_KEY = ec.generate_private_key(ec.SECP256R1())
-"""The key the stand-in platform signs with."""
+AION_KEY = SigningKey()
+"""The key the stand-in Aion signs every token with."""
 
-PLATFORM_SUBJECT = "aion:user:user-456"
-
-
-class StaticKeySource:
-    """A key source that always has this key, or none."""
-
-    def __init__(self, key: Optional[ec.EllipticCurvePublicKey]) -> None:
-        self.key = key
-        self.loads = 0
-
-    async def load(self) -> None:
-        self.loads += 1
-
-    def current_key(self) -> Optional[ec.EllipticCurvePublicKey]:
-        return self.key
+JWKS_URL = "https://api.aion.example/runtime/a2a/verification-keys"
 
 
-def platform_token(
-        subject: Optional[str] = PLATFORM_SUBJECT,
+class ControlPlane:
+    """A stand-in key endpoint serving a JWKS, whose document and availability a test changes."""
+
+    def __init__(self, document: Optional[dict[str, Any]] = None) -> None:
+        self.document = document if document is not None else AION_KEY.jwks()
+        self.failing = False
+        self.requests = 0
+
+    def handle(self, request: httpx.Request) -> httpx.Response:
+        self.requests += 1
+        assert str(request.url) == JWKS_URL
+        if self.failing:
+            return httpx.Response(503)
+        return httpx.Response(200, json=self.document)
+
+    def key_source(self, clock=time.monotonic) -> JwksKeySource:
+        client = httpx.AsyncClient(transport=httpx.MockTransport(self.handle))
+        return JwksKeySource(JWKS_URL, client=client, clock=clock)
+
+
+class Clock:
+    """A clock a test moves by hand."""
+
+    def __init__(self) -> None:
+        self.now = 1000.0
+
+    def __call__(self) -> float:
+        return self.now
+
+    def advance(self, seconds: float) -> None:
+        self.now += seconds
+
+
+def verifier(
+        control_plane: Optional[ControlPlane] = None,
         *,
-        key: Any = PLATFORM_KEY,
-        algorithm: str = "ES256",
-        lifetime: int = 300,
-        **claims: Any,
-) -> str:
-    """A token as the platform signs it, valid for ``lifetime`` seconds from now."""
-    now = int(time.time())
-    payload: dict[str, Any] = {
-        "iss": "https://aion.example",
-        "aud": "aion:runtime:version-123:agent:gemma",
-        "sub": subject,
-        "caller_kind": "authenticated",
-        "agent_environment_id": "environment-789",
-        "distribution_id": "distribution-321",
-        "iat": now,
-        "nbf": now,
-        "exp": now + lifetime,
-        "version": 1,
-    }
-    payload.update(claims)
-    return jwt.encode({name: value for name, value in payload.items() if value is not None}, key, algorithm=algorithm)
+        invocations: bool = True,
+        sessions: bool = True,
+) -> TokenVerifier:
+    """A verifier over the stand-in endpoint.
+
+    By default it accepts both kinds and the application's users, as a server
+    outside the platform with ``AION_CLIENT_ID`` does. One without sessions
+    takes invocation tokens only, as a hosted or strict server does.
+    """
+    return TokenVerifier(
+        (control_plane or ControlPlane()).key_source(),
+        issuer=ISSUER,
+        invocation_audience=CLIENT_ID if invocations else None,
+        accept_sessions=sessions,
+        trust_application_users=sessions,
+    )
 
 
-def platform_verifier() -> TokenVerifier:
-    """A verifier that trusts the stand-in platform's key and nothing else."""
-    return TokenVerifier(StaticKeySource(PLATFORM_KEY.public_key()))
+def hosted_verifier(control_plane: Optional[ControlPlane] = None) -> TokenVerifier:
+    """A verifier that accepts invocation tokens only, as a hosted or strict server does."""
+    return verifier(control_plane, sessions=False)
+
+
+def session_verifier(control_plane: Optional[ControlPlane] = None) -> TokenVerifier:
+    """A verifier that accepts anonymous session tokens only, as a server without ``AION_CLIENT_ID`` does."""
+    return verifier(control_plane, invocations=False)

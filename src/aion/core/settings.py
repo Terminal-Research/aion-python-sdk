@@ -87,6 +87,12 @@ class ApiSettings(BaseEnvSettings):
         description="API host URL"
     )
 
+    client_auth_issuer: str = Field(
+        default="aion.io",
+        alias="AION_API_CLIENT_AUTH_ISSUER",
+        description="The issuer Aion signs request tokens as; a token naming another is refused"
+    )
+
     api_keep_alive: int = Field(
         default=60,
         alias="AION_API_KEEP_ALIVE",
@@ -162,6 +168,11 @@ class ApiSettings(BaseEnvSettings):
 
         self._http_url = url
         return self._http_url
+
+    @property
+    def verification_keys_url(self) -> str:
+        """URL of Aion's public JWKS, which request tokens are verified with."""
+        return f"{self.http_url}/runtime/a2a/verification-keys"
 
     @property
     def gql_url(self) -> str:

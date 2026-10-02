@@ -305,6 +305,7 @@ markers = [
     "files: scenario suite - inline file parts: stored, rejected, or passed through",
     "extensions: scenario suite - extension activation and payload delivery",
     "daemon: scenario suite - daemon extension identity and environment",
+    "authentication: scenario suite - bearer tokens: required, verified, and naming the caller",
     "config: scenario suite - aion.yaml configuration and deployment variants",
     "lifecycle: scenario suite - cancel, concurrency, push notifications, startup",
     "persistence: scenario suite - needs POSTGRES_TEST_URL; survives a server restart",

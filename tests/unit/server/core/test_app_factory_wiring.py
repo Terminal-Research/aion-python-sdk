@@ -10,6 +10,7 @@ import pytest
 from fastapi import FastAPI
 
 import aion.server.core.app.factory as factory_module
+from aion.server.auth import AuthConfigurationError
 from aion.server.core.app.factory import AppFactory
 from aion.server.core.middlewares import (
     AionAuthMiddleware,
@@ -119,4 +120,66 @@ def test_the_caller_is_named_before_anything_reads_the_request(create_push, veri
         AionContextMiddleware,
         TracingMiddleware,
     ]
-    assert factory.fastapi_app.user_middleware[0].kwargs == {"verifier": verifier}
+    assert factory.fastapi_app.user_middleware[0].kwargs == {
+        "verifier": verifier,
+        "application_routes": factory._application_routes,
+    }
+
+
+async def test_wrong_authentication_settings_stop_startup_before_anything_else(monkeypatch) -> None:
+    """Raised, not turned into a quiet ``None``: a server must not start unprotected."""
+    factory, _, _ = _factory()
+    monkeypatch.setattr(
+        factory_module, "build_token_verifier", Mock(side_effect=AuthConfigurationError("DEPLOYMENT_ID"))
+    )
+
+    with pytest.raises(AuthConfigurationError):
+        await factory.initialize()
+
+    factory.db_factory.initialize.assert_not_called()
+
+
+@pytest.fixture
+def registry():
+    """The process-wide ``app_registry``, empty before and after the test."""
+    from aion.server import app_registry
+
+    app_registry.clear()
+    yield app_registry
+    app_registry.clear()
+
+
+async def test_the_registered_routes_are_the_applications_and_the_rest_stays_closed(
+    monkeypatch, registry
+) -> None:
+    """Built in ``_initialize``'s order: the server's routes and middlewares, then the ``AppRegistry`` routers."""
+    import httpx
+    from fastapi import APIRouter
+
+    factory, _, _ = _factory()
+    factory.token_verifier = Mock(load=AsyncMock(), trust_application_users=False)
+    for step in (factory.db_factory, factory.agent_factory, factory.plugin_factory):
+        step.initialize = AsyncMock()
+    factory.agent_factory.build = AsyncMock()
+    factory.plugin_factory.configure_app = AsyncMock()
+
+    async def build_app() -> None:
+        factory.fastapi_app = FastAPI()
+        factory.fastapi_app.add_api_route("/", lambda: "agent", methods=["POST"])
+        factory._add_extra_middlewares()
+
+    monkeypatch.setattr(factory, "_build_app", build_app)
+    custom = APIRouter(prefix="/api/custom")
+    custom.add_api_route("/health", lambda: "custom", methods=["GET"])
+    clashing = APIRouter()
+    clashing.add_api_route("/", lambda: "taken", methods=["POST"])
+    registry.add_router(custom)
+    registry.add_router(clashing)
+
+    await factory._initialize()
+
+    transport = httpx.ASGITransport(app=factory.fastapi_app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        assert (await client.get("/api/custom/health")).status_code == 200
+        assert (await client.post("/")).status_code == 401
+        assert (await client.get("/openapi.json")).status_code == 401

@@ -6,7 +6,7 @@ import httpx
 import pytest
 
 from tests.scenarios.commands import help_text
-from tests.scenarios.harness import ScenarioClient, ServeProcess
+from tests.scenarios.harness import ScenarioClient, ServeProcess, control_plane
 
 pytestmark = pytest.mark.smoke
 
@@ -37,17 +37,17 @@ def test_agent_card_is_served_through_the_proxy(server: ServeProcess) -> None:
     assert payload["supportedInterfaces"], "a card with no interface cannot be connected to"
 
 
-def test_in_local_mode_the_card_asks_for_no_token(server: ServeProcess) -> None:
-    """Without credentials nothing checks a token, and the card does not ask for one."""
+def test_the_card_asks_for_a_bearer_token(server: ServeProcess) -> None:
+    """Every call needs a token, and the card says so before the first one is refused."""
     payload = httpx.get(f"{server.agent_url()}/.well-known/agent-card.json", timeout=10.0).json()
 
-    assert "securitySchemes" not in payload
-    assert "securityRequirements" not in payload
+    assert payload["securitySchemes"]["bearer"]["httpAuthSecurityScheme"]["scheme"] == "Bearer"
 
 
 @pytest.mark.parametrize("path", ["/docs", "/redoc"])
 def test_there_is_no_api_browser(server: ServeProcess, path: str) -> None:
-    response = httpx.get(f"{server.agent_url()}{path}", timeout=10.0)
+    headers = {"Authorization": f"Bearer {control_plane().token()}"}
+    response = httpx.get(f"{server.agent_url()}{path}", headers=headers, timeout=10.0)
 
     assert response.status_code == 404
 

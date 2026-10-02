@@ -18,6 +18,8 @@ from urllib.parse import quote
 from a2a.types import TaskArtifactUpdateEvent, TaskStatusUpdateEvent
 from a2a.utils.errors import UnsupportedOperationError
 
+from aion.server.auth import CredentialKind, verified_caller
+
 from .state import ExecutionSnapshot
 
 if TYPE_CHECKING:
@@ -40,6 +42,10 @@ class LegacyStateError(Exception):
     """
 
 
+GATEWAY_STATE_OWNER_PREFIX = "aion.gateway"
+"""Marks the state owner of a gateway conversation, as ``StateScope.state_owner`` spells it."""
+
+
 @dataclass(frozen=True)
 class StateScope:
     """Whose framework state one execution reads and writes.
@@ -47,20 +53,34 @@ class StateScope:
     ``context_id`` names a conversation only as the client sees it: clients
     choose it, so two users - or two agents on one database - can present the
     same one. The state a framework keeps for the conversation - a LangGraph
-    checkpoint, an ADK session - is therefore keyed by the agent and the user
-    as well, the way the tasks table keys its rows.
+    checkpoint, an ADK session - is therefore keyed by the agent and the
+    conversation's state owner as well, the way the tasks table keys its rows.
+
+    The state owner is not always the task's owner. A private conversation -
+    an anonymous session, the application's own user - is its caller's alone,
+    and its state owner is that caller's ``owner_scope``. A conversation Aion
+    routes through its gateway is shared by every participant of one receiving
+    agent identity at one edge environment: its state is keyed by those
+    (``gateway``), whoever started the turn, while each task still belongs to
+    the participant who started it. Context admission keeps a context one kind
+    or the other, so the two kinds never meet in one key.
 
     Built per call from the request, never kept on a shared executor.
 
     Attributes:
         agent_id: The Aion agent id, the ``agent_id`` of the tasks table.
         owner_scope: The owner of the request's ``ServerCallContext``,
-            resolved by the same resolver as the agent's task store. Not a lease owner: that
-            is a server process and has nothing to do with whose state this is.
+            resolved by the same resolver as the agent's task store; the state
+            owner of a private conversation. Not a lease owner: that is a
+            server process and has nothing to do with whose state this is.
+        gateway: For a verified Aion invocation, its receiving agent
+            identity and edge environment: the shared conversation's state
+            owner. ``None`` for a private conversation.
     """
 
     agent_id: str
     owner_scope: str
+    gateway: Optional[tuple[str, str]] = None
 
     @classmethod
     def for_call(
@@ -75,18 +95,31 @@ class StateScope:
         from ``AionAgent.owner_resolver`` - so a task and the framework state
         beside it resolve the same owner. It is required rather than
         defaulted: a default here is exactly how the two could drift apart.
+        Only a verified invocation token makes the scope shared - never
+        request metadata.
         """
         if call_context is None:
             raise ValueError("a state scope needs the caller's ServerCallContext")
-        return cls(agent_id=agent_id, owner_scope=owner_resolver(call_context))
+        caller = verified_caller(call_context)
+        gateway = None
+        if caller is not None and caller.credential is CredentialKind.INVOCATION:
+            gateway = (caller.gateway.owner_agent_identity_id, caller.gateway.edge_agent_environment_id)
+        return cls(agent_id=agent_id, owner_scope=owner_resolver(call_context), gateway=gateway)
+
+    @property
+    def state_owner(self) -> str:
+        """Whose the conversation's state is: the private owner, or the gateway conversation."""
+        if self.gateway is None:
+            return self.owner_scope
+        return ":".join([GATEWAY_STATE_OWNER_PREFIX, *(quote(part, safe="") for part in self.gateway)])
 
     def key_for(self, context_id: str) -> str:
-        """One string key for this agent, owner and context.
+        """One string key for this agent, state owner and context.
 
         Each part is percent-encoded, so no choice of agent id, user name or
         context id can make two different triples meet in one key.
         """
-        parts = (self.agent_id, self.owner_scope, context_id)
+        parts = (self.agent_id, self.state_owner, context_id)
         return ":".join([STATE_KEY_PREFIX, *(quote(part, safe="") for part in parts)])
 
 

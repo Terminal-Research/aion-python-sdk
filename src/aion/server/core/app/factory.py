@@ -9,11 +9,11 @@ from a2a.server.routes import add_a2a_routes_to_fastapi, create_agent_card_route
 from a2a.utils.constants import DEFAULT_RPC_URL
 from aion.db.postgres import DbFactory
 from aion.server.agent.aion_agent import AionAgent
-from aion.server.auth import TokenVerifier, build_token_verifier
+from aion.server.auth import AuthConfigurationError, TokenVerifier, build_token_verifier
 from aion.server.files.a2a import A2AFileTransformer
 from aion.server.files.storage.manager import FileUploadManager
 from fastapi import FastAPI
-from starlette.routing import Route
+from starlette.routing import BaseRoute, Route
 from typing import Optional
 
 from aion.server.agent.execution import AionAgentRequestExecutor, AionRequestContextBuilder
@@ -66,9 +66,8 @@ class AppFactory:
                 through unchanged.
             startup_callback: Optional callback to call after initialization
             token_verifier: Optional pre-built verifier for request tokens. If
-                None, ``aion.server.auth.build_token_verifier`` decides at
-                initialization: the platform's with AION_CLIENT_ID and
-                AION_CLIENT_SECRET, none - local mode - without them.
+                None, ``aion.server.auth.build_token_verifier`` builds the one
+                for the mode the server runs in at initialization.
         """
         self.aion_agent = aion_agent
         self.db_factory = db_factory
@@ -84,16 +83,26 @@ class AppFactory:
         self._executor: Optional[AionAgentRequestExecutor] = None
         self._request_handler: Optional[AionRequestHandler] = None
         self._push_sender = None
+        # The AppRegistry routes, filled once they are mounted; the
+        # authentication middleware leaves them to the application.
+        self._application_routes: list[BaseRoute] = []
 
     async def initialize(self):
         """Initialize the application factory.
 
         Returns:
             Self if initialization successful, None if initialization failed
+
+        Raises:
+            AuthConfigurationError: The authentication settings are wrong; the
+                server must not start, rather than start unprotected.
         """
         try:
             await self._initialize()
             return self
+        except AuthConfigurationError:
+            await self.shutdown()
+            raise
         except Exception as exc:
             logger.error("Failed to initialize application factory", exc_info=exc)
             await self.shutdown()
@@ -103,11 +112,10 @@ class AppFactory:
         """Initialize all application components in sequence."""
         logger.debug("Initializing application for agent '%s'", self.aion_agent.id)
 
-        # 0. Get the key request tokens are verified with ready - or none, in local mode
+        # 0. Get the keys request tokens are verified with ready
         if self.token_verifier is None:
             self.token_verifier = build_token_verifier()
-        if self.token_verifier is not None:
-            await self.token_verifier.load()
+        await self.token_verifier.load()
 
         # 1. Initialize database
         await self.db_factory.initialize()
@@ -125,7 +133,7 @@ class AppFactory:
         await self.plugin_factory.configure_app(self.fastapi_app, self.aion_agent)
 
         # 6. Apply custom app extensions from AppRegistry
-        app_registry.apply_to_app(self.fastapi_app)
+        self._application_routes.extend(app_registry.apply_to_app(self.fastapi_app))
 
         logger.info("Agent '%s' initialized at http://%s:%s",
                     self.aion_agent.id, self.aion_agent.host, self.aion_agent.port)
@@ -198,6 +206,7 @@ class AppFactory:
             agent_executor=self._executor,
             task_store=task_store,
             ownership_provider=self.store_manager.get_ownership_provider(),
+            admission=self.store_manager.get_admission(),
             event_listener=self.store_manager.get_event_listener(),
             push_config_store=push_config_store,
             push_sender=push_sender,
@@ -217,7 +226,9 @@ class AppFactory:
         # the execution scope is populated before the span reads it.
         self.fastapi_app.add_middleware(TracingMiddleware)
         self.fastapi_app.add_middleware(AionContextMiddleware)
-        self.fastapi_app.add_middleware(AionAuthMiddleware, verifier=self.token_verifier)
+        self.fastapi_app.add_middleware(
+            AionAuthMiddleware, verifier=self.token_verifier, application_routes=self._application_routes
+        )
 
     async def shutdown(self) -> None:
         """Shutdown the application and cleanup resources."""
@@ -241,6 +252,12 @@ class AppFactory:
                 logger.info("Push notification client closed")
             except Exception as exc:
                 logger.error("Error closing push notification client", exc_info=exc)
+
+        if self.token_verifier is not None:
+            try:
+                await self.token_verifier.aclose()
+            except Exception as exc:
+                logger.error("Error closing the token verifier", exc_info=exc)
 
         if self.plugin_factory.is_initialized():
             try:
