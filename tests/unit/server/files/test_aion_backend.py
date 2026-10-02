@@ -5,6 +5,8 @@ Every test speaks to a mocked transport - nothing here reaches the platform.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import httpx
 import pytest
 from aion.api import AionFileClient, PrincipalSelector
@@ -67,7 +69,7 @@ class TestRequestShape:
         outcome = await backend(handle).store(upload(), context=upload_context())
 
         assert outcome == UploadReceipt(
-            uri="https://files.aion.test/file-1",
+            uri="https://api.aion.test/files/file-1/versions/v-1/content",
             file_id="file-1",
             version_id="v-1",
             revision=1,
@@ -184,33 +186,25 @@ class TestRetry:
 
 
 class TestCredentials:
-    async def test_refused_credentials_are_reported_once(self, caplog):
-        """A broken secret fails every upload the same way; say it once."""
+    async def test_refused_credentials_name_themselves(self):
         async def handle(request: httpx.Request) -> httpx.Response:
             return httpx.Response(401)
 
-        b = backend(handle)
-        with caplog.at_level("DEBUG"):
-            first = await b.store(upload(), context=upload_context())
-            second = await b.store(upload(), context=upload_context())
+        outcome = await backend(handle).store(upload(), context=upload_context())
 
-        assert first.error_code is second.error_code is FileUploadErrorCode.STORAGE_UNAUTHORIZED
-        assert first.retryable is False and first.client_fault is False
-        errors = [r for r in caplog.records if r.levelname == "ERROR"]
-        assert len(errors) == 1
+        assert outcome.error_code is FileUploadErrorCode.STORAGE_UNAUTHORIZED
+        assert outcome.retryable is False and outcome.client_fault is False
+        assert "refuses the agent's credentials (HTTP 401)" in str(outcome.cause)
 
-    async def test_diagnostic_is_rearmed_by_a_success(self, caplog):
-        answers = iter([httpx.Response(403), accepted(), httpx.Response(403)])
-
+    async def test_the_backend_logs_nothing_itself(self, caplog):
+        """Whoever drops the file writes its one line; a second would repeat it."""
         async def handle(request: httpx.Request) -> httpx.Response:
-            return next(answers)
+            return httpx.Response(403)
 
-        b = backend(handle)
-        with caplog.at_level("ERROR"):
-            for _ in range(3):
-                await b.store(upload(), context=upload_context())
+        with caplog.at_level("INFO", logger="aion.server.files.storage.backends.aion"):
+            await backend(handle).store(upload(), context=upload_context())
 
-        assert len([r for r in caplog.records if r.levelname == "ERROR"]) == 2
+        assert not [r for r in caplog.records if r.name.endswith("backends.aion")]
 
     async def test_no_token_means_no_request(self):
         async def handle(request: httpx.Request) -> httpx.Response:
@@ -220,19 +214,72 @@ class TestCredentials:
         assert outcome.error_code is FileUploadErrorCode.STORAGE_UNAUTHORIZED
 
 
+class TestPermissions:
+    """A 403 is a principal the API will not let write here, not a bad secret."""
+
+    async def test_a_refused_principal_is_named_with_its_organization(self):
+        async def handle(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(403, text="Forbidden", headers={"x-request-id": "req-7"})
+
+        context = upload_context(principal_selector=PrincipalSelector.agent_identity("daemon-1"))
+        outcome = await backend(handle).store(upload(), context=context)
+
+        assert outcome.error_code is FileUploadErrorCode.STORAGE_FORBIDDEN
+        assert outcome.retryable is False and outcome.client_fault is False
+        reason = str(outcome.cause)
+        assert "aion://agent/identity/daemon-1" in reason and ORG in reason
+        assert "HTTP 403: Forbidden (request id req-7)" in reason
+        assert "credentials" not in reason and "Daemon Identity" not in reason
+        assert isinstance(outcome.cause.__cause__, httpx.HTTPStatusError)
+
+    async def test_an_environment_principal_is_named_as_the_likely_cause(self):
+        async def handle(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(403)
+
+        context = upload_context(principal_selector=PrincipalSelector.agent_environment("env-1"))
+        outcome = await backend(handle).store(upload(), context=context)
+
+        assert "aion://agent/environment/env-1" in str(outcome.cause)
+        assert "no Daemon Identity" in str(outcome.cause)
+
+
 class TestResponseContract:
     async def test_response_without_a_url_is_a_failure(self, caplog):
         """A stored file nobody can reach is worse than none: say so, loudly."""
         async def handle(request: httpx.Request) -> httpx.Response:
             return httpx.Response(200, json={"id": "file-1", "secretUrl": "https://x/?sig=s3cr3t"})
 
-        with caplog.at_level("ERROR"):
+        with caplog.at_level("WARNING"):
             outcome = await backend(handle).store(upload(), context=upload_context())
 
         assert isinstance(outcome, UploadFailure)
         assert outcome.retryable is False
         assert "secretUrl" in caplog.text
         assert "s3cr3t" not in caplog.text
+
+
+class TestStoredAddress:
+    """The part points at the stored version, not at a link that expires."""
+
+    async def test_a_granted_url_in_the_response_is_not_persisted(self):
+        async def handle(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                json={"id": "f-1", "versionId": "v-9", "url": "https://x/f-1?grant=g"},
+            )
+
+        outcome = await backend(handle).store(upload(), context=upload_context())
+
+        assert outcome.uri == "https://api.aion.test/files/f-1/versions/v-9/content"
+
+    async def test_without_a_version_the_response_url_is_used(self):
+        async def handle(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json={"id": "f-1", "url": "https://files.aion.test/f-1"})
+
+        outcome = await backend(handle).store(upload(), context=upload_context())
+
+        assert outcome.uri == "https://files.aion.test/f-1"
+        assert outcome.version_id is None
 
 
 class TestLifecycle:

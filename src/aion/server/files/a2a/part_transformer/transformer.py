@@ -112,12 +112,18 @@ class A2AFileTransformer:
         event: AgentEvent,
         *,
         upload_context: UploadContextResolution | None = None,
-    ) -> AgentEvent:
+    ) -> AgentEvent | None:
         """Return a transformed copy of ``event``, or the original if unchanged.
 
         Outbound content never falls back to inline bytes: what could not be
         stored is dropped from the event, so the agent's answer survives while
-        the file does not.
+        the file does not. An event left with nothing to say loses what is
+        empty rather than going out hollow: an artifact update with no part
+        left is not sent at all (``None``), and a status update keeps its state
+        but not an empty message.
+
+        A part without a filename of its own is uploaded under its artifact's
+        name, which is where ``file_artifact()`` puts it.
 
         Args:
             event: Status or artifact update to transform.
@@ -125,11 +131,13 @@ class A2AFileTransformer:
                 the one projected from the active runtime context.
 
         Returns:
-            The event, transformed when it carried inline content.
+            The event, transformed when it carried inline content; ``None``
+            when it was an artifact update whose every part was dropped.
         """
         if self._upload_manager is None:
             return event
 
+        default_filename = None
         if isinstance(event, TaskStatusUpdateEvent):
             message = event.status.message
             if not message or not message.parts:
@@ -139,22 +147,34 @@ class A2AFileTransformer:
             if not event.artifact.parts:
                 return event
             source = list(event.artifact.parts)
+            default_filename = event.artifact.name or None
         else:
             return event
 
         resolution = upload_context or self._current_context(
             context_id=event.context_id, task_id=event.task_id
         )
-        new_parts, report = await self._transform_parts(source, resolution)
+        new_parts, report = await self._transform_parts(
+            source, resolution, default_filename=default_filename
+        )
         if not report.changed:
             return event
 
         new_event = copy.deepcopy(event)
-        target = (
-            new_event.status.message.parts
-            if isinstance(new_event, TaskStatusUpdateEvent)
-            else new_event.artifact.parts
-        )
+        if isinstance(new_event, TaskStatusUpdateEvent):
+            if not new_parts:
+                new_event.status.ClearField("message")
+                return new_event
+            target = new_event.status.message.parts
+        else:
+            if not new_parts:
+                logger.debug(
+                    "Not sending artifact %s (%r): none of its parts could be stored",
+                    new_event.artifact.artifact_id,
+                    new_event.artifact.name,
+                )
+                return None
+            target = new_event.artifact.parts
         del target[:]
         target.extend(new_parts)
         return new_event
@@ -209,6 +229,8 @@ class A2AFileTransformer:
         self,
         parts: list[Part],
         resolution: UploadContextResolution,
+        *,
+        default_filename: str | None = None,
     ) -> tuple[list[Part], TransformReport]:
         """Store every convertible part of one message or event in one batch.
 
@@ -234,7 +256,7 @@ class A2AFileTransformer:
             dropped = set(indexes)
             return [p for i, p in enumerate(parts) if i not in dropped], report
 
-        uploads = [self._upload_for(parts[index]) for index in indexes]
+        uploads = [self._upload_for(parts[index], default_filename) for index in indexes]
         outcomes = await self._upload_manager.store_many(uploads, context=resolution)
 
         stored: dict[int, Part] = {}
@@ -247,13 +269,20 @@ class A2AFileTransformer:
                     filename=parts[index].filename,
                 )
                 continue
+            # One line per file, with the reason in brief; the traceback only
+            # at debug level, since a refusal the storage service answered
+            # with has none worth reading.
             logger.warning(
-                "Dropping inline file part %r (%d bytes): %s",
+                "Dropping inline file part %r (%d bytes): %s%s",
                 upload.filename,
                 upload.byte_size,
                 outcome.error_code.value,
-                exc_info=outcome.cause,
+                f" - {_brief(outcome.cause)}" if outcome.cause is not None else "",
             )
+            if outcome.cause is not None:
+                logger.debug(
+                    "Inline file part %r was not stored", upload.filename, exc_info=outcome.cause
+                )
             report.failures.append(outcome)
 
         convertible = set(indexes)
@@ -270,13 +299,20 @@ class A2AFileTransformer:
         return bool(part.raw) and not self._skip_rules.should_skip(part)
 
     @staticmethod
-    def _upload_for(part: Part) -> FileUpload:
+    def _upload_for(part: Part, default_filename: str | None = None) -> FileUpload:
         """Build the storage request for one inline part."""
+        filename = part.filename or default_filename
         media_type = part.media_type
-        if not media_type and part.filename:
-            media_type, _ = mimetypes.guess_type(part.filename)
+        if not media_type and filename:
+            media_type, _ = mimetypes.guess_type(filename)
         return FileUpload(
             data=bytes(part.raw),
             media_type=media_type or "application/octet-stream",
-            filename=part.filename or None,
+            filename=filename or None,
         )
+
+
+def _brief(cause: BaseException) -> str:
+    """Why a part was not stored, in a few words: a storage refusal's summary,
+    else the exception's own message."""
+    return getattr(cause, "summary", None) or str(cause) or type(cause).__name__

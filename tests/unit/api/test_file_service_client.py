@@ -184,3 +184,76 @@ async def test_rejected_upload_is_both_an_sdk_and_an_httpx_error():
     assert isinstance(error.value, httpx.HTTPStatusError)
     assert error.value.response.status_code == 422
     assert error.value.request is not None
+
+
+@pytest.mark.anyio("asyncio")
+async def test_rejection_names_what_the_api_said():
+    """The status alone does not say why; the body and request id do."""
+    async def rejected(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            403,
+            text="AgentIdentity lacks\n  file.create " + "x" * 400,
+            headers={"x-request-id": "req-42"},
+        )
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(rejected)
+    ) as http_client:
+        async with AionFileClient(
+            jwt_manager=StaticTokenManager(),
+            base_url="https://api.aion.test",
+            http_client=http_client,
+        ) as client:
+            with pytest.raises(AionFileStorageError) as error:
+                await client.create(
+                    b"media",
+                    organization_id="organization-1",
+                    purpose="MessagingMedia",
+                    file_name="message.bin",
+                )
+
+    message = str(error.value)
+    assert "\n" not in message
+    assert message.startswith("Client error '403 Forbidden'")
+    assert "AgentIdentity lacks file.create" in message
+    assert "(request id req-42)" in message
+    assert error.value.request_id == "req-42"
+    assert error.value.detail.startswith("AgentIdentity lacks file.create")
+    assert len(error.value.detail) == 300
+    assert "version-token" not in message
+
+
+@pytest.mark.anyio("asyncio")
+async def test_rejection_without_body_or_request_id_keeps_the_status_line():
+    async def rejected(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(403)
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(rejected)
+    ) as http_client:
+        async with AionFileClient(
+            jwt_manager=StaticTokenManager(),
+            base_url="https://api.aion.test",
+            http_client=http_client,
+        ) as client:
+            with pytest.raises(AionFileStorageError) as error:
+                await client.create(
+                    b"media",
+                    organization_id="organization-1",
+                    purpose="MessagingMedia",
+                    file_name="message.bin",
+                )
+
+    assert error.value.detail is None
+    assert error.value.request_id is None
+    assert str(error.value).startswith("Client error '403 Forbidden' for url ")
+    assert str(error.value).endswith("byteSize=5'")
+
+
+def test_content_url_names_the_exact_version():
+    client = AionFileClient(
+        jwt_manager=StaticTokenManager(), base_url="https://api.aion.test/"
+    )
+    assert client.content_url("file-1", "version-2") == (
+        "https://api.aion.test/files/file-1/versions/version-2/content"
+    )

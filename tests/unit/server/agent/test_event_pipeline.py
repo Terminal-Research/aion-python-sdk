@@ -364,6 +364,24 @@ async def test_the_transformer_runs_before_the_event_is_routed(manager, queue) -
     assert _status_events(queue)[0].status.message.parts[0].text == "transformed"
 
 
+class DroppingTransformer:
+    """A file transformer that could store none of an artifact's parts."""
+
+    async def transform_event(self, event):
+        return None if isinstance(event, TaskArtifactUpdateEvent) else event
+
+
+async def test_an_event_the_transformer_drops_reaches_no_one(manager, queue) -> None:
+    """An artifact whose every file failed to store is not sent hollow."""
+    pipeline = _pipeline(queue, task_started=True, transformer=DroppingTransformer())
+
+    await pipeline.process(_artifact_update("file"))
+    await pipeline.process(_status("answer"))
+
+    assert not [e for e in queue.events if isinstance(e, TaskArtifactUpdateEvent)]
+    assert _status_events(queue)[0].status.message.parts[0].text == "answer"
+
+
 async def test_without_a_task_manager_the_stream_still_works(queue) -> None:
     """No scope-registered task manager means nothing is stored - and nothing raises.
 

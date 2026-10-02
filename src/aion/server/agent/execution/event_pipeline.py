@@ -83,6 +83,8 @@ class AionEventPipeline:
     async def process(self, event) -> None:
         await self._ensure_task_started()
         event = await self._prepare_event(event)
+        if event is None:
+            return
         event = await self._deduplicate_event(event)
         if event is None:
             return

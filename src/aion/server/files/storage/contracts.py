@@ -34,6 +34,7 @@ class FileUploadErrorCode(str, Enum):
     STORAGE_UNAVAILABLE = "STORAGE_UNAVAILABLE"
     STORAGE_REJECTED = "STORAGE_REJECTED"
     STORAGE_UNAUTHORIZED = "STORAGE_UNAUTHORIZED"
+    STORAGE_FORBIDDEN = "STORAGE_FORBIDDEN"
     STORAGE_CLOSED = "STORAGE_CLOSED"
 
     @property
@@ -60,8 +61,8 @@ class FileUploadErrorCode(str, Enum):
 
 # The request names no owning organization, or carries content the storage
 # service will refuse however often it is sent. Everything else - unreachable
-# storage, refused agent credentials, a server on its way down - is the
-# deployment's problem, not the sender's.
+# storage, refused agent credentials or permissions, a server on its way
+# down - is the deployment's problem, not the sender's.
 _CLIENT_FAULTS = frozenset(
     {
         FileUploadErrorCode.NO_DISTRIBUTION,
@@ -94,6 +95,10 @@ _PUBLIC_REASONS: dict[FileUploadErrorCode, str] = {
     FileUploadErrorCode.STORAGE_UNAUTHORIZED: (
         "File content was not stored: the storage service refused the agent's "
         "credentials."
+    ),
+    FileUploadErrorCode.STORAGE_FORBIDDEN: (
+        "File content was not stored: the storage service does not permit the "
+        "agent to store files for this organization."
     ),
     FileUploadErrorCode.STORAGE_CLOSED: (
         "File content was not stored: the server is shutting down."
