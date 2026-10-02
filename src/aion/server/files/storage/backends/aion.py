@@ -1,15 +1,20 @@
 """Store file content through the Aion Files API.
 
 One ``POST /files`` per upload, awaited, under the organization named by the
-verified request projection and acting as its effective principal. The URL the
-API answers with is forwarded into ``Part(url=...)`` unchanged.
+verified request projection and acting as its effective principal. The part
+that replaces the inline bytes points at the stored version itself -
+``/files/{id}/versions/{versionId}/content`` - since a task keeps that URL for
+as long as the task lives, and a link carrying an access grant expires. Only a
+response without those identifiers falls back to the URL the API answered with.
 
 Every attempt at one file reuses the same ``operation_id``: the API treats it
 as the idempotency key, so a retry after a lost response cannot create a second
 File. Retries are for the failures that can pass - transport errors and 5xx
-answers. A refusal the API will repeat (a 4xx) is reported at once, and
-refused credentials are reported at error level once rather than once per
-file, since a broken client secret fails every upload identically.
+answers. A refusal the API will repeat (a 4xx) is reported at once. This
+backend logs nothing itself: whoever drops the file logs one line for it, and
+the failure's cause carries what that line needs - for refused credentials
+(401) or a principal the API does not permit to store files for the
+organization (403), who was refused and where.
 """
 
 from __future__ import annotations
@@ -20,7 +25,7 @@ from typing import Any, Sequence
 from uuid import UUID, uuid4
 
 import httpx
-from aion.api import AionFileClient
+from aion.api import AionFileClient, PrincipalSelector, PrincipalSelectorKind
 from aion.api.exceptions import AionAuthenticationError, AionFileStorageError
 
 from ..context import UploadContext
@@ -37,19 +42,18 @@ logger = logging.getLogger(__name__)
 
 __all__ = ["AionFileStorageBackend"]
 
-# TODO: verify against a real upload before relying on this backend. The
-# three values below are not confirmed by the platform: ``RESPONSE_URL_FIELD``
-# must name the field of the ``POST /files`` answer that carries a URL a
-# ``Part(url=...)`` recipient can fetch - permanent, not a signed link with a
-# TTL, since it is persisted in the task; ``AION_FILE_PURPOSE`` must be a
-# value the API accepts for agent attachments; and the API must authorize
-# ``organizationId`` against the token and effective principal itself, as the
-# SDK does not.
+# TODO: verify against a real upload before relying on this backend. Not yet
+# confirmed by the platform: that ``POST /files`` answers with ``id`` and
+# ``versionId``, and that the version's content address serves a recipient
+# who fetches it; that ``AION_FILE_PURPOSE`` is the purpose for files an agent
+# produces, and that none needs an owner association; and that the API
+# authorizes ``organizationId`` against the token and effective principal
+# itself, as the SDK does not.
 
 # Purpose the Files API records for content exchanged in agent conversations.
 AION_FILE_PURPOSE = "MessagingMedia"
-# Field of the ``POST /files`` response carrying the URL a ``Part(url=...)``
-# recipient can fetch the content from.
+# Field of the ``POST /files`` response carrying a URL, used only when the
+# response does not identify the stored version.
 RESPONSE_URL_FIELD = "url"
 # Attempts per file, including the first.
 MAX_ATTEMPTS = 3
@@ -88,7 +92,6 @@ class AionFileStorageBackend(FileStorageBackend):
         self._max_attempts = max(1, max_attempts)
         self._backoff_seconds = backoff_seconds
         self._slots = asyncio.Semaphore(MAX_CONCURRENT_UPLOADS)
-        self._credentials_refused = False
 
     async def store_many(
         self,
@@ -128,9 +131,9 @@ class AionFileStorageBackend(FileStorageBackend):
                         usage_attribution=context.usage_attribution,
                     )
                 except AionAuthenticationError as error:
-                    return self._credentials_failure(error)
+                    return _credentials_failure(error)
                 except AionFileStorageError as error:
-                    failure = self._classify(error)
+                    failure = self._classify(error, context)
                 except httpx.TransportError as error:
                     failure = UploadFailure(
                         FileUploadErrorCode.STORAGE_UNAVAILABLE,
@@ -138,8 +141,7 @@ class AionFileStorageBackend(FileStorageBackend):
                         cause=error,
                     )
                 else:
-                    self._credentials_accepted()
-                    return self._receipt(response, operation_id)
+                    return self._receipt(response, operation_id, self._client)
 
                 if not failure.retryable or attempt == self._max_attempts:
                     return failure
@@ -154,47 +156,40 @@ class AionFileStorageBackend(FileStorageBackend):
 
         raise AssertionError("unreachable: every attempt returns")
 
-    def _classify(self, error: AionFileStorageError) -> UploadFailure:
+    def _classify(
+        self, error: AionFileStorageError, context: UploadContext
+    ) -> UploadFailure:
         """Map an API refusal onto an outcome by what the status says."""
         status = error.response.status_code
-        if status in (401, 403):
-            return self._credentials_failure(error)
+        if status == 401:
+            return _credentials_failure(error)
+        if status == 403:
+            return _permission_failure(error, context)
         if status >= 500 or status in _RETRYABLE_STATUSES:
             return UploadFailure(
                 FileUploadErrorCode.STORAGE_UNAVAILABLE, retryable=True, cause=error
             )
         return UploadFailure(FileUploadErrorCode.STORAGE_REJECTED, cause=error)
 
-    def _credentials_failure(self, error: Exception) -> UploadFailure:
-        """Report refused credentials once at error level, then quietly."""
-        if self._credentials_refused:
-            logger.debug("Files API still refuses the agent's credentials: %s", error)
-        else:
-            self._credentials_refused = True
-            logger.error(
-                "Files API refused the agent's credentials; further refusals "
-                "are logged at debug level until an upload succeeds: %s",
-                error,
-            )
-        return UploadFailure(FileUploadErrorCode.STORAGE_UNAUTHORIZED, cause=error)
-
-    def _credentials_accepted(self) -> None:
-        """Re-arm the credentials diagnostic after a successful upload."""
-        if self._credentials_refused:
-            self._credentials_refused = False
-            logger.info("Files API accepts the agent's credentials again")
-
     @staticmethod
-    def _receipt(response: dict[str, Any], operation_id: UUID) -> UploadOutcome:
+    def _receipt(
+        response: dict[str, Any], operation_id: UUID, client: AionFileClient
+    ) -> UploadOutcome:
         """Turn an accepted response into a receipt.
 
-        Field names only in the log, never values: the URL may be signed.
+        Field names only in the log, never values: a URL may be signed.
         """
-        uri = response.get(RESPONSE_URL_FIELD)
+        file_id = _optional_str(response.get("id"))
+        version_id = _optional_str(response.get("versionId"))
+        if file_id and version_id:
+            uri = client.content_url(file_id, version_id)
+        else:
+            uri = response.get(RESPONSE_URL_FIELD)
         if not isinstance(uri, str) or not uri:
             logger.error(
-                "Files API accepted operation %s but its response carries no "
-                "%r (fields: %s); the stored file is unreachable",
+                "Files API accepted operation %s but its response identifies no "
+                "stored version (id and versionId) and carries no %r (fields: "
+                "%s); the stored file is unreachable",
                 operation_id,
                 RESPONSE_URL_FIELD,
                 ", ".join(sorted(response)) or "<none>",
@@ -203,10 +198,64 @@ class AionFileStorageBackend(FileStorageBackend):
         revision = response.get("revision")
         return UploadReceipt(
             uri=uri,
-            file_id=_optional_str(response.get("id")),
-            version_id=_optional_str(response.get("versionId")),
+            file_id=file_id,
+            version_id=version_id,
             revision=revision if isinstance(revision, int) else None,
         )
+
+
+class StorageRefusal(Exception):
+    """Why the Files API refused an upload, naming who was refused and where.
+
+    The cause of a 401 or 403 failure, raised from the API's own error. Like
+    every cause it stays in the process: it is what the log line for the
+    dropped file says.
+    """
+
+
+def _credentials_failure(error: Exception) -> UploadFailure:
+    """A failure for credentials the API refuses."""
+    refusal = StorageRefusal(f"Files API refuses the agent's credentials ({_summary(error)})")
+    refusal.__cause__ = error
+    return UploadFailure(FileUploadErrorCode.STORAGE_UNAUTHORIZED, cause=refusal)
+
+
+def _permission_failure(error: Exception, context: UploadContext) -> UploadFailure:
+    """A failure for a principal the API does not let store files here."""
+    principal, organization = _permission_key(context)
+    refusal = StorageRefusal(
+        f"Files API does not permit {principal} to store files for organization "
+        f"{organization} ({_summary(error)}){_principal_hint(context.principal_selector)}"
+    )
+    refusal.__cause__ = error
+    return UploadFailure(FileUploadErrorCode.STORAGE_FORBIDDEN, cause=refusal)
+
+
+def _summary(error: Exception) -> str:
+    """A refusal in a few words, without the request URL."""
+    return getattr(error, "summary", None) or str(error)
+
+
+def _permission_key(context: UploadContext) -> tuple[str, str]:
+    """The principal an upload acts as and the organization it writes to."""
+    selector = context.principal_selector
+    principal = (
+        f"principal {selector}"
+        if selector is not None
+        else "the agent's own credentials (no principal selector)"
+    )
+    return principal, context.organization_id
+
+
+def _principal_hint(selector: PrincipalSelector | None) -> str:
+    """Why the principal is likely refused, when the selector itself says so."""
+    if selector is not None and selector.kind is PrincipalSelectorKind.AGENT_ENVIRONMENT:
+        return (
+            ": the environment has no Daemon Identity, so the upload acts as "
+            "the environment itself; assign one whose role may store files in "
+            "this organization"
+        )
+    return ""
 
 
 def _optional_str(value: Any) -> str | None:

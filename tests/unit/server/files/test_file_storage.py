@@ -357,6 +357,33 @@ class TestA2AFileTransformer:
         parts = event.status.message.parts
         assert [p.url for p in parts] == ["u-0", "u-2"]
 
+    async def test_artifact_left_without_parts_is_not_sent(self, caplog):
+        """An artifact with no part left is not an artifact: nothing goes out."""
+        backend = OutcomeBackend([UploadFailure(FileUploadErrorCode.STORAGE_FORBIDDEN)])
+        with caplog.at_level("DEBUG"):
+            event = await self._transformer(backend).transform_event(
+                artifact_event(raw_part()), upload_context=upload_context()
+            )
+        assert event is None
+        assert "a-1" in caplog.text and "art" in caplog.text
+
+    async def test_status_left_without_parts_keeps_its_state_only(self):
+        backend = OutcomeBackend([UploadFailure(FileUploadErrorCode.STORAGE_FORBIDDEN)])
+        event = await self._transformer(backend).transform_event(
+            status_event(raw_part()), upload_context=upload_context()
+        )
+        assert event.status.state == TaskState.TASK_STATE_WORKING
+        assert not event.status.HasField("message")
+
+    async def test_unnamed_part_is_uploaded_under_its_artifact_name(self, caplog):
+        """``file_artifact()`` names the artifact, not the part."""
+        backend = RecordingBackend()
+        await self._transformer(backend).transform_event(
+            artifact_event(Part(raw=b"a,b", media_type="text/csv")),
+            upload_context=upload_context(),
+        )
+        assert backend.batches[0][0].filename == "art"
+
     async def test_failed_part_is_dropped_and_logged(self, caplog):
         """Never inline bytes - that is what the transformer exists to prevent."""
         backend = OutcomeBackend([UploadFailure(FileUploadErrorCode.STORAGE_UNAVAILABLE, retryable=True)])
@@ -380,6 +407,17 @@ class TestA2AFileTransformer:
             )
         assert "internal.host" not in event.SerializeToString().decode("latin-1")
         assert "internal.host" in caplog.text
+
+    async def test_reason_is_one_line_and_the_traceback_waits_for_debug(self, caplog):
+        cause = RuntimeError("refused")
+        backend = OutcomeBackend([UploadFailure(FileUploadErrorCode.STORAGE_REJECTED, cause=cause)])
+        with caplog.at_level("DEBUG"):
+            await self._transformer(backend).transform_event(
+                status_event(raw_part()), upload_context=upload_context()
+            )
+        warning = next(r for r in caplog.records if r.levelname == "WARNING")
+        assert warning.getMessage().endswith(" - refused") and warning.exc_info is None
+        assert any(r.levelname == "DEBUG" and r.exc_info for r in caplog.records)
 
     async def test_context_failure_is_reported_once_for_the_batch(self):
         """Five attachments under one broken request produce one diagnostic."""
@@ -552,6 +590,7 @@ class TestFaultClassification:
         [
             FileUploadErrorCode.STORAGE_UNAVAILABLE,
             FileUploadErrorCode.STORAGE_UNAUTHORIZED,
+            FileUploadErrorCode.STORAGE_FORBIDDEN,
             FileUploadErrorCode.STORAGE_CLOSED,
         ],
     )

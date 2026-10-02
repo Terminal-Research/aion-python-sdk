@@ -118,6 +118,22 @@ class AionFileClient:
             usage_attribution,
         )
 
+    def content_url(self, file_id: UUID | str, version_id: UUID | str) -> str:
+        """Return the Files API address of one immutable File version's bytes.
+
+        The address names an exact version, so it never drifts to a newer one,
+        and carries no access grant: the Files API authorizes whoever fetches
+        it, and a grant issued for the same version can be added to it later.
+
+        Args:
+            file_id: Stable File identifier.
+            version_id: Identifier of the exact File version.
+
+        Returns:
+            ``{base_url}/files/{file_id}/versions/{version_id}/content``.
+        """
+        return f"{self._base_url}/files/{file_id}/versions/{version_id}/content"
+
     async def replace(
         self,
         file_id: UUID | str,
