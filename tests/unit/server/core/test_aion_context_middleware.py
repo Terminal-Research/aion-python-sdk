@@ -41,6 +41,19 @@ async def test_it_reads_the_distribution_into_the_execution_scope() -> None:
     assert (answer["owner"], answer["authenticated"], answer["scopes"]) == ("", False, None)
 
 
+async def test_caller_metadata_cannot_establish_authenticated_ownership() -> None:
+    metadata = distribution_metadata("dist-1")
+    metadata[DISTRIBUTION_EXTENSION_URI_V1]["callerId"] = (
+        "aion:v1:AionUser:MTExMTExMTEtMTExMS00MTExLTgxMTEtMTExMTExMTExMTEx"
+    )
+    probe = Probe()
+    async with probe.client(Middleware(AionContextMiddleware)) as client:
+        answer = (await send_message(client, metadata)).json()
+
+    assert answer["scope_distribution"] == "dist-1"
+    assert (answer["owner"], answer["authenticated"], answer["scopes"]) == ("", False, None)
+
+
 @pytest.mark.parametrize(
     ("metadata", "problem"),
     [

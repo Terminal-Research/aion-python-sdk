@@ -47,6 +47,7 @@ def create_distribution_payload(identity_overrides=None):
     identity.update(identity_overrides or {})
 
     return {
+        "callerId": "aion:v1:AionUser:MTExMTExMTEtMTExMS00MTExLTgxMTEtMTExMTExMTExMTEx",
         "distribution": {
             "id": "dist-1",
             "endpointType": "A2A",
@@ -133,7 +134,7 @@ class TestDistributionPayloadContract:
             await _prepare(payload)
 
     async def test_rejects_an_empty_distribution_id(self):
-        """The id names the caller that owns the request's tasks; empty would name nobody."""
+        """A distribution routing identifier must not be empty."""
         payload = create_distribution_payload()
         payload["distribution"]["id"] = ""
 
@@ -148,6 +149,7 @@ class TestDistributionPayloadContract:
         """
         extension = (await _prepare(create_distribution_payload())).distribution
 
+        assert extension.caller_id == create_distribution_payload()["callerId"]
         identity = extension.distribution.identities[0]
         assert identity.identity_network == "Aion"
         assert identity.identity_kind == "Personal"

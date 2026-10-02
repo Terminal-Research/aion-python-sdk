@@ -261,9 +261,14 @@ class DistributionExtensionV1(A2ABaseModel):
     Spec: https://docs.aion.to/a2a/extensions/aion/distribution/1.0.0
     """
 
-    sender_id: Optional[str] = Field(
+    caller_id: Optional[str] = Field(
         default=None,
-        description="Source-network sender identifier for this request.",
+        description=(
+            "Canonical initiating Aion principal, identical to the invocation JWT sub. "
+            "Use the verified token for authentication; this metadata grants no access. "
+            "ExternalAnonymous is shared attribution, not an individual memory key. "
+            "The source-network user ID remains in the messaging payload's userId."
+        ),
     )
     distribution: Distribution = Field(
         description=(

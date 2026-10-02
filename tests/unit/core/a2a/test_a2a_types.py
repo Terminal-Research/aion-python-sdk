@@ -688,23 +688,28 @@ class TestDistributionExtension:
             )
 
     def test_distribution_extension_v1(self):
-        """DistributionExtensionV1 defaults sender_id to None."""
+        """An absent caller is not inferred from the receiving distribution."""
         ext = DistributionExtensionV1(
             distribution=_make_distribution(),
             behavior=_make_behavior(),
             environment=_make_environment(),
         )
-        assert ext.sender_id is None
+        assert ext.caller_id is None
 
-    def test_distribution_extension_with_sender_id(self):
-        """DistributionExtensionV1 stores sender_id when provided."""
+    def test_distribution_extension_with_caller_id(self):
+        """Preserve the canonical caller through camelCase wire serialization."""
+        subject = "aion:v1:AionUser:MTExMTExMTEtMTExMS00MTExLTgxMTEtMTExMTExMTExMTEx"
         ext = DistributionExtensionV1(
-            sender_id="user-xyz",
+            caller_id=subject,
             distribution=_make_distribution(),
             behavior=_make_behavior(),
             environment=_make_environment(),
         )
-        assert ext.sender_id == "user-xyz"
+        wire = ext.model_dump(by_alias=True, exclude_none=True)
+        assert wire["callerId"] == subject
+        assert "senderId" not in wire
+        assert "caller_id" not in wire
+        assert DistributionExtensionV1.model_validate(wire).caller_id == subject
 
     def test_discriminated_union_principal(self):
         """PrincipalIdentity parsed via discriminated union on 'kind'."""
