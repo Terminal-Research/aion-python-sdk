@@ -163,7 +163,7 @@ async def test_all_clients_keep_concurrent_execution_attribution(api, resume):
 
     async def stream(context):
         started.append(context)
-        if len(started) == 2:
+        if len(started) == 3:
             barrier.set()
         await barrier.wait()
         async with _aion_model_async_http_client(lambda: "version-token") as model:
@@ -191,33 +191,46 @@ async def test_all_clients_keep_concurrent_execution_attribution(api, resume):
 
     worker = AionAgentRequestExecutor(SimpleNamespace(stream=stream, resume=stream))
     try:
-        await asyncio.wait_for(asyncio.gather(*[
-            worker.execute(incoming(number, resume), AsyncMock()) for number in (1, 2)
-        ]), timeout=20)
+        async def self_initiated():
+            async for _ in stream(None):
+                pass
+
+        await asyncio.wait_for(asyncio.gather(
+            worker.execute(incoming(1, resume), AsyncMock()),
+            worker.execute(incoming(2, resume), AsyncMock()),
+            self_initiated(),
+        ), timeout=20)
     finally:
         await gql.client.http_client.aclose()
     assert AionRuntimeContextRegistry.get_current_context() is None
     guest = Principal("AnonymousSession", "00000000-0000-0000-0000-000000000002").subject
-    assert len(api.requests) == 8
+    assert len(api.requests) == 12
     assert sum(headers.get("aion-caller-id") == guest for _, headers in api.requests) == 4
     for _, headers in api.requests:
         assert headers["authorization"] == "Bearer version-token"
         assert "aion-principal-selector" not in headers
         assert (headers.get("aion-caller-id"), headers.get("aion-usage-attribution")) in (
-            (guest, None), (None, "opaque-forwarded"))
-    assert len(api.subscriptions) == 2
+            (guest, None), (None, "opaque-forwarded"), (None, None))
+    assert sum("aion-caller-id" not in headers and "aion-usage-attribution" not in headers
+               for _, headers in api.requests) == 4
+    assert len(api.subscriptions) == 3
+    assert sum(variables["serviceParameters"] is None
+               for _, variables in api.subscriptions) == 1
     for token, variables in api.subscriptions:
         assert token == "version-token"
         assert variables["principal"] is None
+        if variables["serviceParameters"] is None:
+            continue
         pairs = variables["serviceParameters"]["additional"]
         assert pairs in ([{"key": "Aion-Caller-Id", "value": guest}],
                         [{"key": "Aion-Usage-Attribution", "value": "opaque-forwarded"}])
 
 
 @pytest.mark.parametrize("client_kind", ["model", "mcp", "file", "a2a"])
-async def test_missing_daemon_is_typed_without_retries(api, client_kind):
+@pytest.mark.parametrize("self_initiated", [False, True])
+async def test_missing_daemon_is_typed_without_retries(api, client_kind, self_initiated):
     api.failure = True
-    AionRuntimeContextRegistry.set_current_context(AionRuntimeContext(
+    AionRuntimeContextRegistry.set_current_context(None if self_initiated else AionRuntimeContext(
         callback_attribution=DirectAttribution(
             Principal("ExternalAnonymous", "external-anonymous")
         )

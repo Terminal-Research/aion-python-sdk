@@ -7,6 +7,7 @@ import pytest
 from aion.api import aion_openai_config
 from aion.api.exceptions import AionAuthenticationError, AionModelPrincipalError
 from aion.api.http.jwt_manager import AionRefreshingJWTManager
+from aion.core.runtime.context import AionRuntimeContext
 import aion.api.model_service_client as model_service_client
 
 
@@ -185,9 +186,16 @@ def test_model_rejects_retired_header_even_with_carrier(key):
         )
 
 
-def test_model_requires_attribution_not_selector():
+def test_model_requires_attribution_within_an_inbound_request(monkeypatch):
+    monkeypatch.setattr("aion.api.callback_attribution.get_aion_runtime_context",
+                        lambda: AionRuntimeContext())
     with pytest.raises(AionAuthenticationError, match="request-local attribution"):
         model_service_client.aion_model_request_headers()
+
+
+def test_model_allows_self_initiated_work_without_an_inbound_request(monkeypatch):
+    monkeypatch.setattr("aion.api.callback_attribution.get_aion_runtime_context", lambda: None)
+    assert model_service_client.aion_model_request_headers() == {}
 
 
 @pytest.mark.parametrize("key", ["Aion-Usage-Attribution", "aion-usage-attribution"])

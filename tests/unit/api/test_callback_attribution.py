@@ -32,6 +32,31 @@ def test_identical_explicit_carrier_remains_opaque():
     }
 
 
+def test_self_initiated_work_preserves_bearer_without_inventing_a_caller(monkeypatch):
+    monkeypatch.setattr("aion.api.callback_attribution.get_aion_runtime_context", lambda: None)
+    headers = {"Authorization": "Bearer version", "X-Request-ID": "request-1"}
+    assert callback_headers(headers) == headers
+
+
+@pytest.mark.parametrize("builder", ["mcp", "file", "model", "a2a"])
+def test_active_request_cannot_silently_become_self_initiated(monkeypatch, builder):
+    from aion.api.file_service_client import aion_file_authorization_headers
+    from aion.api.gql.client import _with_callback_attribution
+    from aion.api.model_service_client import aion_model_request_headers
+    from aion.mcp import aion_mcp_authorization_headers
+
+    monkeypatch.setattr("aion.api.callback_attribution.get_aion_runtime_context",
+                        lambda: AionRuntimeContext())
+    calls = {
+        "mcp": lambda: aion_mcp_authorization_headers("version"),
+        "file": lambda: aion_file_authorization_headers("version"),
+        "model": aion_model_request_headers,
+        "a2a": lambda: _with_callback_attribution(None),
+    }
+    with pytest.raises(AionAuthenticationError, match="request-local attribution"):
+        calls[builder]()
+
+
 @pytest.mark.parametrize("builder", ["mcp", "file", "model"])
 def test_each_callback_rejects_stale_explicit_selector(builder):
     from aion.api.file_service_client import aion_file_authorization_headers

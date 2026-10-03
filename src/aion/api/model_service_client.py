@@ -198,7 +198,6 @@ def aion_model_request_headers(
     return callback_headers(
         existing,
         usage_attribution=usage_attribution_provider() if usage_attribution_provider else None,
-        required=True,
     )
 
 

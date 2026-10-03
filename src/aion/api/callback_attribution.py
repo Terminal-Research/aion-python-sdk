@@ -27,18 +27,21 @@ def callback_headers(
     *,
     usage_attribution: str | None = None,
     context: AionRuntimeContext | None = None,
-    required: bool = False,
 ) -> dict[str, str]:
     """Merge exclusive callback inputs without trusting or decoding a carrier.
+
+    Without a runtime context or explicit attribution, send neither header.
+    Aion resolves the deployment's current daemon for self-initiated work.
+    An active runtime context must supply attribution, even for an anonymous
+    inbound caller. Missing request attribution never selects self-attribution.
 
     Args:
         existing: Transport headers or GraphQL pairs; duplicates are rejected.
         usage_attribution: Explicit opaque carrier, which must match this request.
         context: Explicit runtime context, otherwise the current request's scope.
-        required: Refuse a callback without attribution before sending it.
 
     Returns:
-        Headers with one canonical attribution input and unrelated fields intact.
+        Headers with at most one attribution input and unrelated fields intact.
 
     Raises:
         AionAuthenticationError: For missing, conflicting or obsolete inputs.
@@ -85,6 +88,6 @@ def callback_headers(
         headers[AION_USAGE_ATTRIBUTION_HEADER] = attribution.carrier
     elif isinstance(attribution, DirectAttribution):
         headers[AION_CALLER_ID_HEADER] = attribution.caller.subject
-    elif required:
+    elif runtime is not None:
         raise AionAuthenticationError("This callback requires supported request-local attribution.")
     return headers

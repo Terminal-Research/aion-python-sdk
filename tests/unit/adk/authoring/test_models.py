@@ -11,6 +11,7 @@ import aion.adk.authoring.models as models
 import aion.api.model_service_client as model_service_client
 from aion.api.exceptions import AionModelPrincipalError
 from aion.core.exceptions import AionDaemonIdentityRequired
+from aion.core.runtime.context import AionRuntimeContext
 
 
 class FakeConfig:
@@ -152,26 +153,24 @@ def _fake_adk_modules(monkeypatch):
     return calls
 
 
-def test_lite_llm_client_refuses_a_call_with_no_attribution(monkeypatch):
-    """No accepted callback scope must fail before invoking the model client."""
-    from aion.core.exceptions import AionAuthenticationError
+def test_lite_llm_client_allows_deployment_initiated_work(monkeypatch):
+    """A Version-only callback leaves daemon resolution to the control plane."""
     calls = _fake_adk_modules(monkeypatch)
     monkeypatch.setattr(models, "aion_openai_config", lambda: FakeConfig())
     monkeypatch.setattr(models, "aion_model_api_key", lambda: "fresh-jwt")
     monkeypatch.setattr(
-        model_service_client, "aion_principal_selector", lambda: None
+        "aion.api.callback_attribution.get_aion_runtime_context", lambda: None
     )
 
     client = aion_lite_llm("model-id").kwargs["llm_client"]
 
-    with pytest.raises(AionAuthenticationError):
-        client.completion(model="openai/model-id", messages=[], tools=None)
-    with pytest.raises(AionAuthenticationError):
-        asyncio.run(
-            client.acompletion(model="openai/model-id", messages=[], tools=None)
-        )
+    client.completion(model="openai/model-id", messages=[], tools=None)
+    asyncio.run(client.acompletion(model="openai/model-id", messages=[], tools=None))
 
-    assert calls == []
+    assert len(calls) == 2
+    for call in calls:
+        assert call["api_key"] == "fresh-jwt"
+        assert call.get("extra_headers", {}) == {}
 
 
 def test_lite_llm_does_not_derive_authority_from_environment_metadata(monkeypatch):
@@ -185,6 +184,8 @@ def test_lite_llm_does_not_derive_authority_from_environment_metadata(monkeypatc
         "aion_principal_selector",
         lambda: "aion://agent/environment/env-id",
     )
+    monkeypatch.setattr("aion.api.callback_attribution.get_aion_runtime_context",
+                        lambda: AionRuntimeContext())
 
     client = aion_lite_llm("model-id").kwargs["llm_client"]
 

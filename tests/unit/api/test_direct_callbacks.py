@@ -49,6 +49,21 @@ def test_uncredentialed_direct_request_cannot_use_its_guest_token(monkeypatch):
         callback_headers(usage_attribution="stale-carrier")
 
 
+def test_self_initiated_model_and_mcp_keep_version_credentials(monkeypatch):
+    monkeypatch.setattr("aion.api.callback_attribution.get_aion_runtime_context", lambda: None)
+    assert aion_mcp_authorization_headers("version-token") == {
+        "Authorization": "Bearer version-token",
+    }
+    request = httpx.Request("POST", "https://api.aion.test/v1/chat/completions")
+    model_service_client._model_request_hook(lambda: "version-token")(request)
+    assert request.headers["Authorization"] == "Bearer version-token"
+    assert "Aion-Caller-Id" not in request.headers
+    assert "Aion-Usage-Attribution" not in request.headers
+    assert "Aion-Principal-Selector" not in request.headers
+    with pytest.raises(AionAuthenticationError, match="API token"):
+        aion_mcp_authorization_headers(None)
+
+
 @pytest.mark.parametrize("payload", [
     {"error": {"code": "daemon_identity_required", "type": "configuration_error"}},
     {"error": {"code": -32600, "data": {"code": "daemon_identity_required"}}},
