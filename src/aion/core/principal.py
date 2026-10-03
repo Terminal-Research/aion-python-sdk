@@ -1,4 +1,9 @@
-"""The canonical subject a verified token names its caller by: ``aion:v1:<PrincipalType>:<encoded-id>``."""
+"""Canonical caller IDs shared by token subjects, distribution metadata and callbacks.
+
+Parsing proves only canonical formatting, never authentication. A deployment may
+report an unverified caller for attribution; authorization still uses its Version
+credential and the control plane's independently resolved execution principal.
+"""
 
 from __future__ import annotations
 
@@ -7,6 +12,8 @@ import binascii
 import re
 import uuid
 from dataclasses import dataclass
+
+from aion.core.exceptions import InvalidPrincipalError
 
 __all__ = [
     "ANONYMOUS_SESSION",
@@ -44,10 +51,6 @@ _PROVIDER_LABEL = re.compile(r"[!-9;-~]+")
 _UUID_TYPES = {ANONYMOUS_SESSION: "an anonymous session's", EXTERNAL_IDENTITY: "an external identity's"}
 
 
-class InvalidPrincipalError(ValueError):
-    """A subject that is not a canonical principal."""
-
-
 @dataclass(frozen=True)
 class Principal:
     """Who a subject names: a principal type, and an ID that is unique within it.
@@ -60,7 +63,8 @@ class Principal:
     the composite ``ExternalSender`` ID - and any other type's ID is taken as
     the opaque, case-sensitive string it is. The types are not a closed list
     here: which agent and system types exist, and their ID formats, is Aion's
-    backend contract.
+    backend contract. This value carries no evidence of authentication and must
+    not grant permissions merely because it can be parsed.
     """
 
     type: str

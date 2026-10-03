@@ -1,8 +1,21 @@
 """The canonical subject ``aion:v1:<PrincipalType>:<encoded-id>``: one encoder, one decoder, exact round trips."""
 
+import json
+from pathlib import Path
+
 import pytest
 
-from aion.server.auth import InvalidPrincipalError, Principal
+from aion.core.principal import InvalidPrincipalError, Principal
+
+
+@pytest.mark.parametrize("vector", json.loads(
+    (Path(__file__).parent / "fixtures" / "caller-id-vectors.json").read_text()
+))
+def test_backend_golden_caller_ids(vector) -> None:
+    """Literal Scala wire vectors prevent a self-consistent but divergent codec."""
+    principal = Principal(vector["kind"], vector["id"])
+    assert principal.subject == vector["subject"]
+    assert Principal.from_subject(vector["subject"]) == principal
 
 SESSION_ID = "f9d7daea-df95-4111-8533-5d6f043edaf9"
 IDENTITY_ID = "3c9a7e51-2b8d-4f6a-9c0e-1d2f3a4b5c6d"

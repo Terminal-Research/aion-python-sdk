@@ -45,11 +45,16 @@ __all__ = [
     "AionAuthenticationError",
     "AionFileValidationError",
     "AionModelPrincipalError",
+    "InvalidPrincipalError",
 ]
 
 
 class AionError(Exception):
     """Root of every exception the SDK raises on its own behalf."""
+
+
+class InvalidPrincipalError(AionError, ValueError):
+    """A caller ID is not canonical; successful parsing would not authenticate it."""
 
 
 class MissingOptionalDependency(AionError, ImportError):

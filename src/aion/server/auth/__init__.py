@@ -23,7 +23,7 @@ from .caller import (
 )
 from .jwks import JwksKeySource
 from .mode import AuthConfigurationError, build_token_verifier, deployment_id, is_hosted
-from .principal import InvalidPrincipalError, Principal
+from aion.core.principal import InvalidPrincipalError, Principal
 from .verifier import (
     MAX_TOKEN_BYTES,
     InvalidTokenError,

@@ -14,7 +14,7 @@ from aion.core.exceptions import AionError
 
 from .caller import Assurance, AuthenticatedCaller, CredentialKind, GatewayCoordinates
 from .jwks import JwksKeySource
-from .principal import ANONYMOUS_SESSION, InvalidPrincipalError, Principal, canonical_uuid
+from aion.core.principal import ANONYMOUS_SESSION, InvalidPrincipalError, Principal, canonical_uuid
 
 __all__ = [
     "ANONYMOUS_SESSION_AUDIENCE",

@@ -1,0 +1,7 @@
+[
+  {"kind":"AionUser","id":"00000000-0000-0000-0000-000000000001","subject":"aion:v1:AionUser:MDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDAx"},
+  {"kind":"AnonymousSession","id":"00000000-0000-0000-0000-000000000002","subject":"aion:v1:AnonymousSession:MDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDAy"},
+  {"kind":"ExternalAnonymous","id":"anonymous","subject":"aion:v1:ExternalAnonymous:YW5vbnltb3Vz"},
+  {"kind":"InternalService","id":"cron:system","subject":"aion:v1:InternalService:Y3JvbjpzeXN0ZW0"},
+  {"kind":"ExternalSender","id":"v1:slack:dGVuYW50:c2VuZGVy","subject":"aion:v1:ExternalSender:djE6c2xhY2s6ZEdWdVlXNTA6YzJWdVpHVnk"}
+]

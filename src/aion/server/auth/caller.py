@@ -6,7 +6,7 @@ from typing import Any, Mapping, Optional
 
 from starlette.authentication import AuthCredentials, BaseUser
 
-from .principal import Principal
+from aion.core.principal import Principal
 
 __all__ = [
     "Assurance",

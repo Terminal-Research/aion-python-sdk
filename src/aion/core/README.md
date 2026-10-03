@@ -17,6 +17,7 @@ All other Aion subpackages depend on this one; it has no internal Aion dependenc
 | `aion.core.agent` | `BaseThread`, `BaseMessage`, `User` — the base invocation abstractions (`card`, `message`, `thread`) frameworks build on |
 | `aion.core.constants` | Shared A2A extension URI constants |
 | `aion.core.runtime` | `AionRuntimeContext` — invocation-scoped context carrier |
+| `aion.core.principal` | Canonical caller-ID codec shared by server token subjects, distribution metadata and callback attribution |
 | `aion.core.logging` | `AionLogger` / `AionLogRecord` — the logger class every Aion logger is created from, carrying the context fields `aion.server` fills in |
 | `aion.core.config` | `aion.yaml` models (`AionConfig`, `AgentConfig`, `AgentSkill`), `AionConfigReader`, the publication collectors (`ConfigurationError` is re-exported here from `aion.core.exceptions`) |
 | `aion.core.settings` | `BaseEnvSettings`, `ApiSettings`, `api_settings` |
@@ -25,7 +26,17 @@ All other Aion subpackages depend on this one; it has no internal Aion dependenc
 | `aion.core.metaclasses` | `Singleton`, `SingletonABCMeta` |
 | `aion.core.utils` | Pydantic, text, and URL helpers, plus `missing_extra_error`, which names the extra a missing library belongs to and raises `aion.core.exceptions.MissingOptionalDependency` |
 
+## Caller IDs
+
+Caller IDs have the format `aion:v1:<PrincipalType>:<unpadded-base64url-id>`.
+`Principal.from_subject` checks canonical formatting and round-trips already
+encoded subjects unchanged. It does not authenticate a caller: direct callback
+attribution may be reported by the deployment, while callback authorization is
+resolved independently from its Version credential. Do not infer an Aion user
+from a raw provider ID or use a decoded caller as an authorization grant.
+
 ## Scheduled Invocations
+
 
 The optional Cron extension exposes `CronExtensionV1` through
 `context.extensions.get(CRON_EXTENSION_URI_V1)`. Check
