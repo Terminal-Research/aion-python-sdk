@@ -176,6 +176,9 @@ class ServeProcess:
     def __init__(self, framework: Framework, variant: ServeVariant) -> None:
         self.framework = framework
         self.variant = variant
+        # Bind the shared service first so its ephemeral port does not consume
+        # the adjacent agent port after we choose the proxy's base port.
+        control_plane()
         self.port = _free_port()
         self._directory = Path(tempfile.mkdtemp(prefix=f"aion-scenarios-{framework.name}-{variant.name}-"))
         self._process: Optional[subprocess.Popen] = None
