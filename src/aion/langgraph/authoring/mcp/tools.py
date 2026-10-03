@@ -11,6 +11,7 @@ from aion.api.control_plane import (
     PrincipalSelector,
     RuntimeCapabilityReference,
 )
+from aion.api.callback_errors import reraise_callback_error
 from aion.mcp import (
     AionMcpEndpoint,
     aion_mcp_endpoint,
@@ -310,7 +311,11 @@ async def load_aion_mcp_tools(
     )
     factory = client_factory or _default_multi_server_client
     client = factory(config)
-    return await client.get_tools()
+    try:
+        return await client.get_tools()
+    except Exception as error:
+        reraise_callback_error(error)
+        raise
 
 
 async def _endpoints(

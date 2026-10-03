@@ -15,6 +15,7 @@ from aion.api.control_plane import (
 )
 from aion.api.exceptions import AionAuthenticationError, AionModelPrincipalError
 from aion.api.callback_attribution import callback_headers, reject_callback_selector
+from aion.api.callback_errors import callback_response_hook, async_callback_response_hook
 from aion.api.http.jwt_manager import (
     AionJWTManager,
     AionRefreshingJWTManager,
@@ -95,6 +96,8 @@ class AionModelClientConfig:
         kwargs["http_async_client"] = _aion_model_async_http_client(
             api_key_provider
         )
+        # A configuration failure cannot be repaired by retrying the transport.
+        kwargs["max_retries"] = 0
         return kwargs
 
 
@@ -275,7 +278,8 @@ def _aion_model_http_client(
 ) -> httpx.Client:
     """Create an HTTPX client with runtime model headers."""
     return httpx.Client(
-        event_hooks={"request": [_model_request_hook(api_key_provider)]}
+        event_hooks={"request": [_model_request_hook(api_key_provider)],
+                     "response": [callback_response_hook]}
     )
 
 
@@ -284,7 +288,8 @@ def _aion_model_async_http_client(
 ) -> httpx.AsyncClient:
     """Create an async HTTPX client with runtime model headers."""
     return httpx.AsyncClient(
-        event_hooks={"request": [_async_model_request_hook(api_key_provider)]}
+        event_hooks={"request": [_async_model_request_hook(api_key_provider)],
+                     "response": [async_callback_response_hook]}
     )
 
 

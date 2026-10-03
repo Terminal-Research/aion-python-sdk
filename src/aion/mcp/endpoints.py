@@ -18,6 +18,7 @@ from aion.api.control_plane import (
 )
 from aion.api.exceptions import AionAuthenticationError
 from aion.api.callback_attribution import callback_headers, reject_callback_selector
+from aion.api.callback_errors import async_callback_response_hook
 from aion.api.http import aion_jwt_manager
 
 if TYPE_CHECKING:
@@ -69,6 +70,7 @@ class AionMcpEndpoint:
         config: dict[str, Any] = {
             "transport": self.transport,
             "url": self.url,
+            "httpx_client_factory": aion_mcp_http_client,
         }
         if self.headers:
             config["headers"] = dict(self.headers)
@@ -81,6 +83,24 @@ class AionMcpEndpoint:
             A ``MultiServerMCPClient``-ready mapping containing this endpoint.
         """
         return {self.name: self.as_langchain_config()}
+
+
+def aion_mcp_http_client(headers=None, timeout=None, auth=None):
+    """Use MCP transport defaults with callback errors intact.
+
+    Args:
+        headers: Request-scoped endpoint credentials and attribution.
+        timeout: MCP's timeout configuration, including its stream read timeout.
+        auth: Optional transport authentication handler.
+
+    Returns:
+        A new async HTTP client; its MCP session owns closing it.
+    """
+    from mcp.shared._httpx_utils import create_mcp_http_client
+
+    client = create_mcp_http_client(headers=headers, timeout=timeout, auth=auth)
+    client.event_hooks["response"].append(async_callback_response_hook)
+    return client
 
 
 def aion_mcp_authorization_headers(
@@ -97,6 +117,7 @@ def aion_mcp_authorization_headers(
         principal_selector: Retired override; any explicit value is rejected.
         usage_attribution: Optional opaque usage-attribution carrier to
             preserve across this request.
+        context: Explicit runtime scope, otherwise the current invocation.
 
     Returns:
         HTTP headers for Aion MCP requests.

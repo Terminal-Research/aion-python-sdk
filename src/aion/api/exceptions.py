@@ -11,6 +11,7 @@ import httpx
 
 from aion.core.exceptions import (
     AionAuthenticationError,
+    AionDaemonIdentityRequired,
     AionError,
     AionFileValidationError,
     AionModelPrincipalError,
@@ -21,6 +22,7 @@ __all__ = [
     "AionFileStorageError",
     "AionFileValidationError",
     "AionAuthenticationError",
+    "AionDaemonIdentityRequired",
     "AionModelPrincipalError",
 ]
 

@@ -15,6 +15,7 @@ from .control_plane import (
 )
 from .exceptions import (
     AionAuthenticationError,
+    AionDaemonIdentityRequired,
     AionError,
     AionFileStorageError,
     AionFileValidationError,
@@ -30,6 +31,7 @@ __all__ = [
     "AION_PRINCIPAL_SELECTOR_HEADER",
     "AION_RESOURCE_URI_SCHEME",
     "AionAuthenticationError",
+    "AionDaemonIdentityRequired",
     "AionError",
     "AionGqlClient",
     "AionHttpClient",

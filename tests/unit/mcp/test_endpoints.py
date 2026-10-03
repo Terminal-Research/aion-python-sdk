@@ -27,6 +27,7 @@ from aion.mcp import (
     aion_mcp_authorization_headers,
     aion_runtime_context_mcp_endpoints_sync,
 )
+from aion.mcp.endpoints import aion_mcp_http_client
 
 
 class FakeAsyncTokenManager:
@@ -86,6 +87,7 @@ def test_endpoint_returns_langchain_multi_server_config() -> None:
         "transport": "http",
         "url": "https://api.example.com/mcp/capabilities/mcp.aion.metatools",
         "headers": {"Authorization": "Bearer jwt-token"},
+        "httpx_client_factory": aion_mcp_http_client,
     }
     assert endpoint.as_multi_server_config() == {
         "aion_metatools": endpoint.as_langchain_config()

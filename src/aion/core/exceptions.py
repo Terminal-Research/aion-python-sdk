@@ -46,6 +46,7 @@ __all__ = [
     "AionFileValidationError",
     "AionModelPrincipalError",
     "InvalidPrincipalError",
+    "AionDaemonIdentityRequired",
 ]
 
 
@@ -104,6 +105,25 @@ class AionAuthenticationError(AionError):
         self.status_code = status_code
 
 
+class AionDaemonIdentityRequired(ConfigurationError):
+    """A callback needs an explicitly assigned daemon, not different credentials.
+
+    Repair the deployment or agent environment's Identity tab. Retrying or
+    selecting the reported caller as executor cannot repair this configuration.
+    """
+
+    code = "daemon_identity_required"
+    retryable = False
+
+    def __init__(self, resource_type: str | None = None, resource_id: str | None = None):
+        self.resource_type = resource_type
+        self.resource_id = resource_id
+        super().__init__(
+            "Assign a daemon identity in the deployment or agent environment's "
+            "Identity tab before making this callback (daemon_identity_required)."
+        )
+
+
 class AionFileValidationError(AionError, ValueError):
     """Invalid Files API arguments rejected before sending a request.
 
@@ -115,16 +135,9 @@ class AionFileValidationError(AionError, ValueError):
 class AionModelPrincipalError(AionAuthenticationError):
     """A model call has no principal the model service will run work for.
 
-    Deployment credentials authenticate the agent *version*. The model service
-    does not execute work for a version: it needs the runtime principal — the
-    environment's Daemon Identity — which travels in the
-    ``Aion-Principal-Selector`` header and is resolved from the invocation's
-    environment.
-
-    The refusal happens server-side either way, but it arrives as a statement
-    about the protocol rather than about the deployment. Raising here instead
-    keeps the explanation next to the cause and spares a round trip that was
-    going to fail.
+    Used when normalizing ordinary GraphQL model principal arguments. SDK
+    callbacks instead use typed request-local attribution; a missing assigned
+    executor is reported by AionDaemonIdentityRequired after backend resolution.
 
     Args:
         message: What is missing and where it is fixed.

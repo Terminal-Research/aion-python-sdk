@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from aion.api import aion_openai_config
+from aion.api.callback_errors import reraise_callback_error
 
 _RESERVED_AION_MODEL_KWARGS = frozenset(
     {
@@ -75,6 +76,7 @@ def aion_chat_model(
     config = aion_openai_config()
     model_kwargs = config.langchain_openai_kwargs()
     model_kwargs.update(kwargs)
+    model_kwargs["callbacks"] = _callback_handlers(model_kwargs.get("callbacks"))
     return init_chat_model(
         model=model,
         model_provider="openai",
@@ -127,7 +129,26 @@ def aion_chat_openai(
     config = aion_openai_config()
     model_kwargs = config.langchain_openai_kwargs()
     model_kwargs.update(kwargs)
+    model_kwargs["callbacks"] = _callback_handlers(model_kwargs.get("callbacks"))
     return ChatOpenAI(model=model, **model_kwargs)
+
+
+def _callback_handlers(existing):
+    """Preserve typed configuration errors wrapped by the OpenAI transport."""
+    from langchain_core.callbacks import BaseCallbackHandler, BaseCallbackManager
+
+    class CallbackErrors(BaseCallbackHandler):
+        raise_error = True
+        run_inline = True
+
+        def on_llm_error(self, error: BaseException, **kwargs):
+            reraise_callback_error(error)
+
+    if isinstance(existing, BaseCallbackManager):
+        manager = existing.copy()
+        manager.add_handler(CallbackErrors())
+        return manager
+    return [*(existing or ()), CallbackErrors()]
 
 
 def _reject_reserved_model_kwargs(

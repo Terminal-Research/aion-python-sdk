@@ -18,6 +18,8 @@ from aion.mcp import (
     aion_runtime_context_mcp_endpoints,
     aion_runtime_context_mcp_endpoints_sync,
 )
+from aion.mcp.endpoints import aion_mcp_http_client
+from aion.api.callback_errors import reraise_callback_error
 
 if TYPE_CHECKING:
     from aion.core.runtime.context.models import AionRuntimeContext
@@ -93,9 +95,13 @@ def aion_adk_mcp_toolset(
             tools: list[Any] = []
             for endpoint in endpoints:
                 toolset = self._toolset_for(endpoint)
-                result = toolset.get_tools(readonly_context)
-                if isawaitable(result):
-                    result = await result
+                try:
+                    result = toolset.get_tools(readonly_context)
+                    if isawaitable(result):
+                        result = await result
+                except Exception as error:
+                    reraise_callback_error(error)
+                    raise
                 tools.extend(result)
             return tools
 
@@ -296,6 +302,7 @@ def _adk_mcp_toolset_from_endpoint(
         connection_params=StreamableHTTPConnectionParams(
             url=endpoint.url,
             headers=dict(endpoint.headers),
+            httpx_client_factory=aion_mcp_http_client,
         ),
         tool_filter=tool_filter,
         tool_name_prefix=tool_name_prefix,

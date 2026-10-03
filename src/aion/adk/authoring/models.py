@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from aion.api import aion_openai_config
+from aion.api.callback_errors import reraise_callback_error
 from aion.api.model_service_client import (
     aion_model_api_key,
     aion_model_request_headers,
@@ -33,12 +34,14 @@ def _aion_lite_llm_client(base_client_type: type[Any]) -> Any:
             request_kwargs["extra_headers"] = aion_model_request_headers(
                 request_kwargs.get("extra_headers")
             )
-            return litellm.completion(
-                model=model,
-                messages=messages,
-                tools=tools,
-                **request_kwargs,
-            )
+            request_kwargs.setdefault("num_retries", 0)
+            try:
+                return litellm.completion(
+                    model=model, messages=messages, tools=tools, **request_kwargs,
+                )
+            except Exception as error:
+                reraise_callback_error(error)
+                raise
 
         async def acompletion(
             self,
@@ -58,12 +61,14 @@ def _aion_lite_llm_client(base_client_type: type[Any]) -> Any:
             request_kwargs["extra_headers"] = aion_model_request_headers(
                 request_kwargs.get("extra_headers")
             )
-            return await litellm.acompletion(
-                model=model,
-                messages=messages,
-                tools=tools,
-                **request_kwargs,
-            )
+            request_kwargs.setdefault("num_retries", 0)
+            try:
+                return await litellm.acompletion(
+                    model=model, messages=messages, tools=tools, **request_kwargs,
+                )
+            except Exception as error:
+                reraise_callback_error(error)
+                raise
 
     return AionLiteLlmClient()
 

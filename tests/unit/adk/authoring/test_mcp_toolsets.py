@@ -75,9 +75,10 @@ def install_fake_google_adk(monkeypatch):
         pass
 
     class StreamableHTTPConnectionParams:
-        def __init__(self, *, url, headers):
+        def __init__(self, *, url, headers, httpx_client_factory=None):
             self.url = url
             self.headers = headers
+            self.httpx_client_factory = httpx_client_factory
 
     class McpToolset:
         def __init__(

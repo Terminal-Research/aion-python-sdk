@@ -50,6 +50,7 @@ def test_aion_chat_model_configures_langchain_init(monkeypatch):
     )
 
     assert result == "chat-model"
+    assert captured.pop("callbacks")[0].raise_error is True
     assert captured == {
         "model": "model-id-from-control-plane",
         "model_provider": "openai",
@@ -76,6 +77,7 @@ def test_aion_chat_openai_configures_chat_openai(monkeypatch):
     result = aion_chat_openai("model-id-from-control-plane")
 
     assert isinstance(result, ChatOpenAI)
+    assert captured.pop("callbacks")[0].raise_error is True
     assert captured == {
         "model": "model-id-from-control-plane",
         "base_url": "https://api.example.test/v1",

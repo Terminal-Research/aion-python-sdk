@@ -3,9 +3,10 @@
 from collections.abc import Iterable, Mapping
 
 from aion.core.constants import AION_USAGE_ATTRIBUTION_HEADER
-from aion.core.exceptions import AionAuthenticationError
+from aion.core.exceptions import AionAuthenticationError, InvalidPrincipalError
+from aion.core.principal import Principal
 from aion.core.runtime.context import (
-    AionRuntimeContext, ForwardedAttribution, get_aion_runtime_context,
+    AionRuntimeContext, DirectAttribution, ForwardedAttribution, get_aion_runtime_context,
 )
 
 AION_CALLER_ID_HEADER = "Aion-Caller-Id"
@@ -57,8 +58,7 @@ def callback_headers(
             headers[key] = value
     if len(reserved) > 1:
         raise AionAuthenticationError("Signed and direct callback attribution cannot be combined.")
-    if AION_CALLER_ID_HEADER.casefold() in reserved:
-        raise AionAuthenticationError("Direct callback attribution must come from the runtime context.")
+    reported = reserved.get(AION_CALLER_ID_HEADER.casefold())
     supplied = reserved.get(AION_USAGE_ATTRIBUTION_HEADER.casefold())
     if usage_attribution is not None:
         explicit = ForwardedAttribution(usage_attribution).carrier
@@ -67,6 +67,15 @@ def callback_headers(
         supplied = explicit
     runtime = context if context is not None else get_aion_runtime_context()
     attribution = runtime.get_callback_attribution() if runtime is not None else None
+    if reported is not None:
+        if usage_attribution is not None:
+            raise AionAuthenticationError("Signed and direct callback attribution cannot be combined.")
+        try:
+            caller = Principal.from_subject(reported)
+        except InvalidPrincipalError as error:
+            raise AionAuthenticationError("Malformed reported callback caller.") from error
+        if attribution != DirectAttribution(caller):
+            raise AionAuthenticationError("Reported caller conflicts with the current request.")
     if supplied is not None:
         explicit = ForwardedAttribution(supplied)
         if attribution is not None and attribution != explicit:
@@ -74,6 +83,8 @@ def callback_headers(
         attribution = explicit
     if isinstance(attribution, ForwardedAttribution):
         headers[AION_USAGE_ATTRIBUTION_HEADER] = attribution.carrier
-    elif attribution is not None or required:
+    elif isinstance(attribution, DirectAttribution):
+        headers[AION_CALLER_ID_HEADER] = attribution.caller.subject
+    elif required:
         raise AionAuthenticationError("This callback requires supported request-local attribution.")
     return headers
