@@ -1,9 +1,9 @@
 """The verified projection a file upload is authorized against.
 
-A backend needs three request-scoped facts that live in different places: the
-organization that will own the file, the effective principal the call acts as,
-and the opaque usage carrier that decides who is billed. During request
-preprocessing none of them are reachable through ``AionRuntimeContext`` - it is
+A backend needs request-scoped inputs that live in different places: the
+organization that will own the file and the opaque usage carrier that names
+the executor Aion must verify and authorize. During request
+preprocessing neither input are reachable through ``AionRuntimeContext`` - it is
 only established later, inside the executor - so they are projected out of the
 verified extensions once and handed to the backend explicitly.
 
@@ -19,7 +19,6 @@ import logging
 from dataclasses import dataclass
 from typing import Optional, Union
 
-from aion.api.control_plane import PrincipalSelector
 from aion.core.a2a.extensions import DistributionExtensionV1, PrincipalIdentity
 from aion.core.constants import (
     DISTRIBUTION_EXTENSION_URI_V1,
@@ -39,7 +38,6 @@ class UploadContext:
     """Everything a backend needs to store a file for this request."""
 
     organization_id: str
-    principal_selector: Optional[PrincipalSelector] = None
     usage_attribution: Optional[str] = None
     context_id: Optional[str] = None
     task_id: Optional[str] = None
@@ -97,7 +95,6 @@ def resolve_upload_context(
 
     return UploadContext(
         organization_id=principals[0].organization_id,
-        principal_selector=_selector(payload),
         usage_attribution=_usage_attribution(source),
         context_id=context_id,
         task_id=task_id,
@@ -113,19 +110,6 @@ def _distribution_payload(source: object) -> Optional[DistributionExtensionV1]:
         payload = source.get(DISTRIBUTION_EXTENSION_URI_V1)
         return payload if isinstance(payload, DistributionExtensionV1) else None
     return None
-
-
-def _selector(payload: DistributionExtensionV1) -> Optional[PrincipalSelector]:
-    """Build the effective-principal selector for a distribution payload."""
-    raw = payload.environment.principal_selector
-    try:
-        return PrincipalSelector.from_header_value(raw)
-    except ValueError:
-        # A selector the API would reject anyway. Sending nothing lets the
-        # service fall back to the token's own principal, which is the same
-        # degradation as a request that never had an environment.
-        logger.debug("Ignoring unusable principal selector %r", raw)
-        return None
 
 
 def _usage_attribution(source: object) -> Optional[str]:

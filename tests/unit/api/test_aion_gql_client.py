@@ -276,13 +276,13 @@ async def test_a2a_stream_forwards_request_scoped_usage_attribution(
     )
     client.client = generated_client
     client._is_initialized = True
+    from aion.core.runtime.context import ForwardedAttribution
     monkeypatch.setattr(
-        gql_client_module,
-        "get_aion_runtime_context",
+        "aion.api.callback_attribution.get_aion_runtime_context",
         lambda: type(
             "RuntimeContext",
             (),
-            {"get_usage_attribution": lambda self: "signed-token"},
+            {"get_callback_attribution": lambda self: ForwardedAttribution("signed-token")},
         )(),
     )
 

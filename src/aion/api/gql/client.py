@@ -9,10 +9,10 @@ from aion.core.constants import (
     AION_USAGE_ATTRIBUTION_HEADER,
     USAGE_ATTRIBUTION_EXTENSION_URI_V1,
 )
-from aion.core.runtime.context import get_aion_runtime_context
 from aion.core.settings import api_settings
 
 from aion.api.control_plane import CapabilitySubject, PrincipalSelector
+from aion.api.callback_attribution import callback_headers, reject_callback_selector
 from aion.api.http import AionJWTManager
 from aion.api.http.client import DEFAULT_HTTP_TIMEOUT_SECONDS
 from aion.api.model_service_client import aion_model_principal_selector_value
@@ -265,18 +265,24 @@ class AionGqlClient:
             request (A2AJsonRpcRequestGQLInput): JSON-RPC request payload.
             target: Capability subject addressed by the request. Build a
                 distribution target with ``CapabilitySubject.distribution``.
-            principal: Optional principal selector.
+            principal: Optional ordinary GraphQL principal, rejected for callbacks.
             service_parameters: Optional A2A transport parameters. The current
                 request's opaque usage carrier is merged when one is present.
             **kwargs (Any): Additional parameters forwarded to the underlying client.
         """
         self._validate_client_before_execute()
         gql_target = _to_capability_subject_gql_input(target)
+        parameters = _with_callback_attribution(service_parameters)
+        if parameters is not None and any(
+            item.key.casefold() in ("aion-usage-attribution", "aion-caller-id")
+            for item in parameters.additional or ()
+        ):
+            reject_callback_selector(principal)
 
         async for chunk in self.client.a_2_a_stream(
             request=request,
             target=gql_target,
-            service_parameters=_with_usage_attribution(service_parameters),
+            service_parameters=parameters,
             principal=_to_principal_selector_gql_value(principal),
             **kwargs
         ):
@@ -358,36 +364,21 @@ class AionGqlClient:
         return result.get("versionIdByClientId")
 
 
-def _with_usage_attribution(
+def _with_callback_attribution(
     service_parameters: A2AServiceParametersGQLInput | None,
 ) -> A2AServiceParametersGQLInput | None:
-    """Merge the request-local opaque carrier into A2A service parameters."""
-    context = get_aion_runtime_context()
-    carrier = context.get_usage_attribution() if context is not None else None
-    if not carrier:
-        return service_parameters
-
+    """Merge exclusive callback inputs before GraphQL duplicate normalization."""
     current = service_parameters or A2AServiceParametersGQLInput()
-    additional = list(current.additional or ())
-    has_carrier = any(
-        item.key.casefold() == AION_USAGE_ATTRIBUTION_HEADER.casefold()
-        for item in additional
-    )
-    if not has_carrier:
-        additional.append(
-            A2AServiceParameterGQLInput(
-                key=AION_USAGE_ATTRIBUTION_HEADER,
-                value=carrier,
-            )
-        )
-
+    headers = callback_headers((item.key, item.value) for item in current.additional or ())
+    if not headers and service_parameters is None:
+        return None
     extensions = list(current.extensions or ())
-    if USAGE_ATTRIBUTION_EXTENSION_URI_V1 not in extensions:
+    if AION_USAGE_ATTRIBUTION_HEADER in headers and USAGE_ATTRIBUTION_EXTENSION_URI_V1 not in extensions:
         extensions.append(USAGE_ATTRIBUTION_EXTENSION_URI_V1)
     return A2AServiceParametersGQLInput(
         version=current.version,
         extensions=extensions,
-        additional=additional,
+        additional=[A2AServiceParameterGQLInput(key=key, value=value) for key, value in headers.items()],
     )
 
 

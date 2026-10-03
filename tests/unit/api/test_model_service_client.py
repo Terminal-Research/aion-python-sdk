@@ -168,262 +168,75 @@ def test_langchain_kwargs_add_request_scoped_clients(monkeypatch):
     assert captured_providers == [api_key_provider, api_key_provider]
 
 
-def test_model_request_headers_adds_principal_from_provider():
-    headers = model_service_client.aion_model_request_headers(
-        principal_selector_provider=lambda: "aion://agent/identity/identity-id"
-    )
-
-    assert headers == {
-        model_service_client.AION_PRINCIPAL_SELECTOR_HEADER: (
-            "aion://agent/identity/identity-id"
-        )
-    }
-
-
-def test_model_request_headers_rejects_environment_principal():
-    """An environment principal is refused by the model service, so it never goes out."""
-    with pytest.raises(AionModelPrincipalError) as excinfo:
-        model_service_client.aion_model_request_headers(
-            principal_selector_provider=lambda: "aion://agent/environment/env-id"
-        )
-
-    assert excinfo.value.selector == "aion://agent/environment/env-id"
-    assert "Daemon Identity" in str(excinfo.value)
-
-
-def test_model_request_headers_rejects_missing_principal():
-    """No principal at all means the call is attributed to the agent version."""
-    with pytest.raises(AionModelPrincipalError) as excinfo:
-        model_service_client.aion_model_request_headers(
-            principal_selector_provider=lambda: None
-        )
-
-    assert excinfo.value.selector is None
-    assert "Daemon Identity" in str(excinfo.value)
-
-
-def test_model_request_headers_rejects_invalid_principal():
-    with pytest.raises(AionModelPrincipalError) as excinfo:
-        model_service_client.aion_model_request_headers(
-            principal_selector_provider=lambda: "not-a-selector"
-        )
-
-    assert "not a valid Aion selector" in str(excinfo.value)
-
-
-def test_model_request_headers_adds_usage_attribution_from_provider():
-    """A signed carrier supplements, rather than replaces, the principal."""
-    headers = model_service_client.aion_model_request_headers(
-        principal_selector_provider=lambda: "aion://agent/identity/identity-id",
-        usage_attribution_provider=lambda: "signed-token",
-    )
-
-    assert headers == {
-        model_service_client.AION_PRINCIPAL_SELECTOR_HEADER: (
-            "aion://agent/identity/identity-id"
-        ),
-        model_service_client.AION_USAGE_ATTRIBUTION_HEADER: "signed-token"
-    }
-
-
-@pytest.mark.parametrize("header_name", [
-    model_service_client.AION_USAGE_ATTRIBUTION_HEADER,
-    model_service_client.AION_USAGE_ATTRIBUTION_HEADER.lower(),
-])
-def test_model_request_headers_preserves_explicit_usage_attribution(header_name):
-    """Case-insensitive explicit usage headers override the runtime carrier."""
-    headers = model_service_client.aion_model_request_headers(
-        {header_name: "explicit-token"},
-        principal_selector_provider=lambda: "aion://agent/identity/identity-id",
-        usage_attribution_provider=lambda: "context-token",
-    )
-
-    assert headers[model_service_client.AION_USAGE_ATTRIBUTION_HEADER] == (
-        "explicit-token"
-    )
-
-
-@pytest.mark.parametrize("selector", [
-    None,
-    "aion://agent/environment/env-id",
-    "not-a-selector",
-])
-def test_usage_attribution_does_not_bypass_principal_validation(selector):
-    """A billing carrier never authorizes an otherwise invalid model call."""
-    with pytest.raises(AionModelPrincipalError):
+@pytest.mark.parametrize("selector", [None, "aion://agent/environment/env", "invalid"])
+def test_model_rejects_retired_selector_provider(selector):
+    with pytest.raises(AionAuthenticationError, match="no longer supported"):
         model_service_client.aion_model_request_headers(
             principal_selector_provider=lambda: selector,
-            usage_attribution_provider=lambda: "signed-token",
+            usage_attribution_provider=lambda: "opaque",
         )
 
 
-def test_model_principal_selector_value_stays_lenient_by_default(caplog):
-    """Non-strict callers still normalize rather than raise."""
+@pytest.mark.parametrize("key", ["Aion-Principal-Selector", "aion-principal-selector"])
+def test_model_rejects_retired_header_even_with_carrier(key):
+    with pytest.raises(AionAuthenticationError, match="no longer supported"):
+        model_service_client.aion_model_request_headers(
+            {key: "aion://agent/identity/old", "Aion-Usage-Attribution": "opaque"}
+        )
+
+
+def test_model_requires_attribution_not_selector():
+    with pytest.raises(AionAuthenticationError, match="request-local attribution"):
+        model_service_client.aion_model_request_headers()
+
+
+@pytest.mark.parametrize("key", ["Aion-Usage-Attribution", "aion-usage-attribution"])
+def test_model_forwards_opaque_carrier_without_selector(key):
+    existing = {key: "opaque", "X-Request-ID": "request-1"}
+    assert model_service_client.aion_model_request_headers(existing) == {
+        "Aion-Usage-Attribution": "opaque", "X-Request-ID": "request-1",
+    }
+    assert existing == {key: "opaque", "X-Request-ID": "request-1"}
+
+
+def test_model_explicit_carrier_cannot_override_provider():
+    with pytest.raises(AionAuthenticationError, match="Conflicting"):
+        model_service_client.aion_model_request_headers(
+            {"Aion-Usage-Attribution": "other"},
+            usage_attribution_provider=lambda: "current",
+        )
+
+
+def test_model_http_client_refreshes_credentials_and_scope_per_request(monkeypatch):
+    from aion.core.runtime.context import AionRuntimeContext, ForwardedAttribution
+    contexts = iter(
+        AionRuntimeContext(callback_attribution=ForwardedAttribution(value))
+        for value in ("first", "second")
+    )
+    monkeypatch.setattr(
+        "aion.api.callback_attribution.get_aion_runtime_context", lambda: next(contexts)
+    )
+    tokens = iter(["version-1", "version-2"])
+    with model_service_client._aion_model_http_client(lambda: next(tokens)) as client:
+        requests = [
+            client.build_request("POST", "https://api.example.test/v1/chat/completions")
+            for _ in range(2)
+        ]
+        for request in requests:
+            for hook in client.event_hooks["request"]:
+                hook(request)
+    for request, token, carrier in zip(requests, ("version-1", "version-2"), ("first", "second")):
+        assert request.headers["Authorization"] == f"Bearer {token}"
+        assert request.headers["Aion-Usage-Attribution"] == carrier
+        assert "Aion-Principal-Selector" not in request.headers
+
+
+def test_graphql_model_principal_normalization_remains_lenient(caplog):
     caplog.set_level(logging.ERROR, logger="aion.api.model_service_client")
-
-    value = model_service_client.aion_model_principal_selector_value(
+    assert model_service_client.aion_model_principal_selector_value(
         "aion://agent/environment/env-id"
-    )
-
-    assert value is None
+    ) is None
     assert "environment selector will not be sent" in caplog.text
-
-
-def test_model_request_headers_does_not_mutate_existing_headers():
-    existing = {"X-Request-ID": "request-1"}
-
-    headers = model_service_client.aion_model_request_headers(
-        existing,
-        principal_selector_provider=lambda: "aion://agent/identity/identity-id",
-    )
-
-    assert existing == {"X-Request-ID": "request-1"}
-    assert headers == {
-        "X-Request-ID": "request-1",
-        model_service_client.AION_PRINCIPAL_SELECTOR_HEADER: (
-            "aion://agent/identity/identity-id"
-        ),
-    }
-
-
-def test_model_request_headers_preserves_existing_principal(caplog):
-    caplog.set_level(logging.WARNING, logger="aion.api.model_service_client")
-    existing = {
-        model_service_client.AION_PRINCIPAL_SELECTOR_HEADER: (
-            "aion://agent/identity/identity-id"
-        )
-    }
-
-    headers = model_service_client.aion_model_request_headers(existing)
-
-    assert headers == {
-        model_service_client.AION_PRINCIPAL_SELECTOR_HEADER: (
-            "aion://agent/identity/identity-id"
-        )
-    }
-    assert "without principal attribution" not in caplog.text
-
-
-def test_model_request_headers_rejects_existing_environment_principal():
-    """An explicitly supplied environment selector is refused the same way."""
-    existing = {
-        model_service_client.AION_PRINCIPAL_SELECTOR_HEADER: (
-            "aion://agent/environment/env-id"
-        )
-    }
-
-    with pytest.raises(AionModelPrincipalError):
-        model_service_client.aion_model_request_headers(existing)
-
-    assert existing == {
-        model_service_client.AION_PRINCIPAL_SELECTOR_HEADER: (
-            "aion://agent/environment/env-id"
-        )
-    }
-
-
-def test_model_request_hook_resolves_principal_at_request_time(monkeypatch):
-    selectors = iter([
-        "aion://agent/identity/first-identity",
-        "aion://agent/identity/second-identity",
-    ])
-    monkeypatch.setattr(
-        model_service_client, "aion_principal_selector", lambda: next(selectors)
-    )
-    first_request = httpx.Request(
-        "POST", "https://api.example.test/v1/chat/completions"
-    )
-    second_request = httpx.Request(
-        "POST", "https://api.example.test/v1/chat/completions"
-    )
-
-    model_service_client.aion_model_request_hook(first_request)
-    model_service_client.aion_model_request_hook(second_request)
-
-    assert (
-        first_request.headers[model_service_client.AION_PRINCIPAL_SELECTOR_HEADER]
-        == "aion://agent/identity/first-identity"
-    )
-    assert (
-        second_request.headers[model_service_client.AION_PRINCIPAL_SELECTOR_HEADER]
-        == "aion://agent/identity/second-identity"
-    )
-
-
-def test_model_request_hook_preserves_explicit_principal(monkeypatch):
-    """An explicit principal must not skip request-scoped usage forwarding."""
-    monkeypatch.setattr(
-        model_service_client,
-        "aion_principal_selector",
-        lambda: "aion://agent/environment/fresh-env",
-    )
-    monkeypatch.setattr(
-        model_service_client, "aion_usage_attribution", lambda: "signed-token"
-    )
-    request = httpx.Request(
-        "POST",
-        "https://api.example.test/v1/chat/completions",
-        headers={
-            model_service_client.AION_PRINCIPAL_SELECTOR_HEADER: (
-                "aion://agent/identity/explicit-identity"
-            )
-        },
-    )
-
-    model_service_client.aion_model_request_hook(request)
-
-    assert (
-        request.headers[model_service_client.AION_PRINCIPAL_SELECTOR_HEADER]
-        == "aion://agent/identity/explicit-identity"
-    )
-    assert (
-        request.headers[model_service_client.AION_USAGE_ATTRIBUTION_HEADER]
-        == "signed-token"
-    )
-
-
-def test_model_request_hook_rejects_explicit_environment_principal():
-    """The hook fails the request instead of sending one that will be refused."""
-    request = httpx.Request(
-        "POST",
-        "https://api.example.test/v1/chat/completions",
-        headers={
-            model_service_client.AION_PRINCIPAL_SELECTOR_HEADER: (
-                "aion://agent/environment/explicit-env"
-            )
-        },
-    )
-
-    with pytest.raises(AionModelPrincipalError):
-        model_service_client.aion_model_request_hook(request)
-
-
-def test_model_http_client_refreshes_api_key_per_request(monkeypatch):
-    tokens = iter(["jwt-1", "jwt-2"])
-    monkeypatch.setattr(
-        model_service_client,
-        "aion_principal_selector",
-        lambda: "aion://agent/identity/fresh-identity",
-    )
-    client = model_service_client._aion_model_http_client(
-        lambda: next(tokens)
-    )
-    first_request = client.build_request(
-        "POST", "https://api.example.test/v1/chat/completions"
-    )
-    second_request = client.build_request(
-        "POST", "https://api.example.test/v1/chat/completions"
-    )
-    try:
-        for hook in client.event_hooks["request"]:
-            hook(first_request)
-        for hook in client.event_hooks["request"]:
-            hook(second_request)
-    finally:
-        client.close()
-
-    assert first_request.headers["Authorization"] == "Bearer jwt-1"
-    assert second_request.headers["Authorization"] == "Bearer jwt-2"
 
 
 def test_principal_selector_returns_none_when_no_provider(monkeypatch):

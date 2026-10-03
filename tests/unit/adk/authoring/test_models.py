@@ -149,13 +149,9 @@ def _fake_adk_modules(monkeypatch):
     return calls
 
 
-def test_lite_llm_client_refuses_a_call_with_no_principal(monkeypatch):
-    """The ADK path is guarded by the same principal check as the httpx one.
-
-    Both frameworks build their headers with aion_model_request_headers, so a
-    deployment with no principal the model service accepts fails here too —
-    before litellm is reached, rather than as an opaque server refusal.
-    """
+def test_lite_llm_client_refuses_a_call_with_no_attribution(monkeypatch):
+    """No accepted callback scope must fail before invoking the model client."""
+    from aion.core.exceptions import AionAuthenticationError
     calls = _fake_adk_modules(monkeypatch)
     monkeypatch.setattr(models, "aion_openai_config", lambda: FakeConfig())
     monkeypatch.setattr(models, "aion_model_api_key", lambda: "fresh-jwt")
@@ -165,9 +161,9 @@ def test_lite_llm_client_refuses_a_call_with_no_principal(monkeypatch):
 
     client = aion_lite_llm("model-id").kwargs["llm_client"]
 
-    with pytest.raises(AionModelPrincipalError):
+    with pytest.raises(AionAuthenticationError):
         client.completion(model="openai/model-id", messages=[], tools=None)
-    with pytest.raises(AionModelPrincipalError):
+    with pytest.raises(AionAuthenticationError):
         asyncio.run(
             client.acompletion(model="openai/model-id", messages=[], tools=None)
         )
@@ -175,8 +171,9 @@ def test_lite_llm_client_refuses_a_call_with_no_principal(monkeypatch):
     assert calls == []
 
 
-def test_lite_llm_client_refuses_an_environment_principal(monkeypatch):
-    """An environment principal is not one the model service runs work for."""
+def test_lite_llm_does_not_derive_authority_from_environment_metadata(monkeypatch):
+    """Routing metadata alone is not a callback authorization input."""
+    from aion.core.exceptions import AionAuthenticationError
     calls = _fake_adk_modules(monkeypatch)
     monkeypatch.setattr(models, "aion_openai_config", lambda: FakeConfig())
     monkeypatch.setattr(models, "aion_model_api_key", lambda: "fresh-jwt")
@@ -188,10 +185,10 @@ def test_lite_llm_client_refuses_an_environment_principal(monkeypatch):
 
     client = aion_lite_llm("model-id").kwargs["llm_client"]
 
-    with pytest.raises(AionModelPrincipalError) as excinfo:
+    with pytest.raises(AionAuthenticationError) as excinfo:
         asyncio.run(
             client.acompletion(model="openai/model-id", messages=[], tools=None)
         )
 
-    assert "Daemon Identity" in str(excinfo.value)
+    assert "request-local attribution" in str(excinfo.value)
     assert calls == []

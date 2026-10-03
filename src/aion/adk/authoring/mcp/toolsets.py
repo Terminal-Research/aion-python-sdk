@@ -48,7 +48,7 @@ def aion_adk_mcp_toolset(
             server should be connected.
         runtime_capability_references: MCP reference templates resolved from
             ADK's runtime context when ``get_tools`` is called.
-        principal_selector: Optional explicit principal selector.
+        principal_selector: Retired override; any explicit value is rejected.
         jwt_manager: Optional async JWT manager.
         base_url: Optional Aion API base URL.
         context_provider: Optional function that extracts ``AionRuntimeContext``
@@ -149,7 +149,7 @@ def aion_adk_mcp_toolsets_sync(
             server should be connected.
         runtime_capability_references: MCP reference templates resolved from
             ``context`` after the runtime subject is known.
-        principal_selector: Optional explicit principal selector.
+        principal_selector: Retired override; any explicit value is rejected.
         jwt_manager: Optional synchronous JWT manager.
         base_url: Optional Aion API base URL.
         tool_filter: Optional filter forwarded to ADK's ``McpToolset``.

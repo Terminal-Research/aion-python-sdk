@@ -82,7 +82,7 @@ class TestRequestShape:
         assert request.url.params["operationId"]
         assert request.headers["Authorization"] == "Bearer token"
 
-    async def test_request_acts_as_the_projected_principal(self):
+    async def test_request_forwards_carrier_without_claiming_a_principal(self):
         seen: list[httpx.Request] = []
 
         async def handle(request: httpx.Request) -> httpx.Response:
@@ -90,13 +90,12 @@ class TestRequestShape:
             return accepted()
 
         context = upload_context(
-            principal_selector=PrincipalSelector.agent_identity("daemon-7"),
             usage_attribution="opaque-carrier",
         )
         await backend(handle).store(upload(), context=context)
 
         headers = seen[0].headers
-        assert headers["Aion-Principal-Selector"] == "aion://agent/identity/daemon-7"
+        assert "Aion-Principal-Selector" not in headers
         assert headers["Aion-Usage-Attribution"] == "opaque-carrier"
 
     async def test_file_name_is_sanitized_before_it_leaves(self):
@@ -221,26 +220,26 @@ class TestPermissions:
         async def handle(request: httpx.Request) -> httpx.Response:
             return httpx.Response(403, text="Forbidden", headers={"x-request-id": "req-7"})
 
-        context = upload_context(principal_selector=PrincipalSelector.agent_identity("daemon-1"))
+        context = upload_context(usage_attribution="opaque")
         outcome = await backend(handle).store(upload(), context=context)
 
         assert outcome.error_code is FileUploadErrorCode.STORAGE_FORBIDDEN
         assert outcome.retryable is False and outcome.client_fault is False
         reason = str(outcome.cause)
-        assert "aion://agent/identity/daemon-1" in reason and ORG in reason
+        assert "resolved identity" in reason and ORG in reason
         assert "HTTP 403: Forbidden (request id req-7)" in reason
         assert "credentials" not in reason and "Daemon Identity" not in reason
         assert isinstance(outcome.cause.__cause__, httpx.HTTPStatusError)
 
-    async def test_an_environment_principal_is_named_as_the_likely_cause(self):
+    async def test_permission_error_does_not_guess_the_resolved_principal(self):
         async def handle(request: httpx.Request) -> httpx.Response:
             return httpx.Response(403)
 
-        context = upload_context(principal_selector=PrincipalSelector.agent_environment("env-1"))
+        context = upload_context(usage_attribution="opaque")
         outcome = await backend(handle).store(upload(), context=context)
 
-        assert "aion://agent/environment/env-1" in str(outcome.cause)
-        assert "no Daemon Identity" in str(outcome.cause)
+        assert "resolved identity" in str(outcome.cause)
+        assert "no Daemon Identity" not in str(outcome.cause)
 
 
 class TestResponseContract:

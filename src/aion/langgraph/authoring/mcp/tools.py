@@ -41,7 +41,7 @@ class AionLangGraphMcpResolver:
     )
     """MCP reference templates resolved after runtime context is available."""
     principal_selector: PrincipalSelector | None = None
-    """Optional explicit principal selector for all MCP endpoints."""
+    """Retired override; an explicit value is rejected when resolving endpoints."""
     base_url: str | None = None
     """Optional Aion API base URL. Defaults to ``AION_API_HOST``."""
     jwt_manager: Any | None = None
@@ -169,7 +169,7 @@ async def aion_langgraph_mcp_server_config(
             server should be connected.
         runtime_capability_references: MCP reference templates resolved from
             ``context`` after the runtime subject is known.
-        principal_selector: Optional explicit principal selector.
+        principal_selector: Retired override; any explicit value is rejected.
         jwt_manager: Optional async JWT manager.
         base_url: Optional Aion API base URL.
 
@@ -208,7 +208,7 @@ def aion_langgraph_mcp_server_config_sync(
             server should be connected.
         runtime_capability_references: MCP reference templates resolved from
             ``context`` after the runtime subject is known.
-        principal_selector: Optional explicit principal selector.
+        principal_selector: Retired override; any explicit value is rejected.
         jwt_manager: Optional synchronous JWT manager.
         base_url: Optional Aion API base URL.
 
@@ -248,7 +248,7 @@ def aion_langgraph_mcp_client(
             server should be connected.
         runtime_capability_references: MCP reference templates resolved from
             ``context`` after the runtime subject is known.
-        principal_selector: Optional explicit principal selector.
+        principal_selector: Retired override; any explicit value is rejected.
         jwt_manager: Optional synchronous JWT manager.
         base_url: Optional Aion API base URL.
         client_factory: Optional test or customization hook for creating the
@@ -291,7 +291,7 @@ async def load_aion_mcp_tools(
             server should be connected.
         runtime_capability_references: MCP reference templates resolved from
             ``context`` after the runtime subject is known.
-        principal_selector: Optional explicit principal selector.
+        principal_selector: Retired override; any explicit value is rejected.
         jwt_manager: Optional async JWT manager.
         base_url: Optional Aion API base URL.
         client_factory: Optional test or customization hook for creating the

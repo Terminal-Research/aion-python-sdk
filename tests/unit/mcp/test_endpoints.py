@@ -52,7 +52,11 @@ class FakeSyncTokenManager:
 
 
 class FakeRuntimeContext:
-    """Runtime context carrying an environment principal selector."""
+    """Runtime context carrying a signed carrier and capability routing."""
+
+    def get_callback_attribution(self):
+        from aion.core.runtime.context import ForwardedAttribution
+        return ForwardedAttribution("signed-token")
 
     def get_environment(self) -> SimpleNamespace:
         """Return a fake environment."""
@@ -93,15 +97,15 @@ def test_authorization_headers_require_a_token() -> None:
         aion_mcp_authorization_headers(None)
 
 
-def test_authorization_headers_include_principal_selector() -> None:
+def test_authorization_headers_keep_version_and_signed_carrier() -> None:
     headers = aion_mcp_authorization_headers(
         "jwt-token",
-        principal_selector=PrincipalSelector.agent_environment("env-id"),
+        usage_attribution="signed-token",
     )
 
     assert headers == {
         "Authorization": "Bearer jwt-token",
-        AION_PRINCIPAL_SELECTOR_HEADER: "aion://agent/environment/env-id",
+        AION_USAGE_ATTRIBUTION_HEADER: "signed-token",
     }
 
 
@@ -117,13 +121,13 @@ def test_authorization_headers_include_usage_attribution() -> None:
     }
 
 
-def test_authorization_headers_accept_typed_principal_selector() -> None:
+def test_authorization_headers_do_not_emit_a_selector() -> None:
     headers = aion_mcp_authorization_headers(
         "jwt-token",
-        principal_selector=PrincipalSelector.agent_environment("env-id"),
+        usage_attribution="signed-token",
     )
 
-    assert headers[AION_PRINCIPAL_SELECTOR_HEADER] == "aion://agent/environment/env-id"
+    assert AION_PRINCIPAL_SELECTOR_HEADER not in headers
 
 
 def test_metatools_endpoint_uses_async_token_manager() -> None:
@@ -131,7 +135,7 @@ def test_metatools_endpoint_uses_async_token_manager() -> None:
         aion_mcp_endpoint(
             CapabilityReference.global_mcp(),
             jwt_manager=FakeAsyncTokenManager("jwt-token"),
-            principal_selector=PrincipalSelector.agent_environment("env-id"),
+            usage_attribution="signed-token",
             base_url="https://api.example.com/",
         )
     )
@@ -142,8 +146,7 @@ def test_metatools_endpoint_uses_async_token_manager() -> None:
     )
     assert endpoint.headers["Authorization"] == "Bearer jwt-token"
     assert (
-        endpoint.headers[AION_PRINCIPAL_SELECTOR_HEADER]
-        == "aion://agent/environment/env-id"
+        AION_PRINCIPAL_SELECTOR_HEADER not in endpoint.headers
     )
 
 
@@ -252,7 +255,7 @@ def test_generic_mcp_sync_endpoint_addresses_environment_capability() -> None:
             key="mcp.twitter.distribution",
         ),
         jwt_manager=FakeSyncTokenManager("jwt-token"),
-        principal_selector=PrincipalSelector.agent_environment("env-id"),
+        usage_attribution="signed-token",
         base_url="https://api.example.com",
         name="runtime_twitter",
     )
@@ -264,7 +267,7 @@ def test_generic_mcp_sync_endpoint_addresses_environment_capability() -> None:
     )
     assert endpoint.headers == {
         "Authorization": "Bearer jwt-token",
-        AION_PRINCIPAL_SELECTOR_HEADER: "aion://agent/environment/env-id",
+        AION_USAGE_ATTRIBUTION_HEADER: "signed-token",
     }
 
 
@@ -289,8 +292,7 @@ def test_runtime_context_sync_endpoints_use_global_reference_and_capability() ->
         "mcp/capabilities/mcp.twitter.distribution",
     ]
     assert all(
-        endpoint.headers[AION_PRINCIPAL_SELECTOR_HEADER]
-        == "aion://agent/environment/env-id"
+        AION_PRINCIPAL_SELECTOR_HEADER not in endpoint.headers
         for endpoint in endpoints
     )
     assert all(

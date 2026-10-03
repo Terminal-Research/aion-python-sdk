@@ -38,7 +38,11 @@ class FakeSyncTokenManager:
 
 
 class FakeRuntimeContext:
-    """Runtime context carrying an environment principal selector."""
+    """Runtime context carrying a signed carrier and capability routing."""
+
+    def get_callback_attribution(self):
+        from aion.core.runtime.context import ForwardedAttribution
+        return ForwardedAttribution("signed-token")
 
     def get_environment(self) -> SimpleNamespace:
         """Return a fake environment."""

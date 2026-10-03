@@ -35,7 +35,11 @@ class FakeSyncTokenManager:
 
 
 class FakeRuntimeContext:
-    """Runtime context carrying an environment principal selector."""
+    """Runtime context carrying a signed carrier and capability routing."""
+
+    def get_callback_attribution(self):
+        from aion.core.runtime.context import ForwardedAttribution
+        return ForwardedAttribution("signed-token")
 
     def get_environment(self) -> SimpleNamespace:
         """Return a fake environment."""
@@ -80,8 +84,7 @@ def test_langgraph_mcp_server_config_sync_uses_runtime_context() -> None:
         "mcp/capabilities/mcp.twitter.distribution"
     )
     assert (
-        capability["headers"][AION_PRINCIPAL_SELECTOR_HEADER]
-        == "aion://agent/environment/env-id"
+        AION_PRINCIPAL_SELECTOR_HEADER not in capability["headers"]
     )
 
 

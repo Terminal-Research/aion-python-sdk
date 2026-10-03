@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
+from aion.core.runtime.context import AionRuntimeContext, ForwardedAttribution
 from uuid import uuid4
 
 import httpx
@@ -56,19 +56,16 @@ async def test_incomplete_association_is_rejected_before_upload(association):
 
 
 @pytest.mark.anyio("asyncio")
-async def test_create_forwards_runtime_selector_and_attribution(
+async def test_create_forwards_runtime_attribution_without_selector(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A nested File create should forward both request-scoped headers."""
+    """A nested File create keeps Version credentials and the opaque carrier."""
     agent_identity_id = uuid4()
-    runtime_context = SimpleNamespace(
-        get_principal_selector=lambda: (
-            f"aion://agent/identity/{agent_identity_id}"
-        ),
-        get_usage_attribution=lambda: "signed-file-attribution",
+    runtime_context = AionRuntimeContext(
+        callback_attribution=ForwardedAttribution("signed-file-attribution")
     )
     monkeypatch.setattr(
-        "aion.api.file_service_client.get_aion_runtime_context",
+        "aion.api.callback_attribution.get_aion_runtime_context",
         lambda: runtime_context,
     )
 
@@ -79,9 +76,7 @@ async def test_create_forwards_runtime_selector_and_attribution(
         assert request.url.params["purpose"] == "MessagingMedia"
         assert request.url.params["byteSize"] == "5"
         assert request.headers["Authorization"] == "Bearer version-token"
-        assert request.headers[AION_PRINCIPAL_SELECTOR_HEADER] == (
-            f"aion://agent/identity/{agent_identity_id}"
-        )
+        assert AION_PRINCIPAL_SELECTOR_HEADER not in request.headers
         assert request.headers[AION_USAGE_ATTRIBUTION_HEADER] == (
             "signed-file-attribution"
         )
@@ -122,9 +117,7 @@ async def test_replace_preserves_explicit_attribution_headers() -> None:
             expected_version_id
         )
         assert request.url.params["expectedRevision"] == "4"
-        assert request.headers[AION_PRINCIPAL_SELECTOR_HEADER] == (
-            f"aion://agent/identity/{agent_identity_id}"
-        )
+        assert AION_PRINCIPAL_SELECTOR_HEADER not in request.headers
         assert request.headers[AION_USAGE_ATTRIBUTION_HEADER] == "carrier"
         return httpx.Response(200, json={"revision": 5})
 
@@ -143,9 +136,6 @@ async def test_replace_preserves_explicit_attribution_headers() -> None:
         expected_version_id=expected_version_id,
         expected_revision=4,
         file_name="message.bin",
-        principal_selector=PrincipalSelector.agent_identity(
-            str(agent_identity_id)
-        ),
         usage_attribution="carrier",
     )
 

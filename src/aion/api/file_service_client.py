@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 
 import httpx
 from aion.api.control_plane import PrincipalSelector
+from aion.api.callback_attribution import callback_headers, reject_callback_selector
 from aion.api.exceptions import (
     AionAuthenticationError,
     AionFileStorageError,
@@ -14,8 +15,6 @@ from aion.api.exceptions import (
 )
 from aion.api.http import aion_jwt_manager
 from aion.api.http.client import DEFAULT_HTTP_TIMEOUT_SECONDS
-from aion.core.constants import AION_USAGE_ATTRIBUTION_HEADER
-from aion.core.runtime.context import get_aion_runtime_context
 from aion.core.settings import api_settings
 
 
@@ -30,10 +29,9 @@ class AionFileClient:
     """Create and replace immutable Aion File versions.
 
     The client obtains a fresh Aion bearer token for every mutation. When it
-    runs inside an Aion request, it also forwards the runtime's effective
-    principal selector and opaque usage-attribution carrier. The API continues
-    to authorize the selected principal independently; the carrier contributes
-    billing attribution only.
+    runs inside an Aion request, it forwards the opaque usage-attribution carrier.
+    Aion verifies the carrier's executor against current deployment authority;
+    the SDK never decodes the carrier to select a principal.
 
     Args:
         jwt_manager: Optional asynchronous token manager. The process-wide
@@ -86,8 +84,7 @@ class AionFileClient:
             association_kind: Optional File association discriminator.
             association_id: Optional identifier paired with
                 ``association_kind``.
-            principal_selector: Optional explicit effective principal. The
-                current runtime selector is used when omitted.
+            principal_selector: Retired override; any explicit value is rejected.
             usage_attribution: Optional opaque signed carrier. The current
                 runtime carrier is used when omitted.
 
@@ -158,8 +155,7 @@ class AionFileClient:
             media_type: MIME type for the replacement content.
             operation_id: Stable mutation id used for idempotency. A fresh id
                 is generated when omitted.
-            principal_selector: Optional explicit effective principal. The
-                current runtime selector is used when omitted.
+            principal_selector: Retired override; any explicit value is rejected.
             usage_attribution: Optional opaque signed carrier. The current
                 runtime carrier is used when omitted.
 
@@ -237,12 +233,12 @@ def aion_file_authorization_headers(
 ) -> dict[str, str]:
     """Build authorization and request-scoped attribution headers.
 
-    Explicit values win. Otherwise, an active runtime request supplies its
-    effective principal selector and opaque signed carrier unchanged.
+    Explicit carriers must match the current request. A callback carries no
+    independent selector; Aion verifies the signed executor and its authority.
 
     Args:
         token: Aion JWT used as the bearer token.
-        principal_selector: Optional explicit effective principal selector.
+        principal_selector: Retired override; any explicit value is rejected.
         usage_attribution: Optional explicit opaque attribution carrier.
 
     Returns:
@@ -254,20 +250,10 @@ def aion_file_authorization_headers(
     if not token:
         raise AionAuthenticationError("Unable to obtain an Aion API token.")
 
-    context = get_aion_runtime_context()
-    selector = principal_selector or PrincipalSelector.from_runtime_context(
-        context
+    reject_callback_selector(principal_selector)
+    return callback_headers(
+        {"Authorization": f"Bearer {token}"}, usage_attribution=usage_attribution
     )
-    carrier = usage_attribution
-    if carrier is None and context is not None:
-        carrier = context.get_usage_attribution()
-
-    headers = {"Authorization": f"Bearer {token}"}
-    if selector is not None:
-        headers.update(selector.to_headers())
-    if carrier:
-        headers[AION_USAGE_ATTRIBUTION_HEADER] = carrier
-    return headers
 
 
 def _association_params(

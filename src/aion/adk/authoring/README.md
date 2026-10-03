@@ -57,7 +57,7 @@ agent = Agent(
 ```
 
 The toolset implements ADK's `BaseToolset.get_tools(readonly_context)` path and
-derives Aion MCP URLs, bearer auth, and principal selector headers at runtime.
+derives Aion MCP URLs, Version bearer auth, and callback attribution at runtime.
 Use `capability_references` for explicit SDK-level subject + kind + key
 references. Use `runtime_capability_references` when the subject must be
 resolved from the current request.

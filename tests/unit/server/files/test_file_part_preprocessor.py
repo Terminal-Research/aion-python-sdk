@@ -78,7 +78,7 @@ class TestInboundStorage:
         assert part.url and not part.raw
 
     async def test_projection_reaches_the_backend(self):
-        """Organization, selector and carrier arrive as explicit arguments.
+        """Organization and carrier arrive as explicit arguments.
 
         During preprocessing there is no runtime context for the storage client
         to read them from, so the projection is the only source.
@@ -93,9 +93,6 @@ class TestInboundStorage:
         context = backend.contexts[0]
         assert context.organization_id == ORG
         assert context.usage_attribution == "carrier-1"
-        assert context.principal_selector.to_header_value() == (
-            "aion://agent/environment/env-1"
-        )
         assert context.context_id == "ctx-1"
 
     async def test_text_only_request_without_distribution_passes(self):

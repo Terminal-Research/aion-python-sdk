@@ -25,7 +25,7 @@ from typing import Any, Sequence
 from uuid import UUID, uuid4
 
 import httpx
-from aion.api import AionFileClient, PrincipalSelector, PrincipalSelectorKind
+from aion.api import AionFileClient
 from aion.api.exceptions import AionAuthenticationError, AionFileStorageError
 
 from ..context import UploadContext
@@ -127,7 +127,6 @@ class AionFileStorageBackend(FileStorageBackend):
                         file_name=file_name,
                         media_type=upload.media_type,
                         operation_id=operation_id,
-                        principal_selector=context.principal_selector,
                         usage_attribution=context.usage_attribution,
                     )
                 except AionAuthenticationError as error:
@@ -222,10 +221,9 @@ def _credentials_failure(error: Exception) -> UploadFailure:
 
 def _permission_failure(error: Exception, context: UploadContext) -> UploadFailure:
     """A failure for a principal the API does not let store files here."""
-    principal, organization = _permission_key(context)
     refusal = StorageRefusal(
-        f"Files API does not permit {principal} to store files for organization "
-        f"{organization} ({_summary(error)}){_principal_hint(context.principal_selector)}"
+        "Files API does not permit the callback's resolved identity to store "
+        f"files for organization {context.organization_id} ({_summary(error)})"
     )
     refusal.__cause__ = error
     return UploadFailure(FileUploadErrorCode.STORAGE_FORBIDDEN, cause=refusal)
@@ -234,28 +232,6 @@ def _permission_failure(error: Exception, context: UploadContext) -> UploadFailu
 def _summary(error: Exception) -> str:
     """A refusal in a few words, without the request URL."""
     return getattr(error, "summary", None) or str(error)
-
-
-def _permission_key(context: UploadContext) -> tuple[str, str]:
-    """The principal an upload acts as and the organization it writes to."""
-    selector = context.principal_selector
-    principal = (
-        f"principal {selector}"
-        if selector is not None
-        else "the agent's own credentials (no principal selector)"
-    )
-    return principal, context.organization_id
-
-
-def _principal_hint(selector: PrincipalSelector | None) -> str:
-    """Why the principal is likely refused, when the selector itself says so."""
-    if selector is not None and selector.kind is PrincipalSelectorKind.AGENT_ENVIRONMENT:
-        return (
-            ": the environment has no Daemon Identity, so the upload acts as "
-            "the environment itself; assign one whose role may store files in "
-            "this organization"
-        )
-    return ""
 
 
 def _optional_str(value: Any) -> str | None:

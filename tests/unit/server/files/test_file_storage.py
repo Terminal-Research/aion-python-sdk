@@ -131,30 +131,11 @@ class TestUploadContextProjection:
         )
         assert resolved.usage_attribution == "opaque-token"
 
-    def test_selector_matches_the_runtime_context(self):
-        """The projected selector is the one the runtime context would produce.
-
-        Inbound preprocessing cannot read AionRuntimeContext, so it derives the
-        selector from the same environment. If the two ever disagreed, the same
-        agent would act as different principals depending on direction.
-        """
-        from aion.core.runtime.context import AionRuntimeContext
-
+    def test_distribution_daemon_is_not_an_independent_upload_selector(self):
         payload = distribution_payload(principal(), daemon_identity_id="daemon-7")
-        resolved = resolve_upload_context(extensions(payload))
-
-        expected = AionRuntimeContext(
-            distribution_extension_payload=payload
-        ).get_principal_selector()
-        assert expected == "aion://agent/identity/daemon-7"
-        assert resolved.principal_selector.to_header_value() == expected
-
-    def test_selector_falls_back_to_the_environment(self):
-        """Without a daemon identity the environment itself is the principal."""
-        resolved = resolve_upload_context(extensions(distribution_payload(principal())))
-        assert resolved.principal_selector.to_header_value() == (
-            "aion://agent/environment/env-1"
-        )
+        resolved = resolve_upload_context(extensions(payload, carrier="signed"))
+        assert resolved.usage_attribution == "signed"
+        assert not hasattr(resolved, "principal_selector")
 
 
 # --------------------------------------------------------------------------

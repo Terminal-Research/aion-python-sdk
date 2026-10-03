@@ -67,7 +67,7 @@ tools = await load_aion_mcp_tools(
 ```
 
 The helper builds LangChain `MultiServerMCPClient` configuration with Aion
-bearer auth and an `Aion-Principal-Selector` derived from the runtime context.
+Version bearer auth and callback attribution from the current runtime context.
 Use `capability_references` for the SDK-level subject + kind + key shape, such
 as the subjectless global metatools MCP server. Use
 `runtime_capability_references` when the subject must be resolved from the

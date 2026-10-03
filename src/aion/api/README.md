@@ -56,8 +56,9 @@ The REST helpers target these control-plane endpoints:
 ### Files
 
 `AionFileClient` obtains a current bearer token and, inside an Aion runtime
-request, forwards its effective principal selector and opaque usage-attribution
-carrier. The server still authorizes the selected principal independently.
+request, forwards its opaque usage-attribution carrier. The server verifies its
+executor and checks current authority. Explicit callback selector overrides are
+rejected rather than silently selecting a different identity.
 
 ```python
 from aion.api import AionFileClient
@@ -102,7 +103,7 @@ twitter_mcp_url = paths.capability_url(
     CapabilityReference.mcp(subject, key="mcp.twitter.distribution")
 )
 a2a_url = paths.capability_url(CapabilityReference.primary_a2a(subject))
-headers = principal.to_headers()
+graphql_principal = principal.to_gql_value()
 
 runtime_mcp_reference = RuntimeCapabilityReference.primary_mcp(
     CapabilitySubjectSource.INCOMING_DISTRIBUTION
@@ -129,3 +130,7 @@ To regenerate the Python classes for the GraphQL API run:
 ```bash
 poetry run ariadne-codegen client
 ```
+
+SDK callbacks keep the Version bearer and forward `Aion-Usage-Attribution`.
+Do not send `Aion-Principal-Selector` or exchange the bearer for a daemon token.
+Capability subjects still address the destination; they do not select authority.
