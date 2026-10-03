@@ -1,6 +1,7 @@
 """Direct callbacks keep deployment credentials, isolation, and actionable errors."""
 
 import asyncio
+import json
 
 import httpx
 import pytest
@@ -85,12 +86,19 @@ def test_wrapped_transport_groups_preserve_configuration_failure():
 
 
 @pytest.mark.parametrize("asynchronous", [False, True])
-def test_langchain_preserves_error_without_retry(monkeypatch, asynchronous):
+@pytest.mark.parametrize("mode", ["invoke", "stream", "responses_stream"])
+def test_langchain_preserves_error_without_retry(monkeypatch, asynchronous, mode):
     from aion.langgraph.authoring import models
     calls = []
     def handle(request):
         calls.append(request)
-        return httpx.Response(409, json={"error": {"code": "daemon_identity_required"}})
+        payload = {"error": {"code": "daemon_identity_required",
+                             "message": "Select a daemon", "type": "configuration_error"}}
+        if mode == "invoke":
+            return httpx.Response(409, json=payload)
+        event = "event: error\n" if mode == "responses_stream" else ""
+        return httpx.Response(200, headers={"content-type": "text/event-stream"},
+                              text=event + "data: " + json.dumps(payload) + "\n\n")
     sync = httpx.Client(transport=httpx.MockTransport(handle), event_hooks={
         "request": [model_service_client._model_request_hook(lambda: "version-token")],
         "response": [callback_response_hook],
@@ -105,13 +113,24 @@ def test_langchain_preserves_error_without_retry(monkeypatch, asynchronous):
         base_url="https://api.aion.test/v1", api_key="version-token"))
     monkeypatch.setattr("aion.api.callback_attribution.get_aion_runtime_context", lambda:
         AionRuntimeContext(callback_attribution=ForwardedAttribution("opaque")))
-    model = models.aion_chat_openai("test-model")
+    model = models.aion_chat_openai("test-model", use_responses_api=mode == "responses_stream")
+
+    async def consume():
+        if mode == "invoke":
+            await model.ainvoke("hello")
+        else:
+            async for _ in model.astream("hello"):
+                pytest.fail("Missing configuration must not yield model output")
+
     try:
-        with pytest.raises(AionDaemonIdentityRequired):
+        with pytest.raises(AionDaemonIdentityRequired) as caught:
             if asynchronous:
-                asyncio.run(model.ainvoke("hello"))
-            else:
+                asyncio.run(consume())
+            elif mode == "invoke":
                 model.invoke("hello")
+            else:
+                list(model.stream("hello"))
+        assert caught.value.retryable is False
         assert len(calls) == 1
     finally:
         sync.close()

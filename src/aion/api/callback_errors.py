@@ -60,6 +60,11 @@ def reraise_callback_error(error: BaseException) -> None:
         seen.add(id(current))
         if isinstance(current, AionDaemonIdentityRequired):
             raise current
+        # OpenAI stream errors carry decoded details in .body, without an
+        # HTTP failure response. The body may be an envelope or its error.
+        body = getattr(current, "body", None)
+        raise_callback_error(body)
+        raise_callback_error({"error": body})
         response = getattr(current, "response", None)
         if isinstance(response, httpx.Response) and response.is_closed:
             _check_response(response)
@@ -67,3 +72,9 @@ def reraise_callback_error(error: BaseException) -> None:
             pending.extend(current.exceptions)
         if current.__cause__ is not None:
             pending.append(current.__cause__)
+        elif not current.__suppress_context__ and current.__context__ is not None:
+            pending.append(current.__context__)
+        # LiteLLM retains stream failures here when it wraps them for fallback.
+        original = getattr(current, "original_exception", None)
+        if isinstance(original, BaseException):
+            pending.append(original)

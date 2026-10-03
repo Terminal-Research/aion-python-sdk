@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator, Iterator
 from typing import Any
 
 from aion.api import aion_openai_config
@@ -36,9 +37,10 @@ def _aion_lite_llm_client(base_client_type: type[Any]) -> Any:
             )
             request_kwargs.setdefault("num_retries", 0)
             try:
-                return litellm.completion(
+                result = litellm.completion(
                     model=model, messages=messages, tools=tools, **request_kwargs,
                 )
+                return _callback_stream(result) if request_kwargs.get("stream") else result
             except Exception as error:
                 reraise_callback_error(error)
                 raise
@@ -63,14 +65,42 @@ def _aion_lite_llm_client(base_client_type: type[Any]) -> Any:
             )
             request_kwargs.setdefault("num_retries", 0)
             try:
-                return await litellm.acompletion(
+                result = await litellm.acompletion(
                     model=model, messages=messages, tools=tools, **request_kwargs,
                 )
+                return _async_callback_stream(result) if request_kwargs.get("stream") else result
             except Exception as error:
                 reraise_callback_error(error)
                 raise
 
     return AionLiteLlmClient()
+
+
+def _callback_stream(stream: Any) -> Iterator[Any]:
+    """Translate iteration-time errors without buffering or retrying output."""
+    try:
+        yield from stream
+    except Exception as error:
+        reraise_callback_error(error)
+        raise
+    finally:
+        close = getattr(stream, "close", None)
+        if close is not None:
+            close()
+
+
+async def _async_callback_stream(stream: Any) -> AsyncIterator[Any]:
+    """Keep asynchronous stream errors actionable and release the connection."""
+    try:
+        async for chunk in stream:
+            yield chunk
+    except Exception as error:
+        reraise_callback_error(error)
+        raise
+    finally:
+        close = getattr(stream, "aclose", None)
+        if close is not None:
+            await close()
 
 
 def aion_lite_llm(

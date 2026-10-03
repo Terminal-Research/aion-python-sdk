@@ -6,6 +6,7 @@ No database or user server is used by this suite.
 """
 
 import asyncio
+import json
 import socket
 import threading
 import time
@@ -15,7 +16,7 @@ from unittest.mock import AsyncMock
 import pytest
 import uvicorn
 from fastapi import FastAPI, Request, WebSocket
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from a2a.server.agent_execution import RequestContext
 from a2a.server.context import ServerCallContext
 from a2a.types import Message, Part, Role, SendMessageRequest, Task, TaskState, TaskStatus
@@ -43,7 +44,7 @@ class VersionToken:
 @pytest.fixture
 def api():
     app = FastAPI()
-    state = SimpleNamespace(requests=[], subscriptions=[], failure=False)
+    state = SimpleNamespace(requests=[], subscriptions=[], failure=False, stream_error=False)
     details = {"code": "daemon_identity_required", "resourceType": "Deployment",
                "resourceId": "deployment-1", "retryable": False}
 
@@ -51,6 +52,13 @@ def api():
     async def callback(request: Request, path: str):
         await request.body()
         state.requests.append((path, dict(request.headers)))
+        if state.stream_error:
+            async def events():
+                error = {"message": "Select a daemon", "type": "configuration_error",
+                         "code": "daemon_identity_required"}
+                prefix = "event: error\n" if path == "v1/responses" else ""
+                yield prefix + "data: " + json.dumps({"error": error}) + "\n\n"
+            return StreamingResponse(events(), media_type="text/event-stream")
         if state.failure:
             error = {"code": -32600, "data": details} if path == "mcp" else details
             return JSONResponse({"error": error}, status_code=409)
@@ -242,3 +250,48 @@ async def test_missing_daemon_is_typed_without_retries(api, client_kind):
     assert caught.value.code == "daemon_identity_required"
     assert caught.value.retryable is False
     assert len(api.requests) + len(api.subscriptions) == 1
+
+
+@pytest.mark.parametrize("adapter", ["langchain", "langchain-responses", "adk"])
+async def test_model_adapters_preserve_http_200_stream_errors(api, monkeypatch, adapter):
+    """Public framework helpers translate an SSE error, not just HTTP failures."""
+    from aion.api.model_service_client import AionModelClientConfig
+
+    api.stream_error = True
+    AionRuntimeContextRegistry.set_current_context(AionRuntimeContext(
+        callback_attribution=DirectAttribution(
+            Principal("ExternalAnonymous", "external-anonymous"))))
+    config = AionModelClientConfig(base_url=api.url + "/v1", api_key="version-token")
+    with pytest.raises(AionDaemonIdentityRequired) as caught:
+        if adapter == "adk":
+            import openai
+            from google.adk.models.llm_request import LlmRequest
+            from google.genai import types
+            from aion.adk.authoring import models
+
+            monkeypatch.setattr(models, "aion_openai_config", lambda: config)
+            monkeypatch.setattr(models, "aion_model_api_key", lambda: "version-token")
+            async with openai.AsyncOpenAI(base_url=config.base_url,
+                api_key="version-token", max_retries=0) as upstream:
+                model = models.aion_lite_llm("openai/test-model", client=upstream)
+                request = LlmRequest(contents=[types.Content(role="user",
+                    parts=[types.Part(text="hello")])])
+                async for _ in model.generate_content_async(request, stream=True):
+                    pytest.fail("Missing configuration must not produce output")
+        else:
+            from aion.langgraph.authoring import models
+
+            monkeypatch.setattr(models, "aion_openai_config", lambda: config)
+            model = models.aion_chat_openai("test-model",
+                use_responses_api=adapter == "langchain-responses")
+            try:
+                async for _ in model.astream("hello"):
+                    pytest.fail("Missing configuration must not produce output")
+            finally:
+                model.root_client.close()
+                await model.root_async_client.close()
+    assert caught.value.retryable is False
+    assert len(api.requests) == 1
+    _, headers = api.requests[0]
+    assert headers["authorization"] == "Bearer version-token"
+    assert headers["aion-caller-id"] == Principal("ExternalAnonymous", "external-anonymous").subject
