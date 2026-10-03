@@ -5,6 +5,7 @@ distribution metadata, and identity information to agent execution code.
 """
 
 from .builder import AionRuntimeContextBuilder
+from .attribution import CallbackAttribution, DirectAttribution, ForwardedAttribution
 from .extensions import (
     ExtensionActivationError,
     ExtensionPayloadCollector,
@@ -31,6 +32,9 @@ from .registry import (
 )
 
 __all__ = [
+    "CallbackAttribution",
+    "DirectAttribution",
+    "ForwardedAttribution",
     "AionExtensions",
     "AionRuntimeContext",
     "AionRuntimeContextBuilder",

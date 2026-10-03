@@ -19,6 +19,8 @@ from aion.core.runtime import (
     aion_a2a_extension_registry,
 )
 from aion.core.runtime.context.registry import AionRuntimeContextRegistry
+from aion.core.runtime.context.models import AionRuntimeContext
+from aion.core.exceptions import AionAuthenticationError, InvalidPrincipalError
 from aion.server.a2a.constants import TERMINAL_TASK_STATES
 from aion.server.a2a.response_extensions import ResponseServiceParameters
 from aion.server.agent.aion_agent import AionAgent
@@ -28,6 +30,7 @@ from collections.abc import Callable, Iterable
 from typing import Literal, Optional, Tuple
 
 from .event_pipeline import AionEventPipeline
+from .context.attribution import callback_attribution
 from .extensions import (
     ExtensionPreflightError,
     ExtensionTaskHandler,
@@ -106,6 +109,15 @@ class AionAgentRequestExecutor(AgentExecutor):
             context: RequestContext,
             event_queue: EventQueue,
     ) -> None:
+        """Consume the entire execution stream within its request-local scope."""
+        previous = await AionRuntimeContextRegistry.aget_current_context()
+        try:
+            await self._execute(context, event_queue)
+        finally:
+            await AionRuntimeContextRegistry.aset_current_context(previous)
+
+    async def _execute(self, context: RequestContext, event_queue: EventQueue) -> None:
+        """Run one turn; execute() owns restoration on every exit path."""
         error = self._validate_request(context)
         if error:
             raise InvalidParamsError()
@@ -122,7 +134,7 @@ class AionAgentRequestExecutor(AgentExecutor):
 
         try:
             response_parameters = await self._setup_runtime_context(context)
-        except ExtensionActivationError as ex:
+        except (ExtensionActivationError, AionAuthenticationError, InvalidPrincipalError) as ex:
             raise InvalidParamsError(message=str(ex)) from ex
 
         operation: Literal["stream", "resume"] = "stream" if is_new_task else "resume"
@@ -193,6 +205,15 @@ class AionAgentRequestExecutor(AgentExecutor):
     async def cancel(
             self, context: RequestContext, event_queue: EventQueue
     ) -> None:
+        """Cancel with the current request's attribution, restoring any parent scope."""
+        previous = await AionRuntimeContextRegistry.aget_current_context()
+        try:
+            await self._setup_runtime_context(context)
+            await self._cancel(context, event_queue)
+        finally:
+            await AionRuntimeContextRegistry.aset_current_context(previous)
+
+    async def _cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
         """Request cancellation of an ongoing task.
 
         Resolves the task from context, validates it is in a cancelable state,
@@ -242,10 +263,18 @@ class AionAgentRequestExecutor(AgentExecutor):
     async def _setup_runtime_context(context: RequestContext) -> ResponseServiceParameters:
         """Set runtime context and return its verified invocation activation."""
         runtime_context = AionRuntimeContextBuilder.from_request_context(context)
-        if runtime_context:
-            await AionRuntimeContextRegistry.aset_current_context(runtime_context)
-            return ResponseServiceParameters(runtime_context.extensions.activated_uris)
-        return ResponseServiceParameters()
+        if runtime_context is None:
+            runtime_context = AionRuntimeContext()
+        runtime_context = AionRuntimeContext(
+            inbox=runtime_context.inbox,
+            event=runtime_context.event,
+            distribution_extension_payload=runtime_context.distribution_extension_payload,
+            extensions=runtime_context.extensions,
+            callback_attribution=callback_attribution(context, runtime_context),
+            **runtime_context.graph_kwargs,
+        )
+        await AionRuntimeContextRegistry.aset_current_context(runtime_context)
+        return ResponseServiceParameters(runtime_context.extensions.activated_uris)
 
     async def _resolve(
             self,

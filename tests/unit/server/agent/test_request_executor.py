@@ -15,6 +15,19 @@ from aion.server.agent.execution import AionAgentRequestExecutor
 from aion.server.agent.execution.extensions.base import ROUTED_EXTENSION_METADATA_KEY
 from aion.server.agent.execution.extensions.errors import ExtensionPreflightError
 from aion.server.agent.execution.scope import init_execution_scope
+from aion.core.runtime.context.models import AionRuntimeContext
+from aion.core.runtime.context.registry import AionRuntimeContextRegistry
+from aion.server.agent.execution.context.providers import RequestScopeRuntimeContextProvider
+
+
+@pytest.fixture(autouse=True)
+def runtime_provider():
+    provider = RequestScopeRuntimeContextProvider()
+    AionRuntimeContextRegistry.set_provider(provider)
+    provider.set_current_context(None)
+    yield
+    provider.set_current_context(None)
+    AionRuntimeContextRegistry.clear_provider()
 
 
 def _make_task(state: TaskState = TaskState.TASK_STATE_WORKING):
@@ -80,11 +93,12 @@ class TestExecuteRuntimeContext:
         init_execution_scope()
 
         with patch("aion.server.agent.execution.request_executor.AionRuntimeContextBuilder") as MockBuilder:
-            mock_context = MagicMock()
+            mock_context = AionRuntimeContext()
             MockBuilder.from_request_context.return_value = mock_context
 
             with patch("aion.server.agent.execution.request_executor.AionRuntimeContextRegistry") as MockRegistry:
                 MockRegistry.aset_current_context = AsyncMock()
+                MockRegistry.aget_current_context = AsyncMock(return_value=None)
                 with patch("aion.server.agent.execution.request_executor.AionEventPipeline"):
                     # Mock _get_task_for_execution to return our task
                     with patch.object(executor, "_get_task_for_execution", new=AsyncMock(return_value=(task, True))):
@@ -99,7 +113,10 @@ class TestExecuteRuntimeContext:
                         MockBuilder.from_request_context.assert_called_once_with(ctx)
 
                         # Verify context was set via registry
-                        MockRegistry.aset_current_context.assert_awaited_once_with(mock_context)
+                        assigned = MockRegistry.aset_current_context.await_args_list
+                        assert len(assigned) == 2
+                        assert isinstance(assigned[0].args[0], AionRuntimeContext)
+                        assert assigned[1].args == (None,)
 
     @pytest.mark.anyio
     async def test_execute_handles_missing_runtime_context(self):
@@ -117,6 +134,7 @@ class TestExecuteRuntimeContext:
 
             with patch("aion.server.agent.execution.request_executor.AionRuntimeContextRegistry") as MockRegistry:
                 MockRegistry.aset_current_context = AsyncMock()
+                MockRegistry.aget_current_context = AsyncMock(return_value=None)
                 with patch("aion.server.agent.execution.request_executor.AionEventPipeline"):
                     with patch.object(executor, "_get_task_for_execution", new=AsyncMock(return_value=(task, True))):
                         async def empty_stream(*args, **kwargs):
@@ -129,8 +147,12 @@ class TestExecuteRuntimeContext:
                         # Verify builder was called
                         MockBuilder.from_request_context.assert_called_once_with(ctx)
 
-                        # Verify set_current_context was NOT called when context is None
-                        MockRegistry.aset_current_context.assert_not_awaited()
+                        # An empty inbox still gets explicit direct attribution,
+                        # and never inherits the previous execution's caller.
+                        assigned = MockRegistry.aset_current_context.await_args_list
+                        assert len(assigned) == 2
+                        assert assigned[0].args[0].callback_attribution is not None
+                        assert assigned[1].args == (None,)
 
 
 class TestTaskForExecution:
@@ -486,7 +508,7 @@ class TestExecuteViaResolve:
             with patch(
                 "aion.server.agent.execution.request_executor.AionRuntimeContextBuilder"
             ) as MockBuilder:
-                MockBuilder.from_request_context.return_value = MagicMock()
+                MockBuilder.from_request_context.return_value = AionRuntimeContext()
                 with patch(
                     "aion.server.agent.execution.request_executor.AionRuntimeContextRegistry"
                 ) as MockRegistry:
@@ -532,11 +554,12 @@ class TestExecuteViaResolve:
         with patch(
             "aion.server.agent.execution.request_executor.AionRuntimeContextBuilder"
         ) as MockBuilder:
-            MockBuilder.from_request_context.return_value = MagicMock()
+            MockBuilder.from_request_context.return_value = AionRuntimeContext()
             with patch(
                 "aion.server.agent.execution.request_executor.AionRuntimeContextRegistry"
             ) as MockRegistry:
                 MockRegistry.aset_current_context = AsyncMock()
+                MockRegistry.aget_current_context = AsyncMock(return_value=None)
                 with patch("aion.server.agent.execution.request_executor.AionEventPipeline"):
                     await executor.execute(ctx, event_queue)
 
@@ -574,7 +597,7 @@ class TestExecuteViaResolve:
             with patch(
                 "aion.server.agent.execution.request_executor.AionRuntimeContextBuilder"
             ) as MockBuilder:
-                MockBuilder.from_request_context.return_value = MagicMock()
+                MockBuilder.from_request_context.return_value = AionRuntimeContext()
                 with patch(
                     "aion.server.agent.execution.request_executor.AionRuntimeContextRegistry"
                 ) as MockRegistry:

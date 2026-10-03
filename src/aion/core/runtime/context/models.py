@@ -44,6 +44,8 @@ from aion.core.a2a.extensions import (
     TraceabilityExtensionV1,
 )
 from .extensions import AionRuntimeExtensions
+from .attribution import CallbackAttribution, ForwardedAttribution
+from aion.core.exceptions import AionAuthenticationError
 
 
 class EventKind(str, Enum):
@@ -129,6 +131,8 @@ class AionRuntimeContext:
     """
     graph_kwargs: Dict[str, Any]
     """Extra kwargs passed by the graph framework, such as LangGraph config."""
+    callback_attribution: Optional[CallbackAttribution]
+    """Transient callback mode populated from this request, never checkpoint state."""
 
     def __init__(
             self,
@@ -136,6 +140,7 @@ class AionRuntimeContext:
             event: Optional[Event] = None,
             distribution_extension_payload: Optional[DistributionExtensionV1] = None,
             extensions: Optional[AionRuntimeExtensions] = None,
+            callback_attribution: Optional[CallbackAttribution] = None,
             **graph_kwargs: Any,
     ) -> None:
         """Create an Aion runtime context.
@@ -149,6 +154,8 @@ class AionRuntimeContext:
             extensions: Verified, per-request set of active,
                 registered extensions, produced by the collect/verify
                 pipeline.
+            callback_attribution: Transient forwarded or reported-direct callback
+                input. It conveys no independent authorization to the SDK.
             **graph_kwargs: Extra framework-specific values passed by the graph
                 runtime.
         """
@@ -165,6 +172,22 @@ class AionRuntimeContext:
             extensions = AionRuntimeExtensions({})
         object.__setattr__(self, "extensions", extensions)
         object.__setattr__(self, "graph_kwargs", graph_kwargs)
+        object.__setattr__(self, "callback_attribution", callback_attribution)
+
+    def get_callback_attribution(self) -> Optional[CallbackAttribution]:
+        """Return explicit callback input without inferring direct mode from absence.
+
+        A collected usage carrier selects forwarded mode even for contexts built
+        outside server execution. Conflicting explicit input is an error; missing
+        context stays missing rather than inheriting a caller or inventing one.
+        """
+        carrier = self.get_usage_attribution()
+        if carrier is not None:
+            forwarded = ForwardedAttribution(carrier)
+            if self.callback_attribution not in (None, forwarded):
+                raise AionAuthenticationError("Conflicting callback attribution inputs.")
+            return forwarded
+        return self.callback_attribution
 
     def is_extension_active(self, *extensions: Union[AionExtensions, str]) -> bool:
         """Return whether all requested Aion extensions are active.
