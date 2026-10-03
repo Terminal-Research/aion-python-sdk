@@ -13,6 +13,10 @@ from aion.core.settings import api_settings
 
 from aion.api.control_plane import CapabilitySubject, PrincipalSelector
 from aion.api.callback_attribution import callback_headers, reject_callback_selector
+from aion.api.callback_errors import raise_callback_error
+from .generated.graphql_client.a_2_a_stream import (
+    A2AStreamA2ARpcA2AJsonRpcErrorResponseGQL,
+)
 from aion.api.http import AionJWTManager
 from aion.api.http.client import DEFAULT_HTTP_TIMEOUT_SECONDS
 from aion.api.model_service_client import aion_model_principal_selector_value
@@ -286,6 +290,9 @@ class AionGqlClient:
             principal=_to_principal_selector_gql_value(principal),
             **kwargs
         ):
+            response = getattr(chunk, "a_2_a_rpc", None)
+            if isinstance(response, A2AStreamA2ARpcA2AJsonRpcErrorResponseGQL):
+                raise_callback_error({"error": response.error.model_dump()})
             yield chunk
 
     async def version_logs(

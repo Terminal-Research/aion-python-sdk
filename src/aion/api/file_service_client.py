@@ -8,6 +8,7 @@ from uuid import UUID, uuid4
 import httpx
 from aion.api.control_plane import PrincipalSelector
 from aion.api.callback_attribution import callback_headers, reject_callback_selector
+from aion.api.callback_errors import async_callback_response_hook
 from aion.api.exceptions import (
     AionAuthenticationError,
     AionFileStorageError,
@@ -221,6 +222,7 @@ class AionFileClient:
             files={"file": (file_name, content, media_type)},
         )
         if response.is_error:
+            await async_callback_response_hook(response)
             raise AionFileStorageError.from_response(response)
         return response.json()
 

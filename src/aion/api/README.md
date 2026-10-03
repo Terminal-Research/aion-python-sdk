@@ -148,3 +148,10 @@ daemon in the deployment/agent environment Identity tab before retrying. Model
 and MCP adapters preserve this configuration error; successful response streams
 are not buffered for error inspection. Model helpers default to no transport
 retry, so missing configuration is not disguised by repeated connection attempts.
+
+File create/replace and GraphQL A2A subscriptions use the same callback scope.
+GraphQL carries the exclusive input in `serviceParameters.additional`; it does
+not need an independent `principal` argument. File replacement still requires
+its normal update permission and revision fence. Automatic inline-file storage
+needs a known owning organization from distribution metadata; direct code using
+`AionFileClient` supplies `organization_id` explicitly and Aion verifies it.

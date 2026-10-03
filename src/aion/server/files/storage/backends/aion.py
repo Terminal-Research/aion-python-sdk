@@ -27,6 +27,7 @@ from uuid import UUID, uuid4
 import httpx
 from aion.api import AionFileClient
 from aion.api.exceptions import AionAuthenticationError, AionFileStorageError
+from aion.core.exceptions import AionDaemonIdentityRequired
 
 from ..context import UploadContext
 from ..contracts import (
@@ -128,6 +129,10 @@ class AionFileStorageBackend(FileStorageBackend):
                         media_type=upload.media_type,
                         operation_id=operation_id,
                         usage_attribution=context.usage_attribution,
+                    )
+                except AionDaemonIdentityRequired as error:
+                    return UploadFailure(
+                        FileUploadErrorCode.STORAGE_FORBIDDEN, cause=error,
                     )
                 except AionAuthenticationError as error:
                     return _credentials_failure(error)

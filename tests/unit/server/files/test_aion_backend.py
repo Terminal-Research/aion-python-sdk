@@ -216,6 +216,20 @@ class TestCredentials:
 class TestPermissions:
     """A 403 is a principal the API will not let write here, not a bad secret."""
 
+    async def test_missing_daemon_preserves_configuration_error_without_retry(self):
+        from aion.core.exceptions import AionDaemonIdentityRequired
+        attempts = []
+        async def handle(request: httpx.Request) -> httpx.Response:
+            attempts.append(request)
+            return httpx.Response(409, json={"error": {
+                "code": "daemon_identity_required", "retryable": False,
+            }})
+        outcome = await backend(handle).store(upload(), context=upload_context())
+        assert outcome.error_code is FileUploadErrorCode.STORAGE_FORBIDDEN
+        assert outcome.retryable is False
+        assert isinstance(outcome.cause, AionDaemonIdentityRequired)
+        assert len(attempts) == 1
+
     async def test_a_refused_principal_is_named_with_its_organization(self):
         async def handle(request: httpx.Request) -> httpx.Response:
             return httpx.Response(403, text="Forbidden", headers={"x-request-id": "req-7"})
