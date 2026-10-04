@@ -399,6 +399,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 	const [notifications, setNotifications] = useState<TranscriptEntry[]>([]);
 	const contextIdRef = useRef<string | undefined>(undefined);
 	const contextScopeRef = useRef("");
+	const createdContextsRef = useRef(new Map<string, string>());
 	const connectedAgentKeyRef = useRef<string | undefined>(undefined);
 	const currentThreadScopeRef = useRef("");
 	const welcomeLifetimeRef = useRef(new AbortController());
@@ -962,11 +963,13 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				setCurrentContextId(
 					sameOwner && contextScopeRef.current === scope && contextIdRef.current
 						? contextIdRef.current
-						: owner && stored?.credentialScope === owner ? stored.activeContextId : undefined
+						: owner ? createdContextsRef.current.get(JSON.stringify([scope, owner]))
+							?? (stored?.credentialScope === owner ? stored.activeContextId : undefined) : undefined
 				);
 				credentialScopeRef.current = owner;
 				setClientState(connected);
 				connectedAgentKeyRef.current = selectedAgent.agentKey;
+				if (!contextIdRef.current) startNewContext(connected);
 				const connectionNoticeKey = `${selectedAgent.agentKey}:${connected.agentCard.name}:${connected.endpoints.rpcUrl}`;
 				if (lastConnectionNoticeRef.current !== connectionNoticeKey) {
 					lastConnectionNoticeRef.current = connectionNoticeKey;
@@ -1509,6 +1512,11 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 	const activateNewContext = (nextContextId: string): void => {
 		setCurrentContextId(nextContextId);
 		const key = selectedAgent?.agentKey ?? selectedAgentKey;
+		if (key && credentialScopeRef.current) {
+			createdContextsRef.current.set(
+				JSON.stringify([`${selectedEnvironment}:${key}`, credentialScopeRef.current]), nextContextId
+			);
+		}
 		const existing = key ? activeEnvironmentSettings.agents[key] : undefined;
 		if (key && existing) {
 			persistEnvironmentSettings(selectedEnvironment, {
@@ -1520,15 +1528,14 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		}
 	};
 
-	const runClearSlashCommand = (): void => {
+	/** Allocate and retain the context before its single welcome attempt. */
+	const startNewContext = (connected?: Awaited<ReturnType<typeof connectClient>>): void => {
 		const selectedContextAgentKey = selectedAgent?.agentKey ?? selectedAgentKey;
-		clearTranscript();
 		if (selectedContextAgentKey) {
 			const scope = `${selectedEnvironment}:${selectedContextAgentKey}`;
 			createChatThread({
 				signal: welcomeLifetimeRef.current.signal,
-				connected: connectedAgentKeyRef.current === selectedContextAgentKey
-					? clientState : undefined,
+				connected,
 				onCreated: activateNewContext,
 				onWelcome: (request, response) => {
 					const originalContext = request.message!.contextId;
@@ -1561,6 +1568,12 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				}
 			});
 		}
+	};
+
+	const runClearSlashCommand = (): void => {
+		const selectedContextAgentKey = selectedAgent?.agentKey ?? selectedAgentKey;
+		clearTranscript();
+		startNewContext(connectedAgentKeyRef.current === selectedContextAgentKey ? clientState : undefined);
 		const terminalClearRequested = requestTerminalClear({
 			isTTY: stdout.isTTY,
 			terminalType: process.env.TERM,

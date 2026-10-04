@@ -69,9 +69,12 @@ The bundled chat schema includes `a2aAgentCardUrl` for authorized, route-specifi
 React client discovery. The terminal client continues to fetch its selected
 Agent Card through the existing direct A2A connection.
 
-Explicit `/clear` creates and stores a new context ID before sending a unary
+Connecting to an agent without a context for the current credential scope, or
+explicit `/clear`, creates and stores a new context ID before sending a unary
 Welcome Message Extension request when the selected card supports it. Welcome
 completion is independent of the foreground request. Reconnect and context
-restoration do not dispatch it, and failures are not retried. A first user
-prompt creates its context without a separate welcome. Session saves merge
-messages by ID so concurrent welcomes cannot erase ordinary replies.
+restoration reuse the existing ID without another welcome, including after a
+failed welcome. Agents without welcome support use the allocated ID on the
+first user prompt. Session saves merge messages by ID so concurrent welcomes
+cannot erase ordinary replies. Context fetching and transcript restoration
+remain unchanged.

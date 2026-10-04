@@ -59819,6 +59819,7 @@ function ChatApp({ options: options2 }) {
   const [notifications, setNotifications] = (0, import_react37.useState)([]);
   const contextIdRef = (0, import_react37.useRef)(void 0);
   const contextScopeRef = (0, import_react37.useRef)("");
+  const createdContextsRef = (0, import_react37.useRef)(/* @__PURE__ */ new Map());
   const connectedAgentKeyRef = (0, import_react37.useRef)(void 0);
   const currentThreadScopeRef = (0, import_react37.useRef)("");
   const welcomeLifetimeRef = (0, import_react37.useRef)(new AbortController());
@@ -60307,11 +60308,12 @@ ${JSON.stringify(
         const sameOwner = !!owner && owner === credentialScopeRef.current && contextScopeRef.current === scope;
         if (!sameOwner) clearTranscript();
         setCurrentContextId(
-          sameOwner && contextScopeRef.current === scope && contextIdRef.current ? contextIdRef.current : owner && stored?.credentialScope === owner ? stored.activeContextId : void 0
+          sameOwner && contextScopeRef.current === scope && contextIdRef.current ? contextIdRef.current : owner ? createdContextsRef.current.get(JSON.stringify([scope, owner])) ?? (stored?.credentialScope === owner ? stored.activeContextId : void 0) : void 0
         );
         credentialScopeRef.current = owner;
         setClientState(connected);
         connectedAgentKeyRef.current = selectedAgent.agentKey;
+        if (!contextIdRef.current) startNewContext(connected);
         const connectionNoticeKey = `${selectedAgent.agentKey}:${connected.agentCard.name}:${connected.endpoints.rpcUrl}`;
         if (lastConnectionNoticeRef.current !== connectionNoticeKey) {
           lastConnectionNoticeRef.current = connectionNoticeKey;
@@ -60776,6 +60778,12 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
   const activateNewContext = (nextContextId) => {
     setCurrentContextId(nextContextId);
     const key = selectedAgent?.agentKey ?? selectedAgentKey;
+    if (key && credentialScopeRef.current) {
+      createdContextsRef.current.set(
+        JSON.stringify([`${selectedEnvironment}:${key}`, credentialScopeRef.current]),
+        nextContextId
+      );
+    }
     const existing = key ? activeEnvironmentSettings.agents[key] : void 0;
     if (key && existing) {
       persistEnvironmentSettings(selectedEnvironment, {
@@ -60786,14 +60794,13 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
       });
     }
   };
-  const runClearSlashCommand = () => {
+  const startNewContext = (connected) => {
     const selectedContextAgentKey = selectedAgent?.agentKey ?? selectedAgentKey;
-    clearTranscript();
     if (selectedContextAgentKey) {
       const scope = `${selectedEnvironment}:${selectedContextAgentKey}`;
       createChatThread({
         signal: welcomeLifetimeRef.current.signal,
-        connected: connectedAgentKeyRef.current === selectedContextAgentKey ? clientState : void 0,
+        connected,
         onCreated: activateNewContext,
         onWelcome: (request, response) => {
           const originalContext = request.message.contextId;
@@ -60821,6 +60828,11 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
         }
       });
     }
+  };
+  const runClearSlashCommand = () => {
+    const selectedContextAgentKey = selectedAgent?.agentKey ?? selectedAgentKey;
+    clearTranscript();
+    startNewContext(connectedAgentKeyRef.current === selectedContextAgentKey ? clientState : void 0);
     const terminalClearRequested = requestTerminalClear({
       isTTY: stdout.isTTY,
       terminalType: process.env.TERM,

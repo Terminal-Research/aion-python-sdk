@@ -178,6 +178,8 @@ was run. There is no need to run every suite for a documentation-only edit.
 - `aion.langgraph.server` and `aion.adk.server`: framework plugins and
   adapters for execution, state, streams, and A2A conversion.
 - `aion.cli`: the `aion` command, including `serve`, `chat`, and `logs`.
+  Its bundled chat client sends welcomes for newly allocated contexts on
+  connection or `/clear`, and reuses restored contexts without another welcome.
 - `libs/aion-chat-ui`: standalone React/Ink npm CLI; follow its local
   `AGENTS.md` for package-specific work.
 

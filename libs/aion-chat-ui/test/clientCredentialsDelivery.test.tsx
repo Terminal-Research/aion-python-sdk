@@ -45,18 +45,19 @@ const sessionKey = anonymousSessionKey({ controlPlaneUrl: "http://localhost:8080
 const options = { agentId: "demo", headers: {}, pushNotifications: false, pushReceiver: "http://localhost:5000" };
 let calls: Array<{ url: string; authorization: string | null; signal: AbortSignal; body?: Record<string, any> }>;
 let sequence: number;
+let supportsWelcome: boolean;
 let endpoints: Record<string, string>;
 let rpcReply: ((request: Request, body: Record<string, any>) => Promise<Response>) | undefined;
 let app: ReturnType<typeof render> | undefined;
 
 beforeEach(() => {
 	state.values.clear(); state.logs = []; calls = []; sequence = 0;
-	endpoints = { demo: "/agents/demo" }; rpcReply = undefined;
+	endpoints = { demo: "/agents/demo" }; rpcReply = undefined; supportsWelcome = true;
 	const environment = { requestMode: "send-message" as const, responseMode: "message-output" as const, agentSources: {}, agents: {} };
 	state.settings = { selectedEnvironment: "development", environments: {
 		production: { ...environment }, staging: { ...environment }, development: {
 			...environment, selectedAgentId: "demo", selectedAgentKey: agentKey,
-			agents: { [agentKey]: { agentKey, sourceKey: local.sourceKey, agentId: "demo", agentCardUrl: local.url + "/agents/demo/.well-known/agent-card.json", lastSeenAt: new Date().toISOString(), activeContextId: "someone-elses-context", credentialScope: "guest:other" } }
+			agents: { [agentKey]: { agentKey, sourceKey: local.sourceKey, agentId: "demo", agentCardUrl: local.url + "/agents/demo/.well-known/agent-card.json", lastSeenAt: new Date().toISOString(), activeContextId: "existing-context", credentialScope: "guest:00000000-0000-4000-8000-000000000001" } }
 		}
 	} };
 	vi.stubGlobal("fetch", vi.fn<typeof fetch>(async (input, init) => {
@@ -73,7 +74,7 @@ beforeEach(() => {
 		if (request.url.endsWith("agent-card.json")) return Response.json(AgentCard.toJSON(AgentCard.fromJSON({
 			name: "Controlled Agent", description: "Client delivery fixture", version: "1",
 			supportedInterfaces: [{ url: local.url + "/agents/demo/", protocolBinding: "JSONRPC", protocolVersion: "1.0" }],
-			capabilities: { streaming: true, extensions: [{ uri: WELCOME_MESSAGE_EXTENSION_URI }] },
+			capabilities: { streaming: true, extensions: supportsWelcome ? [{ uri: WELCOME_MESSAGE_EXTENSION_URI }] : [] },
 			defaultInputModes: ["text/plain"], defaultOutputModes: ["text/plain"], skills: []
 		})));
 		if (rpcReply) return rpcReply(request, body);
@@ -89,7 +90,7 @@ afterEach(() => { app?.unmount(); app = undefined; vi.unstubAllGlobals(); });
 
 async function enter(text: string): Promise<void> {
 	app!.stdin.write(text);
-	await vi.waitFor(() => expect(app!.lastFrame()).toContain(text));
+	await vi.waitFor(() => expect(app!.lastFrame()).toContain(`› ${text}`));
 	app!.stdin.write("\r");
 }
 
@@ -110,6 +111,84 @@ function delayReply() {
 }
 
 describe("client credential delivery (controlled receiver, not SDK authentication)", () => {
+	it("welcomes a fresh connection once and persists its ID before sending", async () => {
+		state.settings.environments.development.agents[agentKey]!.activeContextId = undefined;
+		const finish = delayReply();
+		app = render(<ChatApp options={options} />);
+		await vi.waitFor(() => expect(calls.filter((call) => call.body?.method)).toHaveLength(1));
+		const welcome = calls.find((call) => call.body?.method)!;
+		const contextId = welcome.body!.params.message.contextId;
+		expect(welcome.body!.params.message.extensions).toEqual([WELCOME_MESSAGE_EXTENSION_URI]);
+		expect(state.settings.environments.development.agents[agentKey]!.activeContextId).toBe(contextId);
+		rpcReply = undefined;
+		await enter("hello");
+		await vi.waitFor(() => expect(calls.filter((call) => call.body?.method)).toHaveLength(2));
+		expect(calls.filter((call) => call.body?.method)[1]!.body!.params.message.contextId).toBe(contextId);
+		expect(welcome.signal.aborted).toBe(false);
+		finish(welcome, "Initial welcome");
+		await vi.waitFor(() => expect(app!.frames.join("\n")).toContain("Initial welcome"));
+	});
+
+	it("restores an existing context without a welcome or a context fetch", async () => {
+		app = render(<ChatApp options={options} />);
+		await vi.waitFor(() => expect(app!.frames.join("\n")).toContain("Connected to"));
+		expect(calls.filter((call) => call.body?.method)).toHaveLength(0);
+		await enter("hello");
+		await vi.waitFor(() => expect(calls.filter((call) => call.body?.method)).toHaveLength(1));
+		expect(calls.find((call) => call.body?.method)!.body!.params.message.contextId).toBe("existing-context");
+	});
+
+	it("keeps a failed welcome's context across reconnect and restart without retrying", async () => {
+		state.settings.environments.development.agents[agentKey]!.activeContextId = undefined;
+		rpcReply = async () => { throw new Error("Welcome unavailable"); };
+		app = render(<ChatApp options={options} />);
+		await vi.waitFor(() => expect(app!.frames.join("\n")).toContain("Welcome failed:"));
+		const contextId = calls.find((call) => call.body?.method)!.body!.params.message.contextId;
+		rpcReply = undefined;
+		await enter("/session retry");
+		await vi.waitFor(() => expect(calls.filter((call) => call.url.endsWith("agent-card.json")).length).toBeGreaterThan(2));
+		expect(calls.filter((call) => call.body?.method)).toHaveLength(1);
+		app.unmount();
+		app = render(<ChatApp options={options} />);
+		await vi.waitFor(() => expect(app!.frames.join("\n")).toContain("Connected to"));
+		expect(calls.filter((call) => call.body?.method)).toHaveLength(1);
+		await enter("hello");
+		await vi.waitFor(() => expect(calls.filter((call) => call.body?.method)).toHaveLength(2));
+		expect(calls.filter((call) => call.body?.method)[1]!.body!.params.message.contextId).toBe(contextId);
+	});
+
+	it("welcomes a new agent and reuses its context when switching back", async () => {
+		endpoints.other = "/agents/other";
+		app = render(<ChatApp options={options} />);
+		await vi.waitFor(() => expect(app!.frames.join("\n")).toContain("Connected to"));
+		await enter("@other");
+		await vi.waitFor(() => expect(calls.filter((call) => call.body?.method)).toHaveLength(1));
+		const contextId = calls.find((call) => call.body?.method)!.body!.params.message.contextId;
+		await enter("@demo");
+		await vi.waitFor(() => expect(state.settings.environments.development.selectedAgentKey).toBe(agentKey));
+		await enter("hello demo");
+		await vi.waitFor(() => expect(calls.filter((call) => call.body?.method)).toHaveLength(2));
+		expect(calls.filter((call) => call.body?.method)[1]!.body!.params.message.contextId).toBe("existing-context");
+		await enter("@other");
+		await vi.waitFor(() => expect(state.settings.environments.development.selectedAgentKey).toBe(createAgentKey(local.sourceKey, "other")));
+		await enter("hello other");
+		await vi.waitFor(() => expect(calls.filter((call) => call.body?.method)).toHaveLength(3));
+		expect(calls.filter((call) => call.body?.method)[2]!.body!.params.message.contextId).toBe(contextId);
+	});
+
+	it("allocates a context even when the agent does not support welcome", async () => {
+		supportsWelcome = false;
+		state.settings.environments.development.agents[agentKey]!.activeContextId = undefined;
+		app = render(<ChatApp options={options} />);
+		await vi.waitFor(() => expect(app!.frames.join("\n")).toContain("Connected to"));
+		const contextId = state.settings.environments.development.agents[agentKey]!.activeContextId;
+		expect(contextId).toBeTruthy();
+		expect(calls.filter((call) => call.body?.method)).toHaveLength(0);
+		await enter("hello");
+		await vi.waitFor(() => expect(calls.filter((call) => call.body?.method)).toHaveLength(1));
+		expect(calls.find((call) => call.body?.method)!.body!.params.message.contextId).toBe(contextId);
+	});
+
 	it("keeps a new-thread welcome alive and on the same context as foreground chat", async () => {
 		const finish = delayReply();
 		app = render(<ChatApp options={options} />);
@@ -176,6 +255,7 @@ describe("client credential delivery (controlled receiver, not SDK authenticatio
 		await enter("hello");
 		await vi.waitFor(() => expect(calls.some((call) => call.body?.method)).toBe(true));
 		const oldPrompt = calls.find((call) => call.body?.method)!;
+		rpcReply = undefined;
 		await enter(change === "agent" ? "@other" : "/session new default-localhost-8000");
 		await vi.waitFor(() => expect(oldPrompt.signal.aborted).toBe(true));
 		finish(oldPrompt, "Retired caller reply");
@@ -198,6 +278,8 @@ describe("client credential delivery (controlled receiver, not SDK authenticatio
 	});
 
 	it("connects and sends interactively without restoring another caller's context", async () => {
+		state.settings.environments.development.agents[agentKey]!.credentialScope = "guest:other";
+		state.settings.environments.development.agents[agentKey]!.activeContextId = "someone-elses-context";
 		app = render(<ChatApp options={options} />);
 		await vi.waitFor(() => expect(app!.frames.join("\n")).toContain("Connected to"));
 		app.stdin.write("hello");
