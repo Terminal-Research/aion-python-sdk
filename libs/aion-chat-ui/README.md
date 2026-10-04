@@ -113,6 +113,13 @@ These commands are intentionally hidden: `aio environment ...`, `aio env ...`, `
 
 ## Development
 
+GraphQL code generation requires Node.js 22.15 or later. Release CI uses 22.23.3.
+The published CLI still supports Node.js 22.0 or later.
+This package pins `graphql@16.14.2`, the same version as the React chat library
+and Aion frontend. Keep these versions aligned when you update GraphQL.
+The `graphql-ws` override keeps the generator's transport at the same `6.3.0`
+version as those clients.
+
 ### Credential Integration
 
 `SourceCredentials` is the shared fetch boundary for discovery, interactive

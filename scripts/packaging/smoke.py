@@ -256,6 +256,32 @@ ENVIRONMENTS = (
         artifact="wheel",
         steps=(
             Step("the base subpackages import", code=probe_imports(*CONTRACT_BASE_MODULES)),
+            Step(
+                "registration serializes without development dependencies",
+                code="""
+import asyncio
+from unittest.mock import AsyncMock
+
+import httpx
+from aion.api.gql.generated.graphql_client.client import GqlClient
+from aion.api.gql.generated.graphql_client.custom_fields import AgentBehaviorFields
+from aion.api.gql.generated.graphql_client.custom_mutations import Mutation
+
+async def check():
+    async with GqlClient(url="https://control-plane.test/graphql") as client:
+        client.execute = AsyncMock(return_value=httpx.Response(
+            200, json={"data": {"registerVersion": []}}
+        ))
+        result = await client.mutation(
+            Mutation.register_version(version_id="test-version").fields(AgentBehaviorFields.id),
+            operation_name="RegisterVersion",
+        )
+        assert result == {"registerVersion": []}
+        client.execute.assert_awaited_once()
+
+asyncio.run(check())
+""",
+            ),
             Step("aion --help", argv=("aion", "--help")),
             Step(
                 "aion.langgraph.authoring names its extra",

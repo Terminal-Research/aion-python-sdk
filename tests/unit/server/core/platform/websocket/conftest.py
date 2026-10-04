@@ -1,4 +1,5 @@
 import asyncio
+from types import SimpleNamespace
 
 import pytest
 
@@ -16,7 +17,7 @@ class FakeTransport:
 
     def __init__(self, connect_error=None):
         self.connect_error = connect_error
-        self.websocket = object()
+        self.adapter = SimpleNamespace(websocket=object())
         self.close_exception = None
         self.connect_calls = 0
         self.close_calls = 0
@@ -36,7 +37,7 @@ class FakeTransport:
 
     def drop(self, error=None):
         """Simulate the transport closing underneath the manager."""
-        self.websocket = None
+        self.adapter.websocket = None
         self.close_exception = error
         self._closed.set()
 

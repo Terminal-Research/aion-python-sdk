@@ -1,7 +1,7 @@
 "Describes API authentication requirements."
 directive @auth("which authenticated subjects have access"
 subjectType: String, "which roles have access"
-roles: [String]) on QUERY | MUTATION
+roles: [String]) on QUERY | MUTATION | FIELD_DEFINITION
 "Marks a fragment as being optionally deferrable. Allowing the backend to split the query and return non-deferred parts first. This implicitly uses a streaming transport protocol which requires client support."
 directive @defer(if: Boolean, label: String) on FRAGMENT_SPREAD | INLINE_FRAGMENT
 

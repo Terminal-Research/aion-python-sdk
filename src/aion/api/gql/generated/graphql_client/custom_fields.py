@@ -2,42 +2,36 @@
 
 from typing import Any, Union
 
-from .base_operation import GraphQLField
+from .base_operation import GraphQLField, GraphQLLeafField
 from .custom_typing_fields import AgentBehaviorGraphQLField, CapabilityGraphQLField
 
 
 class AgentBehaviorFields(GraphQLField):
     """Core persisted configuration for one agent behavior"""
 
-    id: "AgentBehaviorGraphQLField" = AgentBehaviorGraphQLField("id")
+    id = GraphQLLeafField("id", AgentBehaviorGraphQLField)
     "Unique identifier for the behavior"
-    organization_id: "AgentBehaviorGraphQLField" = AgentBehaviorGraphQLField(
-        "organizationId"
-    )
+    organization_id = GraphQLLeafField("organizationId", AgentBehaviorGraphQLField)
     "Organization that owns this behavior"
-    deployment_id: "AgentBehaviorGraphQLField" = AgentBehaviorGraphQLField(
-        "deploymentId"
-    )
+    deployment_id = GraphQLLeafField("deploymentId", AgentBehaviorGraphQLField)
     "Associated deployment for this behavior"
-    version_id: "AgentBehaviorGraphQLField" = AgentBehaviorGraphQLField("versionId")
+    version_id = GraphQLLeafField("versionId", AgentBehaviorGraphQLField)
     "Version of the deployment used by the behavior"
-    kind: "AgentBehaviorGraphQLField" = AgentBehaviorGraphQLField("kind")
+    kind = GraphQLLeafField("kind", AgentBehaviorGraphQLField)
     "Lifecycle state of this behavior"
-    logical_version: "AgentBehaviorGraphQLField" = AgentBehaviorGraphQLField(
-        "logicalVersion"
-    )
+    logical_version = GraphQLLeafField("logicalVersion", AgentBehaviorGraphQLField)
     "the semantic version defined for the behavior by the developer in the Aion.yaml config."
-    name: "AgentBehaviorGraphQLField" = AgentBehaviorGraphQLField("name")
+    name = GraphQLLeafField("name", AgentBehaviorGraphQLField)
     "the developer-assigned name of the behavior from the Aion.yaml or AgentCard. Set to the behaviorKey if not found."
-    description: "AgentBehaviorGraphQLField" = AgentBehaviorGraphQLField("description")
+    description = GraphQLLeafField("description", AgentBehaviorGraphQLField)
     "Optional developer-assigned name of the behavior from the Aion.yaml or AgentCard."
-    configuration_schema: "AgentBehaviorGraphQLField" = AgentBehaviorGraphQLField(
-        "configurationSchema"
+    configuration_schema = GraphQLLeafField(
+        "configurationSchema", AgentBehaviorGraphQLField
     )
     "Schema describing the configuration variables"
-    agent_card: "AgentBehaviorGraphQLField" = AgentBehaviorGraphQLField("agentCard")
+    agent_card = GraphQLLeafField("agentCard", AgentBehaviorGraphQLField)
     "Optional AgentCard manifest describing this behavior"
-    behavior_key: "AgentBehaviorGraphQLField" = AgentBehaviorGraphQLField("behaviorKey")
+    behavior_key = GraphQLLeafField("behaviorKey", AgentBehaviorGraphQLField)
     "Stable identifier for the behavior across versions"
 
     @classmethod
@@ -60,25 +54,25 @@ class AgentBehaviorFields(GraphQLField):
 class CapabilityFields(GraphQLField):
     """Behavior-owned declaration for one service surface."""
 
-    id: "CapabilityGraphQLField" = CapabilityGraphQLField("id")
+    id = GraphQLLeafField("id", CapabilityGraphQLField)
     "Unique identifier for the capability row."
-    behavior_id: "CapabilityGraphQLField" = CapabilityGraphQLField("behaviorId")
+    behavior_id = GraphQLLeafField("behaviorId", CapabilityGraphQLField)
     "Behavior that owns this capability."
-    capability_key: "CapabilityGraphQLField" = CapabilityGraphQLField("capabilityKey")
+    capability_key = GraphQLLeafField("capabilityKey", CapabilityGraphQLField)
     "Stable capability key used by runtime routes."
-    kind: "CapabilityGraphQLField" = CapabilityGraphQLField("kind")
+    kind = GraphQLLeafField("kind", CapabilityGraphQLField)
     "Kind of service surface declared by this capability."
-    description: "CapabilityGraphQLField" = CapabilityGraphQLField("description")
+    description = GraphQLLeafField("description", CapabilityGraphQLField)
     "Optional user-facing description of the capability."
-    is_primary: "CapabilityGraphQLField" = CapabilityGraphQLField("isPrimary")
+    is_primary = GraphQLLeafField("isPrimary", CapabilityGraphQLField)
     "Whether this is the default capability for its kind."
-    categories: "CapabilityGraphQLField" = CapabilityGraphQLField("categories")
+    categories = GraphQLLeafField("categories", CapabilityGraphQLField)
     "Canonical category values for this capability."
-    configuration_schema: "CapabilityGraphQLField" = CapabilityGraphQLField(
-        "configurationSchema"
+    configuration_schema = GraphQLLeafField(
+        "configurationSchema", CapabilityGraphQLField
     )
     "Optional configuration schema for this capability."
-    mcp_profile: "CapabilityGraphQLField" = CapabilityGraphQLField("mcpProfile")
+    mcp_profile = GraphQLLeafField("mcpProfile", CapabilityGraphQLField)
     "Optional internal MCP profile metadata."
 
     def fields(self, *subfields: CapabilityGraphQLField) -> "CapabilityFields":

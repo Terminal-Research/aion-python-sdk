@@ -256,7 +256,7 @@ class AionWebSocketManager(IWebSocketManager):
                     return "shutdown requested"
                 if closed in done:
                     return self._describe_close(transport)
-                if getattr(transport, "websocket", None) is None:
+                if transport.adapter.websocket is None:
                     return "transport dropped its socket without reporting a close"
 
                 # One line per check stands in for the keepalive ping/pong the

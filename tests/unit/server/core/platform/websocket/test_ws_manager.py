@@ -1,10 +1,14 @@
 import asyncio
+import json
 import logging
+from unittest.mock import AsyncMock
 
 import pytest
+from websockets.asyncio.server import serve
 
 from aion.server.core.platform import AionWebSocketManager
 from aion.server.core.platform.websocket import ws_manager as ws_manager_module
+from aion.server.core.platform.websocket.transport import WebsocketTransportFactory
 
 
 async def wait_for(predicate, timeout=2.0):
@@ -173,6 +177,35 @@ class TestAionWebSocketManager:
 
         await ws_manager.stop()
 
+    async def test_real_transport_survives_liveness_checks(self, caplog, monkeypatch):
+        """A gql upgrade must not make a healthy socket look disconnected."""
+        monkeypatch.setattr(ws_manager_module, "LIVENESS_CHECK_INTERVAL", 0.02)
+        connections = []
+
+        async def accept(socket):
+            connections.append(socket)
+            assert socket.subprotocol == "graphql-transport-ws"
+            assert json.loads(await socket.recv())["type"] == "connection_init"
+            await socket.send(json.dumps({"type": "connection_ack"}))
+            await socket.wait_closed()
+
+        async with serve(accept, "127.0.0.1", 0, subprotocols=["graphql-transport-ws"]) as server:
+            port = server.sockets[0].getsockname()[1]
+            factory = WebsocketTransportFactory(
+                f"ws://127.0.0.1:{port}/graphql", AsyncMock(get_token=AsyncMock(return_value=None))
+            )
+            manager = AionWebSocketManager(factory, stop_timeout=1.0)
+            try:
+                with caplog.at_level(logging.DEBUG, logger=ws_manager_module.__name__):
+                    await manager.start()
+                    assert await wait_for(
+                        lambda: sum("connection alive" in r.getMessage() for r in caplog.records) >= 2
+                    )
+                assert manager.is_connected
+                assert len(connections) == 1
+            finally:
+                await manager.stop()
+
     async def test_retries_until_the_platform_comes_back(self, ws_manager, transport_factory, make_transport):
         """Repeated failures must not end the loop; only shutdown does."""
         transport_factory.transports = [
@@ -257,7 +290,7 @@ class TestAionWebSocketManager:
 
         await ws_manager.start()
         # Sever the socket without ever setting the closed event.
-        transport_factory.created[0].websocket = None
+        transport_factory.created[0].adapter.websocket = None
 
         assert await wait_for(lambda: len(transport_factory.created) == 2)
 

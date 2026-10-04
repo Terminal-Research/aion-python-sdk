@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
+
+import httpx
+import pytest
+from graphql import parse
 
 
 GENERATED_CLIENT_DIR = (
@@ -13,6 +18,41 @@ GENERATED_CLIENT_DIR = (
     / "generated"
     / "graphql_client"
 )
+
+
+@pytest.mark.parametrize("version_id", [None, "00000000-0000-0000-0000-000000000001"])
+async def test_registration_custom_operation_reaches_http(version_id):
+    """AST serialization must work without the generator installed at runtime."""
+    from aion.api.gql.generated.graphql_client.client import GqlClient
+    from aion.api.gql.generated.graphql_client.custom_fields import AgentBehaviorFields
+    from aion.api.gql.generated.graphql_client.custom_mutations import Mutation
+
+    requests = []
+
+    def respond(request):
+        payload = json.loads(request.content)
+        operation = parse(payload["query"]).definitions[0]
+        field = operation.selection_set.selections[0]
+        assert operation.name.value == "RegisterVersion"
+        assert field.name.value == "registerVersion"
+        if version_id is None:
+            assert not field.arguments
+            assert not payload["variables"]
+        else:
+            variable_name = field.arguments[0].value.name.value
+            assert payload["variables"][variable_name] == version_id
+        requests.append(payload)
+        return httpx.Response(200, json={"data": {"registerVersion": []}})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as http:
+        client = GqlClient(url="https://control-plane.test/graphql", http_client=http)
+        result = await client.mutation(
+            Mutation.register_version(version_id=version_id).fields(AgentBehaviorFields.id),
+            operation_name="RegisterVersion",
+        )
+
+    assert result == {"registerVersion": []}
+    assert len(requests) == 1
 
 
 def load_generated_module(module_name: str):

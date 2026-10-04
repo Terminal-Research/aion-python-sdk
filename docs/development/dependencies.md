@@ -68,6 +68,24 @@ make help
    poetry install -E langgraph-server -E adk-server --with dev
    ```
 
+## GraphQL compatibility
+
+The SDK pins `graphql-core==3.2.13` and `gql[websockets]==4.0.0` at runtime.
+Its WebSocket transport pins `websockets==15.0.1`, within gql's supported range.
+The development environment pins `ariadne-codegen==0.19.0`.
+Ariadne requires the Core 3.2 AST contract for custom operations.
+Core 3.3 changes that contract and is not compatible with this generator.
+The runtime pins also protect installations without development dependencies.
+
+After a GraphQL dependency change, regenerate the client with
+`poetry run ariadne-codegen client`.
+Run `make tests-unit`, `make check-env`, and the distribution checks.
+
+The terminal client, React chat library, and frontend use `graphql@16.14.2`.
+Their JavaScript version numbers do not match Python package versions.
+The clients use the same schema contract and `graphql-transport-ws` protocol
+as the Caliban backend.
+
 ## Testing changes from a feature branch
 
 Consumers depend on the SDK by git reference:
