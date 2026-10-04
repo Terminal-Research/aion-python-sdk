@@ -44,6 +44,7 @@ ACTIVE_TASK_STATES = frozenset(
 # persisted into the durable task state.
 TRANSIENT_ARTIFACT_IDS = frozenset({
     ArtifactId.STREAM_DELTA.value,
+    ArtifactId.THINKING_DELTA.value,
     ArtifactId.EPHEMERAL_MESSAGE.value,
     ArtifactId.REACTION.value,
 })

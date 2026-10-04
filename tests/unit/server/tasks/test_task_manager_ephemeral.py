@@ -13,6 +13,8 @@ import pytest
 from a2a.server.context import ServerCallContext
 from a2a.server.tasks import InMemoryTaskStore
 from a2a.types import (
+    Artifact,
+    TaskArtifactUpdateEvent,
     Message,
     Part,
     Role,
@@ -21,6 +23,7 @@ from a2a.types import (
     TaskStatusUpdateEvent,
 )
 
+from aion.core.a2a.enums import ArtifactId
 from aion.server.a2a.utils import mark_status_event_ephemeral
 from aion.server.agent.execution.scope import (
     clear_execution_scope,
@@ -111,3 +114,40 @@ async def test_ephemeral_flag_absent_by_default_so_durable_events_persist():
     history_texts = [m.parts[0].text for m in task.history]
     assert history_texts == ["milestone A", "milestone B"]
     assert task.status.message.parts[0].text == "milestone C"
+
+
+@pytest.mark.parametrize("artifact_id", [
+    ArtifactId.STREAM_DELTA.value,
+    ArtifactId.THINKING_DELTA.value,
+    ArtifactId.EPHEMERAL_MESSAGE.value,
+    ArtifactId.REACTION.value,
+])
+async def test_transient_artifact_chunks_are_delivered_without_storage(artifact_id: str):
+    """Keep live chunks out of stored tasks while preserving durable artifacts.
+
+    Repeated chunks retain their original event objects for stream delivery.
+    A later durable write must not copy the transient artifacts into storage.
+    """
+    store = InMemoryTaskStore()
+    context = ServerCallContext()
+    manager = _manager(store, context)
+    await manager.process(_status_event("Working"))
+
+    for append, text in [(False, "First chunk"), (True, "Next chunk")]:
+        event = TaskArtifactUpdateEvent(
+            task_id=TASK_ID,
+            context_id=CONTEXT_ID,
+            artifact=Artifact(artifact_id=artifact_id, parts=[Part(text=text)]),
+            append=append,
+        )
+        assert await manager.process(event) is event
+
+    await manager.process(TaskArtifactUpdateEvent(
+        task_id=TASK_ID,
+        context_id=CONTEXT_ID,
+        artifact=Artifact(artifact_id="report", parts=[Part(text="Durable result")]),
+    ))
+    await manager.process(_status_event("Finished"))
+    task = await store.get(TASK_ID, context)
+    assert [artifact.artifact_id for artifact in task.artifacts] == ["report"]
+    assert task.artifacts[0].parts[0].text == "Durable result"

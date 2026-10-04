@@ -173,7 +173,8 @@ was run. There is no need to run every suite for a documentation-only edit.
 - `aion.db`: PostgreSQL manager, repositories, migrations, task claims, and
   durable ownership.
 - `aion.server`: generic A2A app, plugin discovery, task and file lifecycle,
-  platform link, extensions, push notifications, and observability.
+  platform link, extensions, push notifications, and observability. Response
+  and thinking deltas remain live-only artifacts outside durable task storage.
 - `aion.proxy`: public multi-agent proxy and streaming response handling.
 - `aion.langgraph.server` and `aion.adk.server`: framework plugins and
   adapters for execution, state, streams, and A2A conversion.

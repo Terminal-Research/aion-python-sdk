@@ -316,3 +316,11 @@ are not acknowledgment. Runtime-produced agent messages retain the same URI list
 through persistence; earlier history and user messages are not relabeled. This
 does not require copying extension payloads into response metadata. The server
 currently exposes JSON-RPC, not an additional HTTP+JSON binding.
+
+### Transient stream artifacts
+
+The task manager delivers `aion:stream-delta`, `aion:thinking-delta`,
+`aion:ephemeral-message`, and `aion:reaction` updates to live clients without
+adding them to stored task artifacts. The deduplicator does not retain their
+IDs, so repeated chunks remain deliverable. Ordinary artifacts still persist.
+This filter does not remove artifacts from previously stored tasks.

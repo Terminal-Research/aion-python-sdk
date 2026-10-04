@@ -229,8 +229,8 @@ class AionTaskManager(TaskManager):
     def _check_process_skip_event(event: Event) -> bool:
         """Checks if an event should be skipped from processing and storage.
 
-        Stream delta artifacts are filtered out to prevent persisting intermediate
-        streaming chunks, keeping only final/complete artifacts in storage.
+        Response and thinking delta artifacts are filtered out to prevent
+        persisting intermediate chunks, keeping durable artifacts in storage.
 
         Status updates flagged ephemeral are skipped the same way: the client
         still receives them off the event stream (this method only gates

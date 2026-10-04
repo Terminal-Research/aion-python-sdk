@@ -252,3 +252,20 @@ class TestArtifactOutput:
         assert isinstance(results[0], TaskArtifactUpdateEvent)
         assert results[0].artifact.name == "doc"
         assert converter._streaming_started is False
+
+
+async def test_thinking_output_hint_produces_live_artifact_instead_of_durable_message():
+    """Preserve explicitly marked thinking text as a transient artifact event."""
+    event = make_text_event("Considering the next step")
+    event.custom_metadata = {
+        AION_OUTPUT_KEY: AionOutput(
+            artifact=ArtifactOutput(artifact_id="aion:thinking-delta")
+        ).model_dump(exclude_none=True)
+    }
+
+    results = await make_converter().convert(event)
+
+    assert len(results) == 1
+    assert isinstance(results[0], TaskArtifactUpdateEvent)
+    assert results[0].artifact.artifact_id == "aion:thinking-delta"
+    assert results[0].artifact.parts[0].text == "Considering the next step"

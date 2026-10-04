@@ -262,9 +262,14 @@ class TestDeduplicateArtifactEvent:
         assert ded.deduplicate_artifact_event(_make_artifact_event("persistent-art")) is None
 
     def test_apply_processed_item_transient_artifact_not_tracked(self):
-        """Transient artifacts (stream-delta, ephemeral-message) must not pollute known IDs."""
+        """Transient artifacts must not suppress subsequent live chunks."""
         ded = A2ATaskDeduplicator(_make_task())
-        for transient_id in (ArtifactId.STREAM_DELTA.value, ArtifactId.EPHEMERAL_MESSAGE.value):
+        for transient_id in (
+            ArtifactId.STREAM_DELTA.value,
+            ArtifactId.THINKING_DELTA.value,
+            ArtifactId.EPHEMERAL_MESSAGE.value,
+            ArtifactId.REACTION.value,
+        ):
             event = _make_artifact_event(transient_id)
             ded.apply_processed_item(event)
             # Still passes through — transient IDs are never deduplicated
