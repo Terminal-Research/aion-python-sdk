@@ -241,8 +241,14 @@ class AionWebSocketManager(IWebSocketManager):
         socket dropped without the close ever being signalled.
         """
         transport = self._transport
+        websocket = transport.adapter.websocket
+        if websocket is None:
+            return self._describe_close(transport)
+
         shutdown = asyncio.ensure_future(self._shutdown_event.wait())
-        closed = asyncio.ensure_future(transport.wait_closed())
+        # The transport's wait_closed() has a teardown deadline. The socket's
+        # wait_closed() waits for actual connection loss, without an idle timeout.
+        closed = asyncio.ensure_future(websocket.wait_closed())
 
         try:
             while True:

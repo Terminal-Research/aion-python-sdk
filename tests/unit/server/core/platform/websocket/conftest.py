@@ -7,9 +7,8 @@ import pytest
 class FakeTransport:
     """Stand-in for gql's WebsocketsTransport with a close we can trigger.
 
-    The manager learns that a connection died by awaiting wait_closed(), so tests
-    need a transport whose close they can fire on demand rather than a bare mock
-    whose wait_closed() would return immediately and spin the loop.
+    The manager awaits the socket's wait_closed(), so tests need a socket whose
+    close they can fire on demand rather than a mock that returns immediately.
     """
 
     # gql keeps the auth token in the URL query, exactly as the real factory builds it.
@@ -17,19 +16,18 @@ class FakeTransport:
 
     def __init__(self, connect_error=None):
         self.connect_error = connect_error
-        self.adapter = SimpleNamespace(websocket=object())
+        self._closed = asyncio.Event()
+        self.adapter = SimpleNamespace(
+            websocket=SimpleNamespace(wait_closed=self._closed.wait)
+        )
         self.close_exception = None
         self.connect_calls = 0
         self.close_calls = 0
-        self._closed = asyncio.Event()
 
     async def connect(self):
         self.connect_calls += 1
         if self.connect_error is not None:
             raise self.connect_error
-
-    async def wait_closed(self):
-        await self._closed.wait()
 
     async def close(self):
         self.close_calls += 1
