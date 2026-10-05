@@ -52,7 +52,9 @@
     "vitest": "^4.1.11"
   },
   "overrides": {
-    "graphql-ws": "6.3.0"
+    "graphql-ws": "6.3.0",
+    "esbuild": "^0.28.1",
+    "@fastify/busboy": "^3.2.1"
   },
   "files": [
     "bin",
