@@ -40,6 +40,10 @@ contracts; reconcile this file with them when behavior changes.
   `### Bug Fixes`, one short `* **scope:** description` line each. Before a
   release the section must be complete and renamed to the released version;
   see `RELEASE.md`.
+- When bumping `a2a-sdk`, diff its `DefaultRequestHandlerV2`,
+  `ActiveTaskRegistry` and `a2a.server.cluster` against the Aion overrides,
+  and update the "Relation to a2a cluster mode" section of
+  `aion.server.tasks.ownership` to match.
 - Keep unrelated user changes intact. Commit messages must read like ordinary
   developer messages, without AI attribution, `Co-Authored-By`, or generated-by
   markers. If a commit is blocked, preserve the staged state and give the exact

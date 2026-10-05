@@ -7,6 +7,11 @@ task may be taken over, and this is what acts on it.
 It is deliberately separate from the provider that hands out leases. Holding a
 lease and reclaiming someone else's are different jobs with different failure
 consequences, and only one of them is safe to enable on the first deployment.
+
+A reclaimed task is settled, not executed again. a2a-go redelivers a dead
+node's work and runs the agent from the start; a2a-python 1.2 leaves it
+running in the store. See the ``ownership`` package docstring for why a
+re-run is not used here.
 """
 
 from __future__ import annotations

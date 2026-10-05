@@ -392,6 +392,13 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
         the caller's scope. A task another user owns reads as absent there,
         and is reported as not found - its existence is not confirmed.
 
+        a2a-sdk's ``_subscribe_remote`` answers the remote case with a snapshot
+        and a tail read from its event stream. There is no such stream here,
+        so a task executing elsewhere is refused as busy. The
+        ``aion.server.tasks.ownership`` package docstring describes the
+        journal and stream that would let this branch follow the task
+        instead.
+
         Raises:
             TaskNotFoundError: If no such task exists for this caller.
             TaskOwnershipBusy: If another instance is executing the task.

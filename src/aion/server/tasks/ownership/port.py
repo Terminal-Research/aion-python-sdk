@@ -24,6 +24,11 @@ class OwnershipProvider(Protocol):
     There is deliberately no ``is_owner()``. Ownership is only ever established
     as the result of a conditional write; any answer given before the write has
     already expired by the time the write happens.
+
+    ``acquire``/``release`` play the part of a2a-go's ``LeaseManager.Acquire``
+    and ``Lease.Release``; a2a-python 1.2 has no counterpart. See the package
+    docstring for the full mapping and what adopting an upstream lease
+    interface would take.
     """
 
     enforcement_enabled: bool

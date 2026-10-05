@@ -221,7 +221,9 @@ class PostgresTaskStore(BaseTaskStore):
         a write with ``None`` updates it as recorded, a write with another
         owner's context is refused. Separately, the write is fenced by this
         process's lease on the task - the lease owner is a server process
-        and has nothing to do with the user who owns the task.
+        and has nothing to do with the user who owns the task. The fence
+        takes the place of a2a's version check (``VersionedTaskStore``), so
+        ``tasks`` has no version column.
 
         Raises:
             ValueError: If ``task.id`` is not a UUID (see

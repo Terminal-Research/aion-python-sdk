@@ -530,6 +530,12 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         owner is the process holding its claim, and only that process can run
         its teardown. ``task`` and ``version`` are the base handler's read and
         are not used: ``_cancel_elsewhere`` decides from the claim.
+
+        The base path, like a2a-go's ``cancel`` payload, never calls
+        ``AgentExecutor.cancel`` on the executing process, which is where an
+        evolution run's rescue happens. Keep this override until upstream
+        cancellation reaches the owner's executor - see the
+        ``aion.server.tasks.ownership`` package docstring.
         """
         return await self._cancel_or_not_found(task_id, context)
 
