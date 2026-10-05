@@ -4,7 +4,7 @@
      commands.py and frameworks.py. Do not edit by hand: run
      `make scenarios-matrix`. -->
 
-165 scenarios in 32 files, 366 runs across 2 frameworks: 336 run, 30 skipped.
+166 scenarios in 32 files, 368 runs across 2 frameworks: 338 run, 30 skipped.
 
 Nothing here was produced by running a scenario: `pytest --collect-only` and the registries are all it takes, and the same suite always renders the same file. What the suite is and how to run it is in [README.md](README.md).
 
@@ -74,7 +74,7 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 | `authentication` | bearer tokens: required, verified, and naming the caller | 6 | `make tests-scenarios TAGS=authentication` |
 | `config` | aion.yaml configuration and deployment variants | 7 | `make tests-scenarios TAGS=config` |
 | `lifecycle` | cancel, concurrency, push notifications, startup | 4 | `make tests-scenarios TAGS=lifecycle` |
-| `contexts` | Context extension: list, read and delete conversations | 4 | `make tests-scenarios TAGS=contexts` |
+| `contexts` | Context extension: list, read and delete conversations | 5 | `make tests-scenarios TAGS=contexts` |
 | `persistence` | needs POSTGRES_TEST_URL; survives a server restart | 10 | `make tests-scenarios-persistence` |
 | `distributed` | needs POSTGRES_TEST_URL; two servers over one database | 15 | `make tests-scenarios-distributed` |
 | `native` | an ordinary framework agent on its own path: model, tools, memory, no Aion API | 29 | `make tests-scenarios TAGS=native` |
@@ -87,12 +87,12 @@ Who a request is from, and what a server does with one that names nobody it trus
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [No ``Authorization`` header: ``401`` with a bearer challenge, and no run.](core/test_authentication.py#L48 "test_a_call_without_a_token_is_refused") | `authentication` | — | `default` | ✓ | ✓ |
-| [The token names no caller the server trusts: ``401``, and the reason never quotes it.](core/test_authentication.py#L56 "test_a_call_with_a_token_that_does_not_verify_is_refused") | `authentication` | — | `default` | ✓ | ✓ |
-| [The control plane's token opens the endpoint the two refusals above close.](core/test_authentication.py#L77 "test_a_call_with_an_anonymous_session_token_is_served") | `authentication` | — | `default` | ✓ | ✓ |
-| [The caller is the token's ``sub``: the first session holds the context, the second is refused.](core/test_authentication.py#L85 "test_a_session_cannot_enter_another_sessions_context") | `authentication` | — | `default` | ✓ | ✓ |
-| [Aion's invocation for this client ID is served; a session and another client's invocation are refused.](core/test_authentication.py#L134 "test_a_hosted_or_strict_server_serves_invocations_only") | `authentication` | — | `default` | ✓ | ✓ |
-| [Not a server that starts open: ``aion serve`` exits with an error, and says why.](core/test_authentication.py#L149 "test_settings_that_cannot_protect_the_server_stop_it_starting") | `authentication` | — | `default` | ✓ | ✓ |
+| [No ``Authorization`` header: ``401`` with a bearer challenge, and no run.](core/test_authentication.py#L49 "test_a_call_without_a_token_is_refused") | `authentication` | — | `default` | ✓ | ✓ |
+| [The token names no caller the server trusts: ``401``, and the reason never quotes it.](core/test_authentication.py#L58 "test_a_call_with_a_token_that_does_not_verify_is_refused") | `authentication` | — | `default` | ✓ | ✓ |
+| [The control plane's token opens the endpoint the two refusals above close.](core/test_authentication.py#L80 "test_a_call_with_an_anonymous_session_token_is_served") | `authentication` | — | `default` | ✓ | ✓ |
+| [The caller is the token's ``sub``: the first session holds the context, the second is refused.](core/test_authentication.py#L88 "test_a_session_cannot_enter_another_sessions_context") | `authentication` | — | `default` | ✓ | ✓ |
+| [Aion's invocation for this client ID is served; a session and another client's invocation are refused.](core/test_authentication.py#L137 "test_a_hosted_or_strict_server_serves_invocations_only") | `authentication` | — | `default` | ✓ | ✓ |
+| [Not a server that starts open: ``aion serve`` exits with an error, and says why.](core/test_authentication.py#L152 "test_settings_that_cannot_protect_the_server_stop_it_starting") | `authentication` | — | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_big_payload.py`
 
@@ -146,10 +146,11 @@ The Context extension on a real deployment: discover it, list and read contexts,
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [Declared once and optional: its methods need no activation.](core/test_contexts.py#L45 "test_the_card_declares_the_context_extension") | `contexts` | — | `default` | ✓ | ✓ |
-| [A caller's conversation is listed and read back in order, over JSON-RPC and HTTP+JSON.](core/test_contexts.py#L53 "test_a_conversation_is_listed_and_read_back") | `contexts` | `echo` | `default` | ✓ | ✓ |
-| [Knowing a context ID lets another caller neither read nor delete the context.](core/test_contexts.py#L77 "test_another_caller_neither_sees_nor_deletes_it") | `contexts` | `echo` | `default` | ✓ | ✓ |
-| [Deleting a context cancels its running turn; the ID then starts a conversation with no memory.](core/test_contexts.py#L94 "test_deleting_a_context_cancels_its_running_turn_and_forgets_it") | `contexts` | `slow` | `default` | ✓ | ✓ |
+| [Declared once and optional: its methods need no activation.](core/test_contexts.py#L47 "test_the_card_declares_the_context_extension") | `contexts` | — | `default` | ✓ | ✓ |
+| [``401`` on both bindings: a JSON-RPC error with ``-32051``, and a problem detail over HTTP+JSON.](core/test_contexts.py#L55 "test_a_call_without_a_token_is_refused_in_each_bindings_format") | `contexts` | — | `default` | ✓ | ✓ |
+| [A caller's conversation is listed and read back in order, over JSON-RPC and HTTP+JSON.](core/test_contexts.py#L76 "test_a_conversation_is_listed_and_read_back") | `contexts` | `echo` | `default` | ✓ | ✓ |
+| [Knowing a context ID lets another caller neither read nor delete the context.](core/test_contexts.py#L100 "test_another_caller_neither_sees_nor_deletes_it") | `contexts` | `echo` | `default` | ✓ | ✓ |
+| [Deleting a context cancels its running turn; the ID then starts a conversation with no memory.](core/test_contexts.py#L117 "test_deleting_a_context_cancels_its_running_turn_and_forgets_it") | `contexts` | `slow` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_daemon.py`
 

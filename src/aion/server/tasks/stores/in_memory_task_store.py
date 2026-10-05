@@ -1,5 +1,7 @@
 """In-memory task store implementation for development and testing."""
 
+from __future__ import annotations
+
 import logging
 import asyncio
 from datetime import datetime, timezone
