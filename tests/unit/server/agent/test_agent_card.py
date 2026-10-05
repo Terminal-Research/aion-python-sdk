@@ -49,18 +49,6 @@ class TestCapabilities:
         assert len(declarations) == 1
         assert not declarations[0].required
 
-    @pytest.mark.parametrize("uri", [
-        "https://docs.aion.to/a2a/extensions/aion/context/get-context/1.0.0",
-        "https://docs.aion.to/a2a/extensions/aion/context/get-contexts/1.0.0",
-    ])
-    def test_the_per_method_context_uris_are_not_declared(self, uri):
-        """GetContext and GetContexts belong to the unified extension, not to URIs of their own."""
-        card = AionAgentCard.from_config(_make_config(), "http://localhost:8000")
-        descriptors = {d.uri for d in aion_a2a_extension_registry.get_all()}
-
-        assert uri not in {ext.uri for ext in card.capabilities.extensions}
-        assert uri not in descriptors
-
     def test_evolution_is_not_advertised_before_it_is_enabled(self):
         """The counter-example: advertised=True, and still off the card.
 

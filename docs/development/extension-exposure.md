@@ -168,11 +168,6 @@ The wire models are typed in `src/aion/core/a2a/` (`ContextSummary`,
 models), the lifecycle errors in `src/aion/server/contexts/errors.py`, and the
 behaviour is described in `src/aion/server/README.md` under *Contexts*.
 
-The per-method URIs `.../context/get-context/1.0.0` and
-`.../context/get-contexts/1.0.0` are not registered. The method names are the
-same in both contracts and the response shapes are not, so one server can
-answer a method name only one way; it answers by the unified contract.
-
 ## It is not an authorization mechanism
 
 Withholding an extension from the card changes what a client is *told*, never
