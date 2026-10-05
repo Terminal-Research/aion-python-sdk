@@ -13,7 +13,10 @@ Make sure that:
 
 - you are on `main`, and it is what is on GitHub: `git checkout main && git pull`;
 - `[project].version` in `pyproject.toml` is the version you mean to release,
-  and it is not on PyPI yet: <https://pypi.org/project/aionto-sdk/#history>.
+  and it is not on PyPI yet: <https://pypi.org/project/aionto-sdk/#history>;
+- `CHANGELOG.md` lists every client-visible change since the last release,
+  and its `Unreleased` heading is renamed to that version, for example
+  `## 0.2.0 (2026-10-20)`.
 
 Then:
 

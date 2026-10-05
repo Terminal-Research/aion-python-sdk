@@ -34,6 +34,12 @@ contracts; reconcile this file with them when behavior changes.
   when applicable; `A2AError` subclasses remain in the a2a-sdk hierarchy.
 - No general formatter or type checker is configured for this Python project.
   Follow surrounding style and do not introduce unrelated tooling changes.
+- Record every change a client of an agent's server or a project installing
+  the SDK can notice in `CHANGELOG.md`, under `## Unreleased`, in the
+  a2a-python changelog format: `### ⚠ BREAKING CHANGES`, `### Features` and
+  `### Bug Fixes`, one short `* **scope:** description` line each. Before a
+  release the section must be complete and renamed to the released version;
+  see `RELEASE.md`.
 - Keep unrelated user changes intact. Commit messages must read like ordinary
   developer messages, without AI attribution, `Co-Authored-By`, or generated-by
   markers. If a commit is blocked, preserve the staged state and give the exact
@@ -194,7 +200,8 @@ User-facing docs live in the `aion-docs-mintlify` repository at
 <https://docs.aion.to>. Link to the page that owns a topic rather than
 duplicating it here; do not create Markdown files that only forward to a URL.
 `docs/development/` holds repository-specific maintainer guides, and
-`RELEASE.md` holds the release procedure. The root `README.md` is the PyPI
+`RELEASE.md` holds the release procedure and `CHANGELOG.md` the
+client-visible changes per release. The root `README.md` is the PyPI
 page: keep it short and use absolute links. Existing subpackage READMEs
 describe their local code; update the document that owns behavior you change.
 Test-suite guidance lives beside the suite, with the generated scenario matrix
