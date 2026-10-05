@@ -5,23 +5,18 @@ overrides reimplement the base body rather than delegating to ``super()``.
 That style is deliberate — it is how ``AionTaskManager`` and the per-task push
 projection get injected — but it means an SDK upgrade can silently desynchronise
 the two sides: the base gains a parameter, starts passing it at a call site
-Aion does not control, and the override rejects it at runtime.
+Aion does not control, and the override rejects it at runtime - for
+``DefaultRequestHandlerV2._setup_active_task`` passing ``initial_message=`` to
+``ActiveTaskRegistry.get_or_create``, that would break every ``message/send``
+and ``message/stream`` call while a unit suite without the real registry
+attached stays green.
 
-The a2a-sdk 1.0.3 to 1.1.2 upgrade produced exactly that failure.
-``DefaultRequestHandlerV2._setup_active_task`` began passing
-``initial_message=`` to ``ActiveTaskRegistry.get_or_create``, which
-``AionActiveTaskRegistry`` did not accept, breaking every ``message/send`` and
-``message/stream`` call. The whole unit suite stayed green, because nothing
-exercised that path with the real registry attached.
-
-These tests close that gap by asserting the coupling directly instead of
-relying on some other test to happen to traverse it.
+These tests assert the coupling directly instead of relying on some other
+test to happen to traverse it.
 """
 
 import ast
-import asyncio
 import inspect
-import threading
 
 import pytest
 from a2a.server.agent_execution import AgentExecutor, RequestContextBuilder
@@ -41,7 +36,7 @@ from aion.server.agent.execution.request_context_builder import AionRequestConte
 from aion.server.agent.execution.request_executor import AionAgentRequestExecutor
 from aion.server.core.app.handlers.jsonrpc_dispatcher import AionJsonRpcDispatcher
 from aion.server.core.app.handlers.request_handler import AionRequestHandler
-from aion.server.tasks.authenticated_push_sender import AuthenticatedPushNotificationSender
+from aion.server.tasks.push_sender import AionPushNotificationSender
 from aion.server.tasks.stores.in_memory_task_store import InMemoryTaskStore
 from aion.server.tasks.stores.postgres_task_store import PostgresTaskStore
 from aion.server.tasks.task_manager import AionTaskManager
@@ -65,12 +60,12 @@ OVERRIDES = [
     (AionAgentRequestExecutor, AgentExecutor, "cancel"),
     (TerminalTaskPushSender, PushNotificationSender, "send_notification"),
     (
-        AuthenticatedPushNotificationSender,
+        AionPushNotificationSender,
         BasePushNotificationSender,
         "_dispatch_notification",
     ),
     (
-        AuthenticatedPushNotificationSender,
+        AionPushNotificationSender,
         BasePushNotificationSender,
         "send_notification",
     ),
@@ -200,10 +195,10 @@ async def test_get_or_create_threads_initial_message_into_task_manager(execution
     """The inbound user message must reach the task manager that records it.
 
     ``AionActiveTaskRegistry.get_or_create`` reimplements the base body and so
-    is responsible for forwarding ``initial_message`` itself. Before the 1.1.2
-    upgrade it hardcoded ``None``; the SDK now supplies the real message and
-    de-duplicates it downstream by ``message_id``, so dropping it here loses the
-    user turn from task history rather than failing loudly.
+    is responsible for forwarding ``initial_message`` itself. The SDK supplies
+    the real message and de-duplicates it downstream by ``message_id``, so
+    dropping it here would lose the user turn from task history rather than
+    fail loudly.
     """
     registry = AionActiveTaskRegistry(
         agent_executor=Mock(),
@@ -230,7 +225,7 @@ async def test_get_or_create_threads_initial_message_into_task_manager(execution
 async def test_get_or_create_refuses_work_once_registry_is_closed():
     """A closed registry must not hand out new tasks.
 
-    ``ActiveTaskRegistry.aclose()`` (new in a2a-sdk 1.1.2) marks the registry
+    ``ActiveTaskRegistry.aclose()`` marks the registry
     closed so shutdown can drain it without racing new arrivals. Since the Aion
     override reimplements ``get_or_create``, it has to honour that flag itself,
     otherwise a task registered during shutdown is never drained.
@@ -246,45 +241,19 @@ async def test_get_or_create_refuses_work_once_registry_is_closed():
         await registry.get_or_create("task-after-close", call_context=Mock())
 
 
-async def test_the_registry_holds_the_base_lock_of_either_kind():
-    """The override enters whatever lock the installed a2a-sdk gives the base.
-
-    a2a-sdk 1.1.3 changed ``ActiveTaskRegistry._lock`` from an
-    ``asyncio.Lock`` to a ``threading.RLock``, and the override - which
-    entered it with ``async with`` - failed every request. Both kinds are in
-    the supported range, so both are checked here, whichever this
-    environment installed.
-    """
-    registry = AionActiveTaskRegistry(
-        agent_executor=Mock(),
-        task_store=InMemoryTaskStore(),
-        push_sender=None,
-    )
-
-    registry._lock = asyncio.Lock()
-    async with registry._registry_lock():
-        assert registry._lock.locked()
-    assert not registry._lock.locked()
-
-    registry._lock = threading.RLock()
-    async with registry._registry_lock():
-        assert registry._lock._is_owned()
-    assert not registry._lock._is_owned()
-
-
 def test_no_critical_section_of_the_registry_awaits():
-    """What makes the two lock kinds interchangeable, held for every section.
+    """The registry's ``threading.RLock`` is never held across an ``await``.
 
-    A ``threading.RLock`` held across an ``await`` lets another coroutine on
-    the same thread re-enter it and so excludes nothing. Every section the
-    override guards is therefore synchronous; this fails the day one is not.
+    An ``RLock`` held across an ``await`` lets another coroutine on the same
+    thread re-enter it and so excludes nothing. Every section the override
+    guards is therefore synchronous; this fails the day one is not.
     """
     tree = ast.parse(inspect.getsource(active_task_registry_module))
     sections = [
         node
         for node in ast.walk(tree)
-        if isinstance(node, ast.AsyncWith)
-        and "_registry_lock" in ast.unparse(node.items[0].context_expr)
+        if isinstance(node, ast.With)
+        and ast.unparse(node.items[0].context_expr) == "self._lock"
     ]
     awaiting = [
         section.lineno
@@ -296,3 +265,46 @@ def test_no_critical_section_of_the_registry_awaits():
 
     assert sections
     assert awaiting == [], f"critical sections awaiting at lines {awaiting}"
+
+
+async def test_a_message_to_a_terminal_task_is_refused_as_the_base_refuses_it():
+    """A send into a task with an outcome answers ``UnsupportedOperationError``.
+
+    The override re-reads the task after it wins the claim, before the base
+    ``ActiveTask.start`` would; both refuse a terminal task with the same
+    error, naming the state, so the client sees one answer either way.
+    """
+    from a2a.auth.user import User
+    from a2a.server.context import ServerCallContext
+    from a2a.types import Task, TaskState, TaskStatus
+    from a2a.utils.errors import UnsupportedOperationError
+
+    class _Caller(User):
+        @property
+        def is_authenticated(self) -> bool:
+            return True
+
+        @property
+        def user_name(self) -> str:
+            return "alice"
+
+    store = InMemoryTaskStore()
+    context = ServerCallContext(user=_Caller())
+    await store.save(
+        Task(
+            id="task-done",
+            context_id="ctx-1",
+            status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED),
+        ),
+        context,
+    )
+    registry = AionActiveTaskRegistry(agent_executor=Mock(), task_store=store, push_sender=None)
+
+    with pytest.raises(UnsupportedOperationError, match="TASK_STATE_COMPLETED"):
+        await registry.get_or_create(
+            "task-done",
+            call_context=context,
+            context_id="ctx-1",
+            create_task_if_missing=True,
+        )
+    await registry.aclose()

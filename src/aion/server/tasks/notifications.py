@@ -19,6 +19,12 @@ lost to a reconnect degrades delivery to the pre-existing polling cadence
 rather than losing it outright. See ``aion.server.tasks.ownership.postgres
 .PostgresOwnershipProvider`` for the owner-side subscriber and
 ``AionRequestHandler.on_cancel_task`` for the waiter-side caller.
+
+The channel carries control events only, never a task's own events. a2a's
+event streams (``DatabaseTaskEventStream`` in a2a-python, the ``Puller`` in
+a2a-go) poll a journal of task events instead. A NOTIFY-woken stream over
+such a journal would reuse this listener; see the
+``aion.server.tasks.ownership`` package docstring.
 """
 
 from __future__ import annotations

@@ -11,7 +11,11 @@ from a2a.types import TaskState, a2a_pb2
 from a2a.types.a2a_pb2 import Task
 from a2a.utils.constants import DEFAULT_LIST_TASKS_PAGE_SIZE
 from a2a.utils.errors import InvalidParamsError, TaskNotCancelableError
-from a2a.utils.task import decode_page_token, encode_page_token
+from a2a.utils.task import (
+    ListTasksCursor,
+    decode_list_tasks_cursor,
+    encode_list_tasks_cursor,
+)
 from typing import Callable, NamedTuple, Optional, List
 
 from aion.server.a2a.constants import TERMINAL_TASK_STATES
@@ -19,14 +23,22 @@ from aion.server.tasks.ownership import DegenerateOwnershipProvider, TaskOwnersh
 from .base_task_store import BaseTaskStore
 
 logger = logging.getLogger(__name__)
-_MIN_TIMESTAMP = datetime.min.replace(tzinfo=timezone.utc)
 
 
-def _status_timestamp(task: Task) -> datetime | None:
-    """Return a task timestamp as an aware datetime, if it has one."""
-    if not task.HasField('status') or not task.status.HasField('timestamp'):
-        return None
-    return task.status.timestamp.ToDatetime(tzinfo=timezone.utc)
+def _list_sort_key(task: Task) -> tuple[bool, int, str]:
+    """The ``ListTasks`` order, as a2a-sdk sorts it: ``(has timestamp, timestamp, id)``, descending."""
+    has_timestamp = task.HasField('status') and task.status.HasField('timestamp')
+    return (
+        has_timestamp,
+        task.status.timestamp.ToNanoseconds() if has_timestamp else 0,
+        task.id,
+    )
+
+
+def _cursor_for(task: Task) -> ListTasksCursor:
+    """The cursor naming ``task``'s position in the ``ListTasks`` order."""
+    has_timestamp, timestamp_ns, task_id = _list_sort_key(task)
+    return ListTasksCursor(timestamp_ns=timestamp_ns if has_timestamp else None, task_id=task_id)
 
 
 class _Stored(NamedTuple):
@@ -171,47 +183,42 @@ class InMemoryTaskStore(BaseTaskStore):
                 task for task in tasks if task.status.state == params.status
             ]
         if params.HasField('status_timestamp_after'):
-            last_updated_after = params.status_timestamp_after.ToDatetime(
-                tzinfo=timezone.utc
-            )
+            last_updated_after_ns = params.status_timestamp_after.ToNanoseconds()
             tasks = [
                 task
                 for task in tasks
                 if (
-                    (timestamp := _status_timestamp(task)) is not None
-                    and timestamp >= last_updated_after
+                    task.HasField('status')
+                    and task.status.HasField('timestamp')
+                    and task.status.timestamp.ToNanoseconds() >= last_updated_after_ns
                 )
             ]
 
-        # Order tasks by last update time. To ensure stable sorting, in cases where timestamps are null or not unique, do a second order comparison of IDs.
-        tasks.sort(
-            key=lambda task: (
-                (timestamp := _status_timestamp(task)) is not None,
-                timestamp or _MIN_TIMESTAMP,
-                task.id,
-            ),
-            reverse=True,
-        )
+        # Newest status first; a task without a timestamp sorts last, and the
+        # id breaks ties, so the order is total.
+        tasks.sort(key=_list_sort_key, reverse=True)
 
-        # Paginate tasks
+        # The page token is a2a-sdk's keyset cursor: it carries the position
+        # of the last task returned, so it stays valid if that task is updated
+        # or deleted. A task updated mid-listing can move above the cursor and
+        # be skipped.
         total_size = len(tasks)
         start_idx = 0
         if params.page_token:
-            start_task_id = decode_page_token(params.page_token)
-            valid_token = False
-            for i, task in enumerate(tasks):
-                if task.id == start_task_id:
-                    start_idx = i
-                    valid_token = True
-                    break
-            if not valid_token:
+            cursor = decode_list_tasks_cursor(params.page_token)
+            if cursor is None:
                 raise InvalidParamsError(
                     f'Invalid page token: {params.page_token}'
                 )
+            after = cursor.sort_key()
+            start_idx = next(
+                (i for i, task in enumerate(tasks) if _list_sort_key(task) < after),
+                total_size,
+            )
         page_size = params.page_size or DEFAULT_LIST_TASKS_PAGE_SIZE
         end_idx = start_idx + page_size
         next_page_token = (
-            encode_page_token(tasks[end_idx].id)
+            encode_list_tasks_cursor(_cursor_for(tasks[end_idx - 1]))
             if end_idx < total_size
             else None
         )

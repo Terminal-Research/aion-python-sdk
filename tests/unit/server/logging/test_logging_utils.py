@@ -231,7 +231,7 @@ class TestPushNotificationLogging:
     """The blanket a2a rule must not reach the sender that carries the diagnosis.
 
     There is deliberately no rule for the SDK's own push-notification module:
-    AuthenticatedPushNotificationSender overrides both of its logging methods
+    AionPushNotificationSender overrides both of its logging methods
     and never delegates, so that module emits nothing here and a rule naming it
     would only pin us to an SDK-internal path that an upgrade can rename
     silently. What has to hold is the pair below.
@@ -248,7 +248,7 @@ class TestPushNotificationLogging:
         f = NamespaceFilter(BASE_RULES)
 
         assert f.filter(self._record(
-            "aion.server.tasks.authenticated_push_sender", logging.WARNING))
+            "aion.server.tasks.push_sender", logging.WARNING))
 
     def test_a2a_warnings_are_kept(self):
         """The a2a rule trims the namespace to WARNING, it does not silence it."""

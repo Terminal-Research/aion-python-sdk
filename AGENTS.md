@@ -34,6 +34,25 @@ contracts; reconcile this file with them when behavior changes.
   when applicable; `A2AError` subclasses remain in the a2a-sdk hierarchy.
 - No general formatter or type checker is configured for this Python project.
   Follow surrounding style and do not introduce unrelated tooling changes.
+- Record every change a client of an agent's server or a project installing
+  the SDK can notice in `CHANGELOG.md`, under `## Unreleased`, in the
+  a2a-python changelog format: `### ⚠ BREAKING CHANGES`, `### Features` and
+  `### Bug Fixes`, one short `* **scope:** description` line each. Before a
+  release the section must be complete and renamed to the released version;
+  see `RELEASE.md`.
+- Task ownership (claims, heartbeat, reaper, owner-run cancellation) is
+  Aion's own, not a2a-sdk's. On every `a2a-sdk` bump:
+  - diff its `DefaultRequestHandlerV2`, `ActiveTaskRegistry` and
+    `a2a.server.cluster` against the Aion overrides, and update the
+    "Relation to a2a cluster mode" section of `aion.server.tasks.ownership`;
+  - check whether upstream now covers what the Aion mechanism provides, and
+    propose moving onto it only when all of these hold: remote cancellation
+    runs `AgentExecutor.cancel` on the executing process; exclusivity is
+    taken before execution starts and writes are fenced against an expired
+    owner; a dead owner's task can be settled as FAILED instead of re-run;
+    the backend plugs into the existing PostgreSQL schema without changing
+    `tasks`. When only some hold, drop the Aion overrides that upstream now
+    makes redundant and keep the rest.
 - Keep unrelated user changes intact. Commit messages must read like ordinary
   developer messages, without AI attribution, `Co-Authored-By`, or generated-by
   markers. If a commit is blocked, preserve the staged state and give the exact
@@ -194,7 +213,8 @@ User-facing docs live in the `aion-docs-mintlify` repository at
 <https://docs.aion.to>. Link to the page that owns a topic rather than
 duplicating it here; do not create Markdown files that only forward to a URL.
 `docs/development/` holds repository-specific maintainer guides, and
-`RELEASE.md` holds the release procedure. The root `README.md` is the PyPI
+`RELEASE.md` holds the release procedure and `CHANGELOG.md` the
+client-visible changes per release. The root `README.md` is the PyPI
 page: keep it short and use absolute links. Existing subpackage READMEs
 describe their local code; update the document that owns behavior you change.
 Test-suite guidance lives beside the suite, with the generated scenario matrix

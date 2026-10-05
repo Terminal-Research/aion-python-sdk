@@ -201,7 +201,7 @@ check-env: ## Check the installed environment for duplicate or broken packages
 
 # The other direction of the compatibility question. Every other target here
 # runs against the newest release in each declared range; this one installs the
-# oldest, so that `a2a-sdk>=1.1.5`, `langgraph>=1.0.0` and `google-adk>=1.27.1`
+# oldest, so that `a2a-sdk>=1.2.2`, `langgraph>=1.0.0` and `google-adk>=1.27.1`
 # mean what the manifest says rather than only having been typed there.
 #
 # uv rather than Poetry, for the one thing Poetry cannot do: `--resolution
@@ -237,7 +237,7 @@ check-env: ## Check the installed environment for duplicate or broken packages
 # uv comes from the dev group, so a `poetry install` is enough to run this;
 # one on PATH is used first, which is how CI provides it without Poetry.
 FLOORS_PYTHON ?= 3.12
-FLOORS_EXCLUDE_NEWER ?= 2026-10-01
+FLOORS_EXCLUDE_NEWER ?= 2026-10-06
 FLOORS_VENV := .venv-floors
 FLOORS_PY := $(FLOORS_VENV)/bin/python
 FLOORS_UV = $(or $(shell command -v uv 2>/dev/null),$(shell poetry run sh -c 'command -v uv' 2>/dev/null))

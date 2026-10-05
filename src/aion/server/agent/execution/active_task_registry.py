@@ -1,9 +1,7 @@
 """Registry that creates ActiveTask instances wired with AionTaskManager."""
 
 import asyncio
-import contextlib
 import logging
-from collections.abc import AsyncIterator
 from typing import Any, override
 
 from a2a.server.agent_execution.active_task import ActiveTask
@@ -12,9 +10,9 @@ from a2a.server.context import ServerCallContext
 from a2a.types import Task, TaskState
 from a2a.types.a2a_pb2 import Message
 from a2a.utils.errors import (
-    InvalidParamsError,
     TaskNotCancelableError,
     TaskNotFoundError,
+    UnsupportedOperationError,
 )
 
 from aion.core.a2a.enums import TaskSettlementReason
@@ -74,6 +72,12 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
     subscriber cannot make that call — it may have merely disconnected while
     the execution carried on — which is why ``TerminalTaskProjection`` only
     reads.
+
+    ``_active_tasks`` and ``_task_managers`` are guarded by the base
+    registry's ``threading.RLock``, shared with the base methods this class
+    inherits. Every critical section is synchronous - no ``await`` between
+    entering and leaving - because an ``RLock`` held across an ``await`` lets
+    another coroutine on the same thread re-enter it and excludes nothing.
     """
 
     def __init__(
@@ -122,31 +126,6 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
         self._ownership.set_control_signal_callback(self._on_control_signal)
         self._ownership.start()
 
-    @contextlib.asynccontextmanager
-    async def _registry_lock(self) -> AsyncIterator[None]:
-        """Hold the base registry's lock, whichever kind this a2a-sdk has.
-
-        The lock is the base class's and has to stay shared: the base methods
-        this class still inherits - ``_remove_task``, ``get``, ``aclose`` -
-        guard ``_active_tasks`` with it too. a2a-sdk up to 1.1.2 makes it an
-        ``asyncio.Lock``, entered with ``async with``; from 1.1.3 it is a
-        ``threading.RLock``, entered with ``with``. Both are in the supported
-        range, so the kind is read off the object rather than assumed.
-
-        Every critical section in this class is synchronous - no ``await``
-        between entering and leaving - and has to stay that way. That is what
-        makes the two kinds interchangeable here: a ``threading.RLock`` held
-        across an ``await`` would let another coroutine on the same thread
-        re-enter it, and would exclude nothing.
-        """
-        lock = self._lock
-        if isinstance(lock, asyncio.Lock):
-            async with lock:
-                yield
-        else:
-            with lock:
-                yield
-
     @override
     async def get_or_create(
         self,
@@ -185,7 +164,7 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
         _require_call_context(call_context)
         while True:
             reusable: ActiveTask | None = None
-            async with self._registry_lock():
+            with self._lock:
                 if self._closed:
                     raise RuntimeError('ActiveTaskRegistry is closed')
 
@@ -210,8 +189,8 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
                     self._task_managers.pop(task_id, None)
 
             if reusable is not None:
-                # The cache-hit guard a2a-sdk's own get_or_create has had since
-                # 1.1.4 (#1172): a live task found by id alone is handed out
+                # The cache-hit guard of a2a-sdk's own get_or_create: a live
+                # task found by id alone is handed out
                 # only to a caller the owner-aware store shows it to. Skipped
                 # on the create path, where the send path has already read the
                 # task through the store. Outside the lock: the read is I/O.
@@ -257,8 +236,11 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
                 if claim is not None:
                     task = await task_manager.refresh_task()
                     if task is not None and task.status.state in TERMINAL_TASK_STATES:
-                        raise InvalidParamsError(
-                            message=f"Task {task_id} is already in terminal state"
+                        raise UnsupportedOperationError(
+                            message=(
+                                f"Task {task_id} is in terminal state: "
+                                f"{TaskState.Name(task.status.state)}"
+                            )
                         )
             except BaseException:
                 if claim is not None:
@@ -268,7 +250,7 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
             closed = False
             raced: ActiveTask | None = None
             active_task: ActiveTask | None = None
-            async with self._registry_lock():
+            with self._lock:
                 if self._closed:
                     closed = True
                 else:
@@ -366,7 +348,7 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
         the normal path, where the claim is already gone by the time cleanup
         runs.
         """
-        async with self._registry_lock():
+        with self._lock:
             if self._active_tasks.get(active_task.task_id) is not active_task:
                 return
             self._active_tasks.pop(active_task.task_id, None)
@@ -410,6 +392,13 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
         the caller's scope. A task another user owns reads as absent there,
         and is reported as not found - its existence is not confirmed.
 
+        a2a-sdk's ``_subscribe_remote`` answers the remote case with a snapshot
+        and a tail read from its event stream. There is no such stream here,
+        so a task executing elsewhere is refused as busy. The
+        ``aion.server.tasks.ownership`` package docstring describes the
+        journal and stream that would let this branch follow the task
+        instead.
+
         Raises:
             TaskNotFoundError: If no such task exists for this caller.
             TaskOwnershipBusy: If another instance is executing the task.
@@ -417,7 +406,7 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
         _require_call_context(call_context)
         stale_active_task = None
         local_active_task = None
-        async with self._registry_lock():
+        with self._lock:
             if self._closed:
                 raise RuntimeError('ActiveTaskRegistry is closed')
             active_task = self._active_tasks.get(task_id)
@@ -710,7 +699,7 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
     async def _remove_task(self, task_id: str) -> None:
         """Drop the task manager alongside the base registry's own entry."""
         await super()._remove_task(task_id)
-        async with self._registry_lock():
+        with self._lock:
             self._task_managers.pop(task_id, None)
 
     @override
@@ -734,7 +723,7 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
         it - see ``_remove_task_for_incarnation``, which is told to stand
         down for the duration via ``_shutting_down``.
         """
-        async with self._registry_lock():
+        with self._lock:
             self._shutting_down = True
             task_managers = list(self._task_managers.values())
             claims = [
@@ -777,7 +766,7 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
         except TimeoutError:
             logger.warning("Task shutdown settlement exceeded %.1fs", SHUTDOWN_DB_TIMEOUT_SECONDS)
 
-        async with self._registry_lock():
+        with self._lock:
             self._task_managers.clear()
 
         for claim in claims:

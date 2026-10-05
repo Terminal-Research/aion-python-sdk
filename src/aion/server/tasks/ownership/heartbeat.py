@@ -26,6 +26,10 @@ class OwnershipHeartbeat:
     blocked loop that keeps renewing its leases through a separate thread is a
     runtime unable to process a cancellation while still holding the right to
     execute.
+
+    It is the counterpart of a2a-go's per-execution ``Heartbeater``, batched
+    per process. Both stop the work they can no longer vouch for: here
+    through ``mark_lost``, there by cancelling the execution's context.
     """
 
     def __init__(self, provider) -> None:

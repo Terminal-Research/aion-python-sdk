@@ -14,7 +14,7 @@ from aion.core.db import DbManagerProtocol
 from typing import Optional
 
 from aion.server.settings import app_settings
-from .authenticated_push_sender import AuthenticatedPushNotificationSender
+from .push_sender import AionPushNotificationSender
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +50,7 @@ class PushNotificationFactory:
         else:
             config_store = cls._create_memory_store(owner_resolver)
 
-        sender = AuthenticatedPushNotificationSender(
+        sender = AionPushNotificationSender(
             httpx_client=httpx.AsyncClient(timeout=cls._build_timeout()),
             config_store=config_store,
         )

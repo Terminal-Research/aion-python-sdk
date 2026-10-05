@@ -4,8 +4,8 @@ JSON-RPC 2.0 reserves the whole -32768..-32000 band for the spec's own future
 use, and carves out -32000..-32099 within it as "Server error - reserved for
 implementation-defined server-errors" - the only part of that band anything
 outside the spec itself may legally claim. a2a-sdk already lives there
-(TaskNotFoundError: -32001 ... VersionNotSupportedError: -32009 as of
-a2a-sdk 1.1.2) and grows upward from -32001, so Aion's own errors take the
+(TaskNotFoundError: -32001 ... VersionNotSupportedError: -32009 in
+a2a-sdk 1.2) and grows upward from -32001, so Aion's own errors take the
 bottom of that same block: -32050..-32099. Not a hard guarantee - the range is
 shared, not owned - but it keeps Aion and a2a-sdk growing from opposite ends
 instead of the same one, so an ordinary a2a-sdk upgrade would have to add

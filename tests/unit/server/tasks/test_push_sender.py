@@ -1,11 +1,10 @@
-"""Tests for AuthenticatedPushNotificationSender.
+"""Tests for AionPushNotificationSender.
 
-The sender owns the inbound half of the push contract that the SDK base class
-drops: a client that declares ``taskPushNotificationConfig.authentication``
-expects its callback endpoint to be called with those credentials. The base
-class emits only ``X-A2A-Notification-Token``, so an authenticated webhook
-rejects every delivery. These tests pin the header derivation and the failure
-handling around it.
+The sender delivers exactly as a2a-sdk's base class does - the notification
+token and the config's ``authentication`` as headers, the push URL check, the
+concurrent fan-out - and adds a diagnostic log of every delivery. These tests
+pin the headers, the URL check, and the failure handling and reports around
+them.
 """
 
 import datetime
@@ -26,7 +25,7 @@ from a2a.types import (
 from a2a.types.a2a_pb2 import AuthenticationInfo, TaskPushNotificationConfig
 from unittest.mock import AsyncMock, Mock
 
-from aion.server.tasks.authenticated_push_sender import AuthenticatedPushNotificationSender
+from aion.server.tasks.push_sender import AionPushNotificationSender
 
 TASK_ID = "task-1"
 CONTEXT_ID = "ctx-1"
@@ -134,15 +133,15 @@ def _store(config: TaskPushNotificationConfig) -> Mock:
     return store
 
 
-def _sender(config: TaskPushNotificationConfig, client: Mock) -> AuthenticatedPushNotificationSender:
-    return AuthenticatedPushNotificationSender(
+def _sender(config: TaskPushNotificationConfig, client: Mock) -> AionPushNotificationSender:
+    return AionPushNotificationSender(
         httpx_client=client, config_store=_store(config)
     )
 
 
 def _fan_out_sender(
         statuses: dict[str, int], client: Mock | None = None
-) -> AuthenticatedPushNotificationSender:
+) -> AionPushNotificationSender:
     """Builds a sender whose task has one webhook per entry in ``statuses``.
 
     Args:
@@ -164,12 +163,12 @@ def _fan_out_sender(
 
         client = Mock()
         client.post = AsyncMock(side_effect=post)
-    return AuthenticatedPushNotificationSender(httpx_client=client, config_store=store)
+    return AionPushNotificationSender(httpx_client=client, config_store=store)
 
 
 def _our_records(caplog) -> list[logging.LogRecord]:
     """Returns the records the sender itself emitted, ignoring the SDK's."""
-    return [r for r in caplog.records if r.name.endswith("authenticated_push_sender")]
+    return [r for r in caplog.records if r.name.endswith("push_sender")]
 
 
 def _sent_headers(client: Mock) -> dict[str, str] | None:
@@ -216,18 +215,20 @@ class TestAuthorizationHeader:
         assert _sent_headers(client)["Authorization"] == f"Bearer {CREDENTIALS}"
 
     @pytest.mark.anyio
-    async def test_scheme_without_credentials_sends_nothing(self):
-        """A scheme with no credential value carries no authentication to send."""
+    async def test_scheme_without_credentials_sends_nothing(self, caplog):
+        """A scheme with no credential value carries no authentication to send, and says so."""
         client = _client()
         sender = _sender(_config(scheme="Bearer", credentials=""), client)
 
-        await sender.send_notification(TASK_ID, _event())
+        with caplog.at_level(logging.WARNING):
+            await sender.send_notification(TASK_ID, _event())
 
         assert _sent_headers(client) is None
+        assert any("no credentials" in r.getMessage() for r in _our_records(caplog))
 
 
 class TestBaseBehaviourIsPreserved:
-    """The notification token keeps working exactly as it did before."""
+    """Headers and request shape match a2a-sdk's own sender."""
 
     @pytest.mark.anyio
     async def test_config_without_authentication_sends_no_authorization(self):
@@ -279,6 +280,38 @@ class TestBaseBehaviourIsPreserved:
         assert url == WEBHOOK_URL
         assert payload["task"]["id"] == TASK_ID
         assert payload["task"]["status"]["state"] == "TASK_STATE_COMPLETED"
+
+
+class TestPushUrlCheck:
+    """The push URL validator a2a-sdk's sender consults is consulted here too."""
+
+    @pytest.mark.anyio
+    async def test_a_refused_url_is_not_called(self):
+        client = _client()
+        validator = AsyncMock(return_value=False)
+        sender = AionPushNotificationSender(
+            httpx_client=client,
+            config_store=_store(_config()),
+            push_url_validator=validator,
+        )
+
+        await sender.send_notification(TASK_ID, _event())
+
+        validator.assert_awaited_once_with(WEBHOOK_URL)
+        client.post.assert_not_awaited()
+
+    @pytest.mark.anyio
+    async def test_an_accepted_url_is_called(self):
+        client = _client()
+        sender = AionPushNotificationSender(
+            httpx_client=client,
+            config_store=_store(_config()),
+            push_url_validator=AsyncMock(return_value=True),
+        )
+
+        await sender.send_notification(TASK_ID, _event())
+
+        client.post.assert_awaited_once()
 
 
 class TestFailureHandling:
@@ -346,7 +379,7 @@ class TestFailureHandling:
         with caplog.at_level(logging.DEBUG):
             await sender.send_notification(TASK_ID, _event())
 
-        record = next(r for r in caplog.records if r.name.endswith("authenticated_push_sender"))
+        record = next(r for r in caplog.records if r.name.endswith("push_sender"))
         assert record.levelno == logging.WARNING
         assert record.exc_info is None
         assert "401" in record.getMessage()
@@ -371,7 +404,7 @@ class TestFailureHandling:
         with caplog.at_level(logging.DEBUG):
             await sender.send_notification(TASK_ID, _event())
 
-        record = next(r for r in caplog.records if r.name.endswith("authenticated_push_sender"))
+        record = next(r for r in caplog.records if r.name.endswith("push_sender"))
         assert len(record.getMessage()) < 600
         assert "…" in record.getMessage()
 
@@ -396,7 +429,7 @@ class TestFailureHandling:
         with caplog.at_level(logging.DEBUG):
             await sender.send_notification(TASK_ID, _event())
 
-        record = next(r for r in caplog.records if r.name.endswith("authenticated_push_sender"))
+        record = next(r for r in caplog.records if r.name.endswith("push_sender"))
         assert record.levelno == logging.WARNING
         assert record.exc_info is None
         assert "PUSH_NOTIFICATION_TIMEOUT_SECONDS" in record.getMessage()
@@ -411,7 +444,7 @@ class TestFailureHandling:
         with caplog.at_level(logging.DEBUG):
             await sender.send_notification(TASK_ID, _event())
 
-        record = next(r for r in caplog.records if r.name.endswith("authenticated_push_sender"))
+        record = next(r for r in caplog.records if r.name.endswith("push_sender"))
         assert record.levelno == logging.ERROR
         assert record.exc_info is not None
 
