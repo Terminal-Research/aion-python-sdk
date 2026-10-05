@@ -511,36 +511,28 @@ class TestAdvertisement:
         assert descriptor.active is True
         assert descriptor.advertised is False
 
-    def test_context_read_extensions_are_active_and_not_advertised(self):
-        """The built-in case the flag exists for.
+    def test_the_context_extension_is_active_and_advertised(self):
+        """The unified Context extension is enabled and published out of the box.
 
-        Both methods stay registered, enabled and callable; neither is
-        announced on a standard agent's card. Regression guard for
-        registry.py's registrations - see
+        The standard server implements the whole contract - reads, bindings
+        and DeleteContext - so a standard agent's card declares it. See
         docs/development/extension-exposure.md.
         """
-        from aion.core.constants.a2a import (
-            GET_CONTEXT_EXTENSION_URI_V1,
-            GET_CONTEXTS_LIST_EXTENSION_URI_V1,
-        )
+        from aion.core.constants.a2a import CONTEXT_EXTENSION_URI_V1
 
         descriptors = {d.uri: d for d in aion_a2a_extension_registry.get_all()}
-        for uri in (GET_CONTEXT_EXTENSION_URI_V1, GET_CONTEXTS_LIST_EXTENSION_URI_V1):
-            assert descriptors[uri].active is True
-            assert descriptors[uri].advertised is False
+        assert descriptors[CONTEXT_EXTENSION_URI_V1].active is True
+        assert descriptors[CONTEXT_EXTENSION_URI_V1].advertised is True
+        assert CONTEXT_EXTENSION_URI_V1 in {d.uri for d in aion_a2a_extension_registry.get_advertised()}
 
-    def test_a_custom_registration_can_advertise_a_context_uri(self):
-        """An implementation that genuinely fulfills a broader contract may
-        say so: register() replaces by URI, and that stayed true."""
-        from aion.core.constants.a2a import GET_CONTEXT_EXTENSION_URI_V1
+    def test_an_unavailable_context_extension_is_withdrawn_from_the_card(self):
+        """A deployment that cannot fulfill the contract stops declaring it."""
+        from aion.core.constants.a2a import CONTEXT_EXTENSION_URI_V1
 
-        aion_a2a_extension_registry.register(
-            ExtensionDescriptor(uri=GET_CONTEXT_EXTENSION_URI_V1, advertised=True)
-        )
+        aion_a2a_extension_registry.mark_unavailable(CONTEXT_EXTENSION_URI_V1, "no context catalog")
 
-        assert GET_CONTEXT_EXTENSION_URI_V1 in {
-            d.uri for d in aion_a2a_extension_registry.get_advertised()
-        }
+        assert CONTEXT_EXTENSION_URI_V1 not in {d.uri for d in aion_a2a_extension_registry.get_advertised()}
+        assert aion_a2a_extension_registry.unservable_reason(CONTEXT_EXTENSION_URI_V1) == "no context catalog"
 
     def test_get_advertised_omits_a_descriptor_whose_requirement_is_inactive(self):
         """`requires` decides advertisement too, not only verification.
@@ -696,13 +688,9 @@ class TestServiceability:
         assert aion_a2a_extension_registry.unservable_reason(withheld) is None
         assert aion_a2a_extension_registry.unservable_reason(announced) is not None
 
-    def test_the_context_read_extensions_are_servable_as_shipped(self):
+    def test_the_context_extension_is_servable_as_shipped(self):
         """The methods this matters for: enforcement that refused them would
         be a behaviour change, not a check."""
-        from aion.core.constants.a2a import (
-            GET_CONTEXT_EXTENSION_URI_V1,
-            GET_CONTEXTS_LIST_EXTENSION_URI_V1,
-        )
+        from aion.core.constants.a2a import CONTEXT_EXTENSION_URI_V1
 
-        for uri in (GET_CONTEXT_EXTENSION_URI_V1, GET_CONTEXTS_LIST_EXTENSION_URI_V1):
-            assert aion_a2a_extension_registry.unservable_reason(uri) is None
+        assert aion_a2a_extension_registry.unservable_reason(CONTEXT_EXTENSION_URI_V1) is None

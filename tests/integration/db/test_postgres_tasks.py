@@ -252,16 +252,7 @@ async def test_context_queries_are_scoped_to_the_exact_owner(postgres_session):
     await repository.save(alice_shared)
     await repository.save(bob_shared)
     await postgres_session.commit()
-    await _advance_transaction_clock()
 
-    alice_recent = _record(context_id="alice-recent", owner_scope="alice")
-    await repository.save(alice_recent)
-    await postgres_session.commit()
-
-    assert await repository.find_unique_context_ids(
-        agent_id=AGENT_ID,
-        owner_scope="alice",
-    ) == ["alice-recent", "shared"]
     alice_tasks = await repository.find(
         agent_id=AGENT_ID,
         owner_scope="alice",

@@ -31,6 +31,7 @@ from tests.scenarios.harness import (
 pytestmark = [pytest.mark.authentication]
 
 TASK_NOT_FOUND = -32001
+MISSING_AUTHENTICATION = -32051
 """The JSON-RPC code A2A gives a task the caller cannot see."""
 
 _SEND_MESSAGE = {
@@ -51,6 +52,7 @@ def test_a_call_without_a_token_is_refused(server: ServeProcess) -> None:
 
     assert response.status_code == 401
     assert response.headers["www-authenticate"].startswith("Bearer")
+    assert response.json()["error"]["code"] == MISSING_AUTHENTICATION
 
 
 @pytest.mark.parametrize(
@@ -71,6 +73,7 @@ def test_a_call_with_a_token_that_does_not_verify_is_refused(server: ServeProces
     response = _post(server, {"Authorization": f"Bearer {token}"})
 
     assert response.status_code == 401
+    assert response.json()["error"]["code"] == MISSING_AUTHENTICATION
     assert token not in response.text
 
 

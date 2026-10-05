@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 import logging
 from typing import TYPE_CHECKING, AsyncGenerator
@@ -30,6 +31,7 @@ class AppLifespan:
     def __init__(self, app_factory: AppFactory):
         """Initialize the lifespan manager with an app factory."""
         self.app_factory: AppFactory = app_factory
+        self._context_deletions: asyncio.Task | None = None
 
     @asynccontextmanager
     async def executor(self, app: FastAPI) -> AsyncGenerator[None, None]:
@@ -61,6 +63,22 @@ class AppLifespan:
         # overdue cancellation, or an active task with no claim at all.
         await self._reconcile_task_ownership()
         self._start_event_listener()
+        self._resume_context_deletions()
+
+    def _resume_context_deletions(self):
+        """Finish, in the background, the context deletions a previous process left ``deleting``.
+
+        In the background because a deletion waits for its tasks'
+        cancellations, which can take as long as the agent needs to stop;
+        serving must not wait for that. The listener above is already running,
+        so a cancellation settled by another server is heard.
+        """
+        handler = self.app_factory._request_handler
+        if handler is None:
+            return
+        self._context_deletions = asyncio.create_task(
+            handler.resume_pending_context_deletions(), name="resume-context-deletions"
+        )
 
     def _start_event_listener(self):
         """Start the cross-pod task-event listener, if this store has one.
@@ -106,6 +124,9 @@ class AppLifespan:
 
     async def shutdown(self):
         """Handle application shutdown events."""
+        if self._context_deletions is not None and not self._context_deletions.done():
+            # Durable: whatever it did not finish, the next start resumes.
+            self._context_deletions.cancel()
         listener = self.app_factory.store_manager.get_event_listener()
         if listener is not None:
             await listener.stop()

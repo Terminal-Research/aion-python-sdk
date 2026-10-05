@@ -6,8 +6,8 @@ messages. This module pins the guarantee: whatever shape the agent uses to
 deliver its output, every message it produced is reachable from the final Task
 exactly once, reconstructed as `history + status.message`.
 
-That reconstruction is what both readers already do — `ConversationBuilder`
-server-side and `getTaskMessages` in aion-chat-ui.
+That reconstruction is what both readers already do — `conversation_of`
+behind GetContext server-side and `getTaskMessages` in aion-chat-ui.
 """
 
 import pytest
@@ -23,7 +23,7 @@ from a2a.types import (
 )
 from unittest.mock import Mock, patch
 
-from aion.server.a2a.conversation import ConversationBuilder
+from aion.server.tasks.contexts import conversation_of
 from aion.server.tasks.task_manager import AionTaskManager
 
 TASK_ID = "task-1"
@@ -185,4 +185,4 @@ class TestNoMessageLoss:
 
 def _conversation(task: Task) -> list[str]:
     """What GetContext returns for this task."""
-    return [m.message_id for m in ConversationBuilder.extract_messages_from_tasks([task])]
+    return [m.message_id for m in conversation_of(task)]

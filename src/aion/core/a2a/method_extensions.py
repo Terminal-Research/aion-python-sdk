@@ -4,11 +4,12 @@ An A2A extension is not one kind of thing. The specification uses *extension*
 as the umbrella term and distinguishes, among others, message extensions,
 which augment or alter the data of a standard request, and **method
 extensions**, which add an RPC method of their own while remaining ordinary
-extensions with their own URI. ``GetContext`` and ``GetContexts`` are method
-extensions.
+extensions with their own URI. ``GetContexts``, ``GetContext`` and
+``DeleteContext`` are the methods of one such extension, the Context
+extension, and all three are bound to its single URI.
 
 That is a statement about extension points, not about layering, so it does not
-give these two a registry of their own. Their identity, activation and
+give these methods a registry of their own. Their identity, activation and
 exposure policy stay in ``AionA2AExtensionRegistry`` with every other
 extension; what is specific to them is that one transport - JSON-RPC - has to
 know which method name carries which extension, which params model parses it,
@@ -30,12 +31,9 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Mapping, Type
 
-from aion.core.constants.a2a import (
-    GET_CONTEXT_EXTENSION_URI_V1,
-    GET_CONTEXTS_LIST_EXTENSION_URI_V1,
-)
+from aion.core.constants.a2a import CONTEXT_EXTENSION_URI_V1
 
-from .request_params import GetContextParams, GetContextsListParams
+from .request_params import DeleteContextParams, GetContextParams, GetContextsParams
 
 __all__ = [
     "AionJsonRpcMethodExtensionBinding",
@@ -72,15 +70,20 @@ class AionJsonRpcMethodExtensionBinding:
 AION_JSONRPC_METHOD_EXTENSION_BINDINGS: Mapping[str, AionJsonRpcMethodExtensionBinding] = (
     MappingProxyType(
         {
+            "GetContexts": AionJsonRpcMethodExtensionBinding(
+                extension_uri=CONTEXT_EXTENSION_URI_V1,
+                params_model=GetContextsParams,
+                handler_name="on_get_contexts",
+            ),
             "GetContext": AionJsonRpcMethodExtensionBinding(
-                extension_uri=GET_CONTEXT_EXTENSION_URI_V1,
+                extension_uri=CONTEXT_EXTENSION_URI_V1,
                 params_model=GetContextParams,
                 handler_name="on_get_context",
             ),
-            "GetContexts": AionJsonRpcMethodExtensionBinding(
-                extension_uri=GET_CONTEXTS_LIST_EXTENSION_URI_V1,
-                params_model=GetContextsListParams,
-                handler_name="on_get_contexts_list",
+            "DeleteContext": AionJsonRpcMethodExtensionBinding(
+                extension_uri=CONTEXT_EXTENSION_URI_V1,
+                params_model=DeleteContextParams,
+                handler_name="on_delete_context",
             ),
         }
     )

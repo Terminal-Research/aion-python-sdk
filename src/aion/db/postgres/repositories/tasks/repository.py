@@ -502,34 +502,6 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
 
         return await self._execute_and_convert_many(stmt)
 
-    async def find_unique_context_ids(
-            self,
-            agent_id: str,
-            owner_scope: Optional[str],
-            pagination: Optional[Pagination] = None,
-    ) -> List[str]:
-        """Find all unique context_id values ordered by latest task creation.
-
-        ``owner_scope`` limits them to one owner's; ``None`` lists every owner's.
-        """
-        stmt = select(self.model_class.context_id).where(self.model_class.agent_id == agent_id)
-        if owner_scope is not None:
-            stmt = stmt.where(self.model_class.owner_scope == owner_scope)
-        stmt = (
-            stmt
-            .group_by(self.model_class.context_id)
-            .order_by(
-                desc(func.max(self.model_class.created_at)),
-                desc(self.model_class.context_id),
-            )
-        )
-
-        if pagination is not None:
-            stmt = self._apply_pagination(stmt, pagination)
-
-        result = await self._session.execute(stmt)
-        return [row[0] for row in result.fetchall()]
-
     async def find_artifacts(
             self,
             agent_id: str,

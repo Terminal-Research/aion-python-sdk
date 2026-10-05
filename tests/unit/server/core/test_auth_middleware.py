@@ -23,6 +23,7 @@ from starlette.responses import PlainTextResponse, StreamingResponse
 from starlette.routing import Route
 
 from aion.server.auth.verifier import CLOCK_SKEW_LEEWAY_SECONDS, INVOCATION_LIFETIME_SECONDS as INVOCATION_LIFETIME
+from aion.server.core.errors import AUTHENTICATION_REQUIRED_CODE
 from aion.server.core.middlewares import AionAuthMiddleware, AionContextMiddleware
 
 from tests.unit.support.distribution import distribution_metadata
@@ -57,6 +58,11 @@ def _aion() -> list[Middleware]:
 
 def _bearer(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
+
+
+def _rpc_reason(response: httpx.Response) -> str:
+    """The reason a refusal on the JSON-RPC endpoint gives."""
+    return response.json()["error"]["data"]["detail"]
 
 
 async def test_the_token_names_the_owner() -> None:
@@ -145,7 +151,7 @@ async def test_a_request_without_a_valid_token_never_reaches_the_agent(headers, 
 
     assert response.status_code == 401
     assert response.headers["www-authenticate"] == challenge
-    assert response.json()["error"] == "unauthorized"
+    assert response.json()["error"]["code"] == AUTHENTICATION_REQUIRED_CODE
     assert probe.calls == 0
 
 
@@ -171,7 +177,7 @@ async def test_until_the_keys_load_a_request_is_answered_503_and_never_served() 
 
     assert response.status_code == 503
     assert response.headers["retry-after"] == "1"
-    assert response.json()["error"] == "unavailable"
+    assert response.json()["error"]["data"]["retryable"] is True
     assert probe.calls == 0
 
 
@@ -345,7 +351,7 @@ async def test_a_damaged_aion_token_is_refused_even_with_an_application_user(tok
         response = await send_message(client, headers=_bearer(token()))
 
     assert response.status_code == 401
-    assert response.json()["detail"] == "the bearer token is a damaged Aion token"
+    assert _rpc_reason(response) == "the bearer token is a damaged Aion token"
     assert probe.calls == 0
 
 
@@ -367,7 +373,7 @@ async def test_a_bearer_over_8_kib_is_refused_even_with_an_application_user(toke
         response = await send_message(client, headers=_bearer(token()))
 
     assert response.status_code == 401
-    assert response.json()["detail"] == "the bearer token is longer than 8192 bytes"
+    assert _rpc_reason(response) == "the bearer token is longer than 8192 bytes"
     assert probe.calls == 0
 
 
@@ -511,3 +517,115 @@ def _unsigned(header: dict, claims: dict) -> str:
 def _signed_claims(**replaced) -> str:
     claims = jwt.decode(platform_token(), options={"verify_signature": False})
     return AION_KEY.sign_raw(AION_KEY.header_json(), json.dumps({**claims, **replaced}))
+
+
+# A refusal answers in the error format of the transport its path belongs to.
+
+CONTEXT_GET = "/context:get"
+OPENAPI = "/openapi.json"
+
+_REFUSALS = {
+    "no-token": ({}, "Bearer", "the request carries no bearer token"),
+    "invalid-token": (
+        _bearer(platform_token(issued_at=0)),
+        'Bearer error="invalid_token"',
+        None,
+    ),
+    "damaged-aion-token": (
+        _bearer(AION_KEY.invocation_token(USER_ID, headers={"typ": None})),
+        'Bearer error="invalid_token"',
+        "the bearer token is a damaged Aion token",
+    ),
+    "over-8-kib": (_bearer("k" * 8193), 'Bearer error="invalid_token"', "the bearer token is longer than 8192 bytes"),
+}
+
+
+async def _refused(path: str, headers: dict[str, str], middleware: list[Middleware] | None = None) -> httpx.Response:
+    probe = Probe()
+    async with probe.client(*(middleware or _aion())) as client:
+        response = await client.post(path, json={"jsonrpc": "2.0", "id": "req-1", "method": "GetContexts"},
+                                     headers=headers)
+    assert probe.calls == 0
+    return response
+
+
+@pytest.mark.parametrize(("headers", "challenge", "reason"), _REFUSALS.values(), ids=_REFUSALS.keys())
+async def test_the_jsonrpc_endpoint_refuses_with_a_jsonrpc_error(headers, challenge, reason) -> None:
+    """Aion's ``-32051``, answering ``id`` ``null``: the body is never read."""
+    response = await _refused("/", headers)
+
+    assert response.status_code == 401
+    assert response.headers["www-authenticate"] == challenge
+    assert response.headers["content-type"] == "application/json"
+    body = response.json()
+    assert body["jsonrpc"] == "2.0" and body["id"] is None
+    assert (body["error"]["code"], body["error"]["message"]) == (-32051, "Unauthorized")
+    assert set(body["error"]["data"]) == {"detail"}
+    if reason is not None:
+        assert body["error"]["data"]["detail"] == reason
+
+
+@pytest.mark.parametrize(("headers", "challenge", "reason"), _REFUSALS.values(), ids=_REFUSALS.keys())
+@pytest.mark.parametrize("path", ["/contexts:get", CONTEXT_GET, "/context:delete", f"{CONTEXT_GET}/"])
+async def test_a_context_http_route_refuses_with_a_problem_detail(path, headers, challenge, reason) -> None:
+    """No ``type``: the specification defines none for a missing authentication."""
+    response = await _refused(path, headers)
+
+    assert response.status_code == 401
+    assert response.headers["www-authenticate"] == challenge
+    assert response.headers["content-type"] == "application/problem+json"
+    body = response.json()
+    assert set(body) == {"title", "status", "detail"}
+    assert (body["title"], body["status"]) == ("Unauthorized", 401)
+    if reason is not None:
+        assert body["detail"] == reason
+
+
+@pytest.mark.parametrize(("headers", "challenge", "reason"), _REFUSALS.values(), ids=_REFUSALS.keys())
+@pytest.mark.parametrize("path", [OPENAPI, ELSEWHERE, "/context:get/extra"])
+async def test_any_other_closed_path_refuses_with_a_plain_error(path, headers, challenge, reason) -> None:
+    response = await _refused(path, headers)
+
+    assert response.status_code == 401
+    assert response.headers["www-authenticate"] == challenge
+    body = response.json()
+    assert set(body) == {"error", "detail"}
+    assert body["error"] == "unauthorized"
+    if reason is not None:
+        assert body["detail"] == reason
+
+
+def _outage() -> list[Middleware]:
+    control_plane = ControlPlane()
+    control_plane.failing = True
+    return [Middleware(AionAuthMiddleware, verifier=hosted_verifier(control_plane)), Middleware(AionContextMiddleware)]
+
+
+async def test_an_outage_on_the_jsonrpc_endpoint_is_a_retryable_internal_error() -> None:
+    response = await _refused("/", _bearer(platform_token()), _outage())
+
+    assert response.status_code == 503
+    assert response.headers["retry-after"] == "1"
+    body = response.json()
+    assert body["id"] is None
+    assert body["error"]["code"] == -32603
+    assert body["error"]["data"]["retryable"] is True
+    assert body["error"]["data"]["detail"]
+
+
+async def test_an_outage_on_a_context_http_route_is_a_503_problem_detail() -> None:
+    response = await _refused(CONTEXT_GET, _bearer(platform_token()), _outage())
+
+    assert response.status_code == 503
+    assert response.headers["retry-after"] == "1"
+    assert response.headers["content-type"] == "application/problem+json"
+    body = response.json()
+    assert (body["title"], body["status"]) == ("Service Unavailable", 503)
+    assert body["detail"]
+
+
+async def test_an_outage_elsewhere_is_a_plain_error() -> None:
+    response = await _refused(OPENAPI, _bearer(platform_token()), _outage())
+
+    assert response.status_code == 503
+    assert response.json()["error"] == "unavailable"

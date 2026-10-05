@@ -2,7 +2,6 @@
 
 import logging
 from typing import Any, AsyncIterator, Dict
-from urllib.parse import urljoin
 
 import httpx
 from fastapi import Request, Response
@@ -211,9 +210,12 @@ class RequestHandler:
             available_agents = list(self.agent_urls.keys())
             raise AgentNotFoundException(agent_id, available_agents)
 
-        # Build target URL
+        # Build target URL. Appended rather than resolved as a relative
+        # reference: a first segment with a colon, like the Context
+        # extension's ``context:get``, would otherwise be read as a URL scheme
+        # and replace the agent's address altogether.
         agent_base_url = self.agent_urls[agent_id]
-        target_url = urljoin(f"{agent_base_url}/", path)
+        target_url = f"{agent_base_url.rstrip('/')}/{path}"
 
         # Add query parameters if present
         if request.url.query:

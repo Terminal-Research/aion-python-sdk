@@ -2,9 +2,12 @@
 
 import logging
 from collections.abc import Sequence
+from enum import Enum
 from typing import Any, Optional
 
-from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH
+from a2a.server.jsonrpc_models import InternalError
+from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH, DEFAULT_RPC_URL
+from aion.core.constants.a2a import CONTEXT_HTTP_PATHS
 from aion.server.auth import (
     CallerCredentials,
     InvalidTokenError,
@@ -15,6 +18,7 @@ from aion.server.auth import (
     claimed_kind,
 )
 from aion.server.constants import CONFIGURATION_FILE_URL, HEALTH_CHECK_URL
+from aion.server.core.errors import AUTHENTICATION_REQUIRED_CODE, AuthenticationRequired
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
@@ -26,14 +30,41 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "AionAuthMiddleware",
     "PUBLIC_PATHS",
+    "Transport",
+    "transport_of",
 ]
 
 _BEARER = "bearer"
+_PROBLEM_JSON = "application/problem+json"
 
 PUBLIC_PATHS = frozenset(
     path.rstrip("/") for path in (AGENT_CARD_WELL_KNOWN_PATH, HEALTH_CHECK_URL, CONFIGURATION_FILE_URL)
 )
 """The only paths open without a token: how to call the agent, whether it is up, and its configuration schema."""
+
+_JSONRPC_PATH = DEFAULT_RPC_URL.rstrip("/")
+_CONTEXT_HTTP_PATHS = frozenset(f"{_JSONRPC_PATH}/{path}" for path in CONTEXT_HTTP_PATHS)
+
+
+class Transport(Enum):
+    """The protocol binding a request arrives on, which decides the form of a refusal's body."""
+
+    JSONRPC = "jsonrpc"
+    """The A2A JSON-RPC endpoint: a JSON-RPC response object."""
+    HTTP_JSON = "http+json"
+    """A Context extension HTTP+JSON route: an ``application/problem+json`` problem detail."""
+    OTHER = "other"
+    """Any other closed path, such as the OpenAPI schema: a plain JSON object."""
+
+
+def transport_of(path: str) -> Transport:
+    """The transport whose error format a refusal on ``path`` is written in, trailing slash ignored."""
+    path = path.rstrip("/")
+    if path == _JSONRPC_PATH:
+        return Transport.JSONRPC
+    if path in _CONTEXT_HTTP_PATHS:
+        return Transport.HTTP_JSON
+    return Transport.OTHER
 
 
 class AionAuthMiddleware(BaseHTTPMiddleware):
@@ -84,6 +115,21 @@ class AionAuthMiddleware(BaseHTTPMiddleware):
     the verification keys have not loaded, an Aion token cannot be checked at
     all and the request is answered ``503``: an outage never lets a token
     through unchecked.
+
+    A refusal keeps its HTTP status and headers - ``401`` with an RFC 6750
+    ``WWW-Authenticate`` challenge, ``503`` with ``Retry-After`` - and its
+    body is written in the error format of the transport the path belongs to
+    (``transport_of``):
+
+    - the JSON-RPC endpoint answers a JSON-RPC error with ``id`` ``null``,
+      since the body is never read: ``AUTHENTICATION_REQUIRED_CODE``
+      (``-32051``) for a ``401``, and ``-32603`` with ``retryable`` ``true``
+      in its ``data`` for a ``503``; the reason is ``data.detail``;
+    - the Context extension's HTTP+JSON routes answer an
+      ``application/problem+json`` problem detail with the reason as
+      ``detail``, and no ``type``, which the specification does not define
+      for these statuses;
+    - every other closed path answers ``{"error": ..., "detail": ...}``.
     """
 
     def __init__(
@@ -106,27 +152,28 @@ class AionAuthMiddleware(BaseHTTPMiddleware):
         if request.url.path.rstrip("/") in PUBLIC_PATHS or self._is_application_route(request.scope):
             return await call_next(request)
 
+        path = request.url.path
         token = _bearer_token(request.headers.get("authorization"))
         if token is not None and len(token.encode("utf-8")) > MAX_TOKEN_BYTES:
             return _unauthorized(
-                f"the bearer token is longer than {MAX_TOKEN_BYTES} bytes", error_code="invalid_token"
+                path, f"the bearer token is longer than {MAX_TOKEN_BYTES} bytes", error_code="invalid_token"
             )
         claim = claimed_kind(token) if token is not None else TokenClaim.FOREIGN
         if claim is TokenClaim.DAMAGED_AION:
-            return _unauthorized("the bearer token is a damaged Aion token", error_code="invalid_token")
+            return _unauthorized(path, "the bearer token is a damaged Aion token", error_code="invalid_token")
         if claim is TokenClaim.FOREIGN:
             if self._verifier.trust_application_users and _is_application_user(request.scope.get("user")):
                 return await call_next(request)
             if token is None:
-                return _unauthorized("the request carries no bearer token", error_code=None)
-            return _unauthorized("the bearer token is not an Aion token", error_code="invalid_token")
+                return _unauthorized(path, "the request carries no bearer token", error_code=None)
+            return _unauthorized(path, "the bearer token is not an Aion token", error_code="invalid_token")
 
         try:
             caller = await self._verifier.verify(token)
         except InvalidTokenError as error:
-            return _unauthorized(str(error), error_code="invalid_token")
+            return _unauthorized(path, str(error), error_code="invalid_token")
         except KeysUnavailableError as error:
-            return _unavailable(str(error))
+            return _unavailable(path, str(error))
 
         request.scope["auth"] = CallerCredentials(caller)
         request.scope["user"] = caller
@@ -175,22 +222,56 @@ def _bearer_token(header: str | None) -> str | None:
     return token
 
 
-def _unauthorized(reason: str, *, error_code: str | None) -> JSONResponse:
+def _unauthorized(path: str, reason: str, *, error_code: str | None) -> JSONResponse:
     """A ``401`` in RFC 6750's form: the reason is safe to show, and never quotes the token."""
     logger.info("Refused a request: %s", reason)
     challenge = "Bearer" if error_code is None else f'Bearer error="{error_code}"'
-    return JSONResponse(
-        {"error": "unauthorized", "detail": reason},
-        status_code=401,
+    return _refusal(
+        path,
+        401,
+        reason,
         headers={"WWW-Authenticate": challenge},
+        jsonrpc_error={
+            "code": AUTHENTICATION_REQUIRED_CODE,
+            "message": AuthenticationRequired.message,
+            "data": {"detail": reason},
+        },
+        title="Unauthorized",
+        error="unauthorized",
     )
 
 
-def _unavailable(reason: str) -> JSONResponse:
+def _unavailable(path: str, reason: str) -> JSONResponse:
     """A ``503``: the token could not be checked yet, so the request is neither refused nor served."""
     logger.warning("Could not verify a request: %s", reason)
-    return JSONResponse(
-        {"error": "unavailable", "detail": reason},
-        status_code=503,
+    internal = InternalError()
+    return _refusal(
+        path,
+        503,
+        reason,
         headers={"Retry-After": "1"},
+        jsonrpc_error={"code": internal.code, "message": internal.message, "data": {"detail": reason, "retryable": True}},
+        title="Service Unavailable",
+        error="unavailable",
     )
+
+
+def _refusal(
+    path: str,
+    status: int,
+    reason: str,
+    *,
+    headers: dict[str, str],
+    jsonrpc_error: dict[str, Any],
+    title: str,
+    error: str,
+) -> JSONResponse:
+    """The refusal's body in the error format of the transport ``path`` belongs to."""
+    transport = transport_of(path)
+    if transport is Transport.JSONRPC:
+        body: dict[str, Any] = {"jsonrpc": "2.0", "id": None, "error": jsonrpc_error}
+        return JSONResponse(body, status_code=status, headers=headers)
+    if transport is Transport.HTTP_JSON:
+        body = {"title": title, "status": status, "detail": reason}
+        return JSONResponse(body, status_code=status, headers=headers, media_type=_PROBLEM_JSON)
+    return JSONResponse({"error": error, "detail": reason}, status_code=status, headers=headers)

@@ -28,24 +28,31 @@ from .models import (
     A2AInbox,
     A2AManifest,
     A2AOutbox,
-    ContextsList,
-    Conversation,
-    ConversationTaskStatus,
+    ContextArtifact,
+    ContextSummary,
+    ContextSummaryList,
+    ContextView,
+    DeleteContextResult,
 )
 
 from .request import (
+    DeleteContextRequest,
     GetContextRequest,
-    GetContextsListRequest,
+    GetContextsRequest,
 )
 
 from .request_params import (
+    CONTEXT_PAGE_DEFAULT,
+    CONTEXT_PAGE_MAX,
+    DeleteContextParams,
     GetContextParams,
-    GetContextsListParams,
+    GetContextsParams,
 )
 
 from .response import (
+    DeleteContextSuccessResponse,
     GetContextSuccessResponse,
-    GetContextsListSuccessResponse,
+    GetContextsSuccessResponse,
 )
 
 from .method_extensions import (

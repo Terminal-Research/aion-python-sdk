@@ -6,11 +6,9 @@ from aion.core.a2a import AION_JSONRPC_METHOD_EXTENSION_BINDINGS
 from aion.core.constants.a2a import (
     BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1,
     CRON_EXTENSION_URI_V1,
+    CONTEXT_EXTENSION_URI_V1,
     DAEMON_EXTENSION_URI_V1,
-    GET_CONTEXT_EXTENSION_URI_V1,
-    GET_CONTEXTS_LIST_EXTENSION_URI_V1,
 )
-from aion.core.runtime.context.extensions.descriptors import ExtensionDescriptor
 from aion.server.agent.card import AionAgentCard
 from aion.core.config.models import AgentConfig, AgentSkill
 from aion.core.runtime import aion_a2a_extension_registry
@@ -37,40 +35,19 @@ class TestCapabilities:
         assert len(declarations) == 1
         assert not declarations[0].required
 
-    @pytest.mark.parametrize("uri", [
-        "https://docs.aion.to/a2a/extensions/aion/context/1.0.0",
-        GET_CONTEXT_EXTENSION_URI_V1,
-        GET_CONTEXTS_LIST_EXTENSION_URI_V1,
-    ])
-    def test_context_extensions_are_not_advertised_by_default(self, uri):
-        """The context-read extensions are supported, not announced.
+    def test_the_context_extension_is_advertised_once_and_optional(self):
+        """The unified Context extension is declared once, never required.
 
-        A standard agent does not present them as one of its capabilities, and
-        a card carrying them would also be claiming the platform's unified
-        Context lifecycle, which this server does not implement. The unified
-        URI is in the list because it is not registered at all.
+        Its methods are invoked directly and need no activation, so a client
+        that ignores the declaration loses nothing.
         """
         card = AionAgentCard.from_config(_make_config(), "http://localhost:8000")
-
-        assert uri not in {ext.uri for ext in card.capabilities.extensions}
-
-    @pytest.mark.parametrize("uri", [
-        GET_CONTEXT_EXTENSION_URI_V1,
-        GET_CONTEXTS_LIST_EXTENSION_URI_V1,
-    ])
-    def test_context_extensions_are_registered_and_active(self, uri):
-        """Kept off the card, but supported: not advertised is not disabled.
-
-        The pair with the test above - together they are the whole claim.
-        Absent from the card and absent from the registry would be a removed
-        extension; absent from the card while active in the registry is the
-        internal, non-advertised surface these methods actually are.
-        """
-        descriptors = {d.uri: d for d in aion_a2a_extension_registry.get_all()}
-
-        assert uri in descriptors
-        assert descriptors[uri].active is True
-        assert descriptors[uri].advertised is False
+        declarations = [
+            extension for extension in card.capabilities.extensions
+            if extension.uri == CONTEXT_EXTENSION_URI_V1
+        ]
+        assert len(declarations) == 1
+        assert not declarations[0].required
 
     def test_evolution_is_not_advertised_before_it_is_enabled(self):
         """The counter-example: advertised=True, and still off the card.
@@ -160,20 +137,12 @@ class TestCapabilities:
         Asserted on a URI that really is bound to a JSON-RPC method, not on a
         fake descriptor that merely stands for one: an invented URI no
         binding claims would pass this test however the card treated method
-        extensions, which is the one outcome that proves nothing. The two
-        context methods are withheld by exposure policy, and nothing in the
-        card builder knows a method extension from any other - the property
+        extensions, which is the one outcome that proves nothing. Nothing in
+        the card builder knows a method extension from any other - the property
         this pins, so the distinction cannot quietly grow into a rule.
         """
         uri = AION_JSONRPC_METHOD_EXTENSION_BINDINGS["GetContext"].extension_uri
-        assert uri == GET_CONTEXT_EXTENSION_URI_V1
-        aion_a2a_extension_registry.register(
-            ExtensionDescriptor(
-                uri=uri,
-                description="A context read this deployment does announce.",
-                advertised=True,
-            )
-        )
+        assert uri == CONTEXT_EXTENSION_URI_V1
 
         card = AionAgentCard.from_config(_make_config(), "http://localhost:8000")
 

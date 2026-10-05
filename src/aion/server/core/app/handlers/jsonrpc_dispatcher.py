@@ -20,6 +20,7 @@ from google.protobuf.json_format import MessageToDict
 from a2a.utils.errors import UnsupportedOperationError
 from aion.core.a2a import AION_JSONRPC_METHOD_EXTENSION_BINDINGS
 from aion.core.runtime import aion_a2a_extension_registry
+from aion.server.contexts import ContextLifecycleError
 from jsonrpc.jsonrpc2 import JSONRPC20Request, JSONRPC20Response
 from pydantic import ValidationError
 from sse_starlette.sse import EventSourceResponse
@@ -246,11 +247,16 @@ class AionJsonRpcDispatcher(JsonRpcDispatcher):
                 request_id=request_id,
                 response=result.model_dump(mode='json'),
                 # A JSON-RPC result is any JSON value, not only an object:
-                # GetContext answers with a Conversation and GetContexts with
-                # an array of context ids, and refusing the array would turn
-                # every call of it into InvalidAgentResponse.
+                # GetContexts answers with a raw array of context summaries,
+                # and refusing the array would turn every call of it into
+                # InvalidAgentResponse.
                 success_response_types=(dict, list),
             )
+        except ContextLifecycleError as error:
+            # The Context extension's own codes (1000-1002) sit outside the
+            # JSON-RPC server-error band and carry their own data, so they are
+            # rendered here rather than through a2a-sdk's error maps.
+            return JSONResponse({'jsonrpc': '2.0', 'id': request_id, 'error': error.jsonrpc_error()})
         except Exception:
             logger.error('Unhandled exception in Aion handler', exc_info=True)
             from a2a.server.jsonrpc_models import InternalError

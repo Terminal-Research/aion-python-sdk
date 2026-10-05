@@ -62,6 +62,27 @@ policy (see above). The agent card declares the bearer scheme in its
 request without a verified caller is answered `401` before its body is read,
 and the agent never runs.
 
+A refusal is always `401` with an RFC 6750 `WWW-Authenticate: Bearer`
+challenge (`error="invalid_token"` when a token was presented), or `503` with
+`Retry-After` while the verification keys have not loaded. Its body is written
+in the error format of the transport the path belongs to:
+
+| Path | `401` body | `503` body |
+| --- | --- | --- |
+| JSON-RPC endpoint | JSON-RPC error `-32051` `Unauthorized`, `data.detail` | JSON-RPC error `-32603`, `data.detail`, `data.retryable: true` |
+| Context HTTP+JSON routes | `application/problem+json`, `title` `Unauthorized`, `detail` | `application/problem+json`, `status` `503`, `detail` |
+| Anything else | `{"error": "unauthorized", "detail": ...}` | `{"error": "unavailable", "detail": ...}` |
+
+The JSON-RPC error answers `id` `null`, since the body is never read.
+`-32051` (`AuthenticationRequired` in `aion.server.core.errors`) is returned
+for every JSON-RPC method, not only the Context ones. It is Aion's own code:
+Aion assigns its JSON-RPC errors from `-32050` to `-32099`, while a2a-sdk
+assigns its own upward from `-32001`, and the Context extension's table lists
+`-32010` for missing authentication - the next code a2a-sdk would take. The
+problem
+details carry no `type`, which the specification does not define for these
+statuses.
+
 Where the caller may come from is the server's mode:
 
 | Mode | Selected by | Served |
@@ -173,23 +194,21 @@ the JSON-RPC dispatcher copies it from the request's own `tenant` field, which
 the client chooses, and the default resolver ignores it. There is no `/docs` or
 `/redoc`.
 
-Aion's `GetContexts` and `GetContext`, and finding an interrupted task through
-its `contextId`, go through the same owner filter as everything else: a
-caller sees its own contexts and continues its own interrupted task. They are
-the caller's task history, not a conversation's: in a shared gateway
-conversation `GetContext` returns only the caller's own tasks, and the whole
-conversation's history is Aion's to serve. Neither extension is advertised on
-the agent card. Only a call without a `ServerCallContext` - from Python code
-that holds the handler - reads no history at all.
+Finding an interrupted task through its `contextId` goes through the same
+owner filter as everything else: a caller continues its own interrupted task.
+The Context extension (`GetContexts`, `GetContext`, `DeleteContext`) answers
+by context binding instead - see [Contexts](#contexts) below. Only a call
+without a `ServerCallContext` - from Python code that holds the handler -
+reads no history at all.
 
 ### What is isolated
 
 Every A2A operation is limited to the caller's owner, on the in-memory and
 the PostgreSQL store alike: `SendMessage` and `SendStreamingMessage`
 (including a `taskId` to continue), `GetTask`, `ListTasks`, `CancelTask`,
-`SubscribeToTask`, the push notification config methods, and Aion's
-`GetContexts`/`GetContext`. Another owner's task answers as if it did not
-exist. Each request path carries its own `ServerCallContext` down to the
+`SubscribeToTask` and the push notification config methods. Another owner's
+task answers as if it did not exist. The Context extension's methods are
+limited to the contexts the caller is bound to. Each request path carries its own `ServerCallContext` down to the
 store; the server refuses to run one without it rather than treat it as
 unscoped. The token is a header, so every method names its caller the same
 way, whether or not it has `params.metadata`.
@@ -201,8 +220,9 @@ another (`aion.server.auth.has_individual_access`). It starts a task in its
 gateway conversation and follows it on the same request; every later reach is
 refused as if no task existed: `GetTask`, `CancelTask`, `SubscribeToTask`,
 continuing a task, the push notification config methods and finding an
-interrupted task through its `contextId`. `ListTasks`, `GetContexts` and
-`GetContext` answer empty.
+interrupted task through its `contextId`. `ListTasks` and `GetContexts` answer
+empty, `GetContext` answers `ContextNotFound`, and `DeleteContext` changes
+nothing.
 
 ### Who may use a context
 
@@ -228,9 +248,10 @@ the caller's own, and a `contextId` sent with it has to match. A message with
 neither gets a new context ID, reserved like any other. In a shared context
 each participant still owns only their own tasks.
 
-A reservation is never released: not when the agent fails, not when the
-process dies, not when task rows are deleted, because the framework state may
-still be there. Reservations live beside the task store: in PostgreSQL
+A reservation is not released when the agent fails, when the process dies or
+when task rows are deleted, because the framework state may still be there.
+Only `DeleteContext` ends it, once that state is gone too - see
+[Contexts](#contexts). Reservations live beside the task store: in PostgreSQL
 (`context_reservations`, keyed by agent and context, so several servers of
 one agent agree and several agents share a database) or in the process for
 the in-memory store. An agent that brings its own checkpointer or session
@@ -266,6 +287,85 @@ start the new version. An old process still writing during or after the
 migration creates tasks and state no reservation knows about, and the check
 at first use cannot make up for it.
 
+### Contexts
+
+The Context extension (<https://docs.aion.to/a2a/extensions/aion/context/1.0.0>)
+lets a client that talks to this server directly list, read and delete its
+conversations. It is declared on the agent card and needs no activation. The
+three methods are served over JSON-RPC by name and over HTTP+JSON by path,
+relative to the A2A endpoint:
+
+| Method | HTTP+JSON | Result |
+| --- | --- | --- |
+| `GetContexts` | `POST /contexts:get` | the caller's contexts, most recently active first |
+| `GetContext` | `POST /context:get` | one context: chronological messages, up to 50 latest artifacts, latest status |
+| `DeleteContext` | `POST /context:delete` | `{"contextId": ...}` |
+
+A request without a verified caller is refused before any method runs: `401`
+with JSON-RPC error `-32051` on the JSON-RPC endpoint, and `401`
+`application/problem+json` on the HTTP+JSON routes (see *Where the user comes
+from*).
+
+**Bindings.** Admission binds every caller it admits to the context, by owner
+scope (`context_bindings` in PostgreSQL, the reservation entry in memory). A
+private context has one binding, a shared gateway conversation one per
+participant. A caller sees a context exactly while it is bound to it; any other
+context - another caller's, or one that does not exist - is answered alike:
+`ContextNotFound` (`1000`, HTTP `404`) for a read, success for a delete. A
+caller without individual access is never bound. `GetContext` returns every
+participant's messages, not only the caller's, because a binding is to the
+whole conversation. Pagination selects the newest `historyLength` messages
+after skipping `historyOffset` and returns them in order. `title` and
+`summary` are always `null`: this server generates neither.
+
+**Deletion.** `DeleteContext` removes the caller's binding. While another
+caller is bound, that is all. Removing the last one makes the deletion durable:
+the reservation becomes `deleting`, and no message is admitted into the context
+until it ends. Then every active task of the context, whoever owns it, is
+cancelled through the ordinary cancellation path, in groups of ten; once all
+are terminal the framework state - LangGraph checkpoints, ADK sessions - is
+deleted under the context holder's state scope, and the tasks, their messages,
+artifacts, claims and push configurations and the bindings are removed in one
+storage step. The reservation becomes `deleted`, and the next message with
+that context ID reserves it afresh: a new conversation, with nothing of the
+old one.
+
+A deletion that cannot finish in one request - a cancellation still settling
+on another server, a database error, a concurrent attempt at the same deletion
+- answers `ContextDeletionInProgress` (`1001`, HTTP `409`, retryable, with a
+`deletionOperationId`) and stays durable. The same caller repeating the
+request resumes it, and a server resumes every pending deletion of its agent
+in the background when it starts. A definitive refusal - a cancellation the
+agent rejects, or framework state its executor cannot delete
+(`ExecutorAdapter.supports_state_deletion`, asked before any task is
+cancelled) - returns the context to `active` without the caller's binding and
+answers `ContextNotDeletable` (`1002`, HTTP `409`).
+
+Nothing the deletion removed comes back. A new task in a context that is
+`deleting` or `deleted` is refused when it would first be written - a message
+admitted just before the deletion started included - with
+`TaskOwnershipLost`; in PostgreSQL that check holds the reservation row, so it
+and the end of a deletion cannot interleave. A late write of a removed task is
+refused too: in PostgreSQL its claim is gone, so the fenced write finds no
+lease; in memory the task is remembered as retired. A stream still open on a
+task cancelled by the deletion closes with the outcome the task declared,
+since the task itself is no longer stored.
+
+Limitations, as implemented:
+
+- A `blocked` context (from before reservations) has no holder to key its
+  framework state by: its tasks are deleted, its framework state is not, and
+  the context stays closed to every caller.
+- A framework state store outside the SDK's own backends is deleted only if
+  the executor can do it; with a LangGraph checkpointer without
+  `adelete_thread`, removing a context's last binding answers
+  `ContextNotDeletable`.
+- Unattributed invocations are never bound, so their tasks in a shared
+  conversation are deleted with it but listed and read by nobody.
+- A removed participant of a shared gateway conversation is bound again by
+  its next message into it, which is a new authorized message rather than a
+  restored grant.
+
 ### `context=None` in the stores
 
 The stores' `context` parameter keeps a2a-sdk's `TaskStore` signature.
@@ -282,8 +382,7 @@ only a context names one:
 | `ServerCallContext()` | owned by the anonymous owner `""` | as above, with owner `""` |
 | `None` | `TaskOwnerUndefinedError` - nothing is written | saved, keeping the recorded owner |
 
-Context listings (`get_context_tasks`, `get_context_last_task`,
-`get_context_ids`) are ordered by task creation, newest first, across owners;
+Context listings (`get_context_tasks`, `get_context_last_task`) are ordered by task creation, newest first, across owners;
 an update keeps a task's place.
 
 The owner here is the caller. It is unrelated to the lease owner of task

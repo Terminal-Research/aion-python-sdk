@@ -12,18 +12,22 @@ from a2a.server.routes.jsonrpc_dispatcher import JsonRpcDispatcher
 from sse_starlette.sse import EventSourceResponse
 from starlette.responses import JSONResponse, Response
 
-from a2a.types import TaskState
+from datetime import datetime, timezone
 
-from aion.core.constants.a2a import GET_CONTEXTS_LIST_EXTENSION_URI_V1
+from a2a.types import TaskState, TaskStatus
+
+from aion.core.constants.a2a import CONTEXT_EXTENSION_URI_V1
 from aion.core.runtime import aion_a2a_extension_registry
 from aion.core.runtime.context.extensions.descriptors import ExtensionDescriptor
 from aion.core.a2a import (
     AION_JSONRPC_METHOD_EXTENSION_BINDINGS,
     AionJsonRpcMethodExtensionBinding,
-    ContextsList,
-    Conversation,
-    ConversationTaskStatus,
+    ContextSummary,
+    ContextSummaryList,
+    ContextView,
+    DeleteContextResult,
 )
+from aion.server.contexts import ContextDeletionInProgress, ContextNotFound
 from aion.server.core.app.handlers import jsonrpc_dispatcher as dispatcher_module
 from aion.server.core.app.handlers.jsonrpc_dispatcher import (
     AionJsonRpcDispatcher,
@@ -72,10 +76,20 @@ def _request(body: dict) -> Mock:
     return request
 
 
-def _conversation() -> Conversation:
-    return Conversation(
+_AT = datetime(2026, 9, 10, 18, 42, 11, 532000, tzinfo=timezone.utc)
+
+
+def _conversation() -> ContextView:
+    return ContextView(
         context_id="c1",
-        status=ConversationTaskStatus(state=TaskState.TASK_STATE_COMPLETED),
+        status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED),
+        last_activity_at=_AT,
+    )
+
+
+def _summaries(*context_ids: str) -> ContextSummaryList:
+    return ContextSummaryList(
+        [ContextSummary(context_id=context_id, last_activity_at=_AT) for context_id in context_ids]
     )
 
 
@@ -172,11 +186,11 @@ class TestMethodExtensionRouting:
         handler.on_get_context.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_get_contexts_answers_with_its_array_of_ids(self):
+    async def test_get_contexts_answers_with_its_array_of_summaries(self):
         """The same for GetContexts, whose result is an array rather than an
         object - which is the whole reason it needs its own wire test."""
         handler = Mock()
-        handler.on_get_contexts_list = AsyncMock(return_value=ContextsList(["c1", "c2"]))
+        handler.on_get_contexts = AsyncMock(return_value=_summaries("c1", "c2"))
         dispatcher = _dispatcher(handler)
 
         response = await dispatcher.handle_requests(
@@ -187,8 +201,100 @@ class TestMethodExtensionRouting:
         body = json.loads(response.body)
         assert "error" not in body
         assert body["id"] == 2
-        assert body["result"] == ["c1", "c2"]
-        handler.on_get_contexts_list.assert_awaited_once()
+        assert [entry["contextId"] for entry in body["result"]] == ["c1", "c2"]
+        assert body["result"][0] == {
+            "contextId": "c1",
+            "title": None,
+            "summary": None,
+            "lastActivityAt": "2026-09-10T18:42:11.532Z",
+        }
+        handler.on_get_contexts.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_delete_context_answers_with_its_context_id(self):
+        """DeleteContext's whole wire path."""
+        handler = Mock()
+        handler.on_delete_context = AsyncMock(return_value=DeleteContextResult(context_id="c1"))
+        dispatcher = _dispatcher(handler)
+
+        response = await dispatcher.handle_requests(
+            _request({"jsonrpc": "2.0", "id": 5, "method": "DeleteContext", "params": {"contextId": "c1"}})
+        )
+
+        body = json.loads(response.body)
+        assert body == {"jsonrpc": "2.0", "id": 5, "result": {"contextId": "c1"}}
+
+    @pytest.mark.asyncio
+    async def test_params_may_be_omitted(self):
+        """GetContexts without params uses the defaults."""
+        handler = Mock()
+        handler.on_get_contexts = AsyncMock(return_value=_summaries())
+        dispatcher = _dispatcher(handler)
+
+        response = await dispatcher.handle_requests(_request({"jsonrpc": "2.0", "id": 6, "method": "GetContexts"}))
+
+        assert json.loads(response.body)["result"] == []
+        params = handler.on_get_contexts.await_args.args[0]
+        assert (params.history_length, params.history_offset) == (50, 0)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "method,params",
+        [
+            ("GetContexts", {"historyLength": 101}),
+            ("GetContext", {"contextId": "c1", "historyOffset": -1}),
+            ("GetContext", {"contextId": " "}),
+            ("DeleteContext", {"contextId": ""}),
+        ],
+    )
+    async def test_invalid_params_are_refused(self, method, params):
+        """Blank contextId and out-of-range pagination are -32602."""
+        handler = Mock()
+        dispatcher = _dispatcher(handler)
+
+        response = await dispatcher.handle_requests(
+            _request({"jsonrpc": "2.0", "id": 8, "method": method, "params": params})
+        )
+
+        assert json.loads(response.body)["error"]["code"] == -32602
+
+    @pytest.mark.asyncio
+    async def test_a_hidden_context_is_context_not_found(self):
+        """ContextNotFound carries its own code and sanitized data."""
+        handler = Mock()
+        handler.on_get_context = AsyncMock(side_effect=ContextNotFound("c1"))
+        dispatcher = _dispatcher(handler)
+
+        response = await dispatcher.handle_requests(
+            _request({"jsonrpc": "2.0", "id": 10, "method": "GetContext", "params": {"contextId": "c1"}})
+        )
+
+        assert json.loads(response.body) == {
+            "jsonrpc": "2.0",
+            "id": 10,
+            "error": {
+                "code": 1000,
+                "message": "Context not found",
+                "data": {"contextId": "c1", "retryable": False},
+            },
+        }
+
+    @pytest.mark.asyncio
+    async def test_a_deletion_in_progress_is_retryable(self):
+        """1001 carries the deletion operation id as diagnostic data."""
+        handler = Mock()
+        handler.on_delete_context = AsyncMock(
+            side_effect=ContextDeletionInProgress("c1", deletion_operation_id="op-1")
+        )
+        dispatcher = _dispatcher(handler)
+
+        response = await dispatcher.handle_requests(
+            _request({"jsonrpc": "2.0", "id": 11, "method": "DeleteContext", "params": {"contextId": "c1"}})
+        )
+
+        error = json.loads(response.body)["error"]
+        assert error["code"] == 1001
+        assert error["data"] == {"contextId": "c1", "retryable": True, "deletionOperationId": "op-1"}
 
     @pytest.mark.asyncio
     async def test_the_handler_is_resolved_from_the_binding(self):
@@ -231,14 +337,14 @@ class TestMethodExtensionRouting:
         """The identity the method belongs to reaches everything downstream,
         beside the transport-level method name."""
         handler = Mock()
-        handler.on_get_contexts_list = AsyncMock(return_value=ContextsList([]))
+        handler.on_get_contexts = AsyncMock(return_value=_summaries())
         dispatcher = _dispatcher(handler)
 
         await dispatcher.handle_requests(
             _request({"jsonrpc": "2.0", "id": 4, "method": "GetContexts", "params": {}})
         )
 
-        context = handler.on_get_contexts_list.await_args.args[1]
+        context = handler.on_get_contexts.await_args.args[1]
         assert context.state["method"] == "GetContexts"
         assert (
             context.state["extension_uri"]
@@ -264,7 +370,7 @@ class TestStateEnforcement:
 
     async def _call(self) -> dict:
         handler = Mock()
-        handler.on_get_contexts_list = AsyncMock(return_value=ContextsList([]))
+        handler.on_get_contexts = AsyncMock(return_value=_summaries())
         dispatcher = _dispatcher(handler)
         response = await dispatcher.handle_requests(
             _request({"jsonrpc": "2.0", "id": 9, "method": "GetContexts", "params": {}})
@@ -278,29 +384,29 @@ class TestStateEnforcement:
         body = await self._call()
 
         assert "error" not in body
-        self.handler.on_get_contexts_list.assert_awaited_once()
+        self.handler.on_get_contexts.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_a_deactivated_extension_refuses_the_call(self):
         self._rebind(
-            ExtensionDescriptor(uri=GET_CONTEXTS_LIST_EXTENSION_URI_V1, active=False)
+            ExtensionDescriptor(uri=CONTEXT_EXTENSION_URI_V1, active=False)
         )
 
         body = await self._call()
 
         assert "enabled_extensions" in body["error"]["message"]
-        self.handler.on_get_contexts_list.assert_not_awaited()
+        self.handler.on_get_contexts.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_an_unavailable_extension_refuses_with_its_own_reason(self):
         aion_a2a_extension_registry.mark_unavailable(
-            GET_CONTEXTS_LIST_EXTENSION_URI_V1, "the context store is not configured"
+            CONTEXT_EXTENSION_URI_V1, "the context store is not configured"
         )
 
         body = await self._call()
 
         assert "the context store is not configured" in body["error"]["message"]
-        self.handler.on_get_contexts_list.assert_not_awaited()
+        self.handler.on_get_contexts.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_a_missing_requirement_refuses_the_call(self):
@@ -311,14 +417,14 @@ class TestStateEnforcement:
         )
         self._rebind(
             ExtensionDescriptor(
-                uri=GET_CONTEXTS_LIST_EXTENSION_URI_V1, requires=(required,)
+                uri=CONTEXT_EXTENSION_URI_V1, requires=(required,)
             )
         )
 
         body = await self._call()
 
         assert required in body["error"]["message"]
-        self.handler.on_get_contexts_list.assert_not_awaited()
+        self.handler.on_get_contexts.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_withholding_it_from_the_card_does_not_refuse_the_call(self):
@@ -326,7 +432,7 @@ class TestStateEnforcement:
         that would quietly stop being true."""
         self._rebind(
             ExtensionDescriptor(
-                uri=GET_CONTEXTS_LIST_EXTENSION_URI_V1, advertised=False
+                uri=CONTEXT_EXTENSION_URI_V1, advertised=False
             )
         )
 
@@ -339,7 +445,7 @@ class TestStateEnforcement:
         """The other direction of the same claim."""
         self._rebind(
             ExtensionDescriptor(
-                uri=GET_CONTEXTS_LIST_EXTENSION_URI_V1, active=False, advertised=True
+                uri=CONTEXT_EXTENSION_URI_V1, active=False, advertised=True
             )
         )
 

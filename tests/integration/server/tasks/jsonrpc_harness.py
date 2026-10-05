@@ -29,7 +29,9 @@ from starlette.routing import Route
 from aion.server.agent.execution.request_context_builder import AionRequestContextBuilder
 from aion.server.core.app.handlers import AionJsonRpcDispatcher, AionRequestHandler
 from aion.db.postgres.manager import db_manager
+from aion.server.core.app.api import ContextHTTPRoutes
 from aion.server.tasks.admission import InMemoryContextAdmission, PostgresContextAdmission
+from aion.server.tasks.contexts import InMemoryContextCatalog, PostgresContextCatalog
 from aion.server.tasks.push_notifications import PushNotificationFactory
 from aion.server.tasks.stores.in_memory_task_store import InMemoryTaskStore
 from aion.server.tasks.stores.postgres_task_store import PostgresTaskStore
@@ -49,10 +51,18 @@ A2A_V03 = "0.3"
 class ScriptedAgent:
     """Answers by the message text: ``done``, ``ask`` (input required) or ``hold``."""
 
+    supports_context_state_deletion = True
+
     def __init__(self) -> None:
         self.runs: list[tuple[str, str, str]] = []
         self.release = asyncio.Event()
         self.cancels = 0
+        self.deleted_state: list[tuple[str, Optional[str], Optional[tuple[str, str]]]] = []
+        # The request handler reaches the running agent as `agent_executor.agent`.
+        self.agent = self
+
+    async def delete_context_state(self, context_id, *, owner_scope, gateway) -> None:
+        self.deleted_state.append((context_id, owner_scope, gateway))
 
     async def execute(self, context, event_queue) -> None:
         text = context.get_user_input()
@@ -62,8 +72,15 @@ class ScriptedAgent:
             "ask": TaskState.TASK_STATE_INPUT_REQUIRED,
             "hold": TaskState.TASK_STATE_WORKING,
         }[text]
+        # The first event carries the message that started the turn, as the
+        # SDK's executors announce a task, so its history holds the turn.
         await event_queue.enqueue_event(
-            Task(id=context.task_id, context_id=context.context_id, status=TaskStatus(state=state))
+            Task(
+                id=context.task_id,
+                context_id=context.context_id,
+                status=TaskStatus(state=state),
+                history=[context.message] if context.message else [],
+            )
         )
         if state == TaskState.TASK_STATE_WORKING:
             await self.release.wait()
@@ -94,10 +111,12 @@ class JsonRpcServer:
             self.store = InMemoryTaskStore()
             lease = self.store.ownership_provider
             admission = InMemoryContextAdmission()
+            catalog = InMemoryContextCatalog(self.store, admission)
         else:
             lease = provider("pod-a")
             self.store = PostgresTaskStore(agent_id=lease.agent_id, ownership_provider=lease)
             admission = PostgresContextAdmission(lease.agent_id, db_manager)
+            catalog = PostgresContextCatalog(lease.agent_id, db_manager)
         self.admission = admission
         self.lease = lease
         self.agent = ScriptedAgent()
@@ -113,6 +132,7 @@ class JsonRpcServer:
             agent_card=card,
             ownership_provider=lease,
             admission=admission,
+            context_catalog=catalog,
             push_config_store=self.push_configs,
             request_context_builder=AionRequestContextBuilder(
                 task_store=self.store, auto_discover_interrupted_task=True
@@ -120,7 +140,10 @@ class JsonRpcServer:
         )
         dispatcher = AionJsonRpcDispatcher(request_handler=self.handler, enable_v0_3_compat=True)
         app = Starlette(
-            routes=[Route(DEFAULT_RPC_URL, endpoint=dispatcher.handle_requests, methods=["POST"])],
+            routes=[
+                Route(DEFAULT_RPC_URL, endpoint=dispatcher.handle_requests, methods=["POST"]),
+                *ContextHTTPRoutes(self.handler, base_url=DEFAULT_RPC_URL).routes(),
+            ],
             middleware=middleware,
         )
         self.client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")

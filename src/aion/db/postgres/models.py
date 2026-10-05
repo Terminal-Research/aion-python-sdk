@@ -3,13 +3,25 @@
 from __future__ import annotations
 
 import uuid
-from sqlalchemy import BigInteger, Column, Computed, DateTime, ForeignKey, PrimaryKeyConstraint, String, Text, func
+from sqlalchemy import (
+    BigInteger,
+    Column,
+    Computed,
+    DateTime,
+    ForeignKey,
+    ForeignKeyConstraint,
+    PrimaryKeyConstraint,
+    String,
+    Text,
+    func,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import declarative_base
 from google.protobuf.struct_pb2 import Struct
 from a2a.types import Artifact, Message, TaskStatus
 
 from .constants import (
+    CONTEXT_BINDINGS_TABLE,
     CONTEXT_RESERVATIONS_TABLE,
     TASK_ARTIFACTS_TABLE,
     TASK_CLAIMS_TABLE,
@@ -20,6 +32,7 @@ from .fields import ProtobufType
 
 __all__ = [
     "BaseModel",
+    "ContextBindingModel",
     "ContextReservationModel",
     "TaskClaimModel",
     "TaskRecordModel",
@@ -237,15 +250,19 @@ class TaskArtifactModel(BaseModel):
 
 
 class ContextReservationModel(BaseModel):
-    """Who may use a context of an agent: one row per ``(agent_id, context_id)``, written once.
+    """Who may use a context of an agent, and where it is in its lifecycle: one row per ``(agent_id, context_id)``.
 
     The first request admitted into a context writes the row; every later
     request is admitted only if it is the same holder. A ``private`` context
     belongs to one caller, by ``owner_scope``; a ``shared`` one to an Aion
     gateway conversation, by the receiving agent identity and the edge
     environment of the invocation. A ``blocked`` context already had data when
-    reservations were introduced and is admitted into by nobody. The row is
-    never updated or deleted: the framework state it guards outlives tasks.
+    reservations were introduced and is admitted into by nobody.
+
+    The row outlives the context's tasks, because the framework state it
+    guards does. It changes in exactly two ways: ``DeleteContext`` moves it
+    through ``deleting`` to ``deleted``, and the next request into a
+    ``deleted`` context reserves it afresh for that request's holder.
     """
 
     __tablename__ = CONTEXT_RESERVATIONS_TABLE
@@ -266,4 +283,46 @@ class ContextReservationModel(BaseModel):
         nullable=False,
         server_default=func.clock_timestamp(),
         doc="When the first request was admitted into the context.",
+    )
+    state = Column(
+        Text,
+        nullable=False,
+        server_default="active",
+        doc="``active``, ``deleting`` or ``deleted``.",
+    )
+    deletion_operation_id = Column(
+        Text, nullable=True, doc="The durable deletion in progress or last finished."
+    )
+    deletion_requested_by = Column(
+        Text, nullable=True, doc="``owner_scope`` of the caller whose request started the deletion."
+    )
+    deleted_at = Column(DateTime(timezone=True), nullable=True, doc="When the deletion finished.")
+
+
+class ContextBindingModel(BaseModel):
+    """A caller bound to a context: one row per ``(agent_id, context_id, owner_scope)``.
+
+    Written when a caller is admitted into the context, removed by that
+    caller's ``DeleteContext``. A caller sees a context through the Context
+    extension exactly while it has a binding to it.
+    """
+
+    __tablename__ = CONTEXT_BINDINGS_TABLE
+    __table_args__ = (
+        PrimaryKeyConstraint("agent_id", "context_id", "owner_scope"),
+        ForeignKeyConstraint(
+            ["agent_id", "context_id"],
+            [f"{CONTEXT_RESERVATIONS_TABLE}.agent_id", f"{CONTEXT_RESERVATIONS_TABLE}.context_id"],
+            ondelete="CASCADE",
+        ),
+    )
+
+    agent_id = Column(Text, nullable=False, doc="Identity of the agent whose context this is.")
+    context_id = Column(Text, nullable=False, doc="The A2A context ID.")
+    owner_scope = Column(Text, nullable=False, doc="The bound caller's owner scope.")
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.clock_timestamp(),
+        doc="When the caller was first admitted into the context.",
     )

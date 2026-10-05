@@ -208,7 +208,6 @@ _STORE_METHODS = (
     "delete",
     "cancel_with_ownership_revocation",
     "request_cancellation",
-    "get_context_ids",
     "get_context_tasks",
     "get_context_last_task",
 )

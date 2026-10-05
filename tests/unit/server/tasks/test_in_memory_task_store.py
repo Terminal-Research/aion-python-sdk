@@ -52,10 +52,6 @@ async def test_context_directory_isolated_by_resolved_owner():
     await store.save(bob, "bob")
     await store.save(alice_new, "alice")
 
-    assert await store.get_context_ids(context="alice") == [
-        "alice-second-context",
-        "ctx-1",
-    ]
     assert [
         task.id
         for task in await store.get_context_tasks("ctx-1", context="alice")

@@ -5,13 +5,15 @@ tracking within the Agent-to-Agent (A2A) protocol layer.
 """
 
 import copy
+from datetime import datetime, timezone
 from typing import Any, List, Dict, Optional, TYPE_CHECKING
 
-from a2a.types import Message, Artifact, Task, TaskState
-from pydantic import ConfigDict, RootModel, Field, field_serializer
+from a2a.types import Message, Artifact, Task, TaskState, TaskStatus
+from google.protobuf.json_format import MessageToDict
+from pydantic import ConfigDict, RootModel, Field, field_serializer, model_serializer, model_validator
 
 from aion.core.a2a import A2ABaseModel
-from aion.core.utils.pydantic import Protobuf, ProtobufEnum
+from aion.core.utils.pydantic import Protobuf
 
 if TYPE_CHECKING:
     from a2a.server.agent_execution import RequestContext
@@ -19,9 +21,11 @@ if TYPE_CHECKING:
 __all__ = [
     "A2AInbox",
     "A2AOutbox",
-    "Conversation",
-    "ContextsList",
-    "ConversationTaskStatus",
+    "ContextArtifact",
+    "ContextSummary",
+    "ContextSummaryList",
+    "ContextView",
+    "DeleteContextResult",
     "A2AManifest",
 ]
 
@@ -85,44 +89,137 @@ class A2AOutbox(A2ABaseModel):
     )
 
 
-class ConversationTaskStatus(A2ABaseModel):
-    """Serializable snapshot of an A2A task's lifecycle state."""
-
-    state: ProtobufEnum[TaskState]
-    """
-    The current state of the task's lifecycle.
-    """
-
-    @field_serializer('state')
-    def serialize_state(self, value: int) -> str:
-        """Serialize the TaskState protobuf enum to its string name."""
-        return TaskState.Name(value)
-
-
-class Conversation(A2ABaseModel):
-    """Data model for conversation representation"""
+class ContextSummary(A2ABaseModel):
+    """One entry of a ``GetContexts`` result: a caller-visible context by its latest activity."""
 
     context_id: str
     """
-    Unique identifier for the conversation context.
+    Opaque caller-visible context identifier.
+    """
+    title: Optional[str] = None
+    """
+    Generated current subject. The SDK server generates none, so it is ``None``.
+    """
+    summary: Optional[str] = None
+    """
+    Generated conversation summary. The SDK server generates none, so it is ``None``.
+    """
+    last_activity_at: datetime
+    """
+    Latest task activity in the context, in UTC.
+    """
+
+    @field_serializer("last_activity_at")
+    def serialize_last_activity_at(self, value: datetime) -> str:
+        """Serialize as an RFC 3339 UTC timestamp with millisecond precision."""
+        return _rfc3339_utc(value)
+
+
+class ContextSummaryList(RootModel[List[ContextSummary]]):
+    """The ``GetContexts`` result: a raw array of context summaries, most recent first."""
+
+    root: List[ContextSummary] = Field(default_factory=list)
+
+
+class ContextArtifact(A2ABaseModel):
+    """An artifact of a context, qualified by the task that produced it.
+
+    Serialized as the A2A artifact's own fields plus ``taskId``: artifact
+    identity within a context is the pair ``(taskId, artifactId)``, since two
+    tasks can each produce an artifact with the same ID.
+    """
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    task_id: str
+    """
+    Caller-facing identifier of the task that produced the artifact.
+    """
+    artifact: Protobuf[Artifact]
+    """
+    The A2A artifact.
+    """
+
+    @model_validator(mode="before")
+    @classmethod
+    def _split_flat_payload(cls, data: Any) -> Any:
+        """Accept the flat wire shape: artifact fields next to ``taskId``."""
+        if isinstance(data, dict) and "artifact" not in data:
+            fields = dict(data)
+            task_id = fields.pop("taskId", fields.pop("task_id", None))
+            return {"task_id": task_id, "artifact": fields}
+        return data
+
+    @model_serializer(mode="plain")
+    def _serialize_flat(self) -> dict[str, Any]:
+        return {"taskId": self.task_id, **MessageToDict(self.artifact)}
+
+
+class ContextView(A2ABaseModel):
+    """The ``GetContext`` result: one context's messages, recent artifacts and latest status.
+
+    History combines the messages of every task in the context in
+    chronological order; it is not a list of tasks.
+    """
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    context_id: str
+    """
+    Caller-visible context identifier.
+    """
+    title: Optional[str] = None
+    """
+    Generated current subject. The SDK server generates none, so it is ``None``.
+    """
+    summary: Optional[str] = None
+    """
+    Generated conversation summary. The SDK server generates none, so it is ``None``.
     """
     history: List[Protobuf[Message]] = Field(default_factory=list)
     """
-    List of messages in the conversation history.
+    Chronological messages of the selected history page.
     """
-    artifacts: List[Protobuf[Artifact]] = Field(default_factory=list)
+    artifacts: List[ContextArtifact] = Field(default_factory=list)
     """
-    Generated artifacts produced during the conversation (code, files, documents).
+    Up to 50 latest durable artifacts, newest first.
     """
-    status: ConversationTaskStatus
+    status: Protobuf[TaskStatus]
     """
-    Current status of the conversation.
+    Status of the context's most recently active task.
+    """
+    last_activity_at: datetime
+    """
+    Latest task activity in the context, in UTC.
+    """
+
+    @field_serializer("status")
+    def serialize_status(self, value: TaskStatus) -> dict[str, Any]:
+        """Serialize the status with its ``state`` always present."""
+        serialized = MessageToDict(value)
+        serialized.setdefault("state", TaskState.Name(value.state))
+        return serialized
+
+    @field_serializer("last_activity_at")
+    def serialize_last_activity_at(self, value: datetime) -> str:
+        """Serialize as an RFC 3339 UTC timestamp with millisecond precision."""
+        return _rfc3339_utc(value)
+
+
+class DeleteContextResult(A2ABaseModel):
+    """The ``DeleteContext`` result."""
+
+    context_id: str
+    """
+    The context the request named.
     """
 
 
-class ContextsList(RootModel[List[str]]):
-    """A list of context strings for LangGraph agent communication."""
-    root: List[str] = Field(description="Ordered list of context identifiers, most recent first.")
+def _rfc3339_utc(value: datetime) -> str:
+    """Format ``value`` as ``YYYY-MM-DDTHH:MM:SS.mmmZ``; a naive value is taken as UTC."""
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 class A2AManifest(A2ABaseModel):

@@ -13,13 +13,22 @@ at one edge environment, whose participants share the agent's memory while
 each still owns only their own tasks. Every other caller - an anonymous
 session, the application's own user - holds a **private** context by its
 owner scope.
+
+Admission also **binds** the caller to the context by its owner scope: a
+private context ends up with one binding, a shared one with one per
+participant. Bindings are what the Context extension lists, reads and
+deletes by; see ``aion.server.tasks.contexts``. A context whose last binding
+was removed is being deleted, and nothing is admitted into it until the
+deletion finishes; once it has, the context is reserved afresh by the next
+request, as if it had never existed.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Literal, Optional, Protocol
 
 from a2a.server.context import ServerCallContext
@@ -28,14 +37,20 @@ from a2a.server.owner_resolver import OwnerResolver
 from aion.db.postgres import DbManager
 from aion.db.postgres.records import ContextReservationRecord
 from aion.db.postgres.repositories import ContextReservationsRepository
+from aion.db.postgres.repositories.context_reservations.repository import ACTIVE, DELETED, DELETING
 from aion.server.auth import CredentialKind, verified_caller
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
+    "ACTIVE",
+    "DELETED",
+    "DELETING",
     "ContextAdmission",
     "ContextHolder",
     "InMemoryContextAdmission",
+    "InMemoryContextEntry",
+    "holder_of_record",
     "PostgresContextAdmission",
     "holder_of",
 ]
@@ -85,40 +100,63 @@ def holder_of(call_context: ServerCallContext, owner_resolver: OwnerResolver) ->
 
 
 class ContextAdmission(Protocol):
-    """Reserves a context for its first holder and admits only that holder after."""
+    """Reserves a context for its first holder, admits only that holder after, and binds whoever it admits."""
 
-    async def admit(self, context_id: str, holder: ContextHolder) -> bool:
+    async def admit(self, context_id: str, holder: ContextHolder, member: Optional[str]) -> bool:
         """Whether ``holder`` may use ``context_id``; reserves it when nobody holds it yet.
 
-        A refusal changes nothing. An admission is permanent: the
-        reservation is never released, whatever happens to the request.
+        An admitted ``member`` - the caller's owner scope - is bound to the
+        context. ``None`` binds nobody: a caller without individual access
+        has no owner scope of its own to be bound by.
+
+        A refusal changes nothing. A context being deleted admits nobody.
         """
+
+
+@dataclass
+class InMemoryContextEntry:
+    """One context's reservation, lifecycle and bindings, held by this process."""
+
+    holder: ContextHolder
+    state: str = ACTIVE
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    bindings: dict[str, datetime] = field(default_factory=dict)
+    deletion_operation_id: Optional[str] = None
+    deletion_requested_by: Optional[str] = None
 
 
 class InMemoryContextAdmission:
     """Reservations held by this process, for the in-memory task store and framework state."""
 
     def __init__(self) -> None:
-        self._holders: dict[str, ContextHolder] = {}
-        self._lock = asyncio.Lock()
+        self.entries: dict[str, InMemoryContextEntry] = {}
+        self.lock = asyncio.Lock()
 
-    async def admit(self, context_id: str, holder: ContextHolder) -> bool:
-        async with self._lock:
-            return self._holders.setdefault(context_id, holder) == holder
+    async def admit(self, context_id: str, holder: ContextHolder, member: Optional[str]) -> bool:
+        async with self.lock:
+            entry = self.entries.get(context_id)
+            if entry is None or entry.state == DELETED:
+                entry = self.entries[context_id] = InMemoryContextEntry(holder)
+            if entry.holder != holder or entry.state != ACTIVE:
+                return False
+            if member:
+                entry.bindings.setdefault(member, datetime.now(timezone.utc))
+            return True
 
 
 class PostgresContextAdmission:
     """Reservations in ``context_reservations``, shared by every server of the agent on one database.
 
     A context nobody holds is refused, and stays unreserved, when framework
-    state saved before it carried an agent exists for it.
+    state saved before it carried an agent exists for it. The binding is
+    written in the same transaction as the reservation it depends on.
     """
 
     def __init__(self, agent_id: str, db_manager: DbManager) -> None:
         self._agent_id = agent_id
         self._db_manager = db_manager
 
-    async def admit(self, context_id: str, holder: ContextHolder) -> bool:
+    async def admit(self, context_id: str, holder: ContextHolder, member: Optional[str]) -> bool:
         wanted = ContextReservationRecord(
             agent_id=self._agent_id,
             context_id=context_id,
@@ -129,12 +167,20 @@ class PostgresContextAdmission:
         )
         async with self._db_manager.get_session() as session:
             async with session.begin():
-                held = await ContextReservationsRepository(session).reserve(wanted)
-        if held is None:
-            return False
-        return ContextHolder(
-            held.kind,  # type: ignore[arg-type]
-            owner_scope=held.owner_scope,
-            owner_agent_identity_id=held.owner_agent_identity_id,
-            edge_agent_environment_id=held.edge_agent_environment_id,
-        ) == holder
+                repository = ContextReservationsRepository(session)
+                held = await repository.reserve(wanted)
+                if held is None or held.state != ACTIVE or holder_of_record(held) != holder:
+                    return False
+                if member:
+                    await repository.bind(self._agent_id, context_id, member)
+                return True
+
+
+def holder_of_record(record: ContextReservationRecord) -> ContextHolder:
+    """The holder a reservation row names."""
+    return ContextHolder(
+        record.kind,  # type: ignore[arg-type]
+        owner_scope=record.owner_scope,
+        owner_agent_identity_id=record.owner_agent_identity_id,
+        edge_agent_environment_id=record.edge_agent_environment_id,
+    )

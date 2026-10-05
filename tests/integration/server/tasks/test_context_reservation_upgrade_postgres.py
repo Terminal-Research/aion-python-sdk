@@ -166,8 +166,8 @@ async def test_a_closed_context_admits_nobody_and_keeps_its_data(db) -> None:
     await _from_005()
     admission = PostgresContextAdmission(AGENT, db)
 
-    assert not await admission.admit(context_id, ALICE)
-    assert not await admission.admit(context_id, GATEWAY)
+    assert not await admission.admit(context_id, ALICE, None)
+    assert not await admission.admit(context_id, GATEWAY, None)
     async with db.get_session() as session:
         tasks = (await session.execute(text("SELECT count(*) FROM tasks WHERE context_id = :id"),
                                        {"id": context_id})).scalar()
@@ -190,8 +190,8 @@ async def test_state_that_names_no_agent_closes_its_context_on_first_use(db, leg
     assert await _reservations(db, context_id) == set()
     for agent_id in (AGENT, OTHER_AGENT):
         admission = PostgresContextAdmission(agent_id, db)
-        assert not await admission.admit(context_id, ALICE)
-        assert not await admission.admit(context_id, GATEWAY)
+        assert not await admission.admit(context_id, ALICE, None)
+        assert not await admission.admit(context_id, GATEWAY, None)
     # Refused without a reservation: nobody holds it, and nobody can.
     assert await _reservations(db, context_id) == set()
 
@@ -203,10 +203,10 @@ async def test_new_contexts_work_as_before(db) -> None:
     admission = PostgresContextAdmission(AGENT, db)
     private, shared = _context(), _context()
 
-    assert await admission.admit(private, ALICE)
-    assert await admission.admit(shared, GATEWAY)
-    assert await admission.admit(private, ALICE)
-    assert not await admission.admit(private, GATEWAY)
+    assert await admission.admit(private, ALICE, None)
+    assert await admission.admit(shared, GATEWAY, None)
+    assert await admission.admit(private, ALICE, None)
+    assert not await admission.admit(private, GATEWAY, None)
 
 
 async def test_first_callers_racing_for_a_new_context_get_one_holder(db) -> None:
@@ -215,6 +215,6 @@ async def test_first_callers_racing_for_a_new_context_get_one_holder(db) -> None
     admissions = [PostgresContextAdmission(AGENT, db) for _ in range(6)]
     holders = [ContextHolder.private(f"caller-{index}") for index in range(6)]
 
-    admitted = await asyncio.gather(*(a.admit(context_id, h) for a, h in zip(admissions, holders)))
+    admitted = await asyncio.gather(*(a.admit(context_id, h, None) for a, h in zip(admissions, holders)))
 
     assert sum(admitted) == 1

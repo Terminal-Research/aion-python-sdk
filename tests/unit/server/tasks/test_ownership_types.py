@@ -76,7 +76,7 @@ def test_register_aion_error_refuses_a_reason_already_claimed() -> None:
     with pytest.raises(ValueError, match="Reason"):
         register_aion_error(
             _CollidingReasonError,
-            TASK_OWNERSHIP_BUSY_CODE - 1,
+            AION_ERROR_CODE_RANGE.start,
             http_status=409,
             grpc_status="ABORTED",
             reason="TASK_OWNERSHIP_BUSY",

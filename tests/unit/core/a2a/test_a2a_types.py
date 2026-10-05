@@ -8,9 +8,9 @@ Focus areas:
   A2A Models (aion.shared.types.a2a.models):
     - A2AInbox: construction, frozen immutability, from_request_context
     - A2AOutbox: optional task/message fields, JSON serialization
-    - ConversationTaskStatus: state serialized to string name
-    - Conversation: construction, history/artifacts list, JSON round-trip
-    - ContextsList: root model, list access
+    - ContextSummary / ContextSummaryList: nullable title/summary, UTC timestamp, raw array
+    - ContextArtifact: flat artifact fields plus taskId
+    - ContextView: history, artifacts, status with its state always present
     - A2AManifest: construction, endpoints dict, JSON serialization
 
   Extensions:
@@ -23,15 +23,14 @@ Focus areas:
                       Distribution, Behavior, Environment, DistributionExtensionV1
 
   Request / Response (aion.shared.types.a2a.request, request_params, response):
-    - GetContextParams: required context_id, optional pagination fields
-    - GetContextsListParams: optional pagination
-    - GetContextRequest: jsonrpc default, method literal
-    - GetContextsListRequest: method literal
-    - GetContextSuccessResponse: result is Conversation
-    - GetContextsListSuccessResponse: result is ContextsList
+    - GetContextsParams / GetContextParams / DeleteContextParams: defaults,
+      bounds, non-blank context_id
+    - GetContextsRequest / GetContextRequest / DeleteContextRequest: method literals
+    - Success responses: results serialize as the wire shapes
 """
 
 import json
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -71,13 +70,19 @@ from aion.core.a2a.models import (
     A2AInbox,
     A2AManifest,
     A2AOutbox,
-    Conversation,
-    ConversationTaskStatus,
-    ContextsList,
+    ContextArtifact,
+    ContextSummary,
+    ContextSummaryList,
+    ContextView,
+    DeleteContextResult,
 )
-from aion.core.a2a.request import GetContextRequest, GetContextsListRequest
-from aion.core.a2a.request_params import GetContextParams, GetContextsListParams
-from aion.core.a2a.response import GetContextSuccessResponse, GetContextsListSuccessResponse
+from aion.core.a2a.request import DeleteContextRequest, GetContextRequest, GetContextsRequest
+from aion.core.a2a.request_params import DeleteContextParams, GetContextParams, GetContextsParams
+from aion.core.a2a.response import (
+    DeleteContextSuccessResponse,
+    GetContextSuccessResponse,
+    GetContextsSuccessResponse,
+)
 
 
 class TestEnums:
@@ -209,84 +214,75 @@ class TestA2AOutbox:
         assert outbox.message is not None
 
 
-class TestConversationTaskStatus:
-    def test_state_stored_as_int(self):
-        """ConversationTaskStatus stores the TaskState value as an integer."""
-        status = ConversationTaskStatus(state=TaskState.TASK_STATE_COMPLETED)
-        assert isinstance(status.state, int)
-
-    def test_state_serialized_to_name_string(self):
-        """model_dump serializes the state integer to its TaskState enum name string."""
-        status = ConversationTaskStatus(state=TaskState.TASK_STATE_COMPLETED)
-        data = status.model_dump()
-        assert data["state"] == "TASK_STATE_COMPLETED"
-
-    def test_working_state_serialized(self):
-        """TASK_STATE_WORKING is serialized to its name string in model_dump."""
-        status = ConversationTaskStatus(state=TaskState.TASK_STATE_WORKING)
-        data = status.model_dump()
-        assert data["state"] == "TASK_STATE_WORKING"
-
-    def test_failed_state_serialized(self):
-        """TASK_STATE_FAILED is serialized to its name string in model_dump."""
-        status = ConversationTaskStatus(state=TaskState.TASK_STATE_FAILED)
-        data = status.model_dump()
-        assert data["state"] == "TASK_STATE_FAILED"
+_AT = datetime(2026, 9, 10, 18, 42, 11, 532000, tzinfo=timezone.utc)
 
 
-class TestConversation:
-    def _status(self) -> ConversationTaskStatus:
-        return ConversationTaskStatus(state=TaskState.TASK_STATE_WORKING)
+class TestContextSummary:
+    def test_serializes_wire_shape(self):
+        """A summary carries nullable title/summary and a millisecond UTC timestamp."""
+        summary = ContextSummary(context_id="ctx-1", last_activity_at=_AT)
+        assert summary.model_dump(mode="json") == {
+            "contextId": "ctx-1",
+            "title": None,
+            "summary": None,
+            "lastActivityAt": "2026-09-10T18:42:11.532Z",
+        }
 
-    def test_basic_construction(self):
-        """Conversation with context_id and status initializes with empty history and artifacts."""
-        conv = Conversation(context_id="ctx-1", status=self._status())
-        assert conv.context_id == "ctx-1"
-        assert conv.history == []
-        assert conv.artifacts == []
+    def test_naive_timestamp_is_taken_as_utc(self):
+        """A naive datetime is reported as UTC rather than shifted."""
+        summary = ContextSummary(context_id="ctx-1", last_activity_at=_AT.replace(tzinfo=None))
+        assert summary.model_dump(mode="json")["lastActivityAt"] == "2026-09-10T18:42:11.532Z"
 
-    def test_context_id_required(self):
-        """Conversation raises an exception when context_id is omitted."""
-        with pytest.raises(Exception):
-            Conversation(status=self._status())
+    def test_other_timezone_is_converted_to_utc(self):
+        """A timestamp in another zone is converted, not relabelled."""
+        local = _AT.astimezone(timezone(timedelta(hours=3)))
+        summary = ContextSummary(context_id="ctx-1", last_activity_at=local)
+        assert summary.model_dump(mode="json")["lastActivityAt"] == "2026-09-10T18:42:11.532Z"
 
-    def test_status_required(self):
-        """Conversation raises an exception when status is omitted."""
-        with pytest.raises(Exception):
-            Conversation(context_id="ctx-1")
-
-    def test_history_and_artifacts_default_empty(self):
-        """Conversation history and artifacts default to empty lists."""
-        conv = Conversation(context_id="ctx-1", status=self._status())
-        assert isinstance(conv.history, list)
-        assert isinstance(conv.artifacts, list)
-
-    def test_json_serialization(self):
-        """Conversation serializes to camelCase JSON with state as name string."""
-        conv = Conversation(context_id="ctx-42", status=self._status())
-        # Verify camelCase serialization and nested state name
-        data = json.loads(conv.model_dump_json())
-        assert data["contextId"] == "ctx-42"
-        assert data["status"]["state"] == "TASK_STATE_WORKING"
-        assert data["history"] == []
+    def test_list_is_a_raw_array(self):
+        """The GetContexts result serializes as an array, not an object."""
+        listing = ContextSummaryList([ContextSummary(context_id="ctx-1", last_activity_at=_AT)])
+        dumped = listing.model_dump(mode="json")
+        assert isinstance(dumped, list)
+        assert dumped[0]["contextId"] == "ctx-1"
 
 
-class TestContextsList:
-    def test_holds_list_of_strings(self):
-        """ContextsList root holds the provided list of context ID strings."""
-        cl = ContextsList(root=["ctx-1", "ctx-2"])
-        assert cl.root == ["ctx-1", "ctx-2"]
+class TestContextArtifact:
+    def test_serializes_artifact_fields_next_to_task_id(self):
+        """Artifact identity is (taskId, artifactId): both appear at the top level."""
+        artifact = Artifact(artifact_id="report", name="Weather report")
+        dumped = ContextArtifact(task_id="task-1", artifact=artifact).model_dump(mode="json")
+        assert dumped == {"taskId": "task-1", "artifactId": "report", "name": "Weather report"}
 
-    def test_empty_list(self):
-        """ContextsList accepts an empty list without error."""
-        cl = ContextsList(root=[])
-        assert cl.root == []
+    def test_parses_the_flat_wire_shape(self):
+        """A client can read the flat shape back into the model."""
+        parsed = ContextArtifact.model_validate({"taskId": "task-1", "artifactId": "report"})
+        assert parsed.task_id == "task-1"
+        assert parsed.artifact.artifact_id == "report"
 
-    def test_json_serialization(self):
-        """ContextsList serializes to a plain list via model_dump."""
-        cl = ContextsList(root=["a", "b"])
-        data = cl.model_dump()
-        assert data == ["a", "b"]
+
+class TestContextView:
+    def test_serializes_wire_shape(self):
+        """GetContext's result: history, qualified artifacts, latest status, activity."""
+        view = ContextView(
+            context_id="ctx-1",
+            history=[Message(message_id="m1", role=Role.ROLE_USER)],
+            artifacts=[ContextArtifact(task_id="t1", artifact=Artifact(artifact_id="a1"))],
+            status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED),
+            last_activity_at=_AT,
+        )
+        dumped = view.model_dump(mode="json")
+        assert dumped["contextId"] == "ctx-1"
+        assert dumped["title"] is None and dumped["summary"] is None
+        assert dumped["history"] == [{"messageId": "m1", "role": "ROLE_USER"}]
+        assert dumped["artifacts"] == [{"taskId": "t1", "artifactId": "a1"}]
+        assert dumped["status"] == {"state": "TASK_STATE_COMPLETED"}
+        assert dumped["lastActivityAt"] == "2026-09-10T18:42:11.532Z"
+
+    def test_empty_status_still_names_its_state(self):
+        """A context without tasks reports TASK_STATE_UNSPECIFIED instead of an empty object."""
+        view = ContextView(context_id="ctx-1", status=TaskStatus(), last_activity_at=_AT)
+        assert view.model_dump(mode="json")["status"] == {"state": "TASK_STATE_UNSPECIFIED"}
 
 
 class TestA2AManifest:
@@ -748,106 +744,74 @@ class TestDistributionExtension:
 
 
 class TestRequestParams:
-    def test_get_context_params_required_context_id(self):
-        """GetContextParams with only context_id has None pagination fields."""
-        p = GetContextParams(context_id="ctx-1")
-        assert p.context_id == "ctx-1"
-        assert p.history_length is None
-        assert p.history_offset is None
-        assert p.metadata is None
+    def test_get_contexts_defaults(self):
+        """GetContexts defaults to the first 50 contexts; params may be omitted entirely."""
+        p = GetContextsParams.model_validate({})
+        assert (p.history_length, p.history_offset, p.metadata) == (50, 0, None)
 
-    def test_get_context_params_with_pagination(self):
-        """GetContextParams stores history_length and history_offset when provided."""
-        p = GetContextParams(context_id="ctx-1", history_length=10, history_offset=5)
-        assert p.history_length == 10
-        assert p.history_offset == 5
+    def test_get_context_defaults(self):
+        """GetContext defaults to the newest 50 messages."""
+        p = GetContextParams.model_validate({"contextId": "ctx-1"})
+        assert (p.context_id, p.history_length, p.history_offset) == ("ctx-1", 50, 0)
 
-    def test_get_context_params_missing_context_id_raises(self):
-        """GetContextParams raises an exception when context_id is omitted."""
-        with pytest.raises(Exception):
-            GetContextParams()
+    @pytest.mark.parametrize("model", [GetContextsParams, GetContextParams])
+    @pytest.mark.parametrize("field,value", [("historyLength", 101), ("historyLength", -1), ("historyOffset", -1)])
+    def test_pagination_bounds(self, model, field, value):
+        """historyLength is 0..100 and historyOffset non-negative."""
+        with pytest.raises(ValidationError):
+            model.model_validate({"contextId": "ctx-1", field: value})
 
-    def test_get_contexts_list_params_all_optional(self):
-        """GetContextsListParams constructed with no args has None pagination fields."""
-        p = GetContextsListParams()
-        assert p.history_length is None
-        assert p.history_offset is None
+    def test_page_size_maximum_is_accepted(self):
+        """The maximum page size itself is valid."""
+        assert GetContextsParams.model_validate({"historyLength": 100}).history_length == 100
 
-    def test_get_contexts_list_params_with_values(self):
-        """GetContextsListParams stores history_length when provided."""
-        p = GetContextsListParams(history_length=20, history_offset=0)
-        assert p.history_length == 20
+    @pytest.mark.parametrize("model", [GetContextParams, DeleteContextParams])
+    @pytest.mark.parametrize("value", ["", "   "])
+    def test_blank_context_id_is_rejected(self, model, value):
+        """contextId must be non-blank."""
+        with pytest.raises(ValidationError):
+            model.model_validate({"contextId": value})
+
+    @pytest.mark.parametrize("model", [GetContextParams, DeleteContextParams])
+    def test_context_id_is_required(self, model):
+        """contextId has no default."""
+        with pytest.raises(ValidationError):
+            model.model_validate({})
 
 
 class TestRequestModels:
-    def test_get_context_request_defaults(self):
-        """GetContextRequest defaults jsonrpc to '2.0' and method to 'GetContext'."""
-        req = GetContextRequest(
-            id=1,
-            params=GetContextParams(context_id="ctx-1"),
-        )
-        assert req.jsonrpc == "2.0"
-        assert req.method == "GetContext"
-        assert req.id == 1
-
-    def test_get_context_request_string_id(self):
-        """GetContextRequest accepts a string id."""
-        req = GetContextRequest(
-            id="req-abc",
-            params=GetContextParams(context_id="ctx-1"),
-        )
-        assert req.id == "req-abc"
-
-    def test_get_contexts_list_request_defaults(self):
-        """GetContextsListRequest defaults jsonrpc to '2.0' and method to 'GetContexts'."""
-        req = GetContextsListRequest(
-            id=42,
-            params=GetContextsListParams(),
-        )
-        assert req.jsonrpc == "2.0"
-        assert req.method == "GetContexts"
-
-    def test_get_context_request_json_serialization(self):
-        """GetContextRequest serializes to JSON with correct method and jsonrpc fields."""
-        req = GetContextRequest(
-            id=1,
-            params=GetContextParams(context_id="ctx-1"),
-        )
-        data = json.loads(req.model_dump_json())
-        assert data["method"] == "GetContext"
+    @pytest.mark.parametrize(
+        "request_cls,params,method",
+        [
+            (GetContextsRequest, GetContextsParams(), "GetContexts"),
+            (GetContextRequest, GetContextParams(context_id="ctx-1"), "GetContext"),
+            (DeleteContextRequest, DeleteContextParams(context_id="ctx-1"), "DeleteContext"),
+        ],
+    )
+    def test_envelope(self, request_cls, params, method):
+        """Each envelope fixes its method name and the JSON-RPC version."""
+        data = json.loads(request_cls(id="r1", params=params).model_dump_json())
         assert data["jsonrpc"] == "2.0"
+        assert data["method"] == method
+        assert data["id"] == "r1"
 
 
 class TestResponseModels:
-    def _conversation(self) -> Conversation:
-        return Conversation(
-            context_id="ctx-1",
-            status=ConversationTaskStatus(state=TaskState.TASK_STATE_WORKING),
-        )
+    def test_get_contexts_result_is_an_array(self):
+        """GetContexts' success result is the raw array of summaries."""
+        listing = ContextSummaryList([ContextSummary(context_id="ctx-1", last_activity_at=_AT)])
+        data = json.loads(GetContextsSuccessResponse(id=1, result=listing).model_dump_json())
+        assert data["result"][0]["contextId"] == "ctx-1"
 
-    def test_get_context_success_response(self):
-        """GetContextSuccessResponse defaults jsonrpc to '2.0' and id to None."""
-        resp = GetContextSuccessResponse(result=self._conversation())
-        assert resp.jsonrpc == "2.0"
-        assert resp.id is None
-        assert resp.result.context_id == "ctx-1"
-
-    def test_get_context_success_response_with_id(self):
-        """GetContextSuccessResponse stores id when provided."""
-        resp = GetContextSuccessResponse(id=10, result=self._conversation())
-        assert resp.id == 10
-
-    def test_get_contexts_list_success_response(self):
-        """GetContextsListSuccessResponse stores the ContextsList result."""
-        cl = ContextsList(root=["ctx-1", "ctx-2"])
-        resp = GetContextsListSuccessResponse(result=cl)
-        assert resp.jsonrpc == "2.0"
-        assert resp.result.root == ["ctx-1", "ctx-2"]
-
-    def test_get_context_success_response_json(self):
-        """GetContextSuccessResponse serializes result with camelCase aliases."""
-        resp = GetContextSuccessResponse(id="r1", result=self._conversation())
-        data = json.loads(resp.model_dump_json())
-        assert data["jsonrpc"] == "2.0"
-        # A2ABaseModel serializes with camelCase aliases
+    def test_get_context_result(self):
+        """GetContext's success result is the context view."""
+        view = ContextView(context_id="ctx-1", status=TaskStatus(), last_activity_at=_AT)
+        data = json.loads(GetContextSuccessResponse(id="r1", result=view).model_dump_json())
         assert data["result"]["contextId"] == "ctx-1"
+
+    def test_delete_context_result(self):
+        """DeleteContext's success result names the context."""
+        data = json.loads(
+            DeleteContextSuccessResponse(id="r1", result=DeleteContextResult(context_id="ctx-1")).model_dump_json()
+        )
+        assert data["result"] == {"contextId": "ctx-1"}

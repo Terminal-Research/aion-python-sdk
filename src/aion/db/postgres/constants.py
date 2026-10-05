@@ -7,6 +7,7 @@ TASK_CLAIMS_TABLE = "task_claims"
 TASK_MESSAGES_TABLE = "task_messages"
 TASK_ARTIFACTS_TABLE = "task_artifacts"
 CONTEXT_RESERVATIONS_TABLE = "context_reservations"
+CONTEXT_BINDINGS_TABLE = "context_bindings"
 
 LANGGRAPH_SCHEMA = "aion_langgraph"
 """Schema of the LangGraph checkpoint tables the SDK's checkpointer keeps on this database."""
