@@ -46,8 +46,8 @@ from .postgres_support import POSTGRES_TEST_URL, prepared_database
 pytestmark = [pytest.mark.asyncio(loop_scope="module")]
 
 SIGNER = SigningKey()
-MISSING_AUTHENTICATION = -32010
-"""The Context extension's JSON-RPC code for a request refused for its authentication."""
+MISSING_AUTHENTICATION = -32051
+"""Aion's JSON-RPC code for a request refused for its authentication."""
 """The stand-in Aion: it publishes this key and signs every caller's token with it."""
 
 ALICE = subject("AionUser", "alice")

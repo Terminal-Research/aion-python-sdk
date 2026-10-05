@@ -15,8 +15,8 @@ dozens of codes before it reaches into this block.
 error claims a code in that block. It exists because there is no aion-owned
 layer between an ``A2AError`` subclass and a2a-sdk's own module-level maps
 (``JSON_RPC_ERROR_CODE_MAP``, ``EXCEPTION_MAP``, ``A2A_ERROR_MAPPING``) - see
-``aion.server.tasks.ownership.types.TaskOwnershipBusy`` for the first,
-and so far only, caller. Failing loudly here, at import time, is what turns a
+``aion.server.tasks.ownership.types.TaskOwnershipBusy`` and
+``AuthenticationRequired`` below. Failing loudly here, at import time, is what turns a
 future collision - Aion claiming a code twice, or landing outside its own
 block - into an immediate startup failure instead of two error types silently
 sharing one wire code.
@@ -35,28 +35,12 @@ from a2a.utils.errors import (
     ErrorMapping,
 )
 
-__all__ = ["AION_ERROR_CODE_RANGE", "MISSING_AUTHENTICATION_CODE", "register_aion_error"]
+__all__ = ["AION_ERROR_CODE_RANGE", "AUTHENTICATION_REQUIRED_CODE", "AuthenticationRequired", "register_aion_error"]
 
 # Inclusive on both ends. Assigned bottom-up from -32050; leaves -32000..-32049
 # as headroom for a2a-sdk's own upward growth before either side can collide.
 AION_ERROR_CODE_RANGE = range(-32099, -32049)
 
-MISSING_AUTHENTICATION_CODE = -32010
-"""JSON-RPC code of a request refused for missing or invalid authentication.
-
-The Context extension's error table fixes it: "Missing authentication" is
-``-32010`` over JSON-RPC and ``401 Unauthorized`` over HTTP+JSON
-(https://docs.aion.to/a2a/extensions/aion/context/1.0.0#errors).
-``AionAuthMiddleware`` answers it on the JSON-RPC endpoint before any method
-runs, for every method, since the refusal comes before the body is read.
-
-It lies outside ``AION_ERROR_CODE_RANGE`` on purpose and is not claimed
-through ``register_aion_error``: the code is the specification's, not one
-Aion assigns, and no ``A2AError`` subclass carries it - the middleware writes
-the error object itself. It sits in the part of the server-error block
-a2a-sdk grows into from -32001, so a future a2a-sdk error could take the same
-code.
-"""
 
 
 def register_aion_error(
@@ -98,3 +82,39 @@ def register_aion_error(
     A2A_ERROR_MAPPING[error_cls] = mapping
     A2A_ERROR_REASONS[error_cls] = reason
     A2A_REASON_TO_ERROR[reason] = error_cls
+
+
+AUTHENTICATION_REQUIRED_CODE = -32051
+"""JSON-RPC code of a request refused for missing or invalid authentication.
+
+``AionAuthMiddleware`` answers it on the JSON-RPC endpoint, with HTTP ``401``,
+before any method runs - for every method, since the refusal comes before the
+body is read.
+
+The Context extension's error table lists ``-32010`` for "Missing
+authentication" (https://docs.aion.to/a2a/extensions/aion/context/1.0.0#errors).
+That code is the next one a2a-sdk would assign, counting up from -32001, so
+this server answers with a code from Aion's own block instead, where a2a-sdk's
+growth cannot reach it. The HTTP status, ``401``, is the specification's.
+"""
+
+
+class AuthenticationRequired(A2AError):
+    """A request refused because it carries no credentials the server accepts.
+
+    ``AionAuthMiddleware`` writes the error object itself, before a2a-sdk sees
+    the request; the class exists so that the code is claimed through
+    ``register_aion_error`` like every other Aion code and cannot be taken
+    twice.
+    """
+
+    message = "Unauthorized"
+
+
+register_aion_error(
+    AuthenticationRequired,
+    AUTHENTICATION_REQUIRED_CODE,
+    http_status=401,
+    grpc_status="UNAUTHENTICATED",
+    reason="AUTHENTICATION_REQUIRED",
+)

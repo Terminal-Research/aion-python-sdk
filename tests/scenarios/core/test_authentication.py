@@ -31,7 +31,7 @@ from tests.scenarios.harness import (
 pytestmark = [pytest.mark.authentication]
 
 TASK_NOT_FOUND = -32001
-MISSING_AUTHENTICATION = -32010
+MISSING_AUTHENTICATION = -32051
 """The JSON-RPC code A2A gives a task the caller cannot see."""
 
 _SEND_MESSAGE = {

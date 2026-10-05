@@ -183,7 +183,7 @@ async def test_the_registered_routes_are_the_applications_and_the_rest_stays_clo
         assert (await client.get("/api/custom/health")).status_code == 200
         rpc = await client.post("/")
         assert rpc.status_code == 401
-        assert rpc.json()["error"]["code"] == -32010
+        assert rpc.json()["error"]["code"] == -32051
         context_route = await client.post("/context:get")
         assert context_route.status_code == 401
         assert context_route.headers["content-type"] == "application/problem+json"

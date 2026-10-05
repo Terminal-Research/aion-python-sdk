@@ -23,7 +23,7 @@ from starlette.responses import PlainTextResponse, StreamingResponse
 from starlette.routing import Route
 
 from aion.server.auth.verifier import CLOCK_SKEW_LEEWAY_SECONDS, INVOCATION_LIFETIME_SECONDS as INVOCATION_LIFETIME
-from aion.server.core.errors import MISSING_AUTHENTICATION_CODE
+from aion.server.core.errors import AUTHENTICATION_REQUIRED_CODE
 from aion.server.core.middlewares import AionAuthMiddleware, AionContextMiddleware
 
 from tests.unit.support.distribution import distribution_metadata
@@ -151,7 +151,7 @@ async def test_a_request_without_a_valid_token_never_reaches_the_agent(headers, 
 
     assert response.status_code == 401
     assert response.headers["www-authenticate"] == challenge
-    assert response.json()["error"]["code"] == MISSING_AUTHENTICATION_CODE
+    assert response.json()["error"]["code"] == AUTHENTICATION_REQUIRED_CODE
     assert probe.calls == 0
 
 
@@ -551,7 +551,7 @@ async def _refused(path: str, headers: dict[str, str], middleware: list[Middlewa
 
 @pytest.mark.parametrize(("headers", "challenge", "reason"), _REFUSALS.values(), ids=_REFUSALS.keys())
 async def test_the_jsonrpc_endpoint_refuses_with_a_jsonrpc_error(headers, challenge, reason) -> None:
-    """The Context extension's ``-32010``, answering ``id`` ``null``: the body is never read."""
+    """Aion's ``-32051``, answering ``id`` ``null``: the body is never read."""
     response = await _refused("/", headers)
 
     assert response.status_code == 401
@@ -559,7 +559,7 @@ async def test_the_jsonrpc_endpoint_refuses_with_a_jsonrpc_error(headers, challe
     assert response.headers["content-type"] == "application/json"
     body = response.json()
     assert body["jsonrpc"] == "2.0" and body["id"] is None
-    assert (body["error"]["code"], body["error"]["message"]) == (-32010, "Unauthorized")
+    assert (body["error"]["code"], body["error"]["message"]) == (-32051, "Unauthorized")
     assert set(body["error"]["data"]) == {"detail"}
     if reason is not None:
         assert body["error"]["data"]["detail"] == reason

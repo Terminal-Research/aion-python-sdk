@@ -29,7 +29,7 @@ CONTEXT_EXTENSION_URI = "https://docs.aion.to/a2a/extensions/aion/context/1.0.0"
 """The unified Context extension, written out: the harness imports nothing from ``aion``."""
 
 CONTEXT_NOT_FOUND = 1000
-MISSING_AUTHENTICATION = -32010
+MISSING_AUTHENTICATION = -32051
 TASK_NOT_FOUND = -32001
 
 
@@ -53,7 +53,7 @@ async def test_the_card_declares_the_context_extension(client: ScenarioClient) -
 
 
 async def test_a_call_without_a_token_is_refused_in_each_bindings_format(server: ServeProcess) -> None:
-    """``401`` on both bindings: a JSON-RPC error with ``-32010``, and a problem detail over HTTP+JSON."""
+    """``401`` on both bindings: a JSON-RPC error with ``-32051``, and a problem detail over HTTP+JSON."""
     async with httpx.AsyncClient(timeout=10.0) as anonymous:
         rpc = await anonymous.post(
             server.agent_url(),

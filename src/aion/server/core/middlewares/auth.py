@@ -18,7 +18,7 @@ from aion.server.auth import (
     claimed_kind,
 )
 from aion.server.constants import CONFIGURATION_FILE_URL, HEALTH_CHECK_URL
-from aion.server.core.errors import MISSING_AUTHENTICATION_CODE
+from aion.server.core.errors import AUTHENTICATION_REQUIRED_CODE, AuthenticationRequired
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
@@ -115,6 +115,21 @@ class AionAuthMiddleware(BaseHTTPMiddleware):
     the verification keys have not loaded, an Aion token cannot be checked at
     all and the request is answered ``503``: an outage never lets a token
     through unchecked.
+
+    A refusal keeps its HTTP status and headers - ``401`` with an RFC 6750
+    ``WWW-Authenticate`` challenge, ``503`` with ``Retry-After`` - and its
+    body is written in the error format of the transport the path belongs to
+    (``transport_of``):
+
+    - the JSON-RPC endpoint answers a JSON-RPC error with ``id`` ``null``,
+      since the body is never read: ``AUTHENTICATION_REQUIRED_CODE``
+      (``-32051``) for a ``401``, and ``-32603`` with ``retryable`` ``true``
+      in its ``data`` for a ``503``; the reason is ``data.detail``;
+    - the Context extension's HTTP+JSON routes answer an
+      ``application/problem+json`` problem detail with the reason as
+      ``detail``, and no ``type``, which the specification does not define
+      for these statuses;
+    - every other closed path answers ``{"error": ..., "detail": ...}``.
     """
 
     def __init__(
@@ -216,7 +231,11 @@ def _unauthorized(path: str, reason: str, *, error_code: str | None) -> JSONResp
         401,
         reason,
         headers={"WWW-Authenticate": challenge},
-        jsonrpc_error={"code": MISSING_AUTHENTICATION_CODE, "message": "Unauthorized", "data": {"detail": reason}},
+        jsonrpc_error={
+            "code": AUTHENTICATION_REQUIRED_CODE,
+            "message": AuthenticationRequired.message,
+            "data": {"detail": reason},
+        },
         title="Unauthorized",
         error="unauthorized",
     )

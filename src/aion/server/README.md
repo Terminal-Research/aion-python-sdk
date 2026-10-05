@@ -69,13 +69,17 @@ in the error format of the transport the path belongs to:
 
 | Path | `401` body | `503` body |
 | --- | --- | --- |
-| JSON-RPC endpoint | JSON-RPC error `-32010` `Unauthorized`, `data.detail` | JSON-RPC error `-32603`, `data.detail`, `data.retryable: true` |
+| JSON-RPC endpoint | JSON-RPC error `-32051` `Unauthorized`, `data.detail` | JSON-RPC error `-32603`, `data.detail`, `data.retryable: true` |
 | Context HTTP+JSON routes | `application/problem+json`, `title` `Unauthorized`, `detail` | `application/problem+json`, `status` `503`, `detail` |
 | Anything else | `{"error": "unauthorized", "detail": ...}` | `{"error": "unavailable", "detail": ...}` |
 
 The JSON-RPC error answers `id` `null`, since the body is never read.
-`-32010` is the Context extension's code for missing authentication; it is
-returned for every JSON-RPC method, not only the Context ones. The problem
+`-32051` (`AuthenticationRequired` in `aion.server.core.errors`) is returned
+for every JSON-RPC method, not only the Context ones. It is Aion's own code:
+Aion assigns its JSON-RPC errors from `-32050` to `-32099`, while a2a-sdk
+assigns its own upward from `-32001`, and the Context extension's table lists
+`-32010` for missing authentication - the next code a2a-sdk would take. The
+problem
 details carry no `type`, which the specification does not define for these
 statuses.
 
@@ -298,7 +302,7 @@ relative to the A2A endpoint:
 | `DeleteContext` | `POST /context:delete` | `{"contextId": ...}` |
 
 A request without a verified caller is refused before any method runs: `401`
-with JSON-RPC error `-32010` on the JSON-RPC endpoint, and `401`
+with JSON-RPC error `-32051` on the JSON-RPC endpoint, and `401`
 `application/problem+json` on the HTTP+JSON routes (see *Where the user comes
 from*).
 
