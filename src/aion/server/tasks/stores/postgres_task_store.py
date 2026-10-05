@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from aion.db.postgres.manager import db_manager
 from aion.db.postgres.types import Pagination, Sorting, SortKey
 from aion.db.postgres.repositories import (
+    ContextReservationsRepository,
     TaskArtifactsRepository,
     TaskClaimsRepository,
     TaskMessagesRepository,
@@ -228,7 +229,8 @@ class PostgresTaskStore(BaseTaskStore):
             TaskOwnerUndefinedError: If the task is new and ``context`` is
                 ``None``.
             TaskOwnerMismatchError: If ``context`` resolves to another owner.
-            TaskOwnershipLost: If this process no longer holds the lease.
+            TaskOwnershipLost: If this process no longer holds the lease, or
+                the task is new and its context is being deleted or was.
         """
         # Before TaskRecord.from_task, not between the writes below: the head
         # row carries `status` as JSONB of its own, so a guard placed in front
@@ -246,6 +248,13 @@ class PostgresTaskStore(BaseTaskStore):
             # for a new task fails the same way as in the in-memory store.
             recorded = await repository.lock_owner_scope(task_uuid)
             owner = self._owner_of_write(task.id, write_owner, recorded)
+            if recorded is None and task.context_id and not await ContextReservationsRepository(
+                session
+            ).admits_new_task(self.agent_id, task.context_id):
+                # Admitted before its context's deletion started, created
+                # after: the deletion owns the context now, and a task
+                # created here would outlive it.
+                raise TaskOwnershipLost(task.id)
             claim = self.ownership_provider.claim_for(task.id)
             if claim is None:
                 raise TaskOwnershipLost(task.id)
@@ -583,28 +592,6 @@ class PostgresTaskStore(BaseTaskStore):
             next_page_token=next_page_token,
         )
 
-    async def get_context_ids(
-            self,
-            offset: Optional[int] = None,
-            limit: Optional[int] = None,
-            context: ServerCallContext | None = None,
-    ) -> List[str]:
-        """Retrieve unique context IDs, capped even when the caller asks for everything.
-
-        ``limit=None`` used to reach the repository unbounded, and
-        ``_apply_pagination`` skips a falsy limit - so an omitted limit read
-        every context id the table has ever seen. Callers that truly want a
-        default get one now instead of an unbounded scan.
-        """
-        limit = min(limit, MAX_LIST_TASKS_PAGE_SIZE) if limit else DEFAULT_LIST_TASKS_PAGE_SIZE
-        async with db_manager.get_session() as session:
-            repository = TasksRepository(session)
-            return await repository.find_unique_context_ids(
-                agent_id=self.agent_id,
-                owner_scope=self._owner_filter(context),
-                pagination=Pagination(limit=limit, offset=offset),
-            )
-
     async def get_context_tasks(
             self,
             context_id: str,
@@ -614,10 +601,10 @@ class PostgresTaskStore(BaseTaskStore):
     ) -> List[Task]:
         """Retrieve tasks for a specific context, capped even when the caller asks for everything.
 
-        Same reasoning as :meth:`get_context_ids`: an omitted ``limit``
-        previously reached the repository as ``None`` and came back
-        unbounded, loading every task - full JSON artifacts and history
-        included - that the context has ever had.
+        An omitted ``limit`` falls back to the default page size rather than
+        reaching the repository as ``None``, which would load every task -
+        full JSON artifacts and history included - that the context has ever
+        had.
         """
         limit = min(limit, MAX_LIST_TASKS_PAGE_SIZE) if limit else DEFAULT_LIST_TASKS_PAGE_SIZE
         async with db_manager.get_session() as session:

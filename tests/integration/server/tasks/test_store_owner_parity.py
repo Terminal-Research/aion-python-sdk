@@ -127,7 +127,6 @@ async def test_two_users_with_one_context_see_and_change_only_their_own(stores) 
     assert [t.id for t in await store.get_context_tasks(context_id, context=ALICE)] == [alices]
     assert [t.id for t in await store.get_context_tasks(context_id, context=MALLORY)] == [mallorys]
     assert (await store.get_context_last_task(context_id, context=ALICE)).id == alices
-    assert await store.get_context_ids(context=ALICE) == [context_id]
     assert await store.get(mallorys, ALICE) is None
     listing = await store.list(ListTasksRequest(), ALICE)
     assert [t.id for t in listing.tasks] == [alices] and listing.total_size == 1
@@ -156,7 +155,6 @@ async def test_no_context_reaches_every_owners_task(stores) -> None:
     listing = await store.list(ListTasksRequest())
     assert {t.id for t in listing.tasks} == {alices, mallorys} and listing.total_size == 2
     assert {t.id for t in await store.get_context_tasks(context_id)} == {alices, mallorys}
-    assert await store.get_context_ids() == [context_id]
     assert (await store.get_context_last_task(context_id)).id in {alices, mallorys}
 
     assert await store.request_cancellation(alices) is False
@@ -240,8 +238,6 @@ async def test_context_listings_follow_creation_order_across_owners(stores) -> N
     assert await ids(ALICE) == [a2, a1]
     assert await ids(BOB) == [b1]
     assert [t.id for t in await store.get_context_tasks(shared, offset=1, limit=1)] == [b1]
-    assert await store.get_context_ids() == [later, shared]
-    assert await store.get_context_ids(context=ALICE) == [shared]
 
     # An update keeps a task's place - with the owner's context or with none.
     await stores.save(
@@ -251,10 +247,8 @@ async def test_context_listings_follow_creation_order_across_owners(stores) -> N
         Task(id=b1, context_id=shared, status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED)), BOB
     )
     assert await ids() == [a2, b1, a1]
-    assert await store.get_context_ids() == [later, shared]
 
     await store.delete(a2)
     assert (await store.get_context_last_task(shared)).id == b1
     assert await store.get_context_last_task(shared, context=ALICE) == await store.get(a1)
     await store.delete(b2, BOB)
-    assert await store.get_context_ids() == [shared]

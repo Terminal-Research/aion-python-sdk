@@ -145,6 +145,34 @@ class ADKExecutor(ExecutorAdapter):
 
         yield converter.generate_complete()
 
+    async def delete_state(self, config: ExecutionConfig) -> None:
+        """Delete the context's ADK session and the artifacts saved under it.
+
+        Keyed as every execution of the context was: the agent as the app,
+        the scope's state owner as the user, the context as the session.
+        Artifacts kept in the task tables go with the context's tasks; this
+        removes the ones the artifact service still holds in memory.
+        """
+        scope = config.require_state_scope()
+        session_id = ADKTransformer.to_session_id(config)
+        keys = await self._artifact_service.list_artifact_keys(
+            app_name=scope.agent_id, user_id=scope.state_owner, session_id=session_id
+        )
+        for filename in keys:
+            await self._artifact_service.delete_artifact(
+                app_name=scope.agent_id,
+                user_id=scope.state_owner,
+                filename=filename,
+                session_id=session_id,
+            )
+        session = await self._session_service.get_session(
+            app_name=scope.agent_id, user_id=scope.state_owner, session_id=session_id
+        )
+        if session is not None:
+            await self._session_service.delete_session(
+                app_name=scope.agent_id, user_id=scope.state_owner, session_id=session_id
+            )
+
     async def get_state(self, config: ExecutionConfig) -> ExecutionSnapshot:
         """Retrieve the current execution state snapshot from ADK session.
 

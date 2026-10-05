@@ -49,9 +49,8 @@ __all__ = [
     "BEHAVIOUR_EVOLUTION_SUBTASK_COMPLETED_PAYLOAD_SCHEMA_V1",
     # Daemon extension
     "DAEMON_EXTENSION_URI_V1",
-    # Context extensions
-    "GET_CONTEXT_EXTENSION_URI_V1",
-    "GET_CONTEXTS_LIST_EXTENSION_URI_V1",
+    # Context extension
+    "CONTEXT_EXTENSION_URI_V1",
 ]
 
 # Scheduled invocation provenance (message content remains in ordinary parts).
@@ -122,10 +121,9 @@ BEHAVIOUR_EVOLUTION_SUBTASK_COMPLETED_PAYLOAD_SCHEMA_V1 = f"{BEHAVIOUR_EVOLUTION
 # See: https://docs.aion.to/a2a/extensions/aion/daemon/1.0.0
 DAEMON_EXTENSION_URI_V1 = "https://docs.aion.to/a2a/extensions/aion/daemon/1.0.0"
 
-# Context extensions
-# See: https://docs.aion.to/a2a/extensions/aion/context
-GET_CONTEXT_EXTENSION_URI_V1 = "https://docs.aion.to/a2a/extensions/aion/context/get-context/1.0.0"
-GET_CONTEXTS_LIST_EXTENSION_URI_V1 = "https://docs.aion.to/a2a/extensions/aion/context/get-contexts/1.0.0"
+# Context extension (GetContexts, GetContext and DeleteContext)
+# See: https://docs.aion.to/a2a/extensions/aion/context/1.0.0
+CONTEXT_EXTENSION_URI_V1 = "https://docs.aion.to/a2a/extensions/aion/context/1.0.0"
 
 # Optional agent-generated opening message; Voice keeps its configured greeting.
 WELCOME_MESSAGE_EXTENSION_URI_V1 = (

@@ -12,31 +12,25 @@ import pytest
 from aion.core.a2a import (
     AION_JSONRPC_METHOD_EXTENSION_BINDINGS,
     AionJsonRpcMethodExtensionBinding,
+    DeleteContextParams,
     GetContextParams,
-    GetContextsListParams,
+    GetContextsParams,
 )
 from aion.server.core.app.handlers.request_handler import AionRequestHandler
-from aion.core.constants.a2a import (
-    GET_CONTEXT_EXTENSION_URI_V1,
-    GET_CONTEXTS_LIST_EXTENSION_URI_V1,
-)
+from aion.core.constants.a2a import CONTEXT_EXTENSION_URI_V1
 from aion.core.runtime import aion_a2a_extension_registry
 
 
 class TestBindings:
-    def test_both_context_methods_are_bound(self):
-        assert set(AION_JSONRPC_METHOD_EXTENSION_BINDINGS) == {"GetContext", "GetContexts"}
+    def test_the_three_context_methods_are_bound(self):
+        assert set(AION_JSONRPC_METHOD_EXTENSION_BINDINGS) == {"GetContexts", "GetContext", "DeleteContext"}
 
     @pytest.mark.parametrize(
         ("method", "uri", "params_model", "handler_name"),
         [
-            ("GetContext", GET_CONTEXT_EXTENSION_URI_V1, GetContextParams, "on_get_context"),
-            (
-                "GetContexts",
-                GET_CONTEXTS_LIST_EXTENSION_URI_V1,
-                GetContextsListParams,
-                "on_get_contexts_list",
-            ),
+            ("GetContexts", CONTEXT_EXTENSION_URI_V1, GetContextsParams, "on_get_contexts"),
+            ("GetContext", CONTEXT_EXTENSION_URI_V1, GetContextParams, "on_get_context"),
+            ("DeleteContext", CONTEXT_EXTENSION_URI_V1, DeleteContextParams, "on_delete_context"),
         ],
     )
     def test_each_binding_names_its_extension_model_and_handler(
@@ -102,14 +96,16 @@ class TestBindingsAgainstTheRegistry:
         assert fields == {"extension_uri", "params_model", "handler_name"}
         assert not fields & {"advertised", "internal", "public", "active", "functional"}
 
-    def test_the_bound_extensions_are_active_and_not_advertised(self):
-        """Being a method extension is not what keeps them off the card - the
-        descriptor's advertised flag is. See the Agent Card tests for the
-        other half: a method extension may be advertised.
-        """
-        descriptors = {d.uri: d for d in aion_a2a_extension_registry.get_all()}
+    def test_the_context_methods_share_one_extension(self):
+        """All three methods belong to the one unified Context extension."""
+        uris = {binding.extension_uri for binding in AION_JSONRPC_METHOD_EXTENSION_BINDINGS.values()}
 
-        for binding in AION_JSONRPC_METHOD_EXTENSION_BINDINGS.values():
-            descriptor = descriptors[binding.extension_uri]
-            assert descriptor.active is True
-            assert descriptor.advertised is False
+        assert uris == {CONTEXT_EXTENSION_URI_V1}
+
+    def test_the_context_extension_is_active_and_advertised(self):
+        """The standard server implements the whole contract, so it declares it."""
+        descriptors = {d.uri: d for d in aion_a2a_extension_registry.get_all()}
+        descriptor = descriptors[CONTEXT_EXTENSION_URI_V1]
+
+        assert descriptor.active is True
+        assert descriptor.advertised is True

@@ -18,7 +18,7 @@ from typing import Optional
 
 from aion.server.agent.execution import AionAgentRequestExecutor, AionRequestContextBuilder
 from aion.server.agent.factory import AgentFactory
-from aion.server.core.app.api import AionExtraHTTPRoutes
+from aion.server.core.app.api import AionExtraHTTPRoutes, ContextHTTPRoutes
 from aion.server.core.app.handlers import AionJsonRpcDispatcher, AionRequestHandler
 from aion.server.core.app.handlers.request_preprocessors import A2ARequestPreprocessor, FilePartPreprocessor
 from aion.server.core.middlewares import AionAuthMiddleware, AionContextMiddleware, TracingMiddleware
@@ -168,6 +168,9 @@ class AppFactory:
             ],
         )
         AionExtraHTTPRoutes(self.aion_agent).register(self.fastapi_app)
+        # The Context extension's HTTP+JSON binding, beside the JSON-RPC
+        # endpoint its paths are relative to.
+        ContextHTTPRoutes(request_handler, base_url=DEFAULT_RPC_URL).register(self.fastapi_app)
         self._add_extra_middlewares()
 
     async def _create_request_handler(self) -> AionRequestHandler:
@@ -207,6 +210,7 @@ class AppFactory:
             task_store=task_store,
             ownership_provider=self.store_manager.get_ownership_provider(),
             admission=self.store_manager.get_admission(),
+            context_catalog=self.store_manager.get_context_catalog(),
             event_listener=self.store_manager.get_event_listener(),
             push_config_store=push_config_store,
             push_sender=push_sender,

@@ -7,6 +7,7 @@ from a2a.server.owner_resolver import OwnerResolver, resolve_user_scope
 
 from aion.db.postgres import db_manager
 from .admission import ContextAdmission, InMemoryContextAdmission, PostgresContextAdmission
+from .contexts import ContextCatalog, InMemoryContextCatalog, PostgresContextCatalog
 from .notifications import TaskEventListener, task_event_listener
 from .ownership import OwnershipProvider, PostgresOwnershipProvider
 from .stores import (
@@ -33,6 +34,7 @@ class StoreManager:
         self._ownership_provider: Optional[OwnershipProvider] = None
         self._event_listener: Optional[TaskEventListener] = None
         self._admission: Optional[ContextAdmission] = None
+        self._context_catalog: Optional[ContextCatalog] = None
 
     def initialize(
             self,
@@ -82,11 +84,13 @@ class StoreManager:
                 guard_inline_files=guard_inline_files,
             )
             admission = PostgresContextAdmission(agent_id, db_manager)
+            context_catalog = PostgresContextCatalog(agent_id, db_manager)
         else:
             task_store = InMemoryTaskStore(owner_resolver, guard_inline_files=guard_inline_files)
             ownership_provider = task_store.ownership_provider
             event_listener = None
             admission = InMemoryContextAdmission()
+            context_catalog = InMemoryContextCatalog(task_store, admission)
             logger.warning(
                 "Task ownership enforcement is disabled; in-memory task storage "
                 "is safe only in a single server instance"
@@ -97,6 +101,7 @@ class StoreManager:
         self._ownership_provider = ownership_provider
         self._event_listener = event_listener
         self._admission = admission
+        self._context_catalog = context_catalog
 
     def get_store(self) -> BaseTaskStore:
         """
@@ -148,6 +153,16 @@ class StoreManager:
         if not self._is_initialized:
             raise RuntimeError("Trying to get context admission without initialization")
         return self._admission
+
+    def get_context_catalog(self) -> ContextCatalog:
+        """Return the context catalog over the active task store and reservations.
+
+        Raises:
+            RuntimeError: If called before initialization.
+        """
+        if not self._is_initialized:
+            raise RuntimeError("Trying to get the context catalog without initialization")
+        return self._context_catalog
 
 
 store_manager = StoreManager()

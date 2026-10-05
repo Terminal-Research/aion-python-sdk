@@ -25,7 +25,7 @@ from a2a.utils.errors import InvalidParamsError, TaskNotCancelableError
 from google.protobuf.timestamp_pb2 import Timestamp
 
 from aion.db.postgres.records import TaskRecord
-from aion.server.tasks.ownership import Claim
+from aion.server.tasks.ownership import Claim, TaskOwnershipLost
 from aion.server.tasks.stores.page_token import PageCursor, encode_page_token
 from aion.server.tasks.stores.postgres_task_store import PostgresTaskStore
 
@@ -94,7 +94,6 @@ def repository():
     repo.find_ids = AsyncMock(return_value=[])
     repo.count = AsyncMock(return_value=0)
     repo.find_page = AsyncMock(return_value=[])
-    repo.find_unique_context_ids = AsyncMock(return_value=[])
     repo.delete_by_id = AsyncMock()
     repo.find_by_id = AsyncMock(return_value=None)
     repo.find_by_id_for_update = AsyncMock(return_value=None)
@@ -130,7 +129,15 @@ def artifacts_repository():
 
 
 @pytest.fixture
-def store(repository, claim_repository, messages_repository, artifacts_repository):
+def reservations_repository():
+    """Defaults to "the context takes new tasks"; tests override it."""
+    repo = MagicMock()
+    repo.admits_new_task = AsyncMock(return_value=True)
+    return repo
+
+
+@pytest.fixture
+def store(repository, claim_repository, messages_repository, artifacts_repository, reservations_repository):
     """A store whose session and repositories are stubbed out."""
     session = MagicMock()
     session.commit = AsyncMock()
@@ -161,9 +168,34 @@ def store(repository, claim_repository, messages_repository, artifacts_repositor
     ), patch(
         "aion.server.tasks.stores.postgres_task_store.TaskArtifactsRepository",
         return_value=artifacts_repository,
+    ), patch(
+        "aion.server.tasks.stores.postgres_task_store.ContextReservationsRepository",
+        return_value=reservations_repository,
     ):
         manager.get_session = _session
         yield PostgresTaskStore(agent_id=TEST_AGENT_ID, ownership_provider=_claiming_provider())
+
+
+class TestContextFence:
+    async def test_a_new_task_in_a_closed_context_is_refused(self, store, repository, reservations_repository):
+        """A message admitted before its context's deletion started cannot create a task after it."""
+        reservations_repository.admits_new_task.return_value = False
+
+        with pytest.raises(TaskOwnershipLost):
+            await store.save(Task(id=TASK_UUID, context_id="ctx", status=TaskStatus()), ServerCallContext())
+
+        repository.save_owned_locked.assert_not_awaited()
+        reservations_repository.admits_new_task.assert_awaited_once_with(TEST_AGENT_ID, "ctx")
+
+    async def test_an_existing_task_is_not_asked_about_its_context(self, store, repository, reservations_repository):
+        """Tasks already in a deleting context keep publishing so their cancellation can settle."""
+        repository.lock_owner_scope.return_value = "test-owner"
+        reservations_repository.admits_new_task.return_value = False
+
+        await store.save(Task(id=TASK_UUID, context_id="ctx", status=TaskStatus()), None)
+
+        reservations_repository.admits_new_task.assert_not_awaited()
+        repository.save_owned_locked.assert_awaited_once()
 
 
 class TestCancel:
@@ -613,22 +645,4 @@ class TestContextPaginationDefaults:
         )
 
         pagination = repository.find.await_args.kwargs["pagination"]
-        assert pagination.limit == MAX_LIST_TASKS_PAGE_SIZE
-
-    async def test_context_ids_default_when_limit_is_omitted(
-        self, store, repository
-    ):
-        context = MagicMock()
-        context.user.user_name = "caller-123"
-        await store.get_context_ids(context=context)
-
-        kwargs = repository.find_unique_context_ids.await_args.kwargs
-        pagination = kwargs["pagination"]
-        assert pagination.limit == DEFAULT_LIST_TASKS_PAGE_SIZE
-        assert kwargs["owner_scope"] == "caller-123"
-
-    async def test_context_ids_caps_an_oversized_limit(self, store, repository):
-        await store.get_context_ids(limit=MAX_LIST_TASKS_PAGE_SIZE + 50)
-
-        pagination = repository.find_unique_context_ids.await_args.kwargs["pagination"]
         assert pagination.limit == MAX_LIST_TASKS_PAGE_SIZE

@@ -5,6 +5,7 @@ import time
 
 from a2a.types import Message, Task, TaskArtifactUpdateEvent, TaskStatusUpdateEvent
 from aion.core.config.models import AgentConfig
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from collections.abc import AsyncIterator
 from typing import Any, Optional, TYPE_CHECKING
 
@@ -155,6 +156,27 @@ class LangGraphExecutor(ExecutorAdapter):
         except Exception as e:
             logger.error(f"Failed to resume execution: {e}")
             raise ExecutionError(f"Failed to resume execution: {e}") from e
+
+    @property
+    def supports_state_deletion(self) -> bool:
+        """Whether the graph's checkpointer can delete a thread.
+
+        A graph without a checkpointer keeps no state. One compiled by the
+        application with its own checkpointer can delete only if that
+        checkpointer implements ``adelete_thread``; the base saver's raises.
+        """
+        checkpointer = getattr(self.compiled_graph, "checkpointer", None)
+        if not isinstance(checkpointer, BaseCheckpointSaver):
+            return True
+        return type(checkpointer).adelete_thread is not BaseCheckpointSaver.adelete_thread
+
+    async def delete_state(self, config: ExecutionConfig) -> None:
+        """Delete the context's checkpoint thread, keyed as every execution of it was."""
+        checkpointer = getattr(self.compiled_graph, "checkpointer", None)
+        if not isinstance(checkpointer, BaseCheckpointSaver):
+            return
+        thread_id = config.require_state_scope().key_for(config.context_id)
+        await checkpointer.adelete_thread(thread_id)
 
     async def get_state(self, config: ExecutionConfig) -> ExecutionSnapshot:
         """Return the current graph state as an ExecutionSnapshot."""

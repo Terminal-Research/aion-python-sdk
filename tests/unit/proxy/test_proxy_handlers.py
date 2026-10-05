@@ -270,6 +270,22 @@ async def test_g5_method_body_and_path_forwarded_to_agent_url() -> None:
     assert seen["body"] == b'{"a":1}'
 
 
+@pytest.mark.parametrize("path", ["context:get", "contexts:get", "context:delete"])
+async def test_g5_a_path_with_a_colon_stays_on_the_agent(path) -> None:
+    """A colon in the first segment is part of the path, never a URL scheme."""
+    seen: dict = {}
+
+    def transport(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        return httpx.Response(200, content=b"ok")
+
+    handler = _make_handler(transport)
+
+    await handler.forward_request(AGENT_ID, path, _make_request(body=b"{}"))
+
+    assert seen["url"] == f"{AGENT_URL}/{path}"
+
+
 # -- G6: query string forwarding ------------------------------------------
 
 

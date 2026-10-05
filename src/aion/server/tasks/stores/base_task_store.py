@@ -172,26 +172,6 @@ class BaseTaskStore(TaskStore):
         pass
 
     @abstractmethod
-    async def get_context_ids(
-            self,
-            offset: Optional[int] = None,
-            limit: Optional[int] = None,
-            context: Optional[ServerCallContext] = None,
-    ) -> List[str]:
-        """
-       Retrieve a list of context IDs with optional pagination.
-
-       Args:
-           offset: Number of records to skip (for pagination)
-           limit: Maximum number of records to return
-           context: Server call context used to resolve the exact owner
-
-       Returns:
-           List of context ID strings
-       """
-        pass
-
-    @abstractmethod
     async def get_context_tasks(
             self,
             context_id: str,

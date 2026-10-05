@@ -1,7 +1,6 @@
-"""JSON-RPC 2.0 request envelopes for A2A RPC calls.
+"""JSON-RPC 2.0 request envelopes for the Context extension's methods.
 
-Defines request structures for control-plane invocation methods
-(GetContext, GetContextsList).
+See: https://docs.aion.to/a2a/extensions/aion/context/1.0.0
 """
 
 from __future__ import annotations
@@ -9,17 +8,16 @@ from __future__ import annotations
 from typing import Literal
 
 from aion.core.a2a import A2ABaseModel
-from .request_params import GetContextParams, GetContextsListParams
+from .request_params import DeleteContextParams, GetContextParams, GetContextsParams
 
 __all__ = [
+    "DeleteContextRequest",
     "GetContextRequest",
-    "GetContextsListRequest",
+    "GetContextsRequest",
 ]
 
 
-class GetContextRequest(A2ABaseModel):
-    """JSON-RPC 2.0 request envelope for the GetContext method."""
-
+class _ContextRequest(A2ABaseModel):
     id: str | int
     """
     An identifier established by the Client that MUST contain a String, Number.
@@ -29,33 +27,24 @@ class GetContextRequest(A2ABaseModel):
     """
     Specifies the version of the JSON-RPC protocol. MUST be exactly "2.0".
     """
-    method: Literal['GetContext'] = 'GetContext'
-    """
-    A String containing the name of the method to be invoked.
-    """
-    params: GetContextParams
-    """
-    A Structured value that holds the parameter values to be used during the invocation of the method.
-    """
 
 
-class GetContextsListRequest(A2ABaseModel):
-    """JSON-RPC 2.0 request envelope for the GetContexts (list) method."""
+class GetContextsRequest(_ContextRequest):
+    """JSON-RPC 2.0 request envelope for ``GetContexts``."""
 
-    id: str | int
-    """
-    An identifier established by the Client that MUST contain a String, Number.
-    Numbers SHOULD NOT contain fractional parts.
-    """
-    jsonrpc: Literal['2.0'] = '2.0'
-    """
-    Specifies the version of the JSON-RPC protocol. MUST be exactly "2.0".
-    """
     method: Literal['GetContexts'] = 'GetContexts'
-    """
-    A String containing the name of the method to be invoked.
-    """
-    params: GetContextsListParams
-    """
-    A Structured value that holds the parameter values to be used during the invocation of the method.
-    """
+    params: GetContextsParams = GetContextsParams()
+
+
+class GetContextRequest(_ContextRequest):
+    """JSON-RPC 2.0 request envelope for ``GetContext``."""
+
+    method: Literal['GetContext'] = 'GetContext'
+    params: GetContextParams
+
+
+class DeleteContextRequest(_ContextRequest):
+    """JSON-RPC 2.0 request envelope for ``DeleteContext``."""
+
+    method: Literal['DeleteContext'] = 'DeleteContext'
+    params: DeleteContextParams

@@ -216,19 +216,21 @@ async def test_aions_context_methods_hold_only_the_callers_contexts(server) -> N
     await _send(server, "mallory", "done", mallorys)
 
     contexts = {
-        user: (await _call(server, user, "GetContexts", {}))["result"] for user in ("alice", "mallory")
+        user: [entry["contextId"] for entry in (await _call(server, user, "GetContexts", {}))["result"]]
+        for user in ("alice", "mallory")
     }
     assert set(contexts["alice"]) == {alices_only, alices_other}
     assert contexts["mallory"] == [mallorys]
 
-    owners = (await _call(server, "alice", "GetContext", {"context_id": alices_only}))["result"]
-    theirs = (await _call(server, "mallory", "GetContext", {"context_id": alices_only}))["result"]
-    assert owners["contextId"] == theirs["contextId"] == alices_only
+    owners = (await _call(server, "alice", "GetContext", {"contextId": alices_only}))["result"]
+    assert owners["contextId"] == alices_only
     assert state_of(owners) == "TASK_STATE_COMPLETED"
-    # No task of theirs on this context: the conversation is empty, as for
-    # a context nobody has used.
-    assert state_of(theirs) == "TASK_STATE_UNSPECIFIED"
-    assert not theirs.get("history") and not theirs.get("artifacts")
+    # Not bound to it: the context reads as absent, exactly like one nobody
+    # has used, so the answer says nothing about who holds it.
+    theirs = await _call(server, "mallory", "GetContext", {"contextId": alices_only})
+    absent = await _call(server, "mallory", "GetContext", {"contextId": str(uuid.uuid4())})
+    assert theirs["error"] == {**absent["error"], "data": {"contextId": alices_only, "retryable": False}}
+    assert theirs["error"]["code"] == 1000
 
 
 async def test_a_task_created_without_a_context_never_reaches_an_anonymous_client(server) -> None:

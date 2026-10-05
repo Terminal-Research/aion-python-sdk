@@ -25,7 +25,7 @@ from a2a.types import (
 from a2a.utils.task import apply_history_length
 from unittest.mock import AsyncMock, Mock, patch
 
-from aion.server.a2a.conversation import ConversationBuilder
+from aion.server.tasks.contexts import conversation_of
 from aion.server.tasks.ownership import Claim
 from aion.server.tasks.task_manager import AionTaskManager
 
@@ -100,7 +100,7 @@ def task_manager():
 
 
 def _conversation(task: Task) -> list[str]:
-    return [m.message_id for m in ConversationBuilder.extract_messages_from_tasks([task])]
+    return [m.message_id for m in conversation_of(task)]
 
 
 class TestMessagePlacement:

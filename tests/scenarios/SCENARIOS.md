@@ -4,7 +4,7 @@
      commands.py and frameworks.py. Do not edit by hand: run
      `make scenarios-matrix`. -->
 
-161 scenarios in 31 files, 358 runs across 2 frameworks: 328 run, 30 skipped.
+165 scenarios in 32 files, 366 runs across 2 frameworks: 336 run, 30 skipped.
 
 Nothing here was produced by running a scenario: `pytest --collect-only` and the registries are all it takes, and the same suite always renders the same file. What the suite is and how to run it is in [README.md](README.md).
 
@@ -15,7 +15,7 @@ A status cell reads `✓` when it runs, `skip` when `frameworks.UNSUPPORTED`, `f
 |  | Covered | Not yet |
 |---|---|---|
 | Commands | 21 of 21: `help`, `echo`, `stream`, `typing`, `steps`, `slow`, `artifacts`, `card`, `outbox-task`, `outbox-message`, `ask`, `ask-twice`, `ask-fail`, `fail`, `ext`, `whoami`, `event`, `config`, `ids`, `big`, `parts` | — |
-| Suites | 16 of 16: `smoke`, `streaming`, `events`, `terminal_states`, `interrupts`, `errors`, `artifacts`, `files`, `extensions`, `daemon`, `authentication`, `config`, `lifecycle`, `persistence`, `distributed`, `native` | — |
+| Suites | 17 of 17: `smoke`, `streaming`, `events`, `terminal_states`, `interrupts`, `errors`, `artifacts`, `files`, `extensions`, `daemon`, `authentication`, `config`, `lifecycle`, `contexts`, `persistence`, `distributed`, `native` | — |
 
 ## Frameworks
 
@@ -74,6 +74,7 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 | `authentication` | bearer tokens: required, verified, and naming the caller | 6 | `make tests-scenarios TAGS=authentication` |
 | `config` | aion.yaml configuration and deployment variants | 7 | `make tests-scenarios TAGS=config` |
 | `lifecycle` | cancel, concurrency, push notifications, startup | 4 | `make tests-scenarios TAGS=lifecycle` |
+| `contexts` | Context extension: list, read and delete conversations | 4 | `make tests-scenarios TAGS=contexts` |
 | `persistence` | needs POSTGRES_TEST_URL; survives a server restart | 10 | `make tests-scenarios-persistence` |
 | `distributed` | needs POSTGRES_TEST_URL; two servers over one database | 15 | `make tests-scenarios-distributed` |
 | `native` | an ordinary framework agent on its own path: model, tools, memory, no Aion API | 29 | `make tests-scenarios TAGS=native` |
@@ -138,6 +139,17 @@ Configuration variable delivery through the distribution extension.
 | [Nothing between the wire and the agent masks or truncates a secret.](core/test_config.py#L129 "test_a_secret_value_arrives_whole") | `config` | `config` | `default` | ✓ | ✓ |
 | [An empty string is a configured value, not an absent key.](core/test_config.py#L138 "test_an_empty_value_is_a_value") | `config` | `config` | `default` | ✓ | ✓ |
 | [The contract is a mapping of strings; nothing re-types a value in transit.](core/test_config.py#L147 "test_values_arrive_as_the_strings_they_were_sent_as") | `config` | `config` | `default` | ✓ | ✓ |
+
+### `tests/scenarios/core/test_contexts.py`
+
+The Context extension on a real deployment: discover it, list and read contexts, delete one.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [Declared once and optional: its methods need no activation.](core/test_contexts.py#L45 "test_the_card_declares_the_context_extension") | `contexts` | — | `default` | ✓ | ✓ |
+| [A caller's conversation is listed and read back in order, over JSON-RPC and HTTP+JSON.](core/test_contexts.py#L53 "test_a_conversation_is_listed_and_read_back") | `contexts` | `echo` | `default` | ✓ | ✓ |
+| [Knowing a context ID lets another caller neither read nor delete the context.](core/test_contexts.py#L77 "test_another_caller_neither_sees_nor_deletes_it") | `contexts` | `echo` | `default` | ✓ | ✓ |
+| [Deleting a context cancels its running turn; the ID then starts a conversation with no memory.](core/test_contexts.py#L94 "test_deleting_a_context_cancels_its_running_turn_and_forgets_it") | `contexts` | `slow` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_daemon.py`
 
@@ -465,11 +477,11 @@ The contract from `commands.py`. `Scenarios` counts the scenarios driving the co
 | Command | Summary | Tags | Scenarios | langgraph | adk |
 |---|---|---|---|---|---|
 | `help` | Show this menu | `smoke` | 1 | ✓ | ✓ |
-| `echo <text>` | Reply with the argument, unchanged | `smoke`, `events` | 13 | ✓ | ✓ |
+| `echo <text>` | Reply with the argument, unchanged | `smoke`, `events` | 15 | ✓ | ✓ |
 | `stream <n>` | Reply in n chunks of one message | `streaming` | 10 | ✓ | ✓ |
 | `typing` | Send an ephemeral typing status, then a reply | `streaming`, `events` | 3 | ✓ | ✓ |
 | `steps <n>` | Emit n working statuses, then complete | `events` | 2 | ✓ | ✓ |
-| `slow <sec>` | Reply after n seconds | `lifecycle` | 21 | ✓ | ✓ |
+| `slow <sec>` | Reply after n seconds | `lifecycle` | 22 | ✓ | ✓ |
 | `artifacts` | Emit a two-part data artifact, an inline file and a url | `artifacts`, `files` | 2 | ✓ | [skip](#frameworks) |
 | `card` | Emit one card | `artifacts` | 4 | ✓ | ✓ |
 | `outbox-task` | Return an A2A Task through the outbox | `events` | 6 | ✓ | ✓ |

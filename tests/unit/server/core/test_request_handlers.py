@@ -1,48 +1,11 @@
 import pytest
-from types import SimpleNamespace
-from unittest.mock import Mock, AsyncMock, patch
-from a2a.types import TaskState
+from unittest.mock import AsyncMock, Mock
 
+from aion.core.a2a import DeleteContextParams, GetContextParams, GetContextsParams
 from aion.server.core.app.handlers.request_handler import AionRequestHandler
-from aion.core.a2a import (
-    ContextsList,
-    Conversation,
-    GetContextParams,
-    GetContextsListParams,
-    ConversationTaskStatus
-)
-
-
-# !! Test Data Factories !!
-def create_test_conversation(context_id="test_ctx", state=TaskState.TASK_STATE_COMPLETED):
-    """Factory function to create test conversation objects."""
-    return Conversation(
-        context_id=context_id,
-        history=[],
-        artifacts=[],
-        status=ConversationTaskStatus(state=state)
-    )
-
-
-def create_test_tasks(count=2):
-    """Factory function to create test task objects."""
-    tasks = []
-    for i in range(count):
-        task = Mock()
-        task.history = []
-        task.artifacts = []
-        task.status = Mock()
-        task.status.state = TaskState.TASK_STATE_COMPLETED
-        tasks.append(task)
-    return tasks
-
-
-# !! Base Fixtures !!
-
-@pytest.fixture
-def mock_context():
-    """Create mock server call context."""
-    return SimpleNamespace(user=SimpleNamespace(is_authenticated=True))
+from aion.server.tasks.admission import InMemoryContextAdmission
+from aion.server.tasks.contexts import InMemoryContextCatalog
+from aion.server.tasks.stores import InMemoryTaskStore
 
 
 @pytest.fixture
@@ -51,242 +14,53 @@ def anyio_backend():
     return "asyncio"
 
 
-@pytest.fixture
-def mock_task_store():
-    """Create mock async task store."""
-    return AsyncMock()
-
-
-# !! Composite Fixtures !!
-
-@pytest.fixture
-def request_handler(mock_task_store):
-    """Create request handler with mocked dependencies."""
+def _handler(**kwargs) -> AionRequestHandler:
     return AionRequestHandler(
         agent_executor=Mock(),
-        task_store=mock_task_store,
+        task_store=kwargs.pop("task_store", InMemoryTaskStore()),
         agent_card=Mock(),
+        **kwargs,
     )
 
 
-# !! Individual Mock Fixtures !!
-
-@pytest.fixture
-def mock_conversation_builder():
-    """Mock ConversationBuilder."""
-    with patch('aion.server.core.app.handlers.request_handler.ConversationBuilder') as mock:
-        yield mock
-
-
-@pytest.fixture
-def configured_success_scenario(mock_conversation_builder, mock_task_store):
-    """Pre-configured scenario for successful operations."""
-    test_tasks = create_test_tasks(2)
-    test_conversation = create_test_conversation("test_context_123")
-
-    # Configure mocks
-    mock_task_store.get_context_tasks.return_value = test_tasks
-    mock_conversation_builder.build_from_tasks.return_value = test_conversation
-
-    return {
-        'conversation_builder': mock_conversation_builder,
-        'task_store': mock_task_store,
-        'expected_conversation': test_conversation,
-        'test_tasks': test_tasks
-    }
-
-
-# !! Request Handler Tests !!
-
-class TestAionRequestHandler:
-    """Unit tests for AionRequestHandler business logic methods."""
+class TestContextMethods:
+    """The handler answers the Context extension through its ContextService."""
 
     @pytest.mark.anyio
-    async def test_get_context_success(self, request_handler, mock_context, configured_success_scenario):
-        """Test successful context retrieval with proper data flow."""
-        # Setup
-        params = GetContextParams(
-            context_id="test_context_123",
-            history_length=50,
-            history_offset=0
+    @pytest.mark.parametrize(
+        "handler_name,service_name,params",
+        [
+            ("on_get_contexts", "get_contexts", GetContextsParams()),
+            ("on_get_context", "get_context", GetContextParams(context_id="c1")),
+            ("on_delete_context", "delete_context", DeleteContextParams(context_id="c1")),
+        ],
+    )
+    async def test_each_method_delegates_with_the_call_context(self, handler_name, service_name, params):
+        handler = _handler()
+        service = Mock()
+        setattr(service, service_name, AsyncMock(return_value="answer"))
+        handler._contexts = service
+        call_context = object()
+
+        assert await getattr(handler, handler_name)(params, call_context) == "answer"
+        getattr(service, service_name).assert_awaited_once_with(params, call_context)
+
+    def test_admission_and_catalog_are_chosen_together(self):
+        """A catalog over other reservations than the ones admission writes would read nothing."""
+        store = InMemoryTaskStore()
+        admission = InMemoryContextAdmission()
+        with pytest.raises(ValueError):
+            _handler(task_store=store, admission=admission)
+        with pytest.raises(ValueError):
+            _handler(task_store=store, context_catalog=InMemoryContextCatalog(store, admission))
+
+    def test_both_may_be_passed(self):
+        store = InMemoryTaskStore()
+        admission = InMemoryContextAdmission()
+        handler = _handler(
+            task_store=store, admission=admission, context_catalog=InMemoryContextCatalog(store, admission)
         )
-        scenario = configured_success_scenario
-
-        # Execute
-        result = await request_handler.on_get_context(params, mock_context)
-
-        # Verify
-        assert result == scenario['expected_conversation']
-        assert result.context_id == "test_context_123"
-        scenario['task_store'].get_context_tasks.assert_called_once_with(
-            context_id=params.context_id,
-            limit=params.history_length,
-            offset=params.history_offset,
-            context=mock_context,
-        )
-        scenario['conversation_builder'].build_from_tasks.assert_called_once_with(
-            context_id=params.context_id,
-            tasks=scenario['test_tasks']
-        )
-
-    @pytest.mark.parametrize("history_length,history_offset", [
-        (20, 10),
-        (100, 0),
-        (5, 25),
-    ])
-    @pytest.mark.anyio
-    async def test_get_context_custom_pagination(
-            self,
-            request_handler,
-            mock_context,
-            configured_success_scenario,
-            history_length,
-            history_offset
-    ):
-        """Test context retrieval with different pagination parameters."""
-        # Setup
-        params = GetContextParams(
-            context_id="test_context_456",
-            history_length=history_length,
-            history_offset=history_offset
-        )
-        scenario = configured_success_scenario
-
-        # Execute
-        await request_handler.on_get_context(params, mock_context)
-
-        # Verify pagination parameters
-        scenario['task_store'].get_context_tasks.assert_called_once_with(
-            context_id="test_context_456",
-            limit=history_length,
-            offset=history_offset,
-            context=mock_context,
-        )
-
-    @pytest.mark.anyio
-    async def test_get_contexts_list_success(self, request_handler, mock_context, mock_task_store):
-        """Test successful contexts list retrieval with proper data flow."""
-        # Setup
-        params = GetContextsListParams(history_length=100, history_offset=0)
-        mock_context_ids_data = ["ctx_1", "ctx_2", "ctx_3"]
-
-        mock_task_store.get_context_ids.return_value = mock_context_ids_data
-
-        # Execute
-        result = await request_handler.on_get_contexts_list(params, mock_context)
-
-        # Verify
-        assert isinstance(result, ContextsList)
-        assert result.root == mock_context_ids_data
-        mock_task_store.get_context_ids.assert_called_once_with(
-            limit=params.history_length,
-            offset=params.history_offset,
-            context=mock_context,
-        )
-
-    @pytest.mark.anyio
-    async def test_context_reads_without_a_context_are_empty(
-        self,
-        request_handler,
-    ):
-        """Without a context nobody is named, so nothing is read - never every owner's history."""
-        conversation = await request_handler.on_get_context(
-            GetContextParams(context_id="private-context"),
-            None,
-        )
-        contexts = await request_handler.on_get_contexts_list(
-            GetContextsListParams(),
-            None,
-        )
-
-        assert conversation.context_id == "private-context"
-        assert conversation.history == []
-        assert conversation.artifacts == []
-        assert contexts.root == []
-        request_handler.task_store.get_context_tasks.assert_not_called()
-        request_handler.task_store.get_context_ids.assert_not_called()
-
-    @pytest.mark.anyio
-    async def test_an_unauthenticated_callers_context_reads_go_through_its_owner(
-        self,
-        request_handler,
-    ):
-        """Who sees which history is the store's owner filter, not ``is_authenticated``."""
-        context = SimpleNamespace(user=SimpleNamespace(is_authenticated=False))
-        request_handler.task_store.get_context_tasks.return_value = []
-        request_handler.task_store.get_context_ids.return_value = []
-
-        await request_handler.on_get_context(GetContextParams(context_id="own-context"), context)
-        await request_handler.on_get_contexts_list(GetContextsListParams(), context)
-
-        assert request_handler.task_store.get_context_tasks.await_args.kwargs["context"] is context
-        assert request_handler.task_store.get_context_ids.await_args.kwargs["context"] is context
-
-    @pytest.mark.parametrize("exception_msg,method_name", [
-        ("Database error", "get_context_tasks"),
-        ("Connection timeout", "get_context_ids"),
-    ])
-    @pytest.mark.anyio
-    async def test_store_error_propagation(
-            self,
-            request_handler,
-            mock_context,
-            mock_task_store,
-            exception_msg,
-            method_name
-    ):
-        """Test that store errors are properly propagated."""
-        # Setup
-        getattr(mock_task_store, method_name).side_effect = Exception(exception_msg)
-
-        # Choose appropriate params and method based on test case
-        if method_name == "get_context_tasks":
-            params = GetContextParams(context_id="test_context")
-            test_method = request_handler.on_get_context
-        else:
-            params = GetContextsListParams()
-            test_method = request_handler.on_get_contexts_list
-
-        # Execute & Verify
-        with pytest.raises(Exception, match=exception_msg):
-            await test_method(params, mock_context)
-
-    @pytest.mark.anyio
-    async def test_get_context_empty_tasks(self, request_handler, mock_context, mock_conversation_builder, mock_task_store):
-        """Test handling of empty task list."""
-        # Setup
-        params = GetContextParams(context_id="empty_context")
-        empty_conversation = create_test_conversation("empty_context")
-
-        mock_task_store.get_context_tasks.return_value = []
-        mock_conversation_builder.build_from_tasks.return_value = empty_conversation
-
-        # Execute
-        result = await request_handler.on_get_context(params, mock_context)
-
-        # Verify
-        assert result.context_id == "empty_context"
-        assert len(result.history) == 0
-        mock_conversation_builder.build_from_tasks.assert_called_once_with(
-            context_id="empty_context",
-            tasks=[]
-        )
-
-    @pytest.mark.anyio
-    async def test_get_contexts_list_empty_result(self, request_handler, mock_context,
-                                                  mock_task_store):
-        """Test handling of empty contexts list."""
-        # Setup
-        params = GetContextsListParams()
-
-        mock_task_store.get_context_ids.return_value = []
-
-        # Execute
-        result = await request_handler.on_get_contexts_list(params, mock_context)
-
-        # Verify
-        assert isinstance(result, ContextsList)
-        assert result.root == []
+        assert handler._admission is admission
 
 
 class TestVerifyDeclaredExtensions:

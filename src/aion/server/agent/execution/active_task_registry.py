@@ -671,6 +671,41 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
             )
         return task
 
+    async def cancel_local_as_owner(self, task_id: str) -> Task | None:
+        """Cancel a task this process is executing right now, as the task's own owner.
+
+        The owner-agnostic sibling of :meth:`cancel_local`, for a caller that
+        is entitled to cancel every task of something larger than one owner -
+        ``DeleteContext`` cancelling a shared context's tasks. The cancel runs
+        under the context the task's manager was built with, exactly as a
+        signaled cancel does, so the cancelled task is written into its own
+        owner's partition. Returns ``None`` when no live execution is found
+        here, or when its owner's context is gone and the caller must fall
+        through to the store path.
+
+        Raises:
+            TaskNotCancelableError: If this process's own copy of the task
+                already has an outcome.
+        """
+        active_task = self._active_tasks.get(task_id)
+        if active_task is None or _has_finished(active_task):
+            return None
+        call_context = getattr(self._task_managers.get(task_id), "_call_context", None)
+        if call_context is None:
+            return None
+        task = await active_task.cancel(call_context)
+        if (
+            task.status.state in TERMINAL_TASK_STATES
+            and task.status.state != TaskState.TASK_STATE_CANCELED
+        ):
+            raise TaskNotCancelableError(
+                message=(
+                    "Task cannot be canceled - current state: "
+                    f"{TaskState.Name(task.status.state)}"
+                )
+            )
+        return task
+
     @override
     async def _remove_task(self, task_id: str) -> None:
         """Drop the task manager alongside the base registry's own entry."""

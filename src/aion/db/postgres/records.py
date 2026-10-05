@@ -232,3 +232,11 @@ class ContextReservationRecord(BaseModel):
     """The shared context's edge environment."""
     created_at: _dt.datetime | None = None
     """When the first request was admitted into the context."""
+    state: str = "active"
+    """``active``, ``deleting`` or ``deleted``."""
+    deletion_operation_id: str | None = None
+    """The durable deletion in progress or last finished."""
+    deletion_requested_by: str | None = None
+    """``owner_scope`` of the caller whose request started the deletion."""
+    deleted_at: _dt.datetime | None = None
+    """When the deletion finished."""

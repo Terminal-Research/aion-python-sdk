@@ -10,10 +10,10 @@ from a2a.types.a2a_pb2 import Task
 from a2a.utils.constants import DEFAULT_LIST_TASKS_PAGE_SIZE
 from a2a.utils.errors import InvalidParamsError, TaskNotCancelableError
 from a2a.utils.task import decode_page_token, encode_page_token
-from typing import NamedTuple, Optional, List
+from typing import Callable, NamedTuple, Optional, List
 
 from aion.server.a2a.constants import TERMINAL_TASK_STATES
-from aion.server.tasks.ownership import DegenerateOwnershipProvider
+from aion.server.tasks.ownership import DegenerateOwnershipProvider, TaskOwnershipLost
 from .base_task_store import BaseTaskStore
 
 logger = logging.getLogger(__name__)
@@ -30,6 +30,7 @@ def _status_timestamp(task: Task) -> datetime | None:
 class _Stored(NamedTuple):
     owner: str
     task: Task
+    updated_at: datetime
 
 
 class InMemoryTaskStore(BaseTaskStore):
@@ -48,6 +49,14 @@ class InMemoryTaskStore(BaseTaskStore):
     reaches every owner on reads, listings, cancel and delete, and a task's
     owner is fixed by its first write. See ``BaseTaskStore._owner_filter``
     and ``_owner_of_write``.
+
+    Tasks removed by a context deletion are remembered as retired: a late
+    write of one is refused with ``TaskOwnershipLost``, the same way the
+    durable store refuses a write whose execution claim is gone, so it
+    cannot bring back history the deletion removed. A new task is refused
+    the same way when ``admits_new_task`` says its context is closed - the
+    context catalog installs that check, so a message admitted before a
+    deletion started cannot create a task after it.
     """
 
     def __init__(
@@ -60,6 +69,8 @@ class InMemoryTaskStore(BaseTaskStore):
         logger.debug('Initializing InMemoryTaskStore')
         self.tasks: dict[str, _Stored] = {}
         self.lock = asyncio.Lock()
+        self._retired: set[str] = set()
+        self.admits_new_task: Callable[[str], bool] = lambda context_id: True
         self.owner_resolver = owner_resolver
         self.ownership_provider = DegenerateOwnershipProvider()
 
@@ -91,17 +102,23 @@ class InMemoryTaskStore(BaseTaskStore):
             TaskOwnerUndefinedError: If the task is new and ``context`` is
                 ``None``.
             TaskOwnerMismatchError: If ``context`` resolves to another owner.
+            TaskOwnershipLost: If the task was removed by a context deletion,
+                or is new and its context is being deleted.
         """
         task = self._persistable(task)
         write_owner = self._write_owner(context)
 
         async with self.lock:
+            if task.id in self._retired:
+                raise TaskOwnershipLost(task.id)
             stored = self.tasks.get(task.id)
+            if stored is None and task.context_id and not self.admits_new_task(task.context_id):
+                raise TaskOwnershipLost(task.id)
             owner = self._owner_of_write(
                 task.id, write_owner, None if stored is None else stored.owner
             )
             # Assigning to an existing key keeps its position.
-            self.tasks[task.id] = _Stored(owner, task)
+            self.tasks[task.id] = _Stored(owner, task, datetime.now(timezone.utc))
             logger.debug(
                 'Task %s for owner %s saved successfully.', task.id, owner
             )
@@ -286,38 +303,6 @@ class InMemoryTaskStore(BaseTaskStore):
                 )
             return False
 
-    async def get_context_ids(
-            self,
-            offset: Optional[int] = None,
-            limit: Optional[int] = None,
-            context: ServerCallContext | None = None,
-    ) -> List[str]:
-        """Retrieve the resolved owner's unique context IDs."""
-        owner = self._owner_filter(context)
-        offset = offset or 0
-        context_ids = []
-        seen = set()
-        skipped = 0
-
-        async with self.lock:
-            tasks = self._visible(owner)
-
-        for task in reversed(tasks):
-            if not task.context_id:
-                continue
-            if task.context_id in seen:
-                continue
-            if skipped < offset:
-                seen.add(task.context_id)
-                skipped += 1
-                continue
-            context_ids.append(task.context_id)
-            seen.add(task.context_id)
-            if limit and len(context_ids) >= limit:
-                break
-
-        return context_ids
-
     async def get_context_tasks(
             self,
             context_id: str,
@@ -358,3 +343,29 @@ class InMemoryTaskStore(BaseTaskStore):
             context=context,
         )
         return tasks[0] if tasks else None
+
+    async def tasks_in_context(self, context_id: str) -> list[tuple[Task, datetime]]:
+        """Every owner's tasks of a context with their last write time, oldest first."""
+        async with self.lock:
+            return [
+                (stored.task, stored.updated_at)
+                for stored in self.tasks.values()
+                if stored.task.context_id == context_id
+            ]
+
+    async def retire_context(self, context_id: str) -> list[str]:
+        """Remove every task of a context and refuse any later write of them.
+
+        Returns:
+            The IDs of the removed tasks.
+        """
+        async with self.lock:
+            retired = [
+                task_id
+                for task_id, stored in self.tasks.items()
+                if stored.task.context_id == context_id
+            ]
+            for task_id in retired:
+                del self.tasks[task_id]
+            self._retired.update(retired)
+            return retired

@@ -171,16 +171,21 @@ class TestTerminalTaskProjection:
         assert len(stored.history) == 1
 
     @pytest.mark.anyio
-    async def test_missing_snapshot_fails_the_stream(self):
-        """A task that produced events and vanished is a store defect, not a result."""
+    async def test_a_task_deleted_after_its_outcome_closes_with_that_outcome(self):
+        """The outcome was persisted, then the task's context was deleted: close with what was declared."""
         projection = TerminalTaskProjection(task_store=_store(None), call_context=Mock())
 
-        with pytest.raises(InternalError):
-            await _collect(projection, _status(TaskState.TASK_STATE_COMPLETED, _message()))
+        result = await _collect(projection, _status(TaskState.TASK_STATE_CANCELED))
+
+        assert len(result) == 1
+        closing = result[0]
+        assert isinstance(closing, Task)
+        assert (closing.id, closing.context_id) == (TASK_ID, CONTEXT_ID)
+        assert closing.status.state == TaskState.TASK_STATE_CANCELED
 
     @pytest.mark.anyio
-    async def test_missing_snapshot_fails_even_without_a_terminal_status(self):
-        """The same defect is reported when the agent never declared an outcome."""
+    async def test_missing_snapshot_fails_without_a_declared_outcome(self):
+        """A task that produced events and vanished with no outcome declared is a store defect."""
         projection = TerminalTaskProjection(task_store=_store(None), call_context=Mock())
 
         with pytest.raises(InternalError):

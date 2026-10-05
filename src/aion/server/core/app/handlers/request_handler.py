@@ -7,6 +7,7 @@ from a2a.server.context import ServerCallContext
 from a2a.server.events import Event
 from a2a.server.request_handlers import DefaultRequestHandlerV2
 from a2a.server.request_handlers.request_handler import validate, validate_request_params
+from a2a.server.tasks import InMemoryPushNotificationConfigStore
 from a2a.types import (
     CancelTaskRequest,
     DeleteTaskPushNotificationConfigRequest,
@@ -27,10 +28,17 @@ from a2a.utils.errors import (
     TaskNotFoundError,
 )
 from a2a.utils.task import apply_history_length
-from aion.core.a2a import ContextsList, Conversation, GetContextParams, GetContextsListParams
+from aion.core.a2a import (
+    ContextSummaryList,
+    ContextView,
+    DeleteContextParams,
+    DeleteContextResult,
+    GetContextParams,
+    GetContextsParams,
+)
 from aion.core.runtime import ExtensionActivationError, aion_a2a_extension_registry
 from aion.core.runtime.context.extensions import AionRuntimeExtensions
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Sequence
 from google.protobuf import json_format
 from types import SimpleNamespace
 from typing import override
@@ -43,7 +51,8 @@ from aion.server.tasks.admission import ContextAdmission, InMemoryContextAdmissi
 from aion.server.tasks.notifications import TaskEventListener
 from aion.server.tasks.ownership import OwnershipProvider
 from aion.server.tasks.ownership.config import CANCEL_WAIT_SECONDS
-from aion.server.a2a.conversation import ConversationBuilder
+from aion.server.contexts import ContextService, ContextStateDeleter
+from aion.server.tasks.contexts import ContextCatalog, InMemoryContextCatalog
 from .request_preprocessors import A2ARequestPreprocessor, PreprocessingContext
 from .terminal_task_projection import TerminalTaskProjection
 from aion.server.a2a.response_extensions import ResponseServiceParameters
@@ -82,6 +91,7 @@ class AionRequestHandler(DefaultRequestHandlerV2):
             ownership_provider: OwnershipProvider | None = None,
             event_listener: TaskEventListener | None = None,
             admission: ContextAdmission | None = None,
+            context_catalog: ContextCatalog | None = None,
             **kwargs,
     ) -> None:
         """Build the handler and hand the registry its ownership provider.
@@ -100,9 +110,11 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         second branch is unreachable without a durable store to hold the
         claim it waits on.
 
-        ``admission`` comes from the same factory too; omitted, contexts are
-        reserved in this process only, which is right for a handler without a
-        durable store.
+        ``admission`` and ``context_catalog`` come from the same factory too;
+        omitted, contexts are reserved and catalogued in this process only,
+        which is right for a handler over the in-memory store. The catalog
+        must cover the same reservations admission writes, so a handler given
+        only one of them is refused.
         """
         super().__init__(*args, **kwargs)
         self._active_task_registry = AionActiveTaskRegistry(
@@ -113,7 +125,22 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         )
         self._event_listener = event_listener
         self._preprocessors = preprocessors or []
-        self._admission = admission or InMemoryContextAdmission()
+        if (admission is None) != (context_catalog is None):
+            raise ValueError("admission and context_catalog are chosen together; pass both or neither")
+        if admission is None:
+            admission = InMemoryContextAdmission()
+            context_catalog = InMemoryContextCatalog(self.task_store, admission)
+        self._admission = admission
+        self._contexts = ContextService(
+            catalog=context_catalog,
+            owner_resolver=self.task_store.owner_resolver,
+            cancel_task=self._cancel_for_context_deletion,
+            state_deleter=ContextStateDeleter(
+                supported=lambda: self.agent_executor.agent.supports_context_state_deletion,
+                delete=lambda *args, **kwargs: self.agent_executor.agent.delete_context_state(*args, **kwargs),
+            ),
+            forget_push_configs=self._forget_push_configs,
+        )
 
     @override
     async def _setup_active_task(
@@ -155,8 +182,10 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         context, whose ID is chosen here so it is reserved like any other.
         A caller without individual access continues no task.
         Every refusal is the same ``TaskNotFoundError``, whether another caller
-        holds the context or the caller has no owner to hold it by: it says
-        nothing about who holds what.
+        holds the context, it is being deleted, or the caller has no owner to
+        hold it by: it says nothing about who holds what. An admitted caller
+        with individual access is bound to the context, which is what makes it
+        visible to that caller through the Context extension.
 
         Raises:
             TaskNotFoundError: The caller may not use the context or the task.
@@ -172,7 +201,8 @@ class AionRequestHandler(DefaultRequestHandlerV2):
             message.context_id = str(uuid.uuid4())
 
         holder = holder_of(call_context, self.task_store.owner_resolver)
-        if holder is None or not await self._admission.admit(message.context_id, holder):
+        member = self._contexts.member_of(call_context)
+        if holder is None or not await self._admission.admit(message.context_id, holder, member):
             logger.info("Refused a message into a context its caller may not use")
             raise TaskNotFoundError(f'Task {message.task_id} not found' if message.task_id else 'Task not found')
 
@@ -315,58 +345,74 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         _require_individual_access(context, params.task_id)
         await super().on_delete_task_push_notification_config(params, context)
 
+    async def on_get_contexts(
+            self,
+            params: GetContextsParams,
+            context: ServerCallContext | None = None,
+    ) -> ContextSummaryList:
+        """``GetContexts``: the caller's contexts, most recently active first."""
+        return await self._contexts.get_contexts(params, context)
+
     async def on_get_context(
             self,
             params: GetContextParams,
-            context: ServerCallContext | None = None
-    ) -> Conversation:
-        """Get conversation context by ID.
+            context: ServerCallContext | None = None,
+    ) -> ContextView:
+        """``GetContext``: one context the caller is bound to.
 
-        Args:
-            params: Parameters containing context ID
-            context: Optional server call context
-
-        Returns:
-            Conversation object with context data
+        Raises:
+            ContextNotFound: The caller cannot see the context.
         """
-        if context is None or not has_individual_access(context):
-            return ConversationBuilder.build_from_tasks(
-                context_id=params.context_id,
-                tasks=[],
-            )
+        return await self._contexts.get_context(params, context)
 
-        tasks = await self.task_store.get_context_tasks(
-            context_id=params.context_id,
-            limit=params.history_length,
-            offset=params.history_offset,
-            context=context,
-        )
-
-        return ConversationBuilder.build_from_tasks(context_id=params.context_id, tasks=tasks)
-
-    async def on_get_contexts_list(
+    async def on_delete_context(
             self,
-            params: GetContextsListParams,
-            context: ServerCallContext | None = None
-    ) -> ContextsList:
-        """Get list of available context IDs.
+            params: DeleteContextParams,
+            context: ServerCallContext | None = None,
+    ) -> DeleteContextResult:
+        """``DeleteContext``: remove the caller's access, deleting the context with its last caller.
 
-        Args:
-            params: Parameters for contexts list request
-            context: Optional server call context
-
-        Returns:
-            List of available context IDs
+        Raises:
+            ContextDeletionInProgress: The deletion is durable but not finished.
+            ContextNotDeletable: The deletion was refused definitively.
         """
-        if context is None or not has_individual_access(context):
-            return ContextsList.model_validate([])
+        return await self._contexts.delete_context(params, context)
 
-        context_ids = await self.task_store.get_context_ids(
-            limit=params.history_length,
-            offset=params.history_offset,
-            context=context,
-        )
-        return ContextsList.model_validate(context_ids)
+    async def resume_pending_context_deletions(self) -> None:
+        """Drive every context deletion left unfinished, as the server starts."""
+        await self._contexts.resume_pending_deletions()
+
+    async def _cancel_for_context_deletion(self, task_id: str) -> Task | None:
+        """Cancel one task of a context being deleted, whoever owns it.
+
+        The same three branches as ``on_cancel_task``, without its caller
+        check: the deletion is entitled to every task of the context. A task
+        executing here is cancelled as its own owner; any other is reached
+        through the store with unscoped access.
+
+        Raises:
+            TaskNotCancelableError: If the task already has an outcome.
+        """
+        local = await self._active_task_registry.cancel_local_as_owner(task_id)
+        if local is not None:
+            return local
+        return await self._cancel_elsewhere(task_id, None)
+
+    async def _forget_push_configs(self, task_ids: Sequence[str]) -> None:
+        """Remove every owner's push configurations of removed tasks from an in-memory config store.
+
+        The durable config store is cleared in the deletion's own storage
+        transaction; the in-memory one keeps configs per owner and has no
+        owner-agnostic delete, so its entries are removed here.
+        """
+        store = self._push_config_store
+        if not isinstance(store, InMemoryPushNotificationConfigStore):
+            return
+        removed = set(task_ids)
+        with store.lock:
+            for owner_infos in store._push_notification_infos.values():  # noqa: SLF001
+                for task_id in removed & owner_infos.keys():
+                    del owner_infos[task_id]
 
     @override
     async def on_message_send(
@@ -477,7 +523,29 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         local = await self._active_task_registry.cancel_local(task_id, context)
         if local is not None:
             return local
+        task = await self._cancel_elsewhere(task_id, context)
+        if task is None:
+            raise TaskNotFoundError
+        return task
 
+    async def _cancel_elsewhere(
+            self,
+            task_id: str,
+            context: ServerCallContext | None,
+    ) -> Task | None:
+        """Branches 2 and 3 of ``on_cancel_task``: a claim held elsewhere, or none at all.
+
+        ``context`` scopes the store to the caller's own tasks; ``None``
+        reaches every owner's, for a caller entitled to all of them.
+
+        Returns:
+            The task as cancelled - or as stored when a remote owner's
+            cancellation outran the wait - or ``None`` when no such task
+            exists.
+
+        Raises:
+            TaskNotCancelableError: If the task already has an outcome.
+        """
         # Registered before request_cancellation's transaction commits, not
         # after: the owner's own CANCEL_RESOLVED notification can only follow
         # that commit, but nothing stops it from arriving almost immediately -
@@ -491,7 +559,7 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         try:
             marked = await self.task_store.request_cancellation(task_id, context)
             if marked is None:
-                raise TaskNotFoundError
+                return None
 
             if marked:
                 if waiter is not None:
@@ -500,21 +568,15 @@ class AionRequestHandler(DefaultRequestHandlerV2):
                 # a woken wait still needs the settled row, and a timed-out
                 # one may have missed a notification lost to a listener
                 # reconnect rather than a cancellation that never happened.
-                task = await self.task_store.get(task_id, context)
-                if task is None:
-                    raise TaskNotFoundError
-                return task
+                return await self.task_store.get(task_id, context)
         finally:
             if waiter is not None:
                 waiter.release()
 
-        task = await self.task_store.cancel_with_ownership_revocation(
+        return await self.task_store.cancel_with_ownership_revocation(
             task_id,
             context,
         )
-        if task is None:
-            raise TaskNotFoundError
-        return task
 
     @validate_request_params
     @validate(

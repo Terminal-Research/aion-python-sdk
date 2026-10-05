@@ -46,13 +46,13 @@ component that owns those runtime dependencies records the reason with
 `mark_unavailable()`, the request-time verifier rejects the extension with
 exactly that reason, and the card omits it.
 
-`active` and `advertised` are independent in both directions, and both
-directions occur in the shipped registry:
+`active` and `advertised` are independent: an extension can be advertised and
+inactive until the agent enables it, and a descriptor registered with
+`advertised=False` is supported and callable while staying off the card.
 
 | Extension | `active` | `advertised` | On a standard card |
 | --- | --- | --- | --- |
-| Distribution, messaging, cards, event, traceability, usage attribution | `True` | `True` | yes |
-| `GetContext`, `GetContexts` | `True` | `False` | no — supported, not announced |
+| Distribution, messaging, cards, event, traceability, usage attribution, Context | `True` | `True` | yes |
 | Daemon, behaviour evolution | `False` | `True` | only once the agent enables it |
 
 ## Extension points and transport bindings
@@ -65,8 +65,8 @@ kinds beneath it, and two of them matter here:
   the registry is this kind.
 - A **method extension** adds an RPC method of its own. It is no less an
   extension for it: it has a URI, a descriptor, and the same activation and
-  exposure rules as any other. `GetContext` and `GetContexts` are method
-  extensions.
+  exposure rules as any other. The Context extension is one: `GetContexts`,
+  `GetContext` and `DeleteContext` are three methods bound to its single URI.
 
 An extension may use more than one of these at once, which is why there is no
 `kind` field on the descriptor to disagree with reality. What an extension
@@ -78,7 +78,9 @@ Identity is shared; transport is not. A method extension's routing belongs to
 the binding layer of whichever transport carries it —
 `AION_JSONRPC_METHOD_EXTENSION_BINDINGS`
 (`src/aion/core/a2a/method_extensions.py`) for JSON-RPC, read by
-`AionJsonRpcDispatcher`. A binding holds a method name, a params model, the
+`AionJsonRpcDispatcher`, and the same table for HTTP+JSON, read by
+`ContextHTTPRoutes` (`src/aion/server/core/app/api/contexts.py`), which maps
+each method to a path. A binding holds a method name, a params model, the
 handler that answers it, and the URI of the extension that defines it:
 
 ```
@@ -128,9 +130,8 @@ dispatcher routes, beside the transport-level method name.
 
 **The extension point does not decide public exposure.** A method extension
 registered with `advertised=True` is published on the Agent Card like any
-other extension. `GetContext` and `GetContexts` are withheld because of the
-exposure policy below, not because of what kind of extension they are. What
-puts an extension on a card is `advertised`, activation, availability and its
+other extension, and one registered with `advertised=False` is not. What puts
+an extension on a card is `advertised`, activation, availability and its
 `requires` — in one place, `get_advertised()`.
 
 ## Task-routing: `ExtensionTaskHandler`
@@ -150,45 +151,34 @@ flag to the descriptor: it would be imprecise about what it claims and
 duplicate something the handler already answers exactly — and the two could
 then disagree.
 
-## Internal and non-advertised is not deprecated
+## The Context extension
 
-`GetContext` and `GetContexts` are **current internal, non-advertised Aion
-A2A method extensions**. They are supported, enabled, callable, and their
-URIs are stable identifiers that are not going to be recycled. What
-`advertised=False` says is narrower than it may look: a standard Aion agent
-does not present them among its capabilities, because they are read handlers
-and not an implementation of the platform's unified Context lifecycle. This
-server declares neither that lifecycle, nor context summaries, nor
-`DeleteContext`.
+`GetContexts`, `GetContext` and `DeleteContext` belong to one extension,
+<https://docs.aion.to/a2a/extensions/aion/context/1.0.0>
+(`CONTEXT_EXTENSION_URI_V1` in `src/aion/core/constants/a2a.py`). It is
+declarative - the methods are invoked directly and need no `A2A-Extensions`
+declaration - and it is registered active and advertised, because the standard
+server implements the whole contract: caller-visible reads, bindings and the
+`DeleteContext` lifecycle. A deployment that cannot fulfil it marks it
+unavailable, which takes it off the card and refuses its methods with the
+recorded reason.
 
-A custom implementation that genuinely fulfils a broader contract may register
-either URI itself with `advertised=True`; `register()` replaces by URI, and
-that implementation is then responsible for the contract it announces.
+The wire models are typed in `src/aion/core/a2a/` (`ContextSummary`,
+`ContextView`, `ContextArtifact`, `DeleteContextResult` and the parameter
+models), the lifecycle errors in `src/aion/server/contexts/errors.py`, and the
+behaviour is described in `src/aion/server/README.md` under *Contexts*.
 
-Their canonical URIs are also their specification pages, which is why the URIs
-are not free to change:
-
-| Method | Canonical URI / specification |
-| --- | --- |
-| `GetContext` | <https://docs.aion.to/a2a/extensions/aion/context/get-context/1.0.0> |
-| `GetContexts` | <https://docs.aion.to/a2a/extensions/aion/context/get-contexts/1.0.0> |
-
-`GET_CONTEXT_EXTENSION_URI_V1` and `GET_CONTEXTS_LIST_EXTENSION_URI_V1`
-(`src/aion/core/constants/a2a.py`) are those two strings. The wire models each
-page specifies — `Conversation`, `ConversationTaskStatus`, `ContextsList` —
-are typed in `src/aion/core/a2a/`, and the JSON-RPC methods that carry them in
-`src/aion/core/a2a/method_extensions.py`. Both pages are published outside the
-Agent Extensions navigation: reachable by their URI, which identifiers need,
-without being presented as a capability of a standard agent.
+The per-method URIs `.../context/get-context/1.0.0` and
+`.../context/get-contexts/1.0.0` are not registered. The method names are the
+same in both contracts and the response shapes are not, so one server can
+answer a method name only one way; it answers by the unified contract.
 
 ## It is not an authorization mechanism
 
 Withholding an extension from the card changes what a client is *told*, never
 what a client is *allowed*. A non-advertised extension is invoked exactly like
 an advertised one, under the same authentication and caller-scoping rules —
-context reads resolve history through the same effective caller scope used
-when tasks are saved, and a caller that is not authenticated - a
-distribution's included, since nothing verifies its id - receives an empty
-projection rather than shared history. Anything that must actually be refused is refused
+the Context extension answers only for contexts the caller is bound to, and a
+caller without individual access is bound to none. Anything that must actually be refused is refused
 at request time - by activation state, availability, the extension's
 requirements, or the caller's scope.

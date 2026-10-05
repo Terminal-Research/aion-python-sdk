@@ -125,6 +125,14 @@ class TerminalTaskProjection:
         final_task = await self._close_snapshot(expected_state)
         if final_task is not None:
             yield self._delivered(final_task)
+        elif self._withheld is not None:
+            # The outcome was persisted before it reached us, and the task is
+            # gone since: its context was deleted in between. The declared
+            # outcome is all that is left to close the stream with.
+            withheld = self._withheld
+            yield self._delivered(
+                Task(id=withheld.task_id, context_id=withheld.context_id, status=withheld.status)
+            )
         elif self._task_id:
             # The consumer persists a transition before handing it to us, so a
             # task that produced events and is then missing means the store is

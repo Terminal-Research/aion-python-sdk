@@ -27,8 +27,7 @@ from aion.core.constants.a2a import (
     DAEMON_EXTENSION_URI_V1,
     DISTRIBUTION_EXTENSION_URI_V1,
     EVENT_EXTENSION_URI_V1,
-    GET_CONTEXT_EXTENSION_URI_V1,
-    GET_CONTEXTS_LIST_EXTENSION_URI_V1,
+    CONTEXT_EXTENSION_URI_V1,
     MESSAGING_EXTENSION_URI_V1,
     BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1,
     TRACEABILITY_EXTENSION_URI_V1,
@@ -238,26 +237,15 @@ class AionA2AExtensionRegistry(metaclass=Singleton):
 
 aion_a2a_extension_registry = AionA2AExtensionRegistry()
 
-# Current internal, non-advertised Aion context-read extensions. Registered
-# and enabled like any other built-in, so the methods are recognized, verified
-# and callable; kept off the AgentCard because a standard agent does not
-# announce them as a capability, and because they are read handlers rather
-# than an implementation of the platform's unified Context lifecycle (no
-# summaries, no DeleteContext). A custom implementation that genuinely
-# fulfills a broader contract may re-register either URI with
-# advertised=True.
+# The Context extension: GetContexts, GetContext and DeleteContext, all under
+# one URI. Declarative - its methods are invoked directly and need no
+# activation - and advertised, because the standard server implements the
+# whole contract. Whatever component finds the contract unfulfillable on a
+# deployment marks it unavailable, which also takes it off the AgentCard.
 aion_a2a_extension_registry.register(
     ExtensionDescriptor(
-        uri=GET_CONTEXT_EXTENSION_URI_V1,
-        description="Read the caller's own tasks in one conversation context, with their message history.",
-        advertised=False,
-    )
-)
-aion_a2a_extension_registry.register(
-    ExtensionDescriptor(
-        uri=GET_CONTEXTS_LIST_EXTENSION_URI_V1,
-        description="List the conversation contexts in which the caller has tasks.",
-        advertised=False,
+        uri=CONTEXT_EXTENSION_URI_V1,
+        description="List, retrieve, and delete caller-visible conversation contexts.",
     )
 )
 

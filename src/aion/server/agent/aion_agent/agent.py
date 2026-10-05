@@ -310,6 +310,46 @@ class AionAgent:
         async for event in self._executor.resume(context, config):
             yield event
 
+    @property
+    def supports_context_state_deletion(self) -> bool:
+        """Whether the framework executor can delete a context's state.
+
+        Raises:
+            RuntimeError: If agent is not built yet
+        """
+        if not self._is_built:
+            raise RuntimeError(f"Agent '{self._id}' is not built yet.")
+        return self._executor.supports_state_deletion
+
+    async def delete_context_state(
+        self,
+        context_id: str,
+        *,
+        owner_scope: Optional[str],
+        gateway: Optional[tuple[str, str]],
+    ) -> None:
+        """Delete the framework state of one context, keyed by its state owner.
+
+        The state owner is the context's holder rather than any one caller:
+        the private owner, or the gateway conversation for a shared context -
+        the same ``StateScope`` every execution in the context was given.
+
+        Args:
+            context_id: The context whose state is deleted.
+            owner_scope: The private context's owner; ignored when
+                ``gateway`` is given.
+            gateway: The shared context's receiving agent identity and edge
+                environment.
+
+        Raises:
+            RuntimeError: If agent is not built yet
+            UnsupportedOperationError: If the framework cannot delete state.
+        """
+        if not self._is_built:
+            raise RuntimeError(f"Agent '{self._id}' is not built yet.")
+        scope = StateScope(agent_id=self._id, owner_scope=owner_scope or "", gateway=gateway)
+        await self._executor.delete_state(ExecutionConfig(context_id=context_id, state_scope=scope))
+
     async def cancel(
         self, context: "RequestContext", event_queue: Optional["EventQueue"] = None
     ) -> None:

@@ -259,17 +259,17 @@ async def test_each_agent_reserves_its_own_contexts(postgres_server) -> None:
     context_id = str(uuid.uuid4())
     alice, bob = ContextHolder.private("alice"), ContextHolder.private("bob")
 
-    assert await PostgresContextAdmission("agent-one", db_manager).admit(context_id, alice)
-    assert await PostgresContextAdmission("agent-two", db_manager).admit(context_id, bob)
-    assert not await PostgresContextAdmission("agent-one", db_manager).admit(context_id, bob)
+    assert await PostgresContextAdmission("agent-one", db_manager).admit(context_id, alice, None)
+    assert await PostgresContextAdmission("agent-two", db_manager).admit(context_id, bob, None)
+    assert not await PostgresContextAdmission("agent-one", db_manager).admit(context_id, bob, None)
 
 
 async def test_a_refusal_writes_no_reservation(postgres_server) -> None:
     context_id = str(uuid.uuid4())
     admission = PostgresContextAdmission("agent-one", db_manager)
-    await admission.admit(context_id, ContextHolder.private("alice"))
+    await admission.admit(context_id, ContextHolder.private("alice"), None)
 
-    assert not await admission.admit(context_id, ContextHolder.shared(OTHER_AGENT_IDENTITY, OTHER_EDGE))
+    assert not await admission.admit(context_id, ContextHolder.shared(OTHER_AGENT_IDENTITY, OTHER_EDGE), None)
 
     async with db_manager.get_session() as session:
         rows = (

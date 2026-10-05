@@ -203,18 +203,25 @@ async def test_context_history_is_open_to_its_owner_only(server, callers) -> Non
     await _send(server, alice, "done", shared)
     bobs = await _send(server, bob, "done", shared)
 
-    assert set((await _call(server, alice, "GetContexts", {}))["result"]) == {first_only, shared}
+    async def contexts(caller) -> set[str]:
+        return {entry["contextId"] for entry in (await _call(server, caller, "GetContexts", {}))["result"]}
+
+    assert await contexts(alice) == {first_only, shared}
     if _share_contexts(alice):
-        assert (await _call(server, bob, "GetContexts", {}))["result"] == [shared]
+        # One gateway conversation: both participants are bound to it and
+        # each reads the whole of it, the other's turns included.
+        assert await contexts(bob) == {shared}
+        alices_view = (await _call(server, alice, "GetContext", {"contextId": shared}))["result"]
+        bobs_view = (await _call(server, bob, "GetContext", {"contextId": shared}))["result"]
+        assert alices_view == bobs_view
     else:
         assert error_of(bobs) == TASK_NOT_FOUND
-        assert (await _call(server, bob, "GetContexts", {}))["result"] == []
+        assert await contexts(bob) == set()
 
-    owners = (await _call(server, alice, "GetContext", {"context_id": first_only}))["result"]
-    others = (await _call(server, bob, "GetContext", {"context_id": first_only}))["result"]
+    owners = (await _call(server, alice, "GetContext", {"contextId": first_only}))["result"]
     assert state_of(owners) == "TASK_STATE_COMPLETED"
-    assert state_of(others) == "TASK_STATE_UNSPECIFIED"
-    assert not others.get("history")
+    others = await _call(server, bob, "GetContext", {"contextId": first_only})
+    assert others["error"]["code"] == 1000
 
 
 async def test_a_finished_task_is_subscribed_to_only_by_its_owner(server, callers) -> None:
@@ -344,8 +351,11 @@ async def test_an_unattributed_invocation_runs_but_reaches_no_task_after(server)
 
     assert (await server.rpc("ListTasks", {}, headers=_unattributed()))["result"].get("tasks", []) == []
     assert (await server.rpc("GetContexts", {}, headers=_unattributed()))["result"] == []
-    history = (await server.rpc("GetContext", {"context_id": context_id}, headers=_unattributed()))["result"]
-    assert not history.get("history")
+    unattributed_read = await server.rpc("GetContext", {"contextId": context_id}, headers=_unattributed())
+    assert unattributed_read["error"]["code"] == 1000
+    # Nor can it delete what it cannot see: the answer is success, and nothing changes.
+    deleted = await server.rpc("DeleteContext", {"contextId": context_id}, headers=_unattributed())
+    assert deleted["result"] == {"contextId": context_id}
 
     # A message into the context starts a task of its own; the interrupted one is nobody's to resume.
     fresh = task_of(await server.send("done", context_id, headers=_unattributed()))

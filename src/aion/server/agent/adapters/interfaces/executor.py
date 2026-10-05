@@ -245,6 +245,34 @@ class ExecutorAdapter(ABC):
         """
         pass
 
+    @property
+    def supports_state_deletion(self) -> bool:
+        """Whether :meth:`delete_state` can remove this executor's framework state.
+
+        ``DeleteContext`` asks before it changes anything, so a context whose
+        state could not be removed is refused up front rather than half
+        deleted. Defaults to whether :meth:`delete_state` is overridden.
+        """
+        return type(self).delete_state is not ExecutorAdapter.delete_state
+
+    async def delete_state(self, config: ExecutionConfig) -> None:
+        """Delete the framework state kept for ``config.context_id`` under ``config.state_scope``.
+
+        Called by ``DeleteContext`` once every task of the context is
+        terminal, so nothing is running against the state. Must be
+        idempotent: state that does not exist, or no longer does, is not an
+        error - a retried deletion calls this again.
+
+        Args:
+            config: Identifies the context; ``state_scope`` names its state
+                owner the same way the executions that wrote it did.
+
+        Raises:
+            UnsupportedOperationError: Default - the framework keeps state
+                this executor cannot delete.
+        """
+        raise UnsupportedOperationError()
+
     async def cancel(self, config: ExecutionConfig) -> None:
         """Framework-specific cancellation hook.
 
