@@ -248,7 +248,8 @@ class TestMethodExtensionRouting:
         ],
     )
     async def test_invalid_params_are_refused(self, method, params):
-        """Blank contextId and out-of-range pagination are -32602."""
+        """Blank contextId and out-of-range pagination are -32602, with the
+        reason in ``data.parseError`` as a2a-sdk reports its own methods'."""
         handler = Mock()
         dispatcher = _dispatcher(handler)
 
@@ -256,7 +257,23 @@ class TestMethodExtensionRouting:
             _request({"jsonrpc": "2.0", "id": 8, "method": method, "params": params})
         )
 
-        assert json.loads(response.body)["error"]["code"] == -32602
+        error = json.loads(response.body)["error"]
+        assert error["code"] == -32602
+        assert isinstance(error["data"]["parseError"], str)
+
+    @pytest.mark.asyncio
+    async def test_unknown_params_fields_are_ignored(self):
+        """A field the method does not define is ignored, as a2a-sdk ignores it."""
+        handler = Mock()
+        handler.on_delete_context = AsyncMock(return_value=DeleteContextResult(context_id="c1"))
+        dispatcher = _dispatcher(handler)
+
+        response = await dispatcher.handle_requests(
+            _request({"jsonrpc": "2.0", "id": 9, "method": "DeleteContext",
+                      "params": {"contextId": "c1", "unknownField": True}})
+        )
+
+        assert json.loads(response.body)["result"] == {"contextId": "c1"}
 
     @pytest.mark.asyncio
     async def test_a_hidden_context_is_context_not_found(self):

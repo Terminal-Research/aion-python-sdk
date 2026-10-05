@@ -49,7 +49,7 @@ from unittest.mock import AsyncMock, Mock
 from aion.server.agent.execution import AionActiveTaskRegistry
 from aion.server.agent.execution.scope import clear_execution_scope, init_execution_scope
 from aion.server.core.app.handlers.terminal_task_projection import TerminalTaskProjection
-from aion.server.tasks.authenticated_push_sender import AuthenticatedPushNotificationSender
+from aion.server.tasks.push_sender import AionPushNotificationSender
 from aion.server.tasks.stores.in_memory_task_store import InMemoryTaskStore
 from aion.server.tasks.terminal_push_sender import TerminalTaskPushSender
 
@@ -306,7 +306,7 @@ class TestAuthenticatedWebhookDelivery:
 
     The tests above stub the transport, so they prove what the sender is
     *asked* to deliver but not how it authenticates. This one runs the real
-    AuthenticatedPushNotificationSender underneath the same registry wiring,
+    AionPushNotificationSender underneath the same registry wiring,
     with only httpx faked, and follows the config the whole way: stored by the
     request handler on ``message/send``, read back at dispatch time, and turned
     into request headers.
@@ -347,7 +347,7 @@ class TestAuthenticatedWebhookDelivery:
                 _terminal_status(TaskState.TASK_STATE_COMPLETED),
             ]),
             task_store=InMemoryTaskStore(),
-            push_sender=AuthenticatedPushNotificationSender(
+            push_sender=AionPushNotificationSender(
                 httpx_client=http_client, config_store=config_store
             ),
         )

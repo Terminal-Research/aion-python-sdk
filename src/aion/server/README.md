@@ -390,6 +390,49 @@ ownership in the PostgreSQL deployment - the server process currently
 executing a task - which decides who may write a task's progress, never who
 may see or cancel it.
 
+## A2A methods: what a client sees
+
+The standard A2A methods are a2a-sdk 1.2's, and Aion's handler adds to them
+rather than replacing them. A client sees a2a-sdk's behaviour except where
+this section says otherwise.
+
+- **A message to a task that already has an outcome** is refused with
+  `UnsupportedOperationError` (`-32004`), naming the state:
+  `Task <id> is in terminal state: TASK_STATE_COMPLETED`.
+- **`CancelTask`** on a task that already has an outcome answers
+  `TaskNotCancelableError` (`-32002`); a missing task, or another caller's,
+  answers `TaskNotFoundError` (`-32001`). A task running on another server
+  process is cancelled through that process - its teardown, rescue included,
+  runs where the task runs - and the call waits for it, bounded, before
+  answering with the task as stored.
+- **`SubscribeToTask`** on a task that already has an outcome answers with a
+  stream that carries the stored `Task` and closes, where a2a-sdk answers
+  `UnsupportedOperationError`. A task another server process is running
+  answers `TaskOwnershipBusy` (`-32050`); one waiting for input there answers
+  with the task as stored.
+- **`message/send`** always answers with a `Task`, never a bare `Message`,
+  and a stream always closes with the final `Task`.
+- **`CreateTaskPushNotificationConfig`** answers with the config as stored: an
+  `id` the request left empty is the task's id.
+- **Params** fields a method does not define are ignored, for the standard
+  methods and the Context extension's alike. A request whose params do not
+  parse answers `-32602` with the reason in `error.data.parseError`.
+- **`ListTasks`** page tokens are opaque cursors naming a position in the
+  listing, so a token stays valid when the task it names changes or is
+  deleted. A token that is not such a cursor answers `-32602`, and the
+  PostgreSQL store also refuses one issued for different filters.
+- **The agent card** carries a weak `ETag`; a request with a matching
+  `If-None-Match` answers `304`.
+- **Push notifications** carry the config's `token` as
+  `X-A2A-Notification-Token` and its `authentication` as `Authorization:
+  <scheme> <credentials>`; credentials without a scheme are sent as
+  `Bearer`.
+
+a2a-sdk's cluster mode - a versioned task store with a shared event log - is
+not used. With PostgreSQL, the server process executing a task holds a
+heartbeat-renewed claim on it, and cancellation and shutdown go through the
+claim's holder.
+
 ## Callback execution scope
 
 The executor builds callback attribution from the current accepted request, not
@@ -413,8 +456,9 @@ A2A 1.0 JSON-RPC responses acknowledge verified invocation extensions in the
 `A2A-Extensions` header, including empty or delayed streams. Unknown declarations
 are not acknowledgment. Runtime-produced agent messages retain the same URI list
 through persistence; earlier history and user messages are not relabeled. This
-does not require copying extension payloads into response metadata. The server
-currently exposes JSON-RPC, not an additional HTTP+JSON binding.
+does not require copying extension payloads into response metadata. The A2A
+methods are served over JSON-RPC only; the Context extension adds its own
+HTTP+JSON routes (see [Contexts](#contexts)).
 
 ### Transient stream artifacts
 

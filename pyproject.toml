@@ -32,12 +32,13 @@ dependencies = [
     "PyYAML>=6.0.2,<7.0.0",
     # Published, an exact pin conflicts with whatever the installing project
     # already has; the upper bound stays on the minor because aion.server
-    # reaches into a2a-sdk's internals. The floor is 1.1.5 rather than
-    # anything older: the server relies on the owner-scoped cancel and
-    # subscribe and the terminal write on cancel that 1.1.4 introduced
-    # (a2a-python #1172), on the threading.RLock its registry shares since
-    # 1.1.3, and 1.1.5 is the release those were verified against.
-    "a2a-sdk>=1.1.5,<1.2.0",
+    # reaches into a2a-sdk's internals. The floor is the release the server's
+    # overrides follow: the terminal-state UnsupportedOperationError, the
+    # keyset ListTasksCursor, Authorization from a push config's
+    # authentication, and the stored config set_info returns. The server
+    # passes a2a-sdk neither a VersionedTaskStore nor an event stream, so
+    # a2a-sdk's cluster mode stays off.
+    "a2a-sdk>=1.2.2,<1.3.0",
     # Ariadne's custom operations use graphql-core's 3.2 AST contract.
     # Keep runtime installs aligned with the generator, including without dev extras.
     "gql[websockets]==4.0.0",
@@ -66,7 +67,7 @@ server = [
     # that appears plain in [project.dependencies] and bracketed in more than
     # one extra, and a2a-sdk is exactly that - base, because aion.core builds on
     # its types, and extras-carrying, because aion.server needs its server side.
-    # These five are what those three extras of a2a-sdk 1.1.x pull in; they are
+    # These five are what those three extras of a2a-sdk 1.2 pull in; they are
     # pinned to a2a-sdk's own constraints and held in place by the upper bound
     # on a2a-sdk itself.
     "starlette",

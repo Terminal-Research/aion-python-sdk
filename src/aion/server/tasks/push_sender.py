@@ -1,4 +1,4 @@
-"""Push-notification sender that authenticates webhook calls against external servers."""
+"""Push-notification sender: a2a-sdk's delivery, with a diagnostic log of each one."""
 
 import asyncio
 import httpx
@@ -95,28 +95,27 @@ def _summarize(response: httpx.Response) -> str:
     return body
 
 
-class AuthenticatedPushNotificationSender(BasePushNotificationSender):
-    """Applies ``PushNotificationConfig.authentication`` to the outbound webhook call.
+class AionPushNotificationSender(BasePushNotificationSender):
+    """a2a-sdk's push delivery, reporting what each delivery did.
 
-    The A2A schema lets a client declare how the receiving server authenticates
-    its callbacks — ``TaskPushNotificationConfig.authentication`` carries a
-    ``scheme``/``credentials`` pair, and the platform populates it when it hands
-    us a callback URL. The store round-trips that field intact, but the SDK's
-    ``BasePushNotificationSender`` only ever emits the legacy
-    ``X-A2A-Notification-Token`` header, so every notification reaches an
-    authenticated endpoint anonymously and is rejected with 401/403.
+    Delivery is the base class's contract: the same headers - the
+    notification token as ``X-A2A-Notification-Token``, a config's
+    ``authentication`` as ``Authorization`` - the same push URL check, the
+    same concurrent fan-out with failures swallowed. What this class adds is
+    the log: a refusal is reported with the receiver's status and message
+    rather than a traceback, a timeout with the setting that bounds it, an
+    accepted delivery with how long the receiver took, and a fan-out summary
+    only where it says something the per-webhook lines do not.
 
-    This sender restores the missing half: the declared credentials go out as a
-    standard ``Authorization`` header. The notification token keeps its own
-    header, so a config that sets both is delivered with both, and a config that
-    sets neither behaves exactly as it did before.
+    One header rule goes further than the base: credentials declared without
+    a scheme are sent as ``Bearer``, where the base sends no
+    ``Authorization`` at all.
 
-    The whole dispatch body is reimplemented rather than delegated to, because
-    the base class builds its header dict inline with no extension point. The
-    fan-out around it is reimplemented for the same reason — see
-    ``send_notification``. ``test_sdk_override_parity`` pins both overrides to
-    the base signatures so an SDK upgrade that changes them fails at test time
-    rather than at delivery time.
+    The base class builds its request and logs its outcome inline, with no
+    extension point, so ``_dispatch_notification`` and ``send_notification``
+    are reimplemented rather than delegated to. ``test_sdk_override_parity``
+    pins both to the base signatures so an SDK upgrade that changes them
+    fails at test time rather than at delivery time.
     """
 
     async def aclose(self) -> None:
@@ -191,6 +190,11 @@ class AuthenticatedPushNotificationSender(BasePushNotificationSender):
             one unreachable webhook must not abort the fan-out to the others.
         """
         url = push_info.url
+        if (
+            self._push_url_validator is not None
+            and not await self._push_url_validator(url)
+        ):
+            return False
         try:
             response = await self._client.post(
                 url,
@@ -273,8 +277,14 @@ class AuthenticatedPushNotificationSender(BasePushNotificationSender):
         if authentication.credentials:
             scheme = authentication.scheme or DEFAULT_AUTH_SCHEME
             headers['Authorization'] = f'{scheme} {authentication.credentials}'
+        elif authentication.scheme:
+            logger.warning(
+                'Push config %s sets an authentication scheme with no '
+                'credentials; sending no Authorization header',
+                push_info.id,
+            )
 
         return headers
 
 
-__all__ = ['AuthenticatedPushNotificationSender']
+__all__ = ['AionPushNotificationSender']

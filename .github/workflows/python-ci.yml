@@ -200,7 +200,7 @@ jobs:
     # The unit job varies the interpreter and nothing else, so every leg of it
     # resolves each declared range to its newest release. This one installs
     # the oldest, which is the only thing that can tell us whether
-    # `a2a-sdk>=1.1.5`, `langgraph>=1.0.0` and `google-adk>=1.27.1` are the
+    # `a2a-sdk>=1.2.2`, `langgraph>=1.0.0` and `google-adk>=1.27.1` are the
     # bounds the SDK actually works against or just the versions that happened
     # to be current when they were written.
     #

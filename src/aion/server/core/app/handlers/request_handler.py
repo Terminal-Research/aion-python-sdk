@@ -3,6 +3,7 @@
 import logging
 from a2a.server.agent_execution import RequestContext
 from a2a.server.agent_execution.active_task import ActiveTask
+from a2a.server.cluster.version import TaskVersion
 from a2a.server.context import ServerCallContext
 from a2a.server.events import Event
 from a2a.server.request_handlers import DefaultRequestHandlerV2
@@ -479,7 +480,7 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         async for event in projection.project(super().on_message_send_stream(params, context)):
             yield event
 
-    @validate_request_params
+    @override
     async def on_cancel_task(
             self,
             params: CancelTaskRequest,
@@ -490,39 +491,49 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         Only its initiator may, so a caller without individual access cancels
         nothing: the task answers as if it did not exist.
 
-        Three branches, tried in order:
-
-        1. This process is executing the task right now
-           (``AionActiveTaskRegistry.cancel_local``). Cancelled through the
-           ordinary A2A executor path - rescue included, for evolution runs -
-           and the resulting terminal task is returned directly with no
-           further waiting.
-        2. Another process holds a live claim
-           (``BaseTaskStore.request_cancellation``). This process cannot run
-           that owner's teardown itself, so it marks the claim and waits,
-           bounded, for the terminal write the owner's own cancellation - now
-           discovered over ``TASK_EVENT_CHANNEL`` rather than only at its next
-           heartbeat renewal - will produce. See ``TaskEventListener`` and
-           ``AionActiveTaskRegistry._on_control_signal``. A wait that outruns
-           the bound answers with the task as currently stored rather than
-           blocking the caller further: the eventual terminal state still
-           reaches the client later, over push or ``tasks/resubscribe``.
-        3. No live claim exists anywhere. There is no owner to ask, so the
-           terminal state is written directly
-           (``BaseTaskStore.cancel_with_ownership_revocation``), exactly as
-           this method used to do unconditionally.
-
-        In every branch, the already-terminal case is reported as an error
-        rather than inferred from the returned state: a successful
-        cancellation is itself terminal, so afterwards the two would be
-        indistinguishable.
+        The rest is a2a-sdk's: it reads the task through the owner-scoped
+        store, refuses a task that is missing or already has an outcome, and
+        then cancels it here (``_cancel_local``) when this process holds its
+        execution, or elsewhere (``_cancel_remote``) when it does not. Both
+        hooks are Aion's, because a task here is owned by a claim rather than
+        by a version the base compares - see each of them.
         """
-        task_id = params.id
-        _require_individual_access(context, task_id)
+        _require_individual_access(context, params.id)
+        return await super().on_cancel_task(params, context)
 
+    @override
+    async def _cancel_local(self, task_id: str, context: ServerCallContext) -> Task:
+        """Cancel the execution this process is running, through the executor.
+
+        ``AionActiveTaskRegistry.cancel_local`` cancels through the ordinary
+        A2A executor path - rescue included, for evolution runs - and the
+        resulting terminal task is returned with no further waiting. An
+        execution that ended between the base handler's check and this call
+        is no longer here to cancel, so the claim path decides instead.
+        """
         local = await self._active_task_registry.cancel_local(task_id, context)
         if local is not None:
             return local
+        return await self._cancel_or_not_found(task_id, context)
+
+    @override
+    async def _cancel_remote(
+            self,
+            task_id: str,
+            task: Task,
+            version: TaskVersion,
+            context: ServerCallContext,
+    ) -> Task:
+        """Cancel a task this process is not executing, through its claim.
+
+        The base writes ``CANCELED`` over a version; here the execution's
+        owner is the process holding its claim, and only that process can run
+        its teardown. ``task`` and ``version`` are the base handler's read and
+        are not used: ``_cancel_elsewhere`` decides from the claim.
+        """
+        return await self._cancel_or_not_found(task_id, context)
+
+    async def _cancel_or_not_found(self, task_id: str, context: ServerCallContext) -> Task:
         task = await self._cancel_elsewhere(task_id, context)
         if task is None:
             raise TaskNotFoundError
@@ -533,7 +544,17 @@ class AionRequestHandler(DefaultRequestHandlerV2):
             task_id: str,
             context: ServerCallContext | None,
     ) -> Task | None:
-        """Branches 2 and 3 of ``on_cancel_task``: a claim held elsewhere, or none at all.
+        """Cancel a task through its claim: one held elsewhere, or none at all.
+
+        Another process holding a live claim cannot have its teardown run from
+        here, so the claim is marked (``BaseTaskStore.request_cancellation``)
+        and the owner's own cancellation - discovered over
+        ``TASK_EVENT_CHANNEL`` - is awaited, bounded. A wait that outruns the
+        bound answers with the task as currently stored; the terminal state
+        still reaches the client later, over push or ``tasks/resubscribe``.
+        With no live claim anywhere there is no owner to ask, and the terminal
+        state is written directly
+        (``BaseTaskStore.cancel_with_ownership_revocation``).
 
         ``context`` scopes the store to the caller's own tasks; ``None``
         reaches every owner's, for a caller entitled to all of them.
@@ -594,6 +615,15 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         SDK will not start one for it. Its stream is empty and the projection
         closes it with the stored Task - which is the answer the client asked
         for, and the reason the reaper settles a task rather than deleting it.
+        a2a-sdk's own handler refuses such a task with
+        ``UnsupportedOperationError`` instead.
+
+        The base handler is not delegated to for the live case either: it
+        attaches through ``get_or_create``, which would start an empty
+        execution here for a task another process is running.
+        ``AionActiveTaskRegistry.get_for_attach`` attaches to an execution
+        this process holds, refuses a task another process is running with
+        ``TaskOwnershipBusy``, and otherwise leaves the stream empty.
         """
         _require_individual_access(context, params.id)
         active_task = await self._active_task_registry.get_for_attach(

@@ -13,7 +13,7 @@ from a2a.server.tasks import InMemoryPushNotificationConfigStore
 from cryptography.fernet import Fernet
 from unittest.mock import Mock, patch
 
-from aion.server.tasks.authenticated_push_sender import AuthenticatedPushNotificationSender
+from aion.server.tasks.push_sender import AionPushNotificationSender
 from aion.server.tasks.push_notifications import PushNotificationFactory
 
 STORE_PATH = (
@@ -38,7 +38,7 @@ class TestSenderSelection:
         """A config declaring authentication is useless unless this sender is wired in."""
         config_store, sender = PushNotificationFactory.create()
 
-        assert isinstance(sender, AuthenticatedPushNotificationSender)
+        assert isinstance(sender, AionPushNotificationSender)
         assert isinstance(config_store, InMemoryPushNotificationConfigStore)
 
     def test_sender_reads_from_the_store_it_returns(self):

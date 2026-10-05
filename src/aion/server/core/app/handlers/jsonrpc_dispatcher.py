@@ -204,7 +204,7 @@ class AionJsonRpcDispatcher(JsonRpcDispatcher):
             request_id = base_request._id  # noqa: SLF001
         except Exception as e:
             logger.exception('Failed to validate base JSON-RPC request')
-            return self._generate_error_response(request_id, InvalidRequestError(data=str(e)))
+            return self._generate_error_response(request_id, InvalidRequestError(data={'parseError': str(e)}))
 
         # Deployment-level readiness, asked of the registry on every call: an
         # extension disabled for this agent, unavailable on this deployment,
@@ -224,12 +224,13 @@ class AionJsonRpcDispatcher(JsonRpcDispatcher):
                 ),
             )
 
-        # Parse Pydantic params — mirrors SDK's ParseDict(params, model_class())
+        # Parse Pydantic params as the SDK parses its own: unknown fields are
+        # ignored, and a failure answers -32602 with data.parseError.
         try:
             params = body.get('params', {})
             params_obj = binding.params_model.model_validate(params)
         except ValidationError as e:
-            return self._generate_error_response(request_id, InvalidParamsError(data=str(e)))
+            return self._generate_error_response(request_id, InvalidParamsError(data={'parseError': str(e)}))
 
         # Build call context (reuses parent's context builder)
         context = self._context_builder.build(request)

@@ -1,12 +1,11 @@
 """Opaque keyset cursor for ``PostgresTaskStore.list``.
 
-``a2a.utils.task.encode_page_token``/``decode_page_token`` only carry a task
-id, which is why the store used to look the position back up with
-``TasksRepository.sort_key_for_id`` on every paged request. This codec
-carries the keyset position itself - ``status_timestamp`` and ``id`` - so a
-page token decodes straight into the predicate ``find_page`` needs, and a
-fingerprint of the request's filters so a token cannot be replayed against a
-different query and silently return the wrong slice.
+It carries the keyset position - ``status_timestamp`` and ``id`` - like
+a2a-sdk's ``ListTasksCursor``, so a page token decodes straight into the
+predicate ``find_page`` needs and stays valid when the task it names changes
+or is deleted. It also carries a fingerprint of the request's filters, which
+a2a-sdk's cursor does not, so a token cannot be replayed against a different
+query and silently return the wrong slice.
 
 Not a security boundary: the token is for navigating a result set the caller
 is already allowed to see, so it is Base64URL-encoded JSON without a

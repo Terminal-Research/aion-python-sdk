@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Report the lower bound of every dependency range, and whether it was installed.
 
-The manifest states ranges - ``a2a-sdk>=1.1.5,<1.2.0``, ``langgraph>=1.0.0``,
+The manifest states ranges - ``a2a-sdk>=1.2.2,<1.3.0``, ``langgraph>=1.0.0``,
 ``google-adk>=1.27.1`` - and an ordinary install resolves each one to the
 newest release that fits. So the top of every range is exercised on every run
 and the bottom is a promise nothing checks: the SDK may already use a symbol
