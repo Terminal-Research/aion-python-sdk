@@ -12,11 +12,20 @@ var __require = /* @__PURE__ */ ((x) => typeof require !== "undefined" ? require
   if (typeof require !== "undefined") return require.apply(this, arguments);
   throw Error('Dynamic require of "' + x + '" is not supported');
 });
-var __esm = (fn, res) => function __init() {
-  return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+var __esm = (fn, res, err) => function __init() {
+  if (err) throw err[0];
+  try {
+    return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+  } catch (e) {
+    throw err = [e], e;
+  }
 };
 var __commonJS = (cb, mod) => function __require2() {
-  return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+  try {
+    return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+  } catch (e) {
+    throw mod = 0, e;
+  }
 };
 var __export = (target, all) => {
   for (var name in all)
@@ -49222,7 +49231,9 @@ var package_default = {
     vitest: "^4.1.11"
   },
   overrides: {
-    "graphql-ws": "6.3.0"
+    "graphql-ws": "6.3.0",
+    esbuild: "^0.28.1",
+    "@fastify/busboy": "^3.2.1"
   },
   files: [
     "bin",
@@ -59325,6 +59336,7 @@ var GuestSessionError = class extends Error {
     this.reason = reason;
     this.name = "GuestSessionError";
   }
+  reason;
 };
 function trustedUrl(value) {
   const url = new URL(value);
@@ -59355,6 +59367,7 @@ var AnonymousSession = class {
     this.now = options2.now ?? Date.now;
     this.fetcher = options2.fetch ?? fetch;
   }
+  options;
   key;
   session;
   restored;
@@ -59504,6 +59517,7 @@ var SourceCredentials = class {
     this.options = options2;
     this.fetcher = options2.fetch ?? fetch;
   }
+  options;
   guests = /* @__PURE__ */ new Map();
   owners = /* @__PURE__ */ new Map();
   lifetime = new AbortController();
