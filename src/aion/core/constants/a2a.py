@@ -51,6 +51,7 @@ __all__ = [
     "DAEMON_EXTENSION_URI_V1",
     # Context extension
     "CONTEXT_EXTENSION_URI_V1",
+    "CONTEXT_HTTP_PATHS",
 ]
 
 # Scheduled invocation provenance (message content remains in ordinary parts).
@@ -124,6 +125,12 @@ DAEMON_EXTENSION_URI_V1 = "https://docs.aion.to/a2a/extensions/aion/daemon/1.0.0
 # Context extension (GetContexts, GetContext and DeleteContext)
 # See: https://docs.aion.to/a2a/extensions/aion/context/1.0.0
 CONTEXT_EXTENSION_URI_V1 = "https://docs.aion.to/a2a/extensions/aion/context/1.0.0"
+CONTEXT_HTTP_PATHS: dict[str, str] = {
+    "contexts:get": "GetContexts",
+    "context:get": "GetContext",
+    "context:delete": "DeleteContext",
+}
+"""HTTP+JSON path, relative to the A2A endpoint, for each Context method."""
 
 # Optional agent-generated opening message; Voice keeps its configured greeting.
 WELCOME_MESSAGE_EXTENSION_URI_V1 = (

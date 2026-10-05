@@ -181,5 +181,12 @@ async def test_the_registered_routes_are_the_applications_and_the_rest_stays_clo
     transport = httpx.ASGITransport(app=factory.fastapi_app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         assert (await client.get("/api/custom/health")).status_code == 200
-        assert (await client.post("/")).status_code == 401
-        assert (await client.get("/openapi.json")).status_code == 401
+        rpc = await client.post("/")
+        assert rpc.status_code == 401
+        assert rpc.json()["error"]["code"] == -32010
+        context_route = await client.post("/context:get")
+        assert context_route.status_code == 401
+        assert context_route.headers["content-type"] == "application/problem+json"
+        schema = await client.get("/openapi.json")
+        assert schema.status_code == 401
+        assert schema.json()["error"] == "unauthorized"

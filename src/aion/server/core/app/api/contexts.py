@@ -15,7 +15,8 @@ result, exactly as in JSON-RPC. Failures are problem details
 lifecycle errors' own statuses (``404``, ``409``) with their ``contextId``,
 ``retryable`` and ``deletionOperationId`` fields, and ``400`` when the
 extension cannot be served on this agent. Authentication is the server's
-ordinary bearer-token middleware, which answers ``401`` before a route runs.
+bearer-token middleware (``AionAuthMiddleware``), which answers ``401``
+before a route runs, as a problem detail on these paths.
 
 See: https://docs.aion.to/a2a/extensions/aion/context/1.0.0
 """
@@ -34,20 +35,13 @@ from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
 from aion.core.a2a import AION_JSONRPC_METHOD_EXTENSION_BINDINGS
-from aion.core.constants.a2a import CONTEXT_EXTENSION_URI_V1
+from aion.core.constants.a2a import CONTEXT_EXTENSION_URI_V1, CONTEXT_HTTP_PATHS
 from aion.core.runtime import aion_a2a_extension_registry
 from aion.server.contexts import ContextLifecycleError
 
 __all__ = ["CONTEXT_HTTP_PATHS", "ContextHTTPRoutes"]
 
 logger = logging.getLogger(__name__)
-
-CONTEXT_HTTP_PATHS: dict[str, str] = {
-    "contexts:get": "GetContexts",
-    "context:get": "GetContext",
-    "context:delete": "DeleteContext",
-}
-"""HTTP+JSON path, relative to the A2A endpoint, for each Context method."""
 
 _PROBLEM_JSON = "application/problem+json"
 

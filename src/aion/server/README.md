@@ -62,6 +62,23 @@ policy (see above). The agent card declares the bearer scheme in its
 request without a verified caller is answered `401` before its body is read,
 and the agent never runs.
 
+A refusal is always `401` with an RFC 6750 `WWW-Authenticate: Bearer`
+challenge (`error="invalid_token"` when a token was presented), or `503` with
+`Retry-After` while the verification keys have not loaded. Its body is written
+in the error format of the transport the path belongs to:
+
+| Path | `401` body | `503` body |
+| --- | --- | --- |
+| JSON-RPC endpoint | JSON-RPC error `-32010` `Unauthorized`, `data.detail` | JSON-RPC error `-32603`, `data.detail`, `data.retryable: true` |
+| Context HTTP+JSON routes | `application/problem+json`, `title` `Unauthorized`, `detail` | `application/problem+json`, `status` `503`, `detail` |
+| Anything else | `{"error": "unauthorized", "detail": ...}` | `{"error": "unavailable", "detail": ...}` |
+
+The JSON-RPC error answers `id` `null`, since the body is never read.
+`-32010` is the Context extension's code for missing authentication; it is
+returned for every JSON-RPC method, not only the Context ones. The problem
+details carry no `type`, which the specification does not define for these
+statuses.
+
 Where the caller may come from is the server's mode:
 
 | Mode | Selected by | Served |
@@ -280,6 +297,11 @@ relative to the A2A endpoint:
 | `GetContext` | `POST /context:get` | one context: chronological messages, up to 50 latest artifacts, latest status |
 | `DeleteContext` | `POST /context:delete` | `{"contextId": ...}` |
 
+A request without a verified caller is refused before any method runs: `401`
+with JSON-RPC error `-32010` on the JSON-RPC endpoint, and `401`
+`application/problem+json` on the HTTP+JSON routes (see *Where the user comes
+from*).
+
 **Bindings.** Admission binds every caller it admits to the context, by owner
 scope (`context_bindings` in PostgreSQL, the reservation entry in memory). A
 private context has one binding, a shared gateway conversation one per
@@ -339,8 +361,6 @@ Limitations, as implemented:
 - A removed participant of a shared gateway conversation is bound again by
   its next message into it, which is a new authorized message rather than a
   restored grant.
-- Missing authentication is the server's ordinary `401` before any method
-  runs, on both transports.
 
 ### `context=None` in the stores
 

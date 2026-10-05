@@ -46,6 +46,8 @@ from .postgres_support import POSTGRES_TEST_URL, prepared_database
 pytestmark = [pytest.mark.asyncio(loop_scope="module")]
 
 SIGNER = SigningKey()
+MISSING_AUTHENTICATION = -32010
+"""The Context extension's JSON-RPC code for a request refused for its authentication."""
 """The stand-in Aion: it publishes this key and signs every caller's token with it."""
 
 ALICE = subject("AionUser", "alice")
@@ -301,6 +303,7 @@ async def test_a_request_without_a_valid_token_never_reaches_the_agent(server, h
     )
 
     assert response.status_code == 401
+    assert response.json()["error"]["code"] == MISSING_AUTHENTICATION
     assert len(server.agent.runs) == runs
 
 

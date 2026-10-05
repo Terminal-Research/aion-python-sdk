@@ -35,11 +35,28 @@ from a2a.utils.errors import (
     ErrorMapping,
 )
 
-__all__ = ["AION_ERROR_CODE_RANGE", "register_aion_error"]
+__all__ = ["AION_ERROR_CODE_RANGE", "MISSING_AUTHENTICATION_CODE", "register_aion_error"]
 
 # Inclusive on both ends. Assigned bottom-up from -32050; leaves -32000..-32049
 # as headroom for a2a-sdk's own upward growth before either side can collide.
 AION_ERROR_CODE_RANGE = range(-32099, -32049)
+
+MISSING_AUTHENTICATION_CODE = -32010
+"""JSON-RPC code of a request refused for missing or invalid authentication.
+
+The Context extension's error table fixes it: "Missing authentication" is
+``-32010`` over JSON-RPC and ``401 Unauthorized`` over HTTP+JSON
+(https://docs.aion.to/a2a/extensions/aion/context/1.0.0#errors).
+``AionAuthMiddleware`` answers it on the JSON-RPC endpoint before any method
+runs, for every method, since the refusal comes before the body is read.
+
+It lies outside ``AION_ERROR_CODE_RANGE`` on purpose and is not claimed
+through ``register_aion_error``: the code is the specification's, not one
+Aion assigns, and no ``A2AError`` subclass carries it - the middleware writes
+the error object itself. It sits in the part of the server-error block
+a2a-sdk grows into from -32001, so a future a2a-sdk error could take the same
+code.
+"""
 
 
 def register_aion_error(

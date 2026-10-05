@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import uuid
 
+import httpx
 import pytest
 
 from tests.scenarios.commands import echo_text
@@ -28,6 +29,7 @@ CONTEXT_EXTENSION_URI = "https://docs.aion.to/a2a/extensions/aion/context/1.0.0"
 """The unified Context extension, written out: the harness imports nothing from ``aion``."""
 
 CONTEXT_NOT_FOUND = 1000
+MISSING_AUTHENTICATION = -32010
 TASK_NOT_FOUND = -32001
 
 
@@ -48,6 +50,27 @@ async def test_the_card_declares_the_context_extension(client: ScenarioClient) -
 
     assert len(declared) == 1
     assert not declared[0].required
+
+
+async def test_a_call_without_a_token_is_refused_in_each_bindings_format(server: ServeProcess) -> None:
+    """``401`` on both bindings: a JSON-RPC error with ``-32010``, and a problem detail over HTTP+JSON."""
+    async with httpx.AsyncClient(timeout=10.0) as anonymous:
+        rpc = await anonymous.post(
+            server.agent_url(),
+            json={"jsonrpc": "2.0", "id": "1", "method": "GetContexts", "params": {}},
+            headers={"A2A-Version": "1.0"},
+        )
+        http = await anonymous.post(f"{server.agent_url().rstrip('/')}/context:get", json={"contextId": "c-1"})
+
+    assert rpc.status_code == 401
+    assert rpc.headers["www-authenticate"].startswith("Bearer")
+    assert rpc.json()["id"] is None
+    assert rpc.json()["error"]["code"] == MISSING_AUTHENTICATION
+
+    assert http.status_code == 401
+    assert http.headers["www-authenticate"].startswith("Bearer")
+    assert http.headers["content-type"] == "application/problem+json"
+    assert (http.json()["title"], http.json()["status"]) == ("Unauthorized", 401)
 
 
 @pytest.mark.command("echo")
