@@ -18,10 +18,12 @@ from a2a.types import Artifact
 from aion.adk.authoring.constants import AION_OUTPUT_KEY, AION_ROUTING_KEY
 from aion.adk.authoring.transformers import convert_a2a_part_to_genai_part
 from aion.core.a2a.enums import ArtifactId, ArtifactName
-from aion.core.a2a.extensions.messaging import MessageActionPayload, ReactionActionPayload
+from aion.core.a2a.extensions.messaging import FileActionPayload, MessageActionPayload, ReactionActionPayload
+from aion.core.constants import MESSAGING_EXTENSION_URI_V1
 from aion.core.agent.invocation.card import Card
 from google.adk.events import Event, EventActions
 from google.genai import types
+from google.protobuf.json_format import MessageToDict
 from .context_vars import EventEmitter
 from .event_metadata import AionOutput, ArtifactOutput, CardOutput
 
@@ -134,11 +136,11 @@ async def emit_artifact(
 ) -> None:
     """Emit a pre-built artifact during ADK agent execution.
 
-    Saves each artifact part to artifact_service (which handles bytes→URL
-    upload via FileUploadManager when configured), then emits an ADK Event
+    Saves the artifact part to artifact_service, then emits an ADK Event
     with EventActions(artifact_delta=...) — the standard ADK artifact path.
-    The aion:output hint carries artifact_id and name so the converter can
-    emit a properly identified TaskArtifactUpdateEvent.
+    The aion:output hint carries artifact_id, name, and any file action so
+    the converter can apply retention when it uploads bytes and emits the
+    TaskArtifactUpdateEvent.
 
     Args:
         emitter: ADK event emitter callable from the invocation ContextVar
@@ -197,10 +199,14 @@ async def emit_artifact(
         return
 
     meta = dict(metadata) if metadata else {}
+    file_action = MessageToDict(artifact.parts[0].metadata).get(MESSAGING_EXTENSION_URI_V1)
+    if not isinstance(file_action, dict) or file_action.get("schema") != FileActionPayload.SCHEMA_URI:
+        file_action = None
     meta[AION_OUTPUT_KEY] = AionOutput(
         artifact=ArtifactOutput(
             artifact_id=artifact.artifact_id,
             artifact_name=artifact.name,
+            file_action=file_action,
         )
     ).model_dump(exclude_none=True)
     if routing is not None:

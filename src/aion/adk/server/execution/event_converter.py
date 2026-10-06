@@ -26,15 +26,9 @@ from aion.core.agent.invocation.card import Card
 from aion.core.agent.invocation.card.utils import build_card_a2a_part
 from aion.core.constants import CARDS_EXTENSION_URI_V1, MESSAGE_ACTION_PAYLOAD_SCHEMA_V1, MESSAGING_EXTENSION_URI_V1, \
     REACTION_ACTION_PAYLOAD_SCHEMA_V1, STREAM_DELTA_PAYLOAD_SCHEMA_V1
-from aion.core.runtime.context import get_aion_runtime_context
 from aion.server.a2a.constants import TRANSIENT_ARTIFACT_IDS
-from aion.server.files.storage import (
-    FileUpload,
-    FileUploadManager,
-    UploadFailure,
-    UploadReceipt,
-    resolve_upload_context,
-)
+from aion.server.files.a2a.part_transformer import A2AFileTransformer
+from aion.server.files.storage import FileUploadManager
 from google.adk.events import Event
 from google.protobuf import json_format, struct_pb2
 
@@ -63,7 +57,9 @@ class ADKToA2AEventConverter:
         self._task_id = task_id
         self._context_id = context_id
         self._ctx = ctx
-        self._file_uploader = file_uploader
+        self._file_transformer = (
+            A2AFileTransformer(file_uploader) if file_uploader is not None else None
+        )
         self._streaming_started = False
 
     async def convert(self, adk_event: Event) -> list[AgentEvent]:
@@ -334,10 +330,9 @@ class ADKToA2AEventConverter:
                 logger.warning("Could not transform artifact part: %s", filename)
                 continue
 
-            if self._file_uploader is not None and a2a_part.raw:
-                a2a_part = await self._store_inline(a2a_part)
-                if a2a_part is None:
-                    continue
+            file_action = hint.file_action if hint else None
+            if file_action is not None:
+                a2a_part.metadata.update({MESSAGING_EXTENSION_URI_V1: file_action})
 
             artifact_id = hint.artifact_id if hint else str(uuid.uuid4())
             name = (hint.artifact_name if hint else None) or filename
@@ -347,7 +342,7 @@ class ADKToA2AEventConverter:
             if user_meta:
                 artifact_metadata.update(user_meta)
 
-            results.append(TaskArtifactUpdateEvent(
+            event = TaskArtifactUpdateEvent(
                 task_id=self._task_id,
                 context_id=self._context_id,
                 artifact=Artifact(
@@ -355,60 +350,16 @@ class ADKToA2AEventConverter:
                     name=name,
                     parts=[a2a_part],
                     metadata=artifact_metadata,
+                    extensions=[MESSAGING_EXTENSION_URI_V1] if file_action is not None else [],
                 ),
                 append=False,
                 last_chunk=True,
-            ))
-        return results
-
-    async def _store_inline(self, part: Part) -> Part | None:
-        """Store an artifact's inline bytes, or drop the artifact.
-
-        Artifacts loaded from ADK's artifact service bypass the A2A part
-        transformer entirely, so this is the second direct entry into storage
-        and the one that would otherwise let raw bytes through. It follows the
-        same outbound policy: content that could not be stored never falls
-        back to inline bytes.
-
-        Args:
-            part: Artifact part carrying inline bytes.
-
-        Returns:
-            A URL part when the content was stored, ``None`` otherwise.
-        """
-        media_type = part.media_type or "application/octet-stream"
-        resolution = resolve_upload_context(
-            get_aion_runtime_context(),
-            context_id=self._context_id,
-            task_id=self._task_id,
-        )
-        if isinstance(resolution, UploadFailure):
-            failure = resolution
-        else:
-            outcome = await self._file_uploader.store(
-                FileUpload(
-                    data=bytes(part.raw),
-                    media_type=media_type,
-                    filename=part.filename or None,
-                ),
-                context=resolution,
             )
-            if isinstance(outcome, UploadReceipt):
-                return Part(
-                    url=outcome.uri,
-                    media_type=part.media_type,
-                    filename=part.filename,
-                )
-            failure = outcome
-
-        logger.warning(
-            "Dropping artifact %r (%d bytes) that cannot be stored: %s",
-            part.filename or None,
-            len(part.raw),
-            failure.error_code.value,
-            exc_info=failure.cause,
-        )
-        return None
+            if self._file_transformer is not None:
+                event = await self._file_transformer.transform_event(event)
+            if event is not None:
+                results.append(event)
+        return results
 
     def finalize_stream(self, delta_text: str) -> list[AgentEvent]:
         """End any open STREAM_DELTA and emit accumulated text as working status.

@@ -10,6 +10,8 @@ custom_metadata is treated as user-defined metadata forwarded to A2A.
 
 from __future__ import annotations
 
+from typing import Any
+
 from aion.adk.authoring.constants import AION_OUTPUT_KEY, AION_ROUTING_KEY
 from aion.core.a2a.metadata import agent_metadata
 from aion.core.a2a.extensions.messaging import MessageActionPayload, ReactionActionPayload
@@ -30,6 +32,12 @@ class ArtifactOutput(BaseModel):
     artifact_name: str | None = Field(
         default=None,
         description="Human-readable artifact name. Defaults to artifact_id when absent.",
+    )
+    # Keep the wire object: exclude_none on an enclosing model must not erase
+    # an explicit retentionExpiresAt: null and turn it into the default.
+    file_action: dict[str, Any] | None = Field(
+        default=None,
+        description="FileActionPayload metadata for the artifact's single file part.",
     )
 
 

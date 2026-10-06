@@ -5,6 +5,7 @@ from .backends import (
 )
 from .context import UploadContext, UploadContextResolution, resolve_upload_context
 from .contracts import (
+    FileRetentionDefault,
     FileUpload,
     FileUploadErrorCode,
     UploadFailure,
@@ -18,6 +19,7 @@ __all__ = [
     "FileStorageBackend",
     "StubFileStorageBackend",
     "FileUpload",
+    "FileRetentionDefault",
     "FileUploadErrorCode",
     "FileUploadManager",
     "UploadContext",

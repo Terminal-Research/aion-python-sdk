@@ -5,7 +5,7 @@ from __future__ import annotations
 from uuid import uuid4
 
 from a2a.types import Artifact, Part
-from aion.core.a2a import file_artifact
+from aion.core.a2a import FileActionPayload, file_artifact
 from google.protobuf.json_format import MessageToDict, ParseDict
 from google.protobuf.struct_pb2 import Value
 
@@ -70,6 +70,7 @@ async def artifacts(invocation: Invocation) -> None:
             ARTIFACT_FILE_BYTES,
             mime_type=ARTIFACT_FILE_MEDIA_TYPE,
             name=ARTIFACT_FILE_NAME,
+            file_action=FileActionPayload(retention_expires_at=None),
         )
     )
     await thread.post(

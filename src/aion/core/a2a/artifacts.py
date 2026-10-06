@@ -11,6 +11,9 @@ from uuid import uuid4
 from a2a.types import Artifact, Part
 from google.protobuf import json_format, struct_pb2
 
+from aion.core.a2a.extensions.messaging import FileActionPayload
+from aion.core.constants.a2a import MESSAGING_EXTENSION_URI_V1
+
 
 def url_artifact(
     url: str,
@@ -43,6 +46,7 @@ def file_artifact(
     mime_type: str,
     name: str | None = None,
     artifact_id: str | None = None,
+    file_action: FileActionPayload | None = None,
 ) -> Artifact:
     """Build an Artifact carrying inline file content as bytes.
 
@@ -51,6 +55,8 @@ def file_artifact(
         mime_type: MIME type of the file (e.g. "text/plain", "image/png").
         name: Human-readable artifact name. Defaults to "file".
         artifact_id: Explicit artifact ID. Auto-generated if not provided.
+        file_action: Per-file retention request. Omit for the Aion storage
+            provider's 30-day default; explicit null retention is indefinite.
 
     Returns:
         a2a.types.Artifact with a single FilePart (FileWithBytes).
@@ -63,7 +69,12 @@ def file_artifact(
     return Artifact(
         artifact_id=artifact_id or str(uuid4()),
         name=name or "file",
-        parts=[Part(raw=data, media_type=mime_type)],
+        parts=[Part(
+            raw=data,
+            media_type=mime_type,
+            metadata=file_action.to_metadata() if file_action is not None else {},
+        )],
+        extensions=[MESSAGING_EXTENSION_URI_V1] if file_action is not None else [],
     )
 
 

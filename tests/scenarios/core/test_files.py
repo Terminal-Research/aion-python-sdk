@@ -15,6 +15,7 @@ from __future__ import annotations
 import httpx
 import pytest
 import pytest_asyncio
+from google.protobuf.json_format import MessageToDict
 
 from tests.scenarios.commands import (
     ARTIFACT_DATA_NAME,
@@ -213,7 +214,7 @@ async def test_without_a_backend_inline_content_passes_through(client: ScenarioC
 @pytest.mark.variant("file-storage")
 @pytest.mark.command("artifacts")
 async def test_an_outbound_file_leaves_as_a_url(storage_client: ScenarioClient) -> None:
-    """The agent emits bytes; the client receives a URL. Data and url parts are untouched."""
+    """The uploaded URL preserves the file action, including explicit null retention."""
     events = await storage_client.send(
         "artifacts",
         metadata=distribution_metadata(),
@@ -224,6 +225,11 @@ async def test_an_outbound_file_leaves_as_a_url(storage_client: ScenarioClient) 
     assert file_part.WhichOneof("content") == "url"
     assert file_part.url.startswith(STUB_URL_PREFIX)
     assert not file_part.raw
+    messaging_uri = "https://docs.aion.to/a2a/extensions/aion/distribution/messaging/1.0.0"
+    assert MessageToDict(file_part.metadata)[messaging_uri] == {
+        "schema": f"{messaging_uri}#FileActionPayload",
+        "retentionExpiresAt": None,
+    }
 
     data_parts = artifact_named(events, ARTIFACT_DATA_NAME)
     assert [part.WhichOneof("content") for part in data_parts] == ["data", "data"]

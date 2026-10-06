@@ -24,17 +24,20 @@ from a2a.types import (
 )
 from aion.core.a2a.extensions import (
     DistributionExtensionV1,
+    FileActionPayload,
     ServiceIdentity,
 )
 from aion.core.constants import (
     CARDS_MEDIA_TYPE,
     DISTRIBUTION_EXTENSION_URI_V1,
+    MESSAGING_EXTENSION_URI_V1,
     USAGE_ATTRIBUTION_EXTENSION_URI_V1,
 )
 from aion.core.runtime.context import AionRuntimeExtensions
 from aion.server.files.a2a import strip_inline_file_content
 from aion.server.files.a2a.part_transformer import A2AFileTransformer
 from aion.server.files.storage import (
+    FileRetentionDefault,
     FileUpload,
     FileUploadErrorCode,
     FileUploadManager,
@@ -279,6 +282,47 @@ class TestA2AFileTransformer:
             artifact_event(raw_part()), upload_context=upload_context()
         )
         assert event.artifact.parts[0].url
+
+    @pytest.mark.parametrize("event_builder", [status_event, artifact_event])
+    @pytest.mark.parametrize("deadline", ["not-a-dateZ", "2030-01-01", 42, False])
+    async def test_invalid_file_action_drops_only_its_part(self, event_builder, deadline):
+        backend = RecordingBackend()
+        invalid = raw_part(name="invalid.png")
+        invalid.metadata.update({MESSAGING_EXTENSION_URI_V1: {
+            "schema": FileActionPayload.SCHEMA_URI,
+            "retentionExpiresAt": deadline,
+        }})
+        source = event_builder(Part(text="keep"), invalid, raw_part(name="valid.png"))
+        result = await self._transformer(backend).transform_event(
+            source, upload_context=upload_context(),
+        )
+        parts = (result.status.message.parts if isinstance(result, TaskStatusUpdateEvent)
+                 else result.artifact.parts)
+        assert [p.text for p in parts if p.text] == ["keep"]
+        assert len([p for p in parts if p.url]) == 1
+        assert [u.filename for u in backend.batches[0]] == ["valid.png"]
+
+    async def test_inbound_metadata_cannot_request_indefinite_retention(self):
+        backend = RecordingBackend()
+        part = raw_part()
+        part.metadata.update(FileActionPayload(retention_expires_at=None).to_metadata())
+        message = Message(message_id="m", role=Role.ROLE_USER, parts=[part])
+        result = await self._transformer(backend).transform_message(
+            message, upload_context=upload_context(),
+        )
+        assert result.report.ok
+        assert backend.batches[0][0].retention_expires_at is FileRetentionDefault.PROVIDER
+        assert not result.message.parts[0].metadata
+
+    async def test_url_action_does_not_upload_or_renew_a_file(self):
+        backend = RecordingBackend()
+        part = Part(url="https://files.test/existing", metadata=
+                    FileActionPayload(retention_expires_at=None).to_metadata())
+        event = artifact_event(part)
+        assert await self._transformer(backend).transform_event(
+            event, upload_context=upload_context(),
+        ) is event
+        assert backend.batches == []
 
     async def test_event_without_inline_parts_is_returned_unchanged(self):
         event = status_event(Part(text="hello"))

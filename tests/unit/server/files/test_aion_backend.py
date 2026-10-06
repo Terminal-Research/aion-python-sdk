@@ -6,11 +6,14 @@ Every test speaks to a mocked transport - nothing here reaches the platform.
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import httpx
 import pytest
+from a2a.types import TaskArtifactUpdateEvent
 from aion.api import AionFileClient, PrincipalSelector
+from aion.core.a2a import FileActionPayload, file_artifact
+from aion.core.constants.a2a import MESSAGING_EXTENSION_URI_V1
 from aion.core.principal import Principal
 from aion.core.runtime.context import (
     AionRuntimeContext, DirectAttribution, ForwardedAttribution,
@@ -26,6 +29,7 @@ from aion.server.files.storage import (
 from aion.server.files.storage.backends.aion import (
     AionFileStorageBackend,
 )
+from aion.server.files.a2a.part_transformer import A2AFileTransformer
 
 from tests.unit.support.files import ORG, upload_context
 
@@ -80,6 +84,44 @@ def upload(name="report.pdf", data=b"%PDF") -> FileUpload:
 
 
 class TestRequestShape:
+    @pytest.mark.parametrize("action,expected", [
+        (None, "2030-01-31T12:00:00Z"),
+        (FileActionPayload(), "2030-01-31T12:00:00Z"),
+        (FileActionPayload(retention_expires_at=None), None),
+        (FileActionPayload(retention_expires_at="2099-01-01T00:00:00Z"),
+         "2099-01-01T00:00:00Z"),
+    ])
+    async def test_file_action_controls_actual_upload_retention(
+        self, monkeypatch, action, expected,
+    ):
+        """Builder metadata reaches the Files API without collapsing null."""
+        class FixedClock(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return datetime(2030, 1, 1, 12, tzinfo=timezone.utc)
+
+        monkeypatch.setattr("aion.server.files.storage.backends.aion.datetime", FixedClock)
+        requests = []
+
+        async def handle(request):
+            requests.append(request)
+            assert request.url.params.get("retentionExpiresAt") == expected
+            return accepted()
+
+        transformer = A2AFileTransformer(FileUploadManager(backend(handle)))
+        artifact = file_artifact(
+            b"%PDF", mime_type="application/pdf", name="report.pdf", file_action=action,
+        )
+        event = TaskArtifactUpdateEvent(task_id="task", context_id="context", artifact=artifact)
+        result = await transformer.transform_event(event, upload_context=upload_context())
+
+        assert len(requests) == 1
+        assert result.artifact.parts[0].url.endswith("?grant=secret")
+        assert not result.artifact.parts[0].raw
+        assert result.artifact.parts[0].metadata == artifact.parts[0].metadata
+        if action is not None:
+            assert MESSAGING_EXTENSION_URI_V1 in result.artifact.extensions
+
     @pytest.mark.parametrize("direct", [False, True])
     async def test_direct_and_contextual_delivery_use_same_callback_for_grant(self, direct):
         attribution = (DirectAttribution(Principal("AnonymousSession", "00000000-0000-0000-0000-000000000001"))
@@ -125,7 +167,9 @@ class TestRequestShape:
             seen.append(request)
             return accepted()
 
+        before = datetime.now(timezone.utc)
         outcome = await backend(handle).store(upload(), context=upload_context())
+        after = datetime.now(timezone.utc)
 
         assert outcome == UploadReceipt(
             uri="https://api.aion.test/files/file-1/versions/v-1/content?grant=secret",
@@ -139,7 +183,8 @@ class TestRequestShape:
         assert request.url.path == "/files/agent-artifacts"
         assert request.url.params["organizationId"] == ORG
         assert "purpose" not in request.url.params
-        assert "retentionExpiresAt" not in request.url.params
+        deadline = datetime.fromisoformat(request.url.params["retentionExpiresAt"])
+        assert before + timedelta(days=30) <= deadline <= after + timedelta(days=30)
         assert request.url.params["byteSize"] == "4"
         assert request.url.params["operationId"]
         assert request.headers["Authorization"] == "Bearer token"
@@ -192,15 +237,18 @@ class TestRetry:
     async def test_operation_id_is_stable_across_attempts(self):
         """A retry after a lost answer must not create a second File."""
         ids: list[str] = []
+        deadlines: list[str] = []
 
         async def handle(request: httpx.Request) -> httpx.Response:
             ids.append(request.url.params["operationId"])
+            deadlines.append(request.url.params["retentionExpiresAt"])
             return httpx.Response(503) if len(ids) < 3 else accepted()
 
         outcome = await backend(handle).store(upload(), context=upload_context())
 
         assert isinstance(outcome, UploadReceipt)
         assert len(set(ids)) == 1 and len(ids) == 3
+        assert len(set(deadlines)) == 1
 
     async def test_unavailable_after_the_last_attempt(self):
         calls = 0

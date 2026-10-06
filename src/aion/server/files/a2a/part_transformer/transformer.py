@@ -22,6 +22,9 @@ import logging
 import mimetypes
 from dataclasses import dataclass, field
 
+from google.protobuf.json_format import MessageToDict
+from pydantic import ValidationError
+
 from a2a.types import (
     Message,
     Part,
@@ -29,8 +32,11 @@ from a2a.types import (
     TaskStatusUpdateEvent,
 )
 from aion.core.runtime.context import get_aion_runtime_context
+from aion.core.a2a.extensions.messaging import FileActionPayload
+from aion.core.constants.a2a import MESSAGING_EXTENSION_URI_V1
 from aion.server.files.storage import (
     FileUpload,
+    FileUploadErrorCode,
     FileUploadManager,
     UploadContextResolution,
     UploadFailure,
@@ -155,7 +161,7 @@ class A2AFileTransformer:
             context_id=event.context_id, task_id=event.task_id
         )
         new_parts, report = await self._transform_parts(
-            source, resolution, default_filename=default_filename
+            source, resolution, default_filename=default_filename, outbound=True
         )
         if not report.changed:
             return event
@@ -231,6 +237,7 @@ class A2AFileTransformer:
         resolution: UploadContextResolution,
         *,
         default_filename: str | None = None,
+        outbound: bool = False,
     ) -> tuple[list[Part], TransformReport]:
         """Store every convertible part of one message or event in one batch.
 
@@ -256,17 +263,28 @@ class A2AFileTransformer:
             dropped = set(indexes)
             return [p for i, p in enumerate(parts) if i not in dropped], report
 
-        uploads = [self._upload_for(parts[index], default_filename) for index in indexes]
+        uploads = []
+        upload_indexes = []
+        for index in indexes:
+            try:
+                upload = self._upload_for(parts[index], default_filename, outbound=outbound)
+            except ValidationError:
+                logger.warning("Dropping inline file part with invalid retention metadata")
+                report.failures.append(UploadFailure(FileUploadErrorCode.STORAGE_REJECTED))
+                continue
+            uploads.append(upload)
+            upload_indexes.append(index)
         outcomes = await self._upload_manager.store_many(uploads, context=resolution)
 
         stored: dict[int, Part] = {}
-        for index, upload, outcome in zip(indexes, uploads, outcomes, strict=True):
+        for index, upload, outcome in zip(upload_indexes, uploads, outcomes, strict=True):
             if isinstance(outcome, UploadReceipt):
                 report.receipts.append(outcome)
                 stored[index] = Part(
                     url=outcome.uri,
                     media_type=upload.media_type,
                     filename=parts[index].filename,
+                    metadata=parts[index].metadata if outbound else None,
                 )
                 continue
             # One line per file, with the reason in brief; the traceback only
@@ -299,16 +317,26 @@ class A2AFileTransformer:
         return bool(part.raw) and not self._skip_rules.should_skip(part)
 
     @staticmethod
-    def _upload_for(part: Part, default_filename: str | None = None) -> FileUpload:
+    def _upload_for(
+        part: Part, default_filename: str | None = None, *, outbound: bool = False
+    ) -> FileUpload:
         """Build the storage request for one inline part."""
         filename = part.filename or default_filename
         media_type = part.media_type
         if not media_type and filename:
             media_type, _ = mimetypes.guess_type(filename)
+        retention = {}
+        if outbound:
+            payload = MessageToDict(part.metadata).get(MESSAGING_EXTENSION_URI_V1)
+            if isinstance(payload, dict) and payload.get("schema") == FileActionPayload.SCHEMA_URI:
+                action = FileActionPayload.model_validate(payload)
+                if "retention_expires_at" in action.model_fields_set:
+                    retention["retention_expires_at"] = action.retention_expires_at
         return FileUpload(
             data=bytes(part.raw),
             media_type=media_type or "application/octet-stream",
             filename=filename or None,
+            **retention,
         )
 
 

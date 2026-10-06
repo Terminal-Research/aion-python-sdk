@@ -14,6 +14,7 @@ from typing import Optional, Union
 
 __all__ = [
     "FileUpload",
+    "FileRetentionDefault",
     "FileUploadErrorCode",
     "UploadFailure",
     "UploadOutcome",
@@ -111,20 +112,26 @@ _PUBLIC_REASONS: dict[FileUploadErrorCode, str] = {
 }
 
 
+class FileRetentionDefault(Enum):
+    """An omitted retention choice, resolved only by the storage provider."""
+
+    PROVIDER = "provider"
+
+
 @dataclass(frozen=True)
 class FileUpload:
     """One file handed to a backend for storage.
 
     ``filename`` is the name the sender suggested and is untrusted: backends
     present :meth:`leaf_name` to a storage service, never the name as received.
-    ``retention_expires_at`` is an explicit absolute deadline; omission does
-    not add a finite lifetime for Aion agent output.
+    ``retention_expires_at`` distinguishes provider policy from an explicit
+    deadline or None (indefinite). This shared contract supplies no duration.
     """
 
     data: bytes
     media_type: str = "application/octet-stream"
     filename: Optional[str] = None
-    retention_expires_at: Optional[datetime] = None
+    retention_expires_at: datetime | None | FileRetentionDefault = FileRetentionDefault.PROVIDER
 
     @property
     def byte_size(self) -> int:

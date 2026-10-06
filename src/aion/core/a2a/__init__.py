@@ -75,6 +75,7 @@ from .extensions.distribution import (
 from .extensions.event import EventMessageMetadataV1, EventPartMetadataV1
 from .extensions.messaging import (
     CommandEventPayload,
+    FileActionPayload,
     MessageActionPayload,
     MessageActionTrajectory,
     MessageEventPayload,

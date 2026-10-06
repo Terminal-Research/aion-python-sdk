@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import Any, Sequence
 from uuid import uuid4
 
@@ -30,6 +31,7 @@ from aion.core.exceptions import AionDaemonIdentityRequired, AionError
 from ..context import UploadContext
 from ..contracts import (
     FileUpload,
+    FileRetentionDefault,
     FileUploadErrorCode,
     UploadFailure,
     UploadOutcome,
@@ -99,6 +101,11 @@ class AionFileStorageBackend(FileStorageBackend):
         """Retry upload under one operation ID, then retry only its grant."""
         operation_id = uuid4()
         file_name = upload.leaf_name(str(operation_id))
+        # This provider uploads AgentArtifact only. Resolve its default once,
+        # before retries, without changing the File Service's null contract.
+        retention_expires_at = upload.retention_expires_at
+        if retention_expires_at is FileRetentionDefault.PROVIDER:
+            retention_expires_at = datetime.now(timezone.utc) + timedelta(days=30)
         uploaded = None
 
         async with self._slots:
@@ -111,7 +118,7 @@ class AionFileStorageBackend(FileStorageBackend):
                             file_name=file_name,
                             media_type=upload.media_type,
                             operation_id=operation_id,
-                            retention_expires_at=upload.retention_expires_at,
+                            retention_expires_at=retention_expires_at,
                             usage_attribution=context.usage_attribution,
                             runtime_context=context.runtime_context,
                         )

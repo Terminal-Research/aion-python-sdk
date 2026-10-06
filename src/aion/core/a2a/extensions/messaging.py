@@ -4,14 +4,17 @@ Defines payload models for message-based events (messages, reactions, commands),
 and action payloads for routing message responses through distribution channels.
 """
 
+from datetime import datetime, timedelta
 from typing import Any, ClassVar, Dict, Literal, Optional
 
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from aion.core.a2a import A2ABaseModel
 from aion.core.constants.a2a import (
     COMMAND_EVENT_PAYLOAD_SCHEMA_V1,
     COMMAND_EVENT_TYPE_V1,
+    FILE_ACTION_PAYLOAD_SCHEMA_V1,
+    MESSAGING_EXTENSION_URI_V1,
     MESSAGE_EVENT_PAYLOAD_SCHEMA_V1,
     MESSAGE_EVENT_TYPE_V1,
     REACTION_EVENT_PAYLOAD_SCHEMA_V1,
@@ -26,6 +29,7 @@ __all__ = [
     "CommandEventPayload",
     "SourceSystemEventPayload",
     "MessageActionPayload",
+    "FileActionPayload",
     "ReactionActionPayload",
 ]
 
@@ -140,6 +144,44 @@ class MessageActionPayload(A2ABaseModel):
         default=None,
         description="Provider message id being replied to; required when trajectory is 'reply'.",
     )
+
+
+class FileActionPayload(A2ABaseModel):
+    """Initial retention requested for one outbound inline file part.
+
+    Omission leaves the storage provider's default in effect. Explicit None
+    requests indefinite storage. This action does not renew an existing URL
+    or grant authority over a File.
+    """
+
+    SCHEMA_URI: ClassVar[str] = FILE_ACTION_PAYLOAD_SCHEMA_V1
+
+    retention_expires_at: Optional[datetime] = Field(
+        default=None,
+        description="Absolute UTC retention deadline, or null for indefinite storage.",
+    )
+
+    @field_validator("retention_expires_at", mode="before")
+    @classmethod
+    def validate_utc_input(cls, value: Any) -> Any:
+        """Accept explicit null, UTC datetimes, or UTC-Z wire timestamps."""
+        if value is None or isinstance(value, str) and value.endswith("Z"):
+            return value
+        if isinstance(value, datetime) and value.utcoffset() == timedelta(0):
+            return value
+        raise ValueError("File retention timestamps must use UTC (Z)")
+
+    def to_metadata(self) -> dict[str, Any]:
+        """Return file-part metadata without losing explicit null.
+
+        Returns:
+            The Messaging extension object with the exact schema and only
+            the fields explicitly supplied by the agent.
+        """
+        return {MESSAGING_EXTENSION_URI_V1: {
+            "schema": self.SCHEMA_URI,
+            **self.model_dump(mode="json", by_alias=True, exclude_unset=True),
+        }}
 
 
 class ReactionActionPayload(A2ABaseModel):

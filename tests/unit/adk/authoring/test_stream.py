@@ -5,7 +5,7 @@ from aion.adk.authoring.constants import AION_OUTPUT_KEY, AION_ROUTING_KEY
 from aion.adk.authoring.invocation.emitters import emit_artifact, emit_card, emit_reaction, emit_message
 from aion.adk.authoring.invocation.event_metadata import get_aion_output
 from aion.adk.authoring.invocation.invocation_context import AionInvocationContext
-from aion.core.a2a import data_artifact, file_artifact, url_artifact
+from aion.core.a2a import FileActionPayload, data_artifact, file_artifact, url_artifact
 from aion.core.a2a.enums import ArtifactId
 from aion.core.a2a.extensions.messaging import MessageActionPayload, ReactionActionPayload
 from aion.core.agent.invocation.card import Card
@@ -170,6 +170,21 @@ class TestEmitArtifact:
         call_kwargs = ctx.artifact_service.save_artifact.call_args.kwargs
         assert call_kwargs["filename"] == "file.txt"
         assert call_kwargs["artifact"].inline_data.data == b"hello"
+
+    def test_file_action_preserves_explicit_null_in_event(self):
+        emitter = MagicMock()
+        ctx = make_mock_ctx()
+        artifact = file_artifact(
+            b"hello", mime_type="text/plain", name="file.txt",
+            file_action=FileActionPayload(retention_expires_at=None),
+        )
+        asyncio.run(emit_artifact(emitter, ctx, artifact))
+
+        output = get_aion_output(emitter.call_args[0][0])
+        assert output.artifact.file_action == {
+            "schema": FileActionPayload.SCHEMA_URI,
+            "retentionExpiresAt": None,
+        }
 
     def test_data_artifact_saved_to_artifact_service(self):
         emitter = MagicMock()

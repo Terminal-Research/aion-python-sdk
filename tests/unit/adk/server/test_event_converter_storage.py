@@ -1,20 +1,20 @@
 """The ADK artifact path stores its own content, under the same policy.
 
-Artifacts loaded from ADK's artifact service are converted directly, without
-passing through the A2A part transformer. That makes this the second direct
-entry into storage and the one that would otherwise let raw bytes reach the
-task record - so it shares the outbound rule: never fall back to inline
-content; an artifact that could not be stored is dropped and logged.
+Artifacts loaded from ADK's artifact service use the shared outbound file
+transformer, including the file action carried by the authoring helper.
+An artifact that could not be stored is dropped rather than kept inline.
 """
 
 from unittest.mock import AsyncMock, MagicMock
+from datetime import datetime, timezone
 
 import pytest
 from a2a.types import TaskArtifactUpdateEvent
 from aion.adk.authoring.constants import AION_OUTPUT_KEY
 from aion.adk.authoring.invocation.event_metadata import AionOutput, ArtifactOutput
 from aion.adk.server.execution.event_converter import ADKToA2AEventConverter
-from aion.core.a2a import file_artifact
+from aion.core.a2a import FileActionPayload, file_artifact
+from aion.core.constants import MESSAGING_EXTENSION_URI_V1
 from aion.core.runtime.context import (
     AionRuntimeContext,
     AionRuntimeContextRegistry,
@@ -24,6 +24,7 @@ from aion.server.agent.execution.context.providers import (
     RequestScopeRuntimeContextProvider,
 )
 from aion.server.files.storage import (
+    FileRetentionDefault,
     FileUploadErrorCode,
     FileUploadManager,
     UploadFailure,
@@ -64,8 +65,10 @@ def no_runtime_context(context_provider):
     AionRuntimeContextRegistry.set_current_context(None)
 
 
-def bytes_artifact_event(data: bytes = b"hello bytes") -> tuple[Event, MagicMock]:
-    artifact = file_artifact(data, mime_type="text/plain", name="bytes_file")
+def bytes_artifact_event(
+    data: bytes = b"hello bytes", *, file_action: FileActionPayload | None = None,
+) -> tuple[Event, MagicMock]:
+    artifact = file_artifact(data, mime_type="text/plain", name="bytes_file", file_action=file_action)
     event = Event(
         author="agent",
         content=None,
@@ -74,7 +77,9 @@ def bytes_artifact_event(data: bytes = b"hello bytes") -> tuple[Event, MagicMock
         custom_metadata={
             AION_OUTPUT_KEY: AionOutput(
                 artifact=ArtifactOutput(
-                    artifact_id=artifact.artifact_id, artifact_name="bytes_file"
+                    artifact_id=artifact.artifact_id, artifact_name="bytes_file",
+                    file_action=(file_action.to_metadata()[MESSAGING_EXTENSION_URI_V1]
+                                 if file_action is not None else None),
                 )
             ).model_dump(exclude_none=True)
         },
@@ -106,6 +111,21 @@ def converter(service, backend=None) -> ADKToA2AEventConverter:
 
 
 class TestArtifactStorage:
+    @pytest.mark.parametrize("action,expected", [
+        (FileActionPayload(), FileRetentionDefault.PROVIDER),
+        (FileActionPayload(retention_expires_at=None), None),
+        (FileActionPayload(retention_expires_at="2099-01-01T00:00:00Z"),
+         datetime(2099, 1, 1, tzinfo=timezone.utc)),
+    ])
+    async def test_adk_file_action_reaches_storage(self, runtime_context, action, expected):
+        event, service = bytes_artifact_event(file_action=action)
+        backend = RecordingBackend()
+        results = await converter(service, backend).convert(event)
+
+        assert backend.batches[0][0].retention_expires_at == expected
+        assert results[0].artifact.parts[0].url
+        assert MESSAGING_EXTENSION_URI_V1 in results[0].artifact.extensions
+
     async def test_inline_artifact_content_is_stored(self, runtime_context):
         event, service = bytes_artifact_event()
         backend = RecordingBackend()
