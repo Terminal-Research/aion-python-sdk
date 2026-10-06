@@ -221,16 +221,16 @@ Inline file parts: stored on the way in and out, rejected, or passed through.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [The inbox keeps the data part as it was sent, metadata included.](core/test_files.py#L103 "test_an_inbound_data_part_reaches_the_inbox_whole") | `files` | `parts` | `default` | ✓ | ✓ |
-| [The agent never sees the bytes: by the time it runs, the file is a URL.](core/test_files.py#L121 "test_an_inbound_file_reaches_the_agent_as_a_url") | `files` | `parts` | `file-storage` | ✓ | ✓ |
-| [Reading the task back returns what was persisted: a URL part, no raw content.](core/test_files.py#L140 "test_the_stored_task_holds_the_url_and_not_the_bytes") | `files` | `parts` | `file-storage` | ✓ | ✓ |
-| [No distribution means no owning organization: the request is refused, not degraded.](core/test_files.py#L161 "test_an_inbound_file_without_a_distribution_is_rejected") | `files` | `parts` | `file-storage` | ✓ | ✓ |
-| [A service identity alone names nobody to own the file.](core/test_files.py#L171 "test_a_distribution_without_a_principal_cannot_own_a_file") | `files` | `parts` | `file-storage` | ✓ | ✓ |
-| [Storage is a concern of file parts only; a plain message is unaffected.](core/test_files.py#L186 "test_text_only_requests_need_no_distribution") | `files` | `parts` | `file-storage` | ✓ | ✓ |
-| [Passthrough is a supported mode: no backend, the bytes reach the agent and the record.](core/test_files.py#L196 "test_without_a_backend_inline_content_passes_through") | `files` | `parts` | `default` | ✓ | ✓ |
-| [The agent emits bytes; the client receives a URL. Data and url parts are untouched.](core/test_files.py#L214 "test_an_outbound_file_leaves_as_a_url") | `files` | `artifacts` | `file-storage` | ✓ | [skip](#frameworks) |
-| [No backend, no conversion: the bytes the agent emitted are the bytes received.](core/test_files.py#L239 "test_without_a_backend_an_outbound_file_stays_inline") | `files` | `artifacts` | `default` | ✓ | [skip](#frameworks) |
-| [Selecting the Aion backend without AION_CLIENT_ID and AION_CLIENT_SECRET is a startup error.](core/test_files.py#L252 "test_the_aion_backend_does_not_serve_without_credentials") | `files` | — | `aion-no-credentials` | ✓ | ✓ |
+| [The inbox keeps the data part as it was sent, metadata included.](core/test_files.py#L102 "test_an_inbound_data_part_reaches_the_inbox_whole") | `files` | `parts` | `default` | ✓ | ✓ |
+| [The agent never sees the bytes: by the time it runs, the file is a URL.](core/test_files.py#L120 "test_an_inbound_file_reaches_the_agent_as_a_url") | `files` | `parts` | `file-storage` | ✓ | ✓ |
+| [Reading the task back returns what was persisted: a URL part, no raw content.](core/test_files.py#L139 "test_the_stored_task_holds_the_url_and_not_the_bytes") | `files` | `parts` | `file-storage` | ✓ | ✓ |
+| [Direct invocation attribution supports storage without distribution metadata.](core/test_files.py#L160 "test_a_direct_inbound_file_uses_callback_scope") | `files` | `parts` | `file-storage` | ✓ | ✓ |
+| [Missing distribution principals do not override accepted callback attribution.](core/test_files.py#L171 "test_distribution_recipients_do_not_select_file_authority") | `files` | `parts` | `file-storage` | ✓ | ✓ |
+| [Storage is a concern of file parts only; a plain message is unaffected.](core/test_files.py#L185 "test_text_only_requests_need_no_distribution") | `files` | `parts` | `file-storage` | ✓ | ✓ |
+| [Passthrough is a supported mode: no backend, the bytes reach the agent and the record.](core/test_files.py#L195 "test_without_a_backend_inline_content_passes_through") | `files` | `parts` | `default` | ✓ | ✓ |
+| [The agent emits bytes; the client receives a URL. Data and url parts are untouched.](core/test_files.py#L213 "test_an_outbound_file_leaves_as_a_url") | `files` | `artifacts` | `file-storage` | ✓ | [skip](#frameworks) |
+| [No backend, no conversion: the bytes the agent emitted are the bytes received.](core/test_files.py#L238 "test_without_a_backend_an_outbound_file_stays_inline") | `files` | `artifacts` | `default` | ✓ | [skip](#frameworks) |
+| [Selecting the Aion backend without AION_CLIENT_ID and AION_CLIENT_SECRET is a startup error.](core/test_files.py#L251 "test_the_aion_backend_does_not_serve_without_credentials") | `files` | — | `aion-no-credentials` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_interrupts.py`
 

@@ -7,7 +7,7 @@ agent saw, what came back, what a later read of the task returns.
 
 The backend here is the SDK's stub, which hands back a URL without storing
 anything: it proves the conversion path, not a storage service. The Aion
-Files API backend needs platform credentials and is checked by hand.
+File Service backend has separate local HTTP transport and backend storage tests.
 """
 
 from __future__ import annotations
@@ -15,7 +15,6 @@ from __future__ import annotations
 import httpx
 import pytest
 import pytest_asyncio
-from a2a.utils.errors import InvalidParamsError
 
 from tests.scenarios.commands import (
     ARTIFACT_DATA_NAME,
@@ -160,27 +159,27 @@ async def test_the_stored_task_holds_the_url_and_not_the_bytes(storage_client: S
 
 @pytest.mark.variant("file-storage")
 @pytest.mark.command("parts")
-async def test_an_inbound_file_without_a_distribution_is_rejected(storage_client: ScenarioClient) -> None:
-    """No distribution means no owning organization: the request is refused, not degraded."""
-    with pytest.raises(InvalidParamsError) as error:
-        await storage_client.send("parts", files=[PNG])
-
-    assert "distribution" in str(error.value)
+async def test_a_direct_inbound_file_uses_callback_scope(storage_client: ScenarioClient) -> None:
+    """Direct invocation attribution supports storage without distribution metadata."""
+    events = await storage_client.send("parts", files=[PNG])
+    seen = parts_seen(events)
+    assert seen.kinds == ["text", "url"]
+    assert seen.raw_bytes == 0
+    assert final_task(events).state == "COMPLETED"
 
 
 @pytest.mark.variant("file-storage")
 @pytest.mark.command("parts")
-async def test_a_distribution_without_a_principal_cannot_own_a_file(storage_client: ScenarioClient) -> None:
-    """A service identity alone names nobody to own the file."""
-    with pytest.raises(InvalidParamsError) as error:
-        await storage_client.send(
-            "parts",
-            files=[PNG],
-            metadata=distribution_metadata(principal=False, service=True),
-            extensions=[DISTRIBUTION_EXTENSION_URI],
-        )
-
-    assert "principal identity" in str(error.value)
+async def test_distribution_recipients_do_not_select_file_authority(storage_client: ScenarioClient) -> None:
+    """Missing distribution principals do not override accepted callback attribution."""
+    events = await storage_client.send(
+        "parts",
+        files=[PNG],
+        metadata=distribution_metadata(principal=False, service=True),
+        extensions=[DISTRIBUTION_EXTENSION_URI],
+    )
+    assert parts_seen(events).kinds == ["text", "url"]
+    assert final_task(events).state == "COMPLETED"
 
 
 @pytest.mark.variant("file-storage")

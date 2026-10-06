@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock
 import pytest
 import uvicorn
 from fastapi import FastAPI, Request, WebSocket
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from a2a.server.agent_execution import RequestContext
 from a2a.server.context import ServerCallContext
 from a2a.types import Message, Part, Role, SendMessageRequest, Task, TaskState, TaskStatus
@@ -34,6 +34,8 @@ from aion.server.agent.execution import AionAgentRequestExecutor
 from aion.server.agent.execution.context.providers import RequestScopeRuntimeContextProvider
 from aion.server.agent.execution.scope import init_execution_scope, clear_execution_scope
 from aion.server.auth import Assurance, AuthenticatedCaller, CallerCredentials, CredentialKind
+from aion.server.files.storage import FileUpload, UploadContext, UploadReceipt
+from aion.server.files.storage.backends.aion import AionFileStorageBackend
 
 
 class VersionToken:
@@ -44,7 +46,8 @@ class VersionToken:
 @pytest.fixture
 def api():
     app = FastAPI()
-    state = SimpleNamespace(requests=[], subscriptions=[], failure=False, stream_error=False)
+    state = SimpleNamespace(requests=[], subscriptions=[], failure=False,
+                            stream_error=False, grant_number=0, content=b"")
     details = {"code": "daemon_identity_required", "resourceType": "Deployment",
                "resourceId": "deployment-1", "retryable": False}
 
@@ -62,7 +65,26 @@ def api():
         if state.failure:
             error = {"code": -32600, "data": details} if path == "mcp" else details
             return JSONResponse({"error": error}, status_code=409)
+        if path == "files/agent-artifacts":
+            form = await request.form()
+            state.content = await form["file"].read()
+        if path == "files/file-1/versions/version-1/grants":
+            state.grant_number += 1
+            return {
+                "id": "file-1", "versionId": "version-1",
+                "url": state.url + "/files/file-1/versions/version-1/content?grant="
+                       + str(state.grant_number),
+                "accessExpiresAt": "2099-01-01T00:00:00Z",
+                "retentionExpiresAt": None,
+            }
         return {"id": "file-1", "versionId": "version-1", "ok": True}
+
+    @app.get("/files/file-1/versions/version-1/content")
+    async def content(request: Request):
+        if request.query_params.get("grant") != str(state.grant_number):
+            return Response(status_code=410)
+        assert "authorization" not in request.headers
+        return Response(state.content, media_type="application/octet-stream")
 
     @app.websocket("/ws/graphql")
     async def graphql(ws: WebSocket):
@@ -130,6 +152,35 @@ async def gql_client(api):
     )
     await client.initialize()
     return client
+
+
+async def test_artifact_delivery_and_explicit_fresh_grant_over_real_http(api):
+    """Recipients need only the grant; refresh uses Version credentials and IDs.
+
+    This is transport-contract coverage. Real grant persistence, expiration and
+    object cleanup are exercised by the backend's disposable lifecycle suite.
+    """
+    import httpx
+
+    async with AionFileClient(jwt_manager=VersionToken(), base_url=api.url) as files:
+        backend = AionFileStorageBackend(files, backoff_seconds=0)
+        receipt = await backend.store(FileUpload(b"recipient bytes"),
+            context=UploadContext(usage_attribution="opaque-forwarded"))
+        assert isinstance(receipt, UploadReceipt)
+        assert receipt.retention_expires_at is None
+        async with httpx.AsyncClient() as recipient:
+            assert (await recipient.get(receipt.uri)).content == b"recipient bytes"
+            api.grant_number += 1  # Invalidate the fixture's first capability.
+            assert (await recipient.get(receipt.uri)).status_code == 410
+            fresh = await files.create_read_grant(receipt.file_id, receipt.version_id,
+                usage_attribution="opaque-forwarded")
+            assert (await recipient.get(fresh["url"])).content == b"recipient bytes"
+        paths = [path for path, _ in api.requests]
+        assert paths.count("files/agent-artifacts") == 1
+        assert paths.count("files/file-1/versions/version-1/grants") == 2
+        for _, headers in api.requests:
+            assert headers["authorization"] == "Bearer version-token"
+            assert headers["aion-usage-attribution"] == "opaque-forwarded"
 
 
 def incoming(number, resume):
