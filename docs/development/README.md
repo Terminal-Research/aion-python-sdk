@@ -59,7 +59,7 @@ A unit test runs on any developer machine with nothing set up. It may use
 short child Python to see what a thinner installation imports. An integration
 test is about a real infrastructure boundary or an OS-level lifecycle, where
 the real behaviour is the subject: a PostgreSQL to migrate and truncate, a
-real process tree and its descendants to signal, real lease timeouts to wait
+real process tree and its descendants to signal, real timeouts to wait
 for. Run it before you commit rather than between two edits.
 
 ```bash

@@ -8,13 +8,14 @@ catalog of one kind, so the two backends cannot drift apart:
 * artifacts are qualified by task, newest first, without streaming deltas;
 * ``DeleteContext`` removes the caller's binding; the last one cancels the
   context's active tasks through the store, deletes its framework state under
-  the holder's scope and removes its tasks, messages, artifacts, claims and
+  the holder's scope and removes its tasks, messages, artifacts, versions and
   bindings, after which the ID starts a new conversation;
 * an unsettled deletion stays durable and fenced, and the same caller's retry
   finishes it; a late write of a removed task is refused.
 
-Cancellation goes through the stores' own unscoped cancel - the path a task
-with no live execution takes - and framework state through a recording fake.
+Cancellation is a2a-sdk's remote cancellation - ``CANCELED`` written over the
+stored version, unscoped - the path a task with no live execution takes; and
+framework state goes through a recording fake.
 """
 
 from __future__ import annotations
@@ -25,12 +26,23 @@ from typing import Optional
 import pytest
 import pytest_asyncio
 from a2a.auth.user import User
+from a2a.server.cluster import ConcurrentTaskModificationError, LegacyTaskStoreAdapter, TaskVersion
 from a2a.server.context import ServerCallContext
 from a2a.server.owner_resolver import resolve_user_scope
-from a2a.types import Artifact, Message, Part, Role, Task, TaskPushNotificationConfig, TaskState, TaskStatus
+from a2a.types import (
+    Artifact,
+    Message,
+    Part,
+    Role,
+    Task,
+    TaskPushNotificationConfig,
+    TaskState,
+    TaskStatus,
+    TaskStatusUpdateEvent,
+)
 from sqlalchemy import text
 
-from .postgres_support import POSTGRES_TEST_URL, prepared_database, provider, truncate
+from .postgres_support import POSTGRES_TEST_URL, prepared_database, stores as postgres_stores, task_version, truncate
 
 from aion.core.a2a import (
     A2AMetadataKey,
@@ -44,10 +56,8 @@ from aion.db.postgres.manager import db_manager
 from aion.server.contexts import ContextDeletionInProgress, ContextNotFound, ContextService, ContextStateDeleter
 from aion.server.tasks.admission import ContextHolder, InMemoryContextAdmission, PostgresContextAdmission
 from aion.server.tasks.contexts import InMemoryContextCatalog, PostgresContextCatalog
-from aion.server.tasks.ownership import TaskOwnershipLost
 from aion.server.tasks.push_notifications import PushNotificationFactory
 from aion.server.tasks.stores.in_memory_task_store import InMemoryTaskStore
-from aion.server.tasks.stores.postgres_task_store import PostgresTaskStore
 
 pytestmark = [pytest.mark.asyncio(loop_scope="module")]
 
@@ -95,15 +105,15 @@ class _Backend:
         self.deleted: list[tuple] = []
         self.unsettled = False
         if kind == "memory":
-            self._lease = None
             self.store = InMemoryTaskStore(resolve_user_scope)
+            self.versioned = LegacyTaskStoreAdapter(self.store)
             self.admission = InMemoryContextAdmission()
             catalog = InMemoryContextCatalog(self.store, self.admission)
         else:
-            self._lease = provider("pod-a", agent_id=f"agent-{uuid.uuid4()}")
-            self.store = PostgresTaskStore(agent_id=self._lease.agent_id, ownership_provider=self._lease)
-            self.admission = PostgresContextAdmission(self._lease.agent_id, db_manager)
-            catalog = PostgresContextCatalog(self._lease.agent_id, db_manager)
+            agent_id = f"agent-{uuid.uuid4()}"
+            self.store, self.versioned = postgres_stores(agent_id)
+            self.admission = PostgresContextAdmission(agent_id, db_manager)
+            catalog = PostgresContextCatalog(agent_id, db_manager)
         self.service = ContextService(
             catalog=catalog,
             owner_resolver=resolve_user_scope,
@@ -114,20 +124,29 @@ class _Backend:
     async def _cancel(self, task_id: str):
         if self.unsettled:
             raise TimeoutError("the owner has not answered yet")
-        return await self.store.cancel_with_ownership_revocation(task_id, None)
+        stored = await self.versioned.get(task_id, None)
+        if stored is None:
+            return None
+        cancelled = Task()
+        cancelled.CopyFrom(stored.task)
+        cancelled.status.state = TaskState.TASK_STATE_CANCELED
+        await self.versioned.save(
+            cancelled,
+            event=TaskStatusUpdateEvent(task_id=task_id, context_id=cancelled.context_id, status=cancelled.status),
+            prev=stored.task,
+            prev_version=stored.version,
+            context=None,
+        )
+        return cancelled
 
     async def _delete_state(self, context_id, *, owner_scope, gateway):
         self.deleted.append((context_id, owner_scope, gateway))
 
     async def save(self, task: Task, name: str) -> None:
-        if self._lease is None:
-            await self.store.save(task, _caller(name))
-            return
-        claim = await self._lease.acquire(task.id)
-        try:
-            await self.store.save(task, _caller(name))
-        finally:
-            await self._lease.release(claim)
+        """Write a new task as a server does: through the versioned store, with its event."""
+        await self.versioned.save(
+            task, event=task, prev=None, prev_version=TaskVersion.MISSING, context=_caller(name)
+        )
 
     async def send(
         self,
@@ -275,18 +294,22 @@ async def test_an_unsettled_deletion_is_fenced_and_resumed_by_its_caller(backend
 async def test_a_late_write_cannot_restore_a_removed_task(backend):
     """An execution still writing after the deletion cannot bring the task back.
 
-    On PostgreSQL the writer holds a claim the deletion removed, so its fenced
-    write finds no live lease; in memory the removed task is retired.
+    The writer holds the version it last read. On PostgreSQL the deletion
+    removed the version row, so the write is stale; in memory the removed
+    task is retired. And written afresh, as a new task, it is refused by
+    admission: the context is no longer active.
     """
     task = await backend.send("alice", "ctx", _message("m1"))
-    claim = await backend._lease.acquire(task.id) if backend._lease is not None else None
+    stored = await backend.versioned.get(task.id, _caller("alice"))
     await backend.delete("alice", "ctx")
 
-    with pytest.raises(TaskOwnershipLost):
+    with pytest.raises(ConcurrentTaskModificationError):
+        await backend.versioned.save(
+            task, event=None, prev=stored.task, prev_version=stored.version, context=_caller("alice")
+        )
+    with pytest.raises(ConcurrentTaskModificationError):
         await backend.store.save(task, _caller("alice"))
 
-    if claim is not None:
-        await backend._lease.release(claim)
     assert await backend.task_count("ctx") == 0
 
 
@@ -301,7 +324,7 @@ async def test_a_deleted_context_id_starts_a_new_conversation(backend):
         await backend.history("alice", "ctx")
 
 
-async def test_postgres_removes_claims_and_push_configs_with_the_tasks(backend):
+async def test_postgres_removes_versions_and_push_configs_with_the_tasks(backend):
     if backend.kind != "postgres":
         pytest.skip("storage detail of the PostgreSQL backend")
     task = await backend.send("alice", "ctx", _message("m1"))
@@ -313,8 +336,11 @@ async def test_postgres_removes_claims_and_push_configs_with_the_tasks(backend):
     )
     assert await push_configs.get_info_for_dispatch(task.id)
 
+    assert await task_version(task.id) is not None
+
     await backend.delete("alice", "ctx")
 
+    assert await task_version(task.id) is None
     async with db_manager.get_session() as session:
         remaining = await session.scalar(
             text("SELECT count(*) FROM push_notification_configs WHERE task_id = :task_id"), {"task_id": task.id}
@@ -372,7 +398,7 @@ async def test_a_message_admitted_before_the_deletion_creates_no_task_after_it(b
 
     await backend.delete("alice", "ctx")
 
-    with pytest.raises(TaskOwnershipLost):
+    with pytest.raises(ConcurrentTaskModificationError):
         await backend.save(late, "alice")
     assert await backend.task_count("ctx") == 0
 

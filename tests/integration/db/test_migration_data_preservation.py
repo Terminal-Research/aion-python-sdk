@@ -25,7 +25,6 @@ from sqlalchemy import create_engine, text
 from aion.db.postgres.constants import (
     AION_SCHEMA,
     TASK_ARTIFACTS_TABLE,
-    TASK_CLAIMS_TABLE,
     TASK_MESSAGES_TABLE,
     TASKS_TABLE,
 )
@@ -67,7 +66,7 @@ def at_revision_003(_sync_engine):
     command.upgrade(alembic_config, "head")
     with _sync_engine.begin() as connection:
         connection.execute(
-            text(f"TRUNCATE TABLE {AION_SCHEMA}.{TASK_CLAIMS_TABLE}, {AION_SCHEMA}.{TASKS_TABLE} CASCADE")
+            text(f"TRUNCATE TABLE {AION_SCHEMA}.{TASKS_TABLE} CASCADE")
         )
     command.downgrade(alembic_config, "base")
     command.upgrade(alembic_config, "003")

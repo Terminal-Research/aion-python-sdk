@@ -15,7 +15,6 @@ dozens of codes before it reaches into this block.
 error claims a code in that block. It exists because there is no aion-owned
 layer between an ``A2AError`` subclass and a2a-sdk's own module-level maps
 (``JSON_RPC_ERROR_CODE_MAP``, ``EXCEPTION_MAP``, ``A2A_ERROR_MAPPING``) - see
-``aion.server.tasks.ownership.types.TaskOwnershipBusy`` and
 ``AuthenticationRequired`` below. Failing loudly here, at import time, is what turns a
 future collision - Aion claiming a code twice, or landing outside its own
 block - into an immediate startup failure instead of two error types silently

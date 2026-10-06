@@ -22,6 +22,7 @@ import pytest
 from a2a.server.context import ServerCallContext
 from a2a.types import Task, TaskState, TaskStatus, TaskStatusUpdateEvent
 from a2a.utils import DEFAULT_RPC_URL
+from a2a.server.cluster import DatabaseTaskEventStream
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.routing import Route
@@ -34,12 +35,12 @@ from aion.server.tasks.admission import InMemoryContextAdmission, PostgresContex
 from aion.server.tasks.contexts import InMemoryContextCatalog, PostgresContextCatalog
 from aion.server.tasks.push_notifications import PushNotificationFactory
 from aion.server.tasks.stores.in_memory_task_store import InMemoryTaskStore
-from aion.server.tasks.stores.postgres_task_store import PostgresTaskStore
 
-from .postgres_support import provider, truncate
+from .postgres_support import stores, truncate
 
 TASK_NOT_FOUND = -32001
 TASK_NOT_CANCELABLE = -32002
+UNSUPPORTED_OPERATION = -32004
 INVALID_REQUEST = -32600
 INVALID_PARAMS = -32602
 
@@ -109,16 +110,18 @@ class JsonRpcServer:
     def __init__(self, kind: str, middleware: list[Middleware]) -> None:
         if kind == "memory":
             self.store = InMemoryTaskStore()
-            lease = self.store.ownership_provider
+            handler_store, event_stream = self.store, None
             admission = InMemoryContextAdmission()
             catalog = InMemoryContextCatalog(self.store, admission)
         else:
-            lease = provider("pod-a")
-            self.store = PostgresTaskStore(agent_id=lease.agent_id, ownership_provider=lease)
-            admission = PostgresContextAdmission(lease.agent_id, db_manager)
-            catalog = PostgresContextCatalog(lease.agent_id, db_manager)
+            # Built the way StoreManager builds it: a2a-sdk's cluster mode.
+            self.store, handler_store = stores("test-agent")
+            event_stream = DatabaseTaskEventStream(
+                db_manager.get_engine(), create_table=False, poll_interval_s=0.05
+            )
+            admission = PostgresContextAdmission(self.store.agent_id, db_manager)
+            catalog = PostgresContextCatalog(self.store.agent_id, db_manager)
         self.admission = admission
-        self.lease = lease
         self.agent = ScriptedAgent()
         card = Mock()
         card.capabilities.streaming = True
@@ -128,9 +131,9 @@ class JsonRpcServer:
         self.push_configs, _ = PushNotificationFactory.create(db_manager if kind == "postgres" else None)
         self.handler = AionRequestHandler(
             agent_executor=self.agent,
-            task_store=self.store,
+            task_store=handler_store,
+            event_stream=event_stream,
             agent_card=card,
-            ownership_provider=lease,
             admission=admission,
             context_catalog=catalog,
             push_config_store=self.push_configs,
@@ -202,13 +205,9 @@ class JsonRpcServer:
     async def write(self, state: TaskState, context: ServerCallContext | None) -> str:
         """Create a task from Python, beside the server, as an integrator's code would."""
         task_id = str(uuid.uuid4())
-        claim = await self.lease.acquire(task_id)
-        try:
-            await self.store.save(
-                Task(id=task_id, context_id=str(uuid.uuid4()), status=TaskStatus(state=state)), context
-            )
-        finally:
-            await self.lease.release(claim)
+        await self.store.save(
+            Task(id=task_id, context_id=str(uuid.uuid4()), status=TaskStatus(state=state)), context
+        )
         return task_id
 
     async def aclose(self) -> None:

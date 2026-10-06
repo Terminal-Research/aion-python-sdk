@@ -72,10 +72,12 @@ from sqlalchemy.dialects.postgresql import JSONB
 
 from aion.db.postgres.constants import (
     TASK_ARTIFACTS_TABLE,
-    TASK_CLAIMS_TABLE,
     TASK_MESSAGES_TABLE,
     TASKS_TABLE,
 )
+
+# Written out: the table no longer exists at head, so no constant names it.
+_TASK_CLAIMS_TABLE = "task_claims"
 
 
 revision = "004"
@@ -207,7 +209,7 @@ def upgrade() -> None:
     # before the first task row exists, and expired orphan claims are
     # harmless reconciliation candidates.
     op.create_table(
-        TASK_CLAIMS_TABLE,
+        _TASK_CLAIMS_TABLE,
         sa.Column("task_id", sa.Uuid(), primary_key=True),
         sa.Column("agent_id", sa.Text(), nullable=False),
         sa.Column("owner_token", sa.Uuid(), nullable=False),
@@ -229,12 +231,12 @@ def upgrade() -> None:
     )
     op.create_index(
         "task_claims_expiry_idx",
-        TASK_CLAIMS_TABLE,
+        _TASK_CLAIMS_TABLE,
         ["lease_expires_at"],
     )
     op.create_index(
         "task_claims_cancel_requested_idx",
-        TASK_CLAIMS_TABLE,
+        _TASK_CLAIMS_TABLE,
         ["cancel_requested_at"],
         postgresql_where=sa.text("cancel_requested_at IS NOT NULL"),
     )
@@ -360,9 +362,9 @@ def downgrade() -> None:
     op.drop_table(TASK_MESSAGES_TABLE)
 
     logger.debug("Dropping task ownership claims table")
-    op.drop_index("task_claims_cancel_requested_idx", table_name=TASK_CLAIMS_TABLE)
-    op.drop_index("task_claims_expiry_idx", table_name=TASK_CLAIMS_TABLE)
-    op.drop_table(TASK_CLAIMS_TABLE)
+    op.drop_index("task_claims_cancel_requested_idx", table_name=_TASK_CLAIMS_TABLE)
+    op.drop_index("task_claims_expiry_idx", table_name=_TASK_CLAIMS_TABLE)
+    op.drop_table(_TASK_CLAIMS_TABLE)
 
     logger.debug("Restoring ix_tasks_context_id, dropped by this migration's upgrade")
     op.create_index(CONTEXT_ID_INDEX, TASKS_TABLE, ["context_id"])

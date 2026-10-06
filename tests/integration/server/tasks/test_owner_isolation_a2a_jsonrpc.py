@@ -22,10 +22,10 @@ and changes nothing: send (continuing a foreign ``taskId``, or a foreign
 interrupted task found through the ``contextId``), get, list, cancel and
 subscribe, on live and finished tasks, and Aion's ``GetContexts`` and
 ``GetContext`` - and sending into another user's context. The owner's own calls work as before, including the errors
-that reveal a task exists (not cancelable, terminal).
+that reveal a task exists (not cancelable, nothing left to stream).
 
-The in-memory run and the PostgreSQL run are the same test; the lease owner
-of task ownership (a server process) plays no part in any of it.
+The in-memory run and the PostgreSQL run are the same test; which server
+process runs a task plays no part in any of it.
 """
 
 from __future__ import annotations
@@ -48,6 +48,7 @@ from aion.server.tasks.stores import TaskOwnerUndefinedError
 from .jsonrpc_harness import (
     TASK_NOT_CANCELABLE,
     TASK_NOT_FOUND,
+    UNSUPPORTED_OPERATION,
     JsonRpcServer,
     error_of,
     serving,
@@ -168,10 +169,9 @@ async def test_a_finished_task_answers_only_its_owner(server) -> None:
 
     theirs = await _call(server, "mallory", "SubscribeToTask", {"id": done["id"]})
     assert error_of(theirs) == TASK_NOT_FOUND
-    # The owner is answered with the task as it ended.
-    [owners] = await _call(server, "alice", "SubscribeToTask", {"id": done["id"]})
-    assert owners["result"]["task"]["id"] == done["id"]
-    assert state_of(owners["result"]["task"]) == "TASK_STATE_COMPLETED"
+    # The owner is told the task has nothing left to stream - which says it exists.
+    owners = await _call(server, "alice", "SubscribeToTask", {"id": done["id"]})
+    assert error_of(owners) == UNSUPPORTED_OPERATION
 
 
 async def test_a_live_task_can_be_subscribed_to_and_cancelled_only_by_its_owner(server) -> None:

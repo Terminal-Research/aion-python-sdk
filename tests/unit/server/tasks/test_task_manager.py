@@ -4,12 +4,10 @@ Aion follows the A2A convention implemented by the base TaskManager:
 `status.message` carries the most recent message, `history` carries everything
 before it. The two together are the conversation, and no message appears twice.
 
-On top of persistence the manager owns two side effects - releasing the task's
-lease and telling the registry an execution has stopped for input - and both
-belong to a change of state rather than to every write.
+On top of persistence the manager owns one side effect - telling the registry
+an execution has stopped for input - and it belongs to a change of state
+rather than to every write.
 """
-
-import uuid
 
 import pytest
 from a2a.types import (
@@ -26,7 +24,6 @@ from a2a.utils.task import apply_history_length
 from unittest.mock import AsyncMock, Mock, patch
 
 from aion.server.tasks.contexts import conversation_of
-from aion.server.tasks.ownership import Claim
 from aion.server.tasks.task_manager import AionTaskManager
 
 TASK_ID = "task-1"
@@ -223,34 +220,9 @@ class _RecordingStore:
         self.task.CopyFrom(task)
 
 
-class _RecordingProvider:
-    """Provider holding one claim and recording its release."""
-
-    enforcement_enabled = True
-
-    def __init__(self) -> None:
-        """Start out holding a claim for the task under test."""
-        self.claim = Claim(
-            task_id=TASK_ID,
-            owner_token=uuid.uuid4(),
-            lease_expires_at=None,
-            deadline=float("inf"),
-        )
-        self.released: list[Claim] = []
-
-    def claim_for(self, task_id: str) -> Claim | None:
-        """Report the lease this process holds until it is given up."""
-        return None if self.released else self.claim
-
-    async def release(self, claim: Claim) -> None:
-        """Record the release."""
-        self.released.append(claim)
-
-
 def _built(
     stored_state: TaskState,
     *,
-    provider: _RecordingProvider | None = None,
     on_interrupted=None,
     task_id: str | None = TASK_ID,
 ) -> tuple[AionTaskManager, _RecordingStore]:
@@ -263,13 +235,12 @@ def _built(
         context_id=CONTEXT_ID,
         initial_message=None,
         on_interrupted=on_interrupted,
-        ownership_provider=provider,
     )
     return manager, store
 
 
 class TestInterruptTeardownFollowsTransitions:
-    """Teardown and release answer a change of state, not a write."""
+    """Teardown answers a change of state, not a write."""
 
     @pytest.mark.anyio
     async def test_rewriting_the_same_interrupt_state_is_not_a_new_interrupt(self):
@@ -278,49 +249,43 @@ class TestInterruptTeardownFollowsTransitions:
         The SDK consumer records the incoming user message against the task as
         it stands - still INPUT_REQUIRED - before applying the event that opens
         the new turn. Treating that as an interrupt would close the execution
-        that has just started and give up the lease it has just taken.
+        that has just started.
         """
-        provider = _RecordingProvider()
         callback = Mock()
         manager, _store = _built(
             TaskState.TASK_STATE_INPUT_REQUIRED,
-            provider=provider,
             on_interrupted=callback,
         )
-        await manager.refresh_task()
+        await manager.get_task()
 
         await manager.save_task_event(_task(TaskState.TASK_STATE_INPUT_REQUIRED))
 
         callback.assert_not_called()
-        assert provider.released == []
 
     @pytest.mark.anyio
     @pytest.mark.parametrize(
         "state",
         [TaskState.TASK_STATE_INPUT_REQUIRED, TaskState.TASK_STATE_AUTH_REQUIRED],
     )
-    async def test_stopping_for_input_tears_down_and_releases_once(self, state):
-        """A turn that stops for the user hands back both object and lease."""
-        provider = _RecordingProvider()
+    async def test_stopping_for_input_tears_down_once(self, state):
+        """A turn that stops for the user hands back its object."""
         callback = Mock()
         manager, _store = _built(
             TaskState.TASK_STATE_WORKING,
-            provider=provider,
             on_interrupted=callback,
         )
-        await manager.refresh_task()
+        await manager.get_task()
 
         await manager.save_task_event(_task(state))
 
         callback.assert_called_once_with(TASK_ID)
-        assert provider.released == [provider.claim]
 
     @pytest.mark.anyio
     async def test_a_second_question_in_the_same_turn_tears_down_again(self):
         """Going back to work and stopping again is a second interrupt."""
         callback = Mock()
         manager, _store = _built(TaskState.TASK_STATE_WORKING, on_interrupted=callback)
-        await manager.refresh_task()
+        await manager.get_task()
 
         await manager.save_task_event(_task(TaskState.TASK_STATE_INPUT_REQUIRED))
         await manager.save_task_event(_task(TaskState.TASK_STATE_WORKING))
@@ -329,33 +294,28 @@ class TestInterruptTeardownFollowsTransitions:
         assert callback.call_args_list == [((TASK_ID,),), ((TASK_ID,),)]
 
     @pytest.mark.anyio
-    async def test_an_outcome_releases_the_lease_without_a_teardown(self):
+    async def test_an_outcome_is_not_a_teardown(self):
         """A terminal state ends the execution; nothing needs closing for it."""
-        provider = _RecordingProvider()
         callback = Mock()
         manager, _store = _built(
             TaskState.TASK_STATE_WORKING,
-            provider=provider,
             on_interrupted=callback,
         )
-        await manager.refresh_task()
+        await manager.get_task()
 
         await manager.save_task_event(_task(TaskState.TASK_STATE_COMPLETED))
 
-        assert provider.released == [provider.claim]
         callback.assert_not_called()
 
     @pytest.mark.anyio
     async def test_a_refused_write_changes_nothing(self):
         """A write that did not happen is not a transition."""
-        provider = _RecordingProvider()
         callback = Mock()
         manager, store = _built(
             TaskState.TASK_STATE_WORKING,
-            provider=provider,
             on_interrupted=callback,
         )
-        await manager.refresh_task()
+        await manager.get_task()
         store.refuse = True
 
         with pytest.raises(RuntimeError):
@@ -363,7 +323,6 @@ class TestInterruptTeardownFollowsTransitions:
 
         assert manager._persisted_state == TaskState.TASK_STATE_WORKING
         callback.assert_not_called()
-        assert provider.released == []
 
     @pytest.mark.anyio
     async def test_the_registry_hears_only_after_the_outcome_is_written(self):
@@ -373,7 +332,7 @@ class TestInterruptTeardownFollowsTransitions:
             TaskState.TASK_STATE_WORKING,
             on_interrupted=lambda _task_id: order.append("interrupted"),
         )
-        await manager.refresh_task()
+        await manager.get_task()
         original_save = store.save
 
         async def _record_save(task, context=None):
@@ -390,15 +349,6 @@ class TestInterruptTeardownFollowsTransitions:
 
 class TestPersistedStateBaseline:
     """Every way a stored task reaches the manager sets the comparison point."""
-
-    @pytest.mark.anyio
-    async def test_refresh_task_reads_the_baseline(self):
-        """The re-read that follows an acquire also seeds the baseline."""
-        manager, _store = _built(TaskState.TASK_STATE_INPUT_REQUIRED)
-
-        await manager.refresh_task()
-
-        assert manager._persisted_state == TaskState.TASK_STATE_INPUT_REQUIRED
 
     @pytest.mark.anyio
     async def test_get_task_reads_the_baseline(self):
@@ -455,30 +405,89 @@ class TestPersistedStateBaseline:
         callback.assert_called_once_with(TASK_ID)
 
 
-class TestResumeKeepsTheLease:
-    """A resume must not give back the lease it has just acquired."""
+class TestResumeIsNotAnInterrupt:
+    """A resume must not close the execution it has just started."""
 
     @pytest.mark.anyio
-    async def test_the_lease_survives_the_message_write_and_ends_with_the_task(self):
-        """Held across the resume, released by the outcome that ends the turn."""
-        provider = _RecordingProvider()
+    async def test_the_message_write_and_the_outcome_close_nothing(self):
+        """Neither the resume's first write nor its outcome is an interrupt."""
         callback = Mock()
         manager, _store = _built(
             TaskState.TASK_STATE_INPUT_REQUIRED,
-            provider=provider,
             on_interrupted=callback,
         )
-        await manager.refresh_task()
+        await manager.get_task()
 
         # The consumer's write of the incoming user message, before the first
         # event of the resumed turn is applied.
         await manager.save_task_event(_task(TaskState.TASK_STATE_INPUT_REQUIRED))
-        assert provider.released == []
         callback.assert_not_called()
 
         await manager.save_task_event(_task(TaskState.TASK_STATE_WORKING))
-        assert provider.released == []
 
         await manager.save_task_event(_task(TaskState.TASK_STATE_COMPLETED))
-        assert provider.released == [provider.claim]
+        callback.assert_not_called()
+
+
+class TestATerminalTaskIsFinal:
+    """Nothing the manager writes replaces an outcome the store already holds."""
+
+    @pytest.mark.anyio
+    async def test_rewriting_the_same_outcome_passes(self):
+        """A failing producer and the consumer both record FAILED; the second is no news."""
+        manager, store = _built(TaskState.TASK_STATE_WORKING)
+        await manager.get_task()
+        await manager.save_task_event(_task(TaskState.TASK_STATE_FAILED))
+
+        await manager.save_task_event(_task(TaskState.TASK_STATE_FAILED))
+
+        assert store.task.status.state == TaskState.TASK_STATE_FAILED
+
+    @pytest.mark.anyio
+    async def test_a_direct_write_after_a_reread_finds_the_task_cancelled_is_refused(self):
+        """The race between a remote cancel and the producer's own Task save.
+
+        Another server wrote CANCELED; the consumer reread the task on its
+        conflict and so holds the new version. The producer's Task save must
+        not land over it.
+        """
+        from a2a.server.cluster.task_store import ConcurrentTaskModificationError
+
+        manager, store = _built(TaskState.TASK_STATE_WORKING)
+        await manager.get_task()
+        store.task = _task(TaskState.TASK_STATE_CANCELED)
+
+        manager.invalidate()
+        assert (await manager.get_task()).status.state == TaskState.TASK_STATE_CANCELED
+
+        with pytest.raises(ConcurrentTaskModificationError):
+            await manager.save_task_event(_task(TaskState.TASK_STATE_COMPLETED))
+
+        assert store.task.status.state == TaskState.TASK_STATE_CANCELED
+
+    @pytest.mark.anyio
+    async def test_a_status_update_after_the_managers_own_outcome_is_refused(self):
+        from a2a.server.cluster.task_store import ConcurrentTaskModificationError
+
+        manager, store = _built(TaskState.TASK_STATE_WORKING)
+        await manager.get_task()
+        await manager.save_task_event(_task(TaskState.TASK_STATE_COMPLETED))
+
+        with pytest.raises(ConcurrentTaskModificationError):
+            await manager.save_task_event(_task(TaskState.TASK_STATE_FAILED))
+
+        assert store.task.status.state == TaskState.TASK_STATE_COMPLETED
+
+    @pytest.mark.anyio
+    async def test_invalidate_makes_the_next_read_the_baseline(self):
+        """The state the store holds after a reread is what a transition is measured against."""
+        callback = Mock()
+        manager, store = _built(TaskState.TASK_STATE_WORKING, on_interrupted=callback)
+        await manager.get_task()
+        store.task = _task(TaskState.TASK_STATE_INPUT_REQUIRED)
+
+        manager.invalidate()
+        await manager.get_task()
+        await manager.save_task_event(_task(TaskState.TASK_STATE_INPUT_REQUIRED))
+
         callback.assert_not_called()

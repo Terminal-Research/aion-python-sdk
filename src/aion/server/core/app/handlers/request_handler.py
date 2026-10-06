@@ -3,7 +3,7 @@
 import logging
 from a2a.server.agent_execution import RequestContext
 from a2a.server.agent_execution.active_task import ActiveTask
-from a2a.server.cluster.version import TaskVersion
+from a2a.server.cluster.task_store import LegacyTaskStoreAdapter
 from a2a.server.context import ServerCallContext
 from a2a.server.events import Event
 from a2a.server.request_handlers import DefaultRequestHandlerV2
@@ -22,11 +22,14 @@ from a2a.types import (
     SubscribeToTaskRequest,
     Task,
     TaskPushNotificationConfig,
+    TaskState,
 )
 from a2a.utils.errors import (
     InternalError,
     InvalidParamsError,
+    TaskNotCancelableError,
     TaskNotFoundError,
+    UnsupportedOperationError,
 )
 from a2a.utils.task import apply_history_length
 from aion.core.a2a import (
@@ -46,12 +49,10 @@ from typing import override
 import uuid
 
 from aion.server.agent.execution import AionActiveTaskRegistry
-from aion.db.postgres.events import TaskEventKind
+from aion.server.a2a.constants import TERMINAL_TASK_STATES
 from aion.server.auth import has_individual_access
 from aion.server.tasks.admission import ContextAdmission, InMemoryContextAdmission, holder_of
-from aion.server.tasks.notifications import TaskEventListener
-from aion.server.tasks.ownership import OwnershipProvider
-from aion.server.tasks.ownership.config import CANCEL_WAIT_SECONDS
+from aion.server.tasks.stores import BaseTaskStore
 from aion.server.contexts import ContextService, ContextStateDeleter
 from aion.server.tasks.contexts import ContextCatalog, InMemoryContextCatalog
 from .request_preprocessors import A2ARequestPreprocessor, PreprocessingContext
@@ -61,15 +62,18 @@ from aion.server.a2a.response_extensions import ResponseServiceParameters
 logger = logging.getLogger(__name__)
 
 
-async def _no_events() -> AsyncGenerator[Event]:
-    """An empty event stream, for a subscription with nothing to wait for.
+def _unversioned(versioned_store) -> BaseTaskStore:
+    """The plain task store behind a2a-sdk's versioned one.
 
-    Handed to ``TerminalTaskProjection``, it produces exactly the stored Task:
-    the projection closes every stream that way, so a settled task needs no
-    separate reply path of its own.
+    a2a-sdk's handler reads and writes tasks through its versioned store: the
+    store it was given, or ``LegacyTaskStoreAdapter`` around a plain one.
+    Aion's own paths - admission, the closing Task of a stream, the context
+    catalog - read tasks without a version, from the store underneath, which
+    a versioned store names ``as_task_store`` as a2a-sdk's own does.
     """
-    return
-    yield  # pragma: no cover - unreachable, and what makes this a generator
+    if isinstance(versioned_store, LegacyTaskStoreAdapter):
+        return versioned_store.store
+    return versioned_store.as_task_store
 
 
 def _require_individual_access(context: ServerCallContext | None, task_id: str) -> None:
@@ -89,29 +93,18 @@ class AionRequestHandler(DefaultRequestHandlerV2):
             self,
             *args,
             preprocessors: list[A2ARequestPreprocessor] | None = None,
-            ownership_provider: OwnershipProvider | None = None,
-            event_listener: TaskEventListener | None = None,
             admission: ContextAdmission | None = None,
             context_catalog: ContextCatalog | None = None,
             **kwargs,
     ) -> None:
-        """Build the handler and hand the registry its ownership provider.
+        """Build the handler over a2a-sdk's own, with Aion's registry.
 
-        The provider arrives from the same factory that chose the task store,
-        keeping the pair one decision. Omitted, the registry falls back to the
-        single-process provider, which is what a handler built without a
-        durable store should get.
+        ``task_store`` and ``event_stream`` are a2a-sdk's arguments and mean
+        what they mean there: a ``VersionedTaskStore`` with an
+        ``event_stream`` runs a2a-sdk's cluster mode, a plain store its
+        single-process mode. ``StoreManager`` picks the pair.
 
-        ``event_listener`` is threaded in the same way rather than read off
-        the module-level ``store_manager`` singleton at call time: a handler
-        built directly, outside ``AppFactory`` - as every ownership test does
-        - would otherwise reach a singleton nothing ever initialized. ``None``
-        is a legitimate value, not just a not-yet-wired default: it is what an
-        in-memory-backed handler should have, since ``on_cancel_task``'s
-        second branch is unreachable without a durable store to hold the
-        claim it waits on.
-
-        ``admission`` and ``context_catalog`` come from the same factory too;
+        ``admission`` and ``context_catalog`` come from the same factory;
         omitted, contexts are reserved and catalogued in this process only,
         which is right for a handler over the in-memory store. The catalog
         must cover the same reservations admission writes, so a handler given
@@ -120,21 +113,21 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         super().__init__(*args, **kwargs)
         self._active_task_registry = AionActiveTaskRegistry(
             agent_executor=self.agent_executor,
-            task_store=self.task_store,
+            task_store=self._versioned_store,
             push_sender=self._push_sender,
-            ownership_provider=ownership_provider,
+            event_stream=self._event_stream,
         )
-        self._event_listener = event_listener
+        self._tasks = _unversioned(self._versioned_store)
         self._preprocessors = preprocessors or []
         if (admission is None) != (context_catalog is None):
             raise ValueError("admission and context_catalog are chosen together; pass both or neither")
         if admission is None:
             admission = InMemoryContextAdmission()
-            context_catalog = InMemoryContextCatalog(self.task_store, admission)
+            context_catalog = InMemoryContextCatalog(self._tasks, admission)
         self._admission = admission
         self._contexts = ContextService(
             catalog=context_catalog,
-            owner_resolver=self.task_store.owner_resolver,
+            owner_resolver=self._tasks.owner_resolver,
             cancel_task=self._cancel_for_context_deletion,
             state_deleter=ContextStateDeleter(
                 supported=lambda: self.agent_executor.agent.supports_context_state_deletion,
@@ -194,14 +187,14 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         message = params.message
         if message.task_id:
             _require_individual_access(call_context, message.task_id)
-            task = await self.task_store.get(message.task_id, call_context)
+            task = await self._tasks.get(message.task_id, call_context)
             if task is None or (message.context_id and message.context_id != task.context_id):
                 raise TaskNotFoundError(f'Task {message.task_id} not found')
             message.context_id = task.context_id
         elif not message.context_id:
             message.context_id = str(uuid.uuid4())
 
-        holder = holder_of(call_context, self.task_store.owner_resolver)
+        holder = holder_of(call_context, self._tasks.owner_resolver)
         member = self._contexts.member_of(call_context)
         if holder is None or not await self._admission.admit(message.context_id, holder, member):
             logger.info("Refused a message into a context its caller may not use")
@@ -386,10 +379,14 @@ class AionRequestHandler(DefaultRequestHandlerV2):
     async def _cancel_for_context_deletion(self, task_id: str) -> Task | None:
         """Cancel one task of a context being deleted, whoever owns it.
 
-        The same three branches as ``on_cancel_task``, without its caller
+        The same two branches as ``on_cancel_task``, without its caller
         check: the deletion is entitled to every task of the context. A task
-        executing here is cancelled as its own owner; any other is reached
-        through the store with unscoped access.
+        executing here is cancelled as its own owner; any other gets
+        a2a-sdk's remote cancellation - ``CANCELED`` written over its stored
+        version - through the store with unscoped access.
+
+        Returns:
+            The cancelled task, or ``None`` when no such task exists.
 
         Raises:
             TaskNotCancelableError: If the task already has an outcome.
@@ -397,7 +394,12 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         local = await self._active_task_registry.cancel_local_as_owner(task_id)
         if local is not None:
             return local
-        return await self._cancel_elsewhere(task_id, None)
+        stored = await self._versioned_store.get(task_id, None)
+        if stored is None:
+            return None
+        if stored.task.status.state in TERMINAL_TASK_STATES:
+            raise TaskNotCancelableError
+        return await self._cancel_remote(task_id, stored.task, stored.version, None)
 
     async def _forget_push_configs(self, task_ids: Sequence[str]) -> None:
         """Remove every owner's push configurations of removed tasks from an in-memory config store.
@@ -435,7 +437,7 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         task_id = result.task_id or params.message.task_id
         # The store is read directly: ActiveTask.get_task() waits on a flag that
         # a message-only interaction never sets, which would hang the request.
-        task = await self.task_store.get(task_id, context) if task_id else None
+        task = await self._tasks.get(task_id, context) if task_id else None
 
         if task is None:
             # Aion's executor always announces a Task, so a message with no task
@@ -473,7 +475,7 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         exactly one event. See TerminalTaskProjection.
         """
         projection = TerminalTaskProjection(
-            task_store=self.task_store,
+            task_store=self._tasks,
             call_context=context,
             task_transform=lambda task: apply_history_length(task, params.configuration),
         )
@@ -486,124 +488,16 @@ class AionRequestHandler(DefaultRequestHandlerV2):
             params: CancelTaskRequest,
             context: ServerCallContext,
     ) -> Task:
-        """Cancel a task, wherever in the process fleet it is actually executing.
+        """Cancel a task; only its initiator may.
 
-        Only its initiator may, so a caller without individual access cancels
-        nothing: the task answers as if it did not exist.
-
-        The rest is a2a-sdk's: it reads the task through the owner-scoped
-        store, refuses a task that is missing or already has an outcome, and
-        then cancels it here (``_cancel_local``) when this process holds its
-        execution, or elsewhere (``_cancel_remote``) when it does not. Both
-        hooks are Aion's, because a task here is owned by a claim rather than
-        by a version the base compares - see each of them.
+        A caller without individual access cancels nothing: the task answers
+        as if it did not exist. The rest is a2a-sdk's: a task this instance
+        holds is cancelled through its executor, any other gets ``CANCELED``
+        written over its stored version, and the instance executing it stops
+        at its next write.
         """
         _require_individual_access(context, params.id)
         return await super().on_cancel_task(params, context)
-
-    @override
-    async def _cancel_local(self, task_id: str, context: ServerCallContext) -> Task:
-        """Cancel the execution this process is running, through the executor.
-
-        ``AionActiveTaskRegistry.cancel_local`` cancels through the ordinary
-        A2A executor path - rescue included, for evolution runs - and the
-        resulting terminal task is returned with no further waiting. An
-        execution that ended between the base handler's check and this call
-        is no longer here to cancel, so the claim path decides instead.
-        """
-        local = await self._active_task_registry.cancel_local(task_id, context)
-        if local is not None:
-            return local
-        return await self._cancel_or_not_found(task_id, context)
-
-    @override
-    async def _cancel_remote(
-            self,
-            task_id: str,
-            task: Task,
-            version: TaskVersion,
-            context: ServerCallContext,
-    ) -> Task:
-        """Cancel a task this process is not executing, through its claim.
-
-        The base writes ``CANCELED`` over a version; here the execution's
-        owner is the process holding its claim, and only that process can run
-        its teardown. ``task`` and ``version`` are the base handler's read and
-        are not used: ``_cancel_elsewhere`` decides from the claim.
-
-        The base path, like a2a-go's ``cancel`` payload, never calls
-        ``AgentExecutor.cancel`` on the executing process, which is where an
-        evolution run's rescue happens. Keep this override until upstream
-        cancellation reaches the owner's executor - see the
-        ``aion.server.tasks.ownership`` package docstring.
-        """
-        return await self._cancel_or_not_found(task_id, context)
-
-    async def _cancel_or_not_found(self, task_id: str, context: ServerCallContext) -> Task:
-        task = await self._cancel_elsewhere(task_id, context)
-        if task is None:
-            raise TaskNotFoundError
-        return task
-
-    async def _cancel_elsewhere(
-            self,
-            task_id: str,
-            context: ServerCallContext | None,
-    ) -> Task | None:
-        """Cancel a task through its claim: one held elsewhere, or none at all.
-
-        Another process holding a live claim cannot have its teardown run from
-        here, so the claim is marked (``BaseTaskStore.request_cancellation``)
-        and the owner's own cancellation - discovered over
-        ``TASK_EVENT_CHANNEL`` - is awaited, bounded. A wait that outruns the
-        bound answers with the task as currently stored; the terminal state
-        still reaches the client later, over push or ``tasks/resubscribe``.
-        With no live claim anywhere there is no owner to ask, and the terminal
-        state is written directly
-        (``BaseTaskStore.cancel_with_ownership_revocation``).
-
-        ``context`` scopes the store to the caller's own tasks; ``None``
-        reaches every owner's, for a caller entitled to all of them.
-
-        Returns:
-            The task as cancelled - or as stored when a remote owner's
-            cancellation outran the wait - or ``None`` when no such task
-            exists.
-
-        Raises:
-            TaskNotCancelableError: If the task already has an outcome.
-        """
-        # Registered before request_cancellation's transaction commits, not
-        # after: the owner's own CANCEL_RESOLVED notification can only follow
-        # that commit, but nothing stops it from arriving almost immediately -
-        # registering any later would race that notification and could miss
-        # it. See TaskEventListener.register / Waiter.
-        waiter = (
-            self._event_listener.register(TaskEventKind.CANCEL_RESOLVED, task_id)
-            if self._event_listener
-            else None
-        )
-        try:
-            marked = await self.task_store.request_cancellation(task_id, context)
-            if marked is None:
-                return None
-
-            if marked:
-                if waiter is not None:
-                    await waiter.wait(timeout=CANCEL_WAIT_SECONDS)
-                # Read regardless of whether the wait was woken or timed out:
-                # a woken wait still needs the settled row, and a timed-out
-                # one may have missed a notification lost to a listener
-                # reconnect rather than a cancellation that never happened.
-                return await self.task_store.get(task_id, context)
-        finally:
-            if waiter is not None:
-                waiter.release()
-
-        return await self.task_store.cancel_with_ownership_revocation(
-            task_id,
-            context,
-        )
 
     @validate_request_params
     @validate(
@@ -615,37 +509,34 @@ class AionRequestHandler(DefaultRequestHandlerV2):
             params: SubscribeToTaskRequest,
             context: ServerCallContext,
     ) -> AsyncGenerator[Event]:
-        """Resubscribe handler applying the same terminal-Task projection.
+        """a2a-sdk's resubscription, closed by the stored Task.
 
-        A task that already has an outcome has no execution to join, and the
-        SDK will not start one for it. Its stream is empty and the projection
-        closes it with the stored Task - which is the answer the client asked
-        for, and the reason the reaper settles a task rather than deleting it.
-        a2a-sdk's own handler refuses such a task with
-        ``UnsupportedOperationError`` instead.
+        a2a-sdk serves it: from the ``ActiveTask`` when this instance holds
+        the task, otherwise from a snapshot followed by the task's journal,
+        until the task stops. ``TerminalTaskProjection`` closes either stream
+        with the stored Task, as it closes every stream this handler opens:
+        the journal's last event may be a status update, and a client of this
+        server always sees a task stop through a Task.
 
-        The base handler is not delegated to for the live case either: it
-        attaches through ``get_or_create``, which would start an empty
-        execution here for a task another process is running.
-        ``AionActiveTaskRegistry.get_for_attach`` attaches to an execution
-        this process holds, refuses a task another process is running with
-        ``TaskOwnershipBusy``, and otherwise leaves the stream empty.
+        A task that already has an outcome is refused with
+        ``UnsupportedOperationError``, as a2a-sdk refuses it. The check runs
+        before the projection, because the projection would otherwise answer
+        the refusal with the stored Task.
         """
         _require_individual_access(context, params.id)
-        active_task = await self._active_task_registry.get_for_attach(
-            params.id,
-            context,
-        )
+        stored = await self._versioned_store.get(params.id, context)
+        if stored is None:
+            raise TaskNotFoundError
+        if stored.task.status.state in TERMINAL_TASK_STATES:
+            raise UnsupportedOperationError(
+                message=f'Task {params.id} is in terminal state: '
+                f'{TaskState.Name(stored.task.status.state)}'
+            )
+
         projection = TerminalTaskProjection(
-            task_store=self.task_store,
+            task_store=self._tasks,
             call_context=context,
             task_id=params.id,
         )
-        source = (
-            active_task.subscribe(include_initial_task=True)
-            if active_task is not None
-            else _no_events()
-        )
-
-        async for event in projection.project(source):
+        async for event in projection.project(super().on_subscribe_to_task(params, context)):
             yield event

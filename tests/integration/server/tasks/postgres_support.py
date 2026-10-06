@@ -1,4 +1,4 @@
-"""Shared setup for the ownership tests that need a real PostgreSQL.
+"""Shared setup for the task-store tests that need a real PostgreSQL.
 
 Importing this module points the database singletons at ``POSTGRES_TEST_URL``
 before anything reads them, so a test module must import it before it imports
@@ -23,7 +23,7 @@ POSTGRES_TEST_URL = os.getenv("POSTGRES_TEST_URL")
 if POSTGRES_TEST_URL:
     os.environ["POSTGRES_URL"] = POSTGRES_TEST_URL
 
-from a2a.server.context import ServerCallContext
+from a2a.server.context import ServerCallContext  # noqa: E402
 from a2a.types import Task, TaskStatus, TaskState  # noqa: E402
 from sqlalchemy import text  # noqa: E402
 
@@ -32,23 +32,18 @@ from aion.db.postgres.migrations.env import config as alembic_config  # noqa: E4
 from aion.db.postgres.utils import convert_pg_url  # noqa: E402
 from aion.db.postgres.manager import db_manager  # noqa: E402
 from aion.db.postgres.migrations import upgrade_to_head  # noqa: E402
-from aion.db.postgres.repositories import TaskClaimsRepository  # noqa: E402
-from aion.server.tasks.ownership import LeaseSettings, PostgresOwnershipProvider  # noqa: E402
 from aion.server.tasks.stores.postgres_task_store import PostgresTaskStore  # noqa: E402
+from aion.server.tasks.stores.postgres_versioned_task_store import PostgresVersionedTaskStore  # noqa: E402
 
 __all__ = [
     "POSTGRES_TEST_URL",
     "prepared_database",
     "truncate",
-    "provider",
+    "stores",
     "write_task",
     "task_state",
-    "claim_count",
-    "lease_expiry",
-    "expire_all",
-    "request_cancel",
-    "cancel_requested_at",
-    "age_cancel_request",
+    "task_version",
+    "journal",
 ]
 
 
@@ -76,58 +71,28 @@ async def prepared_database():
 
 
 async def truncate() -> None:
-    """Empty the claim, task and context reservation tables."""
+    """Empty the task, version, journal and context reservation tables."""
     async with db_manager.get_session() as session:
-        await session.execute(text("TRUNCATE task_claims, tasks, context_reservations CASCADE"))
+        await session.execute(
+            text("TRUNCATE tasks, task_versions, task_events, context_reservations CASCADE")
+        )
         await session.commit()
 
 
-def provider(instance: str, agent_id: str = "test-agent", **kwargs) -> PostgresOwnershipProvider:
-    """Build a provider standing in for one replica of ``agent_id``.
-
-    ``instance`` names one pod-like replica of the same agent (the tests use
-    it for HA scenarios like "pod-a" vs "pod-b"); pass a different
-    ``agent_id`` explicitly for a test that needs two distinct agents sharing
-    one database instead.
-    """
-    return PostgresOwnershipProvider(
-        agent_id,
-        task_id_parser=lambda task_id: uuid.UUID(task_id),
-        owner_instance_id=instance,
-        **kwargs,
-    )
-
-
-def short_lease(ttl_seconds: float = 2.0, **overrides) -> LeaseSettings:
-    """Build lease timing a test can wait out.
-
-    The deployed numbers are a minute of TTL and a quarter of that between
-    renewals. A test that waited for them would not be run, so the same ratios
-    are kept at a scale that a test can observe.
-    """
-    settings = dict(
-        ttl_seconds=ttl_seconds,
-        heartbeat_interval_seconds=ttl_seconds / 8,
-        safety_margin_seconds=ttl_seconds / 4,
-        unknown_retry_seconds=0.05,
-        reconcile_interval_seconds=ttl_seconds / 4,
-    )
-    settings.update(overrides)
-    return LeaseSettings(**settings)
+def stores(agent_id: str = "test-agent", **kwargs) -> tuple[PostgresTaskStore, PostgresVersionedTaskStore]:
+    """The plain store of ``agent_id`` and the versioned store over it, as the server builds them."""
+    store = PostgresTaskStore(agent_id=agent_id, **kwargs)
+    return store, PostgresVersionedTaskStore(store)
 
 
 async def write_task(
-    owner: PostgresOwnershipProvider,
+    agent_id: str,
     task_id: str,
     state: TaskState,
     context_id: str = "ctx",
 ) -> None:
-    """Write a task through the fenced store the provider belongs to.
-
-    As the anonymous owner: these tests are about the lease, and a task
-    needs an owner named on its first write.
-    """
-    store = PostgresTaskStore(agent_id=owner.agent_id, ownership_provider=owner)
+    """Write a task through the plain store of ``agent_id``, as the anonymous owner."""
+    store, _ = stores(agent_id)
     await store.save(
         Task(id=task_id, context_id=context_id, status=TaskStatus(state=state)),
         ServerCallContext(),
@@ -143,77 +108,20 @@ async def task_state(task_id: str) -> str | None:
         return result.scalar()
 
 
-async def claim_count() -> int:
-    """Count the rows in the claim table."""
-    async with db_manager.get_session() as session:
-        return (await session.execute(text("SELECT count(*) FROM task_claims"))).scalar()
-
-
-async def lease_expiry(task_id: str):
-    """Read the stored lease end of one task, or ``None`` when it has no lease."""
+async def task_version(task_id: str) -> int | None:
+    """Read the version row a2a-sdk's cluster mode keeps for a task."""
     async with db_manager.get_session() as session:
         result = await session.execute(
-            text("SELECT lease_expires_at FROM task_claims WHERE task_id = :id"),
-            {"id": uuid.UUID(task_id)},
+            text("SELECT version FROM task_versions WHERE task_id = :id"), {"id": task_id}
         )
         return result.scalar()
 
 
-async def expire_all() -> None:
-    """Move every lease into the past."""
-    async with db_manager.get_session() as session:
-        await session.execute(
-            text(
-                "UPDATE task_claims SET lease_expires_at = "
-                "clock_timestamp() - interval '5 min'"
-            )
-        )
-        await session.commit()
-
-
-async def request_cancel(owner: PostgresOwnershipProvider, task_id: str) -> bool:
-    """Mark a live claim as having a cancellation requested against it.
-
-    Bypasses the task-row lock ``PostgresTaskStore.request_cancellation``
-    takes: these tests exercise the claim-table statement in isolation, the
-    same way ``write_task`` exercises ``save`` without the task-row lock a
-    full ``on_cancel_task`` call would also take.
-
-    Returns:
-        Whether a live claim existed to mark.
-    """
-    async with db_manager.get_session() as session:
-        marked = await TaskClaimsRepository(session).request_cancel(
-            uuid.UUID(task_id), owner.agent_id
-        )
-        await session.commit()
-        return marked is not None
-
-
-async def cancel_requested_at(task_id: str):
-    """Read the raw ``cancel_requested_at`` column for one claim, or ``None``."""
+async def journal(task_id: str) -> list[tuple[int, str | None]]:
+    """The ``(task_version, owner)`` of every journal entry of a task, in order."""
     async with db_manager.get_session() as session:
         result = await session.execute(
-            text("SELECT cancel_requested_at FROM task_claims WHERE task_id = :id"),
-            {"id": uuid.UUID(task_id)},
+            text("SELECT task_version, owner FROM task_events WHERE task_id = :id ORDER BY seq"),
+            {"id": task_id},
         )
-        return result.scalar()
-
-
-async def age_cancel_request(task_id: str, seconds: float) -> None:
-    """Push one claim's ``cancel_requested_at`` ``seconds`` into the past.
-
-    Lets a test put a cancellation request past any grace period without
-    waiting the grace period out or shrinking it to something a test can
-    race against.
-    """
-    async with db_manager.get_session() as session:
-        await session.execute(
-            text(
-                "UPDATE task_claims SET cancel_requested_at = "
-                "clock_timestamp() - make_interval(secs => :seconds) "
-                "WHERE task_id = :id"
-            ),
-            {"id": uuid.UUID(task_id), "seconds": seconds},
-        )
-        await session.commit()
+        return [(row[0], row[1]) for row in result.all()]

@@ -24,7 +24,7 @@ hierarchy:
   ``NoAdapterFoundError(AdapterError, ValueError)`` in ``aion.server.agent``
   is the same move for the same reason.
 * Errors that belong to the A2A protocol rather than to Aion — ``A2AError``
-  subclasses such as ``TaskOwnershipBusy`` — are outside this hierarchy. They
+  subclasses such as ``AuthenticationRequired`` — are outside this hierarchy. They
   are a2a-sdk's vocabulary, and a client catching them is catching a protocol
   error, not an SDK one.
 

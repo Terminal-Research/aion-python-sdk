@@ -188,8 +188,8 @@ jobs:
           python-version: "3.12"
           poetry-version: ${{ env.POETRY_VERSION }}
 
-      # Two servers of one agent over one database: ownership, cross-process
-      # cancel, and what a surviving reaper does with a dead owner's tasks.
+      # Two servers of one agent over one database: a2a-sdk's cluster mode -
+      # following, continuing and cancelling a task across processes.
       - name: Run distributed scenarios
         run: make tests-scenarios-distributed
 

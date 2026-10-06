@@ -37,11 +37,11 @@ class TestSettledTask:
         """A client must tell a supplied state from one the agent declared."""
         settled = settled_task(
             _task("task-1", TaskState.TASK_STATE_WORKING),
-            TaskSettlementReason.LEASE_EXPIRED,
+            TaskSettlementReason.SERVER_SHUTDOWN,
         )
 
         assert settled.metadata[A2AMetadataKey.SETTLED_REASON.value] == (
-            TaskSettlementReason.LEASE_EXPIRED.value
+            TaskSettlementReason.SERVER_SHUTDOWN.value
         )
 
     def test_keeps_the_rest_of_the_task(self):
@@ -74,44 +74,3 @@ class TestSettledTask:
         assert settled_task(
             _task("task-1", state), TaskSettlementReason.SERVER_SHUTDOWN
         ) is not None
-
-
-class TestSettledTaskChoosesStateByReason:
-    """Most reasons report a failure; a requested cancellation is not one."""
-
-    @pytest.mark.parametrize(
-        "reason",
-        [
-            TaskSettlementReason.SERVER_SHUTDOWN,
-            TaskSettlementReason.LEASE_EXPIRED,
-        ],
-    )
-    def test_ordinary_reasons_settle_as_failed(self, reason):
-        """The run stopped without an outcome; nothing asked for this ending."""
-        settled = settled_task(_task("task-1", TaskState.TASK_STATE_WORKING), reason)
-
-        assert settled.status.state == TaskState.TASK_STATE_FAILED
-
-    @pytest.mark.parametrize(
-        "reason",
-        [
-            TaskSettlementReason.CANCEL_REQUESTED,
-            TaskSettlementReason.CANCEL_TIMEOUT,
-        ],
-    )
-    def test_cancellation_reasons_settle_as_canceled(self, reason):
-        """Someone asked for exactly this outcome; it is not a failure to report."""
-        settled = settled_task(_task("task-1", TaskState.TASK_STATE_WORKING), reason)
-
-        assert settled.status.state == TaskState.TASK_STATE_CANCELED
-
-    def test_the_reason_is_still_recorded_in_metadata(self):
-        """A client must still be able to tell this apart from an agent's own CANCELED."""
-        settled = settled_task(
-            _task("task-1", TaskState.TASK_STATE_WORKING),
-            TaskSettlementReason.CANCEL_TIMEOUT,
-        )
-
-        assert settled.metadata[A2AMetadataKey.SETTLED_REASON.value] == (
-            TaskSettlementReason.CANCEL_TIMEOUT.value
-        )

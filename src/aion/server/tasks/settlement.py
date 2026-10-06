@@ -1,15 +1,13 @@
 """Supplying a final state for a task whose execution is gone.
 
 The server writes a task's outcome only where the execution cannot: shutdown
-cancelled it, or its owner stopped renewing the task's lease and the reaper
-reclaimed it. Both leave a task holding an active state with nothing alive to
+cancelled it. That leaves a task holding an active state with nothing alive to
 advance it, so it would be presented as running forever.
 
 This module builds the settled task; it never writes one. A shutdown settles
-its own tasks while it still holds their claims (``ActiveTaskRegistry``), and a
-task whose owner is gone is settled by ``ClaimReaper`` once the lease expires.
-Both reach the store through a claim, so exactly one writer ever decides a
-given task's supplied state.
+the tasks it interrupted (``AionActiveTaskRegistry.aclose``) through the
+versioned store, so a task another instance has moved on in the meantime keeps
+the state that instance gave it.
 
 Such a task is settled terminally — most often as ``FAILED``, since the run
 did not finish and nothing can continue it. The alternative — a non-terminal
@@ -23,12 +21,6 @@ to a question no agent asked, resuming from a suspension point that does not
 exist in the checkpoint. Terminal is the honest answer, and continuity is not
 lost by it: the context keeps the history, so the next message opens a fresh
 task that reads it.
-
-``CANCEL_REQUESTED`` and ``CANCEL_TIMEOUT`` are the one pair of reasons that
-settle as ``CANCELED`` instead: both mean someone asked for exactly this
-outcome (see ``TaskSettlementReason``), so it is not a failure the server
-supplies in the run's absence, it is the run's own requested ending arriving
-late.
 
 The reason is recorded in metadata under ``A2AMetadataKey.SETTLED_REASON`` so a
 client can tell a state the server had to supply from one the agent declared.
@@ -65,16 +57,8 @@ def settled_task(task: Task, reason: TaskSettlementReason) -> Optional[Task]:
     if task.status.state in NON_ACTIVE_TASK_STATES:
         return None
 
-    cancel_reasons = (
-        TaskSettlementReason.CANCEL_REQUESTED,
-        TaskSettlementReason.CANCEL_TIMEOUT,
-    )
     settled = Task()
     settled.CopyFrom(task)
-    settled.status.state = (
-        TaskState.TASK_STATE_CANCELED
-        if reason in cancel_reasons
-        else TaskState.TASK_STATE_FAILED
-    )
+    settled.status.state = TaskState.TASK_STATE_FAILED
     settled.metadata[A2AMetadataKey.SETTLED_REASON.value] = reason.value
     return settled

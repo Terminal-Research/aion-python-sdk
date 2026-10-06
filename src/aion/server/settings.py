@@ -73,39 +73,6 @@ class AppSettings(BaseEnvSettings):
         ),
     )
 
-    task_ownership_reaper: bool = Field(
-        default=True,
-        alias="TASK_OWNERSHIP_REAPER",
-        description=(
-            "Whether this process reclaims task leases whose owner stopped "
-            "renewing them. Reclaiming is only safe once every writer "
-            "heartbeats, which every deployed instance now does, so it is on "
-            "by default; set a falsy value to hold a process back during a "
-            "rollout whose older instances do not yet heartbeat. Applies only "
-            "where PostgreSQL ownership is in use."
-        ),
-    )
-
-    # The bound mirrors MIN_LEASE_TTL_SECONDS in aion.server.tasks.ownership.config,
-    # which cannot be imported here without importing the whole ownership
-    # package; a unit test keeps the two equal.
-    task_ownership_lease_ttl_seconds: float = Field(
-        default=60.0,
-        ge=24.0,
-        alias="TASK_OWNERSHIP_LEASE_TTL_SECONDS",
-        description=(
-            "How long a task lease outlives its holder's last renewal, in "
-            "seconds. It bounds how long a task whose instance died looks "
-            "alive before another instance settles it; the renewal interval, "
-            "the reconcile passes and the other lease timings are fixed shares "
-            "of it, so a shorter TTL means faster recovery and more frequent "
-            "database writes for every running task. The cancellation grace "
-            "and wait are not affected. Minimum 24. Applies only where "
-            "PostgreSQL ownership is in use; each lease carries its own "
-            "expiry, so instances may differ during a rollout."
-        ),
-    )
-
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = Field(
         description="Logging level to use.",
         alias="LOG_LEVEL",

@@ -4,16 +4,8 @@ What separates this group from the persistence one is not the database but
 the boundary. There, one server is restarted and asked what it kept; here,
 two operating-system processes serve the same agent at the same time over the
 same PostgreSQL, each with its own proxy, its own process manager and its own
-``HOST_NAME`` - the shape a deployment actually has, and the one in which a
-lease taken under one identity and a row written under another would be
-visible.
-
-Two pairs are offered, and the difference is the point.
-``servers`` gives the two processes different host names, which is what makes
-the diagnostic ``owner_instance_id`` of a refusal readable.
-``same_host_servers`` gives them the same one, which is what proves the
-refusal does not depend on it: the authority is the fencing token in the
-claim row, not the name of the process holding it.
+``HOST_NAME`` - the shape a deployment actually has, and the one in which
+a2a-sdk's cluster mode does what it is for.
 
 The pair is built once per module. A scenario that takes a server away has to
 say so - ``fresh_servers`` - because the module-scoped pair would then be one
@@ -33,8 +25,6 @@ from tests.scenarios.harness.pg import have_postgres, postgres_env
 
 HOST_A = "scenario-host-a"
 HOST_B = "scenario-host-b"
-SHARED_HOST = "scenario-host-shared"
-"""One name for both servers, so a refusal cannot be read off the name."""
 
 
 @pytest.fixture(autouse=True)
@@ -73,12 +63,6 @@ def servers(framework: Framework) -> Iterator[tuple[ServeProcess, ServeProcess]]
     yield from _pair(framework, (HOST_A, HOST_B))
 
 
-@pytest.fixture(scope="module")
-def same_host_servers(framework: Framework) -> Iterator[tuple[ServeProcess, ServeProcess]]:
-    """Two servers of one agent, indistinguishable by host name."""
-    yield from _pair(framework, (SHARED_HOST, SHARED_HOST))
-
-
 @pytest.fixture
 def fresh_servers(framework: Framework) -> Iterator[tuple[ServeProcess, ServeProcess]]:
     """A pair of this test's own, for a scenario that ends one of them."""
@@ -99,19 +83,6 @@ async def clients(
 ) -> AsyncIterator[tuple[ScenarioClient, ScenarioClient]]:
     """A client on each of the two servers."""
     pair = await _connect(servers)
-    try:
-        yield pair
-    finally:
-        for client in pair:
-            await client.close()
-
-
-@pytest_asyncio.fixture(scope="module", loop_scope="session")
-async def same_host_clients(
-    same_host_servers: tuple[ServeProcess, ServeProcess],
-) -> AsyncIterator[tuple[ScenarioClient, ScenarioClient]]:
-    """A client on each of the two identically named servers."""
-    pair = await _connect(same_host_servers)
     try:
         yield pair
     finally:

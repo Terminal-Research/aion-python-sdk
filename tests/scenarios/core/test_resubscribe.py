@@ -2,24 +2,16 @@
 
 A caller that loses its stream has one way back in, and what it gets depends
 on what the task is doing. A task still running hands over its remaining
-events and its outcome. A task that already has an outcome has no execution
-to join, so the server replays the stored ``Task`` and closes the stream -
-which is the answer to the most ordinary reconnect there is, reading the
-result of a finished turn, and the reason a reaper settles a task rather than
-deleting it.
+events and its outcome. A task that already has an outcome has nothing left
+to stream, and a2a-sdk refuses the subscription with
+``UnsupportedOperationError``; its result is read with ``tasks/get``.
 
-A task waiting for input is the third case, and it is the one where the
-answer depends on the deployment rather than on the protocol. These scenarios
-run on the default in-memory deployment, where ownership is not enforced and
-one process both holds the paused task and will carry its next turn: a
-subscriber attaches to that execution and stays attached, so the resume
-another client sends reaches it. The PostgreSQL contract is the other one and
-is written down where a database exists to show it -
-``persistence/test_resubscribe.py``. Neither is the general rule; both are
-current behaviour, and the difference follows from enforcement being a
-property of the durable build.
-
-Nothing here waits for a lease.
+A task waiting for input is the third case. These scenarios run on the
+default in-memory deployment, a2a-sdk's single-process mode: one process
+holds the paused task and will carry its next turn, so a subscriber attaches
+to that execution and stays attached, and the resume another client sends
+reaches it. On PostgreSQL - cluster mode - a subscriber follows the task's
+journal instead; ``persistence/test_resubscribe.py`` shows that one.
 """
 
 from __future__ import annotations
@@ -32,10 +24,8 @@ import pytest_asyncio
 from a2a.types import TaskState
 
 from tests.scenarios.commands import (
-    FAIL_REPLY_TEXT,
     ask_answer_text,
     ask_question,
-    echo_text,
     slow_text,
 )
 from tests.scenarios.harness import (
@@ -50,6 +40,9 @@ from tests.scenarios.harness import (
 from tests.scenarios.harness.recorder import _payload_of, to_event
 
 pytestmark = [pytest.mark.events]
+
+UNSUPPORTED_OPERATION_CODE = -32004
+"""What A2A answers a resubscription to a task that already has an outcome."""
 
 SLOW_SECONDS = 5
 """Long enough to resubscribe while it runs, short enough to then wait out."""
@@ -123,56 +116,37 @@ async def test_resubscribing_does_not_start_the_turn_again(
 # A task that already has an outcome
 # --------------------------------------------------------------------------
 
-@pytest.mark.command("echo")
-async def test_a_settled_task_is_replayed_once_and_the_stream_closes(
-    client: ScenarioClient,
+async def _finished(client: ScenarioClient, command: str) -> str:
+    """The id of a task the command leaves with an outcome."""
+    if command == "cancel":
+        task_id, _ = await run_until_working(client, f"slow {SLOW_SECONDS}")
+        assert (await client.cancel(task_id)).status.state == TaskState.TASK_STATE_CANCELED
+        return task_id
+    return final_task(await client.send(command)).task_id
+
+
+@pytest.mark.parametrize(
+    ("command", "state"),
+    [
+        pytest.param("echo resubscribe-me", "COMPLETED", marks=pytest.mark.command("echo")),
+        pytest.param("fail after-reply", "FAILED", marks=pytest.mark.command("fail")),
+        pytest.param("cancel", "CANCELED", marks=pytest.mark.command("slow")),
+    ],
+)
+async def test_a_task_with_an_outcome_refuses_a_subscriber(
+    client: ScenarioClient, command: str, state: str
 ) -> None:
-    """A finished turn answers a subscriber with the task it left behind."""
-    task_id = final_task(await client.send("echo resubscribe-me")).task_id
+    """Nothing is left to stream; the refusal leaves the stored task as it was."""
+    task_id = await _finished(client, command)
+    before = await client.get_task(task_id)
 
-    resubscribed = await client.subscribe(task_id)
+    response = await client.rpc("SubscribeToTask", {"id": task_id})
 
-    assert [event.kind for event in resubscribed] == ["task"]
-    assert resubscribed[0].state == "COMPLETED"
-    assert resubscribed[0].final
-    assert echo_text("resubscribe-me") in resubscribed[0].text
-
-
-@pytest.mark.command("echo")
-async def test_the_replayed_task_is_the_stored_task(client: ScenarioClient) -> None:
-    """Resubscribe and tasks/get answer with the same record, not two readings."""
-    task_id = final_task(await client.send("echo same-as-get")).task_id
-
-    replayed = (await client.subscribe(task_id))[0].raw
-    fetched = await client.get_task(task_id)
-
-    assert replayed == fetched, (
-        f"resubscribe and tasks/get disagree.\nreplayed:\n{replayed}\nfetched:\n{fetched}"
-    )
-
-
-@pytest.mark.command("fail")
-async def test_a_failed_task_is_replayed_as_failed(client: ScenarioClient) -> None:
-    """The outcome a subscriber is given is the one the task has, not a fresh run."""
-    task_id = final_task(await client.send("fail after-reply")).task_id
-
-    resubscribed = await client.subscribe(task_id)
-
-    assert [event.kind for event in resubscribed] == ["task"]
-    assert resubscribed[0].state == "FAILED"
-    assert FAIL_REPLY_TEXT in stored_texts(resubscribed[0].raw)
-
-
-@pytest.mark.command("slow")
-async def test_a_cancelled_task_is_replayed_as_cancelled(client: ScenarioClient) -> None:
-    """A cancel is an outcome like any other, and replays like one."""
-    task_id, _ = await run_until_working(client, f"slow {SLOW_SECONDS}")
-    assert (await client.cancel(task_id)).status.state == TaskState.TASK_STATE_CANCELED
-
-    resubscribed = await client.subscribe(task_id)
-
-    assert [event.kind for event in resubscribed] == ["task"]
-    assert resubscribed[0].state == "CANCELED"
+    assert "error" in response, f"a finished task accepted a subscription: {response}"
+    assert response["error"]["code"] == UNSUPPORTED_OPERATION_CODE
+    after = await client.get_task(task_id)
+    assert TaskState.Name(after.status.state) == f"TASK_STATE_{state}"
+    assert after == before
 
 
 # --------------------------------------------------------------------------

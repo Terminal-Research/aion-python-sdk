@@ -16,7 +16,7 @@ import pytest
 from tests.scenarios.agents.native_script import RECALL_PREFIX, confirmed_answer
 from tests.scenarios.frameworks import Framework
 from tests.scenarios.harness import ScenarioClient, ServeProcess, ServeVariant, final_task, reply_texts
-from tests.scenarios.harness.pg import claim_released, have_postgres, postgres_env
+from tests.scenarios.harness.pg import have_postgres, postgres_env
 
 pytestmark = [pytest.mark.native, pytest.mark.distributed]
 
@@ -54,7 +54,6 @@ async def test_a_conversation_begun_on_one_instance_continues_on_the_other(
     first_server, second_server = servers
     async with await _connect(first_server) as client:
         first = final_task(await client.send("say hello"))
-    await claim_released(first.task_id)
 
     async with await _connect(second_server) as client:
         events = await client.send("recall", context_id=first.context_id)
@@ -70,7 +69,6 @@ async def test_a_tool_paused_on_one_instance_resumes_on_the_other(
     async with await _connect(first_server) as client:
         opened = final_task(await client.send("confirm deploy"))
     assert opened.state == "INPUT_REQUIRED"
-    await claim_released(opened.task_id)
 
     async with await _connect(second_server) as client:
         events = await client.send("yes", task_id=opened.task_id, context_id=opened.context_id)

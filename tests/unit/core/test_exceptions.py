@@ -134,12 +134,12 @@ class TestInternalRoots:
             assert issubclass(getattr(module, name), HTTPException)
 
     def test_a2a_protocol_errors_stay_out_of_the_hierarchy(self):
-        """TaskOwnershipBusy belongs to a2a-sdk's vocabulary, not to AionError."""
+        """AuthenticationRequired belongs to a2a-sdk's vocabulary, not to AionError."""
         from a2a.utils.errors import A2AError
 
-        busy = importlib.import_module("aion.server.tasks.ownership.types").TaskOwnershipBusy
-        assert issubclass(busy, A2AError)
-        assert not issubclass(busy, AionError)
+        refusal = importlib.import_module("aion.server.core.errors").AuthenticationRequired
+        assert issubclass(refusal, A2AError)
+        assert not issubclass(refusal, AionError)
 
 
 def test_dead_server_exceptions_package_is_gone():

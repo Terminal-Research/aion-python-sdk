@@ -190,7 +190,7 @@ async def test_the_context_stays_reserved_after_its_tasks_are_gone(server) -> No
         server.store.tasks.clear()
     else:
         async with db_manager.get_session() as session:
-            await session.execute(text("TRUNCATE task_claims, tasks CASCADE"))
+            await session.execute(text("TRUNCATE tasks, task_versions, task_events CASCADE"))
             await session.commit()
 
     assert error_of(await _send(server, bob, "done", context_id)) == TASK_NOT_FOUND
@@ -305,7 +305,7 @@ async def test_a_context_from_before_reservations_is_refused_before_anything_hap
         async with db_manager.get_session() as session:
             await session.execute(
                 text("INSERT INTO context_reservations (agent_id, context_id, kind) VALUES (:agent, :id, 'blocked')"),
-                {"agent": postgres_server.lease.agent_id, "id": context_id},
+                {"agent": postgres_server.store.agent_id, "id": context_id},
             )
             await session.commit()
     else:

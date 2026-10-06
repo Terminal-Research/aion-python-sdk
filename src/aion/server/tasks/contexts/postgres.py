@@ -5,8 +5,9 @@ from __future__ import annotations
 import uuid
 from typing import Optional
 
+from a2a.server.models import TaskVersionModel
 from a2a.types import TaskStatus
-from sqlalchemy import and_, delete, desc, func, literal_column, or_, select, text
+from sqlalchemy import Text, and_, cast, delete, desc, func, literal_column, or_, select, text
 
 from aion.core.a2a import A2AMetadataKey, MessageType
 from aion.db.postgres import DbManager
@@ -14,7 +15,6 @@ from aion.db.postgres.models import (
     ContextBindingModel,
     ContextReservationModel,
     TaskArtifactModel,
-    TaskClaimModel,
     TaskMessageModel,
     TaskRecordModel,
 )
@@ -48,7 +48,7 @@ class PostgresContextCatalog:
 
     Every statement is scoped to ``agent_id``, so agents sharing a database
     never see each other's contexts. The deletion's last step - removing the
-    tasks, their claims and push configurations, and the bindings - is one
+    tasks, their versions and push configurations, and the bindings - is one
     transaction that holds the reservation row, the same lock admission
     takes, so no request is admitted into the context halfway through.
     """
@@ -214,13 +214,27 @@ class PostgresContextCatalog:
                 if held is None or held.state != DELETING or held.deletion_operation_id != operation_id:
                     return FinishOutcome.SUPERSEDED, []
 
+                task_filter = (
+                    TaskRecordModel.agent_id == self._agent_id,
+                    TaskRecordModel.context_id == context_id,
+                )
+                # Version rows before task rows, in the order every versioned
+                # write takes them, so the deletion and a late write of one of
+                # these tasks cannot deadlock. No task joins the context
+                # meanwhile: admission holds the reservation row locked above.
+                await session.execute(
+                    select(TaskVersionModel.task_id)
+                    .where(
+                        TaskVersionModel.task_id.in_(
+                            select(cast(TaskRecordModel.id, Text)).where(*task_filter)
+                        )
+                    )
+                    .with_for_update()
+                )
                 rows = (
                     await session.execute(
                         select(TaskRecordModel.id, TaskRecordModel.status)
-                        .where(
-                            TaskRecordModel.agent_id == self._agent_id,
-                            TaskRecordModel.context_id == context_id,
-                        )
+                        .where(*task_filter)
                         .with_for_update()
                     )
                 ).all()
@@ -229,10 +243,16 @@ class PostgresContextCatalog:
 
                 task_ids = [task_id for task_id, _ in rows]
                 if task_ids:
-                    # A claim row has no foreign key to its task. Removing it
-                    # is what refuses a late write of a removed task: a
-                    # fenced write needs a live claim to land.
-                    await session.execute(delete(TaskClaimModel).where(TaskClaimModel.task_id.in_(task_ids)))
+                    # A version row has no foreign key to its task. Removing it
+                    # is what refuses a late write of a removed task: the
+                    # writer's version no longer matches, and the task it
+                    # would then recreate is refused by admission - the
+                    # context is no longer active.
+                    await session.execute(
+                        delete(TaskVersionModel).where(
+                            TaskVersionModel.task_id.in_([str(task_id) for task_id in task_ids])
+                        )
+                    )
                     if await session.scalar(text("SELECT to_regclass(:table) IS NOT NULL"), {"table": _PUSH_CONFIGS_TABLE}):
                         await session.execute(
                             text(f"DELETE FROM {_PUSH_CONFIGS_TABLE} WHERE task_id = ANY(:task_ids)"),

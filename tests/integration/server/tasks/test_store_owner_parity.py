@@ -9,6 +9,10 @@ two cannot drift apart:
 * ``context=None`` is the stores' deliberate unscoped access for code that
   holds the store itself: reads, listings, cancel and delete reach every
   owner's task of this agent;
+* the versioned store a2a-sdk's handler works through - ``LegacyTaskStoreAdapter``
+  over the in-memory store, ``PostgresVersionedTaskStore`` over PostgreSQL -
+  keeps the same scope, so a cancellation written the way a2a-sdk writes one
+  reaches only the tasks the caller's context reaches;
 * a task's owner is fixed by its first write, and only a context names one:
   a user's context that user, an explicit ``ServerCallContext()`` the
   anonymous owner ``""``. A new task written with ``None`` is refused
@@ -17,8 +21,7 @@ two cannot drift apart:
 * context listings follow creation order across owners, newest first; an
   update keeps a task's place.
 
-The owner here is the user a task belongs to, not the lease owner of task
-ownership (a server process), which none of this touches.
+The owner here is the user a task belongs to.
 """
 
 from __future__ import annotations
@@ -28,14 +31,14 @@ import uuid
 import pytest
 import pytest_asyncio
 from a2a.auth.user import User
+from a2a.server.cluster import LegacyTaskStoreAdapter
 from a2a.server.context import ServerCallContext
-from a2a.types import ListTasksRequest, Task, TaskState, TaskStatus
+from a2a.types import ListTasksRequest, Task, TaskState, TaskStatus, TaskStatusUpdateEvent
 
 from aion.server.tasks.stores import TaskOwnerMismatchError, TaskOwnerUndefinedError
 from aion.server.tasks.stores.in_memory_task_store import InMemoryTaskStore
-from aion.server.tasks.stores.postgres_task_store import PostgresTaskStore
 
-from .postgres_support import POSTGRES_TEST_URL, prepared_database, provider, truncate
+from .postgres_support import POSTGRES_TEST_URL, prepared_database, stores as postgres_stores, truncate
 
 pytestmark = [pytest.mark.asyncio(loop_scope="module")]
 
@@ -76,22 +79,31 @@ class _Stores:
     def __init__(self, kind: str) -> None:
         self.kind = kind
         if kind == "memory":
-            self._lease = None
             self.store = InMemoryTaskStore()
+            self.versioned = LegacyTaskStoreAdapter(self.store)
         else:
-            self._lease = provider("pod-a")
-            self.store = PostgresTaskStore(agent_id=self._lease.agent_id, ownership_provider=self._lease)
+            self.store, self.versioned = postgres_stores()
 
     async def save(self, task: Task, context: ServerCallContext | None) -> None:
-        """Write as a server does between turns: under the task's lease, then let it go."""
-        if self._lease is None:
-            await self.store.save(task, context)
-            return
-        claim = await self._lease.acquire(task.id)
-        try:
-            await self.store.save(task, context)
-        finally:
-            await self._lease.release(claim)
+        """Write the task through the plain store."""
+        await self.store.save(task, context)
+
+    async def cancel(self, task_id: str, context: ServerCallContext | None) -> Task | None:
+        """Write ``CANCELED`` the way a2a-sdk's remote cancellation does, or None if unseen."""
+        stored = await self.versioned.get(task_id, context)
+        if stored is None:
+            return None
+        cancelled = Task()
+        cancelled.CopyFrom(stored.task)
+        cancelled.status.state = TaskState.TASK_STATE_CANCELED
+        await self.versioned.save(
+            cancelled,
+            event=TaskStatusUpdateEvent(task_id=task_id, context_id=cancelled.context_id, status=cancelled.status),
+            prev=stored.task,
+            prev_version=stored.version,
+            context=context,
+        )
+        return cancelled
 
     async def write(
         self,
@@ -131,15 +143,13 @@ async def test_two_users_with_one_context_see_and_change_only_their_own(stores) 
     listing = await store.list(ListTasksRequest(), ALICE)
     assert [t.id for t in listing.tasks] == [alices] and listing.total_size == 1
 
-    assert await store.request_cancellation(mallorys, ALICE) is None
-    assert await store.cancel_with_ownership_revocation(mallorys, ALICE) is None
+    assert await stores.cancel(mallorys, ALICE) is None
     await store.delete(mallorys, ALICE)
     assert await _state(stores, mallorys, MALLORY) == TaskState.TASK_STATE_WORKING
 
-    # The owner's own calls: no live claim to ask, so the cancel is direct.
-    assert await store.request_cancellation(alices, ALICE) is False
-    cancelled = await store.cancel_with_ownership_revocation(alices, ALICE)
+    cancelled = await stores.cancel(alices, ALICE)
     assert cancelled.status.state == TaskState.TASK_STATE_CANCELED
+    assert await _state(stores, alices, ALICE) == TaskState.TASK_STATE_CANCELED
     await store.delete(alices, ALICE)
     assert await store.get(alices, ALICE) is None
 
@@ -157,8 +167,7 @@ async def test_no_context_reaches_every_owners_task(stores) -> None:
     assert {t.id for t in await store.get_context_tasks(context_id)} == {alices, mallorys}
     assert (await store.get_context_last_task(context_id)).id in {alices, mallorys}
 
-    assert await store.request_cancellation(alices) is False
-    cancelled = await store.cancel_with_ownership_revocation(alices)
+    cancelled = await stores.cancel(alices, None)
     assert cancelled.status.state == TaskState.TASK_STATE_CANCELED
     # Cancelled where it lives: still the owner's, not moved to anyone.
     assert await _state(stores, alices, ALICE) == TaskState.TASK_STATE_CANCELED

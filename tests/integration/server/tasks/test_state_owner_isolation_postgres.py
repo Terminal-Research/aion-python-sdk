@@ -58,7 +58,7 @@ from aion.server.agent.exceptions import ExecutionError
 from aion.server.agent.execution.scope import init_execution_scope
 from aion.server.tasks.stores.postgres_task_store import PostgresTaskStore
 
-from .postgres_support import POSTGRES_TEST_URL, prepared_database, provider, truncate
+from .postgres_support import POSTGRES_TEST_URL, prepared_database, truncate
 
 pytestmark = [
     pytest.mark.skipif(not POSTGRES_TEST_URL, reason="POSTGRES_TEST_URL is not set"),
@@ -293,10 +293,8 @@ async def test_adk_session_saved_under_the_shared_user_is_refused(db) -> None:
 
 
 async def _save_task_with_report(agent_id: str, user: ServerCallContext, context_id: str, text: str, version: int) -> None:
-    owner = provider(f"pod-{agent_id}", agent_id=agent_id)
-    store = PostgresTaskStore(agent_id=agent_id, ownership_provider=owner)
+    store = PostgresTaskStore(agent_id=agent_id)
     task_id = str(uuid.uuid4())
-    await owner.acquire(task_id)
     artifact = Artifact(artifact_id=uuid.uuid4().hex, name="report.txt", parts=[Part(text=text)])
     artifact.metadata["version"] = str(version)
     await store.save(
@@ -366,12 +364,12 @@ async def _owner_scope_of(task_id: str) -> str:
 
 
 async def _store_for(agent: AionAgent):
-    """The store the server would build for this agent, and its ownership provider."""
+    """The store the server would build for this agent."""
     from aion.server.tasks.store_manager import StoreManager
 
     manager = StoreManager()
     manager.initialize(agent_id=agent.id, owner_resolver=agent.owner_resolver)
-    return manager.get_store(), manager.get_ownership_provider()
+    return manager.get_store()
 
 
 @pytest.mark.parametrize("framework", ["langgraph", "adk"])
@@ -394,7 +392,7 @@ async def test_a_custom_owner_resolver_names_one_owner_for_the_task_and_the_stat
         owner_resolver=_by_organization,
     )
     agent._is_built = True
-    store, ownership = await _store_for(agent)
+    store = await _store_for(agent)
     alice = ServerCallContext(user=_User("alice@acme"))
     bob = ServerCallContext(user=_User("bob@acme"))
     carol = ServerCallContext(user=_User("carol@globex"))
@@ -406,7 +404,6 @@ async def test_a_custom_owner_resolver_names_one_owner_for_the_task_and_the_stat
     assert await _answer(agent.stream(_request(bob, context_id, "b1"))) == "turns=2"
 
     task_id = str(uuid.uuid4())
-    await ownership.acquire(task_id)
     await store.save(
         Task(id=task_id, context_id=context_id, status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED)),
         alice,

@@ -21,6 +21,7 @@ import inspect
 import pytest
 from a2a.server.agent_execution import AgentExecutor, RequestContextBuilder
 from a2a.server.agent_execution.active_task_registry import ActiveTaskRegistry
+from a2a.server.cluster import VersionedTaskStore
 from a2a.server.request_handlers import DefaultRequestHandlerV2
 from a2a.server.routes.jsonrpc_dispatcher import JsonRpcDispatcher
 from a2a.server.tasks import TaskManager, TaskStore
@@ -39,6 +40,7 @@ from aion.server.core.app.handlers.request_handler import AionRequestHandler
 from aion.server.tasks.push_sender import AionPushNotificationSender
 from aion.server.tasks.stores.in_memory_task_store import InMemoryTaskStore
 from aion.server.tasks.stores.postgres_task_store import PostgresTaskStore
+from aion.server.tasks.stores.postgres_versioned_task_store import PostgresVersionedTaskStore
 from aion.server.tasks.task_manager import AionTaskManager
 from aion.server.tasks.terminal_push_sender import TerminalTaskPushSender
 
@@ -46,15 +48,30 @@ from aion.server.tasks.terminal_push_sender import TerminalTaskPushSender
 # server depends on. Extend this table whenever a new SDK extension point is
 # subclassed.
 OVERRIDES = [
+    (AionActiveTaskRegistry, ActiveTaskRegistry, "get"),
     (AionActiveTaskRegistry, ActiveTaskRegistry, "get_or_create"),
+    (AionActiveTaskRegistry, ActiveTaskRegistry, "_on_active_task_cleanup"),
     (AionActiveTaskRegistry, ActiveTaskRegistry, "aclose"),
     (AionActiveTaskRegistry, ActiveTaskRegistry, "_remove_task"),
+    (AionTaskManager, TaskManager, "invalidate"),
+    (AionTaskManager, TaskManager, "get_task"),
+    (AionTaskManager, TaskManager, "ensure_task_id"),
+    (AionTaskManager, TaskManager, "_save_task"),
     (AionTaskManager, TaskManager, "process"),
     (AionRequestHandler, DefaultRequestHandlerV2, "_setup_active_task"),
+    (AionRequestHandler, DefaultRequestHandlerV2, "on_get_task"),
+    (AionRequestHandler, DefaultRequestHandlerV2, "on_list_tasks"),
+    (AionRequestHandler, DefaultRequestHandlerV2, "on_cancel_task"),
     (AionRequestHandler, DefaultRequestHandlerV2, "on_message_send"),
     (AionRequestHandler, DefaultRequestHandlerV2, "on_message_send_stream"),
     (AionRequestHandler, DefaultRequestHandlerV2, "on_subscribe_to_task"),
+    (AionRequestHandler, DefaultRequestHandlerV2, "on_create_task_push_notification_config"),
+    (AionRequestHandler, DefaultRequestHandlerV2, "on_get_task_push_notification_config"),
+    (AionRequestHandler, DefaultRequestHandlerV2, "on_list_task_push_notification_configs"),
+    (AionRequestHandler, DefaultRequestHandlerV2, "on_delete_task_push_notification_config"),
     (AionJsonRpcDispatcher, JsonRpcDispatcher, "handle_requests"),
+    (AionJsonRpcDispatcher, JsonRpcDispatcher, "_process_streaming_request"),
+    (AionJsonRpcDispatcher, JsonRpcDispatcher, "_create_response"),
     (AionRequestContextBuilder, RequestContextBuilder, "build"),
     (AionAgentRequestExecutor, AgentExecutor, "execute"),
     (AionAgentRequestExecutor, AgentExecutor, "cancel"),
@@ -77,12 +94,23 @@ OVERRIDES = [
     (PostgresTaskStore, TaskStore, "get"),
     (PostgresTaskStore, TaskStore, "delete"),
     (PostgresTaskStore, TaskStore, "list"),
+    (PostgresVersionedTaskStore, VersionedTaskStore, "save"),
+    (PostgresVersionedTaskStore, VersionedTaskStore, "get"),
+    (PostgresVersionedTaskStore, VersionedTaskStore, "delete"),
+    (PostgresVersionedTaskStore, VersionedTaskStore, "list"),
 ]
 
 # Aion-only TaskStore operations must not silently become overrides when the
 # a2a-sdk grows its storage contract. Such a collision requires an explicit
 # compatibility decision during the dependency upgrade.
-AION_TASK_STORE_EXTENSIONS = ["cancel_with_ownership_revocation", "request_cancellation"]
+AION_TASK_STORE_EXTENSIONS = [
+    "get_context_tasks",
+    "get_context_last_task",
+    "write",
+    "get_in_session",
+    "tasks_in_context",
+    "retire_context",
+]
 
 
 @pytest.mark.parametrize("method_name", AION_TASK_STORE_EXTENSIONS)
@@ -270,9 +298,8 @@ def test_no_critical_section_of_the_registry_awaits():
 async def test_a_message_to_a_terminal_task_is_refused_as_the_base_refuses_it():
     """A send into a task with an outcome answers ``UnsupportedOperationError``.
 
-    The override re-reads the task after it wins the claim, before the base
-    ``ActiveTask.start`` would; both refuse a terminal task with the same
-    error, naming the state, so the client sees one answer either way.
+    The override builds the ``ActiveTask`` and leaves the check to the base
+    ``ActiveTask.start``, which refuses a terminal task naming its state.
     """
     from a2a.auth.user import User
     from a2a.server.context import ServerCallContext
@@ -300,11 +327,15 @@ async def test_a_message_to_a_terminal_task_is_refused_as_the_base_refuses_it():
     )
     registry = AionActiveTaskRegistry(agent_executor=Mock(), task_store=store, push_sender=None)
 
-    with pytest.raises(UnsupportedOperationError, match="TASK_STATE_COMPLETED"):
-        await registry.get_or_create(
-            "task-done",
-            call_context=context,
-            context_id="ctx-1",
-            create_task_if_missing=True,
-        )
+    init_execution_scope()
+    try:
+        with pytest.raises(UnsupportedOperationError, match="TASK_STATE_COMPLETED"):
+            await registry.get_or_create(
+                "task-done",
+                call_context=context,
+                context_id="ctx-1",
+                create_task_if_missing=True,
+            )
+    finally:
+        clear_execution_scope()
     await registry.aclose()

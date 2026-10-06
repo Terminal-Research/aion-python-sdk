@@ -3,17 +3,17 @@
 import logging
 from typing import Optional
 
+from a2a.server.cluster import DatabaseTaskEventStream, TaskEventStream, VersionedTaskStore
 from a2a.server.owner_resolver import OwnerResolver, resolve_user_scope
 
 from aion.db.postgres import db_manager
 from .admission import ContextAdmission, InMemoryContextAdmission, PostgresContextAdmission
 from .contexts import ContextCatalog, InMemoryContextCatalog, PostgresContextCatalog
-from .notifications import TaskEventListener, task_event_listener
-from .ownership import OwnershipProvider, PostgresOwnershipProvider
 from .stores import (
     BaseTaskStore,
     InMemoryTaskStore,
-    PostgresTaskStore
+    PostgresTaskStore,
+    PostgresVersionedTaskStore,
 )
 
 logger = logging.getLogger(__name__)
@@ -24,15 +24,21 @@ class StoreManager:
     Singleton manager for task store implementations.
 
     Automatically selects the appropriate storage backend based on database
-    manager initialization state. Provides PostgreSQL storage when available,
-    falls back to in-memory storage otherwise.
+    manager initialization state.
+
+    With PostgreSQL the server runs in a2a-sdk's cluster mode: the request
+    handler gets a ``VersionedTaskStore`` and a ``TaskEventStream``, so any
+    instance serving the agent over the same database can execute, follow
+    and cancel any task. Without a database the store is in memory, has no
+    versions and no stream, and the server is a single instance - a2a-sdk's
+    single-process mode.
     """
 
     def __init__(self):
         self._is_initialized = False
         self._store: Optional[InMemoryTaskStore | PostgresTaskStore] = None
-        self._ownership_provider: Optional[OwnershipProvider] = None
-        self._event_listener: Optional[TaskEventListener] = None
+        self._versioned_store: Optional[VersionedTaskStore] = None
+        self._event_stream: Optional[TaskEventStream] = None
         self._admission: Optional[ContextAdmission] = None
         self._context_catalog: Optional[ContextCatalog] = None
 
@@ -51,9 +57,9 @@ class StoreManager:
 
         Args:
             agent_id: Identity of the agent this process serves. Scopes every
-                task and claim the Postgres backend touches, so several
-                agents can share one database. Unused by the in-memory
-                fallback, which is already isolated by being unshared.
+                task the Postgres backend touches, so several agents can
+                share one database. Unused by the in-memory fallback, which
+                is already isolated by being unshared.
             guard_inline_files: True when a file storage backend is
                 installed, so the store strips inline file content that
                 reaches it unconverted. Passed by the component that
@@ -68,38 +74,28 @@ class StoreManager:
             return
 
         if db_manager.is_initialized:
-            # Only the durable store has anyone to signal across pods: the
-            # in-memory fallback settles every cancellation locally, through
-            # AionActiveTaskRegistry.cancel_local, and never reaches the
-            # claim-signal path this listener answers. Built before the
-            # provider so the provider can subscribe to it from its own
-            # constructor - see PostgresOwnershipProvider's event_listener
-            # argument.
-            event_listener = task_event_listener
-            ownership_provider = PostgresOwnershipProvider(agent_id, event_listener=event_listener)
             task_store = PostgresTaskStore(
                 agent_id=agent_id,
-                ownership_provider=ownership_provider,
                 owner_resolver=owner_resolver,
                 guard_inline_files=guard_inline_files,
             )
+            versioned_store = PostgresVersionedTaskStore(task_store)
+            # The tables come from the SDK's own migrations, like every other
+            # table here; the stream must not create them on first use.
+            event_stream = DatabaseTaskEventStream(db_manager.get_engine(), create_table=False)
             admission = PostgresContextAdmission(agent_id, db_manager)
             context_catalog = PostgresContextCatalog(agent_id, db_manager)
         else:
             task_store = InMemoryTaskStore(owner_resolver, guard_inline_files=guard_inline_files)
-            ownership_provider = task_store.ownership_provider
-            event_listener = None
+            versioned_store = None
+            event_stream = None
             admission = InMemoryContextAdmission()
             context_catalog = InMemoryContextCatalog(task_store, admission)
-            logger.warning(
-                "Task ownership enforcement is disabled; in-memory task storage "
-                "is safe only in a single server instance"
-            )
 
         self._is_initialized = True
         self._store = task_store
-        self._ownership_provider = ownership_provider
-        self._event_listener = event_listener
+        self._versioned_store = versioned_store
+        self._event_stream = event_stream
         self._admission = admission
         self._context_catalog = context_catalog
 
@@ -117,29 +113,31 @@ class StoreManager:
             raise RuntimeError("Trying to get a store without initialization")
         return self._store
 
-    def get_ownership_provider(self) -> OwnershipProvider:
-        """Return the provider selected alongside the active task store.
+    def get_handler_store(self) -> BaseTaskStore | VersionedTaskStore:
+        """Return the store the request handler is built over.
 
-        Storage and enforcement are one decision: a shared store always comes
-        with fenced claims, a process-local store always comes with the
-        degenerate provider, and no third combination can be assembled.
-        """
-        if not self._is_initialized:
-            raise RuntimeError("Trying to get ownership provider without initialization")
-        return self._ownership_provider
-
-    def get_event_listener(self) -> Optional[TaskEventListener]:
-        """Return the process's cross-pod task-event listener, if any.
-
-        ``None`` for the in-memory backend, which has nothing to listen for -
-        see :meth:`initialize`.
+        The versioned store over :meth:`get_store` with PostgreSQL, so a2a-sdk
+        runs in cluster mode; the plain store otherwise, which a2a-sdk wraps
+        in ``LegacyTaskStoreAdapter`` itself.
 
         Raises:
             RuntimeError: If called before initialization.
         """
         if not self._is_initialized:
-            raise RuntimeError("Trying to get event listener without initialization")
-        return self._event_listener
+            raise RuntimeError("Trying to get the handler store without initialization")
+        return self._versioned_store if self._versioned_store is not None else self._store
+
+    def get_event_stream(self) -> Optional[TaskEventStream]:
+        """Return the cross-instance event stream, if this store has one.
+
+        ``None`` for the in-memory backend, which serves one instance only.
+
+        Raises:
+            RuntimeError: If called before initialization.
+        """
+        if not self._is_initialized:
+            raise RuntimeError("Trying to get the event stream without initialization")
+        return self._event_stream
 
     def get_admission(self) -> ContextAdmission:
         """Return the context reservations kept beside the active task store.
