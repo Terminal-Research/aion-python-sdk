@@ -72,7 +72,8 @@ server = [
     # on a2a-sdk itself.
     "starlette",
     # 1.6.5 is the oldest release where the separator the JSON-RPC
-    # dispatcher sets on a response after building it is honored; below it
+    # dispatcher and the A2A 0.3 adapter set on a response after building it
+    # is honored; below it
     # events go out CRLF-delimited, which HTTP tunnels mangle. Found by the
     # `floors` CI job (tests/unit/server/core/test_jsonrpc_dispatcher.py).
     "sse-starlette>=1.6.5",

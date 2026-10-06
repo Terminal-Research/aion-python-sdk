@@ -44,3 +44,5 @@
 * **server:** check the push URL validator before every push delivery
 * **server:** load the in-memory task store on Python 3.12 and 3.13
 * **chat:** prompt for an explicit login after an authentication failure
+* **server:** separate the events of A2A 0.3 streams (message/stream, tasks/resubscribe) with LF, as A2A 1.0 streams are
+* **server:** refuse an A2A 0.3 message/stream whose declared extensions fail verification with -32602 before the stream opens

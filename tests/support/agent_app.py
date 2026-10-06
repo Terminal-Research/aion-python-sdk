@@ -14,6 +14,8 @@ The agent answers by the text of the last user message:
 
 * ``ask`` - interrupts with a question (``TASK_STATE_INPUT_REQUIRED``); the
   next message answers it;
+* ``hold`` - works until ``ServedApp.release`` is set, then replies
+  ``released`` and completes;
 * anything else - replies ``echo: <text>`` and completes.
 """
 
@@ -43,7 +45,7 @@ from aion.server.tasks.store_manager import StoreManager
 
 from .aion_tokens import CLIENT_ID, ISSUER, SigningKey
 
-__all__ = ["AGENT_ID", "AGENT_PORT", "SIGNER", "ServedApp", "agent_app", "user_token"]
+__all__ = ["AGENT_ID", "AGENT_PORT", "SIGNER", "ServedApp", "agent_app", "proxied", "user_token"]
 
 AGENT_ID = "protocol-agent"
 AGENT_PORT = 18765
@@ -60,10 +62,13 @@ def user_token(user: str = "alice") -> str:
     return SIGNER.invocation_token(user)
 
 
-def _graph() -> StateGraph:
+def _graph(release: asyncio.Event) -> StateGraph:
     async def answer(state: MessagesState) -> dict:
         humans = [message for message in state["messages"] if isinstance(message, HumanMessage)]
         text = humans[-1].text
+        if text == "hold":
+            await release.wait()
+            return {"messages": [AIMessage(content="released")]}
         if text == "ask":
             resume = interrupt("question?")
             (reply,) = resume["messages"]
@@ -93,6 +98,8 @@ class ServedApp:
 
     factory: AppFactory
     client: httpx.AsyncClient
+    release: asyncio.Event
+    rpc_path: str = DEFAULT_RPC_URL
 
     @property
     def card(self):
@@ -115,9 +122,9 @@ class ServedApp:
             sent.setdefault("Authorization", f"Bearer {user_token(user)}")
         if raw is not None:
             sent.setdefault("Content-Type", "application/json")
-            request = self.client.post(DEFAULT_RPC_URL, content=raw, headers=sent)
+            request = self.client.post(self.rpc_path, content=raw, headers=sent)
         else:
-            request = self.client.post(DEFAULT_RPC_URL, json=body, headers=sent)
+            request = self.client.post(self.rpc_path, json=body, headers=sent)
         return await asyncio.wait_for(request, timeout=30)
 
     async def rpc(self, method: str, params: Optional[dict[str, Any]] = None, **options: Any) -> Any:
@@ -186,13 +193,14 @@ async def agent_app(database=None) -> AsyncIterator[ServedApp]:
     plugin_factory = Mock()
     plugin_factory.is_initialized.return_value = False
     adapter = LangGraphAdapter(db_manager=database)
+    release = asyncio.Event()
 
     with patch("aion.server.tasks.store_manager.db_manager", db):
         agent = await AionAgent.from_adapter(
             AGENT_ID,
             AgentConfig(path="agent.py:graph", name="Protocol agent", description="Answers by the text it gets"),
             adapter,
-            _graph(),
+            _graph(release),
         )
         agent._is_built = True
         agent.port = AGENT_PORT
@@ -214,6 +222,35 @@ async def agent_app(database=None) -> AsyncIterator[ServedApp]:
     # provider, shutdown is ``AppFactory.shutdown``.
     async with app.router.lifespan_context(app):
         try:
-            yield ServedApp(factory=factory, client=client)
+            yield ServedApp(factory=factory, client=client, release=release)
         finally:
+            release.set()
             await client.aclose()
+
+
+@asynccontextmanager
+async def proxied(served: ServedApp) -> AsyncIterator[ServedApp]:
+    """``served`` behind ``aion.proxy``: the proxy's application, forwarding to it over ASGI.
+
+    The proxy is built as ``aion serve`` builds it - its middlewares, its
+    routes and its ``RequestHandler`` - with the HTTP client it forwards
+    through reaching the agent's application in this process.
+    """
+    from aion.proxy.constants import build_agent_path
+    from aion.proxy.handlers import RequestHandler
+    from aion.proxy.routes import ProxyRouter
+    from aion.proxy.server import AionAgentProxyServer
+
+    agent_url = "http://agent"
+    proxy = AionAgentProxyServer({AGENT_ID: agent_url})
+    upstream = httpx.AsyncClient(transport=httpx.ASGITransport(app=served.factory.get_fastapi_app()))
+    proxy.request_handler = RequestHandler(proxy.agent_urls, upstream)
+    ProxyRouter(agent_proxy_server=proxy, request_handler=proxy.request_handler).register_routes()
+    client = httpx.AsyncClient(transport=httpx.ASGITransport(app=proxy.app), base_url="http://proxy")
+    try:
+        yield ServedApp(
+            factory=served.factory, client=client, release=served.release, rpc_path=build_agent_path(AGENT_ID)
+        )
+    finally:
+        await client.aclose()
+        await upstream.aclose()

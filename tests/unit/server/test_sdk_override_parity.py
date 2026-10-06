@@ -25,6 +25,7 @@ from a2a.server.agent_execution.active_task_registry import ActiveTaskRegistry
 from a2a.server.cluster import VersionedTaskStore
 from a2a.server.request_handlers import DefaultRequestHandlerV2
 from a2a.server.routes.jsonrpc_dispatcher import JsonRpcDispatcher
+from a2a.compat.v0_3.jsonrpc_adapter import JSONRPC03Adapter
 from a2a.server.tasks import TaskManager, TaskStore
 from a2a.server.tasks.base_push_notification_sender import BasePushNotificationSender
 from a2a.server.tasks.push_notification_sender import PushNotificationSender
@@ -37,6 +38,7 @@ from aion.server.agent.execution.scope import clear_execution_scope, init_execut
 from aion.server.agent.execution.request_context_builder import AionRequestContextBuilder
 from aion.server.agent.execution.request_executor import AionAgentRequestExecutor
 from aion.server.core.app.handlers.jsonrpc_dispatcher import AionJsonRpcDispatcher
+from aion.server.core.app.handlers.jsonrpc_v03_adapter import AionJSONRPC03Adapter
 from aion.server.core.app.handlers.request_handler import AionRequestHandler
 from aion.server.tasks.push_sender import AionPushNotificationSender
 from aion.server.tasks.stores.in_memory_task_store import InMemoryTaskStore
@@ -73,6 +75,7 @@ OVERRIDES = [
     (AionJsonRpcDispatcher, JsonRpcDispatcher, "handle_requests"),
     (AionJsonRpcDispatcher, JsonRpcDispatcher, "_process_streaming_request"),
     (AionJsonRpcDispatcher, JsonRpcDispatcher, "_create_response"),
+    (AionJSONRPC03Adapter, JSONRPC03Adapter, "_process_streaming_request"),
     (AionRequestContextBuilder, RequestContextBuilder, "build"),
     (AionAgentRequestExecutor, AgentExecutor, "execute"),
     (AionAgentRequestExecutor, AgentExecutor, "cancel"),

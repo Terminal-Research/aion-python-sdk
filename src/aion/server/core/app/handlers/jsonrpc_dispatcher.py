@@ -27,12 +27,12 @@ from sse_starlette.sse import EventSourceResponse
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
+from .jsonrpc_v03_adapter import AionJSONRPC03Adapter
 from .request_handler import AionRequestHandler
+from .sse import SSE_LINE_SEPARATOR
 from aion.server.a2a.response_extensions import ResponseServiceParameters
 
 logger = logging.getLogger(__name__)
-
-_SSE_LINE_SEPARATOR = '\n'
 
 
 class AionJsonRpcDispatcher(JsonRpcDispatcher):
@@ -80,8 +80,17 @@ class AionJsonRpcDispatcher(JsonRpcDispatcher):
         and one naming a handler that does not exist would fail on a caller's
         request instead of on startup. Whether the extension may be served
         right now is a different question, asked per request.
+
+        A2A 0.3's methods are served by ``AionJSONRPC03Adapter`` in place of
+        a2a-sdk's adapter, so its streams follow this binding's stream rules.
         """
         super().__init__(*args, **kwargs)
+        if self._v03_adapter is not None:
+            self._v03_adapter = AionJSONRPC03Adapter(
+                http_handler=self.request_handler,
+                context_builder=self._context_builder,
+                shutdown_grace_period=self._shutdown_grace_period,
+            )
         registered = {d.uri for d in aion_a2a_extension_registry.get_all()}
         for method, binding in AION_JSONRPC_METHOD_EXTENSION_BINDINGS.items():
             if binding.extension_uri not in registered:
@@ -160,8 +169,7 @@ class AionJsonRpcDispatcher(JsonRpcDispatcher):
     ) -> Response:
         """Create a response with tunnel-safe SSE event delimiters.
 
-        LF is a valid SSE line separator and keeps the required blank line
-        between events independent from HTTP/1.1 CRLF transfer framing.
+        The events are separated with ``SSE_LINE_SEPARATOR``.
 
         Args:
             context: Server context associated with the JSON-RPC request.
@@ -175,7 +183,7 @@ class AionJsonRpcDispatcher(JsonRpcDispatcher):
         if parameters.activated_extensions:
             response.headers['A2A-Extensions'] = ','.join(parameters.activated_extensions)
         if isinstance(response, EventSourceResponse):
-            response.sep = _SSE_LINE_SEPARATOR
+            response.sep = SSE_LINE_SEPARATOR
         return response
 
     async def _handle_method_extension(self, body: dict, request: Request) -> Response:

@@ -91,6 +91,7 @@ What Aion adds on top of cluster mode:
 | `AionJsonRpcDispatcher.handle_requests` | `JsonRpcDispatcher.handle_requests` | extended | Routes Aion's method extensions; every standard method goes to a2a-sdk. | `test_method_extension_bindings.py` |
 | `AionJsonRpcDispatcher._process_streaming_request` | `JsonRpcDispatcher._process_streaming_request` | extended | Verifies a send's extension activation before the SSE headers go out. | `test_jsonrpc_dispatcher.py` |
 | `AionJsonRpcDispatcher._create_response` | `JsonRpcDispatcher._create_response` | extended | LF event delimiters in SSE, safe through tunnels. | `test_jsonrpc_dispatcher.py` |
+| `AionJSONRPC03Adapter._process_streaming_request` | `JSONRPC03Adapter._process_streaming_request` | extended | The A2A 0.3 streams follow the 1.0 binding's rules: LF event delimiters, and a `message/stream` whose extensions fail verification refused with `-32602` before the stream opens. | `test_v03_streams.py` |
 | `AionRequestContextBuilder.build` | `RequestContextBuilder.build` | replaced | A message with a `contextId` and no `taskId` continues the caller's interrupted task in that context. | `test_request_context_builder.py` |
 | `AionAgentRequestExecutor.execute` | `AgentExecutor.execute` | replaced | Runs the agent's framework adapter or a routed extension handler through `AionEventPipeline`. | `test_request_executor.py` |
 | `AionAgentRequestExecutor.cancel` | `AgentExecutor.cancel` | replaced | Delegates to the framework adapter or extension handler, then writes `CANCELED`; runs only for a task this server holds. | `test_request_executor.py` |
@@ -117,7 +118,7 @@ What Aion adds on top of cluster mode:
 | `ActiveTask` | built by `AionActiveTaskRegistry` |
 | `TaskUpdater`, `EventQueue` | `AionAgentRequestExecutor`, `AionEventPipeline` |
 | `add_a2a_routes_to_fastapi`, `create_agent_card_routes` | `AppFactory._build_app` |
-| A2A 0.3 compatibility (`enable_v0_3_compat=True`) | `AionJsonRpcDispatcher` |
+| A2A 0.3 compatibility (`enable_v0_3_compat=True`) | `AionJsonRpcDispatcher`, which installs `AionJSONRPC03Adapter` as the adapter |
 | `DatabasePushNotificationConfigStore`, `InMemoryPushNotificationConfigStore` | `PushNotificationFactory` |
 | `resolve_user_scope`, `OwnerResolver` | default owner resolver of the stores and the agent |
 
