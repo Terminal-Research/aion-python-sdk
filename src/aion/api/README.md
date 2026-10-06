@@ -50,7 +50,7 @@ The REST helpers target these control-plane endpoints:
 | `GET /v1/models` | Lists model-service catalog entries available through Aion. |
 | `GET /v1/models/{model}` | Retrieves one model-service catalog entry. |
 | `POST /v1/chat/completions` | Creates a model-service chat completion, including streaming responses when requested. |
-| `POST /files` | Creates an immutable File version. |
+| `POST /files/agent-artifacts` | Creates protected agent output. |
 | `PUT /files/{fileId}` | Replaces a File under an exact version/revision fence. |
 
 ### Files
@@ -64,14 +64,22 @@ rejected rather than silently selecting a different identity.
 from aion.api import AionFileClient
 
 async with AionFileClient() as files:
-    uploaded = await files.create(
+    uploaded = await files.create_agent_artifact(
         b"message attachment",
         organization_id="organization-id",
-        purpose="MessagingMedia",
         file_name="message.txt",
         media_type="text/plain",
     )
+    shared = await files.create_read_grant(
+        uploaded["id"], uploaded["versionId"], ttl_minutes=60,
+    )
 ```
+
+Use `create_profile_image` for avatar/background uploads, `get_metadata`
+for safe current facts, and `renew_retention` with a required absolute
+timezone-aware deadline or explicit `None`. A grant does not renew storage.
+See [File Service](https://docs.aion.to/docs/resources/file-service) for the
+owner, permission, and retention contract.
 
 ## Control-plane addressing
 

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone, timedelta
+import json
+
 from aion.core.runtime.context import AionRuntimeContext, ForwardedAttribution
 from uuid import uuid4
 
@@ -43,10 +46,9 @@ async def test_incomplete_association_is_rejected_before_upload(association):
             http_client=http_client,
         ) as client:
             with pytest.raises(AionFileValidationError) as error:
-                await client.create(
+                await client.create_agent_artifact(
                     b"media",
                     organization_id="organization-1",
-                    purpose="MessagingMedia",
                     file_name="message.bin",
                     **association,
                 )
@@ -71,9 +73,9 @@ async def test_create_forwards_runtime_attribution_without_selector(
 
     async def handle(request: httpx.Request) -> httpx.Response:
         assert request.method == "POST"
-        assert request.url.path == "/files"
+        assert request.url.path == "/files/agent-artifacts"
         assert request.url.params["organizationId"] == "organization-1"
-        assert request.url.params["purpose"] == "MessagingMedia"
+        assert "purpose" not in request.url.params
         assert request.url.params["byteSize"] == "5"
         assert request.headers["Authorization"] == "Bearer version-token"
         assert AION_PRINCIPAL_SELECTOR_HEADER not in request.headers
@@ -92,10 +94,9 @@ async def test_create_forwards_runtime_attribution_without_selector(
         http_client=http_client,
     )
 
-    result = await client.create(
+    result = await client.create_agent_artifact(
         b"media",
         organization_id="organization-1",
-        purpose="MessagingMedia",
         file_name="message.bin",
     )
 
@@ -152,7 +153,7 @@ async def test_rejected_upload_is_both_an_sdk_and_an_httpx_error():
     wrapper is both, so neither has to change.
     """
     async def rejected(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(422, json={"message": "bad purpose"})
+        return httpx.Response(422, json={"message": "invalid file"})
 
     async with httpx.AsyncClient(
         transport=httpx.MockTransport(rejected)
@@ -163,10 +164,9 @@ async def test_rejected_upload_is_both_an_sdk_and_an_httpx_error():
             http_client=http_client,
         ) as client:
             with pytest.raises(AionFileStorageError) as error:
-                await client.create(
+                await client.create_agent_artifact(
                     b"media",
                     organization_id="organization-1",
-                    purpose="Nonsense",
                     file_name="message.bin",
                 )
 
@@ -195,10 +195,9 @@ async def test_rejection_names_what_the_api_said():
             http_client=http_client,
         ) as client:
             with pytest.raises(AionFileStorageError) as error:
-                await client.create(
+                await client.create_agent_artifact(
                     b"media",
                     organization_id="organization-1",
-                    purpose="MessagingMedia",
                     file_name="message.bin",
                 )
 
@@ -227,10 +226,9 @@ async def test_rejection_without_body_or_request_id_keeps_the_status_line():
             http_client=http_client,
         ) as client:
             with pytest.raises(AionFileStorageError) as error:
-                await client.create(
+                await client.create_agent_artifact(
                     b"media",
                     organization_id="organization-1",
-                    purpose="MessagingMedia",
                     file_name="message.bin",
                 )
 
@@ -247,3 +245,134 @@ def test_content_url_names_the_exact_version():
     assert client.content_url("file-1", "version-2") == (
         "https://api.aion.test/files/file-1/versions/version-2/content"
     )
+
+
+@pytest.mark.anyio("asyncio")
+@pytest.mark.parametrize("ttl,seconds", [(None, None), (1, "60"), (60, "3600"), (1440, "86400")])
+async def test_grants_convert_minutes_once_and_preserve_exact_ids(ttl, seconds):
+    async def handle(request):
+        assert request.url.path == "/files/f-1/versions/v-2/grants"
+        assert request.url.params.get("ttlSeconds") == seconds
+        assert request.headers["Authorization"] == "Bearer version-token"
+        assert request.headers[AION_USAGE_ATTRIBUTION_HEADER] == "carrier"
+        return httpx.Response(200, json={
+            "id": "f-1", "versionId": "v-2", "url": "https://api.aion.test/granted",
+            "accessExpiresAt": "2026-10-06T01:00:00Z", "retentionExpiresAt": None,
+        })
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as http:
+        async with AionFileClient(jwt_manager=StaticTokenManager(),
+                                  base_url="https://api.aion.test", http_client=http) as files:
+            result = await files.create_read_grant(
+                "f-1", "v-2", ttl_minutes=ttl, usage_attribution="carrier",
+            )
+    assert result["versionId"] == "v-2"
+    assert result["retentionExpiresAt"] is None
+    assert result["accessExpiresAt"] == "2026-10-06T01:00:00Z"
+
+
+@pytest.mark.anyio("asyncio")
+@pytest.mark.parametrize("ttl", [0, -1, 1441, 1.5, True, "60"])
+async def test_invalid_grant_lifetimes_never_reach_http(ttl):
+    async def unexpected(request):
+        pytest.fail("Invalid grant lifetime reached HTTP")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(unexpected)) as http:
+        async with AionFileClient(jwt_manager=StaticTokenManager(), http_client=http) as files:
+            with pytest.raises(AionFileValidationError):
+                await files.create_read_grant("f", "v", ttl_minutes=ttl)
+
+
+@pytest.mark.anyio("asyncio")
+@pytest.mark.parametrize("deadline", [
+    None, datetime(2100, 1, 1, tzinfo=timezone(timedelta(hours=2))),
+])
+async def test_explicit_retention_preserves_absolute_value_and_null(deadline):
+    bodies = []
+
+    async def handle(request):
+        assert request.method == "PUT"
+        assert request.url.path == "/files/f/retention"
+        bodies.append(json.loads(request.content))
+        return httpx.Response(200, json={"metadata": bodies[-1]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as http:
+        async with AionFileClient(jwt_manager=StaticTokenManager(), http_client=http) as files:
+            for _ in range(2):
+                await files.renew_retention("f", retention_expires_at=deadline)
+            with pytest.raises(TypeError):
+                await files.renew_retention("f")
+    expected = None if deadline is None else "2099-12-31T22:00:00Z"
+    assert bodies == [{"retentionExpiresAt": expected}] * 2
+
+
+@pytest.mark.anyio("asyncio")
+async def test_naive_retention_deadline_never_reaches_http():
+    async def unexpected(request):
+        pytest.fail("Naive date reached HTTP")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(unexpected)) as http:
+        async with AionFileClient(jwt_manager=StaticTokenManager(), http_client=http) as files:
+            with pytest.raises(AionFileValidationError):
+                await files.renew_retention("f", retention_expires_at=datetime(2030, 1, 1))
+
+
+@pytest.mark.anyio("asyncio")
+@pytest.mark.parametrize("image_type", ["avatar", "background"])
+async def test_profile_routes_carry_targets_without_policy_overrides(image_type):
+    async def handle(request):
+        assert request.url.path == f"/files/profile-images/{image_type}"
+        assert request.url.params["associationKind"] == "Identity"
+        assert request.url.params["associationId"] == "service-1"
+        assert "purpose" not in request.url.params
+        assert "retentionExpiresAt" not in request.url.params
+        return httpx.Response(200, json={"id": "image-1"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as http:
+        async with AionFileClient(jwt_manager=StaticTokenManager(), http_client=http) as files:
+            await files.create_profile_image(
+                b"image", image_type=image_type, organization_id="org",
+                file_name="image.png", media_type="image/png",
+                association_kind="Identity", association_id="service-1",
+            )
+
+
+@pytest.mark.anyio("asyncio")
+async def test_file_metadata_preserves_daemon_configuration_error():
+    from aion.core.exceptions import AionDaemonIdentityRequired
+
+    async def handle(request):
+        assert request.method == "GET"
+        return httpx.Response(409, json={
+            "error": {"code": "daemon_identity_required", "resourceType": "Deployment"}
+        })
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as http:
+        async with AionFileClient(jwt_manager=StaticTokenManager(), http_client=http) as files:
+            with pytest.raises(AionDaemonIdentityRequired):
+                await files.get_metadata("f")
+
+
+@pytest.mark.anyio("asyncio")
+async def test_artifact_deadline_is_explicit_and_metadata_does_not_renew_it():
+    seen = []
+    deadline = datetime(2100, 1, 1, tzinfo=timezone.utc)
+
+    async def handle(request):
+        seen.append(request)
+        if request.method == "POST":
+            assert request.url.params["retentionExpiresAt"] == "2100-01-01T00:00:00Z"
+            assert "purpose" not in request.url.params
+            assert "storageCategory" not in request.url.params
+        return httpx.Response(200, json={"id": "f"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as http:
+        async with AionFileClient(jwt_manager=StaticTokenManager(), http_client=http) as files:
+            await files.create_agent_artifact(
+                b"x", organization_id="org", file_name="x.txt",
+                retention_expires_at=deadline,
+            )
+            await files.get_metadata("f")
+    assert [(r.method, r.url.path) for r in seen] == [
+        ("POST", "/files/agent-artifacts"), ("GET", "/files/f"),
+    ]

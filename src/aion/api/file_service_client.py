@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Protocol
+from datetime import datetime, timezone
+from typing import Any, Literal, Protocol
 from uuid import UUID, uuid4
 
 import httpx
@@ -27,9 +28,9 @@ class AsyncTokenManager(Protocol):
 
 
 class AionFileClient:
-    """Create and replace immutable Aion File versions.
+    """Upload, inspect, share, and retain Aion File versions.
 
-    The client obtains a fresh Aion bearer token for every mutation. When it
+    The client obtains a fresh Aion bearer token for every request. When it
     runs inside an Aion request, it forwards the opaque usage-attribution carrier.
     Aion verifies the carrier's executor against current deployment authority;
     the SDK never decodes the carrier to select a principal.
@@ -58,26 +59,25 @@ class AionFileClient:
         )
         self._owns_http_client = http_client is None
 
-    async def create(
+    async def create_agent_artifact(
         self,
         content: bytes,
         *,
         organization_id: UUID | str,
-        purpose: str,
         file_name: str,
         media_type: str = "application/octet-stream",
         operation_id: UUID | str | None = None,
         association_kind: str | None = None,
         association_id: UUID | str | None = None,
+        retention_expires_at: datetime | None = None,
         principal_selector: PrincipalSelector | None = None,
         usage_attribution: str | None = None,
     ) -> dict[str, Any]:
-        """Create one immutable File through the authenticated Files API.
+        """Upload protected agent output with optional timed retention.
 
         Args:
             content: Complete byte content to upload.
-            organization_id: Organization that owns and pays for the File.
-            purpose: File-purpose discriminator accepted by the API.
+            organization_id: Payer organization verified by Aion.
             file_name: Safe leaf name presented with the uploaded content.
             media_type: MIME type for the uploaded content.
             operation_id: Stable mutation id used for idempotency. A fresh id
@@ -85,6 +85,8 @@ class AionFileClient:
             association_kind: Optional File association discriminator.
             association_id: Optional identifier paired with
                 ``association_kind``.
+            retention_expires_at: Optional absolute deadline. Omission keeps
+                content indefinitely; the server validates a supplied deadline.
             principal_selector: Retired override; any explicit value is rejected.
             usage_attribution: Optional opaque signed carrier. The current
                 runtime carrier is used when omitted.
@@ -101,19 +103,155 @@ class AionFileClient:
         params = {
             "operationId": str(operation_id or uuid4()),
             "organizationId": str(organization_id),
-            "purpose": purpose,
             "byteSize": str(len(content)),
         }
         params.update(_association_params(association_kind, association_id))
+        if retention_expires_at is not None:
+            params["retentionExpiresAt"] = _retention_timestamp(retention_expires_at)
         return await self._upload(
             "POST",
-            "/files",
+            "/files/agent-artifacts",
             content,
             file_name,
             media_type,
             params,
             principal_selector,
             usage_attribution,
+        )
+
+    async def create_profile_image(
+        self,
+        content: bytes,
+        *,
+        image_type: Literal["avatar", "background"],
+        organization_id: UUID | str,
+        file_name: str,
+        media_type: str,
+        operation_id: UUID | str | None = None,
+        association_kind: Literal["Identity", "AgentIdentity"] | None = None,
+        association_id: UUID | str | None = None,
+        usage_attribution: str | None = None,
+    ) -> dict[str, Any]:
+        """Upload a public profile image without changing the profile.
+
+        Args:
+            content: Image bytes to normalize.
+            image_type: Semantic avatar or background route.
+            organization_id: Authoritative profile organization.
+            file_name: Original leaf filename.
+            media_type: MIME type for the image.
+            operation_id: Stable upload retry ID, generated when omitted.
+            association_kind: Saved service or agent profile target type.
+            association_id: Saved target ID, paired with association_kind.
+                Omit both for the authenticated user's personal profile.
+            usage_attribution: Explicit carrier or active runtime attribution.
+
+        Returns:
+            Stable and exact File IDs, public URL, and normalized metadata.
+        """
+        if image_type not in ("avatar", "background"):
+            raise AionFileValidationError("image_type must be avatar or background")
+        if association_kind not in (None, "Identity", "AgentIdentity"):
+            raise AionFileValidationError("Invalid profile association kind")
+        params = {
+            "operationId": str(operation_id or uuid4()),
+            "organizationId": str(organization_id),
+            "byteSize": str(len(content)),
+            **_association_params(association_kind, association_id),
+        }
+        return await self._upload(
+            "POST", f"/files/profile-images/{image_type}", content,
+            file_name, media_type, params, None, usage_attribution,
+        )
+
+    async def get_metadata(
+        self,
+        file_id: UUID | str,
+        *,
+        usage_attribution: str | None = None,
+    ) -> dict[str, Any]:
+        """Read safe File metadata under the current owner's FileRead scope.
+
+        Args:
+            file_id: Stable File identifier.
+            usage_attribution: Explicit carrier or active runtime attribution.
+
+        Returns:
+            Current version, owner, metadata, and retention-renewal authority.
+        """
+        return await self._request(
+            "GET", f"/files/{file_id}", usage_attribution=usage_attribution,
+        )
+
+    async def create_read_grant(
+        self,
+        file_id: UUID | str,
+        version_id: UUID | str,
+        *,
+        ttl_minutes: int | None = None,
+        usage_attribution: str | None = None,
+    ) -> dict[str, Any]:
+        """Create a bearer download link for an exact available File version.
+
+        Args:
+            file_id: Stable File identifier.
+            version_id: Exact content version; never substituted with latest.
+            ttl_minutes: Whole minutes from 1 through 1,440. Omit for the
+                server's one-hour default.
+            usage_attribution: Explicit carrier or active runtime attribution.
+
+        Returns:
+            Exact IDs, secret URL, accessExpiresAt, and retentionExpiresAt.
+            Creating a grant does not renew File retention.
+
+        Raises:
+            AionFileValidationError: If the supplied lifetime is not valid.
+            AionFileStorageError: If FileUpdate or other server checks fail.
+        """
+        params = {}
+        if ttl_minutes is not None:
+            if type(ttl_minutes) is not int or not 1 <= ttl_minutes <= 1440:
+                raise AionFileValidationError(
+                    "ttl_minutes must be a whole number from 1 through 1440"
+                )
+            params["ttlSeconds"] = str(ttl_minutes * 60)
+        return await self._request(
+            "POST", f"/files/{file_id}/versions/{version_id}/grants",
+            params=params, usage_attribution=usage_attribution,
+        )
+
+    async def renew_retention(
+        self,
+        file_id: UUID | str,
+        *,
+        retention_expires_at: datetime | None,
+        usage_attribution: str | None = None,
+    ) -> dict[str, Any]:
+        """Extend available agent output to a fixed deadline or indefinite.
+
+        Args:
+            file_id: Stable File identifier.
+            retention_expires_at: Required absolute timestamp, or explicit
+                None for indefinite storage. Reuse the same value on retries.
+            usage_attribution: Explicit carrier or active runtime attribution.
+
+        Returns:
+            Current metadata with the effective retention deadline. Content
+            versions and previously issued grant deadlines do not change.
+
+        Raises:
+            AionFileValidationError: If the timestamp has no timezone.
+            AionFileStorageError: If the server rejects expiry, shortening,
+                purpose, or FileUpdate authority.
+        """
+        deadline = (
+            _retention_timestamp(retention_expires_at)
+            if retention_expires_at is not None else None
+        )
+        return await self._request(
+            "PUT", f"/files/{file_id}/retention",
+            json={"retentionExpiresAt": deadline},
+            usage_attribution=usage_attribution,
         )
 
     def content_url(self, file_id: UUID | str, version_id: UUID | str) -> str:
@@ -145,7 +283,7 @@ class AionFileClient:
         principal_selector: PrincipalSelector | None = None,
         usage_attribution: str | None = None,
     ) -> dict[str, Any]:
-        """Create a revision-fenced replacement File version.
+        """Create a revision-fenced replacement of agent-output content.
 
         Args:
             file_id: Stable File identifier whose head will be replaced.
@@ -208,6 +346,22 @@ class AionFileClient:
         principal_selector: PrincipalSelector | None,
         usage_attribution: str | None,
     ) -> dict[str, Any]:
+        return await self._request(
+            method, path, params=params,
+            files={"file": (file_name, content, media_type)},
+            principal_selector=principal_selector,
+            usage_attribution=usage_attribution,
+        )
+
+    async def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        principal_selector: PrincipalSelector | None = None,
+        usage_attribution: str | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
         token = await self._jwt_manager.get_token()
         headers = aion_file_authorization_headers(
             token,
@@ -217,9 +371,8 @@ class AionFileClient:
         response = await self._http_client.request(
             method,
             f"{self._base_url}{path}",
-            params=params,
             headers=headers,
-            files={"file": (file_name, content, media_type)},
+            **kwargs,
         )
         if response.is_error:
             await async_callback_response_hook(response)
@@ -244,7 +397,7 @@ def aion_file_authorization_headers(
         usage_attribution: Optional explicit opaque attribution carrier.
 
     Returns:
-        Headers for one authenticated File mutation.
+        Headers for one authenticated File operation.
 
     Raises:
         AionAuthenticationError: If no bearer token is available.
@@ -272,6 +425,13 @@ def _association_params(
         "associationKind": kind,
         "associationId": str(association_id),
     }
+
+
+def _retention_timestamp(value: datetime) -> str:
+    """Normalize an explicit instant without calculating or extending it."""
+    if not isinstance(value, datetime) or value.utcoffset() is None:
+        raise AionFileValidationError("retention_expires_at must be timezone-aware")
+    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 __all__ = [

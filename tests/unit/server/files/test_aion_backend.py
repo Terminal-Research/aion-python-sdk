@@ -18,7 +18,6 @@ from aion.server.files.storage import (
     UploadReceipt,
 )
 from aion.server.files.storage.backends.aion import (
-    AION_FILE_PURPOSE,
     AionFileStorageBackend,
 )
 
@@ -75,9 +74,11 @@ class TestRequestShape:
             revision=1,
         )
         request = seen[0]
-        assert request.method == "POST" and request.url.path == "/files"
+        assert request.method == "POST"
+        assert request.url.path == "/files/agent-artifacts"
         assert request.url.params["organizationId"] == ORG
-        assert request.url.params["purpose"] == AION_FILE_PURPOSE
+        assert "purpose" not in request.url.params
+        assert "retentionExpiresAt" not in request.url.params
         assert request.url.params["byteSize"] == "4"
         assert request.url.params["operationId"]
         assert request.headers["Authorization"] == "Bearer token"

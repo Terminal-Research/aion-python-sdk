@@ -174,9 +174,9 @@ async def test_all_clients_keep_concurrent_execution_attribution(api, resume):
         async with factory(headers=dict(endpoint.headers)) as mcp:
             assert (await mcp.post(api.url + "/mcp", json={})).status_code == 200
         async with AionFileClient(jwt_manager=VersionToken(), base_url=api.url) as files:
-            await files.create(
+            await files.create_agent_artifact(
                 b"content", organization_id="org-1",
-                purpose="MessagingMedia", file_name="x.txt",
+                file_name="x.txt",
             )
             await files.replace(
                 "file-1", b"updated", expected_version_id="version-1",
@@ -246,9 +246,9 @@ async def test_missing_daemon_is_typed_without_retries(api, client_kind, self_in
                 await client.post(api.url + "/mcp", json={})
         elif client_kind == "file":
             async with AionFileClient(jwt_manager=VersionToken(), base_url=api.url) as client:
-                await client.create(
+                await client.create_agent_artifact(
                     b"content", organization_id="org-1",
-                    purpose="MessagingMedia", file_name="x.txt",
+                    file_name="x.txt",
                 )
         else:
             client = await gql_client(api)
