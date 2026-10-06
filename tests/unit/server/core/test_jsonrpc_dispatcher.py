@@ -249,7 +249,8 @@ class TestMethodExtensionRouting:
     )
     async def test_invalid_params_are_refused(self, method, params):
         """Blank contextId and out-of-range pagination are -32602, with the
-        reason in ``data.parseError`` as a2a-sdk reports its own methods'."""
+        reason in an ``ErrorInfo`` detail's ``metadata.parseError`` as
+        a2a-sdk reports its own methods'."""
         handler = Mock()
         dispatcher = _dispatcher(handler)
 
@@ -259,7 +260,55 @@ class TestMethodExtensionRouting:
 
         error = json.loads(response.body)["error"]
         assert error["code"] == -32602
-        assert isinstance(error["data"]["parseError"], str)
+        [detail] = error["data"]
+        assert detail["@type"] == "type.googleapis.com/google.rpc.ErrorInfo"
+        assert detail["reason"] == "INVALID_PARAMS"
+        assert isinstance(detail["metadata"]["parseError"], str)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("announced", [None, "1.0", "1", "1.2"])
+    async def test_a_call_announcing_a2a_1_x_or_nothing_is_served(self, announced):
+        """No ``A2A-Version`` is served too: the method extensions have no 0.3 form."""
+        handler = Mock()
+        handler.on_get_contexts = AsyncMock(return_value=_summaries())
+        dispatcher = _dispatcher(handler)
+        if announced is not None:
+            dispatcher._context_builder.build.return_value.state["headers"] = {"a2a-version": announced}
+
+        response = await dispatcher.handle_requests(_request({"jsonrpc": "2.0", "id": 12, "method": "GetContexts"}))
+
+        assert json.loads(response.body)["result"] == []
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("announced", ["0.3", "2.0", "latest"])
+    async def test_a_call_announcing_another_version_is_refused(self, announced):
+        """``VersionNotSupportedError`` (-32009), as for a standard method."""
+        handler = Mock()
+        handler.on_get_contexts = AsyncMock(return_value=_summaries())
+        dispatcher = _dispatcher(handler)
+        dispatcher._context_builder.build.return_value.state["headers"] = {"a2a-version": announced}
+
+        response = await dispatcher.handle_requests(_request({"jsonrpc": "2.0", "id": 13, "method": "GetContexts"}))
+
+        error = json.loads(response.body)["error"]
+        assert error["code"] == -32009
+        assert error["data"][0]["reason"] == "VERSION_NOT_SUPPORTED"
+        handler.on_get_contexts.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_the_response_acknowledges_the_extension_that_served_it(self):
+        handler = Mock()
+        handler.on_get_context = AsyncMock(side_effect=ContextNotFound("c1"))
+        handler.on_get_contexts = AsyncMock(return_value=_summaries())
+        dispatcher = _dispatcher(handler)
+
+        served = await dispatcher.handle_requests(_request({"jsonrpc": "2.0", "id": 14, "method": "GetContexts"}))
+        refused = await dispatcher.handle_requests(
+            _request({"jsonrpc": "2.0", "id": 15, "method": "GetContext", "params": {"contextId": "c1"}})
+        )
+
+        assert served.headers["A2A-Extensions"] == CONTEXT_EXTENSION_URI_V1
+        assert refused.headers["A2A-Extensions"] == CONTEXT_EXTENSION_URI_V1
 
     @pytest.mark.asyncio
     async def test_unknown_params_fields_are_ignored(self):

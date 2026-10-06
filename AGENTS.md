@@ -47,8 +47,14 @@ contracts; reconcile this file with them when behavior changes.
   requires. `docs/development/a2a-sdk-mapping.md` is the map of every a2a-sdk
   server entry point to what Aion does with it. On every `a2a-sdk` bump:
   - diff its `DefaultRequestHandlerV2`, `ActiveTaskRegistry`, `ActiveTask`,
-    `TaskManager` and `a2a.server.cluster` against the Aion overrides, and
-    update the mapping table in the same change;
+    `TaskManager`, `JSONRPC03Adapter` and `a2a.server.cluster` against the
+    Aion overrides, and update the mapping table in the same change;
+  - when `COPIED_BODIES` in `tests/unit/server/test_sdk_override_parity.py`
+    fails, a body an override copies has changed: compare it with the
+    override, carry the change over, and add the new hash under the release;
+  - when `tests/unit/server/core/test_a2a_surface.py` fails, a method or a
+    route was added or dropped: decide what the server answers, then update
+    the test and the mapping table;
   - check whether upstream now offers what cluster mode lacks here - a wait
     hook in `DatabaseTaskEventStream`, remote cancellation that runs
     `AgentExecutor.cancel`, detection of a dead instance, journal cleanup -

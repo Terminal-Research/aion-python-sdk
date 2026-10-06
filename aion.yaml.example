@@ -19,7 +19,9 @@ aion:
       description: "Answers product questions and escalates what it cannot."
       version: "1.2.0"
 
-      # Optional. Defaults to ["text"] for both.
+      # Optional. Media types, such as "image/png" or "image/*", or the short
+      # names text, json, image, audio and video (text/plain, application/json,
+      # image/*, audio/*, video/*). Defaults to text/plain for both.
       input_modes: ["text"]
       output_modes: ["text"]
 

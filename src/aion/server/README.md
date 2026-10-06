@@ -412,7 +412,15 @@ this section says otherwise.
   `id` the request left empty is the task's id.
 - **Params** fields a method does not define are ignored, for the standard
   methods and the Context extension's alike. A request whose params do not
-  parse answers `-32602` with the reason in `error.data.parseError`.
+  parse answers `-32602`; its `error.data` is a list holding a
+  `google.rpc.ErrorInfo` detail (`reason` `INVALID_PARAMS`, `domain`
+  `a2a-protocol.org`) with the reason in `metadata.parseError`.
+- **The Context extension's methods** (`GetContexts`, `GetContext`,
+  `DeleteContext`) check `A2A-Version` as the standard methods do: another
+  major version than 1 answers `VersionNotSupportedError` (`-32009`). A call
+  without the header is served, where a standard method reads it as 0.3 and
+  refuses it. A response carries the Context extension's URI in
+  `A2A-Extensions`.
 - **`ListTasks`** page tokens are opaque cursors naming a position in the
   listing, so a token stays valid when the task it names changes or is
   deleted. A token that is not such a cursor answers `-32602`, and the
@@ -423,6 +431,12 @@ this section says otherwise.
   `X-A2A-Notification-Token` and its `authentication` as `Authorization:
   <scheme> <credentials>`; credentials without a scheme are sent as
   `Bearer`.
+- **Push notification URLs** on a server the Aion platform hosts
+  (`DEPLOYMENT_ID` set) must be `http` or `https` and resolve to public
+  addresses only: a config naming another one - loopback, private,
+  link-local, the cloud metadata endpoint - is refused with `-32602`,
+  created on its own or inline in `SendMessage`, and a delivery to a stored
+  one is skipped. Elsewhere any URL is accepted.
 
 ### Several servers of one agent
 

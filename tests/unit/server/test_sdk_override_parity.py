@@ -16,6 +16,7 @@ test to happen to traverse it.
 """
 
 import ast
+import hashlib
 import inspect
 
 import pytest
@@ -24,6 +25,7 @@ from a2a.server.agent_execution.active_task_registry import ActiveTaskRegistry
 from a2a.server.cluster import VersionedTaskStore
 from a2a.server.request_handlers import DefaultRequestHandlerV2
 from a2a.server.routes.jsonrpc_dispatcher import JsonRpcDispatcher
+from a2a.compat.v0_3.jsonrpc_adapter import JSONRPC03Adapter
 from a2a.server.tasks import TaskManager, TaskStore
 from a2a.server.tasks.base_push_notification_sender import BasePushNotificationSender
 from a2a.server.tasks.push_notification_sender import PushNotificationSender
@@ -36,6 +38,7 @@ from aion.server.agent.execution.scope import clear_execution_scope, init_execut
 from aion.server.agent.execution.request_context_builder import AionRequestContextBuilder
 from aion.server.agent.execution.request_executor import AionAgentRequestExecutor
 from aion.server.core.app.handlers.jsonrpc_dispatcher import AionJsonRpcDispatcher
+from aion.server.core.app.handlers.jsonrpc_v03_adapter import AionJSONRPC03Adapter
 from aion.server.core.app.handlers.request_handler import AionRequestHandler
 from aion.server.tasks.push_sender import AionPushNotificationSender
 from aion.server.tasks.stores.in_memory_task_store import InMemoryTaskStore
@@ -72,6 +75,7 @@ OVERRIDES = [
     (AionJsonRpcDispatcher, JsonRpcDispatcher, "handle_requests"),
     (AionJsonRpcDispatcher, JsonRpcDispatcher, "_process_streaming_request"),
     (AionJsonRpcDispatcher, JsonRpcDispatcher, "_create_response"),
+    (AionJSONRPC03Adapter, JSONRPC03Adapter, "_process_streaming_request"),
     (AionRequestContextBuilder, RequestContextBuilder, "build"),
     (AionAgentRequestExecutor, AgentExecutor, "execute"),
     (AionAgentRequestExecutor, AgentExecutor, "cancel"),
@@ -99,6 +103,30 @@ OVERRIDES = [
     (PostgresVersionedTaskStore, VersionedTaskStore, "delete"),
     (PostgresVersionedTaskStore, VersionedTaskStore, "list"),
 ]
+
+# The a2a-sdk methods whose bodies an override copies and changes rather than
+# calling: the source of each, as one a2a-sdk release ships it, hashed
+# (sha256 of ``inspect.getsource``). A release that changes such a body -
+# keeping its signature, so the tests above stay green - leaves the copy here
+# behind it; the hash is what notices. One entry per a2a-sdk release in the
+# supported range whose copy has been compared with the override.
+COPIED_BODIES = {
+    (ActiveTaskRegistry, "get"): {
+        "1.2.2": "038ae198bdf3d13402709dd84f42c88afcbcb0786d4ab1cc03dcb21114218744",
+    },
+    (ActiveTaskRegistry, "get_or_create"): {
+        "1.2.2": "08bcf2740e25ab6e98557ae2003ae98c3a77b0263b5b7e333976ce9b0f8d41cc",
+    },
+    (ActiveTaskRegistry, "_on_active_task_cleanup"): {
+        "1.2.2": "40595a22c2b71e62ebdfe9d816e7fd4a386deeb08ad4b7383d0cb8055651bc91",
+    },
+    (BasePushNotificationSender, "send_notification"): {
+        "1.2.2": "18d0ee14c71993e519652a6e87f5d3bca610987c739a3196312ef448da801a95",
+    },
+    (BasePushNotificationSender, "_dispatch_notification"): {
+        "1.2.2": "1bae1aa38d4cce000e323a27bf42fc131c590603a7b786dec2f85b8d22e759ee",
+    },
+}
 
 # Aion-only TaskStore operations must not silently become overrides when the
 # a2a-sdk grows its storage contract. Such a collision requires an explicit
@@ -339,3 +367,38 @@ async def test_a_message_to_a_terminal_task_is_refused_as_the_base_refuses_it():
     finally:
         clear_execution_scope()
     await registry.aclose()
+
+
+def _source_hash(function) -> str:
+    return hashlib.sha256(inspect.getsource(function).encode()).hexdigest()
+
+
+@pytest.mark.parametrize(
+    ("base_cls", "method_name"),
+    list(COPIED_BODIES),
+    ids=[f"{base.__name__}.{method}" for base, method in COPIED_BODIES],
+)
+def test_a_copied_a2a_sdk_body_is_the_one_the_copy_was_compared_with(base_cls, method_name):
+    """The installed a2a-sdk ships the body the override was last compared with.
+
+    A failure means a2a-sdk changed the method. Compare its new body with the
+    Aion override, carry the change over where it applies, and add the new
+    hash under the release that ships it.
+    """
+    from importlib.metadata import version
+
+    installed = _source_hash(getattr(base_cls, method_name))
+    approved = COPIED_BODIES[(base_cls, method_name)]
+
+    assert installed in approved.values(), (
+        f"a2a-sdk {version('a2a-sdk')} changed {base_cls.__name__}.{method_name} "
+        f"(sha256 {installed}); compare it with the Aion override, then record "
+        f"the hash in COPIED_BODIES"
+    )
+
+
+def test_every_copied_body_is_an_override_in_the_table():
+    """A hashed method is one Aion overrides; dropping the override drops the hash."""
+    overridden = {(base, method) for _, base, method in OVERRIDES}
+
+    assert set(COPIED_BODIES) <= overridden

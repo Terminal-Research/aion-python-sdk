@@ -14,10 +14,47 @@ Status of an entry point:
 | extended | Subclassed; the override delegates to a2a-sdk and adds around it. |
 | replaced | Subclassed or reimplemented; Aion's body stands in for a2a-sdk's. |
 | not used | Available in a2a-sdk and deliberately left out. |
+| added | Aion's own, with no a2a-sdk counterpart. |
 
 `tests/unit/server/test_sdk_override_parity.py` holds the same list of
 overrides as [Overridden methods](#overridden-methods), and
 `tests/unit/server/test_a2a_sdk_mapping.py` checks that the two agree.
+
+## JSON-RPC methods
+
+Every method the JSON-RPC endpoint answers. The A2A 1.0 methods are
+`JsonRpcDispatcher.METHOD_TO_MODEL`, the A2A 0.3 methods
+`JSONRPC03Adapter.METHOD_TO_MODEL`, which serves each one through the 1.0
+handler; `tests/unit/server/core/test_a2a_surface.py` pins both lists and the
+routes, and `tests/unit/server/test_a2a_sdk_mapping.py` checks this table
+against them.
+
+| Method | Protocol | Status | Aion | What differs |
+|---|---|---|---|---|
+| `SendMessage` | 1.0 | extended | `AionRequestHandler.on_message_send` | Answers with a `Task`, never a bare `Message`; context admission, extension verification and file preprocessing run first. |
+| `SendStreamingMessage` | 1.0 | extended | `AionRequestHandler.on_message_send_stream`, `AionJsonRpcDispatcher._process_streaming_request` | Extensions verified before the SSE headers; the stream opens and closes with the stored `Task`. |
+| `GetTask` | 1.0 | extended | `AionRequestHandler.on_get_task` | The caller's own tasks only. |
+| `ListTasks` | 1.0 | extended | `AionRequestHandler.on_list_tasks` | The caller's own tasks only; opaque page cursors. |
+| `CancelTask` | 1.0 | extended | `AionRequestHandler.on_cancel_task` | The caller's own tasks only. |
+| `SubscribeToTask` | 1.0 | extended | `AionRequestHandler.on_subscribe_to_task` | The caller's own tasks only; the stream closes with the stored `Task`. |
+| `CreateTaskPushNotificationConfig` | 1.0 | extended | `AionRequestHandler.on_create_task_push_notification_config` | The task's initiator only; on a hosted server the URL must be public. |
+| `GetTaskPushNotificationConfig` | 1.0 | extended | `AionRequestHandler.on_get_task_push_notification_config` | The task's initiator only. |
+| `ListTaskPushNotificationConfigs` | 1.0 | extended | `AionRequestHandler.on_list_task_push_notification_configs` | The task's initiator only. |
+| `DeleteTaskPushNotificationConfig` | 1.0 | extended | `AionRequestHandler.on_delete_task_push_notification_config` | The task's initiator only. |
+| `GetExtendedAgentCard` | 1.0 | as is | - | The card declares no extended card: `UnsupportedOperationError` (`-32004`). |
+| `message/send` | 0.3 | as is | through `SendMessage` | |
+| `message/stream` | 0.3 | extended | `AionJSONRPC03Adapter._process_streaming_request` | LF event delimiters; extensions verified before the stream opens. |
+| `tasks/get` | 0.3 | as is | through `GetTask` | |
+| `tasks/cancel` | 0.3 | as is | through `CancelTask` | |
+| `tasks/resubscribe` | 0.3 | extended | `AionJSONRPC03Adapter._process_streaming_request` | LF event delimiters. |
+| `tasks/pushNotificationConfig/set` | 0.3 | as is | through `CreateTaskPushNotificationConfig` | |
+| `tasks/pushNotificationConfig/get` | 0.3 | as is | through `GetTaskPushNotificationConfig` | |
+| `tasks/pushNotificationConfig/list` | 0.3 | as is | through `ListTaskPushNotificationConfigs` | |
+| `tasks/pushNotificationConfig/delete` | 0.3 | as is | through `DeleteTaskPushNotificationConfig` | |
+| `agent/getAuthenticatedExtendedCard` | 0.3 | as is | through `GetExtendedAgentCard` | |
+| `GetContexts` | Aion | added | `AionJsonRpcDispatcher._handle_method_extension` | The Context extension; errors in a2a-sdk's format, `A2A-Version` checked, a call without it served. |
+| `GetContext` | Aion | added | `AionJsonRpcDispatcher._handle_method_extension` | As `GetContexts`. |
+| `DeleteContext` | Aion | added | `AionJsonRpcDispatcher._handle_method_extension` | As `GetContexts`. |
 
 ## Deployment modes
 
@@ -88,9 +125,10 @@ What Aion adds on top of cluster mode:
 | `AionTaskManager.ensure_task_id` | `TaskManager.ensure_task_id` | extended | Records the state the store read brought back. | `test_task_manager.py` |
 | `AionTaskManager._save_task` | `TaskManager._save_task` | extended | Serializes the manager's writes; refuses a write that moves a terminal task to another state and skips one that keeps it; schedules the `ActiveTask` teardown on a move into `INPUT_REQUIRED` or `AUTH_REQUIRED`. | `test_task_manager.py`, `test_task_manager_postgres.py` |
 | `AionTaskManager.process` | `TaskManager.process` | extended | Skips live-only events, stores a standalone `Message` as a status update, keeps the closing message on the final status. | `test_task_manager.py` |
-| `AionJsonRpcDispatcher.handle_requests` | `JsonRpcDispatcher.handle_requests` | extended | Routes Aion's method extensions; every standard method goes to a2a-sdk. | `test_method_extension_bindings.py` |
+| `AionJsonRpcDispatcher.handle_requests` | `JsonRpcDispatcher.handle_requests` | extended | Routes Aion's method extensions; every standard method goes to a2a-sdk. A method extension answers errors in a2a-sdk's format (`ErrorInfo` details) and checks `A2A-Version` by its rule, except that a call without the header is served. | `test_method_extension_bindings.py`, `test_jsonrpc_dispatcher.py`, `test_error_format.py` |
 | `AionJsonRpcDispatcher._process_streaming_request` | `JsonRpcDispatcher._process_streaming_request` | extended | Verifies a send's extension activation before the SSE headers go out. | `test_jsonrpc_dispatcher.py` |
 | `AionJsonRpcDispatcher._create_response` | `JsonRpcDispatcher._create_response` | extended | LF event delimiters in SSE, safe through tunnels. | `test_jsonrpc_dispatcher.py` |
+| `AionJSONRPC03Adapter._process_streaming_request` | `JSONRPC03Adapter._process_streaming_request` | extended | The A2A 0.3 streams follow the 1.0 binding's rules: LF event delimiters, and a `message/stream` whose extensions fail verification refused with `-32602` before the stream opens. | `test_v03_streams.py` |
 | `AionRequestContextBuilder.build` | `RequestContextBuilder.build` | replaced | A message with a `contextId` and no `taskId` continues the caller's interrupted task in that context. | `test_request_context_builder.py` |
 | `AionAgentRequestExecutor.execute` | `AgentExecutor.execute` | replaced | Runs the agent's framework adapter or a routed extension handler through `AionEventPipeline`. | `test_request_executor.py` |
 | `AionAgentRequestExecutor.cancel` | `AgentExecutor.cancel` | replaced | Delegates to the framework adapter or extension handler, then writes `CANCELED`; runs only for a task this server holds. | `test_request_executor.py` |
@@ -117,14 +155,16 @@ What Aion adds on top of cluster mode:
 | `ActiveTask` | built by `AionActiveTaskRegistry` |
 | `TaskUpdater`, `EventQueue` | `AionAgentRequestExecutor`, `AionEventPipeline` |
 | `add_a2a_routes_to_fastapi`, `create_agent_card_routes` | `AppFactory._build_app` |
-| A2A 0.3 compatibility (`enable_v0_3_compat=True`) | `AionJsonRpcDispatcher` |
+| A2A 0.3 compatibility (`enable_v0_3_compat=True`) | `AionJsonRpcDispatcher`, which installs `AionJSONRPC03Adapter` as the adapter |
 | `DatabasePushNotificationConfigStore`, `InMemoryPushNotificationConfigStore` | `PushNotificationFactory` |
+| `validate_push_notification_url` as `push_url_validator` of `DefaultRequestHandlerV2` and `BasePushNotificationSender` | `AppFactory`, on a server the platform hosts only (`push_url_validator()`) |
 | `resolve_user_scope`, `OwnerResolver` | default owner resolver of the stores and the agent |
 
 ## Not used
 
 | a2a-sdk | Why |
 |---|---|
+| `validate_input_modes` of `DefaultRequestHandlerV2` | It compares a part's media type with the card's modes literally, so the `image/*` an `image` mode stands for would refuse every `image/png`; and it runs after the file preprocessors. A part the agent cannot take is refused by the file handling, which says why. |
 | `DefaultRequestHandler` (v1) and `QueueManager` | The server is built on `DefaultRequestHandlerV2`. |
 | `a2a.server.tasks.InMemoryTaskStore`, `DatabaseTaskStore` | Aion's stores keep owner scope, context admission and Aion's schema. |
 | `VersionedDatabaseTaskStore` | See [Cluster mode](#cluster-mode). |

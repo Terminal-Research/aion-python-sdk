@@ -24,21 +24,28 @@ class TestAgentConfigVersion:
 
 
 class TestAgentConfigModes:
-    def test_default_modes_are_text(self):
-        """AgentConfig defaults input and output modes to ['text']."""
+    def test_default_modes_are_plain_text(self):
         agent = AgentConfig(path="my.module:Agent")
-        assert agent.input_modes == ["text"]
-        assert agent.output_modes == ["text"]
+        assert agent.input_modes == ["text/plain"]
+        assert agent.output_modes == ["text/plain"]
 
-    def test_valid_non_default_mode(self):
-        """AgentConfig accepts valid non-default mode names like 'audio' and 'image'."""
-        agent = AgentConfig(path="my.module:Agent", input_modes=["audio", "image"])
-        assert set(agent.input_modes) == {"audio", "image"}
+    def test_a_short_name_is_read_as_its_media_type(self):
+        agent = AgentConfig(path="my.module:Agent", input_modes=["text", "json", "image", "audio", "video"])
+        assert agent.input_modes == ["text/plain", "application/json", "image/*", "audio/*", "video/*"]
 
-    def test_invalid_mode_raises(self):
-        """AgentConfig raises ValidationError with 'Invalid mode' for unsupported mode names."""
+    def test_a_media_type_is_kept_lowercased(self):
+        agent = AgentConfig(path="my.module:Agent", input_modes=["image/PNG", "application/pdf", "text/*"])
+        assert agent.input_modes == ["image/png", "application/pdf", "text/*"]
+
+    def test_a_mode_named_twice_is_listed_once(self):
+        agent = AgentConfig(path="my.module:Agent", output_modes=["text", "text/plain", "json"])
+        assert agent.output_modes == ["text/plain", "application/json"]
+
+    @pytest.mark.parametrize("mode", ["pdf", "image/", "*/*x", "text plain"])
+    def test_invalid_mode_raises(self, mode):
+        """Neither a short name nor a media type."""
         with pytest.raises(ValidationError, match="Invalid mode"):
-            AgentConfig(path="my.module:Agent", input_modes=["pdf"])
+            AgentConfig(path="my.module:Agent", input_modes=[mode])
 
     def test_empty_modes_raises(self):
         """AgentConfig raises ValidationError when modes list is empty."""

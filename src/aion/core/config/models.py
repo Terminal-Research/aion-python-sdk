@@ -3,9 +3,21 @@
 Defines Pydantic models for representing configuration fields, schemas, and metadata.
 """
 
+import re
 from enum import Enum
 from typing import List, Dict, Any, Optional, Union
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+MODE_MEDIA_TYPES = {
+    "text": "text/plain",
+    "json": "application/json",
+    "image": "image/*",
+    "audio": "audio/*",
+    "video": "video/*",
+}
+"""The media type each short mode name of ``aion.yaml`` stands for."""
+
+_MEDIA_TYPE = re.compile(r"^[a-z0-9][a-z0-9!#$&^_.+-]*/(\*|[a-z0-9][a-z0-9!#$&^_.+-]*)$")
 
 
 class ConfigurationType(str, Enum):
@@ -205,14 +217,15 @@ class AgentConfig(BaseModel):
         default_factory=list,
         description="List of agent skills")
 
-    # Input/output modes
+    # Input/output modes, as media types. ``aion.yaml`` may also name them by
+    # the short names of MODE_MEDIA_TYPES.
     input_modes: List[str] = Field(
-        default_factory=lambda: ["text"],
-        description="Supported input modes")
+        default_factory=lambda: ["text/plain"],
+        description="Media types the agent accepts")
 
     output_modes: List[str] = Field(
-        default_factory=lambda: ["text"],
-        description="Supported output modes")
+        default_factory=lambda: ["text/plain"],
+        description="Media types the agent answers with")
 
     # Additional configuration
     configuration: Dict[str, ConfigurationField] = Field(
@@ -258,15 +271,28 @@ class AgentConfig(BaseModel):
     @field_validator('input_modes', 'output_modes')
     @classmethod
     def validate_modes(cls, value):
-        """Validate input/output modes."""
+        """Read input/output modes as media types.
+
+        A2A names a mode by its media type, and the agent card carries these
+        lists as they are. A short name - ``text``, ``json``, ``image``,
+        ``audio``, ``video`` - is read as the media type MODE_MEDIA_TYPES
+        gives it; a media type, ``image/png`` or ``image/*``, is kept,
+        lowercased. Duplicates are dropped, the first one kept in place.
+        """
         if not value:
             raise ValueError("At least one mode must be specified")
 
-        valid_modes = {"text", "audio", "image", "video", "json"}
+        media_types = []
         for mode in value:
-            if mode not in valid_modes:
-                raise ValueError(f"Invalid mode: {mode}. Must be one of {valid_modes}")
-        return value
+            media_type = MODE_MEDIA_TYPES.get(mode, mode.strip().lower())
+            if not _MEDIA_TYPE.match(media_type):
+                raise ValueError(
+                    f"Invalid mode: {mode}. Name a media type such as image/png or image/*, "
+                    f"or one of {', '.join(MODE_MEDIA_TYPES)}"
+                )
+            if media_type not in media_types:
+                media_types.append(media_type)
+        return media_types
 
     @field_validator('version')
     @classmethod

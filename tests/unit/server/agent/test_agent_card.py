@@ -282,21 +282,21 @@ class TestSupportedInterfaces:
 
 class TestInputOutputModes:
     def test_default_input_modes(self):
-        """Card default input modes are ['text'] when none are configured."""
+        """Card default input modes are plain text when none are configured."""
         card = AionAgentCard.from_config(_make_config(), "http://localhost:8000")
-        assert card.default_input_modes == ["text"]
+        assert card.default_input_modes == ["text/plain"]
 
     def test_custom_input_modes(self):
-        """Card default input modes reflect the custom modes set in AgentConfig."""
+        """The card names the configured modes by their media types."""
         card = AionAgentCard.from_config(
-            _make_config(input_modes=["text", "audio"]), "http://localhost:8000"
+            _make_config(input_modes=["text", "audio", "image/png"]), "http://localhost:8000"
         )
-        assert card.default_input_modes == ["text", "audio"]
+        assert card.default_input_modes == ["text/plain", "audio/*", "image/png"]
 
     def test_default_output_modes(self):
-        """Card default output modes are ['text'] when none are configured."""
+        """Card default output modes are plain text when none are configured."""
         card = AionAgentCard.from_config(_make_config(), "http://localhost:8000")
-        assert card.default_output_modes == ["text"]
+        assert card.default_output_modes == ["text/plain"]
 
 
 def test_the_card_asks_for_a_bearer_token():

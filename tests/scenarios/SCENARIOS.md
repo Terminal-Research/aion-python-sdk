@@ -4,7 +4,7 @@
      commands.py and frameworks.py. Do not edit by hand: run
      `make scenarios-matrix`. -->
 
-161 scenarios in 32 files, 362 runs across 2 frameworks: 331 run, 31 skipped.
+164 scenarios in 32 files, 368 runs across 2 frameworks: 337 run, 31 skipped.
 
 Nothing here was produced by running a scenario: `pytest --collect-only` and the registries are all it takes, and the same suite always renders the same file. What the suite is and how to run it is in [README.md](README.md).
 
@@ -61,8 +61,8 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 
 | Suite | What it covers | Scenarios | Run |
 |---|---|---|---|
-| `smoke` | agent answers at all: card, health, help, echo | 7 | `make tests-scenarios TAGS=smoke` |
-| `streaming` | chunked replies, ephemeral typing, unary send | 13 | `make tests-scenarios TAGS=streaming` |
+| `smoke` | agent answers at all: card, health, help, echo | 8 | `make tests-scenarios TAGS=smoke` |
+| `streaming` | chunked replies, ephemeral typing, unary send | 14 | `make tests-scenarios TAGS=streaming` |
 | `events` | event order, ids, outbox, get_task agreement | 20 | `make tests-scenarios TAGS=events` |
 | `terminal_states` | COMPLETED, FAILED, CANCELED, INPUT_REQUIRED | 9 | `make tests-scenarios TAGS=terminal_states` |
 | `interrupts` | INPUT_REQUIRED and resume | 9 | `make tests-scenarios TAGS=interrupts` |
@@ -73,7 +73,7 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 | `daemon` | daemon extension identity and environment | 6 | `make tests-scenarios TAGS=daemon` |
 | `authentication` | bearer tokens: required, verified, and naming the caller | 6 | `make tests-scenarios TAGS=authentication` |
 | `config` | aion.yaml configuration and deployment variants | 7 | `make tests-scenarios TAGS=config` |
-| `lifecycle` | cancel, concurrency, push notifications, startup | 4 | `make tests-scenarios TAGS=lifecycle` |
+| `lifecycle` | cancel, concurrency, push notifications, startup | 5 | `make tests-scenarios TAGS=lifecycle` |
 | `contexts` | Context extension: list, read and delete conversations | 5 | `make tests-scenarios TAGS=contexts` |
 | `persistence` | needs POSTGRES_TEST_URL; survives a server restart | 10 | `make tests-scenarios-persistence` |
 | `distributed` | needs POSTGRES_TEST_URL; two servers over one database | 13 | `make tests-scenarios-distributed` |
@@ -274,6 +274,7 @@ Push notification delivery to a real HTTP callback.
 | [The pushed body identifies the task the notification is about.](core/test_push_notifications.py#L152 "test_push_notification_carries_the_task_id") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
 | [The callback accepts the delivery, because it arrived authenticated.](core/test_push_notifications.py#L175 "test_a_declared_credential_is_presented_to_the_callback") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
 | [The callback really checks: the same delivery without credentials is rejected.](core/test_push_notifications.py#L206 "test_an_undeclared_credential_is_refused_by_the_callback") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
+| [The four push config methods, on a task of this caller; a config created without an id takes the task's.](core/test_push_notifications.py#L228 "test_a_push_config_is_created_read_listed_and_deleted") | `lifecycle` | `echo` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_resubscribe.py`
 
@@ -300,6 +301,7 @@ Does a deployment of this framework answer at all.
 | [There is no api browser](core/test_smoke.py#L47 "test_there_is_no_api_browser") | `smoke` | — | `default` | ✓ | ✓ |
 | [`help` answers the menu, and the turn completes.](core/test_smoke.py#L55 "test_help_answers_with_the_menu") | `smoke` | `help` | `default` | ✓ | ✓ |
 | [`echo <text>` answers with the argument, unchanged.](core/test_smoke.py#L64 "test_echo_answers_with_the_argument") | `smoke` | `echo` | `default` | ✓ | ✓ |
+| [The card names a 0.3 interface; a 0.3 `message/send` through the proxy completes.](core/test_smoke.py#L74 "test_an_a2a_0_3_client_is_answered_too") | `smoke` | `echo` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_stream_delta_shape.py`
 
@@ -327,6 +329,7 @@ Replies that arrive in pieces, and the indicator sent while one is built.
 | [The caller learns the agent is busy, and the answer follows.](core/test_streaming.py#L86 "test_the_indicator_is_delivered_before_the_reply") | `streaming` | `typing` | `default` | ✓ | ✓ |
 | [The turn has one durable reply, and the indicator is not it.](core/test_streaming.py#L104 "test_the_indicator_is_not_a_durable_reply") | `streaming` | `typing` | `default` | ✓ | ✓ |
 | [What was shown once is gone; what was said is kept.](core/test_streaming.py#L112 "test_the_indicator_never_reaches_task_history") | `streaming` | `typing` | `default` | ✓ | ✓ |
+| [`SendMessage` without a stream answers once: the task, completed, the reply on its status.](core/test_streaming.py#L131 "test_a_unary_send_answers_with_the_completed_task") | `streaming` | `echo` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/distributed/test_cancel.py`
 
@@ -473,7 +476,7 @@ The contract from `commands.py`. `Scenarios` counts the scenarios driving the co
 | Command | Summary | Tags | Scenarios | langgraph | adk |
 |---|---|---|---|---|---|
 | `help` | Show this menu | `smoke` | 1 | ✓ | ✓ |
-| `echo <text>` | Reply with the argument, unchanged | `smoke`, `events` | 15 | ✓ | ✓ |
+| `echo <text>` | Reply with the argument, unchanged | `smoke`, `events` | 18 | ✓ | ✓ |
 | `stream <n>` | Reply in n chunks of one message | `streaming` | 10 | ✓ | ✓ |
 | `typing` | Send an ephemeral typing status, then a reply | `streaming`, `events` | 3 | ✓ | ✓ |
 | `steps <n>` | Emit n working statuses, then complete | `events` | 2 | ✓ | ✓ |
