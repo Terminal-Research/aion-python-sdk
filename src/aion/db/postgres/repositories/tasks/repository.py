@@ -6,7 +6,7 @@ import datetime as _dt
 import uuid
 from typing import List, Type, Optional
 
-from sqlalchemy import select, func, asc, desc, delete, literal, update, and_, or_
+from sqlalchemy import select, func, asc, desc, delete, and_, or_
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Select
@@ -15,7 +15,6 @@ from a2a.types import Artifact, TaskStatus
 
 from aion.db.postgres.records import TaskRecord, resolve_status_timestamp
 from aion.db.postgres.repositories.base import BaseRepository
-from aion.db.postgres.repositories.task_claims import TaskClaimsRepository
 from aion.db.postgres.models import TaskArtifactModel, TaskRecordModel
 from aion.db.postgres.types import Pagination, Sorting
 from aion.db.postgres.repositories.tasks.selectors import latest_artifacts, artifacts_by_version, all_versions_by_name
@@ -281,7 +280,9 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
 
         ``created_at`` is deliberately absent from both the insert values and
         the conflict update. The database owns it and an entity constructed
-        from an incoming A2A task must never be able to reset it.
+        from an incoming A2A task must never be able to reset it. Callers lock
+        the row first (:meth:`lock_owner_scope`) and decide who may write;
+        this statement only writes.
         """
         stmt = insert(self.model_class).values(
             id=entity.id,
@@ -299,7 +300,7 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
                 "status": stmt.excluded.status,
                 "status_timestamp": stmt.excluded.status_timestamp,
                 "metadata": stmt.excluded.metadata,
-                "updated_at": func.now(),
+                "updated_at": func.clock_timestamp(),
             },
         )
         await self._session.execute(stmt)
@@ -308,10 +309,9 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
     async def lock_owner_scope(self, task_id: uuid.UUID) -> Optional[str]:
         """Lock the task row and return its recorded owner, or None if there is no row.
 
-        The same ``SELECT ... FOR UPDATE`` :meth:`save_owned` starts with, so a
-        caller that goes on to :meth:`save_owned_locked` pays for one lock and
-        learns whose task it is writing - a task's owner is fixed by its first
-        write, and the upsert never changes it.
+        A caller that goes on to :meth:`save` pays for one lock and learns
+        whose task it is writing - a task's owner is fixed by its first write,
+        and the upsert never changes it.
         """
         result = await self._session.execute(
             select(self.model_class.owner_scope)
@@ -320,157 +320,32 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
         )
         return result.scalar_one_or_none()
 
-    async def save_owned(self, entity: TaskRecord, owner_token: uuid.UUID) -> bool:
-        """Fenced upsert a task only while ``owner_token`` is current.
-
-        The ownership predicate is the source relation of the upsert itself.
-        Consequently an absent or replaced claim produces zero rows in both the
-        insert and conflict-update paths; callers can treat ``False`` as a
-        definitive ownership loss without a check-then-write race.
-
-        Args:
-            entity: Complete task snapshot to persist.
-            owner_token: Process-local claim token, passed only to SQL.
-
-        Returns:
-            ``True`` when the row was inserted or updated, ``False`` when the
-            claim predicate produced no source row.
-        """
-        # Normal writes and claim acquisition both take the task row first.  A
-        # new task has no row yet, so the SELECT is intentionally allowed to
-        # return zero rows; the claim predicate below remains authoritative.
-        await self._session.execute(
-            select(self.model_class.id)
-            .where(self.model_class.id == entity.id)
-            .with_for_update()
-        )
-        return await self.save_owned_locked(entity, owner_token)
-
-    async def save_owned_locked(self, entity: TaskRecord, owner_token: uuid.UUID) -> bool:
-        """Fenced upsert for a caller that already holds the task row's lock.
-
-        The same predicate as :meth:`save_owned`, without the leading
-        ``SELECT ... FOR UPDATE``. A caller that reached this task through its
-        own ``FOR UPDATE`` - the reaper, recovering a candidate it already
-        locked to read - would otherwise pay for locking the same row twice
-        in one transaction.
-
-        Args:
-            entity: Complete task snapshot to persist.
-            owner_token: Process-local claim token, passed only to SQL.
-
-        Returns:
-            ``True`` when the row was inserted or updated, ``False`` when the
-            claim predicate produced no source row.
-        """
-        # The claim check is the source relation of the insert: a row is
-        # produced to insert only while ``owned`` yields one. Literals carry
-        # the model's own column types so ProtobufType serializes them the
-        # same way a plain ``.values()`` insert would.
-        owned = TaskClaimsRepository.owned_cte(entity.id, owner_token)
-        source = select(
-            literal(entity.id, type_=self.model_class.id.type),
-            literal(entity.agent_id, type_=self.model_class.agent_id.type),
-            literal(entity.owner_scope, type_=self.model_class.owner_scope.type),
-            literal(entity.context_id, type_=self.model_class.context_id.type),
-            literal(entity.status, type_=self.model_class.status.type),
-            literal(entity.status_timestamp, type_=self.model_class.status_timestamp.type),
-            literal(entity.task_metadata, type_=self.model_class.task_metadata.type),
-        ).select_from(owned)
-
-        insert_stmt = insert(self.model_class).from_select(
-            [
-                "id",
-                "agent_id",
-                "owner_scope",
-                "context_id",
-                "status",
-                "status_timestamp",
-                "metadata",
-            ],
-            source,
-        )
-        stmt = insert_stmt.on_conflict_do_update(
-            index_elements=[self.model_class.id],
-            set_={
-                "context_id": insert_stmt.excluded.context_id,
-                "status": insert_stmt.excluded.status,
-                "status_timestamp": insert_stmt.excluded.status_timestamp,
-                "metadata": insert_stmt.excluded.metadata,
-                "updated_at": func.clock_timestamp(),
-            },
-        ).returning(self.model_class.id)
-        result = await self._session.execute(stmt)
-        await self._session.flush()
-        return result.first() is not None
-
     async def find_by_id_for_update(
             self,
             task_id: uuid.UUID,
-            agent_id: Optional[str] = None,
+            agent_id: str,
             *,
             owner_scope: Optional[str] = None,
-            skip_locked: bool = False,
     ) -> Optional[TaskRecord]:
         """Find and lock a task row until the surrounding transaction ends.
 
-        Callers use this as the stable mutex for operations that coordinate a
-        task row with its optional ownership claim.  The repository does not
-        open or commit a transaction; the caller must keep the same session
-        and transaction for every dependent write.
+        The repository does not open or commit a transaction; the caller must
+        keep the same session and transaction for every dependent write.
 
         Args:
+            task_id: The task to lock.
             agent_id: Restrict to this agent's tasks - a task id that exists
                 but belongs to a different agent is reported as not found,
-                the same as one that does not exist at all. Left as ``None``
-                only for trusted, agent-agnostic maintenance code such as the
-                claim reaper, which reconciles tasks across every agent
-                sharing this database; every request-facing caller must pass
-                its own agent_id instead.
+                the same as one that does not exist at all.
             owner_scope: Restrict to one caller's tasks - another user's task
                 is reported as not found and is not locked. ``None`` for the
                 server's own paths, which act for no user.
-            skip_locked: When ``True``, a row already locked by another
-                transaction is reported as not found instead of waited on -
-                for callers, such as the reaper, that treat "someone else has
-                it" as a reason to move on to the next candidate.
         """
-        conditions = [self.model_class.id == task_id]
-        if agent_id is not None:
-            conditions.append(self.model_class.agent_id == agent_id)
+        conditions = [self.model_class.id == task_id, self.model_class.agent_id == agent_id]
         if owner_scope is not None:
             conditions.append(self.model_class.owner_scope == owner_scope)
-        stmt = (
-            select(self.model_class)
-            .where(*conditions)
-            .with_for_update(skip_locked=skip_locked)
-        )
+        stmt = select(self.model_class).where(*conditions).with_for_update()
         return await self._execute_and_convert(stmt)
-
-    async def update_status(self, task_id: uuid.UUID, agent_id: str, status: TaskStatus) -> None:
-        """Update only a task's status inside the caller's transaction.
-
-        A targeted update avoids replacing artifacts, history, or metadata
-        from a stale full-task snapshot.  ``ProtobufType`` on the ORM model
-        performs the JSONB serialization. ``status`` never reaches ``SET``
-        without ``status_timestamp`` alongside it, computed by the same
-        helper every other writer uses, so the two columns cannot drift.
-
-        Nothing is reported back about how many rows changed: the caller holds
-        the row lock from :meth:`find_by_id_for_update`, so the row it just
-        read cannot disappear before this statement runs.
-        """
-        status, status_timestamp = resolve_status_timestamp(status)
-        stmt = (
-            update(self.model_class)
-            .where(self.model_class.id == task_id, self.model_class.agent_id == agent_id)
-            .values(
-                status=status,
-                status_timestamp=status_timestamp,
-                updated_at=func.clock_timestamp(),
-            )
-        )
-        await self._session.execute(stmt)
 
     async def find(
             self,

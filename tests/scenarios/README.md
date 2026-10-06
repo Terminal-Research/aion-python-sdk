@@ -82,35 +82,26 @@ make scenarios-matrix                      # rewrite SCENARIOS.md
 `make tests-scenarios-persistence` runs the scenarios under `persistence/`,
 which restart a server and ask what became of the tasks it was holding, once
 per framework. `make tests-scenarios-distributed` runs those under
-`distributed/`, which start two servers of one agent over one database and ask
-which of them owns a task, may cancel it, and closes what a dead one left
-behind. Both use `POSTGRES_TEST_URL` when the environment names one and start a
-disposable PostgreSQL otherwise; without a database both skip themselves. The
-rest of the scenarios need no database and do not wait for one.
+`distributed/`, which start two servers of one agent over one database - a2a-sdk's
+cluster mode - and ask whether one of them follows, continues and cancels a task
+the other is running, and what becomes of the tasks of a server that died. Both
+use `POSTGRES_TEST_URL` when the environment names one and start a disposable
+PostgreSQL otherwise; without a database both skip themselves. The rest of the
+scenarios need no database and do not wait for one.
 
-One of them does wait, and the contract is why. A server that shuts down in an
-orderly way settles the tasks it was running itself, under the claims it still
-holds, so that scenario reads `server_shutdown` the moment the next process is
-up. A server that is killed outright settles nothing: its tasks are reclaimed
-only when the leases it stopped renewing expire, which is `lease_expired` and
-no sooner than the lease allows. The servers here run with
-`TASK_OWNERSHIP_LEASE_TTL_SECONDS` at 24 seconds rather than the deployed 60
-(`SCENARIO_LEASE_TTL_SECONDS` in `harness/pg.py`, which says why it cannot be
-lower), with a reconcile pass every 12, and every wait for a lease is derived
-from that TTL. That scenario is still the better part of a minute rather than
-seconds, and it is the reason these two groups are not part of
-`make tests-scenarios`. `distributed/` waits once more,
-for the same reason and only in `test_recovery.py`.
+A server that shuts down in an orderly way settles the tasks it was running
+itself, so that scenario reads `server_shutdown` the moment the next process is
+up. A server that is killed outright settles nothing, and nothing settles its
+tasks afterwards: they keep their state until someone cancels them, which any
+server can. These two groups start several servers per scenario, which is the
+reason they are not part of `make tests-scenarios`.
 
-It is also why both groups need a database. In-memory task storage is limited
-to the life of one process: it offers no cross-process ownership and no
-recovery from a hard crash, because leases, the refusals built on them and the
-reaper that settles a dead owner's tasks all belong to the PostgreSQL-backed
-store. That is a property of the deployment rather than a gap in the tests -
-`tests/unit/server/tasks/test_store_manager_ownership.py` asserts it from the
-other side, on the provider the in-memory store selects - so there is no
-crash for an in-memory server to recover from, and nothing here pretends
-otherwise.
+It is also why both groups need a database. In-memory task storage is
+a2a-sdk's single-process mode: it is limited to the life of one process and
+shares nothing with another, so there is no second server to follow a task
+from and nothing survives a restart. That is a property of the deployment
+rather than a gap in the tests - `tests/unit/server/tasks/test_store_manager.py`
+asserts it from the other side - and nothing here pretends otherwise.
 
 `KEEP_SERVE=1` leaves the servers running after the session and prints the
 port, the rendered `aion.yaml` and the log of each — the fastest way to poke at

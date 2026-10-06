@@ -5,12 +5,13 @@ from __future__ import annotations
 import logging
 import asyncio
 from datetime import datetime, timezone
+from a2a.server.cluster.task_store import ConcurrentTaskModificationError
 from a2a.server.context import ServerCallContext
 from a2a.server.owner_resolver import OwnerResolver, resolve_user_scope
-from a2a.types import TaskState, a2a_pb2
+from a2a.types import a2a_pb2
 from a2a.types.a2a_pb2 import Task
 from a2a.utils.constants import DEFAULT_LIST_TASKS_PAGE_SIZE
-from a2a.utils.errors import InvalidParamsError, TaskNotCancelableError
+from a2a.utils.errors import InvalidParamsError
 from a2a.utils.task import (
     ListTasksCursor,
     decode_list_tasks_cursor,
@@ -18,8 +19,6 @@ from a2a.utils.task import (
 )
 from typing import Callable, NamedTuple, Optional, List
 
-from aion.server.a2a.constants import TERMINAL_TASK_STATES
-from aion.server.tasks.ownership import DegenerateOwnershipProvider, TaskOwnershipLost
 from .base_task_store import BaseTaskStore
 
 logger = logging.getLogger(__name__)
@@ -65,12 +64,13 @@ class InMemoryTaskStore(BaseTaskStore):
     and ``_owner_of_write``.
 
     Tasks removed by a context deletion are remembered as retired: a late
-    write of one is refused with ``TaskOwnershipLost``, the same way the
-    durable store refuses a write whose execution claim is gone, so it
-    cannot bring back history the deletion removed. A new task is refused
-    the same way when ``admits_new_task`` says its context is closed - the
-    context catalog installs that check, so a message admitted before a
-    deletion started cannot create a task after it.
+    write of one is refused with ``ConcurrentTaskModificationError``, the
+    error a2a-sdk's task manager handles for a write another writer has
+    overtaken, so it cannot bring back history the deletion removed. A new
+    task is refused the same way when ``admits_new_task`` says its context is
+    closed - the context catalog installs that check, so a message admitted
+    before a deletion started cannot create a task after it, exactly as
+    ``PostgresTaskStore.write`` refuses it.
     """
 
     def __init__(
@@ -86,7 +86,6 @@ class InMemoryTaskStore(BaseTaskStore):
         self._retired: set[str] = set()
         self.admits_new_task: Callable[[str], bool] = lambda context_id: True
         self.owner_resolver = owner_resolver
-        self.ownership_provider = DegenerateOwnershipProvider()
 
     def _visible(self, owner: Optional[str]) -> list[Task]:
         """The tasks a call may see, oldest first: one owner's, or every owner's for None."""
@@ -116,18 +115,18 @@ class InMemoryTaskStore(BaseTaskStore):
             TaskOwnerUndefinedError: If the task is new and ``context`` is
                 ``None``.
             TaskOwnerMismatchError: If ``context`` resolves to another owner.
-            TaskOwnershipLost: If the task was removed by a context deletion,
-                or is new and its context is being deleted.
+            ConcurrentTaskModificationError: If the task was removed by a
+                context deletion, or is new and its context is being deleted.
         """
         task = self._persistable(task)
         write_owner = self._write_owner(context)
 
         async with self.lock:
             if task.id in self._retired:
-                raise TaskOwnershipLost(task.id)
+                raise ConcurrentTaskModificationError(task.id)
             stored = self.tasks.get(task.id)
             if stored is None and task.context_id and not self.admits_new_task(task.context_id):
-                raise TaskOwnershipLost(task.id)
+                raise ConcurrentTaskModificationError(task.id)
             owner = self._owner_of_write(
                 task.id, write_owner, None if stored is None else stored.owner
             )
@@ -253,64 +252,6 @@ class InMemoryTaskStore(BaseTaskStore):
 
             del self.tasks[task_id]
             logger.debug('Task %s deleted successfully.', task_id)
-
-    async def cancel_with_ownership_revocation(
-            self, task_id: str, context: ServerCallContext | None = None
-    ) -> Task | None:
-        """Cancel a task in the local store without ownership state.
-
-        Mirrors the durable store's contract, including reporting the
-        already-terminal case as an error rather than leaving the caller to
-        infer it from a state that a successful cancellation also produces.
-
-        Returns:
-            The canceled task, or ``None`` when no such task exists.
-
-        Raises:
-            TaskNotCancelableError: If the task already has an outcome.
-        """
-        owner = self._owner_filter(context)
-        async with self.lock:
-            task = self._locate(task_id, owner)
-            if task is None:
-                return None
-            if task.status.state in TERMINAL_TASK_STATES:
-                raise TaskNotCancelableError(
-                    message=(
-                        "Task cannot be canceled - current state: "
-                        f"{TaskState.Name(task.status.state)}"
-                    )
-                )
-            task.status.state = TaskState.TASK_STATE_CANCELED
-            return task
-
-    async def request_cancellation(
-            self, task_id: str, context: ServerCallContext | None = None
-    ) -> bool | None:
-        """Report "no live claim" for any cancelable task.
-
-        A single-process store has no distributed claim to mark: the
-        in-process ``ActiveTaskRegistry`` already gives mutual exclusion
-        stricter than a lease, so ``on_cancel_task`` finds and cancels the
-        local execution directly and never needs this path to signal
-        anything - see its first branch, tried before this one. When it is
-        reached anyway, always answering ``False`` sends the caller straight
-        to :meth:`cancel_with_ownership_revocation`, the correct single-writer
-        outcome here.
-        """
-        owner = self._owner_filter(context)
-        async with self.lock:
-            task = self._locate(task_id, owner)
-            if task is None:
-                return None
-            if task.status.state in TERMINAL_TASK_STATES:
-                raise TaskNotCancelableError(
-                    message=(
-                        "Task cannot be canceled - current state: "
-                        f"{TaskState.Name(task.status.state)}"
-                    )
-                )
-            return False
 
     async def get_context_tasks(
             self,

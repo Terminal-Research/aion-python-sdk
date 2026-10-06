@@ -76,7 +76,7 @@ class TaskSettlementReason(str, Enum):
     produced no outcome — is left alone: the execution outlives the subscriber
     and records the truth itself.
 
-    Every reason settles the task terminally — never with a resumable state.
+    A reason settles the task terminally — never with a resumable state.
     A non-terminal state would claim the opposite of what happened: the
     server auto-adopts the last interrupted task of a context for a message
     that arrives without a task id, so a resumable settlement would swallow
@@ -84,11 +84,8 @@ class TaskSettlementReason(str, Enum):
     asked. The conversation continues regardless — the context keeps the
     history and the next message opens a fresh task on it.
 
-    Most reasons settle as `FAILED`: the run stopped without an outcome and
-    nothing can carry it on. `CANCEL_REQUESTED` and `CANCEL_TIMEOUT` are the
-    exception — they settle as `CANCELED`, because a cancellation someone
-    asked for is not a failure, it is the outcome that was requested; see
-    `aion.server.tasks.settlement.settled_task`.
+    A settled task is `FAILED`: the run stopped without an outcome and nothing
+    can carry it on; see `aion.server.tasks.settlement.settled_task`.
     """
 
     SERVER_SHUTDOWN = "server_shutdown"
@@ -96,42 +93,7 @@ class TaskSettlementReason(str, Enum):
 
     Shutdown cancels the execution, so nothing is left to record an outcome and
     the task would otherwise stay active in the store forever. The shutting-down
-    process settles the task itself, while it still holds the claim, so the
-    outcome is recorded at once rather than waiting for the lease to lapse.
-    """
-
-    LEASE_EXPIRED = "lease_expired"
-    """This task's ownership lease expired before it was renewed.
-
-    The one reason reported for an owner lost outright — SIGKILL, OOM, a lost
-    machine — because such a process is gone before shutdown runs and cannot
-    settle anything. The task keeps the active state it had until its lease
-    lapses and the reaper reclaims it, which is also why this is the weakest
-    of the reasons: the previous owner is presumed gone, not confirmed gone,
-    and the settlement arrives no sooner than the lease allows.
-    """
-
-    CANCEL_REQUESTED = "cancel_requested"
-    """A cancellation was requested and the owner's lease expired before it acted on it.
-
-    The mark left by `BaseTaskStore.request_cancellation` -
-    `task_claims.cancel_requested_at` - outlives the owner only for as long as
-    the claim itself does. When the reaper reclaims an expired lease that
-    still carries the mark, the request survives it by exactly this one
-    settlement: closing the task as `CANCELED`, honoring what was asked,
-    rather than `FAILED`, which would report an ordinary lost-owner outcome
-    for a task whose owner may simply have died mid-cancellation.
-    """
-
-    CANCEL_TIMEOUT = "cancel_timeout"
-    """A cancellation was requested, but the owner did not honor it in time.
-
-    Distinct from `CANCEL_REQUESTED`: here the owner's lease never expired -
-    it kept renewing normally, meaning the process is alive but its
-    cancellation handling is stuck unwinding past its own grace period. The
-    reaper forces the task closed regardless of the live lease so the request
-    cannot hang forever; see `ClaimReaper` and
-    `aion.server.tasks.ownership.config.LeaseSettings.cancel_grace_seconds`.
+    process settles the task itself, as its last write to it.
     """
 
     @property
@@ -158,18 +120,6 @@ _SETTLEMENT_DESCRIPTIONS = {
     TaskSettlementReason.SERVER_SHUTDOWN: (
         "The server was shut down while this task was still running, so the "
         "task was stopped without finishing."
-    ),
-    TaskSettlementReason.LEASE_EXPIRED: (
-        "The worker running this task stopped reporting, so the task was "
-        "closed without finishing."
-    ),
-    TaskSettlementReason.CANCEL_REQUESTED: (
-        "This task was cancelled as requested; the worker running it stopped "
-        "before it could report the cancellation itself."
-    ),
-    TaskSettlementReason.CANCEL_TIMEOUT: (
-        "This task was cancelled as requested; the worker running it did not "
-        "stop in time and was closed out."
     ),
 }
 

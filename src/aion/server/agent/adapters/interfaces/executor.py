@@ -71,8 +71,8 @@ class StateScope:
         agent_id: The Aion agent id, the ``agent_id`` of the tasks table.
         owner_scope: The owner of the request's ``ServerCallContext``,
             resolved by the same resolver as the agent's task store; the state
-            owner of a private conversation. Not a lease owner: that is a
-            server process and has nothing to do with whose state this is.
+            owner of a private conversation. Which server process runs the
+            task has nothing to do with whose state this is.
         gateway: For a verified Aion invocation, its receiving agent
             identity and edge environment: the shared conversation's state
             owner. ``None`` for a private conversation.

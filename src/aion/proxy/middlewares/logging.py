@@ -44,21 +44,20 @@ class ProxyLoggingMiddleware(BaseHTTPMiddleware):
     def _log_request_response(self, request: Request, response: Response):
         """Log proxy request completion with status code.
 
-        A request the proxy forwards is logged again by the agent that serves it,
-        so announcing every hop at info level doubles the request log for nothing.
-        Failures are the exception: a request the proxy rejects, or one it cannot
-        deliver, never reaches an agent and this is the only record it leaves.
+        A response the agent produced is relayed as is and the agent has logged
+        that request, and a forwarding failure is logged with its cause by the
+        handler; both set ``request.state.logged_elsewhere`` and stay at debug
+        here, whatever the status. Any other failure is the proxy's own and
+        never reached an agent, so this line is its only record, at warning.
 
         Args:
             request: The HTTP request object
             response: The HTTP response object
         """
-        # Use full request path
-        path = request.url.path
+        text = f"{request.method} {request.url.path} | {response.status_code}"
 
-        text = f"{request.method} {path} | {response.status_code}"
-
-        if response.status_code >= 400:
+        logged_elsewhere = getattr(request.state, "logged_elsewhere", False)
+        if response.status_code >= 400 and not logged_elsewhere:
             self.logger.warning(text)
         else:
             self.logger.debug(text)

@@ -7,15 +7,14 @@ id or lists tasks has to honor it:
 
 * resubscribe and cancel of a task live on this server - the registry checks
   the caller through the store's ``get``;
-* cancel of a task live on another server - ``request_cancellation`` marks
-  that server's claim;
-* cancel of a task no server holds - ``cancel_with_ownership_revocation``
-  writes the outcome directly;
+* cancel of a task live on another server, and of one no server holds -
+  a2a-sdk's remote cancellation reads and writes it through the versioned
+  store, scoped to the caller;
 * ``tasks/list`` - its count, its pages and its page token.
 
 The other user gets ``TaskNotFound`` or an empty listing and changes nothing;
-the owner gets exactly what they got before. The lease's "owner" is a server
-process and plays no part in who may do this.
+the owner gets exactly what they got before. Which server runs a task plays
+no part in who may do this.
 """
 
 from __future__ import annotations
@@ -26,6 +25,7 @@ import uuid
 import pytest
 import pytest_asyncio
 from a2a.auth.user import User
+from a2a.server.cluster import DatabaseTaskEventStream
 from a2a.server.context import ServerCallContext
 from a2a.types import (
     CancelTaskRequest,
@@ -46,15 +46,11 @@ from unittest.mock import Mock
 
 from aion.server.agent.execution.scope import init_execution_scope
 from aion.server.core.app.handlers.request_handler import AionRequestHandler
-from aion.server.tasks.notifications import TaskEventListener
-from aion.server.tasks.stores.postgres_task_store import PostgresTaskStore
 
 from .postgres_support import (
     POSTGRES_TEST_URL,
-    cancel_requested_at,
-    claim_count,
     prepared_database,
-    provider,
+    stores,
     task_state,
     truncate,
 )
@@ -126,19 +122,23 @@ async def _migrated_database():
         yield manager
 
 
+def _event_stream() -> DatabaseTaskEventStream:
+    """a2a-sdk's stream over the journal, polling fast enough for a test to wait on."""
+    return DatabaseTaskEventStream(_db_manager.get_engine(), create_table=False, poll_interval_s=0.05)
+
+
 @pytest_asyncio.fixture(loop_scope="module")
 async def stack(_migrated_database):
     await truncate()
-    owner_provider = provider("pod-a")
-    store = PostgresTaskStore(agent_id=owner_provider.agent_id, ownership_provider=owner_provider)
+    store, versioned = stores()
     agent = _HoldingAgent()
     card = Mock()
     card.capabilities.streaming = True
     handler = AionRequestHandler(
         agent_executor=agent,
-        task_store=store,
+        task_store=versioned,
         agent_card=card,
-        ownership_provider=owner_provider,
+        event_stream=_event_stream(),
     )
     yield handler, agent, store
     agent.release.set()
@@ -270,19 +270,16 @@ class _Pod:
     """One server over the shared database, built the way StoreManager builds one."""
 
     def __init__(self, name: str, agent) -> None:
-        self.listener = TaskEventListener(db_manager=_db_manager)
-        self.listener.start()
-        self.provider = provider(name, event_listener=self.listener)
-        self.store = PostgresTaskStore(agent_id=self.provider.agent_id, ownership_provider=self.provider)
+        self.name = name
+        self.store, versioned = stores()
         self.agent = agent
         card = Mock()
         card.capabilities.streaming = True
         self.handler = AionRequestHandler(
             agent_executor=agent,
-            task_store=self.store,
+            task_store=versioned,
             agent_card=card,
-            ownership_provider=self.provider,
-            event_listener=self.listener,
+            event_stream=_event_stream(),
         )
 
     async def send(self, user: ServerCallContext) -> Task:
@@ -311,7 +308,6 @@ class _Pod:
         if hasattr(self.agent, "release"):
             self.agent.release.set()
         await self.handler._active_task_registry.aclose()
-        await self.listener.stop()
 
 
 @pytest_asyncio.fixture(loop_scope="module")
@@ -358,7 +354,11 @@ async def test_tasks_list_holds_only_the_callers_tasks(pods) -> None:
 
 
 async def test_another_user_cannot_cancel_a_task_live_on_another_server(pods) -> None:
-    """The cross-server branch: no mark on the owner's claim, nothing stops."""
+    """The remote branch: another user's cancel writes nothing, the owner's writes CANCELED.
+
+    The executing server finds out at its agent's next write and stops the
+    execution there; ``AgentExecutor.cancel`` is not called on it.
+    """
     agent = _HoldingAgent()
     pod_a, pod_b = pods("pod-a", agent), pods("pod-b", _HoldingAgent())
     alice, mallory = _context("alice"), _context("mallory")
@@ -367,34 +367,29 @@ async def test_another_user_cannot_cancel_a_task_live_on_another_server(pods) ->
     with pytest.raises(TaskNotFoundError):
         await pod_b.cancel(task_id, mallory)
 
-    assert await cancel_requested_at(task_id) is None
     assert await task_state(task_id) == "TASK_STATE_WORKING"
     assert agent.cancels == 0 and not stream.done()
 
     cancelled = await pod_b.cancel(task_id, alice)
 
     assert cancelled.status.state == TaskState.TASK_STATE_CANCELED
+    assert await task_state(task_id) == "TASK_STATE_CANCELED"
+    agent.release.set()
     await asyncio.wait_for(stream, timeout=10)
-    assert agent.cancels == 1
+    assert agent.cancels == 0
     assert await task_state(task_id) == "TASK_STATE_CANCELED"
     assert await _owner_scope(task_id) == "alice"
 
 
 async def test_another_user_cannot_cancel_a_task_no_server_holds(pods) -> None:
-    """The direct branch: a task waiting for input has no lease to go through."""
+    """A task waiting for input has no execution anywhere; the cancel is the write."""
     pod = pods("pod-a", _AskingAgent())
     alice, mallory = _context("alice"), _context("mallory")
     task = await pod.send(alice)
     assert task.status.state == TaskState.TASK_STATE_INPUT_REQUIRED
-    for _ in range(100):
-        if await claim_count() == 0:
-            break
-        await asyncio.sleep(0.05)
-    assert await claim_count() == 0
 
     with pytest.raises(TaskNotFoundError):
         await pod.cancel(task.id, mallory)
-    assert await pod.store.cancel_with_ownership_revocation(task.id, mallory) is None
     assert await task_state(task.id) == "TASK_STATE_INPUT_REQUIRED"
 
     cancelled = await pod.cancel(task.id, alice)
@@ -426,8 +421,7 @@ async def test_delete_without_a_context_reaches_any_owners_task_of_this_agent(po
     """``context=None`` is the store's deliberate unscoped access; the agent still bounds it."""
     pod = pods("pod-a", _QuickAgent())
     task = await _stored_task(pod, _context("alice"))
-    other_agent = provider("pod-x", agent_id="another-agent")
-    other_store = PostgresTaskStore(agent_id=other_agent.agent_id, ownership_provider=other_agent)
+    other_store, _ = stores("another-agent")
 
     await other_store.delete(task.id)
     assert await task_state(task.id) == "TASK_STATE_COMPLETED"
@@ -440,8 +434,7 @@ async def test_another_agents_store_cannot_delete_the_task(pods) -> None:
     pod = pods("pod-a", _QuickAgent())
     alice = _context("alice")
     task = await _stored_task(pod, alice)
-    other_agent = provider("pod-x", agent_id="another-agent")
-    other_store = PostgresTaskStore(agent_id=other_agent.agent_id, ownership_provider=other_agent)
+    other_store, _ = stores("another-agent")
 
     await other_store.delete(task.id, alice)
 

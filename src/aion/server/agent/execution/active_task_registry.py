@@ -6,34 +6,21 @@ from typing import Any, override
 
 from a2a.server.agent_execution.active_task import ActiveTask
 from a2a.server.agent_execution.active_task_registry import ActiveTaskRegistry
+from a2a.server.cluster.task_store import ConcurrentTaskModificationError, StoredTask
 from a2a.server.context import ServerCallContext
 from a2a.types import Task, TaskState
 from a2a.types.a2a_pb2 import Message
-from a2a.utils.errors import (
-    TaskNotCancelableError,
-    TaskNotFoundError,
-    UnsupportedOperationError,
-)
+from a2a.utils.errors import TaskNotCancelableError, TaskNotFoundError
 
 from aion.core.a2a.enums import TaskSettlementReason
-from aion.server.a2a.constants import ACTIVE_TASK_STATES, TERMINAL_TASK_STATES
+from aion.server.a2a.constants import TERMINAL_TASK_STATES
 from aion.server.agent.execution.scope import set_task_manager
 from aion.server.tasks import AionTaskManager, TerminalTaskPushSender, settled_task
-from aion.server.tasks.ownership import (
-    DegenerateOwnershipProvider,
-    OwnershipProvider,
-    SHUTDOWN_DB_TIMEOUT_SECONDS,
-    Busy,
-    Claim,
-    ControlSignal,
-    TaskOwnershipBusy,
-)
 
 logger = logging.getLogger(__name__)
 
-# A signaled cancellation can be rescuing committed evolution work. Give its
-# normal 60-second drain time to finish before shutdown interrupts it.
-SHUTDOWN_CANCEL_DRAIN_SECONDS = 60.0
+SHUTDOWN_DB_TIMEOUT_SECONDS = 2.0
+"""How long shutdown may spend settling the tasks it interrupted."""
 
 
 def _require_call_context(call_context: ServerCallContext | None) -> None:
@@ -66,12 +53,21 @@ def _has_finished(active_task: ActiveTask) -> bool:
 class AionActiveTaskRegistry(ActiveTaskRegistry):
     """Extends the base registry to inject AionTaskManager and populate the execution scope.
 
-    The registry also settles tasks left running by a shutdown. It is the only
-    layer that may: an outcome is otherwise always written by the execution
-    itself, and the registry is where the execution is known to be gone. A
-    subscriber cannot make that call — it may have merely disconnected while
-    the execution carried on — which is why ``TerminalTaskProjection`` only
-    reads.
+    Everything that decides where a task runs is a2a-sdk's: any instance
+    creates an ``ActiveTask`` for any task it receives a request for, and the
+    versioned store, when there is one, orders the writes of instances that
+    run the same task. This class adds what is Aion's on top of that:
+
+    * the task manager is ``AionTaskManager`` and the push sender is wrapped
+      per task in ``TerminalTaskPushSender``;
+    * an ``ActiveTask`` is closed once its task reaches ``INPUT_REQUIRED`` or
+      ``AUTH_REQUIRED``, and a finished one is never handed out again, so the
+      next turn starts a fresh ``ActiveTask`` - on whichever instance it
+      arrives at;
+    * tasks left running by a shutdown are settled as ``FAILED``. The
+      registry is the only layer that may: an outcome is otherwise always
+      written by the execution itself, and the registry is where the
+      execution is known to be gone.
 
     ``_active_tasks`` and ``_task_managers`` are guarded by the base
     registry's ``threading.RLock``, shared with the base methods this class
@@ -80,51 +76,31 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
     another coroutine on the same thread re-enter it and excludes nothing.
     """
 
-    def __init__(
-        self,
-        *args: Any,
-        ownership_provider: OwnershipProvider | None = None,
-        **kwargs: Any,
-    ) -> None:
-        """Wire the registry to the ownership provider chosen with the store.
-
-        The provider is passed in rather than read off the task store: the
-        pairing of store and provider is one decision, made once in
-        ``StoreManager``, and a registry that discovered it by attribute lookup
-        would silently fall back to no enforcement whenever the lookup missed.
-        """
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        """Build the registry with the base registry's arguments."""
         super().__init__(*args, **kwargs)
         # Managers are kept here rather than read off ActiveTask so shutdown
         # can reach the store through the same call context the task ran with:
-        # a store may resolve ownership from it, and no request context exists
-        # at shutdown.
+        # a store resolves the owner from it, and no request context exists at
+        # shutdown.
         self._task_managers: dict[str, AionTaskManager] = {}
         self._interruption_tasks: set[asyncio.Task[None]] = set()
         self._interruption_tasks_by_id: dict[str, ActiveTask] = {}
-        # Cancellation signaled through the claim rather than requested on
-        # this pod directly - see _on_control_signal. Tracked the same way as
-        # _interruption_tasks: one background dispatch per ActiveTask
-        # incarnation, forgotten once it finishes so a later incarnation of
-        # the same task_id can be signaled again.
-        self._cancel_signal_tasks: set[asyncio.Task[None]] = set()
-        self._cancel_signal_tasks_by_id: dict[
-            str, tuple[ActiveTask, asyncio.Task[None]]
-        ] = {}
-        # Set for the duration of aclose(). While it is set,
-        # _remove_task_for_incarnation must not release a claim: aclose() has
-        # already taken its own snapshot of the claims held at shutdown, and
-        # releases them itself only after _settle_interrupted_task has used
-        # them to write the shutdown outcome.
-        self._shutting_down = False
 
-        self._ownership: OwnershipProvider = (
-            ownership_provider
-            if ownership_provider is not None
-            else DegenerateOwnershipProvider()
-        )
-        self._ownership.set_loss_callback(self._on_ownership_lost)
-        self._ownership.set_control_signal_callback(self._on_control_signal)
-        self._ownership.start()
+    @override
+    async def get(self, task_id: str) -> ActiveTask | None:
+        """The live ``ActiveTask`` for ``task_id``, or ``None``.
+
+        A finished object can linger until the SDK's deferred cleanup runs;
+        it executes nothing and refuses new subscribers, so it is reported as
+        absent. The handler then treats the task as running elsewhere, or
+        nowhere - which is what it is.
+        """
+        with self._lock:
+            active_task = self._active_tasks.get(task_id)
+        if active_task is None or _has_finished(active_task):
+            return None
+        return active_task
 
     @override
     async def get_or_create(
@@ -143,6 +119,9 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
         reimplementation rather than a ``super()`` call, it must track the
         base signature and preconditions exactly.
 
+        A registered object that has finished is closed and replaced rather
+        than returned: ``start`` and ``subscribe`` refuse to run on it.
+
         Args:
             task_id: Identifier of the task to retrieve or create.
             call_context: Server call context carried into the task manager.
@@ -160,168 +139,94 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
         Raises:
             RuntimeError: If the registry has already been closed via
                 ``aclose()``.
+            TaskNotFoundError: If a live task is registered but the caller's
+                owner-scoped store does not show it.
         """
         _require_call_context(call_context)
         while True:
-            reusable: ActiveTask | None = None
+            stale: ActiveTask | None = None
+            created: ActiveTask | None = None
             with self._lock:
                 if self._closed:
                     raise RuntimeError('ActiveTaskRegistry is closed')
 
                 existing = self._active_tasks.get(task_id)
-                if existing is not None and self._is_reusable(
-                    existing, task_id, create_task_if_missing
-                ):
-                    reusable = existing
-
-                if reusable is not None:
-                    stale_active_task = None
-                elif existing is None:
-                    stale_active_task = None
-                else:
-                    # A finished ActiveTask can linger until the SDK's deferred
-                    # cleanup runs, and an object whose lease is gone is no
-                    # longer executing anything. Either way the entry is
-                    # dropped here so start/subscribe never meets an object
-                    # that reports itself already completed.
-                    stale_active_task = existing
+                if existing is not None and _has_finished(existing):
+                    stale = existing
                     self._active_tasks.pop(task_id, None)
                     self._task_managers.pop(task_id, None)
+                    existing = None
 
-            if reusable is not None:
-                # The cache-hit guard of a2a-sdk's own get_or_create: a live
-                # task found by id alone is handed out
-                # only to a caller the owner-aware store shows it to. Skipped
-                # on the create path, where the send path has already read the
-                # task through the store. Outside the lock: the read is I/O.
-                if not create_task_if_missing and await self._task_store.get(
-                    task_id, call_context
-                ) is None:
-                    raise TaskNotFoundError
-                return reusable
+                if existing is None and stale is None:
+                    created = self._create(
+                        task_id, call_context, context_id, initial_message
+                    )
 
-            if stale_active_task is not None:
+            if stale is not None:
                 # Closed outside the critical section: aclose drives the SDK
                 # cleanup callback, which needs this same lock.
-                await stale_active_task.aclose()
+                await stale.aclose()
                 continue
 
-            # Deliberately outside the registry lock. Acquiring a lease is a
-            # database round trip that can wait on the task row a cancellation
-            # holds, and this lock is shared by every task in the process:
-            # holding it across that wait stalls unrelated work.
-            claim: Claim | None = None
-            if create_task_if_missing:
-                acquired = await self._ownership.acquire(task_id)
-                if isinstance(acquired, Busy):
-                    owner = await self._ownership.current_owner(task_id)
-                    raise TaskOwnershipBusy(task_id, owner_instance_id=owner)
-                claim = acquired
+            if existing is not None:
+                # The cache-hit guard of a2a-sdk's own get_or_create: a live
+                # task found by id alone is handed out only to a caller the
+                # owner-aware store shows it to. Skipped on the create path,
+                # where the send path has already read the task through the
+                # store. Outside the lock: the read is I/O.
+                if not create_task_if_missing:
+                    stored = await self._task_store.get(task_id, call_context)
+                    if isinstance(stored, StoredTask):
+                        stored = stored.task
+                    if not stored:
+                        raise TaskNotFoundError
+                return existing
 
-            try:
-                task_manager = AionTaskManager(
-                    task_id=task_id,
-                    context_id=context_id,
-                    task_store=self._task_store,
-                    initial_message=initial_message,
-                    context=call_context,
-                    on_interrupted=self._on_task_interrupted,
-                    ownership_provider=self._ownership,
-                )
+            await created.start(
+                call_context=call_context,
+                create_task_if_missing=create_task_if_missing,
+            )
+            return created
 
-                # An acquire is followed by a fresh read. A task may have
-                # become terminal on another instance before this process won
-                # the expired claim, and the manager's cache would otherwise
-                # write a pre-outcome snapshot back over it.
-                if claim is not None:
-                    task = await task_manager.refresh_task()
-                    if task is not None and task.status.state in TERMINAL_TASK_STATES:
-                        raise UnsupportedOperationError(
-                            message=(
-                                f"Task {task_id} is in terminal state: "
-                                f"{TaskState.Name(task.status.state)}"
-                            )
-                        )
-            except BaseException:
-                if claim is not None:
-                    await self._ownership.release(claim)
-                raise
-
-            closed = False
-            raced: ActiveTask | None = None
-            active_task: ActiveTask | None = None
-            with self._lock:
-                if self._closed:
-                    closed = True
-                else:
-                    raced = self._active_tasks.get(task_id)
-
-                if not closed and raced is None:
-                    set_task_manager(task_manager)
-
-                    # Push dispatch runs in the background consumer with no
-                    # request context, so the outbound projection is bound per
-                    # task, to the manager that carries its call context.
-                    push_sender = self._push_sender
-                    if push_sender is not None:
-                        push_sender = TerminalTaskPushSender(
-                            inner=push_sender,
-                            task_manager=task_manager,
-                        )
-
-                    active_task = ActiveTask(
-                        agent_executor=self._agent_executor,
-                        task_id=task_id,
-                        task_manager=task_manager,
-                        push_sender=push_sender,
-                        on_cleanup=self._on_active_task_cleanup,
-                    )
-                    self._active_tasks[task_id] = active_task
-                    self._task_managers[task_id] = task_manager
-
-            if closed:
-                # Released outside the lock for the same reason it was acquired
-                # outside it: this is a database round trip.
-                if claim is not None:
-                    await self._ownership.release(claim)
-                raise RuntimeError('ActiveTaskRegistry is closed')
-
-            if raced is not None:
-                # Another caller created the object while the lease was being
-                # acquired. Its claim and ours are the same map entry, so the
-                # lease must not be released here.
-                return raced
-
-            try:
-                await active_task.start(
-                    call_context=call_context,
-                    create_task_if_missing=create_task_if_missing,
-                )
-            except Exception:
-                if claim is not None:
-                    await self._ownership.release(claim)
-                raise
-            return active_task
-
-    def _is_reusable(
+    def _create(
         self,
-        active_task: ActiveTask,
         task_id: str,
-        create_task_if_missing: bool,
-    ) -> bool:
-        """Report whether a registered ActiveTask may serve this request.
+        call_context: ServerCallContext,
+        context_id: str | None,
+        initial_message: Message | None,
+    ) -> ActiveTask:
+        """Build and register the ``ActiveTask``; the caller holds the lock."""
+        task_manager = AionTaskManager(
+            task_id=task_id,
+            context_id=context_id,
+            task_store=self._task_store,
+            initial_message=initial_message,
+            context=call_context,
+            on_interrupted=self._on_task_interrupted,
+        )
+        set_task_manager(task_manager)
 
-        An object that has finished is never reusable. Beyond that, only a
-        request that intends to execute needs a lease behind the object: a
-        subscriber attaches to whatever the process is already running.
-        """
-        if _has_finished(active_task):
-            return False
-        if not create_task_if_missing:
-            return True
-        if not self._ownership.enforcement_enabled:
-            return True
-        return self._ownership.claim_for(task_id) is not None
+        # Push dispatch runs in the background consumer with no request
+        # context, so the outbound projection is bound per task, to the
+        # manager that carries its call context.
+        push_sender = self._push_sender
+        if push_sender is not None:
+            push_sender = TerminalTaskPushSender(
+                inner=push_sender,
+                task_manager=task_manager,
+            )
+
+        active_task = ActiveTask(
+            agent_executor=self._agent_executor,
+            task_id=task_id,
+            task_manager=task_manager,
+            push_sender=push_sender,
+            on_cleanup=self._on_active_task_cleanup,
+            event_stream=self._event_stream,
+        )
+        self._active_tasks[task_id] = active_task
+        self._task_managers[task_id] = task_manager
+        return active_task
 
     def _on_active_task_cleanup(self, active_task: ActiveTask) -> None:
         """Remove an ActiveTask only if it is still the registered incarnation.
@@ -339,134 +244,14 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
         cleanup.add_done_callback(self._cleanup_tasks.discard)
 
     async def _remove_task_for_incarnation(self, active_task: ActiveTask) -> None:
-        """Drop one object and its manager, then release any lease it still holds.
-
-        A consumer that fails while writing its own failure can miss the
-        terminal write that normally releases the claim (see
-        ``AionTaskManager._save_task``), leaving the heartbeat renewing a
-        lease for work that no longer exists. Releasing it here is a no-op on
-        the normal path, where the claim is already gone by the time cleanup
-        runs.
-        """
+        """Drop one object and its manager, if they are still the registered ones."""
         with self._lock:
             if self._active_tasks.get(active_task.task_id) is not active_task:
                 return
             self._active_tasks.pop(active_task.task_id, None)
             if self._task_managers.get(active_task.task_id) is active_task._task_manager:
                 self._task_managers.pop(active_task.task_id, None)
-            claim = (
-                None
-                if self._shutting_down
-                else self._ownership.claim_for(active_task.task_id)
-            )
             logger.debug("Removed active task for %s", active_task.task_id)
-
-        if claim is not None:
-            await self._ownership.release(claim)
-
-    async def get_for_attach(
-        self,
-        task_id: str,
-        call_context: ServerCallContext,
-    ) -> ActiveTask | None:
-        """Return a local running task for a passive subscriber.
-
-        A subscriber never acquires a lease. It may attach to what this process
-        is already executing, and otherwise only to a task that nothing is
-        executing at all — which the durable state, not the claim table,
-        decides: an active state implies a live lease held elsewhere, while a
-        terminal or interrupted task legitimately has no owner and is safe to
-        replay locally.
-
-        Returns:
-            The ``ActiveTask`` to subscribe to, or ``None`` when there is no
-            execution to join and none can be started here - a task that
-            already has an outcome, or, where ownership is enforced, one that
-            is waiting for input. The caller answers those from the store.
-            Only single-process serving still attaches to an interrupted task,
-            because only there can the same object carry the next turn.
-
-        The caller's access is checked before anything is handed out, the
-        local execution included: ``_active_tasks`` is keyed by task id alone
-        and knows nothing of owners, while the task store is partitioned by
-        the caller's scope. A task another user owns reads as absent there,
-        and is reported as not found - its existence is not confirmed.
-
-        a2a-sdk's ``_subscribe_remote`` answers the remote case with a snapshot
-        and a tail read from its event stream. There is no such stream here,
-        so a task executing elsewhere is refused as busy. The
-        ``aion.server.tasks.ownership`` package docstring describes the
-        journal and stream that would let this branch follow the task
-        instead.
-
-        Raises:
-            TaskNotFoundError: If no such task exists for this caller.
-            TaskOwnershipBusy: If another instance is executing the task.
-        """
-        _require_call_context(call_context)
-        stale_active_task = None
-        local_active_task = None
-        with self._lock:
-            if self._closed:
-                raise RuntimeError('ActiveTaskRegistry is closed')
-            active_task = self._active_tasks.get(task_id)
-            if active_task is not None:
-                if self._is_reusable(active_task, task_id, create_task_if_missing=False):
-                    local_active_task = active_task
-                else:
-                    stale_active_task = active_task
-                    self._active_tasks.pop(task_id, None)
-                    self._task_managers.pop(task_id, None)
-
-        if stale_active_task is not None:
-            await stale_active_task.aclose()
-
-        # Outside the registry lock: a store read is I/O, and no critical
-        # section here may await.
-        task = await self._task_store.get(task_id, call_context)
-        if task is None:
-            raise TaskNotFoundError
-
-        if local_active_task is not None:
-            return local_active_task
-
-        if (
-            self._ownership.enforcement_enabled
-            and task.status.state in ACTIVE_TASK_STATES
-        ):
-            # Presented as running, and this process is not the one running it.
-            # A stream opened here would never produce an event, which a client
-            # cannot tell apart from an agent that is thinking.
-            owner = await self._ownership.current_owner(task_id)
-            raise TaskOwnershipBusy(task_id, owner_instance_id=owner)
-
-        if task.status.state in TERMINAL_TASK_STATES:
-            # A settled task is not resumable and never will be, and
-            # ``ActiveTask.start`` refuses one: building an execution here
-            # would answer the most ordinary reconnect there is - a client
-            # reading the result of a finished turn - with "your parameters
-            # are wrong". The stored task is the whole answer.
-            return None
-
-        if self._ownership.enforcement_enabled:
-            # An interrupted task, and this process is not executing it. An
-            # object built here would never finish: the SDK ends an execution
-            # on a terminal event or on ``aclose``, and a process that only
-            # reads the task produces neither, so the registry would hold it
-            # until shutdown. Nor could it ever carry the answer - the resume
-            # acquires a lease, and an object without one is replaced rather
-            # than reused. The stored task is again the whole answer.
-            return None
-
-        # Single-process serving, where a resume does reuse this object and a
-        # subscriber attached now goes on to see the next turn. Kept for that,
-        # and only there: the same object left behind by a process that cannot
-        # resume it is a leak.
-        return await self.get_or_create(
-            task_id,
-            call_context=call_context,
-            create_task_if_missing=False,
-        )
 
     def _on_task_interrupted(self, task_id: str) -> None:
         """Schedule ActiveTask teardown after INPUT/AUTH_REQUIRED is persisted."""
@@ -497,187 +282,22 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
         except Exception:
             logger.error("Failed to close interrupted task %s", task_id, exc_info=True)
 
-    def _on_ownership_lost(self, task_id: str, reason: str) -> None:
-        """Fail closed by tearing down the local execution immediately."""
-        logger.warning("Task %s lost ownership (%s); stopping execution", task_id, reason)
-        pending_cancel = self._cancel_signal_tasks_by_id.get(task_id)
-        if pending_cancel is not None:
-            # ActiveTask.cancel holds its lock while it awaits the executor.
-            # Stop that wait so ActiveTask.aclose can acquire the lock.
-            pending_cancel[1].cancel()
-        self._on_task_interrupted(task_id)
-
-    def _on_control_signal(self, task_id: str, signal: ControlSignal) -> None:
-        """React to a request a non-owner left on this process's held claim.
-
-        Called synchronously from the ownership provider's renewal path (see
-        ``PostgresOwnershipProvider._notify_control_signal_once``), so this
-        only schedules the actual work rather than awaiting it - the same
-        discipline ``_on_ownership_lost``/``_on_task_interrupted`` already
-        follow, and for the same reason: this runs on the heartbeat's own
-        coroutine, which must return to keep renewing every other lease.
-
-        A signal naming a task this process is not currently executing is a
-        contradiction - the claim it rode in on is only renewed for a task
-        this process holds - and is logged rather than acted on; whatever
-        left that mark eventually stops waiting for it (see the reaper's
-        overdue-cancel pass, and the request-side wait timeout).
-        """
-        if signal is not ControlSignal.CANCEL or self._shutting_down:
-            return
-        active_task = self._active_tasks.get(task_id)
-        if active_task is None:
-            logger.warning(
-                "Received a cancel signal for %s but this process holds no "
-                "active execution for it",
-                task_id,
-            )
-            return
-        self._dispatch_cancel(task_id, active_task)
-
-    def _dispatch_cancel(self, task_id: str, active_task: ActiveTask) -> None:
-        """Schedule ``active_task.cancel`` at most once per incarnation.
-
-        Mirrors ``_on_task_interrupted``'s scheduling exactly: the identity
-        check against ``active_task`` (not just ``task_id``) is what makes a
-        second signal for the same incarnation a no-op while still allowing a
-        later incarnation - after a resume - to be signaled again.
-        """
-        existing = self._cancel_signal_tasks_by_id.get(task_id)
-        if existing is not None and existing[0] is active_task:
-            return
-
-        # The cancel runs as the task's owner: the context its manager was
-        # built with. A context is not invented when that is missing - an
-        # empty one names a different owner, and the store would then look
-        # in the wrong partition. The claim's own backstop settles the task.
-        task_manager = self._task_managers.get(task_id)
-        call_context = getattr(task_manager, "_call_context", None)
-        if call_context is None:
-            logger.warning(
-                "Cancel signal for %s ignored: its owner's call context is gone", task_id
-            )
-            return
-
-        pending = asyncio.create_task(
-            self._run_signaled_cancel(task_id, active_task, call_context),
-            name=f"cancel-signal:{task_id}",
-        )
-        self._cancel_signal_tasks.add(pending)
-        self._cancel_signal_tasks_by_id[task_id] = (active_task, pending)
-
-        def forget_pending(done: asyncio.Task[None]) -> None:
-            self._cancel_signal_tasks.discard(done)
-            current = self._cancel_signal_tasks_by_id.get(task_id)
-            if current is not None and current[0] is active_task and current[1] is done:
-                self._cancel_signal_tasks_by_id.pop(task_id, None)
-
-        pending.add_done_callback(forget_pending)
-
-    async def _run_signaled_cancel(
-        self, task_id: str, active_task: ActiveTask, call_context: ServerCallContext
-    ) -> None:
-        """Run the same graceful cancel a local ``tasks/cancel`` call would run.
-
-        ``ActiveTask.cancel`` is the SDK's own path: it cancels the producer,
-        calls the executor's ``cancel`` (rescue included, for evolution runs -
-        see ``EvolutionHandler.cancel``), and waits for the consumer to persist
-        the terminal outcome. Using it here rather than a bespoke teardown is
-        what lets a cross-pod cancellation get exactly the same result a
-        same-pod one does.
-
-        Delivery of the signal that led here is one-shot per claim
-        incarnation (see ``PostgresOwnershipProvider._notify_control_signal_once``),
-        so a failure below would otherwise go unretried until the reaper's
-        much slower ``CANCEL_TIMEOUT`` backstop forces the task closed without
-        rescue. ``forget_control_signal`` undoes that bookkeeping on any
-        failure that leaves the task still cancelable, so the very next
-        heartbeat renewal re-delivers the same request and tries again.
-        """
-        try:
-            await active_task.cancel(call_context)
-        except TaskNotCancelableError:
-            # Reached its own terminal outcome in the race between the signal
-            # and the run finishing on its own; nothing left to cancel, and
-            # nothing to retry either.
-            pass
-        except Exception:
-            logger.error("Signaled cancel failed for task %s", task_id, exc_info=True)
-            self._ownership.forget_control_signal(task_id)
-
-    async def cancel_local(
-        self, task_id: str, call_context: ServerCallContext
-    ) -> Task | None:
-        """Cancel a task this process is executing right now, without a signal round trip.
-
-        The fast path for ``tasks/cancel``: when the request lands on the pod
-        already running the task, there is no reason to wait out a heartbeat
-        tick the way a cross-pod request must. Returns ``None`` only when no
-        live execution is found here, which tells the caller to fall through
-        to the claim-signal or direct-store path instead.
-
-        The caller's access is checked first, through the owner-partitioned
-        task store, exactly as ``get_for_attach`` checks it. It has to be:
-        ``ActiveTask.cancel`` rebinds the task manager to the caller's
-        context, so a cancel from another user would both stop the owner's
-        run and write the cancelled task into that user's partition.
-
-        Raises:
-            TaskNotFoundError: If the task is running here but belongs to
-                another caller. Raised rather than answered with ``None``, so
-                the request does not fall through to the claim or store path.
-            TaskNotCancelableError: If this process's own copy of the task
-                already has an outcome. Left to propagate rather than
-                swallowed into the ``None`` case: the answer is authoritative
-                here, so there is nothing a fallback path would learn that
-                this call does not already know.
-
-                ``_has_finished`` alone does not guarantee this: the SDK's own
-                ``ActiveTask.cancel`` awaits ``task_manager.get_task()`` before
-                it re-checks its finished flag under its own lock, and does
-                not raise if the run reaches its own outcome in that window -
-                it silently returns the task as it already stood. Re-derived
-                here so a race that lands in that window still gets the same
-                error branches 2 and 3 already guarantee, instead of a
-                same-pod cancel occasionally answering as if it had succeeded.
-        """
-        _require_call_context(call_context)
-        active_task = self._active_tasks.get(task_id)
-        if active_task is None or _has_finished(active_task):
-            return None
-        if await self._task_store.get(task_id, call_context) is None:
-            raise TaskNotFoundError
-        task = await active_task.cancel(call_context)
-        if (
-            task.status.state in TERMINAL_TASK_STATES
-            and task.status.state != TaskState.TASK_STATE_CANCELED
-        ):
-            raise TaskNotCancelableError(
-                message=(
-                    "Task cannot be canceled - current state: "
-                    f"{TaskState.Name(task.status.state)}"
-                )
-            )
-        return task
-
     async def cancel_local_as_owner(self, task_id: str) -> Task | None:
         """Cancel a task this process is executing right now, as the task's own owner.
 
-        The owner-agnostic sibling of :meth:`cancel_local`, for a caller that
-        is entitled to cancel every task of something larger than one owner -
-        ``DeleteContext`` cancelling a shared context's tasks. The cancel runs
-        under the context the task's manager was built with, exactly as a
-        signaled cancel does, so the cancelled task is written into its own
-        owner's partition. Returns ``None`` when no live execution is found
-        here, or when its owner's context is gone and the caller must fall
-        through to the store path.
+        For a caller that is entitled to cancel every task of something larger
+        than one owner - ``DeleteContext`` cancelling a shared context's
+        tasks. The cancel runs under the context the task's manager was built
+        with, so the cancelled task is written into its own owner's partition.
+        Returns ``None`` when no live execution is found here, or when its
+        owner's context is gone and the caller must cancel through the store.
 
         Raises:
             TaskNotCancelableError: If this process's own copy of the task
                 already has an outcome.
         """
-        active_task = self._active_tasks.get(task_id)
-        if active_task is None or _has_finished(active_task):
+        active_task = await self.get(task_id)
+        if active_task is None:
             return None
         call_context = getattr(self._task_managers.get(task_id), "_call_context", None)
         if call_context is None:
@@ -714,49 +334,28 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
 
         Such a task is settled as ``FAILED``, marked in metadata with
         ``SERVER_SHUTDOWN``. See ``aion.server.tasks.settlement`` for why the
-        state is terminal rather than resumable.
-
-        The claim each task manager needs to write that outcome is snapshotted
-        here, before the drain, and released explicitly afterwards. Draining
-        finishes each ``ActiveTask``, which would otherwise release its claim
-        through the ordinary cleanup path well before settlement gets to use
-        it - see ``_remove_task_for_incarnation``, which is told to stand
-        down for the duration via ``_shutting_down``.
+        state is terminal rather than resumable. The settlement is an ordinary
+        versioned write: a task another instance has moved on in the meantime
+        refuses it, and keeps the state that instance gave it.
         """
         with self._lock:
-            self._shutting_down = True
             task_managers = list(self._task_managers.values())
-            claims = [
-                claim
-                for task_id in self._task_managers
-                if (claim := self._ownership.claim_for(task_id)) is not None
-            ]
-
-        # A signaled cancel may still be rescuing committed work. Let it
-        # finish its bounded drain while the heartbeat keeps the claim alive.
-        # ActiveTask.cancel holds the task's lock throughout that wait, so any
-        # cancel still pending at the deadline must be interrupted before the
-        # base drain calls ActiveTask.aclose.
-        cancel_tasks = set(self._cancel_signal_tasks)
-        if cancel_tasks:
-            _, pending = await asyncio.wait(
-                cancel_tasks, timeout=SHUTDOWN_CANCEL_DRAIN_SECONDS
-            )
-            for task in pending:
-                task.cancel()
 
         await super().aclose()
 
         if self._interruption_tasks:
             await asyncio.gather(*self._interruption_tasks, return_exceptions=True)
-        if self._cancel_signal_tasks:
-            await asyncio.gather(*self._cancel_signal_tasks, return_exceptions=True)
 
         try:
             async with asyncio.timeout(SHUTDOWN_DB_TIMEOUT_SECONDS):
                 for task_manager in task_managers:
                     try:
                         await self._settle_interrupted_task(task_manager)
+                    except ConcurrentTaskModificationError:
+                        logger.info(
+                            "Task %s was moved on by another writer; not settling it after shutdown",
+                            task_manager.task_id,
+                        )
                     except Exception as exc:
                         logger.error(
                             "Failed to settle task %s after shutdown",
@@ -768,11 +367,6 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
 
         with self._lock:
             self._task_managers.clear()
-
-        for claim in claims:
-            await self._ownership.release(claim)
-
-        await self._ownership.stop()
 
     @staticmethod
     async def _settle_interrupted_task(task_manager: AionTaskManager) -> None:

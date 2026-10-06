@@ -18,14 +18,14 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from a2a.server.cluster.task_store import ConcurrentTaskModificationError
 from a2a.server.context import ServerCallContext
 from a2a.types import Artifact, Message, Task, TaskState, TaskStatus, a2a_pb2
 from a2a.utils.constants import DEFAULT_LIST_TASKS_PAGE_SIZE, MAX_LIST_TASKS_PAGE_SIZE
-from a2a.utils.errors import InvalidParamsError, TaskNotCancelableError
+from a2a.utils.errors import InvalidParamsError
 from google.protobuf.timestamp_pb2 import Timestamp
 
 from aion.db.postgres.records import TaskRecord
-from aion.server.tasks.ownership import Claim, TaskOwnershipLost
 from aion.server.tasks.stores.page_token import PageCursor, encode_page_token
 from aion.server.tasks.stores.postgres_task_store import PostgresTaskStore
 
@@ -48,20 +48,6 @@ def _make_task(
         history=history or [],
         artifacts=artifacts or [],
     )
-
-
-def _claiming_provider(token: uuid.UUID | None = None) -> MagicMock:
-    """A provider that always hands out a claim for the task under test."""
-    provider = MagicMock()
-    provider.claim_for = MagicMock(
-        side_effect=lambda task_id: Claim(
-            task_id=task_id,
-            owner_token=token or uuid.uuid4(),
-            lease_expires_at=None,
-            deadline=float("inf"),
-        )
-    )
-    return provider
 
 
 def _make_entity(
@@ -87,24 +73,13 @@ def _make_entity(
 def repository():
     repo = MagicMock()
     repo.save = AsyncMock()
-    repo.save_owned = AsyncMock(return_value=True)
-    repo.save_owned_locked = AsyncMock(return_value=True)
     repo.lock_owner_scope = AsyncMock(return_value=None)
     repo.find = AsyncMock(return_value=[])
     repo.find_ids = AsyncMock(return_value=[])
     repo.count = AsyncMock(return_value=0)
     repo.find_page = AsyncMock(return_value=[])
-    repo.delete_by_id = AsyncMock()
+    repo.delete_by_id = AsyncMock(return_value=True)
     repo.find_by_id = AsyncMock(return_value=None)
-    repo.find_by_id_for_update = AsyncMock(return_value=None)
-    repo.update_status = AsyncMock()
-    return repo
-
-
-@pytest.fixture
-def claim_repository():
-    repo = MagicMock()
-    repo.revoke_unconditionally = AsyncMock()
     return repo
 
 
@@ -137,7 +112,7 @@ def reservations_repository():
 
 
 @pytest.fixture
-def store(repository, claim_repository, messages_repository, artifacts_repository, reservations_repository):
+def store(repository, messages_repository, artifacts_repository, reservations_repository):
     """A store whose session and repositories are stubbed out."""
     session = MagicMock()
     session.commit = AsyncMock()
@@ -160,9 +135,6 @@ def store(repository, claim_repository, messages_repository, artifacts_repositor
         "aion.server.tasks.stores.postgres_task_store.TasksRepository",
         return_value=repository,
     ), patch(
-        "aion.server.tasks.stores.postgres_task_store.TaskClaimsRepository",
-        return_value=claim_repository,
-    ), patch(
         "aion.server.tasks.stores.postgres_task_store.TaskMessagesRepository",
         return_value=messages_repository,
     ), patch(
@@ -173,7 +145,7 @@ def store(repository, claim_repository, messages_repository, artifacts_repositor
         return_value=reservations_repository,
     ):
         manager.get_session = _session
-        yield PostgresTaskStore(agent_id=TEST_AGENT_ID, ownership_provider=_claiming_provider())
+        yield PostgresTaskStore(agent_id=TEST_AGENT_ID)
 
 
 class TestContextFence:
@@ -181,10 +153,10 @@ class TestContextFence:
         """A message admitted before its context's deletion started cannot create a task after it."""
         reservations_repository.admits_new_task.return_value = False
 
-        with pytest.raises(TaskOwnershipLost):
+        with pytest.raises(ConcurrentTaskModificationError):
             await store.save(Task(id=TASK_UUID, context_id="ctx", status=TaskStatus()), ServerCallContext())
 
-        repository.save_owned_locked.assert_not_awaited()
+        repository.save.assert_not_awaited()
         reservations_repository.admits_new_task.assert_awaited_once_with(TEST_AGENT_ID, "ctx")
 
     async def test_an_existing_task_is_not_asked_about_its_context(self, store, repository, reservations_repository):
@@ -195,52 +167,14 @@ class TestContextFence:
         await store.save(Task(id=TASK_UUID, context_id="ctx", status=TaskStatus()), None)
 
         reservations_repository.admits_new_task.assert_not_awaited()
-        repository.save_owned_locked.assert_awaited_once()
-
-
-class TestCancel:
-    async def test_locks_updates_and_revokes_in_one_store_operation(
-        self, store, repository, claim_repository
-    ):
-        repository.find_by_id_for_update.return_value = _make_entity(TASK_UUID)
-
-        canceled = await store.cancel_with_ownership_revocation(TASK_UUID)
-
-        task_uuid = uuid.UUID(TASK_UUID)
-        # No caller context here, so the owner is not a filter.
-        repository.find_by_id_for_update.assert_awaited_once_with(
-            task_uuid, TEST_AGENT_ID, owner_scope=None
-        )
-        repository.update_status.assert_awaited_once_with(task_uuid, TEST_AGENT_ID, canceled.status)
-        claim_repository.revoke_unconditionally.assert_awaited_once_with(task_uuid, TEST_AGENT_ID)
-        assert canceled.status.state == TaskState.TASK_STATE_CANCELED
-
-    async def test_missing_task_does_not_attempt_writes(
-        self, store, repository, claim_repository
-    ):
-        assert await store.cancel_with_ownership_revocation(TASK_UUID) is None
-
-        repository.update_status.assert_not_awaited()
-        claim_repository.revoke_unconditionally.assert_not_awaited()
-
-    async def test_terminal_task_is_not_updated_or_revoked(
-        self, store, repository, claim_repository
-    ):
-        entity = _make_entity(TASK_UUID, state=TaskState.TASK_STATE_COMPLETED)
-        repository.find_by_id_for_update.return_value = entity
-
-        with pytest.raises(TaskNotCancelableError):
-            await store.cancel_with_ownership_revocation(TASK_UUID)
-
-        repository.update_status.assert_not_awaited()
-        claim_repository.revoke_unconditionally.assert_not_awaited()
+        repository.save.assert_awaited_once()
 
 
 class TestSaveIdentity:
     async def test_save_keeps_the_callers_identifier(self, store, repository):
         await store.save(_make_task(), ServerCallContext())
 
-        entity = repository.save_owned_locked.await_args.args[0]
+        entity = repository.save.await_args.args[0]
         assert str(entity.id) == TASK_UUID
 
     async def test_save_persists_the_resolved_owner(self, store, repository):
@@ -249,7 +183,7 @@ class TestSaveIdentity:
 
         await store.save(_make_task(), context)
 
-        entity = repository.save_owned_locked.await_args.args[0]
+        entity = repository.save.await_args.args[0]
         assert entity.owner_scope == "caller-123"
 
     @pytest.mark.parametrize("task_id", ["not-a-uuid", "", "evo-test-e1907a4c"])
@@ -261,7 +195,7 @@ class TestSaveIdentity:
         with pytest.raises(ValueError):
             await store.save(_make_task(task_id=task_id))
 
-        repository.save_owned_locked.assert_not_awaited()
+        repository.save.assert_not_awaited()
 
 
 class TestSaveNormalization:

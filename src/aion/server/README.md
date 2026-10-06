@@ -325,7 +325,7 @@ until it ends. Then every active task of the context, whoever owns it, is
 cancelled through the ordinary cancellation path, in groups of ten; once all
 are terminal the framework state - LangGraph checkpoints, ADK sessions - is
 deleted under the context holder's state scope, and the tasks, their messages,
-artifacts, claims and push configurations and the bindings are removed in one
+artifacts, versions and push configurations and the bindings are removed in one
 storage step. The reservation becomes `deleted`, and the next message with
 that context ID reserves it afresh: a new conversation, with nothing of the
 old one.
@@ -344,10 +344,11 @@ answers `ContextNotDeletable` (`1002`, HTTP `409`).
 Nothing the deletion removed comes back. A new task in a context that is
 `deleting` or `deleted` is refused when it would first be written - a message
 admitted just before the deletion started included - with
-`TaskOwnershipLost`; in PostgreSQL that check holds the reservation row, so it
-and the end of a deletion cannot interleave. A late write of a removed task is
-refused too: in PostgreSQL its claim is gone, so the fenced write finds no
-lease; in memory the task is remembered as retired. A stream still open on a
+`ConcurrentTaskModificationError`; in PostgreSQL that check holds the
+reservation row, so it and the end of a deletion cannot interleave. A late
+write of a removed task is refused too: in PostgreSQL its version row is gone,
+so the write is stale, and as a new task it is refused by the check above; in
+memory the task is remembered as retired. A stream still open on a
 task cancelled by the deletion closes with the outcome the task declared,
 since the task itself is no longer stored.
 
@@ -385,10 +386,8 @@ only a context names one:
 Context listings (`get_context_tasks`, `get_context_last_task`) are ordered by task creation, newest first, across owners;
 an update keeps a task's place.
 
-The owner here is the caller. It is unrelated to the lease owner of task
-ownership in the PostgreSQL deployment - the server process currently
-executing a task - which decides who may write a task's progress, never who
-may see or cancel it.
+The owner here is the caller. Which server process executes a task plays no
+part in who may see or cancel it.
 
 ## A2A methods: what a client sees
 
@@ -401,17 +400,14 @@ this section says otherwise.
   `Task <id> is in terminal state: TASK_STATE_COMPLETED`.
 - **`CancelTask`** on a task that already has an outcome answers
   `TaskNotCancelableError` (`-32002`); a missing task, or another caller's,
-  answers `TaskNotFoundError` (`-32001`). A task running on another server
-  process is cancelled through that process - its teardown, rescue included,
-  runs where the task runs - and the call waits for it, bounded, before
-  answering with the task as stored.
-- **`SubscribeToTask`** on a task that already has an outcome answers with a
-  stream that carries the stored `Task` and closes, where a2a-sdk answers
-  `UnsupportedOperationError`. A task another server process is running
-  answers `TaskOwnershipBusy` (`-32050`); one waiting for input there answers
-  with the task as stored.
+  answers `TaskNotFoundError` (`-32001`).
+- **`SubscribeToTask`** on a task that already has an outcome answers
+  `UnsupportedOperationError` (`-32004`), as in a2a-sdk; the result is read
+  with `GetTask`.
 - **`message/send`** always answers with a `Task`, never a bare `Message`,
-  and a stream always closes with the final `Task`.
+  and every stream - `SendStreamingMessage` and `SubscribeToTask` alike -
+  closes with the stored `Task`, where a2a-sdk may close one with the last
+  status update.
 - **`CreateTaskPushNotificationConfig`** answers with the config as stored: an
   `id` the request left empty is the task's id.
 - **Params** fields a method does not define are ignored, for the standard
@@ -428,10 +424,38 @@ this section says otherwise.
   <scheme> <credentials>`; credentials without a scheme are sent as
   `Bearer`.
 
-a2a-sdk's cluster mode - a versioned task store with a shared event log - is
-not used. With PostgreSQL, the server process executing a task holds a
-heartbeat-renewed claim on it, and cancellation and shutdown go through the
-claim's holder.
+### Several servers of one agent
+
+With PostgreSQL the server runs a2a-sdk's cluster mode, so any number of
+servers of one agent can share the database. The rules are a2a-sdk's:
+
+- Any server executes any request it receives. Each task has a version in
+  `task_versions`; every write names the version it was derived from, and a
+  stale one is refused. The event of each write goes to `task_events` in the
+  same transaction.
+- A subscriber on a server that is not running the task is served the stored
+  task and then the task's journal, polled every 0.5 s, until the task stops
+  again. Live-only updates - response and thinking deltas, ephemeral
+  progress (see [Transient stream artifacts](#transient-stream-artifacts)) -
+  are never stored, so they reach only a subscriber on the executing server.
+- The next turn of a paused task runs on whichever server receives it, from
+  the stored task. Framework state has to be in the same database for that:
+  the SDK's PostgreSQL checkpointer and session service are.
+- Nothing stops two servers from executing one task at once - a second
+  message sent to another server while the first runs is executed there. The
+  version decides what lands: a write over a task that another execution has
+  already finished is dropped, and that execution stops.
+- `CancelTask` for a task this server holds cancels it through its executor.
+  For any other task it writes `CANCELED` over the stored version and answers
+  at once; the server executing the task stops it at its next write, without
+  calling `AgentExecutor.cancel` there.
+- A server that dies leaves its tasks in the state they had; nothing settles
+  them. Any server can cancel such a task. An orderly shutdown settles the
+  tasks it was running as `FAILED` with `aion:settledReason=server_shutdown`.
+- The journal is never pruned.
+
+Without a database the store is in memory and the server is a2a-sdk's single
+process: no versions, no journal, nothing shared, so one server only.
 
 ## Callback execution scope
 

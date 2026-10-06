@@ -18,7 +18,7 @@ of the dispatcher's routing table rather than a description of one:
 
     extension registry  ->  identity, active, available, advertised
     JSON-RPC binding    ->  method name, params model, handler, extension URI
-    task handler        ->  ownership of task execution
+    task handler        ->  task execution
 
 Nothing here says whether an extension is enabled or published. A binding that
 carried its own ``advertised`` or ``internal`` flag could disagree with the

@@ -17,7 +17,7 @@ from google.protobuf.struct_pb2 import Struct
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from aion.db.postgres.constants import AION_SCHEMA, TASK_CLAIMS_TABLE
+from aion.db.postgres.constants import AION_SCHEMA
 from aion.db.postgres.records import TaskRecord
 from aion.db.postgres.repositories import (
     STATUS_TIMESTAMP_SORT_KEY,
@@ -205,33 +205,22 @@ async def test_concurrent_upserts_for_one_task_id_are_safe(postgres_engine):
         }
 
 
-async def test_fenced_upsert_requires_the_exact_claim(postgres_session):
-    """Both insert and update paths are rejected without the current token."""
+async def test_upsert_updates_a_task_in_place_and_keeps_its_creation_time(postgres_session):
+    """The second write of a task replaces its head row; ``created_at`` stays the database's."""
     repository = TasksRepository(postgres_session)
-    missing_claim_id = uuid.uuid4()
-    assert not await repository.save_owned(_record(missing_claim_id), uuid.uuid4())
-    assert await repository.find_by_id(missing_claim_id, AGENT_ID) is None
-
     task_id = uuid.uuid4()
-    token = uuid.uuid4()
-    await postgres_session.execute(
-        text(
-            f"INSERT INTO {AION_SCHEMA}.{TASK_CLAIMS_TABLE} "
-            "(task_id, agent_id, owner_token, lease_expires_at) "
-            "VALUES (:task_id, :agent_id, :owner_token, clock_timestamp() + interval '60 seconds')"
-        ),
-        {"task_id": task_id, "agent_id": AGENT_ID, "owner_token": token},
-    )
-    assert await repository.save_owned(_record(task_id), token)
+    await repository.save(_record(task_id))
     await postgres_session.commit()
+    created = (await repository.find_by_id(task_id, AGENT_ID)).created_at
 
     changed = _record(task_id, timestamp=datetime.now(timezone.utc))
     changed.status.state = TaskState.TASK_STATE_COMPLETED
-    assert not await repository.save_owned(changed, uuid.uuid4())
+    await repository.save(changed)
+    await postgres_session.commit()
 
     current = await repository.find_by_id(task_id, AGENT_ID)
-    assert current is not None
-    assert current.status.state == TaskState.TASK_STATE_WORKING
+    assert current.status.state == TaskState.TASK_STATE_COMPLETED
+    assert current.created_at == created
 
 
 async def test_count_matches_the_filtered_result_size(postgres_session):

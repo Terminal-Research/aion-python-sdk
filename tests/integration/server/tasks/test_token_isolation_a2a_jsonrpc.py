@@ -35,6 +35,7 @@ from tests.support.aion_tokens import CLIENT_ID, ISSUER, SigningKey, subject
 
 from .jsonrpc_harness import (
     TASK_NOT_FOUND,
+    UNSUPPORTED_OPERATION,
     JsonRpcServer,
     error_of,
     serving,
@@ -231,9 +232,8 @@ async def test_a_finished_task_is_subscribed_to_only_by_its_owner(server, caller
     done = task_of(await _send(server, alice, "done", str(uuid.uuid4())))
 
     assert error_of(await _call(server, bob, "SubscribeToTask", {"id": done["id"]})) == TASK_NOT_FOUND
-    [owners] = await _call(server, alice, "SubscribeToTask", {"id": done["id"]})
-    assert owners["result"]["task"]["id"] == done["id"]
-    assert state_of(owners["result"]["task"]) == "TASK_STATE_COMPLETED"
+    # The owner is told there is nothing left to stream, which says the task exists.
+    assert error_of(await _call(server, alice, "SubscribeToTask", {"id": done["id"]})) == UNSUPPORTED_OPERATION
 
 
 async def test_a_live_task_is_subscribed_to_only_by_its_owner(server, callers) -> None:

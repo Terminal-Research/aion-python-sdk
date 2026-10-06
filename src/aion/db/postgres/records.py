@@ -12,7 +12,6 @@ from google.protobuf.struct_pb2 import Struct
 __all__ = [
     "ContextReservationRecord",
     "TaskRecord",
-    "TaskClaimRecord",
     "TaskMessageRecord",
     "TaskArtifactRecord",
     "resolve_status_timestamp",
@@ -136,7 +135,7 @@ class TaskRecord(BaseModel):
                      while A2A uses a plain string identifier).
             history: This task's messages, in order, when the caller fetched
                 them. Omitted entirely (not merely empty) for a caller that
-                never needs them, such as the reaper reading only status.
+                never needs them, such as one reading only status.
             artifacts: This task's artifacts, when the caller fetched them.
 
         Returns:
@@ -150,35 +149,6 @@ class TaskRecord(BaseModel):
             history=history,
             metadata=self.task_metadata,
         )
-
-
-class TaskClaimRecord(BaseModel):
-    """Pydantic representation of a row from the ``task_claims`` table.
-
-    A plain snapshot of the database row. It carries no opinion about what a
-    caller may infer from it — ``aion.server.tasks.ownership.Claim`` is the
-    type that adds the fail-closed local deadline and the rest of the
-    process-side meaning; this one only mirrors the columns.
-    """
-
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    task_id: uuid.UUID
-    """Identifier of the task whose execution lease this row holds."""
-    agent_id: str
-    """Identity of the agent process that owns this claim."""
-    owner_token: uuid.UUID
-    """Random incarnation token used for fencing writes."""
-    lease_expires_at: _dt.datetime
-    """Database timestamp after which another process may acquire the lease."""
-    acquired_at: _dt.datetime | None = None
-    """Timestamp at which this incarnation acquired the lease."""
-    renewed_at: _dt.datetime | None = None
-    """Timestamp of the most recent successful renewal."""
-    owner_instance_id: str | None = None
-    """Best-effort pod/process identity used for diagnostics only."""
-    cancel_requested_at: _dt.datetime | None = None
-    """When a non-owner asked this claim's owner to cancel the task, or None."""
 
 
 class TaskMessageRecord(BaseModel):

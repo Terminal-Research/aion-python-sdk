@@ -9,21 +9,17 @@ status, history, artifacts and metadata - comes back equal to what went in.
 The restart is not an event in its life.
 
 A task that was still running cannot be picked back up - the execution went
-with the process - so the server settles it, and how it settles says which
-restart happened. An orderly shutdown cancels what it is running and settles
-those tasks itself, as ``FAILED`` with
-``aion:settledReason=server_shutdown``. A process that was killed outright
-settles nothing and leaves its task holding a lease it will never renew
-again; the ownership reconciler reclaims it once the lease expires, as
-``FAILED`` with ``lease_expired``. That second path is the slow one by
-construction - the lease is what tells a dead owner from a busy one - and it
-is the only guarantee a crash carries. Either way what the task had already
-recorded stays recorded.
+with the process - and what happens to it says which restart happened. An
+orderly shutdown cancels what it is running and settles those tasks itself, as
+``FAILED`` with ``aion:settledReason=server_shutdown``. A process that was
+killed outright settles nothing: as in a2a-sdk's cluster mode, nothing
+detects a dead instance, so the task keeps the active state it had until
+someone cancels it - which any server can, by writing ``CANCELED`` over its
+stored version. Either way what the task had already recorded stays recorded.
 
 Which restart a task is started for is not timed: it is restarted on the
 WORKING status the agent sends before it sleeps, the first moment the task is
-observably occupied. Only the wait for the lease is a duration, because a
-lease is one.
+observably occupied.
 """
 
 from __future__ import annotations
@@ -35,13 +31,11 @@ from tests.scenarios.commands import echo_text, step_text
 from tests.scenarios.harness import (
     ScenarioClient,
     ServeProcess,
-    eventually,
     final_task,
     reply_texts,
     run_until_working,
     stored_texts,
 )
-from tests.scenarios.harness.pg import scenario_lease
 
 pytestmark = [pytest.mark.persistence]
 
@@ -54,17 +48,6 @@ ACTIVE_STATES = (TaskState.TASK_STATE_SUBMITTED, TaskState.TASK_STATE_WORKING)
 SLOW_SECONDS = 120
 """Longer than any settlement here waits, so the agent never ends the task itself."""
 
-LEASE = scenario_lease()
-
-LEASE_TIMEOUT_SECONDS = 2 * LEASE.ttl_seconds + LEASE.reconcile_interval_seconds
-"""Room for the lease to expire and for a reconcile pass to act on it.
-
-The worst case is a whole TTL and then a whole reconcile interval; another
-TTL on top is margin. Derived from the TTL the servers are given
-(``harness.pg.SCENARIO_LEASE_TTL_SECONDS``) rather than written down.
-"""
-
-
 async def reconnect(server: ServeProcess) -> ScenarioClient:
     """A client on the server that is running now, whichever process that is."""
     return await ScenarioClient.connect(server.base_url, server.variant.agent_id)
@@ -76,18 +59,6 @@ def settled_reason(task) -> str | None:
     if SETTLED_REASON_KEY not in metadata:
         return None
     return metadata[SETTLED_REASON_KEY]
-
-
-async def settled(client: ScenarioClient, task_id: str, *, timeout: float):
-    """The task once it has left its active state, however long that takes."""
-
-    async def probe():
-        task = await client.get_task(task_id)
-        return task if task.status.state not in ACTIVE_STATES else None
-
-    return await eventually(
-        probe, what=f"task {task_id} being settled", timeout=timeout, interval=1.0
-    )
 
 
 # --------------------------------------------------------------------------
@@ -163,16 +134,16 @@ async def test_a_running_task_is_settled_by_an_orderly_shutdown(
 
 
 @pytest.mark.command("slow")
-async def test_a_running_task_is_settled_after_a_crash_when_its_lease_expires(
+async def test_a_crashed_servers_task_stays_active_until_it_is_cancelled(
     pg_server: ServeProcess,
     pg_client: ScenarioClient,
 ) -> None:
-    """A killed owner settles nothing, so the lease it stopped renewing does.
+    """A killed process settles nothing, and its successor does not either.
 
-    What the task had already recorded is read here too, from the settled
-    task rather than from the active one: the question is what survives the
-    whole crash, settlement included, and waiting out a production lease twice
-    to ask it separately would buy nothing.
+    Starting is not evidence that a previous instance died, so the task is
+    presented exactly as it was left - active, with everything it recorded.
+    A cancel on the new process closes it: a2a-sdk's remote cancellation,
+    ``CANCELED`` written over the stored version, needs no execution to reach.
     """
     text = f"slow {SLOW_SECONDS}"
     task_id, streamed = await run_until_working(pg_client, text)
@@ -180,13 +151,17 @@ async def test_a_running_task_is_settled_after_a_crash_when_its_lease_expires(
 
     pg_server.crash_restart()
     async with await reconnect(pg_server) as fresh_client:
-        task = await settled(fresh_client, task_id, timeout=LEASE_TIMEOUT_SECONDS)
+        left = await fresh_client.get_task(task_id)
+        cancelled = await fresh_client.cancel(task_id)
+        stored = await fresh_client.get_task(task_id)
 
-    assert task.id == task_id
-    assert task.status.state == TaskState.TASK_STATE_FAILED
-    assert settled_reason(task) == "lease_expired"
-
-    history = stored_texts(task)
+    assert left.status.state in ACTIVE_STATES
+    assert settled_reason(left) is None
+    history = stored_texts(left)
     assert text in history, "the message that opened the task is gone"
     for reply in delivered:
         assert reply in history, f"a reply the client had already seen is gone: {reply!r}"
+
+    assert cancelled.status.state == TaskState.TASK_STATE_CANCELED
+    assert stored.status.state == TaskState.TASK_STATE_CANCELED
+    assert stored_texts(stored) == history

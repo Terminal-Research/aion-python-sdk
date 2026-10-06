@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 if os.getenv("POSTGRES_TEST_URL"):
     os.environ["POSTGRES_URL"] = os.environ["POSTGRES_TEST_URL"]
 
-from aion.db.postgres.constants import AION_SCHEMA, TASK_CLAIMS_TABLE, TASKS_TABLE
+from aion.db.postgres.constants import AION_SCHEMA, TASK_EVENTS_TABLE, TASK_VERSIONS_TABLE, TASKS_TABLE
 from aion.db.postgres.migrations import upgrade_to_head
 from aion.db.postgres.migrations.env import config as alembic_config
 from aion.db.postgres.utils import convert_pg_url
@@ -51,7 +51,8 @@ async def postgres_session(postgres_engine):
     async with postgres_engine.begin() as connection:
         await connection.execute(
             text(
-                f"TRUNCATE TABLE {AION_SCHEMA}.{TASK_CLAIMS_TABLE}, "
+                f"TRUNCATE TABLE {AION_SCHEMA}.{TASK_VERSIONS_TABLE}, "
+                f"{AION_SCHEMA}.{TASK_EVENTS_TABLE}, "
                 f"{AION_SCHEMA}.{TASKS_TABLE} CASCADE"
             )
         )

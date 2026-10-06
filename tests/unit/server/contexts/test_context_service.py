@@ -34,7 +34,7 @@ from aion.server.contexts import (
 )
 from aion.server.tasks.admission import ACTIVE, DELETING, ContextHolder, InMemoryContextAdmission
 from aion.server.tasks.contexts import InMemoryContextCatalog
-from aion.server.tasks.ownership import TaskOwnershipLost
+from a2a.server.cluster.task_store import ConcurrentTaskModificationError
 from aion.server.tasks.stores import InMemoryTaskStore
 
 GATEWAY = ContextHolder.shared("identity", "environment")
@@ -368,7 +368,7 @@ class TestDeletion:
 
         await world.delete("alice", "ctx")
 
-        with pytest.raises(TaskOwnershipLost):
+        with pytest.raises(ConcurrentTaskModificationError):
             await world.store.save(late, _caller("alice"))
         assert world.store.tasks == {}
 
@@ -402,7 +402,7 @@ class TestDeletion:
         task = await world.send("alice", "ctx", _message("m1"))
         await world.delete("alice", "ctx")
 
-        with pytest.raises(TaskOwnershipLost):
+        with pytest.raises(ConcurrentTaskModificationError):
             await world.store.save(task, _caller("alice"))
 
         assert world.store.tasks == {}

@@ -6,14 +6,16 @@ import uuid
 from datetime import timezone
 from typing import Optional, List
 
+from a2a.server.cluster.task_store import ConcurrentTaskModificationError
 from a2a.server.context import ServerCallContext
+from a2a.server.models import TaskVersionModel
 from a2a.server.owner_resolver import OwnerResolver, resolve_user_scope
 from a2a.types import Message, Task, TaskState, TaskStatus
 from a2a.types import a2a_pb2
 from a2a.utils.constants import DEFAULT_LIST_TASKS_PAGE_SIZE, MAX_LIST_TASKS_PAGE_SIZE
-from a2a.utils.errors import InvalidParamsError, TaskNotCancelableError
 from a2a.utils.task import validate_history_length
 from opentelemetry import trace
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aion.db.postgres.manager import db_manager
@@ -21,14 +23,10 @@ from aion.db.postgres.types import Pagination, Sorting, SortKey
 from aion.db.postgres.repositories import (
     ContextReservationsRepository,
     TaskArtifactsRepository,
-    TaskClaimsRepository,
     TaskMessagesRepository,
     TasksRepository,
 )
 from aion.db.postgres.records import TaskRecord
-from aion.server.a2a.constants import TERMINAL_TASK_STATES
-from aion.server.tasks.identifiers import require_task_uuid
-from aion.server.tasks.ownership import OwnershipProvider, TaskOwnershipLost
 from .base_task_store import BaseTaskStore
 from .page_token import PageCursor, decode_page_token, encode_page_token
 
@@ -52,36 +50,33 @@ class PostgresTaskStore(BaseTaskStore):
       unpromoted - see :meth:`_effective_history`) and ``task.artifacts`` -
       inserting only a new tail of messages, upserting only artifacts whose
       content changed. Both are no-ops on an empty list, which is what keeps
-      a caller that never touches history or artifacts - the reaper settling
-      a task, cancellation - from clearing either table by passing an
-      unhydrated ``Task`` through ``save``.
+      a caller that never touches history or artifacts from clearing either
+      table by passing an unhydrated ``Task`` through ``save``.
     - Every method that returns a ``Task`` to a caller outside this store
       hydrates it fully from both child tables first, inside a
       ``REPEATABLE READ`` transaction so the head and its children come from
       one consistent snapshot rather than whatever each of several
       ``READ COMMITTED`` statements happened to see.
+
+    This store does not order concurrent writers. a2a-sdk's cluster mode does
+    that with a version per task, and :class:`PostgresVersionedTaskStore`
+    adds it around this store: its compare-and-swap and this store's write
+    share one transaction (:meth:`write`).
     """
 
     def __init__(
             self,
             agent_id: str,
-            ownership_provider: OwnershipProvider,
             owner_resolver: OwnerResolver = resolve_user_scope,
             *,
             guard_inline_files: bool = False,
     ) -> None:
-        """Initialize the store with its agent identity and ownership provider.
-
-        The provider is required rather than optional: an instance without one
-        would be a shared store whose writes are unfenced, which is the exact
-        combination the pairing in ``StoreManager`` exists to make unreachable.
+        """Initialize the store with its agent identity.
 
         Args:
             agent_id: Identity of the agent this process serves. Every query
                 and write below is scoped to it, so several agents can share
                 one database without ever seeing each other's tasks.
-            ownership_provider: Fences writes against a concurrently running
-                incarnation of the same task.
             owner_resolver: Resolves the effective caller into the stable scope
                 persisted with each task.
             guard_inline_files: Strip inline file content before writing -
@@ -90,10 +85,7 @@ class PostgresTaskStore(BaseTaskStore):
         super().__init__(guard_inline_files=guard_inline_files)
         if not agent_id:
             raise ValueError("PostgresTaskStore requires a non-empty agent_id")
-        if ownership_provider is None:
-            raise ValueError("PostgresTaskStore requires an ownership provider")
         self.agent_id = agent_id
-        self.ownership_provider = ownership_provider
         self.owner_resolver = owner_resolver
 
     @staticmethod
@@ -212,18 +204,37 @@ class PostgresTaskStore(BaseTaskStore):
     async def save(
             self, task: Task, context: ServerCallContext | None = None
     ) -> None:
-        """Save a task.
+        """Save a task in a transaction of its own.
+
+        See :meth:`write` for what is written and when a write is refused.
+        """
+        async with db_manager.get_session() as session:
+            async with session.begin():
+                await self.write(session, task, context)
+
+    async def write(
+            self,
+            session: AsyncSession,
+            task: Task,
+            context: ServerCallContext | None = None,
+    ) -> str:
+        """Write a task inside the caller's transaction.
 
         A task's owner (``owner_scope``) is fixed by its first write. A new
         task takes the owner its context names - a user's context that
         user, an explicit ``ServerCallContext()`` the anonymous owner ``""``
         - and ``None`` cannot create one. An existing task keeps its owner:
         a write with ``None`` updates it as recorded, a write with another
-        owner's context is refused. Separately, the write is fenced by this
-        process's lease on the task - the lease owner is a server process
-        and has nothing to do with the user who owns the task. The fence
-        takes the place of a2a's version check (``VersionedTaskStore``), so
-        ``tasks`` has no version column.
+        owner's context is refused.
+
+        A new task is refused while its context is being deleted or once it
+        was: admitted before the deletion started and created after it, the
+        task would outlive its context. The refusal is
+        ``ConcurrentTaskModificationError``, the error a2a-sdk's task manager
+        already handles for a write another writer has overtaken.
+
+        Returns:
+            The owner the task is written under.
 
         Raises:
             ValueError: If ``task.id`` is not a UUID (see
@@ -231,8 +242,8 @@ class PostgresTaskStore(BaseTaskStore):
             TaskOwnerUndefinedError: If the task is new and ``context`` is
                 ``None``.
             TaskOwnerMismatchError: If ``context`` resolves to another owner.
-            TaskOwnershipLost: If this process no longer holds the lease, or
-                the task is new and its context is being deleted or was.
+            ConcurrentTaskModificationError: If the task is new and its
+                context is being deleted or was.
         """
         # Before TaskRecord.from_task, not between the writes below: the head
         # row carries `status` as JSONB of its own, so a guard placed in front
@@ -242,169 +253,36 @@ class PostgresTaskStore(BaseTaskStore):
         task_uuid = uuid.UUID(task.id)
         write_owner = self._write_owner(context)
 
-        async with db_manager.get_session() as session:
-            repository = TasksRepository(session)
-            # The row lock the upsert below takes anyway, taken first so the
-            # owner it reads cannot change before the write. Who owns the
-            # task is settled before the lease, so a write naming no owner
-            # for a new task fails the same way as in the in-memory store.
-            recorded = await repository.lock_owner_scope(task_uuid)
-            owner = self._owner_of_write(task.id, write_owner, recorded)
-            if recorded is None and task.context_id and not await ContextReservationsRepository(
-                session
-            ).admits_new_task(self.agent_id, task.context_id):
-                # Admitted before its context's deletion started, created
-                # after: the deletion owns the context now, and a task
-                # created here would outlive it.
-                raise TaskOwnershipLost(task.id)
-            claim = self.ownership_provider.claim_for(task.id)
-            if claim is None:
-                raise TaskOwnershipLost(task.id)
-            entity = TaskRecord.from_task(task, self.agent_id, owner)
-            if not await repository.save_owned_locked(entity, claim.owner_token):
-                raise TaskOwnershipLost(task.id)
-            await TaskMessagesRepository(session).append_new(
-                entity.id, self._effective_history(task)
-            )
-            await TaskArtifactsRepository(session).upsert_batch(entity.id, task.artifacts)
-            if entity.status.state in TERMINAL_TASK_STATES:
-                # Before the claim is released - the release happens one
-                # layer up, in AionTaskManager._save_task, only after this
-                # write returns successfully. A pod waiting on this task's
-                # cancellation is only woken if it actually asked; see
-                # notify_cancel_resolved.
-                await TaskClaimsRepository(session).notify_cancel_resolved(entity.id)
-            await session.commit()
+        repository = TasksRepository(session)
+        # The row lock the upsert below takes anyway, taken first so the
+        # owner it reads cannot change before the write.
+        recorded = await repository.lock_owner_scope(task_uuid)
+        owner = self._owner_of_write(task.id, write_owner, recorded)
+        if recorded is None and task.context_id and not await ContextReservationsRepository(
+            session
+        ).admits_new_task(self.agent_id, task.context_id):
+            raise ConcurrentTaskModificationError(task.id)
+        entity = TaskRecord.from_task(task, self.agent_id, owner)
+        await repository.save(entity)
+        await TaskMessagesRepository(session).append_new(
+            entity.id, self._effective_history(task)
+        )
+        await TaskArtifactsRepository(session).upsert_batch(entity.id, task.artifacts)
+        return owner
 
-    async def cancel_with_ownership_revocation(
-            self, task_id: str, context: ServerCallContext | None = None
+    async def get_in_session(
+            self,
+            session: AsyncSession,
+            task_id: uuid.UUID,
+            context: ServerCallContext | None = None,
     ) -> Task | None:
-        """Cancel a task while holding its task-row mutex.
-
-        Cancellation is the one control-plane path that intentionally does not
-        present an owner token.  It locks ``tasks`` first, changes a non-terminal
-        task to ``CANCELED``, and removes any claim in the same transaction so a
-        running owner discovers the loss on its next heartbeat.
-
-        The already-terminal case is reported from here rather than inferred by
-        the caller from the returned state: a successful cancellation also ends
-        in a terminal state, so afterwards the two are indistinguishable.
-
-        With a caller's context, only that caller's task is found - its
-        ``owner_scope`` is part of the locking query, so another user's task
-        is neither locked nor changed and reads as absent. The owner token the
-        claim carries names a server process, not a user, and says nothing
-        about who may cancel. ``None`` reaches every owner's task, as everywhere
-        in this store.
-
-        Returns:
-            The canceled task, or ``None`` when no such task exists for this
-            caller.
-
-        Raises:
-            TaskNotCancelableError: If the task already has an outcome.
-        """
-        try:
-            task_uuid = require_task_uuid(task_id)
-        except InvalidParamsError:
+        """Read one fully hydrated task inside the caller's transaction."""
+        entity = await TasksRepository(session).find_by_id(
+            task_id, self.agent_id, owner_scope=self._owner_filter(context)
+        )
+        if not entity:
             return None
-
-        owner_scope = self._owner_filter(context)
-        async with db_manager.get_session() as session:
-            async with session.begin():
-                # No REPEATABLE READ here on purpose: find_by_id_for_update's
-                # row lock already blocks the only writer that touches this
-                # task's messages and artifacts (save_owned takes the same
-                # lock first), which gives the hydration below a consistent
-                # view without paying for snapshot isolation - and without
-                # its serialization failures on the UPDATE further down.
-                tasks = TasksRepository(session)
-                claims = TaskClaimsRepository(session)
-                entity = await tasks.find_by_id_for_update(
-                    task_uuid, self.agent_id, owner_scope=owner_scope
-                )
-                if entity is None:
-                    return None
-
-                task = await self._hydrate(session, entity)
-                if task.status.state in TERMINAL_TASK_STATES:
-                    raise TaskNotCancelableError(
-                        message=(
-                            "Task cannot be canceled - current state: "
-                            f"{TaskState.Name(task.status.state)}"
-                        )
-                    )
-
-                task.status.state = TaskState.TASK_STATE_CANCELED
-                await tasks.update_status(task_uuid, self.agent_id, task.status)
-                # Deleted without a token on purpose: removing the lease is how
-                # a pod that is not the owner tells the owner it has stopped
-                # being one.
-                await claims.revoke_unconditionally(task_uuid, self.agent_id)
-
-                return task
-
-    async def request_cancellation(
-            self, task_id: str, context: ServerCallContext | None = None
-    ) -> Optional[bool]:
-        """Ask this task's owner to cancel it, without writing a terminal state.
-
-        The non-owner mirror of :meth:`save`'s fenced write: a pod that does
-        not hold this task's claim cannot run its teardown, so instead of
-        writing ``CANCELED`` itself it marks the claim and lets the owner
-        discover the mark on its next heartbeat renewal and cancel locally -
-        see ``PostgresOwnershipProvider._notify_control_signal_once`` and
-        ``AionActiveTaskRegistry._on_control_signal``. The eventual terminal
-        write, and its notification to whoever is waiting on it, both happen
-        over there, not here.
-
-        Locks the task row before marking the claim, in the same transaction,
-        for the same reason :meth:`cancel_with_ownership_revocation` does:
-        a task that reaches an outcome between the read and the write must
-        not have a cancellation request attached to a claim it no longer
-        needs. Whichever of the two writers gets the lock first decides the
-        race; the loser's transaction observes the outcome the winner already
-        committed.
-
-        Returns:
-            ``True`` when a live claim was marked - the caller should now
-            wait for the terminal write it will trigger. ``False`` when the
-            task exists but has no live claim - there is no owner to ask, and
-            the caller must close the task out directly instead, exactly as
-            :meth:`cancel_with_ownership_revocation` already does. ``None``
-            when no such task exists for this caller: as there, the caller's
-            ``owner_scope`` is part of the locking query, so another user's
-            task is neither locked nor marked.
-
-        Raises:
-            TaskNotCancelableError: If the task already has an outcome.
-        """
-        try:
-            task_uuid = require_task_uuid(task_id)
-        except InvalidParamsError:
-            return None
-
-        owner_scope = self._owner_filter(context)
-        async with db_manager.get_session() as session:
-            async with session.begin():
-                tasks = TasksRepository(session)
-                claims = TaskClaimsRepository(session)
-                entity = await tasks.find_by_id_for_update(
-                    task_uuid, self.agent_id, owner_scope=owner_scope
-                )
-                if entity is None:
-                    return None
-
-                if entity.status.state in TERMINAL_TASK_STATES:
-                    raise TaskNotCancelableError(
-                        message=(
-                            "Task cannot be canceled - current state: "
-                            f"{TaskState.Name(entity.status.state)}"
-                        )
-                    )
-
-                marked = await claims.request_cancel(task_uuid, self.agent_id)
-                return marked is not None
+        return await self._hydrate(session, entity)
 
     async def get(
             self, task_id: str, context: ServerCallContext | None = None
@@ -422,19 +300,10 @@ class PostgresTaskStore(BaseTaskStore):
         except ValueError:
             return None
 
-        owner_scope = self._owner_filter(context)
         async with db_manager.get_session() as session:
             async with session.begin():
                 await self._repeatable_read(session)
-                repository = TasksRepository(session)
-                entity = await repository.find_by_id(
-                    task_uuid, self.agent_id, owner_scope=owner_scope
-                )
-
-                if not entity:
-                    return None
-
-                return await self._hydrate(session, entity)
+                return await self.get_in_session(session, task_uuid, context)
 
     async def delete(
             self, task_id: str, context: ServerCallContext | None = None
@@ -445,8 +314,9 @@ class PostgresTaskStore(BaseTaskStore):
         owner's is left as it is, exactly as in the in-memory store. ``None``
         deletes regardless of owner: the store's deliberate unfiltered access,
         which no A2A request path uses. ``task_messages`` and
-        ``task_artifacts`` rows cascade with it; there is nothing else here to
-        clean up.
+        ``task_artifacts`` rows cascade with it. The task's version row goes
+        in the same transaction, as a2a-sdk's versioned store removes it; its
+        events stay in ``task_events``, which a2a-sdk never prunes.
         """
         owner_scope = self._owner_filter(context)
         try:
@@ -455,9 +325,22 @@ class PostgresTaskStore(BaseTaskStore):
             return
 
         async with db_manager.get_session() as session:
-            repository = TasksRepository(session)
-            await repository.delete_by_id(task_uuid, self.agent_id, owner_scope=owner_scope)
-            await session.commit()
+            async with session.begin():
+                # The version row before the task row, in the order every
+                # versioned write takes them, so a delete and a write of the
+                # same task cannot deadlock.
+                await session.execute(
+                    select(TaskVersionModel.task_id)
+                    .where(TaskVersionModel.task_id == task_id)
+                    .with_for_update()
+                )
+                deleted = await TasksRepository(session).delete_by_id(
+                    task_uuid, self.agent_id, owner_scope=owner_scope
+                )
+                if deleted:
+                    await session.execute(
+                        delete(TaskVersionModel).where(TaskVersionModel.task_id == task_id)
+                    )
 
     async def list(
             self,

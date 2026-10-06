@@ -1,36 +1,26 @@
 """Cancelling a task through a server that is not the one running it.
 
-``tasks/cancel`` may arrive anywhere. Whichever process receives it, the
-execution it has to stop belongs to another one, and no process can run
-another's teardown: the receiving server marks the claim and the owner acts
-on it locally, over ``TASK_EVENT_CHANNEL``. That path has never run between
-two operating-system processes - the integration tests listen on one database
-from a single interpreter, and the scenario cancel never left one server - so
-it is what these scenarios drive.
+``tasks/cancel`` may arrive anywhere. The server that receives it cancels a
+task it is running through its executor; any other task gets a2a-sdk's remote
+cancellation: ``CANCELED`` is written over the task's stored version, and the
+cancel is answered at once. The server executing the task finds out at its
+next write, which no longer matches the version, rereads the task, sees it
+terminal and stops the execution. ``AgentExecutor.cancel`` is not called
+there.
 
-The owner is alive throughout. A cancel racing the death of its owner is a
-different guarantee and lives in ``test_recovery.py``; nothing here waits for
-a lease.
+So the owner's own stream closes as CANCELED only once its agent writes
+again, and the reply the cancelled work owed never lands. That is what these
+scenarios drive.
 
 Two cancels are two different questions, and the scenarios keep them apart.
 A second one sent after the task is already settled must be refused as not
 cancelable, because a successful cancellation is itself terminal and would
 otherwise be indistinguishable from one. Two genuinely concurrent ones must
 agree on the *outcome* - the task ends cancelled once, and nothing answers
-late - but not necessarily on the *reply* each caller gets: with only two
-servers one of the two cancels reaches the owner itself, and an owner that
-finishes settling before the other request is served refuses that one as not
-cancelable. Both answers are correct, and which pair arrives is a race, so
-the scenario asserts the outcome and allows either reply.
-
-An owner that stays alive but never honors the cancel is not driven here.
-The reaper closes such a task as CANCELED with the ``cancel_timeout`` reason
-once ``CANCEL_GRACE_SECONDS`` (120 s) has passed, and that grace must stay
-longer than the evolution rescue drain, so a scenario would spend more than
-two minutes per framework waiting for it. The chain is checked at the
-integration level instead, by
-``test_an_owner_that_ignores_a_cancellation_is_forced_closed`` in
-``tests/integration/server/tasks/test_task_ownership_e2e_postgres.py``.
+late - but not necessarily on the *reply* each caller gets: one of them may
+find the task already cancelled by the other. Both answers are correct, and
+which pair arrives is a race, so the scenario asserts the outcome and allows
+either reply.
 """
 
 from __future__ import annotations
@@ -43,19 +33,20 @@ from a2a.types import TaskState
 
 from tests.scenarios.commands import slow_text
 from tests.scenarios.harness import ScenarioClient, run_until_working, stored_texts
-from tests.scenarios.harness.pg import claim_released
 from tests.scenarios.harness.recorder import Ev, _payload_of, to_event
 
 pytestmark = [pytest.mark.distributed]
 
-SLOW_SECONDS = 20
-"""Long enough that a cancel always lands mid-sleep."""
+SLOW_SECONDS = 6
+"""Long enough that a cancel always lands mid-sleep, short enough to wait out.
+
+The owner learns of a remote cancel at its next write, which for ``slow`` is
+the reply after the sleep, so a scenario that watches the owner stop waits
+this long.
+"""
 
 NOT_CANCELABLE_CODE = -32002
 """What A2A answers a cancel of a task that has already finished."""
-
-SETTLE_TIMEOUT_SECONDS = 30
-"""A cross-process cancel that has not landed by now is not merely slow."""
 
 
 def _cancel_answer(response: dict) -> str:
@@ -94,7 +85,8 @@ async def test_a_cancel_on_the_other_server_reaches_the_owner(
     The stream the owner opened is kept open here rather than closed the way
     ``run_until_working`` leaves it: what arrives on it is the delivery
     itself, across the process boundary, and not an outcome read back
-    afterwards.
+    afterwards. It arrives when the owner's agent writes again and finds the
+    task cancelled.
     """
     first, second = clients
     events: list[Ev] = []
@@ -130,12 +122,12 @@ async def test_a_cancel_on_the_other_server_reaches_the_owner(
 async def test_the_cancelled_work_produces_no_late_answer(
     clients: tuple[ScenarioClient, ScenarioClient],
 ) -> None:
-    """The reply the agent owed never lands, on either server, and the claim goes."""
+    """The reply the agent owed never lands, on either server."""
     first, second = clients
 
     task_id, _ = await run_until_working(first, f"slow {SLOW_SECONDS}")
     await second.cancel(task_id)
-    await claim_released(task_id, timeout=SETTLE_TIMEOUT_SECONDS)
+    await asyncio.sleep(SLOW_SECONDS + 1)
 
     stored = await first.get_task(task_id)
     assert stored.status.state == TaskState.TASK_STATE_CANCELED
@@ -149,11 +141,12 @@ async def test_two_concurrent_cancels_agree(
 ) -> None:
     """Concurrent cancels reach one outcome, and no caller is told otherwise.
 
-    With two servers, one of these two requests goes to the owner, so the
-    pair of replies is genuinely racy: either both are answered with the
-    cancelled task, or the owner settles first and the other request is
-    refused as not cancelable. Demanding two CANCELED replies would fail on
-    a legitimate ordering. What is not racy is the outcome - exactly one
+    With two servers, one of these two requests goes to the owner, which
+    cancels through its executor, and the other writes ``CANCELED`` over the
+    stored version. The pair of replies is genuinely racy: either both are
+    answered with the cancelled task, or one finds the task already settled
+    and is refused as not cancelable. Demanding two CANCELED replies would
+    fail on a legitimate ordering. What is not racy is the outcome - exactly one
     cancellation happens, it holds, and neither caller is answered with a
     state the task never reached - so that is what this asserts.
 
@@ -178,7 +171,7 @@ async def test_two_concurrent_cancels_agree(
             f"a concurrent cancel was answered with neither: {here} {there}"
         )
 
-    await claim_released(task_id, timeout=SETTLE_TIMEOUT_SECONDS)
+    await asyncio.sleep(SLOW_SECONDS + 1)
     await cancelled_everywhere(first, second, task_id=task_id)
     stored = await first.get_task(task_id)
     assert slow_text(float(SLOW_SECONDS)) not in stored_texts(stored), (
@@ -225,7 +218,6 @@ async def test_a_cancelled_task_never_reaches_another_terminal_state(
 
     task_id, _ = await run_until_working(first, f"slow {seconds}")
     await second.cancel(task_id)
-    await claim_released(task_id, timeout=SETTLE_TIMEOUT_SECONDS)
 
     await asyncio.sleep(seconds + 1)
 

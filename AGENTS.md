@@ -40,19 +40,19 @@ contracts; reconcile this file with them when behavior changes.
   `### Bug Fixes`, one short `* **scope:** description` line each. Before a
   release the section must be complete and renamed to the released version;
   see `RELEASE.md`.
-- Task ownership (claims, heartbeat, reaper, owner-run cancellation) is
-  Aion's own, not a2a-sdk's. On every `a2a-sdk` bump:
-  - diff its `DefaultRequestHandlerV2`, `ActiveTaskRegistry` and
-    `a2a.server.cluster` against the Aion overrides, and update the
-    "Relation to a2a cluster mode" section of `aion.server.tasks.ownership`;
-  - check whether upstream now covers what the Aion mechanism provides, and
-    propose moving onto it only when all of these hold: remote cancellation
-    runs `AgentExecutor.cancel` on the executing process; exclusivity is
-    taken before execution starts and writes are fenced against an expired
-    owner; a dead owner's task can be settled as FAILED instead of re-run;
-    the backend plugs into the existing PostgreSQL schema without changing
-    `tasks`. When only some hold, drop the Aion overrides that upstream now
-    makes redundant and keep the rest.
+- Running a task across several instances is a2a-sdk's cluster mode, not an
+  Aion mechanism: with PostgreSQL the handler gets a `VersionedTaskStore`
+  (`PostgresVersionedTaskStore`) and a2a-sdk's `DatabaseTaskEventStream`.
+  Stay close to upstream; adapt only what the Aion schema or contract
+  requires. `docs/development/a2a-sdk-mapping.md` is the map of every a2a-sdk
+  server entry point to what Aion does with it. On every `a2a-sdk` bump:
+  - diff its `DefaultRequestHandlerV2`, `ActiveTaskRegistry`, `ActiveTask`,
+    `TaskManager` and `a2a.server.cluster` against the Aion overrides, and
+    update the mapping table in the same change;
+  - check whether upstream now offers what cluster mode lacks here - a wait
+    hook in `DatabaseTaskEventStream`, remote cancellation that runs
+    `AgentExecutor.cancel`, detection of a dead instance, journal cleanup -
+    and adopt it rather than writing an Aion version.
 - Keep unrelated user changes intact. Commit messages must read like ordinary
   developer messages, without AI attribution, `Co-Authored-By`, or generated-by
   markers. If a commit is blocked, preserve the staged state and give the exact
@@ -144,7 +144,7 @@ fixture and configuration directories do not.
   It runs on four pytest-xdist workers; `UNIT_WORKERS=0` runs it in one
   process for `--pdb` or `-s`. `tests/unit` mirrors `src/aion`; shared unit
   builders live in `tests/unit/support`.
-- Real PostgreSQL, real process trees, or elapsed lease/timeout behavior:
+- Real PostgreSQL, real process trees, or elapsed timeout behavior:
   `make tests-integration`, optionally with `TEST_PATHS=` and `ARGS=`.
   Run the relevant integration suite before committing changes to these
   boundaries. The target starts and removes a disposable PostgreSQL
@@ -189,8 +189,8 @@ was run. There is no need to run every suite for a documentation-only edit.
   proxy.
 - `aion.langgraph.authoring` and `aion.adk.authoring`: framework-facing
   authoring helpers, model routing, tools, and invocation support.
-- `aion.db`: PostgreSQL manager, repositories, migrations, task claims, and
-  durable ownership.
+- `aion.db`: PostgreSQL manager, repositories and migrations, including
+  a2a-sdk's `task_versions` and `task_events` tables.
 - `aion.server`: generic A2A app, plugin discovery, task and file lifecycle,
   platform link, extensions, push notifications, and observability. Response
   and thinking deltas remain live-only artifacts outside durable task storage.

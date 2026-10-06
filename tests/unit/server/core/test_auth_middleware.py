@@ -166,6 +166,18 @@ async def test_a_refusal_never_quotes_the_token(caplog) -> None:
     assert token not in caplog.text
 
 
+async def test_a_misaddressed_token_is_one_warning_and_its_audiences_stay_in_the_server_log(caplog) -> None:
+    probe = Probe()
+    with caplog.at_level("INFO", logger="aion.server.core.middlewares.auth"):
+        async with probe.client(*_aion()) as client:
+            response = await send_message(client, headers=_bearer(platform_token(audience="another-client")))
+
+    refusals = [record for record in caplog.records if record.name == "aion.server.core.middlewares.auth"]
+    assert [record.levelname for record in refusals] == ["WARNING"]
+    assert "'another-client'" in refusals[0].getMessage()
+    assert "another-client" not in response.text
+
+
 async def test_until_the_keys_load_a_request_is_answered_503_and_never_served() -> None:
     """An outage is neither a pass nor a verdict on the token: the client may retry."""
     control_plane = ControlPlane()

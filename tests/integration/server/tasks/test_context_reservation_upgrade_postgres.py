@@ -27,7 +27,7 @@ from alembic import command
 from langgraph.checkpoint.base import empty_checkpoint
 from sqlalchemy import text
 
-from .postgres_support import POSTGRES_TEST_URL, prepared_database, provider, truncate
+from .postgres_support import POSTGRES_TEST_URL, prepared_database, truncate
 
 from aion.adk.server.session.backends.postgres import PostgresBackend as AdkSessions
 from aion.db.postgres.migrations.env import config as alembic_config
@@ -92,10 +92,8 @@ async def _reservations(db, *context_ids: str) -> set[tuple[str, str, str]]:
 
 
 async def _task(context_id: str, owner: str, agent_id: str = AGENT) -> None:
-    lease = provider(f"pod-{agent_id}", agent_id=agent_id)
-    store = PostgresTaskStore(agent_id=agent_id, ownership_provider=lease)
+    store = PostgresTaskStore(agent_id=agent_id)
     task_id = str(uuid.uuid4())
-    await lease.acquire(task_id)
     await store.save(
         Task(id=task_id, context_id=context_id, status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED)),
         ServerCallContext(user=_User(owner)),

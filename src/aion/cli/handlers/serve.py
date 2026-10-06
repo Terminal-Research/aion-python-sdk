@@ -26,7 +26,7 @@ from aion.cli.utils.port_manager import AionPortManager
 
 logger = logging.getLogger(__name__)
 
-# Each child may spend 60 seconds rescuing a signaled cancellation, then up
+# Each child may spend 60 seconds rescuing an evolution run its shutdown cancels, then up
 # to two seconds settling interrupted tasks. Leave room for remaining cleanup.
 SERVE_SHUTDOWN_TIMEOUT_SECONDS = 75
 

@@ -10,6 +10,12 @@
 * **server:** replace the per-method GetContext/GetContexts extensions with the unified Context extension
 * **server:** refuse a message to a task with an outcome with UnsupportedOperationError (-32004) instead of InvalidParamsError (-32602)
 * **server:** rename AuthenticatedPushNotificationSender to AionPushNotificationSender (aion.server.tasks.push_sender)
+* **server:** run a2a-sdk's cluster mode on PostgreSQL in place of task claims: any server executes, follows and cancels any task, and TaskOwnershipBusy (-32050) is gone
+* **server:** answer SubscribeToTask on a task with an outcome with UnsupportedOperationError (-32004) instead of the stored Task
+* **server:** cancel a task running on another server by writing CANCELED over its stored version; AgentExecutor.cancel no longer runs on the executing server
+* **server:** leave the tasks of a server that died in the state they had instead of settling them as FAILED (lease_expired); remove TASK_OWNERSHIP_REAPER and TASK_OWNERSHIP_LEASE_TTL_SECONDS
+* **server:** drop the lease_expired, cancel_requested and cancel_timeout settlement reasons
+* **db:** migration 008 adds task_versions and task_events and drops task_claims; stop every server of an agent before migrating
 
 
 ### Features
@@ -25,6 +31,8 @@
 * **server:** ignore unknown params fields and report parse failures in error.data.parseError, Context extension methods included
 * **deps:** support google-adk 2.x and wider LangGraph ranges; support Python 3.14
 * **chat:** discover A2A and Aion Chat agents together
+* **server:** follow a task running on another server through SubscribeToTask, from the stored task and the task journal
+* **server:** resume a task paused for input on any server of the agent
 
 
 ### Bug Fixes

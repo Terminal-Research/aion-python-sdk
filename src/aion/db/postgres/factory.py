@@ -44,7 +44,7 @@ class DbFactory:
                 verified, the manager fails to initialize, or migrations fail.
                 A configured PostgreSQL that turns out unreachable must stop
                 startup rather than silently degrade to an in-memory store
-                with no ownership enforcement across pods.
+                that one server instance alone can serve.
         """
         pg_url = db_settings.pg_url
         if not pg_url:

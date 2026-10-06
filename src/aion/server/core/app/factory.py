@@ -207,11 +207,10 @@ class AppFactory:
 
         return AionRequestHandler(
             agent_executor=self._executor,
-            task_store=task_store,
-            ownership_provider=self.store_manager.get_ownership_provider(),
+            task_store=self.store_manager.get_handler_store(),
+            event_stream=self.store_manager.get_event_stream(),
             admission=self.store_manager.get_admission(),
             context_catalog=self.store_manager.get_context_catalog(),
-            event_listener=self.store_manager.get_event_listener(),
             push_config_store=push_config_store,
             push_sender=push_sender,
             agent_card=self.aion_agent.card,

@@ -4,7 +4,7 @@
      commands.py and frameworks.py. Do not edit by hand: run
      `make scenarios-matrix`. -->
 
-166 scenarios in 32 files, 368 runs across 2 frameworks: 338 run, 30 skipped.
+161 scenarios in 32 files, 362 runs across 2 frameworks: 331 run, 31 skipped.
 
 Nothing here was produced by running a scenario: `pytest --collect-only` and the registries are all it takes, and the same suite always renders the same file. What the suite is and how to run it is in [README.md](README.md).
 
@@ -63,7 +63,7 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 |---|---|---|---|
 | `smoke` | agent answers at all: card, health, help, echo | 7 | `make tests-scenarios TAGS=smoke` |
 | `streaming` | chunked replies, ephemeral typing, unary send | 13 | `make tests-scenarios TAGS=streaming` |
-| `events` | event order, ids, outbox, get_task agreement | 23 | `make tests-scenarios TAGS=events` |
+| `events` | event order, ids, outbox, get_task agreement | 20 | `make tests-scenarios TAGS=events` |
 | `terminal_states` | COMPLETED, FAILED, CANCELED, INPUT_REQUIRED | 9 | `make tests-scenarios TAGS=terminal_states` |
 | `interrupts` | INPUT_REQUIRED and resume | 9 | `make tests-scenarios TAGS=interrupts` |
 | `errors` | failures that must stay reported, not crash the server | 8 | `make tests-scenarios TAGS=errors` |
@@ -76,7 +76,7 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 | `lifecycle` | cancel, concurrency, push notifications, startup | 4 | `make tests-scenarios TAGS=lifecycle` |
 | `contexts` | Context extension: list, read and delete conversations | 5 | `make tests-scenarios TAGS=contexts` |
 | `persistence` | needs POSTGRES_TEST_URL; survives a server restart | 10 | `make tests-scenarios-persistence` |
-| `distributed` | needs POSTGRES_TEST_URL; two servers over one database | 15 | `make tests-scenarios-distributed` |
+| `distributed` | needs POSTGRES_TEST_URL; two servers over one database | 13 | `make tests-scenarios-distributed` |
 | `native` | an ordinary framework agent on its own path: model, tools, memory, no Aion API | 29 | `make tests-scenarios TAGS=native` |
 
 ## Scenarios by file
@@ -281,14 +281,11 @@ What ``tasks/resubscribe`` gives a client that comes back to a task.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [The reconnecting client sees the rest of the turn, outcome included.](core/test_resubscribe.py#L86 "test_a_running_task_hands_its_remaining_events_to_a_subscriber") | `events` | `slow` | `default` | ✓ | ✓ |
-| [One execution, one task: the reply is said once, not once per subscriber.](core/test_resubscribe.py#L104 "test_resubscribing_does_not_start_the_turn_again") | `events` | `slow` | `default` | ✓ | ✓ |
-| [A finished turn answers a subscriber with the task it left behind.](core/test_resubscribe.py#L126 "test_a_settled_task_is_replayed_once_and_the_stream_closes") | `events` | `echo` | `default` | ✓ | ✓ |
-| [Resubscribe and tasks/get answer with the same record, not two readings.](core/test_resubscribe.py#L141 "test_the_replayed_task_is_the_stored_task") | `events` | `echo` | `default` | ✓ | ✓ |
-| [The outcome a subscriber is given is the one the task has, not a fresh run.](core/test_resubscribe.py#L154 "test_a_failed_task_is_replayed_as_failed") | `events` | `fail` | `default` | ✓ | ✓ |
-| [A cancel is an outcome like any other, and replays like one.](core/test_resubscribe.py#L166 "test_a_cancelled_task_is_replayed_as_cancelled") | `events` | `slow` | `default` | ✓ | ✓ |
-| [The subscriber is given the pause, then the turn that ends it.](core/test_resubscribe.py#L182 "test_a_paused_task_keeps_a_subscriber_until_another_client_resumes_it") | `events` | `ask` | `default` | ✓ | [skip](#frameworks) |
-| [No second task, and nothing the pause had recorded is lost.](core/test_resubscribe.py#L222 "test_resuming_under_a_subscriber_keeps_one_task_and_its_question") | `events` | `ask` | `default` | ✓ | [skip](#frameworks) |
+| [The reconnecting client sees the rest of the turn, outcome included.](core/test_resubscribe.py#L79 "test_a_running_task_hands_its_remaining_events_to_a_subscriber") | `events` | `slow` | `default` | ✓ | ✓ |
+| [One execution, one task: the reply is said once, not once per subscriber.](core/test_resubscribe.py#L97 "test_resubscribing_does_not_start_the_turn_again") | `events` | `slow` | `default` | ✓ | ✓ |
+| [Nothing is left to stream; the refusal leaves the stored task as it was.](core/test_resubscribe.py#L128 "test_a_task_with_an_outcome_refuses_a_subscriber") | `events` | `echo` | `default` | ✓ | ✓ |
+| [The subscriber is given the pause, then the turn that ends it.](core/test_resubscribe.py#L156 "test_a_paused_task_keeps_a_subscriber_until_another_client_resumes_it") | `events` | `ask` | `default` | ✓ | [skip](#frameworks) |
+| [No second task, and nothing the pause had recorded is lost.](core/test_resubscribe.py#L196 "test_resuming_under_a_subscriber_keeps_one_task_and_its_question") | `events` | `ask` | `default` | ✓ | [skip](#frameworks) |
 
 ### `tests/scenarios/core/test_smoke.py`
 
@@ -337,33 +334,31 @@ Cancelling a task through a server that is not the one running it.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [The owner's own stream closes as CANCELED, on a cancel it never received.](distributed/test_cancel.py#L88 "test_a_cancel_on_the_other_server_reaches_the_owner") | `distributed` | `slow` | `default` | ✓ | ✓ |
-| [The reply the agent owed never lands, on either server, and the claim goes.](distributed/test_cancel.py#L129 "test_the_cancelled_work_produces_no_late_answer") | `distributed` | `slow` | `default` | ✓ | ✓ |
-| [Concurrent cancels reach one outcome, and no caller is told otherwise.](distributed/test_cancel.py#L146 "test_two_concurrent_cancels_agree") | `distributed` | `slow` | `default` | ✓ | ✓ |
-| [A repeat is not a second cancellation but an error, and changes nothing.](distributed/test_cancel.py#L189 "test_cancelling_a_settled_task_again_is_refused") | `distributed` | `slow` | `default` | ✓ | ✓ |
-| [The outcome holds: nothing overwrites it once the work has stopped.](distributed/test_cancel.py#L212 "test_a_cancelled_task_never_reaches_another_terminal_state") | `distributed` | `slow` | `default` | ✓ | ✓ |
+| [The owner's own stream closes as CANCELED, on a cancel it never received.](distributed/test_cancel.py#L79 "test_a_cancel_on_the_other_server_reaches_the_owner") | `distributed` | `slow` | `default` | ✓ | ✓ |
+| [The reply the agent owed never lands, on either server.](distributed/test_cancel.py#L121 "test_the_cancelled_work_produces_no_late_answer") | `distributed` | `slow` | `default` | ✓ | ✓ |
+| [Concurrent cancels reach one outcome, and no caller is told otherwise.](distributed/test_cancel.py#L138 "test_two_concurrent_cancels_agree") | `distributed` | `slow` | `default` | ✓ | ✓ |
+| [A repeat is not a second cancellation but an error, and changes nothing.](distributed/test_cancel.py#L182 "test_cancelling_a_settled_task_again_is_refused") | `distributed` | `slow` | `default` | ✓ | ✓ |
+| [The outcome holds: nothing overwrites it once the work has stopped.](distributed/test_cancel.py#L205 "test_a_cancelled_task_never_reaches_another_terminal_state") | `distributed` | `slow` | `default` | ✓ | ✓ |
 
-### `tests/scenarios/distributed/test_ownership.py`
+### `tests/scenarios/distributed/test_cluster.py`
 
-Who owns a task, when two servers of one agent share one database.
+Two servers of one agent over one database: a2a-sdk's cluster mode.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [A subscriber on the wrong server is told so, by the reserved code.](distributed/test_ownership.py#L82 "test_the_other_server_refuses_to_subscribe_to_a_running_task") | `distributed` | `slow` | `default` | ✓ | ✓ |
-| [A message sent to the wrong server is refused the same way as a subscribe.](distributed/test_ownership.py#L98 "test_the_other_server_refuses_to_continue_a_running_task") | `distributed` | `slow` | `default` | ✓ | ✓ |
-| [The refusal is the whole outcome: no second turn, no second task.](distributed/test_ownership.py#L131 "test_a_refused_continuation_starts_nothing") | `distributed` | `slow` | `default` | ✓ | ✓ |
-| [The diagnostic reaches the caller, and it names the server that holds it.](distributed/test_ownership.py#L163 "test_the_refusal_names_the_owning_instance") | `distributed` | `slow` | `default` | ✓ | ✓ |
-| [Authority is the fencing token, not the name of the process holding it.](distributed/test_ownership.py#L183 "test_a_competitor_with_the_same_host_name_is_refused_too") | `distributed` | `slow` | `default` | ✓ | ✓ |
-| [A claim exists exactly while the work does.](distributed/test_ownership.py#L215 "test_a_running_task_holds_a_claim_and_lets_it_go") | `distributed` | `slow` | `default` | ✓ | ✓ |
-| [One database, one answer: the outcome does not depend on who is asked.](distributed/test_ownership.py#L228 "test_both_servers_read_the_same_finished_task") | `distributed` | `echo` | `default` | ✓ | ✓ |
+| [A subscriber on the server not running the task gets its live tail.](distributed/test_cluster.py#L48 "test_the_other_server_follows_a_running_task_to_its_end") | `distributed` | `slow` | `default` | ✓ | ✓ |
+| [The next turn runs wherever it arrives, from the stored task.](distributed/test_cluster.py#L71 "test_a_task_paused_on_one_server_is_resumed_on_the_other") | `distributed` | `ask` | `default` | ✓ | [skip](#frameworks) |
+| [Nothing stops two executions of one task; the version decides what lands.](distributed/test_cluster.py#L89 "test_a_second_message_runs_on_the_other_server_and_the_first_outcome_wins") | `distributed` | `slow` | `default` | ✓ | ✓ |
+| [There is nothing left to stream, so a2a-sdk refuses the subscription.](distributed/test_cluster.py#L118 "test_resubscribing_to_a_finished_task_is_refused") | `distributed` | `echo` | `default` | ✓ | ✓ |
+| [One database, one answer: the outcome does not depend on who is asked.](distributed/test_cluster.py#L133 "test_both_servers_read_the_same_finished_task") | `distributed` | `echo` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/distributed/test_recovery.py`
 
-One server dies; the one that was already running closes what it left.
+One server dies; what becomes of the tasks it was running.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [The whole sequence, in the order a deployment would live it.](distributed/test_recovery.py#L95 "test_a_dead_owner_leaves_two_tasks_and_the_survivor_closes_both") | `distributed` | `slow` | `default` | ✓ | ✓ |
+| [The whole sequence, in the order a deployment would live it.](distributed/test_recovery.py#L44 "test_a_dead_servers_task_stays_active_until_the_survivor_cancels_it") | `distributed` | `slow` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/native/test_distributed.py`
 
@@ -372,7 +367,7 @@ A native agent served by two instances over one database.
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
 | [A conversation begun on one instance continues on the other](native/test_distributed.py#L51 "test_a_conversation_begun_on_one_instance_continues_on_the_other") | `native`, `distributed` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
-| [A tool paused on one instance resumes on the other](native/test_distributed.py#L65 "test_a_tool_paused_on_one_instance_resumes_on_the_other") | `native`, `distributed` | — | `default` | ✓ `langgraph_native` | [skip](#frameworks) |
+| [A tool paused on one instance resumes on the other](native/test_distributed.py#L64 "test_a_tool_paused_on_one_instance_resumes_on_the_other") | `native`, `distributed` | — | `default` | ✓ `langgraph_native` | [skip](#frameworks) |
 
 ### `tests/scenarios/native/test_failure_and_cancel.py`
 
@@ -456,20 +451,20 @@ What a server restart does to the tasks the previous process held.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [The task read back after a restart is the task that was read before it.](persistence/test_restart.py#L97 "test_a_completed_task_is_unchanged_by_a_restart") | `persistence` | `echo` | `default` | ✓ | ✓ |
-| [Every reply of a multi-step turn is still there, in order, afterwards.](persistence/test_restart.py#L124 "test_a_multi_step_history_survives_a_restart") | `persistence` | `steps` | `default` | ✓ | ✓ |
-| [A shutdown cancels what it is running and says so on the task it leaves.](persistence/test_restart.py#L149 "test_a_running_task_is_settled_by_an_orderly_shutdown") | `persistence` | `slow` | `default` | ✓ | ✓ |
-| [A killed owner settles nothing, so the lease it stopped renewing does.](persistence/test_restart.py#L165 "test_a_running_task_is_settled_after_a_crash_when_its_lease_expires") | `persistence` | `slow` | `default` | ✓ | ✓ |
+| [The task read back after a restart is the task that was read before it.](persistence/test_restart.py#L68 "test_a_completed_task_is_unchanged_by_a_restart") | `persistence` | `echo` | `default` | ✓ | ✓ |
+| [Every reply of a multi-step turn is still there, in order, afterwards.](persistence/test_restart.py#L95 "test_a_multi_step_history_survives_a_restart") | `persistence` | `steps` | `default` | ✓ | ✓ |
+| [A shutdown cancels what it is running and says so on the task it leaves.](persistence/test_restart.py#L120 "test_a_running_task_is_settled_by_an_orderly_shutdown") | `persistence` | `slow` | `default` | ✓ | ✓ |
+| [A killed process settles nothing, and its successor does not either.](persistence/test_restart.py#L136 "test_a_crashed_servers_task_stays_active_until_it_is_cancelled") | `persistence` | `slow` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/persistence/test_resubscribe.py`
 
-Resubscribing to a paused task where ownership is enforced.
+Resubscribing to a paused task in a2a-sdk's cluster mode.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [One stored Task, carrying the question, and then the end of the stream.](persistence/test_resubscribe.py#L34 "test_a_paused_task_is_replayed_once_and_the_stream_closes") | `persistence` | `ask` | `default` | ✓ | [skip](#frameworks) |
-| [No execution was started, so the task is still waiting and still resumable.](persistence/test_resubscribe.py#L52 "test_the_replay_leaves_the_pause_as_it_found_it") | `persistence` | `ask` | `default` | ✓ | [skip](#frameworks) |
-| [Once the turn is over, the replay is the outcome - question and answer kept.](persistence/test_resubscribe.py#L83 "test_a_settled_task_is_replayed_the_same_way") | `persistence` | `ask` | `default` | ✓ | [skip](#frameworks) |
+| [The stored pause first, then the turn that ends it, closed by a Task.](persistence/test_resubscribe.py#L49 "test_a_paused_task_is_followed_until_the_resume_finishes_it") | `persistence` | `ask` | `default` | ✓ | [skip](#frameworks) |
+| [No second task, and nothing the pause had recorded is lost.](persistence/test_resubscribe.py#L78 "test_following_the_pause_leaves_one_task_and_its_question") | `persistence` | `ask` | `default` | ✓ | [skip](#frameworks) |
+| [Once the turn is over there is nothing to follow; tasks/get has the outcome.](persistence/test_resubscribe.py#L104 "test_a_finished_task_refuses_a_subscriber") | `persistence` | `ask` | `default` | ✓ | [skip](#frameworks) |
 
 ## Commands
 
@@ -482,15 +477,15 @@ The contract from `commands.py`. `Scenarios` counts the scenarios driving the co
 | `stream <n>` | Reply in n chunks of one message | `streaming` | 10 | ✓ | ✓ |
 | `typing` | Send an ephemeral typing status, then a reply | `streaming`, `events` | 3 | ✓ | ✓ |
 | `steps <n>` | Emit n working statuses, then complete | `events` | 2 | ✓ | ✓ |
-| `slow <sec>` | Reply after n seconds | `lifecycle` | 22 | ✓ | ✓ |
+| `slow <sec>` | Reply after n seconds | `lifecycle` | 17 | ✓ | ✓ |
 | `artifacts` | Emit a two-part data artifact, an inline file and a url | `artifacts`, `files` | 2 | ✓ | [skip](#frameworks) |
 | `card` | Emit one card | `artifacts` | 4 | ✓ | ✓ |
 | `outbox-task` | Return an A2A Task through the outbox | `events` | 6 | ✓ | ✓ |
 | `outbox-message` | Return an A2A Message through the outbox | `events` | 3 | ✓ | ✓ |
-| `ask` | Ask a question, then quote the answer | `interrupts` | 8 | ✓ | [skip](#frameworks) |
+| `ask` | Ask a question, then quote the answer | `interrupts` | 9 | ✓ | [skip](#frameworks) |
 | `ask-twice` | Ask two questions in a row | `interrupts` | 3 | ✓ | [skip](#frameworks) |
 | `ask-fail` | Ask a question, then fail on the answer | `interrupts`, `errors` | 3 | ✓ | [skip](#frameworks) |
-| `fail <mode>` | Fail on purpose: exception \| after-reply | `errors`, `terminal_states` | 6 | ✓ | ✓ |
+| `fail <mode>` | Fail on purpose: exception \| after-reply | `errors`, `terminal_states` | 5 | ✓ | ✓ |
 | `ext` | Report active and unknown extensions | `extensions` | 6 | ✓ | ✓ |
 | `whoami` | Report the daemon identity | `daemon` | 6 | ✓ | ✓ |
 | `event` | Report the event this turn carried | `extensions`, `events` | 4 | ✓ | ✓ |

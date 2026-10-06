@@ -1,14 +1,21 @@
 """Aion-specific task manager that orchestrates event routing and persistence."""
 
+import asyncio
 import logging
 from collections.abc import Callable
 
+from a2a.server.cluster.task_store import (
+    ConcurrentTaskModificationError,
+    LegacyTaskStoreAdapter,
+    VersionedTaskStore,
+)
 from a2a.server.events import Event
 from a2a.server.tasks import TaskManager
 from a2a.types import Message, Task, TaskArtifactUpdateEvent, TaskState, TaskStatus, TaskStatusUpdateEvent
 from aion.server.a2a.constants import (
     INTERRUPT_TASK_STATES,
     NON_ACTIVE_TASK_STATES,
+    TERMINAL_TASK_STATES,
     TRANSIENT_ARTIFACT_IDS,
 )
 from aion.server.a2a.utils import is_ephemeral_status_event, is_task_interrupted
@@ -35,7 +42,6 @@ class AionTaskManager(TaskManager):
         self,
         *args,
         on_interrupted: Callable[[str], None] | None = None,
-        ownership_provider=None,
         **kwargs,
     ):
         """Initialize the manager and bind the registry's interrupt callback.
@@ -56,7 +62,6 @@ class AionTaskManager(TaskManager):
                 "the task store would not be limited to the request's owner"
             )
         self._on_interrupted = on_interrupted
-        self._ownership_provider = ownership_provider
         # The state the store last held, kept as a scalar rather than read off
         # ``_current_task``: that object is mutable and the base class applies
         # the new status to it before it asks for the write, so by the time
@@ -64,6 +69,22 @@ class AionTaskManager(TaskManager):
         # ``None`` means nothing has been read or written yet, so the first
         # write of a non-active state counts as a transition.
         self._persisted_state: TaskState | None = None
+        # Two writers share this manager: the SDK consumer, for the events the
+        # agent puts on the queue, and the producer, for the Task and Message
+        # events ``AionEventPipeline`` saves itself. Each write names the
+        # version the previous one left, so they take turns.
+        self._write_lock = asyncio.Lock()
+
+    @override
+    def invalidate(self) -> None:
+        """Drop the cached snapshot, and with it the state it was read in.
+
+        a2a-sdk calls this before each request and after a write another
+        writer overtook, so the next read is the store's. That read is the new
+        baseline: what the store holds now, not what this manager last saw.
+        """
+        super().invalidate()
+        self._persisted_state = None
 
     @override
     async def get_task(self) -> Task | None:
@@ -86,62 +107,63 @@ class AionTaskManager(TaskManager):
     def _remember_loaded_state(self, task: Task | None) -> None:
         """Adopt a loaded task's state as the baseline, once.
 
-        Only the first observation counts: later reads see the manager's own
-        cache, which already carries whatever this turn has written.
+        Only the first observation after a store read counts: later reads see
+        the manager's own cache, which already carries whatever this turn has
+        written.
         """
         if task is not None and self._persisted_state is None:
             self._persisted_state = task.status.state
 
-    async def refresh_task(self) -> Task | None:
-        """Reload the task snapshot from the store and replace the local cache.
-
-        Ownership acquisition is a transition in the database.  A cached task
-        from before that transition may already be terminal, so every execute
-        path explicitly refreshes before it starts an ``ActiveTask``.
-        """
-        if not self.task_id:
-            self._current_task = None
-            return None
-        self._current_task = await self.task_store.get(
-            self.task_id,
-            self._call_context,
-        )
-        if self._current_task is not None:
-            self._persisted_state = self._current_task.status.state
-        return self._current_task
-
     @override
     async def _save_task(self, task: Task) -> None:
-        """Persist through the store, then act on a move out of active state.
+        """Persist through the store, then act on a move into an interrupt.
 
-        The store performs the fencing write.  Release happens only after that
-        write returns successfully, so a terminal outcome never discards the
-        token before it has served as proof of ownership. The receipt is
-        captured before the write: a replacement incarnation must not be
-        released if the old write races with ownership loss.
+        Writes of this manager take turns (``_write_lock``): the SDK consumer
+        and ``AionEventPipeline._save_silently`` both write through it, and a
+        write started from a version the other has just moved on would be
+        refused as stale.
 
-        Both effects follow the transition, not the state being written: the SDK
-        consumer saves the task once more in its interrupt state when it records
-        the incoming user message of a resumed turn, before the turn's first event
-        is applied. Treating that write as a fresh interrupt would tear down the
-        execution that just started and release the lease it just took.
+        A task the store holds as terminal is final. The version check alone
+        does not ensure that: the SDK consumer rereads the task when another
+        writer overtakes it - another server cancelling it, say - and a Task
+        or Message the producer saves directly would then be written over the
+        fresh version. So once the store holds a terminal state:
+
+        * a write in another state is refused as the overtaken write it is,
+          with ``ConcurrentTaskModificationError``;
+        * a write in the same state - a late reply, a late artifact, the
+          consumer recording the ``FAILED`` a failing producer already wrote -
+          is not written at all. The cached snapshot the write was applied to
+          is dropped, so nothing reads the unwritten change back from it.
+
+        The interrupt effect follows the transition, not the state being
+        written: the SDK consumer saves the task once more in its interrupt
+        state when it records the incoming user message of a resumed turn,
+        before the turn's first event is applied. Treating that write as a
+        fresh interrupt would tear down the execution that just started.
+
+        Raises:
+            ConcurrentTaskModificationError: If the store holds the task in
+                another terminal state, or the write is stale.
         """
-        previous_state = self._persisted_state
-        claim = (
-            self._ownership_provider.claim_for(task.id)
-            if self._ownership_provider is not None
-            else None
-        )
-        await super()._save_task(task)
+        async with self._write_lock:
+            previous_state = self._persisted_state
+            if previous_state in TERMINAL_TASK_STATES:
+                if task.status.state != previous_state:
+                    raise ConcurrentTaskModificationError(task.id)
+                logger.debug(
+                    "Task %s is already %s; not writing to it again",
+                    task.id,
+                    TaskState.Name(previous_state),
+                )
+                self.invalidate()
+                return
+            await super()._save_task(task)
 
-        state = task.status.state
-        self._persisted_state = state
+            state = task.status.state
+            self._persisted_state = state
         if state not in NON_ACTIVE_TASK_STATES or state == previous_state:
             return
-
-        # A claim only exists when a provider handed one out.
-        if claim is not None:
-            await self._ownership_provider.release(claim)
 
         if state in INTERRUPT_TASK_STATES and self._on_interrupted is not None:
             self._on_interrupted(task.id)
@@ -216,6 +238,20 @@ class AionTaskManager(TaskManager):
             status=TaskStatus(state=state, message=message),
         )
 
+    def _unversioned_store(self):
+        """The plain store, for the reads only it offers.
+
+        The registry hands this manager a2a-sdk's versioned store: the one it
+        was built with, or ``LegacyTaskStoreAdapter`` around a plain one.
+        Context listings belong to the Aion store underneath.
+        """
+        store = self.task_store
+        if isinstance(store, LegacyTaskStoreAdapter):
+            return store.store
+        if isinstance(store, VersionedTaskStore):
+            return store.as_task_store
+        return store
+
     @staticmethod
     def _track_task_status(event: Event) -> None:
         """Update task status in ExecutionScope when a TaskStatusUpdateEvent is received."""
@@ -263,7 +299,7 @@ class AionTaskManager(TaskManager):
             logger.warning("Task ID already assigned, ignoring")
             return None
 
-        last_task = await self.task_store.get_context_last_task(
+        last_task = await self._unversioned_store().get_context_last_task(
             context_id=self.context_id,
             context=self._call_context,
         )
@@ -274,6 +310,9 @@ class AionTaskManager(TaskManager):
             return None
 
         self.task_id = last_task.id
-        self._current_task = last_task
+        # The task's version is not known from this read, so nothing is
+        # cached: the next read goes through the store and brings the
+        # version back with the task, which the next write compares against.
+        self.invalidate()
         self._persisted_state = last_task.status.state
         return last_task
