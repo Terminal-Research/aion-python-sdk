@@ -354,6 +354,29 @@ class ScenarioClient:
         response.raise_for_status()
         return response.json()
 
+    async def rpc_v03(self, method: str, params: Mapping[str, Any]) -> dict:
+        """Call one of A2A 0.3's methods by hand, as a 0.3 client calls it.
+
+        A 0.3 client sends no ``A2A-Version`` header, which is how the server
+        tells its calls from 1.0's; otherwise this is ``rpc``. The header is
+        taken off the request explicitly: the typed clients built over the
+        same HTTP client may have made it one of its defaults.
+        """
+        request = self._http.build_request(
+            "POST",
+            self.agent_url,
+            json={
+                "jsonrpc": "2.0",
+                "id": uuid.uuid4().hex,
+                "method": method,
+                "params": dict(params),
+            },
+        )
+        request.headers.pop(A2A_VERSION_HEADER, None)
+        response = await self._http.send(request)
+        response.raise_for_status()
+        return response.json()
+
     def stream(self, text: str, **kwargs: Any) -> AsyncIterator:
         """Raw streaming send, for scenarios that read events as they arrive."""
         request = SendMessageRequest(message=self.build_message(text, **kwargs))

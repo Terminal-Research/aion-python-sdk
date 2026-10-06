@@ -121,3 +121,20 @@ async def test_the_indicator_never_reaches_task_history(client: ScenarioClient) 
     assert TYPING_INDICATOR not in texts, (
         f"the ephemeral indicator was persisted into task history: {texts}"
     )
+
+
+# --------------------------------------------------------------------------
+# A unary send
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.command("echo")
+async def test_a_unary_send_answers_with_the_completed_task(client: ScenarioClient) -> None:
+    """`SendMessage` without a stream answers once: the task, completed, the reply on its status."""
+    events = await client.send("echo unary hello", stream=False)
+
+    [answer] = events
+    assert answer.kind == "task"
+    assert answer.state == "COMPLETED"
+    stored = await client.get_task(answer.task_id)
+    assert "unary hello" in stored_texts(stored)

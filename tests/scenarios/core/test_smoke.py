@@ -69,3 +69,24 @@ async def test_echo_answers_with_the_argument(client: ScenarioClient) -> None:
     replies = [event.text for event in events if event.text]
     assert "hello scenarios" in replies
     assert events[-1].state == "COMPLETED"
+
+
+@pytest.mark.command("echo")
+async def test_an_a2a_0_3_client_is_answered_too(client: ScenarioClient) -> None:
+    """The card names a 0.3 interface; a 0.3 `message/send` through the proxy completes."""
+    response = await client.rpc_v03(
+        "message/send",
+        {
+            "message": {
+                "kind": "message",
+                "messageId": "scenario-v03",
+                "role": "user",
+                "parts": [{"kind": "text", "text": "echo from 0.3"}],
+            }
+        },
+    )
+
+    task = response["result"]
+    assert task["kind"] == "task"
+    assert task["status"]["state"] == "completed"
+    assert "from 0.3" in [part.get("text") for part in task["status"]["message"]["parts"]]

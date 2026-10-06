@@ -223,3 +223,22 @@ async def test_an_undeclared_credential_is_refused_by_the_callback(
     assert notifications, "no push notification received"
     assert not any(n.accepted for n in notifications)
     assert all(n.header(AUTHORIZATION_HEADER) is None for n in notifications)
+
+
+@pytest.mark.command("echo")
+async def test_a_push_config_is_created_read_listed_and_deleted(client: ScenarioClient) -> None:
+    """The four push config methods, on a task of this caller; a config created without an id takes the task's."""
+    task_id = final_task(await client.send("echo configs")).task_id
+    url = "http://127.0.0.1:9/scenario-hook"
+
+    created = await client.rpc("CreateTaskPushNotificationConfig", {"taskId": task_id, "url": url})
+    read = await client.rpc("GetTaskPushNotificationConfig", {"taskId": task_id, "id": task_id})
+    listed = await client.rpc("ListTaskPushNotificationConfigs", {"taskId": task_id})
+    deleted = await client.rpc("DeleteTaskPushNotificationConfig", {"taskId": task_id, "id": task_id})
+    after = await client.rpc("ListTaskPushNotificationConfigs", {"taskId": task_id})
+
+    assert created["result"] == {"id": task_id, "taskId": task_id, "url": url}
+    assert read["result"] == created["result"]
+    assert listed["result"]["configs"] == [created["result"]]
+    assert "error" not in deleted
+    assert after["result"].get("configs", []) == []
