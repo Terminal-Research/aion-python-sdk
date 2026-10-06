@@ -63,7 +63,7 @@ def test_the_minimal_agent_is_a_path_and_defaults(config) -> None:
     onboarding = config.agents["onboarding"]
 
     assert onboarding.name == "Agent"
-    assert onboarding.input_modes == ["text"]
+    assert onboarding.input_modes == ["text/plain"]
     assert onboarding.skills == []
 
 

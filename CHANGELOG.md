@@ -48,4 +48,5 @@
 * **server:** separate the events of A2A 0.3 streams (message/stream, tasks/resubscribe) with LF, as A2A 1.0 streams are
 * **server:** refuse an A2A 0.3 message/stream whose declared extensions fail verification with -32602 before the stream opens
 * **server:** report a params parse failure of every method, Context extension methods included, as a2a-sdk 1.2 does: error.data is a list holding a google.rpc.ErrorInfo with the reason in metadata.parseError
+* **server:** name the agent card's input and output modes by media type, as A2A requires: aion.yaml takes media types and reads the short names text, json, image, audio and video as text/plain, application/json, image/*, audio/* and video/*
 * **server:** check A2A-Version on the Context extension methods (-32009 for another major version; a call without it is served) and acknowledge the extension in A2A-Extensions

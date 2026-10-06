@@ -127,6 +127,7 @@ What Aion adds on top of cluster mode:
 
 | a2a-sdk | Why |
 |---|---|
+| `validate_input_modes` of `DefaultRequestHandlerV2` | It compares a part's media type with the card's modes literally, so the `image/*` an `image` mode stands for would refuse every `image/png`; and it runs after the file preprocessors. A part the agent cannot take is refused by the file handling, which says why. |
 | `DefaultRequestHandler` (v1) and `QueueManager` | The server is built on `DefaultRequestHandlerV2`. |
 | `a2a.server.tasks.InMemoryTaskStore`, `DatabaseTaskStore` | Aion's stores keep owner scope, context admission and Aion's schema. |
 | `VersionedDatabaseTaskStore` | See [Cluster mode](#cluster-mode). |
