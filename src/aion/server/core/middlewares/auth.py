@@ -171,7 +171,7 @@ class AionAuthMiddleware(BaseHTTPMiddleware):
         try:
             caller = await self._verifier.verify(token)
         except InvalidTokenError as error:
-            return _unauthorized(path, str(error), error_code="invalid_token")
+            return _unauthorized(path, str(error), error_code="invalid_token", detail=error.detail)
         except KeysUnavailableError as error:
             return _unavailable(path, str(error))
 
@@ -222,9 +222,16 @@ def _bearer_token(header: str | None) -> str | None:
     return token
 
 
-def _unauthorized(path: str, reason: str, *, error_code: str | None) -> JSONResponse:
-    """A ``401`` in RFC 6750's form: the reason is safe to show, and never quotes the token."""
-    logger.info("Refused a request: %s", reason)
+def _unauthorized(path: str, reason: str, *, error_code: str | None, detail: str | None = None) -> JSONResponse:
+    """A ``401`` in RFC 6750's form: the reason is safe to show, and never quotes the token.
+
+    ``detail`` goes to the server log only, at WARNING: it marks a refusal that
+    points at this server's configuration rather than at the caller.
+    """
+    if detail is None:
+        logger.info("Refused a request: %s", reason)
+    else:
+        logger.warning("Refused a request: %s (%s)", reason, detail)
     challenge = "Bearer" if error_code is None else f'Bearer error="{error_code}"'
     return _refusal(
         path,

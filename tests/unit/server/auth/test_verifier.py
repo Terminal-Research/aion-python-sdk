@@ -341,6 +341,20 @@ async def test_a_token_the_mode_refuses_costs_no_key_lookup() -> None:
     assert control_plane.requests == 0
 
 
+async def test_a_misaddressed_token_names_both_audiences_for_the_server_log() -> None:
+    refused = await _refused(AION_KEY.invocation_token(audience="another-client"), match="not addressed")
+
+    assert refused.detail == f"token aud 'another-client', this server expects {verifier().invocation_audience!r}"
+    assert "another-client" not in str(refused)
+
+
+async def test_a_token_from_another_issuer_names_both_issuers_for_the_server_log() -> None:
+    refused = await _refused(AION_KEY.invocation_token(iss="someone-else"), match="issuer")
+
+    assert "'someone-else'" in refused.detail and repr(verifier().issuer) in refused.detail
+    assert "someone-else" not in str(refused)
+
+
 async def test_the_issuer_is_the_configured_one() -> None:
     control_plane = ControlPlane()
     built = verifier(control_plane)

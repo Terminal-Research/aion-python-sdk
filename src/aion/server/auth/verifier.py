@@ -57,7 +57,16 @@ _COMMON_CLAIMS = ["iss", "aud", "sub", "iat", "nbf", "exp", "token_use", "contra
 
 
 class InvalidTokenError(AionError):
-    """A request token that does not verify. Its message says why and never quotes the token."""
+    """A request token that does not verify. Its message says why and never quotes the token.
+
+    The message is the reason the caller receives. ``detail``, when set, is for
+    the server log only: it names the values behind a refusal that usually
+    points at the server's own configuration rather than at the caller.
+    """
+
+    def __init__(self, message: str, *, detail: Optional[str] = None) -> None:
+        super().__init__(message)
+        self.detail = detail
 
 
 class KeysUnavailableError(AionError):
@@ -203,7 +212,7 @@ class TokenVerifier:
             raise InvalidTokenError("the bearer token is signed with an unknown key")
 
         _check_claim_types(unverified_claims)
-        claims = _decode(token, key=key.key, audience=audience, issuer=self.issuer)
+        claims = _decode(token, unverified_claims, key=key.key, audience=audience, issuer=self.issuer)
         return _caller(claims, credential=credential)
 
 
@@ -278,7 +287,13 @@ def _check_claim_types(claims: dict[str, Any]) -> None:
             raise InvalidTokenError(f"the bearer token's '{name}' is not a whole number")
 
 
-def _decode(token: str, *, key: Any, audience: str, issuer: str) -> dict[str, Any]:
+def _decode(token: str, unverified_claims: dict[str, Any], *, key: Any, audience: str, issuer: str) -> dict[str, Any]:
+    """The verified claims of ``token``.
+
+    A signed Aion token for another audience or issuer usually means the
+    deployment is configured for another client or environment, so that
+    refusal carries both values as its ``detail`` for the server log.
+    """
     try:
         claims = jwt.decode(
             token,
@@ -296,9 +311,18 @@ def _decode(token: str, *, key: Any, audience: str, issuer: str) -> dict[str, An
     except jwt.MissingRequiredClaimError as error:
         raise InvalidTokenError(f"the bearer token has no '{error.claim}' claim") from None
     except jwt.InvalidAudienceError:
-        raise InvalidTokenError("the bearer token is not addressed to this server") from None
+        raise InvalidTokenError(
+            "the bearer token is not addressed to this server",
+            detail=f"token aud {unverified_claims.get('aud')!r}, this server expects {audience!r}",
+        ) from None
     except jwt.InvalidIssuerError:
-        raise InvalidTokenError("the bearer token has an unexpected issuer") from None
+        raise InvalidTokenError(
+            "the bearer token has an unexpected issuer",
+            detail=(
+                f"token iss {unverified_claims.get('iss')!r}, "
+                f"this server expects {issuer!r} (AION_API_CLIENT_AUTH_ISSUER)"
+            ),
+        ) from None
     except jwt.InvalidSignatureError:
         raise InvalidTokenError("the bearer token does not verify") from None
     except jwt.DecodeError:
