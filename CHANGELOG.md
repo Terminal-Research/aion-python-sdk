@@ -28,7 +28,7 @@
 * **server:** propagate signed usage attribution through Python clients
 * **server:** answer CreateTaskPushNotificationConfig with the stored config, its empty id set to the task id
 * **server:** serve the agent card with a weak ETag and answer a matching If-None-Match with 304
-* **server:** ignore unknown params fields and report parse failures in error.data.parseError, Context extension methods included
+* **server:** ignore unknown params fields, Context extension methods included
 * **deps:** support google-adk 2.x and wider LangGraph ranges; support Python 3.14
 * **chat:** discover A2A and Aion Chat agents together
 * **server:** follow a task running on another server through SubscribeToTask, from the stored task and the task journal
@@ -47,3 +47,5 @@
 * **chat:** prompt for an explicit login after an authentication failure
 * **server:** separate the events of A2A 0.3 streams (message/stream, tasks/resubscribe) with LF, as A2A 1.0 streams are
 * **server:** refuse an A2A 0.3 message/stream whose declared extensions fail verification with -32602 before the stream opens
+* **server:** report a params parse failure of every method, Context extension methods included, as a2a-sdk 1.2 does: error.data is a list holding a google.rpc.ErrorInfo with the reason in metadata.parseError
+* **server:** check A2A-Version on the Context extension methods (-32009 for another major version; a call without it is served) and acknowledge the extension in A2A-Extensions

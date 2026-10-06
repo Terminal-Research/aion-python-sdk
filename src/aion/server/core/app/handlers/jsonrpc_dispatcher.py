@@ -5,19 +5,21 @@ from collections.abc import AsyncGenerator
 from typing import Any, override
 
 from a2a.server.context import ServerCallContext
-from a2a.server.jsonrpc_models import (
-    InvalidParamsError,
-    InvalidRequestError,
-    JSONParseError,
-)
+from a2a.server.jsonrpc_models import JSONParseError
 from a2a.server.request_handlers import prepare_response_object
 from a2a.server.routes.jsonrpc_dispatcher import JsonRpcDispatcher
 from a2a.server.request_handlers.response_helpers import build_error_response
 from a2a.utils import constants, proto_utils
-from a2a.utils.errors import A2AError
+from a2a.utils.errors import (
+    A2AError,
+    InternalError,
+    InvalidParamsError,
+    InvalidRequestError,
+    UnsupportedOperationError,
+    VersionNotSupportedError,
+)
 from a2a.utils.version_validator import validate_version
 from google.protobuf.json_format import MessageToDict
-from a2a.utils.errors import UnsupportedOperationError
 from aion.core.a2a import AION_JSONRPC_METHOD_EXTENSION_BINDINGS
 from aion.core.runtime import aion_a2a_extension_registry
 from aion.server.contexts import ContextLifecycleError
@@ -33,6 +35,33 @@ from .sse import SSE_LINE_SEPARATOR
 from aion.server.a2a.response_extensions import ResponseServiceParameters
 
 logger = logging.getLogger(__name__)
+
+
+def _refuse_unsupported_version(context: ServerCallContext) -> None:
+    """Refuse a method extension call announcing an A2A version other than 1.x.
+
+    The standard methods' rule, ``a2a.utils.version_validator``, with one
+    difference: a call that announces no version is served. a2a-sdk reads a
+    missing ``A2A-Version`` as 0.3, and the method extensions have no 0.3
+    form, so that rule would refuse every caller that does not send the
+    header.
+
+    Raises:
+        VersionNotSupportedError: ``A2A-Version`` names another major version,
+            or is not a version at all.
+    """
+    headers = context.state.get('headers', {})
+    announced = headers.get(constants.VERSION_HEADER) or headers.get(constants.VERSION_HEADER.lower())
+    if not announced:
+        return
+    # Major versions compared, as a2a-sdk compares them: "1", "1.0" and "1.2"
+    # are all 1.x.
+    expected_major = constants.PROTOCOL_VERSION_1_0.split('.', 1)[0]
+    if str(announced).strip().split('.', 1)[0] != expected_major:
+        raise VersionNotSupportedError(
+            message=f"A2A version '{announced}' is not supported by this handler. "
+            f"Expected version '{constants.PROTOCOL_VERSION_1_0}'."
+        )
 
 
 class AionJsonRpcDispatcher(JsonRpcDispatcher):
@@ -233,7 +262,8 @@ class AionJsonRpcDispatcher(JsonRpcDispatcher):
             )
 
         # Parse Pydantic params as the SDK parses its own: unknown fields are
-        # ignored, and a failure answers -32602 with data.parseError.
+        # ignored, and a failure answers -32602 with the reason in the
+        # ErrorInfo detail's metadata.parseError.
         try:
             params = body.get('params', {})
             params_obj = binding.params_model.model_validate(params)
@@ -250,9 +280,14 @@ class AionJsonRpcDispatcher(JsonRpcDispatcher):
         context.state['extension_uri'] = binding.extension_uri
 
         try:
+            _refuse_unsupported_version(context)
+        except VersionNotSupportedError as error:
+            return self._generate_error_response(request_id, error)
+
+        try:
             handler = getattr(self.request_handler, binding.handler_name)
             result = await handler(params_obj, context)
-            response_dict = prepare_response_object(
+            response = JSONResponse(prepare_response_object(
                 request_id=request_id,
                 response=result.model_dump(mode='json'),
                 # A JSON-RPC result is any JSON value, not only an object:
@@ -260,18 +295,20 @@ class AionJsonRpcDispatcher(JsonRpcDispatcher):
                 # and refusing the array would turn every call of it into
                 # InvalidAgentResponse.
                 success_response_types=(dict, list),
-            )
+            ))
         except ContextLifecycleError as error:
             # The Context extension's own codes (1000-1002) sit outside the
             # JSON-RPC server-error band and carry their own data, so they are
             # rendered here rather than through a2a-sdk's error maps.
-            return JSONResponse({'jsonrpc': '2.0', 'id': request_id, 'error': error.jsonrpc_error()})
+            response = JSONResponse({'jsonrpc': '2.0', 'id': request_id, 'error': error.jsonrpc_error()})
         except Exception:
             logger.error('Unhandled exception in Aion handler', exc_info=True)
-            from a2a.server.jsonrpc_models import InternalError
             return self._generate_error_response(request_id, InternalError())
 
-        return JSONResponse(response_dict)
+        # The extension served the call, so the response acknowledges it as a
+        # standard method's acknowledges the extensions it verified.
+        response.headers['A2A-Extensions'] = binding.extension_uri
+        return response
 
 
 __all__ = ['AionJsonRpcDispatcher']
