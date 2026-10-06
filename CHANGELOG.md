@@ -38,6 +38,7 @@
 
 ### Bug Fixes
 
+* **server:** assign missing task status timestamps before storage, streaming and push delivery, and preserve explicit timestamps
 * **server:** keep thinking deltas out of stored tasks
 * **server:** wait for the platform WebSocket to actually close
 * **server:** say why a Files API upload failed

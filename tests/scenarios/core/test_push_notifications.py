@@ -147,6 +147,15 @@ async def test_push_notification_reaches_callback(
 
     pushed_task = _task_from_notification(terminal)
     assert pushed_task.get("status", {}).get("state") == "TASK_STATE_COMPLETED"
+    assert pushed_task["status"]["timestamp"] == task_ev.raw.status.timestamp.ToJsonString()
+    working_statuses = [
+        notification.body["statusUpdate"]["status"]
+        for notification in notifications
+        if notification.body.get("statusUpdate", {}).get("status", {}).get("state")
+        == "TASK_STATE_WORKING"
+    ]
+    assert working_statuses
+    assert all(status.get("timestamp") for status in working_statuses)
 
 
 @pytest.mark.variant("push")

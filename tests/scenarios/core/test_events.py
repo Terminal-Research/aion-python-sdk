@@ -58,6 +58,11 @@ async def test_working_statuses_arrive_in_order(client: ScenarioClient) -> None:
         status("WORKING", text="step 3/3"),
         task("COMPLETED"),
     ])
+    for event in events:
+        assert event.raw.status.HasField("timestamp"), event
+    completed_at = final_task(events).raw.status.timestamp.ToNanoseconds()
+    for event in events:
+        assert event.raw.status.timestamp.ToNanoseconds() <= completed_at, event
 
 
 @pytest.mark.command("ids")
@@ -93,6 +98,7 @@ async def test_get_task_agrees_with_the_closing_event(client: ScenarioClient) ->
     assert stored.id == closing.task_id
     assert stored.context_id == closing.context_id
     assert stored.status.state == closing.raw.status.state
+    assert stored.status.timestamp == closing.raw.status.timestamp
     assert "stored" in json.dumps(
         [part.text for message in stored.history for part in message.parts]
     )

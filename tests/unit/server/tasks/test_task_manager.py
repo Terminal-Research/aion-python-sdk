@@ -100,6 +100,87 @@ def _conversation(task: Task) -> list[str]:
     return [m.message_id for m in conversation_of(task)]
 
 
+class TestStatusTimestamps:
+    """Storage and both delivery channels must see the same status time."""
+
+    @pytest.mark.anyio
+    async def test_initial_task_is_stamped_when_it_bypasses_process(self, task_manager):
+        """The event consumer saves the opening Task without calling process."""
+        task = Task(
+            id=TASK_ID,
+            context_id=CONTEXT_ID,
+            status=TaskStatus(state=TaskState.TASK_STATE_SUBMITTED),
+        )
+
+        await task_manager.save_task_event(task)
+
+        assert task.status.HasField("timestamp")
+        assert (await task_manager.get_task()).status.timestamp == task.status.timestamp
+
+    @pytest.mark.parametrize("kind", ["task", "status", "message"])
+    @pytest.mark.anyio
+    async def test_missing_timestamp_is_present_before_storage(self, task_manager, kind):
+        """Stamp at the shared event boundary, before stores can invent a time."""
+        if kind == "task":
+            event = Task(
+                id=TASK_ID,
+                context_id=CONTEXT_ID,
+                status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
+            )
+        elif kind == "status":
+            event = _status(TaskState.TASK_STATE_WORKING, _message("msg-agent"))
+        else:
+            event = _message("msg-agent")
+
+        saved_timestamps = []
+        original_save = task_manager.task_store.save
+
+        async def save(task, context=None):
+            assert task.status.HasField("timestamp")
+            saved_timestamps.append(task.status.timestamp.ToJsonString())
+            await original_save(task, context)
+
+        with patch.object(task_manager.task_store, "save", side_effect=save):
+            returned = await task_manager.process(event)
+
+        assert saved_timestamps == [returned.status.timestamp.ToJsonString()]
+        stored = await task_manager.get_task()
+        assert stored.status.timestamp == returned.status.timestamp
+
+    @pytest.mark.parametrize("kind", ["task", "status"])
+    @pytest.mark.anyio
+    async def test_explicit_timestamp_is_preserved(self, task_manager, kind):
+        """A caller-supplied status time is not replaced by processing time."""
+        event = (
+            Task(id=TASK_ID, context_id=CONTEXT_ID, status=TaskStatus(
+                state=TaskState.TASK_STATE_WORKING,
+            ))
+            if kind == "task" else _status(TaskState.TASK_STATE_WORKING)
+        )
+        timestamp = "2026-10-06T16:33:27.194366Z"
+        event.status.timestamp.FromJsonString(timestamp)
+
+        returned = await task_manager.process(event)
+
+        assert returned.status.timestamp.ToJsonString() == timestamp
+        assert (await task_manager.get_task()).status.timestamp.ToJsonString() == timestamp
+
+    @pytest.mark.parametrize("state", NON_ACTIVE_STATES)
+    @pytest.mark.anyio
+    async def test_closing_status_keeps_its_time_when_carrying_the_reply(self, task_manager, state):
+        """Working and closing events keep their own times through reply carry."""
+        working = await task_manager.process(
+            _status(TaskState.TASK_STATE_WORKING, _message("msg-agent"))
+        )
+        closing = await task_manager.process(_status(state))
+
+        assert working.status.HasField("timestamp")
+        assert closing.status.HasField("timestamp")
+        assert closing.status.timestamp.ToNanoseconds() >= working.status.timestamp.ToNanoseconds()
+        assert closing.status.message.message_id == "msg-agent"
+        assert (await task_manager.get_task()).status.timestamp == closing.status.timestamp
+
+
 class TestMessagePlacement:
     """The last message stays in status; earlier ones live in history."""
 

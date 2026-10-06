@@ -123,6 +123,9 @@ class AionTaskManager(TaskManager):
         write started from a version the other has just moved on would be
         refused as stale.
 
+        Initial Task snapshots bypass ``process`` in the event consumer, so
+        their missing timestamp is assigned here before storage and delivery.
+
         A task the store holds as terminal is final. The version check alone
         does not ensure that: the SDK consumer rereads the task when another
         writer overtakes it - another server cancelling it, say - and a Task
@@ -158,6 +161,8 @@ class AionTaskManager(TaskManager):
                 )
                 self.invalidate()
                 return
+            if not task.status.HasField("timestamp"):
+                task.status.timestamp.GetCurrentTime()
             await super()._save_task(task)
 
             state = task.status.state
@@ -175,17 +180,25 @@ class AionTaskManager(TaskManager):
         If the event is task-related (`Task`, `TaskStatusUpdateEvent`, `TaskArtifactUpdateEvent`),
         the internal task state is updated and persisted.
 
+        Missing status timestamps are assigned before persistence and delivery,
+        including ephemeral updates. Streams, push notifications and stored Task
+        snapshots therefore share one time instead of each receiver inventing it.
+        Explicit timestamps are preserved.
+
         Args:
             event: The event object received from the agent.
 
         Returns:
             The same event object that was processed (or skipped).
         """
-        if self._check_process_skip_event(event):
-            return event
-
         if isinstance(event, Message):
             event = await self._wrap_message_as_status_event(event)
+
+        if isinstance(event, TaskStatusUpdateEvent) and not event.status.HasField("timestamp"):
+            event.status.timestamp.GetCurrentTime()
+
+        if self._check_process_skip_event(event):
+            return event
 
         event = await self._carry_pending_message(event)
 

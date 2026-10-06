@@ -89,6 +89,7 @@ async def test_ephemeral_status_event_is_streamed_but_not_persisted():
     # Streamed: process returns the ephemeral event untouched, so the SSE
     # consumer still delivers the frame to the client.
     assert returned is ephemeral
+    assert returned.status.HasField("timestamp")
 
     task = await store.get(TASK_ID, context)
     history_texts = [m.parts[0].text for m in task.history]
