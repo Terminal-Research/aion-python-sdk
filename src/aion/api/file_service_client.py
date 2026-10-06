@@ -18,6 +18,7 @@ from aion.api.exceptions import (
 from aion.api.http import aion_jwt_manager
 from aion.api.http.client import DEFAULT_HTTP_TIMEOUT_SECONDS
 from aion.core.settings import api_settings
+from aion.core.runtime.context import AionRuntimeContext
 
 
 class AsyncTokenManager(Protocol):
@@ -63,7 +64,7 @@ class AionFileClient:
         self,
         content: bytes,
         *,
-        organization_id: UUID | str,
+        organization_id: UUID | str | None = None,
         file_name: str,
         media_type: str = "application/octet-stream",
         operation_id: UUID | str | None = None,
@@ -72,12 +73,14 @@ class AionFileClient:
         retention_expires_at: datetime | None = None,
         principal_selector: PrincipalSelector | None = None,
         usage_attribution: str | None = None,
+        runtime_context: AionRuntimeContext | None = None,
     ) -> dict[str, Any]:
         """Upload protected agent output with optional timed retention.
 
         Args:
             content: Complete byte content to upload.
-            organization_id: Payer organization verified by Aion.
+            organization_id: Optional payer organization. Aion derives it from
+                verified callback attribution when omitted.
             file_name: Safe leaf name presented with the uploaded content.
             media_type: MIME type for the uploaded content.
             operation_id: Stable mutation id used for idempotency. A fresh id
@@ -90,6 +93,8 @@ class AionFileClient:
             principal_selector: Retired override; any explicit value is rejected.
             usage_attribution: Optional opaque signed carrier. The current
                 runtime carrier is used when omitted.
+            runtime_context: Explicit request scope during preprocessing,
+                before the execution context has been installed.
 
         Returns:
             Parsed Files API response.
@@ -102,9 +107,10 @@ class AionFileClient:
         """
         params = {
             "operationId": str(operation_id or uuid4()),
-            "organizationId": str(organization_id),
             "byteSize": str(len(content)),
         }
+        if organization_id is not None:
+            params["organizationId"] = str(organization_id)
         params.update(_association_params(association_kind, association_id))
         if retention_expires_at is not None:
             params["retentionExpiresAt"] = _retention_timestamp(retention_expires_at)
@@ -117,6 +123,7 @@ class AionFileClient:
             params,
             principal_selector,
             usage_attribution,
+            runtime_context,
         )
 
     async def create_profile_image(
@@ -190,6 +197,7 @@ class AionFileClient:
         *,
         ttl_minutes: int | None = None,
         usage_attribution: str | None = None,
+        runtime_context: AionRuntimeContext | None = None,
     ) -> dict[str, Any]:
         """Create a bearer download link for an exact available File version.
 
@@ -199,6 +207,7 @@ class AionFileClient:
             ttl_minutes: Whole minutes from 1 through 1,440. Omit for the
                 server's one-hour default.
             usage_attribution: Explicit carrier or active runtime attribution.
+            runtime_context: Explicit preprocessing request scope, when needed.
 
         Returns:
             Exact IDs, secret URL, accessExpiresAt, and retentionExpiresAt.
@@ -218,6 +227,7 @@ class AionFileClient:
         return await self._request(
             "POST", f"/files/{file_id}/versions/{version_id}/grants",
             params=params, usage_attribution=usage_attribution,
+            runtime_context=runtime_context,
         )
 
     async def renew_retention(
@@ -345,12 +355,14 @@ class AionFileClient:
         params: dict[str, str],
         principal_selector: PrincipalSelector | None,
         usage_attribution: str | None,
+        runtime_context: AionRuntimeContext | None = None,
     ) -> dict[str, Any]:
         return await self._request(
             method, path, params=params,
             files={"file": (file_name, content, media_type)},
             principal_selector=principal_selector,
             usage_attribution=usage_attribution,
+            runtime_context=runtime_context,
         )
 
     async def _request(
@@ -360,6 +372,7 @@ class AionFileClient:
         *,
         principal_selector: PrincipalSelector | None = None,
         usage_attribution: str | None = None,
+        runtime_context: AionRuntimeContext | None = None,
         **kwargs: Any,
     ) -> dict[str, Any]:
         token = await self._jwt_manager.get_token()
@@ -367,6 +380,7 @@ class AionFileClient:
             token,
             principal_selector=principal_selector,
             usage_attribution=usage_attribution,
+            runtime_context=runtime_context,
         )
         response = await self._http_client.request(
             method,
@@ -385,6 +399,7 @@ def aion_file_authorization_headers(
     *,
     principal_selector: PrincipalSelector | None = None,
     usage_attribution: str | None = None,
+    runtime_context: AionRuntimeContext | None = None,
 ) -> dict[str, str]:
     """Build authorization and request-scoped attribution headers.
 
@@ -395,6 +410,7 @@ def aion_file_authorization_headers(
         token: Aion JWT used as the bearer token.
         principal_selector: Retired override; any explicit value is rejected.
         usage_attribution: Optional explicit opaque attribution carrier.
+        runtime_context: Explicit preprocessing scope or the current runtime.
 
     Returns:
         Headers for one authenticated File operation.
@@ -407,7 +423,8 @@ def aion_file_authorization_headers(
 
     reject_callback_selector(principal_selector)
     return callback_headers(
-        {"Authorization": f"Bearer {token}"}, usage_attribution=usage_attribution
+        {"Authorization": f"Bearer {token}"}, usage_attribution=usage_attribution,
+        context=runtime_context,
     )
 
 

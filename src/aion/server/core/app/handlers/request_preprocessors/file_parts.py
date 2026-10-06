@@ -8,6 +8,8 @@ from typing import Any
 
 from a2a.types import SendMessageRequest, SubscribeToTaskRequest
 from a2a.utils.errors import InternalError, InvalidParamsError
+from aion.core.runtime.context import AionRuntimeContext
+from aion.server.agent.execution.context.attribution import callback_attribution
 from aion.server.files.a2a import A2AFileTransformer
 from aion.server.files.storage import (
     UploadFailure,
@@ -69,8 +71,13 @@ class FilePartPreprocessor:
             return
 
         message = request_obj.message
+        runtime = AionRuntimeContext(extensions=context.extensions)
+        runtime = AionRuntimeContext(
+            extensions=context.extensions,
+            callback_attribution=callback_attribution(context.call_context, runtime),
+        )
         resolution = resolve_upload_context(
-            context.extensions,
+            runtime,
             context_id=message.context_id or None,
             task_id=message.task_id or None,
         )

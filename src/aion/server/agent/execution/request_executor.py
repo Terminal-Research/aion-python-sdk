@@ -270,7 +270,7 @@ class AionAgentRequestExecutor(AgentExecutor):
             event=runtime_context.event,
             distribution_extension_payload=runtime_context.distribution_extension_payload,
             extensions=runtime_context.extensions,
-            callback_attribution=callback_attribution(context, runtime_context),
+            callback_attribution=callback_attribution(context.call_context, runtime_context),
             **runtime_context.graph_kwargs,
         )
         await AionRuntimeContextRegistry.aset_current_context(runtime_context)

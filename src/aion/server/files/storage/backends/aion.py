@@ -1,11 +1,9 @@
-"""Store file content through the Aion Files API.
+"""Store agent output and obtain an exact-version recipient download grant.
 
-One ``POST /files/agent-artifacts`` per upload, under the organization named by the
-verified request projection and acting as its effective principal. The part
-that replaces the inline bytes points at the stored version itself -
-``/files/{id}/versions/{versionId}/content`` - since a task keeps that URL for
-as long as the task lives, and a link carrying an access grant expires. Only a
-response without those identifiers falls back to the URL the API answered with.
+Aion resolves the owner and payer from authenticated callback evidence. A
+protected content address alone is not deliverable to an unauthenticated
+recipient. Keep stable File IDs separately from the temporary granted URL;
+historical URLs are not automatically refreshed.
 
 Every attempt at one file reuses the same ``operation_id``: the API treats it
 as the idempotency key, so a retry after a lost response cannot create a second
@@ -22,12 +20,12 @@ from __future__ import annotations
 import asyncio
 import logging
 from typing import Any, Sequence
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import httpx
 from aion.api import AionFileClient
 from aion.api.exceptions import AionAuthenticationError, AionFileStorageError
-from aion.core.exceptions import AionDaemonIdentityRequired
+from aion.core.exceptions import AionDaemonIdentityRequired, AionError
 
 from ..context import UploadContext
 from ..contracts import (
@@ -43,9 +41,6 @@ logger = logging.getLogger(__name__)
 
 __all__ = ["AionFileStorageBackend"]
 
-# Field of the upload response carrying a URL, used only when the
-# response does not identify the stored version.
-RESPONSE_URL_FIELD = "url"
 # Attempts per file, including the first.
 MAX_ATTEMPTS = 3
 # Pause before the second attempt; doubles for each one after it.
@@ -101,20 +96,34 @@ class AionFileStorageBackend(FileStorageBackend):
     async def _store_one(
         self, upload: FileUpload, context: UploadContext
     ) -> UploadOutcome:
-        """Upload one file, retrying under a stable operation id."""
+        """Retry upload under one operation ID, then retry only its grant."""
         operation_id = uuid4()
         file_name = upload.leaf_name(str(operation_id))
+        uploaded = None
 
         async with self._slots:
             for attempt in range(1, self._max_attempts + 1):
                 try:
-                    response = await self._client.create_agent_artifact(
-                        upload.data,
-                        organization_id=context.organization_id,
-                        file_name=file_name,
-                        media_type=upload.media_type,
-                        operation_id=operation_id,
+                    if uploaded is None:
+                        uploaded = await self._client.create_agent_artifact(
+                            upload.data,
+                            organization_id=context.organization_id,
+                            file_name=file_name,
+                            media_type=upload.media_type,
+                            operation_id=operation_id,
+                            retention_expires_at=upload.retention_expires_at,
+                            usage_attribution=context.usage_attribution,
+                            runtime_context=context.runtime_context,
+                        )
+                    file_id = _optional_str(uploaded.get("id"))
+                    version_id = _optional_str(uploaded.get("versionId"))
+                    if not file_id or not version_id:
+                        logger.error("File upload response has no exact version identifiers")
+                        return UploadFailure(FileUploadErrorCode.STORAGE_UNAVAILABLE)
+                    grant = await self._client.create_read_grant(
+                        file_id, version_id,
                         usage_attribution=context.usage_attribution,
+                        runtime_context=context.runtime_context,
                     )
                 except AionDaemonIdentityRequired as error:
                     return UploadFailure(
@@ -131,12 +140,12 @@ class AionFileStorageBackend(FileStorageBackend):
                         cause=error,
                     )
                 else:
-                    return self._receipt(response, operation_id, self._client)
+                    return self._receipt(uploaded, grant)
 
                 if not failure.retryable or attempt == self._max_attempts:
                     return failure
                 logger.info(
-                    "Retrying upload %s (attempt %d of %d): %s",
+                    "Retrying file delivery %s (attempt %d of %d): %s",
                     operation_id,
                     attempt + 1,
                     self._max_attempts,
@@ -163,27 +172,17 @@ class AionFileStorageBackend(FileStorageBackend):
 
     @staticmethod
     def _receipt(
-        response: dict[str, Any], operation_id: UUID, client: AionFileClient
+        response: dict[str, Any], grant: dict[str, Any]
     ) -> UploadOutcome:
-        """Turn an accepted response into a receipt.
-
-        Field names only in the log, never values: a URL may be signed.
-        """
+        """Accept only an exact-version grant, never a protected fallback URL."""
         file_id = _optional_str(response.get("id"))
         version_id = _optional_str(response.get("versionId"))
-        if file_id and version_id:
-            uri = client.content_url(file_id, version_id)
-        else:
-            uri = response.get(RESPONSE_URL_FIELD)
-        if not isinstance(uri, str) or not uri:
-            logger.error(
-                "Files API accepted operation %s but its response identifies no "
-                "stored version (id and versionId) and carries no %r (fields: "
-                "%s); the stored file is unreachable",
-                operation_id,
-                RESPONSE_URL_FIELD,
-                ", ".join(sorted(response)) or "<none>",
-            )
+        uri = grant.get("url")
+        expiry = grant.get("accessExpiresAt")
+        if (grant.get("id") != file_id or grant.get("versionId") != version_id
+                or not isinstance(uri, str) or not uri
+                or not isinstance(expiry, str) or not expiry):
+            logger.error("File grant response does not identify the uploaded version and access expiry")
             return UploadFailure(FileUploadErrorCode.STORAGE_UNAVAILABLE)
         revision = response.get("revision")
         return UploadReceipt(
@@ -191,10 +190,12 @@ class AionFileStorageBackend(FileStorageBackend):
             file_id=file_id,
             version_id=version_id,
             revision=revision if isinstance(revision, int) else None,
+            access_expires_at=expiry,
+            retention_expires_at=grant.get("retentionExpiresAt"),
         )
 
 
-class StorageRefusal(Exception):
+class StorageRefusal(AionError):
     """Why the Files API refused an upload, naming who was refused and where.
 
     The cause of a 401 or 403 failure, raised from the API's own error. Like
@@ -226,4 +227,4 @@ def _summary(error: Exception) -> str:
 
 
 def _optional_str(value: Any) -> str | None:
-    return str(value) if value is not None and value != "" else None
+    return value if isinstance(value, str) and value else None

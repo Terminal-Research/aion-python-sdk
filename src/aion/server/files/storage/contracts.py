@@ -8,6 +8,7 @@ is never written to the task record.
 """
 
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
 from typing import Optional, Union
 
@@ -21,7 +22,7 @@ __all__ = [
 
 
 class FileUploadErrorCode(str, Enum):
-    """Stable identifiers for why a file was not stored.
+    """Stable identifiers for why file delivery did not succeed.
 
     Logged by the server and, for inbound content, named in the rejection the
     client reads. Each code carries one fixed ``public_reason``, so what leaves
@@ -29,6 +30,7 @@ class FileUploadErrorCode(str, Enum):
     """
 
     NO_DISTRIBUTION = "NO_DISTRIBUTION"
+    NO_ATTRIBUTION = "NO_ATTRIBUTION"
     NO_ORGANIZATION = "NO_ORGANIZATION"
     AMBIGUOUS_ORGANIZATION = "AMBIGUOUS_ORGANIZATION"
     STORAGE_UNAVAILABLE = "STORAGE_UNAVAILABLE"
@@ -74,6 +76,9 @@ _CLIENT_FAULTS = frozenset(
 
 
 _PUBLIC_REASONS: dict[FileUploadErrorCode, str] = {
+    FileUploadErrorCode.NO_ATTRIBUTION: (
+        "File delivery requires the current request's callback attribution."
+    ),
     FileUploadErrorCode.NO_DISTRIBUTION: (
         "File content cannot be stored: the request did not declare a "
         "distribution, so the owning organization is unknown."
@@ -87,21 +92,21 @@ _PUBLIC_REASONS: dict[FileUploadErrorCode, str] = {
         "than one principal identity, so the owning organization is ambiguous."
     ),
     FileUploadErrorCode.STORAGE_UNAVAILABLE: (
-        "File content was not stored: the storage service did not answer in time."
+        "File content could not be delivered: the storage service did not answer in time."
     ),
     FileUploadErrorCode.STORAGE_REJECTED: (
-        "File content was not stored: the storage service rejected the upload."
+        "File content could not be delivered: the storage service rejected the request."
     ),
     FileUploadErrorCode.STORAGE_UNAUTHORIZED: (
-        "File content was not stored: the storage service refused the agent's "
+        "File content could not be delivered: the storage service refused the agent's "
         "credentials."
     ),
     FileUploadErrorCode.STORAGE_FORBIDDEN: (
-        "File content was not stored: the storage service does not permit the "
-        "agent to store files for this organization."
+        "File content could not be delivered: the storage service does not permit "
+        "this file operation."
     ),
     FileUploadErrorCode.STORAGE_CLOSED: (
-        "File content was not stored: the server is shutting down."
+        "File content could not be delivered: the server is shutting down."
     ),
 }
 
@@ -112,11 +117,14 @@ class FileUpload:
 
     ``filename`` is the name the sender suggested and is untrusted: backends
     present :meth:`leaf_name` to a storage service, never the name as received.
+    ``retention_expires_at`` is an explicit absolute deadline; omission does
+    not add a finite lifetime for Aion agent output.
     """
 
     data: bytes
     media_type: str = "application/octet-stream"
     filename: Optional[str] = None
+    retention_expires_at: Optional[datetime] = None
 
     @property
     def byte_size(self) -> int:
@@ -153,17 +161,20 @@ class UploadReceipt:
     ``Part(url=...)``. The SDK does not rewrite, sign, or otherwise interpret
     it - and does not log it either: a service is free to answer with a signed
     URL whose query string is a credential.
+    Stable File/version IDs remain independent of access and storage deadlines.
     """
 
     uri: str
     file_id: Optional[str] = None
     version_id: Optional[str] = None
     revision: Optional[int] = None
+    access_expires_at: Optional[str] = None
+    retention_expires_at: Optional[str] = None
 
 
 @dataclass(frozen=True)
 class UploadFailure:
-    """Why one file was not stored.
+    """Why one file could not be delivered, even if storage already committed.
 
     Only ``error_code`` and the reason derived from it are ever published.
     ``cause`` never leaves the process: it is logged where the failure is

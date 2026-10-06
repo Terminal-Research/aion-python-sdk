@@ -90,39 +90,35 @@ def raw_part(data: bytes = b"bytes", name: str = "a.png", media: str = "image/pn
 # --------------------------------------------------------------------------
 
 class TestUploadContextProjection:
-    def test_single_principal_identity_gives_its_organization(self):
-        """Exactly one principal identity: that identity's organization owns the file."""
-        resolved = resolve_upload_context(extensions(distribution_payload(principal())))
+    def test_distribution_does_not_select_a_payer(self):
+        resolved = resolve_upload_context(extensions(distribution_payload(principal()), carrier="signed"))
         assert isinstance(resolved, UploadContext)
-        assert resolved.organization_id == ORG
+        assert resolved.organization_id is None
         assert resolved.distribution_id == "dist-1"
 
-    def test_no_principal_identity_is_a_context_failure(self):
-        """A distribution with only a service identity names no owning organization."""
+    def test_signed_usage_does_not_require_a_distribution_principal(self):
         resolved = resolve_upload_context(
-            extensions(distribution_payload(service_identity()))
+            extensions(distribution_payload(service_identity()), carrier="signed")
         )
-        assert isinstance(resolved, UploadFailure)
-        assert resolved.error_code is FileUploadErrorCode.NO_ORGANIZATION
+        assert isinstance(resolved, UploadContext)
+        assert resolved.organization_id is None
 
-    def test_several_principal_identities_are_ambiguous(self):
-        """Two principals: refuse rather than silently pick who pays."""
+    def test_recipients_do_not_override_the_verified_payer(self):
         resolved = resolve_upload_context(
             extensions(
                 distribution_payload(
                     principal(organization_id="org-a", identity_id="p-a"),
                     principal(organization_id="org-b", identity_id="p-b"),
-                )
+                ), carrier="signed",
             )
         )
-        assert isinstance(resolved, UploadFailure)
-        assert resolved.error_code is FileUploadErrorCode.AMBIGUOUS_ORGANIZATION
+        assert isinstance(resolved, UploadContext)
+        assert resolved.organization_id is None
 
-    def test_missing_distribution_is_its_own_code(self):
-        """No distribution at all is distinguishable from one without a principal."""
+    def test_missing_attribution_never_selects_self_initiated_work(self):
         resolved = resolve_upload_context(extensions(None))
         assert isinstance(resolved, UploadFailure)
-        assert resolved.error_code is FileUploadErrorCode.NO_DISTRIBUTION
+        assert resolved.error_code is FileUploadErrorCode.NO_ATTRIBUTION
 
     def test_usage_carrier_is_projected(self):
         """The opaque signed carrier travels with the projection, uninspected."""

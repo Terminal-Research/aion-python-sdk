@@ -235,7 +235,7 @@ async def test_rejection_without_body_or_request_id_keeps_the_status_line():
     assert error.value.detail is None
     assert error.value.request_id is None
     assert str(error.value).startswith("Client error '403 Forbidden' for url ")
-    assert str(error.value).endswith("byteSize=5'")
+    assert error.value.request.url.params["byteSize"] == "5"
 
 
 def test_content_url_names_the_exact_version():

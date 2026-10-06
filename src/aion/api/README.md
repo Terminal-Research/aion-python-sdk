@@ -160,6 +160,14 @@ retry, so missing configuration is not disguised by repeated connection attempts
 File create/replace and GraphQL A2A subscriptions use the same callback scope.
 GraphQL carries the exclusive input in `serviceParameters.additional`; it does
 not need an independent `principal` argument. File replacement still requires
-its normal update permission and revision fence. Automatic inline-file storage
-needs a known owning organization from distribution metadata; direct code using
-`AionFileClient` supplies `organization_id` explicitly and Aion verifies it.
+its normal update permission and revision fence. Artifact uploads may omit
+`organization_id`: Aion derives it from verified callback attribution or the
+deployment's current payer. An explicit organization must match that payer.
+Neither distribution recipients nor reported callers select the File owner.
+
+The Aion storage backend obtains an exact-version grant after upload and emits
+that URL for recipient delivery. Grant retries do not repeat a confirmed upload.
+Receipts retain File/version IDs and separate access/retention deadlines; stored
+history links are not renewed automatically. No finite retention is added unless
+the uploader supplies an absolute deadline. Grant failure is a delivery failure,
+even if the upload committed; it never falls back to a protected content URL.

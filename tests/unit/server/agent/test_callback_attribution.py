@@ -157,14 +157,14 @@ async def test_missing_or_unactivated_carrier_cannot_fall_back(activated):
 def test_absent_canonical_caller_is_external_anonymous_not_a_guessed_user():
     context = SimpleNamespace(call_context=SimpleNamespace(
         state={}, user=SimpleNamespace(user_name="raw-provider-name", is_authenticated=True)))
-    assert callback_attribution(context, AionRuntimeContext()) == DirectAttribution(
+    assert callback_attribution(context.call_context, AionRuntimeContext()) == DirectAttribution(
         Principal("ExternalAnonymous", "external-anonymous"))
 
 
 def test_distribution_payload_does_not_override_verified_caller():
     context, principal = request()
     runtime = AionRuntimeContext(distribution_extension_payload=SimpleNamespace(caller_id="spoofed"))
-    assert callback_attribution(context, runtime) == DirectAttribution(principal)
+    assert callback_attribution(context.call_context, runtime) == DirectAttribution(principal)
 
 
 def test_conflicting_runtime_inputs_are_rejected():

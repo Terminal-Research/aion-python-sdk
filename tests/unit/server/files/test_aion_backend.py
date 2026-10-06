@@ -6,16 +6,22 @@ Every test speaks to a mocked transport - nothing here reaches the platform.
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import datetime, timezone
 
 import httpx
 import pytest
 from aion.api import AionFileClient, PrincipalSelector
+from aion.core.principal import Principal
+from aion.core.runtime.context import (
+    AionRuntimeContext, DirectAttribution, ForwardedAttribution,
+)
 from aion.server.files.storage import (
     FileUpload,
     FileUploadErrorCode,
     FileUploadManager,
     UploadFailure,
     UploadReceipt,
+    resolve_upload_context,
 )
 from aion.server.files.storage.backends.aion import (
     AionFileStorageBackend,
@@ -44,11 +50,27 @@ def accepted(file_id: str = "file-1") -> httpx.Response:
     )
 
 
-def backend(handler, *, token="token", attempts=3) -> AionFileStorageBackend:
+def granted(file_id="file-1", version_id="v-1") -> httpx.Response:
+    return httpx.Response(200, json={
+        "id": file_id, "versionId": version_id,
+        "url": f"https://api.aion.test/files/{file_id}/versions/{version_id}/content?grant=secret",
+        "accessExpiresAt": "2026-10-06T01:00:00Z", "retentionExpiresAt": None,
+    })
+
+
+def backend(handler, *, token="token", attempts=3, grant_handler=None) -> AionFileStorageBackend:
+    async def dispatch(request):
+        if request.url.path.endswith("/grants"):
+            if grant_handler is not None:
+                return await grant_handler(request)
+            segments = request.url.path.split("/")
+            return granted(segments[2], segments[4])
+        return await handler(request)
+
     client = AionFileClient(
         jwt_manager=StaticTokenManager(token),
         base_url="https://api.aion.test",
-        http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(dispatch)),
     )
     return AionFileStorageBackend(client, max_attempts=attempts, backoff_seconds=0)
 
@@ -58,6 +80,44 @@ def upload(name="report.pdf", data=b"%PDF") -> FileUpload:
 
 
 class TestRequestShape:
+    @pytest.mark.parametrize("direct", [False, True])
+    async def test_direct_and_contextual_delivery_use_same_callback_for_grant(self, direct):
+        attribution = (DirectAttribution(Principal("AnonymousSession", "00000000-0000-0000-0000-000000000001"))
+                       if direct else ForwardedAttribution("signed-without-distribution"))
+        context = resolve_upload_context(AionRuntimeContext(callback_attribution=attribution))
+        seen = []
+
+        async def handle(request):
+            seen.append(request)
+            assert "organizationId" not in request.url.params
+            assert request.headers["Authorization"] == "Bearer token"
+            assert "Aion-Principal-Selector" not in request.headers
+            if direct:
+                assert request.headers["Aion-Caller-Id"] == attribution.caller.subject
+                assert "Aion-Usage-Attribution" not in request.headers
+            else:
+                assert request.headers["Aion-Usage-Attribution"] == attribution.carrier
+                assert "Aion-Caller-Id" not in request.headers
+            return granted() if request.url.path.endswith("/grants") else accepted()
+
+        result = await backend(handle, grant_handler=handle).store(upload(), context=context)
+        assert isinstance(result, UploadReceipt)
+        assert len(seen) == 2
+
+    async def test_explicit_retention_is_not_recalculated_on_retry(self):
+        deadlines = []
+        deadline = datetime(2099, 1, 1, tzinfo=timezone.utc)
+
+        async def handle(request):
+            deadlines.append(request.url.params["retentionExpiresAt"])
+            return httpx.Response(503) if len(deadlines) == 1 else accepted()
+
+        result = await backend(handle).store(
+            replace(upload(), retention_expires_at=deadline), context=upload_context(),
+        )
+        assert isinstance(result, UploadReceipt)
+        assert deadlines == ["2099-01-01T00:00:00Z"] * 2
+
     async def test_stored_file_becomes_a_receipt(self):
         seen: list[httpx.Request] = []
 
@@ -68,10 +128,11 @@ class TestRequestShape:
         outcome = await backend(handle).store(upload(), context=upload_context())
 
         assert outcome == UploadReceipt(
-            uri="https://api.aion.test/files/file-1/versions/v-1/content",
+            uri="https://api.aion.test/files/file-1/versions/v-1/content?grant=secret",
             file_id="file-1",
             version_id="v-1",
             revision=1,
+            access_expires_at="2026-10-06T01:00:00Z",
         )
         request = seen[0]
         assert request.method == "POST"
@@ -268,14 +329,14 @@ class TestResponseContract:
 
         assert isinstance(outcome, UploadFailure)
         assert outcome.retryable is False
-        assert "secretUrl" in caplog.text
+        assert "no exact version identifiers" in caplog.text
         assert "s3cr3t" not in caplog.text
 
 
 class TestStoredAddress:
-    """The part points at the stored version, not at a link that expires."""
+    """Recipient delivery requires an exact-version grant, not just storage."""
 
-    async def test_a_granted_url_in_the_response_is_not_persisted(self):
+    async def test_upload_url_is_replaced_by_an_exact_recipient_grant(self):
         async def handle(request: httpx.Request) -> httpx.Response:
             return httpx.Response(
                 200,
@@ -284,16 +345,60 @@ class TestStoredAddress:
 
         outcome = await backend(handle).store(upload(), context=upload_context())
 
-        assert outcome.uri == "https://api.aion.test/files/f-1/versions/v-9/content"
+        assert outcome.uri == "https://api.aion.test/files/f-1/versions/v-9/content?grant=secret"
+        assert outcome.file_id == "f-1" and outcome.version_id == "v-9"
 
-    async def test_without_a_version_the_response_url_is_used(self):
+    async def test_missing_exact_version_never_falls_back_to_upload_url(self):
         async def handle(request: httpx.Request) -> httpx.Response:
             return httpx.Response(200, json={"id": "f-1", "url": "https://files.aion.test/f-1"})
 
         outcome = await backend(handle).store(upload(), context=upload_context())
 
-        assert outcome.uri == "https://files.aion.test/f-1"
-        assert outcome.version_id is None
+        assert isinstance(outcome, UploadFailure)
+
+    async def test_grant_retry_does_not_upload_again(self):
+        uploads, grants = [], []
+
+        async def handle(request):
+            uploads.append(request)
+            return accepted()
+
+        async def share(request):
+            grants.append(request)
+            assert request.url.path == "/files/file-1/versions/v-1/grants"
+            assert "ttlSeconds" not in request.url.params
+            assert request.headers["Aion-Usage-Attribution"] == "opaque"
+            return httpx.Response(503) if len(grants) == 1 else granted()
+
+        outcome = await backend(handle, grant_handler=share).store(
+            upload(), context=upload_context(usage_attribution="opaque"),
+        )
+        assert isinstance(outcome, UploadReceipt)
+        assert len(uploads) == 1 and len(grants) == 2
+
+    @pytest.mark.parametrize("result", [403, "wrong-version", "missing-expiry"])
+    async def test_failed_grant_never_returns_protected_content(self, result):
+        uploads, grants = [], []
+
+        async def handle(request):
+            uploads.append(request)
+            return accepted()
+
+        async def share(request):
+            grants.append(request)
+            if result == 403:
+                return httpx.Response(403)
+            response = granted(version_id="wrong" if result == "wrong-version" else "v-1")
+            data = response.json()
+            if result == "missing-expiry":
+                data.pop("accessExpiresAt")
+            return httpx.Response(200, json=data)
+
+        outcome = await backend(handle, grant_handler=share).store(
+            upload(), context=upload_context(),
+        )
+        assert isinstance(outcome, UploadFailure)
+        assert len(uploads) == 1 and len(grants) == 1
 
 
 class TestLifecycle:

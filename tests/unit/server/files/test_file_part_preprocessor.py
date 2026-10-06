@@ -91,7 +91,7 @@ class TestInboundStorage:
         )
 
         context = backend.contexts[0]
-        assert context.organization_id == ORG
+        assert context.organization_id is None
         assert context.usage_attribution == "carrier-1"
         assert context.context_id == "ctx-1"
 
@@ -105,13 +105,12 @@ class TestInboundStorage:
         assert req.message.parts[0].text == "hello"
         assert backend.batches == []
 
-    async def test_inline_part_without_distribution_is_rejected(self):
+    async def test_direct_inline_part_preserves_anonymous_caller(self):
         pre, backend = preprocessor()
-
-        with pytest.raises(InvalidParamsError):
-            await pre.process(request(raw_part()), preprocessing_context(None))
-
-        assert backend.batches == []
+        await pre.process(request(raw_part()), preprocessing_context(None))
+        caller = backend.contexts[0].runtime_context.get_callback_attribution().caller
+        assert caller.type == "ExternalAnonymous"
+        assert backend.contexts[0].organization_id is None
 
     async def test_permanent_storage_rejection_is_a_client_error(self):
         backend = OutcomeBackend([UploadFailure(FileUploadErrorCode.STORAGE_REJECTED)])

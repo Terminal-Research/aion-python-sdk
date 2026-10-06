@@ -18,6 +18,7 @@ from aion.core.a2a import file_artifact
 from aion.core.runtime.context import (
     AionRuntimeContext,
     AionRuntimeContextRegistry,
+    ForwardedAttribution,
 )
 from aion.server.agent.execution.context.providers import (
     RequestScopeRuntimeContextProvider,
@@ -49,10 +50,11 @@ def context_provider():
 
 @pytest.fixture
 def runtime_context(context_provider):
-    """Install a runtime context carrying a usable distribution."""
+    """Install the accepted callback evidence that execution always supplies."""
     payload = distribution_payload(principal())
     AionRuntimeContextRegistry.set_current_context(
-        AionRuntimeContext(distribution_extension_payload=payload)
+        AionRuntimeContext(distribution_extension_payload=payload,
+                           callback_attribution=ForwardedAttribution("signed"))
     )
     return payload
 
@@ -113,7 +115,8 @@ class TestArtifactStorage:
         assert isinstance(results[0], TaskArtifactUpdateEvent)
         part = results[0].artifact.parts[0]
         assert part.url and not part.raw
-        assert backend.contexts[0].organization_id == "org-1"
+        assert backend.contexts[0].organization_id is None
+        assert backend.contexts[0].usage_attribution == "signed"
         assert backend.contexts[0].context_id == "ctx-1"
 
     async def test_failed_storage_drops_the_artifact(self, runtime_context, caplog):
@@ -129,8 +132,8 @@ class TestArtifactStorage:
         assert results == []
         assert "STORAGE_REJECTED" in caplog.text
 
-    async def test_missing_distribution_drops_the_artifact(self, no_runtime_context):
-        """No distribution means no owning organization, so nothing can be stored."""
+    async def test_missing_attribution_drops_the_artifact(self, no_runtime_context):
+        """Missing invocation scope must not turn an upload into autonomous work."""
         backend = RecordingBackend()
         event, service = bytes_artifact_event()
 

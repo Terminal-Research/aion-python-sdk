@@ -6,14 +6,14 @@ from aion.core.principal import Principal
 from aion.core.runtime.context.attribution import CallbackAttribution, DirectAttribution, ForwardedAttribution
 from aion.core.runtime.context.models import AionRuntimeContext
 from aion.server.auth import verified_caller
-from a2a.server.agent_execution import RequestContext
+from a2a.server.context import ServerCallContext
 
 
-def callback_attribution(context: RequestContext, runtime: AionRuntimeContext) -> CallbackAttribution:
+def callback_attribution(call: ServerCallContext | None, runtime: AionRuntimeContext) -> CallbackAttribution:
     """Preserve a carrier or capture the accepted caller for this invocation.
 
     Args:
-        context: Accepted A2A RequestContext, including ServerCallContext.
+        call: Accepted ServerCallContext, shared by preprocessing and execution.
         runtime: Extension payloads collected from this request, not task history.
 
     Returns:
@@ -27,7 +27,6 @@ def callback_attribution(context: RequestContext, runtime: AionRuntimeContext) -
     attribution = runtime.get_callback_attribution()
     if isinstance(attribution, ForwardedAttribution):
         return attribution
-    call = getattr(context, "call_context", None)
     state = getattr(call, "state", None) or {}
     headers = state.get("headers", {})
     if any(str(key).lower() == AION_USAGE_ATTRIBUTION_HEADER.lower() for key in headers):
