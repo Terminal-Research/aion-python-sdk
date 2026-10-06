@@ -248,6 +248,8 @@ class RequestHandler:
                 stream=True,
             )
 
+            # The agent logs the request it answers; the proxy only relays it.
+            request.state.logged_elsewhere = True
             return UpstreamStreamingResponse(
                 response,
                 self._forwarded_response_headers(response),
@@ -255,14 +257,17 @@ class RequestHandler:
             )
 
         except httpx.ConnectError:
+            request.state.logged_elsewhere = True
             logger.error(f"Failed to connect to agent '{agent_id}' at {agent_base_url}")
             raise AgentUnavailableException(agent_id)
 
         except httpx.TimeoutException:
+            request.state.logged_elsewhere = True
             logger.error(f"Timeout when connecting to agent '{agent_id}'")
             raise AgentTimeoutException(agent_id)
 
         except Exception as e:
+            request.state.logged_elsewhere = True
             logger.error(f"Error forwarding request to agent '{agent_id}': {str(e)}")
             raise AgentProxyException(agent_id, str(e))
 
