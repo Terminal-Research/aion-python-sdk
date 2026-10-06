@@ -19,8 +19,12 @@ async def _database():
 
 
 @pytest_asyncio.fixture(params=["memory", "postgres"], loop_scope="module")
-async def served(request, _database):
-    """The application on the in-memory stores, and on PostgreSQL when ``POSTGRES_TEST_URL`` is set."""
+async def served(request, _database, monkeypatch):
+    """The application on the in-memory stores, and on PostgreSQL when ``POSTGRES_TEST_URL`` is set.
+
+    Not hosted by the platform: ``DEPLOYMENT_ID`` is unset while it is built.
+    """
+    monkeypatch.delenv("DEPLOYMENT_ID", raising=False)
     if request.param == "postgres":
         if _database is None:
             pytest.skip("POSTGRES_TEST_URL is not set")

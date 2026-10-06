@@ -33,6 +33,7 @@
 * **chat:** discover A2A and Aion Chat agents together
 * **server:** follow a task running on another server through SubscribeToTask, from the stored task and the task journal
 * **server:** resume a task paused for input on any server of the agent
+* **server:** on a server the Aion platform hosts, accept only push notification URLs that resolve to public addresses, and skip deliveries to any other
 
 
 ### Bug Fixes

@@ -24,6 +24,7 @@ from aion.server.core.app.handlers.request_preprocessors import A2ARequestPrepro
 from aion.server.core.middlewares import AionAuthMiddleware, AionContextMiddleware, TracingMiddleware
 from aion.server.plugins import PluginFactory
 from aion.server.tasks import StoreManager, PushNotificationFactory
+from aion.server.tasks.push_notifications import push_url_validator
 from .lifespan import AppLifespan
 from .registry import app_registry
 
@@ -199,9 +200,13 @@ class AppFactory:
             file_transformer=self.file_transformer,
         )
 
+        # One push URL policy for the configs the handler accepts and the
+        # deliveries the sender makes.
+        url_validator = push_url_validator()
         push_config_store, push_sender = PushNotificationFactory.create(
             self.db_factory.db_manager,
             owner_resolver=self.aion_agent.owner_resolver,
+            push_url_validator=url_validator,
         )
         self._push_sender = push_sender
 
@@ -213,6 +218,7 @@ class AppFactory:
             context_catalog=self.store_manager.get_context_catalog(),
             push_config_store=push_config_store,
             push_sender=push_sender,
+            push_url_validator=url_validator,
             agent_card=self.aion_agent.card,
             request_context_builder=AionRequestContextBuilder(
                 task_store=task_store,

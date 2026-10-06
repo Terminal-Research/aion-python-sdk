@@ -7,6 +7,7 @@ with inert stand-ins, so each test sees only the call or the order it asserts.
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+from a2a.utils.push_url_validator import validate_push_notification_url
 from fastapi import FastAPI
 
 import aion.server.core.app.factory as factory_module
@@ -101,9 +102,28 @@ async def test_push_configs_resolve_owners_like_the_tasks(create_push) -> None:
 
     await factory._create_request_handler()
 
-    create_push.assert_called_once_with(
-        factory.db_factory.db_manager, owner_resolver=agent.owner_resolver
-    )
+    create_push.assert_called_once()
+    assert create_push.call_args.args == (factory.db_factory.db_manager,)
+    assert create_push.call_args.kwargs["owner_resolver"] is agent.owner_resolver
+
+
+@pytest.mark.parametrize(
+    "deployment_id, validator",
+    [("3f2b8c1e-7d4a-4e5f-9a6b-1c2d3e4f5a6b", validate_push_notification_url), (None, None)],
+    ids=["hosted", "not-hosted"],
+)
+async def test_push_urls_are_checked_on_a_hosted_server_only(create_push, monkeypatch, deployment_id, validator) -> None:
+    """The handler, which accepts configs, and the sender, which delivers, get one policy."""
+    if deployment_id is None:
+        monkeypatch.delenv("DEPLOYMENT_ID", raising=False)
+    else:
+        monkeypatch.setenv("DEPLOYMENT_ID", deployment_id)
+    factory, _, _ = _factory()
+
+    await factory._create_request_handler()
+
+    assert create_push.call_args.kwargs["push_url_validator"] is validator
+    assert factory_module.AionRequestHandler.call_args.kwargs["push_url_validator"] is validator
 
 
 @pytest.mark.parametrize("verifier", [Mock(), None], ids=["platform", "local-mode"])

@@ -120,6 +120,7 @@ What Aion adds on top of cluster mode:
 | `add_a2a_routes_to_fastapi`, `create_agent_card_routes` | `AppFactory._build_app` |
 | A2A 0.3 compatibility (`enable_v0_3_compat=True`) | `AionJsonRpcDispatcher`, which installs `AionJSONRPC03Adapter` as the adapter |
 | `DatabasePushNotificationConfigStore`, `InMemoryPushNotificationConfigStore` | `PushNotificationFactory` |
+| `validate_push_notification_url` as `push_url_validator` of `DefaultRequestHandlerV2` and `BasePushNotificationSender` | `AppFactory`, on a server the platform hosts only (`push_url_validator()`) |
 | `resolve_user_scope`, `OwnerResolver` | default owner resolver of the stores and the agent |
 
 ## Not used

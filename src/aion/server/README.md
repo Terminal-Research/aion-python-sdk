@@ -423,6 +423,12 @@ this section says otherwise.
   `X-A2A-Notification-Token` and its `authentication` as `Authorization:
   <scheme> <credentials>`; credentials without a scheme are sent as
   `Bearer`.
+- **Push notification URLs** on a server the Aion platform hosts
+  (`DEPLOYMENT_ID` set) must be `http` or `https` and resolve to public
+  addresses only: a config naming another one - loopback, private,
+  link-local, the cloud metadata endpoint - is refused with `-32602`,
+  created on its own or inline in `SendMessage`, and a delivery to a stored
+  one is skipped. Elsewhere any URL is accepted.
 
 ### Several servers of one agent
 

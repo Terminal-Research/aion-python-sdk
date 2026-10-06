@@ -9,16 +9,39 @@ from a2a.server.owner_resolver import OwnerResolver, resolve_user_scope
 from a2a.server.tasks import InMemoryPushNotificationConfigStore
 from a2a.server.tasks.push_notification_config_store import PushNotificationConfigStore
 from a2a.server.tasks.push_notification_sender import PushNotificationSender
+from a2a.utils.push_url_validator import validate_push_notification_url
 from aion.db.postgres import AION_SCHEMA
 from aion.core.db import DbManagerProtocol
+from collections.abc import Awaitable, Callable
 from typing import Optional
 
+from aion.server.auth import is_hosted
 from aion.server.settings import app_settings
 from .push_sender import AionPushNotificationSender
 
 logger = logging.getLogger(__name__)
 
 CONNECT_TIMEOUT_SECONDS = 5.0
+
+PushUrlValidator = Callable[[str], Awaitable[bool]]
+
+
+def push_url_validator() -> Optional[PushUrlValidator]:
+    """The check a push URL must pass on this server, or ``None`` for none.
+
+    On a server the Aion platform hosts (``DEPLOYMENT_ID`` set) it is
+    a2a-sdk's ``validate_push_notification_url``: only an ``http`` or
+    ``https`` URL whose host resolves to public addresses is accepted, so a
+    client cannot have the server post to the deployment's own network or to
+    the cloud metadata endpoint. Elsewhere every URL is accepted - a server
+    run locally, or deployed by its owner, delivers to ``localhost`` and to
+    private networks as its webhooks need.
+
+    The request handler applies it when a config is created, inline in a
+    ``SendMessage`` too, and the sender before every delivery, so a config
+    stored before the server was hosted is skipped with a warning.
+    """
+    return validate_push_notification_url if is_hosted() else None
 
 
 class PushNotificationFactory:
@@ -33,6 +56,7 @@ class PushNotificationFactory:
             cls,
             db_manager: Optional[DbManagerProtocol] = None,
             owner_resolver: OwnerResolver = resolve_user_scope,
+            push_url_validator: Optional[PushUrlValidator] = None,
     ) -> tuple[PushNotificationConfigStore, PushNotificationSender]:
         """Build the config store and the sender that delivers from it.
 
@@ -42,6 +66,9 @@ class PushNotificationFactory:
             owner_resolver: The agent's resolver, so a task's configs belong to
                 the task's owner when a client reads or deletes them. Delivery
                 reads them by task id alone, across owners.
+            push_url_validator: The check every delivery's URL must pass
+                first; ``None`` delivers to any URL. See
+                ``push_url_validator()``.
         """
         if db_manager and db_manager.is_initialized:
             config_store: PushNotificationConfigStore = cls._create_postgres_store(
@@ -53,6 +80,7 @@ class PushNotificationFactory:
         sender = AionPushNotificationSender(
             httpx_client=httpx.AsyncClient(timeout=cls._build_timeout()),
             config_store=config_store,
+            push_url_validator=push_url_validator,
         )
         return config_store, sender
 
