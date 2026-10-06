@@ -35,9 +35,9 @@ dependencies = [
     # reaches into a2a-sdk's internals. The floor is the release the server's
     # overrides follow: the terminal-state UnsupportedOperationError, the
     # keyset ListTasksCursor, Authorization from a push config's
-    # authentication, and the stored config set_info returns. The server
-    # passes a2a-sdk neither a VersionedTaskStore nor an event stream, so
-    # a2a-sdk's cluster mode stays off.
+    # authentication, the stored config set_info returns, and the cluster
+    # mode (VersionedTaskStore, TaskEventStream) the server runs on
+    # PostgreSQL.
     "a2a-sdk>=1.2.2,<1.3.0",
     # Ariadne's custom operations use graphql-core's 3.2 AST contract.
     # Keep runtime installs aligned with the generator, including without dev extras.

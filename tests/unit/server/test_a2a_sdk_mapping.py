@@ -4,8 +4,9 @@ The page is where a person or an agent looks up what Aion does with an a2a-sdk
 entry point. Its table of overridden methods is checked against
 ``OVERRIDES`` in ``test_sdk_override_parity.py`` in both directions, and
 ``OVERRIDES`` against the a2a-sdk methods the Aion classes actually redefine,
-so no override can be added or dropped without the page. Every test file the
-page names has to exist.
+so no override can be added or dropped without the page. Its table of
+JSON-RPC methods is checked against the methods the endpoint answers, also
+both ways. Every test file the page names has to exist.
 """
 
 from __future__ import annotations
@@ -18,7 +19,9 @@ from tests.unit.server.test_sdk_override_parity import OVERRIDES
 REPOSITORY = Path(__file__).resolve().parents[3]
 MAPPING = REPOSITORY / "docs" / "development" / "a2a-sdk-mapping.md"
 TABLE_HEADING = "## Overridden methods"
+METHODS_HEADING = "## JSON-RPC methods"
 STATUSES = {"as is", "extended", "replaced", "not used"}
+METHOD_STATUSES = STATUSES | {"added"}
 
 
 def _section(text: str, heading: str) -> str:
@@ -27,13 +30,17 @@ def _section(text: str, heading: str) -> str:
     return text[start:] if following == -1 else text[start:following]
 
 
-def _override_rows() -> list[list[str]]:
+def _rows(heading: str) -> list[list[str]]:
     rows = []
-    for line in _section(MAPPING.read_text(), TABLE_HEADING).splitlines():
+    for line in _section(MAPPING.read_text(), heading).splitlines():
         if not line.startswith("| `"):
             continue
         rows.append([cell.strip() for cell in line.strip("|").split("|")])
     return rows
+
+
+def _override_rows() -> list[list[str]]:
+    return _rows(TABLE_HEADING)
 
 
 def _name(cell: str) -> str:
@@ -87,3 +94,24 @@ def test_every_a2a_sdk_method_an_aion_class_redefines_is_listed() -> None:
 
     unlisted = sorted(f"{cls.__name__}.{name}" for cls, name in found - listed)
     assert not unlisted, f"a2a-sdk methods overridden but not in OVERRIDES: {unlisted}"
+
+
+def test_the_page_lists_exactly_the_json_rpc_methods_the_endpoint_answers() -> None:
+    # The dispatcher first: a2a-sdk's adapter module cannot be the first of
+    # the two imported.
+    from a2a.server.routes.jsonrpc_dispatcher import JsonRpcDispatcher
+    from a2a.compat.v0_3.jsonrpc_adapter import JSONRPC03Adapter
+
+    from aion.core.a2a import AION_JSONRPC_METHOD_EXTENSION_BINDINGS
+
+    documented = {}
+    for method, protocol, status, *_ in _rows(METHODS_HEADING):
+        assert status in METHOD_STATUSES, f"{method}: unknown status {status!r}"
+        documented[method.strip("`")] = protocol
+    answered = {
+        **{method: "1.0" for method in JsonRpcDispatcher.METHOD_TO_MODEL},
+        **{method: "0.3" for method in JSONRPC03Adapter.METHOD_TO_MODEL},
+        **{method: "Aion" for method in AION_JSONRPC_METHOD_EXTENSION_BINDINGS},
+    }
+
+    assert documented == answered

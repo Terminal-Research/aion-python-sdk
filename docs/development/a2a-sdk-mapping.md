@@ -14,10 +14,47 @@ Status of an entry point:
 | extended | Subclassed; the override delegates to a2a-sdk and adds around it. |
 | replaced | Subclassed or reimplemented; Aion's body stands in for a2a-sdk's. |
 | not used | Available in a2a-sdk and deliberately left out. |
+| added | Aion's own, with no a2a-sdk counterpart. |
 
 `tests/unit/server/test_sdk_override_parity.py` holds the same list of
 overrides as [Overridden methods](#overridden-methods), and
 `tests/unit/server/test_a2a_sdk_mapping.py` checks that the two agree.
+
+## JSON-RPC methods
+
+Every method the JSON-RPC endpoint answers. The A2A 1.0 methods are
+`JsonRpcDispatcher.METHOD_TO_MODEL`, the A2A 0.3 methods
+`JSONRPC03Adapter.METHOD_TO_MODEL`, which serves each one through the 1.0
+handler; `tests/unit/server/core/test_a2a_surface.py` pins both lists and the
+routes, and `tests/unit/server/test_a2a_sdk_mapping.py` checks this table
+against them.
+
+| Method | Protocol | Status | Aion | What differs |
+|---|---|---|---|---|
+| `SendMessage` | 1.0 | extended | `AionRequestHandler.on_message_send` | Answers with a `Task`, never a bare `Message`; context admission, extension verification and file preprocessing run first. |
+| `SendStreamingMessage` | 1.0 | extended | `AionRequestHandler.on_message_send_stream`, `AionJsonRpcDispatcher._process_streaming_request` | Extensions verified before the SSE headers; the stream opens and closes with the stored `Task`. |
+| `GetTask` | 1.0 | extended | `AionRequestHandler.on_get_task` | The caller's own tasks only. |
+| `ListTasks` | 1.0 | extended | `AionRequestHandler.on_list_tasks` | The caller's own tasks only; opaque page cursors. |
+| `CancelTask` | 1.0 | extended | `AionRequestHandler.on_cancel_task` | The caller's own tasks only. |
+| `SubscribeToTask` | 1.0 | extended | `AionRequestHandler.on_subscribe_to_task` | The caller's own tasks only; the stream closes with the stored `Task`. |
+| `CreateTaskPushNotificationConfig` | 1.0 | extended | `AionRequestHandler.on_create_task_push_notification_config` | The task's initiator only; on a hosted server the URL must be public. |
+| `GetTaskPushNotificationConfig` | 1.0 | extended | `AionRequestHandler.on_get_task_push_notification_config` | The task's initiator only. |
+| `ListTaskPushNotificationConfigs` | 1.0 | extended | `AionRequestHandler.on_list_task_push_notification_configs` | The task's initiator only. |
+| `DeleteTaskPushNotificationConfig` | 1.0 | extended | `AionRequestHandler.on_delete_task_push_notification_config` | The task's initiator only. |
+| `GetExtendedAgentCard` | 1.0 | as is | - | The card declares no extended card: `UnsupportedOperationError` (`-32004`). |
+| `message/send` | 0.3 | as is | through `SendMessage` | |
+| `message/stream` | 0.3 | extended | `AionJSONRPC03Adapter._process_streaming_request` | LF event delimiters; extensions verified before the stream opens. |
+| `tasks/get` | 0.3 | as is | through `GetTask` | |
+| `tasks/cancel` | 0.3 | as is | through `CancelTask` | |
+| `tasks/resubscribe` | 0.3 | extended | `AionJSONRPC03Adapter._process_streaming_request` | LF event delimiters. |
+| `tasks/pushNotificationConfig/set` | 0.3 | as is | through `CreateTaskPushNotificationConfig` | |
+| `tasks/pushNotificationConfig/get` | 0.3 | as is | through `GetTaskPushNotificationConfig` | |
+| `tasks/pushNotificationConfig/list` | 0.3 | as is | through `ListTaskPushNotificationConfigs` | |
+| `tasks/pushNotificationConfig/delete` | 0.3 | as is | through `DeleteTaskPushNotificationConfig` | |
+| `agent/getAuthenticatedExtendedCard` | 0.3 | as is | through `GetExtendedAgentCard` | |
+| `GetContexts` | Aion | added | `AionJsonRpcDispatcher._handle_method_extension` | The Context extension; errors in a2a-sdk's format, `A2A-Version` checked, a call without it served. |
+| `GetContext` | Aion | added | `AionJsonRpcDispatcher._handle_method_extension` | As `GetContexts`. |
+| `DeleteContext` | Aion | added | `AionJsonRpcDispatcher._handle_method_extension` | As `GetContexts`. |
 
 ## Deployment modes
 
