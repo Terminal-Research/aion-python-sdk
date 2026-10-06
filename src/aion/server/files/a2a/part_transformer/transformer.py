@@ -330,8 +330,7 @@ class A2AFileTransformer:
             payload = MessageToDict(part.metadata).get(MESSAGING_EXTENSION_URI_V1)
             if isinstance(payload, dict) and payload.get("schema") == FileActionPayload.SCHEMA_URI:
                 action = FileActionPayload.model_validate(payload)
-                if "retention_expires_at" in action.model_fields_set:
-                    retention["retention_expires_at"] = action.retention_expires_at
+                retention["retention_expires_at"] = action.retention_expires_at
         return FileUpload(
             data=bytes(part.raw),
             media_type=media_type or "application/octet-stream",

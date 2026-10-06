@@ -149,16 +149,16 @@ class MessageActionPayload(A2ABaseModel):
 class FileActionPayload(A2ABaseModel):
     """Initial retention requested for one outbound inline file part.
 
-    Omission leaves the storage provider's default in effect. Explicit None
-    requests indefinite storage. This action does not renew an existing URL
-    or grant authority over a File.
+    The storage provider's default applies only without this action. An action
+    with an omitted or None retention deadline requests indefinite storage.
+    This action does not renew an existing URL or grant authority over a File.
     """
 
     SCHEMA_URI: ClassVar[str] = FILE_ACTION_PAYLOAD_SCHEMA_V1
 
     retention_expires_at: Optional[datetime] = Field(
         default=None,
-        description="Absolute UTC retention deadline, or null for indefinite storage.",
+        description="Absolute UTC deadline. Omitted or null requests indefinite storage.",
     )
 
     @field_validator("retention_expires_at", mode="before")

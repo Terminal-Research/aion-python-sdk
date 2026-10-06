@@ -86,7 +86,7 @@ def upload(name="report.pdf", data=b"%PDF") -> FileUpload:
 class TestRequestShape:
     @pytest.mark.parametrize("action,expected", [
         (None, "2030-01-31T12:00:00Z"),
-        (FileActionPayload(), "2030-01-31T12:00:00Z"),
+        (FileActionPayload(), None),
         (FileActionPayload(retention_expires_at=None), None),
         (FileActionPayload(retention_expires_at="2099-01-01T00:00:00Z"),
          "2099-01-01T00:00:00Z"),

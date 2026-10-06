@@ -112,7 +112,8 @@ def converter(service, backend=None) -> ADKToA2AEventConverter:
 
 class TestArtifactStorage:
     @pytest.mark.parametrize("action,expected", [
-        (FileActionPayload(), FileRetentionDefault.PROVIDER),
+        (None, FileRetentionDefault.PROVIDER),
+        (FileActionPayload(), None),
         (FileActionPayload(retention_expires_at=None), None),
         (FileActionPayload(retention_expires_at="2099-01-01T00:00:00Z"),
          datetime(2099, 1, 1, tzinfo=timezone.utc)),
@@ -124,7 +125,7 @@ class TestArtifactStorage:
 
         assert backend.batches[0][0].retention_expires_at == expected
         assert results[0].artifact.parts[0].url
-        assert MESSAGING_EXTENSION_URI_V1 in results[0].artifact.extensions
+        assert (MESSAGING_EXTENSION_URI_V1 in results[0].artifact.extensions) == (action is not None)
 
     async def test_inline_artifact_content_is_stored(self, runtime_context):
         event, service = bytes_artifact_event()

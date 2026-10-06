@@ -33,8 +33,7 @@ class ArtifactOutput(BaseModel):
         default=None,
         description="Human-readable artifact name. Defaults to artifact_id when absent.",
     )
-    # Keep the wire object: exclude_none on an enclosing model must not erase
-    # an explicit retentionExpiresAt: null and turn it into the default.
+    # Keep the wire object, including its schema discriminator and explicit null.
     file_action: dict[str, Any] | None = Field(
         default=None,
         description="FileActionPayload metadata for the artifact's single file part.",

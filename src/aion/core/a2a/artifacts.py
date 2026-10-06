@@ -56,7 +56,8 @@ def file_artifact(
         name: Human-readable artifact name. Defaults to "file".
         artifact_id: Explicit artifact ID. Auto-generated if not provided.
         file_action: Per-file retention request. Omit for the Aion storage
-            provider's 30-day default; explicit null retention is indefinite.
+            provider's 30-day default. An action with no deadline requests
+            indefinite storage.
 
     Returns:
         a2a.types.Artifact with a single FilePart (FileWithBytes).
