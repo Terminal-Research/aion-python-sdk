@@ -36,6 +36,12 @@ runs the full source-checkout gate on every pull request ([CI guide](../docs/dev
 count (default 4; any `pytest -n` value). `UNIT_WORKERS=0` runs the suite in
 one process, which `--pdb` and `-s` need.
 
+`make tests-scenarios` runs on pytest-xdist workers as well, one scenario
+module per worker. `SCENARIO_WORKERS` sets the count the same way (default 4);
+`SCENARIO_WORKERS=0` runs the scenarios in one process for `--pdb` and `-s`,
+and `KEEP_SERVE=1` implies it. The database-backed scenario targets always run
+in one process, because their scenarios share one database.
+
 Use `TEST_PATHS` for a unit or integration subset and `ARGS` for pytest
 options:
 

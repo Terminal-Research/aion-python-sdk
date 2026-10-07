@@ -134,14 +134,24 @@ TAGS ?=
 FRAMEWORK ?=
 
 # Without TAGS, everything except the two groups that need a database and
-# have targets of their own: persistence restarts a server and waits out a
-# production lease, distributed runs two servers over one database.
+# have targets of their own: persistence restarts servers over one database,
+# distributed runs two servers over one database.
 SCENARIO_TAGS := $(if $(TAGS),$(shell echo "$(TAGS)" | sed 's/  */ or /g'),not persistence and not distributed)
 SCENARIO_EXPR := scenario and ($(SCENARIO_TAGS))
 FRAMEWORK_FILTER := $(if $(FRAMEWORK),-k "[$(FRAMEWORK)]",)
 
-tests-scenarios: ## Run the scenarios against this working tree (TAGS=, FRAMEWORK=)
-	poetry run pytest tests/scenarios -m "$(SCENARIO_EXPR)" $(FRAMEWORK_FILTER) $(ARGS)
+# The ordinary scenarios run on pytest-xdist workers. Each worker starts the
+# servers its scenarios need and keeps them for its session; `--dist loadfile`
+# keeps a module on one worker, so a deployment variant is not started on
+# every worker. SCENARIO_WORKERS takes what `pytest -n` takes; 0 runs every
+# scenario in the pytest process itself, which `-s` and `--pdb` need.
+# KEEP_SERVE forces 0: a worker's report of the servers it left running
+# would not reach this terminal.
+SCENARIO_WORKERS ?= 4
+SCENARIO_XDIST := -n $(if $(KEEP_SERVE),0,$(SCENARIO_WORKERS)) --dist loadfile
+
+tests-scenarios: ## Run the scenarios against this working tree (TAGS=, FRAMEWORK=, SCENARIO_WORKERS=)
+	poetry run pytest tests/scenarios -m "$(SCENARIO_EXPR)" $(SCENARIO_XDIST) $(FRAMEWORK_FILTER) $(ARGS)
 
 # The scenarios that restart a server and expect the tasks to still be there.
 # The database is handled the way the integration targets handle it, and by
@@ -157,9 +167,11 @@ tests-scenarios-persistence: ## Run the persistence scenarios against a real dat
 tests-scenarios-pg: tests-scenarios-persistence ## Alias for tests-scenarios-persistence
 
 # The scenarios that run two servers of one agent over one database and ask
-# which of them owns a task. Same database contract as the persistence target,
-# and separate from it for the same reason: a plain `make tests-scenarios`
-# would otherwise start four servers per scenario and wait out a lease.
+# whether one of them follows, continues and cancels a task the other runs.
+# Same database contract as the persistence target. A plain `make
+# tests-scenarios` leaves them out: they need that database and start two
+# servers per scenario. Both database-backed targets run in one process,
+# because their scenarios share and truncate that one database.
 tests-scenarios-distributed: export POSTGRES_TEST_URL := $(POSTGRES_TEST_URL)
 tests-scenarios-distributed: ## Run the distributed scenarios against a real database
 	@$(call with_pg_test,poetry run pytest tests/scenarios -m "scenario and distributed" \

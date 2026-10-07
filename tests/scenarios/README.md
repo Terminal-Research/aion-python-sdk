@@ -103,9 +103,15 @@ from and nothing survives a restart. That is a property of the deployment
 rather than a gap in the tests - `tests/unit/server/tasks/test_store_manager.py`
 asserts it from the other side - and nothing here pretends otherwise.
 
+`make tests-scenarios` spreads the scenario modules over `SCENARIO_WORKERS`
+pytest-xdist workers (default 4). Each worker starts the servers its modules
+need, so a deployment variant may run once per worker; `SCENARIO_WORKERS=0`
+runs everything in one process with one server per variant.
+
 `KEEP_SERVE=1` leaves the servers running after the session and prints the
 port, the rendered `aion.yaml` and the log of each — the fastest way to poke at
-a deployment a scenario just failed against. `PG_TEST_KEEP=1` does the same for
+a deployment a scenario just failed against. It runs the scenarios in one
+process, so the report reaches the terminal. `PG_TEST_KEEP=1` does the same for
 the database. A failing scenario carries the tail of the server log in its
 report either way.
 

@@ -156,8 +156,9 @@ fixture and configuration directories do not.
   boundaries. The target starts and removes a disposable PostgreSQL
   container unless `POSTGRES_TEST_URL` is supplied.
 - Public A2A, proxy, agent-framework, or wire behavior: run the relevant
-  `make tests-scenarios` selection. It starts real `aion serve` processes.
-  `TAGS=` and `FRAMEWORK=` narrow it. Run database-backed groups with
+  `make tests-scenarios` selection. It starts real `aion serve` processes on
+  four pytest-xdist workers; `SCENARIO_WORKERS=0` runs it in one process for
+  `--pdb` or `-s`. `TAGS=` and `FRAMEWORK=` narrow it. Run database-backed groups with
   `make tests-scenarios-persistence` or `make tests-scenarios-distributed`.
   Read `tests/scenarios/README.md` for selection and scope.
 - New or changed cross-package imports: `make lint-imports`.
