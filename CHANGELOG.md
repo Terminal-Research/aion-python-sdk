@@ -42,6 +42,7 @@
 * **server:** keep thinking deltas out of stored tasks
 * **server:** wait for the platform WebSocket to actually close
 * **server:** say why the Files API refused a file: the refused step (upload or download grant), on whose behalf, and the operation id
+* **server:** start several servers of an agent together on a fresh PostgreSQL: the LangGraph checkpoint, ADK session and push notification config table setup takes turns under advisory locks instead of failing all but one server, and the push config table is created at startup rather than in the first request
 * **server:** keep in-memory ListTasks page tokens valid when the task they name changes or is deleted
 * **server:** check the push URL validator before every push delivery
 * **server:** load the in-memory task store on Python 3.12 and 3.13

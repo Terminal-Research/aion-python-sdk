@@ -19,6 +19,15 @@ logger = logging.getLogger(__name__)
 # only build their own engine from a URL.
 _ACCEPTS_ENGINE = "db_engine" in inspect.signature(DatabaseSessionService.__init__).parameters
 
+# Every server of an agent prepares the session schema and tables on start,
+# and in cluster mode they share one database. Both steps check and then
+# create, so servers starting together against a fresh database would all
+# create, and all but one would fail on PostgreSQL's catalog constraints.
+# google-adk's own table lock only covers one process. The servers take turns
+# under this session-level advisory lock, distinct from the SDK migration lock
+# so neither setup waits on the other.
+SESSION_SETUP_LOCK_KEY = 7_382_194_613
+
 
 class AionADKSessionService(DatabaseSessionService):
     """DatabaseSessionService that reuses a shared SQLAlchemy engine.
@@ -54,7 +63,29 @@ class AionADKSessionService(DatabaseSessionService):
         self._session_locks_guard = asyncio.Lock()
 
     async def setup(self) -> None:
-        """Create the schema, then the tables google-adk keeps in it."""
+        """Create the schema, then the tables google-adk keeps in it.
+
+        Both run under ``SESSION_SETUP_LOCK_KEY``, held on a connection of its
+        own, so servers that start together against one database run them one
+        after another.
+        """
+        async with self.db_engine.connect() as lock_conn:
+            await lock_conn.execute(
+                text("SELECT pg_advisory_lock(CAST(:key AS BIGINT))"),
+                {"key": SESSION_SETUP_LOCK_KEY},
+            )
+            await lock_conn.commit()
+            try:
+                await self._prepare_schema_and_tables()
+            finally:
+                await lock_conn.execute(
+                    text("SELECT pg_advisory_unlock(CAST(:key AS BIGINT))"),
+                    {"key": SESSION_SETUP_LOCK_KEY},
+                )
+                await lock_conn.commit()
+
+    async def _prepare_schema_and_tables(self) -> None:
+        """Create the schema if it is missing, then google-adk's tables in it."""
         logger.debug(f"Ensuring schema '{self._schema}' exists")
         try:
             async with self.db_engine.begin() as conn:

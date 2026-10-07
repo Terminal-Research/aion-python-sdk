@@ -113,7 +113,7 @@ class PushNotificationFactory:
             db_manager: DbManagerProtocol,
             owner_resolver: OwnerResolver,
     ) -> PushNotificationConfigStore:
-        """Build a DatabasePushNotificationConfigStore bound to the shared engine.
+        """Build the database config store bound to the shared engine.
 
         A stored configuration is the callback URL plus the credentials the
         receiver expects to see on the webhook call. Handing the store the
@@ -124,11 +124,10 @@ class PushNotificationFactory:
 
         Returns:
             The database-backed config store, encrypting at rest when
-            ``ENCRYPTION_KEY`` is configured.
+            ``ENCRYPTION_KEY`` is configured. Its table is created by
+            :meth:`prepare`, not here.
         """
-        from a2a.server.tasks.database_push_notification_config_store import (
-            DatabasePushNotificationConfigStore,
-        )
+        from .push_config_store import AionDatabasePushNotificationConfigStore
         engine = db_manager.get_engine().execution_options(
             schema_translate_map={None: AION_SCHEMA}
         )
@@ -158,11 +157,27 @@ class PushNotificationFactory:
                 "encrypt them at rest."
             )
 
-        return DatabasePushNotificationConfigStore(
+        return AionDatabasePushNotificationConfigStore(
             engine=engine,
             encryption_key=encryption_key,
             owner_resolver=owner_resolver,
         )
+
+    @staticmethod
+    async def prepare(config_store: PushNotificationConfigStore) -> None:
+        """Create the database config table while the server starts.
+
+        a2a-sdk would otherwise create it inside the first request that reaches
+        the store, where a failure is a client's InternalError. An in-memory
+        store needs nothing.
+
+        Args:
+            config_store: The store :meth:`create` returned.
+        """
+        from .push_config_store import AionDatabasePushNotificationConfigStore
+
+        if isinstance(config_store, AionDatabasePushNotificationConfigStore):
+            await config_store.initialize()
 
     @staticmethod
     def _create_memory_store(owner_resolver: OwnerResolver) -> PushNotificationConfigStore:

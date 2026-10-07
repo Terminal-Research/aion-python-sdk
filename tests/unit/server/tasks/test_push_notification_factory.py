@@ -11,14 +11,14 @@ import pytest
 from a2a.server.owner_resolver import resolve_user_scope
 from a2a.server.tasks import InMemoryPushNotificationConfigStore
 from cryptography.fernet import Fernet
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 from aion.server.tasks.push_sender import AionPushNotificationSender
 from aion.server.tasks.push_notifications import PushNotificationFactory
 
 STORE_PATH = (
-    "a2a.server.tasks.database_push_notification_config_store."
-    "DatabasePushNotificationConfigStore"
+    "aion.server.tasks.push_config_store."
+    "AionDatabasePushNotificationConfigStore"
 )
 
 
@@ -152,3 +152,22 @@ class TestConfigOwner:
         config_store, _ = PushNotificationFactory.create()
 
         assert config_store.owner_resolver is resolve_user_scope
+
+
+class TestPrepare:
+    """The database table is created while the server starts, not in a request."""
+
+    async def test_a_database_store_creates_its_table(self):
+        from aion.server.tasks.push_config_store import AionDatabasePushNotificationConfigStore
+
+        store = Mock(spec=AionDatabasePushNotificationConfigStore)
+        store.initialize = AsyncMock()
+
+        await PushNotificationFactory.prepare(store)
+
+        store.initialize.assert_awaited_once_with()
+
+    async def test_a_memory_store_needs_nothing(self):
+        config_store, _ = PushNotificationFactory.create()
+
+        await PushNotificationFactory.prepare(config_store)
