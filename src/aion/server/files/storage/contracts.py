@@ -30,10 +30,7 @@ class FileUploadErrorCode(str, Enum):
     the process is a function of the code alone.
     """
 
-    NO_DISTRIBUTION = "NO_DISTRIBUTION"
     NO_ATTRIBUTION = "NO_ATTRIBUTION"
-    NO_ORGANIZATION = "NO_ORGANIZATION"
-    AMBIGUOUS_ORGANIZATION = "AMBIGUOUS_ORGANIZATION"
     STORAGE_UNAVAILABLE = "STORAGE_UNAVAILABLE"
     STORAGE_REJECTED = "STORAGE_REJECTED"
     STORAGE_UNAUTHORIZED = "STORAGE_UNAUTHORIZED"
@@ -62,35 +59,16 @@ class FileUploadErrorCode(str, Enum):
         return self in _CLIENT_FAULTS
 
 
-# The request names no owning organization, or carries content the storage
-# service will refuse however often it is sent. Everything else - unreachable
-# storage, refused agent credentials or permissions, a server on its way
-# down - is the deployment's problem, not the sender's.
-_CLIENT_FAULTS = frozenset(
-    {
-        FileUploadErrorCode.NO_DISTRIBUTION,
-        FileUploadErrorCode.NO_ORGANIZATION,
-        FileUploadErrorCode.AMBIGUOUS_ORGANIZATION,
-        FileUploadErrorCode.STORAGE_REJECTED,
-    }
-)
+# Content the storage service will refuse however often it is sent. Everything
+# else - a request with no callback attribution, unreachable storage, refused
+# agent credentials or permissions, a server on its way down - is the
+# deployment's problem, not the sender's.
+_CLIENT_FAULTS = frozenset({FileUploadErrorCode.STORAGE_REJECTED})
 
 
 _PUBLIC_REASONS: dict[FileUploadErrorCode, str] = {
     FileUploadErrorCode.NO_ATTRIBUTION: (
         "File delivery requires the current request's callback attribution."
-    ),
-    FileUploadErrorCode.NO_DISTRIBUTION: (
-        "File content cannot be stored: the request did not declare a "
-        "distribution, so the owning organization is unknown."
-    ),
-    FileUploadErrorCode.NO_ORGANIZATION: (
-        "File content cannot be stored: the declared distribution carries no "
-        "principal identity, so the owning organization is unknown."
-    ),
-    FileUploadErrorCode.AMBIGUOUS_ORGANIZATION: (
-        "File content cannot be stored: the declared distribution carries more "
-        "than one principal identity, so the owning organization is ambiguous."
     ),
     FileUploadErrorCode.STORAGE_UNAVAILABLE: (
         "File content could not be delivered: the storage service did not answer in time."
