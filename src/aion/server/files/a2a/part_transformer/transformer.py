@@ -287,9 +287,8 @@ class A2AFileTransformer:
                     metadata=parts[index].metadata if outbound else None,
                 )
                 continue
-            # One line per file, with the reason in brief; the traceback only
-            # at debug level, since a refusal the storage service answered
-            # with has none worth reading.
+            # One line per file with the reason in brief and no traceback: a
+            # refusal the storage service answered with has none worth reading.
             logger.warning(
                 "Dropping inline file part %r (%d bytes): %s%s",
                 upload.filename,
@@ -297,10 +296,6 @@ class A2AFileTransformer:
                 outcome.error_code.value,
                 f" - {_brief(outcome.cause)}" if outcome.cause is not None else "",
             )
-            if outcome.cause is not None:
-                logger.debug(
-                    "Inline file part %r was not stored", upload.filename, exc_info=outcome.cause
-                )
             report.failures.append(outcome)
 
         convertible = set(indexes)

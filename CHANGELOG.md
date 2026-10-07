@@ -42,6 +42,8 @@
 * **server:** keep thinking deltas out of stored tasks
 * **server:** wait for the platform WebSocket to actually close
 * **server:** say why the Files API refused a file: the refused step (upload or download grant), on whose behalf, and the operation id
+* **api:** name the resource Aion reports as missing a daemon identity, such as the deployment and its id, in AionDaemonIdentityRequired
+* **server:** fail a file that cannot be stored for lack of a daemon identity as NO_DAEMON_IDENTITY instead of STORAGE_FORBIDDEN: the log line names the step, its behalf and the operation id, and the sender of a rejected inbound file reads that the agent has no daemon identity
 * **server:** start several servers of an agent together on a fresh PostgreSQL: the LangGraph checkpoint, ADK session and push notification config table setup takes turns under advisory locks instead of failing all but one server, and the push config table is created at startup rather than in the first request
 * **server:** keep in-memory ListTasks page tokens valid when the task they name changes or is deleted
 * **server:** check the push URL validator before every push delivery

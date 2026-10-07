@@ -77,6 +77,23 @@ def test_missing_daemon_has_stable_non_retryable_error(payload):
     assert "Identity tab" in str(caught.value)
 
 
+def test_missing_daemon_names_the_resource_aion_reports():
+    payload = {"error": {"code": "daemon_identity_required",
+                         "resourceType": "Deployment", "resourceId": "deployment-1"}}
+    with pytest.raises(AionDaemonIdentityRequired) as caught:
+        raise_callback_error(payload)
+    assert (caught.value.resource_type, caught.value.resource_id) == ("Deployment", "deployment-1")
+    assert str(caught.value).startswith(
+        "Assign a daemon identity to Deployment deployment-1 in the deployment"
+    )
+
+
+def test_missing_daemon_without_a_resource_keeps_the_general_hint():
+    assert str(AionDaemonIdentityRequired()).startswith(
+        "Assign a daemon identity in the deployment or agent environment's Identity tab"
+    )
+
+
 def test_unrelated_errors_are_not_reclassified():
     raise_callback_error({"error": {"code": "invalid_token"}})
     callback_response_hook(httpx.Response(403, text="Forbidden"))

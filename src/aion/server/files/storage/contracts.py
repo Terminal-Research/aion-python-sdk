@@ -31,6 +31,7 @@ class FileUploadErrorCode(str, Enum):
     """
 
     NO_ATTRIBUTION = "NO_ATTRIBUTION"
+    NO_DAEMON_IDENTITY = "NO_DAEMON_IDENTITY"
     STORAGE_UNAVAILABLE = "STORAGE_UNAVAILABLE"
     STORAGE_REJECTED = "STORAGE_REJECTED"
     STORAGE_UNAUTHORIZED = "STORAGE_UNAUTHORIZED"
@@ -60,15 +61,19 @@ class FileUploadErrorCode(str, Enum):
 
 
 # Content the storage service will refuse however often it is sent. Everything
-# else - a request with no callback attribution, unreachable storage, refused
-# agent credentials or permissions, a server on its way down - is the
-# deployment's problem, not the sender's.
+# else - a request with no callback attribution, an agent with no daemon
+# identity, unreachable storage, refused agent credentials or permissions, a
+# server on its way down - is the deployment's problem, not the sender's.
 _CLIENT_FAULTS = frozenset({FileUploadErrorCode.STORAGE_REJECTED})
 
 
 _PUBLIC_REASONS: dict[FileUploadErrorCode, str] = {
     FileUploadErrorCode.NO_ATTRIBUTION: (
         "File delivery requires the current request's callback attribution."
+    ),
+    FileUploadErrorCode.NO_DAEMON_IDENTITY: (
+        "File content could not be delivered: the agent has no daemon identity "
+        "assigned for this file operation."
     ),
     FileUploadErrorCode.STORAGE_UNAVAILABLE: (
         "File content could not be delivered: the storage service did not answer in time."

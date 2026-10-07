@@ -57,10 +57,10 @@ class FilePartPreprocessor:
         Raises:
             InvalidParamsError: The request carries inline content the storage
                 service rejects outright, which only the client can fix.
-            InternalError: The deployment cannot store the content - storage
-                refused the agent's credentials or permissions, or did not
-                answer in time. Retrying the same request can succeed only in
-                the last case.
+            InternalError: The deployment cannot store the content - the agent
+                has no daemon identity, storage refused its credentials or
+                permissions, or did not answer in time. Retrying the same
+                request can succeed only in the last case.
         """
         _request_receipts.set([])
 

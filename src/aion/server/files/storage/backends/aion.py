@@ -142,9 +142,7 @@ class AionFileStorageBackend(FileStorageBackend):
                         runtime_context=context.runtime_context,
                     )
                 except AionDaemonIdentityRequired as error:
-                    return UploadFailure(
-                        FileUploadErrorCode.STORAGE_FORBIDDEN, cause=error,
-                    )
+                    return _daemon_failure(error, _Refused(step, operation_id, context))
                 except AionAuthenticationError as error:
                     return _credentials_failure(error, _Refused(step, operation_id, context))
                 except AionFileStorageError as error:
@@ -214,9 +212,9 @@ class AionFileStorageBackend(FileStorageBackend):
 class StorageRefusal(AionError):
     """Why the Files API refused a file, naming the step, its behalf and operation.
 
-    The cause of a 401 or 403 failure, raised from the API's own error. Like
-    every cause it stays in the process: it is what the log line for the
-    dropped file says.
+    The cause of a 401, a 403 or a missing daemon identity, raised from the
+    API's own error. Like every cause it stays in the process: it is what the
+    log line for the dropped file says.
     """
 
 
@@ -249,6 +247,13 @@ def _permission_failure(error: Exception, refused: _Refused) -> UploadFailure:
     refusal = StorageRefusal(f"Files API does not permit {refused} ({_summary(error)})")
     refusal.__cause__ = error
     return UploadFailure(FileUploadErrorCode.STORAGE_FORBIDDEN, cause=refusal)
+
+
+def _daemon_failure(error: AionDaemonIdentityRequired, refused: _Refused) -> UploadFailure:
+    """A failure for a step Aion has no daemon identity to run on this request's behalf."""
+    refusal = StorageRefusal(f"Files API has no daemon identity for {refused}: {error}")
+    refusal.__cause__ = error
+    return UploadFailure(FileUploadErrorCode.NO_DAEMON_IDENTITY, cause=refusal)
 
 
 def _acting_as(context: UploadContext) -> str:

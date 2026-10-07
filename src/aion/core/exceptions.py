@@ -110,6 +110,12 @@ class AionDaemonIdentityRequired(ConfigurationError):
 
     Repair the deployment or agent environment's Identity tab. Retrying or
     selecting the reported caller as executor cannot repair this configuration.
+    The message names the resource Aion reports as missing the daemon, such as
+    the deployment and its id, when the response carries it.
+
+    Args:
+        resource_type: Kind of resource that needs a daemon, as Aion reports it.
+        resource_id: Id of that resource.
     """
 
     code = "daemon_identity_required"
@@ -118,8 +124,10 @@ class AionDaemonIdentityRequired(ConfigurationError):
     def __init__(self, resource_type: str | None = None, resource_id: str | None = None):
         self.resource_type = resource_type
         self.resource_id = resource_id
+        resource = " ".join(part for part in (resource_type, resource_id) if part)
+        target = f" to {resource}" if resource else ""
         super().__init__(
-            "Assign a daemon identity in the deployment or agent environment's "
+            f"Assign a daemon identity{target} in the deployment or agent environment's "
             "Identity tab before making this callback (daemon_identity_required)."
         )
 

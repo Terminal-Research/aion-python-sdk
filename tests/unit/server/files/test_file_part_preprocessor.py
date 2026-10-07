@@ -250,6 +250,21 @@ class TestRejectionClassification:
                 preprocessing_context(distribution_payload(principal())),
             )
 
+    async def test_a_missing_daemon_tells_the_sender_it_is_the_agent(self):
+        """The sender learns the agent is not configured, not that it erred."""
+        backend = OutcomeBackend(
+            [UploadFailure(FileUploadErrorCode.NO_DAEMON_IDENTITY)]
+        )
+        pre, _ = preprocessor(backend)
+
+        with pytest.raises(InternalError) as error:
+            await pre.process(
+                request(raw_part()),
+                preprocessing_context(distribution_payload(principal())),
+            )
+
+        assert error.value.message == FileUploadErrorCode.NO_DAEMON_IDENTITY.public_reason
+
     async def test_shutdown_is_not_the_senders_fault(self):
         pre, _ = preprocessor()
         await pre._transformer.upload_manager.aclose()

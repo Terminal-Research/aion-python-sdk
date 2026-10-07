@@ -337,10 +337,31 @@ class TestPermissions:
                 "code": "daemon_identity_required", "retryable": False,
             }})
         outcome = await backend(handle).store(upload(), context=upload_context())
-        assert outcome.error_code is FileUploadErrorCode.STORAGE_FORBIDDEN
-        assert outcome.retryable is False
-        assert isinstance(outcome.cause, AionDaemonIdentityRequired)
+        assert outcome.error_code is FileUploadErrorCode.NO_DAEMON_IDENTITY
+        assert outcome.retryable is False and outcome.client_fault is False
+        assert isinstance(outcome.cause.__cause__, AionDaemonIdentityRequired)
         assert len(attempts) == 1
+
+    async def test_a_missing_daemon_names_its_resource_operation_and_behalf(self):
+        """What to assign and where comes from the API; the request is the SDK's."""
+        operations = []
+
+        async def handle(request: httpx.Request) -> httpx.Response:
+            operations.append(request.url.params["operationId"])
+            return httpx.Response(409, json={"error": {
+                "code": "daemon_identity_required",
+                "resourceType": "Deployment",
+                "resourceId": "deployment-1",
+            }})
+
+        outcome = await backend(handle).store(upload(), context=upload_context())
+
+        assert str(outcome.cause) == (
+            f"Files API has no daemon identity for the upload (operation {operations[0]}) "
+            "on behalf of the deployment's daemon: Assign a daemon identity to "
+            "Deployment deployment-1 in the deployment or agent environment's "
+            "Identity tab before making this callback (daemon_identity_required)."
+        )
 
     async def test_a_refused_upload_names_its_operation_and_behalf(self):
         """The operation id is what the platform logs the refused request under."""
